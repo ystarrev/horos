@@ -33,14 +33,20 @@ mv "$cmake_dir" "$cmake_dir.tmp"
 rm -Rf "$cmake_dir.tmp" "$install_dir.tmp"
 mkdir -p "$cmake_dir";
 
+archs=$(printf '%s' "$ARCHS" | tr ' ' ';')
+if [ -z "$archs" ]; then
+    archs="$NATIVE_ARCH_ACTUAL"
+fi
+
 args=( "$source_dir" )
 cfs=( $OTHER_CFLAGS )
 cxxfs=( $OTHER_CPLUSPLUSFLAGS )
 
 args+=(-Wno-dev)
 args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
-args+=(-DCMAKE_OSX_ARCHITECTURES="$ARCHS")
+args+=(-DCMAKE_OSX_ARCHITECTURES="$archs")
 args+=(-DDCMTK_ENABLE_MANPAGES=OFF)
+args+=(-DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
 args+=(-DCMAKE_INSTALL_PREFIX="$install_dir")
 

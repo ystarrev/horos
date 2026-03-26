@@ -3,12 +3,13 @@
 use strict;
 use File::Copy;
 use File::Basename;
+use File::Path qw(make_path);
 my $destination = "$ENV{TARGET_BUILD_DIR}/$ENV{PUBLIC_HEADERS_FOLDER_PATH}";
 
-mkdir $destination unless -d $destination;
-open Horos_h, ">", "$destination/Horos.h" or die $!;
+make_path($destination) unless -d $destination;
+open my $horos_h, ">", "$destination/Horos.h" or die $!;
 
-print Horos_h "#ifndef __Horos_API\n#define __Horos_API\n\n";
+print {$horos_h} "#ifndef __Horos_API\n#define __Horos_API\n\n";
 
 my @fromdirs = ( "$ENV{PROJECT_DIR}/Nitrogen/Sources", "$ENV{PROJECT_DIR}/Nitrogen/Sources/JSON", "$ENV{PROJECT_DIR}/Horos/Sources" );
 # TODO: "$ENV{PROJECT_DIR}/cocoahttpserver",
@@ -27,18 +28,19 @@ foreach my $root (@fromdirs) {
         my $filename = $_;
         next unless -f "$root/$filename" && $filename =~ /\.h$/s;
         print STDERR "Copying $root/$filename -> $destination/".(basename $filename)."\n";
-        my @args = ( "cp", "-fp", "$root/$filename", "$destination/".(basename $filename) );
-        system(@args) == 0 or die "Copy failed: $? ($!)";
-        print Horos_h "#include <Horos/$filename>\n";
+        copy("$root/$filename", "$destination/".(basename $filename))
+            or die "Copy failed for $root/$filename: $!";
+        print {$horos_h} "#include <Horos/$filename>\n";
     }
     
     closedir(DIR);
 }
 
-print Horos_h "\n#endif\n";
-close Horos_h;
+print {$horos_h} "\n#endif\n";
+close $horos_h;
 
 chdir "$ENV{TARGET_BUILD_DIR}/$ENV{FULL_PRODUCT_NAME}";
-symlink "Versions/Current/Headers", "Headers";
+unlink "Headers" if -e "Headers" || -l "Headers";
+symlink "Versions/Current/Headers", "Headers" or die "Failed to create Headers symlink: $!";
 
 exit 0;

@@ -36,6 +36,11 @@ mkdir -p "$cmake_dir";
 export CC=clang
 export CXX=clang
 
+archs=$(printf '%s' "$ARCHS" | tr ' ' ';')
+if [ -z "$archs" ]; then
+    archs="$NATIVE_ARCH_ACTUAL"
+fi
+
 args=( "$source_dir" )
 cfs=( $OTHER_CFLAGS )
 cxxfs=( $OTHER_CPLUSPLUSFLAGS )
@@ -43,13 +48,17 @@ cxxfs=( $OTHER_CPLUSPLUSFLAGS )
 args+=(-DGDCM_DOCUMENTATION=OFF)
 args+=(-DGDCM_BUILD_TESTING=OFF)
 args+=(-DGDCM_BUILD_DOCBOOK_MANPAGES=OFF)
+args+=(-DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
 args+=(-DGDCM_USE_SYSTEM_OPENJPEG=ON)
 
 args+=(-DCMAKE_IGNORE_PATH="/opt/local/include;/opt/local/lib")
 
 openjpeg_install="$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install"
-openjpeg_include="$openjpeg_install/include/openjpeg-2.5"
+openjpeg_include="$openjpeg_install/include/OpenJPEG"
+if [ ! -d "$openjpeg_include" ]; then
+    openjpeg_include="$openjpeg_install/include/openjpeg-2.5"
+fi
 if [ ! -d "$openjpeg_include" ]; then
     openjpeg_include="$openjpeg_install/include/openjpeg-2.3"
 fi
@@ -62,7 +71,7 @@ args+=(-DOPENJPEG_INCLUDE_DIRS="$openjpeg_include")
 #cxxfs+=( -framework CharLS -F"$TARGET_BUILD_DIR" )
 
 args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
-args+=(-DCMAKE_OSX_ARCHITECTURES="$ARCHS")
+args+=(-DCMAKE_OSX_ARCHITECTURES="$archs")
 
 args+=(-DCMAKE_INSTALL_PREFIX="$TARGET_TEMP_DIR/Install")
 args+=(-DGDCM_INSTALL_INCLUDE_DIR="include/GDCM")

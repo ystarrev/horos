@@ -997,7 +997,6 @@
 		AB1CB35C0618A37E00CD966B /* MyPoint.h in Headers */ = {isa = PBXBuildFile; fileRef = AB1CB35A0618A37E00CD966B /* MyPoint.h */; };
 		AB1CB35D0618A37E00CD966B /* MyPoint.m in Sources */ = {isa = PBXBuildFile; fileRef = AB1CB35B0618A37E00CD966B /* MyPoint.m */; };
 		AB28B48805B7998800A9906C /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 29B97324FDCFA39411CA2CEA /* AppKit.framework */; };
-		AB28B48A05B7998A00A9906C /* AGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38FC99057A9B050041FEBB /* AGL.framework */; };
 		AB28B48B05B7998A00A9906C /* OpenGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB0EA93B056EDC7E004BBDD3 /* OpenGL.framework */; };
 		AB28B48C05B7998B00A9906C /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 29B97325FDCFA39411CA2CEA /* Foundation.framework */; };
 		AB28B8D005B79D1000A9906C /* MyOutlineView.h in Headers */ = {isa = PBXBuildFile; fileRef = AB0813D6057C698900A72813 /* MyOutlineView.h */; };
@@ -10043,7 +10042,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastTestingUpgradeCheck = 0730;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2630;
 				ORGANIZATIONNAME = "The Horos Project";
 				TargetAttributes = {
 					71A522F72021AB220065793A = {
@@ -10633,6 +10632,7 @@
 			shellPath = /bin/sh;
 			shellScript = (
 				"echo \"$TARGET_BUILD_DIR/$FULL_PRODUCT_NAME\" > \"$TARGET_TEMP_DIR/Product.path\"",
+				"",
 			);
 		};
 		7183153F161065BE0098576F /* Replace Weasis ext-config.properties and zip resources */ = {
@@ -10662,6 +10662,7 @@
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Make.sh\"",
+				"",
 			);
 		};
 		71A523142021D1F30065793A /* CMake */ = {
@@ -10679,6 +10680,7 @@
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Make.sh\"",
+				"",
 			);
 		};
 		71A523222021D2C30065793A /* CMake */ = {
@@ -10723,6 +10725,7 @@
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/CMake.sh\"",
+				"",
 			);
 		};
 		71A5233B2021DB490065793A /* Make */ = {
@@ -10731,6 +10734,7 @@
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Make.sh\"",
+				"",
 			);
 		};
 		71A5235020220FB10065793A /* CMake */ = {
@@ -10748,6 +10752,7 @@
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Make.sh\"",
+				"",
 			);
 		};
 		71BC461D1F27308D00FD6CCF /* Copy Horos Framework */ = {
@@ -10776,6 +10781,7 @@
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/CMake.sh\"",
+				"",
 			);
 		};
 		9920CBF0202A0BA600FE0A2A /* Make */ = {
@@ -10784,6 +10790,7 @@
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Make.sh\"",
+				"",
 			);
 		};
 		AB0F3A3F1046BE51004129DD /* Copy Headers and Create Horos.h */ = {
@@ -10883,6 +10890,7 @@
 				"#codesign -f -s \"Developer ID Application\" \"${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/\"",
 				"#echo \"code signed\"",
 				"#fi",
+				"",
 			);
 		};
 		CED88262125064F70085A861 /* CodeSigning */ = {
@@ -13235,6 +13243,7 @@
 			baseConfigurationReference = F3D78C9D2892994600148FE5 /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = "$(ARCHS_STANDARD)";
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
 				CLANG_CXX_LIBRARY = "libc++";
@@ -13290,6 +13299,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = F3C3F0702893A429004B2F61 /* Horos.xcconfig */;
 			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
 				AUTOMATION_APPLE_EVENTS = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = Horos/Horos.entitlements;
@@ -13657,8 +13667,7 @@
 			baseConfigurationReference = F3C3F0702893A429004B2F61 /* Horos.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TA74QT8SLC;
@@ -13697,6 +13706,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = F3C3F0702893A429004B2F61 /* Horos.xcconfig */;
 			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
 				AUTOMATION_APPLE_EVENTS = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = Horos/Horos.entitlements;
@@ -13788,6 +13798,7 @@
 			baseConfigurationReference = F3D78C9D2892994600148FE5 /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = "$(ARCHS_STANDARD)";
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
 				CLANG_CXX_LIBRARY = "libc++";
@@ -13870,8 +13881,7 @@
 			baseConfigurationReference = F3C3F0702893A429004B2F61 /* Horos.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TA74QT8SLC;

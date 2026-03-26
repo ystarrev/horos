@@ -36,18 +36,24 @@ mkdir -p "$cmake_dir"
 export CC=clang
 export CXX=clang
 
+archs=$(printf '%s' "$ARCHS" | tr ' ' ';')
+if [ -z "$archs" ]; then
+    archs="$NATIVE_ARCH_ACTUAL"
+fi
+
 args=("$source_dir")
 cfs=($OTHER_CFLAGS)
 cxxfs=($OTHER_CPLUSPLUSFLAGS)
 
 args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
-args+=(-DCMAKE_OSX_ARCHITECTURES="$ARCHS")
+args+=(-DCMAKE_OSX_ARCHITECTURES="$archs")
 
 args+=(-DCMAKE_INSTALL_PREFIX="$TARGET_TEMP_DIR/Install")
 args+=(-DOPENJPEG_INSTALL_INCLUDE_DIR="include/OpenJPEG")
 args+=(-DOPENJPEG_INSTALL_LIB_DIR="lib")
 
 args+=(-DBUILD_DOC=OFF)
+args+=(-DBUILD_CODEC=OFF)
 args+=(-DBUILD_SHARED_LIBS=OFF)
 args+=(-DBUILD_STATIC_LIBS=ON)
 args+=(-DBUILD_TESTING=OFF)

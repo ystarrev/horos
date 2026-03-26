@@ -34,15 +34,21 @@ mkdir -p "$cmake_dir"
 export CC=clang
 export CXX=clang
 
+archs=$(printf '%s' "$ARCHS" | tr ' ' ';')
+if [ -z "$archs" ]; then
+    archs="$NATIVE_ARCH_ACTUAL"
+fi
+
 args=("$PROJECT_DIR/$TARGET_NAME")
 cxxfs=($OTHER_CPLUSPLUSFLAGS)
 ldfs=($OTHER_LDFLAGS)
 
 args+=(-DBUILD_SHARED_LIBS=OFF)
 args+=(-DBUILD_TESTING=OFF)
+args+=(-DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
 args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
-args+=(-DCMAKE_OSX_ARCHITECTURES="$ARCHS")
+args+=(-DCMAKE_OSX_ARCHITECTURES="$archs")
 args+=(-DCMAKE_INSTALL_PREFIX="$install_dir")
 
 args+=(-DCMAKE_IGNORE_PATH="/opt/local/include;/opt/local/lib")

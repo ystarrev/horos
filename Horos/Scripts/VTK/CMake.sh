@@ -34,6 +34,11 @@ mv "$cmake_dir" "$cmake_dir.tmp"
 rm -Rf "$cmake_dir.tmp" "$install_dir.tmp"
 mkdir -p "$cmake_dir"; cd "$cmake_dir"
 
+archs=$(printf '%s' "$ARCHS" | tr ' ' ';')
+if [ -z "$archs" ]; then
+    archs="$NATIVE_ARCH_ACTUAL"
+fi
+
 args=("$PROJECT_DIR/$TARGET_NAME") # -G Xcode
 cxxfs=( -w -fvisibility=default )
 args+=(-DVTK_USE_X:BOOL=OFF)
@@ -45,7 +50,7 @@ args+=(-DBUILD_SHARED_LIBS=OFF)
 args+=(-DBUILD_TESTING=OFF)
 args+=(-DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
-args+=(-DCMAKE_OSX_ARCHITECTURES="$ARCHS")
+args+=(-DCMAKE_OSX_ARCHITECTURES="$archs")
 
 args+=(-DVTK_USE_SYSTEM_ZLIB:BOOL=ON)
 args+=(-DVTK_USE_SYSTEM_EXPAT=ON)

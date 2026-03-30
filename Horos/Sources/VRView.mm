@@ -7331,11 +7331,21 @@ public:
             int i;
             
             NSRect size = [self bounds];
-            
-            *width = (long) size.size.width;
+            NSRect backingSize = size;
+
+            if ([self respondsToSelector:@selector(convertRectToBacking:)])
+                backingSize = [self convertRectToBacking: size];
+            else if ([[self window] respondsToSelector:@selector(backingScaleFactor)])
+            {
+                CGFloat scale = [[self window] backingScaleFactor];
+                backingSize.size.width *= scale;
+                backingSize.size.height *= scale;
+            }
+
+            *width = (long) backingSize.size.width;
             *width/=4;
             *width*=4;
-            *height = (long) size.size.height;
+            *height = (long) backingSize.size.height;
             *spp = 3;
             *bpp = 8;
             

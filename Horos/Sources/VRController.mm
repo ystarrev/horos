@@ -1807,6 +1807,7 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: shadingView];
         [toolbarItem setMinSize:NSMakeSize(NSWidth([shadingView frame]), NSHeight([shadingView frame]))];
+        [toolbarItem setMaxSize:NSMakeSize(NSWidth([shadingView frame]), NSHeight([shadingView frame]))];
     }
     else if ([itemIdent isEqualToString: EngineToolbarItemIdentifier]) {
         // Set up the standard properties
@@ -1828,6 +1829,7 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: perspectiveView];
         [toolbarItem setMinSize:NSMakeSize(NSWidth([perspectiveView frame]), NSHeight([perspectiveView frame]))];
+        [toolbarItem setMaxSize:NSMakeSize(NSWidth([perspectiveView frame]), NSHeight([perspectiveView frame]))];
     }
     else if ([itemIdent isEqualToString: QTExportToolbarItemIdentifier]) {
         
@@ -1901,7 +1903,7 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: WLWWView];
         [toolbarItem setMinSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
+        [toolbarItem setMaxSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
         
         [[wlwwPopup cell] setUsesItemFromMenu:YES];
     }
@@ -1967,6 +1969,7 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: BlendingView];
         [toolbarItem setMinSize:NSMakeSize(NSWidth([BlendingView frame]), NSHeight([BlendingView frame]))];
+        [toolbarItem setMaxSize:NSMakeSize(NSWidth([BlendingView frame]), NSHeight([BlendingView frame]))];
     }
     else if([itemIdent isEqualToString: ModeToolbarItemIdentifier]) {
         // Set up the standard properties
@@ -1977,6 +1980,7 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: modeView];
         [toolbarItem setMinSize:NSMakeSize(NSWidth([modeView frame]), NSHeight([modeView frame]))];
+        [toolbarItem setMaxSize:NSMakeSize(NSWidth([modeView frame]), NSHeight([modeView frame]))];
     }
     else if([itemIdent isEqualToString: LODToolbarItemIdentifier]) {
         // Set up the standard properties
@@ -1987,6 +1991,7 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: LODView];
         [toolbarItem setMinSize:NSMakeSize(NSWidth([LODView frame]), NSHeight([LODView frame]))];
+        [toolbarItem setMaxSize:NSMakeSize(NSWidth([LODView frame]), NSHeight([LODView frame]))];
         
         [[wlwwPopup cell] setUsesItemFromMenu:YES];
     }
@@ -2038,6 +2043,7 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
         
         [toolbarItem setView: ClippingRangeView];
         [toolbarItem setMinSize: NSMakeSize(NSWidth([ClippingRangeView frame]), NSHeight([ClippingRangeView frame]))];
+        [toolbarItem setMaxSize: NSMakeSize(NSWidth([ClippingRangeView frame]), NSHeight([ClippingRangeView frame]))];
     }
     else if( [itemIdent isEqualToString: CLUTEditorsViewToolbarItemIdentifier])
     {
@@ -2047,6 +2053,7 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
         
         [toolbarItem setView: CLUTEditorsView];
         [toolbarItem setMinSize: NSMakeSize(NSWidth([CLUTEditorsView frame]), NSHeight([CLUTEditorsView frame]))];
+        [toolbarItem setMaxSize: NSMakeSize(NSWidth([CLUTEditorsView frame]), NSHeight([CLUTEditorsView frame]))];
     }
     else
         toolbarItem = nil;
@@ -2061,7 +2068,13 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
                 toolbarItem = item;
         }
     }
-    
+    if (![toolbarItem view] && [toolbarItem image])
+    {
+        NSImage *toolbarImage = [[toolbarItem image] copy];
+        [toolbarImage setSize:NSMakeSize(32, 32)];
+        [toolbarItem setImage:[toolbarImage autorelease]];
+    }
+
     return toolbarItem;
 }
 

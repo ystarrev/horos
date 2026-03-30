@@ -330,6 +330,7 @@
 		5997896C11B7B3E9002DB107 /* AnonymizationViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = 5997895C11B7B3E9002DB107 /* AnonymizationViewController.mm */; };
 		5997896E11B7B402002DB107 /* PlusButton.png in Resources */ = {isa = PBXBuildFile; fileRef = 5997896D11B7B402002DB107 /* PlusButton.png */; };
 		5997897011B7B40B002DB107 /* MinusButton.png in Resources */ = {isa = PBXBuildFile; fileRef = 5997896F11B7B40B002DB107 /* MinusButton.png */; };
+		5997898211B7B40C002DB107 /* MetalToolbar.png in Resources */ = {isa = PBXBuildFile; fileRef = 5997898311B7B40C002DB107 /* MetalToolbar.png */; };
 		5997897B11B7B423002DB107 /* AnonymizationCustomTagPanel.xib in Resources */ = {isa = PBXBuildFile; fileRef = 5997897111B7B422002DB107 /* AnonymizationCustomTagPanel.xib */; };
 		5997897C11B7B423002DB107 /* AnonymizationPanel.xib in Resources */ = {isa = PBXBuildFile; fileRef = 5997897311B7B423002DB107 /* AnonymizationPanel.xib */; };
 		5997897D11B7B423002DB107 /* AnonymizationSavePanel.xib in Resources */ = {isa = PBXBuildFile; fileRef = 5997897511B7B423002DB107 /* AnonymizationSavePanel.xib */; };
@@ -3573,6 +3574,7 @@ F4A10000000100000000000B /* MetalViewerScoutView.swift in Sources */ = {isa = PB
 		5997895C11B7B3E9002DB107 /* AnonymizationViewController.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = AnonymizationViewController.mm; sourceTree = "<group>"; };
 		5997896D11B7B402002DB107 /* PlusButton.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = PlusButton.png; sourceTree = "<group>"; };
 		5997896F11B7B40B002DB107 /* MinusButton.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = MinusButton.png; sourceTree = "<group>"; };
+		5997898311B7B40C002DB107 /* MetalToolbar.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = MetalToolbar.png; sourceTree = "<group>"; };
 		5997897211B7B423002DB107 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/AnonymizationCustomTagPanel.xib; sourceTree = "<group>"; };
 		5997897411B7B423002DB107 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/AnonymizationPanel.xib; sourceTree = "<group>"; };
 		5997897611B7B423002DB107 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/AnonymizationSavePanel.xib; sourceTree = "<group>"; };
@@ -7425,6 +7427,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				ABBB6497063587B200D9531F /* Play.pdf */,
 				CE06475110F12DA500551AD9 /* PlayTemplate.png */,
 				5997896D11B7B402002DB107 /* PlusButton.png */,
+				5997898311B7B40C002DB107 /* MetalToolbar.png */,
 				A9B23D1515CFE8D0000E47C3 /* Point.pdf */,
 				AB10FA221129302A009EB238 /* PopUpArrows.png */,
 				ABBB6498063587B200D9531F /* Preferences.icns */,
@@ -10233,6 +10236,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				7E2BE4190715E5040017898A /* CD.tif in Resources */,
 				CE99E890073AB4C500725ABC /* Photos.icns in Resources */,
 				CE49E2CA0760B93500444203 /* Empty.tif in Resources */,
+				5997898211B7B40C002DB107 /* MetalToolbar.png in Resources */,
 				CE52264F077C48D900EED851 /* Sync.pdf in Resources */,
 				CEE6717D077D5ECF00E4BB10 /* SyncLock.pdf in Resources */,
 				7E54309F07A05F7500500ABB /* burn_throb.tif in Resources */,

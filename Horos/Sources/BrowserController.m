@@ -19349,7 +19349,16 @@ restart:
         [toolbarItem setLabel: NSLocalizedString(@"Metal", nil)];
         [toolbarItem setPaletteLabel: NSLocalizedString(@"Metal", nil)];
         [toolbarItem setToolTip: NSLocalizedString(@"Metal", nil)];
-        [toolbarItem setImage: [NSImage imageNamed: MetalToolbarItemIdentifier]];
+        NSImage *metalImage = [NSImage imageNamed: MetalToolbarItemIdentifier];
+        if (metalImage == nil)
+        {
+            NSString *metalPath = [[NSBundle mainBundle] pathForResource: @"MetalToolbar" ofType: @"png" inDirectory: @"Icons"];
+            if (metalPath == nil)
+                metalPath = [[NSBundle mainBundle] pathForResource: @"MetalToolbar" ofType: @"png"];
+            if (metalPath)
+                metalImage = [[[NSImage alloc] initWithContentsOfFile: metalPath] autorelease];
+        }
+        [toolbarItem setImage: metalImage];
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(openMetalViewer:)];
     }

@@ -75,32 +75,32 @@ The Horos Project was based originally upon the OsiriX Project which at the time
 	switch (character) {
 		case NSLeftArrowFunctionKey:
 			switch ([self state]) {
-				case NSOffState:
+				case NSControlStateValueOff:
 					NSBeep();
 					break;
-				case NSMixedState:
-					[self setState:NSOffState];
+				case NSControlStateValueMixed:
+					[self setState:NSControlStateValueOff];
 					break;
-				case NSOnState:
+				case NSControlStateValueOn:
 					if ([self allowsMixedState])
-						[self setState:NSMixedState];
+						[self setState:NSControlStateValueMixed];
 					else
-						[self setState:NSOffState];
+						[self setState:NSControlStateValueOff];
 					break;
 			}
 			break;
 		case NSRightArrowFunctionKey:
 			switch ([self state]) {
-				case NSOffState:
+				case NSControlStateValueOff:
 					if ([self allowsMixedState])
-						[self setState:NSMixedState];
+						[self setState:NSControlStateValueMixed];
 					else
-						[self setState:NSOnState];
+						[self setState:NSControlStateValueOn];
 					break;
-				case NSMixedState:
-					[self setState:NSOnState];
+				case NSControlStateValueMixed:
+					[self setState:NSControlStateValueOn];
 					break;
-				case NSOnState:
+				case NSControlStateValueOn:
 					NSBeep();
 					break;
 			}

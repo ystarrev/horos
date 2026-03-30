@@ -283,7 +283,7 @@ static NSString*	SearchToolbarItemIdentifier			= @"Search";
 static NSString*	TimeIntervalToolbarItemIdentifier	= @"TimeInterval";
 static NSString*    ModalityFilterToolbarItemIdentifier = @"ModalityFilter";
 static NSString*	XMLToolbarItemIdentifier			= @"XML.icns";
-static NSString*	MailToolbarItemIdentifier			= @"Mail.icns";
+static NSString*	MetalToolbarItemIdentifier			= @"MetalToolbar.png";
 static NSString*	OpenKeyImagesAndROIsToolbarItemIdentifier	= @"ROIsAndKeys.tif";
 static NSString*	OpenKeyImagesToolbarItemIdentifier	= @"Keys.tif";
 static NSString*	OpenROIsToolbarItemIdentifier	= @"ROIs.tif";
@@ -2614,11 +2614,11 @@ static NSConditionLock *threadLock = nil;
         [searchField setTextColor: [NSColor controlTextColor]];
 
     for( long i = 0; i < [[sender menu] numberOfItems]; i++)
-        [[[sender menu] itemAtIndex: i] setState: NSOffState];
+        [[[sender menu] itemAtIndex: i] setState: NSControlStateValueOff];
     
     [[searchField cell] setPlaceholderString: [[[sender menu] itemWithTag: [sender tag]] title]];
     
-    [[[sender menu] itemWithTag: [sender tag]] setState: NSOnState];
+    [[[sender menu] itemWithTag: [sender tag]] setState: NSControlStateValueOn];
     [toolbarSearchItem setLabel: [NSString stringWithFormat: NSLocalizedString(@"Search by %@", nil), [sender title]]];
     searchType = [sender tag];
     
@@ -5062,7 +5062,7 @@ static NSConditionLock *threadLock = nil;
                         for( NSButtonCell *cell in oMatrix.cells)
                         {
                             NSInteger row, column;
-                            if( cell.state == NSOnState && cell.isTransparent == NO && [oMatrix getRow: &row column: &column ofCell: cell])
+                            if( cell.state == NSControlStateValueOn && cell.isTransparent == NO && [oMatrix getRow: &row column: &column ofCell: cell])
                             {
                                 if (cell.representedObject)
                                 {
@@ -5120,14 +5120,14 @@ static NSConditionLock *threadLock = nil;
                         {
                             for( NSCell *cell in [oMatrix cells])
                             {
-                                [cell setState: NSOffState];
+                                [cell setState: NSControlStateValueOff];
                                 [cell setHighlighted: NO];
                             }
                             
                             for( NSDictionary *d in selectedRowColumns)
                             {
                                 NSCell *cell = [oMatrix cellAtRow: [[d objectForKey: @"row"] intValue] column: [[d objectForKey: @"column"] intValue]];
-                                [cell setState: NSOnState];
+                                [cell setState: NSControlStateValueOn];
                                 [cell setHighlighted: YES];
                             }
                         }
@@ -5149,7 +5149,7 @@ static NSConditionLock *threadLock = nil;
                                     }
                                     else {
                                         [cell setHighlighted: YES];
-                                        [cell setState: NSOnState];
+                                        [cell setState: NSControlStateValueOn];
                                     }
                                 }
                             }
@@ -5357,9 +5357,11 @@ static NSConditionLock *threadLock = nil;
         if( result == NSAlertDefaultReturn)
         {
             // Now modify the DICOM files
+            NSInteger row = [selectedRows firstIndex];
             for( NSInteger x = 0; x < [selectedRows count] ; x++)
             {
-                NSInteger row = ( x == 0) ? [selectedRows firstIndex] : [selectedRows indexGreaterThanIndex: row];
+                if( x > 0)
+                    row = [selectedRows indexGreaterThanIndex: row];
                 
                 DicomStudy *study = [databaseOutline itemAtRow: row];
                 
@@ -5459,9 +5461,11 @@ static NSConditionLock *threadLock = nil;
             }
         }
         
+        NSInteger row = [selectedRows firstIndex];
         for( NSInteger x = 0; x < [selectedRows count] ; x++)
         {
-            NSInteger row = ( x == 0) ? [selectedRows firstIndex] : [selectedRows indexGreaterThanIndex: row];
+            if( x > 0)
+                row = [selectedRows indexGreaterThanIndex: row];
             
             DicomStudy *study = [databaseOutline itemAtRow: row];
             if( [[study valueForKey:@"type"] isEqualToString: @"Study"] == NO) study = [study valueForKey:@"study"];
@@ -6067,7 +6071,7 @@ static NSConditionLock *threadLock = nil;
         }
     }
     
-    [animationCheck setState: NSOffState];
+    [animationCheck setState: NSControlStateValueOff];
     
     NSArray *albumArray = self.albumArray;
     
@@ -6098,8 +6102,10 @@ static NSConditionLock *threadLock = nil;
             NSMutableArray* studiesToRemove = [NSMutableArray array];
             DicomAlbum* album = [albumArray objectAtIndex:albumTable.selectedRow];
             
+            NSInteger row = [selectedRows firstIndex];
             for (NSInteger x = 0; x < selectedRows.count; ++x) {
-                NSInteger row = (x == 0) ? [selectedRows firstIndex] : [selectedRows indexGreaterThanIndex:row];
+                if (x > 0)
+                    row = [selectedRows indexGreaterThanIndex:row];
                 DicomStudy* study = [databaseOutline itemAtRow: row];
                 
                 if ([study isKindOfClass:[DicomStudy class]])
@@ -6214,15 +6220,15 @@ static NSConditionLock *threadLock = nil;
         if ([ro isEqualToString:@"name"])
         {
             if ([[NSUserDefaults standardUserDefaults] boolForKey:@"HIDEPATIENTNAME"])
-                [mi setState: NSOffState];
-            else [mi setState: NSOnState];
+                [mi setState: NSControlStateValueOff];
+            else [mi setState: NSControlStateValueOn];
         }
         else
         {
             NSInteger index = [columnIdentifiers indexOfObject:ro];
             if (index != NSNotFound && ![[cols objectAtIndex:index] isHidden])
-                [mi setState: NSOnState];
-            else [mi setState: NSOffState];
+                [mi setState: NSControlStateValueOn];
+            else [mi setState: NSControlStateValueOff];
         }
     }
 }
@@ -6275,7 +6281,7 @@ static NSConditionLock *threadLock = nil;
                     
                     [databaseOutline setColumnWithIdentifier:identifier visible: [[columnsDatabase valueForKey: key] intValue]];
                     
-                    if( [[columnsDatabase valueForKey: key] intValue] == NSOnState)
+                    if( [[columnsDatabase valueForKey: key] intValue] == NSControlStateValueOn)
                     {
                         [databaseOutline scrollColumnToVisible: [databaseOutline columnWithIdentifier: identifier]];
                     }
@@ -9250,7 +9256,7 @@ static BOOL withReset = NO;
     // Wait loading all images !!!
     if( _database == nil) return;
     //	if( bonjourDownloading) return;
-    if( animationCheck.state == NSOffState) return;
+    if( animationCheck.state == NSControlStateValueOff) return;
     
     if( self.window.isKeyWindow == NO) return;
     if( animationSlider.isEnabled == NO) return;
@@ -9533,7 +9539,7 @@ static BOOL withReset = NO;
                 else if ([fileType isEqualToString: @"DICOMMPEG2"])
                 {
                     long count = [[curFile valueForKey:@"noFiles"] intValue];
-                    [cell setTitle:[NSString stringWithFormat: NSLocalizedString(@"MPEG-2 Series\r%@\r%d Images", nil), name, count]];
+                    [cell setTitle:[NSString stringWithFormat: NSLocalizedString(@"MPEG-2 Series\r%@\r%ld Images", nil), name, count]];
                     img = [[NSImage alloc] initWithContentsOfFile:[[NSBundle mainBundle] pathForImageResource:@"mpeg2"]];
                 }
                 else if( [[curFile valueForKey:@"type"] isEqualToString: @"Series"])
@@ -9575,11 +9581,11 @@ static BOOL withReset = NO;
                 else if( [[curFile valueForKey:@"type"] isEqualToString: @"Image"])
                 {
                     if( [DCMAbstractSyntaxUID isStructuredReport: seriesSOPClassUID] || [DCMAbstractSyntaxUID isPDF: seriesSOPClassUID])
-                        [cell setTitle:[NSString stringWithFormat:NSLocalizedString(@"Page %d", nil), i+1]];
+                        [cell setTitle:[NSString stringWithFormat:NSLocalizedString(@"Page %ld", nil), (long)i+1]];
                     else if( [[curFile valueForKey: @"sliceLocation"] floatValue])
-                        [cell setTitle:[NSString stringWithFormat:NSLocalizedString(@"Image %d\r%.2f", nil), i+1, [[curFile valueForKey: @"sliceLocation"] floatValue]]];
+                        [cell setTitle:[NSString stringWithFormat:NSLocalizedString(@"Image %ld\r%.2f", nil), (long)i+1, [[curFile valueForKey: @"sliceLocation"] floatValue]]];
                     else
-                        [cell setTitle:[NSString stringWithFormat:NSLocalizedString(@"Image %d", nil), i+1]];
+                        [cell setTitle:[NSString stringWithFormat:NSLocalizedString(@"Image %ld", nil), (long)i+1]];
                 }
                 
                 [cell setButtonType:NSPushOnPushOffButton];
@@ -12216,7 +12222,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
                 }
             }
             
-            result = NSRunInformationalAlertPanel( NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"This 32-bit version cannot load this series, but I can load a subset of the series: 1 on %d images.", nil), NSLocalizedString(@"OK",nil), NSLocalizedString(@"Cancel",nil), nil, subSampling);
+            result = NSRunInformationalAlertPanel( NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"This 32-bit version cannot load this series, but I can load a subset of the series: 1 on %ld images.", nil), NSLocalizedString(@"OK",nil), NSLocalizedString(@"Cancel",nil), nil, (long)subSampling);
         }
         
         //  (3) Load Images (memory allocation)
@@ -12882,7 +12888,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
                             [cell setEnabled:YES];
                             [cell setFont:[NSFont systemFontOfSize:10]];
                             [cell setImagePosition: NSImageBelow];
-                            [cell setTitle:[NSString stringWithFormat:NSLocalizedString(@"%d/%d Images", nil), i+1, [[splittedSeries objectAtIndex:i] count]]];
+                            [cell setTitle:[NSString stringWithFormat:NSLocalizedString(@"%d/%lu Images", nil), i+1, (unsigned long)[[splittedSeries objectAtIndex:i] count]]];
                             [cell setImage: img];
                             [cell setAlternateImage:img];
                             [dcmPix release];
@@ -12906,7 +12912,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
                                 [cell setEnabled:YES];
                                 [cell setFont:[NSFont systemFontOfSize:10]];
                                 [cell setImagePosition: NSImageBelow];
-                                [cell setTitle:[NSString stringWithFormat:NSLocalizedString(@"%d/%d Images", nil), i+1, [splittedSeries count]]];
+                                [cell setTitle:[NSString stringWithFormat:NSLocalizedString(@"%d/%lu Images", nil), i+1, (unsigned long)[splittedSeries count]]];
                                 [cell setImage: img];
                                 [cell setAlternateImage:img];
                                 [dcmPix release];
@@ -13159,7 +13165,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
                             {
                                 openAllWindows = NO;
                                 
-                                if( NSRunInformationalAlertPanel( NSLocalizedString(@"Series Opening", nil), NSLocalizedString(@"Are you sure you want to open %d windows? It's a lot of windows for this screen...", nil), NSLocalizedString(@"Yes", nil), NSLocalizedString(@"Cancel", nil), nil, [[splittedSeries objectAtIndex: 0] count]) == NSAlertDefaultReturn)
+                                if( NSRunInformationalAlertPanel( NSLocalizedString(@"Series Opening", nil), NSLocalizedString(@"Are you sure you want to open %lu windows? It's a lot of windows for this screen...", nil), NSLocalizedString(@"Yes", nil), NSLocalizedString(@"Cancel", nil), nil, (unsigned long)[[splittedSeries objectAtIndex: 0] count]) == NSAlertDefaultReturn)
                                     openAllWindows = YES;
                             }
                             
@@ -13369,6 +13375,142 @@ constrainSplitPosition:(CGFloat)proposedPosition
     openReparsedSeriesFlag = YES;
     [self viewerDICOM: sender];
     openReparsedSeriesFlag = NO;
+}
+
+- (IBAction)openMetalViewer:(id)sender
+{
+    NSMutableArray *selectedItems = [NSMutableArray array];
+    
+    if (([sender isKindOfClass:[NSMenuItem class]] && [sender menu] == [oMatrix menu]) || [[self window] firstResponder] == oMatrix)
+        [self filesForDatabaseMatrixSelection:selectedItems onlyImages:YES];
+    else
+        [self filesForDatabaseOutlineSelection:selectedItems onlyImages:YES];
+    
+    if ([selectedItems count] == 0)
+    {
+        NSBeep();
+        return;
+    }
+    
+    [self openMetalViewerForImages:selectedItems];
+}
+
+- (void)openMetalViewerForImages:(NSArray*)loadList
+{
+    if ([loadList count] == 0)
+        return;
+    
+    BOOL multiFrame = NO;
+    unsigned long memBlock = 0;
+    NSData *volumeData = nil;
+    float *fVolumePtr = nil;
+    NSMutableArray *viewerPix = nil;
+    NSMutableArray *correspondingObjects = nil;
+    
+    NSManagedObject *curFile = [loadList objectAtIndex:0];
+    if ([loadList count] == 1 && ([[curFile valueForKey:@"numberOfFrames"] intValue] > 1 || [[curFile valueForKey:@"numberOfSeries"] intValue] > 1))
+    {
+        multiFrame = YES;
+        long h = [[curFile valueForKey:@"height"] intValue];
+        long w = [[curFile valueForKey:@"width"] intValue];
+        memBlock = w * h * [[curFile valueForKey:@"numberOfFrames"] intValue];
+    }
+    else
+    {
+        for (NSManagedObject *image in loadList)
+        {
+            long h = [[image valueForKey:@"height"] intValue];
+            long w = [[image valueForKey:@"width"] intValue];
+            
+            if (w * h < 256 * 256)
+            {
+                w = 256;
+                h = 256;
+            }
+            
+            memBlock += w * h;
+        }
+    }
+    
+    if (memBlock < 256 * 256)
+        memBlock = 256 * 256;
+    
+    fVolumePtr = malloc(memBlock * sizeof(float));
+    if (fVolumePtr == nil)
+    {
+        NSRunCriticalAlertPanel(NSLocalizedString(@"Not enough memory", nil), NSLocalizedString(@"Your computer doesn't have enough RAM to load this series.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        return;
+    }
+    
+    volumeData = [[NSData alloc] initWithBytesNoCopy:fVolumePtr length:memBlock * sizeof(float) freeWhenDone:YES];
+    viewerPix = [[NSMutableArray alloc] initWithCapacity:0];
+    correspondingObjects = [[NSMutableArray alloc] initWithCapacity:0];
+    
+    unsigned long mem = 0;
+    if (multiFrame)
+    {
+        NSManagedObject *multiFrameObject = [loadList objectAtIndex:0];
+        int numberOfFrames = [[multiFrameObject valueForKey:@"numberOfFrames"] intValue];
+        
+        for (unsigned long i = 0; i < numberOfFrames; i++)
+        {
+            DCMPix *dcmPix = [[DCMPix alloc] initWithPath:[multiFrameObject valueForKey:@"completePath"] :i :numberOfFrames :fVolumePtr + mem :i :[[multiFrameObject valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj:multiFrameObject];
+            
+            if (dcmPix)
+            {
+                mem += ([[multiFrameObject valueForKey:@"width"] intValue]) * ([[multiFrameObject valueForKey:@"height"] intValue]);
+                [viewerPix addObject:dcmPix];
+                [correspondingObjects addObject:multiFrameObject];
+                [dcmPix release];
+            }
+        }
+    }
+    else
+    {
+        for (unsigned long i = 0; i < [loadList count]; i++)
+        {
+            NSManagedObject *imageObject = [loadList objectAtIndex:i];
+            DCMPix *dcmPix = [[DCMPix alloc] initWithPath:[imageObject valueForKey:@"completePath"] :i :[loadList count] :fVolumePtr + mem :[[imageObject valueForKey:@"frameID"] intValue] :[[imageObject valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj:imageObject];
+            
+            if (dcmPix)
+            {
+                mem += ([[imageObject valueForKey:@"width"] intValue]) * ([[imageObject valueForKey:@"height"] intValue]);
+                [viewerPix addObject:dcmPix];
+                [correspondingObjects addObject:imageObject];
+                [dcmPix release];
+            }
+        }
+    }
+    
+    if ([viewerPix count] == 0)
+    {
+        NSRunCriticalAlertPanel(NSLocalizedString(@"Files not available", nil), NSLocalizedString(@"No readable files were found in this selection.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        [volumeData release];
+        [viewerPix release];
+        [correspondingObjects release];
+        return;
+    }
+    
+    NSManagedObject *firstObject = [correspondingObjects objectAtIndex:0];
+    NSString *patientName = [firstObject valueForKeyPath:@"series.study.name"] ?: NSLocalizedString(@"Patient", nil);
+    NSString *seriesName = [firstObject valueForKeyPath:@"series.name"] ?: NSLocalizedString(@"Series", nil);
+    NSString *title = [NSString stringWithFormat:@"%@ - %@", patientName, seriesName];
+    NSDictionary *context = [NSDictionary dictionaryWithObjectsAndKeys:viewerPix, @"pixList", volumeData, @"volumeData", title, @"title", nil];
+    
+    Class launcherClass = NSClassFromString(@"HorosMetalViewerLauncher");
+    SEL launchSelector = @selector(launchWithContext:);
+    if (launcherClass && [launcherClass respondsToSelector:launchSelector])
+    {
+        ((void (*)(id, SEL, id))[launcherClass methodForSelector:launchSelector])(launcherClass, launchSelector, context);
+    }
+    else
+    {
+        NSRunCriticalAlertPanel(NSLocalizedString(@"Metal Viewer", nil), NSLocalizedString(@"The Metal viewer is not available in this build.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+    }
+    
+    [volumeData release];
+    [viewerPix release];
+    [correspondingObjects release];
 }
 
 - (void) viewerDICOM: (id)sender
@@ -14535,7 +14677,7 @@ static NSArray*	openSubSeriesArray = nil;
         [alert addButtonWithTitle:NSLocalizedString(@"OK",nil)];
         [alert setMessageText:NSLocalizedString(@"Not validated OsiriX plugins were detected!",nil)];
         [alert setInformativeText:NSLocalizedString(@"Not validated OsiriX plugins may cause Horos run-time errors. In case of problems, you can disable/uninstall them in [Plugins => Plugin Manager]. A brand new Horos plugin database is being built for you.",nil)];
-        [alert setAlertStyle:NSWarningAlertStyle];
+        [alert setAlertStyle:NSAlertStyleWarning];
         [alert runModal];
         [alert release];
     }
@@ -15237,8 +15379,8 @@ static NSArray*	openSubSeriesArray = nil;
     }
     else if( [menuItem action] == @selector(annotMenu:))
     {
-        if( [menuItem tag] == [[NSUserDefaults standardUserDefaults] integerForKey:@"ANNOTATIONS"]) [menuItem setState: NSOnState];
-        else [menuItem setState: NSOffState];
+        if( [menuItem tag] == [[NSUserDefaults standardUserDefaults] integerForKey:@"ANNOTATIONS"]) [menuItem setState: NSControlStateValueOn];
+        else [menuItem setState: NSControlStateValueOff];
     }
     return YES;
 }
@@ -15456,7 +15598,7 @@ static NSArray*	openSubSeriesArray = nil;
             [alert setShowsSuppressionButton:YES ];
             [alert addButtonWithTitle: NSLocalizedString(@"OK", nil)];
             
-            if ([[alert suppressionButton] state] == NSOnState)
+            if ([[alert suppressionButton] state] == NSControlStateValueOn)
                 [[NSUserDefaults standardUserDefaults] setBool:YES forKey:alertSuppress];
         }
         else
@@ -15626,7 +15768,7 @@ static NSArray*	openSubSeriesArray = nil;
                 else
                     [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"deleteZIPfile"];
                 
-                if ([[alert suppressionButton] state] == NSOnState)
+                if ([[alert suppressionButton] state] == NSControlStateValueOn)
                     [[NSUserDefaults standardUserDefaults] setBool:YES forKey: @"HideZIPSuppressionMessage"];
             }
             
@@ -18944,8 +19086,6 @@ restart:
             
             [item setView: reportTemplatesView];
             
-            [item setMinSize: NSMakeSize(NSWidth([reportTemplatesView frame]), NSHeight([reportTemplatesView frame]))];
-            [item setMaxSize: NSMakeSize(NSWidth([reportTemplatesView frame]), NSHeight([reportTemplatesView frame]))];
             
             reportToolbarItemType = -1;
         }
@@ -19204,13 +19344,14 @@ restart:
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(addStudiesToUser:)];
     }
-    else if ([itemIdent isEqualToString: MailToolbarItemIdentifier])
+    else if ([itemIdent isEqualToString: MetalToolbarItemIdentifier])
     {
-        [toolbarItem setLabel: NSLocalizedString(@"Email", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"Email", nil)];
-        [toolbarItem setImage: [NSImage imageNamed: MailToolbarItemIdentifier]];
+        [toolbarItem setLabel: NSLocalizedString(@"Metal", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString(@"Metal", nil)];
+        [toolbarItem setToolTip: NSLocalizedString(@"Metal", nil)];
+        [toolbarItem setImage: [NSImage imageNamed: MetalToolbarItemIdentifier]];
         [toolbarItem setTarget: self];
-        [toolbarItem setAction: @selector(sendMail:)];
+        [toolbarItem setAction: @selector(openMetalViewer:)];
     }
     else if ([itemIdent isEqualToString: ExportToolbarItemIdentifier])
     {
@@ -19364,8 +19505,6 @@ restart:
         
         // Use a custom view, a text field, for the search item 
         [toolbarItem setView: searchView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([searchView frame]), NSHeight([searchView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([searchView frame])+100, NSHeight([searchView frame]))];
     }
     else if ([itemIdent isEqualToString: TimeIntervalToolbarItemIdentifier])
     {
@@ -19375,8 +19514,6 @@ restart:
         
         // Use a custom view, a text field, for the search item 
         [toolbarItem setView: timeIntervalView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([timeIntervalView frame]), NSHeight([timeIntervalView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([timeIntervalView frame]), NSHeight([timeIntervalView frame]))];
     }
     else if ([itemIdent isEqualToString: ModalityFilterToolbarItemIdentifier])
     {
@@ -19386,8 +19523,6 @@ restart:
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: modalityFilterView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([modalityFilterView frame]), NSHeight([modalityFilterView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([modalityFilterView frame]), NSHeight([modalityFilterView frame]))];
     }
     else if ([itemIdent isEqualToString: ResetSplitViewsItemIdentifier])
     {
@@ -19444,6 +19579,13 @@ restart:
                     toolbarItem = item;
             }
         }
+    }
+    
+    if (![toolbarItem view] && [toolbarItem image])
+    {
+        NSImage *toolbarImage = [[toolbarItem image] copy];
+        [toolbarImage setSize:NSMakeSize(32, 32)];
+        [toolbarItem setImage:[toolbarImage autorelease]];
     }
     
     return toolbarItem;
@@ -19573,7 +19715,7 @@ restart:
             //          ToggleDrawerToolbarItemIdentifier, // removed from default items because we have a dedicated button on the bottom left of this window
             ImportToolbarItemIdentifier,
             ExportToolbarItemIdentifier,
-            MailToolbarItemIdentifier,
+            MetalToolbarItemIdentifier,
             QTSaveToolbarItemIdentifier,
             QueryToolbarItemIdentifier,
             SendToolbarItemIdentifier,
@@ -19607,7 +19749,7 @@ restart:
                              NSToolbarSeparatorItemIdentifier,
                              ImportToolbarItemIdentifier,
                              //			 CDRomToolbarItemIdentifier,
-                             MailToolbarItemIdentifier,
+                             MetalToolbarItemIdentifier,
                              WebServerSingleNotification,
                              AddStudiesToUserItemIdentifier,
                              QTSaveToolbarItemIdentifier,
@@ -20073,6 +20215,7 @@ restart:
            [toolbarItem action] == @selector(viewerReparsedSeries:) ||
            [toolbarItem action] == @selector(MovieViewerDICOM:) || 
            [toolbarItem action] == @selector(viewerDICOMMergeSelection:) || 
+[toolbarItem action] == @selector(openMetalViewer:) || 
            [toolbarItem action] == @selector(revealInFinder:) || 
            [toolbarItem action] == @selector(export2PACS:) || 
            [toolbarItem action] == @selector(exportQuicktime:) || 
@@ -20080,7 +20223,6 @@ restart:
            [toolbarItem action] == @selector(exportTIFF:) || 
            [toolbarItem action] == @selector(exportDICOMFile:) ||
            [toolbarItem action] == @selector(exportROIAndKeyImagesAsDICOMSeries:) ||
-           [toolbarItem action] == @selector(sendMail:) || 
            [toolbarItem action] == @selector(addStudiesToUser:) || 
            [toolbarItem action] == @selector(sendEmailNotification:) || 
            [toolbarItem action] == @selector(compressSelectedFiles:) || 

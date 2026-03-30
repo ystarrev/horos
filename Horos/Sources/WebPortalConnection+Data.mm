@@ -1934,7 +1934,7 @@ const NSString* const GenerateMovieDicomImagesParamKey = @"dicomImageArray";
 			NSMutableDictionary* albumDictionary = [NSMutableDictionary dictionary];
 			
 			[albumDictionary setObject:N2NonNullString(album.name) forKey:@"name"];
-			[albumDictionary setObject:N2NonNullString([album.name stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding]) forKey:@"nameURLSafe"];
+			[albumDictionary setObject:N2NonNullString([album.name stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]]) forKey:@"nameURLSafe"];
 			
 			if (album.smartAlbum.intValue == 1)
 				[albumDictionary setObject:@"SmartAlbum" forKey:@"type"];

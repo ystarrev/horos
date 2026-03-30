@@ -1599,12 +1599,12 @@ static NSString*	ParameterPanelToolbarItemIdentifier		= @"3D";
 
 - (IBAction)toggleDisplayBones:(id)sender;
 {
-	if([sender state]==NSOffState)
+	if([sender state]==NSControlStateValueOff)
 	{
 		displayBones=NO;
 		[bonesThresholdSlider setEnabled:NO];
 	}
-	else if([sender state]==NSOnState)
+	else if([sender state]==NSControlStateValueOn)
 	{
 		displayBones=YES;
 		[bonesThresholdSlider setEnabled:YES];
@@ -1823,7 +1823,7 @@ static NSString*	ParameterPanelToolbarItemIdentifier		= @"3D";
 	[subtractionMaxValueTextField setStringValue:[NSString stringWithFormat:@"%d", subtractionMaxValue]];
 	// bones
 	displayBones = [[settings objectForKey:@"displayBones"] boolValue];
-	[displayBonesButton setState:(displayBones)?NSOnState:NSOffState];
+	[displayBonesButton setState:(displayBones)?NSControlStateValueOn:NSControlStateValueOff];
 	bonesThreshold = [[settings objectForKey:@"bonesThreshold"] intValue];
 	[bonesThresholdSlider setEnabled:displayBones];
 	[bonesThresholdSlider setIntValue:bonesThreshold];

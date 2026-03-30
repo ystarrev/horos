@@ -396,10 +396,11 @@ NSString* const SessionDicomCStorePortKey = @"DicomCStorePort"; // NSNumber (int
 	NSMutableString* str = [NSMutableString string];
 	for (NSString* key in dict) {
 		NSString* value = [dict objectForKey:key];
+		NSString* encodedKey = [key stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
 		if ([value isKindOfClass: [NSArray class]])
 			for (NSString* v2 in (NSArray*)value)
-				[str appendFormat:@"%@%@=%@", str.length?@"&":@"", [key stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding], [v2 stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding]];
-		else [str appendFormat:@"%@%@=%@", str.length?@"&":@"", [key stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding], [value stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding]];
+				[str appendFormat:@"%@%@=%@", str.length?@"&":@"", encodedKey, [v2 stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]]];
+		else [str appendFormat:@"%@%@=%@", str.length?@"&":@"", encodedKey, [value stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]]];
 	} return str;
 }
 

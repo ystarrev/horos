@@ -16,6 +16,7 @@ install_dir="$TARGET_TEMP_DIR/Install"
 
 mkdir -p "$cmake_dir"; cd "$cmake_dir"
 if [ -e "$cmake_dir/Makefile" -a -f "$cmake_dir/.buildhash" ] && [ "$(cat "$cmake_dir/.buildhash")" == "$hash" ]; then
+    touch "$TARGET_TEMP_DIR/CMake.stamp"
     exit 0
 fi
 
@@ -44,6 +45,10 @@ fi
 args=( "$source_dir" )
 cfs=( $OTHER_CFLAGS )
 cxxfs=( $OTHER_CPLUSPLUSFLAGS )
+
+# Newer AppleClang warns on GDCM's raw memcpy usage for legacy value types.
+# This is third-party code and the warning is noisy but not actionable here.
+cxxfs+=( -Wno-nontrivial-memcall )
 
 args+=(-DGDCM_DOCUMENTATION=OFF)
 args+=(-DGDCM_BUILD_TESTING=OFF)
@@ -104,5 +109,6 @@ cmake "${args[@]}"
 
 echo "$hash" > "$cmake_dir/.buildhash"
 echo "$env" > "$cmake_dir/.cmakeenv"
+touch "$TARGET_TEMP_DIR/CMake.stamp"
 
 exit 0

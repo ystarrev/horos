@@ -1366,7 +1366,7 @@ public:
 
 -(IBAction) switchShading:(id) sender
 {
-	if( [sender state] == NSOnState)
+	if( [sender state] == NSControlStateValueOn)
 	{
 		volumeProperty->ShadeOn();
 		

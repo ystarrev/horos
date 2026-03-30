@@ -7072,7 +7072,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                                                      8,
                                                      bytesPerRow,
                                                      cs,
-                                                     kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Big);
+                                                     (CGBitmapInfo)(kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Big));
 
             CGColorSpaceRelease(cs);
 
@@ -7534,7 +7534,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                         //   - This portion tells OsiriX which view is active for the image.  This allows OsiriX to determine whether the
                         //	   image is axial, sagittal, or coronal.
                         // Grab orientations for i, j, and k axes based on either qform or sform matrices.
-                        int icod, jcod, kcod;
+                        int icod = 0, jcod = 0, kcod = 0;
                         if(qform_code > 0)
                         {
                             nifti_mat44_to_orientation(nifti_imagedata->qto_xyz, &icod, &jcod, &kcod);
@@ -9470,7 +9470,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
 -(void) applyShutter
 {
-    if (shutterEnabled == NSOnState)
+    if (shutterEnabled == NSControlStateValueOn)
     {
         if( shutterRect.origin.x < 0) { shutterRect.size.width += shutterRect.origin.x; shutterRect.origin.x = 0;}
         if( shutterRect.origin.y < 0) { shutterRect.size.height += shutterRect.origin.y; shutterRect.origin.y = 0;}

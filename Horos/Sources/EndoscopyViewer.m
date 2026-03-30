@@ -1168,7 +1168,7 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
 - (IBAction) setExportAllViews: (id) sender
 {
     if([[sender class] isEqual:[NSButton class]])
-        exportAllViews = ([sender state] == NSOnState); // for the fly thru: it's a check box
+        exportAllViews = ([sender state] == NSControlStateValueOn); // for the fly thru: it's a check box
     else
         exportAllViews = ([sender selectedTag] == 0); // for the DICOM export sheet: it's a matrix with 2 radio buttons
 }
@@ -1348,7 +1348,7 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
 - (IBAction)pathAssistantSetPointA:(id)sender;
 {
     isLookingBackwards=NO;
-    [pathAssistantLookBackButton setState:NSOffState];
+    [pathAssistantLookBackButton setState:NSControlStateValueOff];
     [pathAssistantSetPointBButton setEnabled:YES];
     [pathAssistantExportToFlyThruButton setEnabled:NO];
     
@@ -1362,7 +1362,7 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
 - (IBAction)pathAssistantSetPointB:(id)sender;
 {
     isLookingBackwards=NO;
-    [pathAssistantLookBackButton setState:NSOffState];
+    [pathAssistantLookBackButton setState:NSControlStateValueOff];
     [pathAssistantExportToFlyThruButton setEnabled:YES];
     
     if(!pointB)
@@ -1426,7 +1426,7 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
 - (IBAction)pathAssistantLockPath:(id)sender;
 {
     isLookingBackwards=NO;
-    [pathAssistantLookBackButton setState:NSOffState];
+    [pathAssistantLookBackButton setState:NSControlStateValueOff];
     [pathAssistantExportToFlyThruButton setEnabled:YES];
     
     isFlyPathLocked = YES;
@@ -1441,7 +1441,7 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
 - (IBAction)pathAssistantDeletePath:(id)sender;
 {
     isLookingBackwards=NO;
-    [pathAssistantLookBackButton setState:NSOffState];
+    [pathAssistantLookBackButton setState:NSControlStateValueOff];
     [pathAssistantExportToFlyThruButton setEnabled:NO];
     
     isFlyPathLocked = NO;
@@ -1629,7 +1629,7 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
     isLookingBackwards=NO;
     isShowCenterLine=YES;
     
-    [pathAssistantLookBackButton setState:NSOffState];
+    [pathAssistantLookBackButton setState:NSControlStateValueOff];
     [pathAssistantLookBackButton setEnabled:NO];
     [pathAssistantCameraOrFocalOnPathMatrix setEnabled:NO];
     [pathAssistantExportToFlyThruButton setEnabled:NO];
@@ -1883,7 +1883,7 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
 
 - (IBAction) showOrHideCenterlines:(id) sender
 {
-    if([sender state]==NSOnState)
+    if([sender state]==NSControlStateValueOn)
         isShowCenterLine=YES;
     else {
         isShowCenterLine=NO;
@@ -1894,7 +1894,7 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
 }
 - (IBAction)lookBackwards:(id)sender
 {
-    if([sender state]==NSOnState)
+    if([sender state]==NSControlStateValueOn)
         isLookingBackwards=YES;
     else {
         isLookingBackwards=NO;

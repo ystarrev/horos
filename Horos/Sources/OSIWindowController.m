@@ -564,8 +564,8 @@ static BOOL protectedReentryWindowDidResize = NO;
         [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(windowWillCloseNotification:) name: NSWindowWillCloseNotification object: nil];
 	}
 
-    // Override toolbar style
-    self.window.toolbarStyle = NSWindowToolbarStyleExpanded;
+    // Keep compact toolbar metrics to match legacy Horos appearance.
+    self.window.toolbarStyle = NSWindowToolbarStyleAutomatic;
 
 	return self;
 }

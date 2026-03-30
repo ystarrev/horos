@@ -884,9 +884,6 @@ typedef GreaterPathNodeOnF NodeCompare;
         NSLog(@"Can not define path from point to itself.");
         return ERROR_CANNOTFINDPATH;
     }
-    
-    std::cout   << "x= " << pta.x << " y= " << pta.y <<  " z= " << pta.z << std::endl
-                << "x= " << ptb.x << " y= " << ptb.y <<  " z= " << ptb.z << std::endl;
 
     // get the boundaries for threshold
     int posA = (int)pta.z*inputWidth*inputHeight+(int)pta.y*inputWidth+(int)pta.x,

@@ -26,6 +26,7 @@
 
 #import "VRPresetPreview.h"
 #import "VRView.h"
+#import <WebKit/WebKit.h>
 
 static IChatTheatreDelegate	*iChatDelegate = nil;
 
@@ -83,7 +84,27 @@ static IChatTheatreDelegate	*iChatDelegate = nil;
 	[[[IMAVManager sharedAVManager] videoDataSource] release];
 	[[IMAVManager sharedAVManager] setVideoDataSource:nil];
 	[[IMService notificationCenter] removeObserver:self];
+	[_helpWebView release];
 	[super dealloc];
+}
+
+- (void)awakeFromNib
+{
+	if (_helpWebView != nil || web == nil)
+		return;
+
+	WKWebViewConfiguration *configuration = [[[WKWebViewConfiguration alloc] init] autorelease];
+	_helpWebView = [[WKWebView alloc] initWithFrame:[web bounds] configuration:configuration];
+	[_helpWebView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+	[web addSubview:_helpWebView];
+
+	NSString *htmlPath = [[NSBundle mainBundle] pathForResource:@"iChatTheatre-English" ofType:@"html" inDirectory:@"iChatTheatreHelp"];
+	if (htmlPath != nil)
+	{
+		NSURL *fileURL = [NSURL fileURLWithPath:htmlPath];
+		NSURL *readAccessURL = [fileURL URLByDeletingLastPathComponent];
+		[_helpWebView loadFileURL:fileURL allowingReadAccessToURL:readAccessURL];
+	}
 }
 
 - (void)_stateChanged:(NSNotification *)aNotification;

@@ -41,15 +41,11 @@
 
 #include "options.h"
 
-#ifndef OSIRIX_LIGHT
 #include "FVTiff.h"
-#endif
 
 int main(int argc, const char *argv[])
 {	
-	#ifndef OSIRIX_LIGHT
     FVTIFFInitialize();
-	#endif
 	
     return NSApplicationMain(argc, argv);
 }

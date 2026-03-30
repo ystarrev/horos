@@ -62,6 +62,12 @@
 			_margin = NSMakeRect(NSMakePoint(5,5), NSMakeSize(10));
 			_separation = NSMakeSize(1,1);
 			break;
+		case NSControlSizeLarge:
+		case NSControlSizeExtraLarge:
+		default:
+			_margin = NSMakeRect(NSMakePoint(17,17), NSMakeSize(34));
+			_separation = NSMakeSize(2,6);
+			break;
 	}
 	
 //	_fontSize = [NSFont systemFontSizeForControlSize:size];

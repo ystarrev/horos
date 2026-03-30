@@ -51,6 +51,7 @@
 #include "vtkHorosFixedPointVolumeRayCastMIPHelper.h"
 
 #include <vtkImageData.h>
+#include <vtkRectilinearGrid.h>
 #include <vtkCommand.h>
 #include <vtkFixedPointVolumeRayCastMapper.h>
 #include <vtkObjectFactory.h>
@@ -99,9 +100,9 @@ void vtkFixedPointMIPHelperGenerateImageOneNN( T *data,
                                        vtkFixedPointVolumeRayCastMapper *mapper,
                                        vtkVolume *vtkNotUsed(vol))
 {
-  VTKKWRCHelper_InitializationAndLoopStartNN();
-  VTKKWRCHelper_InitializeMIPOneNN();
-  VTKKWRCHelper_SpaceLeapSetup();
+  VTKKWRCHelper_InitializationAndLoopStartNN;
+  VTKKWRCHelper_InitializeMIPOneNN;
+  VTKKWRCHelper_SpaceLeapSetup;
 
   if ( cropping )
     {
@@ -172,7 +173,7 @@ void vtkFixedPointMIPHelperGenerateImageOneNN( T *data,
     VTKKWRCHelper_LookupColorMax( colorTable[0], scalarOpacityTable[0], maxIdx, imagePtr );
     }
 
-  VTKKWRCHelper_IncrementAndLoopEnd();
+  VTKKWRCHelper_IncrementAndLoopEnd;
 
 }
 
@@ -189,9 +190,9 @@ void vtkFixedPointMIPHelperGenerateImageDependentNN(
   vtkFixedPointVolumeRayCastMapper *mapper,
   vtkVolume *vtkNotUsed(vol))
 {
-  VTKKWRCHelper_InitializationAndLoopStartNN();
-  VTKKWRCHelper_InitializeMIPMultiNN();
-  VTKKWRCHelper_SpaceLeapSetup();
+  VTKKWRCHelper_InitializationAndLoopStartNN;
+  VTKKWRCHelper_InitializeMIPMultiNN;
+  VTKKWRCHelper_SpaceLeapSetup;
 
   int maxValueDefined = 0;
   unsigned short maxIdxS = 0;
@@ -254,7 +255,7 @@ void vtkFixedPointMIPHelperGenerateImageDependentNN(
     imagePtr[0] = imagePtr[1] = imagePtr[2] = imagePtr[3] = 0;
     }
 
-  VTKKWRCHelper_IncrementAndLoopEnd();
+  VTKKWRCHelper_IncrementAndLoopEnd;
 }
 
 // This method is called when the interpolation type is nearest neighbor and
@@ -271,10 +272,10 @@ void vtkFixedPointMIPHelperGenerateImageIndependentNN(
   vtkFixedPointVolumeRayCastMapper *mapper,
   vtkVolume *vol)
 {
-  VTKKWRCHelper_InitializeWeights();
-  VTKKWRCHelper_InitializationAndLoopStartNN();
-  VTKKWRCHelper_InitializeMIPMultiNN();
-  VTKKWRCHelper_SpaceLeapSetupMulti();
+  VTKKWRCHelper_InitializeWeights;
+  VTKKWRCHelper_InitializationAndLoopStartNN;
+  VTKKWRCHelper_InitializeMIPMultiNN;
+  VTKKWRCHelper_SpaceLeapSetupMulti;
 
   int maxValueDefined = 0;
   unsigned short maxIdx[4];
@@ -327,7 +328,7 @@ void vtkFixedPointMIPHelperGenerateImageIndependentNN(
                                                        components, imagePtr );
     }
 
-  VTKKWRCHelper_IncrementAndLoopEnd();
+  VTKKWRCHelper_IncrementAndLoopEnd;
 }
 
 // This method is called when the interpolation type is linear, the
@@ -346,9 +347,10 @@ void vtkFixedPointMIPHelperGenerateImageOneSimpleTrilin(
   vtkFixedPointVolumeRayCastMapper *mapper,
   vtkVolume *vtkNotUsed(vol))
 {
-  VTKKWRCHelper_InitializationAndLoopStartTrilin();
-  VTKKWRCHelper_InitializeMIPOneTrilin();
-  VTKKWRCHelper_SpaceLeapSetup();
+  T* data = dataPtr;
+  VTKKWRCHelper_InitializationAndLoopStartTrilin;
+  VTKKWRCHelper_InitializeMIPOneTrilin;
+  VTKKWRCHelper_SpaceLeapSetup;
 
   int meanIP = vtkMeanIPMode;
   int maxValueDefined = 0;
@@ -449,7 +451,7 @@ void vtkFixedPointMIPHelperGenerateImageOneSimpleTrilin(
     imagePtr[0] = imagePtr[1] = imagePtr[2] = imagePtr[3] = 0;
     }
 
-  VTKKWRCHelper_IncrementAndLoopEnd();
+  VTKKWRCHelper_IncrementAndLoopEnd;
 }
 
 
@@ -470,9 +472,10 @@ void vtkFixedPointMIPHelperGenerateImageOneTrilin(
   vtkFixedPointVolumeRayCastMapper *mapper,
   vtkVolume *vtkNotUsed(vol))
 {
-  VTKKWRCHelper_InitializationAndLoopStartTrilin();
-  VTKKWRCHelper_InitializeMIPOneTrilin();
-  VTKKWRCHelper_SpaceLeapSetup();
+  T* data = dataPtr;
+  VTKKWRCHelper_InitializationAndLoopStartTrilin;
+  VTKKWRCHelper_InitializeMIPOneTrilin;
+  VTKKWRCHelper_SpaceLeapSetup;
 
   int maxValueDefined = 0;
   unsigned short maxIdx = 0;
@@ -524,7 +527,7 @@ void vtkFixedPointMIPHelperGenerateImageOneTrilin(
     imagePtr[0] = imagePtr[1] = imagePtr[2] = imagePtr[3] = 0;
     }
 
-  VTKKWRCHelper_IncrementAndLoopEnd();
+  VTKKWRCHelper_IncrementAndLoopEnd;
 }
 
 // This method is used when the interpolation type is linear, the data has
@@ -549,9 +552,10 @@ void vtkFixedPointMIPHelperGenerateImageDependentTrilin(
   vtkFixedPointVolumeRayCastMapper *mapper,
   vtkVolume *vtkNotUsed(vol))
 {
-  VTKKWRCHelper_InitializationAndLoopStartTrilin();
-  VTKKWRCHelper_InitializeMIPMultiTrilin();
-  VTKKWRCHelper_SpaceLeapSetup();
+  T* data = dataPtr;
+  VTKKWRCHelper_InitializationAndLoopStartTrilin;
+  VTKKWRCHelper_InitializeMIPMultiTrilin;
+  VTKKWRCHelper_SpaceLeapSetup;
 
   int maxValueDefined = 0;
   unsigned short maxIdx = 0;
@@ -625,7 +629,7 @@ void vtkFixedPointMIPHelperGenerateImageDependentTrilin(
     imagePtr[0] = imagePtr[1] = imagePtr[2] = imagePtr[3] = 0;
     }
 
-  VTKKWRCHelper_IncrementAndLoopEnd();
+  VTKKWRCHelper_IncrementAndLoopEnd;
 }
 
 // This method is used when the interpolation type is linear, the data has
@@ -646,9 +650,10 @@ void vtkFixedPointMIPHelperGenerateImageIndependentTrilin(
   vtkFixedPointVolumeRayCastMapper *mapper,
   vtkVolume *vol)
 {
-  VTKKWRCHelper_InitializeWeights();
-  VTKKWRCHelper_InitializationAndLoopStartTrilin();
-  VTKKWRCHelper_InitializeMIPMultiTrilin();
+  T* data = dataPtr;
+  VTKKWRCHelper_InitializeWeights;
+  VTKKWRCHelper_InitializationAndLoopStartTrilin;
+  VTKKWRCHelper_InitializeMIPMultiTrilin;
 
   int maxValueDefined = 0;
   for ( k = 0; k < numSteps; k++ )
@@ -710,7 +715,7 @@ void vtkFixedPointMIPHelperGenerateImageIndependentTrilin(
                                                         components, imagePtr );
     }
 
-  VTKKWRCHelper_IncrementAndLoopEnd();
+  VTKKWRCHelper_IncrementAndLoopEnd;
 }
 
 void vtkHorosFixedPointVolumeRayCastMIPHelper::GenerateImage(
@@ -819,5 +824,3 @@ void vtkHorosFixedPointVolumeRayCastMIPHelper::PrintSelf(ostream& os, vtkIndent 
 {
   this->Superclass::PrintSelf(os,indent);
 }
-
-

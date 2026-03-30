@@ -3030,6 +3030,17 @@
 		F35B0D8F28954862008ABE3E /* FeedbackReporter.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F35B0D8E28954830008ABE3E /* FeedbackReporter.framework */; };
 		F35B0D9028954862008ABE3E /* FeedbackReporter.framework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = F35B0D8E28954830008ABE3E /* FeedbackReporter.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		F3E3E6CD289527220037A247 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F3E3E6CA289527220037A247 /* UserNotifications.framework */; };
+F4A100000001000000000001 /* MetalViewerLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000001 /* MetalViewerLauncher.swift */; };
+F4A100000001000000000002 /* MetalViewerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000002 /* MetalViewerWindowController.swift */; };
+F4A100000001000000000003 /* MetalImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000003 /* MetalImageView.swift */; };
+F4A100000001000000000004 /* MetalViewerRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000004 /* MetalViewerRenderer.swift */; };
+F4A100000001000000000005 /* MetalShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000005 /* MetalShaders.metal */; };
+F4A100000001000000000006 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000006 /* Metal.framework */; };
+F4A100000001000000000007 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000007 /* MetalKit.framework */; };
+F4A100000001000000000008 /* MetalViewerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000008 /* MetalViewerModels.swift */; };
+F4A100000001000000000009 /* MetalViewerPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000009 /* MetalViewerPaneView.swift */; };
+F4A10000000100000000000A /* MetalViewerToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000A /* MetalViewerToolbarView.swift */; };
+F4A10000000100000000000B /* MetalViewerScoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000B /* MetalViewerScoutView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -4158,7 +4169,7 @@
 		AB0EA93B056EDC7E004BBDD3 /* OpenGL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenGL.framework; path = /System/Library/Frameworks/OpenGL.framework; sourceTree = "<absolute>"; };
 		AB0F20AB06460F7F0075465D /* Burner.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Burner.icns; sourceTree = "<group>"; };
 		AB0F3A2C1046BD2B004129DD /* Horos.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Horos.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		AB10FA221129302A009EB238 /* PopUpArrows.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = PopUpArrows.png; path = nitrogen/Resources/PopUpArrows.png; sourceTree = SOURCE_ROOT; };
+		AB10FA221129302A009EB238 /* PopUpArrows.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = PopUpArrows.png; path = Nitrogen/Resources/PopUpArrows.png; sourceTree = SOURCE_ROOT; };
 		AB10FA670B96C95500D74684 /* OsirixDownload.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = OsirixDownload.icns; sourceTree = "<group>"; };
 		AB10FA9F11293378009EB238 /* N2Debug.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Debug.h; sourceTree = "<group>"; };
 		AB10FAA011293378009EB238 /* N2Debug.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Debug.mm; sourceTree = "<group>"; };
@@ -5672,6 +5683,17 @@
 		F3D78C9D2892994600148FE5 /* Config.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 		F3E3E6CA289527220037A247 /* UserNotifications.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotifications.framework; path = System/Library/Frameworks/UserNotifications.framework; sourceTree = SDKROOT; };
 		F3EFB87A2895825C0012A622 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		F4A100000002000000000001 /* MetalViewerLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerLauncher.swift; sourceTree = SOURCE_ROOT; };
+		F4A100000002000000000002 /* MetalViewerWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerWindowController.swift; sourceTree = SOURCE_ROOT; };
+		F4A100000002000000000003 /* MetalImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalImageView.swift; sourceTree = SOURCE_ROOT; };
+		F4A100000002000000000004 /* MetalViewerRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerRenderer.swift; sourceTree = SOURCE_ROOT; };
+		F4A100000002000000000005 /* MetalShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Horos/Sources/MetalViewer/MetalShaders.metal; sourceTree = SOURCE_ROOT; };
+		F4A100000002000000000008 /* MetalViewerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerModels.swift; sourceTree = SOURCE_ROOT; };
+		F4A100000002000000000009 /* MetalViewerPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerPaneView.swift; sourceTree = SOURCE_ROOT; };
+		F4A10000000200000000000A /* MetalViewerToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerToolbarView.swift; sourceTree = SOURCE_ROOT; };
+		F4A10000000200000000000B /* MetalViewerScoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerScoutView.swift; sourceTree = SOURCE_ROOT; };
+F4A100000002000000000006 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -5692,6 +5714,8 @@
 			isa = PBXFrameworksBuildPhase;
 			files = (
 				9966A1AB1AE09D7C00F2D81A /* Quartz.framework in Frameworks */,
+				F4A100000001000000000006 /* Metal.framework in Frameworks */,
+				F4A100000001000000000007 /* MetalKit.framework in Frameworks */,
 				9966A1A91AE09D6800F2D81A /* InstantMessage.framework in Frameworks */,
 				9966A1A71AE09D5D00F2D81A /* DiskArbitration.framework in Frameworks */,
 				9966A1A51AE09D5100F2D81A /* CoreMedia.framework in Frameworks */,
@@ -10042,7 +10066,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastTestingUpgradeCheck = 0730;
-				LastUpgradeCheck = 2630;
+				LastUpgradeCheck = 2640;
 				ORGANIZATIONNAME = "The Horos Project";
 				TargetAttributes = {
 					71A522F72021AB220065793A = {
@@ -10543,6 +10567,9 @@
 		4A2F5930078D148300C514A2 /* Unzip Binaries */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = "Unzip Binaries";
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/UnzipBinaries.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/Horos/Unzip.sh\"",
@@ -10552,6 +10579,9 @@
 		59BDEE70117CB3A6007F1F2C /* Zip Horos Launcher into Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = "Zip Horos Launcher into Resources";
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/ZipHorosLauncherIntoResources.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"#cd \"${BUILT_PRODUCTS_DIR}\"",
@@ -10563,11 +10593,20 @@
 				"#product=\"$SRCROOT/Binaries/Horos Launcher.zip\"",
 				"#cp \"$product\" \"${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"",
 				"",
+				"mkdir -p \"$DERIVED_FILE_DIR\"",
+				"touch \"$DERIVED_FILE_DIR/ZipHorosLauncherIntoResources.stamp\"",
+				"",
 			);
 		};
 		59F69A4E1056328D008585F5 /* API */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = API;
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/HorosAPI.framework",
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/OsiriXAPI.framework",
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/OsiriX Headers.framework",
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/HorosDCM.framework",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/Horos/API.sh\"",
@@ -10577,6 +10616,9 @@
 		5F026FFC24212E630083A650 /* Sign */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = Sign;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/Sign.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"# Need to sign command-line executables. The identity defined must exist as",
@@ -10588,6 +10630,8 @@
 				"",
 				"if [ \"$CODE_SIGNING_ALLOWED\" = \"NO\" ]; then",
 				"  echo \"Code signing disabled, skipping DCMTK sign\"",
+				"  mkdir -p \"$TARGET_TEMP_DIR\"",
+				"  touch \"$TARGET_TEMP_DIR/Sign.stamp\"",
 				"  exit 0",
 				"fi",
 				"",
@@ -10597,6 +10641,8 @@
 				"",
 				"if ! security find-identity -v -p codesigning | grep -q \"${identity}\"; then",
 				"  echo \"Code signing identity '${identity}' not found; skipping DCMTK sign\"",
+				"  mkdir -p \"$TARGET_TEMP_DIR\"",
+				"  touch \"$TARGET_TEMP_DIR/Sign.stamp\"",
 				"  exit 0",
 				"fi",
 				"",
@@ -10605,12 +10651,17 @@
 				"codesign --verbose=4 -f --prefix \"${prefix}\" --options runtime -s \"${identity}\" \"${copy_dir}/dcmprscu\"",
 				"codesign --verbose=4 -f --prefix \"${prefix}\" --options runtime -s \"${identity}\" \"${copy_dir}/dsr2html\"",
 				"codesign --verbose=4 -f --prefix \"${prefix}\" --options runtime -s \"${identity}\" \"${copy_dir}/echoscu\"",
+				"mkdir -p \"$TARGET_TEMP_DIR\"",
+				"touch \"$TARGET_TEMP_DIR/Sign.stamp\"",
 				"",
 			);
 		};
 		5F1E2A6D2411AE7E00365A0C /* CMake */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = CMake;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/CMake.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/CMake.sh\"",
@@ -10620,6 +10671,9 @@
 		5F1E2A6E2411AE7E00365A0C /* Make */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = Make;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/Make.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Make.sh\"",
@@ -10629,6 +10683,9 @@
 		710BAF711FB33751004909E4 /* Store Product Path */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = "Store Product Path";
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/Product.path",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"echo \"$TARGET_BUILD_DIR/$FULL_PRODUCT_NAME\" > \"$TARGET_TEMP_DIR/Product.path\"",
@@ -10638,6 +10695,10 @@
 		7183153F161065BE0098576F /* Replace Weasis ext-config.properties and zip resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = "Replace Weasis ext-config.properties and zip resources";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/weasis/weasis/conf/ext-config.properties",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/weasis/weasis/resources.zip",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"cp -fp \"$PROJECT_DIR/Horos/Resources/weasis-ext-config.properties\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/weasis/weasis/conf/ext-config.properties\"",
@@ -10650,6 +10711,9 @@
 		71A522FB2021AB450065793A /* CMake */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = CMake;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/CMake.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/CMake.sh\"",
@@ -10659,6 +10723,9 @@
 		71A522FC2021ACE70065793A /* Make */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = Make;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/Make.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Make.sh\"",
@@ -10668,6 +10735,9 @@
 		71A523142021D1F30065793A /* CMake */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = CMake;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/CMake.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/CMake.sh\"",
@@ -10677,6 +10747,9 @@
 		71A523152021D2250065793A /* Make */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = Make;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/Make.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Make.sh\"",
@@ -10686,6 +10759,9 @@
 		71A523222021D2C30065793A /* CMake */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = CMake;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/CMake.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/CMake.sh\"",
@@ -10695,6 +10771,9 @@
 		71A523232021D2D70065793A /* Make */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = Make;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/Make.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Make.sh\"",
@@ -10704,6 +10783,9 @@
 		71A523302021D3520065793A /* Config */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = Config;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/Config.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Config.sh\"",
@@ -10713,6 +10795,9 @@
 		71A523312021D3650065793A /* Make */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = Make;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/Make.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Make.sh\"",
@@ -10722,6 +10807,9 @@
 		71A5233A2021DB370065793A /* CMake */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = CMake;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/CMake.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/CMake.sh\"",
@@ -10731,6 +10819,9 @@
 		71A5233B2021DB490065793A /* Make */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = Make;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/Make.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Make.sh\"",
@@ -10740,6 +10831,9 @@
 		71A5235020220FB10065793A /* CMake */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = CMake;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/CMake.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/CMake.sh\"",
@@ -10749,6 +10843,9 @@
 		71A5235120220FBD0065793A /* Make */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = Make;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/Make.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Make.sh\"",
@@ -10758,26 +10855,40 @@
 		71BC461D1F27308D00FD6CCF /* Copy Horos Framework */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = "Copy Horos Framework";
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/CopyHorosFramework.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"#path=$(cat \"$TARGET_TEMP_DIR/../Horos API.build/Product.path\")",
 				"#rsync --exclude=\".DS_Store\" -rtlv \"$path\" \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/\"",
+				"",
+				"mkdir -p \"$DERIVED_FILE_DIR\"",
+				"touch \"$DERIVED_FILE_DIR/CopyHorosFramework.stamp\"",
 				"",
 			);
 		};
 		71E6C0B41FBAD32800FF75B6 /* Submodules */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = Submodules;
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Submodules.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"git submodule sync --recursive",
-				"git submodule update --init --recursive",
+				"echo \"Using currently checked-out submodule revisions (skipping git submodule update)\"",
+				"mkdir -p \"$DERIVED_FILE_DIR\"",
+				"touch \"$DERIVED_FILE_DIR/Submodules.stamp\"",
 				"",
 			);
 		};
 		9920CBEF202A0BA600FE0A2A /* CMake */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = CMake;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/CMake.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/CMake.sh\"",
@@ -10787,6 +10898,9 @@
 		9920CBF0202A0BA600FE0A2A /* Make */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = Make;
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/Make.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/$TARGET_NAME/Make.sh\"",
@@ -10796,6 +10910,9 @@
 		AB0F3A3F1046BE51004129DD /* Copy Headers and Create Horos.h */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = "Copy Headers and Create Horos.h";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(PUBLIC_HEADERS_FOLDER_PATH)/Horos.h",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"./Horos/Scripts/Horos/API-Headers.pl",
@@ -10805,6 +10922,12 @@
 		ABF307FB1443330100BBC96A /* Copy Scripts */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = "Copy Scripts";
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/pages2pages09.applescript",
+				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/pages092pdf.applescript",
+				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/pages2pdf.applescript",
+				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/word2pdf.applescript",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"#XCode 10 seems to have a bug or new behavior that makes applescript to be built into scpt. This may be a temporary workaround. Otherwise, code has to be changed to run scpt",
@@ -10833,6 +10956,9 @@
 		CE48FEFE181E486C00A0910B /* Git Hash */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = "Git Hash";
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/GitHash.stamp",
+			);
 			shellPath = /usr/bin/perl;
 			shellScript = (
 				"use strict;",
@@ -10877,11 +11003,18 @@
 				"@defaults = ( 'defaults', 'write', $INFO, 'GitState', \"$GitState\" );",
 				"system( @defaults );",
 				"",
+				"my $stamp = \"$ENV{DERIVED_FILE_DIR}/GitHash.stamp\";",
+				"system( 'mkdir', '-p', $ENV{DERIVED_FILE_DIR} );",
+				"system( 'touch', $stamp );",
+				"",
 			);
 		};
 		CED7488F158F07B500120143 /* Code Signing */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = "Code Signing";
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/ApiCodeSigning.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"##test with codesign -vvv",
@@ -10890,12 +11023,17 @@
 				"#codesign -f -s \"Developer ID Application\" \"${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/\"",
 				"#echo \"code signed\"",
 				"#fi",
+				"mkdir -p \"$DERIVED_FILE_DIR\"",
+				"touch \"$DERIVED_FILE_DIR/ApiCodeSigning.stamp\"",
 				"",
 			);
 		};
 		CED88262125064F70085A861 /* CodeSigning */ = {
 			isa = PBXShellScriptBuildPhase;
 			name = CodeSigning;
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/CodeSigning.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"#test with codesign -vvv",
@@ -10908,6 +11046,8 @@
 				"#codesign --resource-rules Rules.plist -f -s \"Developer ID Application\" \"${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/\"",
 				"#echo \"code signed\"",
 				"#fi",
+				"mkdir -p \"$DERIVED_FILE_DIR\"",
+				"touch \"$DERIVED_FILE_DIR/CodeSigning.stamp\"",
 				"",
 			);
 		};
@@ -11157,6 +11297,15 @@
 		AB28B42C05B7921E00A9906C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
+				F4A100000001000000000001 /* MetalViewerLauncher.swift in Sources */,
+				F4A100000001000000000008 /* MetalViewerModels.swift in Sources */,
+				F4A100000001000000000009 /* MetalViewerPaneView.swift in Sources */,
+				F4A10000000100000000000B /* MetalViewerScoutView.swift in Sources */,
+				F4A10000000100000000000A /* MetalViewerToolbarView.swift in Sources */,
+				F4A100000001000000000002 /* MetalViewerWindowController.swift in Sources */,
+				F4A100000001000000000003 /* MetalImageView.swift in Sources */,
+				F4A100000001000000000004 /* MetalViewerRenderer.swift in Sources */,
+				F4A100000001000000000005 /* MetalShaders.metal in Sources */,
 				AB28B8D605B79D1500A9906C /* XMLController.m in Sources */,
 				AB28B8D805B79D1600A9906C /* NSFullScreenWindow.m in Sources */,
 				AB28B8DA05B79D1800A9906C /* NSFont_OpenGL.m in Sources */,
@@ -13245,7 +13394,7 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = "$(ARCHS_STANDARD)";
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_LINK_OBJC_RUNTIME = NO;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -13307,7 +13456,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TA74QT8SLC;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -13358,18 +13507,23 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).horos";
 				PRODUCT_NAME = Horos;
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = Horos/Horos-Bridging-Header.h;
+				SWIFT_VERSION = 5.0;
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
 				SKIP_INSTALL = NO;
-				SYSTEM_HEADER_SEARCH_PATHS = (
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
-					$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/OpenSSL.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/ITK.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/VTK.build/Install/include,
-				);
+					SYSTEM_HEADER_SEARCH_PATHS = (
+						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
+						$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/GDCM.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/OpenSSL.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/CharLS.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/ITK.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6,
+						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6/vtktiff/libtiff,
+					);
 				USER_HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"Binaries/dcmtk-source",
@@ -13405,8 +13559,6 @@
 				OTHER_CFLAGS = "$(inherited)";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"-seg1addr",
-					0x20000000,
 					"-lopenjp2",
 					"-lCharLS",
 				);
@@ -13467,15 +13619,17 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).decompress";
 				PRODUCT_NAME = Decompress;
-				SYSTEM_HEADER_SEARCH_PATHS = (
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
-					$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/VTK.build/Install/include,
-					Binaries/Ming,
-				);
+					SYSTEM_HEADER_SEARCH_PATHS = (
+						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
+						$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/CharLS.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/GDCM.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6,
+						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6/vtktiff/libtiff,
+						Binaries/Ming,
+					);
 				USER_HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"Binaries/dcmtk-source",
@@ -13691,8 +13845,6 @@
 				OTHER_CFLAGS = "$(inherited)";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"-seg1addr",
-					0x20000000,
 					"-lopenjp2",
 					"-lCharLS",
 				);
@@ -13715,7 +13867,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TA74QT8SLC;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -13763,19 +13915,24 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).horos";
 				PRODUCT_NAME = Horos;
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = Horos/Horos-Bridging-Header.h;
+				SWIFT_VERSION = 5.0;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
 				SKIP_INSTALL = NO;
-				SYSTEM_HEADER_SEARCH_PATHS = (
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
-					$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/OpenSSL.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/ITK.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/VTK.build/Install/include,
-				);
+					SYSTEM_HEADER_SEARCH_PATHS = (
+						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
+						$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/GDCM.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/OpenSSL.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/CharLS.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/ITK.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6,
+						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6/vtktiff/libtiff,
+					);
 				USER_HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"Binaries/dcmtk-source",
@@ -13800,7 +13957,7 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = "$(ARCHS_STANDARD)";
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_LINK_OBJC_RUNTIME = NO;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -13930,15 +14087,17 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).decompress";
 				PRODUCT_NAME = Decompress;
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				SYSTEM_HEADER_SEARCH_PATHS = (
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
-					$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/VTK.build/Install/include,
-					Binaries/Ming,
-				);
+					SYSTEM_HEADER_SEARCH_PATHS = (
+						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
+						$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/CharLS.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/GDCM.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include,
+						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6,
+						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6/vtktiff/libtiff,
+						Binaries/Ming,
+					);
 				USER_HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"Binaries/dcmtk-source",

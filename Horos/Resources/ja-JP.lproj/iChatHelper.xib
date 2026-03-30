@@ -3,7 +3,6 @@
     <dependencies>
         <deployment identifier="macosx"/>
         <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="10116"/>
-        <plugIn identifier="com.apple.WebKitIBPlugin" version="10116"/>
     </dependencies>
     <objects>
         <customObject id="-2" userLabel="File's Owner" customClass="IChatTheatreDelegate">
@@ -24,14 +23,11 @@
                 <rect key="frame" x="0.0" y="0.0" width="939" height="723"/>
                 <autoresizingMask key="autoresizingMask"/>
                 <subviews>
-                    <webView translatesAutoresizingMaskIntoConstraints="NO" id="3">
+                    <view translatesAutoresizingMaskIntoConstraints="NO" id="3">
                         <rect key="frame" x="0.0" y="20" width="939" height="703"/>
-                        <webPreferences key="preferences" defaultFontSize="12" defaultFixedFontSize="12">
-                            <nil key="identifier"/>
-                        </webPreferences>
-                    </webView>
-                    <button misplaced="YES" translatesAutoresizingMaskIntoConstraints="NO" id="4">
-                        <rect key="frame" x="7" y="1" width="114" height="18"/>
+                    </view>
+                    <button translatesAutoresizingMaskIntoConstraints="NO" id="4">
+                        <rect key="frame" x="10" y="1" width="114" height="18"/>
                         <buttonCell key="cell" type="check" title="Don't show again" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="small" inset="2" id="5">
                             <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
                             <font key="font" metaFont="smallSystem"/>
@@ -43,6 +39,7 @@
                 </subviews>
                 <constraints>
                     <constraint firstItem="4" firstAttribute="leading" secondItem="2" secondAttribute="leading" constant="10" id="FZO-cX-LMk"/>
+                    <constraint firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="4" secondAttribute="trailing" constant="10" id="LqS-Mm-jh3"/>
                     <constraint firstItem="3" firstAttribute="top" secondItem="2" secondAttribute="top" id="U1F-vN-xcA"/>
                     <constraint firstItem="3" firstAttribute="leading" secondItem="2" secondAttribute="leading" id="b64-Js-xpZ"/>
                     <constraint firstItem="4" firstAttribute="top" secondItem="3" secondAttribute="bottom" constant="4" id="cRu-x6-66S"/>

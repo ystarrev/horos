@@ -803,7 +803,7 @@ NSInteger sortPluginArrayByName(id plugin1, id plugin2, void *context)
         [alert addButtonWithTitle:NSLocalizedString(@"No",nil)];
         [alert setMessageText:NSLocalizedString(@"Not validated OsiriX plugin.",nil)];
         [alert setInformativeText:NSLocalizedString(@"Not validated OsiriX plugins may cause Horos run-time errors. In case of problems, you can disable/uninstall them in [Plugins => Plugin Manager]. Continue installing?",nil)];
-        [alert setAlertStyle:NSWarningAlertStyle];
+        [alert setAlertStyle:NSAlertStyleWarning];
         
         if ([alert runModal] != NSAlertFirstButtonReturn)
         {

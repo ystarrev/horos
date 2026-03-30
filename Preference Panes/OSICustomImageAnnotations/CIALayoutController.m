@@ -1165,7 +1165,7 @@
 	NSArray *keys = [NSArray arrayWithObjects:@"LowerLeft", @"LowerMiddle", @"LowerRight", @"MiddleLeft", @"MiddleRight", @"TopLeft", @"TopMiddle", @"TopRight", nil];
 	NSMutableDictionary *layoutViewDict = [NSMutableDictionary dictionary];
 	
-	if([[prefPane sameAsDefaultButton] state]==NSOnState)
+	if([[prefPane sameAsDefaultButton] state]==NSControlStateValueOn)
 	{
 		[layoutViewDict setObject:@"1" forKey:@"sameAsDefault"];
 	}
@@ -1321,7 +1321,7 @@
 {
 	[self removeAllAnnotations];
 	
-	[[prefPane orientationWidgetButton] setState:NSOffState];
+	[[prefPane orientationWidgetButton] setState:NSControlStateValueOff];
 	
 	NSDictionary *palceHoldersForModality = [annotationsLayoutDictionary objectForKey:modality];
 	NSArray *keys = [NSArray arrayWithObjects:@"LowerLeft", @"LowerMiddle", @"LowerRight", @"MiddleLeft", @"MiddleRight", @"TopLeft", @"TopMiddle", @"TopRight", nil];
@@ -1348,7 +1348,7 @@
 					if([[[anAnnotation content] objectAtIndex:0] isEqualToString:@"Special_Orientation"])
 					{
 						[anAnnotation setIsOrientationWidget:YES];
-						[[prefPane orientationWidgetButton] setState:NSOnState];
+						[[prefPane orientationWidgetButton] setState:NSControlStateValueOn];
 					}
 			
 			[anAnnotation setPlaceHolder:placeHolder];
@@ -1367,12 +1367,12 @@
 		[placeHolder updateFrameAroundAnnotationsWithAnimation:NO];
 	}
 	
-	[[prefPane sameAsDefaultButton] setState:NSOffState];
+	[[prefPane sameAsDefaultButton] setState:NSControlStateValueOff];
 	
 	if(n==0 && ![modality isEqualTo:@"Default"])
 	{
 		[self loadAnnotationLayoutForModality:@"Default"];
-		[[prefPane sameAsDefaultButton] setState:NSOnState];
+		[[prefPane sameAsDefaultButton] setState:NSControlStateValueOn];
 		[layoutView setEnabled:NO];
 		[[prefPane orientationWidgetButton] setEnabled:NO];
 	}

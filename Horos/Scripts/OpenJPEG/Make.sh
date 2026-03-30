@@ -6,7 +6,7 @@ source_dir="$PROJECT_DIR/$TARGET_NAME"
 cmake_dir="$TARGET_TEMP_DIR/CMake"
 install_dir="$TARGET_TEMP_DIR/Install"
 
-[ -d "$install_dir" ] && [ ! -f "$install_dir/.incomplete" ] && exit 0
+[ -d "$install_dir" ] && [ ! -f "$install_dir/.incomplete" ] && touch "$TARGET_TEMP_DIR/Make.stamp" && exit 0
 
 mkdir -p "$install_dir"
 touch "$install_dir/.incomplete"
@@ -30,5 +30,6 @@ elif [ -d "$install_dir/include/openjpeg-2.3" ]; then
 fi
 
 rm -f "$install_dir/.incomplete"
+touch "$TARGET_TEMP_DIR/Make.stamp"
 
 exit 0

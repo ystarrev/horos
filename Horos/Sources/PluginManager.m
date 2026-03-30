@@ -282,7 +282,7 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
 					[subMenu insertItem:item atIndex:[subMenu numberOfItems]];
 				}
 				
-				id  subMenuItem;
+				id subMenuItem = nil;
 				
 				if( [pluginType rangeOfString: @"imageFilter"].location != NSNotFound)
 				{

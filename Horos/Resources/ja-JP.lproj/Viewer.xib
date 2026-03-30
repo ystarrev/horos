@@ -251,7 +251,7 @@
             </constraints>
         </customView>
         <window title="Viewer" allowsToolTipsWhenApplicationIsInactive="NO" autorecalculatesKeyViewLoop="NO" oneShot="NO" visibleAtLaunch="NO" animationBehavior="default" id="5" userLabel="Window" customClass="OSIWindow">
-            <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES" resizable="YES" texturedBackground="YES"/>
+            <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES" resizable="YES"/>
             <windowPositionMask key="initialPositionMask" leftStrut="YES" bottomStrut="YES"/>
             <rect key="contentRect" x="312" y="231" width="725" height="442"/>
             <rect key="screenRect" x="0.0" y="0.0" width="2560" height="1417"/>
@@ -1753,7 +1753,7 @@ Gw
                             <action selector="endQuicktime:" target="-2" id="533"/>
                         </connections>
                     </button>
-                    <box boxType="secondary" borderType="bezel" title="Box" titlePosition="noTitle" translatesAutoresizingMaskIntoConstraints="NO" id="1379">
+                    <box borderType="bezel" title="Box" titlePosition="noTitle" translatesAutoresizingMaskIntoConstraints="NO" id="1379">
                         <rect key="frame" x="36" y="31" width="422" height="111"/>
                         <view key="contentView" id="Yre-Sf-jb3">
                             <rect key="frame" x="3" y="3" width="416" height="105"/>
@@ -3969,7 +3969,7 @@ Gw
                             <binding destination="1977" name="selectedTag" keyPath="values.dcmExportFormat" id="2441"/>
                         </connections>
                     </matrix>
-                    <box boxType="secondary" borderType="bezel" title="Box" titlePosition="noTitle" translatesAutoresizingMaskIntoConstraints="NO" id="1349">
+                    <box borderType="bezel" title="Box" titlePosition="noTitle" translatesAutoresizingMaskIntoConstraints="NO" id="1349">
                         <rect key="frame" x="29" y="118" width="594" height="112"/>
                         <view key="contentView" id="sGl-TN-8Ww">
                             <rect key="frame" x="3" y="3" width="588" height="106"/>
@@ -5386,7 +5386,7 @@ Gw
                             <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
                         </textFieldCell>
                     </textField>
-                    <box misplaced="YES" boxType="secondary" borderType="bezel" title="Box" titlePosition="noTitle" translatesAutoresizingMaskIntoConstraints="NO" id="1868">
+                    <box misplaced="YES" borderType="bezel" title="Box" titlePosition="noTitle" translatesAutoresizingMaskIntoConstraints="NO" id="1868">
                         <rect key="frame" x="265" y="60" width="405" height="106"/>
                         <view key="contentView" id="XTt-f8-mKg">
                             <rect key="frame" x="3" y="3" width="399" height="100"/>

@@ -1398,8 +1398,8 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     else if( [item action] == @selector(syncronize:))
     {
         valid = YES;
-        if( [item tag] == syncro) [item setState: NSOnState];
-        else [item setState: NSOffState];
+        if( [item tag] == syncro) [item setState: NSControlStateValueOn];
+        else [item setState: NSControlStateValueOff];
     }
     else if( [item action] == @selector(mergeFusedImages:))
     {
@@ -1408,14 +1408,14 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     else if( [item action] == @selector(annotMenu:))
     {
         valid = YES;
-        if( [item tag] == [[NSUserDefaults standardUserDefaults] integerForKey:@"ANNOTATIONS"]) [item setState: NSOnState];
-        else [item setState: NSOffState];
+        if( [item tag] == [[NSUserDefaults standardUserDefaults] integerForKey:@"ANNOTATIONS"]) [item setState: NSControlStateValueOn];
+        else [item setState: NSControlStateValueOff];
     }
     else if( [item action] == @selector(barMenu:))
     {
         valid = YES;
-        if( [item tag] == [[NSUserDefaults standardUserDefaults] integerForKey:@"CLUTBARS"]) [item setState: NSOnState];
-        else [item setState: NSOffState];
+        if( [item tag] == [[NSUserDefaults standardUserDefaults] integerForKey:@"CLUTBARS"]) [item setState: NSControlStateValueOn];
+        else [item setState: NSControlStateValueOff];
     }
     else valid = YES;
     
@@ -6399,7 +6399,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 - (void) prepareOpenGL
 {
-    
+    [super prepareOpenGL];
 }
 
 + (void) computePETBlendingCLUT
@@ -6903,9 +6903,9 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 - (IBAction) alwaysSyncMenu:(id) sender
 {
-    if( [[NSUserDefaults standardUserDefaults] integerForKey:@"SAMESTUDY"] == NSOnState)
-        [[NSUserDefaults standardUserDefaults] setInteger: NSOnState forKey:@"SAMESTUDY"];
-    else [[NSUserDefaults standardUserDefaults] setInteger: NSOffState forKey:@"SAMESTUDY"];
+    if( [[NSUserDefaults standardUserDefaults] integerForKey:@"SAMESTUDY"] == NSControlStateValueOn)
+        [[NSUserDefaults standardUserDefaults] setInteger: NSControlStateValueOn forKey:@"SAMESTUDY"];
+    else [[NSUserDefaults standardUserDefaults] setInteger: NSControlStateValueOff forKey:@"SAMESTUDY"];
 }
 
 -(void) setSyncOnLocationImpossible:(BOOL) v
@@ -8505,7 +8505,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                                 {
                                     float min = lwl - lww/2, max = lwl + lww/2;
                                     
-                                    [tempString2 appendFormat: NSLocalizedString( @"From: %d %% (%0.2f) to: %d %% (%0.2f)", @"No special characters for this string, only ASCII characters."), (long) (min * 100. / self.curDCM.maxValueOfSeries), lwl - lww/2, (long) (max * 100. / self.curDCM.maxValueOfSeries), lwl + lww/2];
+                                    [tempString2 appendFormat: NSLocalizedString( @"From: %ld %% (%0.2f) to: %ld %% (%0.2f)", @"No special characters for this string, only ASCII characters."), (long) (min * 100. / self.curDCM.maxValueOfSeries), lwl - lww/2, (long) (max * 100. / self.curDCM.maxValueOfSeries), lwl + lww/2];
                                 }
                             }
                         }

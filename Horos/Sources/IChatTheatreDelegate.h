@@ -13,16 +13,18 @@
 =========================================================================*/
 
 #import <Cocoa/Cocoa.h>
-#import <WebKit/WebView.h>
+
+@class WKWebView;
 
 /** \brief Delegate for managing iChat Theatre */
 
 @interface IChatTheatreDelegate : NSObject {
 	BOOL _hasChanged;
-	IBOutlet WebView *web;
+	IBOutlet NSView *web;
+	WKWebView *_helpWebView;
 }
 
-@property(readonly) WebView *web;
+@property(readonly) NSView *web;
 
 /** Shared delegate for iChat Theater */
 + (IChatTheatreDelegate*) sharedDelegate;

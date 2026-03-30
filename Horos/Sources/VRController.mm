@@ -985,8 +985,8 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
             else if([view mode] == 0 && [[pixList[ 0] objectAtIndex:0] isRGB] == NO) [self ApplyOpacityString:NSLocalizedString(@"Logarithmic Inverse Table", nil)];		//For VR mode only
         }
         
-        if( [view shading]) [shadingCheck setState: NSOnState];
-        else [shadingCheck setState: NSOffState];
+        if( [view shading]) [shadingCheck setState: NSControlStateValueOn];
+        else [shadingCheck setState: NSControlStateValueOff];
         
         float ambient, diffuse, specular, specularpower;
         
@@ -1254,8 +1254,8 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
     {
         valid = YES;
         
-        if( [item tag] == [view currentTool]) [item setState:NSOnState];
-        else [item setState:NSOffState];
+        if( [item tag] == [view currentTool]) [item setState:NSControlStateValueOn];
+        else [item setState:NSControlStateValueOff];
     }
     else valid = YES;
     
@@ -3355,17 +3355,17 @@ NSInteger sort3DSettingsDict(id preset1, id preset2, void *context)
                     }
                 }
                 [self applyShading:self];
-                if([shadingCheck state]==NSOffState)
+                if([shadingCheck state]==NSControlStateValueOff)
                 {
-                    [shadingCheck setState:NSOnState];
+                    [shadingCheck setState:NSControlStateValueOn];
                     [view switchShading:shadingCheck];
                 }
             }
             else
             {
-                if([shadingCheck state]==NSOnState)
+                if([shadingCheck state]==NSControlStateValueOn)
                 {
-                    [shadingCheck setState:NSOffState];
+                    [shadingCheck setState:NSControlStateValueOff];
                     [view switchShading:shadingCheck];
                 }
             }

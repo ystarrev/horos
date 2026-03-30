@@ -15,6 +15,7 @@ install_dir="$TARGET_TEMP_DIR/Install"
 
 mkdir -p "$cmake_dir"; cd "$cmake_dir"
 if [ -e Makefile -a -f .cmakehash ] && [ "$(cat '.cmakehash')" = "$hash" ]; then
+    touch "$TARGET_TEMP_DIR/CMake.stamp"
     exit 0
 fi
 
@@ -53,6 +54,7 @@ args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
 args+=(-DCMAKE_OSX_ARCHITECTURES="$archs")
 
 args+=(-DVTK_USE_SYSTEM_ZLIB:BOOL=ON)
+args+=(-DVTK_USE_SYSTEM_PNG:BOOL=ON)
 args+=(-DVTK_USE_SYSTEM_EXPAT=ON)
 args+=(-DVTK_USE_SYSTEM_LIBXML2=ON)
 
@@ -98,20 +100,31 @@ for i in "${!cxxfs[@]}"; do
         unset 'cxxfs[$i]'
     fi
 done
-cxxfs+=( -std=c++11 )
 
 if [ ${#cxxfs[@]} -ne 0 ]; then
     cxxfss="${cxxfs[@]}"
     args+=(-DCMAKE_CXX_FLAGS="$cxxfss")
 fi
 
-# Force a modern C++ standard for VTK/eigen compatibility
-args+=(-DCMAKE_CXX_STANDARD=11)
-args+=(-DCMAKE_CXX_STANDARD_REQUIRED=ON)
+# Keep CMake C++ standard aligned with Xcode's CLANG_CXX_LANGUAGE_STANDARD
+case "$CLANG_CXX_LANGUAGE_STANDARD" in
+    c++11|gnu++11) cxx_std_num=11 ;;
+    c++14|gnu++14) cxx_std_num=14 ;;
+    c++17|gnu++17) cxx_std_num=17 ;;
+    c++20|gnu++20) cxx_std_num=20 ;;
+    c++23|gnu++23) cxx_std_num=23 ;;
+    c++0x|gnu++0x) cxx_std_num=11 ;;
+    *) cxx_std_num="" ;;
+esac
+if [ -n "$cxx_std_num" ]; then
+    args+=(-DCMAKE_CXX_STANDARD="$cxx_std_num")
+    args+=(-DCMAKE_CXX_STANDARD_REQUIRED=ON)
+fi
 
 cmake "${args[@]}"
 
 echo "$hash" > "$cmake_dir/.cmakehash"
 echo "$env" > "$cmake_dir/.cmakeenv"
+touch "$TARGET_TEMP_DIR/CMake.stamp"
 
 exit 0

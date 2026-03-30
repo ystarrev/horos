@@ -39,8 +39,6 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "WebKit/WebKit.h"
-
 /** \brief  Window Controller for Splash Window */
 @interface SplashScreen : NSWindowController <NSWindowDelegate>
 {
@@ -49,9 +47,9 @@
 	IBOutlet	id view;
 	int         versionType;
     
-    IBOutlet    WebView *aboutWebView;
-    IBOutlet    WebView *partnersWebView;
-    IBOutlet    WebView *releaseNotesWebView;
+    IBOutlet    NSView *aboutWebView;
+    IBOutlet    NSView *partnersWebView;
+    IBOutlet    NSView *releaseNotesWebView;
 }
 
 - (void) affiche;

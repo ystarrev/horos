@@ -16,6 +16,7 @@ install_dir="$TARGET_TEMP_DIR/Install"
 
 mkdir -p "$cmake_dir"; cd "$cmake_dir"
 if [ -e Makefile -a -f .cmakehash ] && [ "$(cat '.cmakehash')" = "$hash" ]; then
+    touch "$TARGET_TEMP_DIR/CMake.stamp"
     exit 0
 fi
 
@@ -27,6 +28,23 @@ fi
 
 command -v cmake >/dev/null 2>&1 || { echo >&2 "error: building $TARGET_NAME requires CMake. Please install CMake. Aborting."; exit 1; }
 command -v pkg-config >/dev/null 2>&1 || { echo >&2 "error: building $TARGET_NAME requires pkg-config. Please install pkg-config. Aborting."; exit 1; }
+
+# Grok depends on nested git submodules (e.g. highway, CLI11).
+# Do not mutate git state during an Xcode build; just verify the checked-out
+# tree already contains the required nested submodule contents.
+required_submodules=(
+    "$source_dir/src/include/CLI11"
+    "$source_dir/src/lib/core/highway"
+    "$source_dir/src/lib/core/highway/hwy"
+)
+
+for required_path in "${required_submodules[@]}"; do
+    if [ ! -e "$required_path" ]; then
+        echo >&2 "error: missing required Grok dependency at $required_path"
+        echo >&2 "error: initialize the Grok submodules before building."
+        exit 1
+    fi
+done
 
 mv "$cmake_dir" "$cmake_dir.tmp"
 [ -d "$install_dir" ] && mv "$install_dir" "$install_dir.tmp"
@@ -61,6 +79,7 @@ args+=(-DBUILD_SHARED_LIBS=OFF)
 args+=(-DBUILD_STATIC_LIBS=ON)
 args+=(-DBUILD_TESTING=OFF)
 args+=(-DCMAKE_POLICY_VERSION_MINIMUM=3.5)
+args+=(-DGRK_BUILD_JPEG=OFF)
 
 args+=(-DCMAKE_IGNORE_PATH="/opt/local/include;/opt/local/lib")
 
@@ -98,5 +117,6 @@ cmake "${args[@]}"
 
 echo "$hash" > "$cmake_dir/.cmakehash"
 echo "$env" > "$cmake_dir/.cmakeenv"
+touch "$TARGET_TEMP_DIR/CMake.stamp"
 
 exit 0

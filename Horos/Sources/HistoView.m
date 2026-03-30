@@ -207,11 +207,11 @@
         if( curMousePosition > 0)
             ss++;
         
-		trace = [NSString stringWithFormat:NSLocalizedString(@"Total Pixels: %d\n\nRange:%d/%d\n\nPixels for\nthis range:%d", nil), pixels, ss, ee, noAtMouse];
+		trace = [NSString stringWithFormat:NSLocalizedString(@"Total Pixels: %ld\n\nRange:%ld/%ld\n\nPixels for\nthis range:%ld", nil), pixels, ss, ee, noAtMouse];
 	}
 	else
 	{
-		trace = [NSString stringWithFormat:NSLocalizedString(@"Total Pixels: %d", nil), pixels];
+		trace = [NSString stringWithFormat:NSLocalizedString(@"Total Pixels: %ld", nil), pixels];
 	}
 	
 	NSRect dstRect = boundsRect;

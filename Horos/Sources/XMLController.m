@@ -1075,7 +1075,7 @@ extern int delayedTileWindows;
                     [alert setInformativeText: NSLocalizedString(@"DICOM editing is now activated. You can edit any DICOM fields.\r\rSelect at which level you want to apply the changes (this image only, this series or the entire study.\r\rWarning !\rModifying DICOM fields can corrupt the DICOM files!\r\"With Great Power, Comes Great Responsibility\"", nil)];
                     [alert setShowsSuppressionButton:YES];
                     [alert runModal];
-                    if ([[alert suppressionButton] state] == NSOnState)
+                    if ([[alert suppressionButton] state] == NSControlStateValueOn)
                     {
                         [defaults setBool:YES forKey:exampleAlertSuppress];
                     }

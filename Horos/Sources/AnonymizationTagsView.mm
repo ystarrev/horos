@@ -79,7 +79,7 @@
 
 -(void)addButtonAction:(NSButton*)sender {
 	[anonymizationViewController addTag:dcmTagsPopUpButton.selectedDCMAttributeTag];
-	[[anonymizationViewController.tagsView checkBoxForObject:dcmTagsPopUpButton.selectedDCMAttributeTag] setState:NSOnState];
+	[[anonymizationViewController.tagsView checkBoxForObject:dcmTagsPopUpButton.selectedDCMAttributeTag] setState:NSControlStateValueOn];
 	[self.window makeFirstResponder:[anonymizationViewController.tagsView textFieldForObject:dcmTagsPopUpButton.selectedDCMAttributeTag]];
 	[dcmTagsPopUpButton setSelectedDCMAttributeTag:NULL];
 }

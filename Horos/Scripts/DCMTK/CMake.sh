@@ -16,6 +16,7 @@ install_dir="$TARGET_TEMP_DIR/Install"
 
 mkdir -p "$cmake_dir"; cd "$cmake_dir"
 if [ -e "$cmake_dir/Makefile" -a -f "$cmake_dir/.buildhash" ] && [ "$(cat "$cmake_dir/.buildhash")" == "$hash" ]; then
+    touch "$TARGET_TEMP_DIR/CMake.stamp"
     exit 0
 fi
 
@@ -83,5 +84,6 @@ cmake "${args[@]}"
 
 echo "$hash" > "$cmake_dir/.buildhash"
 echo "$env" > "$cmake_dir/.cmakeenv"
+touch "$TARGET_TEMP_DIR/CMake.stamp"
 
 exit 0

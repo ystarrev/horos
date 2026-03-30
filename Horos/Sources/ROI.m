@@ -5383,8 +5383,8 @@ void gl_round_box(int mode, float minx, float miny, float maxx, float maxy, floa
                                             NSArray * physicalUnitsXYDirection = [NSArray arrayWithObjects:
                                                                                   NSLocalizedString( @"none", nil), @"%", NSLocalizedString( @"dB", @"decibel"), NSLocalizedString( @"cm", nil), NSLocalizedString( @"sec", @"second"), NSLocalizedString( @"hertz", nil), NSLocalizedString( @"dB/sec", @"decibel per second"), NSLocalizedString( @"cm/sec", nil), NSLocalizedString( @"cm\u00B2", @"cm2"), NSLocalizedString( @"cm\u00B2/sec", @"cm2/sec"), NSLocalizedString( @"cm\u00B3", @"cm3"), NSLocalizedString( @"cm\u00B3/sec", @"cm3/sec"), @"\u00B0", nil];
                                             
-                                            NSString * unitsX;
-                                            NSString * unitsY;
+                                            NSString * unitsX = NSLocalizedString( @"unknown", nil);
+                                            NSString * unitsY = NSLocalizedString( @"unknown", nil);
                                             if ((physicalUnitsXDirection < 0) || (physicalUnitsXDirection > 12)) {
                                                 unitsX = NSLocalizedString( @"unknown", nil);
                                             } else if ((physicalUnitsYDirection < 0) || (physicalUnitsYDirection > 12)) {

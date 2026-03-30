@@ -22,4 +22,7 @@ cd "$SRCROOT/Binaries/EmbeddedPlugins"
 cd "$SRCROOT/Binaries/PAGES"
 rm ._*
 
+mkdir -p "$DERIVED_FILE_DIR"
+touch "$DERIVED_FILE_DIR/UnzipBinaries.stamp"
+
 exit 0

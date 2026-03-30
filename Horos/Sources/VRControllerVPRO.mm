@@ -491,7 +491,7 @@ static NSString*	ModeToolbarItemIdentifier			= @"Mode";
 	
 	[[enginePopup menu] setAutoenablesItems : NO];
 //	[[[enginePopup menu] itemAtIndex: 3] setEnabled: NO];
-	[[[enginePopup menu] itemAtIndex: [[NSUserDefaults standardUserDefaults] integerForKey: @"MAPPERMODEVR"]+1] setState:NSOnState];
+	[[[enginePopup menu] itemAtIndex: [[NSUserDefaults standardUserDefaults] integerForKey: @"MAPPERMODEVR"]+1] setState:NSControlStateValueOn];
 	
 	[self updateEngine];
 	
@@ -552,8 +552,8 @@ static NSString*	ModeToolbarItemIdentifier			= @"Mode";
 	if( [dict objectForKey:@"CLUTName"]) [self ApplyOpacityString:[dict objectForKey:@"OpacityName"]];
 	else [self ApplyOpacityString:NSLocalizedString(@"Logarithmic Inverse Table", nil)];
 	
-	if( [view shading]) [shadingCheck setState: NSOnState];
-	else [shadingCheck setState: NSOffState];
+	if( [view shading]) [shadingCheck setState: NSControlStateValueOn];
+	else [shadingCheck setState: NSControlStateValueOff];
 	
 	float ambient, diffuse, specular, specularpower;
 	
@@ -1080,10 +1080,10 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	
 	for( i = 0 ; i < [[enginePopup menu] numberOfItems]; i++)
 	{
-		[[[enginePopup menu] itemAtIndex: i] setState: NSOffState];
+		[[[enginePopup menu] itemAtIndex: i] setState: NSControlStateValueOff];
 	}
 	
-	[[enginePopup selectedItem] setState: NSOnState];
+	[[enginePopup selectedItem] setState: NSControlStateValueOn];
 
 	[view setEngine: [[enginePopup selectedItem] tag]];
 	[view setBlendingEngine: [[enginePopup selectedItem] tag]];

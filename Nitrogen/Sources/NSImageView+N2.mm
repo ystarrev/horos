@@ -43,7 +43,7 @@
 @implementation NSImageView (N2)
 
 +(id)createWithImage:(NSImage*)image {
-	id view = [[self alloc] initWithSize:[image size]];
+	id view = [[self alloc] initWithFrame:NSMakeRect(0, 0, [image size].width, [image size].height)];
 	[view setImage:image];
 	return [view autorelease];
 }

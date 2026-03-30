@@ -44,7 +44,7 @@
 	self = [super init];
 	[self setBezelStyle:NSDisclosureBezelStyle];
 	[self setButtonType:NSOnOffButton];
-	[self setState:NSOnState];
+	[self setState:NSControlStateValueOn];
 	[self setControlSize:NSSmallControlSize];
 	[self sendActionOn:NSLeftMouseDownMask];
 	

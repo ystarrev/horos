@@ -180,7 +180,7 @@
 
 - (BOOL) allWithSameName
 {
-	return [allWithSameName state]==NSOnState;
+	return [allWithSameName state]==NSControlStateValueOn;
 }
 
 - (void) setROI: (ROI*) iroi :(ViewerController*) c

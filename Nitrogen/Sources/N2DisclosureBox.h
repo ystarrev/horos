@@ -53,7 +53,8 @@ extern NSString* N2DisclosureBoxDidCollapseNotification;
 }
 
 @property BOOL enabled;
-@property N2DisclosureButtonCell* titleCell;
+-(N2DisclosureButtonCell*)titleCell;
+-(void)setTitleCell:(N2DisclosureButtonCell*)titleCell;
 
 -(id)initWithTitle:(NSString*)title content:(NSView*)view;
 -(void)toggle:(id)sender;

@@ -3188,7 +3188,7 @@ static BOOL protectionAgainstReentry = NO;
             
             if ([[PluginManager preProcessPlugins] count])
             {
-                thread.status = [NSString stringWithFormat:NSLocalizedString(@"Preprocessing %d files with %d plugins...", nil), filesArray.count, [[PluginManager preProcessPlugins] count]];
+                thread.status = [NSString stringWithFormat:NSLocalizedString(@"Preprocessing %lu files with %lu plugins...", nil), (unsigned long)filesArray.count, (unsigned long)[[PluginManager preProcessPlugins] count]];
                 for (id filter in [PluginManager preProcessPlugins])
                 {
                     @try
@@ -3309,7 +3309,7 @@ static BOOL protectionAgainstReentry = NO;
                 mdb.compressDecompressThread = [[[NSThread alloc] initWithTarget:self selector:@selector(_threadCompressDecompress) object:nil] autorelease];
                 [mdb.compressDecompressThread start];
             } else {
-                mdb.compressDecompressThread.status = [NSString stringWithFormat:NSLocalizedString(@"%d additional files queued", nil), _compressQueue.count+_decompressQueue.count];
+                mdb.compressDecompressThread.status = [NSString stringWithFormat:NSLocalizedString(@"%lu additional files queued", nil), (unsigned long)(_compressQueue.count+_decompressQueue.count)];
             }
         }
     }
@@ -3593,7 +3593,7 @@ static BOOL protectionAgainstReentry = NO;
         
         NSMutableArray* studies = [NSMutableArray arrayWithArray: [oldContext executeFetchRequest:dbRequest error:nil]];
         NSInteger studiesCount = studies.count;
-        thread.status = [NSString stringWithFormat:NSLocalizedString(@"Upgrading %d %@...", nil), studiesCount, (studiesCount != 1 ? NSLocalizedString(@"studies", nil) : NSLocalizedString(@"study", nil))];
+        thread.status = [NSString stringWithFormat:NSLocalizedString(@"Upgrading %ld %@...", nil), (long)studiesCount, (studiesCount != 1 ? NSLocalizedString(@"studies", nil) : NSLocalizedString(@"study", nil))];
         thread.progress = 0;
         //   [NSThread sleepForTimeInterval:2];
         
@@ -3858,7 +3858,7 @@ static BOOL protectionAgainstReentry = NO;
         [newAlbumsNames release];		newAlbumsNames = nil;
         
         if (upgradeProblems.count)
-            NSRunAlertPanel(NSLocalizedString(@"Database Upgrade", nil), NSLocalizedString(@"The upgrade encountered %d errors. These corrupted studies have been removed: %@", nil), nil, nil, nil, upgradeProblems.count, [upgradeProblems componentsJoinedByString:@", "]);
+            NSRunAlertPanel(NSLocalizedString(@"Database Upgrade", nil), NSLocalizedString(@"The upgrade encountered %lu errors. These corrupted studies have been removed: %@", nil), nil, nil, nil, (unsigned long)upgradeProblems.count, [upgradeProblems componentsJoinedByString:@", "]);
         
         return YES;
     } @catch (NSException* e) {

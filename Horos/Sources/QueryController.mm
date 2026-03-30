@@ -1030,7 +1030,7 @@ extern "C"
 	NSMutableArray *cellsString = [NSMutableArray array];
 	for( NSCell *cell in [modalityFilterMatrix cells])
 	{
-		if( [cell state] == NSOnState)
+		if( [cell state] == NSControlStateValueOn)
 			[cellsString addObject: [cell title]];
 	}
 	[presets setValue: cellsString forKey: @"modalityStrings"];
@@ -1228,7 +1228,7 @@ extern "C"
         for( NSCell *cell in [modalityFilterMatrix cells])
         {
             if( [[presets valueForKey: @"modalityStrings"] containsObject: cell.title])
-                [cell setState: NSOnState];
+                [cell setState: NSControlStateValueOn];
         }
     }
 	else if( [presets valueForKey: @"modalityFilterMatrixString"]) // Backward compatibility
@@ -1252,7 +1252,7 @@ extern "C"
                 for( NSCell *cell in [modalityFilterMatrix cells])
                 {
                     if( [cell.title isEqualToString: m[row][col]])
-                        [cell setState: NSOnState];
+                        [cell setState: NSControlStateValueOn];
                 }
             }
 			
@@ -2185,7 +2185,7 @@ extern "C"
 		for( NSCell *c in [modalityFilterMatrix cells])
 		{
 			if( [sender selectedCell] != c)
-				[c setState: NSOffState];
+				[c setState: NSControlStateValueOff];
 		}
 	}
 }
@@ -4114,7 +4114,7 @@ extern "C"
     NSMutableString *cellsString = [NSMutableString string];
 	for( NSCell *cell in [modalityFilterMatrix cells])
 	{
-		if( [cell state] == NSOnState)
+		if( [cell state] == NSControlStateValueOn)
 		{
 			NSInteger row, col;
 			
@@ -4484,7 +4484,7 @@ extern "C"
                 NSMenuItem *item = [tableHeaderContextMenu addItemWithTitle:title action:@selector(contextMenuSelected:) keyEquivalent:@""];
                 [item setTarget: self];
                 [item setRepresentedObject: column];
-                [item setState: cols ? NSOffState: NSOnState];
+                [item setState: cols ? NSControlStateValueOff: NSControlStateValueOn];
                 
                 if( cols)
                     [outlineView removeTableColumn:column]; // initially want to show all columns
@@ -4519,7 +4519,7 @@ extern "C"
             }
             else
             {
-                [item setState: NSOnState];
+                [item setState: NSControlStateValueOn];
                 column = [item representedObject];
                 
                 [column setWidth:[[colinfo objectForKey:@"width"] floatValue]];
@@ -4585,8 +4585,8 @@ extern "C"
 
 - (void)contextMenuSelected:(NSMenuItem*)sender
 {
-    BOOL on = ([sender state] == NSOnState);
-    [sender setState: on ? NSOffState : NSOnState];
+    BOOL on = ([sender state] == NSControlStateValueOn);
+    [sender setState: on ? NSControlStateValueOff : NSControlStateValueOn];
     
     NSTableColumn *column = [sender representedObject];
     

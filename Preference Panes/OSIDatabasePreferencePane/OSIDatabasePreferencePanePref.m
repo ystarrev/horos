@@ -432,9 +432,9 @@
 {
 	NSUserDefaults	*defaults = [NSUserDefaults standardUserDefaults];
 
-	if( [[olderType cellWithTag:0] state] == NSOffState && [[olderType cellWithTag:1] state] == NSOffState)
+	if( [[olderType cellWithTag:0] state] == NSControlStateValueOff && [[olderType cellWithTag:1] state] == NSControlStateValueOff)
 	{
-		[older setState: NSOffState];
+		[older setState: NSControlStateValueOff];
 	}
 	
 	[defaults setBool:[older state] forKey:@"AUTOCLEANINGDATE"];

@@ -46,7 +46,7 @@
 //		
 //		for( i = 0; i < 6; i++)
 //		{
-//			if( [[what cellWithTag: i] state] == NSOnState)
+//			if( [[what cellWithTag: i] state] == NSControlStateValueOn)
 //				message = [message stringByAppendingFormat:@" - What:%d", [[what cellWithTag: i] tag]];
 //		}
 //		

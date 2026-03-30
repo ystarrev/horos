@@ -173,14 +173,14 @@ NSRect DKCenterRect(NSRect smallRect, NSRect bigRect)
 
 	NSCellStateValue state = [self state];
 	switch (state) {
-		case NSOffState:
+		case NSControlStateValueOff:
 			//Far left. We're already there; don't do anything.
 			break;
-		case NSOnState:
+		case NSControlStateValueOn:
 			//Far right.
 			thumbFrame.origin.x += (cellFrame.size.width - thumbFrame.size.width);
 			break;
-		case NSMixedState:
+		case NSControlStateValueMixed:
 			//Middle.
 			thumbFrame.origin.x = (cellFrame.size.width / 2.0f) - (thumbFrame.size.width / 2.0f);
 			break;
@@ -466,32 +466,32 @@ NSRect DKCenterRect(NSRect smallRect, NSRect bigRect)
 
 			if ([self allowsMixedState]) {
 				if (xFraction < ONE_THIRD)
-					desiredState = NSOffState;
+					desiredState = NSControlStateValueOff;
 				else if (xFraction >= TWO_THIRDS)
-					desiredState = NSOnState;
+					desiredState = NSControlStateValueOn;
 				else
-					desiredState = NSMixedState;
+					desiredState = NSControlStateValueMixed;
 			} else {
 				if (xFraction < ONE_HALF)
-					desiredState = NSOffState;
+					desiredState = NSControlStateValueOff;
 				else
-					desiredState = NSOnState;
+					desiredState = NSControlStateValueOn;
 			}
 
 			//We actually need to set the state to the one *before* the one we want, because NSCell will advance it. I'm not sure how to thwart that without breaking -setNextState, which breaks AXPress and the space bar.
 			NSCellStateValue stateBeforeDesiredState;
 			switch (desiredState) {
-				case NSOnState:
+				case NSControlStateValueOn:
 					if ([self allowsMixedState]) {
-						stateBeforeDesiredState = NSMixedState;
+						stateBeforeDesiredState = NSControlStateValueMixed;
 						break;
 					}
 					//Fall through.
-				case NSMixedState:
-					stateBeforeDesiredState = NSOffState;
+				case NSControlStateValueMixed:
+					stateBeforeDesiredState = NSControlStateValueOff;
 					break;
-				case NSOffState:
-					stateBeforeDesiredState = NSOnState;
+				case NSControlStateValueOff:
+					stateBeforeDesiredState = NSControlStateValueOn;
 					break;
 			}
 

@@ -117,7 +117,7 @@
     size_t bytesPerRow = CVPixelBufferGetBytesPerRow(buffer);
     
     // context to draw in, set to pixel buffer's address
-    CGContextRef ctxt = CGBitmapContextCreate(rasterData, width, height, bitsPerComponent, bytesPerRow, cs, kCGImageAlphaNoneSkipFirst);
+    CGContextRef ctxt = CGBitmapContextCreate(rasterData, width, height, bitsPerComponent, bytesPerRow, cs, (CGBitmapInfo)kCGImageAlphaNoneSkipFirst);
     if(ctxt == NULL)
     {
         NSLog(@"******** CVPixelBufferFromNSImage : could not create context");

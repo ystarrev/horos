@@ -51,25 +51,25 @@ public:
   {
     switch (error)
     {
-      case charls::ApiResult::OK:
+      case charls::ApiResult::success:
         return EC_Normal;
-      case charls::ApiResult::UncompressedBufferTooSmall:
+      case charls::ApiResult::destination_buffer_too_small:
         return EC_JLSUncompressedBufferTooSmall;
-      case charls::ApiResult::CompressedBufferTooSmall:
+      case charls::ApiResult::source_buffer_too_small:
         return EC_JLSCompressedBufferTooSmall;
-      case charls::ApiResult::ImageTypeNotSupported:
+      case charls::ApiResult::encoding_not_supported:
         return EC_JLSCodecUnsupportedImageType;
-      case charls::ApiResult::InvalidJlsParameters:
+      case charls::ApiResult::invalid_argument:
         return EC_JLSCodecInvalidParameters;
-      case charls::ApiResult::ParameterValueNotSupported:
+      case charls::ApiResult::parameter_value_not_supported:
         return EC_JLSCodecUnsupportedValue;
-      case charls::ApiResult::InvalidCompressedData:
+      case charls::ApiResult::invalid_encoded_data:
         return EC_JLSInvalidCompressedData;
-      case charls::ApiResult::UnsupportedBitDepthForTransform:
+      case charls::ApiResult::bit_depth_for_transform_not_supported:
         return EC_JLSUnsupportedBitDepthForTransform;
-      case charls::ApiResult::UnsupportedColorTransform:
+      case charls::ApiResult::color_transform_not_supported:
         return EC_JLSUnsupportedColorTransform;
-      case charls::ApiResult::TooMuchCompressedData:
+      case charls::ApiResult::too_much_encoded_data:
         return EC_JLSTooMuchCompressedData;
       default:
         return EC_IllegalParameter;

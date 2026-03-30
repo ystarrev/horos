@@ -610,10 +610,10 @@ OFCondition DJLSEncoderBase::compressRawFrame(
 
   if (opt_use_custom_options)
   {
-    jls_params.custom.T1 = djcp->getT1();
-    jls_params.custom.T2 = djcp->getT2();
-    jls_params.custom.T3 = djcp->getT3();
-    jls_params.custom.RESET = djcp->getReset();
+    jls_params.custom.Threshold1 = djcp->getT1();
+    jls_params.custom.Threshold2 = djcp->getT2();
+    jls_params.custom.Threshold3 = djcp->getT3();
+    jls_params.custom.ResetValue = djcp->getReset();
     // not set: jls_params.custom.MAXVAL
     // MAXVAL is the maximum sample value in the image, it helps the compression
     // if it's used (I think...)
@@ -626,7 +626,7 @@ OFCondition DJLSEncoderBase::compressRawFrame(
   else
     return EC_IllegalCall;
 
-  enum charls::InterleaveMode ilv;
+  charls::InterleaveMode ilv;
   switch (planarConfiguration)
   {
     // ILV_LINE is not supported by DICOM
@@ -1041,10 +1041,10 @@ OFCondition DJLSEncoderBase::compressCookedFrame(
 
   if (opt_use_custom_options)
   {
-    jls_params.custom.T1 = djcp->getT1();
-    jls_params.custom.T2 = djcp->getT2();
-    jls_params.custom.T3 = djcp->getT3();
-    jls_params.custom.RESET = djcp->getReset();
+    jls_params.custom.Threshold1 = djcp->getT1();
+    jls_params.custom.Threshold2 = djcp->getT2();
+    jls_params.custom.Threshold3 = djcp->getT3();
+    jls_params.custom.ResetValue = djcp->getReset();
   }
 
   switch (djcp->getJplsInterleaveMode())

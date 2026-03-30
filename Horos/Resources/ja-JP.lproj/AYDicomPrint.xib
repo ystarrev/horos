@@ -677,7 +677,7 @@
                                         <binding destination="11" name="value" keyPath="selection.colorPrint" id="441"/>
                                     </connections>
                                 </button>
-                                <box misplaced="YES" title="Box" boxType="secondary" borderType="bezel" titlePosition="noTitle" translatesAutoresizingMaskIntoConstraints="NO" id="487">
+                                <box misplaced="YES" title="Box" borderType="bezel" titlePosition="noTitle" translatesAutoresizingMaskIntoConstraints="NO" id="487">
                                     <rect key="frame" x="222" y="9" width="527" height="106"/>
                                     <view key="contentView" id="NYc-bN-CyB">
                                         <rect key="frame" x="3" y="3" width="521" height="100"/>

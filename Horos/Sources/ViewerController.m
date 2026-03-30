@@ -138,6 +138,88 @@ extern ThumbnailsListPanel *thumbnailsListPanel[ MAXSCREENS];
 
 extern BOOL FULL32BITPIPELINE;
 
+@interface HorosToolbarFixedWidthView : NSView
+{
+    NSSize _toolbarSize;
+    NSView *_wrappedView;
+}
+
+- (id)initWithWrappedView:(NSView *)view size:(NSSize)size;
+
+@end
+
+@implementation HorosToolbarFixedWidthView
+
+- (id)initWithWrappedView:(NSView *)view size:(NSSize)size
+{
+    static const CGFloat kHorizontalPadding = 12.0;
+    static const CGFloat kVerticalPadding = 8.0;
+    static const CGFloat kWidthBoost = 8.0;
+    static const CGFloat kHeightBoost = 4.0;
+    static const CGFloat kVerticalOffset = -2.0;
+    
+    _toolbarSize = NSMakeSize(ceil(size.width + kHorizontalPadding), ceil(size.height + kVerticalPadding));
+    self = [super initWithFrame:NSMakeRect(0, 0, _toolbarSize.width, _toolbarSize.height)];
+    if (self)
+    {
+        _wrappedView = [view retain];
+        [self setAutoresizingMask:0];
+        [self setTranslatesAutoresizingMaskIntoConstraints:NO];
+        [self setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+        [self setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+        [self setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationVertical];
+        [self setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationVertical];
+        
+        [_wrappedView removeFromSuperviewWithoutNeedingDisplay];
+        [_wrappedView setAutoresizingMask:NSViewNotSizable];
+        [self addSubview:_wrappedView];
+        
+        NSRect wrappedFrame = NSMakeRect(floor((_toolbarSize.width - size.width - kWidthBoost) / 2.0),
+                                         floor((_toolbarSize.height - size.height - kHeightBoost) / 2.0) + kVerticalOffset,
+                                         ceil(size.width + kWidthBoost),
+                                         ceil(size.height + kHeightBoost));
+        [_wrappedView setFrame: wrappedFrame];
+    }
+    return self;
+}
+
+- (NSSize)intrinsicContentSize
+{
+    return _toolbarSize;
+}
+
+- (void)dealloc
+{
+    [_wrappedView release];
+    [super dealloc];
+}
+
+@end
+
+static NSView *HorosToolbarSizedView(NSView *view)
+{
+    if (!view)
+        return nil;
+    
+    if ([[view superview] isKindOfClass:[HorosToolbarFixedWidthView class]])
+        return [view superview];
+    
+    NSSize size = [view frame].size;
+    if (size.width < 1 || size.height < 1)
+        size = [view fittingSize];
+    if (size.width < 1)
+        size.width = 32;
+    if (size.height < 1)
+        size.height = 32;
+    
+    return [[[HorosToolbarFixedWidthView alloc] initWithWrappedView:view size:size] autorelease];
+}
+
+static void HorosSetToolbarItemSizedView(NSToolbarItem *toolbarItem, NSView *view)
+{
+    [toolbarItem setView:HorosToolbarSizedView(view)];
+}
+
 static	BOOL SYNCSERIES = NO, ViewBoundsDidChangeProtect = NO, recursiveCloseWindowsProtected = NO;
 
 static NSString* ViewerToolbarIdentifier				= @"Viewer Toolbar Identifier";
@@ -686,7 +768,7 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
     else if( [item action] == @selector( useVOILUT:))
     {
         if( imageView.curDCM.VOILUTApplied)
-            [item setState: NSOnState];
+            [item setState: NSControlStateValueOn];
         else
             [item setState: [[NSUserDefaults standardUserDefaults] boolForKey: @"UseVOILUT"]];
         
@@ -885,11 +967,11 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
     }
     else if( [item action] == @selector(roiSaveSeries:) || [item action] == @selector(roiSelectDeselectAll:) || [item action] == @selector(roiDeleteAll:) || [item action] == @selector(roiRename:) || [item action] == @selector(setROIsImagesKeyImages:))
     {
-        for( int y = 0; y < maxMovieIndex; y++)
+        for( int y = 0; y < maxMovieIndex && valid == NO; y++)
         {
             for( int x = 0; x < [pixList[ y] count]; x++)
             {
-                for( int i = 0; i < [[roiList[ y] objectAtIndex: x] count]; i++)
+                if( [[roiList[ y] objectAtIndex: x] count] > 0)
                 {
                     valid = YES;
                     break;
@@ -921,8 +1003,8 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
         int columns = [imageView columns];
         int tag =  ((rows - 1) * 4) + (columns - 1);
         
-        if( [item tag] == tag) [item setState:NSOnState];
-        else [item setState:NSOffState];
+        if( [item tag] == tag) [item setState:NSControlStateValueOn];
+        else [item setState:NSControlStateValueOff];
     }
     else if( [item action] == @selector(SyncSeries:))
     {
@@ -955,8 +1037,8 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
             }
         }
         
-        if( [item tag] == [imageView currentTool]) [item setState:NSOnState];
-        else [item setState:NSOffState];
+        if( [item tag] == [imageView currentTool]) [item setState:NSControlStateValueOn];
+        else [item setState:NSControlStateValueOff];
         
         if( [item image] == nil)
         {
@@ -968,22 +1050,22 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
     {
         valid = YES;
         
-        if( [[item title] isEqualToString: curCLUTMenu]) [item setState:NSOnState];
-        else [item setState:NSOffState];
+        if( [[item title] isEqualToString: curCLUTMenu]) [item setState:NSControlStateValueOn];
+        else [item setState:NSControlStateValueOff];
     }
     else if( [item action] == @selector(ApplyConv:))
     {
         valid = YES;
         
-        if( [[item title] isEqualToString: curConvMenu]) [item setState:NSOnState];
-        else [item setState:NSOffState];
+        if( [[item title] isEqualToString: curConvMenu]) [item setState:NSControlStateValueOn];
+        else [item setState:NSControlStateValueOff];
     }
     else if( [item action] == @selector(ApplyOpacity:))
     {
         valid = YES;
         
-        if( [[item title] isEqualToString: curOpacityMenu]) [item setState:NSOnState];
-        else [item setState:NSOffState];
+        if( [[item title] isEqualToString: curOpacityMenu]) [item setState:NSControlStateValueOn];
+        else [item setState:NSControlStateValueOff];
     }
     else if( [item action] == @selector(ApplyWLWW:))
     {
@@ -998,8 +1080,8 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
         
         @catch (NSException * e) {}
         
-        if( [str isEqualToString: curWLWWMenu] || [[item title] isEqualToString: curWLWWMenu]) [item setState:NSOnState];
-        else [item setState:NSOffState];
+        if( [str isEqualToString: curWLWWMenu] || [[item title] isEqualToString: curWLWWMenu]) [item setState:NSControlStateValueOn];
+        else [item setState:NSControlStateValueOff];
     }
     else valid = YES;
     
@@ -2471,7 +2553,7 @@ static volatile int numberOfThreadsForRelisce = 0;
         {
             [self checkEverythingLoaded];
             [self computeInterval];
-            if( previousFusionActivated == NSOnState)
+            if( previousFusionActivated == NSControlStateValueOn)
                 [self setFusionMode: previousFusion];
             [popFusion selectItemWithTag:previousFusion];
         }
@@ -6306,9 +6388,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setToolTip: NSLocalizedString(@"Change the frame rate speed", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: speedView];
-        [toolbarItem setMinSize:NSMakeSize(100, NSHeight([speedView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(200,NSHeight([speedView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, speedView);
         
         // By default, in text only mode, a custom items label will be shown as disabled text, but you can provide a
         // custom menu of your own by using <item> setMenuFormRepresentation]
@@ -6329,9 +6409,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setToolTip: NSLocalizedString(@"4D Series Controller", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: movieView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([movieView frame]), NSHeight([movieView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([movieView frame]),NSHeight([movieView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, movieView);
     }
     else if([itemIdent isEqualToString: SerieToolbarItemIdentifier]) {
         // Set up the standard properties
@@ -6340,9 +6418,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setToolTip: NSLocalizedString(@"Next/Previous Series", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: serieView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([serieView frame]), NSHeight([serieView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([serieView frame]),NSHeight([serieView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, serieView);
     }
     else if([itemIdent isEqualToString: PatientToolbarItemIdentifier]) {
         // Set up the standard properties
@@ -6351,9 +6427,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setToolTip: NSLocalizedString(@"Next/Previous Patient", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: patientView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([patientView frame]), NSHeight([patientView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([patientView frame]), NSHeight([patientView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, patientView);
     }
     else if([itemIdent isEqualToString: SubtractionToolbarItemIdentifier])
     {
@@ -6363,9 +6437,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setToolTip: NSLocalizedString(@"Subtraction module", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: subCtrlView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([subCtrlView frame]), NSHeight([subCtrlView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([subCtrlView frame]),NSHeight([subCtrlView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, subCtrlView);
     }
     else if([itemIdent isEqualToString: WLWWToolbarItemIdentifier]) {
         //	NSMenu *submenu = nil;
@@ -6377,9 +6449,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setToolTip: NSLocalizedString(@"Modify WL/WW & CLUT", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: WLWWView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, WLWWView);
         
         // Pulldown that doesnt change item
         //        [[wlwwPopup cell] setBezelStyle:NSSmallIconButtonBezelStyle];
@@ -6397,9 +6467,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setToolTip: NSLocalizedString(@"Apply a convolution filter", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: ConvView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([ConvView frame]), NSHeight([ConvView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([ConvView frame]), NSHeight([ConvView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, ConvView);
         
         [[convPopup cell] setUsesItemFromMenu:YES];
         //	[convPopup setMenu: convViewMenu];
@@ -6415,9 +6483,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setToolTip: NSLocalizedString(@"Change Thick Slab mode and number", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: FusionView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([FusionView frame]), NSHeight([FusionView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([FusionView frame]) + 200, NSHeight([FusionView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, FusionView);
     }
     else if([itemIdent isEqualToString: StatusToolbarItemIdentifier])
     {
@@ -6426,9 +6492,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setPaletteLabel: NSLocalizedString(@"Status & Comments", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: StatusView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([StatusView frame]), NSHeight([FusionView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([StatusView frame]), NSHeight([FusionView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, StatusView);
     }
     else if([itemIdent isEqualToString: BlendingToolbarItemIdentifier])
     {
@@ -6438,9 +6502,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setToolTip: NSLocalizedString(@"Fusion Mode and Percentage", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: BlendingView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([BlendingView frame]), NSHeight([BlendingView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([BlendingView frame]), NSHeight([BlendingView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, BlendingView);
     }
     else if([itemIdent isEqualToString: RGBFactorToolbarItemIdentifier])
     {
@@ -6449,9 +6511,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setPaletteLabel: NSLocalizedString(@"RGB Factors", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: RGBFactorsView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([RGBFactorsView frame]), NSHeight([RGBFactorsView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([RGBFactorsView frame]), NSHeight([RGBFactorsView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, RGBFactorsView);
     }
     else if([itemIdent isEqualToString: OrientationToolbarItemIdentifier])
     {
@@ -6460,9 +6520,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setPaletteLabel: NSLocalizedString(@"Orientation", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: orientationView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([orientationView frame]), NSHeight([orientationView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([orientationView frame]), NSHeight([orientationView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, orientationView);
     }
     else if([itemIdent isEqualToString: SeriesPopupToolbarItemIdentifier])
     {
@@ -6470,9 +6528,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setPaletteLabel: NSLocalizedString(@"Series Selection", nil)];
         [toolbarItem setToolTip: NSLocalizedString(@"Series Selection", nil)];
         
-        [toolbarItem setView: seriesPopupView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([seriesPopupView frame]), NSHeight([seriesPopupView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([seriesPopupView frame]), NSHeight([seriesPopupView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, seriesPopupView);
     }
     else if([itemIdent isEqualToString: WindowsTilingToolbarItemIdentifier])
     {
@@ -6481,9 +6537,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setPaletteLabel: NSLocalizedString(@"Windows Tiling", nil)];
         [toolbarItem setToolTip: NSLocalizedString(@"Windows Tiling", nil)];
         
-        [toolbarItem setView: windowsTiling];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([windowsTiling frame]), NSHeight([windowsTiling frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([windowsTiling frame]), NSHeight([windowsTiling frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, windowsTiling);
     }
     else if([itemIdent isEqualToString: AnnotationsToolbarItemIdentifier])
     {
@@ -6492,9 +6546,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setPaletteLabel: NSLocalizedString(@"Annotations", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: annotations];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([annotations frame]), NSHeight([annotations frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([annotations frame]), NSHeight([annotations frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, annotations);
     }
     else if([itemIdent isEqualToString: ShutterToolbarItemIdentifier])
     {
@@ -6503,9 +6555,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setPaletteLabel: NSLocalizedString(@"Shutter", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: shutterView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([shutterView frame]), NSHeight([shutterView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([shutterView frame]), NSHeight([shutterView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, shutterView);
     }
     else if([itemIdent isEqualToString: PropagateSettingsToolbarItemIdentifier])
     {
@@ -6514,9 +6564,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setPaletteLabel: NSLocalizedString(@"Propagate", nil)];
         [toolbarItem setToolTip: NSLocalizedString(@"Propagate settings (WL/WW, zoom, ...)", nil)];
         
-        [toolbarItem setView: propagateSettingsView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([propagateSettingsView frame]), NSHeight([propagateSettingsView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([propagateSettingsView frame]), NSHeight([propagateSettingsView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, propagateSettingsView);
     }
     else if([itemIdent isEqualToString: ReconstructionToolbarItemIdentifier])
     {
@@ -6526,9 +6574,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setToolTip: NSLocalizedString(@"2D/3D Reconstruction Tools", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: ReconstructionView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([ReconstructionView frame]), NSHeight([ReconstructionView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([ReconstructionView frame]), NSHeight([ReconstructionView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, ReconstructionView);
     }
     else if([itemIdent isEqualToString: KeyImagesToolbarItemIdentifier])
     {
@@ -6537,9 +6583,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setPaletteLabel: NSLocalizedString(@"Key Images", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: keyImages];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([keyImages frame]), NSHeight([keyImages frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([keyImages frame]), NSHeight([keyImages frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, keyImages);
     }
     else if([itemIdent isEqualToString: ToolsToolbarItemIdentifier]) {
         // Set up the standard properties
@@ -6548,9 +6592,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setToolTip: NSLocalizedString(@"Change the mouse button function", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: toolsView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([toolsView frame]), NSHeight([toolsView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([toolsView frame]),NSHeight([toolsView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, toolsView);
         
     }
     else if ([itemIdent isEqualToString: FlipVerticalToolbarItemIdentifier]) {
@@ -6603,9 +6645,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setPaletteLabel: NSLocalizedString(@"Display type", nil)];
         [toolbarItem setToolTip: NSLocalizedString(@"Display type", nil)];
         
-        [toolbarItem setView: display12bitToolbarItemView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([display12bitToolbarItemView frame]), NSHeight([display12bitToolbarItemView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([display12bitToolbarItemView frame]),NSHeight([display12bitToolbarItemView frame]))];
+        HorosSetToolbarItemSizedView(toolbarItem, display12bitToolbarItemView);
     }
     else if([itemIdent isEqualToString: CobbAngleToolbarItemIdentifier])
     {
@@ -6668,6 +6708,13 @@ static ViewerController *draggedController = nil;
             if( item)
                 toolbarItem = item;
         }
+    }
+
+    if( toolbarItem && [toolbarItem view] == nil && [toolbarItem image])
+    {
+        NSImage *toolbarImage = [[toolbarItem image] copy];
+        [toolbarImage setSize: NSMakeSize(32, 32)];
+        [toolbarItem setImage: [toolbarImage autorelease]];
     }
     
     //    [toolbarItem setMinSize: NSMakeSize( toolbarItem.minSize.width, 53)];
@@ -7034,7 +7081,7 @@ static ViewerController *draggedController = nil;
     
     NSRect shutterRect = NSMakeRect( 0, 0, 0, 0);
     
-    if ([shutterOnOff state] == NSOnState)
+    if ([shutterOnOff state] == NSControlStateValueOn)
     {
         // Find the first ROI selected for the current frame and copy the rectangle in shutterRect
         ROI *selectedROI = nil;
@@ -7062,7 +7109,7 @@ static ViewerController *draggedController = nil;
                 if (shutterRect.origin.y + shutterRect.size.height > p.pheight) shutterRect.size.height = p.pheight - shutterRect.origin.y;
                 
                 p.shutterRect = shutterRect;
-                p.shutterEnabled = NSOnState;
+                p.shutterEnabled = NSControlStateValueOn;
             }
         }
         else
@@ -7070,19 +7117,19 @@ static ViewerController *draggedController = nil;
             //using stored shutterRect?
             if( (curPix.shutterRect.size.width == 0 || (curPix.shutterRect.size.width == [curPix pwidth] && curPix.shutterRect.size.height == [curPix pheight])) && curPix.shutterPolygonal == nil)
             {
-                [shutterOnOff setState:NSOffState];
+                [shutterOnOff setState:NSControlStateValueOff];
                 
                 NSRunCriticalAlertPanel(NSLocalizedString(@"Shutter", nil), NSLocalizedString(@"Please first define a rectangle with a rectangular ROI.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             }
             else //reuse preconfigured shutterRect
             {
-                for( DCMPix *p in [imageView dcmPixList]) p.shutterEnabled = NSOnState;
+                for( DCMPix *p in [imageView dcmPixList]) p.shutterEnabled = NSControlStateValueOn;
             }
         }
     }
     else
     {
-        for( DCMPix *p in [imageView dcmPixList]) p.shutterEnabled = NSOffState;
+        for( DCMPix *p in [imageView dcmPixList]) p.shutterEnabled = NSControlStateValueOff;
     }
     [imageView setIndex: [imageView curImage]]; //refresh viewer only
 }
@@ -7200,6 +7247,8 @@ static ViewerController *draggedController = nil;
     [toolbar setAllowsUserCustomization: YES];
     [toolbar setAutosavesConfiguration: YES];
     [toolbar setShowsBaselineSeparator: NO];
+    [toolbar setDisplayMode: NSToolbarDisplayModeIconOnly];
+    [toolbar setSizeMode: NSToolbarSizeModeRegular];
     
     // We are the delegate
     [toolbar setDelegate: self];
@@ -8239,7 +8288,7 @@ static int avoidReentryRefreshDatabase = 0;
                 
                 [self ActivateBlending: nil];
                 [self clear8bitRepresentations];
-                [shutterOnOff setState:NSOffState];
+                [shutterOnOff setState:NSControlStateValueOff];
                 
                 [self setFusionMode: 0];
                 
@@ -8353,12 +8402,12 @@ static int avoidReentryRefreshDatabase = 0;
                         [slider setEnabled:YES];
                     }
                     
-                    [subCtrlOnOff setState: NSOffState];
+                    [subCtrlOnOff setState: NSControlStateValueOff];
                     [convPopup selectItemAtIndex:0];
                     [stacksFusion setIntValue: [[NSUserDefaults standardUserDefaults] integerForKey:@"stackThickness"]];
                     [sliderFusion setIntValue: [[NSUserDefaults standardUserDefaults] integerForKey:@"stackThickness"]];
                     [sliderFusion setEnabled:NO];
-                    [activatedFusion setState: NSOffState];
+                    [activatedFusion setState: NSControlStateValueOff];
                     
                     [movieRateSlider setEnabled: NO];
                     [moviePosSlider setEnabled: NO];
@@ -9874,7 +9923,7 @@ static int avoidReentryRefreshDatabase = 0;
     else
     {
         NSRunAlertPanel(NSLocalizedString(@"Subtraction", nil), NSLocalizedString(@"Subtraction works only for XA modality.", nil), nil, nil, nil);
-        [subCtrlOnOff setState: NSOffState];
+        [subCtrlOnOff setState: NSControlStateValueOff];
     }
 }
 
@@ -9908,7 +9957,7 @@ static int avoidReentryRefreshDatabase = 0;
         subCtrlMinMax.x = subCtrlMin;
         subCtrlMinMax.y = subCtrlMax;
         
-        [subCtrlOnOff setState: NSOnState]; //"on"
+        [subCtrlOnOff setState: NSControlStateValueOn]; //"on"
         [self subCtrlOnOff: subCtrlOnOff];//subtracts
     }
 }
@@ -9917,7 +9966,7 @@ static int avoidReentryRefreshDatabase = 0;
 {
     if( enableSubtraction)
     {
-        if ([subCtrlOnOff state] == NSOnState) //only when in subtraction mode
+        if ([subCtrlOnOff state] == NSControlStateValueOn) //only when in subtraction mode
         {
             subCtrlOffset = [[[imageView dcmPixList] objectAtIndex:[imageView curImage]] subPixOffset];
             
@@ -10007,133 +10056,133 @@ static int avoidReentryRefreshDatabase = 0;
             // On stronger than Off
             //----------------------------------------------------------------------------------  y=-2
         case 0://x=-2 (On On Off)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOnState];	[sc9 setState: NSOffState];	//Off
-            [sc4 setState: NSOnState];	[sc5 setState: NSOnState];	[sc6 setState: NSOnState];	//On
-            [sc1 setState: NSOnState];	[sc2 setState: NSOnState];	[sc3 setState: NSOnState];	//On
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOff];	//Off
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOn];	//On
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOn];	//On
             break;
         case 1://x=-1 (On Off Off)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOffState];	[sc9 setState: NSOffState];
-            [sc4 setState: NSOnState];	[sc5 setState: NSOnState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOnState];	[sc2 setState: NSOnState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOff];	[sc9 setState: NSControlStateValueOff];
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOn];
             break;
         case 4:// x=0 (Off Off Off)
-            [sc7 setState: NSOffState];	[sc8 setState: NSOffState];	[sc9 setState: NSOffState];
-            [sc4 setState: NSOnState];	[sc5 setState: NSOnState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOnState];	[sc2 setState: NSOnState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOff];	[sc8 setState: NSControlStateValueOff];	[sc9 setState: NSControlStateValueOff];
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOn];
             break;
         case 2://x=1
-            [sc7 setState: NSOffState];	[sc8 setState: NSOffState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOnState];	[sc5 setState: NSOnState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOnState];	[sc2 setState: NSOnState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOff];	[sc8 setState: NSControlStateValueOff];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOn];
             break;
         case 3:// x=2
-            [sc7 setState: NSOffState];	[sc8 setState: NSOnState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOnState];	[sc5 setState: NSOnState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOnState];	[sc2 setState: NSOnState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOff];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOn];
             
             break;//------------------------------------------------------------------------------y=-1
         case 5://x=-2 (On On Off)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOnState];	[sc9 setState: NSOffState];	//Off
-            [sc4 setState: NSOnState];	[sc5 setState: NSOnState];	[sc6 setState: NSOffState];	//Off
-            [sc1 setState: NSOnState];	[sc2 setState: NSOnState];	[sc3 setState: NSOnState];	//On
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOff];	//Off
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOff];	//Off
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOn];	//On
             break;
         case 6://x=-1 (On Off Off)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOffState];	[sc9 setState: NSOffState];
-            [sc4 setState: NSOnState];	[sc5 setState: NSOffState];	[sc6 setState: NSOffState];
-            [sc1 setState: NSOnState];	[sc2 setState: NSOnState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOff];	[sc9 setState: NSControlStateValueOff];
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOff];	[sc6 setState: NSControlStateValueOff];
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOn];
             break;
         case 9:// x=0 (Off Off Off)
-            [sc7 setState: NSOffState];	[sc8 setState: NSOffState];	[sc9 setState: NSOffState];
-            [sc4 setState: NSOffState];	[sc5 setState: NSOffState];	[sc6 setState: NSOffState];
-            [sc1 setState: NSOnState];	[sc2 setState: NSOnState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOff];	[sc8 setState: NSControlStateValueOff];	[sc9 setState: NSControlStateValueOff];
+            [sc4 setState: NSControlStateValueOff];	[sc5 setState: NSControlStateValueOff];	[sc6 setState: NSControlStateValueOff];
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOn];
             break;
         case 7://x=1 y=-1
-            [sc7 setState: NSOffState];	[sc8 setState: NSOffState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOffState];	[sc5 setState: NSOffState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOnState];	[sc2 setState: NSOnState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOff];	[sc8 setState: NSControlStateValueOff];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOff];	[sc5 setState: NSControlStateValueOff];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOn];
             break;
         case 8:// x=2 y=-1
-            [sc7 setState: NSOffState];	[sc8 setState: NSOnState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOffState];	[sc5 setState: NSOnState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOnState];	[sc2 setState: NSOnState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOff];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOff];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOn];
             
             break;//--------------------------------------------------------------------------------y=0
         case 20://x=-2 (On On Off)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOnState];	[sc9 setState: NSOffState];	//Off
-            [sc4 setState: NSOnState];	[sc5 setState: NSOnState];	[sc6 setState: NSOffState];	//Off
-            [sc1 setState: NSOnState];	[sc2 setState: NSOnState];	[sc3 setState: NSOffState];	//Off
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOff];	//Off
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOff];	//Off
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOff];	//Off
             break;
         case 21://x=-1 (On Off Off)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOffState];	[sc9 setState: NSOffState];
-            [sc4 setState: NSOnState];	[sc5 setState: NSOffState];	[sc6 setState: NSOffState];
-            [sc1 setState: NSOnState];	[sc2 setState: NSOffState];	[sc3 setState: NSOffState];
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOff];	[sc9 setState: NSControlStateValueOff];
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOff];	[sc6 setState: NSControlStateValueOff];
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOff];	[sc3 setState: NSControlStateValueOff];
             break;
         case 24:// x=0 (Off Off Off)
-            [sc7 setState: NSOffState];	[sc8 setState: NSOffState];	[sc9 setState: NSOffState];
-            [sc4 setState: NSOffState];	[sc5 setState: NSOffState];	[sc6 setState: NSOffState];
-            [sc1 setState: NSOffState];	[sc2 setState: NSOffState];	[sc3 setState: NSOffState];
+            [sc7 setState: NSControlStateValueOff];	[sc8 setState: NSControlStateValueOff];	[sc9 setState: NSControlStateValueOff];
+            [sc4 setState: NSControlStateValueOff];	[sc5 setState: NSControlStateValueOff];	[sc6 setState: NSControlStateValueOff];
+            [sc1 setState: NSControlStateValueOff];	[sc2 setState: NSControlStateValueOff];	[sc3 setState: NSControlStateValueOff];
             break;
         case 22://x=1 (Off Off On)
-            [sc7 setState: NSOffState];	[sc8 setState: NSOffState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOffState];	[sc5 setState: NSOffState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOffState];	[sc2 setState: NSOffState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOff];	[sc8 setState: NSControlStateValueOff];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOff];	[sc5 setState: NSControlStateValueOff];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOff];	[sc2 setState: NSControlStateValueOff];	[sc3 setState: NSControlStateValueOn];
             break;
         case 23:// x=2 (Off On On)
-            [sc7 setState: NSOffState];	[sc8 setState: NSOnState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOffState];	[sc5 setState: NSOnState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOffState];	[sc2 setState: NSOnState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOff];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOff];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOff];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOn];
             
             break;//-------------------------------------------------------------------------------y=1
         case 10://x=-2 (On On Off)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOnState];	[sc9 setState: NSOnState];	//On
-            [sc4 setState: NSOnState];	[sc5 setState: NSOnState];	[sc6 setState: NSOffState];	//Off
-            [sc1 setState: NSOnState];	[sc2 setState: NSOnState];	[sc3 setState: NSOffState];	//Off
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOn];	//On
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOff];	//Off
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOff];	//Off
             break;
         case 11://x=-1 (On Off Off)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOnState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOnState];	[sc5 setState: NSOffState];	[sc6 setState: NSOffState];
-            [sc1 setState: NSOnState];	[sc2 setState: NSOffState];	[sc3 setState: NSOffState];
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOff];	[sc6 setState: NSControlStateValueOff];
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOff];	[sc3 setState: NSControlStateValueOff];
             break;
         case 14:// x=0 (Off Off Off)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOnState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOffState];	[sc5 setState: NSOffState];	[sc6 setState: NSOffState];
-            [sc1 setState: NSOffState];	[sc2 setState: NSOffState];	[sc3 setState: NSOffState];
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOff];	[sc5 setState: NSControlStateValueOff];	[sc6 setState: NSControlStateValueOff];
+            [sc1 setState: NSControlStateValueOff];	[sc2 setState: NSControlStateValueOff];	[sc3 setState: NSControlStateValueOff];
             break;
         case 12://x=1 (Off Off On)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOnState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOffState];	[sc5 setState: NSOffState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOffState];	[sc2 setState: NSOffState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOff];	[sc5 setState: NSControlStateValueOff];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOff];	[sc2 setState: NSControlStateValueOff];	[sc3 setState: NSControlStateValueOn];
             break;
         case 13:// x=2 (Off On On)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOnState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOffState];	[sc5 setState: NSOnState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOffState];	[sc2 setState: NSOnState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOff];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOff];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOn];
             
             break;//------------------------------------------------------------------------------ y=2
         case 15://x=-2 (On On Off)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOnState];	[sc9 setState: NSOnState];	//On
-            [sc4 setState: NSOnState];	[sc5 setState: NSOnState];	[sc6 setState: NSOnState];	//On
-            [sc1 setState: NSOnState];	[sc2 setState: NSOnState];	[sc3 setState: NSOffState];	//Off
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOn];	//On
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOn];	//On
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOff];	//Off
             break;
         case 16://x=-1 (On Off Off)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOnState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOnState];	[sc5 setState: NSOnState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOnState];	[sc2 setState: NSOffState];	[sc3 setState: NSOffState];
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOn];	[sc2 setState: NSControlStateValueOff];	[sc3 setState: NSControlStateValueOff];
             break;
         case 19:// x=0 (Off Off Off)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOnState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOnState];	[sc5 setState: NSOnState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOffState];	[sc2 setState: NSOffState];	[sc3 setState: NSOffState];
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOff];	[sc2 setState: NSControlStateValueOff];	[sc3 setState: NSControlStateValueOff];
             break;
         case 17://x=1 (Off Off On)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOnState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOnState];	[sc5 setState: NSOnState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOffState];	[sc2 setState: NSOffState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOff];	[sc2 setState: NSControlStateValueOff];	[sc3 setState: NSControlStateValueOn];
             break;
         case 18:// x=2 (Off On On)
-            [sc7 setState: NSOnState];	[sc8 setState: NSOnState];	[sc9 setState: NSOnState];
-            [sc4 setState: NSOnState];	[sc5 setState: NSOnState];	[sc6 setState: NSOnState];
-            [sc1 setState: NSOffState];	[sc2 setState: NSOnState];	[sc3 setState: NSOnState];
+            [sc7 setState: NSControlStateValueOn];	[sc8 setState: NSControlStateValueOn];	[sc9 setState: NSControlStateValueOn];
+            [sc4 setState: NSControlStateValueOn];	[sc5 setState: NSControlStateValueOn];	[sc6 setState: NSControlStateValueOn];
+            [sc1 setState: NSControlStateValueOff];	[sc2 setState: NSControlStateValueOn];	[sc3 setState: NSControlStateValueOn];
             break;
     }
     
@@ -10143,7 +10192,7 @@ static int avoidReentryRefreshDatabase = 0;
 {
     if( enableSubtraction)
     {
-        if ([subCtrlOnOff state] == NSOnState) //only when in subtraction mode
+        if ([subCtrlOnOff state] == NSControlStateValueOn) //only when in subtraction mode
         {
             float	cwl, cww;
             [imageView getWLWW:&cwl :&cww];
@@ -10204,7 +10253,7 @@ static int avoidReentryRefreshDatabase = 0;
     
     if( [subCtrlSum intValue] <= 1)
     {
-        [activatedFusion setState: NSOffState];
+        [activatedFusion setState: NSControlStateValueOff];
         [sliderFusion setEnabled:NO];
     }
     
@@ -10217,7 +10266,7 @@ static int avoidReentryRefreshDatabase = 0;
 - (IBAction) subSharpen:(id) sender
 {
     if ([sender tag] == 30) [subCtrlSharpenButton  setState: ![subCtrlSharpenButton state]];
-    if ([subCtrlSharpenButton state] == NSOnState)	[self ApplyConvString:@"Sharpen 5x5"];
+    if ([subCtrlSharpenButton state] == NSControlStateValueOn)	[self ApplyConvString:@"Sharpen 5x5"];
     else [self ApplyConvString:NSLocalizedString(@"No Filter", nil)];
 }
 
@@ -10422,7 +10471,7 @@ static int avoidReentryRefreshDatabase = 0;
     
     [imageView sendSyncMessage: 0];
     
-    if( activatedFusionState == NSOnState)
+    if( activatedFusionState == NSControlStateValueOn)
         [self setFusionMode: previousFusion];
     
     imageView.drawing = YES;
@@ -12416,12 +12465,12 @@ static float oldsetww, oldsetwl;
     
     if( m == 0)
     {
-        [activatedFusion setState: NSOffState];
+        [activatedFusion setState: NSControlStateValueOff];
         [sliderFusion setEnabled:NO];
     }
     else
     {
-        [activatedFusion setState: NSOnState];
+        [activatedFusion setState: NSControlStateValueOn];
         [sliderFusion setEnabled:YES];
     }
     
@@ -12436,7 +12485,7 @@ static float oldsetww, oldsetwl;
 
 - (void) activateFusion:(id) sender
 {
-    if( [sender state] == NSOffState)
+    if( [sender state] == NSControlStateValueOff)
         [self setFusionMode: 0];
     else
         [self setFusionMode: [[popFusion selectedItem] tag]];
@@ -14433,10 +14482,10 @@ static float oldsetww, oldsetwl;
     
     float minValue = -FLT_MAX;
     float maxValue = FLT_MAX;
-    if( [checkMaxValue state] == NSOnState) maxValue = [maxValueText floatValue];
-    if( [checkMinValue state] == NSOnState) minValue = [minValueText floatValue];
+    if( [checkMaxValue state] == NSControlStateValueOn) maxValue = [maxValueText floatValue];
+    if( [checkMinValue state] == NSControlStateValueOn) minValue = [minValueText floatValue];
     
-    BOOL propagateIn4D = [setROI4DSeries state] == NSOnState;
+    BOOL propagateIn4D = [setROI4DSeries state] == NSControlStateValueOn;
     
     float newValue = [newValueText floatValue];
     BOOL revertToSaved = [newValueMatrix selectedTag];
@@ -15763,7 +15812,7 @@ static float oldsetww, oldsetwl;
         
         WaitRendering	*wait = [[WaitRendering alloc] init: NSLocalizedString(@"Processing...",nil)];
         [wait showWindow:self];
-        if ([brushROIFilterOptionsAllWithSameName state]==NSOffState)
+        if ([brushROIFilterOptionsAllWithSameName state]==NSControlStateValueOff)
         {
             [self applyMorphology: [NSArray arrayWithObject:selectedROI] action:morphoFunction radius: [structuringElementRadiusSlider intValue] sendNotification:YES];
         }
@@ -17659,7 +17708,7 @@ static float oldsetww, oldsetwl;
         if( [imageView flippedData]) val -= direction;
         else val += direction;
         
-        if( [loopButton state] == NSOnState)
+        if( [loopButton state] == NSControlStateValueOn)
         {
             if( val < 0) val = (long)[pixList[ curMovieIndex] count]-1;
             if( val >= [pixList[ curMovieIndex] count]) val = 0;
@@ -18498,22 +18547,22 @@ static float oldsetww, oldsetwl;
     {
         [printLayout selectItemWithTitle: [p valueForKey: @"layout"]];
         
-        if( [p valueForKey: @"comments"]) [[printSettings cellWithTag: 2] setState: NSOnState];
-        else [[printSettings cellWithTag: 2] setState: NSOffState];
+        if( [p valueForKey: @"comments"]) [[printSettings cellWithTag: 2] setState: NSControlStateValueOn];
+        else [[printSettings cellWithTag: 2] setState: NSControlStateValueOff];
         
-        if( [p valueForKey: @"patientInfo"]) [[printSettings cellWithTag: 0] setState: NSOnState];
-        else [[printSettings cellWithTag: 0] setState: NSOffState];
+        if( [p valueForKey: @"patientInfo"]) [[printSettings cellWithTag: 0] setState: NSControlStateValueOn];
+        else [[printSettings cellWithTag: 0] setState: NSControlStateValueOff];
         
-        if( [p valueForKey: @"studyInfo"]) [[printSettings cellWithTag: 1] setState: NSOnState];
-        else [[printSettings cellWithTag: 1] setState: NSOffState];
+        if( [p valueForKey: @"studyInfo"]) [[printSettings cellWithTag: 1] setState: NSControlStateValueOn];
+        else [[printSettings cellWithTag: 1] setState: NSControlStateValueOff];
         
         if( imageView.whiteBackground || ([[p valueForKey: @"backgroundColor"] boolValue] &&
                                           [[p valueForKey: @"backgroundColorR"] floatValue] == 1 &&
                                           [[p valueForKey: @"backgroundColorG"] floatValue] == 1 &&
                                           [[p valueForKey: @"backgroundColorB"] floatValue] == 1))
-            [[printSettings cellWithTag: 3] setState: NSOnState];
+            [[printSettings cellWithTag: 3] setState: NSControlStateValueOn];
         else
-            [[printSettings cellWithTag: 3] setState: NSOffState];
+            [[printSettings cellWithTag: 3] setState: NSControlStateValueOff];
         
         [printFormat selectCellWithTag: [[p valueForKey: @"format"] intValue]];
         [printInterval setIntValue: [[p valueForKey: @"interval"] intValue]];
@@ -18803,7 +18852,7 @@ static float oldsetww, oldsetwl;
 
 - (void) exportQuicktime:(id) sender
 {
-    [quicktimeAllViewers setState: NSOffState];
+    [quicktimeAllViewers setState: NSControlStateValueOff];
     
     if( [[[imageView seriesObj] valueForKey: @"keyImages"] count]) [[quicktimeMode cellWithTag: 3] setEnabled: YES];
     else [[quicktimeMode cellWithTag: 3] setEnabled: NO];
@@ -19324,7 +19373,7 @@ static float oldsetww, oldsetwl;
 
 - (IBAction) exportDICOMAllViewers:(id) sender
 {
-    if( [dcmAllViewers state] == NSOnState)
+    if( [dcmAllViewers state] == NSControlStateValueOn)
     {
         [dcmFormat selectCellWithTag: 1];	// Always screen capture
         [dcmFormat setEnabled: NO];
@@ -19378,7 +19427,7 @@ static float oldsetww, oldsetwl;
 - (void) exportDICOMFile:(id) sender
 {
     [dcmFormat setEnabled: YES];
-    [dcmAllViewers setState: NSOffState];
+    [dcmAllViewers setState: NSControlStateValueOff];
     
     if( [[imageView curDCM] isRGB] || [self subtractionActivated])
     {
@@ -19502,7 +19551,7 @@ static float oldsetww, oldsetwl;
 {
     [imageView flagsChanged];	// If shift key was pressed, hiding the ROI data	apple-shift-E
     
-    [imageAllViewers setState: NSOffState];
+    [imageAllViewers setState: NSControlStateValueOff];
     
     if( [[ViewerController getDisplayed2DViewers] count] > 1) [imageAllViewers setEnabled: YES];
     else [imageAllViewers setEnabled: NO];
@@ -20476,7 +20525,7 @@ static float oldsetww, oldsetwl;
         {
             if( [imageView flippedData])
             {
-                if( error) *error = [NSString stringWithFormat: NSLocalizedString(@"Only ONE ROI per image supported! (im: %d)", nil), [pixList[curMovieIndex] count] -x];
+                if( error) *error = [NSString stringWithFormat: NSLocalizedString(@"Only ONE ROI per image supported! (im: %lu)", nil), (unsigned long)([pixList[curMovieIndex] count] -x)];
             }
             else
             {
@@ -22364,7 +22413,7 @@ static float oldsetww, oldsetwl;
      {
      if( [fileList[ curMovieIndex] objectAtIndex: 0] == [fileList[ curMovieIndex] lastObject])
      {
-     [keyImageCheck setState: NSOffState];
+     [keyImageCheck setState: NSControlStateValueOff];
      [keyImageCheck setEnabled: NO];
      //			[keyImageDisplay setEnabled: NO];
      [keyImagePopUpButton setEnabled: NO];
@@ -22382,11 +22431,11 @@ static float oldsetww, oldsetwl;
     // Update Key Image check box
     if( [imageView curImage] >= 0 && [[[fileList[curMovieIndex] objectAtIndex:[imageView curImage]] valueForKey:@"isKeyImage"] boolValue] == YES)
     {
-        [keyImageCheck setState: NSOnState];
+        [keyImageCheck setState: NSControlStateValueOn];
     }
     else
     {
-        [keyImageCheck setState: NSOffState];
+        [keyImageCheck setState: NSControlStateValueOff];
     }
 }
 
@@ -22586,9 +22635,7 @@ static float oldsetww, oldsetwl;
     if (!studySelected.reportURL && templatesArray.count > 1)
     {
         [reportTemplatesImageView setImage:[self reportIcon]];
-        [item setView:reportTemplatesView];
-        [item setMinSize:NSMakeSize(NSWidth([reportTemplatesView frame]), NSHeight([reportTemplatesView frame]))];
-        [item setMaxSize:NSMakeSize(NSWidth([reportTemplatesView frame]), NSHeight([reportTemplatesView frame]))];
+        HorosSetToolbarItemSizedView(item, reportTemplatesView);
     }
     else
     {
@@ -22735,7 +22782,7 @@ static float oldsetww, oldsetwl;
     {
         NSArray *menuItems = [[sender menu] itemArray];
         for(item in menuItems)
-            [item setState:NSOffState];
+            [item setState:NSControlStateValueOff];
         tag = [(NSMenuItem *)sender tag];
     }
     
@@ -22869,4 +22916,3 @@ static float oldsetww, oldsetwl;
 
 
 @end
-

@@ -14,6 +14,7 @@ install_dir="$TARGET_TEMP_DIR/Install"
 
 mkdir -p "$cmake_dir"; cd "$cmake_dir"
 if [ -e Makefile -a -f .cmakehash ] && [ "$(cat '.cmakehash')" = "$hash" ]; then
+    touch "$TARGET_TEMP_DIR/CMake.stamp"
     exit 0
 fi
 
@@ -32,7 +33,7 @@ rm -Rf "$cmake_dir.tmp" "$install_dir.tmp"
 mkdir -p "$cmake_dir"
 
 export CC=clang
-export CXX=clang
+export CXX=clang++
 
 archs=$(printf '%s' "$ARCHS" | tr ' ' ';')
 if [ -z "$archs" ]; then
@@ -44,7 +45,10 @@ cxxfs=($OTHER_CPLUSPLUSFLAGS)
 ldfs=($OTHER_LDFLAGS)
 
 args+=(-DBUILD_SHARED_LIBS=OFF)
-args+=(-DBUILD_TESTING=OFF)
+args+=(-DCHARLS_BUILD_TESTS=OFF)
+args+=(-DCHARLS_BUILD_FUZZ_TEST=OFF)
+args+=(-DCHARLS_BUILD_SAMPLES=OFF)
+args+=(-DCHARLS_INSTALL=ON)
 args+=(-DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
 args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
@@ -52,12 +56,6 @@ args+=(-DCMAKE_OSX_ARCHITECTURES="$archs")
 args+=(-DCMAKE_INSTALL_PREFIX="$install_dir")
 
 args+=(-DCMAKE_IGNORE_PATH="/opt/local/include;/opt/local/lib")
-
-if [ ! -z "$CLANG_CXX_LIBRARY" ] && [ "$CLANG_CXX_LIBRARY" != 'compiler-default' ]; then
-#  args+=(-DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY="$CLANG_CXX_LIBRARY")
-    cxxfs+=(-stdlib="$CLANG_CXX_LIBRARY")
-    ldfs+=(-lc++)
-fi
 
 if [ ! -z "$CLANG_CXX_LANGUAGE_STANDARD" ]; then
 #    args+=(-DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="$CLANG_CXX_LANGUAGE_STANDARD")
@@ -80,5 +78,6 @@ cmake "${args[@]}"
 
 echo "$hash" > "$cmake_dir/.cmakehash"
 echo "$env" > "$cmake_dir/.cmakeenv"
+touch "$TARGET_TEMP_DIR/CMake.stamp"
 
 exit 0

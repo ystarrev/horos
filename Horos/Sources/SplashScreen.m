@@ -43,6 +43,14 @@
 #include <mach/host_info.h>
 #include <mach/machine.h>
 #include <sys/sysctl.h>
+#import <WebKit/WebKit.h>
+
+@interface SplashScreen ()
+@property(retain) WKWebView *aboutContentWebView;
+@property(retain) WKWebView *partnersContentWebView;
+@property(retain) WKWebView *releaseNotesContentWebView;
+@end
+
 
 //BOOL IsPPC()
 //
@@ -126,56 +134,32 @@ BOOL useQuartz() {
 }
 @implementation SplashScreen
 
+@synthesize aboutContentWebView;
+@synthesize partnersContentWebView;
+@synthesize releaseNotesContentWebView;
+
+- (WKWebView*)configuredSplashWebViewForContainer:(NSView*)container relativePath:(NSString*)relativePath
+{
+    WKWebViewConfiguration *configuration = [[[WKWebViewConfiguration alloc] init] autorelease];
+    WKPreferences *preferences = [[[WKPreferences alloc] init] autorelease];
+    [preferences setJavaScriptCanOpenWindowsAutomatically:NO];
+    [configuration setPreferences:preferences];
+    WKWebView *webView = [[[WKWebView alloc] initWithFrame:[container bounds] configuration:configuration] autorelease];
+    [webView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+    [container addSubview:webView];
+
+    NSURL *resourceURL = [[NSBundle mainBundle] resourceURL];
+    NSURL *htmlURL = [resourceURL URLByAppendingPathComponent:[@"Splash/" stringByAppendingString:relativePath]];
+    [webView loadFileURL:htmlURL allowingReadAccessToURL:[resourceURL URLByAppendingPathComponent:@"Splash"]];
+
+    return webView;
+}
 
 - (void) awakeFromNib
 {
-    {
-        WebFrame * mf = [aboutWebView mainFrame];
-        
-        NSString* resourceURLString = [[[NSBundle mainBundle] resourceURL] absoluteString];
-        NSURL *theURL = [NSURL URLWithString:[NSString stringWithFormat:@"%@Splash/about.html",resourceURLString]];
-        NSURLRequest * theURLRequest = [NSURLRequest requestWithURL:theURL];
-        [mf loadRequest:theURLRequest];;
-        
-        //TODO - Try to load remotely, and in case if fails, load locally
-        
-        //theURL = [NSURL URLWithString:@"http://127.0.0.1:8887/about.html"];
-        //theURLRequest = [NSURLRequest requestWithURL:theURL];
-        //[mf loadRequest:theURLRequest];;
-    }
-    
-    
-    {
-        WebFrame * mf = [releaseNotesWebView mainFrame];
-        
-        NSString* resourceURLString = [[[NSBundle mainBundle] resourceURL] absoluteString];
-        NSURL *theURL = [NSURL URLWithString:[NSString stringWithFormat:@"%@Splash/releasenotes.html",resourceURLString]];
-        NSURLRequest * theURLRequest = [NSURLRequest requestWithURL:theURL];
-        [mf loadRequest:theURLRequest];;
-        
-        //TODO - Try to load remotely, and in case if fails, load locally
-        
-        //theURL = [NSURL URLWithString:@"http://127.0.0.1:8887/releasenotes.html"];
-        //theURLRequest = [NSURLRequest requestWithURL:theURL];
-        //[mf loadRequest:theURLRequest];;
-    }
-    
-    
-    {
-        WebFrame * mf = [partnersWebView mainFrame];
-        
-        NSString* resourceURLString = [[[NSBundle mainBundle] resourceURL] absoluteString];
-        NSURL *theURL = [NSURL URLWithString:[NSString stringWithFormat:@"%@Splash/partners.html",resourceURLString]];
-        NSURLRequest * theURLRequest = [NSURLRequest requestWithURL:theURL];
-        [mf loadRequest:theURLRequest];;
-        
-        //TODO - Try to load remotely, and in case if fails, load locally
-        
-        //theURL = [NSURL URLWithString:@"http://127.0.0.1:8887/partners.html"];
-        //theURLRequest = [NSURLRequest requestWithURL:theURL];
-        //[mf loadRequest:theURLRequest];;
-    }
-  
+    self.aboutContentWebView = [self configuredSplashWebViewForContainer:aboutWebView relativePath:@"about.html"];
+    self.releaseNotesContentWebView = [self configuredSplashWebViewForContainer:releaseNotesWebView relativePath:@"releasenotes.html"];
+    self.partnersContentWebView = [self configuredSplashWebViewForContainer:partnersWebView relativePath:@"partners.html"];
     self.window.level = NSFloatingWindowLevel;
 }
 

@@ -47,7 +47,7 @@ extern BOOL USETOOLBARPANEL;
 
 //static int MacOSVersion109orHigher = -1;
 
-static int fixedHeight = 100;
+static int fixedHeight = 60;
 
 @implementation ToolbarPanelController
 
@@ -88,11 +88,17 @@ static int fixedHeight = 100;
 {
 	NSRect screenRect = [viewer.window.screen visibleFrame];
 	
+    NSRect frame = self.window.frame;
+    NSRect layoutRect = self.window.contentLayoutRect;
+    CGFloat measuredHeight = NSHeight(frame) - NSMinY(layoutRect);
+    if( measuredHeight < 44)
+        measuredHeight = [self fixedHeight];
+
 	NSRect dstframe;
-	dstframe.size.height = [self fixedHeight];
+	dstframe.size.height = ceil(measuredHeight);
 	dstframe.size.width = screenRect.size.width;
 	dstframe.origin.x = screenRect.origin.x;
-	dstframe.origin.y = screenRect.origin.y + screenRect.size.height - dstframe.size.height + [ToolbarPanelController hiddenHeight];
+	dstframe.origin.y = screenRect.origin.y + screenRect.size.height - dstframe.size.height + 4;
 	
     if( NSEqualRects( dstframe, self.window.frame) == NO)
         [[self window] setFrame:dstframe display:YES];
@@ -105,7 +111,7 @@ static int fixedHeight = 100;
 		toolbar = [t retain];
         viewer = [v retain];
 
-        self.window.toolbarStyle = NSWindowToolbarStyleExpanded;
+        self.window.toolbarStyle = NSWindowToolbarStyleAutomatic;
 		
         [[self window] setAnimationBehavior: NSWindowAnimationBehaviorNone];
         [[self window] setToolbar: toolbar];

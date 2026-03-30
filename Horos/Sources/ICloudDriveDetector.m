@@ -287,7 +287,7 @@ static NSString* purgedDatabasePath = nil;
     [alert setInformativeText:[NSString stringWithFormat:@"Your Horos database and image files will be moved from \"%@\" to \"%@\". Horos will be restarted after this operation is concluded.",databasePath,nosyncPath]];
     [alert addButtonWithTitle:@"Continue"];
     [alert addButtonWithTitle:@"Cancel"];
-    [alert setAlertStyle:NSWarningAlertStyle];
+    [alert setAlertStyle:NSAlertStyleWarning];
     
     [alert beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse returnCode)
     {

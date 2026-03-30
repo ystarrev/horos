@@ -16,6 +16,7 @@ install_dir="$TARGET_TEMP_DIR/Install"
 
 mkdir -p "$cmake_dir"; cd "$cmake_dir"
 if [ -e Makefile -a -f .cmakehash ] && [ "$(cat '.cmakehash')" = "$hash" ]; then
+    touch "$TARGET_TEMP_DIR/Config.stamp"
     exit 0
 fi
 
@@ -28,6 +29,8 @@ fi
 
 command -v pkg-config >/dev/null 2>&1 || { echo >&2 "error: building $TARGET_NAME requires pkg-config. Please install pkg-config. Aborting."; exit 1; }
 
+# Clean stale temp paths first; they can exist as files or dirs from aborted runs.
+rm -Rf "$cmake_dir.tmp" "$install_dir.tmp"
 mv "$cmake_dir" "$cmake_dir.tmp"
 [ -d "$install_dir" ] && mv "$install_dir" "$install_dir.tmp"
 rm -Rf "$cmake_dir.tmp" "$install_dir.tmp"
@@ -94,5 +97,6 @@ fi
 
 echo "$hash" > "$cmake_dir/.cmakehash"
 echo "$env" > "$cmake_dir/.cmakeenv"
+touch "$TARGET_TEMP_DIR/Config.stamp"
 
 exit 0

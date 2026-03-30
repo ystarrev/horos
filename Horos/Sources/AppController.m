@@ -429,7 +429,7 @@ NSString* documentsDirectoryFor(int mode, NSString *url) { // __deprecated
 	return [DicomDatabase baseDirPathForMode:mode path:url];
 }
 
-NSString* documentsDirectory() { // __deprecated
+NSString* documentsDirectory(void) { // __deprecated
 	return [DicomDatabase defaultBaseDirPath];
 }
 
@@ -509,7 +509,7 @@ int dictSort(id num1, id num2, void *context)
 
 //———————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
-NSRect screenFrame()
+NSRect screenFrame(void)
 {
 	int i = 0;
 	float height = 0.0;
@@ -4787,16 +4787,16 @@ static BOOL initialized = NO;
             if( study == nil || study.isDeleted)
             {
                 [item setEnabled: NO];
-                [item setState: NSOffState];
+                [item setState: NSControlStateValueOff];
             }
             else
             {
                 [item setEnabled: YES];
                 
                 if( [[[[ViewerController getDisplayed2DViewers] valueForKey: @"currentStudy"] valueForKey: @"objectID"] containsObject: item.representedObject])
-                    [item setState: NSOnState];
+                    [item setState: NSControlStateValueOn];
                 else
-                    [item setState: NSOffState];
+                    [item setState: NSControlStateValueOff];
             }
         }
         return YES;
@@ -4806,9 +4806,9 @@ static BOOL initialized = NO;
 		if( [item action] == @selector(setFixedTilingColumns:))
 		{
 		   if( [item tag] == lastColumns && [item tag] <= [[ViewerController getDisplayed2DViewers] count])
-				[item setState: NSOnState];
+				[item setState: NSControlStateValueOn];
 			else
-				[item setState: NSOffState];
+				[item setState: NSControlStateValueOff];
 		}
 		
 		if( [item action] == @selector(autoQueryRefresh:))
@@ -4824,9 +4824,9 @@ static BOOL initialized = NO;
 		if( [item action] == @selector(setFixedTilingRows:))
 		{
 			if( [item tag] == lastRows && [item tag] <= [[ViewerController getDisplayed2DViewers] count])
-				[item setState: NSOnState];
+				[item setState: NSControlStateValueOn];
 			else
-			   [item setState: NSOffState];
+			   [item setState: NSControlStateValueOff];
 		}
 		
 		if( [item tag] > [[ViewerController getDisplayed2DViewers] count])

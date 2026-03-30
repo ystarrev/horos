@@ -52,7 +52,6 @@
 #import "N2Debug.h"
 #import "DicomDatabase.h"
 #import "ROI.h"
-#import <vtkConfigure.h>
 
 #define D2R 0.01745329251994329576923690768    // degrees to radians
 #define R2D 57.2957795130823208767981548141    // radians to degrees
@@ -907,7 +906,7 @@
 	// loop through the cells
 	for (int j = 0;  j < ncells; j++) {
 		vtkIdType numPoints;
-		vtkIdType *cellPoints ;
+		const vtkIdType *cellPoints ;
 		vtkIdType cellId = cellIds->GetId(j);
 		//get all points for the cell
 		data->GetCellPoints(cellId, numPoints, cellPoints);				

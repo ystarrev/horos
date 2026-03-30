@@ -236,20 +236,20 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 {
 //	if( blendingController)
 //	{
-//		if( [bcor state] == NSOnState) aRenderer->RemoveActor(blendingCoronal);
-//		if( [bsag state] == NSOnState) aRenderer->RemoveActor(blendingSaggital);
-//		if( [bax state] == NSOffState) aRenderer->AddActor(blendingAxial);
+//		if( [bcor state] == NSControlStateValueOn) aRenderer->RemoveActor(blendingCoronal);
+//		if( [bsag state] == NSControlStateValueOn) aRenderer->RemoveActor(blendingSaggital);
+//		if( [bax state] == NSControlStateValueOff) aRenderer->AddActor(blendingAxial);
 //	}
 //	else
 //	{
-//		if( [bcor state] == NSOnState) aRenderer->RemoveActor(coronal);
-//		if( [bsag state] == NSOnState) aRenderer->RemoveActor(saggital);
-//		if( [bax state] == NSOffState) aRenderer->AddActor(axial);
+//		if( [bcor state] == NSControlStateValueOn) aRenderer->RemoveActor(coronal);
+//		if( [bsag state] == NSControlStateValueOn) aRenderer->RemoveActor(saggital);
+//		if( [bax state] == NSControlStateValueOff) aRenderer->AddActor(axial);
 //	}
 //	
-//	[bcor setState:NSOffState];
-//	[bsag setState:NSOffState];
-//	[bax setState:NSOnState];
+//	[bcor setState:NSControlStateValueOff];
+//	[bsag setState:NSControlStateValueOff];
+//	[bax setState:NSControlStateValueOn];
 	
 	aCamera->SetFocalPoint (0, 0, 0);
 	aCamera->SetPosition (0, 0, -1);
@@ -1381,7 +1381,7 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 	NSLog(@"start");
 	
 	thickSlabGap = [[sender selectedItem] tag];
-//	[sender setState:NSOnState];
+//	[sender setState:NSControlStateValueOn];
 	
 	NSLog(@"Gap: %2.2f", thickSlabGap);
 	
@@ -1402,7 +1402,7 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 
 - (IBAction) setThickSlabActivated: (id) sender
 {
-	if( [activatedThickSlab state] == NSOnState)
+	if( [activatedThickSlab state] == NSControlStateValueOn)
 	{
 		[self setThickSlabMode: thickSlabPopUp];
 		[sliderThickSlab setEnabled: YES];
@@ -1418,7 +1418,7 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 {
 	thickSlabMode = [[thickSlabPopUp selectedItem] tag];
 	
-	if([activatedThickSlab state] == NSOffState)
+	if([activatedThickSlab state] == NSControlStateValueOff)
 		thickSlabMode = 0;
 	
 	[finalView setSlab:[self thickSlab]];

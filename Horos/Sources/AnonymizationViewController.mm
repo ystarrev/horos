@@ -292,7 +292,7 @@ NSInteger CompareArraysByNameOfDCMAttributeTagAtIndexZero(id arg1, id arg2, void
 		[self addTag:tag];
 		id value = tagValue.count>1? [tagValue objectAtIndex:1] : NULL;
 		NSButton* checkBox = [self.tagsView checkBoxForObject:tag];
-		[checkBox setState: value? NSOnState : NSOffState];
+		[checkBox setState: value? NSControlStateValueOn : NSControlStateValueOff];
 		NSTextField* textField = [self.tagsView textFieldForObject:tag];
 		
 		if (!value || [value isKindOfClass:[NSString class]])
@@ -307,7 +307,7 @@ NSInteger CompareArraysByNameOfDCMAttributeTagAtIndexZero(id arg1, id arg2, void
 	}
 	
 	for (DCMAttributeTag* tag in zeroTags) {
-		[[self.tagsView checkBoxForObject:tag] setState:NSOffState];
+		[[self.tagsView checkBoxForObject:tag] setState:NSControlStateValueOff];
 		[[self.tagsView textFieldForObject:tag] setStringValue:@""];
 	}
 	

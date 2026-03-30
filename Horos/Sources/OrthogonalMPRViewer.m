@@ -528,7 +528,7 @@ static SyncSeriesScope globalSyncSeriesScope;
 
 - (IBAction) activateThickSlab : (id) sender
 {
-    if( [thickSlabActivated state] == NSOnState)
+    if( [thickSlabActivated state] == NSControlStateValueOn)
     {
         [self setThickSlabMode: thickSlabPopup];
     }
@@ -540,7 +540,7 @@ static SyncSeriesScope globalSyncSeriesScope;
 
 -(IBAction) setThickSlabMode : (id) sender
 {
-    if( [thickSlabActivated state] == NSOffState)
+    if( [thickSlabActivated state] == NSControlStateValueOff)
     {
         [thickSlabSlider setEnabled:NO];
         [controller setThickSlab: 0];
@@ -850,29 +850,29 @@ static SyncSeriesScope globalSyncSeriesScope;
     if( [item action] == @selector(changeTool:))
     {
         valid = YES;
-        if( [item tag] == [controller currentTool]) [item setState: NSOnState];
-        else [item setState: NSOffState];
+        if( [item tag] == [controller currentTool]) [item setState: NSControlStateValueOn];
+        else [item setState: NSControlStateValueOff];
     }
     else if( [item action] == @selector(ApplyCLUT:))
     {
         valid = YES;
         
-        if( [[item title] isEqualToString: curCLUTMenu]) [item setState:NSOnState];
-        else [item setState:NSOffState];
+        if( [[item title] isEqualToString: curCLUTMenu]) [item setState:NSControlStateValueOn];
+        else [item setState:NSControlStateValueOff];
     }
     //	else if( [item action] == @selector(ApplyConv:))
     //	{
     //		valid = YES;
     //
-    //		if( [[item title] isEqualToString: curConvMenu]) [item setState:NSOnState];
-    //		else [item setState:NSOffState];
+    //		if( [[item title] isEqualToString: curConvMenu]) [item setState:NSControlStateValueOn];
+    //		else [item setState:NSControlStateValueOff];
     //	}
     else if( [item action] == @selector(ApplyOpacity:))
     {
         valid = YES;
         
-        if( [[item title] isEqualToString: curOpacityMenu]) [item setState:NSOnState];
-        else [item setState:NSOffState];
+        if( [[item title] isEqualToString: curOpacityMenu]) [item setState:NSControlStateValueOn];
+        else [item setState:NSControlStateValueOff];
     }
     else if( [item action] == @selector(ApplyWLWW:))
     {
@@ -887,20 +887,20 @@ static SyncSeriesScope globalSyncSeriesScope;
         
         @catch (NSException * e) {}
         
-        if( [str isEqualToString: curWLWWMenu] || [[item title] isEqualToString: curWLWWMenu]) [item setState:NSOnState];
-        else [item setState:NSOffState];
+        if( [str isEqualToString: curWLWWMenu] || [[item title] isEqualToString: curWLWWMenu]) [item setState:NSControlStateValueOn];
+        else [item setState:NSControlStateValueOff];
     }
     else if( [item action] == @selector(syncSeriesScopeAction:))    {
         valid = YES;
-        [item setState: (globalSyncSeriesScope == [item tag] ? NSOnState : NSOffState)];
+        [item setState: (globalSyncSeriesScope == [item tag] ? NSControlStateValueOn : NSControlStateValueOff)];
     }
     else if( [item action] == @selector(syncSeriesBehaviorAction:))   {
         valid = YES;
-        [item setState: (syncSeriesBehavior == [item tag] ? NSOnState : NSOffState)];
+        [item setState: (syncSeriesBehavior == [item tag] ? NSControlStateValueOn : NSControlStateValueOff)];
     }
     else if( [item action] == @selector(syncSeriesStateAction:))   {
         valid = YES;
-        [item setState: (syncSeriesState == [item tag] ? NSOnState : NSOffState)];
+        [item setState: (syncSeriesState == [item tag] ? NSControlStateValueOn : NSControlStateValueOff)];
     }
     else valid = YES;
     

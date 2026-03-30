@@ -284,6 +284,7 @@ static NSString*	TimeIntervalToolbarItemIdentifier	= @"TimeInterval";
 static NSString*    ModalityFilterToolbarItemIdentifier = @"ModalityFilter";
 static NSString*	XMLToolbarItemIdentifier			= @"XML.icns";
 static NSString*	MetalToolbarItemIdentifier			= @"MetalToolbar.png";
+static NSString*	Metal3DToolbarItemIdentifier			= @"Metal3DToolbarItem";
 static NSString*	OpenKeyImagesAndROIsToolbarItemIdentifier	= @"ROIsAndKeys.tif";
 static NSString*	OpenKeyImagesToolbarItemIdentifier	= @"Keys.tif";
 static NSString*	OpenROIsToolbarItemIdentifier	= @"ROIs.tif";
@@ -13377,6 +13378,36 @@ constrainSplitPosition:(CGFloat)proposedPosition
     openReparsedSeriesFlag = NO;
 }
 
+- (BOOL)canOpenMetal3DForCurrentSelection
+{
+    if( [[databaseOutline selectedRowIndexes] count] != 1)
+        return NO;
+
+    NSInteger row = [databaseOutline selectedRow];
+    if( row < 0)
+        return NO;
+
+    id object = [databaseOutline itemAtRow: row];
+    if( object == nil || [object respondsToSelector:@selector(isDistant)] == NO || [object isDistant])
+        return NO;
+
+    if( [object respondsToSelector:@selector(entity)] && [[object entity] isEqual: _database.seriesEntity])
+        return YES;
+
+    return NO;
+}
+
+- (IBAction)openMetal3DViewer:(id)sender
+{
+    if( [self canOpenMetal3DForCurrentSelection] == NO)
+    {
+        NSBeep();
+        return;
+    }
+
+    NSRunInformationalAlertPanel(NSLocalizedString(@"3D Metal", nil), NSLocalizedString(@"The 3D Metal viewer is not available yet.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+}
+
 - (IBAction)openMetalViewer:(id)sender
 {
     NSMutableArray *selectedItems = [NSMutableArray array];
@@ -19258,6 +19289,7 @@ restart:
     [self.window setToolbar: toolbar];
     [self.window setShowsToolbarButton:NO];
     [[self.window toolbar] setVisible: YES];
+    [self performSelector:@selector(removeForbiddenDatabaseToolbarItems) withObject:nil afterDelay:0.0];
     
     //    [self.window makeKeyAndOrderFront:nil];
     
@@ -19344,11 +19376,29 @@ restart:
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(addStudiesToUser:)];
     }
+    else if ([itemIdent isEqualToString: Metal3DToolbarItemIdentifier])
+    {
+        [toolbarItem setLabel: NSLocalizedString(@"3D Metal", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString(@"3D Metal", nil)];
+        [toolbarItem setToolTip: NSLocalizedString(@"3D Metal", nil)];
+        NSImage *metalImage = [NSImage imageNamed: MetalToolbarItemIdentifier];
+        if (metalImage == nil)
+        {
+            NSString *metalPath = [[NSBundle mainBundle] pathForResource: @"MetalToolbar" ofType: @"png" inDirectory: @"Icons"];
+            if (metalPath == nil)
+                metalPath = [[NSBundle mainBundle] pathForResource: @"MetalToolbar" ofType: @"png"];
+            if (metalPath)
+                metalImage = [[[NSImage alloc] initWithContentsOfFile: metalPath] autorelease];
+        }
+        [toolbarItem setImage: metalImage];
+        [toolbarItem setTarget: self];
+        [toolbarItem setAction: @selector(openMetal3DViewer:)];
+    }
     else if ([itemIdent isEqualToString: MetalToolbarItemIdentifier])
     {
-        [toolbarItem setLabel: NSLocalizedString(@"Metal", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"Metal", nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"Metal", nil)];
+        [toolbarItem setLabel: NSLocalizedString(@"2D Metal", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString(@"2D Metal", nil)];
+        [toolbarItem setToolTip: NSLocalizedString(@"2D Metal", nil)];
         NSImage *metalImage = [NSImage imageNamed: MetalToolbarItemIdentifier];
         if (metalImage == nil)
         {
@@ -19553,6 +19603,9 @@ restart:
     }
     else
     {
+        if( [itemIdent isEqualToString: @"Cloud Dashboard"] || [itemIdent isEqualToString: @"Cloud Report"] || [itemIdent isEqualToString: @"Cloud Sharing"] )
+            return nil;
+
         // Is it a plugin menu item?
         if( [[PluginManager pluginsDict] objectForKey: itemIdent] != nil)
         {
@@ -19724,6 +19777,7 @@ restart:
             //          ToggleDrawerToolbarItemIdentifier, // removed from default items because we have a dedicated button on the bottom left of this window
             ImportToolbarItemIdentifier,
             ExportToolbarItemIdentifier,
+            Metal3DToolbarItemIdentifier,
             MetalToolbarItemIdentifier,
             QTSaveToolbarItemIdentifier,
             QueryToolbarItemIdentifier,
@@ -19758,6 +19812,7 @@ restart:
                              NSToolbarSeparatorItemIdentifier,
                              ImportToolbarItemIdentifier,
                              //			 CDRomToolbarItemIdentifier,
+                             Metal3DToolbarItemIdentifier,
                              MetalToolbarItemIdentifier,
                              WebServerSingleNotification,
                              AddStudiesToUserItemIdentifier,
@@ -19785,6 +19840,8 @@ restart:
     for( NSString *plugin in allPlugins)
     {
         if ([plugin isEqualToString: @"(-"])
+            continue;
+        if( [plugin isEqualToString: @"Cloud Dashboard"] || [plugin isEqualToString: @"Cloud Report"] || [plugin isEqualToString: @"Cloud Sharing"] )
             continue;
         
         NSBundle		*bundle = [[PluginManager pluginsDict] objectForKey: plugin];
@@ -19818,8 +19875,24 @@ restart:
         if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForBrowserController:)])
             [array addObjectsFromArray: [[[PluginManager plugins] objectForKey:key] toolbarAllowedIdentifiersForBrowserController: self]];
     }
+
+    [array removeObject: @"Cloud Dashboard"];
+    [array removeObject: @"Cloud Report"];
+    [array removeObject: @"Cloud Sharing"];
     
     return array;
+}
+
+- (void)removeForbiddenDatabaseToolbarItems
+{
+    NSArray *forbiddenItems = [NSArray arrayWithObjects:@"Cloud Dashboard", @"Cloud Report", @"Cloud Sharing", nil];
+
+    for( NSInteger i = [[toolbar items] count]-1; i >= 0; --i)
+    {
+        NSToolbarItem *item = [[toolbar items] objectAtIndex:i];
+        if( [forbiddenItems containsObject:[item itemIdentifier]] || [forbiddenItems containsObject:[item label]] || [forbiddenItems containsObject:[item paletteLabel]])
+            [toolbar removeItemAtIndex:i];
+    }
 }
 
 - (void)toolbarWillAddItem:(NSNotification *) notif
@@ -19837,6 +19910,9 @@ restart:
         [toolbarSearchItem release];
         toolbarSearchItem = [addedItem retain];
     }
+
+    if( [[NSArray arrayWithObjects:@"Cloud Dashboard", @"Cloud Report", @"Cloud Sharing", nil] containsObject:[addedItem itemIdentifier]] || [[NSArray arrayWithObjects:@"Cloud Dashboard", @"Cloud Report", @"Cloud Sharing", nil] containsObject:[addedItem label]] || [[NSArray arrayWithObjects:@"Cloud Dashboard", @"Cloud Report", @"Cloud Sharing", nil] containsObject:[addedItem paletteLabel]])
+        [self performSelector:@selector(removeForbiddenDatabaseToolbarItems) withObject:nil afterDelay:0.0];
 }  
 
 - (void)toolbarDidRemoveItem: (NSNotification *)notif
@@ -20225,6 +20301,7 @@ restart:
            [toolbarItem action] == @selector(MovieViewerDICOM:) || 
            [toolbarItem action] == @selector(viewerDICOMMergeSelection:) || 
 [toolbarItem action] == @selector(openMetalViewer:) || 
+[toolbarItem action] == @selector(openMetal3DViewer:) || 
            [toolbarItem action] == @selector(revealInFinder:) || 
            [toolbarItem action] == @selector(export2PACS:) || 
            [toolbarItem action] == @selector(exportQuicktime:) || 
@@ -20259,6 +20336,9 @@ restart:
         if ([[toolbarItem itemIdentifier] isEqualToString: QueryToolbarItemIdentifier]) return NO;
     }
     
+    if ([[toolbarItem itemIdentifier] isEqualToString: Metal3DToolbarItemIdentifier])
+        return [self canOpenMetal3DForCurrentSelection];
+
     if ([[toolbarItem itemIdentifier] isEqualToString: OpenKeyImagesAndROIsToolbarItemIdentifier])
     {
         if( containsDistantStudy)

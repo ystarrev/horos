@@ -1685,6 +1685,8 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
     
     // Attach the toolbar to the document window
     [[self window] setToolbar: toolbar];
+    if ([[self window] respondsToSelector:@selector(setToolbarStyle:)])
+        [[self window] setToolbarStyle: NSWindowToolbarStylePreference];
     [[self window] setShowsToolbarButton: [style isEqualToString:@"panel"]];
     [[[self window] toolbar] setVisible: [style isEqualToString:@"standard"]];
     

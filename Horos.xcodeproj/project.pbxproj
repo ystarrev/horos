@@ -3042,6 +3042,11 @@ F4A100000001000000000008 /* MetalViewerModels.swift in Sources */ = {isa = PBXBu
 F4A100000001000000000009 /* MetalViewerPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000009 /* MetalViewerPaneView.swift */; };
 F4A10000000100000000000A /* MetalViewerToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000A /* MetalViewerToolbarView.swift */; };
 F4A10000000100000000000B /* MetalViewerScoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000B /* MetalViewerScoutView.swift */; };
+F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000C /* Metal3DViewerLauncher.swift */; };
+F4A10000000100000000000D /* Metal3DViewerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000D /* Metal3DViewerWindowController.swift */; };
+F4A10000000100000000000E /* Metal3DViewerToolbarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000E /* Metal3DViewerToolbarController.swift */; };
+F4A10000000100000000000F /* Metal3DVolumeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000F /* Metal3DVolumeView.swift */; };
+F4A100000001000000000010 /* Metal3DVolumeRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000010 /* Metal3DVolumeRenderer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -5694,6 +5699,11 @@ F4A10000000100000000000B /* MetalViewerScoutView.swift in Sources */ = {isa = PB
 		F4A100000002000000000009 /* MetalViewerPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerPaneView.swift; sourceTree = SOURCE_ROOT; };
 		F4A10000000200000000000A /* MetalViewerToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerToolbarView.swift; sourceTree = SOURCE_ROOT; };
 		F4A10000000200000000000B /* MetalViewerScoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerScoutView.swift; sourceTree = SOURCE_ROOT; };
+		F4A10000000200000000000C /* Metal3DViewerLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DViewerLauncher.swift; sourceTree = SOURCE_ROOT; };
+		F4A10000000200000000000D /* Metal3DViewerWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DViewerWindowController.swift; sourceTree = SOURCE_ROOT; };
+		F4A10000000200000000000E /* Metal3DViewerToolbarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DViewerToolbarController.swift; sourceTree = SOURCE_ROOT; };
+		F4A10000000200000000000F /* Metal3DVolumeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DVolumeView.swift; sourceTree = SOURCE_ROOT; };
+		F4A100000002000000000010 /* Metal3DVolumeRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DVolumeRenderer.swift; sourceTree = SOURCE_ROOT; };
 F4A100000002000000000006 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
@@ -11302,6 +11312,11 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 			isa = PBXSourcesBuildPhase;
 			files = (
 				F4A100000001000000000001 /* MetalViewerLauncher.swift in Sources */,
+				F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */,
+				F4A100000001000000000010 /* Metal3DVolumeRenderer.swift in Sources */,
+				F4A10000000100000000000F /* Metal3DVolumeView.swift in Sources */,
+				F4A10000000100000000000E /* Metal3DViewerToolbarController.swift in Sources */,
+				F4A10000000100000000000D /* Metal3DViewerWindowController.swift in Sources */,
 				F4A100000001000000000008 /* MetalViewerModels.swift in Sources */,
 				F4A100000001000000000009 /* MetalViewerPaneView.swift in Sources */,
 				F4A10000000100000000000B /* MetalViewerScoutView.swift in Sources */,

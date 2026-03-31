@@ -38,3 +38,8 @@ Binaries/EmbeddedPlugins/HorosCloud.horosplugin
 *.xcscmblueprint
 DICOMPrint/DICOMPrint
 Horos.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+*.pcm
+/.clang-module-cache
+com.apple.DeveloperTools/26.4-17E192/Xcode/26.4-17E192/Xcode/CachedSpecifications-xcodebuild
+*.xcplugincache
+com.apple.DeveloperTools/26.4-17E192/Xcode/26.4-17E192/Xcode/PlugInCache-xcodebuild.xcplugincache

@@ -13399,13 +13399,138 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 - (IBAction)openMetal3DViewer:(id)sender
 {
-    if( [self canOpenMetal3DForCurrentSelection] == NO)
+    NSMutableArray *selectedItems = [NSMutableArray array];
+    
+    if (([sender isKindOfClass:[NSMenuItem class]] && [sender menu] == [oMatrix menu]) || [[self window] firstResponder] == oMatrix)
+        [self filesForDatabaseMatrixSelection:selectedItems onlyImages:YES];
+    else
+        [self filesForDatabaseOutlineSelection:selectedItems onlyImages:YES];
+    
+    if ([selectedItems count] == 0)
     {
         NSBeep();
         return;
     }
+    
+    [self openMetal3DViewerForImages:selectedItems];
+}
 
-    NSRunInformationalAlertPanel(NSLocalizedString(@"3D Metal", nil), NSLocalizedString(@"The 3D Metal viewer is not available yet.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+- (void)openMetal3DViewerForImages:(NSArray*)loadList
+{
+    if ([loadList count] == 0)
+        return;
+    
+    BOOL multiFrame = NO;
+    unsigned long memBlock = 0;
+    NSData *volumeData = nil;
+    float *fVolumePtr = nil;
+    NSMutableArray *viewerPix = nil;
+    NSMutableArray *correspondingObjects = nil;
+    
+    NSManagedObject *curFile = [loadList objectAtIndex:0];
+    if ([loadList count] == 1 && ([[curFile valueForKey:@"numberOfFrames"] intValue] > 1 || [[curFile valueForKey:@"numberOfSeries"] intValue] > 1))
+    {
+        multiFrame = YES;
+        long h = [[curFile valueForKey:@"height"] intValue];
+        long w = [[curFile valueForKey:@"width"] intValue];
+        memBlock = w * h * [[curFile valueForKey:@"numberOfFrames"] intValue];
+    }
+    else
+    {
+        for (NSManagedObject *image in loadList)
+        {
+            long h = [[image valueForKey:@"height"] intValue];
+            long w = [[image valueForKey:@"width"] intValue];
+            
+            if (w * h < 256 * 256)
+            {
+                w = 256;
+                h = 256;
+            }
+            
+            memBlock += w * h;
+        }
+    }
+    
+    if (memBlock < 256 * 256)
+        memBlock = 256 * 256;
+    
+    fVolumePtr = malloc(memBlock * sizeof(float));
+    if (fVolumePtr == nil)
+    {
+        NSRunCriticalAlertPanel(NSLocalizedString(@"Not enough memory", nil), NSLocalizedString(@"Your computer doesn't have enough RAM to load this series.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        return;
+    }
+    
+    volumeData = [[NSData alloc] initWithBytesNoCopy:fVolumePtr length:memBlock * sizeof(float) freeWhenDone:YES];
+    viewerPix = [[NSMutableArray alloc] initWithCapacity:0];
+    correspondingObjects = [[NSMutableArray alloc] initWithCapacity:0];
+    
+    unsigned long mem = 0;
+    if (multiFrame)
+    {
+        NSManagedObject *multiFrameObject = [loadList objectAtIndex:0];
+        int numberOfFrames = [[multiFrameObject valueForKey:@"numberOfFrames"] intValue];
+        
+        for (unsigned long i = 0; i < numberOfFrames; i++)
+        {
+            DCMPix *dcmPix = [[DCMPix alloc] initWithPath:[multiFrameObject valueForKey:@"completePath"] :i :numberOfFrames :fVolumePtr + mem :i :[[multiFrameObject valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj:multiFrameObject];
+            
+            if (dcmPix)
+            {
+                mem += ([[multiFrameObject valueForKey:@"width"] intValue]) * ([[multiFrameObject valueForKey:@"height"] intValue]);
+                [viewerPix addObject:dcmPix];
+                [correspondingObjects addObject:multiFrameObject];
+                [dcmPix release];
+            }
+        }
+    }
+    else
+    {
+        for (unsigned long i = 0; i < [loadList count]; i++)
+        {
+            NSManagedObject *imageObject = [loadList objectAtIndex:i];
+            DCMPix *dcmPix = [[DCMPix alloc] initWithPath:[imageObject valueForKey:@"completePath"] :i :[loadList count] :fVolumePtr + mem :[[imageObject valueForKey:@"frameID"] intValue] :[[imageObject valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj:imageObject];
+            
+            if (dcmPix)
+            {
+                mem += ([[imageObject valueForKey:@"width"] intValue]) * ([[imageObject valueForKey:@"height"] intValue]);
+                [viewerPix addObject:dcmPix];
+                [correspondingObjects addObject:imageObject];
+                [dcmPix release];
+            }
+        }
+    }
+    
+    if ([viewerPix count] == 0)
+    {
+        NSRunCriticalAlertPanel(NSLocalizedString(@"Files not available", nil), NSLocalizedString(@"No readable files were found in this selection.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        [volumeData release];
+        [viewerPix release];
+        [correspondingObjects release];
+        return;
+    }
+    
+    NSManagedObject *firstObject = [correspondingObjects objectAtIndex:0];
+    NSString *patientName = [firstObject valueForKeyPath:@"series.study.name"] ?: NSLocalizedString(@"Patient", nil);
+    NSString *seriesName = [firstObject valueForKeyPath:@"series.name"] ?: NSLocalizedString(@"Series", nil);
+    NSString *title = [NSString stringWithFormat:@"%@ - %@", patientName, seriesName];
+    NSDictionary *context = [NSDictionary dictionaryWithObjectsAndKeys:viewerPix, @"pixList", volumeData, @"volumeData", title, @"title", nil];
+    
+    Class launcherClass = NSClassFromString(@"HorosMetal3DViewerLauncher");
+    SEL launchSelector = @selector(launchWithContext:);
+    if (launcherClass && [launcherClass respondsToSelector:launchSelector])
+    {
+        ((void (*)(id, SEL, id))[launcherClass methodForSelector:launchSelector])(launcherClass, launchSelector, context);
+    }
+    else
+    {
+        NSRunCriticalAlertPanel(NSLocalizedString(@"3D Metal", nil), NSLocalizedString(@"The 3D Metal viewer is not available in this build.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+    }
+    
+    [volumeData release];
+    [viewerPix release];
+    [correspondingObjects release];
 }
 
 - (IBAction)openMetalViewer:(id)sender

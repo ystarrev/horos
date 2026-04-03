@@ -69,6 +69,7 @@ struct Metal3DVolumeUniforms {
     float stepSize;
     float3 cameraForward;
     float density;
+    float alphaFloor;
     float3 boxMin;
     float padding0;
     float3 boxMax;
@@ -79,15 +80,36 @@ struct Metal3DVolumeUniforms {
     float padding3;
     uint3 volumeDimensions;
     uint cropEnabled;
+    uint maxSteps;
     float windowLevel;
     float windowWidth;
+    float4 boneRenderingOptions;
     float shading;
+    float ambient;
+    float diffuse;
+    float specular;
+    float specularPower;
     uint hasCLUT;
+    float4x4 viewProjectionMatrix;
 };
 
 struct Metal3DRasterizerData {
     float4 position [[position]];
     float2 uv;
+};
+
+struct Metal3DOverlayVertex {
+    float3 position;
+};
+
+struct Metal3DOverlayUniforms {
+    float4x4 viewProjectionMatrix;
+    float4 color;
+};
+
+struct Metal3DFragmentOutput {
+    float4 color [[color(0)]];
+    float depth [[depth(any)]];
 };
 
 vertex RasterizerData metalViewerVertex(
@@ -112,6 +134,14 @@ vertex Metal3DRasterizerData metal3DVolumeVertex(
     return out;
 }
 
+vertex float4 metal3DOverlayVertexMain(
+    const device Metal3DOverlayVertex *vertices [[buffer(0)]],
+    constant Metal3DOverlayUniforms &uniforms [[buffer(1)]],
+    uint vertexID [[vertex_id]]
+) {
+    return uniforms.viewProjectionMatrix * float4(vertices[vertexID].position, 1.0);
+}
+
 static inline bool metal3DIntersectBox(float3 rayOrigin, float3 rayDirection, float3 boxMin, float3 boxMax, thread float &tMin, thread float &tMax) {
     bool3 useOriginalDirection = abs(rayDirection) >= float3(1e-5);
     float3 safeDirection = select(float3(1e-5), rayDirection, useOriginalDirection);
@@ -130,19 +160,34 @@ static inline float3 metal3DTextureCoordinate(float3 position, float3 boxMin, fl
 }
 
 static inline float metal3DOpacityAt(
-    float normalizedScalar,
+    float scalar,
+    float windowLevel,
+    float windowWidth,
     texture2d<float> opacityTexture,
     sampler transferSampler
 ) {
-    return opacityTexture.sample(transferSampler, float2(clamp(normalizedScalar, 0.0, 1.0), 0.5)).r;
+    float minValue = windowLevel - windowWidth * 0.5;
+    float normalizedScalar = clamp((scalar - minValue) / max(windowWidth, 1e-5), 0.0, 1.0);
+    return opacityTexture.sample(transferSampler, float2(normalizedScalar, 0.5)).r;
 }
 
 static inline float3 metal3DColorAt(
-    float normalizedScalar,
+    float scalar,
+    float windowLevel,
+    float windowWidth,
     texture2d<float> clutTexture,
     sampler transferSampler
 ) {
-    return clutTexture.sample(transferSampler, float2(clamp(normalizedScalar, 0.0, 1.0), 0.5)).rgb;
+    float minValue = windowLevel - windowWidth * 0.5;
+    float normalizedScalar = clamp((scalar - minValue) / max(windowWidth, 1e-5), 0.0, 1.0);
+    return clutTexture.sample(transferSampler, float2(normalizedScalar, 0.5)).rgb;
+}
+
+static inline float3 metal3DBoneColor(float scalar, float lowerBound, float upperBound) {
+    float t = clamp((scalar - lowerBound) / max(upperBound - lowerBound, 1e-5), 0.0, 1.0);
+    float3 corticalBone = float3(0.62, 0.58, 0.44);
+    float3 denseBone = float3(0.76, 0.71, 0.55);
+    return mix(corticalBone, denseBone, t);
 }
 
 static inline float3 metal3DGradient(
@@ -151,7 +196,7 @@ static inline float3 metal3DGradient(
     sampler volumeSampler,
     uint3 dimensions
 ) {
-    float3 delta = 1.0 / max(float3(dimensions - uint3(1)), float3(1.0));
+    float3 delta = 1.5 / max(float3(dimensions - uint3(1)), float3(1.0));
     float sampleX1 = volumeTexture.sample(volumeSampler, clamp(texCoord + float3(delta.x, 0.0, 0.0), 0.0, 1.0)).r;
     float sampleX0 = volumeTexture.sample(volumeSampler, clamp(texCoord - float3(delta.x, 0.0, 0.0), 0.0, 1.0)).r;
     float sampleY1 = volumeTexture.sample(volumeSampler, clamp(texCoord + float3(0.0, delta.y, 0.0), 0.0, 1.0)).r;
@@ -161,7 +206,7 @@ static inline float3 metal3DGradient(
     return float3(sampleX1 - sampleX0, sampleY1 - sampleY0, sampleZ1 - sampleZ0);
 }
 
-fragment float4 metal3DVolumeFragment(
+fragment Metal3DFragmentOutput metal3DVolumeFragment(
     Metal3DRasterizerData in [[stage_in]],
     constant Metal3DVolumeUniforms &uniforms [[buffer(0)]],
     texture3d<float> volumeTexture [[texture(0)]],
@@ -182,14 +227,19 @@ fragment float4 metal3DVolumeFragment(
     float tMin = 0.0;
     float tMax = 0.0;
     if (!metal3DIntersectBox(uniforms.cameraPosition, rayDirection, marchingBoxMin, marchingBoxMax, tMin, tMax)) {
-        return float4(0.0, 0.0, 0.0, 1.0);
+        Metal3DFragmentOutput output;
+        output.color = float4(0.0, 0.0, 0.0, 1.0);
+        output.depth = 1.0;
+        return output;
     }
 
-    const float3 lightDirection = normalize(float3(0.45, 0.5, 1.0));
     float4 accumulated = float4(0.0);
     float t = max(tMin, 0.0);
+    float previousScalar = 0.0;
+    float previousT = t;
+    bool havePreviousScalar = false;
 
-    for (uint stepIndex = 0; stepIndex < 1024 && t <= tMax && accumulated.a < 0.985; ++stepIndex, t += uniforms.stepSize) {
+    for (uint stepIndex = 0; stepIndex < uniforms.maxSteps && t <= tMax && accumulated.a < 0.985; ++stepIndex, t += uniforms.stepSize) {
         float3 position = uniforms.cameraPosition + rayDirection * t;
         float3 texCoord = metal3DTextureCoordinate(position, uniforms.boxMin, uniforms.boxMax);
 
@@ -197,31 +247,149 @@ fragment float4 metal3DVolumeFragment(
             continue;
         }
 
-        float normalizedScalar = volumeTexture.sample(textureSampler, texCoord).r;
-        float opacity = metal3DOpacityAt(normalizedScalar, opacityTexture, textureSampler);
-        if (opacity <= 0.001) {
-            continue;
-        }
+        float scalar = volumeTexture.sample(textureSampler, texCoord).r;
+        float opacity = 0.0;
+        float3 color = float3(0.0);
+        if (uniforms.boneRenderingOptions.x > 0.5) {
+            if (scalar < uniforms.boneRenderingOptions.y || scalar > uniforms.boneRenderingOptions.z) {
+                previousScalar = scalar;
+                havePreviousScalar = true;
+                continue;
+            }
+            const float surfaceThreshold = uniforms.boneRenderingOptions.w;
+            const bool crossedSurface = (!havePreviousScalar && scalar >= surfaceThreshold) ||
+                                        (havePreviousScalar && previousScalar < surfaceThreshold && scalar >= surfaceThreshold);
+            if (!crossedSurface) {
+                previousScalar = scalar;
+                previousT = t;
+                havePreviousScalar = true;
+                continue;
+            }
 
-        float3 color = metal3DColorAt(normalizedScalar, clutTexture, textureSampler);
+            float refinedNear = havePreviousScalar ? previousT : max(t - uniforms.stepSize, tMin);
+            float refinedFar = t;
+            float refinedScalar = scalar;
+            float nearScalar = havePreviousScalar ? previousScalar : scalar;
+            float farScalar = scalar;
+
+            for (uint refineStep = 0; refineStep < 10; ++refineStep) {
+                float refinedMid = 0.5 * (refinedNear + refinedFar);
+                float3 refinedPosition = uniforms.cameraPosition + rayDirection * refinedMid;
+                float3 refinedCoord = metal3DTextureCoordinate(refinedPosition, uniforms.boxMin, uniforms.boxMax);
+                refinedScalar = volumeTexture.sample(textureSampler, clamp(refinedCoord, 0.0, 1.0)).r;
+                if (refinedScalar >= surfaceThreshold) {
+                    refinedFar = refinedMid;
+                    farScalar = refinedScalar;
+                } else {
+                    refinedNear = refinedMid;
+                    nearScalar = refinedScalar;
+                }
+            }
+
+            float scalarSpan = farScalar - nearScalar;
+            float interpolation = 0.5;
+            if (abs(scalarSpan) > 1e-5) {
+                interpolation = clamp((surfaceThreshold - nearScalar) / scalarSpan, 0.0, 1.0);
+            }
+            float hitT = mix(refinedNear, refinedFar, interpolation);
+            float3 hitPosition = uniforms.cameraPosition + rayDirection * hitT;
+            float3 hitCoord = metal3DTextureCoordinate(hitPosition, uniforms.boxMin, uniforms.boxMax);
+            float hitScalar = mix(nearScalar, farScalar, interpolation);
+            color = metal3DBoneColor(hitScalar, surfaceThreshold, uniforms.boneRenderingOptions.z);
+            previousScalar = scalar;
+            previousT = t;
+            havePreviousScalar = true;
+            float3 shadedColor = color;
+            if (uniforms.shading > 0.5) {
+                float3 gradient = metal3DGradient(hitCoord, volumeTexture, textureSampler, uniforms.volumeDimensions);
+                float gradientLength = length(gradient);
+                if (gradientLength > 1e-5) {
+                    float3 normal = normalize(gradient);
+                    float3 viewDirection = normalize(uniforms.cameraPosition - hitPosition);
+                    if (dot(normal, viewDirection) < 0.0) {
+                        normal = -normal;
+                    }
+                    float3 lightDirection = viewDirection;
+                    float3 spotlightAxis = -viewDirection;
+                    float spotCos = max(dot(spotlightAxis, uniforms.cameraForward), 0.0);
+                    float spotFactor = smoothstep(0.72, 0.96, spotCos);
+                    float diffuse = max(dot(normal, lightDirection), 0.0);
+                    float facing = max(dot(normal, viewDirection), 0.0);
+                    float3 halfVector = normalize(lightDirection + viewDirection);
+                    float specular = pow(max(dot(normal, halfVector), 0.0), max(uniforms.specularPower, 1.0));
+                    float lighting = clamp(uniforms.ambient + spotFactor * (uniforms.diffuse * diffuse + 0.10 * facing), 0.22, 0.62);
+                    shadedColor *= lighting;
+                    shadedColor += color * (uniforms.specular * specular * diffuse * spotFactor);
+                    shadedColor = min(shadedColor, color * 0.78 + float3(0.045));
+                }
+            } else {
+                shadedColor *= 0.62;
+            }
+            Metal3DFragmentOutput output;
+            output.color = float4(shadedColor, 1.0);
+            float4 clipPosition = uniforms.viewProjectionMatrix * float4(hitPosition, 1.0);
+            output.depth = saturate(clipPosition.z / clipPosition.w);
+            return output;
+        } else {
+            opacity = metal3DOpacityAt(scalar, uniforms.windowLevel, uniforms.windowWidth, opacityTexture, textureSampler);
+            if (opacity <= 0.03) {
+                previousScalar = scalar;
+                previousT = t;
+                havePreviousScalar = true;
+                continue;
+            }
+            color = metal3DColorAt(scalar, uniforms.windowLevel, uniforms.windowWidth, clutTexture, textureSampler);
+            previousScalar = scalar;
+            previousT = t;
+            havePreviousScalar = true;
+        }
         if (uniforms.shading > 0.5) {
             float3 gradient = metal3DGradient(texCoord, volumeTexture, textureSampler, uniforms.volumeDimensions);
             float gradientLength = length(gradient);
             if (gradientLength > 1e-5) {
                 float3 normal = normalize(gradient);
+                float3 viewDirection = normalize(uniforms.cameraPosition - position);
+                if (dot(normal, viewDirection) < 0.0) {
+                    normal = -normal;
+                }
+                float3 lightDirection = viewDirection;
+                float3 spotlightAxis = -viewDirection;
+                float spotCos = max(dot(spotlightAxis, uniforms.cameraForward), 0.0);
+                float spotFactor = smoothstep(0.72, 0.96, spotCos);
                 float diffuse = max(dot(normal, lightDirection), 0.0);
-                float ambient = 0.35;
-                color *= ambient + (1.0 - ambient) * diffuse;
+                float3 halfVector = normalize(lightDirection + viewDirection);
+                float specular = pow(max(dot(normal, halfVector), 0.0), max(uniforms.specularPower, 1.0));
+                color *= clamp(uniforms.ambient + uniforms.diffuse * diffuse * spotFactor, 0.20, 0.90);
+                color += uniforms.specular * specular * spotFactor;
             }
         }
 
-        float sampleAlpha = 1.0 - exp(-clamp(opacity, 0.0, 1.0) * uniforms.density * uniforms.stepSize * 80.0);
+        float sampleAlpha = 1.0 - exp(-clamp(opacity, 0.0, 1.0) * uniforms.density * uniforms.stepSize);
+        if (sampleAlpha <= 0.0025) {
+            continue;
+        }
         accumulated.rgb += (1.0 - accumulated.a) * sampleAlpha * color;
         accumulated.a += (1.0 - accumulated.a) * sampleAlpha;
     }
 
+    if (accumulated.a < uniforms.alphaFloor) {
+        Metal3DFragmentOutput output;
+        output.color = float4(0.0, 0.0, 0.0, 1.0);
+        output.depth = 1.0;
+        return output;
+    }
+
     float3 finalColor = accumulated.rgb;
-    return float4(finalColor, 1.0);
+    Metal3DFragmentOutput output;
+    output.color = float4(finalColor, 1.0);
+    output.depth = 0.9999;
+    return output;
+}
+
+fragment float4 metal3DOverlayFragment(
+    constant Metal3DOverlayUniforms &uniforms [[buffer(1)]]
+) {
+    return uniforms.color;
 }
 
 fragment float4 metalViewerFragment(

@@ -3,12 +3,16 @@ import AppKit
 final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
     enum ItemIdentifier {
         static let crop = NSToolbarItem.Identifier("com.horos.metal3d.crop")
+        static let shading = NSToolbarItem.Identifier("com.horos.metal3d.shading")
+        static let histogram = NSToolbarItem.Identifier("com.horos.metal3d.histogram")
         static let wlww = NSToolbarItem.Identifier("com.horos.metal3d.wlww")
         static let clut = NSToolbarItem.Identifier("com.horos.metal3d.clut")
         static let opacity = NSToolbarItem.Identifier("com.horos.metal3d.opacity")
     }
 
     var cropHandler: ((Bool) -> Void)?
+    var shadingHandler: ((Bool) -> Void)?
+    var histogramHandler: (() -> Void)?
     var wlwwSelectionHandler: ((String) -> Void)?
     var clutSelectionHandler: ((String) -> Void)?
     var opacitySelectionHandler: ((String) -> Void)?
@@ -17,6 +21,7 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
     private let clutPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let opacityPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private var cropEnabled = false
+    private var shadingEnabled = true
 
     override init() {
         super.init()
@@ -55,6 +60,8 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
             ItemIdentifier.crop,
+            ItemIdentifier.shading,
+            ItemIdentifier.histogram,
             ItemIdentifier.wlww,
             ItemIdentifier.clut,
             ItemIdentifier.opacity,
@@ -64,6 +71,8 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
             ItemIdentifier.crop,
+            ItemIdentifier.shading,
+            ItemIdentifier.histogram,
             ItemIdentifier.wlww,
             ItemIdentifier.clut,
             ItemIdentifier.opacity,
@@ -86,6 +95,26 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
             item.target = self
             item.action = #selector(toggleCrop(_:))
             item.image = NSImage(systemSymbolName: "crop", accessibilityDescription: item.label)
+            return item
+
+        case ItemIdentifier.shading:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = NSLocalizedString("Shading", comment: "")
+            item.paletteLabel = item.label
+            item.toolTip = NSLocalizedString("Toggle volume shading", comment: "")
+            item.target = self
+            item.action = #selector(toggleShading(_:))
+            item.image = NSImage(systemSymbolName: shadingEnabled ? "lightbulb.max.fill" : "lightbulb.slash", accessibilityDescription: item.label)
+            return item
+
+        case ItemIdentifier.histogram:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = NSLocalizedString("Histogram", comment: "")
+            item.paletteLabel = item.label
+            item.toolTip = NSLocalizedString("Show the CT voxel histogram", comment: "")
+            item.target = self
+            item.action = #selector(toggleHistogram(_:))
+            item.image = NSImage(systemSymbolName: "chart.xyaxis.line", accessibilityDescription: item.label)
             return item
 
         case ItemIdentifier.wlww:
@@ -121,6 +150,23 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
     private func toggleCrop(_ sender: Any?) {
         cropEnabled.toggle()
         cropHandler?(cropEnabled)
+    }
+
+    @objc
+    private func toggleShading(_ sender: Any?) {
+        shadingEnabled.toggle()
+        if let item = sender as? NSToolbarItem {
+            item.image = NSImage(
+                systemSymbolName: shadingEnabled ? "lightbulb.max.fill" : "lightbulb.slash",
+                accessibilityDescription: item.label
+            )
+        }
+        shadingHandler?(shadingEnabled)
+    }
+
+    @objc
+    private func toggleHistogram(_ sender: Any?) {
+        histogramHandler?()
     }
 
     @objc

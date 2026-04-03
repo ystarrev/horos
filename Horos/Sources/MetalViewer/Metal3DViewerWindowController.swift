@@ -4,6 +4,7 @@ import CoreData
 final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate {
     private let volumeView = Metal3DVolumeView(frame: .zero)
     private let toolbarController = Metal3DViewerToolbarController()
+    private let histogramPanelController = Metal3DHistogramPanelController()
     private let pixList: [DCMPix]
     private let volumeData: Data
 
@@ -71,6 +72,12 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
         toolbarController.cropHandler = { [weak self] isEnabled in
             self?.volumeView.cropEnabled = isEnabled
         }
+        toolbarController.shadingHandler = { [weak self] isEnabled in
+            self?.volumeView.shadingEnabled = isEnabled
+        }
+        toolbarController.histogramHandler = { [weak self] in
+            self?.toggleHistogramPanel()
+        }
         toolbarController.wlwwSelectionHandler = { [weak self] selectedTitle in
             guard let self else { return }
             if let actualSelection = self.volumeView.applyWLPreset(named: selectedTitle) {
@@ -128,6 +135,28 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
         if let selectedOpacityName = volumeView.selectedOpacityName {
             toolbarController.selectOpacity(named: selectedOpacityName)
         }
+        histogramPanelController.update(histogram: volumeView.makeHistogramModel())
+    }
+
+    private func toggleHistogramPanel() {
+        histogramPanelController.update(histogram: volumeView.makeHistogramModel())
+        guard let panel = histogramPanelController.window else { return }
+
+        if panel.isVisible {
+            panel.orderOut(nil)
+            return
+        }
+
+        if let window {
+            let origin = NSPoint(x: window.frame.maxX + 14, y: window.frame.maxY - panel.frame.height - 40)
+            panel.setFrameOrigin(origin)
+        }
+        histogramPanelController.showWindow(self)
+        panel.orderFrontRegardless()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        histogramPanelController.close()
     }
 
     private static func windowTitle(for title: String) -> String {

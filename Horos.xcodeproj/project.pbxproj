@@ -3043,10 +3043,13 @@ F4A100000001000000000009 /* MetalViewerPaneView.swift in Sources */ = {isa = PBX
 F4A10000000100000000000A /* MetalViewerToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000A /* MetalViewerToolbarView.swift */; };
 F4A10000000100000000000B /* MetalViewerScoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000B /* MetalViewerScoutView.swift */; };
 F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000C /* Metal3DViewerLauncher.swift */; };
-F4A10000000100000000000D /* Metal3DViewerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000D /* Metal3DViewerWindowController.swift */; };
-F4A10000000100000000000E /* Metal3DViewerToolbarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000E /* Metal3DViewerToolbarController.swift */; };
-F4A10000000100000000000F /* Metal3DVolumeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000F /* Metal3DVolumeView.swift */; };
-F4A100000001000000000010 /* Metal3DVolumeRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000010 /* Metal3DVolumeRenderer.swift */; };
+		F4A10000000100000000000D /* Metal3DViewerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000D /* Metal3DViewerWindowController.swift */; };
+		F4A10000000100000000000E /* Metal3DViewerToolbarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000E /* Metal3DViewerToolbarController.swift */; };
+		F4A10000000100000000000F /* Metal3DVolumeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000F /* Metal3DVolumeView.swift */; };
+		F4A100000001000000000010 /* Metal3DVolumeRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000010 /* Metal3DVolumeRenderer.swift */; };
+		F4A100000001000000000011 /* Metal3DHistogramModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000011 /* Metal3DHistogramModel.swift */; };
+		F4A100000001000000000012 /* Metal3DHistogramView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000012 /* Metal3DHistogramView.swift */; };
+		F4A100000001000000000013 /* Metal3DHistogramPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000013 /* Metal3DHistogramPanelController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -5704,6 +5707,9 @@ F4A100000001000000000010 /* Metal3DVolumeRenderer.swift in Sources */ = {isa = P
 		F4A10000000200000000000E /* Metal3DViewerToolbarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DViewerToolbarController.swift; sourceTree = SOURCE_ROOT; };
 		F4A10000000200000000000F /* Metal3DVolumeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DVolumeView.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000010 /* Metal3DVolumeRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DVolumeRenderer.swift; sourceTree = SOURCE_ROOT; };
+		F4A100000002000000000011 /* Metal3DHistogramModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DHistogramModel.swift; sourceTree = SOURCE_ROOT; };
+		F4A100000002000000000012 /* Metal3DHistogramView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DHistogramView.swift; sourceTree = SOURCE_ROOT; };
+		F4A100000002000000000013 /* Metal3DHistogramPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DHistogramPanelController.swift; sourceTree = SOURCE_ROOT; };
 F4A100000002000000000006 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
@@ -11314,6 +11320,9 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				F4A100000001000000000001 /* MetalViewerLauncher.swift in Sources */,
 				F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */,
 				F4A100000001000000000010 /* Metal3DVolumeRenderer.swift in Sources */,
+				F4A100000001000000000013 /* Metal3DHistogramPanelController.swift in Sources */,
+				F4A100000001000000000012 /* Metal3DHistogramView.swift in Sources */,
+				F4A100000001000000000011 /* Metal3DHistogramModel.swift in Sources */,
 				F4A10000000100000000000F /* Metal3DVolumeView.swift in Sources */,
 				F4A10000000100000000000E /* Metal3DViewerToolbarController.swift in Sources */,
 				F4A10000000100000000000D /* Metal3DViewerWindowController.swift in Sources */,

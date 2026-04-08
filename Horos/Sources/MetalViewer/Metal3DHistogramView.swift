@@ -1,6 +1,19 @@
 import AppKit
 
 final class Metal3DHistogramView: NSView {
+    var opacityPoints = [SIMD2<Float>]() {
+        didSet {
+            opacityPoints.sort { lhs, rhs in lhs.x < rhs.x }
+            needsDisplay = true
+        }
+    }
+
+    var opacityPointsChanged: (([SIMD2<Float>]) -> Void)?
+
+    private let plotInsets = NSEdgeInsets(top: 10, left: 22, bottom: 34, right: 12)
+    private let handleRadius: CGFloat = 5
+    private var activePointIndex: Int?
+
     var histogram: Metal3DHistogramModel? {
         didSet {
             needsDisplay = true
@@ -24,24 +37,14 @@ final class Metal3DHistogramView: NSView {
         super.draw(dirtyRect)
 
         let bounds = self.bounds.insetBy(dx: 16, dy: 16)
-        let titleRect = NSRect(x: bounds.minX, y: bounds.maxY - 22, width: bounds.width, height: 20)
-        let subtitleRect = NSRect(x: bounds.minX, y: bounds.maxY - 42, width: bounds.width, height: 16)
-        let plotRect = NSRect(x: bounds.minX + 6, y: bounds.minY + 30, width: bounds.width - 12, height: bounds.height - 86)
+        let subtitleRect = NSRect(x: bounds.minX, y: bounds.maxY - 18, width: bounds.width, height: 16)
+        let plotRect = self.plotRect(in: bounds)
 
-        let titleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 15, weight: .semibold),
-            .foregroundColor: NSColor.white,
-        ]
-        let subtitleAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .regular),
-            .foregroundColor: NSColor.secondaryLabelColor,
-        ]
-        let axisAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
-            .foregroundColor: NSColor.tertiaryLabelColor,
-        ]
+        let subtitleFont = NSFont.systemFont(ofSize: 11, weight: .regular)
+        let axisFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        let subtitleAttributes = makeAttributes(font: subtitleFont, color: NSColor.secondaryLabelColor)
+        let axisAttributes = makeAttributes(font: axisFont, color: NSColor.tertiaryLabelColor)
 
-        NSString(string: NSLocalizedString("CT Histogram", comment: "")).draw(in: titleRect, withAttributes: titleAttributes)
         NSString(string: NSLocalizedString("X: Hounsfield units   Y: voxel count (log scale)", comment: "")).draw(in: subtitleRect, withAttributes: subtitleAttributes)
 
         NSColor(calibratedWhite: 0.18, alpha: 1.0).setFill()
@@ -88,6 +91,37 @@ final class Metal3DHistogramView: NSView {
         histogramColor.setFill()
         barPath.fill()
 
+        if opacityPoints.count >= 2 {
+            let curvePath = NSBezierPath()
+            for (index, point) in opacityPoints.enumerated() {
+                let screenPoint = screenPoint(forOpacityPoint: point, in: plotRect, histogram: histogram)
+                if index == 0 {
+                    curvePath.move(to: screenPoint)
+                } else {
+                    curvePath.line(to: screenPoint)
+                }
+            }
+            NSColor.systemOrange.setStroke()
+            curvePath.lineWidth = 2
+            curvePath.stroke()
+
+            for point in opacityPoints {
+                let screenPoint = screenPoint(forOpacityPoint: point, in: plotRect, histogram: histogram)
+                let handleRect = NSRect(
+                    x: screenPoint.x - handleRadius,
+                    y: screenPoint.y - handleRadius,
+                    width: handleRadius * 2,
+                    height: handleRadius * 2
+                )
+                let handlePath = NSBezierPath(ovalIn: handleRect)
+                NSColor.systemOrange.setFill()
+                handlePath.fill()
+                NSColor.black.withAlphaComponent(0.45).setStroke()
+                handlePath.lineWidth = 1
+                handlePath.stroke()
+            }
+        }
+
         let ticks = [
             histogram.minimumHU,
             -1000,
@@ -126,5 +160,85 @@ final class Metal3DHistogramView: NSView {
                 withAttributes: axisAttributes
             )
         }
+    }
+
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let histogram else { return }
+        let location = convert(event.locationInWindow, from: nil)
+        let bounds = self.bounds.insetBy(dx: 16, dy: 16)
+        let plotRect = self.plotRect(in: bounds)
+
+        activePointIndex = nil
+        for (index, point) in opacityPoints.enumerated() {
+            let handlePoint = screenPoint(forOpacityPoint: point, in: plotRect, histogram: histogram)
+            let distance = hypot(handlePoint.x - location.x, handlePoint.y - location.y)
+            if distance <= handleRadius + 4 {
+                activePointIndex = index
+                break
+            }
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let histogram, let activePointIndex, opacityPoints.indices.contains(activePointIndex) else { return }
+        let location = convert(event.locationInWindow, from: nil)
+        let bounds = self.bounds.insetBy(dx: 16, dy: 16)
+        let plotRect = self.plotRect(in: bounds)
+        guard plotRect.width > 1, plotRect.height > 1 else { return }
+
+        var xFraction = (location.x - plotRect.minX) / plotRect.width
+        var yFraction = (location.y - plotRect.minY) / plotRect.height
+        xFraction = min(max(xFraction, 0), 1)
+        yFraction = min(max(yFraction, 0), 1)
+
+        var newHU = Float(histogram.minimumHU) + Float(xFraction) * Float(histogram.maximumHU - histogram.minimumHU)
+        let newOpacity = Float(min(max(yFraction, 0), 1))
+
+        if activePointIndex == 0 {
+            newHU = Float(histogram.minimumHU)
+        } else if activePointIndex == opacityPoints.count - 1 {
+            newHU = Float(histogram.maximumHU)
+        } else {
+            let previous = opacityPoints[activePointIndex - 1].x + 1
+            let next = opacityPoints[activePointIndex + 1].x - 1
+            newHU = min(max(newHU, previous), next)
+        }
+
+        opacityPoints[activePointIndex] = SIMD2<Float>(newHU, newOpacity)
+        opacityPointsChanged?(opacityPoints)
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        activePointIndex = nil
+    }
+
+    private func plotRect(in bounds: CGRect) -> CGRect {
+        CGRect(
+            x: bounds.minX + plotInsets.left,
+            y: bounds.minY + plotInsets.bottom,
+            width: bounds.width - plotInsets.left - plotInsets.right,
+            height: bounds.height - plotInsets.top - plotInsets.bottom - 18
+        )
+    }
+
+    private func screenPoint(forOpacityPoint point: SIMD2<Float>, in plotRect: CGRect, histogram: Metal3DHistogramModel) -> CGPoint {
+        let xFraction = CGFloat((point.x - Float(histogram.minimumHU)) / Float(max(histogram.maximumHU - histogram.minimumHU, 1)))
+        let yFraction = CGFloat(min(max(point.y, 0), 1))
+        return CGPoint(
+            x: plotRect.minX + min(max(xFraction, 0), 1) * plotRect.width,
+            y: plotRect.minY + min(max(yFraction, 0), 1) * plotRect.height
+        )
+    }
+
+    private func makeAttributes(font: NSFont, color: NSColor) -> [NSAttributedString.Key: Any] {
+        [
+            .font: font,
+            .foregroundColor: color,
+        ]
     }
 }

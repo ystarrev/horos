@@ -261,6 +261,15 @@ final class Metal3DVolumeView: NSView {
         renderer?.makeHistogramModel()
     }
 
+    func opacityControlPoints() -> [SIMD2<Float>] {
+        renderer?.opacityControlPoints() ?? []
+    }
+
+    func setOpacityControlPoints(_ points: [SIMD2<Float>]) {
+        renderer?.setOpacityControlPoints(points)
+        metalView.setNeedsDisplay(metalView.bounds)
+    }
+
     private func updateAppearance() {
         if cropEnabled {
             metalView.clearColor = MTLClearColor(red: 0.02, green: 0.015, blue: 0.015, alpha: 1.0)

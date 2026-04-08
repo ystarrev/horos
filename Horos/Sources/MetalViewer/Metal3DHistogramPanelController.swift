@@ -3,6 +3,12 @@ import AppKit
 final class Metal3DHistogramPanelController: NSWindowController {
     private let histogramView = Metal3DHistogramView(frame: .zero)
 
+    var opacityPointsChanged: (([SIMD2<Float>]) -> Void)? {
+        didSet {
+            histogramView.opacityPointsChanged = opacityPointsChanged
+        }
+    }
+
     init() {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 460, height: 280),
@@ -10,7 +16,7 @@ final class Metal3DHistogramPanelController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        panel.title = NSLocalizedString("Histogram", comment: "")
+        panel.title = NSLocalizedString("CT Histogram", comment: "")
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.level = .floating
@@ -38,7 +44,8 @@ final class Metal3DHistogramPanelController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(histogram: Metal3DHistogramModel?) {
+    func update(histogram: Metal3DHistogramModel?, opacityPoints: [SIMD2<Float>]) {
         histogramView.histogram = histogram
+        histogramView.opacityPoints = opacityPoints
     }
 }

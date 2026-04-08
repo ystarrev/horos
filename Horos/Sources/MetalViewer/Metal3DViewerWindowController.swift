@@ -78,6 +78,9 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
         toolbarController.histogramHandler = { [weak self] in
             self?.toggleHistogramPanel()
         }
+        histogramPanelController.opacityPointsChanged = { [weak self] points in
+            self?.volumeView.setOpacityControlPoints(points)
+        }
         toolbarController.wlwwSelectionHandler = { [weak self] selectedTitle in
             guard let self else { return }
             if let actualSelection = self.volumeView.applyWLPreset(named: selectedTitle) {
@@ -135,11 +138,17 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
         if let selectedOpacityName = volumeView.selectedOpacityName {
             toolbarController.selectOpacity(named: selectedOpacityName)
         }
-        histogramPanelController.update(histogram: volumeView.makeHistogramModel())
+        histogramPanelController.update(
+            histogram: volumeView.makeHistogramModel(),
+            opacityPoints: volumeView.opacityControlPoints()
+        )
     }
 
     private func toggleHistogramPanel() {
-        histogramPanelController.update(histogram: volumeView.makeHistogramModel())
+        histogramPanelController.update(
+            histogram: volumeView.makeHistogramModel(),
+            opacityPoints: volumeView.opacityControlPoints()
+        )
         guard let panel = histogramPanelController.window else { return }
 
         if panel.isVisible {

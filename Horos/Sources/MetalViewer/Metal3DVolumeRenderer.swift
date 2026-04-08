@@ -75,6 +75,10 @@ private struct Metal3DVolumeUniforms {
     var windowLevel: Float
     var windowWidth: Float
     var boneRenderingOptions: SIMD4<Float>
+    var opacityDomainMin: Float
+    var opacityDomainMax: Float
+    var useRawOpacityCurve: UInt32
+    var padding4: UInt32 = 0
     var shading: Float
     var ambient: Float
     var diffuse: Float
@@ -131,12 +135,15 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private let boneUpperHU: Float = 2200.0
     private let boneSurfaceHU: Float = 300.0
     private let cropHandleRadius: Float = 0.016
+    private let histogramDomainMin: Float = -1200.0
+    private let histogramDomainMax: Float = 3200.0
 
     private var volumeTexture: MTLTexture?
     private var clutTexture: MTLTexture?
     private var opacityTexture: MTLTexture?
     private var drawableSize = CGSize(width: 1, height: 1)
     private var rawVolume = [Float]()
+    private var customOpacityControlPoints = [SIMD2<Float>]()
 
     private(set) var selectedWLPresetName = Metal3DDefaults.defaultWLWW
     private(set) var selectedCLUTName = Metal3DDefaults.noCLUT
@@ -648,6 +655,9 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             windowLevel: windowLevel,
             windowWidth: windowWidth,
             boneRenderingOptions: boneRenderingOptions(),
+            opacityDomainMin: histogramDomainMin,
+            opacityDomainMax: histogramDomainMax,
+            useRawOpacityCurve: customOpacityControlPoints.isEmpty ? 0 : 1,
             shading: shadingEnabled ? 1.0 : 0.0,
             ambient: shadingAmbient,
             diffuse: shadingDiffuse,
@@ -950,6 +960,21 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return Metal3DHistogramModel(voxels: rawVolume)
     }
 
+    func opacityControlPoints() -> [SIMD2<Float>] {
+        if customOpacityControlPoints.isEmpty == false {
+            return customOpacityControlPoints
+        }
+        return defaultOpacityControlPoints()
+    }
+
+    func setOpacityControlPoints(_ points: [SIMD2<Float>]) {
+        guard points.count >= 2 else { return }
+        customOpacityControlPoints = points.sorted { $0.x < $1.x }.map {
+            SIMD2<Float>($0.x, min(max($0.y, 0), 1))
+        }
+        opacityTexture = makeOpacityTransferTexture()
+    }
+
     private func boneRenderingOptions() -> SIMD4<Float> {
         guard boneModeEnabled else {
             return .zero
@@ -1027,7 +1052,32 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let span = max(end - start, 0.0001)
         let textureDomainScale = Metal3DDefaults.maxDynamicValue / Float(max(width - 1, 1))
 
-        if currentOpacityPoints.isEmpty {
+        if customOpacityControlPoints.isEmpty == false {
+            let points = customOpacityControlPoints
+            for index in 0..<width {
+                let fraction = Float(index) / Float(max(width - 1, 1))
+                let sample = histogramDomainMin + fraction * (histogramDomainMax - histogramDomainMin)
+                if sample <= points[0].x {
+                    values[index] = points[0].y / superSampling
+                    continue
+                }
+                if sample >= points[points.count - 1].x {
+                    values[index] = points[points.count - 1].y / superSampling
+                    continue
+                }
+
+                for pointIndex in 1..<points.count {
+                    let previous = points[pointIndex - 1]
+                    let current = points[pointIndex]
+                    if sample <= current.x {
+                        let t = (sample - previous.x) / max(current.x - previous.x, 0.0001)
+                        let opacity = previous.y + (current.y - previous.y) * t
+                        values[index] = opacity / superSampling
+                        break
+                    }
+                }
+            }
+        } else if currentOpacityPoints.isEmpty {
             for index in 0..<width {
                 let convertedSample = Float(index) * textureDomainScale
                 let clamped = min(max((convertedSample - start) / span, 0), 1)
@@ -1080,6 +1130,16 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             Data(buffer: buffer)
         }
         return makeFloat1DTexture(data: data, width: values.count)
+    }
+
+    private func defaultOpacityControlPoints() -> [SIMD2<Float>] {
+        return [
+            SIMD2<Float>(histogramDomainMin, 0.0),
+            SIMD2<Float>(boneLowerHU, 0.0),
+            SIMD2<Float>(boneSurfaceHU, 1.0),
+            SIMD2<Float>(boneUpperHU, 1.0),
+            SIMD2<Float>(histogramDomainMax, 1.0),
+        ]
     }
 
     private func makeColorTransferTexture() -> MTLTexture? {

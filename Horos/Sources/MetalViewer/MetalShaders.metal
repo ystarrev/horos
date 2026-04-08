@@ -84,6 +84,10 @@ struct Metal3DVolumeUniforms {
     float windowLevel;
     float windowWidth;
     float4 boneRenderingOptions;
+    float opacityDomainMin;
+    float opacityDomainMax;
+    uint useRawOpacityCurve;
+    uint padding4;
     float shading;
     float ambient;
     float diffuse;
@@ -171,6 +175,17 @@ static inline float metal3DOpacityAt(
     return opacityTexture.sample(transferSampler, float2(normalizedScalar, 0.5)).r;
 }
 
+static inline float metal3DRawOpacityAt(
+    float scalar,
+    float domainMin,
+    float domainMax,
+    texture2d<float> opacityTexture,
+    sampler transferSampler
+) {
+    float normalizedScalar = clamp((scalar - domainMin) / max(domainMax - domainMin, 1e-5), 0.0, 1.0);
+    return opacityTexture.sample(transferSampler, float2(normalizedScalar, 0.5)).r;
+}
+
 static inline float3 metal3DColorAt(
     float scalar,
     float windowLevel,
@@ -188,6 +203,10 @@ static inline float3 metal3DBoneColor(float scalar, float lowerBound, float uppe
     float3 corticalBone = float3(0.62, 0.58, 0.44);
     float3 denseBone = float3(0.76, 0.71, 0.55);
     return mix(corticalBone, denseBone, t);
+}
+
+static inline float metal3DHash(float3 value) {
+    return fract(sin(dot(value, float3(12.9898, 78.233, 45.164))) * 43758.5453);
 }
 
 static inline float3 metal3DGradient(
@@ -295,6 +314,23 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
             float3 hitPosition = uniforms.cameraPosition + rayDirection * hitT;
             float3 hitCoord = metal3DTextureCoordinate(hitPosition, uniforms.boxMin, uniforms.boxMax);
             float hitScalar = mix(nearScalar, farScalar, interpolation);
+            float hitOpacity = uniforms.useRawOpacityCurve != 0
+                ? metal3DRawOpacityAt(hitScalar, uniforms.opacityDomainMin, uniforms.opacityDomainMax, opacityTexture, textureSampler)
+                : metal3DOpacityAt(hitScalar, uniforms.windowLevel, uniforms.windowWidth, opacityTexture, textureSampler);
+            float surfaceVisibility = smoothstep(0.02, 0.30, clamp(hitOpacity, 0.0, 1.0));
+            if (surfaceVisibility <= 0.001) {
+                previousScalar = scalar;
+                previousT = t;
+                havePreviousScalar = true;
+                continue;
+            }
+            float dither = metal3DHash(floor(hitPosition * 220.0));
+            if (surfaceVisibility < 0.999 && dither > surfaceVisibility) {
+                previousScalar = scalar;
+                previousT = t;
+                havePreviousScalar = true;
+                continue;
+            }
             color = metal3DBoneColor(hitScalar, surfaceThreshold, uniforms.boneRenderingOptions.z);
             previousScalar = scalar;
             previousT = t;
@@ -322,8 +358,6 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
                     shadedColor += color * (uniforms.specular * specular * diffuse * spotFactor);
                     shadedColor = min(shadedColor, color * 0.78 + float3(0.045));
                 }
-            } else {
-                shadedColor *= 0.62;
             }
             Metal3DFragmentOutput output;
             output.color = float4(shadedColor, 1.0);

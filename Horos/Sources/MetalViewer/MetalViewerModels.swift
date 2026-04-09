@@ -15,7 +15,7 @@ final class MetalViewerSeries {
     private let imageObjects: [NSManagedObject]
     private let isBonjour: Bool
     private var cachedPixList: [DCMPix]?
-    private var cachedVolumeData: NSData?
+    private var cachedVolumeBacking: NSData?
 
     init(
         identifier: String = UUID().uuidString,
@@ -27,8 +27,7 @@ final class MetalViewerSeries {
         showsStudyHeader: Bool,
         imageObjects: [NSManagedObject],
         isBonjour: Bool,
-        initialPixList: [DCMPix]? = nil,
-        initialVolumeData: NSData? = nil
+        initialPixList: [DCMPix]? = nil
     ) {
         self.identifier = identifier
         self.title = title
@@ -41,7 +40,7 @@ final class MetalViewerSeries {
         self.isBonjour = isBonjour
         self.imageCount = imageObjects.isEmpty ? (initialPixList?.count ?? 0) : imageObjects.count
         self.cachedPixList = initialPixList
-        self.cachedVolumeData = initialVolumeData
+        self.cachedVolumeBacking = nil
     }
 
     func loadedPixList() -> [DCMPix] {
@@ -52,7 +51,6 @@ final class MetalViewerSeries {
         let loadList = imageObjects
         guard loadList.isEmpty == false else {
             cachedPixList = []
-            cachedVolumeData = NSData()
             return []
         }
 
@@ -82,7 +80,7 @@ final class MetalViewerSeries {
         }
 
         let pointer = UnsafeMutablePointer<Float>.allocate(capacity: Int(memBlock))
-        let volumeData = NSData(bytesNoCopy: pointer, length: Int(memBlock) * MemoryLayout<Float>.size, freeWhenDone: true)
+        let volumeBacking = NSData(bytesNoCopy: pointer, length: Int(memBlock) * MemoryLayout<Float>.size, freeWhenDone: true)
 
         var pixList: [DCMPix] = []
         var memOffset: UInt = 0
@@ -117,7 +115,7 @@ final class MetalViewerSeries {
         }
 
         cachedPixList = pixList
-        cachedVolumeData = volumeData
+        cachedVolumeBacking = volumeBacking
         return pixList
     }
 

@@ -8,7 +8,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         static let maximumPaneCount = 8
     }
 
-    private let study: MetalViewerStudy
+    private var study: MetalViewerStudy
     private let toolbarView = MetalViewerToolbarView(frame: .zero)
     private let scoutView: MetalViewerScoutView
     private let contentSplitView = NSSplitView(frame: .zero)
@@ -286,6 +286,13 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             updateToolbarStatus()
         }
         updateReferenceLines()
+    }
+
+    func updateStudy(_ study: MetalViewerStudy) {
+        self.study = study
+        scoutView.reload(series: study.series)
+        let selectedIdentifier = activePaneView?.series.identifier ?? study.initialSeriesIdentifier
+        scoutView.setSelectedSeries(identifier: selectedIdentifier)
     }
 
     private func updateToolbarStatus() {

@@ -30,7 +30,7 @@ struct RegistrationUniforms {
     float baseWindowWidth;
     float overlayWindowLevel;
     float overlayWindowWidth;
-    float4 registrationOptions;
+    float4 metricOptions;
     float3 overlayTranslationWorld;
     float3 movingRotationCenterWorld;
     uint3 baseTextureSize;
@@ -115,6 +115,28 @@ struct Metal3DFragmentOutput {
     float4 color [[color(0)]];
     float depth [[depth(any)]];
 };
+
+static inline float metalViewerNormalizedValue(float value, float level, float width) {
+    const float minValue = level - width * 0.5;
+    return clamp((value - minValue) / max(width, 1e-5), 0.0, 1.0);
+}
+
+static inline float metalViewerGradientMagnitudeNormalized(
+    texture3d<float, access::sample> texture,
+    sampler metricSampler,
+    float3 coord,
+    float level,
+    float width
+) {
+    const float3 delta = 1.0 / max(float3(texture.get_width() - 1, texture.get_height() - 1, texture.get_depth() - 1), float3(1.0));
+    const float sampleX1 = metalViewerNormalizedValue(texture.sample(metricSampler, clamp(coord + float3(delta.x, 0.0, 0.0), 0.0, 1.0)).r, level, width);
+    const float sampleX0 = metalViewerNormalizedValue(texture.sample(metricSampler, clamp(coord - float3(delta.x, 0.0, 0.0), 0.0, 1.0)).r, level, width);
+    const float sampleY1 = metalViewerNormalizedValue(texture.sample(metricSampler, clamp(coord + float3(0.0, delta.y, 0.0), 0.0, 1.0)).r, level, width);
+    const float sampleY0 = metalViewerNormalizedValue(texture.sample(metricSampler, clamp(coord - float3(0.0, delta.y, 0.0), 0.0, 1.0)).r, level, width);
+    const float sampleZ1 = metalViewerNormalizedValue(texture.sample(metricSampler, clamp(coord + float3(0.0, 0.0, delta.z), 0.0, 1.0)).r, level, width);
+    const float sampleZ0 = metalViewerNormalizedValue(texture.sample(metricSampler, clamp(coord - float3(0.0, 0.0, delta.z), 0.0, 1.0)).r, level, width);
+    return length(float3(sampleX1 - sampleX0, sampleY1 - sampleY0, sampleZ1 - sampleZ0));
+}
 
 vertex RasterizerData metalViewerVertex(
     const device MetalVertex *vertices [[buffer(0)]],
@@ -494,9 +516,9 @@ kernel void metalViewerRegistrationJointHistogram(
             const float basePixelValue = baseTexture.sample(metricSampler, baseCoord).r;
             const float overlayPixelValue = overlayTexture.sample(metricSampler, overlayCoord).r;
 
-            if (uniforms.registrationOptions.x > 0.5) {
-                const float boneLower = uniforms.registrationOptions.y;
-                const float boneUpper = uniforms.registrationOptions.z;
+            if (uniforms.metricOptions.x > 0.5 && uniforms.metricOptions.x < 1.5) {
+                const float boneLower = uniforms.metricOptions.y;
+                const float boneUpper = uniforms.metricOptions.z;
                 const bool baseIsBone = basePixelValue >= boneLower && basePixelValue <= boneUpper;
                 const bool overlayIsBone = overlayPixelValue >= boneLower && overlayPixelValue <= boneUpper;
                 if (!(baseIsBone && overlayIsBone)) {
@@ -504,11 +526,18 @@ kernel void metalViewerRegistrationJointHistogram(
                 }
             }
 
-            const float baseMinValue = uniforms.baseWindowLevel - uniforms.baseWindowWidth * 0.5;
-            const float overlayMinValue = uniforms.overlayWindowLevel - uniforms.overlayWindowWidth * 0.5;
+            const float baseNormalized = metalViewerNormalizedValue(basePixelValue, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
+            const float overlayNormalized = metalViewerNormalizedValue(overlayPixelValue, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
 
-            const float baseNormalized = clamp((basePixelValue - baseMinValue) / uniforms.baseWindowWidth, 0.0, 1.0);
-            const float overlayNormalized = clamp((overlayPixelValue - overlayMinValue) / uniforms.overlayWindowWidth, 0.0, 1.0);
+            if (uniforms.metricOptions.x > 1.5) {
+                const float gradientThreshold = uniforms.metricOptions.y;
+                const float baseGradient = metalViewerGradientMagnitudeNormalized(baseTexture, metricSampler, baseCoord, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
+                const float overlayGradient = metalViewerGradientMagnitudeNormalized(overlayTexture, metricSampler, overlayCoord, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
+                if (max(baseGradient, overlayGradient) < gradientThreshold) {
+                    return;
+                }
+            }
+
             const uint baseBin = min(uint(baseNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
             const uint overlayBin = min(uint(overlayNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
             const uint histogramIndex = overlayBin * kRegistrationHistogramBins + baseBin;

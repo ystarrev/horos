@@ -30,7 +30,7 @@ private struct RegistrationUniforms {
     var baseWindowWidth: Float
     var overlayWindowLevel: Float
     var overlayWindowWidth: Float
-    var registrationOptions: SIMD4<Float>
+    var metricOptions: SIMD4<Float>
     var overlayTranslationWorld: SIMD3<Float>
     var movingRotationCenterWorld: SIMD3<Float>
     var baseTextureSize: SIMD3<UInt32>
@@ -154,12 +154,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var fixedVoxelToWorld = matrix_identity_float4x4
     private var movingWorldToVoxel = matrix_identity_float4x4
     private var movingRotationCenterWorld = SIMD3<Float>(repeating: 0)
+    private var baseInformativeCenterWorld = SIMD3<Float>(repeating: 0)
+    private var overlayInformativeCenterWorld = SIMD3<Float>(repeating: 0)
+    private var baseIsThinSlab = false
+    private var overlayIsThinSlab = false
 
     private(set) var currentSliceIndex = 0
     private(set) var windowLevel: Float = 0
     private(set) var windowWidth: Float = 1
     private(set) var overlayWindowLevel: Float = 0
     private(set) var overlayWindowWidth: Float = 1
+    private var baseRegistrationWindowLevel: Float = 0
+    private var baseRegistrationWindowWidth: Float = 1
+    private var overlayRegistrationWindowLevel: Float = 0
+    private var overlayRegistrationWindowWidth: Float = 1
     private(set) var overlayBlend: Float = 0.5
     private(set) var overlayTranslationWorld = SIMD3<Float>(repeating: 0)
     private(set) var overlayRotationRadians = SIMD3<Float>(repeating: 0)
@@ -286,6 +294,17 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let fullResolutionVolume = makeVolumeData(for: overlayPixList)
         overlayVolumeData = fullResolutionVolume.data
         overlayVolumeDimensions = fullResolutionVolume.dimensions
+        let overlayRegistrationWindow = registrationWindow(for: fullResolutionVolume.data, pixList: overlayPixList)
+        overlayRegistrationWindowLevel = overlayRegistrationWindow.level
+        overlayRegistrationWindowWidth = overlayRegistrationWindow.width
+        overlayInformativeCenterWorld = informativeCenterWorld(
+            for: fullResolutionVolume.data,
+            dimensions: fullResolutionVolume.dimensions,
+            voxelToWorld: movingVoxelToWorld,
+            level: overlayRegistrationWindow.level,
+            width: overlayRegistrationWindow.width
+        )
+        overlayIsThinSlab = isThinSlab(dimensions: fullResolutionVolume.dimensions, voxelToWorld: movingVoxelToWorld)
         overlayVolumeTexture = makeTexture3D(from: fullResolutionVolume.data, dimensions: fullResolutionVolume.dimensions)
         overlayVolumeLevels = makeVolumeLevels(
             from: fullResolutionVolume.data,
@@ -307,6 +326,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         overlayVolumeData = []
         overlayVolumeDimensions = SIMD3<Int>(repeating: 1)
         overlayVolumeLevels = []
+        overlayRegistrationWindowLevel = 0
+        overlayRegistrationWindowWidth = 1
+        overlayInformativeCenterWorld = .zero
+        overlayIsThinSlab = false
         overlayTranslationWorld = .zero
         overlayRotationRadians = .zero
         overlayTranslationPixels = .zero
@@ -425,6 +448,17 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let fullResolutionVolume = makeVolumeData(for: pixList)
         baseVolumeData = fullResolutionVolume.data
         baseVolumeDimensions = fullResolutionVolume.dimensions
+        let baseRegistrationWindow = registrationWindow(for: fullResolutionVolume.data, pixList: pixList)
+        baseRegistrationWindowLevel = baseRegistrationWindow.level
+        baseRegistrationWindowWidth = baseRegistrationWindow.width
+        baseInformativeCenterWorld = informativeCenterWorld(
+            for: fullResolutionVolume.data,
+            dimensions: fullResolutionVolume.dimensions,
+            voxelToWorld: fixedVoxelToWorld,
+            level: baseRegistrationWindow.level,
+            width: baseRegistrationWindow.width
+        )
+        baseIsThinSlab = isThinSlab(dimensions: fullResolutionVolume.dimensions, voxelToWorld: fixedVoxelToWorld)
         baseVolumeTexture = makeTexture3D(from: fullResolutionVolume.data, dimensions: fullResolutionVolume.dimensions)
         baseVolumeLevels = makeVolumeLevels(
             from: fullResolutionVolume.data,
@@ -490,6 +524,38 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         return (volume, SIMD3<Int>(width, height, depth))
+    }
+
+    private func registrationWindow(for volume: [Float], pixList: [DCMPix]) -> (level: Float, width: Float) {
+        guard volume.isEmpty == false else { return (0, 1) }
+
+        let isCT = pixList.first?.modalityString?.uppercased().contains("CT") == true
+        let lowerPercentile: Float = isCT ? 0.005 : 0.01
+        let upperPercentile: Float = isCT ? 0.995 : 0.99
+        let maxSamples = 262_144
+        let stride = max(volume.count / maxSamples, 1)
+
+        var samples = [Float]()
+        samples.reserveCapacity((volume.count + stride - 1) / stride)
+        var index = 0
+        while index < volume.count {
+            let value = volume[index]
+            if value.isFinite {
+                samples.append(value)
+            }
+            index += stride
+        }
+
+        guard samples.isEmpty == false else { return (0, 1) }
+        samples.sort()
+
+        let lowerIndex = min(max(Int(Float(samples.count - 1) * lowerPercentile), 0), samples.count - 1)
+        let upperIndex = min(max(Int(Float(samples.count - 1) * upperPercentile), 0), samples.count - 1)
+        let lowerValue = samples[min(lowerIndex, upperIndex)]
+        let upperValue = samples[max(lowerIndex, upperIndex)]
+        let width = max(upperValue - lowerValue, 1)
+        let level = lowerValue + width * 0.5
+        return (level, width)
     }
 
     private func makeTexture3D(from volume: [Float], dimensions: SIMD3<Int>) -> MTLTexture? {
@@ -788,6 +854,29 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return SIMD3<Float>(max(simd_length(x), 0.0001), max(simd_length(y), 0.0001), max(simd_length(z), 0.0001))
     }
 
+    private func physicalExtent(dimensions: SIMD3<Int>, voxelToWorld: simd_float4x4) -> SIMD3<Float> {
+        let spacing = voxelSpacing(from: voxelToWorld)
+        return SIMD3<Float>(
+            Float(max(dimensions.x - 1, 0)) * spacing.x,
+            Float(max(dimensions.y - 1, 0)) * spacing.y,
+            Float(max(dimensions.z - 1, 0)) * spacing.z
+        )
+    }
+
+    private func isThinSlab(dimensions: SIMD3<Int>, voxelToWorld: simd_float4x4) -> Bool {
+        let extent = physicalExtent(dimensions: dimensions, voxelToWorld: voxelToWorld)
+        let sortedExtent = [extent.x, extent.y, extent.z].sorted()
+        guard let thinnest = sortedExtent.first,
+              let middle = sortedExtent.dropFirst().first,
+              let thickest = sortedExtent.last else {
+            return false
+        }
+
+        let minInPlaneExtent = max(middle, thickest)
+        let anisotropy = thinnest / max(minInPlaneExtent, 0.0001)
+        return thinnest < 40 && anisotropy < 0.35
+    }
+
     private func gaussianBlur3D(_ source: [Float], dimensions: SIMD3<Int>, sigma: SIMD3<Float>) -> [Float] {
         var result = source
         if sigma.x > 0.001 {
@@ -919,6 +1008,64 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return SIMD3<Float>(world.x, world.y, world.z)
     }
 
+    private func informativeCenterWorld(
+        for volume: [Float],
+        dimensions: SIMD3<Int>,
+        voxelToWorld: simd_float4x4,
+        level: Float,
+        width: Float
+    ) -> SIMD3<Float> {
+        guard volume.isEmpty == false else { return .zero }
+
+        let normalizedThreshold: Float = 0.18
+        let sliceElementCount = max(dimensions.x * dimensions.y, 1)
+        let maxSamples = 200_000
+        let strideX = max(dimensions.x / 96, 1)
+        let strideY = max(dimensions.y / 96, 1)
+        let strideZ = max(dimensions.z / 96, 1)
+        let adaptiveStride = max(Int(sqrt(Double(max(volume.count / maxSamples, 1)))), 1)
+        let sampleStrideX = max(strideX, adaptiveStride)
+        let sampleStrideY = max(strideY, adaptiveStride)
+        let sampleStrideZ = max(strideZ, adaptiveStride)
+
+        var weightedWorld = SIMD3<Float>(repeating: 0)
+        var totalWeight: Float = 0
+
+        for z in stride(from: 0, to: max(dimensions.z, 1), by: sampleStrideZ) {
+            for y in stride(from: 0, to: max(dimensions.y, 1), by: sampleStrideY) {
+                for x in stride(from: 0, to: max(dimensions.x, 1), by: sampleStrideX) {
+                    let index = z * sliceElementCount + y * dimensions.x + x
+                    guard index < volume.count else { continue }
+
+                    let value = volume[index]
+                    let normalized = min(max((value - (level - width * 0.5)) / max(width, 1), 0), 1)
+                    let weight = max(normalized - normalizedThreshold, 0)
+                    if weight <= 0 {
+                        continue
+                    }
+
+                    let voxel = SIMD4<Float>(Float(x), Float(y), Float(z), 1)
+                    let world = voxelToWorld * voxel
+                    weightedWorld += SIMD3<Float>(world.x, world.y, world.z) * weight
+                    totalWeight += weight
+                }
+            }
+        }
+
+        if totalWeight <= 0.0001 {
+            let centerVoxel = SIMD4<Float>(
+                Float(max(dimensions.x - 1, 0)) * 0.5,
+                Float(max(dimensions.y - 1, 0)) * 0.5,
+                Float(max(dimensions.z - 1, 0)) * 0.5,
+                1
+            )
+            let world = voxelToWorld * centerVoxel
+            return SIMD3<Float>(world.x, world.y, world.z)
+        }
+
+        return weightedWorld / totalWeight
+    }
+
     private func rotationMatrix(for radians: SIMD3<Float>) -> simd_float4x4 {
         let cx = cos(radians.x)
         let sx = sin(radians.x)
@@ -959,15 +1106,40 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return vector
     }
 
+    private func transformedOverlayCenterWorld(for state: RigidTransformState) -> SIMD3<Float> {
+        let centeredPoint = overlayInformativeCenterWorld - movingRotationCenterWorld
+        let rotated = rotationMatrix(for: state.rotationRadians) * SIMD4<Float>(centeredPoint, 1)
+        return SIMD3<Float>(rotated.x, rotated.y, rotated.z) + movingRotationCenterWorld + state.translationWorld
+    }
+
+    private func centerOfMassInitialGuess() -> RigidTransformState {
+        guard baseVolumeData.isEmpty == false,
+              overlayVolumeData.isEmpty == false else {
+            return RigidTransformState(
+                translationWorld: overlayTranslationWorld,
+                rotationRadians: overlayRotationRadians
+            )
+        }
+
+        let currentState = RigidTransformState(
+            translationWorld: overlayTranslationWorld,
+            rotationRadians: overlayRotationRadians
+        )
+        let transformedOverlayCenter = transformedOverlayCenterWorld(for: currentState)
+        let delta = baseInformativeCenterWorld - transformedOverlayCenter
+
+        return RigidTransformState(
+            translationWorld: overlayTranslationWorld + delta,
+            rotationRadians: overlayRotationRadians
+        )
+    }
+
     private func runRegistration() {
         guard baseVolumeLevels.isEmpty == false, overlayVolumeLevels.isEmpty == false else { return }
 
         registrationGeneration += 1
         let generation = registrationGeneration
-        let initialGuess = RigidTransformState(
-            translationWorld: overlayTranslationWorld,
-            rotationRadians: overlayRotationRadians
-        )
+        let initialGuess = centerOfMassInitialGuess()
         publishRegistrationUpdate(
             state: initialGuess,
             inProgress: true,
@@ -1000,22 +1172,39 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             let translationMM: Float
             let rotationRadians: Float
             let maxIterations: Int
+            let allowsRotation: Bool
         }
 
-        let rigidSteps: [RigidStep] = [
-            RigidStep(translationMM: 40, rotationRadians: 12 * .pi / 180, maxIterations: 32),
-            RigidStep(translationMM: 20, rotationRadians: 6 * .pi / 180, maxIterations: 28),
-            RigidStep(translationMM: 10, rotationRadians: 3 * .pi / 180, maxIterations: 24),
-            RigidStep(translationMM: 5, rotationRadians: 1.5 * .pi / 180, maxIterations: 20),
-            RigidStep(translationMM: 2, rotationRadians: 0.75 * .pi / 180, maxIterations: 18),
-            RigidStep(translationMM: 1, rotationRadians: 0.35 * .pi / 180, maxIterations: 16)
-        ]
+        let slabAwareRegistration = baseIsThinSlab || overlayIsThinSlab
+        let rigidSteps: [RigidStep] = slabAwareRegistration
+            ? [
+                RigidStep(translationMM: 12, rotationRadians: 0, maxIterations: 24, allowsRotation: false),
+                RigidStep(translationMM: 8, rotationRadians: 0, maxIterations: 20, allowsRotation: false),
+                RigidStep(translationMM: 6, rotationRadians: 2 * .pi / 180, maxIterations: 20, allowsRotation: true),
+                RigidStep(translationMM: 4, rotationRadians: 1.2 * .pi / 180, maxIterations: 18, allowsRotation: true),
+                RigidStep(translationMM: 2, rotationRadians: 0.6 * .pi / 180, maxIterations: 16, allowsRotation: true),
+                RigidStep(translationMM: 1, rotationRadians: 0.25 * .pi / 180, maxIterations: 14, allowsRotation: true)
+            ]
+            : [
+                RigidStep(translationMM: 40, rotationRadians: 12 * .pi / 180, maxIterations: 32, allowsRotation: true),
+                RigidStep(translationMM: 20, rotationRadians: 6 * .pi / 180, maxIterations: 28, allowsRotation: true),
+                RigidStep(translationMM: 10, rotationRadians: 3 * .pi / 180, maxIterations: 24, allowsRotation: true),
+                RigidStep(translationMM: 5, rotationRadians: 1.5 * .pi / 180, maxIterations: 20, allowsRotation: true),
+                RigidStep(translationMM: 2, rotationRadians: 0.75 * .pi / 180, maxIterations: 18, allowsRotation: true),
+                RigidStep(translationMM: 1, rotationRadians: 0.35 * .pi / 180, maxIterations: 16, allowsRotation: true)
+            ]
 
         let levelPairs = Array(zip(baseVolumeLevels, overlayVolumeLevels))
         guard levelPairs.isEmpty == false else { return (initialGuess, .greatestFiniteMagnitude) }
         var best = initialGuess
         let firstUseBoneOnly = shouldUseBoneOnlyMetric(forLevelIndex: 0, totalLevels: levelPairs.count)
-        var bestMetric = metricValue(for: initialGuess, level: levelPairs[0], useBoneOnly: firstUseBoneOnly)
+        var bestMetric = metricValue(
+            for: initialGuess,
+            level: levelPairs[0],
+            levelIndex: 0,
+            totalLevels: levelPairs.count,
+            useBoneOnly: firstUseBoneOnly
+        )
 
         for (levelIndex, levelPair) in levelPairs.enumerated() {
             let useBoneOnly = shouldUseBoneOnlyMetric(forLevelIndex: levelIndex, totalLevels: levelPairs.count)
@@ -1024,14 +1213,15 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 let result = optimizeLevelWithNelderMead(
                     startingAt: best,
                     level: levelPair,
+                    levelIndex: levelIndex,
+                    totalLevels: levelPairs.count,
                     useBoneOnly: useBoneOnly,
                     translationMM: step.translationMM,
                     rotationRadians: step.rotationRadians,
+                    allowsRotation: step.allowsRotation,
                     maxIterations: step.maxIterations,
                     generation: generation,
-                    levelIndex: levelIndex,
                     stepIndex: stepIndex,
-                    totalLevels: levelPairs.count,
                     totalSteps: rigidSteps.count
                 )
                 best = result.state
@@ -1056,14 +1246,15 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private func optimizeLevelWithNelderMead(
         startingAt initialState: RigidTransformState,
         level: (VolumeLevel, VolumeLevel),
+        levelIndex: Int,
+        totalLevels: Int,
         useBoneOnly: Bool,
         translationMM: Float,
         rotationRadians: Float,
+        allowsRotation: Bool,
         maxIterations: Int,
         generation: UInt,
-        levelIndex: Int,
         stepIndex: Int,
-        totalLevels: Int,
         totalSteps: Int
     ) -> (state: RigidTransformState, metric: Float) {
         struct Vertex {
@@ -1080,18 +1271,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             translationMM,
             translationMM,
             translationMM,
-            rotationRadians,
-            rotationRadians,
-            rotationRadians
+            allowsRotation ? rotationRadians : 0,
+            allowsRotation ? rotationRadians : 0,
+            allowsRotation ? rotationRadians : 0
         )
 
         var simplex: [Vertex] = []
         let startParameters = parameters(for: initialState)
-        simplex.append(Vertex(parameters: startParameters, metric: metricValue(for: initialState, level: level, useBoneOnly: useBoneOnly)))
+        simplex.append(Vertex(parameters: startParameters, metric: metricValue(for: initialState, level: level, levelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)))
         for dimension in 0..<6 {
             var candidate = startParameters
             candidate[dimension] += parameterScales[dimension]
-            simplex.append(Vertex(parameters: candidate, metric: metricValue(for: state(for: candidate), level: level, useBoneOnly: useBoneOnly)))
+            simplex.append(Vertex(parameters: candidate, metric: metricValue(for: state(for: candidate), level: level, levelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)))
         }
 
         func sortSimplex() {
@@ -1130,11 +1321,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             centroid = centroid / 6
 
             let reflected = centroid + alpha * (centroid - worstVertex.parameters)
-            let reflectedMetric = metricValue(for: state(for: reflected), level: level, useBoneOnly: useBoneOnly)
+            let reflectedMetric = metricValue(for: state(for: reflected), level: level, levelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)
 
             if reflectedMetric < bestVertex.metric {
                 let expanded = centroid + gamma * (reflected - centroid)
-                let expandedMetric = metricValue(for: state(for: expanded), level: level, useBoneOnly: useBoneOnly)
+                let expandedMetric = metricValue(for: state(for: expanded), level: level, levelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)
                 simplex[6] = expandedMetric < reflectedMetric
                     ? Vertex(parameters: expanded, metric: expandedMetric)
                     : Vertex(parameters: reflected, metric: reflectedMetric)
@@ -1144,7 +1335,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 let shouldOutsideContract = reflectedMetric < worstVertex.metric
                 let contractionTarget = shouldOutsideContract ? reflected : worstVertex.parameters
                 let contracted = centroid + rho * (contractionTarget - centroid)
-                let contractedMetric = metricValue(for: state(for: contracted), level: level, useBoneOnly: useBoneOnly)
+                let contractedMetric = metricValue(for: state(for: contracted), level: level, levelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)
 
                 let contractionAccepted = shouldOutsideContract
                     ? contractedMetric <= reflectedMetric
@@ -1155,7 +1346,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 } else {
                     for index in 1..<simplex.count {
                         simplex[index].parameters = bestVertex.parameters + sigma * (simplex[index].parameters - bestVertex.parameters)
-                        simplex[index].metric = metricValue(for: state(for: simplex[index].parameters), level: level, useBoneOnly: useBoneOnly)
+                        simplex[index].metric = metricValue(for: state(for: simplex[index].parameters), level: level, levelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)
                     }
                 }
             }
@@ -1221,7 +1412,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    private func metricValue(for state: RigidTransformState, level: (VolumeLevel, VolumeLevel), useBoneOnly: Bool) -> Float {
+    private func metricValue(
+        for state: RigidTransformState,
+        level: (VolumeLevel, VolumeLevel),
+        levelIndex: Int,
+        totalLevels: Int,
+        useBoneOnly: Bool
+    ) -> Float {
         let baseVolumeTexture = level.0.texture
         let overlayVolumeTexture = level.1.texture
 
@@ -1240,11 +1437,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         memset(histogramBuffer.contents(), 0, histogramBufferLength)
 
         var uniforms = RegistrationUniforms(
-            baseWindowLevel: windowLevel,
-            baseWindowWidth: max(windowWidth, 1),
-            overlayWindowLevel: overlayWindowLevel,
-            overlayWindowWidth: max(overlayWindowWidth, 1),
-            registrationOptions: registrationOptions(useBoneOnly: useBoneOnly),
+            baseWindowLevel: baseRegistrationWindowLevel,
+            baseWindowWidth: max(baseRegistrationWindowWidth, 1),
+            overlayWindowLevel: overlayRegistrationWindowLevel,
+            overlayWindowWidth: max(overlayRegistrationWindowWidth, 1),
+            metricOptions: metricOptions(forLevelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly),
             overlayTranslationWorld: state.translationWorld,
             movingRotationCenterWorld: movingRotationCenterWorld,
             baseTextureSize: SIMD3<UInt32>(
@@ -1310,18 +1507,30 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         let nmi = (baseEntropy + overlayEntropy) / jointEntropy
-        let totalVoxelCount = Double(baseVolumeTexture.width * baseVolumeTexture.height * baseVolumeTexture.depth)
-        let overlapFraction = overlapTotal / max(totalVoxelCount, 1)
-        let overlapPenalty = 1.0 - overlapFraction
+        let fixedVoxelCount = Double(baseVolumeTexture.width * baseVolumeTexture.height * baseVolumeTexture.depth)
+        let movingVoxelCount = Double(overlayVolumeTexture.width * overlayVolumeTexture.height * overlayVolumeTexture.depth)
+        let overlapDenominator = min(fixedVoxelCount, movingVoxelCount)
+        let overlapFraction = overlapTotal / max(overlapDenominator, 1)
+        let slabAwareRegistration = baseIsThinSlab || overlayIsThinSlab
+        let minimumUsefulOverlap: Double
+        if slabAwareRegistration {
+            minimumUsefulOverlap = useBoneOnly ? 0.015 : 0.035
+        } else {
+            minimumUsefulOverlap = useBoneOnly ? 0.003 : 0.01
+        }
+        let overlapPenalty = overlapFraction < minimumUsefulOverlap
+            ? Float((minimumUsefulOverlap - overlapFraction) * (slabAwareRegistration ? 8.0 : 4.0))
+            : 0
 
-        return Float(-nmi + overlapPenalty)
+        return Float(-nmi) + overlapPenalty
     }
 
-    private func registrationOptions(useBoneOnly: Bool) -> SIMD4<Float> {
+    private func metricOptions(forLevelIndex levelIndex: Int, totalLevels: Int, useBoneOnly: Bool) -> SIMD4<Float> {
         guard useBoneOnly,
               let basePix = pixList.first,
               let overlayPix = overlayPixList.first else {
-            return .zero
+            let usesStructureMetric = shouldUseStructureMetric(forLevelIndex: levelIndex, totalLevels: totalLevels)
+            return usesStructureMetric ? SIMD4<Float>(2, structureGradientThreshold(forLevelIndex: levelIndex, totalLevels: totalLevels), 0, 0) : .zero
         }
 
         let baseModality = basePix.modalityString?.uppercased() ?? ""
@@ -1335,12 +1544,23 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             return SIMD4<Float>(1, 65, 3000, 0)
         }
 
-        return .zero
+        let usesStructureMetric = shouldUseStructureMetric(forLevelIndex: levelIndex, totalLevels: totalLevels)
+        return usesStructureMetric ? SIMD4<Float>(2, structureGradientThreshold(forLevelIndex: levelIndex, totalLevels: totalLevels), 0, 0) : .zero
     }
 
     private func shouldUseBoneOnlyMetric(forLevelIndex levelIndex: Int, totalLevels: Int) -> Bool {
         guard totalLevels > 0 else { return false }
         return levelIndex == totalLevels - 1
+    }
+
+    private func shouldUseStructureMetric(forLevelIndex levelIndex: Int, totalLevels: Int) -> Bool {
+        guard totalLevels > 1 else { return true }
+        return levelIndex >= max(totalLevels - 2, 0)
+    }
+
+    private func structureGradientThreshold(forLevelIndex levelIndex: Int, totalLevels: Int) -> Float {
+        guard totalLevels > 1 else { return 0.018 }
+        return levelIndex == totalLevels - 1 ? 0.018 : 0.012
     }
 
     private func currentOverlayTranslationPixels(for translationWorld: SIMD3<Float>? = nil) -> SIMD2<Float> {

@@ -124,6 +124,11 @@ private struct VolumeLevel {
     let voxelToWorld: simd_float4x4
 }
 
+private struct SlabGeometry {
+    let normalWorld: SIMD3<Float>
+    let thicknessMM: Float
+}
+
 private struct MetalVertex {
     var position: SIMD2<Float>
     var texCoord: SIMD2<Float>
@@ -154,10 +159,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var fixedVoxelToWorld = matrix_identity_float4x4
     private var movingWorldToVoxel = matrix_identity_float4x4
     private var movingRotationCenterWorld = SIMD3<Float>(repeating: 0)
+    private var baseVolumeCenterWorld = SIMD3<Float>(repeating: 0)
+    private var overlayVolumeCenterWorld = SIMD3<Float>(repeating: 0)
     private var baseInformativeCenterWorld = SIMD3<Float>(repeating: 0)
     private var overlayInformativeCenterWorld = SIMD3<Float>(repeating: 0)
     private var baseIsThinSlab = false
     private var overlayIsThinSlab = false
+    private var baseSlabGeometry: SlabGeometry?
+    private var overlaySlabGeometry: SlabGeometry?
 
     private(set) var currentSliceIndex = 0
     private(set) var windowLevel: Float = 0
@@ -297,6 +306,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let overlayRegistrationWindow = registrationWindow(for: fullResolutionVolume.data, pixList: overlayPixList)
         overlayRegistrationWindowLevel = overlayRegistrationWindow.level
         overlayRegistrationWindowWidth = overlayRegistrationWindow.width
+        overlayVolumeCenterWorld = volumeCenterWorld(for: overlayPixList, voxelToWorld: movingVoxelToWorld)
         overlayInformativeCenterWorld = informativeCenterWorld(
             for: fullResolutionVolume.data,
             dimensions: fullResolutionVolume.dimensions,
@@ -305,6 +315,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             width: overlayRegistrationWindow.width
         )
         overlayIsThinSlab = isThinSlab(dimensions: fullResolutionVolume.dimensions, voxelToWorld: movingVoxelToWorld)
+        overlaySlabGeometry = overlayIsThinSlab ? slabGeometry(dimensions: fullResolutionVolume.dimensions, voxelToWorld: movingVoxelToWorld) : nil
         overlayVolumeTexture = makeTexture3D(from: fullResolutionVolume.data, dimensions: fullResolutionVolume.dimensions)
         overlayVolumeLevels = makeVolumeLevels(
             from: fullResolutionVolume.data,
@@ -328,8 +339,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         overlayVolumeLevels = []
         overlayRegistrationWindowLevel = 0
         overlayRegistrationWindowWidth = 1
+        overlayVolumeCenterWorld = .zero
         overlayInformativeCenterWorld = .zero
         overlayIsThinSlab = false
+        overlaySlabGeometry = nil
         overlayTranslationWorld = .zero
         overlayRotationRadians = .zero
         overlayTranslationPixels = .zero
@@ -451,6 +464,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let baseRegistrationWindow = registrationWindow(for: fullResolutionVolume.data, pixList: pixList)
         baseRegistrationWindowLevel = baseRegistrationWindow.level
         baseRegistrationWindowWidth = baseRegistrationWindow.width
+        baseVolumeCenterWorld = volumeCenterWorld(for: pixList, voxelToWorld: fixedVoxelToWorld)
         baseInformativeCenterWorld = informativeCenterWorld(
             for: fullResolutionVolume.data,
             dimensions: fullResolutionVolume.dimensions,
@@ -459,6 +473,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             width: baseRegistrationWindow.width
         )
         baseIsThinSlab = isThinSlab(dimensions: fullResolutionVolume.dimensions, voxelToWorld: fixedVoxelToWorld)
+        baseSlabGeometry = baseIsThinSlab ? slabGeometry(dimensions: fullResolutionVolume.dimensions, voxelToWorld: fixedVoxelToWorld) : nil
         baseVolumeTexture = makeTexture3D(from: fullResolutionVolume.data, dimensions: fullResolutionVolume.dimensions)
         baseVolumeLevels = makeVolumeLevels(
             from: fullResolutionVolume.data,
@@ -877,6 +892,25 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return thinnest < 40 && anisotropy < 0.35
     }
 
+    private func slabGeometry(dimensions: SIMD3<Int>, voxelToWorld: simd_float4x4) -> SlabGeometry {
+        let columns = [
+            SIMD3<Float>(voxelToWorld.columns.0.x, voxelToWorld.columns.0.y, voxelToWorld.columns.0.z),
+            SIMD3<Float>(voxelToWorld.columns.1.x, voxelToWorld.columns.1.y, voxelToWorld.columns.1.z),
+            SIMD3<Float>(voxelToWorld.columns.2.x, voxelToWorld.columns.2.y, voxelToWorld.columns.2.z)
+        ]
+        let counts = [
+            Float(max(dimensions.x - 1, 0)),
+            Float(max(dimensions.y - 1, 0)),
+            Float(max(dimensions.z - 1, 0))
+        ]
+        let extents = zip(columns, counts).map { column, count in
+            simd_length(column) * count
+        }
+        let minIndex = extents.enumerated().min(by: { $0.element < $1.element })?.offset ?? 2
+        let normal = simd_normalize(columns[minIndex])
+        return SlabGeometry(normalWorld: normal, thicknessMM: max(extents[minIndex], 0.1))
+    }
+
     private func gaussianBlur3D(_ source: [Float], dimensions: SIMD3<Int>, sigma: SIMD3<Float>) -> [Float] {
         var result = source
         if sigma.x > 0.001 {
@@ -1110,6 +1144,33 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let centeredPoint = overlayInformativeCenterWorld - movingRotationCenterWorld
         let rotated = rotationMatrix(for: state.rotationRadians) * SIMD4<Float>(centeredPoint, 1)
         return SIMD3<Float>(rotated.x, rotated.y, rotated.z) + movingRotationCenterWorld + state.translationWorld
+    }
+
+    private func transformedOverlayVolumeCenterWorld(for state: RigidTransformState) -> SIMD3<Float> {
+        let centeredPoint = overlayVolumeCenterWorld - movingRotationCenterWorld
+        let rotated = rotationMatrix(for: state.rotationRadians) * SIMD4<Float>(centeredPoint, 1)
+        return SIMD3<Float>(rotated.x, rotated.y, rotated.z) + movingRotationCenterWorld + state.translationWorld
+    }
+
+    private func slabOverlapPenalty(for state: RigidTransformState) -> Float {
+        guard let baseSlabGeometry, let overlaySlabGeometry else { return 0 }
+
+        let transformedOverlayCenter = transformedOverlayVolumeCenterWorld(for: state)
+        let centerDelta = transformedOverlayCenter - baseVolumeCenterWorld
+        let combinedNormal = baseSlabGeometry.normalWorld + overlaySlabGeometry.normalWorld
+        let slabNormal = simd_length(combinedNormal) > 0.0001
+            ? simd_normalize(combinedNormal)
+            : baseSlabGeometry.normalWorld
+        let normalSeparation = abs(simd_dot(centerDelta, slabNormal))
+        let combinedHalfThickness = 0.5 * (baseSlabGeometry.thicknessMM + overlaySlabGeometry.thicknessMM)
+        let normalOverlapFraction = max(0, (combinedHalfThickness - normalSeparation) / max(combinedHalfThickness, 0.0001))
+
+        if normalOverlapFraction >= 0.5 {
+            return 0
+        }
+
+        let missingOverlap = 0.5 - normalOverlapFraction
+        return missingOverlap * 2.5
     }
 
     private func centerOfMassInitialGuess() -> RigidTransformState {
@@ -1521,8 +1582,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let overlapPenalty = overlapFraction < minimumUsefulOverlap
             ? Float((minimumUsefulOverlap - overlapFraction) * (slabAwareRegistration ? 8.0 : 4.0))
             : 0
+        let slabPenalty = slabAwareRegistration ? slabOverlapPenalty(for: state) : 0
 
-        return Float(-nmi) + overlapPenalty
+        return Float(-nmi) + overlapPenalty + slabPenalty
     }
 
     private func metricOptions(forLevelIndex levelIndex: Int, totalLevels: Int, useBoneOnly: Bool) -> SIMD4<Float> {

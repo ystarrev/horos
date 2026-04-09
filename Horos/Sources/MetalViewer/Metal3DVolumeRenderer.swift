@@ -90,6 +90,8 @@ private struct Metal3DVolumeUniforms {
 
 private struct Metal3DOverlayVertex {
     var position: SIMD3<Float>
+    var normal: SIMD3<Float>
+    var color: SIMD4<Float>
 }
 
 private struct Metal3DOverlayUniforms {
@@ -117,6 +119,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private let vertexBuffer: MTLBuffer
     private let depthStencilState: MTLDepthStencilState
     private let pixList: [DCMPix]
+    private let cropHandleColor = SIMD4<Float>(0.16, 0.98, 0.32, 1.0)
+    private let cropHandleHighlightColor = SIMD4<Float>(1.0, 0.18, 0.82, 1.0)
     private let volumeDimensions: SIMD3<Int>
     private let boxMin: SIMD3<Float>
     private let boxMax: SIMD3<Float>
@@ -150,6 +154,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private(set) var selectedOpacityName = Metal3DDefaults.linearOpacity
     private(set) var cropEnabled = false
     private(set) var cropOverlayVisible = false
+    private var hoveredCropPlane: Metal3DCropPlane?
+    private var activeCropPlane: Metal3DCropPlane?
     private(set) var shadingEnabled = UserDefaults.standard.bool(forKey: "defaultShading")
 
     private var windowLevel: Float = 0
@@ -422,6 +428,14 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
     func setCropOverlayVisible(_ visible: Bool) {
         cropOverlayVisible = visible
+    }
+
+    func setHoveredCropPlane(_ plane: Metal3DCropPlane?) {
+        hoveredCropPlane = plane
+    }
+
+    func setActiveCropPlane(_ plane: Metal3DCropPlane?) {
+        activeCropPlane = plane
     }
 
     func cropHandleProjections(in bounds: CGRect) -> [Metal3DCropHandleProjection] {
@@ -759,26 +773,28 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         var vertices = [Metal3DOverlayVertex]()
         vertices.reserveCapacity(indices.count * 2)
         for (start, end) in indices {
-            vertices.append(Metal3DOverlayVertex(position: corners[start]))
-            vertices.append(Metal3DOverlayVertex(position: corners[end]))
+            vertices.append(Metal3DOverlayVertex(position: corners[start], normal: .zero, color: cropHandleColor))
+            vertices.append(Metal3DOverlayVertex(position: corners[end], normal: .zero, color: cropHandleColor))
         }
         return vertices
     }
 
     private func makeCropHandleSphereVertices() -> [Metal3DOverlayVertex] {
         let cropCenter = 0.5 * (cropBoxMin + cropBoxMax)
-        let centers: [SIMD3<Float>] = [
-            SIMD3<Float>(cropBoxMin.x, cropCenter.y, cropCenter.z),
-            SIMD3<Float>(cropBoxMax.x, cropCenter.y, cropCenter.z),
-            SIMD3<Float>(cropCenter.x, cropBoxMin.y, cropCenter.z),
-            SIMD3<Float>(cropCenter.x, cropBoxMax.y, cropCenter.z),
-            SIMD3<Float>(cropCenter.x, cropCenter.y, cropBoxMin.z),
-            SIMD3<Float>(cropCenter.x, cropCenter.y, cropBoxMax.z),
+        let centers: [(Metal3DCropPlane, SIMD3<Float>)] = [
+            (.minX, SIMD3<Float>(cropBoxMin.x, cropCenter.y, cropCenter.z)),
+            (.maxX, SIMD3<Float>(cropBoxMax.x, cropCenter.y, cropCenter.z)),
+            (.minY, SIMD3<Float>(cropCenter.x, cropBoxMin.y, cropCenter.z)),
+            (.maxY, SIMD3<Float>(cropCenter.x, cropBoxMax.y, cropCenter.z)),
+            (.minZ, SIMD3<Float>(cropCenter.x, cropCenter.y, cropBoxMin.z)),
+            (.maxZ, SIMD3<Float>(cropCenter.x, cropCenter.y, cropBoxMax.z)),
         ]
-        let latitudes = 8
-        let longitudes = 12
+        let latitudes = 16
+        let longitudes = 24
         var vertices = [Metal3DOverlayVertex]()
-        for center in centers {
+        for (plane, center) in centers {
+            let isHighlighted = plane == activeCropPlane || plane == hoveredCropPlane
+            let color = isHighlighted ? cropHandleHighlightColor : cropHandleColor
             for latitude in 0..<latitudes {
                 let v0 = Float(latitude) / Float(latitudes)
                 let v1 = Float(latitude + 1) / Float(latitudes)
@@ -794,13 +810,17 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                     let p01 = center + cropHandleRadius * Self.spherePoint(theta: theta0, phi: phi1)
                     let p10 = center + cropHandleRadius * Self.spherePoint(theta: theta1, phi: phi0)
                     let p11 = center + cropHandleRadius * Self.spherePoint(theta: theta1, phi: phi1)
+                    let n00 = Self.spherePoint(theta: theta0, phi: phi0)
+                    let n01 = Self.spherePoint(theta: theta0, phi: phi1)
+                    let n10 = Self.spherePoint(theta: theta1, phi: phi0)
+                    let n11 = Self.spherePoint(theta: theta1, phi: phi1)
 
-                    vertices.append(Metal3DOverlayVertex(position: p00))
-                    vertices.append(Metal3DOverlayVertex(position: p10))
-                    vertices.append(Metal3DOverlayVertex(position: p11))
-                    vertices.append(Metal3DOverlayVertex(position: p00))
-                    vertices.append(Metal3DOverlayVertex(position: p11))
-                    vertices.append(Metal3DOverlayVertex(position: p01))
+                    vertices.append(Metal3DOverlayVertex(position: p00, normal: n00, color: color))
+                    vertices.append(Metal3DOverlayVertex(position: p10, normal: n10, color: color))
+                    vertices.append(Metal3DOverlayVertex(position: p11, normal: n11, color: color))
+                    vertices.append(Metal3DOverlayVertex(position: p00, normal: n00, color: color))
+                    vertices.append(Metal3DOverlayVertex(position: p11, normal: n11, color: color))
+                    vertices.append(Metal3DOverlayVertex(position: p01, normal: n01, color: color))
                 }
             }
         }

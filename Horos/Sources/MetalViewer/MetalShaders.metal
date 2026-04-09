@@ -104,10 +104,19 @@ struct Metal3DRasterizerData {
 
 struct Metal3DOverlayVertex {
     float3 position;
+    float3 normal;
+    float4 color;
 };
 
 struct Metal3DOverlayUniforms {
     float4x4 viewProjectionMatrix;
+    float4 color;
+};
+
+struct Metal3DOverlayRasterizerData {
+    float4 position [[position]];
+    float3 worldPosition;
+    float3 normal;
     float4 color;
 };
 
@@ -160,12 +169,17 @@ vertex Metal3DRasterizerData metal3DVolumeVertex(
     return out;
 }
 
-vertex float4 metal3DOverlayVertexMain(
+vertex Metal3DOverlayRasterizerData metal3DOverlayVertexMain(
     const device Metal3DOverlayVertex *vertices [[buffer(0)]],
     constant Metal3DOverlayUniforms &uniforms [[buffer(1)]],
     uint vertexID [[vertex_id]]
 ) {
-    return uniforms.viewProjectionMatrix * float4(vertices[vertexID].position, 1.0);
+    Metal3DOverlayRasterizerData out;
+    out.worldPosition = vertices[vertexID].position;
+    out.normal = vertices[vertexID].normal;
+    out.color = vertices[vertexID].color;
+    out.position = uniforms.viewProjectionMatrix * float4(vertices[vertexID].position, 1.0);
+    return out;
 }
 
 static inline bool metal3DIntersectBox(float3 rayOrigin, float3 rayDirection, float3 boxMin, float3 boxMax, thread float &tMin, thread float &tMax) {
@@ -443,9 +457,27 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
 }
 
 fragment float4 metal3DOverlayFragment(
+    Metal3DOverlayRasterizerData in [[stage_in]],
     constant Metal3DOverlayUniforms &uniforms [[buffer(1)]]
 ) {
-    return uniforms.color;
+    if (length_squared(in.normal) < 1e-6) {
+        return float4(in.color.rgb, uniforms.color.a);
+    }
+
+    float3 normal = normalize(in.normal);
+    const float3 lightDirection = normalize(float3(0.35, 0.55, 1.0));
+    const float3 viewDirection = normalize(float3(0.0, 0.0, 1.0));
+    const float diffuse = max(dot(normal, lightDirection), 0.0);
+    const float3 halfVector = normalize(lightDirection + viewDirection);
+    const float specular = pow(max(dot(normal, halfVector), 0.0), 24.0);
+    const float fresnel = pow(1.0 - max(dot(normal, viewDirection), 0.0), 3.0);
+
+    float lighting = 0.28 + 0.72 * diffuse;
+    float3 color = in.color.rgb * lighting;
+    color += in.color.rgb * (0.18 * fresnel);
+    color += float3(1.0) * (0.25 * specular);
+    color = min(color, float3(1.0));
+    return float4(color, in.color.a * uniforms.color.a);
 }
 
 fragment float4 metalViewerFragment(

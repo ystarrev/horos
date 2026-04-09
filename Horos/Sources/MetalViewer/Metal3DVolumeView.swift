@@ -2,6 +2,8 @@ import AppKit
 import MetalKit
 
 final class Metal3DVolumeView: NSView {
+    private let cropHandleHitPadding: CGFloat = 11
+
     private final class CropOverlayView: NSView {
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
@@ -67,6 +69,7 @@ final class Metal3DVolumeView: NSView {
     private var activeCropPlane: Metal3DCropPlane?
     private var cropHandleProjections = [Metal3DCropPlane: Metal3DCropHandleProjection]()
     private var cropHandleViews = [Metal3DCropPlane: CropHandleView]()
+    private var trackingAreaRef: NSTrackingArea?
     var wlwwInteractionHandler: ((String) -> Void)?
 
     private var cropApplied = false
@@ -76,6 +79,10 @@ final class Metal3DVolumeView: NSView {
             if cropEnabled {
                 cropApplied = true
                 renderer?.setCropEnabled(true)
+            } else {
+                activeCropPlane = nil
+                renderer?.setActiveCropPlane(nil)
+                renderer?.setHoveredCropPlane(nil)
             }
             renderer?.setCropOverlayVisible(cropEnabled)
             updateAppearance()
@@ -142,6 +149,21 @@ final class Metal3DVolumeView: NSView {
         true
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingAreaRef {
+            removeTrackingArea(trackingAreaRef)
+        }
+        let trackingAreaRef = NSTrackingArea(
+            rect: bounds,
+            options: [.activeInKeyWindow, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingAreaRef)
+        self.trackingAreaRef = trackingAreaRef
+    }
+
     override func layout() {
         super.layout()
         refreshCropHandles()
@@ -159,7 +181,9 @@ final class Metal3DVolumeView: NSView {
         let location = convert(event.locationInWindow, from: nil)
         if cropEnabled, let hitPlane = cropPlane(at: location) {
             activeCropPlane = hitPlane
+            renderer?.setActiveCropPlane(hitPlane)
             lastDragLocation = location
+            metalView.setNeedsDisplay(metalView.bounds)
             return
         }
         lastDragLocation = location
@@ -209,7 +233,25 @@ final class Metal3DVolumeView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         activeCropPlane = nil
+        renderer?.setActiveCropPlane(nil)
+        if cropEnabled {
+            let location = convert(event.locationInWindow, from: nil)
+            updateHoveredCropPlane(at: location)
+        }
         lastDragLocation = nil
+        metalView.setNeedsDisplay(metalView.bounds)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard cropEnabled else { return }
+        let location = convert(event.locationInWindow, from: nil)
+        updateHoveredCropPlane(at: location)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard cropEnabled else { return }
+        renderer?.setHoveredCropPlane(nil)
+        metalView.setNeedsDisplay(metalView.bounds)
     }
 
     func configure(pixList: [DCMPix], volumeData: Data) {
@@ -283,7 +325,7 @@ final class Metal3DVolumeView: NSView {
 
     private func cropPlane(at location: CGPoint) -> Metal3DCropPlane? {
         for (plane, handleView) in cropHandleViews where handleView.isHidden == false {
-            if handleView.frame.insetBy(dx: -6, dy: -6).contains(location) {
+            if handleView.frame.insetBy(dx: -cropHandleHitPadding, dy: -cropHandleHitPadding).contains(location) {
                 return plane
             }
         }
@@ -321,5 +363,11 @@ final class Metal3DVolumeView: NSView {
             handleView.alphaValue = 0.0
             handleView.isHidden = false
         }
+    }
+
+    private func updateHoveredCropPlane(at location: CGPoint) {
+        let hoveredPlane = cropPlane(at: location)
+        renderer?.setHoveredCropPlane(hoveredPlane)
+        metalView.setNeedsDisplay(metalView.bounds)
     }
 }

@@ -528,7 +528,6 @@ static OFBool decompressFile(DcmFileFormat fileformat, const char *fname, char *
 	
 	NSLog( @"SEND - decompress: %@", [[NSString stringWithUTF8String: fname] lastPathComponent]);
 
-	#ifndef OSIRIX_LIGHT
 	BOOL useDCMTKForJP2K = [[NSUserDefaults standardUserDefaults] boolForKey: @"useDCMTKForJP2K"];
 	if( useDCMTKForJP2K == NO && (filexfer.getXfer() == EXS_JPEG2000LosslessOnly || filexfer.getXfer() == EXS_JPEG2000))
 	{
@@ -541,7 +540,6 @@ static OFBool decompressFile(DcmFileFormat fileformat, const char *fname, char *
 		[dcmObject release];
 	}
 	else
-	#endif
 	{
         try
         {
@@ -580,7 +578,6 @@ static OFBool compressFile(DcmFileFormat fileformat, const char *fname, char *ou
     {
         DcmXfer filexfer( dataset->getOriginalXfer());
         
-        #ifndef OSIRIX_LIGHT
         BOOL useDCMTKForJP2K = [[NSUserDefaults standardUserDefaults] boolForKey: @"useDCMTKForJP2K"];
         if( useDCMTKForJP2K == NO && opt_networkTransferSyntax == EXS_JPEG2000)
         {
@@ -626,11 +623,9 @@ static OFBool compressFile(DcmFileFormat fileformat, const char *fname, char *ou
             [dcmObject release];
         }
         else
-        #endif
         {
             try
             {
-                #ifndef OSIRIX_LIGHT
                 //NSLog(@"SEND - Compress DCMTK JPEG: %s", fname);
                 
 //                DcmItem *metaInfo = fileformat.getMetaInfo();
@@ -679,7 +674,6 @@ static OFBool compressFile(DcmFileFormat fileformat, const char *fname, char *ou
                 }
                 else
                     status = NO;
-                #endif
             }
             catch(...)
             {
@@ -1268,15 +1262,12 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
 	
 	DcmTLSTransportLayer *tLayer = NULL;
 	
-	#ifndef OSIRIX_LIGHT
 //	if( _secureConnection)
 //		[DDKeychain lockTmpFiles];
 	NSString *uniqueStringID = [NSString stringWithFormat:@"%d.%d.%d", getpid(), inc++, (int) random()];
-	#endif
 	
 	@try
 	{
-	#ifndef OSIRIX_LIGHT
 	#ifdef WITH_OPENSSL
 		if(_cipherSuites)
 		{
@@ -1321,7 +1312,6 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
             }
 		}
 		
-	#endif
 	#endif
 		
 		  int paramCount = [_filesToSend count];
@@ -1414,7 +1404,6 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
 			//return;
 		}
 	
-	#ifndef OSIRIX_LIGHT
 	#ifdef WITH_OPENSSL // joris
 		
 		if( _secureConnection)
@@ -1521,7 +1510,6 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
                 }
             }
         }
-        #endif
         #endif
             
          /* initialize asscociation parameters, i.e. create an instance of T_ASC_Parameters*. */
@@ -1781,7 +1769,6 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
     WSACleanup();
 #endif
 
-#ifndef OSIRIX_LIGHT
 #ifdef WITH_OPENSSL
 /*
     if (tLayer && opt_writeSeedFile)
@@ -1812,7 +1799,6 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
             [[NSFileManager defaultManager] removeItemAtPath:[NSString stringWithFormat:@"%@%@", TLS_TRUSTED_CERTIFICATES_DIR, uniqueStringID] error:NULL];
         }
     }
-#endif
 #endif
 
 //    if (opt_haltOnUnsuccessfulStore && unsuccessfulStoreEncountered)

@@ -74,13 +74,11 @@
 #import "NSFileManager+N2.h"
 #import <objc/runtime.h>
 #import "NSPanel+N2.h"
-#ifndef OSIRIX_LIGHT
 #import "BonjourPublisher.h"
 #ifndef MACAPPSTORE
 #import "Reports.h"
 //#import <ILCrashReporter/ILCrashReporter.h>
 #import "VRView.h"
-#endif
 #endif
 #import "PluginManagerController.h"
 #import "OSIWindowController.h"
@@ -165,16 +163,10 @@ enum	{kSuccess = 0,
 #include <arpa/inet.h>
 
 
-#ifdef OSIRIX_LIGHT
-void exitOsiriX(void)
-{
-	[NSException raise: @"JPEG error exception raised" format: @"JPEG error exception raised - See Console.app for error message"];
-}
-#endif
 
 static char *privateIPstring = nil;
 
-const char *GetPrivateIP()
+const char *GetPrivateIP(void)
 {
 	if( privateIPstring == nil)
 	{
@@ -461,9 +453,7 @@ NSString* convertDICOM( NSString *inputfile)
 	
 	converting = YES;
 	NSLog(@"convertDICOM - FAILED to use current DICOM File Parser : %@", inputfile);
-	#ifndef OSIRIX_LIGHT
 	[[[BrowserController currentBrowser] database] decompressFilesAtPaths:@[inputfile] intoDirAtPath:[outputfile stringByDeletingLastPathComponent]];
-	#endif
 	return outputfile;
 }
 
@@ -1075,7 +1065,6 @@ void exceptionHandler(NSException *exception)
 		
 		[PluginManager setMenus: filtersMenu :roisMenu :othersMenu :dbMenu];
 		
-#ifndef OSIRIX_LIGHT
 		// refresh the plugin manager window (if open)
 		NSArray *winList = [NSApp windows];		
 		for(NSWindow *window in winList)
@@ -1083,7 +1072,6 @@ void exceptionHandler(NSException *exception)
 			if( [[window windowController] isKindOfClass:[PluginManagerController class]])
 				[[window windowController] refreshPluginList];
 		}
-#endif
 	}
 }
 
@@ -1109,12 +1097,10 @@ void exceptionHandler(NSException *exception)
     [NSApp stopModal];
 }
 
-#ifndef OSIRIX_LIGHT
 - (IBAction) autoQueryRefresh:(id)sender
 {
 	[[QueryController currentAutoQueryController] refreshAutoQR: sender];
 }
-#endif
 
 //———————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
@@ -1484,9 +1470,7 @@ void exceptionHandler(NSException *exception)
         
         Use_kdu_IfAvailable = [[NSUserDefaults standardUserDefaults] boolForKey:@"UseKDUForJPEG2000"];
         
-        #ifndef OSIRIX_LIGHT
         [DCMPixelDataAttribute setUse_kdu_IfAvailable: Use_kdu_IfAvailable];
-        #endif
         
         [[BrowserController currentBrowser] setNetworkLogs];
         [DicomFile resetDefaults];
@@ -2228,7 +2212,6 @@ void exceptionHandler(NSException *exception)
 {
 	// this method is always executed as a new thread detached from the NSthread command of RestartSTORESCP method
 
-	#ifndef OSIRIX_LIGHT
 	[STORESCP lock];
 	
     [NSThread currentThread].name = @"DICOM Store-SCP";
@@ -2261,7 +2244,6 @@ void exceptionHandler(NSException *exception)
 	}
 	
 	[STORESCP unlock];
-	#endif
 	
 	return;
 }
@@ -2269,7 +2251,6 @@ void exceptionHandler(NSException *exception)
 -(void) startSTORESCPTLS:(id) sender
 {
 	// this method is always executed as a new thread detached from the NSthread command of RestartSTORESCP method
-#ifndef OSIRIX_LIGHT
     [NSThread currentThread].name = @"DICOM Store-SCP TLS";
     
 	if([[NSUserDefaults standardUserDefaults] boolForKey:@"STORESCPTLS"])
@@ -2299,7 +2280,6 @@ void exceptionHandler(NSException *exception)
 		
 		[STORESCPTLS unlock];
 	}
-#endif
 	return;
 }
 
@@ -2508,7 +2488,7 @@ void exceptionHandler(NSException *exception)
 
 - (void)application:(NSApplication *)sender openFiles:(NSArray *)filenames
 {
-	if([filenames count] == 1) // for iChat Theatre... (drag & drop a DICOM file on the video chat window)
+	if([filenames count] == 1)
 	{
 		for( ViewerController *v in [ViewerController getDisplayed2DViewers])
 		{
@@ -2611,9 +2591,7 @@ static BOOL firstCall = YES;
 {
 	unlink( "/tmp/kill_all_storescu");
 	
-#ifndef OSIRIX_LIGHT
     [DICOMTLS eraseKeys];
-#endif
     
 //	[webServer release];
 //	webServer = nil;
@@ -2627,9 +2605,7 @@ static BOOL firstCall = YES;
 	
 	[[BrowserController currentBrowser] browserPrepareForClose];
     
-#ifndef OSIRIX_LIGHT
 	[WebPortal finalizeWebPortalClass];
-#endif
 
 	[ROI saveDefaultSettings];
 	
@@ -2723,16 +2699,12 @@ static BOOL firstCall = YES;
 {
 	if( [[BrowserController currentBrowser] shouldTerminate: sender] == NO) return;
 
-#ifndef OSIRIX_LIGHT
     [[NSUserDefaults standardUserDefaults] setBool: [[[QueryController currentQueryController] window] isVisible] forKey: @"isQueryControllerVisible"];
-#endif
     for( NSWindow *w in [NSApp windows])
 		[w orderOut:sender];
     
-	#ifndef OSIRIX_LIGHT
 	[dcmtkQRSCP abort];
 	[dcmtkQRSCPTLS abort];
-	#endif
 	
     [NSThread sleepForTimeInterval: 0.5];
 	
@@ -2761,9 +2733,7 @@ static BOOL firstCall = YES;
         self = [super init];
         OsiriX = appController = self;
         
-#ifndef OSIRIX_LIGHT
         [DICOMTLS eraseKeys];
-#endif
         [[NSFileManager defaultManager] removeItemAtPath:[[NSFileManager defaultManager] tmpDirPath] error:NULL];
         
         if ([[NSFileManager defaultManager] fileExistsAtPath:[[[[[[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSLocalDomainMask] firstObject] path] stringByAppendingPathComponent:[[NSBundle mainBundle] objectForInfoDictionaryKey:(NSString*)kCFBundleNameKey]] stringByAppendingPathComponent:@"DLog.enable"]])
@@ -2777,9 +2747,7 @@ static BOOL firstCall = YES;
         
         [[NSAppleEventManager sharedAppleEventManager] setEventHandler:self andSelector:@selector(getUrl:withReplyEvent:) forEventClass:kInternetEventClass andEventID:kAEGetURL];
         
-        #ifndef OSIRIX_LIGHT
         [VRView testGraphicBoard];
-        #endif
     }
     @catch (NSException * e)
     {
@@ -3191,11 +3159,9 @@ static BOOL initialized = NO;
 				
 				Use_kdu_IfAvailable = [[NSUserDefaults standardUserDefaults] boolForKey:@"UseKDUForJPEG2000"];
 				
-				#ifndef OSIRIX_LIGHT
                 [Reports checkForWordTemplates];
 				[Reports checkForPagesTemplate];
 				[DCMPixelDataAttribute setUse_kdu_IfAvailable: Use_kdu_IfAvailable];
-				#endif
 				
 				// CHECK FOR THE HTML TEMPLATES DIRECTORY
 //				
@@ -3240,40 +3206,23 @@ static BOOL initialized = NO;
 #pragma mark-
 #pragma mark notification
 
-// For use with pre-macOS 10.14 notifications (reference NSUserNotificationCenterDelegate).
-//
-- (BOOL)userNotificationCenter:(NSUserNotificationCenter *)center shouldPresentNotification:(NSUserNotification *)notification{
-    return YES;
-}
-
 - (void) notificationTitle:(NSString*) title description:(NSString*) description name:(NSString*) name
 {
-#ifndef OSIRIX_LIGHT
 #ifndef MACAPPSTORE
-    if (@available(macOS 10.14, *))
-    {
-        UNMutableNotificationContent *notification = [[UNMutableNotificationContent alloc] init];
-        notification.title = title;
-        notification.body = description;
-        notification.categoryIdentifier = name;
-        notification.sound = [UNNotificationSound defaultSound];
-        
-        UNNotificationTrigger* trigger = nil; // deliver immediately
-        UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier: [[NSUUID UUID] UUIDString] content: notification trigger: trigger];
-        UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
-        [center addNotificationRequest:request withCompletionHandler:^(NSError * _Nullable error) {
-            if (error) {
-                NSLog(@"User Notification failed for title=[%@] description=[%@] error=[%@]", title, [description stringByReplacingOccurrencesOfString: @"\r" withString: @"\n"], error.localizedDescription);
-            }
-        }];
-    } else {
-        NSUserNotification *notification = [[NSUserNotification alloc] init];
-        [notification setTitle: title];
-        [notification setInformativeText: description];
-        [notification setSoundName: NSUserNotificationDefaultSoundName];
-        [[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification: notification];
-    }
-#endif
+    UNMutableNotificationContent *notification = [[UNMutableNotificationContent alloc] init];
+    notification.title = title;
+    notification.body = description;
+    notification.categoryIdentifier = name;
+    notification.sound = [UNNotificationSound defaultSound];
+    
+    UNNotificationTrigger* trigger = nil; // deliver immediately
+    UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier: [[NSUUID UUID] UUIDString] content: notification trigger: trigger];
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    [center addNotificationRequest:request withCompletionHandler:^(NSError * _Nullable error) {
+        if (error) {
+            NSLog(@"User Notification failed for title=[%@] description=[%@] error=[%@]", title, [description stringByReplacingOccurrencesOfString: @"\r" withString: @"\n"], error.localizedDescription);
+        }
+    }];
 #endif
 }
 
@@ -3286,12 +3235,10 @@ static BOOL initialized = NO;
 	
 	[self killAllStoreSCU: self];
 	
-	#ifndef OSIRIX_LIGHT
 	if( dcmtkQRSCP)
 		[QueryController echo: [self privateIP] port:[dcmtkQRSCP port] AET: [dcmtkQRSCP aeTitle]];
 	if( dcmtkQRSCPTLS)
 		[QueryController echo: [self privateIP] port:[dcmtkQRSCPTLS port] AET: [dcmtkQRSCPTLS aeTitle]];
-	#endif
 	
 	[NSThread sleepForTimeInterval: 0.1];
 	
@@ -3379,20 +3326,16 @@ static BOOL initialized = NO;
     // preferences while running. NOTE: requirements for application to be able to get authorization are more
     // stringent for later releases (e.g., properly signed, notarized).
     //
-    if (@available(macOS 10.14, *)) {
-        UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
-        [center requestAuthorizationWithOptions:(UNAuthorizationOptionSound | UNAuthorizationOptionAlert)
-                              completionHandler:^(BOOL granted, NSError * _Nullable error) {
-            if (!error) {
-                NSLog(@"User Notification authorization request succeeded");
-            }
-            else {
-                NSLog(@"User Notification authorization request failed, error=[%@]", error.localizedDescription);
-            }
-        }];
-    } else {
-        [[NSUserNotificationCenter defaultUserNotificationCenter] setDelegate:self];
-    }
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    [center requestAuthorizationWithOptions:(UNAuthorizationOptionSound | UNAuthorizationOptionAlert)
+                          completionHandler:^(BOOL granted, NSError * _Nullable error) {
+        if (!error) {
+            NSLog(@"User Notification authorization request succeeded");
+        }
+        else {
+            NSLog(@"User Notification authorization request failed, error=[%@]", error.localizedDescription);
+        }
+    }];
     
 //	if ([[NSUserDefaultsController sharedUserDefaultsController] boolForKey: @"ActivityWindowVisibleFlag"])
 //		[[[ActivityWindowController defaultController] window] makeKeyAndOrderFront:self];
@@ -3427,7 +3370,6 @@ static BOOL initialized = NO;
     
     
 	#ifndef MACAPPSTORE
-	#ifndef OSIRIX_LIGHT
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"checkForUpdatesPlugins"])
 		[NSThread detachNewThreadSelector:@selector(checkForUpdates:) toTarget:pluginManager withObject:pluginManager];
 	
@@ -3448,7 +3390,6 @@ static BOOL initialized = NO;
     else [NSThread detachNewThreadSelector: @selector(checkForUpdates:) toTarget:self withObject: self];
     
 	#endif
-	#endif
     
     // Remove PluginManager items...
     #ifdef MACAPPSTORE
@@ -3461,21 +3402,6 @@ static BOOL initialized = NO;
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"]) // Server mode
 		[[[BrowserController currentBrowser] window] orderOut: self];
 
-#ifdef OSIRIX_LIGHT
-	@try
-	{
-		int button = NSRunAlertPanel( NSLocalizedString( @"Horos Lite", nil), NSLocalizedString( @"This is the Lite version of Horos: many functions are not available. You can download the full version of Horos on the Internet.", nil), NSLocalizedString( @"Continue", nil), NSLocalizedString( @"Download", nil), nil);
-	
-		if (NSCancelButton == button)
-			[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_VIEWER]];
-	}
-	@catch (NSException * e)
-	{
-		N2LogExceptionWithStackTrace(e);
-		exit( 0);
-	}
-	
-#endif
 	
 	
 //	NSString *source = [NSString stringWithContentsOfFile: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"]];
@@ -3555,7 +3481,6 @@ static BOOL initialized = NO;
     
     [ROI loadDefaultSettings];
     
-#ifndef OSIRIX_LIGHT
 #ifdef NDEBUG
     PFMoveToApplicationsFolderIfNecessary();
     
@@ -3590,7 +3515,6 @@ static BOOL initialized = NO;
     CFRelease( code);
 #endif // WITH_CODE_SIGNING
 #endif // NDEBUG
-#endif // OSIRIX_LIGHT
     
     if( [AppController hasMacOSXElCapitan] == NO)
     {
@@ -3608,7 +3532,6 @@ static BOOL initialized = NO;
     [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"NSConstraintBasedLayoutVisualizeMutuallyExclusiveConstraints"];
 #endif
 
-#ifndef OSIRIX_LIGHT
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"isQueryControllerVisible"])
     {
         if([QueryController currentQueryController] == nil)
@@ -3616,7 +3539,6 @@ static BOOL initialized = NO;
         
         [[QueryController currentQueryController] showWindow: self];
     }
-#endif
     
 #if defined(USEFEEDBACKREPORTER)
     //dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
@@ -3910,8 +3832,7 @@ static BOOL initialized = NO;
 	}
 	
     /*
-	#ifndef OSIRIX_LIGHT
-	#ifndef MACAPPSTORE
+		#ifndef MACAPPSTORE
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"] == NO)
     {
         @try
@@ -3973,16 +3894,12 @@ static BOOL initialized = NO;
 	
 	[DicomDatabase initializeDicomDatabaseClass];
 	[BrowserController initializeBrowserControllerClass];
-	#ifndef OSIRIX_LIGHT
 	[WebPortal initializeWebPortalClass];
     _bonjourPublisher = [[BonjourPublisher alloc] init];
-	#endif
 	
-	#ifndef OSIRIX_LIGHT
 	if( [[NSUserDefaults standardUserDefaults] boolForKey:@"httpXMLRPCServer"]) {
 		if(XMLRPCServer == nil) XMLRPCServer = [[XMLRPCInterface alloc] init];
 	}
-	#endif
 	
 	NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
     [nc addObserver: self
@@ -4271,19 +4188,14 @@ static BOOL initialized = NO;
 {
 	WaitRendering *wait = nil;
 	
-	#ifdef OSIRIX_LIGHT
-	wait = [[[WaitRendering alloc] init: NSLocalizedString(@"Starting Horos Lite...", nil)] autorelease];
-	#else
 	if( sizeof( long) == 8)
 		wait = [[WaitRendering alloc] init: NSLocalizedString(@"Starting Horos 64-bit", nil)];
 	else
 		wait = [[WaitRendering alloc] init: NSLocalizedString(@"Starting Horos 32-bit", nil)];
-	#endif
 
 	return wait;
 }
 
-#ifndef OSIRIX_LIGHT
 #ifndef MACAPPSTORE
 
 - (IBAction) checkForUpdatesDisabled: (id) sender
@@ -4385,13 +4297,6 @@ static BOOL initialized = NO;
     }
 }
 #endif
-#endif
-
-- (void) URL: (NSURL*) sender resourceDidFailLoadingWithReason: (NSString*) reason
-{
-    if (verboseUpdateCheck)
-        NSRunAlertPanel( NSLocalizedString( @"No connection available", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, reason);
-}
 
 //———————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 #pragma mark-
@@ -4813,11 +4718,9 @@ static BOOL initialized = NO;
 		
 		if( [item action] == @selector(autoQueryRefresh:))
 		{
-			#ifndef OSIRIX_LIGHT
 			if( [QueryController currentAutoQueryController])
 				return YES;
 			else
-			#endif
 				return NO;
 		}
 		
@@ -5621,9 +5524,7 @@ static BOOL initialized = NO;
 {
     @try
     {
-        #ifndef OSIRIX_LIGHT
         return [[[WebPortal defaultWebPortal] database] managedObjectContext];
-        #endif
     }
     @catch (NSException *e) {
         NSLog( @"***** defaultWebPortalManagedObjectContext : %@", e);
@@ -5641,20 +5542,14 @@ static BOOL initialized = NO;
 }
 
 -(WebPortal*)defaultWebPortal {
-	#ifndef OSIRIX_LIGHT
 	return [WebPortal defaultWebPortal];
-	#else
-	return nil;
-	#endif
 }
 
-#ifndef OSIRIX_LIGHT
 
 -(NSString*)weasisBasePath {
 	return [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"weasis"];
 }
 
-#endif
 
 static NSMutableDictionary* _receivingDict = nil;
 

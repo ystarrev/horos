@@ -29,6 +29,7 @@ final class MetalImageView: MTKView {
     let renderer: MetalViewerRenderer
     var titleDidChange: ((String) -> Void)?
     var activateHandler: (() -> Void)?
+    var interactionEventHandler: (() -> Void)?
     var annotationStateDidChange: (() -> Void)?
     private(set) var mouseAnnotationState: MouseAnnotationState?
 
@@ -87,6 +88,7 @@ final class MetalImageView: MTKView {
     }
 
     override func scrollWheel(with event: NSEvent) {
+        interactionEventHandler?()
         let delta = event.scrollingDeltaY == 0 ? event.scrollingDeltaX : event.scrollingDeltaY
         let step = delta > 0 ? 1 : -1
         renderer.stepSlice(by: step)
@@ -94,6 +96,7 @@ final class MetalImageView: MTKView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        interactionEventHandler?()
         activateHandler?()
         window?.makeFirstResponder(self)
         dragAnchor = convert(event.locationInWindow, from: nil)
@@ -104,6 +107,7 @@ final class MetalImageView: MTKView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        interactionEventHandler?()
         let currentPoint = convert(event.locationInWindow, from: nil)
         let currentInteractionMode = interactionMode(for: event)
 
@@ -131,12 +135,14 @@ final class MetalImageView: MTKView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        interactionEventHandler?()
         if interactionMode == .windowLevel {
             renderer.commitWindowLevel()
         }
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        interactionEventHandler?()
         activateHandler?()
         window?.makeFirstResponder(self)
         renderer.resetWindowLevel()
@@ -144,6 +150,7 @@ final class MetalImageView: MTKView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        interactionEventHandler?()
         updateMouseAnnotationState(from: convert(event.locationInWindow, from: nil))
     }
 

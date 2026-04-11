@@ -161,7 +161,6 @@ static NSString* DefaultWebPortalDatabasePath = nil;
 	[NSUserDefaultsController.sharedUserDefaultsController addObserver:(id)self forValuesKey:OsirixWadoServiceEnabledDefaultsKey options:NSKeyValueObservingOptionInitial context:NULL];
 }
 
-#ifndef OSIRIX_LIGHT
 +(void)initializeWebPortalClass { // called from AppController
 	[NSUserDefaultsController.sharedUserDefaultsController addObserver:(id)self forValuesKey:OsirixWebPortalPortNumberDefaultsKey options:NSKeyValueObservingOptionInitial context:self.defaultWebPortal];
 	[NSUserDefaultsController.sharedUserDefaultsController addObserver:(id)self forValuesKey:OsirixWebPortalAddressDefaultsKey options:NSKeyValueObservingOptionInitial context:self.defaultWebPortal];
@@ -170,7 +169,6 @@ static NSString* DefaultWebPortalDatabasePath = nil;
 	[NSUserDefaultsController.sharedUserDefaultsController addObserver:(id)self forValuesKey:OsirixWebPortalRequiresAuthenticationDefaultsKey options:NSKeyValueObservingOptionInitial context:self.defaultWebPortal];
 	[NSUserDefaultsController.sharedUserDefaultsController addObserver:(id)self forValuesKey:OsirixWebPortalUsersCanRestorePasswordDefaultsKey options:NSKeyValueObservingOptionInitial context:self.defaultWebPortal];
 	[NSUserDefaultsController.sharedUserDefaultsController addObserver:(id)self forValuesKey:OsirixWebPortalUsesWeasisDefaultsKey options:NSKeyValueObservingOptionInitial context:self.defaultWebPortal];
-	[NSUserDefaultsController.sharedUserDefaultsController addObserver:(id)self forValuesKey:OsirixWebPortalPrefersFlashDefaultsKey options:NSKeyValueObservingOptionInitial context:self.defaultWebPortal];
 	[NSUserDefaultsController.sharedUserDefaultsController addObserver:(id)self forValuesKey:OsirixWadoServiceEnabledDefaultsKey options:NSKeyValueObservingOptionInitial context:self.defaultWebPortal];
     
 	// last because this starts the listener
@@ -191,13 +189,11 @@ static NSString* DefaultWebPortalDatabasePath = nil;
         w.address = [[NSUserDefaults standardUserDefaults] stringForKey: @"wadoOnlyServerURL"];
         w.authenticationRequired = NO;
         w.weasisEnabled = NO;
-        w.flashEnabled = NO;
         w.wadoEnabled = YES;
         w.notificationsEnabled = NO;
         [w startAcceptingConnections];
     }
 }
-#endif
 
 +(void)observeValueForKeyPath:(NSString*)keyPath ofObject:(id)object change:(NSDictionary*)change context:(void*)context {
 	if (!context) {
@@ -250,12 +246,8 @@ static NSString* DefaultWebPortalDatabasePath = nil;
 			webPortal.weasisEnabled = NSUserDefaults.webPortalUsesWeasis;
 		else
 			
-		if ([keyPath isEqualToString:valuesKeyPath(OsirixWebPortalPrefersFlashDefaultsKey)])
-			webPortal.flashEnabled = NSUserDefaults.webPortalPrefersFlash;
-		else
-			
-		if ([keyPath isEqualToString:valuesKeyPath(OsirixWadoServiceEnabledDefaultsKey)])
-			webPortal.wadoEnabled = NSUserDefaults.wadoServiceEnabled;
+			if ([keyPath isEqualToString:valuesKeyPath(OsirixWadoServiceEnabledDefaultsKey)])
+				webPortal.wadoEnabled = NSUserDefaults.wadoServiceEnabled;
 		else
 		
 		if ([keyPath isEqualToString:valuesKeyPath(OsirixWebPortalNotificationsIntervalDefaultsKey)])
@@ -311,7 +303,7 @@ static NSString* DefaultWebPortalDatabasePath = nil;
 @synthesize passwordRestoreAllowed;
 @synthesize wadoEnabled;
 @synthesize weasisEnabled;
-@synthesize flashEnabled, runLoops, runLoopsLoad;
+@synthesize runLoops, runLoopsLoad;
 
 -(id)initWithDatabase:(WebPortalDatabase*)db dicomDatabase:(DicomDatabase*)dd; {
 	self = [super init];
@@ -805,6 +797,5 @@ static NSString* DefaultWebPortalDatabasePath = nil;
 }
 
 @end
-
 
 

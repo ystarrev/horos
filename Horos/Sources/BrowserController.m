@@ -3,7 +3,7 @@
  
  Horos is free software: you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
- the Free Software Foundation, Êversion 3 of the License.
+ the Free Software Foundation, ÃŠversion 3 of the License.
  
  The Horos Project was based originally upon the OsiriX Project which at the time of
  the code fork was licensed as a LGPL project.  However, not all of the the source-code
@@ -15,24 +15,24 @@
  
  Horos is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY EXPRESS OR IMPLIED, INCLUDING ANY WARRANTY OF
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÊSee the
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÃŠSee the
  GNU Lesser General Public License for more details.
  
  You should have received a copy of the GNU Lesser General Public License
- along with Horos. ÊIf not, see http://www.gnu.org/licenses/lgpl.html
+ along with Horos. ÃŠIf not, see http://www.gnu.org/licenses/lgpl.html
  
  Prior versions of this file were published by the OsiriX team pursuant to
  the below notice and licensing protocol.
  ============================================================================
- Program: Ê OsiriX
- ÊCopyright (c) OsiriX Team
- ÊAll rights reserved.
- ÊDistributed under GNU - LGPL
- Ê
- ÊSee http://www.osirix-viewer.com/copyright.html for details.
- Ê Ê This software is distributed WITHOUT ANY WARRANTY; without even
- Ê Ê the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
- Ê Ê PURPOSE.
+ Program: ÃŠ OsiriX
+ ÃŠCopyright (c) OsiriX Team
+ ÃŠAll rights reserved.
+ ÃŠDistributed under GNU - LGPL
+ ÃŠ
+ ÃŠSee http://www.osirix-viewer.com/copyright.html for details.
+ ÃŠ ÃŠ This software is distributed WITHOUT ANY WARRANTY; without even
+ ÃŠ ÃŠ the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ ÃŠ ÃŠ PURPOSE.
  ============================================================================*/
 
 #include <objc/runtime.h>
@@ -78,6 +78,14 @@
 #import "Wait.h"
 #import "WaitRendering.h"
 #import "BurnerWindowController.h"
+@interface HorosMetal3DViewerLauncher : NSObject
++ (void)launchWithContext:(NSDictionary *)context;
+@end
+
+@interface HorosMetalViewerLauncher : NSObject
++ (void)launchWithContext:(NSDictionary *)context;
+@end
+
 #import "DCMTransferSyntax.h"
 #import "DCMAttributeTag.h"
 #import "DCMPixelDataAttribute.h"
@@ -141,18 +149,12 @@
 #import "ICloudDriveDetector.h"
 #import "NSException+N2.h"
 
-#if defined(USEHOMEPHONE)
-#import "homephone/HorosHomePhone.h"
-#endif
-
 #import "url.h"
 
-#ifndef OSIRIX_LIGHT
 #import "Anonymization.h"
 #import "AnonymizationSavePanelController.h"
 #import "AnonymizationViewController.h"
 #import "NSFileManager+N2.h"
-#endif
 
 #import "WebPortal.h"
 #import "WebPortal+Email+Log.h"
@@ -664,7 +666,7 @@ static NSConditionLock *threadLock = nil;
     [threadLock unlock];
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 #pragma mark-
 #pragma mark Add DICOM Database functions
@@ -1000,7 +1002,7 @@ static NSConditionLock *threadLock = nil;
     [self copyFilesIntoDatabaseIfNeeded: filesArray options: [NSDictionary dictionaryWithObjectsAndKeys: [[NSUserDefaults standardUserDefaults] objectForKey: @"onlyDICOM"], @"onlyDICOM", [NSNumber numberWithBool: YES], @"async", [NSNumber numberWithBool: YES], @"addToAlbum",  [NSNumber numberWithBool: YES], @"selectStudy", nil]];
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 #pragma mark-
 #pragma mark Autorouting functions
@@ -1008,7 +1010,6 @@ static NSConditionLock *threadLock = nil;
 - (void) testAutorouting
 {
     // Test the routing filters
-#ifndef OSIRIX_LIGHT
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"AUTOROUTINGACTIVATED"])
     {
         NSArray	*autoroutingRules = [[NSUserDefaults standardUserDefaults] arrayForKey: @"AUTOROUTINGDICTIONARY"];
@@ -1054,7 +1055,6 @@ static NSConditionLock *threadLock = nil;
         
         [context unlock];
     }
-#endif
 }
 
 - (DicomStudy*) selectedStudy
@@ -1564,7 +1564,6 @@ static NSConditionLock *threadLock = nil;
             studiesToCheck = [NSArray arrayWithObject: studySelected];
     }
     
-#ifndef OSIRIX_LIGHT
     //If PACS On-Demand is activated, check if a local study has more or same number of images of a distant study
     NSMutableArray *patientStudies = [NSMutableArray array];
     
@@ -1602,7 +1601,6 @@ static NSConditionLock *threadLock = nil;
         if( modifications)
             [self refreshComparativeStudies: copyComparativeStudies];
     }
-#endif
 }
 
 -(void)_observeDatabaseAddNotification:(NSNotification*)notification
@@ -1797,12 +1795,10 @@ static NSConditionLock *threadLock = nil;
                 [self refreshMatrix: self];
                 [self refreshAlbums];
                 
-#ifndef OSIRIX_LIGHT
                 if( [QueryController currentQueryController])
                     [[QueryController currentQueryController] refresh: self];
                 else if( [QueryController currentAutoQueryController])
                     [[QueryController currentAutoQueryController] refresh: self];
-#endif
             }
             @catch (NSException* e)
             {
@@ -2562,41 +2558,27 @@ static NSConditionLock *threadLock = nil;
 
 -(long)saveUserDatabase // __deprecated
 {
-#ifndef OSIRIX_LIGHT
     [[[WebPortal defaultWebPortal] database] save:NULL];
-#endif
     return 0;
 }
 
 -(NSManagedObjectModel*)userManagedObjectModel // __deprecated
 {
-#ifndef OSIRIX_LIGHT
     return [[[WebPortal defaultWebPortal] database] managedObjectModel];
-#else
-    return NULL;
-#endif
 }
 
 -(NSManagedObjectContext*)userManagedObjectContext // __deprecated
 {
-#ifndef OSIRIX_LIGHT
     return [[[WebPortal defaultWebPortal] database] managedObjectContext];
-#else
-    return NULL;
-#endif
 }
 
 -(WebPortalUser*)userWithName:(NSString*)name // __deprecated
 {
-#ifndef OSIRIX_LIGHT
     return [[[WebPortal defaultWebPortal] database] userWithName:name];
-#else
-    return NULL;
-#endif
 }
 
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 #pragma mark-
 #pragma mark OutlineView Search & Time Interval Functions
@@ -2792,7 +2774,7 @@ static NSConditionLock *threadLock = nil;
     [self outlineViewRefresh];
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 #pragma mark-
 #pragma mark OutlineView functions
@@ -3098,7 +3080,6 @@ static NSConditionLock *threadLock = nil;
                 }
                 
                 // Merge local and distant studies
-#ifndef OSIRIX_LIGHT
                 
                 // Autoretrieve?
                 NSMutableArray *studyToAutoretrieve = [NSMutableArray array];
@@ -3166,7 +3147,6 @@ static NSConditionLock *threadLock = nil;
                     [[ThreadsManager defaultManager] addThreadAndStart: t];
                 }
                 
-#endif
                 
                 if( [distantStudies count])
                     outlineViewArray = [outlineViewArray arrayByAddingObjectsFromArray: distantStudies];
@@ -3367,10 +3347,8 @@ static NSConditionLock *threadLock = nil;
     NSAutoreleasePool *pool = [NSAutoreleasePool new];
     autoretrievingPACSOnDemandSmartAlbum = YES;
     {
-#ifndef OSIRIX_LIGHT
         [studies setValue:[NSNumber numberWithBool:YES] forKey:@"isAutoRetrieve"];
         [QueryController retrieveStudies: studies showErrors: NO checkForPreviousAutoRetrieve: YES];
-#endif
     }
     autoretrievingPACSOnDemandSmartAlbum = NO;
     [pool release];
@@ -3617,20 +3595,16 @@ static NSConditionLock *threadLock = nil;
         [comparativeTable reloadData];
     }
     
-#ifndef OSIRIX_LIGHT
     if( [QueryController currentQueryController])
         [[QueryController currentQueryController] refresh: self];
     else if( [QueryController currentAutoQueryController])
         [[QueryController currentAutoQueryController] refresh: self];
-#endif
 }
 
 - (NSArray*) childrenArray: (id)item onlyImages: (BOOL)onlyImages
 {
-#ifndef OSIRIX_LIGHT
     if( [item isDistant])
         return [NSArray array];
-#endif
     
     if( [item isDeleted])
     {
@@ -4082,7 +4056,6 @@ static NSConditionLock *threadLock = nil;
 
 - (NSArray*) distantStudiesForSearchString: (NSString*) curSearchString type:(int) curSearchType
 {
-#ifndef OSIRIX_LIGHT
     if( !searchForComparativeStudiesLock)
         searchForComparativeStudiesLock = [NSRecursiveLock new];
     
@@ -4166,7 +4139,6 @@ static NSConditionLock *threadLock = nil;
     {
         [searchForComparativeStudiesLock unlock];
     }
-#endif
     return nil;
 }
 
@@ -4272,7 +4244,6 @@ static NSConditionLock *threadLock = nil;
 
 - (NSArray*) distantStudiesForIntervalFrom: (NSDate*) from to:(NSDate*) to
 {
-#ifndef OSIRIX_LIGHT
     if( !searchForComparativeStudiesLock)
         searchForComparativeStudiesLock = [NSRecursiveLock new];
     
@@ -4309,7 +4280,6 @@ static NSConditionLock *threadLock = nil;
     {
         [searchForComparativeStudiesLock unlock];
     }
-#endif
     return nil;
 }
 
@@ -4412,7 +4382,6 @@ static NSConditionLock *threadLock = nil;
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"searchForSmartAlbumStudiesOnDICOMNodes"] == NO)
         return [NSArray array];
     
-#ifndef OSIRIX_LIGHT
     if( !searchForComparativeStudiesLock)
         searchForComparativeStudiesLock = [NSRecursiveLock new];
     
@@ -4440,7 +4409,6 @@ static NSConditionLock *threadLock = nil;
     {
         [searchForComparativeStudiesLock unlock];
     }
-#endif
     return nil;
 }
 
@@ -4633,7 +4601,6 @@ static NSConditionLock *threadLock = nil;
                             if( servers.count)
                             {
                                 // Distant studies
-#ifndef OSIRIX_LIGHT
                                 distantStudies = [QueryController queryStudiesForPatient: studySelected usePatientID: usePatientID usePatientName: usePatientName usePatientBirthDate: usePatientBirthDate servers: servers showErrors: NO];
                                 
                                 // Merge local and distant studies
@@ -4676,7 +4643,6 @@ static NSConditionLock *threadLock = nil;
                                     t.supportsCancel = YES;
                                     [[ThreadsManager defaultManager] addThreadAndStart: t];
                                 }
-#endif
                             }
                             
                             [mergedStudies sortUsingDescriptors: [NSArray arrayWithObject: [NSSortDescriptor sortDescriptorWithKey:@"date" ascending: NO]]];
@@ -4767,7 +4733,7 @@ static NSConditionLock *threadLock = nil;
         {
             if( [study isKindOfClass: [DicomStudy class]])
             {
-                id obj = [self.database objectWithID: [study objectID]];
+                id obj = [self.database objectWithID: [((NSManagedObject *) study) objectID]];
                 if( obj)
                     [mainContextStudies addObject: obj];
             }
@@ -4814,7 +4780,7 @@ static NSConditionLock *threadLock = nil;
         
         id object = nil;
         if( [studySelected isKindOfClass: [DicomStudy class]])
-            object = [studySelected objectID];
+            object = [((NSManagedObject *) studySelected) objectID];
         else
             object = studySelected; // DCMTKStudyQueryNode
         
@@ -4936,7 +4902,6 @@ static NSConditionLock *threadLock = nil;
                 selectedStudy = [copy objectAtIndex: [comparativeTable selectedRow]];
             
             BOOL found = NO;
-#ifndef OSIRIX_LIGHT
             for( DCMTKStudyQueryNode *study in self.comparativeStudies)
             {
                 if( [study.studyInstanceUID isEqualToString: newStudy.studyInstanceUID])
@@ -4950,7 +4915,6 @@ static NSConditionLock *threadLock = nil;
                     }
                 }
             }
-#endif
             
             if( found == NO)
             {
@@ -5026,7 +4990,7 @@ static NSConditionLock *threadLock = nil;
             BOOL refreshMatrix = YES;
             long nowFiles = [[item valueForKey:@"noFiles"] intValue];
             
-            if( item == previousItem || ([previousItem isKindOfClass: [NSManagedObject class]] && [item isKindOfClass: [NSManagedObject class]] && [[previousItem objectID] isEqual: [item objectID]]))
+            if( item == previousItem || ([previousItem isKindOfClass: [NSManagedObject class]] && [item isKindOfClass: [NSManagedObject class]] && [[((NSManagedObject *) previousItem) objectID] isEqual:[((NSManagedObject *) item) objectID]]))
             {
                 if( nowFiles == previousNoOfFiles)
                     refreshMatrix = NO;
@@ -5058,7 +5022,7 @@ static NSConditionLock *threadLock = nil;
                     else
                         matrixViewArray = [[self childrenArray: item] retain];
                     
-                    if( item == previousItem || ([previousItem isKindOfClass: [NSManagedObject class]] && [item isKindOfClass: [NSManagedObject class]] && [[previousItem objectID] isEqual: [item objectID]]))
+                    if( item == previousItem || ([previousItem isKindOfClass: [NSManagedObject class]] && [item isKindOfClass: [NSManagedObject class]] && [[((NSManagedObject *) previousItem) objectID] isEqual:[((NSManagedObject *) item) objectID]]))
                     {
                         for( NSButtonCell *cell in oMatrix.cells)
                         {
@@ -5117,7 +5081,7 @@ static NSConditionLock *threadLock = nil;
                         matrixLoadIconsThread = [[NSThread alloc] initWithTarget: self selector: @selector(matrixLoadIcons:) object: dict];
                         [matrixLoadIconsThread start];
                         
-                        if( item == previousItem || ([previousItem isKindOfClass: [NSManagedObject class]] && [item isKindOfClass: [NSManagedObject class]] && [[previousItem objectID] isEqual: [item objectID]]))
+                        if( item == previousItem || ([previousItem isKindOfClass: [NSManagedObject class]] && [item isKindOfClass: [NSManagedObject class]] && [[((NSManagedObject *) previousItem) objectID] isEqual:[((NSManagedObject *) item) objectID]]))
                         {
                             for( NSCell *cell in [oMatrix cells])
                             {
@@ -5136,7 +5100,7 @@ static NSConditionLock *threadLock = nil;
                     else
                     {
                         [self matrixLoadIcons: dict];
-                        if( item == previousItem || ([previousItem isKindOfClass: [NSManagedObject class]] && [item isKindOfClass: [NSManagedObject class]] && [[previousItem objectID] isEqual: [item objectID]]))
+                        if( item == previousItem || ([previousItem isKindOfClass: [NSManagedObject class]] && [item isKindOfClass: [NSManagedObject class]] && [[((NSManagedObject *) previousItem) objectID] isEqual:[((NSManagedObject *) item) objectID]]))
                         {
                             [oMatrix deselectAllCells];
                             BOOL first = YES;
@@ -5178,7 +5142,7 @@ static NSConditionLock *threadLock = nil;
                     
                     id object = nil;
                     if( [studySelected isKindOfClass: [DicomStudy class]])
-                        object = [studySelected objectID];
+                        object = [((NSManagedObject *) studySelected) objectID];
                     else
                         object = studySelected; // DCMTKStudyQueryNode
                     
@@ -5341,7 +5305,6 @@ static NSConditionLock *threadLock = nil;
     [self mergeSeriesExecute: seriesArray];
 }
 
-#ifndef OSIRIX_LIGHT
 - (IBAction) unifyStudies:(id) sender
 {
     [ViewerController closeAllWindows];
@@ -5549,7 +5512,12 @@ static NSConditionLock *threadLock = nil;
             // Now modify the DICOM files
             for( NSInteger x = 0; x < [selectedRows count] ; x++)
             {
-                NSInteger row = ( x == 0) ? [selectedRows firstIndex] : [selectedRows indexGreaterThanIndex: row];
+                NSUInteger rowIndex = [selectedRows firstIndex];
+                for( NSInteger i = 0; i < x && rowIndex != NSNotFound; i++)
+                    rowIndex = [selectedRows indexGreaterThanIndex: rowIndex];
+                if( rowIndex == NSNotFound)
+                    continue;
+                NSInteger row = (NSInteger) rowIndex;
                 
                 DicomStudy *study = [databaseOutline itemAtRow: row];
                 if( [[study valueForKey:@"type"] isEqualToString: @"Study"] == NO) study = [study valueForKey:@"study"];
@@ -5689,7 +5657,6 @@ static NSConditionLock *threadLock = nil;
         [self refreshMatrix: self];
     }
 }
-#endif
 
 - (void) proceedDeleteObjects: (NSArray*) objectsToDelete tree:(NSSet*)treeObjs
 {
@@ -5855,7 +5822,7 @@ static NSConditionLock *threadLock = nil;
         
         id object = nil;
         if( [studySelected isKindOfClass: [DicomStudy class]])
-            object = [studySelected objectID];
+            object = [((NSManagedObject *) studySelected) objectID];
         else
             object = studySelected;
         
@@ -5993,10 +5960,8 @@ static NSConditionLock *threadLock = nil;
     
     [self refreshMatrix: self];
     
-#ifndef OSIRIX_LIGHT
     [[QueryController currentQueryController] executeRefresh: self];
     [[QueryController currentAutoQueryController] executeRefresh: self];
-#endif
 }
 
 - (void) delObjects:(NSMutableArray*) objectsToDelete {
@@ -6146,10 +6111,8 @@ static NSConditionLock *threadLock = nil;
         
         [self refreshMatrix: self];
         
-#ifndef OSIRIX_LIGHT
         [[QueryController currentQueryController] executeRefresh: self];
         [[QueryController currentAutoQueryController] executeRefresh: self];
-#endif
     }
     else if (![_database isLocal])
     {
@@ -6318,11 +6281,9 @@ static NSConditionLock *threadLock = nil;
         }
         else
         {
-#ifndef  OSIRIX_LIGHT
             if( [item isKindOfClass: [DCMTKStudyQueryNode class]])
                 returnVal = [[item children]  objectAtIndex: index];
             else
-#endif
                 returnVal = [[self childrenArray: item] objectAtIndex: index];
         }
     }
@@ -6344,12 +6305,10 @@ static NSConditionLock *threadLock = nil;
     
     if( [item isDistant])
     {
-#ifndef OSIRIX_LIGHT
         if( [item isKindOfClass: [DCMTKStudyQueryNode class]])
             return YES;
         else
             return NO;
-#endif
     }
     
     if ([[item valueForKey:@"type"] isEqualToString:@"Series"])
@@ -6375,7 +6334,6 @@ static NSConditionLock *threadLock = nil;
     }
     else
     {
-#ifndef OSIRIX_LIGHT
         if( [item isDistant])
         {
             @try
@@ -6405,7 +6363,6 @@ static NSConditionLock *threadLock = nil;
             return 0;
         }
         else
-#endif
             if ([[item valueForKey:@"type"] isEqualToString:@"Image"]) returnVal = 0;
             else if ([[item valueForKey:@"type"] isEqualToString:@"Series"]) returnVal = [[item valueForKey:@"noFiles"] intValue];
         //else if ([[item valueForKey:@"type"] isEqualToString:@"Study"]) returnVal = [[item valueForKey:@"series"] count];
@@ -6650,12 +6607,10 @@ static NSConditionLock *threadLock = nil;
     
     [_database save:NULL];
     
-#ifndef OSIRIX_LIGHT
     if( [QueryController currentQueryController])
         [[QueryController currentQueryController] refresh: self];
     else if( [QueryController currentAutoQueryController])
         [[QueryController currentAutoQueryController] refresh: self];
-#endif
     
     [databaseOutline reloadData];
 }
@@ -6996,7 +6951,6 @@ static NSConditionLock *threadLock = nil;
             r = YES;
         }
         
-#ifndef OSIRIX_LIGHT
         
         if( ([[[im valueForKey:@"modality"] lowercaseString] isEqualToString:@"pdf"] || [DCMAbstractSyntaxUID isPDF: [im valueForKeyPath: @"series.seriesSOPClassUID"]] || [DCMAbstractSyntaxUID isStructuredReport: [im valueForKeyPath: @"series.seriesSOPClassUID"]]) && [[NSUserDefaults standardUserDefaults] boolForKey: @"openPDFwithPreview"])
         {
@@ -7094,7 +7048,6 @@ static NSConditionLock *threadLock = nil;
             }
         }
         
-#endif
         
         [_database unlock];
     }
@@ -7207,7 +7160,6 @@ static NSConditionLock *threadLock = nil;
             {
                 id comparativeStudy = nil;
                 
-#ifndef OSIRIX_LIGHT
                 if( [s isKindOfClass: [DCMTKStudyQueryNode class]])
                 {
                     DCMTKStudyQueryNode *study = s;
@@ -7241,7 +7193,6 @@ static NSConditionLock *threadLock = nil;
                             [self retrieveComparativeStudy: comparativeStudy select: NO open: NO showGUI: NO];
                     }
                 }
-#endif
                 
                 if( [s isKindOfClass: [DicomStudy class]])
                 {
@@ -7281,7 +7232,6 @@ static NSConditionLock *threadLock = nil;
                     break;
             }
             
-#ifndef OSIRIX_LIGHT
             // Wait until all distant studies are retrieved
             WaitRendering *w = nil;
             NSTimeInterval timeout = [NSDate timeIntervalSinceReferenceDate];
@@ -7334,7 +7284,6 @@ static NSConditionLock *threadLock = nil;
             while( distantStudies && [NSDate timeIntervalSinceReferenceDate] - timeout < TIMEOUT);
             
             [w close];
-#endif
             for( int i = 0; i < comparatives.count; i++)
             {
                 if( [[comparatives objectAtIndex: i] isKindOfClass: [DicomStudy class]] == NO)
@@ -7513,7 +7462,6 @@ static NSConditionLock *threadLock = nil;
 
 - (void) databaseOpenStudy: (NSManagedObject*) item
 {
-#ifndef  OSIRIX_LIGHT
     if( [item isKindOfClass: [DCMTKStudyQueryNode class]])
     {
         // Check to see if already in retrieving mode, if not download it
@@ -7521,7 +7469,6 @@ static NSConditionLock *threadLock = nil;
         
         return;
     }
-#endif
     
     NSArray *cells = [oMatrix selectedCells];
     if( [cells count] > 1)
@@ -7547,7 +7494,7 @@ static NSConditionLock *threadLock = nil;
         
         [self checkIfLocalStudyHasMoreOrSameNumberOfImagesOfADistantStudy: [NSArray arrayWithObject: currentStudy]];
         
-        [[AppController sharedAppController] addStudyToRecentStudiesMenu: currentStudy.objectID];
+        [[AppController sharedAppController] addStudyToRecentStudiesMenu: [((NSManagedObject *) currentStudy) objectID]];
         
         BOOL windowsStateApplied = NO;
         
@@ -7593,7 +7540,6 @@ static NSConditionLock *threadLock = nil;
                         
                         if( [studiesArray count] == 0)
                         {
-#ifndef OSIRIX_LIGHT
                             NSArray *servers = [BrowserController comparativeServers];
                             
                             DCMTKStudyQueryNode *distantStudy = [[QueryController queryStudiesForFilters: [NSDictionary dictionaryWithObject: studyUID forKey: @"StudyInstanceUID"] servers: servers showErrors: NO] lastObject];
@@ -7632,7 +7578,6 @@ static NSConditionLock *threadLock = nil;
                                 
                                 [[NSUserDefaults standardUserDefaults] setInteger: copy forKey: @"ListenerCompressionSettings"];
                             }
-#endif
                         }
                     }
                     
@@ -7922,7 +7867,6 @@ static NSConditionLock *threadLock = nil;
         
         if ([[item numberOfImages] intValue] != 0)
         {
-#ifndef OSIRIX_LIGHT
             if( [item isDistant])
             {
                 id study = item;
@@ -7934,16 +7878,13 @@ static NSConditionLock *threadLock = nil;
                 [self retrieveComparativeStudy: study select: YES open: NO];
             }
             else
-#endif
             {
                 [self databaseOpenStudy: item];
             }
         }
         else
         {
-#ifndef OSIRIX_LIGHT
             [self querySelectedStudy:self];
-#endif
         }
     }
 }
@@ -8118,12 +8059,12 @@ static NSConditionLock *threadLock = nil;
                 [databaseOutline scrollRowToVisible: [databaseOutline selectedRow]];
             }
             
-            if( [[oMatrix selectedCell] representedObject] == [curImage.series objectID])
+            if( [[oMatrix selectedCell] representedObject] == [((NSManagedObject *) curImage.series) objectID])
                 return YES;
             
             for( NSCell *cell in oMatrix.cells)
             {
-                if( [cell representedObject] == [curImage.series objectID])
+                if( [cell representedObject] == [((NSManagedObject *) curImage.series) objectID])
                 {
                     [oMatrix selectCell: cell];
                     [self matrixPressed: oMatrix];
@@ -8736,7 +8677,6 @@ static NSConditionLock *threadLock = nil;
     return string;
 }
 
-#ifndef OSIRIX_LIGHT
 
 - (IBAction) pasteImageForSourceFile: (NSString*) sourceFile
 {
@@ -8813,7 +8753,6 @@ static NSConditionLock *threadLock = nil;
     [self pasteImageForSourceFile: nil];
 }
 
-#endif
 
 - (IBAction) copy: (id)sender
 {
@@ -8847,7 +8786,7 @@ static NSConditionLock *threadLock = nil;
     }];
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 #pragma mark-
 #pragma mark Thumbnails Matrix & Preview functions
@@ -9675,7 +9614,6 @@ static BOOL withReset = NO;
     [oMatrix setNeedsDisplay:YES];
 }
 
-#ifndef OSIRIX_LIGHT
 - (void) pdfPreview:(id)sender
 {
     [self matrixPressed:sender];
@@ -9723,7 +9661,6 @@ static BOOL withReset = NO;
     [NSThread sleepForTimeInterval: 1];
     [pool release];
 }
-#endif
 
 - (void)matrixDisplayIcons:(id) sender
 {
@@ -10942,7 +10879,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     [imageView annotMenu: sender];
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 #pragma mark-
 #pragma mark Albums functions
@@ -11298,12 +11235,12 @@ constrainSplitPosition:(CGFloat)proposedPosition
     NSString *albumName = self.selectedAlbumName;
     
     if( albumName)
-        return [[[d objectsForEntity: d.albumEntity predicate: [NSPredicate predicateWithFormat: @"name == %@", albumName]] lastObject] objectID];
+        return [((NSManagedObject *) [[d objectsForEntity: d.albumEntity predicate: [NSPredicate predicateWithFormat: @"name == %@", albumName]] lastObject]) objectID];
     
     return nil;
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 #pragma mark-
 #pragma mark Albums TableView functions
 
@@ -11705,7 +11642,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     [previousSelectedAlbumId release];
     if (!_database)
         previousSelectedAlbumId = nil;
-    else previousSelectedAlbumId = [selectedAlbum isKindOfClass:[DicomAlbum class]]? [selectedAlbum.objectID retain] : [[NSDictionary dictionary] retain];
+    else previousSelectedAlbumId = [selectedAlbum isKindOfClass:[DicomAlbum class]]? [[((NSManagedObject *) selectedAlbum) objectID] retain] : [[NSDictionary dictionary] retain];
     
     if (previousSelectedAlbumId)
         [self loadSortDescriptors:[self _albumWithID:previousSelectedAlbumId]];
@@ -11735,9 +11672,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
         int copy = [[NSUserDefaults standardUserDefaults] integerForKey: @"ListenerCompressionSettings"];
         [[NSUserDefaults standardUserDefaults] setInteger: 0 forKey: @"ListenerCompressionSettings"]; //No time for decompression....
         
-#ifndef OSIRIX_LIGHT
         [QueryController retrieveStudies: [NSArray arrayWithObject: study] showErrors: NO checkForPreviousAutoRetrieve: NO];
-#endif
         
         DicomDatabase *idb = [[DicomDatabase activeLocalDatabase] independentDatabase];
         
@@ -11890,7 +11825,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
                 
                 if( study && dontSelectStudyFromComparativeStudies == NO)
                 {
-                    //                    #ifndef OSIRIX_LIGHT
                     //                    if( [study isDistant]) // distant study -> download it, and select it
                     //                    {
                     //                        [self retrieveComparativeStudy: study select: YES open: NO]; -- Only when double-clicking
@@ -11912,7 +11846,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     }
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 #pragma mark-
 #pragma mark Open 2D/4D Viewer functions
 
@@ -13232,9 +13166,9 @@ constrainSplitPosition:(CGFloat)proposedPosition
         }
         
         if( [[selectedLine valueForKey:@"type"] isEqualToString: @"Series"])
-            [[AppController sharedAppController] addStudyToRecentStudiesMenu: [[selectedLine valueForKey: @"study"] objectID]];
+            [[AppController sharedAppController] addStudyToRecentStudiesMenu: [((NSManagedObject *) [selectedLine valueForKey: @"study"]) objectID]];
         else
-            [[AppController sharedAppController] addStudyToRecentStudiesMenu: selectedLine.objectID];
+            [[AppController sharedAppController] addStudyToRecentStudiesMenu: [((NSManagedObject *) selectedLine) objectID]];
         
         //////////////////////////////////////
         // Open selected images only !!!
@@ -13518,10 +13452,9 @@ constrainSplitPosition:(CGFloat)proposedPosition
     NSDictionary *context = [NSDictionary dictionaryWithObjectsAndKeys:viewerPix, @"pixList", volumeData, @"volumeData", title, @"title", nil];
     
     Class launcherClass = NSClassFromString(@"HorosMetal3DViewerLauncher");
-    SEL launchSelector = @selector(launchWithContext:);
-    if (launcherClass && [launcherClass respondsToSelector:launchSelector])
+    if (launcherClass)
     {
-        ((void (*)(id, SEL, id))[launcherClass methodForSelector:launchSelector])(launcherClass, launchSelector, context);
+        [launcherClass launchWithContext:context];
     }
     else
     {
@@ -13615,10 +13548,9 @@ constrainSplitPosition:(CGFloat)proposedPosition
     NSDictionary *context = [NSDictionary dictionaryWithObjectsAndKeys:viewerPix, @"pixList", title, @"title", nil];
     
     Class launcherClass = NSClassFromString(@"HorosMetalViewerLauncher");
-    SEL launchSelector = @selector(launchWithContext:);
-    if (launcherClass && [launcherClass respondsToSelector:launchSelector])
+    if (launcherClass)
     {
-        ((void (*)(id, SEL, id))[launcherClass methodForSelector:launchSelector])(launcherClass, launchSelector, context);
+        [launcherClass launchWithContext:context];
     }
     else
     {
@@ -13643,7 +13575,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
 }
 
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 - (void)newViewerDICOM: (id)sender
 {
@@ -13697,7 +13629,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
 }
 
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 - (void)viewerDICOMMergeSelection: (id)sender
 {
@@ -13735,7 +13667,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
         NSRunInformationalAlertPanel(NSLocalizedString(@"ROIs Images", nil), NSLocalizedString(@"No images containing ROIs are found in this selection.", nil), NSLocalizedString(@"OK",nil), nil, nil);
     }
     
-#ifndef OSIRIX_LIGHT
     BOOL escKey = CGEventSourceKeyState( kCGEventSourceStateCombinedSessionState, 53);
     
     if( escKey) //Open the images, and export them
@@ -13749,7 +13680,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
             [[v window] close];
         }
     }
-#endif
 }
 
 - (void) viewerDICOMKeyImages:(id) sender
@@ -13770,7 +13700,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
     else
         [[AppController sharedAppController] checkAllWindowsAreVisible: self makeKey: YES];
     
-#ifndef OSIRIX_LIGHT
     BOOL escKey = CGEventSourceKeyState( kCGEventSourceStateCombinedSessionState, 53);
     
     if( escKey) //Open the images, and export them
@@ -13784,7 +13713,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
             [[v window] close];
         }
     }
-#endif
 }
 
 - (void) MovieViewerDICOM:(id) sender
@@ -13981,7 +13909,7 @@ static NSArray*	openSubSeriesArray = nil;
 }
 
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 #pragma mark-
 #pragma mark GUI functions
@@ -14694,7 +14622,6 @@ static NSArray*	openSubSeriesArray = nil;
         
         [self refreshMatrix: self];
         
-#ifndef OSIRIX_LIGHT
         if( [[NSUserDefaults standardUserDefaults] boolForKey: @"restartAutoQueryAndRetrieve"] == YES && [[NSUserDefaults standardUserDefaults] objectForKey: @"savedAutoDICOMQuerySettingsArray"] != nil)
         {
             [[AppController sharedAppController] notificationTitle: NSLocalizedString( @"Auto-Query", nil) description: NSLocalizedString( @"DICOM Auto-Query is restarting...", nil)  name:@"autoquery"];
@@ -14710,7 +14637,6 @@ static NSArray*	openSubSeriesArray = nil;
         }
         else
             [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"autoRetrieving"];
-#endif
         
 #ifdef WITH_BANNER
         [NSThread detachNewThreadSelector: @selector(checkForBanner:) toTarget: self withObject: nil];
@@ -14804,10 +14730,6 @@ static NSArray*	openSubSeriesArray = nil;
     {
         [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"ROIColorRotation"];
     }
-    
-#if defined(USEHOMEPHONE)
-    [[HorosHomePhone sharedHomePhone] callHomeInformingFunctionType:HOME_PHONE_HOROS_STARTED detail:@"{}"];
-#endif
     
     [ICloudDriveDetector performStartupICloudDriveTasks:self];
     [O2HMigrationAssistant performStartupO2HTasks:self];
@@ -15529,7 +15451,7 @@ static NSArray*	openSubSeriesArray = nil;
     [helpMenu release];
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 #pragma mark-
 #pragma mark DICOM Network & Files functions
@@ -15995,7 +15917,6 @@ static NSArray*	openSubSeriesArray = nil;
 
 //- (void)listenerAnonymizeFiles: (NSArray*)files
 //{
-//	#ifndef OSIRIX_LIGHT
 //	NSArray				*array = [NSArray arrayWithObjects: [DCMAttributeTag tagWithName:@"PatientsName"], @"**anonymized**", [DCMAttributeTag tagWithName:@"PatientID"], @"00000",nil];
 //	NSMutableArray		*tags = [NSMutableArray array];
 //
@@ -16169,7 +16090,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     return [[[array objectAtIndex: 0] valueForKey: @"compression"] intValue];
 }
 
-#ifndef OSIRIX_LIGHT
 
 #pragma deprecated(decompressDICOMJPEGinINCOMING:)
 - (void)decompressDICOMJPEGinINCOMING:(NSArray*)array // __deprecated
@@ -16271,7 +16191,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     else NSRunInformationalAlertPanel(NSLocalizedString(@"Non-Local Database", nil), NSLocalizedString(@"Cannot decompress images in a distant database.", nil), NSLocalizedString(@"OK",nil), nil, nil);
 }
 
-#endif
 
 - (void)checkIncomingThread: (id)sender // __deprecated
 {
@@ -16614,7 +16533,6 @@ static volatile int numberOfThreadsForJPEG = 0;
             tempPath = [tempPath stringByAppendingFormat: @"_%d", uniqueSeriesID];
             previousPath = [NSString stringWithString: tempPath];
             
-#ifndef OSIRIX_LIGHT
             if( [DCMAbstractSyntaxUID isPDF: [curImage valueForKeyPath: @"series.seriesSOPClassUID"]])
             {
                 DCMObject *dcmObject = [DCMObject objectWithContentsOfFile: [curImage valueForKey: @"completePath"] decodingPixelData:NO];
@@ -16688,7 +16606,6 @@ static volatile int numberOfThreadsForJPEG = 0;
                 }
             }
             else
-#endif
             {
                 @autoreleasepool
                 {
@@ -17000,7 +16917,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     [self exportImageAs: @"tif" sender: sender];
 }
 
-#ifndef OSIRIX_LIGHT
 
 - (IBAction) addStudiesToUser: (id) sender
 {
@@ -17077,7 +16993,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 
 -(IBAction)sendEmailNotification:(id)sender
 {
-#ifndef OSIRIX_LIGHT
     self.temporaryNotificationEmail = @"";
     self.customTextNotificationEmail = @"";
     
@@ -17196,12 +17111,10 @@ restart:
     
     [NSApp endSheet: notificationEmailWindow];
     [notificationEmailWindow orderOut: self];
-#endif
 }
 
 -(IBAction)sendMail:(id)sender
 {
-#ifndef OSIRIX_LIGHT
     if( [AppController hasMacOSXSnowLeopard])
     {
 #define kScriptName (@"Mail")
@@ -17318,10 +17231,8 @@ restart:
         [arguments release];
     }
     else if( [NSThread isMainThread]) NSRunCriticalAlertPanel( NSLocalizedString( @"Unsupported", nil), NSLocalizedString( @"This function requires MacOS 10.6 or higher.", nil), NSLocalizedString( @"OK", nil) , nil, nil);
-#endif
 }
 
-#endif
 
 + (NSMutableString*) replaceNotAdmitted: (NSString*)name
 {
@@ -17350,7 +17261,6 @@ restart:
     return mstr;
 }
 
-#ifndef OSIRIX_LIGHT
 - (void) importReport:(NSString*) path UID: (NSString*) uid
 {
     if( [[NSFileManager defaultManager] fileExistsAtPath: path])
@@ -17393,7 +17303,6 @@ restart:
         [context unlock];
     }
 }
-#endif
 
 - (NSArray*) exportDICOMFileInt: (NSString*) location files: (NSMutableArray*) filesToExport objects: (NSMutableArray*) dicomFiles2Export
 {
@@ -17747,7 +17656,6 @@ restart:
             //		[waitCompressionWindow showWindow:self];
             //		[[waitCompressionWindow progress] setMaxValue: [files2Compress count]];
             
-#ifndef OSIRIX_LIGHT
             
             //Workaround for UI calls from background UI (runtime warnings) - Binding could be the definitive resolution for this
             __block NSInteger compressionMatrixSelectedTag = 1;
@@ -17772,14 +17680,12 @@ restart:
                     [self decompressArrayOfFiles: files2Compress work: [NSNumber numberWithChar: 'D']];
                     break;
             }
-#endif
             
             //		[waitCompressionWindow close];
         }
         
         // ANR - I had to create this loop, otherwise, if I export a folder on the desktop, the dcmkdir will scan all files and folders available on the desktop.... not only the exported folder.
         
-#ifndef OSIRIX_LIGHT
         if (addDICOMDIR && exportAborted == NO)
         {
             for( int i = 0; i < [filesToExport count]; i++)
@@ -17838,7 +17744,6 @@ restart:
                 }
             }
         }
-#endif
         if( [[NSUserDefaults standardUserDefaults] boolForKey: @"encryptForExport"] == YES && exportAborted == NO)
         {
             for( int i = 0; i < [filesToExport count]; i++)
@@ -18073,7 +17978,6 @@ restart:
 }
 
 #ifdef OSIRIX_VIEWER
-#ifndef OSIRIX_LIGHT
 - (void) exportROIAndKeyImagesAsDICOMSeries: (id) sender
 {
     WaitRendering *wait = [[WaitRendering alloc] init: NSLocalizedString(@"Generating the DICOM files...", nil)];
@@ -18118,7 +18022,6 @@ restart:
     [wait close];
     [wait autorelease];
 }
-#endif
 #endif
 
 - (void) exportDICOMFile: (id)sender
@@ -18210,7 +18113,6 @@ restart:
     }
 }
 
-#ifndef OSIRIX_LIGHT
 - (void)burnDICOM: (id)sender
 {
     for( NSWindow *win in [NSApp windows])
@@ -18234,9 +18136,7 @@ restart:
     
     [burnerWindowController showWindow:self];
 }
-#endif
 
-#ifndef OSIRIX_LIGHT
 - (IBAction)anonymizeDICOM:(id)sender
 {
     NSMutableArray *dicomFiles2Anonymize = [NSMutableArray array];
@@ -18310,7 +18210,6 @@ restart:
     }
 }
 
-#endif
 
 - (void) unmountPath:(NSString*) path
 {
@@ -18353,9 +18252,7 @@ restart:
     }
 }
 
-#ifndef OSIRIX_LIGHT
 
-#endif
 
 - (void) selectServer: (NSArray*)objects
 {
@@ -18378,7 +18275,6 @@ restart:
     [self selectServer: objects];
 }
 
-#ifndef OSIRIX_LIGHT
 - (IBAction)querySelectedStudy: (id)sender
 {
     //	if( DICOMDIRCDMODE)
@@ -18436,7 +18332,6 @@ restart:
             [[QueryController currentAutoQueryController] showWindow:self];
     }
 }
-#endif
 
 - (void)storeSCPComplete: (id)sender
 {
@@ -18444,7 +18339,6 @@ restart:
     [sender release];
 }
 
-#ifndef OSIRIX_LIGHT
 - (IBAction)importRawData:(id)sender
 {
     [[rdPatientForm cellWithTag:0] setStringValue: @"Raw Data"]; //Patient Name
@@ -18658,14 +18552,12 @@ restart:
     
     [xmlController showWindow:self];
 }
-#endif
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 #pragma mark -
 #pragma mark RTSTRUCT
 
-#ifndef OSIRIX_LIGHT
 - (void)createROIsFromRTSTRUCT: (id)sender
 {
     NSMutableArray *filesArray = [NSMutableArray array];
@@ -18688,9 +18580,8 @@ restart:
         }
     }
 }
-#endif
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 #pragma mark -
 #pragma mark Report functions
@@ -18913,7 +18804,6 @@ restart:
     }
 }
 
-#ifndef OSIRIX_LIGHT
 - (IBAction) generateReport: (id)sender
 {
     NSIndexSet *index = [databaseOutline selectedRowIndexes];
@@ -18925,9 +18815,6 @@ restart:
     
     if( item)
     {
-#if defined(USEHOMEPHONE)
-        [[HorosHomePhone sharedHomePhone] callHomeInformingFunctionType:HOME_PHONE_HOROS_REPORT_REQUESTED detail:[NSString stringWithFormat:@"{\"reportsMode\": \"%d\"}",reportsMode]];
-#endif
 
         if( reportsMode == 0 && [[NSWorkspace sharedWorkspace] fullPathForApplication:@"Microsoft Word"] == nil) // Would absolutePathForAppBundleWithIdentifier be better here? (DDP)
         {
@@ -19102,7 +18989,6 @@ restart:
     [self performSelector: @selector(updateReportToolbarIcon:) withObject: nil afterDelay: 0.1];	
     [[NSNotificationCenter defaultCenter] postNotificationName: OsirixReportModeChangedNotification object: nil userInfo: nil];
 }
-#endif
 
 - (NSImage*) reportIcon
 {
@@ -19170,7 +19056,6 @@ restart:
 {
     @try
     {
-#ifndef OSIRIX_LIGHT
         NSMutableArray* templatesArray = nil;
         switch ([[[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSMODE"] intValue]) {
             case 2:
@@ -19224,9 +19109,6 @@ restart:
             
             [item setImage:icon];
         }
-#else
-        [item setImage:[NSImage imageNamed:@"Report.icns"]];
-#endif
     }
     @catch (NSException * e)
     {
@@ -19237,7 +19119,6 @@ restart:
 
 - (void)reportToolbarItemWillPopUp: (NSNotification *)notif
 {
-#ifndef OSIRIX_LIGHT
     if ([[notif object] isEqualTo:reportTemplatesListPopUpButton])
     {
         [reportTemplatesListPopUpButton removeAllItems];
@@ -19254,10 +19135,9 @@ restart:
         
         [reportTemplatesListPopUpButton setAction:@selector(generateReport:)];
     }
-#endif
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 #pragma mark-
 #pragma mark Toolbar functions
@@ -20192,7 +20072,6 @@ restart:
         else
             [[AppController sharedAppController] checkAllWindowsAreVisible: self makeKey: YES];
         
-#ifndef OSIRIX_LIGHT
         BOOL escKey = CGEventSourceKeyState( kCGEventSourceStateCombinedSessionState, 53);
         
         if( escKey) //Open the images, and export them
@@ -20206,7 +20085,6 @@ restart:
                 [[v window] close];
             }
         }
-#endif
     }
     else
     {
@@ -20467,7 +20345,7 @@ restart:
     return YES;
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 #pragma mark-
 #pragma mark Bonjour
@@ -20549,7 +20427,7 @@ restart:
     return [[DicomDatabase activeLocalDatabase] sqlFilePath];
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 #pragma mark-
 #pragma mark Plugins
@@ -20566,9 +20444,6 @@ restart:
     
     [PluginManager startProtectForCrashWithFilter: filter];
     
-#if defined(USEHOMEPHONE)
-    [[HorosHomePhone sharedHomePhone] callHomeInformingFunctionType:HOME_PHONE_PLUGIN_LAUNCHED detail:[NSString stringWithFormat:@"{\"PluginName\": \"%@\"}",name]];
-#endif
 
     long result = [filter prepareFilter: nil];
     [filter filterImage: name];

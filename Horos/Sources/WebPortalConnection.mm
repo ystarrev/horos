@@ -495,7 +495,6 @@ NSString* const SessionDicomCStorePortKey = @"DicomCStorePort"; // NSNumber (int
     
 	if ([self.requestedPath hasPrefix:@"/weasis/"])
 	{
-		#ifndef OSIRIX_LIGHT
         BOOL assigned = false;
         for (NSString *dir in [Horos WeasisCustomizationPaths]) {
             NSString *path = [dir stringByAppendingPathComponent:[self.requestedPath substringFromIndex:8]];
@@ -508,9 +507,6 @@ NSString* const SessionDicomCStorePortKey = @"DicomCStorePort"; // NSNumber (int
         }
         if (!assigned)
             response.data = [NSData dataWithContentsOfFile:[[[AppController sharedAppController] weasisBasePath] stringByAppendingPathComponent:self.requestedPath]];
-		#else
-		response.statusCode = 404;
-		#endif
 	}
 	else if ([self.requestedPath rangeOfString:@".pvt."].length)
     {
@@ -602,8 +598,8 @@ NSString* const SessionDicomCStorePortKey = @"DicomCStorePort"; // NSNumber (int
                 if ([self.requestedPath hasPrefix:@"/imageAsScreenCapture."])
                     [self processImageAsScreenCapture: YES];
                 else
-                if ([self.requestedPath isEqualToString:@"/movie.mov"] || [self.requestedPath isEqualToString:@"/movie.m4v"] || [self.requestedPath isEqualToString:@"/movie.mp4"] || [self.requestedPath isEqualToString:@"/movie.swf"])
-                    [self processMovie];
+	                if ([self.requestedPath isEqualToString:@"/movie.mov"] || [self.requestedPath isEqualToString:@"/movie.m4v"] || [self.requestedPath isEqualToString:@"/movie.mp4"])
+	                    [self processMovie];
                 else
                 if ([self.requestedPath isEqualToString:@"/password_forgotten"])
                     [self processPasswordForgottenHtml];

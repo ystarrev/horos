@@ -1556,7 +1556,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     [[self windowController] redo: sender];
 }
 
-#ifndef OSIRIX_LIGHT
 - (void)paste:(id)sender
 {
     NSPasteboard *pb = [NSPasteboard generalPasteboard];
@@ -1611,7 +1610,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     if ([winCtrl respondsToSelector:@selector(paste:)])
         [winCtrl paste: sender];
 }
-#endif
 
 -(IBAction) copy:(id) sender
 {
@@ -8129,7 +8127,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     //	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glLineWidth(1.0 * self.window.backingScaleFactor);
     
-    //	#ifndef OSIRIX_LIGHT
     //	if( iChatRunning && cgl_ctx==[_alternateContext CGLContextObj])
     //	{
     //		if(!iChatFontListGL) iChatFontListGL = glGenLists(150);
@@ -8932,10 +8929,8 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     BOOL frontMost = NO, is2DViewer = [self is2DViewer];
     float sf = self.window.backingScaleFactor;
     
-    //	#ifndef OSIRIX_LIGHT
     //    iChatRunning = NO;
     //    if( is2DViewer)
-    //        iChatRunning = [[IChatTheatreDelegate sharedDelegate] isIChatTheatreRunning];
     //	#else
     //    iChatRunning = NO;
     //	#endif
@@ -9066,7 +9061,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             }
             
             // highlight the visible part of the view (the part visible through iChat)
-            //			#ifndef OSIRIX_LIGHT
             //			if( iChatRunning && ctx!=_alternateContext && [[self window] isMainWindow] && isKeyView && iChatWidth>0 && iChatHeight>0)
             //			{
             //				glLoadIdentity (); // reset model view matrix to identity (eliminates rotation basically)
@@ -9121,11 +9115,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             //				glDisable(GL_BLEND);
             //
             //				// label
-            //				NSPoint iChatTheatreSharedViewLabelPosition;
-            //				iChatTheatreSharedViewLabelPosition.x = drawingFrameRect.size.width/2.0;
-            //				iChatTheatreSharedViewLabelPosition.y = topLeft.y;
-            //
-            //				[self DrawNSStringGL:NSLocalizedString(@"iChat Theatre shared view", nil) :fontListGL :iChatTheatreSharedViewLabelPosition.x :iChatTheatreSharedViewLabelPosition.y align:DCMViewTextAlignCenter useStringTexture:YES];
             //			}
             //			#endif
             // ***********************
@@ -9428,9 +9417,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     }
                     
                     // let the pluginSDK draw anything it needs to draw, we use a notification for now, but that is nasty style, we really should be calling a method
-#ifndef OSIRIX_LIGHT
                     [[OSIEnvironment sharedEnvironment] drawDCMView:self];
-#endif
                     
                     if ( !suppress_labels)
                     {
@@ -9718,79 +9705,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 [self drawROISelectorRegion];
             }
             
-            //			if(ctx == _alternateContext && [[NSApplication sharedApplication] isActive]) // iChat Theatre context
-            //			{
-            //				glLoadIdentity (); // reset model view matrix to identity (eliminates rotation basically)
-            //				glScalef (2.0f / drawingFrameRect.size.width, -2.0f /  drawingFrameRect.size.height, 1.0f); // scale to port per pixel scale
-            //				glTranslatef (-(drawingFrameRect.size.width) / 2.0f, -(drawingFrameRect.size.height) / 2.0f, 0.0f); // translate center to upper left
-            //
-            //				NSPoint eventLocation = [[self window] convertScreenToBase: [NSEvent mouseLocation]];
-            //
-            //				// location of the mouse in the OsiriX View
-            //				eventLocation = [self convertPoint:eventLocation fromView:nil];
-            //				eventLocation.y = [self frame].size.height - eventLocation.y;
-            //
-            //				// generate iChat cursor Texture Buffer (only once)
-            //				if(!iChatCursorTextureBuffer)
-            //				{
-            //					NSLog(@"generate iChatCursor Texture Buffer");
-            //					NSImage *iChatCursorImage;
-            //					if ((iChatCursorImage = [[NSCursor pointingHandCursor] image]))
-            //					{
-            //						iChatCursorHotSpot = [[NSCursor pointingHandCursor] hotSpot];
-            //						iChatCursorImageSize = [iChatCursorImage size];
-            //
-            //						NSBitmapImageRep *bitmap = [[NSBitmapImageRep alloc] initWithData:[iChatCursorImage TIFFRepresentation]]; // [NSBitmapImageRep imageRepWithData: [iChatCursorImage TIFFRepresentation]]
-            //
-            //						iChatCursorTextureBuffer = malloc([bitmap bytesPerRow] * iChatCursorImageSize.height);
-            //						memcpy(iChatCursorTextureBuffer, [bitmap bitmapData], [bitmap bytesPerRow] * iChatCursorImageSize.height);
-            //
-            //						[bitmap release];
-            //
-            //						iChatCursorTextureName = 0;
-            //						glGenTextures(1, &iChatCursorTextureName);
-            //						glBindTexture(GL_TEXTURE_RECTANGLE_EXT, iChatCursorTextureName);
-            //						glPixelStorei(GL_UNPACK_ROW_LENGTH, [bitmap bytesPerRow]/4);
-            //						glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, 1);
-            //						glTexParameteri (GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_STORAGE_HINT_APPLE, GL_STORAGE_CACHED_APPLE);
-            //
-            //						glTexImage2D(GL_TEXTURE_RECTANGLE_EXT, 0, GL_RGBA, iChatCursorImageSize.width, iChatCursorImageSize.height, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, iChatCursorTextureBuffer);
-            //					}
-            //				}
-            //
-            //				// draw the cursor in the iChat Theatre View
-            //				if(iChatCursorTextureBuffer)
-            //				{
-            //					eventLocation.x -= iChatCursorHotSpot.x;
-            //					eventLocation.y -= iChatCursorHotSpot.y;
-            //
-            //					glEnable(GL_TEXTURE_RECTANGLE_EXT);
-            //
-            //					glBindTexture(GL_TEXTURE_RECTANGLE_EXT, iChatCursorTextureName);
-            //					glBlendEquation(GL_FUNC_ADD);
-            //					glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            //					glEnable(GL_BLEND);
-            //
-            //					glColor4f(1.0, 1.0, 1.0, 1.0);
-            //					glBegin(GL_QUAD_STRIP);
-            //						glTexCoord2f(0, 0);
-            //						glVertex2f(eventLocation.x, eventLocation.y);
-            //
-            //						glTexCoord2f(iChatCursorImageSize.width, 0);
-            //						glVertex2f(eventLocation.x + iChatCursorImageSize.width, eventLocation.y);
-            //
-            //						glTexCoord2f(0, iChatCursorImageSize.height);
-            //						glVertex2f(eventLocation.x, eventLocation.y + iChatCursorImageSize.height);
-            //
-            //						glTexCoord2f(iChatCursorImageSize.width, iChatCursorImageSize.height);
-            //						glVertex2f(eventLocation.x + iChatCursorImageSize.width, eventLocation.y + iChatCursorImageSize.height);
-            //
-            //						glEnd();
-            //					glDisable(GL_BLEND);
-            //
-            //					glDisable(GL_TEXTURE_RECTANGLE_EXT);
-            //				}
-            //			} // end iChat Theatre context
             
             if( showDescriptionInLarge)
             {
@@ -10539,9 +10453,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     if( offset) *offset = 0;
     
     if(
-#ifndef OSIRIX_LIGHT
        [self class] == [OrthogonalMPRPETCTView class] ||
-#endif
        [self class] == [OrthogonalMPRView class]) allowSmartCropping = NO;	// <- MPR 2D, Ortho MPR
     
     if( screenCapture)	// Pixels displayed in current window
@@ -11760,7 +11672,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     memcpy( correctedOrientation, o, sizeof o );
 }
 
-#ifndef OSIRIX_LIGHT
 - (N3AffineTransform)pixToSubDrawRectTransform // converst points in DCMPix "Slice Coordinates" to coordinates that need to be passed to GL in subDrawRect
 {
     N3AffineTransform pixToSubDrawRectTransform;
@@ -11782,7 +11693,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     
     return pixToSubDrawRectTransform;
 }
-#endif
 
 -(void) setOriginWithRotationX:(float) x Y:(float) y
 {
@@ -13473,11 +13383,6 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
     _dragInProgress = NO;
 }
 
-//part of Dragging Source Protocol
-- (NSDragOperation)draggingSourceOperationMaskForLocal:(BOOL)isLocal{
-    return NSDragOperationEvery;
-}
-
 - (DicomImage *)dicomImage{
     return [dcmFilesList objectAtIndex: curImage];
 }
@@ -13652,8 +13557,6 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
 }
 
 //#pragma mark -
-//#pragma mark IMAVManager delegate methods.
-//// The IMAVManager will call this to ask for the context we'll be providing frames with.
 //- (void)getOpenGLBufferContext:(CGLContextObj *)contextOut pixelFormat:(CGLPixelFormatObj *)pixelFormatOut
 //{
 //
@@ -13661,8 +13564,6 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
 //    *pixelFormatOut = [[self pixelFormat] CGLPixelFormatObj];
 //}
 //
-//// The IMAVManager will call this when it wants a frame.
-//// Note that this will be called on a non-main thread.
 //
 //- (BOOL)renderIntoOpenGLBuffer:(CVOpenGLBufferRef)buffer onScreen:(int *)screenInOut forTime:(CVTimeStamp*)timeStamp
 //{
@@ -13712,7 +13613,6 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
 //    }
 //}
 //
-//// Callback from IMAVManager asking what pixel format we'll be providing frames in.
 //- (void)getPixelBufferPixelFormat:(OSType *)pixelFormatOut
 //{
 //    *pixelFormatOut = kCVPixelFormatType_32ARGB;

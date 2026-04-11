@@ -207,7 +207,7 @@
         if( curMousePosition > 0)
             ss++;
         
-		trace = [NSString stringWithFormat:NSLocalizedString(@"Total Pixels: %ld\n\nRange:%ld/%ld\n\nPixels for\nthis range:%ld", nil), pixels, ss, ee, noAtMouse];
+		trace = [NSString stringWithFormat:NSLocalizedString(@"Total Pixels: %ld\n\nRange:%ld/%ld\n\nPixels for\nthis range:%ld", nil), pixels, ss, ee, (long)noAtMouse];
 	}
 	else
 	{

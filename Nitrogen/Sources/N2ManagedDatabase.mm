@@ -557,11 +557,9 @@ static int gTotalN2ManagedObjectContext = 0;
         } else if ([oid isKindOfClass:[NSManagedObject class]]) {
             oid = [oid objectID];
         }
-#ifndef OSIRIX_LIGHT
         else if ([oid isKindOfClass:[DCMTKQueryNode class]]) {
             return oid;
         }
-#endif
         else if ([oid isKindOfClass:[NSURL class]]) {
             oid = [self.managedObjectContext.persistentStoreCoordinator managedObjectIDForURIRepresentation:oid];
         } else if ([oid isKindOfClass:[NSString class]]) {

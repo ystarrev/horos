@@ -3,7 +3,7 @@
  
  Horos is free software: you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
- the Free Software Foundation, Êversion 3 of the License.
+ the Free Software Foundation, ÃŠversion 3 of the License.
  
  The Horos Project was based originally upon the OsiriX Project which at the time of
  the code fork was licensed as a LGPL project.  However, not all of the the source-code
@@ -15,24 +15,24 @@
  
  Horos is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY EXPRESS OR IMPLIED, INCLUDING ANY WARRANTY OF
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÊSee the
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÃŠSee the
  GNU Lesser General Public License for more details.
  
  You should have received a copy of the GNU Lesser General Public License
- along with Horos. ÊIf not, see http://www.gnu.org/licenses/lgpl.html
+ along with Horos. ÃŠIf not, see http://www.gnu.org/licenses/lgpl.html
  
  Prior versions of this file were published by the OsiriX team pursuant to
  the below notice and licensing protocol.
  ============================================================================
- Program: Ê OsiriX
- ÊCopyright (c) OsiriX Team
- ÊAll rights reserved.
- ÊDistributed under GNU - LGPL
- Ê
- ÊSee http://www.osirix-viewer.com/copyright.html for details.
- Ê Ê This software is distributed WITHOUT ANY WARRANTY; without even
- Ê Ê the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
- Ê Ê PURPOSE.
+ Program: ÃŠ OsiriX
+ ÃŠCopyright (c) OsiriX Team
+ ÃŠAll rights reserved.
+ ÃŠDistributed under GNU - LGPL
+ ÃŠ
+ ÃŠSee http://www.osirix-viewer.com/copyright.html for details.
+ ÃŠ ÃŠ This software is distributed WITHOUT ANY WARRANTY; without even
+ ÃŠ ÃŠ the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ ÃŠ ÃŠ PURPOSE.
  ============================================================================*/
 
 #import "DCMPix.h"
@@ -75,9 +75,7 @@
 //#define uint64 tiff_uint64
 //#import <vtk_tiff.h>
 
-#ifndef OSIRIX_LIGHT
 #include "FVTiff.h"
-#endif
 #include "Analyze.h"
 
 #ifndef DECOMPRESS_APP
@@ -1469,9 +1467,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             [gCUSTOM_IMAGE_ANNOTATIONS addEntriesFromDictionary: [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"CUSTOM_IMAGE_ANNOTATIONS"]];
         }
         
-#ifdef OSIRIX_LIGHT
-        gUSEPAPYRUSDCMPIX = NO;
-#endif
         
 #if __LP64__
         gUSEPAPYRUSDCMPIX = NO;
@@ -3649,7 +3644,8 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         {
             imageObjectID = [[iO objectID] retain];
             
-            URIRepresentationAbsoluteString =  [[[[[iO valueForKeyPath:@"series.study"] objectID] URIRepresentation] absoluteString] retain];
+            NSManagedObject *studyObject = (NSManagedObject *)[iO valueForKeyPath:@"series.study"];
+            URIRepresentationAbsoluteString = [[[[studyObject objectID] URIRepresentation] absoluteString] retain];
             fileTypeHasPrefixDICOM = [[iO valueForKey:@"fileType"] hasPrefix:@"DICOM"];
             numberOfFrames = [[iO valueForKey: @"numberOfFrames"] intValue];
             self->modalityString = [[NSString stringWithString:[iO valueForKeyPath:@"series.modality"]] retain];
@@ -4023,7 +4019,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 -(void) LoadTiff:(long) directory
 {
 #ifndef STATIC_DICOM_LIB
-#ifndef OSIRIX_LIGHT
     long			i, totSize;
     int				w, h, row;
     short			bpp, count, tifspp;
@@ -4369,13 +4364,11 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     }
     else NSLog( @"ERROR TIFF UNKNOWN");
 #endif
-#endif
 }
 
 -(void) LoadFVTiff
 {
 #ifndef STATIC_DICOM_LIB
-#ifndef OSIRIX_LIGHT
     int success = 0, i;
     short head_size = 0;
     char* head_data = 0;
@@ -4430,7 +4423,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             pixelRatio = pixelSpacingY / pixelSpacingX;
     }
     if(tif) TIFFClose(tif);
-#endif
 #endif
 }
 
@@ -4935,7 +4927,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         radionuclideTotalDoseCorrected = radionuclideTotalDose * exp( -timebetween * logf( 2) / halflife);
 }
 
-#ifndef OSIRIX_LIGHT
 - (void)createROIsFromRTSTRUCT: (DCMObject*)dcmObject
 {
 #ifdef OSIRIX_VIEWER
@@ -5326,7 +5317,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 #endif
 } // end createROIsFromRTSTRUCT
 
-#endif
 
 - (void) setVOILUT:(int) first
             number:(unsigned int) number
@@ -5813,7 +5803,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     }
 }
 
-#ifndef OSIRIX_LIGHT
 - (BOOL)loadDICOMDCMFramework
 {
     // Memory test: DCMFramework requires a lot of memory...
@@ -5937,7 +5926,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     else if( [SOPClassUID hasPrefix: @"1.2.840.10008.5.1.4.1.1.88"]) // DICOM SR
     {
 #ifdef OSIRIX_VIEWER
-#ifndef OSIRIX_LIGHT
         
         @try
         {
@@ -5996,9 +5984,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         {
             N2LogExceptionWithStackTrace(e);
         }
-#else
-        [self getDataFromNSImage: [NSImage imageNamed: @"NSIconViewTemplate"]];
-#endif
 #else
         [self getDataFromNSImage: [NSImage imageNamed: @"NSIconViewTemplate"]];
 #endif
@@ -6888,7 +6873,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     
     return returnValue;
 }
-#endif
 
 + (void) purgeCachedDictionaries
 {
@@ -7072,7 +7056,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                                                      8,
                                                      bytesPerRow,
                                                      cs,
-                                                     (CGBitmapInfo)(kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Big));
+                                                     ((CGBitmapInfo)kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Big));
 
             CGColorSpaceRelease(cs);
 
@@ -7149,7 +7133,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                     success = [self loadDICOMPapyrus]; // always fail
                     
 #ifdef OSIRIX_VIEWER
-#ifndef OSIRIX_LIGHT
                     if( success == NO)
                     {
                         // It failed with Papyrus : potential crash with DCMFramework with a corrupted file
@@ -7177,9 +7160,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                         }
                     }
 #endif
-#endif
                 }
-#ifndef OSIRIX_LIGHT  // @@@ Also Decompress ?
                 else
                 {
                     success = [self loadDICOMDCMFramework];
@@ -7189,7 +7170,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                         success = [self loadDICOMPapyrus];
                     }
                 }
-#endif
                 
                 if( numberOfFrames <= 1)
                     [self clearCachedPapyGroups];

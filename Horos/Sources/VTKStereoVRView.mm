@@ -95,8 +95,6 @@ static NSRecursiveLock *drawLock = nil;
 	superVRView = nil;
 	[superVRView release];
 
-//	snVRView = nil;
-//	[snVRView release];
 	/*	
 	 [cursor release];
 	 [_mouseDownTimer invalidate];

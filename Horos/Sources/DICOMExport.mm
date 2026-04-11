@@ -97,10 +97,8 @@ static float deg2rad = M_PI / 180.0f;
 		exportInstanceNumber = 1;
 		exportSeriesNumber = 5000;
 		
-		#ifndef OSIRIX_LIGHT
 		exportSeriesUID = [[DCMObject newSeriesInstanceUID] retain];
 		exportSeriesDescription = [@"OsiriX SC" retain];
-		#endif
 		
 		spacingX = 0;
 		spacingY = 0;
@@ -429,9 +427,6 @@ static float deg2rad = M_PI / 180.0f;
 
 - (NSString*) writeDCMFile: (NSString*) dstPath withExportDCM:(DCMExportPlugin*) dcmExport
 {
-    #ifdef OSIRIX_LIGHT
-    NSLog( @"---- OSIRIX LIGHT CANNOT write DICOM files");
-    #endif
     
 	if( spp != 1 && spp != 3)
 	{

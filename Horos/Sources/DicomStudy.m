@@ -3,7 +3,7 @@
  
  Horos is free software: you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
- the Free Software Foundation, Êversion 3 of the License.
+ the Free Software Foundation, ÃŠversion 3 of the License.
  
  The Horos Project was based originally upon the OsiriX Project which at the time of
  the code fork was licensed as a LGPL project.  However, not all of the the source-code
@@ -15,24 +15,24 @@
  
  Horos is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY EXPRESS OR IMPLIED, INCLUDING ANY WARRANTY OF
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÊSee the
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÃŠSee the
  GNU Lesser General Public License for more details.
  
  You should have received a copy of the GNU Lesser General Public License
- along with Horos. ÊIf not, see http://www.gnu.org/licenses/lgpl.html
+ along with Horos. ÃŠIf not, see http://www.gnu.org/licenses/lgpl.html
  
  Prior versions of this file were published by the OsiriX team pursuant to
  the below notice and licensing protocol.
  ============================================================================
- Program: Ê OsiriX
- ÊCopyright (c) OsiriX Team
- ÊAll rights reserved.
- ÊDistributed under GNU - LGPL
- Ê
- ÊSee http://www.osirix-viewer.com/copyright.html for details.
- Ê Ê This software is distributed WITHOUT ANY WARRANTY; without even
- Ê Ê the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
- Ê Ê PURPOSE.
+ Program: ÃŠ OsiriX
+ ÃŠCopyright (c) OsiriX Team
+ ÃŠAll rights reserved.
+ ÃŠDistributed under GNU - LGPL
+ ÃŠ
+ ÃŠSee http://www.osirix-viewer.com/copyright.html for details.
+ ÃŠ ÃŠ This software is distributed WITHOUT ANY WARRANTY; without even
+ ÃŠ ÃŠ the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ ÃŠ ÃŠ PURPOSE.
  ============================================================================*/
 
 #import "DicomStudy.h"
@@ -367,7 +367,6 @@ static NSRecursiveLock *dbModifyLock = nil;
     
     avoidReentry3++;
     
-#ifndef OSIRIX_LIGHT
     if( [self.hasDICOM boolValue] == YES)
     {
         @try
@@ -390,7 +389,6 @@ static NSRecursiveLock *dbModifyLock = nil;
         @finally {
         }
     }
-#endif
     
     avoidReentry3--;
 }
@@ -635,7 +633,6 @@ static NSRecursiveLock *dbModifyLock = nil;
     
     avoidReentry2++;
     
-#ifndef OSIRIX_LIGHT
     if ([self.hasDICOM boolValue] == YES)
     {
         @try {
@@ -687,7 +684,6 @@ static NSRecursiveLock *dbModifyLock = nil;
     }
     avoidReentry2--;
     
-#endif
 }
 
 - (void) archiveWindowsStateAsDICOMSR
@@ -732,7 +728,6 @@ static NSRecursiveLock *dbModifyLock = nil;
     
     avoidReentry++;
     
-#ifndef OSIRIX_LIGHT
     if( [self.hasDICOM boolValue] == YES)
     {
         [self.managedObjectContext lock];
@@ -842,7 +837,6 @@ static NSRecursiveLock *dbModifyLock = nil;
     
     avoidReentry--;
     
-#endif
 }
 
 - (BOOL)validateForDelete:(NSError **)error
@@ -970,7 +964,6 @@ static NSRecursiveLock *dbModifyLock = nil;
 - (void) dcmodifyThread: (NSDictionary*) dict
 {
 #ifdef OSIRIX_VIEWER
-#ifndef OSIRIX_LIGHT
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
     [[DicomStudy dbModifyLock] lock];
     @try {
@@ -1053,7 +1046,6 @@ static NSRecursiveLock *dbModifyLock = nil;
         [[DicomStudy dbModifyLock] unlock];
         [pool release];
     }
-#endif
 #endif
 }
 
@@ -1140,7 +1132,6 @@ static NSRecursiveLock *dbModifyLock = nil;
 - (void) setStateText: (NSNumber*) c
 {
 #ifdef OSIRIX_VIEWER
-#ifndef OSIRIX_LIGHT
     @try
     {
         if( [self.hasDICOM boolValue] == YES && [[NSUserDefaults standardUserDefaults] boolForKey: @"savedCommentsAndStatusInDICOMFiles"] && [[DicomDatabase databaseForContext:self.managedObjectContext] isLocal])
@@ -1201,7 +1192,6 @@ static NSRecursiveLock *dbModifyLock = nil;
     {
         N2LogExceptionWithStackTrace(e);
     }
-#endif
 #endif
     
     NSNumber *previousState = [self primitiveValueForKey: @"stateText"];
@@ -1349,7 +1339,7 @@ static NSRecursiveLock *dbModifyLock = nil;
     return [super valueForUndefinedKey: key];
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 - (NSNumber*) intervalSinceBirth
 {
@@ -1428,7 +1418,7 @@ static NSRecursiveLock *dbModifyLock = nil;
 }
 
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 - (void) setModality:(NSString *) s
 {
@@ -1567,7 +1557,7 @@ static NSRecursiveLock *dbModifyLock = nil;
     }
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 - (NSSet*) paths
 {
@@ -1608,7 +1598,7 @@ static NSRecursiveLock *dbModifyLock = nil;
 }
 
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 - (NSSet*) keyImages
 {
@@ -1629,7 +1619,7 @@ static NSRecursiveLock *dbModifyLock = nil;
     return nil;
 }
 
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ------------------------ Series subselections-----------------------------------ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘------------------------ Series subselections-----------------------------------Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘Ã‘
 
 + (BOOL) displaySeriesWithSOPClassUID: (NSString*) uid andSeriesDescription: (NSString*) description containingOnlyPixels: (BOOL) pixels
 {
@@ -2323,7 +2313,6 @@ static NSRecursiveLock *dbModifyLock = nil;
 - (NSArray*) generateDICOMSCImagesForKeyImages: (BOOL) keyImages andROIImages: (BOOL) ROIImages
 {
 #ifdef OSIRIX_VIEWER
-#ifndef OSIRIX_LIGHT
     NSArray *images = nil;
     
     if( keyImages && ROIImages)
@@ -2356,7 +2345,6 @@ static NSRecursiveLock *dbModifyLock = nil;
         return  objects;
     }
 #endif
-#endif
     return nil;
 }
 
@@ -2377,7 +2365,6 @@ static NSRecursiveLock *dbModifyLock = nil;
 }
 
 #ifdef OSIRIX_VIEWER
-#ifndef OSIRIX_LIGHT
 -(NSArray*)authorizedUsers
 {
     NSManagedObjectContext* webContext = [WebPortal.defaultWebPortal.database independentContext];
@@ -2433,7 +2420,6 @@ static NSRecursiveLock *dbModifyLock = nil;
     
     return nil;
 }
-#endif
 #endif
 
 @end

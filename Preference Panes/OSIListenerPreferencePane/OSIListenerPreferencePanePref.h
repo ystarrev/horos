@@ -39,7 +39,7 @@
 
 #import "DICOMTLS.h"
 
-@interface OSIListenerPreferencePanePref : NSPreferencePane 
+@interface OSIListenerPreferencePanePref : NSPreferencePane <NSControlTextEditingDelegate>
 {
 	IBOutlet NSTextField *ipField;
 	IBOutlet NSTextField *nameField;

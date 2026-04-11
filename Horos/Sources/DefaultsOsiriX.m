@@ -1035,11 +1035,7 @@ static NSHost *currentHost = nil;
     [defaultValues setObject:@"10" forKey:@"DICOMConnectionTimeout"];
 	[defaultValues setObject:@"1" forKey:@"NSWindowsSetFrameAnimate"];
 	[defaultValues setObject: @"0" forKey: @"TRANSITIONTYPE"];
-	#ifndef OSIRIX_LIGHT
 	[defaultValues setObject: @"1" forKey: @"COPYDATABASE"];
-	#else
-	[defaultValues setObject: @"0" forKey: @"COPYDATABASE"];
-	#endif
 	[defaultValues setObject: @"0" forKey: @"SUVCONVERSION"];
 	[defaultValues setObject: @"1" forKey: @"NoImageTilingInFullscreen"];
 	[defaultValues setObject: @"0" forKey: @"AUTOCLEANINGCOMMENTS"];
@@ -1738,8 +1734,6 @@ static NSHost *currentHost = nil;
 		
 	[defaultValues setObject:[NSNumber numberWithBool:YES] forKey:OsirixWadoServiceEnabledDefaultsKey];
 	[defaultValues setObject:[NSNumber numberWithBool:YES] forKey:OsirixWebPortalUsesWeasisDefaultsKey];
-	[defaultValues setObject:[NSNumber numberWithBool:YES] forKey:OsirixWebPortalPrefersFlashDefaultsKey];
-	
-	return defaultValues;
-}
+		return defaultValues;
+	}
 @end

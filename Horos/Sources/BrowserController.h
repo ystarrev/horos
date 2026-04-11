@@ -72,10 +72,7 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
  *	and manages the database
  */
 
-@interface BrowserController : NSWindowController
-#if (MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_5)
-<NSTableViewDelegate, NSDrawerDelegate, NSMatrixDelegate, NSToolbarDelegate, NSMenuDelegate,NSSplitViewDelegate>   //NSObject
-#endif
+@interface BrowserController : NSWindowController <NSTableViewDelegate, NSDrawerDelegate, NSMatrixDelegate, NSToolbarDelegate, NSMenuDelegate, NSSplitViewDelegate, NSMenuItemValidation>
 {
     DicomDatabase*					_database;
     NSMutableDictionary				*databaseIndexDictionary;
@@ -577,7 +574,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (void) refreshMatrix:(id) sender;
 - (void)updateReportToolbarIcon:(NSNotification *)note;
 
-#ifndef OSIRIX_LIGHT
 - (IBAction) paste: (id)sender;
 - (IBAction) pasteImageForSourceFile: (NSString*) sourceFile;
 - (void) decompressDICOMJPEG: (NSArray*) array __deprecated;
@@ -597,7 +593,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (void) refreshComparativeStudies: (NSArray*) newStudies;
 + (NSArray*) comparativeServers;
 - (IBAction) viewXML:(id) sender;
-#endif
 
 - (void) retrieveComparativeStudy: (DCMTKStudyQueryNode*) study select: (BOOL) select open: (BOOL) open;
 - (void) retrieveComparativeStudy: (DCMTKStudyQueryNode*) study select: (BOOL) select open: (BOOL) open showGUI: (BOOL) showGUI viewer: (ViewerController*) viewer;

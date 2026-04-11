@@ -3,7 +3,7 @@
  
  Horos is free software: you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
- the Free Software Foundation, Êversion 3 of the License.
+ the Free Software Foundation, ÃŠversion 3 of the License.
  
  The Horos Project was based originally upon the OsiriX Project which at the time of
  the code fork was licensed as a LGPL project.  However, not all of the the source-code
@@ -15,24 +15,24 @@
  
  Horos is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY EXPRESS OR IMPLIED, INCLUDING ANY WARRANTY OF
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÊSee the
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÃŠSee the
  GNU Lesser General Public License for more details.
  
  You should have received a copy of the GNU Lesser General Public License
- along with Horos. ÊIf not, see http://www.gnu.org/licenses/lgpl.html
+ along with Horos. ÃŠIf not, see http://www.gnu.org/licenses/lgpl.html
  
  Prior versions of this file were published by the OsiriX team pursuant to
  the below notice and licensing protocol.
  ============================================================================
- Program: Ê OsiriX
- ÊCopyright (c) OsiriX Team
- ÊAll rights reserved.
- ÊDistributed under GNU - LGPL
- Ê
- ÊSee http://www.osirix-viewer.com/copyright.html for details.
- Ê Ê This software is distributed WITHOUT ANY WARRANTY; without even
- Ê Ê the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
- Ê Ê PURPOSE.
+ Program: ÃŠ OsiriX
+ ÃŠCopyright (c) OsiriX Team
+ ÃŠAll rights reserved.
+ ÃŠDistributed under GNU - LGPL
+ ÃŠ
+ ÃŠSee http://www.osirix-viewer.com/copyright.html for details.
+ ÃŠ ÃŠ This software is distributed WITHOUT ANY WARRANTY; without even
+ ÃŠ ÃŠ the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ ÃŠ ÃŠ PURPOSE.
  ============================================================================*/
 
 #import "DicomImage.h"
@@ -578,7 +578,6 @@ NSString* sopInstanceUIDDecode( unsigned char *r, int length)
 - (void) dcmodifyThread: (NSDictionary*) dict
 {
 #ifdef OSIRIX_VIEWER
-#ifndef OSIRIX_LIGHT
 	NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
 	[[DicomStudy dbModifyLock] lock];
 	@try {
@@ -658,7 +657,6 @@ NSString* sopInstanceUIDDecode( unsigned char *r, int length)
         [pool release];
     }
 #endif
-#endif
 }
 
 - (NSNumber*) isImageStorage
@@ -695,7 +693,6 @@ NSString* sopInstanceUIDDecode( unsigned char *r, int length)
         if( [f boolValue] != [[self primitiveValueForKey: @"storedIsKeyImage"] boolValue])
         {
             #ifdef OSIRIX_VIEWER
-            #ifndef OSIRIX_LIGHT
             if( [self.series.study.hasDICOM boolValue] == YES && [[NSUserDefaults standardUserDefaults] boolForKey: @"savedCommentsAndStatusInDICOMFiles"]  && [[DicomDatabase databaseForContext:self.managedObjectContext] isLocal])
             {
                 NSString *c = nil;
@@ -763,7 +760,6 @@ NSString* sopInstanceUIDDecode( unsigned char *r, int length)
                     [[ThreadsManager defaultManager] addThreadAndStart: t];
                 }
             }
-            #endif
             #endif
             
             NSNumber *previousValue = [self primitiveValueForKey: @"storedIsKeyImage"];
@@ -1133,7 +1129,6 @@ NSString* sopInstanceUIDDecode( unsigned char *r, int length)
 	return [NSSet setWithObject:[self completePathWithNoDownloadAndLocalOnly]];
 }
 
-#ifndef OSIRIX_LIGHT
 // DICOM Presentation State
 - (DCMSequenceAttribute *)graphicAnnotationSequence
 {
@@ -1187,7 +1182,6 @@ NSString* sopInstanceUIDDecode( unsigned char *r, int length)
 	[pool release];
 	 return graphicAnnotationSequence;
 }
-#endif
 
 - (NSImage *)image
 {

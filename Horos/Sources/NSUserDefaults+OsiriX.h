@@ -99,10 +99,7 @@ extern NSString* const OsirixWebPortalUsesWeasisDefaultsKey;
 extern NSString* const OsirixWadoServiceEnabledDefaultsKey;
 +(BOOL)wadoServiceEnabled;
 
-extern NSString* const OsirixWebPortalPrefersFlashDefaultsKey;
-+(BOOL)webPortalPrefersFlash;
-
-extern NSString* const OsirixWebPortalPrefersCustomWebPagesKey;
+	extern NSString* const OsirixWebPortalPrefersCustomWebPagesKey;
 +(BOOL)webPortalPrefersCustomWebPages;
 
 extern NSString* const OsirixWebPortalNotificationsEnabledDefaultsKey;

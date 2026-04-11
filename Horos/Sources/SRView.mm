@@ -3,7 +3,7 @@
  
  Horos is free software: you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
- the Free Software Foundation, Êversion 3 of the License.
+ the Free Software Foundation, ÃŠversion 3 of the License.
  
  The Horos Project was based originally upon the OsiriX Project which at the time of
  the code fork was licensed as a LGPL project.  However, not all of the the source-code
@@ -15,33 +15,27 @@
  
  Horos is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY EXPRESS OR IMPLIED, INCLUDING ANY WARRANTY OF
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÊSee the
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÃŠSee the
  GNU Lesser General Public License for more details.
  
  You should have received a copy of the GNU Lesser General Public License
- along with Horos. ÊIf not, see http://www.gnu.org/licenses/lgpl.html
+ along with Horos. ÃŠIf not, see http://www.gnu.org/licenses/lgpl.html
  
  Prior versions of this file were published by the OsiriX team pursuant to
  the below notice and licensing protocol.
  ============================================================================
- Program: Ê OsiriX
- ÊCopyright (c) OsiriX Team
- ÊAll rights reserved.
- ÊDistributed under GNU - LGPL
- Ê
- ÊSee http://www.osirix-viewer.com/copyright.html for details.
- Ê Ê This software is distributed WITHOUT ANY WARRANTY; without even
- Ê Ê the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
- Ê Ê PURPOSE.
+ Program: ÃŠ OsiriX
+ ÃŠCopyright (c) OsiriX Team
+ ÃŠAll rights reserved.
+ ÃŠDistributed under GNU - LGPL
+ ÃŠ
+ ÃŠSee http://www.osirix-viewer.com/copyright.html for details.
+ ÃŠ ÃŠ This software is distributed WITHOUT ANY WARRANTY; without even
+ ÃŠ ÃŠ the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ ÃŠ ÃŠ PURPOSE.
  ============================================================================*/
 
 #import "options.h"
-#if !__LP64__ && !__arm64__
-#define USE3DCONNEXION 1
-#else
-#define USE3DCONNEXION 0
-#endif
-
 #import "SRView.h"
 #import "SRController.h"
 #import "DCMPix.h"
@@ -96,15 +90,6 @@
 #define D2R 0.01745329251994329576923690768    // degrees to radians
 #define R2D 57.2957795130823208767981548141    // radians to degrees
 
-#if USE3DCONNEXION
-#include <3DConnexionClient/ConnexionClientAPI.h>
-extern "C" 
-{
-	extern OSErr InstallConnexionHandlers(ConnexionMessageHandlerProc messageHandler, ConnexionAddedHandlerProc addedHandler, ConnexionRemovedHandlerProc removedHandler) __attribute__((weak_import));
-}
-#endif
-
-static SRView	*snSRView = nil;
 
 typedef struct _xyzArray
 {
@@ -879,10 +864,7 @@ typedef struct _xyzArray
 		point3DTextSizesArray = [[NSMutableArray alloc] initWithCapacity:0];
 		
 		display3DPoints = YES;
-		[self load3DPointsDefaultProperties];
-		
-		[self connect2SpaceNavigator];
-		
+		[self load3DPointsDefaultProperties];		
 		[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(windowWillClose:) name: NSWindowWillCloseNotification object: nil];
     }
     
@@ -966,18 +948,7 @@ typedef struct _xyzArray
 	[_mouseDownTimer invalidate];
 	[_mouseDownTimer release];
 	
-	[destinationImage release];
-		
-	// 3D Connexion SpaceNavigator: Make sure the framework is installed
-	#if USE3DCONNEXION
-	if(InstallConnexionHandlers != NULL)
-	{
-		// 3D Connexion SpaceNavigator: Unregister our client and clean up all handlers
-		if(snConnexionClientID) UnregisterConnexionClient(snConnexionClientID);
-		CleanupConnexionHandlers();
-	}
-	#endif
-		
+	[destinationImage release];		
     [super dealloc];
 }
 # pragma mark-
@@ -1201,13 +1172,6 @@ typedef struct _xyzArray
 	
 	noWaitDialog = YES;
 	tool = currentTool;
-		
-	if( snCloseEventTimer)
-	{
-		[snCloseEventTimer fire];
-	}
-	snStopped = YES;
-
 	if ([theEvent type] == NSLeftMouseDown) {
 		if (_mouseDownTimer) {
 			[self deleteMouseDownTimer];
@@ -3531,11 +3495,6 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
 	_dragInProgress = NO;
 }
 
-//part of Dragging Source Protocol
-- (NSDragOperation)draggingSourceOperationMaskForLocal:(BOOL)isLocal{
-	return NSDragOperationEvery;
-}
-
 -(void) squareView:(id) sender
 {
 	NSLog(@"%d", (int) [[NSUserDefaults standardUserDefaults] integerForKey:@"VRDefaultViewSize"]);
@@ -3629,206 +3588,6 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
 }
 
 #pragma mark-
-#pragma mark  3DConnexion SpaceNavigator
 
-- (void)closeEvent:(id) sender
-{
-	SRView *sV = (SRView*) snSRView;
-	
-	[sV getInteractor]->InvokeEvent(vtkCommand::LeftButtonReleaseEvent,NULL);
-
-	snStopped = YES;
-	
-	[snCloseEventTimer release];
-	snCloseEventTimer = nil;
-}
-
-#if USE3DCONNEXION
-- (void)connect2SpaceNavigator;
-{
-	snSRView = self;
-	snStopped = YES;
-	OSErr	error;
-	if(InstallConnexionHandlers != NULL)
-	{
-		// Install message handler and register our client
-		error = InstallConnexionHandlers(SRSpaceNavigatorMessageHandler, nil, nil);
-
-		// This takes over in our application only
-		snConnexionClientID = RegisterConnexionClient('OsiX', (UInt8*) "\pOsiriX", kConnexionClientModeTakeOver, kConnexionMaskAll);
-	}
-}
-
-void SRSpaceNavigatorMessageHandler(io_connect_t connection, natural_t messageType, void *messageArgument)
-{
-	static ConnexionDeviceState	lastState;
-	ConnexionDeviceState		*state;
-	SRView *sV = (SRView*) snSRView;
-	
-	SInt16 tx, ty, tz, rx, ry, rz, xPos, yPos;
-	float axis_max, speed, rot;
-	
-	BOOL record = NO;
-	
-	switch(messageType)
-	{
-		case kConnexionMsgDeviceState:
-			state = (ConnexionDeviceState*)messageArgument;
-			
-			AbsoluteTime theTime = UpTime();
-			uint64_t t = ((uint64_t*) &theTime)[0];
-
-			if(t - state->time > 2*1000*1000)
-			{		
-				break;
-			}
-
-			if(state->client == snSRView->snConnexionClientID)
-			{
-                // decipher what command/event is being reported by the driver
-                switch (state->command)
-                {
-                    case kConnexionCmdHandleAxis:
-						// get the axis movement (names are taken from the SDK documentation)
-						tx = state->axis[0];
-						ty = state->axis[1];
-						tz = state->axis[2];
-						rx = state->axis[3];
-						ry = state->axis[4];
-						rz = state->axis[5];
-						
-						// normalization
-						axis_max = 500.0; // typical value according to the SDK
-
-						// if shift is pressed -> faster movement
-						BOOL faster;
-						if([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSShiftKeyMask)
-							faster = YES;
-						else faster = NO;
-
-						// if ctrl is pressed -> record
-						if([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSControlKeyMask)
-							record = YES;
-						else record = NO;
-
-						if( sV->snCloseEventTimer)
-						{
-							[sV->snCloseEventTimer invalidate];
-							[sV->snCloseEventTimer release];
-							sV->snCloseEventTimer = nil;
-						}
-						
-						// *** zoom ***					
-						if( sV->projectionMode != 2)
-						{
-							speed = 0.2; // zoom speed 0.2 is slow 1.0 is fast
-							float zoom = ((float)tz/axis_max)*speed +1.0;
-
-							if( zoom < 0.98 || zoom > 1.02)
-							{
-								[sV vtkCamera]->Zoom(zoom);
-								[sV setNeedsDisplay:YES];
-							}
-						}
-						else // endosocpy
-						{
-							float distance = [sV vtkCamera]->GetDistance();
-							float dolly = ((float)tz/axis_max) / 60.;
-							if(faster) dolly*=3.;
-							if( dolly < -0.9) dolly = -0.9;
-							
-							[sV vtkCamera]->Dolly( 1.0 + dolly); 
-							[sV vtkCamera]->SetDistance( distance);
-							[sV vtkCamera]->ComputeViewPlaneNormal();
-							[sV vtkCamera]->OrthogonalizeViewUp();
-							[sV vtkRenderer]->ResetCameraClippingRange();
-							[sV setNeedsDisplay:YES];
-						}
-
-						// *** rotation ***
-						rot = -(float)rz;
-						if( sV->projectionMode == 2) rot = (float)rz;
-						
-						float rotX, rotY;
-						rotX = [sV frame].size.width/2.0 + cos(rot/axis_max)*50.0;
-						rotY = [sV frame].size.height/2.0 + sin(rot/axis_max)*50.0;
-						[sV vtkCamera]->Roll(rot/axis_max*10.0);
-						[sV setNeedsDisplay:YES];
-						
-						// *** pan ***
-						if( sV->projectionMode != 2)
-						{
-							[sV panX:[sV frame].size.width/2.0+tx*10.0 Y:[sV frame].size.height/2.0-ty*10.0];
-							[sV setNeedsDisplay:YES];
-						}
-						// no pan for endoscopy mode
-												
-						// *** 3D rotation ***
-						if( sV->projectionMode != 2)
-						{
-							xPos = lastState.axis[4]-(float)ry/axis_max*50.0;
-							yPos = lastState.axis[3]-(float)rx/axis_max*50.0;
-							[sV getInteractor]->SetEventInformation((int)xPos, (int)yPos, 0, 0);						
-							if( sV->snStopped)
-							{
-								[sV getInteractor]->InvokeEvent(vtkCommand::LeftButtonPressEvent,NULL);
-								sV->snStopped = NO;
-							}
-							else
-								[sV getInteractor]->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);						
-							state->axis[3] = yPos;
-							state->axis[4] = xPos;
-							[sV setNeedsDisplay:YES];
-						}
-						else // endoscopy
-						{
-							[sV vtkCamera]->Yaw((float)ry/axis_max*10.0);
-							[sV vtkCamera]->Pitch((float)rx/axis_max*10.0);
-							[sV vtkCamera]->ComputeViewPlaneNormal();
-							[sV vtkCamera]->OrthogonalizeViewUp();
-							[sV vtkRenderer]->ResetCameraClippingRange();
-							[sV computeOrientationText];
-							[sV setNeedsDisplay:YES];
-						}
-						[sV computeOrientationText];
-						
-						if([sV needsDisplay]) [sV display];
-						
-						sV->snCloseEventTimer = [[NSTimer scheduledTimerWithTimeInterval:0.1 target:sV selector:@selector(closeEvent:) userInfo:nil repeats:0] retain];
-                        break;
-                        
-                    case kConnexionCmdHandleButtons:
-						if(state->buttons==0) // buttons released
-						{
-							[sV closeEvent:nil];
-						}
-						else if(state->buttons==1) // left button pressed
-						{
-							if( sV->projectionMode != 2) [sV coView:nil];
-							else [sV yaw:180.0];
-						}
-						else if(state->buttons==2) // right button pressed
-						{
-							if( sV->projectionMode != 2) [sV saView:nil];
-							else [sV yaw:90.0];
-						}
-						else if(state->buttons==3) // both button are presed
-						{
-							if( sV->projectionMode != 2) [sV saViewOpposite:nil];
-						}
-                        break;
-                }                
-				
-				memcpy( &lastState, state, (long)sizeof(ConnexionDeviceState));
-			}
-			break;
-	}
-	if(record) [sV recordFlyThru];
-}
-#else
-- (void)connect2SpaceNavigator;
-{
-}
-#endif
 
 @end

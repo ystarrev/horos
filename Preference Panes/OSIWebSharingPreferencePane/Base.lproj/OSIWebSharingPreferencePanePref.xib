@@ -189,17 +189,6 @@
                                         <binding destination="296" name="value" keyPath="values.logWebServer" id="1105"/>
                                     </connections>
                                 </button>
-                                <button id="1062">
-                                    <rect key="frame" x="15" y="226" width="308" height="18"/>
-                                    <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                    <buttonCell key="cell" type="check" title="Prefer Flash over QuickTime movies for series viewing" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="small" scrollable="YES" lineBreakMode="clipping" state="on" inset="2" id="1093">
-                                        <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
-                                        <font key="font" metaFont="smallSystem"/>
-                                    </buttonCell>
-                                    <connections>
-                                        <binding destination="296" name="value" keyPath="values.WebServerPrefersFlash" id="1121"/>
-                                    </connections>
-                                </button>
                                 <button id="1064">
                                     <rect key="frame" x="15" y="246" width="236" height="18"/>
                                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>

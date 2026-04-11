@@ -40,7 +40,7 @@
 
 @class DCMAttributeTag;
 
-@interface AnonymizationTagsPopUpButton : NSPopUpButton {
+@interface AnonymizationTagsPopUpButton : NSPopUpButton <NSMenuItemValidation> {
 	DCMAttributeTag* selectedDCMAttributeTag;
 }
 

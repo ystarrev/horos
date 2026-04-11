@@ -54,7 +54,6 @@ extern int gPutSrcAETitleInSourceApplicationEntityTitle, gPutDstAETitleInPrivate
 
 - (void)initDCMTK
 {
-	#ifndef OSIRIX_LIGHT
     // register global JPEG decompression codecs
     DJDecoderRegistration::registerCodecs();
     DJLSDecoderRegistration::registerCodecs();
@@ -96,11 +95,9 @@ extern int gPutSrcAETitleInSourceApplicationEntityTitle, gPutDstAETitleInPrivate
     
     gPutSrcAETitleInSourceApplicationEntityTitle = [[NSUserDefaults standardUserDefaults] boolForKey: @"putSrcAETitleInSourceApplicationEntityTitle"];
     gPutDstAETitleInPrivateInformationCreatorUID = [[NSUserDefaults standardUserDefaults] boolForKey: @"putDstAETitleInPrivateInformationCreatorUID"];
-    #endif
 }
 - (void)destroyDCMTK
 {
-	#ifndef OSIRIX_LIGHT
     // deregister JPEG codecs
     DJDecoderRegistration::cleanup();
     DJEncoderRegistration::cleanup();
@@ -108,7 +105,6 @@ extern int gPutSrcAETitleInSourceApplicationEntityTitle, gPutDstAETitleInPrivate
     // deregister RLE codecs
     DcmRLEDecoderRegistration::cleanup();
     DcmRLEEncoderRegistration::cleanup();
-	#endif
 }
 
 @end

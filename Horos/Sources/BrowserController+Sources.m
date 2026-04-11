@@ -448,9 +448,6 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         else
         {
             int mode = [[NSUserDefaults standardUserDefaults] integerForKey: @"MOUNT"];
-#ifdef OSIRIX_LIGHT
-            mode = 0; //display the source
-#endif
             
             if( mode != 2)
             {
@@ -1057,9 +1054,6 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 -(void)_observeVolumeNotification:(NSNotification*)notification
 {
     int mode = [[NSUserDefaults standardUserDefaults] integerForKey: @"MOUNT"];
-#ifdef OSIRIX_LIGHT
-    mode = 0; //display the source
-#endif
     
     if( mode == 2)
         return;
@@ -1330,10 +1324,6 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         NSInteger mode = [NSUserDefaults.standardUserDefaults integerForKey:@"MOUNT"];
 //        BOOL autoSelectSourceCDDVD = [[NSUserDefaults standardUserDefaults] boolForKey:@"autoSelectSourceCDDVD"];
         
-#ifdef OSIRIX_LIGHT
-        mode = 0; //display the source
-        autoSelectSourceCDDVD = YES;
-#endif
         
         if (mode == -1 || [[NSApp currentEvent] modifierFlags]&NSCommandKeyMask) //The user clicked on the dialog box
         {

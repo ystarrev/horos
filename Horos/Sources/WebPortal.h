@@ -59,8 +59,6 @@
 	BOOL passwordRestoreAllowed;
 	BOOL wadoEnabled;
 	BOOL weasisEnabled;
-	BOOL flashEnabled;
-	
 	BOOL notificationsEnabled;
 	NSInteger notificationsInterval;
 	NSTimer* notificationsTimer, *temporaryUsersTimer;
@@ -103,9 +101,7 @@
 
 @property BOOL wadoEnabled;
 @property BOOL weasisEnabled;
-@property BOOL flashEnabled;
-
-@property (nonatomic) BOOL notificationsEnabled;
+	@property (nonatomic) BOOL notificationsEnabled;
 @property (nonatomic) NSInteger notificationsInterval;
 
 -(id)initWithDatabase:(WebPortalDatabase*)database dicomDatabase:(DicomDatabase*)dd;

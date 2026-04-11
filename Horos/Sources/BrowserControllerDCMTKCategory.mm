@@ -83,7 +83,6 @@ extern NSRecursiveLock *PapyrusLock;
 		return NSLocalizedString( @"Unknown UID", nil);
 }
 
-#ifndef OSIRIX_LIGHT
 
 static int uniqueID = 1;
 static NSString *uniqueSync = @"uniqueSync";
@@ -238,6 +237,5 @@ static NSString *uniqueSync = @"uniqueSync";
 	return [DicomDatabase testFiles:files];
 }
 
-#endif
 
 @end

@@ -3,7 +3,7 @@
  
  Horos is free software: you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
- the Free Software Foundation, Êversion 3 of the License.
+ the Free Software Foundation, ÃŠversion 3 of the License.
  
  The Horos Project was based originally upon the OsiriX Project which at the time of
  the code fork was licensed as a LGPL project.  However, not all of the the source-code
@@ -15,24 +15,24 @@
  
  Horos is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY EXPRESS OR IMPLIED, INCLUDING ANY WARRANTY OF
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÊSee the
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÃŠSee the
  GNU Lesser General Public License for more details.
  
  You should have received a copy of the GNU Lesser General Public License
- along with Horos. ÊIf not, see http://www.gnu.org/licenses/lgpl.html
+ along with Horos. ÃŠIf not, see http://www.gnu.org/licenses/lgpl.html
  
  Prior versions of this file were published by the OsiriX team pursuant to
  the below notice and licensing protocol.
  ============================================================================
- Program: Ê OsiriX
- ÊCopyright (c) OsiriX Team
- ÊAll rights reserved.
- ÊDistributed under GNU - LGPL
- Ê
- ÊSee http://www.osirix-viewer.com/copyright.html for details.
- Ê Ê This software is distributed WITHOUT ANY WARRANTY; without even
- Ê Ê the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
- Ê Ê PURPOSE.
+ Program: ÃŠ OsiriX
+ ÃŠCopyright (c) OsiriX Team
+ ÃŠAll rights reserved.
+ ÃŠDistributed under GNU - LGPL
+ ÃŠ
+ ÃŠSee http://www.osirix-viewer.com/copyright.html for details.
+ ÃŠ ÃŠ This software is distributed WITHOUT ANY WARRANTY; without even
+ ÃŠ ÃŠ the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ ÃŠ ÃŠ PURPOSE.
  ============================================================================*/
 
 #import "DCMDataContainer.h"
@@ -404,7 +404,7 @@ void signal_EXC(int sig_num)
 		union {
 			unsigned long long ull;
 			long long sll;
-			unsigned char buffer[size];
+			unsigned char buffer[8];
 		} u;
 		NSRange range = {position, size};
 		[dicomData getBytes:u.buffer range:range];
@@ -722,7 +722,7 @@ void signal_EXC(int sig_num)
 	union {
 			unsigned short us;
 			short ss;
-			unsigned char buffer[size];
+			unsigned char buffer[2];
 	} u;
 	if ([self isLittleEndian]) 
 		u.us = NSSwapHostShortToLittle(uShort);
@@ -737,7 +737,7 @@ void signal_EXC(int sig_num)
 	union {
 		unsigned short us;
 		short ss;
-		unsigned char buffer[size];
+		unsigned char buffer[2];
 	} u;
 	u.ss = sShort;
 	if ([self isLittleEndian]) 
@@ -750,7 +750,7 @@ void signal_EXC(int sig_num)
 	const int size = 4;
 	union {
 		unsigned long ul;
-		unsigned char buffer[size];
+		unsigned char buffer[4];
 	} u;
 	u.ul = uLong;
 	if ([self isLittleEndian]) 
@@ -764,7 +764,7 @@ void signal_EXC(int sig_num)
 	union {
 		unsigned long ul;
 		long sl;
-		unsigned char buffer[size];
+		unsigned char buffer[4];
 	} u;
 	u.sl = sLong;
 	if ([self isLittleEndian]) 
@@ -778,7 +778,7 @@ void signal_EXC(int sig_num)
 	union {
 		unsigned long ull;
 		long sll;
-		unsigned char buffer[size];
+		unsigned char buffer[8];
 	} u;
 	u.ull = uLongLong;
 	if ([self isLittleEndian]) 
@@ -792,7 +792,7 @@ void signal_EXC(int sig_num)
 	union {
 		unsigned long ull;
 		long sll;
-		unsigned char buffer[size];
+		unsigned char buffer[8];
 	} u;
 	u.sll = sLongLong;
 	if ([self isLittleEndian]) 
@@ -807,7 +807,7 @@ void signal_EXC(int sig_num)
 	union {
 		float f;
 		unsigned long l;
-		unsigned char buffer[size];
+		unsigned char buffer[4];
 	} u;
 	u.f = f;
 	if ([self isLittleEndian]) 
@@ -822,7 +822,7 @@ void signal_EXC(int sig_num)
 	union {
 		double d;
 		unsigned long long l;
-		unsigned char buffer[size];
+		unsigned char buffer[8];
 	} u;
 	u.d = d;
 	if ([self isLittleEndian]) 
@@ -1052,25 +1052,26 @@ void signal_EXC(int sig_num)
 					group = [self nextUnsignedShort];
 					element = [self nextUnsignedShort];
 				}
-				DCMAttributeTag *tag = [[[DCMAttributeTag alloc]  initWithGroup:group element:element] autorelease];
-				//NSDictionary *tagValues = [[DCMTagDictionary sharedTagDictionary] objectForKey:[tag stringValue]];
-				// have valid tag. Should be dicom
-				if (tag) {
-					
-					[transferSyntaxForMetaheader release];
-					transferSyntaxForMetaheader = [[DCMTransferSyntax ImplicitVRLittleEndianTransferSyntax] retain];
-					
-					[transferSyntaxForDataset release];
-					transferSyntaxForDataset = [transferSyntaxForMetaheader retain];
+					DCMAttributeTag *tag = [[[DCMAttributeTag alloc]  initWithGroup:group element:element] autorelease];
+					NSDictionary *tagValues = [[DCMTagDictionary sharedTagDictionary] objectForKey:[tag stringValue]];
+					// have valid tag. Should be dicom
+					if (tagValues) {
+						
+						[transferSyntaxForMetaheader release];
+						transferSyntaxForMetaheader = [[DCMTransferSyntax ImplicitVRLittleEndianTransferSyntax] retain];
+						
+						[transferSyntaxForDataset release];
+						transferSyntaxForDataset = [transferSyntaxForMetaheader retain];
+						
+						[transferSyntaxInUse release];
+						transferSyntaxInUse = [transferSyntaxForDataset retain];
+						position = 0;
+						offset = 0;
+						return YES;
+					}
 				}
-				[transferSyntaxInUse release];
-				transferSyntaxInUse = [transferSyntaxForDataset retain];
-				position = 0;
-				offset = 0;
-				return YES;
 			}
 		}
-	}
 	NSLog(@"Not a valid DICOM file");
 	@try {
 	exception = [NSException exceptionWithName:@"DCMNotDicomError" reason:@"File is not DICOM" userInfo:nil];

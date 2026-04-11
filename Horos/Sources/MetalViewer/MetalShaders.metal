@@ -25,6 +25,13 @@ struct MetalUniforms {
     uint hasOverlay;
 };
 
+struct MetalPreviewUniforms {
+    float2 scale;
+    float2 offset;
+    float windowLevel;
+    float windowWidth;
+};
+
 struct RegistrationUniforms {
     float baseWindowLevel;
     float baseWindowWidth;
@@ -150,6 +157,18 @@ static inline float metalViewerGradientMagnitudeNormalized(
 vertex RasterizerData metalViewerVertex(
     const device MetalVertex *vertices [[buffer(0)]],
     constant MetalUniforms &uniforms [[buffer(1)]],
+    uint vertexID [[vertex_id]]
+) {
+    RasterizerData out;
+    float2 scaledPosition = vertices[vertexID].position * uniforms.scale + uniforms.offset;
+    out.position = float4(scaledPosition, 0.0, 1.0);
+    out.texCoord = vertices[vertexID].texCoord;
+    return out;
+}
+
+vertex RasterizerData metalPreviewVertex(
+    const device MetalVertex *vertices [[buffer(0)]],
+    constant MetalPreviewUniforms &uniforms [[buffer(1)]],
     uint vertexID [[vertex_id]]
 ) {
     RasterizerData out;
@@ -519,6 +538,18 @@ fragment float4 metalViewerFragment(
     const float overlayNormalized = clamp((overlayPixelValue - overlayMinValue) / uniforms.overlayWindowWidth, 0.0, 1.0);
 
     return float4(overlayNormalized * uniforms.overlayBlend, baseNormalized * (1.0 - uniforms.overlayBlend), 0.0, 1.0);
+}
+
+fragment float4 metalPreviewFragment(
+    RasterizerData in [[stage_in]],
+    constant MetalPreviewUniforms &uniforms [[buffer(0)]],
+    texture2d<float> imageTexture [[texture(0)]],
+    sampler imageSampler [[sampler(0)]]
+) {
+    float pixelValue = imageTexture.sample(imageSampler, in.texCoord).r;
+    float minValue = uniforms.windowLevel - uniforms.windowWidth * 0.5;
+    float normalized = clamp((pixelValue - minValue) / max(uniforms.windowWidth, 1e-5), 0.0, 1.0);
+    return float4(normalized, normalized, normalized, 1.0);
 }
 
 kernel void metalViewerRegistrationJointHistogram(

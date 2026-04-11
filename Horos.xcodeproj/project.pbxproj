@@ -194,7 +194,6 @@
 		434B47A21A1A18D3008CF8CF /* kdu_OsiriX_NO_Support.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434B47A11A1A18D3008CF8CF /* kdu_OsiriX_NO_Support.cpp */; };
 		434B47A41A1A194F008CF8CF /* kdu_OsiriX_NO_Support.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434B47A11A1A18D3008CF8CF /* kdu_OsiriX_NO_Support.cpp */; };
 		434B47A51A1A1951008CF8CF /* kdu_OsiriX_NO_Support.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434B47A11A1A18D3008CF8CF /* kdu_OsiriX_NO_Support.cpp */; };
-		439B8C141A19CCC300F396D7 /* 3DconnexionClient.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 439B8C131A19CCC300F396D7 /* 3DconnexionClient.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
 		4F00A9E4139A778000ABD529 /* CPRStretchedView.m in Sources */ = {isa = PBXBuildFile; fileRef = 4F00A9E3139A778000ABD529 /* CPRStretchedView.m */; };
 		4F00A9E8139A779200ABD529 /* CPRStretchedView.h in Headers */ = {isa = PBXBuildFile; fileRef = 4F00A9E7139A779200ABD529 /* CPRStretchedView.h */; };
 		4F1FCE1B143092DC008683F9 /* OSIPlanarBrushROI.h in Headers */ = {isa = PBXBuildFile; fileRef = 4F1FCE19143092DC008683F9 /* OSIPlanarBrushROI.h */; };
@@ -380,7 +379,6 @@
 		59C447EA1451710F00D71580 /* NSArray+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59C447E71451710F00D71580 /* NSArray+N2.mm */; };
 		59C512C01189C0E40074ECBC /* SFHorosAuthorizationView.h in Headers */ = {isa = PBXBuildFile; fileRef = 59C512BE1189C0E40074ECBC /* SFHorosAuthorizationView.h */; };
 		59C512C11189C0E40074ECBC /* SFHorosAuthorizationView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59C512BF1189C0E40074ECBC /* SFHorosAuthorizationView.mm */; };
-		59D9471D125333640095680D /* SWFInit.as in Resources */ = {isa = PBXBuildFile; fileRef = 59D9471C125333640095680D /* SWFInit.as */; };
 		59DB26FB1450787E00E78E03 /* N2Debug.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAA011293378009EB238 /* N2Debug.mm */; };
 		59DB26FE14507ACA00E78E03 /* PrettyCell.h in Headers */ = {isa = PBXBuildFile; fileRef = 59DB26FC14507ACA00E78E03 /* PrettyCell.h */; };
 		59DB270014507ACA00E78E03 /* PrettyCell.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59DB26FD14507ACA00E78E03 /* PrettyCell.mm */; };
@@ -423,10 +421,6 @@
 		59F5F3FA11F476030047A90D /* N2ImageButtonCell.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59F5F3F811F476030047A90D /* N2ImageButtonCell.mm */; };
 		59F5F4EC11F485CC0047A90D /* BrowserController+Activity.h in Headers */ = {isa = PBXBuildFile; fileRef = 59F5F4EA11F485CC0047A90D /* BrowserController+Activity.h */; };
 		59F5F4ED11F485CC0047A90D /* BrowserController+Activity.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59F5F4EB11F485CC0047A90D /* BrowserController+Activity.mm */; };
-		59FB64391230EE4100EBA136 /* libfreetypeOsiriX.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 59FB64341230EE4100EBA136 /* libfreetypeOsiriX.a */; };
-		59FB643A1230EE4100EBA136 /* libgifOsiriX.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 59FB64351230EE4100EBA136 /* libgifOsiriX.a */; };
-		59FB643B1230EE4100EBA136 /* libmingOsiriX.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 59FB64361230EE4100EBA136 /* libmingOsiriX.a */; };
-		59FB643C1230EE4100EBA136 /* libpng12OsiriX.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 59FB64371230EE4100EBA136 /* libpng12OsiriX.a */; };
 		59FB64DD1231295400EBA136 /* NSUserDefaultsController+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = 5997899111B7B48E002DB107 /* NSUserDefaultsController+N2.mm */; };
 		59FB654F12312D8900EBA136 /* weasis in Resources */ = {isa = PBXBuildFile; fileRef = 59FB652912312D8900EBA136 /* weasis */; };
 		5F200F8024292385003EC23E /* dciodvfy in Resources */ = {isa = PBXBuildFile; fileRef = 844003990E8CF99500A00EBD /* dciodvfy */; };
@@ -525,7 +519,6 @@
 		71AD676E1FC4256E00A1E2F8 /* Tiling3x3.pdf in Resources */ = {isa = PBXBuildFile; fileRef = 71E6C0A91FB59A9000FF75B6 /* Tiling3x3.pdf */; };
 		71CE3C19157F489C00AC0112 /* List.pdf in Resources */ = {isa = PBXBuildFile; fileRef = 71CE3C18157F489C00AC0112 /* List.pdf */; };
 		71E6C0801FB5943B00FF75B6 /* O2HMigrationAssistant.xib in Resources */ = {isa = PBXBuildFile; fileRef = 71E6C0821FB5943B00FF75B6 /* O2HMigrationAssistant.xib */; };
-		71E6C0AF1FB5B0BF00FF75B6 /* 3DconnexionClient.framework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = 439B8C131A19CCC300F396D7 /* 3DconnexionClient.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		71EB83C016DCB7FF00D48646 /* O2DicomPredicateEditor.h in Headers */ = {isa = PBXBuildFile; fileRef = 71EB83B216DCB7FF00D48646 /* O2DicomPredicateEditor.h */; };
 		71EB83C116DCB7FF00D48646 /* O2DicomPredicateEditor.m in Sources */ = {isa = PBXBuildFile; fileRef = 71EB83B316DCB7FF00D48646 /* O2DicomPredicateEditor.m */; };
 		71EB83C216DCB7FF00D48646 /* O2DicomPredicateEditorCodeStrings.h in Headers */ = {isa = PBXBuildFile; fileRef = 71EB83B416DCB7FF00D48646 /* O2DicomPredicateEditorCodeStrings.h */; };
@@ -673,8 +666,6 @@
 		84E191FB1369966A008DCFC8 /* WADODownload.h in Headers */ = {isa = PBXBuildFile; fileRef = 84E191F91369966A008DCFC8 /* WADODownload.h */; };
 		84E191FC1369966A008DCFC8 /* WADODownload.m in Sources */ = {isa = PBXBuildFile; fileRef = 84E191FA1369966A008DCFC8 /* WADODownload.m */; };
 		991B8B5C1BB8B279006AF439 /* O2HMigrationAssistant.png in Resources */ = {isa = PBXBuildFile; fileRef = 991B8B5B1BB8B279006AF439 /* O2HMigrationAssistant.png */; };
-		992264FA2028CE63004C4995 /* homephone.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 992264F92028CE62004C4995 /* homephone.framework */; };
-		992264FB2028CE79004C4995 /* homephone.framework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = 992264F92028CE62004C4995 /* homephone.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		992335882009A75A000E10BA /* Horos.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB0F3A2C1046BD2B004129DD /* Horos.framework */; };
 		992335892009A75A000E10BA /* Horos.framework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = AB0F3A2C1046BD2B004129DD /* Horos.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		9939F7A91BCB0BF8009FEB69 /* FVTiff.m in Sources */ = {isa = PBXBuildFile; fileRef = CEE73FC808F44724002A395F /* FVTiff.m */; };
@@ -697,7 +688,6 @@
 		9966A1A31AE09D4800F2D81A /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9966A1A21AE09D4800F2D81A /* AVFoundation.framework */; };
 		9966A1A51AE09D5100F2D81A /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9966A1A41AE09D5100F2D81A /* CoreMedia.framework */; };
 		9966A1A71AE09D5D00F2D81A /* DiskArbitration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9966A1A61AE09D5D00F2D81A /* DiskArbitration.framework */; };
-		9966A1A91AE09D6800F2D81A /* InstantMessage.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9966A1A81AE09D6800F2D81A /* InstantMessage.framework */; };
 		9966A1AB1AE09D7C00F2D81A /* Quartz.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9966A1AA1AE09D7C00F2D81A /* Quartz.framework */; };
 		9966A1AC1AE09DB300F2D81A /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9966A1A21AE09D4800F2D81A /* AVFoundation.framework */; };
 		9966A1AD1AE09DD000F2D81A /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9966A1A41AE09D5100F2D81A /* CoreMedia.framework */; };
@@ -1533,13 +1523,6 @@
 		ABDEBD6C063D693F005B99B4 /* add.tif in Resources */ = {isa = PBXBuildFile; fileRef = ABDEBD51063D6938005B99B4 /* add.tif */; };
 		ABDEBD6D063D693F005B99B4 /* minus.tif in Resources */ = {isa = PBXBuildFile; fileRef = ABDEBD52063D6938005B99B4 /* minus.tif */; };
 		ABDF5A1D0A1B641F002A353A /* small_sharedSmartAlbum.tif in Resources */ = {isa = PBXBuildFile; fileRef = A9B411C10890496400913770 /* small_sharedSmartAlbum.tif */; };
-		ABE0D6940CDB1A4400F0494B /* iChatHelper.xib in Resources */ = {isa = PBXBuildFile; fileRef = ABE0D6920CDB1A4400F0494B /* iChatHelper.xib */; };
-		ABE0D6A20CDB1B9E00F0494B /* browse2OsiriX_small.png in Resources */ = {isa = PBXBuildFile; fileRef = ABE0D69B0CDB1B9E00F0494B /* browse2OsiriX_small.png */; };
-		ABE0D6A30CDB1B9E00F0494B /* iChatIcon.png in Resources */ = {isa = PBXBuildFile; fileRef = ABE0D69C0CDB1B9E00F0494B /* iChatIcon.png */; };
-		ABE0D6A40CDB1B9E00F0494B /* iChatTheatre-English.html in Resources */ = {isa = PBXBuildFile; fileRef = ABE0D69D0CDB1B9E00F0494B /* iChatTheatre-English.html */; };
-		ABE0D6A60CDB1B9E00F0494B /* shareFromMenu_small.png in Resources */ = {isa = PBXBuildFile; fileRef = ABE0D69F0CDB1B9E00F0494B /* shareFromMenu_small.png */; };
-		ABE0D6A70CDB1B9E00F0494B /* shareFromVideoChatWindow_small.png in Resources */ = {isa = PBXBuildFile; fileRef = ABE0D6A00CDB1B9E00F0494B /* shareFromVideoChatWindow_small.png */; };
-		ABE0D6A80CDB1B9E00F0494B /* style.css in Resources */ = {isa = PBXBuildFile; fileRef = ABE0D6A10CDB1B9E00F0494B /* style.css */; };
 		ABE1E8B00649F4150028E2E0 /* iPod.icns in Resources */ = {isa = PBXBuildFile; fileRef = ABE1E8AE0649F4150028E2E0 /* iPod.icns */; };
 		ABE3336B063D624400C8E087 /* QueryFilter.h in Headers */ = {isa = PBXBuildFile; fileRef = ABE33369063D624400C8E087 /* QueryFilter.h */; };
 		ABE3336C063D624400C8E087 /* QueryFilter.m in Sources */ = {isa = PBXBuildFile; fileRef = ABE3336A063D624400C8E087 /* QueryFilter.m */; };
@@ -3050,6 +3033,7 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		F4A100000001000000000011 /* Metal3DHistogramModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000011 /* Metal3DHistogramModel.swift */; };
 		F4A100000001000000000012 /* Metal3DHistogramView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000012 /* Metal3DHistogramView.swift */; };
 		F4A100000001000000000013 /* Metal3DHistogramPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000013 /* Metal3DHistogramPanelController.swift */; };
+		F4A100000001000000000014 /* MetalPreviewImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000014 /* MetalPreviewImageView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -3332,9 +3316,7 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 			dstSubfolder = Frameworks;
 			files = (
 				F35B0D9028954862008ABE3E /* FeedbackReporter.framework in Copy Frameworks */,
-				992264FB2028CE79004C4995 /* homephone.framework in Copy Frameworks */,
 				992335892009A75A000E10BA /* Horos.framework in Copy Frameworks */,
-				71E6C0AF1FB5B0BF00FF75B6 /* 3DconnexionClient.framework in Copy Frameworks */,
 				9966A1B51AE0B6EE00F2D81A /* DCM.framework in Copy Frameworks */,
 			);
 			name = "Copy Frameworks";
@@ -3380,7 +3362,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		200BBB0120AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIAutoroutingPreferencePanePref.xib"; sourceTree = "<group>"; };
 		200BBB0220AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSI3DPreferencePanePref.xib"; sourceTree = "<group>"; };
 		200BBB0320AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AYDicomPrintPref.xib"; sourceTree = "<group>"; };
-		200BBB0420AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/iChatHelper.xib"; sourceTree = "<group>"; };
 		200BBB0520AA3BCF002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/3DPosition.xib"; sourceTree = "<group>"; };
 		200BBB0620AA3BCF002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AnonymizationCustomTagPanel.xib"; sourceTree = "<group>"; };
 		200BBB0720AA3BCF002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AnonymizationPanel.xib"; sourceTree = "<group>"; };
@@ -3442,7 +3423,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		434B461B1A19F631008CF8CF /* OPJSupport.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = OPJSupport.cpp; sourceTree = "<group>"; };
 		434B461C1A19F631008CF8CF /* OPJSupport.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OPJSupport.h; sourceTree = "<group>"; };
 		434B47A11A1A18D3008CF8CF /* kdu_OsiriX_NO_Support.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = kdu_OsiriX_NO_Support.cpp; sourceTree = "<group>"; };
-		439B8C131A19CCC300F396D7 /* 3DconnexionClient.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = 3DconnexionClient.framework; path = Binaries/3DconnexionClient.framework; sourceTree = "<group>"; };
 		4F00A9E3139A778000ABD529 /* CPRStretchedView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CPRStretchedView.m; sourceTree = "<group>"; };
 		4F00A9E7139A779200ABD529 /* CPRStretchedView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CPRStretchedView.h; sourceTree = "<group>"; };
 		4F1FCE19143092DC008683F9 /* OSIPlanarBrushROI.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSIPlanarBrushROI.h; sourceTree = "<group>"; };
@@ -3629,7 +3609,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		59C447E71451710F00D71580 /* NSArray+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = "NSArray+N2.mm"; sourceTree = "<group>"; };
 		59C512BE1189C0E40074ECBC /* SFHorosAuthorizationView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SFHorosAuthorizationView.h; sourceTree = "<group>"; };
 		59C512BF1189C0E40074ECBC /* SFHorosAuthorizationView.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = SFHorosAuthorizationView.mm; sourceTree = "<group>"; };
-		59D9471C125333640095680D /* SWFInit.as */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = SWFInit.as; sourceTree = "<group>"; };
 		59DB26FC14507ACA00E78E03 /* PrettyCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PrettyCell.h; sourceTree = "<group>"; };
 		59DB26FD14507ACA00E78E03 /* PrettyCell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = PrettyCell.mm; sourceTree = "<group>"; };
 		59DB270214507ADF00E78E03 /* N2MutableUInteger.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2MutableUInteger.h; sourceTree = "<group>"; };
@@ -3675,12 +3654,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		59F5F3F811F476030047A90D /* N2ImageButtonCell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2ImageButtonCell.mm; sourceTree = "<group>"; };
 		59F5F4EA11F485CC0047A90D /* BrowserController+Activity.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "BrowserController+Activity.h"; sourceTree = "<group>"; };
 		59F5F4EB11F485CC0047A90D /* BrowserController+Activity.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = "BrowserController+Activity.mm"; sourceTree = "<group>"; };
-		59FB64341230EE4100EBA136 /* libfreetypeOsiriX.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libfreetypeOsiriX.a; path = Binaries/Ming/libfreetypeOsiriX.a; sourceTree = "<group>"; };
-		59FB64351230EE4100EBA136 /* libgifOsiriX.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libgifOsiriX.a; path = Binaries/Ming/libgifOsiriX.a; sourceTree = "<group>"; };
-		59FB64361230EE4100EBA136 /* libmingOsiriX.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmingOsiriX.a; path = Binaries/Ming/libmingOsiriX.a; sourceTree = "<group>"; };
-		59FB64371230EE4100EBA136 /* libpng12OsiriX.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libpng12OsiriX.a; path = Binaries/Ming/libpng12OsiriX.a; sourceTree = "<group>"; };
-		59FB64771231101B00EBA136 /* mingpp.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = mingpp.h; path = Binaries/Ming/mingpp.h; sourceTree = "<group>"; };
-		59FB647D1231106000EBA136 /* ming.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ming.h; path = Binaries/Ming/ming.h; sourceTree = "<group>"; };
 		59FB652912312D8900EBA136 /* weasis */ = {isa = PBXFileReference; lastKnownFileType = folder; name = weasis; path = Binaries/weasis; sourceTree = SOURCE_ROOT; };
 		5F026FFB242055690083A650 /* Decompress.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Decompress.entitlements; sourceTree = "<group>"; };
 		5F92185F23F45592000B8754 /* dcmpsprt */ = {isa = PBXFileReference; lastKnownFileType = text; name = dcmpsprt; path = DCMTK/dcmpsprt; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -3937,7 +3910,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		8CC299E22F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/AYDicomPrintPref.xib; sourceTree = "<group>"; };
 		953DA3D517A1D194000C4BAC /* WebPortalDB 8.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "WebPortalDB 8.xcdatamodel"; sourceTree = "<group>"; };
 		991B8B5B1BB8B279006AF439 /* O2HMigrationAssistant.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = O2HMigrationAssistant.png; sourceTree = "<group>"; };
-		992264F92028CE62004C4995 /* homephone.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = homephone.framework; path = Binaries/homephone.framework; sourceTree = "<group>"; };
 		9923358B2009A7ED000E10BA /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		994FABED1CEBF25800980A15 /* OnOffSwitchControl.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OnOffSwitchControl.h; sourceTree = "<group>"; };
 		994FABEE1CEBF25800980A15 /* OnOffSwitchControl.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OnOffSwitchControl.m; sourceTree = "<group>"; };
@@ -3956,7 +3928,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		9966A1A21AE09D4800F2D81A /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		9966A1A41AE09D5100F2D81A /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
 		9966A1A61AE09D5D00F2D81A /* DiskArbitration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DiskArbitration.framework; path = System/Library/Frameworks/DiskArbitration.framework; sourceTree = SDKROOT; };
-		9966A1A81AE09D6800F2D81A /* InstantMessage.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = InstantMessage.framework; path = System/Library/Frameworks/InstantMessage.framework; sourceTree = SDKROOT; };
 		9966A1AA1AE09D7C00F2D81A /* Quartz.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Quartz.framework; path = System/Library/Frameworks/Quartz.framework; sourceTree = SDKROOT; };
 		9966A1AF1AE09FFE00F2D81A /* Osirix.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Osirix.icns; sourceTree = "<group>"; };
 		9966BCB41CEB5BA50086A8D7 /* osirixplugin.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = osirixplugin.icns; sourceTree = "<group>"; };
@@ -4432,13 +4403,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		ABDC3C730670FF440042069D /* ToolBarNSWindow.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = ToolBarNSWindow.h; sourceTree = "<group>"; };
 		ABDEBD51063D6938005B99B4 /* add.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = add.tif; sourceTree = "<group>"; };
 		ABDEBD52063D6938005B99B4 /* minus.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = minus.tif; sourceTree = "<group>"; };
-		ABE0D6930CDB1A4400F0494B /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/iChatHelper.xib; sourceTree = "<group>"; };
-		ABE0D69B0CDB1B9E00F0494B /* browse2OsiriX_small.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = browse2OsiriX_small.png; sourceTree = "<group>"; };
-		ABE0D69C0CDB1B9E00F0494B /* iChatIcon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = iChatIcon.png; sourceTree = "<group>"; };
-		ABE0D69D0CDB1B9E00F0494B /* iChatTheatre-English.html */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.html; path = "iChatTheatre-English.html"; sourceTree = "<group>"; };
-		ABE0D69F0CDB1B9E00F0494B /* shareFromMenu_small.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = shareFromMenu_small.png; sourceTree = "<group>"; };
-		ABE0D6A00CDB1B9E00F0494B /* shareFromVideoChatWindow_small.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = shareFromVideoChatWindow_small.png; sourceTree = "<group>"; };
-		ABE0D6A10CDB1B9E00F0494B /* style.css */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.css; path = style.css; sourceTree = "<group>"; };
 		ABE17661056D2659009C93B5 /* ViewerController.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = ViewerController.h; sourceTree = "<group>"; };
 		ABE17662056D2659009C93B5 /* ViewerController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ViewerController.m; sourceTree = "<group>"; };
 		ABE1E8AE0649F4150028E2E0 /* iPod.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = iPod.icns; sourceTree = "<group>"; };
@@ -5710,6 +5674,7 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		F4A100000002000000000011 /* Metal3DHistogramModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DHistogramModel.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000012 /* Metal3DHistogramView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DHistogramView.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000013 /* Metal3DHistogramPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DHistogramPanelController.swift; sourceTree = SOURCE_ROOT; };
+		F4A100000002000000000014 /* MetalPreviewImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalPreviewImageView.swift; sourceTree = SOURCE_ROOT; };
 F4A100000002000000000006 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
@@ -5734,7 +5699,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				9966A1AB1AE09D7C00F2D81A /* Quartz.framework in Frameworks */,
 				F4A100000001000000000006 /* Metal.framework in Frameworks */,
 				F4A100000001000000000007 /* MetalKit.framework in Frameworks */,
-				9966A1A91AE09D6800F2D81A /* InstantMessage.framework in Frameworks */,
 				9966A1A71AE09D5D00F2D81A /* DiskArbitration.framework in Frameworks */,
 				9966A1A51AE09D5100F2D81A /* CoreMedia.framework in Frameworks */,
 				9966A1A31AE09D4800F2D81A /* AVFoundation.framework in Frameworks */,
@@ -5750,7 +5714,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				AB28B93705B79D5E00A9906C /* Accelerate.framework in Frameworks */,
 				F3E3E6CD289527220037A247 /* UserNotifications.framework in Frameworks */,
 				CEF0E6DC06AEF5CB001FF9E5 /* Carbon.framework in Frameworks */,
-				992264FA2028CE63004C4995 /* homephone.framework in Frameworks */,
 				7E3E38660715FFDC0049E72E /* PreferencePanes.framework in Frameworks */,
 				7E54303D07A05E7100500ABB /* DiscRecording.framework in Frameworks */,
 				7E54303E07A05E7100500ABB /* DiscRecordingUI.framework in Frameworks */,
@@ -5762,7 +5725,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				8406956310B6800E00C37AD0 /* SystemConfiguration.framework in Frameworks */,
 				A997B15710E0C412004C5BB1 /* SecurityInterface.framework in Frameworks */,
 				841524C5113D6BDB008250E6 /* QuartzCore.framework in Frameworks */,
-				439B8C141A19CCC300F396D7 /* 3DconnexionClient.framework in Frameworks */,
 				9966A2E71AE0C55600F2D81A /* DCM.framework in Frameworks */,
 			);
 		};
@@ -5778,10 +5740,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				AB724FF20ADE6ECB00A212A0 /* libz.dylib in Frameworks */,
 				CE8D062C0FD8733C00165DDE /* Accelerate.framework in Frameworks */,
 				84DE8CD311AC227B0029396D /* WebKit.framework in Frameworks */,
-				59FB64391230EE4100EBA136 /* libfreetypeOsiriX.a in Frameworks */,
-				59FB643A1230EE4100EBA136 /* libgifOsiriX.a in Frameworks */,
-				59FB643B1230EE4100EBA136 /* libmingOsiriX.a in Frameworks */,
-				59FB643C1230EE4100EBA136 /* libpng12OsiriX.a in Frameworks */,
 				7152C52F1D1D7BFF005526D8 /* DCM.framework in Frameworks */,
 			);
 		};
@@ -5794,7 +5752,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				719D3F251FB46738004CFB27 /* Foundation.framework */,
 				719D3F231FB46737004CFB27 /* AppKit.framework */,
 				9966A1AA1AE09D7C00F2D81A /* Quartz.framework */,
-				9966A1A81AE09D6800F2D81A /* InstantMessage.framework */,
 				9966A1A61AE09D5D00F2D81A /* DiskArbitration.framework */,
 				9966A1A41AE09D5100F2D81A /* CoreMedia.framework */,
 				9966A1A21AE09D4800F2D81A /* AVFoundation.framework */,
@@ -5905,9 +5862,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 			children = (
 				F35B0D8E28954830008ABE3E /* FeedbackReporter.framework */,
 				F3E3E6CA289527220037A247 /* UserNotifications.framework */,
-				992264F92028CE62004C4995 /* homephone.framework */,
-				439B8C131A19CCC300F396D7 /* 3DconnexionClient.framework */,
-				59FB64331230EE2F00EBA136 /* Ming */,
 				1058C7A0FEA54F0111CA2CBB /* Linked Frameworks */,
 			);
 			name = Frameworks;
@@ -6195,19 +6149,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 			name = Preferences;
 			sourceTree = "<group>";
 		};
-		59FB64331230EE2F00EBA136 /* Ming */ = {
-			isa = PBXGroup;
-			children = (
-				59FB64341230EE4100EBA136 /* libfreetypeOsiriX.a */,
-				59FB64351230EE4100EBA136 /* libgifOsiriX.a */,
-				59FB64361230EE4100EBA136 /* libmingOsiriX.a */,
-				59FB64371230EE4100EBA136 /* libpng12OsiriX.a */,
-				59FB647D1231106000EBA136 /* ming.h */,
-				59FB64771231101B00EBA136 /* mingpp.h */,
-			);
-			name = Ming;
-			sourceTree = "<group>";
-		};
 		710EF1F51FD014E8000B555B /* Horos */ = {
 			isa = PBXGroup;
 			children = (
@@ -6270,11 +6211,8 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				99BA4CC620A4ACF300B5CD02 /* EmbeddedPlugins */,
 				71EB83D216DD0F1800D48646 /* dicom3tools-libsrc-standard-strval-base.tpl */,
 				71EB83D316DD0F1800D48646 /* osirix-complementary.tpl */,
-				59D9471C125333640095680D /* SWFInit.as */,
 				AB78245B0D3BACC700460DCE /* WebServicesHTML */,
 				CEC4B5A20C7DF2D600AF5A76 /* 3DPRESETS */,
-				ABE0D69A0CDB1B9E00F0494B /* iChatTheatreHelp */,
-				ABE0D6920CDB1A4400F0494B /* iChatHelper.xib */,
 				59FB652912312D8900EBA136 /* weasis */,
 				7183153D1610651E0098576F /* weasis-ext-config.properties */,
 				CECDBE690C95467B006B11A5 /* AnnotationsDefault.plist */,
@@ -7599,19 +7537,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				A958370D0AAEBC2A0001D415 /* SRAnnotation.mm */,
 			);
 			name = "2D Viewer";
-			sourceTree = "<group>";
-		};
-		ABE0D69A0CDB1B9E00F0494B /* iChatTheatreHelp */ = {
-			isa = PBXGroup;
-			children = (
-				ABE0D69B0CDB1B9E00F0494B /* browse2OsiriX_small.png */,
-				ABE0D69C0CDB1B9E00F0494B /* iChatIcon.png */,
-				ABE0D69D0CDB1B9E00F0494B /* iChatTheatre-English.html */,
-				ABE0D69F0CDB1B9E00F0494B /* shareFromMenu_small.png */,
-				ABE0D6A00CDB1B9E00F0494B /* shareFromVideoChatWindow_small.png */,
-				ABE0D6A10CDB1B9E00F0494B /* style.css */,
-			);
-			path = iChatTheatreHelp;
 			sourceTree = "<group>";
 		};
 		BF348573095126B700B05AD2 /* Sending */ = {
@@ -10395,15 +10320,8 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				A977ECAD0CD1F7E500C418D8 /* QRpartiallyInDatabase.tif in Resources */,
 				71AD674A1FC4248100A1E2F8 /* French.plist in Resources */,
 				A977ECAE0CD1F7E500C418D8 /* QRalreadyInDatabase.tif in Resources */,
-				ABE0D6940CDB1A4400F0494B /* iChatHelper.xib in Resources */,
-				ABE0D6A20CDB1B9E00F0494B /* browse2OsiriX_small.png in Resources */,
-				ABE0D6A30CDB1B9E00F0494B /* iChatIcon.png in Resources */,
 				841B0B3A18980EFF0007E5C5 /* 3DCutRead.png in Resources */,
-				ABE0D6A40CDB1B9E00F0494B /* iChatTheatre-English.html in Resources */,
 				71AD67641FC4256E00A1E2F8 /* Tiling1x1.pdf in Resources */,
-				ABE0D6A60CDB1B9E00F0494B /* shareFromMenu_small.png in Resources */,
-				ABE0D6A70CDB1B9E00F0494B /* shareFromVideoChatWindow_small.png in Resources */,
-				ABE0D6A80CDB1B9E00F0494B /* style.css in Resources */,
 				CEDEF7D60D020E9100CADB15 /* TIFFSmall.tif in Resources */,
 				CEDEF7D70D020E9100CADB15 /* MailSmall.tif in Resources */,
 				CEDEF7D80D020E9100CADB15 /* JPEGSmall.tif in Resources */,
@@ -10464,7 +10382,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				59FB654F12312D8900EBA136 /* weasis in Resources */,
 				A97569581237D132003F00D3 /* PathAssistant.png in Resources */,
 				71AD67631FC4248100A1E2F8 /* VR Red Vessels.plist in Resources */,
-				59D9471D125333640095680D /* SWFInit.as in Resources */,
 				CE72D7C31263702500874EF6 /* Pause.pdf in Resources */,
 				71AD67481FC4248100A1E2F8 /* BlackBody.plist in Resources */,
 				71AD676B1FC4256E00A1E2F8 /* Tiling2x4.pdf in Resources */,
@@ -11332,6 +11249,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				F4A10000000100000000000A /* MetalViewerToolbarView.swift in Sources */,
 				F4A100000001000000000002 /* MetalViewerWindowController.swift in Sources */,
 				F4A100000001000000000003 /* MetalImageView.swift in Sources */,
+				F4A100000001000000000014 /* MetalPreviewImageView.swift in Sources */,
 				F4A100000001000000000004 /* MetalViewerRenderer.swift in Sources */,
 				F4A100000001000000000005 /* MetalShaders.metal in Sources */,
 				AB28B8D605B79D1500A9906C /* XMLController.m in Sources */,
@@ -12944,15 +12862,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 			name = Loupe.xib;
 			sourceTree = "<group>";
 		};
-		ABE0D6920CDB1A4400F0494B /* iChatHelper.xib */ = {
-			isa = PBXVariantGroup;
-			children = (
-				ABE0D6930CDB1A4400F0494B /* English */,
-				200BBB0420AA3BCE002914C4 /* ja-JP */,
-			);
-			name = iChatHelper.xib;
-			sourceTree = "<group>";
-		};
 		CE286C100964196C001A4573 /* Localizable.strings */ = {
 			isa = PBXVariantGroup;
 			children = (
@@ -13633,7 +13542,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				GCC_PREFIX_HEADER = Decompress/prefix.pch;
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					Binaries/Ming,
 					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/wlib,
 					$CONFIGURATION_TEMP_DIR/Grok.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/lib,
@@ -13656,7 +13564,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include,
 						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6,
 						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6/vtktiff/libtiff,
-						Binaries/Ming,
 					);
 				USER_HEADER_SEARCH_PATHS = (
 					"$(inherited)",
@@ -14100,7 +14007,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				GCC_PREFIX_HEADER = Decompress/prefix.pch;
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					Binaries/Ming,
 					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/wlib,
 					$CONFIGURATION_TEMP_DIR/Grok.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/lib,
@@ -14124,7 +14030,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include,
 						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6,
 						$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6/vtktiff/libtiff,
-						Binaries/Ming,
 					);
 				USER_HEADER_SEARCH_PATHS = (
 					"$(inherited)",

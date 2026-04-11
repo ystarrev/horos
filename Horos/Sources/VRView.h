@@ -3,7 +3,7 @@
  
  Horos is free software: you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
- the Free Software Foundation, Êversion 3 of the License.
+ the Free Software Foundation, ÃŠversion 3 of the License.
  
  The Horos Project was based originally upon the OsiriX Project which at the time of
  the code fork was licensed as a LGPL project.  However, not all of the the source-code
@@ -15,24 +15,24 @@
  
  Horos is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY EXPRESS OR IMPLIED, INCLUDING ANY WARRANTY OF
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÊSee the
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÃŠSee the
  GNU Lesser General Public License for more details.
  
  You should have received a copy of the GNU Lesser General Public License
- along with Horos. ÊIf not, see http://www.gnu.org/licenses/lgpl.html
+ along with Horos. ÃŠIf not, see http://www.gnu.org/licenses/lgpl.html
  
  Prior versions of this file were published by the OsiriX team pursuant to
  the below notice and licensing protocol.
  ============================================================================
- Program: Ê OsiriX
- ÊCopyright (c) OsiriX Team
- ÊAll rights reserved.
- ÊDistributed under GNU - LGPL
- Ê
- ÊSee http://www.osirix-viewer.com/copyright.html for details.
- Ê Ê This software is distributed WITHOUT ANY WARRANTY; without even
- Ê Ê the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
- Ê Ê PURPOSE.
+ Program: ÃŠ OsiriX
+ ÃŠCopyright (c) OsiriX Team
+ ÃŠAll rights reserved.
+ ÃŠDistributed under GNU - LGPL
+ ÃŠ
+ ÃŠSee http://www.osirix-viewer.com/copyright.html for details.
+ ÃŠ ÃŠ This software is distributed WITHOUT ANY WARRANTY; without even
+ ÃŠ ÃŠ the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ ÃŠ ÃŠ PURPOSE.
  ============================================================================*/
 
 
@@ -209,7 +209,7 @@ typedef char* VTKStereoVRView;
 #define VTKView NSView
 #endif
 
-@interface VRView : VTKView <NSDraggingSource, NSPasteboardItemDataProvider>
+@interface VRView : VTKView <NSDraggingSource, NSPasteboardItemDataProvider, NSMenuItemValidation>
 {
 	NSTimer						*autoRotate, *startAutoRotate;
 	BOOL						isRotating, flyto;
@@ -397,13 +397,7 @@ typedef char* VTKStereoVRView;
 	//Context for rendering to iChat
 	BOOL						_hasChanged;
 	float						iChatWidth, iChatHeight;
-	BOOL						iChatFrameIsSet;
-	
-	// 3DConnexion SpaceNavigator
-	NSTimer			*snCloseEventTimer;
-	BOOL			snStopped;
-	UInt16			snConnexionClientID;
-	
+	BOOL						iChatFrameIsSet;	
 	BOOL			clipRangeActivated;
 	double			clippingRangeThickness;
 	
@@ -509,7 +503,8 @@ typedef char* VTKStereoVRView;
 - (void) setBlendingPixSource:(ViewerController*) bC;
 - (IBAction) endQuicktimeSettings:(id) sender;
 - (IBAction) endDCMExportSettings:(id) sender;
-//- (IBAction) endQuicktimeVRSettings:(id) sender;
+- (IBAction) endQuicktimeVRSettings:(id) sender;
+- (IBAction) invertedSides:(id)sender;
 - (IBAction) exportQuicktime :(id) sender;
 - (float) rotation;
 - (float) numberOfFrames;
@@ -651,10 +646,6 @@ typedef char* VTKStereoVRView;
 - (void)panX:(double)x Y:(double)y;
 
 - (void)recordFlyThru;
-
-// 3DConnexion SpaceNavigator
-- (void)connect2SpaceNavigator;
-void VRSpaceNavigatorMessageHandler(io_connect_t connection, natural_t messageType, void *messageArgument);
 
 #ifdef _STEREO_VISION_
 //Added SilvanWidmer 27-08-09

@@ -1962,7 +1962,6 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 		return tempArray;
 	}
 	
-	#ifndef OSIRIX_LIGHT
 	if( type == tPlain)
 	{
 		NSMutableArray  *tempArray = [ITKSegmentation3D extractContour:textureBuffer width:textureWidth height:textureHeight];
@@ -1972,7 +1971,6 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 		
 		return tempArray;
 	}
-	#endif
 	
 	return points;
 }

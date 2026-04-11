@@ -38,7 +38,6 @@
 
 #import "N2Layout.h"
 
-__deprecated
 @interface N2ColumnLayout : N2Layout {
 	NSArray* _columnDescriptors;
 	NSMutableArray* _rows;

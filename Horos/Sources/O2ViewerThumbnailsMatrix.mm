@@ -154,11 +154,6 @@
     }
 }
 
-- (NSDragOperation) draggingSourceOperationMaskForLocal:(BOOL)isLocal
-{
-	return NSDragOperationEvery;
-}
-
 - (void) actionAndFullscreen: (id) cell
 {
     @try
@@ -327,5 +322,3 @@
 }
 
 @end
-
-

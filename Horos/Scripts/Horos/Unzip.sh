@@ -5,10 +5,8 @@ unzip -uo DB_Previous_Models.zip
 unzip -uo PAGES.zip
 unzip -uo OsiriXReport.template.zip
 # unzip -uo FeedbackReporter.framework.zip
-unzip -uo 3DconnexionClient.framework.zip
 unzip -uo dciodvfy.zip
 unzip -uo Ming.zip
-unzip -uo homephone.framework.zip
 
 unzip -uo weasis-portable*.zip -d weasis
 chmod -R 755 weasis

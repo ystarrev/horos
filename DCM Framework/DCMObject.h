@@ -3,7 +3,7 @@
  
  Horos is free software: you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
- the Free Software Foundation,  version 3 of the License.
+ the Free Software Foundation, √äversion 3 of the License.
  
  The Horos Project was based originally upon the OsiriX Project which at the time of
  the code fork was licensed as a LGPL project.  However, not all of the the source-code
@@ -15,24 +15,24 @@
  
  Horos is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY EXPRESS OR IMPLIED, INCLUDING ANY WARRANTY OF
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE.  See the
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. √äSee the
  GNU Lesser General Public License for more details.
  
  You should have received a copy of the GNU Lesser General Public License
- along with Horos.  If not, see http://www.gnu.org/licenses/lgpl.html
+ along with Horos. √äIf not, see http://www.gnu.org/licenses/lgpl.html
  
  Prior versions of this file were published by the OsiriX team pursuant to
  the below notice and licensing protocol.
  ============================================================================
- Program:   OsiriX
-  Copyright (c) OsiriX Team
-  All rights reserved.
-  Distributed under GNU - LGPL
-  
-  See http://www.osirix-viewer.com/copyright.html for details.
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.
+ Program: √ä OsiriX
+ √äCopyright (c) OsiriX Team
+ √äAll rights reserved.
+ √äDistributed under GNU - LGPL
+ √ä
+ √äSee http://www.osirix-viewer.com/copyright.html for details.
+ √ä √ä This software is distributed WITHOUT ANY WARRANTY; without even
+ √ä √ä the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ √ä √ä PURPOSE.
  ============================================================================*/
 
 
@@ -333,7 +333,7 @@
 * @param ts DCMTransferSyntax for writing
 * @param quality The quality for lossy syntaxes
 * @param aet Application Entity Title for the device doing the writing
-* @param atomically  If YES, the data is written to a backup file, and then—assuming no errors occur—the backup file is renamed to the name specified by path; otherwise, the data is written directly to path.
+* @param atomically  If YES, the data is written to a backup file, and then√ëassuming no errors occur√ëthe backup file is renamed to the name specified by path; otherwise, the data is written directly to path.
 */		
 - (BOOL)writeToFile:(NSString *)path withTransferSyntax:(DCMTransferSyntax *)ts quality:(int)quality AET:(NSString *)aet atomically:(BOOL)atomically;
 
@@ -342,8 +342,8 @@
 * @param ts DCMTransferSyntax for writing
 * @param quality The quality for lossy syntaxes
 * @param aet Application Entity Title for the device doing the writing
-* @param atomically  If YES, the data is written to a backup file, and then—assuming no errors occur—the backup file is renamed to the name specified by path; otherwise, the data is written directly to path.
-* If YES, the data is written to a backup location, and then—assuming no errors occur—the backup location is renamed to the name specified by aURL; otherwise, the data is written directly to aURL. atomically is ignored if aURL is not of a type the supports atomic writes.
+* @param atomically  If YES, the data is written to a backup file, and then√ëassuming no errors occur√ëthe backup file is renamed to the name specified by path; otherwise, the data is written directly to path.
+* If YES, the data is written to a backup location, and then√ëassuming no errors occur√ëthe backup location is renamed to the name specified by aURL; otherwise, the data is written directly to aURL. atomically is ignored if aURL is not of a type the supports atomic writes.
 */
 - (BOOL)writeToURL:(NSURL *)aURL withTransferSyntax:(DCMTransferSyntax *)ts quality:(int)quality AET:(NSString *)aet atomically:(BOOL)atomically;
 

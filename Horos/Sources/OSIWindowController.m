@@ -107,7 +107,6 @@ static BOOL protectedReentryWindowDidResize = NO;
 #pragma mark-
 #pragma mark Magnetic Windows & Tiling
 
-#ifndef OSIRIX_LIGHT
 - (IBAction) paste:(id) sender;
 {
 	if( [[self pixList] count])
@@ -120,7 +119,6 @@ static BOOL protectedReentryWindowDidResize = NO;
 		[[BrowserController currentBrowser] pasteImageForSourceFile: [pix srcFile]];
 	}
 }
-#endif
 
 - (void) setMagnetic:(BOOL) a
 {
@@ -550,12 +548,10 @@ static BOOL protectedReentryWindowDidResize = NO;
 	return nil;
 }
 
-#ifndef OSIRIX_LIGHT
 - (IBAction)querySelectedStudy: (id)sender
 {
 	[[BrowserController currentBrowser] querySelectedStudy: self];
 }
-#endif
 
 - (id)initWithWindowNibName:(NSString *)windowNibName
 {

@@ -553,8 +553,6 @@ static NSString *WebPortalResponseLock = @"WebPortalResponseLock";
 		return [NSNumber numberWithBool: wpc.requestIsMacOS];
 	if ([key isEqualToString:@"proposeWeasis"])
 		return [NSNumber numberWithBool: wpc.portal.weasisEnabled && !wpc.requestIsIOS];
-	if ([key isEqualToString:@"proposeFlash"])
-		return [NSNumber numberWithBool: wpc.portal.flashEnabled && !wpc.requestIsIOS];
 	if ([key isEqualToString:@"authenticationRequired"])
 		return [NSNumber numberWithBool: wpc.portal.authenticationRequired && !wpc.user];
 	if ([key isEqualToString:@"newToken"])
@@ -910,7 +908,6 @@ static NSMutableDictionary *otherStudiesForThisPatientCache = nil;
                     if( servers.count)
                     {
                         // Distant studies
-    #ifndef OSIRIX_LIGHT
                         NSArray *distantStudies = [QueryController queryStudiesForPatient: study usePatientID: usePatientID usePatientName: usePatientName usePatientBirthDate: usePatientBirthDate servers: servers showErrors: NO];
                         
                         // Merge local and distant studies
@@ -930,7 +927,6 @@ static NSMutableDictionary *otherStudiesForThisPatientCache = nil;
                                 }
                             }
                         }
-    #endif
                     }
                 }
             }

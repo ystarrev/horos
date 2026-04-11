@@ -58,7 +58,6 @@
 //@class ThreadPoolServer;
 //@class ThreadPerConnectionServer;
 
-//#import "IChatTheatreDelegate.h"
 
 @class PreferenceController;
 @class BrowserController;
@@ -109,7 +108,7 @@ extern "C"
 
 extern AppController* OsiriX;
 
-@interface AppController : NSObject	<NSNetServiceBrowserDelegate, NSNetServiceDelegate, NSSoundDelegate, NSMenuDelegate, UNUserNotificationCenterDelegate, NSUserNotificationCenterDelegate >
+@interface AppController : NSObject	<NSNetServiceBrowserDelegate, NSNetServiceDelegate, NSSoundDelegate, NSMenuDelegate, UNUserNotificationCenterDelegate, NSMenuItemValidation >
 {
 	IBOutlet BrowserController		*browserController;
 
@@ -194,12 +193,10 @@ extern AppController* OsiriX;
 //===============OSIRIX========================
 - (IBAction) about:(id)sender; /**< Display the about window */
 - (IBAction) showPreferencePanel:(id)sender; /**< Show Preferences window */
-#ifndef OSIRIX_LIGHT
 #ifndef MACAPPSTORE
 - (IBAction) checkForUpdates:(id) sender;  /**< Check for update */
 #endif
 - (IBAction) autoQueryRefresh:(id)sender;
-#endif
 //===============WINDOW========================
 - (IBAction) setFixedTilingRows: (id) sender;
 - (IBAction) setFixedTilingColumns: (id) sender;
@@ -288,9 +285,7 @@ extern AppController* OsiriX;
 #pragma mark -
 -(WebPortal*)defaultWebPortal;
 
-#ifndef OSIRIX_LIGHT
 -(NSString*)weasisBasePath;
-#endif
 
 -(void)setReceivingIcon;
 -(void)unsetReceivingIcon;
@@ -301,4 +296,3 @@ extern AppController* OsiriX;
 - (void)displayError:(NSString *)err;
 
 @end
-

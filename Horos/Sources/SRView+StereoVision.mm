@@ -167,10 +167,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 		point3DTextSizesArray = [[NSMutableArray alloc] initWithCapacity:0];
 		
 		display3DPoints = YES;
-		[self load3DPointsDefaultProperties];
-		
-		[self connect2SpaceNavigator];
-		
+		[self load3DPointsDefaultProperties];		
 		[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(windowWillClose:) name: NSWindowWillCloseNotification object: nil];
     }
     
@@ -411,16 +408,6 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 	[_mouseDownTimer release];
 	
 	[destinationImage release];
-	
-	// 3D Connexion SpaceNavigator: Make sure the framework is installed
-#if USE3DCONNEXION
-	if(InstallConnexionHandlers != NULL)
-	{
-		// 3D Connexion SpaceNavigator: Unregister our client and clean up all handlers
-		if(snConnexionClientID) UnregisterConnexionClient(snConnexionClientID);
-		CleanupConnexionHandlers();
-	}
-#endif
 	
     [super dealloc];
 }
@@ -1451,14 +1438,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 	//	NSLog(@"--> First Surface: %i ; Second Surface: %i ", aRenderer->GetActors()->IsItemPresent( iso[0]),aRenderer->GetActors()->IsItemPresent( iso[1]));
 	
 	noWaitDialog = YES;
-	tool = currentTool;
-	
-	if( snCloseEventTimer)
-	{
-		[snCloseEventTimer fire];
-	}
-	snStopped = YES;
-	
+	tool = currentTool;	
 	if ([theEvent type] == NSLeftMouseDown) {
 		if (_mouseDownTimer) {
 			[self deleteMouseDownTimer];

@@ -195,9 +195,7 @@ static const NSMutableArray* pluginPanes = [[NSMutableArray alloc] init];
 	}
 	
 	if (![parentBundle pathForResource:resourceName ofType:@"prefPane"] && !builtinPrefPaneClass) {
-		#ifndef OSIRIX_LIGHT
 		NSLog(@"Warning: preferences pane %@ not added because resource %@ not found in %@", title, resourceName, [parentBundle resourcePath]);
-		#endif
 		return;
 	}
 	

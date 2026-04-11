@@ -206,11 +206,7 @@ NSString* const OsirixBonjourSharingPasswordDefaultsKey = @"bonjourPassword";
 
 NSString* const OsirixWebPortalEnabledDefaultsKey = @"httpWebServer";
 +(BOOL)webPortalEnabled {
-	#ifdef OSIRIX_LIGHT
-	return NO;
-	#else
 	return [NSUserDefaultsController.sharedUserDefaultsController boolForKey:OsirixWebPortalEnabledDefaultsKey];
-	#endif
 }
 
 NSString* const OsirixWebPortalAddressDefaultsKey = @"webServerAddress";
@@ -246,12 +242,6 @@ NSString* const OsirixWebPortalUsesWeasisDefaultsKey = @"WebServerUsesWeasis";
 NSString* const OsirixWadoServiceEnabledDefaultsKey = @"wadoServer";
 +(BOOL)wadoServiceEnabled {
 	return [NSUserDefaultsController.sharedUserDefaultsController boolForKey:OsirixWadoServiceEnabledDefaultsKey];
-}
-
-NSString* const OsirixWebPortalPrefersFlashDefaultsKey = @"WebServerPrefersFlash";
-
-+(BOOL)webPortalPrefersFlash {
-	return [NSUserDefaultsController.sharedUserDefaultsController boolForKey:OsirixWebPortalPrefersFlashDefaultsKey];
 }
 
 NSString* const OsirixWebPortalPrefersCustomWebPagesKey = @"customWebPages";

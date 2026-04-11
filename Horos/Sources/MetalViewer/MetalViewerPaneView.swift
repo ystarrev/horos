@@ -7,6 +7,9 @@ final class MetalViewerPaneView: NSView {
         private let backgroundView = NSVisualEffectView()
         private let titleLabel = NSTextField(labelWithString: "")
         private let progressIndicator = NSProgressIndicator()
+        private var timer: Timer?
+        private var registrationStartDate: Date?
+        private var baseMessage = ""
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
@@ -25,7 +28,7 @@ final class MetalViewerPaneView: NSView {
             titleLabel.translatesAutoresizingMaskIntoConstraints = false
             titleLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
             titleLabel.textColor = .white
-            titleLabel.alignment = .center
+            titleLabel.alignment = .left
             titleLabel.lineBreakMode = .byWordWrapping
             titleLabel.maximumNumberOfLines = 3
             backgroundView.addSubview(titleLabel)
@@ -34,7 +37,6 @@ final class MetalViewerPaneView: NSView {
             progressIndicator.isIndeterminate = false
             progressIndicator.minValue = 0
             progressIndicator.maxValue = 1
-            progressIndicator.controlTint = .blueControlTint
             progressIndicator.style = .bar
             backgroundView.addSubview(progressIndicator)
 
@@ -64,8 +66,15 @@ final class MetalViewerPaneView: NSView {
         }
 
         func update(isRunning: Bool, message: String, progress: Float) {
-            titleLabel.stringValue = message.isEmpty ? "Registered" : message
+            if isRunning && registrationStartDate == nil {
+                registrationStartDate = Date()
+            } else if isRunning == false && message.isEmpty == false && registrationStartDate == nil {
+                registrationStartDate = Date()
+            }
+
+            baseMessage = message.isEmpty ? "Registered" : message
             progressIndicator.doubleValue = Double(progress)
+            progressIndicator.isHidden = !isRunning
 
             if isRunning || message.isEmpty == false {
                 if isHidden {
@@ -77,6 +86,49 @@ final class MetalViewerPaneView: NSView {
                     animator().alphaValue = 1
                 }
             }
+
+            if isRunning {
+                startTimerIfNeeded()
+                updateDisplayedMessage()
+            } else if message.isEmpty == false {
+                stopTimer()
+                updateDisplayedMessage()
+            } else {
+                stopTimer()
+            }
+        }
+
+        func fadeOut() {
+            guard isHidden == false else { return }
+            stopTimer()
+            registrationStartDate = nil
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.18
+                animator().alphaValue = 0
+            }, completionHandler: { [weak self] in
+                self?.isHidden = true
+            })
+        }
+
+        private func updateDisplayedMessage() {
+            titleLabel.stringValue = "\(baseMessage)\nElapsed: \(elapsedString())"
+        }
+
+        private func elapsedString() -> String {
+            guard let registrationStartDate else { return "0.0s" }
+            return String(format: "%.1fs", Date().timeIntervalSince(registrationStartDate))
+        }
+
+        private func startTimerIfNeeded() {
+            guard timer == nil else { return }
+            timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                self?.updateDisplayedMessage()
+            }
+        }
+
+        private func stopTimer() {
+            timer?.invalidate()
+            timer = nil
         }
     }
 
@@ -285,7 +337,7 @@ final class MetalViewerPaneView: NSView {
             let lineHeight = ceil(Self.mainFont.ascender - Self.mainFont.descender + 2)
             let size = bounds
 
-            var xRasterInit: [String: CGFloat] = [
+            let xRasterInit: [String: CGFloat] = [
                 "TopLeft": size.origin.x + 6,
                 "MiddleLeft": size.origin.x + 6,
                 "LowerLeft": size.origin.x + 6,
@@ -649,6 +701,7 @@ final class MetalViewerPaneView: NSView {
     private var metalView: MetalImageView?
     private var trackingAreaRef: NSTrackingArea?
     private var isHovering = false
+    private var dismissRegistrationStatusOnMouseMove = false
 
     private(set) var series: MetalViewerSeries
     private(set) var overlaySeries: MetalViewerSeries?
@@ -735,7 +788,7 @@ final class MetalViewerPaneView: NSView {
 
         let trackingAreaRef = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeInActiveApp, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -757,6 +810,9 @@ final class MetalViewerPaneView: NSView {
         metalView.translatesAutoresizingMaskIntoConstraints = false
         metalView.activateHandler = { [weak self] in
             self?.activateHandler?()
+        }
+        metalView.interactionEventHandler = { [weak self] in
+            self?.dismissRegistrationStatusIfNeeded()
         }
         metalView.titleDidChange = { [weak self] state in
             self?.currentStateDescription = state
@@ -798,6 +854,7 @@ final class MetalViewerPaneView: NSView {
         self.metalView = metalView
         metalView.renderer.registrationDidChange = { [weak self] isRunning, message, progress in
             self?.registrationStatusView.update(isRunning: isRunning, message: message, progress: progress)
+            self?.dismissRegistrationStatusOnMouseMove = !isRunning && message.isEmpty == false
         }
         currentStateDescription = metalView.renderer.stateDescription
         stateDidChange?(currentStateDescription)
@@ -834,6 +891,10 @@ final class MetalViewerPaneView: NSView {
         updateCloseButtonVisibility()
     }
 
+    override func mouseMoved(with event: NSEvent) {
+        dismissRegistrationStatusIfNeeded()
+    }
+
     override func mouseExited(with event: NSEvent) {
         isHovering = false
         updateCloseButtonVisibility()
@@ -846,11 +907,20 @@ final class MetalViewerPaneView: NSView {
     }
 
     @objc private func closeButtonPressed(_ sender: Any?) {
+        dismissRegistrationStatusIfNeeded()
         closeHandler?()
     }
 
     @objc private func overlayBlendSliderChanged(_ sender: NSSlider) {
+        dismissRegistrationStatusIfNeeded()
         metalView?.renderer.setOverlayBlend(Float(sender.doubleValue))
+    }
+
+    private func dismissRegistrationStatusIfNeeded() {
+        if dismissRegistrationStatusOnMouseMove {
+            dismissRegistrationStatusOnMouseMove = false
+            registrationStatusView.fadeOut()
+        }
     }
 
     private func updateAppearance() {

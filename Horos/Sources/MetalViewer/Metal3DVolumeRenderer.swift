@@ -851,7 +851,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private static func perspectiveMatrix(verticalFov: Float, aspectRatio: Float, nearPlane: Float, farPlane: Float) -> simd_float4x4 {
         let yScale = 1 / tan(verticalFov * 0.5)
         let xScale = yScale / aspectRatio
-        let zRange = farPlane - nearPlane
         let zScale = farPlane / (nearPlane - farPlane)
         let wzScale = (farPlane * nearPlane) / (nearPlane - farPlane)
         return simd_float4x4(columns: (

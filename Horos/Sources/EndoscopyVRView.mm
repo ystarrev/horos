@@ -98,9 +98,7 @@
 -(id)initWithFrame:(NSRect)frame;
 {
     if ( self = [super initWithFrame:frame] )
-    {
-		[self connect2SpaceNavigator];
-		
+    {		
 //		dontUseAutoCropping = YES;
 		
 		superSampling = 4.0;

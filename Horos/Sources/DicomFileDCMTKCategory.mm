@@ -57,9 +57,7 @@
 #include "dipijpeg.h"    /* for dcmimage JPEG plugin */
 
 #ifdef OSIRIX_VIEWER
-#ifndef OSIRIX_LIGHT
 #include <NrrdIO.h> // part of ITK
-#endif
 #endif
 
 #include <string>
@@ -179,7 +177,6 @@ extern NSRecursiveLock *PapyrusLock;
 -(short) getNRRDFile
 {
 #ifdef OSIRIX_VIEWER
-#ifndef OSIRIX_LIGHT
     int			success = 0;
     NSString	*extension = [[filePath pathExtension] lowercaseString];
     char		*err = nil;
@@ -292,7 +289,6 @@ extern NSRecursiveLock *PapyrusLock;
     if (success)
         return 0;
     else
-#endif
 #endif
         return -1;
 }
@@ -1005,7 +1001,6 @@ extern NSRecursiveLock *PapyrusLock;
         }
         
 #ifdef OSIRIX_VIEWER
-#ifndef OSIRIX_LIGHT
         if( [sopClassUID hasPrefix: @"1.2.840.10008.5.1.4.1.1.88"])
         {
             if( [DicomStudy displaySeriesWithSOPClassUID: sopClassUID andSeriesDescription: [dicomElements objectForKey: @"seriesDescription"]])
@@ -1053,7 +1048,6 @@ extern NSRecursiveLock *PapyrusLock;
                 N2LogExceptionWithStackTrace(e);
             }
         }
-#endif
 #endif
         
         NoOfSeries = 1;

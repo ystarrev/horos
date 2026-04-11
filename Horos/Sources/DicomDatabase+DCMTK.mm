@@ -214,7 +214,6 @@
     [thread exitOperation];
     return YES;
     
-    //    #ifndef OSIRIX_LIGHT
     //	@synchronized( [BrowserController currentBrowser])
     //	{
     //		for( NSString *path in paths)

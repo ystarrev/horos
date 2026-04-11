@@ -3,7 +3,7 @@
  
  Horos is free software: you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
- the Free Software Foundation, Êversion 3 of the License.
+ the Free Software Foundation, ÃŠversion 3 of the License.
  
  The Horos Project was based originally upon the OsiriX Project which at the time of
  the code fork was licensed as a LGPL project.  However, not all of the the source-code
@@ -15,24 +15,24 @@
  
  Horos is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY EXPRESS OR IMPLIED, INCLUDING ANY WARRANTY OF
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÊSee the
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÃŠSee the
  GNU Lesser General Public License for more details.
  
  You should have received a copy of the GNU Lesser General Public License
- along with Horos. ÊIf not, see http://www.gnu.org/licenses/lgpl.html
+ along with Horos. ÃŠIf not, see http://www.gnu.org/licenses/lgpl.html
  
  Prior versions of this file were published by the OsiriX team pursuant to
  the below notice and licensing protocol.
  ============================================================================
- Program: Ê OsiriX
- ÊCopyright (c) OsiriX Team
- ÊAll rights reserved.
- ÊDistributed under GNU - LGPL
- Ê
- ÊSee http://www.osirix-viewer.com/copyright.html for details.
- Ê Ê This software is distributed WITHOUT ANY WARRANTY; without even
- Ê Ê the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
- Ê Ê PURPOSE.
+ Program: ÃŠ OsiriX
+ ÃŠCopyright (c) OsiriX Team
+ ÃŠAll rights reserved.
+ ÃŠDistributed under GNU - LGPL
+ ÃŠ
+ ÃŠSee http://www.osirix-viewer.com/copyright.html for details.
+ ÃŠ ÃŠ This software is distributed WITHOUT ANY WARRANTY; without even
+ ÃŠ ÃŠ the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ ÃŠ ÃŠ PURPOSE.
  ============================================================================*/
 
 #include <stdio.h>
@@ -41,9 +41,7 @@
 #include "url.h"
 #import "DCMUIDs.h"
 
-#ifndef OSIRIX_LIGHT
 #include "FVTiff.h"
-#endif
 #import "MutableArrayCategory.h"
 #import "SRAnnotation.h"
 #import "SRAnnotation.h"
@@ -56,9 +54,7 @@
 #import "DICOMToNSString.h"
 #import "DefaultsOsiriX.h"
 
-#ifndef OSIRIX_LIGHT
 #import <vtk_tiff.h>
-#endif
 
 #import "DicomFileDCMTKCategory.h"
 #import "PluginManager.h"
@@ -74,9 +70,7 @@
 #endif
 
 #ifdef OSIRIX_VIEWER
-#ifndef OSIRIX_LIGHT
 #import "DicomStudy.h"
-#endif
 #endif
 
 #include <GDCM/gdcmScanner.h>
@@ -554,9 +548,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
             PREFERPAPYRUSFORCD = (int)[sd integerForKey: @"PREFERPAPYRUSFORCD"];
             TOOLKITPARSER = 2; // Always and only DCMTK. Papyrus has been removed from the project.
             
-#ifdef OSIRIX_LIGHT
-            TOOLKITPARSER = 2;
-#endif
             
             COMMENTSFROMDICOMFILES = [sd boolForKey: @"CommentsFromDICOMFiles"];
             COMMENTSAUTOFILL = [sd boolForKey: @"COMMENTSAUTOFILL"];
@@ -638,7 +629,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     int success = NO;
     
 #ifndef STATIC_DICOM_LIB
-#ifndef OSIRIX_LIGHT
     NSString *extension = [[file pathExtension] lowercaseString];
     
     if( [extension isEqualToString:@"tiff"] ||
@@ -654,7 +644,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     }
     
 #endif
-#endif
     return success;
 }
 
@@ -663,7 +652,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     int success = NO;
     
 #ifndef STATIC_DICOM_LIB
-#ifndef OSIRIX_LIGHT
     NSString *extension = [[file pathExtension] lowercaseString];
     
     if( [extension isEqualToString:@"tiff"] ||
@@ -678,7 +666,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
             TIFFClose(tif);
         }
     }
-#endif
 #endif
     return success;
 }
@@ -852,7 +839,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     int success = 0;
     
 #ifndef STATIC_DICOM_LIB
-#ifndef OSIRIX_LIGHT
     NSString *extension = [[filePath pathExtension] lowercaseString];
     
     if( [extension isEqualToString:@"tiff"] ||
@@ -984,7 +970,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     }
     
 #endif
-#endif
     
     if (success)
         return 0;
@@ -1057,7 +1042,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
             NSString			*tempString = [[filePath lastPathComponent] stringByDeletingPathExtension];
             
 #ifndef STATIC_DICOM_LIB
-#ifndef OSIRIX_LIGHT
             if( [extension isEqualToString:@"tiff"] ||
                [extension isEqualToString:@"stk"] ||
                [extension isEqualToString:@"tif"])
@@ -1092,7 +1076,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
                 }
             }
             else
-#endif
 #endif
             {
                 @autoreleasepool
@@ -2036,7 +2019,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
 - (NSPDFImageRep*) PDFImageRep
 {
 #ifdef OSIRIX_VIEWER
-#ifndef OSIRIX_LIGHT
     
     [[NSFileManager defaultManager] confirmDirectoryAtPath:@"/tmp/dicomsr_osirix/"];
     
@@ -2074,7 +2056,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     }
     
     return [NSPDFImageRep imageRepWithData: [NSData dataWithContentsOfFile: [htmlpath stringByAppendingPathExtension: @"pdf"]]];
-#endif
 #endif
     
     return nil;

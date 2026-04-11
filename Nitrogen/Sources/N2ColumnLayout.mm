@@ -42,6 +42,7 @@
 #import "N2Operators.h"
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include "N2ColorWell.h"
 
@@ -121,19 +122,22 @@ typedef struct ConstrainedFloat {
 	if (!rowsCount)
 		return NULL;
 	
-	ConstrainedFloat widths[colsCount][colsCount];
+	std::vector<ConstrainedFloat> widths(colsCount*colsCount);
+	auto widthAt = [&](NSUInteger spanIndex, NSUInteger fromIndex) -> ConstrainedFloat& {
+		return widths[spanIndex*colsCount + fromIndex];
+	};
 	for (NSUInteger i = 0; i < colsCount; ++i)
 		for (NSUInteger j = 0; j < colsCount; ++j) {
-			widths[j][i].value = 0;
-			widths[j][i].constraint = N2MakeMinMax();
+			widthAt(j, i).value = 0;
+			widthAt(j, i).constraint = N2MakeMinMax();
 		}
 	for (NSArray* row in _rows) {
 		NSUInteger colNumber = 0;
 		for (N2CellDescriptor* cell in row) {
 			NSUInteger span = [cell colSpan];
 			
-			widths[span-1][colNumber].constraint = N2ComposeMinMax(widths[span-1][colNumber].constraint, [cell widthConstraints]);
-			widths[span-1][colNumber].value = std::max(widths[span-1][colNumber].value, [cell optimalSize].width);
+			widthAt(span-1, colNumber).constraint = N2ComposeMinMax(widthAt(span-1, colNumber).constraint, [cell widthConstraints]);
+			widthAt(span-1, colNumber).value = std::max(widthAt(span-1, colNumber).value, [cell optimalSize].width);
 			
 			colNumber += span;
 		}
@@ -142,27 +146,27 @@ typedef struct ConstrainedFloat {
 	CGFloat widthWithSeparations = widthWithMarginAndSeparations - _margin.size.width;
 	
 	if (!_forcesSuperviewWidth && widthWithMarginAndSeparations != CGFLOAT_MAX) {
-		widths[colsCount-1][0].constraint = N2MakeMinMax(widthWithSeparations);
-		widths[colsCount-1][0].value = widthWithSeparations;
+		widthAt(colsCount-1, 0).constraint = N2MakeMinMax(widthWithSeparations);
+		widthAt(colsCount-1, 0).value = widthWithSeparations;
 	}
 	
 	for (NSUInteger span = 1; span <= colsCount; ++span)
 		for (NSUInteger from = 0; from <= colsCount-span; ++from)
-			if (widths[span-1][from].value) {
+			if (widthAt(span-1, from).value) {
 				while (true) {
 					// targetWidth is the sum of span 1 widths
 					ConstrainedFloat targetWidth = {-_separation.width, N2MakeMinMax(-_separation.width)};
 					for (NSUInteger i = from; i < from+span; ++i) {
-						targetWidth.value += widths[0][i].value + _separation.width;
-						targetWidth.constraint = targetWidth.constraint + widths[0][i].constraint + _separation.width;
+						targetWidth.value += widthAt(0, i).value + _separation.width;
+						targetWidth.constraint = targetWidth.constraint + widthAt(0, i).constraint + _separation.width;
 					}
 					
 					CGFloat currentWidth = targetWidth.value;
 
-					targetWidth.value = std::max(widths[span-1][from].value, targetWidth.value);
-					targetWidth.constraint = N2ComposeMinMax(widths[span-1][from].constraint, targetWidth.constraint);
+					targetWidth.value = std::max(widthAt(span-1, from).value, targetWidth.value);
+					targetWidth.constraint = N2ComposeMinMax(widthAt(span-1, from).constraint, targetWidth.constraint);
 					targetWidth.value = N2MinMaxConstrainedValue(targetWidth.constraint, targetWidth.value);
-					widths[span-1][from] = targetWidth;
+					widthAt(span-1, from) = targetWidth;
 					
 					if (span == 1) break;
 					
@@ -183,31 +187,31 @@ typedef struct ConstrainedFloat {
 					if (deltaWidth*deltaWidth < 0.7)
 						break;
 					
-					BOOL colFixed[colsCount];
-					int unfixedColsCount = 0;
-					CGFloat unfixedRefWidth = 0, unfixedInvasivity = 0;
-					for (NSUInteger i = from; i < from+span; ++i)
-						if (!(colFixed[i] = !((deltaWidth > 0 && widths[0][i].value < widths[0][i].constraint.max) || (deltaWidth < 0 && widths[0][i].value > widths[0][i].constraint.min))))
-                        {
-							++unfixedColsCount;
-							unfixedRefWidth += widths[0][i].value;
-							unfixedInvasivity += [[_columnDescriptors objectAtIndex:i] invasivity];
-						}
+						std::vector<BOOL> colFixed(colsCount);
+						int unfixedColsCount = 0;
+						CGFloat unfixedRefWidth = 0, unfixedInvasivity = 0;
+						for (NSUInteger i = from; i < from+span; ++i)
+							if (!(colFixed[i] = !((deltaWidth > 0 && widthAt(0, i).value < widthAt(0, i).constraint.max) || (deltaWidth < 0 && widthAt(0, i).value > widthAt(0, i).constraint.min))))
+	                        {
+								++unfixedColsCount;
+								unfixedRefWidth += widthAt(0, i).value;
+								unfixedInvasivity += [[_columnDescriptors objectAtIndex:i] invasivity];
+							}
 					
 					if (!unfixedColsCount || unfixedRefWidth < 1)
 						break;
 					
 					for (NSUInteger i = from; i < from+span; ++i)
                     {
-						if (!colFixed[i])
-                        {
-							if (unfixedInvasivity == 0)
-								widths[0][i].value *= 1+deltaWidth/unfixedRefWidth;
-							else widths[0][i].value += deltaWidth*([[_columnDescriptors objectAtIndex:i] invasivity]/unfixedInvasivity);
-                        }
-                    }
+							if (!colFixed[i])
+	                        {
+								if (unfixedInvasivity == 0)
+									widthAt(0, i).value *= 1+deltaWidth/unfixedRefWidth;
+								else widthAt(0, i).value += deltaWidth*([[_columnDescriptors objectAtIndex:i] invasivity]/unfixedInvasivity);
+	                        }
+	                    }
+					}
 				}
-			}
 	
 	// views are as wide as the cells
 //	for (NSUInteger span = 1; span <= colsCount; ++span)
@@ -223,8 +227,10 @@ typedef struct ConstrainedFloat {
 //		}
 	
 	// get cell sizes and row heights
-	NSSize sizes[rowsCount][colsCount];
-	memset(sizes, 0, sizeof(NSSize)*rowsCount*colsCount);
+	std::vector<NSSize> sizes(rowsCount*colsCount, NSZeroSize);
+	auto sizeAt = [&](NSUInteger rowIndex, NSUInteger colIndex) -> NSSize& {
+		return sizes[rowIndex*colsCount + colIndex];
+	};
 //	CGFloat rowHeights[rowsCount];
 	for (NSUInteger r = 0; r < rowsCount; ++r) {
 		NSArray* row = [_rows objectAtIndex:r];
@@ -236,10 +242,10 @@ typedef struct ConstrainedFloat {
 			
 			CGFloat spannedWidth = -_separation.width;
 			for (NSUInteger i = colNumber; i < colNumber+span; ++i)
-				spannedWidth += widths[0][i].value + _separation.width;
+				spannedWidth += widthAt(0, i).value + _separation.width;
 			
-			sizes[r][colNumber] = [cell filled]? NSMakeSize(spannedWidth, [cell optimalSizeForWidth:spannedWidth+[cell sizeAdjust].size.width].height) : [cell optimalSizeForWidth:spannedWidth+[cell sizeAdjust].size.width];
-			rowHeight = std::max(rowHeight, sizes[r][colNumber].height);
+			sizeAt(r, colNumber) = [cell filled]? NSMakeSize(spannedWidth, [cell optimalSizeForWidth:spannedWidth+[cell sizeAdjust].size.width].height) : [cell optimalSizeForWidth:spannedWidth+[cell sizeAdjust].size.width];
+			rowHeight = std::max(rowHeight, sizeAt(r, colNumber).height);
 //			rowHeights[l] = std::max(rowHeights[l], sizes[l][i].height);
 	//		NSSize test = sizes[r][colNumber];
 			
@@ -248,10 +254,10 @@ typedef struct ConstrainedFloat {
 		colNumber = 0;
 		for (N2CellDescriptor* cell in row) {
 			NSUInteger span = [cell colSpan];
-			if ([cell filled])
-				sizes[r][colNumber].height = rowHeight;
-			colNumber += span;
-		}
+				if ([cell filled])
+					sizeAt(r, colNumber).height = rowHeight;
+				colNumber += span;
+			}
 				
 	}
 	
@@ -267,12 +273,12 @@ typedef struct ConstrainedFloat {
 	for (NSUInteger r = 0; r < rowsCount; ++r) {
 		NSMutableArray* resultRowSizes = [NSMutableArray arrayWithCapacity:colsCount];
 		for (NSUInteger i = 0; i < colsCount; ++i)
-			[resultRowSizes addObject:[NSValue valueWithSize:sizes[r][i]]];
+			[resultRowSizes addObject:[NSValue valueWithSize:sizeAt(r, i)]];
 		[resultSizes addObject:resultRowSizes];
 	}
 	NSMutableArray* resultColWidths = [NSMutableArray arrayWithCapacity:colsCount];
 	for (NSUInteger i = 0; i < colsCount; ++i)
-		[resultColWidths addObject:[NSNumber numberWithFloat:widths[0][i].value]];
+		[resultColWidths addObject:[NSNumber numberWithFloat:widthAt(0, i).value]];
 	return [NSArray arrayWithObjects: resultColWidths, resultSizes, NULL];
 }
 
@@ -302,17 +308,20 @@ typedef struct ConstrainedFloat {
 	NSSize size = [_view frame].size;
 	
 	NSArray* sizesData = [self computeSizesForSize:size];
-	CGFloat colWidth[colsCount];
+	std::vector<CGFloat> colWidth(colsCount);
 	for (NSUInteger i = 0; i < colsCount; ++i)
 		colWidth[i] = [[[sizesData objectAtIndex:0] objectAtIndex:i] floatValue];
-	NSSize sizes[rowsCount][colsCount];
-	CGFloat rowHeights[rowsCount];
+	std::vector<NSSize> sizes(rowsCount*colsCount, NSZeroSize);
+	std::vector<CGFloat> rowHeights(rowsCount, 0);
+	auto sizeAt = [&](NSUInteger rowIndex, NSUInteger colIndex) -> NSSize& {
+		return sizes[rowIndex*colsCount + colIndex];
+	};
 	for (NSUInteger r = 0; r < rowsCount; ++r) {
 		NSArray* rowsizes = [[sizesData objectAtIndex:1] objectAtIndex:r];
 		rowHeights[r] = 0;
 		for (NSUInteger i = 0; i < colsCount; ++i) {
-			sizes[r][i] = [[rowsizes objectAtIndex:i] sizeValue];
-			rowHeights[r] = std::max(rowHeights[r], sizes[r][i].height);
+			sizeAt(r, i) = [[rowsizes objectAtIndex:i] sizeValue];
+			rowHeights[r] = std::max(rowHeights[r], sizeAt(r, i).height);
 		}
 	}
 		
@@ -334,7 +343,7 @@ typedef struct ConstrainedFloat {
 				spannedWidth += colWidth[i]+_separation.width;
 			
 			NSPoint origin = NSMakePoint(x, y);
-			NSSize size = sizes[r][colNumber];
+				NSSize size = sizeAt(r, colNumber);
 			
 			if ([cell filled])
 				size.width = spannedWidth;
@@ -410,17 +419,20 @@ typedef struct ConstrainedFloat {
 	}
 		
 	NSArray* sizesData = [self computeSizesForWidth:widthWithMarginAndBorder];
-	CGFloat colWidth[colsCount];
+	std::vector<CGFloat> colWidth(colsCount);
 	for (NSUInteger i = 0; i < colsCount; ++i)
 		colWidth[i] = [[[sizesData objectAtIndex:0] objectAtIndex:i] floatValue];
-	NSSize sizes[rowsCount][colsCount];
-	CGFloat rowHeights[rowsCount];
+	std::vector<NSSize> sizes(rowsCount*colsCount, NSZeroSize);
+	std::vector<CGFloat> rowHeights(rowsCount, 0);
+	auto sizeAt = [&](NSUInteger rowIndex, NSUInteger colIndex) -> NSSize& {
+		return sizes[rowIndex*colsCount + colIndex];
+	};
 	for (NSUInteger r = 0; r < rowsCount; ++r) {
 		NSArray* rowsizes = [[sizesData objectAtIndex:1] objectAtIndex:r];
 		rowHeights[r] = 0;
 		for (NSUInteger i = 0; i < colsCount; ++i) {
-			sizes[r][i] = [[rowsizes objectAtIndex:i] sizeValue];
-			rowHeights[r] = std::max(rowHeights[r], sizes[r][i].height);
+			sizeAt(r, i) = [[rowsizes objectAtIndex:i] sizeValue];
+			rowHeights[r] = std::max(rowHeights[r], sizeAt(r, i).height);
 		}
 	}
 	

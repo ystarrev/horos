@@ -3,7 +3,7 @@
  
  Horos is free software: you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
- the Free Software Foundation, Êversion 3 of the License.
+ the Free Software Foundation, ÃŠversion 3 of the License.
  
  The Horos Project was based originally upon the OsiriX Project which at the time of
  the code fork was licensed as a LGPL project.  However, not all of the the source-code
@@ -15,24 +15,24 @@
  
  Horos is distributed in the hope that it will be useful, but
  WITHOUT ANY WARRANTY EXPRESS OR IMPLIED, INCLUDING ANY WARRANTY OF
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÊSee the
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE OR USE. ÃŠSee the
  GNU Lesser General Public License for more details.
  
  You should have received a copy of the GNU Lesser General Public License
- along with Horos. ÊIf not, see http://www.gnu.org/licenses/lgpl.html
+ along with Horos. ÃŠIf not, see http://www.gnu.org/licenses/lgpl.html
  
  Prior versions of this file were published by the OsiriX team pursuant to
  the below notice and licensing protocol.
  ============================================================================
- Program: Ê OsiriX
- ÊCopyright (c) OsiriX Team
- ÊAll rights reserved.
- ÊDistributed under GNU - LGPL
- Ê
- ÊSee http://www.osirix-viewer.com/copyright.html for details.
- Ê Ê This software is distributed WITHOUT ANY WARRANTY; without even
- Ê Ê the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
- Ê Ê PURPOSE.
+ Program: ÃŠ OsiriX
+ ÃŠCopyright (c) OsiriX Team
+ ÃŠAll rights reserved.
+ ÃŠDistributed under GNU - LGPL
+ ÃŠ
+ ÃŠSee http://www.osirix-viewer.com/copyright.html for details.
+ ÃŠ ÃŠ This software is distributed WITHOUT ANY WARRANTY; without even
+ ÃŠ ÃŠ the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ ÃŠ ÃŠ PURPOSE.
  ============================================================================*/
 
 #define MAX4D 500
@@ -87,7 +87,7 @@ enum
 
 /** \brief Window Controller for 2D Viewer*/
 
-@interface ViewerController : OSIWindowController  <NSWindowDelegate, NSSplitViewDelegate, NSToolbarDelegate>
+@interface ViewerController : OSIWindowController  <NSWindowDelegate, NSSplitViewDelegate, NSToolbarDelegate, NSMenuItemValidation, NSToolbarItemValidation>
 {
 	NSRecursiveLock	*roiLock;
 	NSConditionLock *flipDataThread, *convThread;
@@ -763,7 +763,6 @@ enum
 
 - (void) showCurrentThumbnail:(id) sender;
 
-#ifndef OSIRIX_LIGHT
 /** ReSort the images displayed according to IMAGE Table field */
 - (BOOL) sortSeriesByValue: (NSString*) key ascending: (BOOL) ascending;
 
@@ -778,7 +777,6 @@ enum
 
 /** Action to open SRViewer (Surface Rendering) */
 - (IBAction) SRViewer:(id) sender;
-#endif
 
 /** Action to export as JPEG */
 - (void) exportJPEG:(id) sender;
@@ -809,13 +807,11 @@ enum
 - (IBAction) resetImage:(id) sender;
 + (NSArray*) defaultROINames;
 + (void) setDefaultROINames: (NSArray*) names;
-#ifndef OSIRIX_LIGHT
 - (IBAction) endExportDICOMFileSettings:(id) sender;
 - (IBAction) exportAllImages:(NSString*) seriesName;
 - (float) computeVolume:(ROI*) selectedRoi points:(NSMutableArray**) pts error:(NSString**) error;
 - (float) computeVolume:(ROI*) selectedRoi points:(NSMutableArray**) pts generateMissingROIs:(BOOL) generateMissingROIs error:(NSString**) error;
 - (float) computeVolume:(ROI*) selectedRoi points:(NSMutableArray**) pts generateMissingROIs:(BOOL) generateMissingROIs generatedROIs:(NSMutableArray*) generatedROIs computeData:(NSMutableDictionary*) data error:(NSString**) error;
-#endif
 - (IBAction) keyImageCheckBox:(id) sender;
 - (IBAction) keyImageDisplayButton:(id) sender;
 - (void) adjustKeyImage;
@@ -862,10 +858,8 @@ enum
 - (void) ActivateBlending:(ViewerController*) bC;
 - (void) setFusionMode:(long) m;
 - (short) curMovieIndex;
-#ifndef OSIRIX_LIGHT
 //- (id) findiChatButton;
 - (IBAction) Panel3D:(id) sender;
-#endif
 - (void) convertPETtoSUV;
 - (IBAction) fullScreenMenu:(id) sender;
 - (int) imageIndexOfROI:(ROI*) c;
@@ -919,7 +913,6 @@ enum
 * @param radius structuringElementRadius for the filter
 * @param sendNotification Will post an OsirixROIChangeNotification notification if YES
 */
-#ifndef OSIRIX_LIGHT
 - (void) applyMorphology: (NSArray*) rois action:(NSString*) action	radius: (long) radius sendNotification: (BOOL) sendNotification;
 
 /** Set the structuring radius for the brush ROI morpho filter */
@@ -936,7 +929,6 @@ enum
 *  Filters are: erode, dilate, open, close 
 */
 - (IBAction) morphoSelectedBrushROI: (id) sender;
-#endif
 
 /** Create a new ROI between two ROI
 * Converts both ROIs into polygons, after a marching square isocontour
@@ -971,17 +963,13 @@ enum
 *  Each point on the moving viewer needs a twin on the fixed viewer.
 *  Two points are twin brothers if and only if they have the same name.
 */
-#ifndef OSIRIX_LIGHT
 - (void) computeRegistrationWithMovingViewer:(ViewerController*) movingViewer;
-#endif
 
 /** Returns a new viewer with the current series resampled to match the Orientation of series in the other viewer
 *  Both series must be from the same study to insure matching imageOrientationPatient and imagePositionPatient
 *  @param movingViewer  The ViewerController to resample the series to match
 */
-#ifndef OSIRIX_LIGHT
 - (ViewerController*) resampleSeries:(ViewerController*) movingViewer;
-#endif
 
 #pragma mark-
 #pragma mark Key Objects
@@ -1052,7 +1040,6 @@ enum
 /** Returns the OrthogonalMPRViewer for this ViewerController; creating one if necessary */
 - (OrthogonalMPRViewer *)openOrthogonalMPRViewer;
 
-#ifndef OSIRIX_LIGHT
 
 /** Returns the VRController for this ViewerController; creating one if necessary
 * See VRController for modes
@@ -1076,7 +1063,6 @@ enum
 /** Action to open the CPRViewer */
 - (id)openCPRViewer;
 - (IBAction)cprViewer:(id)sender;
-#endif
 
 /** Current SeriesView */
 - (SeriesView *) seriesView;
@@ -1102,9 +1088,7 @@ enum
 /** Deprecated
 * Calcium Scoring moved to a plugin
 */
-#ifndef OSIRIX_LIGHT
 - (IBAction)calciumScoring:(id)sender;
-#endif
 
 #pragma mark-
 #pragma mark Centerline
@@ -1130,10 +1114,8 @@ enum
 
 - (void) turnOffSyncSeriesBetweenStudies:(id) sender;
 
-#ifndef OSIRIX_LIGHT
 - (NSDictionary*) exportDICOMFileInt:(int)screenCapture withName:(NSString*)name;
 - (NSDictionary*) exportDICOMFileInt:(int)screenCapture withName:(NSString*)name allViewers: (BOOL) allViewers;
-#endif
 
 #pragma mark-
 #pragma mark 12 Bit

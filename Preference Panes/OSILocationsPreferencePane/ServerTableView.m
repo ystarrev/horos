@@ -40,14 +40,14 @@
 #import "OSILocationsPreferencePanePref.h"
 
 @implementation ServerTableView
-- (NSDragOperation)draggingSourceOperationMaskForLocal:(BOOL)flag
+- (NSDragOperation)draggingSession:(NSDraggingSession *)session sourceOperationMaskForDraggingContext:(NSDraggingContext)context
 {
-	if( !flag)
+	if( context == NSDraggingContextOutsideApplication)
 	{
 		// link for external dragged URLs
 		return NSDragOperationLink;
 	}
-	return [super draggingSourceOperationMaskForLocal:flag];
+	return NSDragOperationEvery;
 }
 
 - (void) keyDown: (NSEvent *) event

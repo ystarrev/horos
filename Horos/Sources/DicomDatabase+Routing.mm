@@ -364,7 +364,6 @@
 
 -(void) __applyRoutingRules:(NSArray*)autoroutingRules toImages:(NSArray*)newImagesOriginal
 {
-#ifndef OSIRIX_LIGHT
     if (!autoroutingRules)
         autoroutingRules = [[NSUserDefaults standardUserDefaults] arrayForKey:@"AUTOROUTINGDICTIONARY"];
     
@@ -583,7 +582,6 @@
      
      [splash close];
      [splash autorelease];*/
-#endif
 }
 
 

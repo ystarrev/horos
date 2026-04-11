@@ -50,12 +50,10 @@
 // PURPOSE.
 // =========================================================================
 #ifdef _STEREO_VISION_
-dddd
 
 #import "VRView+StereoVision.h"
 
 
-#define USE3DCONNEXION 1
 
 #import "VRView.h"
 #import "DCMCursor.h"
@@ -75,7 +73,6 @@ dddd
 #import "BrowserController.h"
 #import "DICOMExport.h"
 #import "DefaultsOsiriX.h" // for HotKeys
-//#import "IChatTheatreDelegate.h"
 #import "DicomImage.h"
 #import "Notifications.h"
 
@@ -111,17 +108,7 @@ dddd
 
 #include <CoreVideo/CVPixelBuffer.h>
 
-//#import <InstantMessage/IMService.h>
-//#import <InstantMessage/IMAVManager.h>
 
-
-#if USE3DCONNEXION
-#include <3DConnexionClient/ConnexionClientAPI.h>
-extern "C"
-{
-    extern OSErr InstallConnexionHandlers(ConnexionMessageHandlerProc messageHandler, ConnexionAddedHandlerProc addedHandler, ConnexionRemovedHandlerProc removedHandler) __attribute__((weak_import));
-}
-#endif
 
 extern "C"
 {
@@ -138,7 +125,6 @@ extern int dontRenderVolumeRenderingOsiriX;	// See vtkHorosFixedPointVolumeRayCa
 
 static NSRecursiveLock *drawLock = nil;
 static unsigned short *linearOpacity = nil;
-static VRView	*snVRView = nil;
 
 static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *calldata)
 {
@@ -266,7 +252,6 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
         else
             lowResLODFactor = 2.5;
         
-        [[IMService notificationCenter] addObserver:self selector:@selector(_iChatStateChanged:) name:IMAVManagerStateChangedNotification object:nil];
     }
     
     return self;
@@ -987,8 +972,6 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 #pragma mark Mouse mouvements
 - (void)mouseDragged:(NSEvent *)theEvent
 {
-    //snVRView = self;
-    
     //NSLog(@"Mouse dragged!!");
     
     _hasChanged = YES;

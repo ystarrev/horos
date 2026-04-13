@@ -1,0 +1,49 @@
+#ifndef HOROS_MODERN_DCMTK_BRIDGE_H
+#define HOROS_MODERN_DCMTK_BRIDGE_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct HorosModernDCMTKBasicMetadata {
+    char* transferSyntaxUID;
+    char* privateInformationCreatorUID;
+    char* specificCharacterSet;
+    char* sopClassUID;
+    char* imageType;
+    char* sopInstanceUID;
+    char* modality;
+    char* acquisitionDate;
+    char* contentDate;
+    char* seriesDate;
+    char* studyDate;
+    char* acquisitionTime;
+    char* contentTime;
+    char* seriesTime;
+    char* studyTime;
+    char* scanOptions;
+    char* echoTime;
+    char* instanceNumber;
+    char* seriesNumber;
+    char* seriesInstanceUID;
+    char* studyInstanceUID;
+    char* studyID;
+    unsigned short rows;
+    unsigned short columns;
+    int numberOfFrames;
+} HorosModernDCMTKBasicMetadata;
+
+int HorosModernDCMTKIsDICOMFile(const char* path);
+char* HorosModernDCMTKCopySpecificCharacterSet(const char* path);
+char* HorosModernDCMTKCopyField(const char* path, const char* fieldName);
+int HorosModernDCMTKGetDecompressionInfo(const char* path, int* isEncapsulated, unsigned short* rows, unsigned short* columns, char** modality, char** sopClassUID);
+int HorosModernDCMTKGetBasicMetadata(const char* path, HorosModernDCMTKBasicMetadata* metadata);
+char* HorosModernDCMTKCopyStructuredReportHTML(const char* path);
+void HorosModernDCMTKFreeBasicMetadata(HorosModernDCMTKBasicMetadata* metadata);
+void HorosModernDCMTKFreeString(char* value);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

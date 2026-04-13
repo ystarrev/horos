@@ -13504,10 +13504,11 @@ constrainSplitPosition:(CGFloat)proposedPosition
     {
         NSManagedObject *multiFrameObject = [loadList objectAtIndex:0];
         int numberOfFrames = [[multiFrameObject valueForKey:@"numberOfFrames"] intValue];
+        NSString *resolvedPath = [multiFrameObject respondsToSelector:@selector(completePathResolved)] ? [multiFrameObject valueForKey:@"completePathResolved"] : [multiFrameObject valueForKey:@"completePath"];
         
         for (unsigned long i = 0; i < numberOfFrames; i++)
         {
-            DCMPix *dcmPix = [[DCMPix alloc] initWithPath:[multiFrameObject valueForKey:@"completePath"] :i :numberOfFrames :nil :i :[[multiFrameObject valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj:multiFrameObject];
+            DCMPix *dcmPix = [[DCMPix alloc] initWithPath:resolvedPath :i :numberOfFrames :nil :i :[[multiFrameObject valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj:multiFrameObject];
             
             if (dcmPix)
             {
@@ -13522,7 +13523,8 @@ constrainSplitPosition:(CGFloat)proposedPosition
         for (unsigned long i = 0; i < [loadList count]; i++)
         {
             NSManagedObject *imageObject = [loadList objectAtIndex:i];
-            DCMPix *dcmPix = [[DCMPix alloc] initWithPath:[imageObject valueForKey:@"completePath"] :i :[loadList count] :nil :[[imageObject valueForKey:@"frameID"] intValue] :[[imageObject valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj:imageObject];
+            NSString *resolvedPath = [imageObject respondsToSelector:@selector(completePathResolved)] ? [imageObject valueForKey:@"completePathResolved"] : [imageObject valueForKey:@"completePath"];
+            DCMPix *dcmPix = [[DCMPix alloc] initWithPath:resolvedPath :i :[loadList count] :nil :[[imageObject valueForKey:@"frameID"] intValue] :[[imageObject valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj:imageObject];
             
             if (dcmPix)
             {

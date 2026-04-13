@@ -42,7 +42,9 @@
 #import "DicomStudy.h"
 #import "SRAnnotation.h"
 #import "N2Debug.h"
+#import "ModernDCMTKBridge.h"
 
+#include <dlfcn.h>
 #include "osconfig.h"
 #include "dcfilefo.h"
 #include "dcdeftag.h"
@@ -60,14 +62,72 @@
 #include <NrrdIO.h> // part of ITK
 #endif
 
+#include <string.h>
 #include <string>
 
 extern NSRecursiveLock *PapyrusLock;
+
+typedef int (*HorosModernDCMTKIsDICOMFileFn)(const char* path);
+typedef char* (*HorosModernDCMTKCopySpecificCharacterSetFn)(const char* path);
+typedef char* (*HorosModernDCMTKCopyFieldFn)(const char* path, const char* fieldName);
+typedef int (*HorosModernDCMTKGetBasicMetadataFn)(const char* path, HorosModernDCMTKBasicMetadata* metadata);
+typedef void (*HorosModernDCMTKFreeBasicMetadataFn)(HorosModernDCMTKBasicMetadata* metadata);
+typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
+
+static void* HorosModernDCMTKBridgeHandle()
+{
+    static void* handle = nullptr;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSString *bridgePath = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"libHorosModernDCMTKBridge.dylib"];
+        handle = dlopen(bridgePath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+        if (handle == nullptr)
+            NSLog(@"Modern DCMTK bridge unavailable at %@: %s", bridgePath, dlerror());
+    });
+    return handle;
+}
+
+template <typename FunctionType>
+static FunctionType HorosModernDCMTKSymbol(const char* name)
+{
+    void* handle = HorosModernDCMTKBridgeHandle();
+    if (handle == nullptr)
+        return nullptr;
+    return reinterpret_cast<FunctionType>(dlsym(handle, name));
+}
+
+static NSString* HorosModernDCMTKCopiedString(char* value)
+{
+    if (value == nullptr)
+        return nil;
+
+    HorosModernDCMTKFreeStringFn freeStringFn = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    NSString *string = [NSString stringWithCString:value encoding:NSISOLatin1StringEncoding];
+    if (freeStringFn)
+        freeStringFn(value);
+    return string;
+}
+
+static NSString* HorosModernDCMTKBridgeString(const char* value, NSStringEncoding encoding)
+{
+    if (value == nullptr)
+        return nil;
+    return [NSString stringWithCString:value encoding:encoding];
+}
 
 @implementation DicomFile (DicomFileDCMTKCategory)
 
 + (NSArray*) getEncodingArrayForFile: (NSString*) file
 {
+    HorosModernDCMTKCopySpecificCharacterSetFn bridgeFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopySpecificCharacterSetFn>("HorosModernDCMTKCopySpecificCharacterSet");
+    if (bridgeFn)
+    {
+        NSString *characterSet = HorosModernDCMTKCopiedString(bridgeFn(file.UTF8String));
+        if (characterSet.length > 0)
+            return [characterSet componentsSeparatedByString:@"\\"];
+        return [NSArray arrayWithObject: @"ISO_IR 100"];
+    }
+
     DcmFileFormat fileformat;
     NSArray *encodingArray = nil;
     
@@ -89,6 +149,10 @@ extern NSRecursiveLock *PapyrusLock;
 }
 
 + (BOOL) isDICOMFileDCMTK:(NSString *) file{
+    HorosModernDCMTKIsDICOMFileFn bridgeFn = HorosModernDCMTKSymbol<HorosModernDCMTKIsDICOMFileFn>("HorosModernDCMTKIsDICOMFile");
+    if (bridgeFn)
+        return bridgeFn(file.UTF8String) != 0;
+
     DcmFileFormat fileformat;
     OFCondition status = fileformat.loadFile([file UTF8String]);
     if (status.good())
@@ -147,6 +211,14 @@ extern NSRecursiveLock *PapyrusLock;
 {
     if( field.length <= 0)
         return nil;
+
+    HorosModernDCMTKCopyFieldFn bridgeFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyFieldFn>("HorosModernDCMTKCopyField");
+    if (bridgeFn)
+    {
+        NSString *value = HorosModernDCMTKCopiedString(bridgeFn(path.UTF8String, field.UTF8String));
+        if (value)
+            return value;
+    }
     
     DcmTagKey dcmkey(0xffff,0xffff);
     const DcmDataDictionary& globalDataDict = dcmDataDict.rdlock();
@@ -302,6 +374,13 @@ extern NSRecursiveLock *PapyrusLock;
     NSString *echoTime = nil;
     const char *string = NULL;
     NSMutableArray *imageTypeArray = nil;
+    HorosModernDCMTKBasicMetadata bridgeMetadata;
+    memset(&bridgeMetadata, 0, sizeof(bridgeMetadata));
+    BOOL hasBridgeMetadata = NO;
+    HorosModernDCMTKGetBasicMetadataFn bridgeFn = HorosModernDCMTKSymbol<HorosModernDCMTKGetBasicMetadataFn>("HorosModernDCMTKGetBasicMetadata");
+    HorosModernDCMTKFreeBasicMetadataFn freeBridgeMetadataFn = HorosModernDCMTKSymbol<HorosModernDCMTKFreeBasicMetadataFn>("HorosModernDCMTKFreeBasicMetadata");
+    if (bridgeFn)
+        hasBridgeMetadata = bridgeFn(filePath.UTF8String, &bridgeMetadata) != 0;
     
     DcmFileFormat fileformat;
     [PapyrusLock lock];
@@ -318,8 +397,10 @@ extern NSRecursiveLock *PapyrusLock;
         DcmDataset *dataset = fileformat.getDataset();
         
         //TransferSyntax
-        if (fileformat.getMetaInfo()->findAndGetString(DCM_TransferSyntaxUID, string, OFFalse).good() && string != NULL
-            && [[NSString stringWithCString:string encoding: NSASCIIStringEncoding] isEqualToString:@"1.2.840.10008.1.2.4.100"])
+        NSString *transferSyntaxUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.transferSyntaxUID, NSASCIIStringEncoding) : nil;
+        if (transferSyntaxUID == nil && fileformat.getMetaInfo()->findAndGetString(DCM_TransferSyntaxUID, string, OFFalse).good() && string != NULL)
+            transferSyntaxUID = [NSString stringWithCString:string encoding:NSASCIIStringEncoding];
+        if ([transferSyntaxUID isEqualToString:@"1.2.840.10008.1.2.4.100"])
         {
             fileType = [@"DICOMMPEG2" retain];
             [dicomElements setObject:fileType forKey:@"fileType"];
@@ -331,14 +412,20 @@ extern NSRecursiveLock *PapyrusLock;
         }
         
         // PrivateInformationCreatorUID
-        if (fileformat.getMetaInfo()->findAndGetString(DCM_PrivateInformationCreatorUID, string, OFFalse).good() && string != NULL) {
-            [dicomElements setObject:[NSString stringWithCString:string encoding:NSISOLatin1StringEncoding] forKey:@"PrivateInformationCreatorUID"];
+        NSString *privateInformationCreatorUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.privateInformationCreatorUID, NSISOLatin1StringEncoding) : nil;
+        if (privateInformationCreatorUID == nil && fileformat.getMetaInfo()->findAndGetString(DCM_PrivateInformationCreatorUID, string, OFFalse).good() && string != NULL)
+            privateInformationCreatorUID = [NSString stringWithCString:string encoding:NSISOLatin1StringEncoding];
+        if (privateInformationCreatorUID) {
+            [dicomElements setObject:privateInformationCreatorUID forKey:@"PrivateInformationCreatorUID"];
         }
         
         //Character Set
-        if (dataset->findAndGetString(DCM_SpecificCharacterSet, string, OFFalse).good() && string != NULL)
+        NSString *specificCharacterSet = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.specificCharacterSet, NSISOLatin1StringEncoding) : nil;
+        if (specificCharacterSet == nil && dataset->findAndGetString(DCM_SpecificCharacterSet, string, OFFalse).good() && string != NULL)
+            specificCharacterSet = [NSString stringWithCString:string encoding:NSISOLatin1StringEncoding];
+        if (specificCharacterSet)
         {
-            NSArray	*c = [[NSString stringWithCString:string encoding: NSISOLatin1StringEncoding] componentsSeparatedByString:@"\\"];
+            NSArray	*c = [specificCharacterSet componentsSeparatedByString:@"\\"];
             
             if( [c count] >= 10) NSLog( @"Encoding number >= 10 ???");
             
@@ -479,16 +566,21 @@ extern NSRecursiveLock *PapyrusLock;
         
         //SOPClass
         NSString *sopClassUID = nil;
-        if (dataset->findAndGetString(DCM_SOPClassUID, string, OFFalse).good() && string != NULL)
+        sopClassUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.sopClassUID, NSASCIIStringEncoding) : nil;
+        if (sopClassUID == nil && dataset->findAndGetString(DCM_SOPClassUID, string, OFFalse).good() && string != NULL)
+            sopClassUID = [NSString stringWithCString:string encoding:NSASCIIStringEncoding];
+        if (sopClassUID)
         {
-            [dicomElements setObject:[NSString stringWithCString:string encoding: NSASCIIStringEncoding] forKey:@"SOPClassUID"];
-            sopClassUID = [NSString stringWithCString: string encoding: NSASCIIStringEncoding] ;
+            [dicomElements setObject:sopClassUID forKey:@"SOPClassUID"];
         }
         
         //Image Type
-        if (dataset->findAndGetString(DCM_ImageType, string, OFFalse).good() && string != NULL)
+        NSString *imageTypeString = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.imageType, NSISOLatin1StringEncoding) : nil;
+        if (imageTypeString == nil && dataset->findAndGetString(DCM_ImageType, string, OFFalse).good() && string != NULL)
+            imageTypeString = [NSString stringWithCString:string encoding:NSISOLatin1StringEncoding];
+        if (imageTypeString)
         {
-            imageTypeArray = [NSMutableArray arrayWithArray: [[NSString stringWithCString:string encoding: NSISOLatin1StringEncoding] componentsSeparatedByString:@"\\"]];
+            imageTypeArray = [NSMutableArray arrayWithArray:[imageTypeString componentsSeparatedByString:@"\\"]];
             
             if( [imageTypeArray count] > 2)
             {
@@ -502,10 +594,11 @@ extern NSRecursiveLock *PapyrusLock;
         if( imageType) [dicomElements setObject:imageType forKey:@"imageType"];
         
         //SOPInstanceUID
-        if (dataset->findAndGetString(DCM_SOPInstanceUID, string, OFFalse).good() && string != NULL)
-        {
-            SOPUID = [[NSString stringWithCString:string encoding: NSISOLatin1StringEncoding] retain];
-        }
+        NSString *sopInstanceUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.sopInstanceUID, NSISOLatin1StringEncoding) : nil;
+        if (sopInstanceUID == nil && dataset->findAndGetString(DCM_SOPInstanceUID, string, OFFalse).good() && string != NULL)
+            sopInstanceUID = [NSString stringWithCString:string encoding:NSISOLatin1StringEncoding];
+        if (sopInstanceUID)
+            SOPUID = [sopInstanceUID retain];
         else
             SOPUID = nil;
         if (SOPUID) [dicomElements setObject:SOPUID forKey:@"SOPUID"];
@@ -527,10 +620,11 @@ extern NSRecursiveLock *PapyrusLock;
         [dicomElements setObject:study forKey: @"studyDescription"];
         
         //Modality
-        if (dataset->findAndGetString(DCM_Modality, string, OFFalse).good() && string != NULL)
-        {
-            Modality = [[NSString alloc] initWithCString:string encoding: NSASCIIStringEncoding];
-        }
+        NSString *modalityString = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.modality, NSASCIIStringEncoding) : nil;
+        if (modalityString == nil && dataset->findAndGetString(DCM_Modality, string, OFFalse).good() && string != NULL)
+            modalityString = [NSString stringWithCString:string encoding:NSASCIIStringEncoding];
+        if (modalityString)
+            Modality = [[NSString alloc] initWithString:modalityString];
         else
             Modality = [[NSString alloc] initWithString:@"OT"];
         [dicomElements setObject:Modality forKey:@"modality"];
@@ -538,7 +632,15 @@ extern NSRecursiveLock *PapyrusLock;
         
         //Acquistion Date
         NSString *studyDate = nil;
-        if (dataset->findAndGetString(DCM_AcquisitionDate, string, OFFalse).good() && string != NULL && strlen( string) > 0)
+        if (hasBridgeMetadata && bridgeMetadata.acquisitionDate != NULL && bridgeMetadata.acquisitionDate[0] != '\0')
+            studyDate = HorosModernDCMTKBridgeString(bridgeMetadata.acquisitionDate, NSASCIIStringEncoding);
+        else if (hasBridgeMetadata && bridgeMetadata.contentDate != NULL && bridgeMetadata.contentDate[0] != '\0')
+            studyDate = HorosModernDCMTKBridgeString(bridgeMetadata.contentDate, NSASCIIStringEncoding);
+        else if (hasBridgeMetadata && bridgeMetadata.seriesDate != NULL && bridgeMetadata.seriesDate[0] != '\0')
+            studyDate = HorosModernDCMTKBridgeString(bridgeMetadata.seriesDate, NSASCIIStringEncoding);
+        else if (hasBridgeMetadata && bridgeMetadata.studyDate != NULL && bridgeMetadata.studyDate[0] != '\0')
+            studyDate = HorosModernDCMTKBridgeString(bridgeMetadata.studyDate, NSASCIIStringEncoding);
+        else if (dataset->findAndGetString(DCM_AcquisitionDate, string, OFFalse).good() && string != NULL && strlen( string) > 0)
             studyDate = [NSString stringWithCString:string encoding: NSASCIIStringEncoding];
         
         else if (dataset->findAndGetString(DCM_ContentDate, string, OFFalse).good() && string != NULL && strlen( string) > 0)
@@ -553,7 +655,15 @@ extern NSRecursiveLock *PapyrusLock;
         if( [studyDate length] != 8) studyDate = [studyDate stringByReplacingOccurrencesOfString:@"." withString:@""];
         
         NSString* studyTime = nil;
-        if (dataset->findAndGetString(DCM_AcquisitionTime, string, OFFalse).good() && string != NULL && strlen( string) > 0 && atof( string) > 0)
+        if (hasBridgeMetadata && bridgeMetadata.acquisitionTime != NULL && bridgeMetadata.acquisitionTime[0] != '\0' && atof(bridgeMetadata.acquisitionTime) > 0)
+            studyTime = HorosModernDCMTKBridgeString(bridgeMetadata.acquisitionTime, NSASCIIStringEncoding);
+        else if (hasBridgeMetadata && bridgeMetadata.contentTime != NULL && bridgeMetadata.contentTime[0] != '\0' && atof(bridgeMetadata.contentTime) > 0)
+            studyTime = HorosModernDCMTKBridgeString(bridgeMetadata.contentTime, NSASCIIStringEncoding);
+        else if (hasBridgeMetadata && bridgeMetadata.seriesTime != NULL && bridgeMetadata.seriesTime[0] != '\0' && atof(bridgeMetadata.seriesTime) > 0)
+            studyTime = HorosModernDCMTKBridgeString(bridgeMetadata.seriesTime, NSASCIIStringEncoding);
+        else if (hasBridgeMetadata && bridgeMetadata.studyTime != NULL && bridgeMetadata.studyTime[0] != '\0' && atof(bridgeMetadata.studyTime) > 0)
+            studyTime = HorosModernDCMTKBridgeString(bridgeMetadata.studyTime, NSASCIIStringEncoding);
+        else if (dataset->findAndGetString(DCM_AcquisitionTime, string, OFFalse).good() && string != NULL && strlen( string) > 0 && atof( string) > 0)
             studyTime = [NSString stringWithCString:string encoding: NSASCIIStringEncoding];
         
         else if (dataset->findAndGetString(DCM_ContentTime, string, OFFalse).good() && string != NULL && strlen( string) > 0 && atof( string) > 0)
@@ -671,8 +781,12 @@ extern NSRecursiveLock *PapyrusLock;
         
         
         //Cardiac Time
-        if (dataset->findAndGetString(DCM_ScanOptions, string, OFFalse).good() && string != NULL){
-            if( strlen( string) >= 4)
+        NSString *scanOptions = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.scanOptions, NSASCIIStringEncoding) : nil;
+        if (scanOptions == nil && dataset->findAndGetString(DCM_ScanOptions, string, OFFalse).good() && string != NULL)
+            scanOptions = [NSString stringWithCString:string encoding:NSASCIIStringEncoding];
+        if (scanOptions){
+            string = [scanOptions cStringUsingEncoding:NSASCIIStringEncoding];
+            if( string != NULL && strlen( string) >= 4)
             {
                 if( string[ 0] == 'T' && string[ 1] == 'P')
                 {
@@ -712,15 +826,19 @@ extern NSRecursiveLock *PapyrusLock;
         //		}
         
         //Echo Time
-        if (dataset->findAndGetString(DCM_EchoTime, string, OFFalse).good() && string != NULL)
-        {
-            echoTime = [[[NSString alloc] initWithCString:string encoding: NSASCIIStringEncoding] autorelease];
-        }
+        NSString *echoTimeString = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.echoTime, NSASCIIStringEncoding) : nil;
+        if (echoTimeString == nil && dataset->findAndGetString(DCM_EchoTime, string, OFFalse).good() && string != NULL)
+            echoTimeString = [NSString stringWithCString:string encoding:NSASCIIStringEncoding];
+        if (echoTimeString)
+            echoTime = echoTimeString;
         
         //Image Number
-        if (dataset->findAndGetString(DCM_InstanceNumber, string, OFFalse).good() && string != NULL)
+        NSString *instanceNumber = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.instanceNumber, NSASCIIStringEncoding) : nil;
+        if (instanceNumber == nil && dataset->findAndGetString(DCM_InstanceNumber, string, OFFalse).good() && string != NULL)
+            instanceNumber = [NSString stringWithCString:string encoding:NSASCIIStringEncoding];
+        if (instanceNumber)
         {
-            int val = [[NSString stringWithCString:string encoding: NSASCIIStringEncoding] intValue];
+            int val = [instanceNumber intValue];
             imageID = [[NSString alloc] initWithFormat:@"%5d", val];
         }
         else imageID = nil;
@@ -764,18 +882,22 @@ extern NSRecursiveLock *PapyrusLock;
         [dicomElements setObject:[NSNumber numberWithLong: [imageID intValue]] forKey:@"imageID"];
         
         //Series Number
-        if (dataset->findAndGetString(DCM_SeriesNumber, string, OFFalse).good() && string != NULL)
-        {
-            seriesNo = [[NSString alloc] initWithCString:string encoding: NSASCIIStringEncoding];
-        }
+        NSString *seriesNumber = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.seriesNumber, NSASCIIStringEncoding) : nil;
+        if (seriesNumber == nil && dataset->findAndGetString(DCM_SeriesNumber, string, OFFalse).good() && string != NULL)
+            seriesNumber = [NSString stringWithCString:string encoding:NSASCIIStringEncoding];
+        if (seriesNumber)
+            seriesNo = [[NSString alloc] initWithString:seriesNumber];
         else
             seriesNo = [[NSString alloc] initWithString: @"0"];
         if( seriesNo) [dicomElements setObject:[NSNumber numberWithInt:[seriesNo intValue]]  forKey:@"seriesNumber"];
         
         //Series Instance UID
-        if (dataset->findAndGetString(DCM_SeriesInstanceUID, string, OFFalse).good() && string != NULL)
+        NSString *seriesInstanceUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.seriesInstanceUID, NSASCIIStringEncoding) : nil;
+        if (seriesInstanceUID == nil && dataset->findAndGetString(DCM_SeriesInstanceUID, string, OFFalse).good() && string != NULL)
+            seriesInstanceUID = [NSString stringWithCString:string encoding:NSASCIIStringEncoding];
+        if (seriesInstanceUID)
         {
-            self.serieID = [NSString stringWithCString:string encoding: NSASCIIStringEncoding];
+            self.serieID = seriesInstanceUID;
             [dicomElements setObject:self.serieID forKey:@"seriesDICOMUID"];
         }
         else
@@ -803,16 +925,22 @@ extern NSRecursiveLock *PapyrusLock;
             self.serieID = [NSString stringWithFormat:@"%@ TE-%@", self.serieID , echoTime];
         
         //Study Instance UID
-        if (dataset->findAndGetString(DCM_StudyInstanceUID, string, OFFalse).good() && string != NULL)
-            studyID = [[NSString alloc] initWithCString:string encoding: NSASCIIStringEncoding];
+        NSString *studyInstanceUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.studyInstanceUID, NSASCIIStringEncoding) : nil;
+        if (studyInstanceUID == nil && dataset->findAndGetString(DCM_StudyInstanceUID, string, OFFalse).good() && string != NULL)
+            studyInstanceUID = [NSString stringWithCString:string encoding:NSASCIIStringEncoding];
+        if (studyInstanceUID)
+            studyID = [[NSString alloc] initWithString:studyInstanceUID];
         else
             studyID = [[NSString alloc] initWithString:name];
         
         [dicomElements setObject:studyID forKey:@"studyID"];
         
         //StudyID
-        if (dataset->findAndGetString(DCM_StudyID, string, OFFalse).good() && string != NULL)
-            studyIDs = [[NSString alloc] initWithCString:string encoding: NSASCIIStringEncoding];
+        NSString *studyIdentifier = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.studyID, NSASCIIStringEncoding) : nil;
+        if (studyIdentifier == nil && dataset->findAndGetString(DCM_StudyID, string, OFFalse).good() && string != NULL)
+            studyIdentifier = [NSString stringWithCString:string encoding:NSASCIIStringEncoding];
+        if (studyIdentifier)
+            studyIDs = [[NSString alloc] initWithString:studyIdentifier];
         else
             studyIDs = [[NSString alloc] initWithString:@"0"];
         
@@ -832,17 +960,19 @@ extern NSRecursiveLock *PapyrusLock;
         }
         
         //Rows
-        unsigned short rows = 0;
-        if (dataset->findAndGetUint16(DCM_Rows, rows, OFFalse).good())
+        unsigned short rows = bridgeMetadata.rows;
+        if (rows > 0 || dataset->findAndGetUint16(DCM_Rows, rows, OFFalse).good())
             height = rows;
         
         //Columns
-        unsigned short columns = 0;
-        if (dataset->findAndGetUint16(DCM_Columns, columns, OFFalse).good())
+        unsigned short columns = bridgeMetadata.columns;
+        if (columns > 0 || dataset->findAndGetUint16(DCM_Columns, columns, OFFalse).good())
             width = columns;
         
         //Number of Frames
-        if (dataset->findAndGetString(DCM_NumberOfFrames, string, OFFalse).good() && string != NULL)
+        if (bridgeMetadata.numberOfFrames > 0)
+            NoOfFrames = bridgeMetadata.numberOfFrames;
+        else if (dataset->findAndGetString(DCM_NumberOfFrames, string, OFFalse).good() && string != NULL)
             NoOfFrames = atoi(string);
         
         // Is it a multi frame DICOM files? We need to parse these sequences for the correct sliceLocation value !
@@ -1118,9 +1248,14 @@ extern NSRecursiveLock *PapyrusLock;
         
         if( name != nil && studyID != nil && self.serieID != nil && imageID != nil && width != 0 && height != 0)
         {
+            if (hasBridgeMetadata && freeBridgeMetadataFn)
+                freeBridgeMetadataFn(&bridgeMetadata);
             return 0;   // success
         }
     }
+
+    if (hasBridgeMetadata && freeBridgeMetadataFn)
+        freeBridgeMetadataFn(&bridgeMetadata);
     
     return-1;
 }

@@ -188,9 +188,23 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
         let pixelCount = width * height
         let bytesPerRow = MemoryLayout<Float>.stride * width
 
-        if pix.isRGB, let baseAddr = pix.baseAddr {
+        let primaryRGBSource: UnsafeMutableRawPointer?
+        if let baseAddr = pix.baseAddr {
+            primaryRGBSource = UnsafeMutableRawPointer(baseAddr)
+        } else {
+            primaryRGBSource = nil
+        }
+
+        let fallbackRGBSource: UnsafeMutableRawPointer?
+        if let fImage = pix.fImage {
+            fallbackRGBSource = UnsafeMutableRawPointer(fImage)
+        } else {
+            fallbackRGBSource = nil
+        }
+
+        if pix.isRGB, let rgbSource = primaryRGBSource ?? fallbackRGBSource {
             var pixels = [Float](repeating: 0, count: pixelCount)
-            let bytes = UnsafeRawPointer(baseAddr).assumingMemoryBound(to: UInt8.self)
+            let bytes = UnsafeRawPointer(rgbSource).assumingMemoryBound(to: UInt8.self)
             for index in 0..<pixelCount {
                 let r = Float(bytes[index * 4 + 1])
                 let g = Float(bytes[index * 4 + 2])

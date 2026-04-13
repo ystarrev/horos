@@ -146,7 +146,8 @@ private final class MetalViewerScoutItemView: NSView {
         metaLabel.translatesAutoresizingMaskIntoConstraints = false
         metaLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         metaLabel.textColor = NSColor(calibratedWhite: 0.72, alpha: 1)
-        metaLabel.stringValue = "\(series.imageCount) image\(series.imageCount == 1 ? "" : "s")"
+        let unit = series.structuredReportHTML() != nil ? "page" : "image"
+        metaLabel.stringValue = "\(series.imageCount) \(unit)\(series.imageCount == 1 ? "" : "s")"
 
         addSubview(studyHeaderView)
         studyHeaderView.addSubview(studyBadgeField)
@@ -236,7 +237,9 @@ private final class MetalViewerScoutItemView: NSView {
         cancelPendingDrag()
         removeDragPreview()
 
-        if event.clickCount < 2, didStartDrag == false {
+        if event.clickCount < 2,
+           didStartDrag == false,
+           event.modifierFlags.contains(.control) == false {
             onSelect?(series)
         }
 
@@ -270,7 +273,6 @@ private final class MetalViewerScoutItemView: NSView {
     private func beginDrag(with event: NSEvent) {
         cancelPendingDrag()
         didStartDrag = true
-        onSelect?(series)
         removeDragPreview()
 
         let pasteboardItem = NSPasteboardItem()
@@ -358,6 +360,10 @@ private final class MetalViewerScoutItemView: NSView {
     }
 
     private func makeThumbnail(for series: MetalViewerSeries) -> NSImage? {
+        if let html = series.structuredReportHTML() {
+            return structuredReportThumbnail(forHTML: html, size: NSSize(width: 176, height: 120))
+        }
+
         guard let pix = series.firstPreviewPix() else { return nil }
 
         pix.checkLoad()
@@ -402,6 +408,49 @@ private final class MetalViewerScoutItemView: NSView {
         }
 
         return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
+    }
+
+    private func structuredReportThumbnail(forHTML html: String, size: NSSize) -> NSImage? {
+        guard let data = html.data(using: .utf8) else { return nil }
+        guard let attributed = try? NSAttributedString(
+            data: data,
+            options: [
+                .documentType: NSAttributedString.DocumentType.html,
+                .characterEncoding: String.Encoding.utf8.rawValue
+            ],
+            documentAttributes: nil
+        ) else {
+            return nil
+        }
+
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.white.setFill()
+        NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
+
+        let margin: CGFloat = 6
+        let targetRect = NSRect(x: margin, y: margin, width: max(size.width - margin * 2, 1), height: max(size.height - margin * 2, 1))
+        let measuredSize = attributed.size()
+        if measuredSize.width > 0, measuredSize.height > 0 {
+            let scale = min(targetRect.width / measuredSize.width, targetRect.height / measuredSize.height, 1.0)
+            let scaledSize = NSSize(width: measuredSize.width * scale, height: measuredSize.height * scale)
+            let drawRect = NSRect(
+                x: targetRect.midX - scaledSize.width * 0.5,
+                y: targetRect.midY - scaledSize.height * 0.5,
+                width: scaledSize.width,
+                height: scaledSize.height
+            )
+            attributed.draw(in: drawRect)
+        } else {
+            attributed.draw(in: targetRect)
+        }
+
+        NSColor(calibratedWhite: 0.78, alpha: 1).setStroke()
+        let border = NSBezierPath(rect: NSRect(x: 0.5, y: 0.5, width: size.width - 1, height: size.height - 1))
+        border.lineWidth = 1
+        border.stroke()
+        image.unlockFocus()
+        return image
     }
 
     private static let studyDateFormatter: DateFormatter = {

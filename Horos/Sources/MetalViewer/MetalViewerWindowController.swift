@@ -122,6 +122,15 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         scoutView.selectionHandler = { [weak self] series in
             guard let self else { return }
             self.scoutView.setSelectedSeries(identifier: series.identifier)
+            if let targetPane = self.activePaneView ?? self.paneViews.first {
+                targetPane.display(series: series)
+                if self.activePaneView == nil {
+                    self.setActivePane(targetPane)
+                } else {
+                    self.updateToolbarStatus()
+                    self.updateReferenceLines()
+                }
+            }
         }
 
         scoutView.openSeriesHandler = { [weak self] series in

@@ -69,7 +69,6 @@ extern "C"
 @class DicomSeries;
 @class DicomStudy;
 @class DCMWaveform;
-@class DCMTKFileFormat;
 
 /** \brief Represents an image for display */
 
@@ -229,7 +228,6 @@ extern "C"
     NSString            *referencedSOPInstanceUID;
     float               referenceCoordinates[ 4];
     
-    DCMTKFileFormat     *dcmtkDcmFileFormat;
 }
 
 @property long frameNo;
@@ -335,8 +333,6 @@ extern "C"
 @property BOOL SUVConverted, needToCompute8bitRepresentation;
 
 @property BOOL full32bitPipeline;
-@property(retain) DCMTKFileFormat *dcmtkDcmFileFormat;
-
 @property(readonly) BOOL hasSUV;
 @property float decayFactor;
 @property(retain) NSString *units, *decayCorrection;

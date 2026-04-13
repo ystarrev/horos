@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 
 private let metalViewerStudyBadgeColor = NSColor(calibratedRed: 1.0, green: 0.36, blue: 0.72, alpha: 1.0)
 
@@ -699,6 +700,7 @@ final class MetalViewerPaneView: NSView {
     private let referenceLineOverlay = ReferenceLineOverlayView()
     private let registrationStatusView = RegistrationStatusView()
     private var metalView: MetalImageView?
+    private var reportWebView: WKWebView?
     private var trackingAreaRef: NSTrackingArea?
     private var isHovering = false
     private var dismissRegistrationStatusOnMouseMove = false
@@ -803,8 +805,34 @@ final class MetalViewerPaneView: NSView {
         overlayBlendSlider.isHidden = true
 
         metalView?.removeFromSuperview()
+        metalView = nil
+        reportWebView?.removeFromSuperview()
+        reportWebView = nil
         referenceLineOverlay.removeFromSuperview()
         annotationOverlay.removeFromSuperview()
+        registrationStatusView.removeFromSuperview()
+
+        if let html = series.structuredReportHTML() {
+            let reportWebView = WKWebView(frame: .zero)
+            reportWebView.translatesAutoresizingMaskIntoConstraints = false
+            reportWebView.setValue(false, forKey: "drawsBackground")
+            contentView.addSubview(reportWebView)
+
+            NSLayoutConstraint.activate([
+                reportWebView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                reportWebView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                reportWebView.topAnchor.constraint(equalTo: contentView.topAnchor),
+                reportWebView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            ])
+
+            reportWebView.loadHTMLString(html, baseURL: nil)
+            self.reportWebView = reportWebView
+            currentStateDescription = series.title
+            stateDidChange?(currentStateDescription)
+            updateAnnotationOverlay()
+            updateReferenceLineOverlay()
+            return
+        }
 
         let metalView = MetalImageView(frame: .zero, pixList: series.loadedPixList())
         metalView.translatesAutoresizingMaskIntoConstraints = false

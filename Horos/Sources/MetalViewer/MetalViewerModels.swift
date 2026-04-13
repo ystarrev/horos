@@ -16,6 +16,8 @@ final class MetalViewerSeries {
     private let isBonjour: Bool
     private var cachedPixList: [DCMPix]?
     private var cachedVolumeBacking: NSData?
+    private var cachedStructuredReportHTML: String?
+    private var didAttemptStructuredReportHTML = false
 
     init(
         identifier: String = UUID().uuidString,
@@ -41,6 +43,34 @@ final class MetalViewerSeries {
         self.imageCount = imageObjects.isEmpty ? (initialPixList?.count ?? 0) : imageObjects.count
         self.cachedPixList = initialPixList
         self.cachedVolumeBacking = nil
+        self.cachedStructuredReportHTML = nil
+        self.didAttemptStructuredReportHTML = false
+    }
+
+    var isStructuredReport: Bool {
+        structuredReportHTML() != nil
+    }
+
+    func structuredReportHTML() -> String? {
+        if didAttemptStructuredReportHTML {
+            return cachedStructuredReportHTML
+        }
+
+        didAttemptStructuredReportHTML = true
+
+        if let cachedStructuredReportHTML {
+            return cachedStructuredReportHTML
+        }
+
+        for path in structuredReportCandidatePaths() {
+            if let html = StructuredReportSupport.htmlString(forPath: path), html.isEmpty == false {
+                cachedStructuredReportHTML = html
+                return html
+            }
+        }
+
+        cachedStructuredReportHTML = nil
+        return nil
     }
 
     func loadedPixList() -> [DCMPix] {
@@ -91,7 +121,7 @@ final class MetalViewerSeries {
             let width = UInt((object.value(forKey: "width") as? NSNumber)?.intValue ?? 0)
             let height = UInt((object.value(forKey: "height") as? NSNumber)?.intValue ?? 0)
             let seriesID = (object.value(forKeyPath: "series.id") as? NSNumber)?.intValue ?? 0
-            let path = object.value(forKey: "completePath") as? String ?? ""
+            let path = Self.resolvedPath(for: object) ?? ""
 
             for i in 0..<numberOfFrames {
                 if let pix = DCMPix(path: path, i, numberOfFrames, pointer.advanced(by: Int(memOffset)), i, seriesID, isBonjour: isBonjour, imageObj: object) {
@@ -105,7 +135,7 @@ final class MetalViewerSeries {
                 let height = UInt((object.value(forKey: "height") as? NSNumber)?.intValue ?? 0)
                 let frameID = (object.value(forKey: "frameID") as? NSNumber)?.intValue ?? 0
                 let seriesID = (object.value(forKeyPath: "series.id") as? NSNumber)?.intValue ?? 0
-                let path = object.value(forKey: "completePath") as? String ?? ""
+                let path = Self.resolvedPath(for: object) ?? ""
 
                 if let pix = DCMPix(path: path, index, loadList.count, pointer.advanced(by: Int(memOffset)), frameID, seriesID, isBonjour: isBonjour, imageObj: object) {
                     pixList.append(pix)
@@ -128,10 +158,55 @@ final class MetalViewerSeries {
             return nil
         }
 
-        let path = firstObject.value(forKey: "completePath") as? String ?? ""
+        let path = Self.resolvedPath(for: firstObject) ?? ""
         let frameID = (firstObject.value(forKey: "frameID") as? NSNumber)?.intValue ?? 0
         let seriesID = (firstObject.value(forKeyPath: "series.id") as? NSNumber)?.intValue ?? 0
         return DCMPix(path: path, 0, 1, nil, frameID, seriesID, isBonjour: isBonjour, imageObj: firstObject)
+    }
+
+    private static func resolvedPath(for imageObject: NSManagedObject) -> String? {
+        if imageObject.responds(to: NSSelectorFromString("completePathResolved")),
+           let value = imageObject.perform(NSSelectorFromString("completePathResolved"))?.takeUnretainedValue() as? String,
+           value.isEmpty == false {
+            return value
+        }
+
+        if imageObject.responds(to: NSSelectorFromString("completePath")),
+           let value = imageObject.perform(NSSelectorFromString("completePath"))?.takeUnretainedValue() as? String,
+           value.isEmpty == false {
+            return value
+        }
+
+        if let value = imageObject.value(forKey: "completePath") as? String,
+           value.isEmpty == false {
+            return value
+        }
+
+        return nil
+    }
+
+    private func structuredReportCandidatePaths() -> [String] {
+        var orderedPaths: [String] = []
+        var seen = Set<String>()
+
+        func appendPath(_ path: String?) {
+            guard let path, path.isEmpty == false, seen.contains(path) == false else { return }
+            seen.insert(path)
+            orderedPaths.append(path)
+        }
+
+        for imageObject in imageObjects {
+            appendPath(Self.resolvedPath(for: imageObject))
+        }
+
+        if let cachedPixList {
+            for pix in cachedPixList {
+                appendPath(pix.srcFile)
+            }
+        }
+
+        appendPath(firstPreviewPix()?.srcFile)
+        return orderedPaths
     }
 }
 

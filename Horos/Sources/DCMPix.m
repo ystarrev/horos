@@ -54,7 +54,6 @@
 #import "DicomDatabase.h"
 #import "DicomFileDCMTKCategory.h"
 #include <signal.h>
-#import "DCMTKFileFormat.h"
 
 #ifdef OSIRIX_VIEWER
 #import "NSThread+N2.h"
@@ -118,7 +117,6 @@ BOOL	quicktimeRunning = NO;
 NSLock	*quicktimeThreadLock = nil;
 
 static NSMutableDictionary *cachedPapyGroups = nil;
-static NSMutableDictionary *cachedDCMTKFileFormat = nil;
 static NSMutableDictionary *cachedDCMFrameworkFiles = nil;
 static NSMutableArray *nonLinearWLWWThreads = nil;
 static NSMutableArray *minmaxThreads = nil;
@@ -1347,7 +1345,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 @synthesize minValueOfSeries, maxValueOfSeries, factorPET2SUV, slope, offset;
 @synthesize isRGB, pwidth = width, pheight = height, checking, shutterRect;
 @synthesize pixelRatio, transferFunction, subPixOffset, isOriginDefined, shutterEnabled;
-@synthesize imageType, waveform, VOILUTApplied, VOILUT_table, dcmtkDcmFileFormat;
+@synthesize imageType, waveform, VOILUTApplied, VOILUT_table;
 
 @synthesize repetitiontime, echotime;
 
@@ -3400,8 +3398,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         if( cachedDCMFrameworkFiles == nil)
             cachedDCMFrameworkFiles = [NSMutableDictionary new];
         
-        if( cachedDCMTKFileFormat == nil)
-            cachedDCMTKFileFormat = [NSMutableDictionary new];
     }
     
     checking = [[NSRecursiveLock alloc] init];
@@ -3448,8 +3444,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         if( cachedDCMFrameworkFiles == nil)
             cachedDCMFrameworkFiles = [NSMutableDictionary new];
         
-        if( cachedDCMTKFileFormat == nil)
-            cachedDCMTKFileFormat = [NSMutableDictionary new];
     }
     
     needToCompute8bitRepresentation = YES;
@@ -10348,21 +10342,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 - (void) dealloc
 {
     [checking lock];
-    
-    @synchronized( cachedDCMTKFileFormat)
-    {
-        if( self.dcmtkDcmFileFormat)
-        {
-            NSMutableDictionary *dic = [cachedDCMTKFileFormat objectForKey: self.srcFile];
-            
-            [dic setValue: [NSNumber numberWithInt: [[dic objectForKey: @"count"] intValue]-1] forKey: @"count"];
-            
-            if( [[dic objectForKey: @"count"] intValue] == 0)
-                [cachedDCMTKFileFormat removeObjectForKey: self.srcFile];
-            
-            self.dcmtkDcmFileFormat = nil;
-        }
-    }
     
     if( shutterPolygonal)
         free( shutterPolygonal);

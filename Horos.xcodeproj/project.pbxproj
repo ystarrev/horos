@@ -431,6 +431,7 @@
 		5FCC11F22423D0220039EE8F /* dicom.dic in Resources */ = {isa = PBXBuildFile; fileRef = ABBB639E0635874D00D9531F /* dicom.dic */; };
 		5FCC11F32423D0220039EE8F /* dsr2html in Resources */ = {isa = PBXBuildFile; fileRef = 84B5EA4211A2BC0900193FDB /* dsr2html */; };
 		5FCC11F42423D0220039EE8F /* echoscu in Resources */ = {isa = PBXBuildFile; fileRef = CE9C73490B34946B0062FCCC /* echoscu */; };
+		F4A100100001000000000001 /* libHorosModernDCMTKBridge.dylib in Resources */ = {isa = PBXBuildFile; fileRef = F4A100100001000000000002 /* libHorosModernDCMTKBridge.dylib */; };
 		710EF1F31FD00E29000B555B /* Horos.h in Headers */ = {isa = PBXBuildFile; fileRef = 710EF1F11FD00E28000B555B /* Horos.h */; };
 		710EF1F41FD00E29000B555B /* Horos.m in Sources */ = {isa = PBXBuildFile; fileRef = 710EF1F21FD00E29000B555B /* Horos.m */; };
 		710EF1F61FD025BC000B555B /* Horos.m in Sources */ = {isa = PBXBuildFile; fileRef = 710EF1F21FD00E29000B555B /* Horos.m */; };
@@ -2455,8 +2456,6 @@
 		CE0DB329182D604900C90B43 /* ThumbnailsListNSWindow.h in Headers */ = {isa = PBXBuildFile; fileRef = CE0DB326182D604900C90B43 /* ThumbnailsListNSWindow.h */; };
 		CE0E08E806A106D700F2C01C /* ThickSlabController.h in Headers */ = {isa = PBXBuildFile; fileRef = CE0E08E606A106D700F2C01C /* ThickSlabController.h */; };
 		CE0E08E906A106D700F2C01C /* ThickSlabController.mm in Sources */ = {isa = PBXBuildFile; fileRef = CE0E08E706A106D700F2C01C /* ThickSlabController.mm */; };
-		CE0E0DB11863970400417C4C /* DCMTKFileFormat.h in Headers */ = {isa = PBXBuildFile; fileRef = CE0E0DAF1863970400417C4C /* DCMTKFileFormat.h */; };
-		CE0E0DB31863970400417C4C /* DCMTKFileFormat.mm in Sources */ = {isa = PBXBuildFile; fileRef = CE0E0DB01863970400417C4C /* DCMTKFileFormat.mm */; };
 		CE0E3A550D87C56D008135A8 /* ThreeDPanView.h in Headers */ = {isa = PBXBuildFile; fileRef = CE0E3A530D87C56D008135A8 /* ThreeDPanView.h */; };
 		CE0E3A560D87C56D008135A8 /* ThreeDPanView.m in Sources */ = {isa = PBXBuildFile; fileRef = CE0E3A540D87C56D008135A8 /* ThreeDPanView.m */; };
 		CE1119351165CA2000EDD254 /* jcdiffct.c in Sources */ = {isa = PBXBuildFile; fileRef = BFBF3C6909B6828300545F5E /* jcdiffct.c */; };
@@ -3658,6 +3657,7 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		5F026FFB242055690083A650 /* Decompress.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Decompress.entitlements; sourceTree = "<group>"; };
 		5F92185F23F45592000B8754 /* dcmpsprt */ = {isa = PBXFileReference; lastKnownFileType = text; name = dcmpsprt; path = DCMTK/dcmpsprt; sourceTree = BUILT_PRODUCTS_DIR; };
 		5F92186123F455A8000B8754 /* dcmprscu */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = dcmprscu; path = DCMTK/dcmprscu; sourceTree = BUILT_PRODUCTS_DIR; };
+		F4A100100001000000000002 /* libHorosModernDCMTKBridge.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libHorosModernDCMTKBridge.dylib; path = DCMTK/libHorosModernDCMTKBridge.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
 		710EF1F11FD00E28000B555B /* Horos.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Horos.h; sourceTree = "<group>"; };
 		710EF1F21FD00E29000B555B /* Horos.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = Horos.m; sourceTree = "<group>"; };
 		71125D4A215376FC00EB0AA5 /* PathForImage.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PathForImage.h; sourceTree = "<group>"; };
@@ -5352,8 +5352,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		CE0DB326182D604900C90B43 /* ThumbnailsListNSWindow.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ThumbnailsListNSWindow.h; sourceTree = "<group>"; };
 		CE0E08E606A106D700F2C01C /* ThickSlabController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ThickSlabController.h; sourceTree = "<group>"; };
 		CE0E08E706A106D700F2C01C /* ThickSlabController.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ThickSlabController.mm; sourceTree = "<group>"; };
-		CE0E0DAF1863970400417C4C /* DCMTKFileFormat.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DCMTKFileFormat.h; sourceTree = "<group>"; };
-		CE0E0DB01863970400417C4C /* DCMTKFileFormat.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = DCMTKFileFormat.mm; sourceTree = "<group>"; };
 		CE0E3A530D87C56D008135A8 /* ThreeDPanView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ThreeDPanView.h; sourceTree = "<group>"; };
 		CE0E3A540D87C56D008135A8 /* ThreeDPanView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ThreeDPanView.m; sourceTree = "<group>"; };
 		CE114AC317F9568600CB4ED7 /* RTStructIcon.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = RTStructIcon.jpg; sourceTree = "<group>"; };
@@ -7232,6 +7230,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				ABBB639E0635874D00D9531F /* dicom.dic */,
 				84B5EA4211A2BC0900193FDB /* dsr2html */,
 				CE9C73490B34946B0062FCCC /* echoscu */,
+				F4A100100001000000000002 /* libHorosModernDCMTKBridge.dylib */,
 			);
 			name = DCMTK;
 			path = ../../Binaries/DCMTK;
@@ -8595,8 +8594,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				AB695A1D063D8261002BDF78 /* Analyze.h */,
 				CE0CB170084A623C00C6385F /* DCMPix.h */,
 				CE0CB16F084A623C00C6385F /* DCMPix.m */,
-				CE0E0DAF1863970400417C4C /* DCMTKFileFormat.h */,
-				CE0E0DB01863970400417C4C /* DCMTKFileFormat.mm */,
 				71A28B751637F0D200489F2A /* DCMWaveform.h */,
 				71A28B761637F0D200489F2A /* DCMWaveform.m */,
 				A085E103141E53210072BF0D /* DCMUSRegion.h */,
@@ -9847,7 +9844,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				7154B80F14ED5402000EF7E4 /* N2Stuff.h in Headers */,
 				CE0DB329182D604900C90B43 /* ThumbnailsListNSWindow.h in Headers */,
 				434B46161A19F2E5008CF8CF /* options.h in Headers */,
-				CE0E0DB11863970400417C4C /* DCMTKFileFormat.h in Headers */,
 				CE5EEFCB182D249B009D2045 /* ThumbnailsListPanel.h in Headers */,
 				71512E9D15234F6B00B87012 /* DiscMountedAskTheUserDialogController.h in Headers */,
 				714D3BB1152AE40C003EB087 /* O2ScreensPrefsView.h in Headers */,
@@ -10102,6 +10098,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				5FCC11F22423D0220039EE8F /* dicom.dic in Resources */,
 				5FCC11F32423D0220039EE8F /* dsr2html in Resources */,
 				5FCC11F42423D0220039EE8F /* echoscu in Resources */,
+				F4A100100001000000000001 /* libHorosModernDCMTKBridge.dylib in Resources */,
 				5FCC11EE2423CEB00039EE8F /* Decompress in Resources */,
 				71AD67621FC4248100A1E2F8 /* VR Muscles-Bones.plist in Resources */,
 				71AD674D1FC4248100A1E2F8 /* HotGreen.plist in Resources */,
@@ -10588,6 +10585,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				"codesign --verbose=4 -f --prefix \"${prefix}\" --options runtime -s \"${identity}\" \"${copy_dir}/dcmprscu\"",
 				"codesign --verbose=4 -f --prefix \"${prefix}\" --options runtime -s \"${identity}\" \"${copy_dir}/dsr2html\"",
 				"codesign --verbose=4 -f --prefix \"${prefix}\" --options runtime -s \"${identity}\" \"${copy_dir}/echoscu\"",
+				"codesign --verbose=4 -f --prefix \"${prefix}\" --options runtime -s \"${identity}\" \"${copy_dir}/libHorosModernDCMTKBridge.dylib\"",
 				"mkdir -p \"$TARGET_TEMP_DIR\"",
 				"touch \"$TARGET_TEMP_DIR/Sign.stamp\"",
 				"",
@@ -10609,6 +10607,13 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 			isa = PBXShellScriptBuildPhase;
 			name = Make;
 			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/DCMTK/dcmdump",
+				"$(BUILT_PRODUCTS_DIR)/DCMTK/dcmprscu",
+				"$(BUILT_PRODUCTS_DIR)/DCMTK/dcmpsprt",
+				"$(BUILT_PRODUCTS_DIR)/DCMTK/dicom.dic",
+				"$(BUILT_PRODUCTS_DIR)/DCMTK/dsr2html",
+				"$(BUILT_PRODUCTS_DIR)/DCMTK/echoscu",
+				"$(BUILT_PRODUCTS_DIR)/DCMTK/libHorosModernDCMTKBridge.dylib",
 				"$(TARGET_TEMP_DIR)/Make.stamp",
 			);
 			shellPath = /bin/sh;
@@ -11963,7 +11968,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				ABE46FC20A76410F00327466 /* jdpostct.c in Sources */,
 				ABE46FC30A76410F00327466 /* jdpred.c in Sources */,
 				ABE46FC40A76410F00327466 /* jdsample.c in Sources */,
-				CE0E0DB31863970400417C4C /* DCMTKFileFormat.mm in Sources */,
 				ABE46FC50A76410F00327466 /* jdscale.c in Sources */,
 				ABE46FC60A76410F00327466 /* jdshuff.c in Sources */,
 				ABE46FC70A76410F00327466 /* jdtrans.c in Sources */,
@@ -13416,6 +13420,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 					"@executable_path/../Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = (
+					$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/OpenSSL.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/wlib,
@@ -13450,6 +13455,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
 				SKIP_INSTALL = NO;
 					SYSTEM_HEADER_SEARCH_PATHS = (
+						$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
 						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
 						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
 						$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,
@@ -13823,6 +13829,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 					"@executable_path/../Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = (
+					$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/OpenSSL.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/wlib,
 					$CONFIGURATION_TEMP_DIR/ITK.build/Install/wlib,
@@ -13857,6 +13864,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
 				SKIP_INSTALL = NO;
 					SYSTEM_HEADER_SEARCH_PATHS = (
+						$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
 						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
 						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
 						$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,

@@ -48,6 +48,7 @@
 #import "N2Debug.h"
 #import "WaitRendering.h"
 
+#include <dlfcn.h>
 #undef verify
 #include "osconfig.h" /* make sure OS specific configuration is included first */
 #include "djdecode.h"  /* for dcmjpeg decoders */
@@ -72,9 +73,82 @@
 
 // Maximum of 200 files: no more than 10 min...
 
+typedef int (*HorosModernDCMTKGetDecompressionInfoFn)(const char* path, int* isEncapsulated, unsigned short* rows, unsigned short* columns, char** modality, char** sopClassUID);
+typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
+
+static void* HorosModernDCMTKBridgeHandle()
+{
+    static void* handle = nullptr;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSString *bridgePath = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"libHorosModernDCMTKBridge.dylib"];
+        handle = dlopen(bridgePath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+        if (handle == nullptr)
+            NSLog(@"Modern DCMTK bridge unavailable at %@: %s", bridgePath, dlerror());
+    });
+    return handle;
+}
+
+template <typename FunctionType>
+static FunctionType HorosModernDCMTKSymbol(const char* name)
+{
+    void* handle = HorosModernDCMTKBridgeHandle();
+    if (handle == nullptr)
+        return nullptr;
+    return reinterpret_cast<FunctionType>(dlsym(handle, name));
+}
+
+static NSString* HorosModernDCMTKCopiedString(char* value)
+{
+    if (value == nullptr)
+        return nil;
+
+    HorosModernDCMTKFreeStringFn freeStringFn = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    NSString *string = [NSString stringWithCString:value encoding:NSASCIIStringEncoding];
+    if (freeStringFn)
+        freeStringFn(value);
+    return string;
+}
+
 @implementation DicomDatabase (DCMTK)
 
 +(BOOL)fileNeedsDecompression:(NSString*)path {
+    HorosModernDCMTKGetDecompressionInfoFn bridgeFn = HorosModernDCMTKSymbol<HorosModernDCMTKGetDecompressionInfoFn>("HorosModernDCMTKGetDecompressionInfo");
+    if (bridgeFn)
+    {
+        int isEncapsulated = 0;
+        unsigned short rows = 0;
+        unsigned short columns = 0;
+        char *modalityCString = nullptr;
+        char *sopClassUIDCString = nullptr;
+
+        if (bridgeFn(path.UTF8String, &isEncapsulated, &rows, &columns, &modalityCString, &sopClassUIDCString))
+        {
+            if (isEncapsulated)
+                return NO;
+
+            NSString *modality = HorosModernDCMTKCopiedString(modalityCString) ?: @"OT";
+            NSString *SOPClassUID = HorosModernDCMTKCopiedString(sopClassUIDCString) ?: @"";
+
+            if( [DCMAbstractSyntaxUID isImageStorage: SOPClassUID] == YES &&
+               [SOPClassUID isEqualToString:[DCMAbstractSyntaxUID pdfStorageClassUID]] == NO &&
+               [SOPClassUID isEqualToString:[DCMAbstractSyntaxUID EncapsulatedCDAStorage]] == NO &&
+               [DCMAbstractSyntaxUID isStructuredReport: SOPClassUID] == NO)
+            {
+                int resolution = 0;
+                if( resolution == 0 || resolution > rows)
+                    resolution = rows;
+                if( resolution == 0 || resolution > columns)
+                    resolution = columns;
+
+                int quality, compression = [BrowserController compressionForModality: modality quality: &quality resolution: resolution];
+                return compression != compression_none;
+            }
+
+            return NO;
+        }
+    }
+
     DcmFileFormat fileformat;
     OFCondition cond = fileformat.loadFile( [path UTF8String]);
     if( cond.good())

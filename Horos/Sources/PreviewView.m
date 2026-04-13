@@ -36,11 +36,14 @@
  ============================================================================*/
 
 #import "PreviewView.h"
+#import "StructuredReportSupport.h"
 #import "DCMPix.h"
 #import "DCMView.h"
 #import "Notifications.h"
+#import <WebKit/WebKit.h>
 #import <MetalKit/MetalKit.h>
 #import "Horos-Swift.h"
+#include <dlfcn.h>
 
 @class PreviewView;
 
@@ -48,12 +51,60 @@
 @property(nonatomic, assign) PreviewView *owner;
 @end
 
+typedef char* (*HorosModernDCMTKCopyStructuredReportHTMLFn)(const char* path);
+typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
+
+static void* PreviewModernDCMTKBridgeHandle()
+{
+    static void* handle = NULL;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSString *bridgePath = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"libHorosModernDCMTKBridge.dylib"];
+        handle = dlopen(bridgePath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+    });
+    return handle;
+}
+
+static void* PreviewModernDCMTKSymbol(const char* name)
+{
+    void* handle = PreviewModernDCMTKBridgeHandle();
+    if (handle == NULL)
+        return NULL;
+    return dlsym(handle, name);
+}
+
+@implementation StructuredReportSupport
+
++ (NSString *)htmlStringForPath:(NSString *)path
+{
+    if (path.length == 0)
+        return nil;
+
+    HorosModernDCMTKCopyStructuredReportHTMLFn renderFn = (HorosModernDCMTKCopyStructuredReportHTMLFn) PreviewModernDCMTKSymbol("HorosModernDCMTKCopyStructuredReportHTML");
+    HorosModernDCMTKFreeStringFn freeFn = (HorosModernDCMTKFreeStringFn) PreviewModernDCMTKSymbol("HorosModernDCMTKFreeString");
+    if (renderFn == NULL)
+        return nil;
+
+    char *html = renderFn(path.UTF8String);
+    if (html == NULL)
+        return nil;
+
+    NSString *htmlString = [NSString stringWithUTF8String:html];
+    if (freeFn)
+        freeFn(html);
+    return htmlString;
+}
+
+@end
+
 @implementation PreviewView
 {
     MetalPreviewImageView *_metalView;
     NSView *_annotationOverlay;
+    WKWebView *_reportWebView;
     NSMutableArray *_dcmPixList;
     NSArray *_dcmFilesList;
+    NSString *_loadedReportPath;
 }
 
 @synthesize syncRelativeDiff;
@@ -80,6 +131,8 @@
     [_dcmPixList release];
     [_dcmFilesList release];
     [_annotationOverlay release];
+    [_reportWebView release];
+    [_loadedReportPath release];
     [_metalView release];
     [stringID release];
     [super dealloc];
@@ -98,6 +151,12 @@
     [(PreviewAnnotationOverlayView *)_annotationOverlay setOwner:self];
     [_annotationOverlay setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
     [self addSubview:_annotationOverlay];
+
+    WKWebViewConfiguration *configuration = [[[WKWebViewConfiguration alloc] init] autorelease];
+    _reportWebView = [[WKWebView alloc] initWithFrame:self.bounds configuration:configuration];
+    [_reportWebView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+    [_reportWebView setHidden:YES];
+    [self addSubview:_reportWebView];
 }
 
 - (void) setPixels:(NSMutableArray*)pixels files:(NSArray*)files rois:(NSMutableArray*)rois firstImage:(short)firstImage level:(char)level reset:(BOOL)reset
@@ -116,6 +175,7 @@
 
     NSArray *safePixels = pixels ? pixels : @[];
     [_metalView updatePixList:safePixels firstImage:firstImage resetWindowLevel:reset];
+    [self refreshPreviewMode];
     [_annotationOverlay setNeedsDisplay:YES];
 }
 
@@ -126,6 +186,7 @@
         pix = [_dcmPixList objectAtIndex:index];
 
     [_metalView updateCurrentPix:pix index:index resetWindowLevel:NO];
+    [self refreshPreviewMode];
     [_annotationOverlay setNeedsDisplay:YES];
 }
 
@@ -138,6 +199,7 @@
     [_metalView updateCurrentPix:pix index:index resetWindowLevel:NO];
     if (sizeToFit)
         [_metalView resetViewTransform];
+    [self refreshPreviewMode];
     [_annotationOverlay setNeedsDisplay:YES];
 }
 
@@ -226,6 +288,105 @@
 - (BOOL)isFlipped
 {
     return YES;
+}
+
+- (BOOL)currentPixIsStructuredReport
+{
+    NSString *sopClassUID = self.curDCM.SOPClassUID;
+    return [sopClassUID hasPrefix:@"1.2.840.10008.5.1.4.1.1.88"];
+}
+
+- (NSString *)structuredReportHTMLPathForPix:(DCMPix *)pix
+{
+    if (pix == nil || pix.srcFile.length == 0)
+        return nil;
+
+    NSString *directory = @"/tmp/dicomsr_osirix/";
+    [[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
+
+    NSString *htmlPath = [[directory stringByAppendingPathComponent:pix.srcFile.lastPathComponent] stringByAppendingPathExtension:@"xml"];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:htmlPath] == NO)
+    {
+        NSString *dsr2htmlPath = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"dsr2html"];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:dsr2htmlPath] == NO)
+            return nil;
+
+        NSTask *task = [[[NSTask alloc] init] autorelease];
+        [task setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"dicom.dic"] forKey:@"DCMDICTPATH"]];
+        [task setLaunchPath:dsr2htmlPath];
+        [task setArguments:[NSArray arrayWithObjects:@"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items", pix.srcFile, htmlPath, nil]];
+        [task launch];
+        while ([task isRunning])
+            [NSThread sleepForTimeInterval:0.05];
+        [task interrupt];
+    }
+
+    return [[NSFileManager defaultManager] fileExistsAtPath:htmlPath] ? htmlPath : nil;
+}
+
+- (NSString *)structuredReportHTMLStringForPix:(DCMPix *)pix
+{
+    if (pix == nil || pix.srcFile.length == 0)
+        return nil;
+
+    HorosModernDCMTKCopyStructuredReportHTMLFn renderFn = (HorosModernDCMTKCopyStructuredReportHTMLFn) PreviewModernDCMTKSymbol("HorosModernDCMTKCopyStructuredReportHTML");
+    HorosModernDCMTKFreeStringFn freeFn = (HorosModernDCMTKFreeStringFn) PreviewModernDCMTKSymbol("HorosModernDCMTKFreeString");
+    if (renderFn == NULL)
+        return nil;
+
+    char *html = renderFn(pix.srcFile.UTF8String);
+    if (html == NULL)
+        return nil;
+
+    NSString *htmlString = [NSString stringWithUTF8String:html];
+    if (freeFn)
+        freeFn(html);
+    return htmlString;
+}
+
+- (void)refreshPreviewMode
+{
+    DCMPix *pix = self.curDCM;
+    if ([self currentPixIsStructuredReport] == NO)
+    {
+        [_reportWebView setHidden:YES];
+        [_metalView setHidden:NO];
+        [_annotationOverlay setHidden:NO];
+        return;
+    }
+
+    NSString *htmlPath = [self structuredReportHTMLPathForPix:pix];
+    NSString *htmlString = [self structuredReportHTMLStringForPix:pix];
+
+    if (htmlString.length == 0 && htmlPath.length == 0)
+    {
+        [_reportWebView setHidden:YES];
+        [_metalView setHidden:NO];
+        [_annotationOverlay setHidden:NO];
+        return;
+    }
+
+    [_metalView setHidden:YES];
+    [_annotationOverlay setHidden:YES];
+    [_reportWebView setHidden:NO];
+
+    if (htmlString.length > 0)
+    {
+        if ([_loadedReportPath isEqualToString:pix.srcFile] == NO)
+        {
+            [_loadedReportPath release];
+            _loadedReportPath = [pix.srcFile copy];
+            [_reportWebView loadHTMLString:htmlString baseURL:nil];
+        }
+    }
+    else if ([_loadedReportPath isEqualToString:htmlPath] == NO)
+    {
+        [_loadedReportPath release];
+        _loadedReportPath = [htmlPath copy];
+
+        NSURL *fileURL = [NSURL fileURLWithPath:htmlPath];
+        [_reportWebView loadFileURL:fileURL allowingReadAccessToURL:[fileURL URLByDeletingLastPathComponent]];
+    }
 }
 
 - (void)drawAnnotationsInBounds:(NSRect)bounds

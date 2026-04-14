@@ -7,6 +7,7 @@
 #include <dcmtk/dcmdata/dcdict.h>
 #include <dcmtk/dcmdata/dcmetinf.h>
 #include <dcmtk/dcmsr/dsrdoc.h>
+#include <dcmtk/dcmsr/dsrtypes.h>
 #include <dcmtk/ofstd/ofstd.h>
 #include <dcmtk/ofstd/ofstrutl.h>
 
@@ -227,6 +228,13 @@ char* HorosModernDCMTKCopyStructuredReportHTML(const char* path)
     DcmFileFormat fileformat;
     if (!fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).good())
         return nullptr;
+
+    const char* sopClassUID = nullptr;
+    if (fileformat.getDataset()->findAndGetString(DCM_SOPClassUID, sopClassUID, OFFalse).bad() ||
+        sopClassUID == nullptr ||
+        !DSRTypes::isDocumentStorageUID(sopClassUID)) {
+        return nullptr;
+    }
 
     DSRDocument document;
     const size_t readFlags =

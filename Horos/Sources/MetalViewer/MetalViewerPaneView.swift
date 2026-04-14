@@ -813,17 +813,15 @@ final class MetalViewerPaneView: NSView {
         registrationStatusView.removeFromSuperview()
 
         if let html = series.structuredReportHTML() {
-            let reportWebView = WKWebView(frame: .zero)
-            reportWebView.translatesAutoresizingMaskIntoConstraints = false
-            reportWebView.setValue(false, forKey: "drawsBackground")
+            contentView.layoutSubtreeIfNeeded()
+            let reportWebView = WKWebView(frame: contentView.bounds)
+            reportWebView.autoresizingMask = [.width, .height]
+            reportWebView.setValue(true, forKey: "drawsBackground")
+            reportWebView.wantsLayer = true
+            reportWebView.layer?.backgroundColor = NSColor.white.cgColor
+            reportWebView.allowsMagnification = true
+            reportWebView.magnification = 1.0
             contentView.addSubview(reportWebView)
-
-            NSLayoutConstraint.activate([
-                reportWebView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-                reportWebView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-                reportWebView.topAnchor.constraint(equalTo: contentView.topAnchor),
-                reportWebView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-            ])
 
             reportWebView.loadHTMLString(html, baseURL: nil)
             self.reportWebView = reportWebView

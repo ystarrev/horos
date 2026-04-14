@@ -17,7 +17,6 @@ final class MetalViewerSeries {
     private var cachedPixList: [DCMPix]?
     private var cachedVolumeBacking: NSData?
     private var cachedStructuredReportHTML: String?
-    private var didAttemptStructuredReportHTML = false
 
     init(
         identifier: String = UUID().uuidString,
@@ -44,7 +43,6 @@ final class MetalViewerSeries {
         self.cachedPixList = initialPixList
         self.cachedVolumeBacking = nil
         self.cachedStructuredReportHTML = nil
-        self.didAttemptStructuredReportHTML = false
     }
 
     var isStructuredReport: Bool {
@@ -52,24 +50,18 @@ final class MetalViewerSeries {
     }
 
     func structuredReportHTML() -> String? {
-        if didAttemptStructuredReportHTML {
-            return cachedStructuredReportHTML
-        }
-
-        didAttemptStructuredReportHTML = true
-
         if let cachedStructuredReportHTML {
             return cachedStructuredReportHTML
         }
 
-        for path in structuredReportCandidatePaths() {
+        let candidatePaths = structuredReportCandidatePaths()
+        for path in candidatePaths {
             if let html = StructuredReportSupport.htmlString(forPath: path), html.isEmpty == false {
                 cachedStructuredReportHTML = html
                 return html
             }
         }
 
-        cachedStructuredReportHTML = nil
         return nil
     }
 
@@ -195,18 +187,31 @@ final class MetalViewerSeries {
             orderedPaths.append(path)
         }
 
-        for imageObject in imageObjects {
+        for imageObject in imageObjects where Self.isStructuredReport(imageObject: imageObject) {
             appendPath(Self.resolvedPath(for: imageObject))
         }
 
         if let cachedPixList {
             for pix in cachedPixList {
-                appendPath(pix.srcFile)
+                if let sopClassUID = pix.value(forKey: "SOPClassUID") as? String,
+                   sopClassUID.hasPrefix("1.2.840.10008.5.1.4.1.1.88") {
+                    appendPath(pix.srcFile)
+                }
             }
         }
 
-        appendPath(firstPreviewPix()?.srcFile)
+        if imageObjects.isEmpty {
+            appendPath(firstPreviewPix()?.srcFile)
+        }
         return orderedPaths
+    }
+
+    private static func isStructuredReport(imageObject: NSManagedObject) -> Bool {
+        if imageObject.responds(to: NSSelectorFromString("sopClassUID")),
+           let value = imageObject.perform(NSSelectorFromString("sopClassUID"))?.takeUnretainedValue() as? String {
+            return value.hasPrefix("1.2.840.10008.5.1.4.1.1.88")
+        }
+        return false
     }
 }
 

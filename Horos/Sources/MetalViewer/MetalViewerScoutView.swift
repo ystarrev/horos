@@ -430,20 +430,34 @@ private final class MetalViewerScoutItemView: NSView {
 
         let margin: CGFloat = 6
         let targetRect = NSRect(x: margin, y: margin, width: max(size.width - margin * 2, 1), height: max(size.height - margin * 2, 1))
-        let measuredSize = attributed.size()
-        if measuredSize.width > 0, measuredSize.height > 0 {
-            let scale = min(targetRect.width / measuredSize.width, targetRect.height / measuredSize.height, 1.0)
-            let scaledSize = NSSize(width: measuredSize.width * scale, height: measuredSize.height * scale)
-            let drawRect = NSRect(
-                x: targetRect.midX - scaledSize.width * 0.5,
-                y: targetRect.midY - scaledSize.height * 0.5,
-                width: scaledSize.width,
-                height: scaledSize.height
-            )
-            attributed.draw(in: drawRect)
-        } else {
-            attributed.draw(in: targetRect)
-        }
+
+        let pageSize = NSSize(width: 612, height: 792)
+        let textStorage = NSTextStorage(attributedString: attributed)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(containerSize: pageSize)
+        textContainer.lineFragmentPadding = 0
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.ensureLayout(for: textContainer)
+
+        let contentImage = NSImage(size: pageSize)
+        contentImage.lockFocus()
+        NSColor.white.setFill()
+        NSBezierPath(rect: NSRect(origin: .zero, size: pageSize)).fill()
+        let glyphRange = layoutManager.glyphRange(for: textContainer)
+        layoutManager.drawBackground(forGlyphRange: glyphRange, at: .zero)
+        layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: .zero)
+        contentImage.unlockFocus()
+
+        let scale = min(targetRect.width / pageSize.width, targetRect.height / pageSize.height, 1.0)
+        let scaledSize = NSSize(width: pageSize.width * scale, height: pageSize.height * scale)
+        let drawRect = NSRect(
+            x: targetRect.midX - scaledSize.width * 0.5,
+            y: targetRect.midY - scaledSize.height * 0.5,
+            width: scaledSize.width,
+            height: scaledSize.height
+        )
+        contentImage.draw(in: drawRect, from: NSRect(origin: .zero, size: pageSize), operation: .sourceOver, fraction: 1.0)
 
         NSColor(calibratedWhite: 0.78, alpha: 1).setStroke()
         let border = NSBezierPath(rect: NSRect(x: 0.5, y: 0.5, width: size.width - 1, height: size.height - 1))

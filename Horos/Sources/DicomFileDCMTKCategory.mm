@@ -45,44 +45,72 @@
 #import "ModernDCMTKBridge.h"
 
 #include <dlfcn.h>
-#include "osconfig.h"
-#include "dcfilefo.h"
-#include "dcdeftag.h"
-#include "ofstd.h"
-
-#include "dctk.h"
-#include "dcdebug.h"
-#include "cmdlnarg.h"
-#include "ofconapp.h"
-#include "dcuid.h"       /* for dcmtk version name */
-#include "djdecode.h"    /* for dcmjpeg decoders */
-#include "dipijpeg.h"    /* for dcmimage JPEG plugin */
 
 #ifdef OSIRIX_VIEWER
 #include <NrrdIO.h> // part of ITK
 #endif
 
 #include <string.h>
+#include <array>
 #include <string>
-
-extern NSRecursiveLock *PapyrusLock;
 
 typedef int (*HorosModernDCMTKIsDICOMFileFn)(const char* path);
 typedef char* (*HorosModernDCMTKCopySpecificCharacterSetFn)(const char* path);
 typedef char* (*HorosModernDCMTKCopyFieldFn)(const char* path, const char* fieldName);
+typedef char* (*HorosModernDCMTKCopyFieldByTagFn)(const char* path, unsigned short group, unsigned short element);
 typedef int (*HorosModernDCMTKGetBasicMetadataFn)(const char* path, HorosModernDCMTKBasicMetadata* metadata);
+typedef int (*HorosModernDCMTKCopyImageGeometryFn)(const char* path, double* origin3, double* orientation9);
+typedef int (*HorosModernDCMTKCopyFrameGeometryFn)(const char* path, double** sliceLocations, int* sliceCount, double** triggerDelays, int* triggerCount);
+typedef int (*HorosModernDCMTKCopyEncapsulatedDocumentFn)(const char* path, unsigned char** buffer, unsigned long* length);
 typedef void (*HorosModernDCMTKFreeBasicMetadataFn)(HorosModernDCMTKBasicMetadata* metadata);
 typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
+typedef void (*HorosModernDCMTKFreeBufferFn)(void* buffer);
 
 static void* HorosModernDCMTKBridgeHandle()
 {
     static void* handle = nullptr;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        NSString *bridgePath = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"libHorosModernDCMTKBridge.dylib"];
-        handle = dlopen(bridgePath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-        if (handle == nullptr)
-            NSLog(@"Modern DCMTK bridge unavailable at %@: %s", bridgePath, dlerror());
+        NSBundle *bundle = [NSBundle mainBundle];
+        NSArray<NSString *> *basePaths = @[
+            bundle.resourcePath ?: @"",
+            bundle.privateFrameworksPath ?: @"",
+            bundle.sharedFrameworksPath ?: @"",
+            bundle.builtInPlugInsPath ?: @""
+        ];
+        NSArray<NSString *> *relativePaths = @[
+            @"libHorosModernDCMTKBridge.dylib",
+            @"DCMTK/libHorosModernDCMTKBridge.dylib"
+        ];
+        NSString *resolvedPath = nil;
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        for (NSString *basePath in basePaths)
+        {
+            if (basePath.length == 0)
+                continue;
+            for (NSString *relativePath in relativePaths)
+            {
+                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
+                if ([fileManager fileExistsAtPath:candidate])
+                {
+                    resolvedPath = candidate;
+                    break;
+                }
+            }
+            if (resolvedPath)
+                break;
+        }
+
+        if (resolvedPath)
+        {
+            handle = dlopen(resolvedPath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+            if (handle == nullptr)
+                NSLog(@"Modern DCMTK bridge failed to load at %@: %s", resolvedPath, dlerror());
+        }
+        else
+        {
+            NSLog(@"Modern DCMTK bridge not found in bundle search paths.");
+        }
     });
     return handle;
 }
@@ -115,6 +143,58 @@ static NSString* HorosModernDCMTKBridgeString(const char* value, NSStringEncodin
     return [NSString stringWithCString:value encoding:encoding];
 }
 
+static NSString* HorosModernDCMTKCopyFieldString(const char* path,
+                                                 NSString *fieldName,
+                                                 NSStringEncoding encoding,
+                                                 HorosModernDCMTKCopyFieldFn copyFieldFn,
+                                                 HorosModernDCMTKFreeStringFn freeStringFn)
+{
+    if (path == nullptr || fieldName.length == 0 || copyFieldFn == NULL)
+        return nil;
+    char *value = copyFieldFn(path, fieldName.UTF8String);
+    if (value == NULL)
+        return nil;
+    NSString *stringValue = [NSString stringWithCString:value encoding:encoding];
+    if (freeStringFn)
+        freeStringFn(value);
+    return stringValue;
+}
+
+static NSString* HorosModernDCMTKDecodeFieldString(const char* path,
+                                                   NSString *fieldName,
+                                                   NSStringEncoding *encodings,
+                                                   HorosModernDCMTKCopyFieldFn copyFieldFn,
+                                                   HorosModernDCMTKFreeStringFn freeStringFn)
+{
+    if (path == nullptr || fieldName.length == 0 || copyFieldFn == NULL)
+        return nil;
+    char *value = copyFieldFn(path, fieldName.UTF8String);
+    if (value == NULL)
+        return nil;
+    NSString *stringValue = [DicomFile stringWithBytes:value encodings:encodings];
+    if (freeStringFn)
+        freeStringFn(value);
+    return stringValue;
+}
+
+static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
+                                                      int group,
+                                                      int element,
+                                                      NSStringEncoding *encodings,
+                                                      HorosModernDCMTKCopyFieldByTagFn copyFieldByTagFn,
+                                                      HorosModernDCMTKFreeStringFn freeStringFn)
+{
+    if (path == nullptr || group <= 0 || element <= 0 || copyFieldByTagFn == NULL)
+        return nil;
+    char *value = copyFieldByTagFn(path, (unsigned short)group, (unsigned short)element);
+    if (value == NULL)
+        return nil;
+    NSString *stringValue = [DicomFile stringWithBytes:value encodings:encodings];
+    if (freeStringFn)
+        freeStringFn(value);
+    return stringValue;
+}
+
 @implementation DicomFile (DicomFileDCMTKCategory)
 
 + (NSArray*) getEncodingArrayForFile: (NSString*) file
@@ -127,36 +207,13 @@ static NSString* HorosModernDCMTKBridgeString(const char* value, NSStringEncodin
             return [characterSet componentsSeparatedByString:@"\\"];
         return [NSArray arrayWithObject: @"ISO_IR 100"];
     }
-
-    DcmFileFormat fileformat;
-    NSArray *encodingArray = nil;
-    
-    OFCondition status = fileformat.loadFile( [file UTF8String], EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect);
-    
-    DcmDataset *dataset = fileformat.getDataset();
-    
-    const char *string = NULL;
-    
-    if( dataset && dataset->findAndGetString(DCM_SpecificCharacterSet, string, OFFalse).good() && string != NULL)
-    {
-        encodingArray = [[NSString stringWithCString:string encoding: NSISOLatin1StringEncoding] componentsSeparatedByString:@"\\"];
-    }
-    
-    if( encodingArray == nil)
-        encodingArray = [NSArray arrayWithObject: @"ISO_IR 100"];
-    
-    return encodingArray;
+    return [NSArray arrayWithObject: @"ISO_IR 100"];
 }
 
 + (BOOL) isDICOMFileDCMTK:(NSString *) file{
     HorosModernDCMTKIsDICOMFileFn bridgeFn = HorosModernDCMTKSymbol<HorosModernDCMTKIsDICOMFileFn>("HorosModernDCMTKIsDICOMFile");
     if (bridgeFn)
         return bridgeFn(file.UTF8String) != 0;
-
-    DcmFileFormat fileformat;
-    OFCondition status = fileformat.loadFile([file UTF8String]);
-    if (status.good())
-        return YES;
     return NO;
 }
 
@@ -172,41 +229,6 @@ static NSString* HorosModernDCMTKBridgeString(const char* value, NSStringEncodin
     return success;
 }
 
-+ (NSString*) getDicomFieldForGroup:(int) gr element: (int) el forDcmFileFormat: (void*) ff
-{
-    NSString *returnedValue = nil;
-    DcmFileFormat *fileformat = (DcmFileFormat*) ff;
-    
-    if( fileformat)
-    {
-        @try
-        {
-            OFString string;
-            DcmDataset *dataset = fileformat->getDataset();
-            
-            DcmTagKey dcmkey( gr, el);
-            
-            if( dataset && dataset->findAndGetOFString( dcmkey, string, OFFalse).good() && string.length() > 0)
-                returnedValue = [NSString stringWithCString:string.c_str() encoding: NSISOLatin1StringEncoding];
-            
-            if( returnedValue == nil)
-            {
-                //Maybe in the metadata?
-                DcmMetaInfo *metaset = fileformat->getMetaInfo();
-                
-                if( metaset && metaset->findAndGetOFString( dcmkey, string, OFFalse).good() && string.length() > 0)
-                    returnedValue = [NSString stringWithCString:string.c_str() encoding: NSISOLatin1StringEncoding];
-            }
-            
-        }
-        @catch (NSException *exception) {
-            N2LogException( exception);
-        }
-    }
-    
-    return returnedValue;
-}
-
 + (NSString*) getDicomField: (NSString*) field forFile: (NSString*) path
 {
     if( field.length <= 0)
@@ -219,30 +241,6 @@ static NSString* HorosModernDCMTKBridgeString(const char* value, NSStringEncodin
         if (value)
             return value;
     }
-    
-    DcmTagKey dcmkey(0xffff,0xffff);
-    const DcmDataDictionary& globalDataDict = dcmDataDict.rdlock();
-    const DcmDictEntry *dicent = globalDataDict.findEntry( [field UTF8String]);
-    
-    //successfull lookup in dictionary -> translate to tag and return
-    if (dicent)
-        dcmkey = dicent->getKey();
-    dcmDataDict.unlock();
-    
-    if( dcmkey.getGroup() != 0xffff && dcmkey.getElement() != 0xffff)
-    {
-        [PapyrusLock lock];
-        
-        DcmFileFormat fileformat;
-        
-        OFCondition status = fileformat.loadFile( [path UTF8String],  EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect);
-        
-        [PapyrusLock unlock];
-        
-        if (status.good())
-            return [DicomFile getDicomFieldForGroup: dcmkey.getGroup()  element:dcmkey.getElement() forDcmFileFormat: &fileformat];
-    }
-    
     return nil;
 }
 
@@ -365,6 +363,654 @@ static NSString* HorosModernDCMTKBridgeString(const char* value, NSStringEncodin
         return -1;
 }
 
+-(short) getDicomFileDCMTK
+{
+    int i;
+    long cardiacTime = -1;
+    
+    std::array<NSStringEncoding, 10> encoding;
+    NSString *echoTime = nil;
+    NSString *institution = nil;
+    NSString *referringPhysician = nil;
+    NSString *performingPhysician = nil;
+    NSString *accessionNumber = nil;
+    NSString *patientName = nil;
+    NSString *patientAge = nil;
+    NSString *patientBirthDate = nil;
+    NSString *patientSex = nil;
+    NSString *scanOptions = nil;
+    NSString *protocol = nil;
+    double location = 0.0;
+    NSMutableArray *imageTypeArray = nil;
+    HorosModernDCMTKBasicMetadata bridgeMetadata;
+    memset(&bridgeMetadata, 0, sizeof(bridgeMetadata));
+    BOOL hasBridgeMetadata = NO;
+    HorosModernDCMTKGetBasicMetadataFn bridgeFn = HorosModernDCMTKSymbol<HorosModernDCMTKGetBasicMetadataFn>("HorosModernDCMTKGetBasicMetadata");
+    HorosModernDCMTKFreeBasicMetadataFn freeBridgeMetadataFn = HorosModernDCMTKSymbol<HorosModernDCMTKFreeBasicMetadataFn>("HorosModernDCMTKFreeBasicMetadata");
+    if (bridgeFn)
+        hasBridgeMetadata = bridgeFn(filePath.UTF8String, &bridgeMetadata) != 0;
+    
+    HorosModernDCMTKCopyFieldFn copyFieldFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyFieldFn>("HorosModernDCMTKCopyField");
+    HorosModernDCMTKCopyFieldByTagFn copyFieldByTagFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyFieldByTagFn>("HorosModernDCMTKCopyFieldByTag");
+    HorosModernDCMTKCopyImageGeometryFn copyGeometryFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyImageGeometryFn>("HorosModernDCMTKCopyImageGeometry");
+    HorosModernDCMTKCopyFrameGeometryFn copyFrameGeometryFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyFrameGeometryFn>("HorosModernDCMTKCopyFrameGeometry");
+    HorosModernDCMTKCopyEncapsulatedDocumentFn copyEncapsulatedDocumentFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyEncapsulatedDocumentFn>("HorosModernDCMTKCopyEncapsulatedDocument");
+    HorosModernDCMTKFreeStringFn freeStringFn = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    HorosModernDCMTKFreeBufferFn freeBufferFn = HorosModernDCMTKSymbol<HorosModernDCMTKFreeBufferFn>("HorosModernDCMTKFreeBuffer");
+    
+    if (hasBridgeMetadata == NO && copyFieldFn == NULL && copyFieldByTagFn == NULL)
+    {
+        if (hasBridgeMetadata && freeBridgeMetadataFn)
+            freeBridgeMetadataFn(&bridgeMetadata);
+        return -1;
+    }
+    
+    encoding.fill(0);
+    encoding[0] = NSISOLatin1StringEncoding;
+    
+    NSString *transferSyntaxUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.transferSyntaxUID, NSASCIIStringEncoding) : nil;
+    if (transferSyntaxUID == nil)
+        transferSyntaxUID = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"TransferSyntaxUID", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+    if ([transferSyntaxUID isEqualToString:@"1.2.840.10008.1.2.4.100"])
+    {
+        fileType = [@"DICOMMPEG2" retain];
+        [dicomElements setObject:fileType forKey:@"fileType"];
+    }
+    else
+    {
+        fileType = [@"DICOM" retain];
+        [dicomElements setObject:fileType forKey:@"fileType"];
+    }
+    
+    NSString *privateInformationCreatorUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.privateInformationCreatorUID, NSISOLatin1StringEncoding) : nil;
+    if (privateInformationCreatorUID == nil)
+        privateInformationCreatorUID = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"PrivateInformationCreatorUID", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (privateInformationCreatorUID)
+        [dicomElements setObject:privateInformationCreatorUID forKey:@"PrivateInformationCreatorUID"];
+    
+    NSString *specificCharacterSet = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.specificCharacterSet, NSISOLatin1StringEncoding) : nil;
+    if (specificCharacterSet == nil)
+        specificCharacterSet = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"SpecificCharacterSet", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (specificCharacterSet)
+    {
+        NSArray	*c = [specificCharacterSet componentsSeparatedByString:@"\\"];
+        if( [c count] >= 10) NSLog( @"Encoding number >= 10 ???");
+        if( [c count] < 10)
+        {
+            for( i = 0; i < [c count]; i++) encoding[ i] = [NSString encodingForDICOMCharacterSet: [c objectAtIndex: i]];
+            for( i = (int)[c count]; i < 10; i++) encoding[ i] = [NSString encodingForDICOMCharacterSet: [c lastObject]];
+        }
+    }
+    
+    if ([self autoFillComments] == YES && [self autoFillComments])
+    {
+        NSString *commentsField = nil;
+        if ([self commentsGroup] && [self commentsElement])
+            commentsField = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, [self commentsGroup], [self commentsElement], encoding.data(), copyFieldByTagFn, freeStringFn);
+        
+        if ([self commentsGroup2] && [self commentsElement2])
+        {
+            NSString *commentsPart = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, [self commentsGroup2], [self commentsElement2], encoding.data(), copyFieldByTagFn, freeStringFn);
+            if (commentsPart)
+                commentsField = commentsField ? [commentsField stringByAppendingFormat:@" / %@", commentsPart] : commentsPart;
+        }
+        
+        if ([self commentsGroup3] && [self commentsElement3])
+        {
+            NSString *commentsPart = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, [self commentsGroup3], [self commentsElement3], encoding.data(), copyFieldByTagFn, freeStringFn);
+            if (commentsPart)
+                commentsField = commentsField ? [commentsField stringByAppendingFormat:@" / %@", commentsPart] : commentsPart;
+        }
+        
+        if ([self commentsGroup4] && [self commentsElement4])
+        {
+            NSString *commentsPart = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, [self commentsGroup4], [self commentsElement4], encoding.data(), copyFieldByTagFn, freeStringFn);
+            if (commentsPart)
+                commentsField = commentsField ? [commentsField stringByAppendingFormat:@" / %@", commentsPart] : commentsPart;
+        }
+        
+        if (commentsField)
+            [dicomElements setObject:commentsField forKey:@"commentsAutoFill"];
+    }
+    
+    NSString *sopClassUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.sopClassUID, NSASCIIStringEncoding) : nil;
+    if (sopClassUID == nil)
+        sopClassUID = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"SOPClassUID", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+    if (sopClassUID)
+        [dicomElements setObject:sopClassUID forKey:@"SOPClassUID"];
+    
+    NSString *imageTypeString = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.imageType, NSISOLatin1StringEncoding) : nil;
+    if (imageTypeString == nil)
+        imageTypeString = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"ImageType", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (imageTypeString)
+    {
+        imageTypeArray = [NSMutableArray arrayWithArray:[imageTypeString componentsSeparatedByString:@"\\"]];
+        if( [imageTypeArray count] > 2)
+        {
+            imageType = [[imageTypeArray objectAtIndex: 2] retain];
+            [dicomElements setObject:imageType forKey:@"imageType"];
+        }
+    }
+    else
+        imageType = nil;
+    if( imageType) [dicomElements setObject:imageType forKey:@"imageType"];
+    
+    NSString *sopInstanceUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.sopInstanceUID, NSISOLatin1StringEncoding) : nil;
+    if (sopInstanceUID == nil)
+        sopInstanceUID = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"SOPInstanceUID", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (sopInstanceUID)
+        SOPUID = [sopInstanceUID retain];
+    else
+        SOPUID = nil;
+    if (SOPUID) [dicomElements setObject:SOPUID forKey:@"SOPUID"];
+    
+    NSString *studyValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"StudyDescription", encoding.data(), copyFieldFn, freeStringFn);
+    if (studyValue)
+        study = [studyValue retain];
+    if( !study)
+        study = [[NSString alloc] initWithString: @"unnamed"];
+    [dicomElements setObject:study forKey: @"studyDescription"];
+    
+    NSString *modalityString = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.modality, NSASCIIStringEncoding) : nil;
+    if (modalityString == nil)
+        modalityString = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"Modality", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+    if (modalityString)
+        Modality = [[NSString alloc] initWithString:modalityString];
+    else
+        Modality = [[NSString alloc] initWithString:@"OT"];
+    [dicomElements setObject:Modality forKey:@"modality"];
+    
+    NSString *studyDate = nil;
+    if (hasBridgeMetadata && bridgeMetadata.acquisitionDate != NULL && bridgeMetadata.acquisitionDate[0] != '\0')
+        studyDate = HorosModernDCMTKBridgeString(bridgeMetadata.acquisitionDate, NSASCIIStringEncoding);
+    else if (hasBridgeMetadata && bridgeMetadata.contentDate != NULL && bridgeMetadata.contentDate[0] != '\0')
+        studyDate = HorosModernDCMTKBridgeString(bridgeMetadata.contentDate, NSASCIIStringEncoding);
+    else if (hasBridgeMetadata && bridgeMetadata.seriesDate != NULL && bridgeMetadata.seriesDate[0] != '\0')
+        studyDate = HorosModernDCMTKBridgeString(bridgeMetadata.seriesDate, NSASCIIStringEncoding);
+    else if (hasBridgeMetadata && bridgeMetadata.studyDate != NULL && bridgeMetadata.studyDate[0] != '\0')
+        studyDate = HorosModernDCMTKBridgeString(bridgeMetadata.studyDate, NSASCIIStringEncoding);
+    else
+        studyDate = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"AcquisitionDate", NSASCIIStringEncoding, copyFieldFn, freeStringFn) ?:
+                    HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"ContentDate", NSASCIIStringEncoding, copyFieldFn, freeStringFn) ?:
+                    HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"SeriesDate", NSASCIIStringEncoding, copyFieldFn, freeStringFn) ?:
+                    HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"StudyDate", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+    
+    if( [studyDate length] != 8) studyDate = [studyDate stringByReplacingOccurrencesOfString:@"." withString:@""];
+    
+    NSString* studyTime = nil;
+    if (hasBridgeMetadata && bridgeMetadata.acquisitionTime != NULL && bridgeMetadata.acquisitionTime[0] != '\0' && atof(bridgeMetadata.acquisitionTime) > 0)
+        studyTime = HorosModernDCMTKBridgeString(bridgeMetadata.acquisitionTime, NSASCIIStringEncoding);
+    else if (hasBridgeMetadata && bridgeMetadata.contentTime != NULL && bridgeMetadata.contentTime[0] != '\0' && atof(bridgeMetadata.contentTime) > 0)
+        studyTime = HorosModernDCMTKBridgeString(bridgeMetadata.contentTime, NSASCIIStringEncoding);
+    else if (hasBridgeMetadata && bridgeMetadata.seriesTime != NULL && bridgeMetadata.seriesTime[0] != '\0' && atof(bridgeMetadata.seriesTime) > 0)
+        studyTime = HorosModernDCMTKBridgeString(bridgeMetadata.seriesTime, NSASCIIStringEncoding);
+    else if (hasBridgeMetadata && bridgeMetadata.studyTime != NULL && bridgeMetadata.studyTime[0] != '\0' && atof(bridgeMetadata.studyTime) > 0)
+        studyTime = HorosModernDCMTKBridgeString(bridgeMetadata.studyTime, NSASCIIStringEncoding);
+    else
+        studyTime = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"AcquisitionTime", NSASCIIStringEncoding, copyFieldFn, freeStringFn) ?:
+                    HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"ContentTime", NSASCIIStringEncoding, copyFieldFn, freeStringFn) ?:
+                    HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"SeriesTime", NSASCIIStringEncoding, copyFieldFn, freeStringFn) ?:
+                    HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"StudyTime", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+    
+    studyTime = [studyTime stringByReplacingOccurrencesOfString:@":" withString:@""];
+    
+    if( studyDate && studyTime)
+    {
+        NSString *completeDate = [studyDate stringByAppendingString:studyTime];
+        if( [studyTime length] >= 6)
+            date = [[NSCalendarDate alloc] initWithString:completeDate calendarFormat:@"%Y%m%d%H%M%S"];
+        else
+            date = [[NSCalendarDate alloc] initWithString:completeDate calendarFormat:@"%Y%m%d%H%M"];
+    }
+    else if( studyDate)
+    {
+        studyDate = [studyDate stringByAppendingString: @"120000"];
+        date = [[NSCalendarDate alloc] initWithString:studyDate calendarFormat: @"%Y%m%d%H%M%S"];
+    }
+    else
+        date = [[NSCalendarDate dateWithYear:1901 month:1 day:1 hour:0 minute:0 second:0 timeZone:nil] retain];
+    
+    if( date)
+        [dicomElements setObject:date forKey:@"studyDate"];
+    
+    NSString *seriesDescriptionValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"SeriesDescription", encoding.data(), copyFieldFn, freeStringFn);
+    if (seriesDescriptionValue == nil)
+        seriesDescriptionValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"PerformedProcedureStepDescription", encoding.data(), copyFieldFn, freeStringFn);
+    if (seriesDescriptionValue == nil)
+        seriesDescriptionValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"AcquisitionDeviceProcessingDescription", encoding.data(), copyFieldFn, freeStringFn);
+    if (seriesDescriptionValue)
+        serie = [seriesDescriptionValue retain];
+    
+    if( serie == nil)
+        serie = [[NSString alloc] initWithString: @"unnamed"];
+    [dicomElements setObject:serie forKey:@"seriesDescription"];
+    
+    NSString *institutionValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"InstitutionName", encoding.data(), copyFieldFn, freeStringFn);
+    if (institutionValue)
+        institution = [institutionValue retain];
+    if( institution) [dicomElements setObject: institution forKey:@"institutionName"];
+    
+    NSString *referringValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"ReferringPhysiciansName", encoding.data(), copyFieldFn, freeStringFn);
+    if (referringValue)
+        referringPhysician = [referringValue retain];
+    if( referringPhysician) [dicomElements setObject:referringPhysician forKey:@"referringPhysician"];
+    
+    NSString *performingValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"PerformingPhysiciansName", encoding.data(), copyFieldFn, freeStringFn);
+    if (performingValue)
+        performingPhysician = [performingValue retain];
+    if( performingPhysician) [dicomElements setObject:performingPhysician forKey:@"performingPhysician"];
+    
+    NSString *accessionValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"AccessionNumber", encoding.data(), copyFieldFn, freeStringFn);
+    if (accessionValue)
+        accessionNumber = [accessionValue retain];
+    if( accessionNumber) [dicomElements setObject:accessionNumber forKey:@"accessionNumber"];
+    
+    NSString *patientNameValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"PatientName", encoding.data(), copyFieldFn, freeStringFn);
+    if (patientNameValue == nil)
+        patientNameValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"PatientsName", encoding.data(), copyFieldFn, freeStringFn);
+    if (patientNameValue == nil)
+        patientNameValue = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, 0x0010, 0x0010, encoding.data(), copyFieldByTagFn, freeStringFn);
+    if (patientNameValue)
+        patientName = [patientNameValue retain];
+    if (patientName)
+        name = [patientName retain];
+    else if (patientID)
+        name = [patientID retain];
+    else
+        name = [[NSString alloc] initWithString:@"No name"];
+    if( patientName) [dicomElements setObject:patientName forKey:@"patientName"];
+    
+    NSString *patientIDValue = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"PatientID", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (patientIDValue)
+        patientID = [[NSString alloc] initWithString:patientIDValue];
+    if( patientID) [dicomElements setObject:patientID forKey:@"patientID"];
+    
+    NSString *patientAgeValue = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"PatientsAge", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (patientAgeValue)
+        patientAge = [[NSString alloc] initWithString:patientAgeValue];
+    if( patientAge) [dicomElements setObject:patientAge forKey:@"patientAge"];
+    
+    NSString *patientBirthDateValue = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"PatientsBirthDate", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (patientBirthDateValue)
+        patientBirthDate = [[NSString alloc] initWithString:patientBirthDateValue];
+    if( patientBirthDate) [dicomElements setObject:patientBirthDate forKey:@"patientBirthDate"];
+    
+    NSString *patientSexValue = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"PatientsSex", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (patientSexValue)
+        patientSex = [[NSString alloc] initWithString:patientSexValue];
+    if( patientSex) [dicomElements setObject:patientSex forKey:@"patientSex"];
+    
+    if (scanOptions == nil)
+    {
+        NSString *scanOptionsValue = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.scanOptions, NSISOLatin1StringEncoding) : nil;
+        if (scanOptionsValue == nil)
+            scanOptionsValue = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"ScanOptions", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+        if (scanOptionsValue)
+            scanOptions = [[NSString alloc] initWithString:scanOptionsValue];
+    }
+    if( scanOptions) [dicomElements setObject:scanOptions forKey:@"scanOptions"];
+    
+    NSString *protocolValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"ProtocolName", encoding.data(), copyFieldFn, freeStringFn);
+    if (protocolValue)
+        protocol = [protocolValue retain];
+    if( protocol) [dicomElements setObject: protocol forKey:@"protocolName"];
+    
+    NSString *echoTimeString = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.echoTime, NSISOLatin1StringEncoding) : nil;
+    if (echoTimeString == nil)
+        echoTimeString = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"EchoTime", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (echoTimeString) echoTime = [[NSString alloc] initWithString: echoTimeString];
+    if( echoTime) [dicomElements setObject: echoTime forKey:@"echoTime"];
+    
+    NSString *instanceNumber = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.instanceNumber, NSISOLatin1StringEncoding) : nil;
+    if (instanceNumber == nil)
+        instanceNumber = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"InstanceNumber", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (instanceNumber)
+    {
+        imageID = [[NSString alloc] initWithString: instanceNumber];
+        [dicomElements setObject:[NSNumber numberWithLong: [imageID intValue]] forKey:@"imageID"];
+    }
+    
+    if( imageID == nil || [imageID intValue] >= 99999)
+    {
+        if( [Modality isEqualToString:@"MR"] || [Modality isEqualToString:@"CT"] || [Modality isEqualToString:@"US"])
+        {
+            NSString *sliceLocationValue = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"SliceLocation", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+            if (sliceLocationValue)
+            {
+                int val = 10000 + [sliceLocationValue floatValue] * 10.;
+                imageID = [[NSString alloc] initWithFormat:@"%5d", val];
+                [dicomElements setObject:[NSNumber numberWithLong: [imageID intValue]] forKey:@"imageID"];
+            }
+        }
+    }
+    
+    unsigned short rows = bridgeMetadata.rows;
+    if (rows == 0)
+    {
+        NSString *rowsValue = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"Rows", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+        if (rowsValue)
+            rows = (unsigned short)[rowsValue intValue];
+    }
+    if (rows > 0)
+        height = rows;
+    
+    unsigned short columns = bridgeMetadata.columns;
+    if (columns == 0)
+    {
+        NSString *columnsValue = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"Columns", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+        if (columnsValue)
+            columns = (unsigned short)[columnsValue intValue];
+    }
+    if (columns > 0)
+        width = columns;
+    
+    if (bridgeMetadata.numberOfFrames > 0)
+        NoOfFrames = bridgeMetadata.numberOfFrames;
+    else
+    {
+        NSString *framesValue = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"NumberOfFrames", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+        if (framesValue)
+            NoOfFrames = [framesValue intValue];
+    }
+    
+    double origin[ 3] = {0, 0, 0};
+    double orientation[ 9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    if (copyGeometryFn)
+        copyGeometryFn(filePath.UTF8String, origin, orientation);
+    
+    orientation[6] = orientation[1]*orientation[5] - orientation[2]*orientation[4];
+    orientation[7] = orientation[2]*orientation[3] - orientation[0]*orientation[5];
+    orientation[8] = orientation[0]*orientation[4] - orientation[1]*orientation[3];
+    
+    if( fabs( orientation[6]) > fabs(orientation[7]) && fabs( orientation[6]) > fabs(orientation[8])) location = origin[ 0];
+    if( fabs( orientation[7]) > fabs(orientation[6]) && fabs( orientation[7]) > fabs(orientation[8])) location = origin[ 1];
+    if( fabs( orientation[8]) > fabs(orientation[6]) && fabs( orientation[8]) > fabs(orientation[7])) location = origin[ 2];
+    
+    [dicomElements setObject:[NSNumber numberWithDouble: (double)location] forKey:@"sliceLocation"];
+    
+    if( imageID == nil || [imageID intValue] >= 99999)
+    {
+        int val = 10000 + location*10.;
+        [imageID release];
+        imageID = [[NSString alloc] initWithFormat:@"%5d", val];
+    }
+    [dicomElements setObject:[NSNumber numberWithLong: [imageID intValue]] forKey:@"imageID"];
+    
+    NSString *seriesNumber = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.seriesNumber, NSASCIIStringEncoding) : nil;
+    if (seriesNumber == nil)
+        seriesNumber = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"SeriesNumber", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+    if (seriesNumber)
+        seriesNo = [[NSString alloc] initWithString:seriesNumber];
+    else
+        seriesNo = [[NSString alloc] initWithString: @"0"];
+    if( seriesNo) [dicomElements setObject:[NSNumber numberWithInt:[seriesNo intValue]]  forKey:@"seriesNumber"];
+    
+    NSString *seriesInstanceUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.seriesInstanceUID, NSASCIIStringEncoding) : nil;
+    if (seriesInstanceUID == nil)
+        seriesInstanceUID = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"SeriesInstanceUID", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+    if (seriesInstanceUID)
+    {
+        self.serieID = seriesInstanceUID;
+        [dicomElements setObject:self.serieID forKey:@"seriesDICOMUID"];
+    }
+    else
+        self.serieID = name;
+    
+    if( cardiacTime != -1 && [self separateCardiac4D] == YES && [Modality isEqualToString: @"SC"] == NO)
+        self.serieID = [NSString stringWithFormat:@"%@ %2.2d", self.serieID , (int) cardiacTime];
+    
+    if( seriesNo)
+        self.serieID = [NSString stringWithFormat:@"%8.8d %@", [seriesNo intValue] , self.serieID];
+    
+    if( imageType != 0 && [self useSeriesDescription])
+        self.serieID = [NSString stringWithFormat:@"%@ %@", self.serieID , imageType];
+    
+    if( serie != nil && [self useSeriesDescription])
+        self.serieID = [NSString stringWithFormat:@"%@ %@", self.serieID , serie];
+    
+    if( sopClassUID != nil && [[DCMAbstractSyntaxUID hiddenImageSyntaxes] containsObject: sopClassUID])
+        self.serieID = [NSString stringWithFormat:@"%@ %@", self.serieID , sopClassUID];
+    
+    if( echoTime != nil && [self splitMultiEchoMR])
+        self.serieID = [NSString stringWithFormat:@"%@ TE-%@", self.serieID , echoTime];
+    
+    NSString *studyInstanceUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.studyInstanceUID, NSASCIIStringEncoding) : nil;
+    if (studyInstanceUID == nil)
+        studyInstanceUID = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"StudyInstanceUID", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+    if (studyInstanceUID)
+        studyID = [[NSString alloc] initWithString:studyInstanceUID];
+    else
+        studyID = [[NSString alloc] initWithString:name];
+    
+    [dicomElements setObject:studyID forKey:@"studyID"];
+    
+    NSString *studyIdentifier = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.studyID, NSASCIIStringEncoding) : nil;
+    if (studyIdentifier == nil)
+        studyIdentifier = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"StudyID", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+    if (studyIdentifier)
+        studyIDs = [[NSString alloc] initWithString:studyIdentifier];
+    else
+        studyIDs = [[NSString alloc] initWithString:@"0"];
+    
+    if( studyIDs)
+        [dicomElements setObject:studyIDs forKey:@"studyNumber"];
+    
+    if( [self commentsFromDICOMFiles])
+    {
+        NSString *studyComments = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"StudyComments", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+        if (studyComments)
+            [dicomElements setObject: studyComments forKey:@"studyComments"];
+        
+        NSString *seriesComments = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"ImageComments", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+        if (seriesComments)
+            [dicomElements setObject: seriesComments forKey:@"seriesComments"];
+        
+        NSString *stateText = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"InterpretationStatusID", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+        if (stateText)
+            [dicomElements setObject: [NSNumber numberWithInt:[stateText intValue]] forKey:@"stateText"];
+    }
+    
+    NSMutableArray *sliceLocationArray = [NSMutableArray array];
+    NSMutableArray *imageCardiacTriggerArray = [NSMutableArray array];
+    if (copyFrameGeometryFn)
+    {
+        double *sliceLocations = nullptr;
+        double *triggerDelays = nullptr;
+        int sliceCount = 0;
+        int triggerCount = 0;
+        if (copyFrameGeometryFn(filePath.UTF8String, &sliceLocations, &sliceCount, &triggerDelays, &triggerCount))
+        {
+            for (int index = 0; index < sliceCount; index++)
+                [sliceLocationArray addObject:[NSNumber numberWithDouble:sliceLocations[index]]];
+            for (int index = 0; index < triggerCount; index++)
+                [imageCardiacTriggerArray addObject:[NSString stringWithFormat:@"%lf", triggerDelays[index]]];
+        }
+        if (freeBufferFn)
+        {
+            if (sliceLocations)
+                freeBufferFn(sliceLocations);
+            if (triggerDelays)
+                freeBufferFn(triggerDelays);
+        }
+    }
+    
+    if( sliceLocationArray.count)
+    {
+        if( NoOfFrames == sliceLocationArray.count)
+            [dicomElements setObject: sliceLocationArray forKey:@"sliceLocationArray"];
+        else
+            NSLog( @"*** NoOfFrames != sliceLocationArray.count for MR/CT/US multiframe sliceLocation computation (%d, %d)", (int) NoOfFrames, (int) sliceLocationArray.count);
+    }
+    if( imageCardiacTriggerArray.count)
+    {
+        if( NoOfFrames == imageCardiacTriggerArray.count)
+            [dicomElements setObject: imageCardiacTriggerArray forKey:@"imageCommentPerFrame"];
+        else
+            NSLog( @"*** NoOfFrames != imageCardiacTriggerArray.count for MR/CT multiframe image type frame computation (%d, %d)", (int) NoOfFrames, (int) imageCardiacTriggerArray.count);
+        
+    }
+    
+    if( [sopClassUID isEqualToString:[DCMAbstractSyntaxUID pdfStorageClassUID]])
+    {
+        unsigned char *buffer = nullptr;
+        unsigned long length = 0;
+        if (copyEncapsulatedDocumentFn && copyEncapsulatedDocumentFn(filePath.UTF8String, &buffer, &length) && length > 0)
+        {
+            NSData *pdfData = [NSData dataWithBytes:buffer length:(unsigned)length];
+            NSPDFImageRep *rep = [NSPDFImageRep imageRepWithData:pdfData];
+            
+            NoOfFrames = [rep pageCount];
+            
+            NSImage *pdfImage = [[[NSImage alloc] init] autorelease];
+            [pdfImage addRepresentation: rep];
+            
+            NSBitmapImageRep *bitRep = [NSBitmapImageRep imageRepWithData: [pdfImage TIFFRepresentation]];
+            
+            if( bitRep.pixelsWide > pdfImage.size.width)
+            {
+                height = bitRep.pixelsHigh;
+                width = bitRep.pixelsWide;
+            }
+            else
+            {
+                height = pdfImage.size.height;
+                width = pdfImage.size.width;
+            }
+        }
+        if (freeBufferFn && buffer)
+            freeBufferFn(buffer);
+    }
+    
+#ifdef OSIRIX_VIEWER
+    if( [sopClassUID hasPrefix: @"1.2.840.10008.5.1.4.1.1.88"])
+    {
+        if( [DicomStudy displaySeriesWithSOPClassUID: sopClassUID andSeriesDescription: [dicomElements objectForKey: @"seriesDescription"]])
+        {
+            NSPDFImageRep *rep = [self PDFImageRep];
+            
+            NoOfFrames = [rep pageCount];
+            
+            NSImage *pdfImage = [[[NSImage alloc] init] autorelease];
+            [pdfImage addRepresentation: rep];
+            
+            NSBitmapImageRep *bitRep = [NSBitmapImageRep imageRepWithData: [pdfImage TIFFRepresentation]];
+            
+            if( bitRep.pixelsWide > pdfImage.size.width)
+            {
+                height = bitRep.pixelsHigh;
+                width = bitRep.pixelsWide;
+            }
+            else
+            {
+                height = pdfImage.size.height;
+                width = pdfImage.size.width;
+            }
+        }
+        
+        NSString *referencedSOPInstanceUID = [SRAnnotation getImageRefSOPInstanceUID: filePath];
+        
+        if( referencedSOPInstanceUID)
+            [dicomElements setObject: referencedSOPInstanceUID forKey: @"referencedSOPInstanceUID"];
+        
+        @try
+        {
+            if( [[dicomElements objectForKey: @"seriesDescription"] hasPrefix: @"OsiriX ROI SR"])
+            {
+                NSString *referencedSOPInstanceUID = [SRAnnotation getImageRefSOPInstanceUID: filePath];
+                if( referencedSOPInstanceUID)
+                    [dicomElements setObject: referencedSOPInstanceUID forKey: @"referencedSOPInstanceUID"];
+                
+                int numberOfROIs = [[NSUnarchiver unarchiveObjectWithData: [SRAnnotation roiFromDICOM: filePath]] count];
+                [dicomElements setObject: [NSNumber numberWithInt: numberOfROIs] forKey: @"numberOfROIs"];
+            }
+        }
+        @catch (NSException * e)
+        {
+            N2LogExceptionWithStackTrace(e);
+        }
+    }
+#endif
+    
+    NoOfSeries = 1;
+    
+    if( patientID == nil) patientID = [[NSString alloc] initWithString:@""];
+    
+    if( NoOfFrames > 1) // SERIES ID MUST BE UNIQUE!!!!!
+        self.serieID = [NSString stringWithFormat:@"%@-%@-%@", self.serieID, imageID, [dicomElements objectForKey:@"SOPUID"]];
+    
+    if( NoOfFrames <= 1 && [self noLocalizer] && ([self containsString: @"LOCALIZER" inArray: imageTypeArray] || [self containsString: @"REF" inArray: imageTypeArray] || [self containsLocalizerInString: serie]) && [DCMAbstractSyntaxUID isImageStorage: sopClassUID])
+    {
+        self.serieID = @"LOCALIZER";
+        
+        [serie release];
+        serie = [[NSString alloc] initWithString: @"Localizers"];
+        [dicomElements setObject:serie forKey:@"seriesDescription"];
+        
+        [dicomElements setObject: [self.serieID stringByAppendingString: studyID] forKey: @"seriesDICOMUID"];
+    }
+    
+    [dicomElements setObject:[self patientUID] forKey:@"patientUID"];
+    
+    if( self.serieID == nil) self.serieID = name;
+    
+    if( [Modality isEqualToString:@"US"] && [self oneFileOnSeriesForUS])
+    {
+        [dicomElements setObject: [self.serieID stringByAppendingString: [filePath lastPathComponent]] forKey:@"seriesID"];
+    }
+    else if ( [self combineProjectionSeries] && ([Modality isEqualToString:@"MG"] || [Modality isEqualToString:@"CR"] || [Modality isEqualToString:@"DR"] || [Modality isEqualToString:@"DX"] || [Modality  isEqualToString:@"RF"]))
+    {
+        if( [self combineProjectionSeriesMode] == 0)
+        {
+            if( sopClassUID != nil && [[DCMAbstractSyntaxUID hiddenImageSyntaxes] containsObject: sopClassUID])
+                [dicomElements setObject:self.serieID forKey:@"seriesID"];
+            else
+                [dicomElements setObject:studyID forKey:@"seriesID"];
+            
+            [dicomElements setObject:[NSNumber numberWithLong: [self.serieID intValue] * 1000 + [imageID intValue]] forKey:@"imageID"];
+        }
+        else if( [self combineProjectionSeriesMode] == 1)
+        {
+            [dicomElements setObject: [self.serieID stringByAppendingString: imageID] forKey:@"seriesID"];
+        }
+        else NSLog( @"ARG! ERROR !? Unknown combineProjectionSeriesMode");
+    }
+    else
+        [dicomElements setObject:self.serieID forKey:@"seriesID"];
+    
+    if( studyID == nil)
+    {
+        studyID = [[NSString alloc] initWithString:name];
+        [dicomElements setObject:studyID forKey:@"studyID"];
+    }
+    
+    if( imageID == nil)
+    {
+        imageID = [[NSString alloc] initWithString:name];
+        [dicomElements setObject:imageID forKey:@"SOPUID"];
+    }
+    
+    if( date == nil)
+    {
+        date = [[NSCalendarDate dateWithYear:1901 month:1 day:1 hour:0 minute:0 second:0 timeZone:nil] retain];
+        [dicomElements setObject:date forKey:@"studyDate"];
+    }
+    
+    [dicomElements setObject:[NSNumber numberWithBool:YES] forKey:@"hasDICOM"];
+    
+    if( name != nil && studyID != nil && self.serieID != nil && imageID != nil && width != 0 && height != 0)
+    {
+        if (hasBridgeMetadata && freeBridgeMetadataFn)
+            freeBridgeMetadataFn(&bridgeMetadata);
+        return 0;
+    }
+    
+    if (hasBridgeMetadata && freeBridgeMetadataFn)
+        freeBridgeMetadataFn(&bridgeMetadata);
+    
+    return -1;
+}
+
+#if 0
 -(short) getDicomFileDCMTK
 {
     int i;
@@ -1259,4 +1905,5 @@ static NSString* HorosModernDCMTKBridgeString(const char* value, NSStringEncodin
     
     return-1;
 }
+#endif
 @end

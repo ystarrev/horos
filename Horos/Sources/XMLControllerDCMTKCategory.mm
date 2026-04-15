@@ -39,248 +39,200 @@
 #import "BrowserController.h"
 #undef verify
 
-#include "osconfig.h"
-#include "mdfconen.h"
-#import "N2Debug.h"
-
-#include "dcvrsl.h"
-#include "ofcast.h"
-#include "ofstd.h"
-#include "dctk.h"
-#include "dcuid.h"
-
-#define INCLUDE_CSTDIO
-#include "ofstdinc.h"
-
-
 #import "DicomFile.h"
 #import "DICOMToNSString.h"
 #import "DicomFileDCMTKCategory.h"
 #import "DCMAttributeTag.h"
-#include <GDCM/gdcmReader.h>
-#include <GDCM/gdcmDefs.h>
-#include <GDCM/gdcmAnonymizer.h>
-#include <GDCM/gdcmWriter.h>
+#import "DCMTagDictionary.h"
+#import "DCMTagForNameDictionary.h"
+#import "ModernDCMTKBridge.h"
 
-extern NSRecursiveLock *PapyrusLock;
+#include <dlfcn.h>
+
+typedef int (*HorosModernDCMTKReplaceTagValueFn)(const char* path, unsigned short group, unsigned short element, const char* value, int removeIfEmpty);
+
+static void* HorosModernDCMTKBridgeHandle()
+{
+    static void* handle = nullptr;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSBundle *bundle = [NSBundle mainBundle];
+        NSArray<NSString *> *basePaths = @[
+            bundle.resourcePath ?: @"",
+            bundle.privateFrameworksPath ?: @"",
+            bundle.sharedFrameworksPath ?: @"",
+            bundle.builtInPlugInsPath ?: @""
+        ];
+        NSArray<NSString *> *relativePaths = @[
+            @"libHorosModernDCMTKBridge.dylib",
+            @"DCMTK/libHorosModernDCMTKBridge.dylib"
+        ];
+
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        for (NSString *basePath in basePaths)
+        {
+            if (basePath.length == 0)
+                continue;
+
+            for (NSString *relativePath in relativePaths)
+            {
+                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
+                if ([fileManager fileExistsAtPath:candidate])
+                {
+                    handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+                    if (handle == nullptr)
+                        NSLog(@"Modern DCMTK bridge failed to load at %@: %s", candidate, dlerror());
+                    return;
+                }
+            }
+        }
+
+        NSLog(@"Modern DCMTK bridge not found in bundle search paths.");
+    });
+    return handle;
+}
+
+template <typename FunctionType>
+static FunctionType HorosModernDCMTKSymbol(const char* name)
+{
+    void* handle = HorosModernDCMTKBridgeHandle();
+    if (handle == nullptr)
+        return nullptr;
+    return reinterpret_cast<FunctionType>(dlsym(handle, name));
+}
+
+static BOOL HorosParseTagString(NSString *tagString, int *group, int *element)
+{
+    if (tagString.length == 0 || group == NULL || element == NULL)
+        return NO;
+
+    NSString *normalized = [[tagString stringByReplacingOccurrencesOfString:@"(" withString:@""]
+                            stringByReplacingOccurrencesOfString:@")" withString:@""];
+    NSArray *parts = [normalized componentsSeparatedByString:@","];
+    if (parts.count != 2)
+        return NO;
+
+    unsigned int uGroup = 0;
+    unsigned int uElement = 0;
+    NSScanner *scanner = [NSScanner scannerWithString:parts[0]];
+    if (![scanner scanHexInt:&uGroup])
+        return NO;
+    scanner = [NSScanner scannerWithString:parts[1]];
+    if (![scanner scanHexInt:&uElement])
+        return NO;
+
+    *group = (int)uGroup;
+    *element = (int)uElement;
+    return YES;
+}
 
 @implementation XMLController (XMLControllerDCMTKCategory)
 
 
 + (BOOL) modifyDicom:(NSArray*) tagAndValues dicomFiles:(NSArray*) dicomFiles
 {
+    HorosModernDCMTKReplaceTagValueFn replaceTagValueFn =
+        HorosModernDCMTKSymbol<HorosModernDCMTKReplaceTagValueFn>("HorosModernDCMTKReplaceTagValue");
+    if (replaceTagValueFn == nullptr)
+        return NO;
+
     BOOL modifySuccess = YES;
-    
+
+    NSStringEncoding encoding = [NSString defaultCStringEncoding];
+    NSString *referenceFile = [dicomFiles lastObject];
+    if (referenceFile != nil)
+    {
+        NSArray *encodings = [DicomFile getEncodingArrayForFile:referenceFile];
+        if (encodings.count > 0)
+            encoding = [NSString encodingForDICOMCharacterSet:[encodings objectAtIndex:0]];
+    }
+
     for (NSString* f in dicomFiles)
     {
         const char* filename = [f cStringUsingEncoding:[NSString defaultCStringEncoding]];
-        
-        gdcm::Reader reader;
-        
-        reader.SetFileName(filename);
-        
-        if( !reader.Read() )
+
+        if (filename == NULL)
         {
-            std::cerr << "Can't read file for anonymization." << std::endl;
-            
             modifySuccess = NO;
-            
             continue;
         }
-        else
+
+        for (NSArray* replacingItem in tagAndValues)
         {
-            gdcm::File &file = reader.GetFile();
-            
-            gdcm::MediaStorage ms;
-            ms.SetFromFile(file);
-            if( !gdcm::Defs::GetIODNameFromMediaStorage(ms) )
+            DCMAttributeTag* tag = ([replacingItem count] > 0 ? [replacingItem objectAtIndex:0] : nil);
+            NSString *replacementValue = ([replacingItem count] >= 2 ? [replacingItem objectAtIndex:1] : nil);
+            if (tag == nil)
             {
-                std::cerr << "The Media Storage Type is not supported for anonymization: " << ms << std::endl;
-                
                 modifySuccess = NO;
-                
                 continue;
             }
-            else
+
+            const char *encodedValue = NULL;
+            if (replacementValue != nil)
+                encodedValue = [replacementValue cStringUsingEncoding:encoding];
+
+            const int removeIfEmpty = (replacementValue == nil || replacementValue.length == 0) ? 1 : 0;
+            if (!removeIfEmpty && encodedValue == NULL)
             {
-                NSStringEncoding encoding = [NSString defaultCStringEncoding];
-                
-                if ([dicomFiles lastObject] != nil)
-                {
-                    if ([[DicomFile getEncodingArrayForFile:[dicomFiles lastObject]] count] > 0)
-                    {
-                        encoding = [NSString encodingForDICOMCharacterSet:[[DicomFile getEncodingArrayForFile:[dicomFiles lastObject]] objectAtIndex: 0]];
-                    }
-                }
-                
-                std::vector< std::pair<gdcm::Tag, std::string> > replace_tags;
-                for (NSArray* replacingItem in tagAndValues)
-                {
-                    std::string newValue = "";
-                    
-                    DCMAttributeTag* tag = ([replacingItem count] > 0 ? [replacingItem objectAtIndex:0] : nil);
-                    
-                    if (tag)
-                    {
-                        if ([replacingItem count] >= 2)
-                            newValue = std::string( [[replacingItem objectAtIndex:1] cStringUsingEncoding:encoding] );
-                    
-                        replace_tags.push_back( std::make_pair(gdcm::Tag(tag.group,tag.element),newValue) );
-                    }
-                }
-                
-                /////////////////////////////
-                /////////////////////////////
-                /////////////////////////////
-                /////////////////////////////
-                /////////////////////////////
-                
-                gdcm::Anonymizer anon;
-                anon.SetFile( file );
-                
-                bool success = true;
-                
-                std::vector< std::pair<gdcm::Tag, std::string> >::const_iterator it2 = replace_tags.begin();
-                for(; it2 != replace_tags.end(); ++it2)
-                {
-                    success = success && anon.Replace( it2->first, it2->second.c_str() );
-                }
-                
-                if (!success)
-                {
-                    modifySuccess = NO;
-                }
-                
-                /////////////////////////////
-                /////////////////////////////
-                /////////////////////////////
-                /////////////////////////////
-                /////////////////////////////
-                
-                const char* outfilename = filename;
-                
-                gdcm::Writer writer;
-                writer.SetFileName( outfilename );
-                writer.SetFile( file );
-                
-                if( !writer.Write() )
-                {
-                    std::cerr << "Could not Write : " << outfilename << std::endl;
-                    if( strcmp(filename,outfilename) != 0 )
-                    {
-                        gdcm::System::RemoveFile( outfilename );
-                    }
-                    else
-                    {
-                        std::cerr << "gdcmanon just corrupted: " << filename << " (data lost)." << std::endl;
-                        
-                    }
-                    
-                    modifySuccess = NO;
-                    
-                    continue;
-                }
+                modifySuccess = NO;
+                continue;
             }
+
+            if (!replaceTagValueFn(filename, (unsigned short)tag.group, (unsigned short)tag.element, encodedValue, removeIfEmpty))
+                modifySuccess = NO;
         }
     }
-    
-    //////////////////////
-    //////////////////////
-    //////////////////////
-    //////////////////////
-    //////////////////////
-    
+
     return modifySuccess;
 }
 
 
-+ (int) modifyDicom:(NSArray*) params encoding: (NSStringEncoding) encoding
-{
-	int error_count = 0;
-	
-	@try 
-	{
-		int i, argc = [params count];
-        std::vector<char*> argv(argc);
-		
-		for( i = 0; i < argc; i++)
-        {
-            if ([params count] >= i+1)
-                argv[ i] = (char*) [[params objectAtIndex: i] cStringUsingEncoding: encoding];
-            else
-                argv[ i] = (char*) [@"" cStringUsingEncoding: encoding];
-        }
-		
-		MdfConsoleEngine engine( argc, argv.data(),"dcmodify");
-		
-		error_count=engine.startProvidingService();
-		
-		if (error_count > 0)
-			NSLog( @"------- XMLController modifyDicom : there were %d errors", error_count);
-	}
-	@catch (NSException * e) 
-	{
-		N2LogExceptionWithStackTrace(e);
-	}
-	
-    return error_count;
-}
-
 -(int) getGroupAndElementForName:(NSString*) name group:(int*) gp element:(int*) el
 {
-	int result = 0;
-    DcmTagKey key(0xffff,0xffff);
-    const DcmDataDictionary& globalDataDict = dcmDataDict.rdlock();
-    const DcmDictEntry *dicent = globalDataDict.findEntry( [name UTF8String]);
-	
-    //successfull lookup in dictionary -> translate to tag and return
-    
-	if (dicent)
-    {
-        key = dicent->getKey();
-		*gp = key.getGroup();
-		*el = key.getElement();
-		
-		result = 0;
-     }
-	 else result = -1;
-	 
-     dcmDataDict.unlock();
-    
-	return result;
+    if (gp == NULL || el == NULL || name.length == 0)
+        return -1;
+
+    NSString *tagString = [(NSDictionary *)[DCMTagForNameDictionary sharedTagForNameDictionary] objectForKey:name];
+    if (tagString == nil)
+        return -1;
+
+    if (!HorosParseTagString(tagString, gp, el))
+        return -1;
+
+    return 0;
 }
 
 - (void) prepareDictionaryArray
 {
-	DcmDictEntry* e = NULL;
-	DcmDataDictionary& globalDataDict = dcmDataDict.wrlock();
-	
-	DcmDictEntryList list;
-    DcmHashDictIterator iter(globalDataDict.normalBegin());
-    for( int x = 0; x < globalDataDict.numberOfNormalTagEntries(); ++iter, x++)
+    NSDictionary *tagDictionary = [DCMTagDictionary sharedTagDictionary];
+    NSArray<NSString *> *allKeys = [tagDictionary allKeys];
+    NSArray<NSString *> *sortedKeys = [allKeys sortedArrayUsingComparator:^NSComparisonResult(NSString *lhs, NSString *rhs) {
+        int lhsGroup = 0, lhsElement = 0;
+        int rhsGroup = 0, rhsElement = 0;
+        if (!HorosParseTagString(lhs, &lhsGroup, &lhsElement) ||
+            !HorosParseTagString(rhs, &rhsGroup, &rhsElement))
+            return [lhs compare:rhs];
+        if (lhsGroup == rhsGroup)
+            return lhsElement < rhsElement ? NSOrderedAscending : (lhsElement > rhsElement ? NSOrderedDescending : NSOrderedSame);
+        return lhsGroup < rhsGroup ? NSOrderedAscending : NSOrderedDescending;
+    }];
+
+    for (NSString *tagString in sortedKeys)
     {
-        if ((*iter)->getPrivateCreator() == NULL) // exclude private tags
-        {
-          e = new DcmDictEntry(*(*iter));
-          list.insertAndReplace(e);
-        }
+        int group = 0;
+        int element = 0;
+        if (!HorosParseTagString(tagString, &group, &element))
+            continue;
+        if (group <= 0 || (group % 2) == 1)
+            continue; // exclude private tags
+
+        NSDictionary *entry = [tagDictionary objectForKey:tagString];
+        NSString *description = [entry objectForKey:@"Description"];
+        if (description.length == 0)
+            description = @"Unknown";
+
+        NSString *s = [NSString stringWithFormat:@"(0x%04x,0x%04x) %@", group, element, description];
+        [dictionaryArray addObject:s];
     }
-	
-    /* output the list contents */
-    DcmDictEntryListIterator listIter(list.begin());
-    DcmDictEntryListIterator listLast(list.end());
-    for (; listIter != listLast; ++listIter)
-    {
-		e = *listIter;
-		
-		if( e->getGroup() > 0)
-		{
-			NSString	*s = [NSString stringWithFormat:@"(0x%04x,0x%04x) %s", e->getGroup(), e->getElement(), e->getTagName()];
-		
-			[dictionaryArray addObject: s];
-		}
-    }
-	
-	dcmDataDict.unlock();
 }
 @end

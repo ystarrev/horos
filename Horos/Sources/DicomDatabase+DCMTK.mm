@@ -49,24 +49,6 @@
 #import "WaitRendering.h"
 
 #include <dlfcn.h>
-#undef verify
-#include "osconfig.h" /* make sure OS specific configuration is included first */
-#include "djdecode.h"  /* for dcmjpeg decoders */
-#include "djencode.h"  /* for dcmjpeg encoders */
-#include "dcrledrg.h"  /* for DcmRLEDecoderRegistration */
-#include "dcrleerg.h"  /* for DcmRLEEncoderRegistration */
-#include "djrploss.h"
-#include "djrplol.h"
-#include "dcpixel.h"
-#include "dcrlerp.h"
-
-#include "dcdatset.h"
-#include "dcmetinf.h"
-#include "dcfilefo.h"
-#include "dcdebug.h"
-#include "dcuid.h"
-#include "dcdict.h"
-#include "dcdeftag.h"
 
 #define CHUNK_SUBPROCESS 200
 #define TIMEOUT 20UL
@@ -148,59 +130,6 @@ static NSString* HorosModernDCMTKCopiedString(char* value)
             return NO;
         }
     }
-
-    DcmFileFormat fileformat;
-    OFCondition cond = fileformat.loadFile( [path UTF8String]);
-    if( cond.good())
-    {
-        DcmDataset *dataset = fileformat.getDataset();
-        //		DcmItem *metaInfo = fileformat.getMetaInfo();
-        DcmXfer original_xfer(dataset->getOriginalXfer());
-        if (original_xfer.isEncapsulated())
-        {
-            return NO;
-        }
-        else
-        {
-            const char *string = NULL;
-            NSString *modality = @"OT";
-            if (dataset->findAndGetString(DCM_Modality, string, OFFalse).good() && string != NULL)
-                modality = [NSString stringWithCString:string encoding: NSASCIIStringEncoding];
-            
-            NSString *SOPClassUID = @"";
-            if (dataset->findAndGetString(DCM_SOPClassUID, string, OFFalse).good() && string != NULL)
-                SOPClassUID = [NSString stringWithCString:string encoding: NSASCIIStringEncoding];
-            
-            // See Decompress.mm for these exceptions
-            if( [DCMAbstractSyntaxUID isImageStorage: SOPClassUID] == YES &&
-               [SOPClassUID isEqualToString:[DCMAbstractSyntaxUID pdfStorageClassUID]] == NO &&
-               [SOPClassUID isEqualToString:[DCMAbstractSyntaxUID EncapsulatedCDAStorage]] == NO &&
-               [DCMAbstractSyntaxUID isStructuredReport: SOPClassUID] == NO)
-            {
-                int resolution = 0;
-                unsigned short rows = 0;
-                if (dataset->findAndGetUint16( DCM_Rows, rows, OFFalse).good())
-                {
-                    if( resolution == 0 || resolution > rows)
-                        resolution = rows;
-                }
-                unsigned short columns = 0;
-                if (dataset->findAndGetUint16( DCM_Columns, columns, OFFalse).good())
-                {
-                    if( resolution == 0 || resolution > columns)
-                        resolution = columns;
-                }
-                
-                int quality, compression = [BrowserController compressionForModality: modality quality: &quality resolution: resolution];
-                
-                if( compression == compression_none)
-                    return NO;
-                
-                return YES;
-            }
-        }
-    }
-    
     return NO;
 }
 

@@ -116,7 +116,7 @@ NSInteger CompareDCMAttributeTagStringValues(id lsp, id rsp, void* context) {
 					description = [NSString stringWithFormat:@"%@ - %@ -%@", [tag attrTag].stringValue, [tag attrTag].name, valDescription];
 				else
 					description = [NSString stringWithFormat:@"%@ - %@", [tag attrTag].stringValue, [tag attrTag].name];
-				
+
 				NSMenuItem* item = [[[NSMenuItem alloc] initWithTitle: description action:action keyEquivalent:@""] autorelease];
 				item.representedObject = [tag attrTag];
 				item.target = obj;

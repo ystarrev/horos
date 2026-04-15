@@ -38,13 +38,18 @@
 #import <Cocoa/Cocoa.h>
 
 
-@class DCMAttributeTag, AnonymizationViewController, AnonymizationTagsPopUpButton, N2TextField;
+@class DCMAttributeTag, AnonymizationViewController, N2TextField;
 
-@interface AnonymizationTagsView : NSView {
+@interface AnonymizationTagsView : NSView <NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate> {
 	NSMutableArray* viewGroups;
 	NSSize intercellSpacing, cellSize;
 	IBOutlet AnonymizationViewController* anonymizationViewController;
-	AnonymizationTagsPopUpButton* dcmTagsPopUpButton;
+	NSTextField* dcmTagsSearchField;
+	NSPopover* dcmTagsPopover;
+	NSTableView* dcmTagsTableView;
+	NSArray* dcmTagNamesAll;
+	NSArray* dcmTagNamesFiltered;
+	NSString* dcmTagNameSelected;
 	NSButton* dcmTagAddButton;
 }
 

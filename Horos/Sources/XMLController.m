@@ -658,6 +658,9 @@ extern int delayedTileWindows;
 		[[self window] setRepresentedFilename: srcFile];
 		
 		dictionaryArray = [[NSMutableArray array] retain];
+
+		dicomFieldsCombo.delegate = self;
+		dicomFieldsCombo.dataSource = self;
 		
 		[[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(CloseViewerNotification:) name: OsirixCloseViewerNotification object: nil];
 		[[NSNotificationCenter defaultCenter] addObserver:self selector: @selector(refresh:) name:OsirixDCMViewIndexChangedNotification object:nil];
@@ -1793,6 +1796,18 @@ extern int delayedTileWindows;
 	}
 }
 
+- (void)comboBoxSelectionDidChange:(NSNotification *)notification
+{
+    if ([notification object] == dicomFieldsCombo)
+        [self setTagName: dicomFieldsCombo];
+}
+
+- (void)controlTextDidEndEditing:(NSNotification *)notification
+{
+    if ([notification object] == dicomFieldsCombo)
+        [self setTagName: dicomFieldsCombo];
+}
+
 - (NSString *)comboBox:(NSComboBox *)aComboBox completedString:(NSString *)uncompletedString
 {
 	if( [dictionaryArray count] == 0) [self prepareDictionaryArray];
@@ -1821,7 +1836,11 @@ extern int delayedTileWindows;
 - (id) comboBox:(NSComboBox *)aComboBox objectValueForItemAtIndex:(NSInteger)index
 {
 	if( [dictionaryArray count] == 0) [self prepareDictionaryArray];
-	
-	return [dictionaryArray objectAtIndex: index];
+
+	id value = [dictionaryArray objectAtIndex: index];
+	if ([value isKindOfClass:[NSString class]] && [value length] > 16 && [value characterAtIndex: 0] == '(')
+		return [value substringFromIndex: 16];
+
+	return value;
 }
 @end

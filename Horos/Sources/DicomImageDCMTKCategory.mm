@@ -36,65 +36,107 @@
  ============================================================================*/
 
 #import "DicomImageDCMTKCategory.h"
+#import "ModernDCMTKBridge.h"
 
 #undef verify
 
-#include "osconfig.h"    /* make sure OS specific configuration is included first */
+#include <dlfcn.h>
 
-#include "ofstream.h"
-#include "dsrdoc.h"
-#include "dcuid.h"
-#include "dcfilefo.h"
-#include "dsrtypes.h"
-#include "dsrimgtn.h"
+typedef char* (*HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn)(const char* path);
+typedef char* (*HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn)(const char* path);
+typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
+
+static void* HorosModernDCMTKBridgeHandle()
+{
+    static void* handle = nullptr;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSBundle *bundle = [NSBundle mainBundle];
+        NSArray<NSString *> *basePaths = @[
+            bundle.resourcePath ?: @"",
+            bundle.privateFrameworksPath ?: @"",
+            bundle.sharedFrameworksPath ?: @"",
+            bundle.builtInPlugInsPath ?: @""
+        ];
+        NSArray<NSString *> *relativePaths = @[
+            @"libHorosModernDCMTKBridge.dylib",
+            @"DCMTK/libHorosModernDCMTKBridge.dylib"
+        ];
+        NSString *resolvedPath = nil;
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        for (NSString *basePath in basePaths)
+        {
+            if (basePath.length == 0)
+                continue;
+            for (NSString *relativePath in relativePaths)
+            {
+                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
+                if ([fileManager fileExistsAtPath:candidate])
+                {
+                    resolvedPath = candidate;
+                    break;
+                }
+            }
+            if (resolvedPath)
+                break;
+        }
+
+        if (resolvedPath)
+            handle = dlopen(resolvedPath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+        if (handle == nullptr)
+            NSLog(@"Modern DCMTK bridge unavailable: %s", dlerror());
+    });
+    return handle;
+}
+
+template <typename FunctionType>
+static FunctionType HorosModernDCMTKSymbol(const char* name)
+{
+    void* handle = HorosModernDCMTKBridgeHandle();
+    if (handle == nullptr)
+        return nullptr;
+    return reinterpret_cast<FunctionType>(dlsym(handle, name));
+}
+
+static NSString* HorosModernDCMTKCopiedString(char* value)
+{
+    if (value == nullptr)
+        return nil;
+    HorosModernDCMTKFreeStringFn freeStringFn = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    NSString *string = [NSString stringWithUTF8String:value];
+    if (freeStringFn)
+        freeStringFn(value);
+    return string;
+}
 
 @implementation DicomImage(DicomImageDCMTKCategory)
 
 - (NSString*) keyObjectType
 {
-	NSString *type = nil;
-	DcmFileFormat fileformat;
-	DSRDocument *doc = new DSRDocument();
-	OFCondition status = fileformat.loadFile([[self completePath] UTF8String]);
-	if (status.good())
-		status = doc->read(*fileformat.getDataset());
-	if (status.good())
-	{
-		OFString codeMeaning = doc->getTree().getCurrentContentItem().getConceptName().getCodeMeaning();
-		type = [NSString stringWithUTF8String:codeMeaning.c_str()];
-	}
-	delete doc;
-	return type;
+    HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn bridgeFn =
+        HorosModernDCMTKSymbol<HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn>("HorosModernDCMTKCopyStructuredReportKeyObjectType");
+    if (bridgeFn == nullptr)
+        return nil;
+    NSString *type = HorosModernDCMTKCopiedString(bridgeFn([[self completePath] UTF8String]));
+    return type;
 }
 
 - (NSArray*) referencedObjects
 {
-	NSMutableArray *references = [NSMutableArray array];
-	DcmFileFormat fileformat;
-	DSRDocument *doc = new DSRDocument();
-	OFCondition status = fileformat.loadFile([[self completePath] UTF8String]);
-	if (status.good())
-		status = doc->read(*fileformat.getDataset());
-	if (status.good())
-	{
-		DSRDocumentTreeNode *node = NULL; 
-		//DSRDocumentTree  *tree = doc->getTree();
-		/* iterate over all nodes */ 
-        do { 
-            node = OFstatic_cast(DSRDocumentTreeNode *, doc->getTree().getNode()); 
-            if (node->getValueType() == DSRTypes::VT_Image)
-			{
-				//image node get SOPCInstance
-				DSRImageTreeNode *imageNode = OFstatic_cast(DSRImageTreeNode *, node);
-				OFString sopInstance = imageNode->getSOPInstanceUID();
-				NSString *uid = [NSString stringWithUTF8String:sopInstance.c_str()];
-				if (uid)
-					[references addObject:uid];
-			}
-        } while (doc->getTree().iterate()); 
-	}
-	delete doc;
-	return references;
+    HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn bridgeFn =
+        HorosModernDCMTKSymbol<HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn>("HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs");
+    if (bridgeFn == nullptr)
+        return [NSArray array];
+
+    NSString *uids = HorosModernDCMTKCopiedString(bridgeFn([[self completePath] UTF8String]));
+    if (uids.length == 0)
+        return [NSArray array];
+
+    NSArray *parts = [uids componentsSeparatedByString:@"\\"];
+    NSPredicate *predicate = [NSPredicate predicateWithBlock:^BOOL(id  _Nullable evaluatedObject, NSDictionary<NSString *,id> * _Nullable bindings) {
+        return [evaluatedObject isKindOfClass:[NSString class]] && [evaluatedObject length] > 0;
+    }];
+    return [parts filteredArrayUsingPredicate:predicate];
 }
 
 

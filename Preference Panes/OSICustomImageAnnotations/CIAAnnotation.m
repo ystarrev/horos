@@ -253,10 +253,22 @@
 	NSFont *font = [NSFont systemFontOfSize:10.0];
 	[attrsDictionary setObject:font forKey:NSFontAttributeName];
 	NSAttributedString *contentText = [[[NSAttributedString alloc] initWithString:title attributes:attrsDictionary] autorelease];
-	NSRect textBounds = [contentText boundingRectWithSize:[self bounds].size options:NSStringDrawingUsesDeviceMetrics];
+	NSRect textBounds = [contentText boundingRectWithSize:NSMakeSize(CGFLOAT_MAX, [CIAAnnotation defaultSize].height) options:NSStringDrawingUsesDeviceMetrics];
 	
-	[self setFrameSize:NSMakeSize(textBounds.size.width +6.0*ROUNDED_CORNER_SIZE, [self frame].size.height)];
-	width = textBounds.size.width +6.0*ROUNDED_CORNER_SIZE;
+	CGFloat newWidth = textBounds.size.width + 6.0 * ROUNDED_CORNER_SIZE;
+	if (newWidth < [CIAAnnotation defaultSize].width)
+		newWidth = [CIAAnnotation defaultSize].width;
+	
+	NSView *superview = [self superview];
+	if (superview)
+	{
+		CGFloat maxWidth = NSWidth([superview bounds]) - 20.0;
+		if (maxWidth > 0.0 && newWidth > maxWidth)
+			newWidth = maxWidth;
+	}
+	
+	[self setFrameSize:NSMakeSize(newWidth, [CIAAnnotation defaultSize].height)];
+	width = newWidth;
 	[self setNeedsDisplay:YES];
 }
 

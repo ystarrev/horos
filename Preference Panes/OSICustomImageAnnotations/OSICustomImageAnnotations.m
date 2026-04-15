@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "OSICustomImageAnnotations.h"
+#import "OSICustomImageAnnotationsContentView.h"
 #import "PreferencesWindowController+DCMTK.h"
 #import "NSPreferencePane+OsiriX.h"
 
@@ -69,12 +70,44 @@ NSComparisonResult  compareViewTags(id firstView, id secondView, void * context)
 
 - (id) initWithBundle:(NSBundle *)bundle
 {
-	if( self = [super init])
+	if( self = [super initWithBundle: bundle])
 	{
-		NSNib *nib = [[[NSNib alloc] initWithNibNamed: @"OSICustomImageAnnotations" bundle: nil] autorelease];
-		[nib instantiateWithOwner:self topLevelObjects:&_tlos];
-		
+		programmaticContentView = [[OSICustomImageAnnotationsContentView alloc] initWithFrame:NSMakeRect(0.0, 0.0, 685.0, 675.0) target:self];
+        mainWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0.0, 0.0, 685.0, 675.0)
+                                                 styleMask:NSWindowStyleMaskBorderless
+                                                   backing:NSBackingStoreBuffered
+                                                     defer:NO];
+        [mainWindow setReleasedWhenClosed:NO];
+        [mainWindow setContentView:programmaticContentView];
 		[self setMainView: [mainWindow contentView]];
+
+        modalitiesPopUpButton = [programmaticContentView modalitiesPopUpButton];
+        sameAsDefaultButton = [programmaticContentView sameAsDefaultButton];
+        resetDefaultButton = [programmaticContentView resetDefaultButton];
+        orientationWidgetButton = [programmaticContentView orientationWidgetButton];
+        addAnnotationButton = [programmaticContentView addAnnotationButton];
+        removeAnnotationButton = [programmaticContentView removeAnnotationButton];
+        loadsaveButton = [programmaticContentView loadsaveButton];
+        layoutView = [programmaticContentView layoutView];
+        titleLabelTextField = [programmaticContentView titleLabelTextField];
+        titleTextField = [programmaticContentView titleTextField];
+        contentLabeltextField = [programmaticContentView contentLabeltextField];
+        contentTokenField = [programmaticContentView contentTokenField];
+        dicomGroupTextField = [programmaticContentView dicomGroupTextField];
+        dicomElementTextField = [programmaticContentView dicomElementTextField];
+        dicomNameTokenField = [programmaticContentView dicomNameTokenField];
+        groupLabel = [programmaticContentView groupLabel];
+        elementLabel = [programmaticContentView elementLabel];
+        nameLabel = [programmaticContentView nameLabel];
+        addCustomDICOMFieldButton = [programmaticContentView addCustomDICOMFieldButton];
+        addDICOMFieldButton = [programmaticContentView addDICOMFieldButton];
+        addDatabaseFieldButton = [programmaticContentView addDatabaseFieldButton];
+        addSpecialFieldButton = [programmaticContentView addSpecialFieldButton];
+        DICOMFieldsPopUpButton = [programmaticContentView DICOMFieldsPopUpButton];
+        databaseFieldsPopUpButton = [programmaticContentView databaseFieldsPopUpButton];
+        specialFieldsPopUpButton = [programmaticContentView specialFieldsPopUpButton];
+        contentBox = [programmaticContentView contentBox];
+
 		[self mainViewDidLoad];
 	}
 	
@@ -82,6 +115,8 @@ NSComparisonResult  compareViewTags(id firstView, id secondView, void * context)
 }
 
 - (void)dealloc {
+    [mainWindow release]; mainWindow = nil;
+    [programmaticContentView release]; programmaticContentView = nil;
     [_tlos release]; _tlos = nil;
     
     [super dealloc];
@@ -95,7 +130,7 @@ NSComparisonResult  compareViewTags(id firstView, id secondView, void * context)
 {
 	if(!enable) [layoutView setDisabledText:@""];
 	else [layoutView setDefaultDisabledText];
-	[[self mainView] sortSubviewsUsingFunction:(NSComparisonResult (*)(id, id, void *))compareViewTags context: [NSNumber numberWithBool:enable]];
+    [layoutView setEnabled:enable];
 }
 
 #pragma mark -
@@ -196,7 +231,7 @@ NSComparisonResult  compareViewTags(id firstView, id secondView, void * context)
 	
 	if( layoutController == nil)
 	{
-		layoutController = [[CIALayoutController alloc] initWithWindow:window];
+		layoutController = [[CIALayoutController alloc] initWithWindow:nil];
 		[sameAsDefaultButton setHidden:YES];
 		[resetDefaultButton setHidden:NO];
 	}
@@ -204,6 +239,7 @@ NSComparisonResult  compareViewTags(id firstView, id secondView, void * context)
 
 - (void)didSelect
 {
+    [layoutController setWindow:[[self mainView] window]];
 	[layoutController setLayoutView:layoutView];
 	[layoutController setPrefPane:self];
 	[layoutController awakeFromNib];

@@ -44,61 +44,84 @@
 
 #define FRAME_MARGIN 10
 
+- (void)commonInit
+{
+    if (placeHolderArray != nil)
+        return;
+
+	[self setDefaultDisabledText];
+	[self setDefaultEnabledText];
+	
+	// The layout view contains 8 place holders for Annotations. They are labeled as follow:
+	//  +-------+
+	//	| 5 6 7 |
+	//	| 3   4 |
+	//	| 0 1 2 |
+	//	+-------+
+
+	NSRect frame = [self bounds];
+
+	// Frames Origins (x, y) of the place holders in the layout view
+	float x[8], y[8];
+	x[0] = 0.0 + FRAME_MARGIN;
+	x[3] = x[5] = x[0];
+	x[1] = frame.size.width / 2.0 - [CIAPlaceHolder defaultSize].width / 2.0;
+	x[6] = x[1];
+	x[2] = frame.size.width - [CIAPlaceHolder defaultSize].width - FRAME_MARGIN;
+	x[4] = x[7] = x[2];
+
+	y[0] = 0.0 + FRAME_MARGIN;
+	y[1] = y[2] = y[0];
+	y[3] = frame.size.height / 2.0 - [CIAPlaceHolder defaultSize].height / 2.0;
+	y[4] = y[3];
+	y[5] = frame.size.height - [CIAPlaceHolder defaultSize].height - FRAME_MARGIN;
+	y[6] = y[7] = y[5];
+	
+	int align[8];
+	align[0] = CIAPlaceHolderAlignLeft;
+	align[3] = CIAPlaceHolderAlignLeft;
+	align[5] = CIAPlaceHolderAlignLeft;
+	align[1] = CIAPlaceHolderAlignCenter;
+	align[6] = CIAPlaceHolderAlignCenter;
+	align[2] = CIAPlaceHolderAlignRight;
+	align[4] = CIAPlaceHolderAlignRight;
+	align[7] = CIAPlaceHolderAlignRight;
+	
+	NSMutableArray *placeHolderMutableArray = [NSMutableArray arrayWithCapacity:8];
+    int i;
+	for (i=0; i<8; i++)
+	{
+		CIAPlaceHolder *aPlaceHolder = [[CIAPlaceHolder alloc] initWithFrame: NSMakeRect(x[i], y[i], [CIAPlaceHolder defaultSize].width, [CIAPlaceHolder defaultSize].height)];
+		[aPlaceHolder setAlignment:align[i]];
+		if(i==1) [aPlaceHolder setOrientationWidgetPosition:CIAPlaceHolderOrientationWidgetBottom];
+		[self addSubview:aPlaceHolder];
+		[placeHolderMutableArray addObject:aPlaceHolder];
+		[aPlaceHolder release];
+	}
+	placeHolderArray = [[NSArray arrayWithArray:placeHolderMutableArray] retain];
+}
+
 - (id)initWithFrame:(NSRect)frame
 {
     self = [super initWithFrame:frame];
     if(self)
-	{	
-		[self setDefaultDisabledText];
-		[self setDefaultEnabledText];
-		
-		// The layout view contains 8 place holders for Annotations. They are labeled as follow:
-		//  +-------+
-		//	| 5 6 7 |
-		//	| 3   4 |
-		//	| 0 1 2 |
-		//	+-------+
-	
-		// Frames Origins (x, y) of the place holders in the layout view
-		float x[8], y[8];
-		x[0] = 0.0 + FRAME_MARGIN;
-		x[3] = x[5] = x[0];
-		x[1] = frame.size.width / 2.0 - [CIAPlaceHolder defaultSize].width / 2.0;
-		x[6] = x[1];
-		x[2] = frame.size.width - [CIAPlaceHolder defaultSize].width - FRAME_MARGIN;
-		x[4] = x[7] = x[2];
-
-		y[0] = 0.0 + FRAME_MARGIN;
-		y[1] = y[2] = y[0];
-		y[3] = frame.size.height / 2.0 - [CIAPlaceHolder defaultSize].height / 2.0;
-		y[4] = y[3];
-		y[5] = frame.size.height - [CIAPlaceHolder defaultSize].height - FRAME_MARGIN;
-		y[6] = y[7] = y[5];
-		
-		int align[8];
-		align[0] = CIAPlaceHolderAlignLeft;
-		align[3] = CIAPlaceHolderAlignLeft;
-		align[5] = CIAPlaceHolderAlignLeft;
-		align[1] = CIAPlaceHolderAlignCenter;
-		align[6] = CIAPlaceHolderAlignCenter;
-		align[2] = CIAPlaceHolderAlignRight;
-		align[4] = CIAPlaceHolderAlignRight;
-		align[7] = CIAPlaceHolderAlignRight;
-		
-		NSMutableArray *placeHolderMutableArray = [NSMutableArray arrayWithCapacity:8];
-        int i;
-		for (i=0; i<8; i++)
-		{
-			CIAPlaceHolder *aPlaceHolder = [[CIAPlaceHolder alloc] initWithFrame: NSMakeRect(x[i], y[i], [CIAPlaceHolder defaultSize].width, [CIAPlaceHolder defaultSize].height)];
-			[aPlaceHolder setAlignment:align[i]];
-			if(i==1) [aPlaceHolder setOrientationWidgetPosition:CIAPlaceHolderOrientationWidgetBottom];
-			[self addSubview:aPlaceHolder];
-			[placeHolderMutableArray addObject:aPlaceHolder];
-			[aPlaceHolder release];
-		}
-		placeHolderArray = [[NSArray arrayWithArray:placeHolderMutableArray] retain];
-    }
+		[self commonInit];
     return self;
+}
+
+- (id)initWithCoder:(NSCoder *)coder
+{
+    self = [super initWithCoder:coder];
+    if (self)
+        [self commonInit];
+    return self;
+}
+
+- (void)awakeFromNib
+{
+    [super awakeFromNib];
+    [self commonInit];
+    [self updatePlaceHolderOrigins];
 }
 
 - (void)dealloc

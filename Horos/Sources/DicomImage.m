@@ -591,8 +591,6 @@ NSString* sopInstanceUIDDecode( unsigned char *r, int length)
                                                 [NSArray  arrayWithObjects:[DCMAttributeTag tagWithTagString:[dict objectForKey: @"field"]],
                                                                             @"",nil]
             ];
-            
-            //[params addObjectsFromArray: [NSArray arrayWithObjects: @"-e", [dict objectForKey: @"field"], nil]];
         }
         else
         {
@@ -600,8 +598,6 @@ NSString* sopInstanceUIDDecode( unsigned char *r, int length)
                                                 [NSArray  arrayWithObjects:[DCMAttributeTag tagWithTagString:[dict objectForKey: @"field"]],
                                                                             [dict objectForKey: @"value"],nil]
             ];
-            
-            //[params addObjectsFromArray: [NSArray arrayWithObjects: @"-i", [NSString stringWithFormat: @"%@=%@", [dict objectForKey: @"field"], [dict objectForKey: @"value"]], nil]];
         }
         
         NSMutableArray *files = [NSMutableArray arrayWithArray: [dict objectForKey: @"files"]];
@@ -612,42 +608,6 @@ NSString* sopInstanceUIDDecode( unsigned char *r, int length)
         {
             [[NSFileManager defaultManager] removeItemAtPath:[loopItem stringByAppendingString:@".bak"] error:NULL];
         }
-        
-        
-        
-        
-        
-        /*
-		NSMutableArray	*params = [NSMutableArray arrayWithObjects:@"dcmodify", @"--ignore-errors", nil];
-		
-		if( [dict objectForKey: @"value"] == nil || [(NSString*)[dict objectForKey: @"value"] length] == 0)
-			[params addObjectsFromArray: [NSArray arrayWithObjects: @"-e", [dict objectForKey: @"field"], nil]];
-		else
-			[params addObjectsFromArray: [NSArray arrayWithObjects: @"-i", [NSString stringWithFormat: @"%@=%@", [dict objectForKey: @"field"], [dict objectForKey: @"value"]], nil]];
-		
-		NSMutableArray *files = [NSMutableArray arrayWithArray: [dict objectForKey: @"files"]];
-		
-		if( files)
-		{
-			[files removeDuplicatedStrings];
-			
-			[params addObjectsFromArray: files];
-			
-			@try
-			{
-				NSStringEncoding encoding = [NSString encodingForDICOMCharacterSet: [[DicomFile getEncodingArrayForFile: [files lastObject]] objectAtIndex: 0]];
-				
-				[XMLController modifyDicom: params encoding: encoding];
-				
-				for( id loopItem in files)
-					[[NSFileManager defaultManager] removeItemAtPath: [loopItem stringByAppendingString:@".bak"] error:NULL];
-			}
-			@catch (NSException * e)
-			{
-				NSLog(@"**** DicomStudy setComment: %@", e);
-			}
-		}
-        */
 	}
 	@catch (NSException* e) {
 		N2LogExceptionWithStackTrace(e);

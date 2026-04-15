@@ -62,7 +62,7 @@
     DcmHashDictIterator iter(globalDataDict.normalBegin());
     for( int x = 0; x < globalDataDict.numberOfNormalTagEntries(); ++iter, x++)
     {
-        if ((*iter)->getPrivateCreator() == NULL) // exclude private tags
+        if ((*iter)->getPrivateCreator() == NULL)
         {
           e = new DcmDictEntry(*(*iter));
           list.insertAndReplace(e);
@@ -71,7 +71,6 @@
 	
 	NSMutableArray *DICOMFieldsArray = [NSMutableArray array];
 	
-    /* output the list contents */
     DcmDictEntryListIterator listIter(list.begin());
     DcmDictEntryListIterator listLast(list.end());
     for (; listIter != listLast; ++listIter)
@@ -80,13 +79,6 @@
 		
 		if( e->getGroup() > 0)
 		{
-//			NSString	*s = [NSString stringWithFormat:@"(0x%04x,0x%04x) %s", e->getGroup(), e->getElement(), e->getTagName()];
-					
-//			[DICOMFieldsTitlesArray addObject: s];
-//			[DICOMFieldsArray addObject:[NSString stringWithFormat:@"%s",e->getTagName()]];
-//			
-//			[DICOMGroupsArray addObject:[NSNumber numberWithInt:e->getGroup()]];
-			
 			CIADICOMField *dicomField = [[CIADICOMField alloc] initWithGroup:e->getGroup() element:e->getElement() name:[NSString stringWithFormat:@"%s",e->getTagName()]];
 			[DICOMFieldsArray addObject:dicomField];
 			[dicomField release];

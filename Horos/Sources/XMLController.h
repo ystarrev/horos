@@ -46,7 +46,7 @@
 
 /** \brief Window Controller for XML parsing */
 
-@interface XMLController : OSIWindowController <NSToolbarDelegate, NSWindowDelegate, NSToolbarItemValidation>
+@interface XMLController : OSIWindowController <NSToolbarDelegate, NSWindowDelegate, NSToolbarItemValidation, NSComboBoxDelegate, NSComboBoxDataSource>
 {
     IBOutlet NSOutlineView		*table;
 	IBOutlet NSScrollView		*tableScrollView;

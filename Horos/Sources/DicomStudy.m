@@ -977,8 +977,6 @@ static NSRecursiveLock *dbModifyLock = nil;
              [NSArray  arrayWithObjects:[DCMAttributeTag tagWithTagString:[dict objectForKey: @"field"]],
               @"",nil]
              ];
-            
-            //[params addObjectsFromArray: [NSArray arrayWithObjects: @"-e", [dict objectForKey: @"field"], nil]];
         }
         else
         {
@@ -986,8 +984,6 @@ static NSRecursiveLock *dbModifyLock = nil;
              [NSArray  arrayWithObjects:[DCMAttributeTag tagWithTagString:[dict objectForKey: @"field"]],
               [dict objectForKey: @"value"],nil]
              ];
-            
-            //[params addObjectsFromArray: [NSArray arrayWithObjects: @"-i", [NSString stringWithFormat: @"%@=%@", [dict objectForKey: @"field"], [dict objectForKey: @"value"]], nil]];
         }
         
         NSMutableArray *files = [NSMutableArray arrayWithArray: [dict objectForKey: @"files"]];
@@ -998,46 +994,6 @@ static NSRecursiveLock *dbModifyLock = nil;
         {
             [[NSFileManager defaultManager] removeItemAtPath:[loopItem stringByAppendingString:@".bak"] error:NULL];
         }
-        
-        
-        
-        
-        /*
-        NSMutableArray *files = [NSMutableArray arrayWithArray: [dict objectForKey: @"files"]];
-        NSMutableArray	*params = [NSMutableArray arrayWithObjects:@"dcmodify", @"--ignore-errors", nil];
-        NSStringEncoding encoding = [NSString encodingForDICOMCharacterSet: [[DicomFile getEncodingArrayForFile: [files objectAtIndex: 0]] objectAtIndex: 0]];
-        
-        if( [dict objectForKey: @"value"] == nil || [(NSString*)[dict objectForKey: @"value"] length] == 0)
-            [params addObjectsFromArray: [NSArray arrayWithObjects: @"-e", [dict objectForKey: @"field"], nil]];
-        else
-        {
-            if( [[dict objectForKey: @"value"] canBeConvertedToEncoding: encoding])
-                [params addObjectsFromArray: [NSArray arrayWithObjects: @"-i", [NSString stringWithFormat: @"%@=%@", [dict objectForKey: @"field"], [dict objectForKey: @"value"]], nil]];
-            else
-                NSLog( @"---- cannot convert [dict objectForKey: value] to this encoding: %ld", (long) encoding);
-        }
-        
-        if( files)
-        {
-            [files removeDuplicatedStrings];
-            
-            [params addObjectsFromArray: files];
-            
-            @try
-            {
-                [XMLController modifyDicom: params encoding: encoding];
-                
-                for( id loopItem in files)
-                {
-                    [[NSFileManager defaultManager] removeItemAtPath: [loopItem stringByAppendingString:@".bak"] error:NULL];
-                }
-            }
-            @catch (NSException * e)
-            {
-                NSLog(@"**** DicomStudy setComment: %@", e);
-            }
-        }
-        */
     }
     @catch (NSException* e) {
         N2LogExceptionWithStackTrace(e);
@@ -1077,11 +1033,6 @@ static NSRecursiveLock *dbModifyLock = nil;
     [self setPrimitiveValue: c forKey: @"comment"];
     [self didChangeValueForKey: @"comment"];
     
-    if( [previousValue length] != 0 || [c length] != 0)
-    {
-        if( [c isEqualToString: previousValue] == NO)
-            [self archiveAnnotationsAsDICOMSR];
-    }
 }
 
 - (void) setComment2: (NSString*) c
@@ -1092,11 +1043,6 @@ static NSRecursiveLock *dbModifyLock = nil;
     [self setPrimitiveValue: c forKey: @"comment2"];
     [self didChangeValueForKey: @"comment2"];
     
-    if( [previousValue length] != 0 || [c length] != 0)
-    {
-        if( [c isEqualToString: previousValue] == NO)
-            [self archiveAnnotationsAsDICOMSR];
-    }
 }
 
 - (void) setComment3: (NSString*) c
@@ -1107,11 +1053,6 @@ static NSRecursiveLock *dbModifyLock = nil;
     [self setPrimitiveValue: c forKey: @"comment3"];
     [self didChangeValueForKey: @"comment3"];
     
-    if( [previousValue length] != 0 || [c length] != 0)
-    {
-        if( [c isEqualToString: previousValue] == NO)
-            [self archiveAnnotationsAsDICOMSR];
-    }
 }
 
 - (void) setComment4: (NSString*) c
@@ -1122,11 +1063,6 @@ static NSRecursiveLock *dbModifyLock = nil;
     [self setPrimitiveValue: c forKey: @"comment4"];
     [self didChangeValueForKey: @"comment4"];
     
-    if( [previousValue length] != 0 || [c length] != 0)
-    {
-        if( [c isEqualToString: previousValue] == NO)
-            [self archiveAnnotationsAsDICOMSR];
-    }
 }
 
 - (void) setStateText: (NSNumber*) c

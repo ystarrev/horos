@@ -2929,6 +2929,8 @@
 		CEB98C381335084F0083F3FD /* OSICustomImageAnnotations.xib in Resources */ = {isa = PBXBuildFile; fileRef = CEB98C201335084F0083F3FD /* OSICustomImageAnnotations.xib */; };
 		CEB98C3F1335084F0083F3FD /* OSICustomImageAnnotations.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C281335084F0083F3FD /* OSICustomImageAnnotations.h */; };
 		CEB98C401335084F0083F3FD /* OSICustomImageAnnotations.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C291335084F0083F3FD /* OSICustomImageAnnotations.m */; };
+		A1B2C3D4E5F60718293A0001 /* OSICustomImageAnnotationsContentView.h in Headers */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A0002 /* OSICustomImageAnnotationsContentView.h */; };
+		A1B2C3D4E5F60718293A0004 /* OSICustomImageAnnotationsContentView.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A0003 /* OSICustomImageAnnotationsContentView.m */; };
 		CEB98C411335084F0083F3FD /* RWTokenField.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C2A1335084F0083F3FD /* RWTokenField.h */; };
 		CEB98C421335084F0083F3FD /* RWTokenField.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C2B1335084F0083F3FD /* RWTokenField.m */; };
 		CEB98C431335084F0083F3FD /* Security.tiff in Resources */ = {isa = PBXBuildFile; fileRef = CEB98C2C1335084F0083F3FD /* Security.tiff */; };
@@ -5574,6 +5576,8 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		CEB98C1F1335084F0083F3FD /* CIAPlaceHolder.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CIAPlaceHolder.m; sourceTree = "<group>"; };
 		CEB98C281335084F0083F3FD /* OSICustomImageAnnotations.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSICustomImageAnnotations.h; sourceTree = "<group>"; };
 		CEB98C291335084F0083F3FD /* OSICustomImageAnnotations.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSICustomImageAnnotations.m; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A0002 /* OSICustomImageAnnotationsContentView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSICustomImageAnnotationsContentView.h; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A0003 /* OSICustomImageAnnotationsContentView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSICustomImageAnnotationsContentView.m; sourceTree = "<group>"; };
 		CEB98C2A1335084F0083F3FD /* RWTokenField.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RWTokenField.h; sourceTree = "<group>"; };
 		CEB98C2B1335084F0083F3FD /* RWTokenField.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RWTokenField.m; sourceTree = "<group>"; };
 		CEB98C2C1335084F0083F3FD /* Security.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Security.tiff; sourceTree = "<group>"; };
@@ -8907,6 +8911,8 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				CEB98C201335084F0083F3FD /* OSICustomImageAnnotations.xib */,
 				CEB98C281335084F0083F3FD /* OSICustomImageAnnotations.h */,
 				CEB98C291335084F0083F3FD /* OSICustomImageAnnotations.m */,
+				A1B2C3D4E5F60718293A0002 /* OSICustomImageAnnotationsContentView.h */,
+				A1B2C3D4E5F60718293A0003 /* OSICustomImageAnnotationsContentView.m */,
 				CEB98C2A1335084F0083F3FD /* RWTokenField.h */,
 				CEB98C2B1335084F0083F3FD /* RWTokenField.m */,
 				CEB98C2C1335084F0083F3FD /* Security.tiff */,
@@ -9787,6 +9793,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				CEB98C341335084F0083F3FD /* CIALayoutView.h in Headers */,
 				CEB98C361335084F0083F3FD /* CIAPlaceHolder.h in Headers */,
 				CEB98C3F1335084F0083F3FD /* OSICustomImageAnnotations.h in Headers */,
+				A1B2C3D4E5F60718293A0001 /* OSICustomImageAnnotationsContentView.h in Headers */,
 				CEB98C411335084F0083F3FD /* RWTokenField.h in Headers */,
 				CEB98C601335085D0083F3FD /* OSICDPreferencePanePref.h in Headers */,
 				CEB98C6C1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.h in Headers */,
@@ -11618,6 +11625,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				CEB98C351335084F0083F3FD /* CIALayoutView.m in Sources */,
 				CEB98C371335084F0083F3FD /* CIAPlaceHolder.m in Sources */,
 				CEB98C401335084F0083F3FD /* OSICustomImageAnnotations.m in Sources */,
+				A1B2C3D4E5F60718293A0004 /* OSICustomImageAnnotationsContentView.m in Sources */,
 				CEB98C421335084F0083F3FD /* RWTokenField.m in Sources */,
 				CEB98C611335085D0083F3FD /* OSICDPreferencePanePref.m in Sources */,
 				CEB98C6D1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.m in Sources */,

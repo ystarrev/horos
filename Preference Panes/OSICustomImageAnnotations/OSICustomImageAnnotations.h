@@ -45,10 +45,12 @@
 #import "RWTokenField.h"
 
 @class CIALayoutController;
+@class OSICustomImageAnnotationsContentView;
 
 @interface OSICustomImageAnnotations : NSPreferencePane {
 	
 	CIALayoutController *layoutController;
+	OSICustomImageAnnotationsContentView *programmaticContentView;
 	IBOutlet NSWindow *window;
 	IBOutlet NSPopUpButton *modalitiesPopUpButton;
 	IBOutlet NSButton *sameAsDefaultButton, *resetDefaultButton;

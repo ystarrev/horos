@@ -91,6 +91,8 @@
 #import "DicomDatabase.h"
 #import "N2MutableUInteger.h"
 #import "Window3DController.h"
+#import <MetalKit/MetalKit.h>
+#import "Horos-Swift.h"
 #import "N2Stuff.h"
 #import "OSIGeneralPreferencePanePref.h"
 #import "Security/Security.h"
@@ -4306,6 +4308,13 @@ static BOOL initialized = NO;
     splashController = [[SplashScreen alloc] init];
 	[splashController showWindow:self];
 	[splashController affiche];
+}
+
+-(IBAction)showSettingsPanel:(id)sender
+{
+    [[HorosModernSettingsWindowController sharedWindowController] showWindow:sender];
+    [[[HorosModernSettingsWindowController sharedWindowController] window] makeKeyAndOrderFront:sender];
+    [NSApp activateIgnoringOtherApps:YES];
 }
 
 -(IBAction)showPreferencePanel:(id)sender

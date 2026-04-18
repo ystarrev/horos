@@ -17,7 +17,9 @@
 #import <AddressBook/AddressBook.h>
 #import "DicomImage.h"
 #import "DICOMToNSString.h"
+#import "ModernDCMTKBridge.h"
 
+#include <dlfcn.h>
 #undef verify
 
 #include "osconfig.h"    /* make sure OS specific configuration is included first */
@@ -28,6 +30,84 @@
 #include "dsrtypes.h"
 #include "dsrimgtn.h"
 #include "dsrdoctr.h"
+
+typedef char* (*HorosModernDCMTKCopyStructuredReportHTMLFn)(const char* path);
+typedef char* (*HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn)(const char* path);
+typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
+
+static void* HorosStructuredReportBridgeHandle()
+{
+	static void* handle = NULL;
+	static dispatch_once_t onceToken;
+	dispatch_once(&onceToken, ^{
+		NSBundle *bundle = [NSBundle mainBundle];
+		NSArray<NSString *> *basePaths = @[
+			bundle.resourcePath ?: @"",
+			bundle.privateFrameworksPath ?: @"",
+			bundle.sharedFrameworksPath ?: @"",
+			bundle.builtInPlugInsPath ?: @""
+		];
+		NSArray<NSString *> *relativePaths = @[
+			@"libHorosModernDCMTKBridge.dylib",
+			@"DCMTK/libHorosModernDCMTKBridge.dylib"
+		];
+
+		NSFileManager *fileManager = [NSFileManager defaultManager];
+		for (NSString *basePath in basePaths)
+		{
+			if (basePath.length == 0)
+				continue;
+
+			for (NSString *relativePath in relativePaths)
+			{
+				NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
+				if ([fileManager fileExistsAtPath:candidate])
+				{
+					handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+					if (handle == NULL)
+						NSLog(@"Modern DCMTK bridge failed to load at %@: %s", candidate, dlerror());
+					return;
+				}
+			}
+		}
+
+		NSLog(@"Modern DCMTK bridge not found in bundle search paths.");
+	});
+	return handle;
+}
+
+template <typename FunctionType>
+static FunctionType HorosStructuredReportSymbol(const char* name)
+{
+	void* handle = HorosStructuredReportBridgeHandle();
+	if (handle == NULL)
+		return NULL;
+	return reinterpret_cast<FunctionType>(dlsym(handle, name));
+}
+
+static NSString* HorosStructuredReportBridgeString(char* value)
+{
+	if (value == NULL)
+		return nil;
+	NSString* string = [NSString stringWithUTF8String:value];
+	HorosModernDCMTKFreeStringFn freeFn = HorosStructuredReportSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+	if (freeFn)
+		freeFn(value);
+	return string;
+}
+
+static BOOL HorosStructuredReportWriteDocumentToPath(DSRDocument* document, NSString* path)
+{
+	if (document == NULL || path == nil)
+		return NO;
+
+	DcmFileFormat fileformat;
+	OFCondition status = document->write(*fileformat.getDataset());
+	if (status.good())
+		status = fileformat.saveFile([path UTF8String], EXS_LittleEndianExplicit);
+
+	return status.good();
+}
 
 @implementation StructuredReport
 
@@ -606,10 +686,15 @@
 		_doc->writeXML(stream, writeFlags);
 	}
 	else if ([extension isEqualToString:@"htm"] || [extension isEqualToString:@"html"]){
-		[self checkCharacterSet];
-		size_t renderFlags = DSRTypes::HF_renderDcmtkFootnote;		
-		ofstream stream([path UTF8String]);
-		_doc->renderHTML(stream, renderFlags, NULL);
+		NSString *tempSRPath = [[NSTemporaryDirectory() stringByAppendingPathComponent:[[NSProcessInfo processInfo] globallyUniqueString]] stringByAppendingPathExtension:@"dcm"];
+		HorosModernDCMTKCopyStructuredReportHTMLFn renderFn = HorosStructuredReportSymbol<HorosModernDCMTKCopyStructuredReportHTMLFn>("HorosModernDCMTKCopyStructuredReportHTML");
+		if (renderFn != NULL && HorosStructuredReportWriteDocumentToPath(_doc, tempSRPath))
+		{
+			NSString *html = HorosStructuredReportBridgeString(renderFn([tempSRPath UTF8String]));
+			if (html)
+				[html writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+		}
+		[[NSFileManager defaultManager] removeItemAtPath:tempSRPath error:nil];
 	}
 }
 
@@ -624,10 +709,15 @@
 	if (_reportHasChanged) {
 		[self createReport];
 	}
-	[self checkCharacterSet];
-	size_t renderFlags = DSRTypes::HF_renderDcmtkFootnote;		
-	ofstream stream([[self htmlPath] UTF8String]);
-	_doc->renderHTML(stream, renderFlags, NULL);	
+	NSString *tempSRPath = [[NSTemporaryDirectory() stringByAppendingPathComponent:[[NSProcessInfo processInfo] globallyUniqueString]] stringByAppendingPathExtension:@"dcm"];
+	HorosModernDCMTKCopyStructuredReportHTMLFn renderFn = HorosStructuredReportSymbol<HorosModernDCMTKCopyStructuredReportHTMLFn>("HorosModernDCMTKCopyStructuredReportHTML");
+	if (renderFn != NULL && HorosStructuredReportWriteDocumentToPath(_doc, tempSRPath))
+	{
+		NSString *html = HorosStructuredReportBridgeString(renderFn([tempSRPath UTF8String]));
+		if (html)
+			[html writeToFile:[self htmlPath] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+	}
+	[[NSFileManager defaultManager] removeItemAtPath:tempSRPath error:nil];
 }
 
 - (void)writeXML{
@@ -672,23 +762,37 @@
 	NSMutableArray *references = [NSMutableArray array];
 	NSArray *imagesArray = nil;
 	NS_DURING
-	DSRDocumentTreeNode *node = NULL; 
-	//_doc->getTree().print(cout, 0);
-	_doc->getTree().gotoRoot ();
-		/* iterate over all nodes */ 
-	do { 
-		node = OFstatic_cast(DSRDocumentTreeNode *, _doc->getTree().getNode());			
-		if (node != NULL && node->getValueType() == DSRTypes::VT_Image) {
-			//image node get SOPCInstance
-			DSRImageTreeNode *imageNode = OFstatic_cast(DSRImageTreeNode *, node);
-			OFString sopInstance = imageNode->getSOPInstanceUID();
-			if (!sopInstance.empty()) {
-				NSString *uid = [NSString stringWithUTF8String:sopInstance.c_str()];
-				if (uid)
-					[references addObject:uid];
-			}			
+	NSString *reportPath = [self srPath];
+	if (!_reportHasChanged && [[NSFileManager defaultManager] fileExistsAtPath:reportPath])
+	{
+		HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn copyRefsFn =
+			HorosStructuredReportSymbol<HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn>("HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs");
+		NSString *referencedUIDs = copyRefsFn ? HorosStructuredReportBridgeString(copyRefsFn([reportPath UTF8String])) : nil;
+		for (NSString *uid in [referencedUIDs componentsSeparatedByString:@"\\"])
+		{
+			if ([uid length] > 0)
+				[references addObject:uid];
 		}
-	} while (_doc->getTree().iterate()); 
+	}
+	
+	if ([references count] == 0)
+	{
+		DSRDocumentTreeNode *node = NULL; 
+		_doc->getTree().gotoRoot ();
+		do {
+			node = OFstatic_cast(DSRDocumentTreeNode *, _doc->getTree().getNode());
+			if (node != NULL && node->getValueType() == DSRTypes::VT_Image) {
+				DSRImageTreeNode *imageNode = OFstatic_cast(DSRImageTreeNode *, node);
+				OFString sopInstance = imageNode->getSOPInstanceUID();
+				if (!sopInstance.empty()) {
+					NSString *uid = [NSString stringWithUTF8String:sopInstance.c_str()];
+					if (uid)
+						[references addObject:uid];
+				}
+			}
+		} while (_doc->getTree().iterate());
+	}
+
 	NSManagedObjectModel	*model = [[BrowserController currentBrowser] managedObjectModel];
 	NSManagedObjectContext	*context = [[BrowserController currentBrowser] managedObjectContext];
 	NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];

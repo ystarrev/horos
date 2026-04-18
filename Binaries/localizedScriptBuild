@@ -9,9 +9,6 @@ cp -R OSIAutoroutingPreferencePane/$1.lproj /Users/antoinerosset/osirix/osirix/b
 cp -R OSICDPreferencePane/$1.lproj /Users/antoinerosset/osirix/osirix/build/Deployment\ 32-bit/OsiriX.app/Contents/Resources/OSICDPreferencePane.prefPane/Contents/Resources
 
 
-cp -R OSICustomImageAnnotations/$1.lproj /Users/antoinerosset/osirix/osirix/build/Deployment\ 32-bit/OsiriX.app/Contents/Resources/OSICustomImageAnnotations.prefPane/Contents/Resources
-
-
 cp -R OSIDatabasePreferencePane/$1.lproj /Users/antoinerosset/osirix/osirix/build/Deployment\ 32-bit/OsiriX.app/Contents/Resources/OSIDatabasePreferencePane.prefPane/Contents/Resources
 
 

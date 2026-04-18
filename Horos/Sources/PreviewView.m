@@ -59,8 +59,38 @@ static void* PreviewModernDCMTKBridgeHandle()
     static void* handle = NULL;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        NSString *bridgePath = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"libHorosModernDCMTKBridge.dylib"];
-        handle = dlopen(bridgePath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+        NSBundle *bundle = [NSBundle mainBundle];
+        NSArray<NSString *> *basePaths = @[
+            bundle.resourcePath ?: @"",
+            bundle.privateFrameworksPath ?: @"",
+            bundle.sharedFrameworksPath ?: @"",
+            bundle.builtInPlugInsPath ?: @""
+        ];
+        NSArray<NSString *> *relativePaths = @[
+            @"libHorosModernDCMTKBridge.dylib",
+            @"DCMTK/libHorosModernDCMTKBridge.dylib"
+        ];
+
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        for (NSString *basePath in basePaths)
+        {
+            if (basePath.length == 0)
+                continue;
+
+            for (NSString *relativePath in relativePaths)
+            {
+                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
+                if ([fileManager fileExistsAtPath:candidate])
+                {
+                    handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+                    if (handle == NULL)
+                        NSLog(@"Modern DCMTK bridge failed to load at %@: %s", candidate, dlerror());
+                    return;
+                }
+            }
+        }
+
+        NSLog(@"Modern DCMTK bridge not found in bundle search paths.");
     });
     return handle;
 }

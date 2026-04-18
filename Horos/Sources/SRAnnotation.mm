@@ -44,19 +44,115 @@
 #import "DCMCalendarDate.h"
 #import "DicomStudy.h"
 #import "DicomSeries.h"
+#import "ModernDCMTKBridge.h"
 #import "N2Debug.h"
 #import "DICOMToNSString.h"
 
+#include <dlfcn.h>
 #include "osconfig.h"   /* make sure OS specific configuration is included first */
 #include "dsrtypes.h"
 
+typedef char* (*HorosModernDCMTKCopyFieldFn)(const char* path, const char* fieldName);
+typedef int (*HorosModernDCMTKCopyEncapsulatedDocumentFn)(const char* path, unsigned char** buffer, unsigned long* length);
+typedef char* (*HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn)(const char* path);
+typedef char* (*HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn)(const char* path);
+typedef void (*HorosModernDCMTKFreeBufferFn)(void* buffer);
+typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
+
+static void* HorosSRAnnotationBridgeHandle()
+{
+	static void* handle = NULL;
+	static dispatch_once_t onceToken;
+	dispatch_once(&onceToken, ^{
+		NSBundle *bundle = [NSBundle mainBundle];
+		NSArray<NSString *> *basePaths = @[
+			bundle.resourcePath ?: @"",
+			bundle.privateFrameworksPath ?: @"",
+			bundle.sharedFrameworksPath ?: @"",
+			bundle.builtInPlugInsPath ?: @""
+		];
+		NSArray<NSString *> *relativePaths = @[
+			@"libHorosModernDCMTKBridge.dylib",
+			@"DCMTK/libHorosModernDCMTKBridge.dylib"
+		];
+
+		NSFileManager *fileManager = [NSFileManager defaultManager];
+		for (NSString *basePath in basePaths)
+		{
+			if (basePath.length == 0)
+				continue;
+
+			for (NSString *relativePath in relativePaths)
+			{
+				NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
+				if ([fileManager fileExistsAtPath:candidate])
+				{
+					handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+					if (handle == NULL)
+						NSLog(@"Modern DCMTK bridge failed to load at %@: %s", candidate, dlerror());
+					return;
+				}
+			}
+		}
+
+		NSLog(@"Modern DCMTK bridge not found in bundle search paths.");
+	});
+	return handle;
+}
+
+template <typename FunctionType>
+static FunctionType HorosSRAnnotationSymbol(const char* name)
+{
+	void* handle = HorosSRAnnotationBridgeHandle();
+	if (handle == NULL)
+		return NULL;
+	return reinterpret_cast<FunctionType>(dlsym(handle, name));
+}
+
 @implementation SRAnnotation
+
+static NSString* HorosSRAnnotationBridgeString(char* value)
+{
+	if (value == NULL)
+		return nil;
+	NSString* string = [NSString stringWithUTF8String:value];
+	HorosModernDCMTKFreeStringFn freeFn = HorosSRAnnotationSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+	if (freeFn)
+		freeFn(value);
+	return string;
+}
+
+static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
+{
+	if (path == nil || ![[NSFileManager defaultManager] fileExistsAtPath:path])
+		return nil;
+
+	HorosModernDCMTKCopyEncapsulatedDocumentFn copyDocumentFn =
+		HorosSRAnnotationSymbol<HorosModernDCMTKCopyEncapsulatedDocumentFn>("HorosModernDCMTKCopyEncapsulatedDocument");
+	if (copyDocumentFn == NULL)
+		return nil;
+
+	unsigned char* buffer = NULL;
+	unsigned long length = 0;
+	if (!copyDocumentFn(path.fileSystemRepresentation, &buffer, &length) || buffer == NULL || length == 0)
+		return nil;
+
+	NSData* data = [NSData dataWithBytes: buffer length: (NSUInteger) length];
+	HorosModernDCMTKFreeBufferFn freeBufferFn = HorosSRAnnotationSymbol<HorosModernDCMTKFreeBufferFn>("HorosModernDCMTKFreeBuffer");
+	if (freeBufferFn)
+		freeBufferFn(buffer);
+	else
+		free(buffer);
+
+	return data;
+}
 
 + (NSData *)roiFromDICOM:(NSString *)path
 {
 	if( path == nil)
 		return nil;
 	NSData *archiveData = nil;
+
 	DcmFileFormat fileformat;
 	OFCondition status = fileformat.loadFile([path UTF8String]);
 	if( status != EC_Normal) return nil;
@@ -132,49 +228,36 @@
 
 + (NSString*) getReportFilenameFromSR:(NSString*) path;
 {
-	NSString	*result = nil;
-	DSRDocument	*document = new DSRDocument();
-	
-	OFCondition status = EC_Normal;
-	
-	if ([[NSFileManager defaultManager] fileExistsAtPath:path])
-	{			
-		DcmFileFormat fileformat;
-		status  = fileformat.loadFile([path UTF8String]);
-		if (status.good())
-		{
-			status = document->read(*fileformat.getDataset());
-			// See DicomFile.m
-//			int frameNumber = [[NSString stringWithFormat:@"%s", document->getInstanceNumber()] intValue];
-			NSString *accessionNumber = [NSString stringWithFormat:@"%s", document->getAccessionNumber()];
-			NSString *studyInstanceUID = [NSString stringWithFormat:@"%s", document->getStudyInstanceUID()];
-			NSString *patientName = [NSString stringWithFormat:@"%s", document->getPatientsName()];
-			NSString *patientID = [NSString stringWithFormat:@"%s", document->getPatientID()];
-			NSString *patientDOB =  [NSString stringWithFormat:@"%s", document->getPatientsBirthDate()];
-			NSCalendarDate *DOB = [NSCalendarDate dateWithString: patientDOB calendarFormat:@"%Y%m%d"];
-			
-			if( accessionNumber == nil)
-				accessionNumber = @"";
-			
-			if( patientID == nil)
-				patientID = @"";
-			
-			if( patientID == nil)
-				patientID = @"";
-			
-			if( patientName == nil)
-				patientName = @"No name";
-			
-			if( studyInstanceUID == nil)
-				studyInstanceUID = patientName;
-			
-			result = [DicomFile patientUID: [NSDictionary dictionaryWithObjectsAndKeys: patientName, @"patientName", accessionNumber, @"accessionNumber", patientID, @"patientID", studyInstanceUID, @"studyInstanceUID", DOB, @"patientBirthDate", nil]];
-		}
-	}
-	
-	delete document;
-	
-	return result;
+	if (path == nil || ![[NSFileManager defaultManager] fileExistsAtPath:path])
+		return nil;
+
+	HorosModernDCMTKCopyFieldFn copyFieldFn = HorosSRAnnotationSymbol<HorosModernDCMTKCopyFieldFn>("HorosModernDCMTKCopyField");
+	if (copyFieldFn == NULL)
+		return nil;
+
+	NSString* accessionNumber = HorosSRAnnotationBridgeString(copyFieldFn([path UTF8String], "AccessionNumber"));
+	NSString* studyInstanceUID = HorosSRAnnotationBridgeString(copyFieldFn([path UTF8String], "StudyInstanceUID"));
+	NSString* patientName = HorosSRAnnotationBridgeString(copyFieldFn([path UTF8String], "PatientName"));
+	NSString* patientID = HorosSRAnnotationBridgeString(copyFieldFn([path UTF8String], "PatientID"));
+	NSString* patientDOB = HorosSRAnnotationBridgeString(copyFieldFn([path UTF8String], "PatientBirthDate"));
+	NSCalendarDate* DOB = [NSCalendarDate dateWithString:patientDOB calendarFormat:@"%Y%m%d"];
+
+	if (accessionNumber == nil)
+		accessionNumber = @"";
+	if (patientID == nil)
+		patientID = @"";
+	if (patientName == nil)
+		patientName = @"No name";
+	if (studyInstanceUID == nil)
+		studyInstanceUID = patientName;
+
+	return [DicomFile patientUID:[NSDictionary dictionaryWithObjectsAndKeys:
+		patientName, @"patientName",
+		accessionNumber, @"accessionNumber",
+		patientID, @"patientID",
+		studyInstanceUID, @"studyInstanceUID",
+		DOB, @"patientBirthDate",
+		nil]];
 }
 
 
@@ -410,7 +493,7 @@
 			status  = fileformat.loadFile([path UTF8String]);
 			if (status.good()) 				
 				status = document->read(*fileformat.getDataset());
-				
+
 			const Uint8 *buffer;
 			unsigned int length;
 			if (fileformat.getDataset()->findAndGetUint8Array(DCM_EncapsulatedDocument, buffer, &length, OFFalse).good())

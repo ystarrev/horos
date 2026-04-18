@@ -379,11 +379,10 @@ static const NSMutableArray* pluginPanes = [[NSMutableArray alloc] init];
 	[self addPaneWithResourceNamed:@"OSIHangingPreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"Protocols", @"Panel in preferences window") image:[NSImage imageNamed:@"ZoomToFit"] toGroupWithName:name];
     [self addPaneWithResourceNamed:@"OSIHotKeysPref" inBundle:bundle withTitle:NSLocalizedString(@"Hot Keys", @"Panel in preferences window") image:[NSImage imageNamed:@"key"] toGroupWithName:name];
 	
-    name = NSLocalizedString(@"Display", @"Section in preferences window");
+	name = NSLocalizedString(@"Display", @"Section in preferences window");
 	[self addPaneWithResourceNamed:@"OSIViewerPreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"Viewers", @"Panel in preferences window") image:[NSImage imageNamed:@"AxialSmall"] toGroupWithName:name];
 	[self addPaneWithResourceNamed:@"OSI3DPreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"3D", @"Panel in preferences window") image:[NSImage imageNamed:@"VolumeRendering"] toGroupWithName:name];
 	[self addPaneWithResourceNamed:@"OSIPETPreferencePane" inBundle:bundle withTitle:NSLocalizedString(@"PET", @"Panel in preferences window") image:[NSImage imageNamed:@"SUV"] toGroupWithName:name];
-	[self addPaneWithResourceNamed:@"OSICustomImageAnnotations" inBundle:bundle withTitle:NSLocalizedString(@"Annotations", @"Panel in preferences window") image:[NSImage imageNamed:@"CustomImageAnnotations"] toGroupWithName:name];
     [self addPaneWithResourceNamed:@"AYDicomPrintPref" inBundle:bundle withTitle:NSLocalizedString(@"DICOM Print", @"Panel in preferences window") image:[NSImage imageNamed:@"Print"] toGroupWithName:name];
 	
     name = NSLocalizedString(@"Sharing", @"Section in preferences window");
@@ -500,7 +499,7 @@ static const NSMutableArray* pluginPanes = [[NSMutableArray alloc] init];
             [context.pane willSelect];
 
             [self view:cview recursiveBindEnableToObject:self withKeyPath:@"isUnlocked"];
-            
+
             NSView *fview = [[[PreferencesFlippedView alloc] initWithFrame:cview.frame] autorelease];
             fview.translatesAutoresizingMaskIntoConstraints = NO;
             [fview addSubview:cview];
@@ -518,10 +517,10 @@ static const NSMutableArray* pluginPanes = [[NSMutableArray alloc] init];
             sv.verticalScrollElasticity = NSScrollElasticityNone;
 
             [self.window setContentView:sv];
-//            [sv.superview addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"|[sv]|" options:0 metrics:nil views:NSDictionaryOfVariableBindings(sv)]];
-//            [sv.superview addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|[sv]|" options:0 metrics:nil views:NSDictionaryOfVariableBindings(sv)]];
             
-            newSize = fview.fittingSize;
+            NSSize fittingSize = fview.fittingSize;
+            NSSize frameSize = cview.frame.size;
+            newSize = NSMakeSize(MAX(fittingSize.width, frameSize.width), MAX(fittingSize.height, frameSize.height));
         }
 		
         [self.window setTitle:title];
@@ -531,7 +530,6 @@ static const NSMutableArray* pluginPanes = [[NSMutableArray alloc] init];
         [context.pane didSelect];
         
         [self synchronizeSizeWithContent:newSize];
-        
         [self didChangeValueForKey:@"currentContext"];
 		
 //		[oldview release];
@@ -578,8 +576,7 @@ static const NSMutableArray* pluginPanes = [[NSMutableArray alloc] init];
     NSRect frame = [self.window frame];
     
     NSRect newFrame = NSMakeRect(frame.origin.x, frame.origin.y+(frame.size.height-newSize.height), newSize.width, newSize.height);
-    
-    [self.window setFrame:newFrame display:YES animate:YES];
+    [self.window setFrame:newFrame display:YES animate:NO];
 }
 
 

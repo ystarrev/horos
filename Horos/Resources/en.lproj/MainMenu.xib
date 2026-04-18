@@ -25,7 +25,12 @@
                                     <action selector="about:" target="694" id="1115"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="Preferences..." keyEquivalent="," id="695">
+                            <menuItem title="Settings" keyEquivalent="," id="cdx-settings-item-en">
+                                <connections>
+                                    <action selector="showSettingsPanel:" target="694" id="cdx-settings-action-en"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="OldSettings" id="695">
                                 <connections>
                                     <action selector="showPreferencePanel:" target="694" id="696"/>
                                 </connections>

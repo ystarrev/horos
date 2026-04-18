@@ -34,6 +34,7 @@ typedef struct HorosModernDCMTKBasicMetadata {
 } HorosModernDCMTKBasicMetadata;
 
 int HorosModernDCMTKIsDICOMFile(const char* path);
+char* HorosModernDCMTKCopyGeneratedUID(void);
 char* HorosModernDCMTKCopySpecificCharacterSet(const char* path);
 char* HorosModernDCMTKCopyField(const char* path, const char* fieldName);
 char* HorosModernDCMTKCopyFieldByTag(const char* path, unsigned short group, unsigned short element);
@@ -45,6 +46,24 @@ int HorosModernDCMTKCopyEncapsulatedDocument(const char* path, unsigned char** b
 char* HorosModernDCMTKCopyStructuredReportHTML(const char* path);
 char* HorosModernDCMTKCopyStructuredReportKeyObjectType(const char* path);
 char* HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs(const char* path);
+int HorosModernDCMTKWriteKeyObjectReport(const char* path,
+                                         const char* sopInstanceUID,
+                                         const char* seriesInstanceUID,
+                                         const char* studyInstanceUID,
+                                         const char* studyDescription,
+                                         const char* patientName,
+                                         const char* patientBirthDate,
+                                         const char* patientSex,
+                                         const char* patientID,
+                                         const char* referringPhysician,
+                                         const char* studyID,
+                                         const char* accessionNumber,
+                                         int titleCode,
+                                         const char* keyDescription,
+                                         const char* const* imagePaths,
+                                         const char* const* imageSeriesInstanceUIDs,
+                                         const char* const* imageSOPInstanceUIDs,
+                                         int imageCount);
 int HorosModernDCMTKReplaceTagValue(const char* path, unsigned short group, unsigned short element, const char* value, int removeIfEmpty);
 void HorosModernDCMTKFreeBasicMetadata(HorosModernDCMTKBasicMetadata* metadata);
 void HorosModernDCMTKFreeString(char* value);

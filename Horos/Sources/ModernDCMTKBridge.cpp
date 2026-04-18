@@ -6,6 +6,7 @@
 #include <dcmtk/dcmdata/dcdicent.h>
 #include <dcmtk/dcmdata/dcdict.h>
 #include <dcmtk/dcmdata/dcmetinf.h>
+#include <dcmtk/dcmdata/dcuid.h>
 #include <dcmtk/dcmsr/dsrdoc.h>
 #include <dcmtk/dcmsr/dsrtypes.h>
 #include <dcmtk/ofstd/ofstd.h>
@@ -53,6 +54,152 @@ static void HorosModernDCMTKAssignTagString(DcmItem* item, const DcmTagKey& key,
         *destination = HorosModernDCMTKDuplicateCString(value);
 }
 
+static bool HorosModernDCMTKKeyObjectTitle(int titleCode, const char*& codeValue, const char*& codeMeaning)
+{
+    switch (titleCode)
+    {
+        case 113000: codeValue = "113000"; codeMeaning = "Of Interest"; return true;
+        case 113001: codeValue = "113001"; codeMeaning = "Rejected for Quality Reasons"; return true;
+        case 113002: codeValue = "113002"; codeMeaning = "For Referring Provider"; return true;
+        case 113003: codeValue = "113003"; codeMeaning = "For Surgery"; return true;
+        case 113004: codeValue = "113004"; codeMeaning = "For Teaching"; return true;
+        case 113005: codeValue = "113005"; codeMeaning = "For Conference"; return true;
+        case 113006: codeValue = "113006"; codeMeaning = "For Therapy"; return true;
+        case 113007: codeValue = "113007"; codeMeaning = "For Patient"; return true;
+        case 113008: codeValue = "113008"; codeMeaning = "For Peer Review"; return true;
+        case 113009: codeValue = "113009"; codeMeaning = "For Research"; return true;
+        case 113010: codeValue = "113010"; codeMeaning = "Quality Issue"; return true;
+        case 113013: codeValue = "113013"; codeMeaning = "Best In Set"; return true;
+        case 113018: codeValue = "113018"; codeMeaning = "For Printing"; return true;
+        case 113020: codeValue = "113020"; codeMeaning = "For Report Attachment"; return true;
+        default: return false;
+    }
+}
+
+static OFCondition HorosModernDCMTKBuildKeyObjectReport(DSRDocument& document,
+                                                        const char* sopInstanceUID,
+                                                        const char* seriesInstanceUID,
+                                                        const char* studyInstanceUID,
+                                                        const char* studyDescription,
+                                                        const char* patientName,
+                                                        const char* patientBirthDate,
+                                                        const char* patientSex,
+                                                        const char* patientID,
+                                                        const char* referringPhysician,
+                                                        const char* studyID,
+                                                        const char* accessionNumber,
+                                                        int titleCode,
+                                                        const char* keyDescription,
+                                                        const char* const* imagePaths,
+                                                        const char* const* imageSeriesInstanceUIDs,
+                                                        const char* const* imageSOPInstanceUIDs,
+                                                        int imageCount)
+{
+    if (studyInstanceUID == nullptr || studyInstanceUID[0] == '\0')
+        return EC_IllegalParameter;
+
+    const char* codeValue = nullptr;
+    const char* codeMeaning = nullptr;
+    if (!HorosModernDCMTKKeyObjectTitle(titleCode, codeValue, codeMeaning))
+        return EC_IllegalParameter;
+
+    OFCondition status = document.createNewDocument(DSRTypes::DT_KeyObjectSelectionDocument);
+    if (status.good())
+        status = document.setSpecificCharacterSet("ISO_IR 192");
+    if (status.good())
+        status = document.createNewSeriesInStudy(studyInstanceUID);
+    if (status.bad())
+        return status;
+
+    if (status.good() && studyDescription != nullptr && studyDescription[0] != '\0')
+        status = document.setStudyDescription(studyDescription);
+    if (status.good())
+        status = document.setSeriesDescription("OsiriX Key Object Report");
+    if (status.good() && patientName != nullptr && patientName[0] != '\0')
+        status = document.setPatientName(patientName);
+    if (status.good() && patientBirthDate != nullptr && patientBirthDate[0] != '\0')
+        status = document.setPatientBirthDate(patientBirthDate);
+    if (status.good() && patientSex != nullptr && patientSex[0] != '\0')
+        status = document.setPatientSex(patientSex);
+    if (status.good() && patientID != nullptr && patientID[0] != '\0')
+        status = document.setPatientID(patientID);
+    if (status.good() && referringPhysician != nullptr && referringPhysician[0] != '\0')
+        status = document.setReferringPhysicianName(referringPhysician);
+    if (status.good() && studyID != nullptr && studyID[0] != '\0')
+        status = document.setStudyID(studyID);
+    if (status.good() && accessionNumber != nullptr && accessionNumber[0] != '\0')
+        status = document.setAccessionNumber(accessionNumber);
+    if (status.good())
+        status = document.setSeriesNumber("5002");
+    if (status.good())
+        status = document.setManufacturer("OsiriX");
+    if (status.bad())
+        return status;
+
+    DSRDocumentTree& tree = document.getTree();
+    if (tree.addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container) == 0)
+        return EC_IllegalCall;
+
+    status = tree.getCurrentContentItem().setConceptName(DSRCodedEntryValue(codeValue, "DCM", codeMeaning));
+    if (status.bad())
+        return status;
+
+    if (keyDescription != nullptr && keyDescription[0] != '\0')
+    {
+        if (tree.addContentItem(DSRTypes::RT_hasObsContext, DSRTypes::VT_Text, DSRTypes::AM_belowCurrent) == 0)
+            return EC_IllegalCall;
+        status = tree.getCurrentContentItem().setConceptName(DSRCodedEntryValue("113012", "DCM", "Key Object Description"));
+        if (status.bad())
+            return status;
+        status = tree.getCurrentContentItem().setStringValue(keyDescription);
+        if (status.bad())
+            return status;
+        tree.goUp();
+    }
+
+    bool first = true;
+    for (int index = 0; index < imageCount; ++index)
+    {
+        const char* imagePath = (imagePaths != nullptr) ? imagePaths[index] : nullptr;
+        const char* imageSeriesUID = (imageSeriesInstanceUIDs != nullptr) ? imageSeriesInstanceUIDs[index] : nullptr;
+        const char* imageSOPInstanceUID = (imageSOPInstanceUIDs != nullptr) ? imageSOPInstanceUIDs[index] : nullptr;
+        if (imagePath == nullptr || imagePath[0] == '\0' ||
+            imageSeriesUID == nullptr || imageSeriesUID[0] == '\0' ||
+            imageSOPInstanceUID == nullptr || imageSOPInstanceUID[0] == '\0')
+            continue;
+
+        DcmFileFormat imageFile;
+        if (imageFile.loadFile(imagePath, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).bad())
+            continue;
+
+        OFString sopClassUID;
+        if (imageFile.getDataset() == nullptr ||
+            imageFile.getDataset()->findAndGetOFString(DCM_SOPClassUID, sopClassUID, OFFalse).bad() ||
+            sopClassUID.empty())
+            continue;
+
+        if (tree.addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Image, first ? DSRTypes::AM_belowCurrent : DSRTypes::AM_afterCurrent) == 0)
+            return EC_IllegalCall;
+        first = false;
+
+        status = tree.getCurrentContentItem().setImageReference(DSRImageReferenceValue(sopClassUID, OFString(imageSOPInstanceUID)));
+        if (status.bad())
+            return status;
+
+        status = document.getCurrentRequestedProcedureEvidence().addItem(OFString(studyInstanceUID),
+                                                                         OFString(imageSeriesUID),
+                                                                         sopClassUID,
+                                                                         OFString(imageSOPInstanceUID));
+        if (status.bad())
+            return status;
+    }
+
+    if (!first)
+        tree.goUp();
+
+    return EC_Normal;
+}
+
 int HorosModernDCMTKIsDICOMFile(const char* path)
 {
     if (path == nullptr || path[0] == '\0')
@@ -60,6 +207,12 @@ int HorosModernDCMTKIsDICOMFile(const char* path)
 
     DcmFileFormat fileformat;
     return fileformat.loadFile(path).good() ? 1 : 0;
+}
+
+char* HorosModernDCMTKCopyGeneratedUID(void)
+{
+    char uid[100];
+    return HorosModernDCMTKDuplicateCString(dcmGenerateUniqueIdentifier(uid));
 }
 
 char* HorosModernDCMTKCopySpecificCharacterSet(const char* path)
@@ -315,6 +468,9 @@ int HorosModernDCMTKCopyImageGeometry(const char* path, double* origin3, double*
 
 int HorosModernDCMTKCopyFrameGeometry(const char* path, double** sliceLocations, int* sliceCount, double** triggerDelays, int* triggerCount)
 {
+    const DcmTagKey cardiacTriggerSequenceTag(0x0018, 0x9118);
+    const DcmTagKey triggerDelayTimeTag(0x0020, 0x9153);
+
     if (sliceLocations)
         *sliceLocations = nullptr;
     if (sliceCount)
@@ -361,10 +517,10 @@ int HorosModernDCMTKCopyFrameGeometry(const char* path, double** sliceLocations,
         DcmItem* eitem = nullptr;
         while (true)
         {
-            if (perFrameItem->findAndGetSequenceItem(DCM_CardiacTriggerSequence, eitem, x).good())
+            if (perFrameItem->findAndGetSequenceItem(cardiacTriggerSequenceTag, eitem, x).good())
             {
                 Float64 trigger = 0;
-                if (eitem->findAndGetFloat64(DCM_TriggerDelayTime, trigger, 0, OFFalse).good())
+                if (eitem->findAndGetFloat64(triggerDelayTimeTag, trigger, 0, OFFalse).good())
                     triggers.push_back(trigger);
             }
 
@@ -504,7 +660,7 @@ char* HorosModernDCMTKCopyStructuredReportHTML(const char* path)
     const char* sopClassUID = nullptr;
     if (fileformat.getDataset()->findAndGetString(DCM_SOPClassUID, sopClassUID, OFFalse).bad() ||
         sopClassUID == nullptr ||
-        !DSRTypes::isDocumentStorageUID(sopClassUID)) {
+        DSRTypes::sopClassUIDToDocumentType(sopClassUID) == DSRTypes::DT_invalid) {
         return nullptr;
     }
 
@@ -542,7 +698,7 @@ static bool HorosModernDCMTKLoadStructuredReport(const char* path, DcmFileFormat
     const char* sopClassUID = nullptr;
     if (fileformat.getDataset()->findAndGetString(DCM_SOPClassUID, sopClassUID, OFFalse).bad() ||
         sopClassUID == nullptr ||
-        !DSRTypes::isDocumentStorageUID(sopClassUID))
+        DSRTypes::sopClassUIDToDocumentType(sopClassUID) == DSRTypes::DT_invalid)
         return false;
 
     const size_t readFlags =
@@ -581,11 +737,10 @@ char* HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs(const char* 
     tree.gotoRoot();
     do
     {
-        DSRDocumentTreeNode* node = OFstatic_cast(DSRDocumentTreeNode*, tree.getNode());
-        if (node != nullptr && node->getValueType() == DSRTypes::VT_Image)
+        DSRContentItem& item = tree.getCurrentContentItem();
+        if (item.getValueType() == DSRTypes::VT_Image)
         {
-            DSRImageTreeNode* imageNode = OFstatic_cast(DSRImageTreeNode*, node);
-            OFString sopInstance = imageNode->getSOPInstanceUID();
+            OFString sopInstance = item.getImageReference().getSOPInstanceUID();
             if (!sopInstance.empty())
                 uids.push_back(sopInstance);
         }
@@ -603,6 +758,73 @@ char* HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs(const char* 
     }
 
     return HorosModernDCMTKDuplicateCString(joined.c_str());
+}
+
+int HorosModernDCMTKWriteKeyObjectReport(const char* path,
+                                         const char* sopInstanceUID,
+                                         const char* seriesInstanceUID,
+                                         const char* studyInstanceUID,
+                                         const char* studyDescription,
+                                         const char* patientName,
+                                         const char* patientBirthDate,
+                                         const char* patientSex,
+                                         const char* patientID,
+                                         const char* referringPhysician,
+                                         const char* studyID,
+                                         const char* accessionNumber,
+                                         int titleCode,
+                                         const char* keyDescription,
+                                         const char* const* imagePaths,
+                                         const char* const* imageSeriesInstanceUIDs,
+                                         const char* const* imageSOPInstanceUIDs,
+                                         int imageCount)
+{
+    if (path == nullptr || path[0] == '\0')
+        return 0;
+
+    DSRDocument document;
+    OFCondition status = HorosModernDCMTKBuildKeyObjectReport(document,
+                                                              sopInstanceUID,
+                                                              seriesInstanceUID,
+                                                              studyInstanceUID,
+                                                              studyDescription,
+                                                              patientName,
+                                                              patientBirthDate,
+                                                              patientSex,
+                                                              patientID,
+                                                              referringPhysician,
+                                                              studyID,
+                                                              accessionNumber,
+                                                              titleCode,
+                                                              keyDescription,
+                                                              imagePaths,
+                                                              imageSeriesInstanceUIDs,
+                                                              imageSOPInstanceUIDs,
+                                                              imageCount);
+    if (status.bad())
+        return 0;
+
+    DcmFileFormat fileformat;
+    status = document.write(*fileformat.getDataset());
+    if (status.bad())
+        return 0;
+
+    DcmDataset* dataset = fileformat.getDataset();
+    DcmMetaInfo* metaInfo = HorosModernDCMTKMetaInfo(fileformat);
+    if (dataset == nullptr)
+        return 0;
+
+    if (seriesInstanceUID != nullptr && seriesInstanceUID[0] != '\0')
+        dataset->putAndInsertString(DCM_SeriesInstanceUID, seriesInstanceUID, OFTrue);
+    if (sopInstanceUID != nullptr && sopInstanceUID[0] != '\0')
+    {
+        dataset->putAndInsertString(DCM_SOPInstanceUID, sopInstanceUID, OFTrue);
+        if (metaInfo != nullptr)
+            metaInfo->putAndInsertString(DCM_MediaStorageSOPInstanceUID, sopInstanceUID, OFTrue);
+    }
+
+    status = fileformat.saveFile(path, EXS_LittleEndianExplicit);
+    return status.good() ? 1 : 0;
 }
 
 void HorosModernDCMTKFreeBasicMetadata(HorosModernDCMTKBasicMetadata* metadata)

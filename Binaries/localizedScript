@@ -9,9 +9,6 @@ cp -R OSIAutoroutingPreferencePane.prefPane/Contents/Resources/$1.lproj /Users/a
 rm -R -f /Users/antoinerosset/Desktop/Localized3.8/Preference\ Panes/OSICDPreferencePane/$1.lproj
 cp -R OSICDPreferencePane.prefPane/Contents/Resources/$1.lproj /Users/antoinerosset/Desktop/Localized3.8/Preference\ Panes/OSICDPreferencePane
 
-rm -R -f /Users/antoinerosset/Desktop/Localized3.8/Preference\ Panes/OSICustomImageAnnotations/$1.lproj
-cp -R OSICustomImageAnnotations.prefPane/Contents/Resources/$1.lproj /Users/antoinerosset/Desktop/Localized3.8/Preference\ Panes/OSICustomImageAnnotations
-
 rm -R -f /Users/antoinerosset/Desktop/Localized3.8/Preference\ Panes/OSIDatabasePreferencePane/$1.lproj
 cp -R OSIDatabasePreferencePane.prefPane/Contents/Resources/$1.lproj /Users/antoinerosset/Desktop/Localized3.8/Preference\ Panes/OSIDatabasePreferencePane
 

@@ -14,18 +14,14 @@
 
 #import <Cocoa/Cocoa.h>
 
-
-#undef verify
-#include "dsrdoc.h"
-
 /** \brief  DICOM  key object note */
 @interface KeyObjectReport : NSObject {
 	id _study;
-	DSRDocument *_doc;
 	NSArray *_keyImages;
 	NSString *_keyDescription;
 	int _title;
 	NSString *_seriesUID;
+	NSString *_sopInstanceUID;
 }
 
  - (id) initWithStudy:(id)study  

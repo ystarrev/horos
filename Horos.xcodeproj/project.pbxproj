@@ -2917,23 +2917,6 @@
 		CEB98C0F133508350083F3FD /* OSIDatabasePreferencePanePref.xib in Resources */ = {isa = PBXBuildFile; fileRef = CEB98C0B133508350083F3FD /* OSIDatabasePreferencePanePref.xib */; };
 		CEB98C10133508350083F3FD /* OSIDatabasePreferencePanePref.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C0D133508350083F3FD /* OSIDatabasePreferencePanePref.h */; };
 		CEB98C11133508350083F3FD /* OSIDatabasePreferencePanePref.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C0E133508350083F3FD /* OSIDatabasePreferencePanePref.m */; };
-		CEB98C2D1335084F0083F3FD /* AlphaGray.tif in Resources */ = {isa = PBXBuildFile; fileRef = CEB98C151335084F0083F3FD /* AlphaGray.tif */; };
-		CEB98C2E1335084F0083F3FD /* CIAAnnotation.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C161335084F0083F3FD /* CIAAnnotation.h */; };
-		CEB98C2F1335084F0083F3FD /* CIAAnnotation.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C171335084F0083F3FD /* CIAAnnotation.m */; };
-		CEB98C321335084F0083F3FD /* CIALayoutController.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C1A1335084F0083F3FD /* CIALayoutController.h */; };
-		CEB98C331335084F0083F3FD /* CIALayoutController.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C1B1335084F0083F3FD /* CIALayoutController.m */; };
-		CEB98C341335084F0083F3FD /* CIALayoutView.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C1C1335084F0083F3FD /* CIALayoutView.h */; };
-		CEB98C351335084F0083F3FD /* CIALayoutView.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C1D1335084F0083F3FD /* CIALayoutView.m */; };
-		CEB98C361335084F0083F3FD /* CIAPlaceHolder.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C1E1335084F0083F3FD /* CIAPlaceHolder.h */; };
-		CEB98C371335084F0083F3FD /* CIAPlaceHolder.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C1F1335084F0083F3FD /* CIAPlaceHolder.m */; };
-		CEB98C381335084F0083F3FD /* OSICustomImageAnnotations.xib in Resources */ = {isa = PBXBuildFile; fileRef = CEB98C201335084F0083F3FD /* OSICustomImageAnnotations.xib */; };
-		CEB98C3F1335084F0083F3FD /* OSICustomImageAnnotations.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C281335084F0083F3FD /* OSICustomImageAnnotations.h */; };
-		CEB98C401335084F0083F3FD /* OSICustomImageAnnotations.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C291335084F0083F3FD /* OSICustomImageAnnotations.m */; };
-		A1B2C3D4E5F60718293A0001 /* OSICustomImageAnnotationsContentView.h in Headers */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A0002 /* OSICustomImageAnnotationsContentView.h */; };
-		A1B2C3D4E5F60718293A0004 /* OSICustomImageAnnotationsContentView.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A0003 /* OSICustomImageAnnotationsContentView.m */; };
-		CEB98C411335084F0083F3FD /* RWTokenField.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C2A1335084F0083F3FD /* RWTokenField.h */; };
-		CEB98C421335084F0083F3FD /* RWTokenField.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C2B1335084F0083F3FD /* RWTokenField.m */; };
-		CEB98C431335084F0083F3FD /* Security.tiff in Resources */ = {isa = PBXBuildFile; fileRef = CEB98C2C1335084F0083F3FD /* Security.tiff */; };
 		CEB98C5F1335085D0083F3FD /* OSICDPreferencePanePref.xib in Resources */ = {isa = PBXBuildFile; fileRef = CEB98C5B1335085D0083F3FD /* OSICDPreferencePanePref.xib */; };
 		CEB98C601335085D0083F3FD /* OSICDPreferencePanePref.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C5D1335085D0083F3FD /* OSICDPreferencePanePref.h */; };
 		CEB98C611335085D0083F3FD /* OSICDPreferencePanePref.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C5E1335085D0083F3FD /* OSICDPreferencePanePref.m */; };
@@ -3015,8 +2998,9 @@
 		F35B0D8F28954862008ABE3E /* FeedbackReporter.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F35B0D8E28954830008ABE3E /* FeedbackReporter.framework */; };
 		F35B0D9028954862008ABE3E /* FeedbackReporter.framework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = F35B0D8E28954830008ABE3E /* FeedbackReporter.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		F3E3E6CD289527220037A247 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F3E3E6CA289527220037A247 /* UserNotifications.framework */; };
-F4A100000001000000000001 /* MetalViewerLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000001 /* MetalViewerLauncher.swift */; };
-F4A100000001000000000002 /* MetalViewerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000002 /* MetalViewerWindowController.swift */; };
+		F4A100000001000000000015 /* HorosSettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000015 /* HorosSettingsWindowController.swift */; };
+		F4A100000001000000000001 /* MetalViewerLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000001 /* MetalViewerLauncher.swift */; };
+		F4A100000001000000000002 /* MetalViewerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000002 /* MetalViewerWindowController.swift */; };
 F4A100000001000000000003 /* MetalImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000003 /* MetalImageView.swift */; };
 F4A100000001000000000004 /* MetalViewerRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000004 /* MetalViewerRenderer.swift */; };
 F4A100000001000000000005 /* MetalShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000005 /* MetalShaders.metal */; };
@@ -3357,7 +3341,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		200BBAFB20AA3BCC002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIHangingPreferencePanePref.xib"; sourceTree = "<group>"; };
 		200BBAFC20AA3BCD002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIGeneralPreferencePanePref.xib"; sourceTree = "<group>"; };
 		200BBAFD20AA3BCD002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIDatabasePreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAFE20AA3BCD002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSICustomImageAnnotations.xib"; sourceTree = "<group>"; };
 		200BBAFF20AA3BCD002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSICDPreferencePanePref.xib"; sourceTree = "<group>"; };
 		200BBB0020AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/DiscMountedAskTheUserDialog.xib"; sourceTree = "<group>"; };
 		200BBB0120AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIAutoroutingPreferencePanePref.xib"; sourceTree = "<group>"; };
@@ -3904,7 +3887,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		8CC299DA2F3158B500669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSIHangingPreferencePanePref.xib; sourceTree = "<group>"; };
 		8CC299DB2F3158B500669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSIGeneralPreferencePanePref.xib; sourceTree = "<group>"; };
 		8CC299DC2F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSIDatabasePreferencePanePref.xib; sourceTree = "<group>"; };
-		8CC299DD2F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSICustomImageAnnotations.xib; sourceTree = "<group>"; };
 		8CC299DE2F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSICDPreferencePanePref.xib; sourceTree = "<group>"; };
 		8CC299DF2F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/DiscMountedAskTheUserDialog.xib; sourceTree = "<group>"; };
 		8CC299E02F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSIAutoroutingPreferencePanePref.xib; sourceTree = "<group>"; };
@@ -5565,22 +5547,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		CEB98C04133508280083F3FD /* OSIGeneralPreferencePanePref.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSIGeneralPreferencePanePref.m; sourceTree = "<group>"; };
 		CEB98C0D133508350083F3FD /* OSIDatabasePreferencePanePref.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSIDatabasePreferencePanePref.h; sourceTree = "<group>"; };
 		CEB98C0E133508350083F3FD /* OSIDatabasePreferencePanePref.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSIDatabasePreferencePanePref.m; sourceTree = "<group>"; };
-		CEB98C151335084F0083F3FD /* AlphaGray.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = AlphaGray.tif; sourceTree = "<group>"; };
-		CEB98C161335084F0083F3FD /* CIAAnnotation.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CIAAnnotation.h; sourceTree = "<group>"; };
-		CEB98C171335084F0083F3FD /* CIAAnnotation.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CIAAnnotation.m; sourceTree = "<group>"; };
-		CEB98C1A1335084F0083F3FD /* CIALayoutController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CIALayoutController.h; sourceTree = "<group>"; };
-		CEB98C1B1335084F0083F3FD /* CIALayoutController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CIALayoutController.m; sourceTree = "<group>"; };
-		CEB98C1C1335084F0083F3FD /* CIALayoutView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CIALayoutView.h; sourceTree = "<group>"; };
-		CEB98C1D1335084F0083F3FD /* CIALayoutView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CIALayoutView.m; sourceTree = "<group>"; };
-		CEB98C1E1335084F0083F3FD /* CIAPlaceHolder.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CIAPlaceHolder.h; sourceTree = "<group>"; };
-		CEB98C1F1335084F0083F3FD /* CIAPlaceHolder.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CIAPlaceHolder.m; sourceTree = "<group>"; };
-		CEB98C281335084F0083F3FD /* OSICustomImageAnnotations.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSICustomImageAnnotations.h; sourceTree = "<group>"; };
-		CEB98C291335084F0083F3FD /* OSICustomImageAnnotations.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSICustomImageAnnotations.m; sourceTree = "<group>"; };
-		A1B2C3D4E5F60718293A0002 /* OSICustomImageAnnotationsContentView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSICustomImageAnnotationsContentView.h; sourceTree = "<group>"; };
-		A1B2C3D4E5F60718293A0003 /* OSICustomImageAnnotationsContentView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSICustomImageAnnotationsContentView.m; sourceTree = "<group>"; };
-		CEB98C2A1335084F0083F3FD /* RWTokenField.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RWTokenField.h; sourceTree = "<group>"; };
-		CEB98C2B1335084F0083F3FD /* RWTokenField.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RWTokenField.m; sourceTree = "<group>"; };
-		CEB98C2C1335084F0083F3FD /* Security.tiff */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Security.tiff; sourceTree = "<group>"; };
 		CEB98C5D1335085D0083F3FD /* OSICDPreferencePanePref.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSICDPreferencePanePref.h; sourceTree = "<group>"; };
 		CEB98C5E1335085D0083F3FD /* OSICDPreferencePanePref.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSICDPreferencePanePref.m; sourceTree = "<group>"; };
 		CEB98C671335086B0083F3FD /* OSIAutoroutingPreferencePanePref.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSIAutoroutingPreferencePanePref.h; sourceTree = "<group>"; };
@@ -5603,8 +5569,8 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		CECEF72D081BB265002ECC99 /* DICOMExport.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = DICOMExport.mm; sourceTree = "<group>"; };
 		CED1FD191035E9BB0076AB33 /* SetPixelValue.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = SetPixelValue.pdf; sourceTree = "<group>"; };
 		CED1FD1A1035E9BB0076AB33 /* GrowingRegion.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = GrowingRegion.png; sourceTree = "<group>"; };
-		CED2CF950C9B288C0047F123 /* CIADICOMField.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CIADICOMField.m; sourceTree = "<group>"; };
-		CED2CF960C9B288C0047F123 /* CIADICOMField.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CIADICOMField.h; sourceTree = "<group>"; };
+		CED2CF950C9B288C0047F123 /* CIADICOMField.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = Horos/Sources/CIADICOMField.m; sourceTree = SOURCE_ROOT; };
+		CED2CF960C9B288C0047F123 /* CIADICOMField.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Horos/Sources/CIADICOMField.h; sourceTree = SOURCE_ROOT; };
 		CED80C7A0BF187930058A469 /* Autofill.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Autofill.tif; sourceTree = "<group>"; };
 		CED80C7B0BF187930058A469 /* AddLink.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = AddLink.tif; sourceTree = "<group>"; };
 		CED80C960BF18BAF0058A469 /* Save.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Save.tif; sourceTree = "<group>"; };
@@ -5659,6 +5625,7 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		F3D78C9D2892994600148FE5 /* Config.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 		F3E3E6CA289527220037A247 /* UserNotifications.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotifications.framework; path = System/Library/Frameworks/UserNotifications.framework; sourceTree = SDKROOT; };
 		F3EFB87A2895825C0012A622 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		F4A100000002000000000015 /* HorosSettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosSettingsWindowController.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000001 /* MetalViewerLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerLauncher.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000002 /* MetalViewerWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerWindowController.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000003 /* MetalImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalImageView.swift; sourceTree = SOURCE_ROOT; };
@@ -7485,6 +7452,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				CE234014119E7B1500D83C19 /* File Reading */,
 				CE234016119E7B5500D83C19 /* SmartAlbums */,
 				71EB83B116DCB7E700D48646 /* Dicom Predicate Editor */,
+				F4A100000002000000000015 /* HorosSettingsWindowController.swift */,
 				AB142DFC05600D76008461A0 /* AppController.h */,
 				AB142DFD05600D76008461A0 /* AppController.m */,
 				BF18A85709E0BF00005DEFB6 /* AppControllerDCMTKCategory.h */,
@@ -8773,7 +8741,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				CEB98CF313350D270083F3FD /* Hanging */,
 				CEB98CF413350D3C0083F3FD /* General */,
 				CEB98CF513350D4E0083F3FD /* Database */,
-				CEB98CF613350D600083F3FD /* CustomImageAnnotations */,
 				CEB98CF713350D7F0083F3FD /* CD */,
 				CEB98CF813350D8C0083F3FD /* Autorouting */,
 				CEB98CF913350D9E0083F3FD /* 3D */,
@@ -8892,33 +8859,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 			);
 			name = Database;
 			path = OSIDatabasePreferencePane;
-			sourceTree = "<group>";
-		};
-		CEB98CF613350D600083F3FD /* CustomImageAnnotations */ = {
-			isa = PBXGroup;
-			children = (
-				CEB98C151335084F0083F3FD /* AlphaGray.tif */,
-				CED2CF960C9B288C0047F123 /* CIADICOMField.h */,
-				CED2CF950C9B288C0047F123 /* CIADICOMField.m */,
-				CEB98C161335084F0083F3FD /* CIAAnnotation.h */,
-				CEB98C171335084F0083F3FD /* CIAAnnotation.m */,
-				CEB98C1A1335084F0083F3FD /* CIALayoutController.h */,
-				CEB98C1B1335084F0083F3FD /* CIALayoutController.m */,
-				CEB98C1C1335084F0083F3FD /* CIALayoutView.h */,
-				CEB98C1D1335084F0083F3FD /* CIALayoutView.m */,
-				CEB98C1E1335084F0083F3FD /* CIAPlaceHolder.h */,
-				CEB98C1F1335084F0083F3FD /* CIAPlaceHolder.m */,
-				CEB98C201335084F0083F3FD /* OSICustomImageAnnotations.xib */,
-				CEB98C281335084F0083F3FD /* OSICustomImageAnnotations.h */,
-				CEB98C291335084F0083F3FD /* OSICustomImageAnnotations.m */,
-				A1B2C3D4E5F60718293A0002 /* OSICustomImageAnnotationsContentView.h */,
-				A1B2C3D4E5F60718293A0003 /* OSICustomImageAnnotationsContentView.m */,
-				CEB98C2A1335084F0083F3FD /* RWTokenField.h */,
-				CEB98C2B1335084F0083F3FD /* RWTokenField.m */,
-				CEB98C2C1335084F0083F3FD /* Security.tiff */,
-			);
-			name = CustomImageAnnotations;
-			path = OSICustomImageAnnotations;
 			sourceTree = "<group>";
 		};
 		CEB98CF713350D7F0083F3FD /* CD */ = {
@@ -9788,13 +9728,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				CEB98BEE133508180083F3FD /* OSIHangingPreferencePanePref.h in Headers */,
 				CEB98C06133508280083F3FD /* OSIGeneralPreferencePanePref.h in Headers */,
 				CEB98C10133508350083F3FD /* OSIDatabasePreferencePanePref.h in Headers */,
-				CEB98C2E1335084F0083F3FD /* CIAAnnotation.h in Headers */,
-				CEB98C321335084F0083F3FD /* CIALayoutController.h in Headers */,
-				CEB98C341335084F0083F3FD /* CIALayoutView.h in Headers */,
-				CEB98C361335084F0083F3FD /* CIAPlaceHolder.h in Headers */,
-				CEB98C3F1335084F0083F3FD /* OSICustomImageAnnotations.h in Headers */,
-				A1B2C3D4E5F60718293A0001 /* OSICustomImageAnnotationsContentView.h in Headers */,
-				CEB98C411335084F0083F3FD /* RWTokenField.h in Headers */,
 				CEB98C601335085D0083F3FD /* OSICDPreferencePanePref.h in Headers */,
 				CEB98C6C1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.h in Headers */,
 				CEB98C6E1335086B0083F3FD /* RoutesTableView.h in Headers */,
@@ -10401,9 +10334,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				71AD674F1FC4248100A1E2F8 /* HotMetal.plist in Resources */,
 				CEB98C05133508280083F3FD /* OSIGeneralPreferencePanePref.xib in Resources */,
 				CEB98C0F133508350083F3FD /* OSIDatabasePreferencePanePref.xib in Resources */,
-				CEB98C2D1335084F0083F3FD /* AlphaGray.tif in Resources */,
-				CEB98C381335084F0083F3FD /* OSICustomImageAnnotations.xib in Resources */,
-				CEB98C431335084F0083F3FD /* Security.tiff in Resources */,
 				71AD67531FC4248100A1E2F8 /* Jet.plist in Resources */,
 				71AD67521FC4248100A1E2F8 /* ired.plist in Resources */,
 				CEB98C5F1335085D0083F3FD /* OSICDPreferencePanePref.xib in Resources */,
@@ -11246,6 +11176,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 		AB28B42C05B7921E00A9906C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
+				F4A100000001000000000015 /* HorosSettingsWindowController.swift in Sources */,
 				F4A100000001000000000001 /* MetalViewerLauncher.swift in Sources */,
 				F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */,
 				F4A100000001000000000010 /* Metal3DVolumeRenderer.swift in Sources */,
@@ -11620,13 +11551,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				CEB98BEF133508180083F3FD /* OSIHangingPreferencePanePref.m in Sources */,
 				CEB98C07133508280083F3FD /* OSIGeneralPreferencePanePref.m in Sources */,
 				CEB98C11133508350083F3FD /* OSIDatabasePreferencePanePref.m in Sources */,
-				CEB98C2F1335084F0083F3FD /* CIAAnnotation.m in Sources */,
-				CEB98C331335084F0083F3FD /* CIALayoutController.m in Sources */,
-				CEB98C351335084F0083F3FD /* CIALayoutView.m in Sources */,
-				CEB98C371335084F0083F3FD /* CIAPlaceHolder.m in Sources */,
-				CEB98C401335084F0083F3FD /* OSICustomImageAnnotations.m in Sources */,
-				A1B2C3D4E5F60718293A0004 /* OSICustomImageAnnotationsContentView.m in Sources */,
-				CEB98C421335084F0083F3FD /* RWTokenField.m in Sources */,
 				CEB98C611335085D0083F3FD /* OSICDPreferencePanePref.m in Sources */,
 				CEB98C6D1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.m in Sources */,
 				CEB98C6F1335086B0083F3FD /* RoutesTableView.m in Sources */,
@@ -13277,15 +13201,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				8CC299DC2F3158B600669578 /* Base */,
 			);
 			name = OSIDatabasePreferencePanePref.xib;
-			sourceTree = "<group>";
-		};
-		CEB98C201335084F0083F3FD /* OSICustomImageAnnotations.xib */ = {
-			isa = PBXVariantGroup;
-			children = (
-				200BBAFE20AA3BCD002914C4 /* ja-JP */,
-				8CC299DD2F3158B600669578 /* Base */,
-			);
-			name = OSICustomImageAnnotations.xib;
 			sourceTree = "<group>";
 		};
 		CEB98C5B1335085D0083F3FD /* OSICDPreferencePanePref.xib */ = {

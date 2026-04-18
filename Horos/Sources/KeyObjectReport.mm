@@ -14,21 +14,119 @@
 
 #import "KeyObjectReport.h"
 #import "DicomStudy.h"
+#import "ModernDCMTKBridge.h"
+#include <dlfcn.h>
 
-#undef verify
+typedef char* (*HorosModernDCMTKCopyGeneratedUIDFn)(void);
+typedef char* (*HorosModernDCMTKCopyStructuredReportHTMLFn)(const char* path);
+typedef int (*HorosModernDCMTKWriteKeyObjectReportFn)(const char* path,
+													  const char* sopInstanceUID,
+													  const char* seriesInstanceUID,
+													  const char* studyInstanceUID,
+													  const char* studyDescription,
+													  const char* patientName,
+													  const char* patientBirthDate,
+													  const char* patientSex,
+													  const char* patientID,
+													  const char* referringPhysician,
+													  const char* studyID,
+													  const char* accessionNumber,
+													  int titleCode,
+													  const char* keyDescription,
+													  const char* const* imagePaths,
+													  const char* const* imageSeriesInstanceUIDs,
+													  const char* const* imageSOPInstanceUIDs,
+													  int imageCount);
+typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
 
-#include "osconfig.h"    /* make sure OS specific configuration is included first */
-#include "ofstream.h"
-#include "dsrdoc.h"
-#include "dcuid.h"
-#include "dcfilefo.h"
-#include "dsrtypes.h"
+static void* HorosKeyObjectBridgeHandle()
+{
+	static void* handle = NULL;
+	static dispatch_once_t onceToken;
+	dispatch_once(&onceToken, ^{
+		NSBundle *bundle = [NSBundle mainBundle];
+		NSArray<NSString *> *basePaths = @[
+			bundle.resourcePath ?: @"",
+			bundle.privateFrameworksPath ?: @"",
+			bundle.sharedFrameworksPath ?: @"",
+			bundle.builtInPlugInsPath ?: @""
+		];
+		NSArray<NSString *> *relativePaths = @[
+			@"libHorosModernDCMTKBridge.dylib",
+			@"DCMTK/libHorosModernDCMTKBridge.dylib"
+		];
+
+		NSFileManager *fileManager = [NSFileManager defaultManager];
+		for (NSString *basePath in basePaths)
+		{
+			if (basePath.length == 0)
+				continue;
+
+			for (NSString *relativePath in relativePaths)
+			{
+				NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
+				if ([fileManager fileExistsAtPath:candidate])
+				{
+					handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+					if (handle == NULL)
+						NSLog(@"Modern DCMTK bridge failed to load at %@: %s", candidate, dlerror());
+					return;
+				}
+			}
+		}
+
+		NSLog(@"Modern DCMTK bridge not found in bundle search paths.");
+	});
+	return handle;
+}
+
+template <typename FunctionType>
+static FunctionType HorosKeyObjectSymbol(const char* name)
+{
+	void* handle = HorosKeyObjectBridgeHandle();
+	if (handle == NULL)
+		return NULL;
+	return reinterpret_cast<FunctionType>(dlsym(handle, name));
+}
+
+static NSString* HorosISODateStringFromDate(NSDate* date)
+{
+	if (date == nil)
+		return nil;
+	static NSDateFormatter* formatter = nil;
+	if (formatter == nil)
+	{
+		formatter = [[NSDateFormatter alloc] init];
+		[formatter setDateFormat:@"yyyyMMdd"];
+	}
+	return [formatter stringFromDate:date];
+}
+
+static NSArray* HorosKeyObjectValidImageDictionaries(NSArray* keyImages)
+{
+	NSMutableArray* rows = [NSMutableArray array];
+	for (id image in keyImages)
+	{
+		NSString* imagePath = [image valueForKey:@"completePath"];
+		NSString* imageSeriesUID = [image valueForKeyPath:@"series.seriesDICOMUID"];
+		NSString* imageSOPInstanceUID = [image valueForKey:@"sopInstanceUID"];
+		if (imagePath.length == 0 || imageSeriesUID.length == 0 || imageSOPInstanceUID.length == 0)
+			continue;
+		[rows addObject:[NSDictionary dictionaryWithObjectsAndKeys:
+			imagePath, @"path",
+			imageSeriesUID, @"seriesUID",
+			imageSOPInstanceUID, @"sopInstanceUID",
+			nil]];
+	}
+	return rows;
+}
 
 @implementation KeyObjectReport
 
-- (id) initWithStudy:(id)study title:(int)title description:(NSString *)keyDescription seriesUID:(NSString *)seriesUID
+- (id)initWithStudy:(id)study title:(int)title description:(NSString *)keyDescription seriesUID:(NSString *)seriesUID
 {
-	if (self = [super init]){
+	if (self = [super init])
+	{
 		_study = [study retain];
 		_keyDescription = [keyDescription retain];
 		_title = title;
@@ -38,224 +136,117 @@
 	return self;
 }
 
-- (void)createKO{
-	//NSLog(@"create KO");
-	_doc = new DSRDocument(DSRTypes::DT_KeyObjectDoc);
-	_doc->setSpecificCharacterSet("ISO_IR 192"); //UTF 8 string encoding
-	_doc->createNewSeriesInStudy([[_study valueForKey:@"studyInstanceUID"] UTF8String]);
+- (void)createKO
+{
+	[_keyImages release];
+	_keyImages = [[[(DicomStudy*)_study keyImages] allObjects] retain];
 
-	//Study Description
-	if ([_study valueForKey:@"studyName"])
-		_doc->setStudyDescription([[_study valueForKey:@"studyName"] UTF8String]);
-	//Series Description
-	_doc->setSeriesDescription("OsiriX Key Object Report");
-	//Patient Name
-	if ([_study valueForKey:@"name"] )
-		_doc->setPatientsName([[_study valueForKey:@"name"] UTF8String]);
-	// Patient DOB
-	if ([_study valueForKey:@"dateOfBirth"])
-		_doc->setPatientsBirthDate([[[_study valueForKey:@"dateOfBirth"] descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil] UTF8String]);
-	//Patient Sex
-	if ([_study valueForKey:@"patientSex"])
-		_doc->setPatientsSex([[_study valueForKey:@"patientSex"] UTF8String]);
-	//Patient ID
-	NSString *patientID = [_study valueForKey:@"patientID"];
-	if (patientID)
-		_doc->setPatientID([patientID UTF8String]);
-	//Referring Physician
-	if ([_study valueForKey:@"referringPhysician"])
-		_doc->setReferringPhysiciansName([[_study valueForKey:@"referringPhysician"] UTF8String]);
-	//StudyID	
-	if ([_study valueForKey:@"id"]) {
-		NSString *studyID = [_study valueForKey:@"id"];
-		_doc->setStudyID([studyID UTF8String]);
-	}
-	//Accession Number
-	if ([_study valueForKey:@"accessionNumber"])
-		_doc->setAccessionNumber([[_study valueForKey:@"accessionNumber"] UTF8String]);
-	//Series Number
-	_doc->setSeriesNumber("5002");
-	
-	_doc->setManufacturer("OsiriX");
-	
-	// get KeyImages
-	_keyImages = [[(DicomStudy *)_study keyImages] retain];
-		
-	const char *codeMeaning;
-	const char *codeValue;
-	switch (_title){
-		case 113000:	codeMeaning = "Of Interest";
-						codeValue = "113000";
-			break;
-		case 113001:	codeMeaning = "Rejected for Quality Reasons";
-						codeValue = "113001";
-			break;
-		case 113002:	codeMeaning = "For Referring Provider";
-						codeValue = "113002";
-			break;
-		case 113003:	codeMeaning = "For Surgery";
-						codeValue = "113003";
-			break;
-		case 113004:	codeMeaning = "For Teaching";
-						codeValue = "113004";
-			break;
-		case 113005:	codeMeaning = "For Conference";
-						codeValue = "113005";
-			break;
-		case 113006:	codeMeaning = "For Therapy";
-						codeValue = "113006";
-			break;
-		case 113007:	codeMeaning = "For Patient";
-						codeValue = "113007";
-			break;
-		case 113008:	codeMeaning = "For Peer Review";
-						codeValue = "113008";
-			break;
-		case 113009:	codeMeaning = "For Research";
-						codeValue = "113009";
-			break;
-		case 113010:	codeMeaning = "Quality Issue";
-						codeValue = "113010";
-			break;
-		case 113013:	codeMeaning = "Best In Set";
-						codeValue = "113013";
-			break;
-		case 113018:	codeMeaning = "For Printing";
-						codeValue = "113018";
-			break;
-		case 113020:	codeMeaning = "For Report Attachment";
-						codeValue = "113020";
-			break;
-	}
-	
+	[_sopInstanceUID release];
+	_sopInstanceUID = nil;
 
-	_doc->getTree().addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container);
-
-	_doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue(codeValue, "DCM", codeMeaning));
-
-	// Description
-	if (_keyDescription) {
-		_doc->getTree().addContentItem(DSRTypes::RT_hasObsContext, DSRTypes::VT_Text, DSRTypes::AM_belowCurrent);
-		_doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("113012", "DCM", "Key Object Description"));
-		_doc->getTree().getCurrentContentItem().setStringValue([_keyDescription UTF8String]);
-		_doc->getTree().goUp();
-	}
-	
-	if ([_keyImages count] > 0){
-		//NSLog(@"Add key Images");
-		NSEnumerator *enumerator = [_keyImages objectEnumerator];
-		id image;
-		BOOL first = YES;
-		while (image = [enumerator nextObject]){
-			//NSLog(@"key image %@", [image description]);
-			OFString studyUID = OFString([[_study valueForKey:@"studyInstanceUID"] UTF8String]);
-			OFString seriesUID = OFString([[image valueForKeyPath:@"series.seriesDICOMUID"]  UTF8String]);
-			OFString instanceUID = OFString([[image valueForKey:@"sopInstanceUID"] UTF8String]);
-			DcmFileFormat fileformat;
-			OFCondition status = fileformat.loadFile([[image valueForKey:@"completePath"] UTF8String]);
-			OFString sopClassUID;
-			if (status.good()){
-				fileformat.getDataset()->findAndGetOFString(DCM_SOPClassUID, sopClassUID).good();
-			}
-			
-			if (first) {
-				_doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Image, DSRTypes::AM_belowCurrent);
-				first = NO;
-			}
-			else{				
-				_doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Image);
-			}
-			
-			_doc->getTree().getCurrentContentItem().setImageReference(DSRImageReferenceValue(sopClassUID, instanceUID));
-			_doc->getCurrentRequestedProcedureEvidence().addItem(studyUID, seriesUID, sopClassUID, instanceUID);
-		}
-		//go back up in tree
-		_doc->getTree().goUp();
-		
-	}
-
-	//NSLog(@"end createKO");	
-	//_doc->print(cout, nil);
-}
-
- 
- - (void)checkCharacterSet
-{ // check extended character set
-	const char *defaultCharset = "latin-1";
-	const char *charset = _doc->getSpecificCharacterSet();
-	if ((charset == NULL || strlen(charset) == 0) && _doc->containsExtendedCharacters())
+	HorosModernDCMTKCopyGeneratedUIDFn generateUIDFn = HorosKeyObjectSymbol<HorosModernDCMTKCopyGeneratedUIDFn>("HorosModernDCMTKCopyGeneratedUID");
+	HorosModernDCMTKFreeStringFn freeStringFn = HorosKeyObjectSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+	char* generatedUID = generateUIDFn ? generateUIDFn() : NULL;
+	if (generatedUID != NULL)
 	{
-	  // we have an unspecified extended character set
-		OFString charset(defaultCharset);
-		if (charset == "latin-1") _doc->setSpecificCharacterSetType(DSRTypes::CS_Latin1);
-		else if (charset == "latin-2") _doc->setSpecificCharacterSetType(DSRTypes::CS_Latin2);
-		else if (charset == "latin-3") _doc->setSpecificCharacterSetType(DSRTypes::CS_Latin3);
-		else if (charset == "latin-4") _doc->setSpecificCharacterSetType(DSRTypes::CS_Latin4);
-		else if (charset == "latin-5") _doc->setSpecificCharacterSetType(DSRTypes::CS_Latin5);
-		else if (charset == "cyrillic") _doc->setSpecificCharacterSetType(DSRTypes::CS_Cyrillic);
-		else if (charset == "arabic") _doc->setSpecificCharacterSetType(DSRTypes::CS_Arabic);
-		else if (charset == "greek") _doc->setSpecificCharacterSetType(DSRTypes::CS_Greek);
-		else if (charset == "hebrew") _doc->setSpecificCharacterSetType(DSRTypes::CS_Hebrew);
-
+		_sopInstanceUID = [[NSString stringWithUTF8String:generatedUID] retain];
+		if (freeStringFn)
+			freeStringFn(generatedUID);
 	}
 }
- 
- - (void)dealloc{
-	
-	delete _doc;
+
+- (void)dealloc
+{
 	[_study release];
 	[_keyImages release];
 	[_keyDescription release];
 	[_seriesUID release];
+	[_sopInstanceUID release];
 	[super dealloc];
-	
 }
-	
-- (BOOL)writeFileAtPath:(NSString *)path{
-	//NSLog(@"Write file at Path: %@", path);
-	//if (_doc == NULL)
-	//	NSLog(@"ko doc does not exist");
-	DcmFileFormat fileformat;	
-	OFCondition status = _doc->write(*fileformat.getDataset());
-	if (status.good())  {
-		//NSLog(@"have dcmdataset");
-		//Set SeriesUID
-		if (_seriesUID)
-			fileformat.getDataset()->putAndInsertString	(DCM_SeriesInstanceUID,
-									[_seriesUID UTF8String],
-									OFTrue);
-		status = fileformat.saveFile([path UTF8String], EXS_LittleEndianExplicit);
+
+- (BOOL)writeFileAtPath:(NSString *)path
+{
+	NSArray* imageRows = HorosKeyObjectValidImageDictionaries(_keyImages);
+	const int imageCount = (int)[imageRows count];
+
+	const char** imagePaths = imageCount > 0 ? (const char**)calloc(imageCount, sizeof(const char*)) : NULL;
+	const char** imageSeriesUIDs = imageCount > 0 ? (const char**)calloc(imageCount, sizeof(const char*)) : NULL;
+	const char** imageSOPInstanceUIDs = imageCount > 0 ? (const char**)calloc(imageCount, sizeof(const char*)) : NULL;
+
+	for (int index = 0; index < imageCount; ++index)
+	{
+		NSDictionary* row = [imageRows objectAtIndex:index];
+		imagePaths[index] = [[row objectForKey:@"path"] UTF8String];
+		imageSeriesUIDs[index] = [[row objectForKey:@"seriesUID"] UTF8String];
+		imageSOPInstanceUIDs[index] = [[row objectForKey:@"sopInstanceUID"] UTF8String];
 	}
-	else {
-		 _doc->print(cout, nil);
-		NSLog(@"could not covert to dataset");
+
+	HorosModernDCMTKWriteKeyObjectReportFn writeReportFn = HorosKeyObjectSymbol<HorosModernDCMTKWriteKeyObjectReportFn>("HorosModernDCMTKWriteKeyObjectReport");
+	if (writeReportFn == NULL)
+	{
+		free(imagePaths);
+		free(imageSeriesUIDs);
+		free(imageSOPInstanceUIDs);
+		return NO;
 	}
-	
-	if (status.good()) {
-		//NSLog(@"Wrote File");
+
+	const int success = writeReportFn(
+		[path UTF8String],
+		[_sopInstanceUID UTF8String],
+		[_seriesUID UTF8String],
+		[[_study valueForKey:@"studyInstanceUID"] UTF8String],
+		[[_study valueForKey:@"studyName"] UTF8String],
+		[[_study valueForKey:@"name"] UTF8String],
+		[HorosISODateStringFromDate([_study valueForKey:@"dateOfBirth"]) UTF8String],
+		[[_study valueForKey:@"patientSex"] UTF8String],
+		[[_study valueForKey:@"patientID"] UTF8String],
+		[[_study valueForKey:@"referringPhysician"] UTF8String],
+		[[[_study valueForKey:@"id"] description] UTF8String],
+		[[_study valueForKey:@"accessionNumber"] UTF8String],
+		_title,
+		[_keyDescription UTF8String],
+		imagePaths,
+		imageSeriesUIDs,
+		imageSOPInstanceUIDs,
+		imageCount);
+
+	free(imagePaths);
+	free(imageSeriesUIDs);
+	free(imageSOPInstanceUIDs);
+
+	if (success)
 		return YES;
-	}
-	else
-		NSLog(@"KO Write failed");
-	
+
+	NSLog(@"KO Write failed");
 	return NO;
 }
 
-- (BOOL)writeHTMLAtPath:(NSString *)path{
-		size_t renderFlags = DSRTypes::HF_renderDcmtkFootnote;		
-	ofstream stream([path UTF8String]);
-	if ( _doc->renderHTML(stream, renderFlags, NULL).good())	
-		return YES;	
-	return NO;
+- (BOOL)writeHTMLAtPath:(NSString *)path
+{
+	NSString* temporaryPath = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"horos-ko-%@.dcm", _sopInstanceUID ?: @"tmp"]];
+	if (![self writeFileAtPath:temporaryPath])
+		return NO;
+
+	HorosModernDCMTKCopyStructuredReportHTMLFn renderHTMLFn = HorosKeyObjectSymbol<HorosModernDCMTKCopyStructuredReportHTMLFn>("HorosModernDCMTKCopyStructuredReportHTML");
+	HorosModernDCMTKFreeStringFn freeStringFn = HorosKeyObjectSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+	char* html = renderHTMLFn ? renderHTMLFn([temporaryPath UTF8String]) : NULL;
+	[[NSFileManager defaultManager] removeItemAtPath:temporaryPath error:nil];
+	if (html == NULL)
+		return NO;
+
+	NSString* htmlString = [NSString stringWithUTF8String:html];
+	if (freeStringFn)
+		freeStringFn(html);
+	if (htmlString == nil)
+		return NO;
+
+	return [htmlString writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
- - (NSString *)sopInstanceUID{		
-	const char *sop = _doc->getStudyInstanceUID();
-	NSString *sopInstanceUID = nil;
-	if (sop != NULL)
-	 sopInstanceUID = [NSString stringWithUTF8String:sop];
-	NSLog(@"sop: %@", sopInstanceUID);
-	return sopInstanceUID;
+- (NSString *)sopInstanceUID
+{
+	return _sopInstanceUID;
 }
 
 @end

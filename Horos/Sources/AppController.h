@@ -192,6 +192,7 @@ extern AppController* OsiriX;
 #pragma mark static menu items
 //===============OSIRIX========================
 - (IBAction) about:(id)sender; /**< Display the about window */
+- (IBAction) showSettingsPanel:(id)sender; /**< Show new Settings window */
 - (IBAction) showPreferencePanel:(id)sender; /**< Show Preferences window */
 #ifndef MACAPPSTORE
 - (IBAction) checkForUpdates:(id) sender;  /**< Check for update */

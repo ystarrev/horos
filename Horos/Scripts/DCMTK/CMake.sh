@@ -34,9 +34,13 @@ mv "$cmake_dir" "$cmake_dir.tmp"
 rm -Rf "$cmake_dir.tmp" "$install_dir.tmp"
 mkdir -p "$cmake_dir";
 
-archs=$(printf '%s' "$ARCHS" | tr ' ' ';')
-if [ -z "$archs" ]; then
+if [ "$ONLY_ACTIVE_ARCH" = "YES" ] && [ -n "$NATIVE_ARCH_ACTUAL" ] && [ "$NATIVE_ARCH_ACTUAL" != "undefined_arch" ]; then
     archs="$NATIVE_ARCH_ACTUAL"
+else
+    archs=$(printf '%s' "$ARCHS" | tr ' ' ';')
+    if [ -z "$archs" ]; then
+        archs="$NATIVE_ARCH_ACTUAL"
+    fi
 fi
 
 args=( "$source_dir" )
@@ -52,6 +56,11 @@ args+=(-DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 args+=(-DCMAKE_INSTALL_PREFIX="$install_dir")
 
 args+=(-DCMAKE_IGNORE_PATH="/opt/local/include;/opt/local/lib;/opt/homebrew/include;/opt/homebrew/lib")
+
+# Horos needs a subset of DCMTK plus the dcmsign library (`dcmdsig`) that
+# dcmpstat links against. We still avoid building the standalone `dcmsign`
+# executable separately in the module CMake to keep this target lean.
+args+=(-DDCMTK_MODULES=ofstd\;oflog\;oficonv\;dcmdata\;dcmimgle\;dcmimage\;dcmjpeg\;dcmjpls\;dcmtls\;dcmnet\;dcmsr\;dcmsign\;dcmwlm\;dcmqrdb\;dcmpstat\;dcmrt\;dcmiod\;dcmfg\;dcmseg\;dcmtract\;dcmpmap\;dcmect\;dcmapps)
 
 export PKG_CONFIG_PATH="$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/lib/pkgconfig"
 

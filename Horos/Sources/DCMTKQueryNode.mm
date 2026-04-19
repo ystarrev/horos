@@ -1227,6 +1227,7 @@ subOpCallback(void * /*subOpCallbackData*/ ,
         else // DICOM retrieve
         {
             NSMutableArray *localObjectUIDs = [NSMutableArray array];
+            BOOL localSeriesAlreadyExists = NO;
             
             BOOL retrievedDone = NO;
             
@@ -1261,7 +1262,21 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                             DicomStudy *localStudy = [[context executeFetchRequest: request error: &error] lastObject];
                             
                             for( DicomSeries *s in [localStudy valueForKey: @"series"])
+                            {
+                                if( [self isKindOfClass: [DCMTKSeriesQueryNode class]])
+                                {
+                                    NSString *requestedSeriesUID = [self uid];
+                                    NSString *localSeriesDICOMUID = [s valueForKey: @"seriesDICOMUID"];
+                                    NSString *localSeriesInstanceUID = [s valueForKey: @"seriesInstanceUID"];
+                                    
+                                    if( requestedSeriesUID.length &&
+                                        ([localSeriesDICOMUID isEqualToString: requestedSeriesUID] ||
+                                         [localSeriesInstanceUID isEqualToString: requestedSeriesUID]))
+                                        localSeriesAlreadyExists = YES;
+                                }
+                                
                                 [localObjectUIDs addObjectsFromArray: [[[s images] valueForKey: @"sopInstanceUID"] allObjects]];
+                            }
                         }
                         @catch (NSException* e)
                         {
@@ -1278,7 +1293,19 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                     N2LogExceptionWithStackTrace(e);
                 }
                 
-                if( (localObjectUIDs.count || [[NSUserDefaults standardUserDefaults] boolForKey: @"MultipleAssociationsRetrieve"]) && [[NSThread currentThread] isCancelled] == NO) // We have already local images !
+                BOOL shouldTryImageLevelRetrieve = (localObjectUIDs.count > 0);
+                
+                if( [self isKindOfClass: [DCMTKSeriesQueryNode class]])
+                {
+                    if( localSeriesAlreadyExists == NO)
+                        [localObjectUIDs removeAllObjects];
+                    else
+                        shouldTryImageLevelRetrieve = YES;
+                }
+                else if( [[NSUserDefaults standardUserDefaults] boolForKey: @"MultipleAssociationsRetrieve"])
+                    shouldTryImageLevelRetrieve = YES;
+                
+                if( shouldTryImageLevelRetrieve && [[NSThread currentThread] isCancelled] == NO) // We have already local images, or are explicitly parallelizing a study-level retrieve
                 {
                     NSThread *WADOCFind = [[[NSThread alloc] initWithTarget: self selector: @selector( CFINDThread:) object: studyInstanceUID] autorelease];
                     

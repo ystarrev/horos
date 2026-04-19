@@ -63,6 +63,7 @@
 #include "NSFileManager+N2.h"
 
 #import <AVFoundation/AVFoundation.h>
+#import <dlfcn.h>
 
 #ifndef DECOMPRESS_APP
 #include "nifti1.h"
@@ -78,6 +79,29 @@
 #include "Horos.h"
 
 extern NSString * convertDICOM( NSString *inputfile);
+
+typedef int (*HorosModernDCMTKIsDICOMFileFn)(const char*);
+typedef char* (*HorosModernDCMTKCopyFieldFn)(const char*, const char*);
+typedef void (*HorosModernDCMTKFreeStringFn)(char*);
+
+template <typename SymbolType>
+static SymbolType HorosDicomFileSymbol(const char* name)
+{
+    static void* handle = dlopen("libHorosModernDCMTKBridge.dylib", RTLD_LAZY | RTLD_LOCAL);
+    return handle != NULL ? reinterpret_cast<SymbolType>(dlsym(handle, name)) : NULL;
+}
+
+static NSString* HorosDicomFileBridgeString(char* value)
+{
+    if (value == NULL)
+        return nil;
+    HorosModernDCMTKFreeStringFn freeFn = HorosDicomFileSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    NSString* string = [NSString stringWithUTF8String:value];
+    if (freeFn)
+        freeFn(value);
+    return string;
+}
+
 extern NSRecursiveLock *PapyrusLock;
 
 static BOOL DEFAULTSSET = NO;
@@ -715,28 +739,31 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     
     //////////////////////////////////////////////////////////
     
-    try
+    BOOL isDicom = NO;
+    HorosModernDCMTKIsDICOMFileFn isDICOMFn = HorosDicomFileSymbol<HorosModernDCMTKIsDICOMFileFn>("HorosModernDCMTKIsDICOMFile");
+    if (isDICOMFn)
+        isDicom = isDICOMFn(filePath.UTF8String) != 0;
+    else
     {
-        gdcm::Scanner theScanner;
-        
-        gdcm::Directory::FilenamesType filenames;
-        filenames.push_back( std::string([filePath UTF8String]) );
-        
-        theScanner.AddTag(gdcm::Tag(0x0020, 0x000e));//Series UID
-        if( !theScanner.Scan( filenames ) )
+        try
         {
-            return NO;
+            gdcm::Scanner theScanner;
+            
+            gdcm::Directory::FilenamesType filenames;
+            filenames.push_back( std::string([filePath UTF8String]) );
+            
+            theScanner.AddTag(gdcm::Tag(0x0020, 0x000e));//Series UID
+            if( theScanner.Scan( filenames ) && theScanner.IsKey( filenames[0].c_str() ) )
+                isDicom = YES;
         }
-        
-        if( !theScanner.IsKey( filenames[0].c_str() ) )
+        catch (...)
         {
-            return NO;
+            isDicom = NO;
         }
     }
-    catch (...)
-    {
+    
+    if (!isDicom)
         return NO;
-    }
     
     //////////////////////////////////////////////////////////
     
@@ -744,28 +771,17 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     {
         @try
         {
-            try
-            {
-                gdcm::Scanner theScanner;
-                
-                gdcm::Directory::FilenamesType filenames;
-                filenames.push_back( std::string([filePath UTF8String]) );
-                
-                theScanner.AddTag(gdcm::Tag(0x7FE0, 0x0010));//Series UID
-                if( !theScanner.Scan( filenames ) )
-                {
-                    return NO;
-                }
-                
-                if( !theScanner.IsKey( filenames[0].c_str() ) )
-                {
-                    return NO;
-                }
-            }
-            catch (...)
-            {
+            NSString *sopClassUID = nil;
+            HorosModernDCMTKCopyFieldFn copyFieldFn = HorosDicomFileSymbol<HorosModernDCMTKCopyFieldFn>("HorosModernDCMTKCopyField");
+            if (copyFieldFn)
+                sopClassUID = HorosDicomFileBridgeString(copyFieldFn(filePath.UTF8String, "SOPClassUID"));
+            if (sopClassUID == nil)
+                sopClassUID = [DicomFile getDicomField:@"SOPClassUID" forFile:filePath];
+
+            if (sopClassUID.length == 0)
                 *image = NO;
-            }
+            else
+                *image = [DCMAbstractSyntaxUID isImageStorage:sopClassUID] || [DCMAbstractSyntaxUID isHiddenImageStorage:sopClassUID];
         }
         @catch (NSException * e)
         {
@@ -2030,6 +2046,8 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
         [aTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
         [aTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent: @"/dsr2html"]];
         [aTask setArguments: [NSArray arrayWithObjects: @"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items", filePath, htmlpath, nil]];
+        [aTask setStandardOutput:[NSPipe pipe]];
+        [aTask setStandardError:[NSPipe pipe]];
         [aTask launch];
         while( [aTask isRunning])
             [NSThread sleepForTimeInterval: 0.1];

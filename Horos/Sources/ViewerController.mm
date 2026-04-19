@@ -42,8 +42,72 @@
 #import "DicomSeries.h"
 #import "DicomImage.h"
 #import "NSThread+N2.h"
-#include "dcfilefo.h"
-#include "dcdeftag.h"
+#include <dlfcn.h>
+
+typedef int (*HorosModernDCMTKReplaceTagValueFn)(const char* path, unsigned short group, unsigned short element, const char* value, int removeIfEmpty);
+
+static void* HorosViewerControllerBridgeHandle()
+{
+    static void* handle = NULL;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSBundle *bundle = [NSBundle mainBundle];
+        NSArray<NSString *> *basePaths = @[
+            bundle.resourcePath ?: @"",
+            bundle.privateFrameworksPath ?: @"",
+            bundle.sharedFrameworksPath ?: @"",
+            bundle.builtInPlugInsPath ?: @""
+        ];
+        NSArray<NSString *> *relativePaths = @[
+            @"libHorosModernDCMTKBridge.dylib",
+            @"DCMTK/libHorosModernDCMTKBridge.dylib"
+        ];
+
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        for (NSString *basePath in basePaths)
+        {
+            if (basePath.length == 0)
+                continue;
+
+            for (NSString *relativePath in relativePaths)
+            {
+                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
+                if ([fileManager fileExistsAtPath:candidate])
+                {
+                    handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+                    if (handle == NULL)
+                        NSLog(@"Modern DCMTK bridge failed to load at %@: %s", candidate, dlerror());
+                    return;
+                }
+            }
+        }
+
+        NSLog(@"Modern DCMTK bridge not found in bundle search paths.");
+    });
+    return handle;
+}
+
+template <typename FunctionType>
+static FunctionType HorosViewerControllerBridgeSymbol(const char* name)
+{
+    void* handle = HorosViewerControllerBridgeHandle();
+    if (handle == NULL)
+        return NULL;
+    return reinterpret_cast<FunctionType>(dlsym(handle, name));
+}
+
+static void HorosViewerControllerReplaceTagValue(NSString* path, unsigned short group, unsigned short element, NSString* value)
+{
+    if (path.length == 0)
+        return;
+
+    HorosModernDCMTKReplaceTagValueFn replaceTagValueFn =
+        HorosViewerControllerBridgeSymbol<HorosModernDCMTKReplaceTagValueFn>("HorosModernDCMTKReplaceTagValue");
+    if (replaceTagValueFn == NULL)
+        return;
+
+    replaceTagValueFn(path.fileSystemRepresentation, group, element, value.UTF8String, 0);
+}
 
 @implementation ViewerController (MM)
 
@@ -63,28 +127,20 @@
         if ([iseries.name isEqualToString:O2ScreenCapturesSeriesName])
             series = iseries;
     if (series) {
-        DcmFileFormat dfile;
-        if (dfile.loadFile(path.fileSystemRepresentation).good()) {
-            dfile.loadAllDataIntoMemory();
-            DcmDataset* dset = dfile.getDataset(); // = &dfile;
-            
-            // clone seriesinstanceUID and seriesNumber
-            dset->putAndInsertString(DCM_SeriesInstanceUID, series.seriesDICOMUID.UTF8String);
-            dset->putAndInsertString(DCM_SeriesNumber, series.id.stringValue.UTF8String);
-            
-            // find highest instanceNumber in the series
-            NSInteger instanceNumber = 0;
-            for (DicomImage* image in series.images)
-                if (image.instanceNumber.integerValue > instanceNumber)
-                    instanceNumber = image.instanceNumber.integerValue;
-            ++instanceNumber;
-            
-            NSNumber* instanceNumberString = [NSNumber numberWithInteger:instanceNumber];
-            dset->putAndInsertString(DCM_InstanceNumber, instanceNumberString.stringValue.UTF8String);
-            dset->putAndInsertString(DCM_AcquisitionNumber, instanceNumberString.stringValue.UTF8String);
-            
-            dfile.saveFile(path.fileSystemRepresentation);
-        }
+        // Clone series identifiers into the capture via the modern bridge instead of app-side DCMTK dataset editing.
+        HorosViewerControllerReplaceTagValue(path, 0x0020, 0x000E, series.seriesDICOMUID);
+        HorosViewerControllerReplaceTagValue(path, 0x0020, 0x0011, series.id.stringValue);
+        
+        // find highest instanceNumber in the series
+        NSInteger instanceNumber = 0;
+        for (DicomImage* image in series.images)
+            if (image.instanceNumber.integerValue > instanceNumber)
+                instanceNumber = image.instanceNumber.integerValue;
+        ++instanceNumber;
+        
+        NSNumber* instanceNumberString = [NSNumber numberWithInteger:instanceNumber];
+        HorosViewerControllerReplaceTagValue(path, 0x0020, 0x0013, instanceNumberString.stringValue);
+        HorosViewerControllerReplaceTagValue(path, 0x0020, 0x0012, instanceNumberString.stringValue);
     }
     
     // import the file into our DB

@@ -26,13 +26,17 @@
 #include "ofstream.h"
 #include "dsrdoc.h"
 #include "dcuid.h"
-#include "dcfilefo.h"
 #include "dsrtypes.h"
 #include "dsrimgtn.h"
 #include "dsrdoctr.h"
 
 typedef char* (*HorosModernDCMTKCopyStructuredReportHTMLFn)(const char* path);
+typedef char* (*HorosModernDCMTKCopyStructuredReportXMLFn)(const char* path);
 typedef char* (*HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn)(const char* path);
+typedef char* (*HorosModernDCMTKCopyStructuredReportNamedTextValueFn)(const char* path, const char* codeValue, const char* codingSchemeDesignator, const char* codeMeaning);
+typedef char* (*HorosModernDCMTKCopyStructuredReportNamedTextValuesFn)(const char* path, const char* codeValue, const char* codingSchemeDesignator, const char* codeMeaning);
+typedef char* (*HorosModernDCMTKCopyFieldFn)(const char* path, const char* fieldName);
+typedef int (*HorosModernDCMTKWriteStructuredReportFromXMLFn)(const char* xmlPath, const char* dicomPath);
 typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
 
 static void* HorosStructuredReportBridgeHandle()
@@ -96,17 +100,104 @@ static NSString* HorosStructuredReportBridgeString(char* value)
 	return string;
 }
 
+static NSString* HorosStructuredReportCopyField(NSString* path, NSString* fieldName)
+{
+	if (path == nil || fieldName == nil || ![[NSFileManager defaultManager] fileExistsAtPath:path])
+		return nil;
+
+	HorosModernDCMTKCopyFieldFn copyFieldFn =
+		HorosStructuredReportSymbol<HorosModernDCMTKCopyFieldFn>("HorosModernDCMTKCopyField");
+	if (copyFieldFn == NULL)
+		return nil;
+
+	return HorosStructuredReportBridgeString(copyFieldFn(path.fileSystemRepresentation, fieldName.UTF8String));
+}
+
+static NSString* HorosStructuredReportCopyNamedTextValue(NSString* path, NSString* codeValue, NSString* codingSchemeDesignator, NSString* codeMeaning)
+{
+	if (path == nil || ![[NSFileManager defaultManager] fileExistsAtPath:path])
+		return nil;
+
+	HorosModernDCMTKCopyStructuredReportNamedTextValueFn copyValueFn =
+		HorosStructuredReportSymbol<HorosModernDCMTKCopyStructuredReportNamedTextValueFn>("HorosModernDCMTKCopyStructuredReportNamedTextValue");
+	if (copyValueFn == NULL)
+		return nil;
+
+	return HorosStructuredReportBridgeString(copyValueFn(path.fileSystemRepresentation,
+	                                                     codeValue.UTF8String,
+	                                                     codingSchemeDesignator.UTF8String,
+	                                                     codeMeaning.UTF8String));
+}
+
+static NSArray* HorosStructuredReportCopyNamedTextValues(NSString* path, NSString* codeValue, NSString* codingSchemeDesignator, NSString* codeMeaning, NSString* dictionaryKey)
+{
+	if (path == nil || ![[NSFileManager defaultManager] fileExistsAtPath:path])
+		return nil;
+
+	HorosModernDCMTKCopyStructuredReportNamedTextValuesFn copyValuesFn =
+		HorosStructuredReportSymbol<HorosModernDCMTKCopyStructuredReportNamedTextValuesFn>("HorosModernDCMTKCopyStructuredReportNamedTextValues");
+	if (copyValuesFn == NULL)
+		return nil;
+
+	NSString *joinedValues = HorosStructuredReportBridgeString(copyValuesFn(path.fileSystemRepresentation,
+	                                                                        codeValue.UTF8String,
+	                                                                        codingSchemeDesignator.UTF8String,
+	                                                                        codeMeaning.UTF8String));
+	if (joinedValues.length == 0)
+		return nil;
+
+	NSMutableArray *results = [NSMutableArray array];
+	for (NSString *value in [joinedValues componentsSeparatedByString:@"\\"])
+	{
+		if (value.length)
+			[results addObject:[NSDictionary dictionaryWithObject:value forKey:dictionaryKey]];
+	}
+
+	return results.count ? results : nil;
+}
+
 static BOOL HorosStructuredReportWriteDocumentToPath(DSRDocument* document, NSString* path)
 {
 	if (document == NULL || path == nil)
 		return NO;
 
-	DcmFileFormat fileformat;
-	OFCondition status = document->write(*fileformat.getDataset());
-	if (status.good())
-		status = fileformat.saveFile([path UTF8String], EXS_LittleEndianExplicit);
+	HorosModernDCMTKWriteStructuredReportFromXMLFn writeFn =
+		HorosStructuredReportSymbol<HorosModernDCMTKWriteStructuredReportFromXMLFn>("HorosModernDCMTKWriteStructuredReportFromXML");
+	if (writeFn == NULL)
+		return NO;
 
-	return status.good();
+	NSString *tempXMLPath = [[NSTemporaryDirectory() stringByAppendingPathComponent:[[NSProcessInfo processInfo] globallyUniqueString]] stringByAppendingPathExtension:@"xml"];
+	size_t writeFlags = 0;
+	ofstream stream([tempXMLPath UTF8String]);
+	document->writeXML(stream, writeFlags);
+	stream.close();
+
+	BOOL success = writeFn([tempXMLPath UTF8String], [path UTF8String]) != 0;
+	[[NSFileManager defaultManager] removeItemAtPath:tempXMLPath error:nil];
+	return success;
+}
+
+static BOOL HorosStructuredReportReadDocumentFromPath(DSRDocument* document, NSString* path)
+{
+	if (document == NULL || path == nil || ![[NSFileManager defaultManager] fileExistsAtPath:path])
+		return NO;
+
+	HorosModernDCMTKCopyStructuredReportXMLFn copyXMLFn =
+		HorosStructuredReportSymbol<HorosModernDCMTKCopyStructuredReportXMLFn>("HorosModernDCMTKCopyStructuredReportXML");
+	if (copyXMLFn == NULL)
+		return NO;
+
+	NSString *xmlString = HorosStructuredReportBridgeString(copyXMLFn(path.fileSystemRepresentation));
+	if (xmlString.length == 0)
+		return NO;
+
+	NSString *tempXMLPath = [[NSTemporaryDirectory() stringByAppendingPathComponent:[[NSProcessInfo processInfo] globallyUniqueString]] stringByAppendingPathExtension:@"xml"];
+	BOOL wroteXML = [xmlString writeToFile:tempXMLPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+	BOOL success = NO;
+	if (wroteXML)
+		success = document->readXML([tempXMLPath UTF8String], 0).good();
+	[[NSFileManager defaultManager] removeItemAtPath:tempXMLPath error:nil];
+	return success;
 }
 
 @implementation StructuredReport
@@ -125,15 +216,13 @@ static BOOL HorosStructuredReportWriteDocumentToPath(DSRDocument* document, NSSt
 
 		if ([[NSFileManager defaultManager] fileExistsAtPath:file]) {
 			_reportHasChanged = NO;			
-			DcmFileFormat fileformat;
-			OFCondition status = fileformat.loadFile([file UTF8String]);
-			if (status.good())
-				status = _doc->read(*fileformat.getDataset());
+			BOOL loaded = HorosStructuredReportReadDocumentFromPath(_doc, file);
 
 			// If we are the manfacturer we can edit.
-			const char *manf = _doc->getManufacturer();
+			NSString *manufacturer = HorosStructuredReportCopyField(file, @"Manufacturer");
+			const char *manf = manufacturer ? [manufacturer UTF8String] : NULL;
 			//_doc->print(cout, NULL);
-			if (manf != NULL && strcmp("OsiriX", manf) == 0){
+			if (loaded && manf != NULL && strcmp("OsiriX", manf) == 0){
 				
 				//completion flag
 				if (_doc->getCompletionFlag() == DSRTypes::CF_Complete)
@@ -147,86 +236,33 @@ static BOOL HorosStructuredReportWriteDocumentToPath(DSRDocument* document, NSSt
 				else
 					[self setVerified:NO];
 					
-				//go to physician/observer		
-				DSRCodedEntryValue codedEntryValue = DSRCodedEntryValue("121008", "DCM", "Person Observer Name");
-				if (_doc->getTree().gotoNamedNode (codedEntryValue, OFTrue, OFTrue) > 0 ){
-					OFString observer = _doc->getTree().getCurrentContentItem().getStringValue();
-					[self setPhysician:[NSString stringWithCString:observer.c_str() encoding:NSUTF8StringEncoding]];
-				}
-				//go to observer / Institution
-				codedEntryValue = DSRCodedEntryValue("121009", "DCM", "Person Observer's Organization Name");
-				if (_doc->getTree().gotoNamedNode (codedEntryValue, OFTrue, OFTrue) > 0 ){
-					OFString institution = _doc->getTree().getCurrentContentItem().getStringValue();
-					[self setInstitution:[NSString stringWithCString:institution.c_str() encoding:NSUTF8StringEncoding]];
-				}
-				
-				//go to history
-				codedEntryValue = DSRCodedEntryValue("121060", "DCM", "History");
-				if (_doc->getTree().gotoNamedNode (codedEntryValue, OFTrue, OFTrue) > 0){
-					OFString observer = _doc->getTree().getCurrentContentItem().getStringValue();
-					[self setHistory:[NSString stringWithCString:observer.c_str() encoding:NSUTF8StringEncoding]];
-				}
-				
-				//Request
-				codedEntryValue = DSRCodedEntryValue("121062", "DCM", "Request");
-				if (_doc->getTree().gotoNamedNode (codedEntryValue, OFTrue, OFTrue) > 0){
-					OFString request = _doc->getTree().getCurrentContentItem().getStringValue();
-					[self setRequest:[NSString stringWithCString:request.c_str() encoding:NSUTF8StringEncoding]];
-				}
-				
-				//Procedure
-				codedEntryValue = DSRCodedEntryValue("121064", "DCM", "Current Procedure Descriptions");
-				if (_doc->getTree().gotoNamedNode (codedEntryValue, OFTrue, OFTrue) > 0){
-					codedEntryValue = DSRCodedEntryValue("121065", "DCM", "Procedure Description");
-					if (_doc->getTree().gotoNamedNode (codedEntryValue, OFTrue, OFTrue) > 0){
-						OFString procedureDescription = _doc->getTree().getCurrentContentItem().getStringValue();
-						[self setProcedureDescription:[NSString stringWithCString:procedureDescription.c_str() encoding:NSUTF8StringEncoding]];
-					}
-				}
-				
-				//findings
-				codedEntryValue = DSRCodedEntryValue("121070", "DCM", "Findings");
-				if (_doc->getTree().gotoNamedNode (codedEntryValue, OFTrue, OFTrue) > 0) {
-					NSMutableArray *findings = [NSMutableArray array];
-					//get all the findings
-					codedEntryValue = DSRCodedEntryValue("121071", "DCM", "Finding");
-					if (_doc->getTree().gotoNamedNode (codedEntryValue, OFTrue, OFTrue) > 0) {
-						OFString finding = _doc->getTree().getCurrentContentItem().getStringValue();
-						[findings addObject: [NSDictionary dictionaryWithObject:[NSString stringWithCString:finding.c_str() encoding:NSUTF8StringEncoding]
-								forKey:@"finding"]];
-						// get the rest. Need a loop here
-						while(_doc->getTree().gotoNextNamedNode (codedEntryValue, OFFalse) > 0) {
-							finding = _doc->getTree().getCurrentContentItem().getStringValue();
-							[findings addObject: [NSDictionary dictionaryWithObject:[NSString stringWithCString:finding.c_str() encoding:NSUTF8StringEncoding]
-								forKey:@"finding"]];
-						}
-					}
-					//[self setFindings:findings];
-					_findings = [findings retain];
-				}
-				
-				//Impressions
-				codedEntryValue = DSRCodedEntryValue("121072", "DCM", "Impressions");
-				if (_doc->getTree().gotoNamedNode (codedEntryValue, OFTrue, OFTrue) > 0) {
-					NSMutableArray *impressions = [NSMutableArray array];
-					//get all the impressions
-					codedEntryValue = DSRCodedEntryValue("121073", "DCM", "Impression");
-					if (_doc->getTree().gotoNamedNode (codedEntryValue, OFTrue, OFTrue) > 0) {
-						OFString impression = _doc->getTree().getCurrentContentItem().getStringValue();
-						[impressions addObject: [NSDictionary dictionaryWithObject:[NSString stringWithCString:impression.c_str() encoding:NSUTF8StringEncoding]
-								forKey:@"conclusion"]];
-						// get the rest. Need a loop here
-						while(_doc->getTree().gotoNextNamedNode (codedEntryValue, OFFalse) > 0) {
-							impression = _doc->getTree().getCurrentContentItem().getStringValue();
-							[impressions addObject: [NSDictionary dictionaryWithObject:[NSString stringWithCString:impression.c_str() encoding:NSUTF8StringEncoding]
-								forKey:@"conclusion"]];
-							
-						}
+				NSString *physician = HorosStructuredReportCopyNamedTextValue(file, @"121008", @"DCM", @"Person Observer Name");
+				if (physician)
+					[self setPhysician:physician];
 
-					}
-					//[self setConclusions:impressions];
+				NSString *institution = HorosStructuredReportCopyNamedTextValue(file, @"121009", @"DCM", @"Person Observer's Organization Name");
+				if (institution)
+					[self setInstitution:institution];
+				
+				NSString *history = HorosStructuredReportCopyNamedTextValue(file, @"121060", @"DCM", @"History");
+				if (history)
+					[self setHistory:history];
+				
+				NSString *request = HorosStructuredReportCopyNamedTextValue(file, @"121062", @"DCM", @"Request");
+				if (request)
+					[self setRequest:request];
+				
+				NSString *procedureDescription = HorosStructuredReportCopyNamedTextValue(file, @"121065", @"DCM", @"Procedure Description");
+				if (procedureDescription)
+					[self setProcedureDescription:procedureDescription];
+				
+				NSArray *findings = HorosStructuredReportCopyNamedTextValues(file, @"121071", @"DCM", @"Finding", @"finding");
+				if (findings)
+					_findings = [findings retain];
+				
+				NSArray *impressions = HorosStructuredReportCopyNamedTextValues(file, @"121073", @"DCM", @"Impression", @"conclusion");
+				if (impressions)
 					_conclusions = [impressions retain];
-				}
 				
 				//get key Images. If none load from study
 				// get KeyImages
@@ -444,9 +480,17 @@ static BOOL HorosStructuredReportWriteDocumentToPath(DSRDocument* document, NSSt
 
 - (NSDate *)contentDate{
 	NSDate *date = nil;
-	const char *contentDate = _doc->getContentDate();
-	if (contentDate != NULL) {
-		NSString *dateString = [NSString stringWithUTF8String:contentDate];
+	NSString *dateString = nil;
+	NSString *reportPath = [self srPath];
+	if (!_reportHasChanged && [[NSFileManager defaultManager] fileExistsAtPath:reportPath])
+		dateString = HorosStructuredReportCopyField(reportPath, @"ContentDate");
+	else
+	{
+		const char *contentDate = _doc->getContentDate();
+		if (contentDate != NULL)
+			dateString = [NSString stringWithUTF8String:contentDate];
+	}
+	if (dateString != nil) {
 		date = [NSCalendarDate dateWithString:dateString calendarFormat:@"%Y%m%d"];
 	}
 	
@@ -458,9 +502,15 @@ static BOOL HorosStructuredReportWriteDocumentToPath(DSRDocument* document, NSSt
 
 - (NSString *)title{
 	NSString *title = nil;
-	const char *seriesDescription = _doc->getSeriesDescription();
-	if (seriesDescription != NULL)
-		title = [NSString stringWithUTF8String:seriesDescription];
+	NSString *reportPath = [self srPath];
+	if (!_reportHasChanged && [[NSFileManager defaultManager] fileExistsAtPath:reportPath])
+		title = HorosStructuredReportCopyField(reportPath, @"SeriesDescription");
+	else
+	{
+		const char *seriesDescription = _doc->getSeriesDescription();
+		if (seriesDescription != NULL)
+			title = [NSString stringWithUTF8String:seriesDescription];
+	}
 	return title;
 }
 
@@ -624,12 +674,8 @@ static BOOL HorosStructuredReportWriteDocumentToPath(DSRDocument* document, NSSt
 				OFString studyUID = OFString([[_study valueForKey:@"studyInstanceUID"] UTF8String]);
 				OFString seriesUID = OFString([[image valueForKeyPath:@"series.seriesDICOMUID"]  UTF8String]);
 				OFString instanceUID = OFString([[image valueForKey:@"sopInstanceUID"] UTF8String]);
-				DcmFileFormat fileformat;
-				OFCondition status = fileformat.loadFile([[image valueForKey:@"completePath"] UTF8String]);
-				OFString sopClassUID;
-				if (status.good()){
-					fileformat.getDataset()->findAndGetOFString(DCM_SOPClassUID, sopClassUID).good();
-				}
+				NSString *sopClass = [DicomFile getDicomField:@"SOPClassUID" forFile:[image valueForKey:@"completePath"]];
+				OFString sopClassUID = OFString([sopClass UTF8String]);
 				
 				if (first) {
 					_doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Image, DSRTypes::AM_belowCurrent);
@@ -654,12 +700,9 @@ static BOOL HorosStructuredReportWriteDocumentToPath(DSRDocument* document, NSSt
 {
 	if (_reportHasChanged)
 		[self createReport];
-	DcmFileFormat fileformat;	
-	OFCondition status = _doc->write(*fileformat.getDataset());
-	if (status.good()) 
-		status = fileformat.saveFile([[self srPath] UTF8String], EXS_LittleEndianExplicit);
+	BOOL status = HorosStructuredReportWriteDocumentToPath(_doc, [self srPath]);
 		
-	if (status.good())
+	if (status)
 	{
 		NSLog(@"Report saved: %@", [self srPath]);
 		
@@ -674,10 +717,7 @@ static BOOL HorosStructuredReportWriteDocumentToPath(DSRDocument* document, NSSt
 		[self createReport];
 	NSString *extension = [path pathExtension];
 	if ([extension isEqualToString:@"dcm"]) {
-		DcmFileFormat fileformat;	
-		OFCondition status = _doc->write(*fileformat.getDataset());
-		if (status.good()) 
-			status = fileformat.saveFile([path UTF8String], EXS_LittleEndianExplicit);
+		HorosStructuredReportWriteDocumentToPath(_doc, path);
 	}
 	else if ([extension isEqualToString:@"xml"]){
 		size_t writeFlags = 0;		

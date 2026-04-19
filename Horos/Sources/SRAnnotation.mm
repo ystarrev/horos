@@ -54,8 +54,61 @@
 
 typedef char* (*HorosModernDCMTKCopyFieldFn)(const char* path, const char* fieldName);
 typedef int (*HorosModernDCMTKCopyEncapsulatedDocumentFn)(const char* path, unsigned char** buffer, unsigned long* length);
+typedef char* (*HorosModernDCMTKCopyStructuredReportXMLFn)(const char* path);
+typedef int (*HorosModernDCMTKWriteStructuredReportFromXMLFn)(const char* xmlPath, const char* dicomPath);
 typedef char* (*HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn)(const char* path);
 typedef char* (*HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn)(const char* path);
+typedef char* (*HorosModernDCMTKCopyStructuredReportRootCodeMeaningFn)(const char* path);
+typedef char* (*HorosModernDCMTKCopyStructuredReportPrimaryReferenceFn)(const char* path);
+typedef int (*HorosModernDCMTKCopyBufferByTagFn)(const char* path, unsigned short group, unsigned short element, unsigned char** buffer, unsigned long* length);
+typedef int (*HorosModernDCMTKWriteBufferByTagFn)(const char* path, unsigned short group, unsigned short element, const unsigned char* buffer, unsigned long length);
+typedef int (*HorosModernDCMTKReplaceTagValueFn)(const char* path, unsigned short group, unsigned short element, const char* value, int removeIfEmpty);
+typedef int (*HorosModernDCMTKWriteCompatibilityROIStructuredReportFn)(const char* path,
+                                                                       const char* sopInstanceUID,
+                                                                       const char* seriesInstanceUID,
+                                                                       const char* studyInstanceUID,
+                                                                       const char* studyDescription,
+                                                                       const char* patientName,
+                                                                       const char* patientBirthDate,
+                                                                       const char* patientSex,
+                                                                       const char* patientID,
+                                                                       const char* referringPhysician,
+                                                                       const char* studyID,
+                                                                       const char* accessionNumber,
+                                                                       const char* seriesDescription,
+                                                                       const char* seriesNumber,
+                                                                       const char* manufacturer,
+                                                                       const char* contentDate,
+                                                                       const char* contentTime,
+                                                                       const char* referencedSOPClassUID,
+                                                                       const char* referencedSOPInstanceUID,
+                                                                       const char* referencedFrameNumber,
+                                                                       const unsigned char* roiArchiveBytes,
+                                                                       unsigned long roiArchiveLength);
+typedef int (*HorosModernDCMTKWriteCompatibilityStructuredReportFn)(const char* path,
+                                                                    const char* sopInstanceUID,
+                                                                    const char* seriesInstanceUID,
+                                                                    const char* studyInstanceUID,
+                                                                    const char* studyDescription,
+                                                                    const char* patientName,
+                                                                    const char* patientBirthDate,
+                                                                    const char* patientSex,
+                                                                    const char* patientID,
+                                                                    const char* referringPhysician,
+                                                                    const char* studyID,
+                                                                    const char* accessionNumber,
+                                                                    const char* seriesDescription,
+                                                                    const char* seriesNumber,
+                                                                    const char* manufacturer,
+                                                                    const char* contentDate,
+                                                                    const char* contentTime,
+                                                                    const char* referencedSOPClassUID,
+                                                                    const char* referencedSOPInstanceUID,
+                                                                    const char* referencedFrameNumber,
+                                                                    const char* rootCodeMeaning,
+                                                                    const char* childTextValue,
+                                                                    const unsigned char* encapsulatedBytes,
+                                                                    unsigned long encapsulatedLength);
 typedef void (*HorosModernDCMTKFreeBufferFn)(void* buffer);
 typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
 
@@ -147,30 +200,90 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 	return data;
 }
 
+static NSString* HorosSRAnnotationCopyField(NSString* path, NSString* fieldName)
+{
+	if (path == nil || fieldName == nil || ![[NSFileManager defaultManager] fileExistsAtPath:path])
+		return nil;
+
+	HorosModernDCMTKCopyFieldFn copyFieldFn =
+		HorosSRAnnotationSymbol<HorosModernDCMTKCopyFieldFn>("HorosModernDCMTKCopyField");
+	if (copyFieldFn == NULL)
+		return nil;
+
+	return HorosSRAnnotationBridgeString(copyFieldFn(path.fileSystemRepresentation, fieldName.UTF8String));
+}
+
+static BOOL HorosSRAnnotationReadDocumentFromPath(DSRDocument* document, NSString* path)
+{
+	if (document == NULL || path == nil || ![[NSFileManager defaultManager] fileExistsAtPath:path])
+		return NO;
+
+	HorosModernDCMTKCopyStructuredReportXMLFn copyXMLFn =
+		HorosSRAnnotationSymbol<HorosModernDCMTKCopyStructuredReportXMLFn>("HorosModernDCMTKCopyStructuredReportXML");
+	if (copyXMLFn == NULL)
+		return NO;
+
+	NSString *xmlString = HorosSRAnnotationBridgeString(copyXMLFn(path.fileSystemRepresentation));
+	if (xmlString.length == 0)
+		return NO;
+
+	NSString *tempXMLPath = [[NSTemporaryDirectory() stringByAppendingPathComponent:[[NSProcessInfo processInfo] globallyUniqueString]] stringByAppendingPathExtension:@"xml"];
+	BOOL wroteXML = [xmlString writeToFile:tempXMLPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+	BOOL success = NO;
+	if (wroteXML)
+		success = document->readXML(tempXMLPath.fileSystemRepresentation, 0).good();
+	[[NSFileManager defaultManager] removeItemAtPath:tempXMLPath error:nil];
+	return success;
+}
+
+static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString* path)
+{
+	if (document == NULL || path == nil)
+		return NO;
+
+	HorosModernDCMTKWriteStructuredReportFromXMLFn writeFn =
+		HorosSRAnnotationSymbol<HorosModernDCMTKWriteStructuredReportFromXMLFn>("HorosModernDCMTKWriteStructuredReportFromXML");
+	if (writeFn == NULL)
+		return NO;
+
+	NSString *tempXMLPath = [[NSTemporaryDirectory() stringByAppendingPathComponent:[[NSProcessInfo processInfo] globallyUniqueString]] stringByAppendingPathExtension:@"xml"];
+	size_t writeFlags = 0;
+	ofstream stream([tempXMLPath UTF8String]);
+	document->writeXML(stream, writeFlags);
+	stream.close();
+
+	BOOL success = writeFn(tempXMLPath.fileSystemRepresentation, path.fileSystemRepresentation) != 0;
+	[[NSFileManager defaultManager] removeItemAtPath:tempXMLPath error:nil];
+	return success;
+}
+
 + (NSData *)roiFromDICOM:(NSString *)path
 {
 	if( path == nil)
 		return nil;
-	NSData *archiveData = nil;
+	NSData *archiveData = HorosSRAnnotationBridgeEncapsulatedDocument(path);
+	if (archiveData)
+		return archiveData;
 
-	DcmFileFormat fileformat;
-	OFCondition status = fileformat.loadFile([path UTF8String]);
-	if( status != EC_Normal) return nil;
-	
-	OFString name;
-	const Uint8 *buffer = nil;
-	unsigned int length;
-	
-	if (fileformat.getDataset()->findAndGetUint8Array(DCM_EncapsulatedDocument, buffer, &length, OFFalse).good()) //DCM_EncapsulatedDocument
+	HorosModernDCMTKCopyBufferByTagFn copyBufferFn =
+		HorosSRAnnotationSymbol<HorosModernDCMTKCopyBufferByTagFn>("HorosModernDCMTKCopyBufferByTag");
+	if (copyBufferFn != NULL)
 	{
-		archiveData = [NSData dataWithBytes:buffer length:(unsigned)length];
+		unsigned char *buffer = NULL;
+		unsigned long length = 0;
+		if (copyBufferFn(path.fileSystemRepresentation, 0x0071, 0x0011, &buffer, &length) && buffer != NULL && length > 0)
+		{
+			NSData *data = [NSData dataWithBytes:buffer length:(NSUInteger)length];
+			HorosModernDCMTKFreeBufferFn freeBufferFn = HorosSRAnnotationSymbol<HorosModernDCMTKFreeBufferFn>("HorosModernDCMTKFreeBuffer");
+			if (freeBufferFn)
+				freeBufferFn(buffer);
+			else
+				free(buffer);
+			return data;
+		}
 	}
-	else if (fileformat.getDataset()->findAndGetUint8Array(DCM_OsirixROI, buffer, &length, OFFalse).good())	//DCM_EncapsulatedDocument
-	{
-		archiveData = [NSData dataWithBytes:buffer length:(unsigned)length];
-	}
-	
-	return archiveData;
+
+	return nil;
 }
 
 //All the ROIs for an image are archived as an NSArray.  We will need to extract all the necessary ROI info to create the basic SR before adding archived data. 
@@ -193,37 +306,19 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 
 + (NSString*) getImageRefSOPInstanceUID:(NSString*) path;
 {
-	NSString	*result = nil;
-	DSRDocument	*document = new DSRDocument();
-	
-	OFCondition status = EC_Normal;
-	
-	if ([[NSFileManager defaultManager] fileExistsAtPath:path])
-	{			
-		DcmFileFormat fileformat;
-		status  = fileformat.loadFile([path UTF8String]);
-		if (status.good())
-		{
-			status = document->read(*fileformat.getDataset());
-			
-			int instanceNumber = [[NSString stringWithFormat:@"%s", document->getInstanceNumber()] intValue];
-			
-			DSRCodedEntryValue codedEntryValue = DSRCodedEntryValue("IHE.10", "99HUG", "Image Reference");
-			if (document->getTree().gotoNamedNode (codedEntryValue, OFTrue, OFTrue) > 0 )
-			{
-				DSRImageReferenceValue imageRef = document->getTree().getCurrentContentItem().getImageReference();
-				result = [NSString stringWithFormat:@"%s", imageRef.getSOPInstanceUID().c_str()];
-				
-				if( [result length] > 0)
-					result = [result stringByAppendingFormat: @"-%d", instanceNumber];
-				else result = nil;
-			}
-		}
+	if (path == nil || ![[NSFileManager defaultManager] fileExistsAtPath:path])
+		return nil;
+
+	HorosModernDCMTKCopyStructuredReportPrimaryReferenceFn bridgeFn =
+		HorosSRAnnotationSymbol<HorosModernDCMTKCopyStructuredReportPrimaryReferenceFn>("HorosModernDCMTKCopyStructuredReportPrimaryReference");
+	if (bridgeFn != NULL)
+	{
+		NSString *value = HorosSRAnnotationBridgeString(bridgeFn([path UTF8String]));
+		if (value.length)
+			return value;
 	}
-	
-	delete document;
-	
-	return result;
+
+	return nil;
 }
 
 + (NSString*) getReportFilenameFromSR:(NSString*) path;
@@ -296,11 +391,8 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 		
 		// load old SR and replace as needed
 		if ([[NSFileManager defaultManager] fileExistsAtPath: path])
-		{			
-			DcmFileFormat fileformat;
-			status  = fileformat.loadFile([path UTF8String]);
-			if (status.good()) 				
-				status = document->read(*fileformat.getDataset());
+		{
+			status = HorosSRAnnotationReadDocumentFromPath(document, path) ? EC_Normal : EC_IllegalCall;
 			
 			//clear old content	Don't want to UIDs if already created
 			if (status.good()) 
@@ -347,10 +439,7 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 		// load old SR and replace as needed
 		if ([[NSFileManager defaultManager] fileExistsAtPath: path])
 		{
-			DcmFileFormat fileformat;
-			status  = fileformat.loadFile([path UTF8String]);
-			if (status.good())
-				status = document->read(*fileformat.getDataset());
+			status = HorosSRAnnotationReadDocumentFromPath(document, path) ? EC_Normal : EC_IllegalCall;
 			
 			//clear old content	Don't want to UIDs if already created
 			if (status.good())
@@ -401,11 +490,8 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 		
 		// load old SR and replace as needed
 		if ([[NSFileManager defaultManager] fileExistsAtPath: path])
-		{			
-			DcmFileFormat fileformat;
-			status  = fileformat.loadFile([path UTF8String]);
-			if (status.good()) 				
-				status = document->read(*fileformat.getDataset());
+		{
+			status = HorosSRAnnotationReadDocumentFromPath(document, path) ? EC_Normal : EC_IllegalCall;
 			
 			//clear old content	Don't want to UIDs if already created
 			if (status.good()) 
@@ -445,11 +531,8 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 		
 		// load old ROI SR and replace as needed
 		if ([[NSFileManager defaultManager] fileExistsAtPath: path])
-		{			
-			DcmFileFormat fileformat;
-			status  = fileformat.loadFile([path UTF8String]);
-			if (status.good()) 				
-				status = document->read(*fileformat.getDataset());
+		{
+			status = HorosSRAnnotationReadDocumentFromPath(document, path) ? EC_Normal : EC_IllegalCall;
 			
 			//clear old content	Don't want to UIDs if already created
 			if (status.good()) 
@@ -489,21 +572,17 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 		// load data
 		if ([[NSFileManager defaultManager] fileExistsAtPath:path])
 		{
-			DcmFileFormat fileformat;
-			status  = fileformat.loadFile([path UTF8String]);
-			if (status.good()) 				
-				status = document->read(*fileformat.getDataset());
+			HorosModernDCMTKCopyStructuredReportRootCodeMeaningFn rootMeaningFn =
+				HorosSRAnnotationSymbol<HorosModernDCMTKCopyStructuredReportRootCodeMeaningFn>("HorosModernDCMTKCopyStructuredReportRootCodeMeaning");
 
-			const Uint8 *buffer;
-			unsigned int length;
-			if (fileformat.getDataset()->findAndGetUint8Array(DCM_EncapsulatedDocument, buffer, &length, OFFalse).good())
+			status = HorosSRAnnotationReadDocumentFromPath(document, path) ? EC_Normal : EC_IllegalCall;
+
+			NSData *encapsulated = HorosSRAnnotationBridgeEncapsulatedDocument(path);
+			if (encapsulated)
 			{
 				@try
 				{
-					if( buffer)
-						_dataEncapsulated = [[NSData dataWithBytes: buffer length: length] retain];
-					else
-						_dataEncapsulated = [[NSData data] retain];
+					_dataEncapsulated = [encapsulated retain];
 				}
 				
 				@catch( NSException *ne)
@@ -512,7 +591,13 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 				}
 			}
 			
-			_reportURL = [NSString stringWithUTF8String: document->getTree().getCurrentContentItem().getConceptName().getCodeMeaning().c_str()];
+			_reportURL = (rootMeaningFn != NULL) ? [HorosSRAnnotationBridgeString(rootMeaningFn([path UTF8String])) retain] : nil;
+			if (_reportURL == nil)
+			{
+				const char *codeMeaning = document->getTree().getCurrentContentItem().getConceptName().getCodeMeaning().c_str();
+				if (codeMeaning)
+					_reportURL = [[NSString stringWithUTF8String: codeMeaning] retain];
+			}
 			
 			NSString *prefix = @"URL:";
 			
@@ -565,11 +650,8 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 		
 		// load old SR and replace as needed
 		if ([[NSFileManager defaultManager] fileExistsAtPath: path])
-		{			
-			DcmFileFormat fileformat;
-			status  = fileformat.loadFile([path UTF8String]);
-			if (status.good()) 				
-				status = document->read(*fileformat.getDataset());
+		{
+			status = HorosSRAnnotationReadDocumentFromPath(document, path) ? EC_Normal : EC_IllegalCall;
 			
 			//clear old content	Don't want to UIDs if already created
 			if (status.good()) 
@@ -651,6 +733,30 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 - (BOOL)writeToFileAtPath:(NSString *)path
 {
 	id study = [image valueForKeyPath:@"series.study"];
+	NSString *sourcePatientBirthDate = nil;
+	NSString *sourcePatientID = nil;
+	NSString *sourcePatientSex = nil;
+	NSString *canonicalPatientName = nil;
+	NSString *canonicalPatientID = nil;
+	NSString *canonicalPatientBirthDate = nil;
+
+	NSString *patientUID = [study valueForKey:@"patientUID"];
+	if (patientUID.length)
+	{
+		NSRange lastDash = [patientUID rangeOfString:@"-" options:NSBackwardsSearch];
+		if (lastDash.location != NSNotFound)
+		{
+			NSString *prefix = [patientUID substringToIndex:lastDash.location];
+			canonicalPatientBirthDate = [[patientUID substringFromIndex:lastDash.location + 1] retain];
+
+			NSRange secondLastDash = [prefix rangeOfString:@"-" options:NSBackwardsSearch];
+			if (secondLastDash.location != NSNotFound)
+			{
+				canonicalPatientName = [[prefix substringToIndex:secondLastDash.location] retain];
+				canonicalPatientID = [[prefix substringFromIndex:secondLastDash.location + 1] retain];
+			}
+		}
+	}
 	
 	//	Don't want to UIDs if already created
 	if( _newSR)
@@ -668,47 +774,44 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
     // We want the original patient's name
     if( [[NSFileManager defaultManager] fileExistsAtPath: image.completePath])
     {
-        DcmFileFormat fileformat;
-        OFCondition status  = fileformat.loadFile( image.completePath.fileSystemRepresentation);
-        if (status.good())
+        NSString *specificCharacterSet = HorosSRAnnotationCopyField(image.completePath, @"SpecificCharacterSet");
+        if (specificCharacterSet.length)
         {
-            NSArray *encodingArray = nil;
-            const char *string = nil;
-            if (fileformat.getDataset()->findAndGetString( DCM_SpecificCharacterSet, string, OFFalse).good() && string != NULL)
-            {
-                document->setSpecificCharacterSet( string);
-                encodingArray = [[NSString stringWithCString:string encoding: NSISOLatin1StringEncoding] componentsSeparatedByString:@"\\"];
-            }
+            document->setSpecificCharacterSet(specificCharacterSet.UTF8String);
+        }
+
+        NSArray *encodingArray = specificCharacterSet.length ? [specificCharacterSet componentsSeparatedByString:@"\\"] : nil;
         
-            if( encodingArray == nil)
-                encodingArray = [NSArray arrayWithObject: @"ISO_IR 100"];
+        if( encodingArray == nil)
+            encodingArray = [NSArray arrayWithObject: @"ISO_IR 100"];
+        
+        NSStringEncoding encoding = [NSString encodingForDICOMCharacterSet: [encodingArray objectAtIndex: 0]];
+
+        NSString *patientName = HorosSRAnnotationCopyField(image.completePath, @"PatientsName");
+        if (patientName.length)
+            document->setPatientsName(patientName.UTF8String);
+
+        NSString *referringPhysician = HorosSRAnnotationCopyField(image.completePath, @"ReferringPhysiciansName");
+        if (referringPhysician.length)
+            document->setReferringPhysiciansName(referringPhysician.UTF8String);
+
+        NSString *studyDescription = HorosSRAnnotationCopyField(image.completePath, @"StudyDescription");
+        if (studyDescription.length)
+            document->setStudyDescription(studyDescription.UTF8String);
+
+        sourcePatientBirthDate = HorosSRAnnotationCopyField(image.completePath, @"PatientsBirthDate");
+        sourcePatientID = HorosSRAnnotationCopyField(image.completePath, @"PatientID");
+        sourcePatientSex = HorosSRAnnotationCopyField(image.completePath, @"PatientsSex");
+        
+        if( _DICOMSRDescription.length)
+        {
+            NSMutableData *data = [NSMutableData dataWithData: [_DICOMSRDescription dataUsingEncoding:encoding allowLossyConversion: YES]];
+            unsigned char zeroByte = 0;
+            [data appendBytes:&zeroByte length:1];
             
-            NSStringEncoding encoding = [NSString encodingForDICOMCharacterSet: [encodingArray objectAtIndex: 0]];
-            
-            string = nil;
-            status = fileformat.getDataset()->findAndGetString( DCM_PatientsName, string, OFFalse);
-            if (status.good() && string)
-                document->setPatientsName( string);
-            
-            string = nil;
-            status = fileformat.getDataset()->findAndGetString( DCM_ReferringPhysiciansName, string, OFFalse);
-            if (status.good() && string)
-                document->setReferringPhysiciansName( string);
-            
-            string = nil;
-            status = fileformat.getDataset()->findAndGetString( DCM_StudyDescription, string, OFFalse);
-            if (status.good() && string)
-                document->setStudyDescription( string);
-            
-            if( _DICOMSRDescription.length)
-            {
-                NSMutableData *data = [NSMutableData dataWithData: [_DICOMSRDescription dataUsingEncoding:encoding allowLossyConversion: YES]];
-                unsigned char zeroByte = 0;
-                [data appendBytes:&zeroByte length:1];
-                
-                if( [data bytes])
-                    document->setSeriesDescription( (char*) [data bytes]);
-            }
+            if( [data bytes])
+                document->setSeriesDescription( (char*) [data bytes]);
+        }
             
 //            if ([[study valueForKey:@"studyName"] length])
 //            {
@@ -719,7 +822,6 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 //                if( [data bytes])
 //                    document->setStudyDescription( (char*) [data bytes]);
 //            }
-        }
     }
     else
     {
@@ -738,13 +840,17 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
             document->setStudyDescription([[study valueForKey:@"studyName"] UTF8String]);
     }
     
-	if ([study valueForKey:@"dateOfBirth"])
+	if (canonicalPatientBirthDate.length)
+		document->setPatientsBirthDate([canonicalPatientBirthDate UTF8String]);
+	else if ([study valueForKey:@"dateOfBirth"])
 		document->setPatientsBirthDate([[[study valueForKey:@"dateOfBirth"] descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil] UTF8String]);
 		
 	if ([study valueForKey:@"patientSex"])
 		document->setPatientsSex([[study valueForKey:@"patientSex"] UTF8String]);
-		
+	
 	NSString *patientID = [study valueForKey:@"patientID"];
+	if (canonicalPatientID.length)
+		patientID = canonicalPatientID;
 	
 	if (patientID)
 		document->setPatientID([patientID UTF8String]);
@@ -794,43 +900,224 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 	document->getTree().goUp(); // go up to the root element
 	
 	OFCondition status = EC_Normal;
-	DcmFileFormat *fileformat = new DcmFileFormat();
-	DcmDataset *dataset = NULL;
-	
-	if (fileformat != NULL)
-		dataset = fileformat->getDataset();
-	
-	if (dataset != NULL)
+	BOOL isROISR = [_DICOMSRDescription isEqualToString:@"OsiriX ROI SR"];
+	BOOL isCompatibilityStructuredReport =
+		[_DICOMSRDescription isEqualToString:@"OsiriX Annotations SR"] ||
+		[_DICOMSRDescription isEqualToString:@"OsiriX WindowsState SR"] ||
+		[_DICOMSRDescription isEqualToString:@"OsiriX Report SR"];
+	BOOL writeSucceeded = NO;
+	BOOL wroteViaBridge = NO;
+
+	if (isROISR)
 	{
-		//This adds the data to the SR
-		if( _dataEncapsulated)
-		{
-			const Uint8 *buffer =  (const Uint8 *) [_dataEncapsulated bytes];
-			
-			if( buffer)
-				status = dataset->putAndInsertUint8Array(DCM_EncapsulatedDocument , buffer, [_dataEncapsulated length] , OFTrue);
-		}
+		HorosModernDCMTKWriteCompatibilityROIStructuredReportFn writeROIFn =
+			HorosSRAnnotationSymbol<HorosModernDCMTKWriteCompatibilityROIStructuredReportFn>("HorosModernDCMTKWriteCompatibilityROIStructuredReport");
+		NSString *studyInstanceUID = [study valueForKey:@"studyInstanceUID"];
+		NSString *seriesInstanceUID = _seriesInstanceUID ?: [self seriesInstanceUID];
+		const char *generatedSOPInstanceUID = document->getSOPInstanceUID();
+		NSString *studyDescription = [study valueForKey:@"studyName"];
+		if (studyDescription.length == 0)
+			studyDescription = [study valueForKey:@"name"];
 		
-		document->getCodingSchemeIdentification().addPrivateDcmtkCodingScheme();
-		if (document->write(*dataset).good())
+		NSString *patientName = canonicalPatientName.length ? canonicalPatientName : [study valueForKey:@"name"];
+		NSString *referringPhysician = [study valueForKey:@"referringPhysician"];
+		NSString *referencedSOPInstanceUID = [image valueForKey:@"sopInstanceUID"];
+		NSNumber *referencedFrameID = [image valueForKey:@"frameID"];
+		NSString *studyID = [study valueForKey:@"id"];
+		NSString *accessionNumber = [study valueForKey:@"accessionNumber"];
+		NSString *seriesSOPClassUID = [image valueForKeyPath:@"series.seriesSOPClassUID"];
+		NSString *resolvedPatientID = canonicalPatientID.length ? canonicalPatientID : patientID;
+		if (sourcePatientID.length)
+			resolvedPatientID = sourcePatientID;
+		NSString *resolvedPatientBirthDate = canonicalPatientBirthDate;
+		if (resolvedPatientBirthDate.length == 0 && sourcePatientBirthDate.length)
+			resolvedPatientBirthDate = sourcePatientBirthDate;
+		if (resolvedPatientBirthDate.length == 0 && [study valueForKey:@"dateOfBirth"])
+			resolvedPatientBirthDate = [[study valueForKey:@"dateOfBirth"] descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil];
+		NSString *resolvedPatientSex = sourcePatientSex.length ? sourcePatientSex : [study valueForKey:@"patientSex"];
+		NSString *contentDateString = nil;
+		NSString *contentTimeString = nil;
+		if (_contentDate)
 		{
-			if( _seriesInstanceUID)
-				status = dataset->putAndInsertString(DCM_SeriesInstanceUID, [_seriesInstanceUID UTF8String], OFTrue);
-				
-			OFCondition cond = fileformat->saveFile( path.fileSystemRepresentation, EXS_LittleEndianExplicit);
-            if( cond.good())
-            {
-                
-            }
-            else
-                NSLog( @"failed to write file : %@ : %s", path, cond.text());
+			contentDateString = [[DCMCalendarDate dicomDateWithDate:_contentDate] dateString];
+			contentTimeString = [[DCMCalendarDate dicomTimeWithDate:_contentDate] timeString];
+		}
+		else
+		{
+			contentDateString = [[DCMCalendarDate date] dateString];
+			contentTimeString = [[DCMCalendarDate date] timeString];
+		}
+
+		if (writeROIFn != NULL)
+		{
+			const unsigned char *buffer = _dataEncapsulated ? (const unsigned char *)[_dataEncapsulated bytes] : NULL;
+			const char *sopUIDCString = (generatedSOPInstanceUID && generatedSOPInstanceUID[0] != 0) ? generatedSOPInstanceUID : NULL;
+			writeSucceeded = writeROIFn(path.fileSystemRepresentation,
+							sopUIDCString,
+							seriesInstanceUID.UTF8String,
+							studyInstanceUID.UTF8String,
+							studyDescription.UTF8String,
+							patientName.UTF8String,
+							resolvedPatientBirthDate.UTF8String,
+							resolvedPatientSex.UTF8String,
+							resolvedPatientID.UTF8String,
+							referringPhysician.UTF8String,
+							studyID.UTF8String,
+							accessionNumber.UTF8String,
+							_DICOMSRDescription.UTF8String,
+							_DICOMSeriesNumber.UTF8String,
+							"Horos",
+							contentDateString.UTF8String,
+							contentTimeString.UTF8String,
+							seriesSOPClassUID.UTF8String,
+							referencedSOPInstanceUID.UTF8String,
+							(referencedFrameID && [referencedFrameID intValue] > 0) ? [[referencedFrameID stringValue] UTF8String] : NULL,
+							buffer,
+							_dataEncapsulated ? [_dataEncapsulated length] : 0);
+			wroteViaBridge = writeSucceeded;
 		}
 	}
+	else if (isCompatibilityStructuredReport)
+	{
+		HorosModernDCMTKWriteCompatibilityStructuredReportFn writeCompatibilityFn =
+			HorosSRAnnotationSymbol<HorosModernDCMTKWriteCompatibilityStructuredReportFn>("HorosModernDCMTKWriteCompatibilityStructuredReport");
+		NSString *studyInstanceUID = [study valueForKey:@"studyInstanceUID"];
+		NSString *seriesInstanceUID = _seriesInstanceUID ?: [self seriesInstanceUID];
+		const char *generatedSOPInstanceUID = document->getSOPInstanceUID();
+		NSString *studyDescription = [study valueForKey:@"studyName"];
+		if (studyDescription.length == 0)
+			studyDescription = [study valueForKey:@"name"];
+		NSString *patientName = canonicalPatientName.length ? canonicalPatientName : [study valueForKey:@"name"];
+		NSString *referringPhysician = [study valueForKey:@"referringPhysician"];
+		NSString *referencedSOPInstanceUID = [image valueForKey:@"sopInstanceUID"];
+		NSNumber *referencedFrameID = [image valueForKey:@"frameID"];
+		NSString *studyID = [study valueForKey:@"id"];
+		NSString *accessionNumber = [study valueForKey:@"accessionNumber"];
+		NSString *seriesSOPClassUID = [image valueForKeyPath:@"series.seriesSOPClassUID"];
+		NSString *resolvedPatientID = canonicalPatientID.length ? canonicalPatientID : patientID;
+		if (sourcePatientID.length)
+			resolvedPatientID = sourcePatientID;
+		NSString *resolvedPatientBirthDate = canonicalPatientBirthDate;
+		if (resolvedPatientBirthDate.length == 0 && sourcePatientBirthDate.length)
+			resolvedPatientBirthDate = sourcePatientBirthDate;
+		if (resolvedPatientBirthDate.length == 0 && [study valueForKey:@"dateOfBirth"])
+			resolvedPatientBirthDate = [[study valueForKey:@"dateOfBirth"] descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil];
+		NSString *resolvedPatientSex = sourcePatientSex.length ? sourcePatientSex : [study valueForKey:@"patientSex"];
+		NSString *contentDateString = nil;
+		NSString *contentTimeString = nil;
+		if (_contentDate)
+		{
+			contentDateString = [[DCMCalendarDate dicomDateWithDate:_contentDate] dateString];
+			contentTimeString = [[DCMCalendarDate dicomTimeWithDate:_contentDate] timeString];
+		}
+		else
+		{
+			contentDateString = [[DCMCalendarDate date] dateString];
+			contentTimeString = [[DCMCalendarDate date] timeString];
+		}
+		NSString *rootCodeMeaning = [NSString stringWithUTF8String:document->getTree().getCurrentContentItem().getConceptName().getCodeMeaning().c_str()];
+		NSString *childTextValue = nil;
+		if ([_DICOMSRDescription isEqualToString:@"OsiriX Annotations SR"])
+			childTextValue = [NSString stringWithFormat:@"%@", [self annotations]];
+		
+		if (writeCompatibilityFn != NULL)
+		{
+			const unsigned char *buffer = _dataEncapsulated ? (const unsigned char *)[_dataEncapsulated bytes] : NULL;
+			const char *sopUIDCString = (generatedSOPInstanceUID && generatedSOPInstanceUID[0] != 0) ? generatedSOPInstanceUID : NULL;
+			writeSucceeded = writeCompatibilityFn(path.fileSystemRepresentation,
+							  sopUIDCString,
+							  seriesInstanceUID.UTF8String,
+							  studyInstanceUID.UTF8String,
+							  studyDescription.UTF8String,
+							  patientName.UTF8String,
+							  resolvedPatientBirthDate.UTF8String,
+							  resolvedPatientSex.UTF8String,
+							  resolvedPatientID.UTF8String,
+							  referringPhysician.UTF8String,
+							  studyID.UTF8String,
+							  accessionNumber.UTF8String,
+							  _DICOMSRDescription.UTF8String,
+							  _DICOMSeriesNumber.UTF8String,
+							  "Horos",
+							  contentDateString.UTF8String,
+							  contentTimeString.UTF8String,
+							  seriesSOPClassUID.UTF8String,
+							  referencedSOPInstanceUID.UTF8String,
+							  (referencedFrameID && [referencedFrameID intValue] > 0) ? [[referencedFrameID stringValue] UTF8String] : NULL,
+							  rootCodeMeaning.UTF8String,
+							  childTextValue.UTF8String,
+							  buffer,
+							  _dataEncapsulated ? [_dataEncapsulated length] : 0);
+			wroteViaBridge = writeSucceeded;
+		}
+	}
+	else
+	{
+		document->getCodingSchemeIdentification().addPrivateDcmtkCodingScheme();
+		writeSucceeded = HorosSRAnnotationWriteDocumentToPath(document, path);
+		wroteViaBridge = writeSucceeded;
+	}
+
+	if (writeSucceeded && wroteViaBridge && !isROISR && !isCompatibilityStructuredReport)
+	{
+		HorosModernDCMTKReplaceTagValueFn replaceTagFn =
+			HorosSRAnnotationSymbol<HorosModernDCMTKReplaceTagValueFn>("HorosModernDCMTKReplaceTagValue");
+		HorosModernDCMTKWriteBufferByTagFn writeBufferFn =
+			HorosSRAnnotationSymbol<HorosModernDCMTKWriteBufferByTagFn>("HorosModernDCMTKWriteBufferByTag");
+		const char *generatedSOPInstanceUID = document->getSOPInstanceUID();
+		NSString *studyInstanceUID = [study valueForKey:@"studyInstanceUID"];
+		NSString *studyDescription = [study valueForKey:@"studyName"];
+		if (studyDescription.length == 0)
+			studyDescription = [study valueForKey:@"name"];
+		NSString *patientName = canonicalPatientName.length ? canonicalPatientName : [study valueForKey:@"name"];
+		NSString *referringPhysician = [study valueForKey:@"referringPhysician"];
+		NSString *referencedSOPInstanceUID = [image valueForKey:@"sopInstanceUID"];
+		NSNumber *referencedFrameID = [image valueForKey:@"frameID"];
+		NSString *resolvedPatientID = canonicalPatientID.length ? canonicalPatientID : patientID;
+		if (sourcePatientID.length)
+			resolvedPatientID = sourcePatientID;
+		NSString *resolvedPatientBirthDate = canonicalPatientBirthDate;
+		if (resolvedPatientBirthDate.length == 0 && sourcePatientBirthDate.length)
+			resolvedPatientBirthDate = sourcePatientBirthDate;
+		if (resolvedPatientBirthDate.length == 0 && [study valueForKey:@"dateOfBirth"])
+			resolvedPatientBirthDate = [[study valueForKey:@"dateOfBirth"] descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil];
+
+		if (replaceTagFn != NULL)
+		{
+			replaceTagFn(path.fileSystemRepresentation, 0x0020, 0x000D, studyInstanceUID.UTF8String, studyInstanceUID.length == 0);
+			replaceTagFn(path.fileSystemRepresentation, 0x0020, 0x000E, _seriesInstanceUID ? _seriesInstanceUID.UTF8String : NULL, _seriesInstanceUID == nil);
+			replaceTagFn(path.fileSystemRepresentation, 0x0008, 0x0018, generatedSOPInstanceUID, generatedSOPInstanceUID == NULL || generatedSOPInstanceUID[0] == 0);
+			replaceTagFn(path.fileSystemRepresentation, 0x0008, 0x0060, "SR", 0);
+			replaceTagFn(path.fileSystemRepresentation, 0x0020, 0x0011, _DICOMSeriesNumber.UTF8String, _DICOMSeriesNumber == nil);
+			replaceTagFn(path.fileSystemRepresentation, 0x0008, 0x103E, _DICOMSRDescription.UTF8String, _DICOMSRDescription == nil);
+			replaceTagFn(path.fileSystemRepresentation, 0x0008, 0x1030, studyDescription.UTF8String, studyDescription.length == 0);
+			replaceTagFn(path.fileSystemRepresentation, 0x0010, 0x0010, patientName.UTF8String, patientName.length == 0);
+			replaceTagFn(path.fileSystemRepresentation, 0x0008, 0x0090, referringPhysician.UTF8String, referringPhysician.length == 0);
+			replaceTagFn(path.fileSystemRepresentation, 0x0010, 0x0020, resolvedPatientID.UTF8String, resolvedPatientID.length == 0);
+			replaceTagFn(path.fileSystemRepresentation, 0x0010, 0x0030, resolvedPatientBirthDate.UTF8String, resolvedPatientBirthDate.length == 0);
+			replaceTagFn(path.fileSystemRepresentation, 0x0010, 0x0040, sourcePatientSex.UTF8String, sourcePatientSex.length == 0);
+			replaceTagFn(path.fileSystemRepresentation, 0x0020, 0x0010, [[study valueForKey:@"id"] UTF8String], [study valueForKey:@"id"] == nil);
+			replaceTagFn(path.fileSystemRepresentation, 0x0008, 0x0050, [[study valueForKey:@"accessionNumber"] UTF8String], [study valueForKey:@"accessionNumber"] == nil);
+			replaceTagFn(path.fileSystemRepresentation, 0x0008, 0x1155, referencedSOPInstanceUID.UTF8String, referencedSOPInstanceUID.length == 0);
+			if (referencedFrameID && [referencedFrameID intValue] > 0)
+				replaceTagFn(path.fileSystemRepresentation, 0x0008, 0x1160, [[referencedFrameID stringValue] UTF8String], 0);
+		}
+
+		if (_dataEncapsulated && writeBufferFn != NULL)
+		{
+			const unsigned char *buffer = (const unsigned char *)[_dataEncapsulated bytes];
+			if (buffer)
+				writeBufferFn(path.fileSystemRepresentation, 0x0042, 0x0011, buffer, (unsigned long)[_dataEncapsulated length]);
+		}
+	}
+	[canonicalPatientName release];
+	[canonicalPatientID release];
+	[canonicalPatientBirthDate release];
+	[sourcePatientBirthDate release];
+	[sourcePatientID release];
+	[sourcePatientSex release];
 	
-	if( fileformat)
-		delete fileformat;
-	
-	return YES;
+	return writeSucceeded;
 }
 
 - (NSString *)seriesInstanceUID

@@ -1579,6 +1579,8 @@ static NSRecursiveLock *dbModifyLock = nil;
         
         if ([DCMAbstractSyntaxUID isStructuredReport:uid] && [description hasPrefix: @"OsiriX ROI SR"] == NO && [description hasPrefix: @"OsiriX Annotations SR"] == NO && [description hasPrefix: @"OsiriX Report SR"] == NO && [description hasPrefix: @"OsiriX WindowsState SR"] == NO)
             return YES;
+        if ([DCMAbstractSyntaxUID isKeyObjectDocument:uid] || [DCMAbstractSyntaxUID isPDF:uid])
+            return YES;
     }
     
     return NO;

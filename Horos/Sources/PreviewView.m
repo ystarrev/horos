@@ -39,7 +39,11 @@
 #import "StructuredReportSupport.h"
 #import "DCMPix.h"
 #import "DCMView.h"
+#import "DCMAbstractSyntaxUID.h"
 #import "Notifications.h"
+#import "BrowserController.h"
+#import "DicomImage.h"
+#import "DicomStudy.h"
 #import <WebKit/WebKit.h>
 #import <MetalKit/MetalKit.h>
 #import "Horos-Swift.h"
@@ -52,6 +56,8 @@
 @end
 
 typedef char* (*HorosModernDCMTKCopyStructuredReportHTMLFn)(const char* path);
+typedef char* (*HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn)(const char* path);
+typedef char* (*HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn)(const char* path);
 typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
 
 static void* PreviewModernDCMTKBridgeHandle()
@@ -131,10 +137,12 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 {
     MetalPreviewImageView *_metalView;
     NSView *_annotationOverlay;
-    WKWebView *_reportWebView;
+    WebView *_reportWebView;
     NSMutableArray *_dcmPixList;
     NSArray *_dcmFilesList;
     NSString *_loadedReportPath;
+    NSInteger _displayedImageIndex;
+    NSInteger _displayedImageCount;
 }
 
 @synthesize syncRelativeDiff;
@@ -182,8 +190,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     [_annotationOverlay setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
     [self addSubview:_annotationOverlay];
 
-    WKWebViewConfiguration *configuration = [[[WKWebViewConfiguration alloc] init] autorelease];
-    _reportWebView = [[WKWebView alloc] initWithFrame:self.bounds configuration:configuration];
+    _reportWebView = [[WebView alloc] initWithFrame:self.bounds];
     [_reportWebView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
     [_reportWebView setHidden:YES];
     [self addSubview:_reportWebView];
@@ -205,6 +212,8 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 
     NSArray *safePixels = pixels ? pixels : @[];
     [_metalView updatePixList:safePixels firstImage:firstImage resetWindowLevel:reset];
+    _displayedImageIndex = MAX(0, firstImage);
+    _displayedImageCount = files.count > 0 ? (NSInteger)files.count : (NSInteger)safePixels.count;
     [self refreshPreviewMode];
     [_annotationOverlay setNeedsDisplay:YES];
 }
@@ -243,6 +252,13 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 {
     if (wl) *wl = _metalView.currentWindowLevel;
     if (ww) *ww = _metalView.currentWindowWidth;
+}
+
+- (void)setDisplayedImageIndex:(NSInteger)index totalCount:(NSInteger)totalCount
+{
+    _displayedImageIndex = MAX(0, index);
+    _displayedImageCount = MAX(totalCount, 0);
+    [_annotationOverlay setNeedsDisplay:YES];
 }
 
 - (DCMPix *)curDCM
@@ -326,6 +342,102 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     return [sopClassUID hasPrefix:@"1.2.840.10008.5.1.4.1.1.88"];
 }
 
+- (BOOL)currentPixIsKeyObjectDocument
+{
+    NSString *sopClassUID = self.curDCM.SOPClassUID;
+    return [DCMAbstractSyntaxUID isKeyObjectDocument:sopClassUID];
+}
+
+- (NSString *)keyObjectTypeForPix:(DCMPix *)pix
+{
+    if (pix == nil || pix.srcFile.length == 0)
+        return nil;
+
+    HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn copyTypeFn = (HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn)PreviewModernDCMTKSymbol("HorosModernDCMTKCopyStructuredReportKeyObjectType");
+    HorosModernDCMTKFreeStringFn freeFn = (HorosModernDCMTKFreeStringFn)PreviewModernDCMTKSymbol("HorosModernDCMTKFreeString");
+    if (copyTypeFn == NULL)
+        return nil;
+
+    char *value = copyTypeFn(pix.srcFile.UTF8String);
+    if (value == NULL)
+        return nil;
+
+    NSString *type = [NSString stringWithUTF8String:value];
+    if (freeFn)
+        freeFn(value);
+    return type;
+}
+
+- (NSArray *)referencedImagesForPix:(DCMPix *)pix
+{
+    NSArray *uids = [self referencedUIDsForPix:pix];
+    if (uids.count == 0)
+        return @[];
+
+    BrowserController *browser = [BrowserController currentBrowser];
+    NSManagedObjectContext *context = browser.managedObjectContext;
+    if (context == nil)
+        return @[];
+
+    @try
+    {
+        NSFetchRequest *request = [[[NSFetchRequest alloc] init] autorelease];
+        [request setEntity:[NSEntityDescription entityForName:@"Image" inManagedObjectContext:context]];
+        [request setPredicate:[NSPredicate predicateWithFormat:@"compressedSopInstanceUID != NIL"]];
+
+        NSError *error = nil;
+        NSArray *matches = [context executeFetchRequest:request error:&error];
+        if (matches.count == 0)
+            return @[];
+
+        NSMutableArray *orderedImages = [NSMutableArray array];
+        for (NSString *uid in uids)
+        {
+            NSPredicate *match = [NSComparisonPredicate predicateWithLeftExpression:[NSExpression expressionForKeyPath:@"compressedSopInstanceUID"]
+                                                                    rightExpression:[NSExpression expressionForConstantValue:[DicomImage sopInstanceUIDEncodeString:uid]]
+                                                                     customSelector:@selector(isEqualToSopInstanceUID:)];
+            NSArray *found = [matches filteredArrayUsingPredicate:match];
+            if (found.count)
+                [orderedImages addObject:[found objectAtIndex:0]];
+        }
+
+        return orderedImages;
+    }
+    @catch (NSException *e)
+    {
+        NSLog(@"KO preview lookup exception: %@", e);
+        return @[];
+    }
+}
+
+- (NSArray *)referencedUIDsForPix:(DCMPix *)pix
+{
+    if (pix == nil || pix.srcFile.length == 0)
+        return @[];
+
+    HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn copyRefsFn = (HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn)PreviewModernDCMTKSymbol("HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs");
+    HorosModernDCMTKFreeStringFn freeFn = (HorosModernDCMTKFreeStringFn)PreviewModernDCMTKSymbol("HorosModernDCMTKFreeString");
+    if (copyRefsFn == NULL)
+        return @[];
+
+    char *value = copyRefsFn(pix.srcFile.UTF8String);
+    if (value == NULL)
+        return @[];
+
+    NSString *uidsString = [NSString stringWithUTF8String:value];
+    if (freeFn)
+        freeFn(value);
+    if (uidsString.length == 0)
+        return @[];
+
+    NSMutableArray *uids = [NSMutableArray array];
+    for (NSString *uid in [uidsString componentsSeparatedByString:@"\\"])
+        if (uid.length)
+            [uids addObject:uid];
+
+    return uids;
+}
+
 - (NSString *)structuredReportHTMLPathForPix:(DCMPix *)pix
 {
     if (pix == nil || pix.srcFile.length == 0)
@@ -345,6 +457,8 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         [task setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"dicom.dic"] forKey:@"DCMDICTPATH"]];
         [task setLaunchPath:dsr2htmlPath];
         [task setArguments:[NSArray arrayWithObjects:@"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items", pix.srcFile, htmlPath, nil]];
+        [task setStandardOutput:[NSPipe pipe]];
+        [task setStandardError:[NSPipe pipe]];
         [task launch];
         while ([task isRunning])
             [NSThread sleepForTimeInterval:0.05];
@@ -374,6 +488,58 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     return htmlString;
 }
 
+- (NSString *)htmlStringByStrippingLinks:(NSString *)htmlString
+{
+    if (htmlString.length == 0)
+        return htmlString;
+
+    NSError *error = nil;
+    NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"<a\\b[^>]*>(.*?)</a>"
+                                                                           options:NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators
+                                                                             error:&error];
+    if (regex == nil)
+        return htmlString;
+
+    return [regex stringByReplacingMatchesInString:htmlString
+                                           options:0
+                                             range:NSMakeRange(0, htmlString.length)
+                                      withTemplate:@"$1"];
+}
+
+- (NSString *)keyObjectReferenceHTMLSummaryForPix:(DCMPix *)pix
+{
+    if ([self currentPixIsKeyObjectDocument] == NO)
+        return @"";
+
+    NSArray *images = [self referencedImagesForPix:pix];
+    if (images.count == 0)
+    {
+        NSArray *uids = [self referencedUIDsForPix:pix];
+        if (uids.count == 0)
+            return @"";
+        return [NSString stringWithFormat:@"<hr/><p><b>%@</b>: %lu</p>",
+                NSLocalizedString(@"Referenced Images", nil),
+                (unsigned long)uids.count];
+    }
+
+    NSMutableString *html = [NSMutableString stringWithFormat:@"<hr/><p><b>%@</b></p><ul>",
+                             NSLocalizedString(@"Referenced Images", nil)];
+    for (DicomImage *image in images)
+    {
+        NSString *seriesName = [image valueForKeyPath:@"series.name"];
+        NSNumber *instanceNumber = [image valueForKey:@"instanceNumber"];
+        if (seriesName.length == 0)
+            seriesName = NSLocalizedString(@"Series", nil);
+
+        if (instanceNumber)
+            [html appendFormat:@"<li>%@ — %@ %@</li>", seriesName, NSLocalizedString(@"Image", nil), instanceNumber];
+        else
+            [html appendFormat:@"<li>%@</li>", seriesName];
+    }
+    [html appendString:@"</ul>"];
+    return html;
+}
+
 - (void)refreshPreviewMode
 {
     DCMPix *pix = self.curDCM;
@@ -387,6 +553,13 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 
     NSString *htmlPath = [self structuredReportHTMLPathForPix:pix];
     NSString *htmlString = [self structuredReportHTMLStringForPix:pix];
+    if ([self currentPixIsKeyObjectDocument] && htmlString.length > 0)
+    {
+        htmlString = [self htmlStringByStrippingLinks:htmlString];
+        NSString *summary = [self keyObjectReferenceHTMLSummaryForPix:pix];
+        if (summary.length)
+            htmlString = [htmlString stringByAppendingString:summary];
+    }
 
     if (htmlString.length == 0 && htmlPath.length == 0)
     {
@@ -406,7 +579,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         {
             [_loadedReportPath release];
             _loadedReportPath = [pix.srcFile copy];
-            [_reportWebView loadHTMLString:htmlString baseURL:nil];
+            [[_reportWebView mainFrame] loadHTMLString:htmlString baseURL:nil];
         }
     }
     else if ([_loadedReportPath isEqualToString:htmlPath] == NO)
@@ -415,7 +588,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         _loadedReportPath = [htmlPath copy];
 
         NSURL *fileURL = [NSURL fileURLWithPath:htmlPath];
-        [_reportWebView loadFileURL:fileURL allowingReadAccessToURL:[fileURL URLByDeletingLastPathComponent]];
+        [[_reportWebView mainFrame] loadRequest:[NSURLRequest requestWithURL:fileURL]];
     }
 }
 
@@ -544,7 +717,11 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         else if ([value isEqualToString:@"Rotation Angle"] && fullText)
             [primary appendString:@" Angle: 0"];
         else if ([value isEqualToString:@"Image Position"])
-            [primary appendFormat:@"Im: %ld/%lu", (long)_metalView.currentIndex + 1, (unsigned long)_dcmPixList.count];
+        {
+            NSInteger displayedIndex = _displayedImageCount > 0 ? _displayedImageIndex : _metalView.currentIndex;
+            NSUInteger totalCount = _displayedImageCount > 0 ? (NSUInteger)_displayedImageCount : (_dcmFilesList.count ? _dcmFilesList.count : _dcmPixList.count);
+            [primary appendFormat:@"Im: %ld/%lu", (long)displayedIndex + 1, (unsigned long)totalCount];
+        }
         else if ([value isEqualToString:@"Window Level / Window Width"])
             [primary appendFormat:@"WL: %d WW: %d", (int)lrintf(_metalView.currentWindowLevel), (int)lrintf(_metalView.currentWindowWidth)];
         else if ([value isEqualToString:@"Thickness / Location / Position"])

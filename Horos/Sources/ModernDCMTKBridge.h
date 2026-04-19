@@ -38,14 +38,82 @@ char* HorosModernDCMTKCopyGeneratedUID(void);
 char* HorosModernDCMTKCopySpecificCharacterSet(const char* path);
 char* HorosModernDCMTKCopyField(const char* path, const char* fieldName);
 char* HorosModernDCMTKCopyFieldByTag(const char* path, unsigned short group, unsigned short element);
+int HorosModernDCMTKCopyBufferByTag(const char* path, unsigned short group, unsigned short element, unsigned char** buffer, unsigned long* length);
+int HorosModernDCMTKWriteBufferByTag(const char* path, unsigned short group, unsigned short element, const unsigned char* buffer, unsigned long length);
 int HorosModernDCMTKGetDecompressionInfo(const char* path, int* isEncapsulated, unsigned short* rows, unsigned short* columns, char** modality, char** sopClassUID);
 int HorosModernDCMTKGetBasicMetadata(const char* path, HorosModernDCMTKBasicMetadata* metadata);
 int HorosModernDCMTKCopyImageGeometry(const char* path, double* origin3, double* orientation9);
 int HorosModernDCMTKCopyFrameGeometry(const char* path, double** sliceLocations, int* sliceCount, double** triggerDelays, int* triggerCount);
 int HorosModernDCMTKCopyEncapsulatedDocument(const char* path, unsigned char** buffer, unsigned long* length);
+int HorosModernDCMTKCopyFileDataInTransferSyntax(const char* path,
+                                                 const char* transferSyntaxUID,
+                                                 int quality,
+                                                 unsigned char** buffer,
+                                                 unsigned long* length);
+int HorosModernDCMTKWriteFileInTransferSyntax(const char* inputPath,
+                                              const char* outputPath,
+                                              const char* transferSyntaxUID,
+                                              int quality);
 char* HorosModernDCMTKCopyStructuredReportHTML(const char* path);
+char* HorosModernDCMTKCopyStructuredReportXML(const char* path);
 char* HorosModernDCMTKCopyStructuredReportKeyObjectType(const char* path);
 char* HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs(const char* path);
+char* HorosModernDCMTKCopyStructuredReportRootCodeMeaning(const char* path);
+char* HorosModernDCMTKCopyStructuredReportPrimaryReference(const char* path);
+char* HorosModernDCMTKCopyStructuredReportNamedTextValue(const char* path,
+                                                         const char* codeValue,
+                                                         const char* codingSchemeDesignator,
+                                                         const char* codeMeaning);
+char* HorosModernDCMTKCopyStructuredReportNamedTextValues(const char* path,
+                                                          const char* codeValue,
+                                                          const char* codingSchemeDesignator,
+                                                          const char* codeMeaning);
+int HorosModernDCMTKWriteCompatibilityROIStructuredReport(const char* path,
+                                                          const char* sopInstanceUID,
+                                                          const char* seriesInstanceUID,
+                                                          const char* studyInstanceUID,
+                                                          const char* studyDescription,
+                                                          const char* patientName,
+                                                          const char* patientBirthDate,
+                                                          const char* patientSex,
+                                                          const char* patientID,
+                                                          const char* referringPhysician,
+                                                          const char* studyID,
+                                                          const char* accessionNumber,
+                                                          const char* seriesDescription,
+                                                          const char* seriesNumber,
+                                                          const char* manufacturer,
+                                                          const char* contentDate,
+                                                          const char* contentTime,
+                                                          const char* referencedSOPClassUID,
+                                                          const char* referencedSOPInstanceUID,
+                                                          const char* referencedFrameNumber,
+                                                          const unsigned char* roiArchiveBytes,
+                                                          unsigned long roiArchiveLength);
+int HorosModernDCMTKWriteCompatibilityStructuredReport(const char* path,
+                                                       const char* sopInstanceUID,
+                                                       const char* seriesInstanceUID,
+                                                       const char* studyInstanceUID,
+                                                       const char* studyDescription,
+                                                       const char* patientName,
+                                                       const char* patientBirthDate,
+                                                       const char* patientSex,
+                                                       const char* patientID,
+                                                       const char* referringPhysician,
+                                                       const char* studyID,
+                                                       const char* accessionNumber,
+                                                       const char* seriesDescription,
+                                                       const char* seriesNumber,
+                                                       const char* manufacturer,
+                                                       const char* contentDate,
+                                                       const char* contentTime,
+                                                       const char* referencedSOPClassUID,
+                                                       const char* referencedSOPInstanceUID,
+                                                       const char* referencedFrameNumber,
+                                                       const char* rootCodeMeaning,
+                                                       const char* childTextValue,
+                                                       const unsigned char* encapsulatedBytes,
+                                                       unsigned long encapsulatedLength);
 int HorosModernDCMTKWriteKeyObjectReport(const char* path,
                                          const char* sopInstanceUID,
                                          const char* seriesInstanceUID,
@@ -64,6 +132,7 @@ int HorosModernDCMTKWriteKeyObjectReport(const char* path,
                                          const char* const* imageSeriesInstanceUIDs,
                                          const char* const* imageSOPInstanceUIDs,
                                          int imageCount);
+int HorosModernDCMTKWriteStructuredReportFromXML(const char* xmlPath, const char* dicomPath);
 int HorosModernDCMTKReplaceTagValue(const char* path, unsigned short group, unsigned short element, const char* value, int removeIfEmpty);
 void HorosModernDCMTKFreeBasicMetadata(HorosModernDCMTKBasicMetadata* metadata);
 void HorosModernDCMTKFreeString(char* value);

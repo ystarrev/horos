@@ -9,13 +9,39 @@
 #include <dcmtk/dcmdata/dcuid.h>
 #include <dcmtk/dcmsr/dsrdoc.h>
 #include <dcmtk/dcmsr/dsrtypes.h>
+#include <dcmtk/dcmjpeg/djdecode.h>
+#include <dcmtk/dcmjpeg/djencode.h>
+#include <dcmtk/dcmjpeg/djrplol.h>
+#include <dcmtk/dcmjpeg/djrploss.h>
+#include <dcmtk/dcmjpls/djdecode.h>
+#include <dcmtk/dcmjpls/djencode.h>
+#include <dcmtk/dcmjpls/djrparam.h>
+#if __has_include(<dcmtk/dcmj2k/djdecode.h>) && __has_include(<dcmtk/dcmj2k/djencode.h>) && __has_include(<dcmtk/dcmj2k/djrparam.h>)
+#include <dcmtk/dcmj2k/djdecode.h>
+#include <dcmtk/dcmj2k/djencode.h>
+#include <dcmtk/dcmj2k/djrparam.h>
+#define HOROS_HAS_DCMJ2K 1
+#else
+#define HOROS_HAS_DCMJ2K 0
+#endif
+#if __has_include(<dcmtk/dcmrle/dcrledrg.h>) && __has_include(<dcmtk/dcmrle/dcrleerg.h>) && __has_include(<dcmtk/dcmrle/dcrlerp.h>)
+#include <dcmtk/dcmrle/dcrledrg.h>
+#include <dcmtk/dcmrle/dcrleerg.h>
+#include <dcmtk/dcmrle/dcrlerp.h>
+#define HOROS_HAS_DCMRLE 1
+#else
+#define HOROS_HAS_DCMRLE 0
+#endif
 #include <dcmtk/ofstd/ofstd.h>
 #include <dcmtk/ofstd/ofstrutl.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <sstream>
 #include <vector>
+
+static bool HorosModernDCMTKLoadStructuredReport(const char* path, DcmFileFormat& fileformat, DSRDocument& document);
 
 static char* HorosModernDCMTKDuplicateCString(const char* value)
 {
@@ -29,6 +55,28 @@ static char* HorosModernDCMTKDuplicateCString(const char* value)
 
     std::memcpy(copy, value, length + 1);
     return copy;
+}
+
+static void HorosModernDCMTKEnsureCodecRegistration()
+{
+    static bool registered = false;
+    if (registered)
+        return;
+
+    DJDecoderRegistration::registerCodecs();
+    DJEncoderRegistration::registerCodecs();
+#if HOROS_HAS_DCMRLE
+    DcmRLEDecoderRegistration::registerCodecs();
+    DcmRLEEncoderRegistration::registerCodecs();
+#endif
+    DJLSDecoderRegistration::registerCodecs();
+    DJLSEncoderRegistration::registerCodecs();
+#if HOROS_HAS_DCMJ2K
+    DJ2KDecoderRegistration::registerCodecs();
+    DJ2KEncoderRegistration::registerCodecs();
+#endif
+
+    registered = true;
 }
 
 static DcmMetaInfo* HorosModernDCMTKMetaInfo(DcmFileFormat& fileformat)
@@ -284,6 +332,246 @@ char* HorosModernDCMTKCopyFieldByTag(const char* path, unsigned short group, uns
         return HorosModernDCMTKDuplicateCString(value.c_str());
 
     return nullptr;
+}
+
+int HorosModernDCMTKCopyBufferByTag(const char* path, unsigned short group, unsigned short element, unsigned char** buffer, unsigned long* length)
+{
+    if (buffer == nullptr || length == nullptr)
+        return 0;
+
+    *buffer = nullptr;
+    *length = 0;
+
+    if (path == nullptr || path[0] == '\0')
+        return 0;
+
+    DcmFileFormat fileformat;
+    if (!fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).good())
+        return 0;
+
+    DcmDataset* dataset = fileformat.getDataset();
+    if (dataset == nullptr)
+        return 0;
+
+    const Uint8* data = nullptr;
+    unsigned long dataLength = 0;
+    if (dataset->findAndGetUint8Array(DcmTagKey(group, element), data, &dataLength, OFFalse).bad() ||
+        data == nullptr || dataLength == 0)
+        return 0;
+
+    unsigned char* copy = static_cast<unsigned char*>(std::malloc(dataLength));
+    if (copy == nullptr)
+        return 0;
+
+    std::memcpy(copy, data, dataLength);
+    *buffer = copy;
+    *length = dataLength;
+    return 1;
+}
+
+
+int HorosModernDCMTKCopyFileDataInTransferSyntax(const char* path,
+                                                 const char* transferSyntaxUID,
+                                                 int quality,
+                                                 unsigned char** buffer,
+                                                 unsigned long* length)
+{
+    if (buffer)
+        *buffer = nullptr;
+    if (length)
+        *length = 0;
+
+    if (path == nullptr || path[0] == '\0' || transferSyntaxUID == nullptr || transferSyntaxUID[0] == '\0' || buffer == nullptr || length == nullptr)
+        return 0;
+
+    DcmFileFormat fileformat;
+    OFCondition status = fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect);
+    if (status.bad())
+        return 0;
+
+    DcmDataset* dataset = fileformat.getDataset();
+    if (dataset == nullptr)
+        return 0;
+
+    DcmXfer originalXfer(dataset->getOriginalXfer());
+    DcmXfer requestedXfer(transferSyntaxUID);
+    if (requestedXfer.getXfer() == EXS_Unknown)
+        return 0;
+
+    const E_TransferSyntax originalSyntax = originalXfer.getXfer();
+    const E_TransferSyntax requestedSyntax = requestedXfer.getXfer();
+    const bool syntaxEquivalent =
+        (originalSyntax == requestedSyntax) ||
+        (originalSyntax == EXS_JPEG2000 && requestedSyntax == EXS_JPEG2000LosslessOnly) ||
+        (originalSyntax == EXS_JPEG2000LosslessOnly && requestedSyntax == EXS_JPEG2000) ||
+        (originalSyntax == EXS_JPEGLSLossy && requestedSyntax == EXS_JPEGLSLossless) ||
+        (originalSyntax == EXS_JPEGLSLossless && requestedSyntax == EXS_JPEGLSLossy);
+
+    auto copyFileBytes = [&](const char* sourcePath) -> int {
+        FILE* fp = std::fopen(sourcePath, "rb");
+        if (fp == nullptr)
+            return 0;
+
+        if (std::fseek(fp, 0, SEEK_END) != 0)
+        {
+            std::fclose(fp);
+            return 0;
+        }
+
+        const long size = std::ftell(fp);
+        if (size < 0)
+        {
+            std::fclose(fp);
+            return 0;
+        }
+
+        if (std::fseek(fp, 0, SEEK_SET) != 0)
+        {
+            std::fclose(fp);
+            return 0;
+        }
+
+        unsigned char* data = static_cast<unsigned char*>(std::malloc(static_cast<size_t>(size)));
+        if (data == nullptr && size > 0)
+        {
+            std::fclose(fp);
+            return 0;
+        }
+
+        const size_t readLength = (size > 0) ? std::fread(data, 1, static_cast<size_t>(size), fp) : 0;
+        std::fclose(fp);
+        if (readLength != static_cast<size_t>(size))
+        {
+            std::free(data);
+            return 0;
+        }
+
+        *buffer = data;
+        *length = static_cast<unsigned long>(readLength);
+        return 1;
+    };
+
+    if (syntaxEquivalent)
+        return copyFileBytes(path);
+
+    HorosModernDCMTKEnsureCodecRegistration();
+
+    DcmRepresentationParameter* params = nullptr;
+    DJ_RPLossy lossyParams(90);
+    DJ_RPLossy jpeg2000Params(quality);
+    DJ_RPLossy jpeg2000LosslessParams(quality);
+#if HOROS_HAS_DCMRLE
+    DcmRLERepresentationParameter rleParams;
+#endif
+    DJ_RPLossless losslessParams(6, 0);
+
+    if (requestedSyntax == EXS_JPEGProcess14SV1)
+        params = &losslessParams;
+    else if (requestedSyntax == EXS_JPEGProcess2_4)
+        params = &lossyParams;
+    else if (requestedSyntax == EXS_RLELossless)
+#if HOROS_HAS_DCMRLE
+        params = &rleParams;
+#else
+        return 0;
+#endif
+    else if (requestedSyntax == EXS_JPEG2000LosslessOnly)
+        params = &jpeg2000LosslessParams;
+    else if (requestedSyntax == EXS_JPEG2000)
+        params = &jpeg2000Params;
+    else if (requestedSyntax == EXS_JPEGLSLossless)
+        params = &jpeg2000LosslessParams;
+    else if (requestedSyntax == EXS_JPEGLSLossy)
+        params = &jpeg2000Params;
+
+    dataset->chooseRepresentation(requestedSyntax, params);
+    if (!dataset->canWriteXfer(requestedSyntax))
+        return 0;
+
+    char tempPath[256];
+    std::snprintf(tempPath, sizeof(tempPath), "/tmp/horos-modern-bridge-%u.dcm", static_cast<unsigned>(std::rand()));
+    status = fileformat.saveFile(tempPath, requestedSyntax);
+    if (status.bad())
+        return 0;
+
+    const int copied = copyFileBytes(tempPath);
+    std::remove(tempPath);
+    return copied;
+}
+
+
+int HorosModernDCMTKWriteFileInTransferSyntax(const char* inputPath,
+                                              const char* outputPath,
+                                              const char* transferSyntaxUID,
+                                              int quality)
+{
+    if (inputPath == nullptr || inputPath[0] == '\0' || outputPath == nullptr || outputPath[0] == '\0' ||
+        transferSyntaxUID == nullptr || transferSyntaxUID[0] == '\0')
+        return 0;
+
+    DcmFileFormat fileformat;
+    OFCondition status = fileformat.loadFile(inputPath, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect);
+    if (status.bad())
+        return 0;
+
+    DcmDataset* dataset = fileformat.getDataset();
+    if (dataset == nullptr)
+        return 0;
+
+    DcmXfer originalXfer(dataset->getOriginalXfer());
+    DcmXfer requestedXfer(transferSyntaxUID);
+    if (requestedXfer.getXfer() == EXS_Unknown)
+        return 0;
+
+    const E_TransferSyntax originalSyntax = originalXfer.getXfer();
+    const E_TransferSyntax requestedSyntax = requestedXfer.getXfer();
+    const bool syntaxEquivalent =
+        (originalSyntax == requestedSyntax) ||
+        (originalSyntax == EXS_JPEG2000 && requestedSyntax == EXS_JPEG2000LosslessOnly) ||
+        (originalSyntax == EXS_JPEG2000LosslessOnly && requestedSyntax == EXS_JPEG2000) ||
+        (originalSyntax == EXS_JPEGLSLossy && requestedSyntax == EXS_JPEGLSLossless) ||
+        (originalSyntax == EXS_JPEGLSLossless && requestedSyntax == EXS_JPEGLSLossy);
+
+    if (!syntaxEquivalent)
+    {
+        HorosModernDCMTKEnsureCodecRegistration();
+
+        DcmRepresentationParameter* params = nullptr;
+        DJ_RPLossy lossyParams(90);
+        DJ_RPLossy jpeg2000Params(quality);
+        DJ_RPLossy jpeg2000LosslessParams(quality);
+#if HOROS_HAS_DCMRLE
+        DcmRLERepresentationParameter rleParams;
+#endif
+        DJ_RPLossless losslessParams(6, 0);
+
+        if (requestedSyntax == EXS_JPEGProcess14SV1)
+            params = &losslessParams;
+        else if (requestedSyntax == EXS_JPEGProcess2_4)
+            params = &lossyParams;
+        else if (requestedSyntax == EXS_RLELossless)
+#if HOROS_HAS_DCMRLE
+            params = &rleParams;
+#else
+            return 0;
+#endif
+        else if (requestedSyntax == EXS_JPEG2000LosslessOnly)
+            params = &jpeg2000LosslessParams;
+        else if (requestedSyntax == EXS_JPEG2000)
+            params = &jpeg2000Params;
+        else if (requestedSyntax == EXS_JPEGLSLossless)
+            params = &jpeg2000LosslessParams;
+        else if (requestedSyntax == EXS_JPEGLSLossy)
+            params = &jpeg2000Params;
+
+        dataset->chooseRepresentation(requestedSyntax, params);
+        if (!dataset->canWriteXfer(requestedSyntax))
+            return 0;
+    }
+
+    fileformat.loadAllDataIntoMemory();
+    status = fileformat.saveFile(outputPath, requestedSyntax);
+    return status.good() ? 1 : 0;
 }
 
 int HorosModernDCMTKReplaceTagValue(const char* path, unsigned short group, unsigned short element, const char* value, int removeIfEmpty)
@@ -648,6 +936,28 @@ int HorosModernDCMTKCopyEncapsulatedDocument(const char* path, unsigned char** b
     return 0;
 }
 
+int HorosModernDCMTKWriteBufferByTag(const char* path, unsigned short group, unsigned short element, const unsigned char* buffer, unsigned long length)
+{
+    if (path == nullptr || path[0] == '\0' || buffer == nullptr || length == 0)
+        return 0;
+
+    DcmFileFormat fileformat;
+    if (!fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).good())
+        return 0;
+
+    DcmDataset* dataset = fileformat.getDataset();
+    if (dataset == nullptr)
+        return 0;
+
+    const DcmTagKey key(group, element);
+    if (dataset->putAndInsertUint8Array(key, buffer, length, OFTrue).bad())
+        return 0;
+
+    const E_TransferSyntax originalXfer = fileformat.getDataset()->getOriginalXfer();
+    OFCondition status = fileformat.saveFile(path, originalXfer, EET_UndefinedLength, EGL_recalcGL, EPD_withoutPadding);
+    return status.good() ? 1 : 0;
+}
+
 char* HorosModernDCMTKCopyStructuredReportHTML(const char* path)
 {
     if (path == nullptr || path[0] == '\0')
@@ -687,6 +997,22 @@ char* HorosModernDCMTKCopyStructuredReportHTML(const char* path)
     return HorosModernDCMTKDuplicateCString(html.c_str());
 }
 
+char* HorosModernDCMTKCopyStructuredReportXML(const char* path)
+{
+    DcmFileFormat fileformat;
+    DSRDocument document;
+    if (!HorosModernDCMTKLoadStructuredReport(path, fileformat, document))
+        return nullptr;
+
+    std::ostringstream output;
+    const size_t writeFlags = 0;
+    if (document.writeXML(output, writeFlags).bad())
+        return nullptr;
+
+    const std::string xml = output.str();
+    return HorosModernDCMTKDuplicateCString(xml.c_str());
+}
+
 static bool HorosModernDCMTKLoadStructuredReport(const char* path, DcmFileFormat& fileformat, DSRDocument& document)
 {
     if (path == nullptr || path[0] == '\0')
@@ -710,7 +1036,45 @@ static bool HorosModernDCMTKLoadStructuredReport(const char* path, DcmFileFormat
     return document.read(*fileformat.getDataset(), readFlags).good();
 }
 
+static bool HorosModernDCMTKStructuredReportItemMatchesCode(DSRContentItem& item,
+                                                            const char* codeValue,
+                                                            const char* codingSchemeDesignator,
+                                                            const char* codeMeaning)
+{
+    const DSRCodedEntryValue conceptName = item.getConceptName();
+    if (conceptName.isEmpty())
+        return false;
+
+    if (codeValue != nullptr && codeValue[0] != '\0' && conceptName.getCodeValue() != codeValue)
+        return false;
+
+    if (codingSchemeDesignator != nullptr &&
+        codingSchemeDesignator[0] != '\0' &&
+        conceptName.getCodingSchemeDesignator() != codingSchemeDesignator)
+        return false;
+
+    if (codeMeaning != nullptr && codeMeaning[0] != '\0' && conceptName.getCodeMeaning() != codeMeaning)
+        return false;
+
+    return true;
+}
+
 char* HorosModernDCMTKCopyStructuredReportKeyObjectType(const char* path)
+{
+    DcmFileFormat fileformat;
+    DSRDocument document;
+    if (!HorosModernDCMTKLoadStructuredReport(path, fileformat, document))
+        return nullptr;
+
+    document.getTree().gotoRoot();
+    const OFString codeMeaning = document.getTree().getCurrentContentItem().getConceptName().getCodeMeaning();
+    if (codeMeaning.empty())
+        return nullptr;
+
+    return HorosModernDCMTKDuplicateCString(codeMeaning.c_str());
+}
+
+char* HorosModernDCMTKCopyStructuredReportRootCodeMeaning(const char* path)
 {
     DcmFileFormat fileformat;
     DSRDocument document;
@@ -758,6 +1122,330 @@ char* HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs(const char* 
     }
 
     return HorosModernDCMTKDuplicateCString(joined.c_str());
+}
+
+char* HorosModernDCMTKCopyStructuredReportPrimaryReference(const char* path)
+{
+    DcmFileFormat fileformat;
+    DSRDocument document;
+    if (!HorosModernDCMTKLoadStructuredReport(path, fileformat, document))
+        return nullptr;
+
+    int instanceNumber = 0;
+    OFString rawInstanceNumber;
+    if (document.getInstanceNumber(rawInstanceNumber).good() && !rawInstanceNumber.empty())
+        instanceNumber = std::atoi(rawInstanceNumber.c_str());
+
+    DSRDocumentTree& tree = document.getTree();
+    tree.gotoRoot();
+    do
+    {
+        DSRContentItem& item = tree.getCurrentContentItem();
+        if (item.getValueType() == DSRTypes::VT_Image)
+        {
+            OFString sopInstance = item.getImageReference().getSOPInstanceUID();
+            if (sopInstance.empty())
+                continue;
+
+            std::string value = sopInstance.c_str();
+            if (instanceNumber > 0)
+            {
+                value += "-";
+                value += std::to_string(instanceNumber);
+            }
+            return HorosModernDCMTKDuplicateCString(value.c_str());
+        }
+    } while (tree.iterate());
+
+    return nullptr;
+}
+
+char* HorosModernDCMTKCopyStructuredReportNamedTextValue(const char* path,
+                                                         const char* codeValue,
+                                                         const char* codingSchemeDesignator,
+                                                         const char* codeMeaning)
+{
+    DcmFileFormat fileformat;
+    DSRDocument document;
+    if (!HorosModernDCMTKLoadStructuredReport(path, fileformat, document))
+        return nullptr;
+
+    DSRDocumentTree& tree = document.getTree();
+    tree.gotoRoot();
+    do
+    {
+        DSRContentItem& item = tree.getCurrentContentItem();
+        if (!HorosModernDCMTKStructuredReportItemMatchesCode(item, codeValue, codingSchemeDesignator, codeMeaning))
+            continue;
+
+        const OFString value = item.getStringValue();
+        if (!value.empty())
+            return HorosModernDCMTKDuplicateCString(value.c_str());
+    } while (tree.iterate());
+
+    return nullptr;
+}
+
+char* HorosModernDCMTKCopyStructuredReportNamedTextValues(const char* path,
+                                                          const char* codeValue,
+                                                          const char* codingSchemeDesignator,
+                                                          const char* codeMeaning)
+{
+    DcmFileFormat fileformat;
+    DSRDocument document;
+    if (!HorosModernDCMTKLoadStructuredReport(path, fileformat, document))
+        return nullptr;
+
+    std::vector<OFString> values;
+    DSRDocumentTree& tree = document.getTree();
+    tree.gotoRoot();
+    do
+    {
+        DSRContentItem& item = tree.getCurrentContentItem();
+        if (!HorosModernDCMTKStructuredReportItemMatchesCode(item, codeValue, codingSchemeDesignator, codeMeaning))
+            continue;
+
+        const OFString value = item.getStringValue();
+        if (!value.empty())
+            values.push_back(value);
+    } while (tree.iterate());
+
+    if (values.empty())
+        return nullptr;
+
+    OFString joined;
+    for (size_t index = 0; index < values.size(); ++index)
+    {
+        if (index > 0)
+            joined += "\\";
+        joined += values[index];
+    }
+
+    return HorosModernDCMTKDuplicateCString(joined.c_str());
+}
+
+int HorosModernDCMTKWriteCompatibilityROIStructuredReport(const char* path,
+                                                          const char* sopInstanceUID,
+                                                          const char* seriesInstanceUID,
+                                                          const char* studyInstanceUID,
+                                                          const char* studyDescription,
+                                                          const char* patientName,
+                                                          const char* patientBirthDate,
+                                                          const char* patientSex,
+                                                          const char* patientID,
+                                                          const char* referringPhysician,
+                                                          const char* studyID,
+                                                          const char* accessionNumber,
+                                                          const char* seriesDescription,
+                                                          const char* seriesNumber,
+                                                          const char* manufacturer,
+                                                          const char* contentDate,
+                                                          const char* contentTime,
+                                                          const char* referencedSOPClassUID,
+                                                          const char* referencedSOPInstanceUID,
+                                                          const char* referencedFrameNumber,
+                                                          const unsigned char* roiArchiveBytes,
+                                                          unsigned long roiArchiveLength)
+{
+    if (path == nullptr || path[0] == '\0' ||
+        studyInstanceUID == nullptr || studyInstanceUID[0] == '\0' ||
+        seriesInstanceUID == nullptr || seriesInstanceUID[0] == '\0' ||
+        sopInstanceUID == nullptr || sopInstanceUID[0] == '\0')
+        return 0;
+
+    DcmFileFormat fileformat;
+    DcmDataset* dataset = fileformat.getDataset();
+    DcmMetaInfo* metaInfo = HorosModernDCMTKMetaInfo(fileformat);
+    if (dataset == nullptr)
+        return 0;
+
+    const char* sopClassUID = UID_BasicTextSRStorage;
+
+    dataset->putAndInsertString(DCM_SOPClassUID, sopClassUID, OFTrue);
+    dataset->putAndInsertString(DCM_SOPInstanceUID, sopInstanceUID, OFTrue);
+    dataset->putAndInsertString(DCM_StudyInstanceUID, studyInstanceUID, OFTrue);
+    dataset->putAndInsertString(DCM_SeriesInstanceUID, seriesInstanceUID, OFTrue);
+    dataset->putAndInsertString(DCM_Modality, "SR", OFTrue);
+    dataset->putAndInsertString(DCM_ConversionType, "WSD", OFTrue);
+
+    if (studyDescription != nullptr && studyDescription[0] != '\0')
+        dataset->putAndInsertString(DCM_StudyDescription, studyDescription, OFTrue);
+    if (patientName != nullptr && patientName[0] != '\0')
+        dataset->putAndInsertString(DCM_PatientName, patientName, OFTrue);
+    if (patientBirthDate != nullptr && patientBirthDate[0] != '\0')
+        dataset->putAndInsertString(DCM_PatientBirthDate, patientBirthDate, OFTrue);
+    if (patientSex != nullptr && patientSex[0] != '\0')
+        dataset->putAndInsertString(DCM_PatientSex, patientSex, OFTrue);
+    if (patientID != nullptr && patientID[0] != '\0')
+        dataset->putAndInsertString(DCM_PatientID, patientID, OFTrue);
+    if (referringPhysician != nullptr && referringPhysician[0] != '\0')
+        dataset->putAndInsertString(DCM_ReferringPhysicianName, referringPhysician, OFTrue);
+    if (studyID != nullptr && studyID[0] != '\0')
+        dataset->putAndInsertString(DCM_StudyID, studyID, OFTrue);
+    if (accessionNumber != nullptr && accessionNumber[0] != '\0')
+        dataset->putAndInsertString(DCM_AccessionNumber, accessionNumber, OFTrue);
+    if (seriesDescription != nullptr && seriesDescription[0] != '\0')
+        dataset->putAndInsertString(DCM_SeriesDescription, seriesDescription, OFTrue);
+    if (seriesNumber != nullptr && seriesNumber[0] != '\0')
+        dataset->putAndInsertString(DCM_SeriesNumber, seriesNumber, OFTrue);
+    if (manufacturer != nullptr && manufacturer[0] != '\0')
+        dataset->putAndInsertString(DCM_Manufacturer, manufacturer, OFTrue);
+    if (contentDate != nullptr && contentDate[0] != '\0')
+        dataset->putAndInsertString(DCM_ContentDate, contentDate, OFTrue);
+    if (contentTime != nullptr && contentTime[0] != '\0')
+        dataset->putAndInsertString(DCM_ContentTime, contentTime, OFTrue);
+    if (referencedSOPClassUID != nullptr && referencedSOPClassUID[0] != '\0')
+        dataset->putAndInsertString(DCM_ReferencedSOPClassUID, referencedSOPClassUID, OFTrue);
+    if (referencedSOPInstanceUID != nullptr && referencedSOPInstanceUID[0] != '\0')
+        dataset->putAndInsertString(DCM_ReferencedSOPInstanceUID, referencedSOPInstanceUID, OFTrue);
+    if (referencedFrameNumber != nullptr && referencedFrameNumber[0] != '\0')
+        dataset->putAndInsertString(DCM_ReferencedFrameNumber, referencedFrameNumber, OFTrue);
+    if (roiArchiveBytes != nullptr && roiArchiveLength > 0)
+    {
+        dataset->putAndInsertUint8Array(DCM_EncapsulatedDocument, roiArchiveBytes, roiArchiveLength, OFTrue);
+        dataset->putAndInsertUint8Array(DcmTagKey(0x0071, 0x0011), roiArchiveBytes, roiArchiveLength, OFTrue);
+    }
+
+    if (metaInfo != nullptr)
+    {
+        metaInfo->putAndInsertString(DCM_MediaStorageSOPClassUID, sopClassUID, OFTrue);
+        metaInfo->putAndInsertString(DCM_MediaStorageSOPInstanceUID, sopInstanceUID, OFTrue);
+    }
+
+    OFCondition status = fileformat.saveFile(path, EXS_LittleEndianExplicit);
+    return status.good() ? 1 : 0;
+}
+
+int HorosModernDCMTKWriteCompatibilityStructuredReport(const char* path,
+                                                       const char* sopInstanceUID,
+                                                       const char* seriesInstanceUID,
+                                                       const char* studyInstanceUID,
+                                                       const char* studyDescription,
+                                                       const char* patientName,
+                                                       const char* patientBirthDate,
+                                                       const char* patientSex,
+                                                       const char* patientID,
+                                                       const char* referringPhysician,
+                                                       const char* studyID,
+                                                       const char* accessionNumber,
+                                                       const char* seriesDescription,
+                                                       const char* seriesNumber,
+                                                       const char* manufacturer,
+                                                       const char* contentDate,
+                                                       const char* contentTime,
+                                                       const char* referencedSOPClassUID,
+                                                       const char* referencedSOPInstanceUID,
+                                                       const char* referencedFrameNumber,
+                                                       const char* rootCodeMeaning,
+                                                       const char* childTextValue,
+                                                       const unsigned char* encapsulatedBytes,
+                                                       unsigned long encapsulatedLength)
+{
+    if (path == nullptr || path[0] == '\0' ||
+        studyInstanceUID == nullptr || studyInstanceUID[0] == '\0')
+        return 0;
+
+    DSRDocument document;
+    OFCondition status = document.createNewDocument(DSRTypes::DT_BasicTextSR);
+    if (status.good())
+        status = document.setSpecificCharacterSet("ISO_IR 192");
+    if (status.good())
+        status = document.createNewSeriesInStudy(studyInstanceUID);
+    if (status.good() && studyDescription != nullptr && studyDescription[0] != '\0')
+        status = document.setStudyDescription(studyDescription);
+    if (status.good() && seriesDescription != nullptr && seriesDescription[0] != '\0')
+        status = document.setSeriesDescription(seriesDescription);
+    if (status.good() && patientName != nullptr && patientName[0] != '\0')
+        status = document.setPatientName(patientName);
+    if (status.good() && patientBirthDate != nullptr && patientBirthDate[0] != '\0')
+        status = document.setPatientBirthDate(patientBirthDate);
+    if (status.good() && patientSex != nullptr && patientSex[0] != '\0')
+        status = document.setPatientSex(patientSex);
+    if (status.good() && patientID != nullptr && patientID[0] != '\0')
+        status = document.setPatientID(patientID);
+    if (status.good() && referringPhysician != nullptr && referringPhysician[0] != '\0')
+        status = document.setReferringPhysicianName(referringPhysician);
+    if (status.good() && studyID != nullptr && studyID[0] != '\0')
+        status = document.setStudyID(studyID);
+    if (status.good() && accessionNumber != nullptr && accessionNumber[0] != '\0')
+        status = document.setAccessionNumber(accessionNumber);
+    if (status.good() && seriesNumber != nullptr && seriesNumber[0] != '\0')
+        status = document.setSeriesNumber(seriesNumber);
+    if (status.good() && manufacturer != nullptr && manufacturer[0] != '\0')
+        status = document.setManufacturer(manufacturer);
+    if (status.good() && contentDate != nullptr && contentDate[0] != '\0')
+        status = document.setContentDate(contentDate);
+    if (status.good() && contentTime != nullptr && contentTime[0] != '\0')
+        status = document.setContentTime(contentTime);
+    if (status.bad())
+        return 0;
+
+    DSRDocumentTree& tree = document.getTree();
+    if (tree.addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container) == 0)
+        return 0;
+
+    const char* rootMeaning = (rootCodeMeaning != nullptr && rootCodeMeaning[0] != '\0') ? rootCodeMeaning : "Annotations";
+    status = tree.getCurrentContentItem().setConceptName(DSRCodedEntryValue("1", "99HUG", rootMeaning));
+    if (status.bad())
+        return 0;
+
+    if (referencedSOPClassUID != nullptr && referencedSOPClassUID[0] != '\0' &&
+        referencedSOPInstanceUID != nullptr && referencedSOPInstanceUID[0] != '\0')
+    {
+        if (tree.addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Image, DSRTypes::AM_belowCurrent) == 0)
+            return 0;
+        tree.getCurrentContentItem().setConceptName(DSRCodedEntryValue("IHE.10", "99HUG", "Image Reference"));
+        DSRImageReferenceValue imageRef{OFString(referencedSOPClassUID), OFString(referencedSOPInstanceUID)};
+        if (referencedFrameNumber != nullptr && referencedFrameNumber[0] != '\0')
+            imageRef.getFrameList().putString(referencedFrameNumber);
+        status = tree.getCurrentContentItem().setImageReference(imageRef);
+        if (status.bad())
+            return 0;
+        tree.goUp();
+    }
+
+    if (childTextValue != nullptr && childTextValue[0] != '\0')
+    {
+        if (tree.addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Text, DSRTypes::AM_belowCurrent) == 0)
+            return 0;
+        status = tree.getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_01", OFFIS_CODING_SCHEME_DESIGNATOR, "Description"));
+        if (status.bad())
+            return 0;
+        status = tree.getCurrentContentItem().setStringValue(childTextValue);
+        if (status.bad())
+            return 0;
+        tree.goUp();
+    }
+
+    DcmFileFormat fileformat;
+    status = document.write(*fileformat.getDataset());
+    if (status.bad())
+        return 0;
+
+    DcmDataset* dataset = fileformat.getDataset();
+    DcmMetaInfo* metaInfo = HorosModernDCMTKMetaInfo(fileformat);
+    if (dataset == nullptr)
+        return 0;
+
+    if (seriesInstanceUID != nullptr && seriesInstanceUID[0] != '\0')
+        dataset->putAndInsertString(DCM_SeriesInstanceUID, seriesInstanceUID, OFTrue);
+    if (sopInstanceUID != nullptr && sopInstanceUID[0] != '\0')
+    {
+        dataset->putAndInsertString(DCM_SOPInstanceUID, sopInstanceUID, OFTrue);
+        if (metaInfo != nullptr)
+            metaInfo->putAndInsertString(DCM_MediaStorageSOPInstanceUID, sopInstanceUID, OFTrue);
+    }
+    if (referencedSOPClassUID != nullptr && referencedSOPClassUID[0] != '\0')
+        dataset->putAndInsertString(DCM_ReferencedSOPClassUID, referencedSOPClassUID, OFTrue);
+    if (referencedSOPInstanceUID != nullptr && referencedSOPInstanceUID[0] != '\0')
+        dataset->putAndInsertString(DCM_ReferencedSOPInstanceUID, referencedSOPInstanceUID, OFTrue);
+    if (referencedFrameNumber != nullptr && referencedFrameNumber[0] != '\0')
+        dataset->putAndInsertString(DCM_ReferencedFrameNumber, referencedFrameNumber, OFTrue);
+    if (encapsulatedBytes != nullptr && encapsulatedLength > 0)
+        dataset->putAndInsertUint8Array(DCM_EncapsulatedDocument, encapsulatedBytes, encapsulatedLength, OFTrue);
+
+    status = fileformat.saveFile(path, EXS_LittleEndianExplicit);
+    return status.good() ? 1 : 0;
 }
 
 int HorosModernDCMTKWriteKeyObjectReport(const char* path,
@@ -824,6 +1512,24 @@ int HorosModernDCMTKWriteKeyObjectReport(const char* path,
     }
 
     status = fileformat.saveFile(path, EXS_LittleEndianExplicit);
+    return status.good() ? 1 : 0;
+}
+
+int HorosModernDCMTKWriteStructuredReportFromXML(const char* xmlPath, const char* dicomPath)
+{
+    if (xmlPath == nullptr || xmlPath[0] == '\0' || dicomPath == nullptr || dicomPath[0] == '\0')
+        return 0;
+
+    DSRDocument document;
+    if (document.readXML(xmlPath, 0).bad())
+        return 0;
+
+    DcmFileFormat fileformat;
+    OFCondition status = document.write(*fileformat.getDataset());
+    if (status.bad())
+        return 0;
+
+    status = fileformat.saveFile(dicomPath, EXS_LittleEndianExplicit);
     return status.good() ? 1 : 0;
 }
 

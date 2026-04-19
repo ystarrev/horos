@@ -6988,6 +6988,8 @@ static NSConditionLock *threadLock = nil;
                     [aTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
                     [aTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent: @"/dsr2html"]];
                     [aTask setArguments: [NSArray arrayWithObjects: @"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items", [im completePathResolved], htmlpath, nil]];
+                    [aTask setStandardOutput:[NSPipe pipe]];
+                    [aTask setStandardError:[NSPipe pipe]];
                     [aTask launch];
                     while( [aTask isRunning])
                         [NSThread sleepForTimeInterval: 0.1];
@@ -9038,6 +9040,7 @@ static BOOL withReset = NO;
                     [dcmPix release];
                     
                     [imageView setIndex:[cell tag]];
+                    [imageView setDisplayedImageIndex:[animationSlider intValue] totalCount:noOfImages];
                 }
             }
             else if( [[aFile valueForKey:@"type"] isEqualToString:@"Study"] || ([[aFile valueForKey:@"type"] isEqualToString:@"Series"] && [[[aFile valueForKey:@"images"] allObjects] count] > 1))
@@ -9091,6 +9094,7 @@ static BOOL withReset = NO;
                                     
                                     if( withReset) [imageView setIndexWithReset:[cell tag] :YES];
                                     else [imageView setIndex:[cell tag]];
+                                    [imageView setDisplayedImageIndex:[animationSlider intValue] totalCount:[images count]];
                                     
                                     @try
                                     {
@@ -9140,6 +9144,7 @@ static BOOL withReset = NO;
                                     
                                     if( withReset) [imageView setIndexWithReset:[cell tag] :YES];
                                     else [imageView setIndex:[cell tag]];
+                                    [imageView setDisplayedImageIndex:[animationSlider intValue] totalCount:noOfImages];
                                     
                                     @try
                                     {
@@ -16574,6 +16579,8 @@ static volatile int numberOfThreadsForJPEG = 0;
                     [aTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
                     [aTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent: @"/dsr2html"]];
                     [aTask setArguments: [NSArray arrayWithObjects: @"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items", [curImage valueForKey: @"completePath"], htmlpath, nil]];
+                    [aTask setStandardOutput:[NSPipe pipe]];
+                    [aTask setStandardError:[NSPipe pipe]];
                     [aTask launch];
                     while( [aTask isRunning])
                         [NSThread sleepForTimeInterval: 0.1];

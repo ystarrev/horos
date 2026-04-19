@@ -1867,6 +1867,60 @@ static BOOL protectionAgainstReentry = NO;
                             DICOMSR = YES;
                         }
                     }
+
+                    if (DICOMSR && [[curDict objectForKey:@"seriesDescription"] isEqualToString:@"OsiriX ROI SR"])
+                    {
+                        NSString *referencedUID = [curDict objectForKey:@"referencedSOPInstanceUID"];
+                        if (referencedUID.length)
+                        {
+                            NSString *referencedSOPInstanceUID = referencedUID;
+                            NSNumber *referencedFrameID = nil;
+
+                            NSRange dashRange = [referencedUID rangeOfString:@"-" options:NSBackwardsSearch];
+                            if (dashRange.location != NSNotFound && dashRange.location + 1 < referencedUID.length)
+                            {
+                                NSString *frameSuffix = [referencedUID substringFromIndex:dashRange.location + 1];
+                                NSScanner *scanner = [NSScanner scannerWithString:frameSuffix];
+                                NSInteger frameValue = 0;
+                                if ([scanner scanInteger:&frameValue] && scanner.isAtEnd)
+                                {
+                                    referencedSOPInstanceUID = [referencedUID substringToIndex:dashRange.location];
+                                    if (frameValue > 0)
+                                        referencedFrameID = [NSNumber numberWithInteger:frameValue];
+                                }
+                            }
+
+                            NSFetchRequest *referenceRequest = [NSFetchRequest fetchRequestWithEntityName:@"Image"];
+                            referenceRequest.fetchLimit = 1;
+                            if (referencedFrameID)
+                                referenceRequest.predicate = [NSPredicate predicateWithFormat:@"sopInstanceUID == %@ AND frameID == %@", referencedSOPInstanceUID, referencedFrameID];
+                            else
+                                referenceRequest.predicate = [NSPredicate predicateWithFormat:@"sopInstanceUID == %@", referencedSOPInstanceUID];
+
+                            DicomImage *referencedImage = [[self.managedObjectContext executeFetchRequest:referenceRequest error:nil] lastObject];
+                            DicomStudy *referencedStudy = [referencedImage valueForKeyPath:@"series.study"];
+
+                            if (referencedStudy)
+                            {
+                                if (referencedStudy.studyInstanceUID.length)
+                                    [curDict setObject:referencedStudy.studyInstanceUID forKey:@"studyID"];
+                                if (referencedStudy.patientUID.length)
+                                    [curDict setObject:referencedStudy.patientUID forKey:@"patientUID"];
+                                if (referencedStudy.patientID.length)
+                                    [curDict setObject:referencedStudy.patientID forKey:@"patientID"];
+                                if (referencedStudy.name.length)
+                                    [curDict setObject:referencedStudy.name forKey:@"patientName"];
+                                if (referencedStudy.dateOfBirth)
+                                    [curDict setObject:referencedStudy.dateOfBirth forKey:@"patientBirthDate"];
+                                if (referencedStudy.patientSex.length)
+                                    [curDict setObject:referencedStudy.patientSex forKey:@"patientSex"];
+                                if (referencedStudy.accessionNumber.length)
+                                    [curDict setObject:referencedStudy.accessionNumber forKey:@"accessionNumber"];
+                                if (referencedStudy.studyName.length)
+                                    [curDict setObject:referencedStudy.studyName forKey:@"studyDescription"];
+                            }
+                        }
+                    }
                     
                     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"acceptUnsupportedSOPClassUID"] == NO)
                     {
@@ -1958,7 +2012,22 @@ static BOOL protectionAgainstReentry = NO;
                                         {
                                             NSLog( @"-*-*-*-*-* same studyUID (%@), but not same patientUID (%@ versus %@)", [curDict objectForKey: @"studyID"], [curDict objectForKey: @"patientUID"], [[studiesArray objectAtIndex: index] valueForKey: @"patientUID"]);
                                             
-                                            if( self.hasPotentiallySlowDataAccess) //It's a CD... be less restrictive !
+                                            if( importedFiles)
+                                            {
+                                                study = tstudy;
+                                                
+                                                if( tstudy.patientUID.length)
+                                                    [curDict setObject: tstudy.patientUID forKey: @"patientUID"];
+                                                if( tstudy.patientID.length)
+                                                    [curDict setObject: tstudy.patientID forKey: @"patientID"];
+                                                if( tstudy.name.length)
+                                                    [curDict setObject: tstudy.name forKey: @"patientName"];
+                                                if( tstudy.dateOfBirth)
+                                                    [curDict setObject: tstudy.dateOfBirth forKey: @"patientBirthDate"];
+                                                if( tstudy.patientSex.length)
+                                                    [curDict setObject: tstudy.patientSex forKey: @"patientSex"];
+                                            }
+                                            else if( self.hasPotentiallySlowDataAccess) //It's a CD... be less restrictive !
                                                 study = tstudy;
                                         }
                                     }
@@ -2033,6 +2102,23 @@ static BOOL protectionAgainstReentry = NO;
                             {
                                 if ([[study valueForKey: @"modality"] isEqualToString: @"SR"] || [[study valueForKey: @"modality"] isEqualToString: @"OT"])
                                     study.modality = [curDict objectForKey: @"modality"];
+                                
+                                if (study.dateOfBirth == nil && [curDict objectForKey: @"patientBirthDate"])
+                                    study.dateOfBirth = [curDict objectForKey: @"patientBirthDate"];
+                                if (study.patientSex.length == 0 && [[curDict objectForKey: @"patientSex"] length])
+                                    study.patientSex = [curDict objectForKey: @"patientSex"];
+                                if (study.patientID.length == 0 && [[curDict objectForKey: @"patientID"] length])
+                                    study.patientID = [curDict objectForKey: @"patientID"];
+                                if (study.name.length == 0 && [[curDict objectForKey: @"patientName"] length])
+                                    study.name = [curDict objectForKey: @"patientName"];
+                                if (study.patientUID.length == 0 && [[curDict objectForKey: @"patientUID"] length])
+                                    study.patientUID = [curDict objectForKey: @"patientUID"];
+                                if (study.referringPhysician.length == 0 && [[curDict objectForKey: @"referringPhysiciansName"] length])
+                                    study.referringPhysician = [curDict objectForKey: @"referringPhysiciansName"];
+                                if (study.performingPhysician.length == 0 && [[curDict objectForKey: @"performingPhysiciansName"] length])
+                                    study.performingPhysician = [curDict objectForKey: @"performingPhysiciansName"];
+                                if (study.institutionName.length == 0 && [[curDict objectForKey: @"institutionName"] length])
+                                    study.institutionName = [curDict objectForKey: @"institutionName"];
                                 
                                 if ([study valueForKey: @"studyName"] == nil || [[study valueForKey: @"studyName"] isEqualToString: @"unnamed"] || [[study valueForKey: @"studyName"] isEqualToString: @""])
                                     
@@ -2258,11 +2344,14 @@ static BOOL protectionAgainstReentry = NO;
                                     [study setValue:[study valueForKey:@"modalities"] forKey:@"modality"];
                                     [seriesTable setValue: nil forKey:@"thumbnail"];
                                     
-                                    if (DICOMSR && [curDict objectForKey: @"numberOfROIs"] && [curDict objectForKey: @"referencedSOPInstanceUID"]) // OsiriX ROI SR
+                                    if (DICOMSR && [curDict objectForKey: @"referencedSOPInstanceUID"]) // OsiriX ROI SR
                                     {
                                         NSString *s = [curDict objectForKey: @"referencedSOPInstanceUID"];
                                         [image setValue: s forKey:@"comment"];
-                                        [image setValue: [curDict objectForKey: @"numberOfROIs"] forKey:@"scale"];
+
+                                        id numberOfROIs = [curDict objectForKey: @"numberOfROIs"];
+                                        if (numberOfROIs)
+                                            [image setValue: numberOfROIs forKey:@"scale"];
                                     }
                                     
                                     // Relations
@@ -3197,7 +3286,13 @@ static BOOL protectionAgainstReentry = NO;
             
             NSArray* addedFiles = nil;
             if( thread.isCancelled == NO)
-                addedFiles = [self addFilesAtPaths:filesArray]; // these are IDs!
+                addedFiles = [self addFilesAtPaths: filesArray
+                                 postNotifications: YES
+                                          dicomOnly: [[NSUserDefaults standardUserDefaults] boolForKey: @"onlyDICOM"]
+                                rereadExistingItems: NO
+                                  generatedByOsiriX: NO
+                                      importedFiles: YES
+                                        returnArray: YES]; // these are IDs!
             
             addedFilesCount = addedFiles.count;
             

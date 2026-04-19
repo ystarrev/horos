@@ -5933,6 +5933,8 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 [aTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
                 [aTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent: @"/dsr2html"]];
                 [aTask setArguments: [NSArray arrayWithObjects: @"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items",self.srcFile, htmlpath, nil]];
+                [aTask setStandardOutput:[NSPipe pipe]];
+                [aTask setStandardError:[NSPipe pipe]];
                 [aTask launch];
                 while( [aTask isRunning])
                     [NSThread sleepForTimeInterval: 0.1];
@@ -5943,29 +5945,30 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             
             if( [[NSFileManager defaultManager] fileExistsAtPath: [htmlpath stringByAppendingPathExtension: @"pdf"]] == NO)
             {
-                if( [[NSFileManager defaultManager] fileExistsAtPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]])
-                {
-                    NSTask *aTask = [[[NSTask alloc] init] autorelease];
-                    [aTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]];
-                    [aTask setArguments: [NSArray arrayWithObjects: htmlpath, @"pdfFromURL", nil]];
-                    [aTask launch];
-                    NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
-                    while( [aTask isRunning] && [NSDate timeIntervalSinceReferenceDate] - start < 10)
-                        [NSThread sleepForTimeInterval: 0.1];
-                    
-                    //[aTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
-                    [aTask interrupt];
-                }
+                // Avoid spawning the Decompress helper here just to synthesize an SR preview PDF.
+                // In debug/dev builds that helper may be unavailable or codesign-mismatched, which
+                // causes noisy console errors even though the report itself can still be opened.
             }
             
-            NSPDFImageRep *rep = [NSPDFImageRep imageRepWithData: [NSData dataWithContentsOfFile: [htmlpath stringByAppendingPathExtension: @"pdf"]]];
+            NSData *pdfPreviewData = [NSData dataWithContentsOfFile: [htmlpath stringByAppendingPathExtension: @"pdf"]];
+            NSPDFImageRep *rep = pdfPreviewData ? [NSPDFImageRep imageRepWithData: pdfPreviewData] : nil;
             
-            [rep setCurrentPage: frameNo];
-            
-            NSImage *pdfImage = [[[NSImage alloc] init] autorelease];
-            [pdfImage addRepresentation: rep];
-            
-            [self getDataFromNSImage: pdfImage];
+            if( rep)
+            {
+                [rep setCurrentPage: frameNo];
+                
+                NSImage *pdfImage = [[[NSImage alloc] init] autorelease];
+                [pdfImage addRepresentation: rep];
+                
+                [self getDataFromNSImage: pdfImage];
+            }
+            else
+            {
+                NSImage *fallbackImage = [NSImage imageNamed: @"NSInfo"];
+                if( fallbackImage == nil)
+                    fallbackImage = [NSImage imageNamed: @"NSIconViewTemplate"];
+                [self getDataFromNSImage: fallbackImage];
+            }
             
             [self loadCustomImageAnnotationsPapyLink:-1 DCMLink:dcmObject];
             

@@ -44,6 +44,106 @@
 #import "altivecFunctions.h"
 #import "DICOMToNSString.h"
 #import "DicomDatabase+DCMTK.h"
+#include <dlfcn.h>
+
+typedef char* (*HorosModernDCMTKCopyGeneratedUIDFn)(void);
+typedef char* (*HorosModernDCMTKCopyFieldFn)(const char* path, const char* fieldName);
+typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
+
+static void* HorosDICOMExportBridgeHandle()
+{
+    static void* handle = NULL;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSBundle *bundle = [NSBundle mainBundle];
+        NSArray<NSString *> *basePaths = @[
+            bundle.resourcePath ?: @"",
+            bundle.privateFrameworksPath ?: @"",
+            bundle.sharedFrameworksPath ?: @"",
+            bundle.builtInPlugInsPath ?: @""
+        ];
+        NSArray<NSString *> *relativePaths = @[
+            @"libHorosModernDCMTKBridge.dylib",
+            @"DCMTK/libHorosModernDCMTKBridge.dylib"
+        ];
+
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        for (NSString *basePath in basePaths)
+        {
+            if (basePath.length == 0)
+                continue;
+
+            for (NSString *relativePath in relativePaths)
+            {
+                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
+                if ([fileManager fileExistsAtPath:candidate])
+                {
+                    handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+                    if (handle == NULL)
+                        NSLog(@"Modern DCMTK bridge failed to load at %@: %s", candidate, dlerror());
+                    return;
+                }
+            }
+        }
+    });
+    return handle;
+}
+
+template <typename FunctionType>
+static FunctionType HorosDICOMExportSymbol(const char* name)
+{
+    void* handle = HorosDICOMExportBridgeHandle();
+    if (handle == NULL)
+        return NULL;
+    return reinterpret_cast<FunctionType>(dlsym(handle, name));
+}
+
+static NSString* HorosDICOMExportGeneratedUID()
+{
+    HorosModernDCMTKCopyGeneratedUIDFn copyUIDFn =
+        HorosDICOMExportSymbol<HorosModernDCMTKCopyGeneratedUIDFn>("HorosModernDCMTKCopyGeneratedUID");
+    if (copyUIDFn == NULL)
+        return nil;
+
+    char *value = copyUIDFn();
+    if (value == NULL)
+        return nil;
+
+    NSString *string = [NSString stringWithUTF8String:value];
+    HorosModernDCMTKFreeStringFn freeFn =
+        HorosDICOMExportSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    if (freeFn)
+        freeFn(value);
+    return string;
+}
+
+static NSString* HorosDICOMExportCopyField(NSString *path, NSString *fieldName)
+{
+    if (path.length == 0 || fieldName.length == 0)
+        return nil;
+
+    HorosModernDCMTKCopyFieldFn copyFieldFn =
+        HorosDICOMExportSymbol<HorosModernDCMTKCopyFieldFn>("HorosModernDCMTKCopyField");
+    if (copyFieldFn == NULL)
+        return nil;
+
+    char *value = copyFieldFn(path.fileSystemRepresentation, fieldName.UTF8String);
+    if (value == NULL)
+        return nil;
+
+    NSString *string = [NSString stringWithUTF8String:value];
+    HorosModernDCMTKFreeStringFn freeFn =
+        HorosDICOMExportSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    if (freeFn)
+        freeFn(value);
+
+    return string;
+}
+
+static NSString* HorosDICOMExportGeneratedSeriesUID()
+{
+    return HorosDICOMExportGeneratedUID();
+}
 
 static float deg2rad = M_PI / 180.0f; 
 
@@ -72,7 +172,7 @@ static float deg2rad = M_PI / 180.0f;
 		exportSeriesNumber = no;
 		
 		[exportSeriesUID release];
-		exportSeriesUID = [[DCMObject newSeriesInstanceUID] retain];
+		exportSeriesUID = [HorosDICOMExportGeneratedSeriesUID() retain];
 	}
 }
 
@@ -97,7 +197,7 @@ static float deg2rad = M_PI / 180.0f;
 		exportInstanceNumber = 1;
 		exportSeriesNumber = 5000;
 		
-		exportSeriesUID = [[DCMObject newSeriesInstanceUID] retain];
+		exportSeriesUID = [HorosDICOMExportGeneratedSeriesUID() retain];
 		exportSeriesDescription = [@"OsiriX SC" retain];
 		
 		spacingX = 0;
@@ -318,7 +418,7 @@ static float deg2rad = M_PI / 180.0f;
 - (BOOL) createDICOMHeader: (DcmItem *) dataset dictionary: (NSDictionary*) dict
 {
 	OFCondition result = EC_Normal;
-	char buf[80];
+    NSString *generatedUID = nil;
 	
 	// insert empty type 2 attributes
 	if (result.good()) result = dataset->insertEmptyElement(DCM_StudyDate);
@@ -369,26 +469,26 @@ static float deg2rad = M_PI / 180.0f;
     else
         result = dataset->putAndInsertString(DCM_Modality, "OT");
     
-	dcmGenerateUniqueIdentifier(buf, SITE_STUDY_UID_ROOT);
+    generatedUID = HorosDICOMExportGeneratedUID();
 	if (result.good())
     {
         if( [dict objectForKey: @"studyUID"])
             result = dataset->putAndInsertString(DCM_StudyInstanceUID, [[dict objectForKey: @"studyUID"] UTF8String]);
-        else
-            result = dataset->putAndInsertString(DCM_StudyInstanceUID, buf);
+        else if (generatedUID.length)
+            result = dataset->putAndInsertString(DCM_StudyInstanceUID, [generatedUID UTF8String]);
     }
 	
-	dcmGenerateUniqueIdentifier(buf, SITE_SERIES_UID_ROOT);
+    generatedUID = HorosDICOMExportGeneratedUID();
 	if (result.good())
     {
         if( [dict objectForKey: @"seriesUID"])
             result = dataset->putAndInsertString(DCM_SeriesInstanceUID, [[dict objectForKey: @"seriesUID"] UTF8String]);
-        else
-            result = dataset->putAndInsertString(DCM_SeriesInstanceUID, buf);
+        else if (generatedUID.length)
+            result = dataset->putAndInsertString(DCM_SeriesInstanceUID, [generatedUID UTF8String]);
     }
 	
-	dcmGenerateUniqueIdentifier(buf, SITE_INSTANCE_UID_ROOT);
-	if (result.good()) result = dataset->putAndInsertString(DCM_SOPInstanceUID, buf);
+    generatedUID = HorosDICOMExportGeneratedUID();
+	if (result.good() && generatedUID.length) result = dataset->putAndInsertString(DCM_SOPInstanceUID, [generatedUID UTF8String]);
 	
 	// set instance creation date and time
 	OFString s;
@@ -788,9 +888,10 @@ static float deg2rad = M_PI / 180.0f;
 					[self removeAllFieldsOfGroup: 0x0028 dataset: dataset];
 					[self removeAllFieldsOfGroup: 0x5200 dataset: dataset];     //We don't support multiframe export
 					
-					if (dataset->findAndGetString(DCM_SpecificCharacterSet, string, OFFalse).good() && string != NULL)
+					NSString *specificCharacterSet = HorosDICOMExportCopyField(dcmSourcePath, @"SpecificCharacterSet");
+					if (specificCharacterSet.length)
 					{
-						NSArray	*c = [[NSString stringWithCString:string encoding: NSISOLatin1StringEncoding] componentsSeparatedByString:@"\\"];
+						NSArray	*c = [specificCharacterSet componentsSeparatedByString:@"\\"];
 						
 						if( [c count] >= 10) NSLog( @"Encoding number >= 10 ???");
 						
@@ -861,8 +962,9 @@ static float deg2rad = M_PI / 180.0f;
 					if( spp == 3)
 						dataset->putAndInsertString( DCM_PlanarConfiguration, "0");
 					
-					if( dataset->findAndGetString( DCM_Modality, string, OFFalse).good() && string != NULL)
-						modality = string;
+					NSString *sourceModality = HorosDICOMExportCopyField(dcmSourcePath, @"Modality");
+					if (sourceModality.length)
+						modality = [sourceModality UTF8String];
 					
 					delete dataset->remove( DCM_PixelData);
                     delete dataset->remove( DcmTagKey( 0x0009, 0x1110)); // "GEIIS" The problematic private group, containing a *always* JPEG compressed PixelData
@@ -935,10 +1037,12 @@ static float deg2rad = M_PI / 180.0f;
                     delete dataset->remove( DCM_PerFrameFunctionalGroupsSequence);
                     delete dataset->remove( DCM_IconImageSequence); // GE bug
                     
-					char buf[ 128];
-					dcmGenerateUniqueIdentifier( buf);
-					dataset->putAndInsertString( DCM_SOPInstanceUID, buf);
-					metaInfo->putAndInsertString( DCM_MediaStorageSOPInstanceUID, buf);
+                    NSString *generatedUID = HorosDICOMExportGeneratedUID();
+                    if (generatedUID.length)
+                    {
+                        dataset->putAndInsertString(DCM_SOPInstanceUID, [generatedUID UTF8String]);
+                        metaInfo->putAndInsertString(DCM_MediaStorageSOPInstanceUID, [generatedUID UTF8String]);
+                    }
 					
                     dcmtkFileFormat->chooseRepresentation( EXS_LittleEndianExplicit, NULL);
 					if( dcmtkFileFormat->canWriteXfer( EXS_LittleEndianExplicit))

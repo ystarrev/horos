@@ -46,6 +46,7 @@
 #import "DicomDatabase.h"
 #import "N2Debug.h"
 #import "N2Stuff.h"
+#import <dlfcn.h>
 #undef verify
 #include "osconfig.h" /* make sure OS specific configuration is included first */
 
@@ -88,6 +89,29 @@ END_EXTERN_C
 #include "dcasccff.h"  /* for class DcmAssociationConfigurationFile */
 
 #ifdef ON_THE_FLY_COMPRESSION
+typedef int (*HorosModernDCMTKWriteFileInTransferSyntaxFn)(const char*, const char*, const char*, int);
+
+template <typename SymbolType>
+static SymbolType HorosStoreSCUSymbol(const char* name)
+{
+    static void* handle = dlopen("libHorosModernDCMTKBridge.dylib", RTLD_LAZY | RTLD_LOCAL);
+    return handle != NULL ? reinterpret_cast<SymbolType>(dlsym(handle, name)) : NULL;
+}
+
+static BOOL HorosStoreSCUWriteFileInTransferSyntax(const char* inputPath, const char* outputPath, E_TransferSyntax syntax, int quality)
+{
+    HorosModernDCMTKWriteFileInTransferSyntaxFn writeFn = HorosStoreSCUSymbol<HorosModernDCMTKWriteFileInTransferSyntaxFn>("HorosModernDCMTKWriteFileInTransferSyntax");
+    if (writeFn == NULL)
+        return NO;
+
+    const char* transferSyntaxUID = DcmXfer(syntax).getXferID();
+    if (transferSyntaxUID == NULL || transferSyntaxUID[0] == '\0')
+        return NO;
+
+    unlink(outputPath);
+    return writeFn(inputPath, outputPath, transferSyntaxUID, quality) != 0;
+}
+
 #include "djdecode.h"  /* for dcmjpeg decoders */
 #include "djencode.h"  /* for dcmjpeg encoders */
 #include "dcrledrg.h"  /* for DcmRLEDecoderRegistration */
@@ -523,7 +547,6 @@ progressCallback(void * /*callbackData*/,
 static OFBool decompressFile(DcmFileFormat fileformat, const char *fname, char *outfname)
 {
 	OFBool status = YES;
-	OFCondition cond;
 	DcmXfer filexfer(fileformat.getDataset()->getOriginalXfer());
 	
 	NSLog( @"SEND - decompress: %@", [[NSString stringWithUTF8String: fname] lastPathComponent]);
@@ -541,28 +564,7 @@ static OFBool decompressFile(DcmFileFormat fileformat, const char *fname, char *
 	}
 	else
 	{
-        try
-        {
-              DcmDataset *dataset = fileformat.getDataset();
-
-              // decompress data set if compressed
-              dataset->chooseRepresentation(EXS_LittleEndianExplicit, NULL);
-
-              // check if everything went well
-              if (dataset->canWriteXfer(EXS_LittleEndianExplicit))
-              {
-                fileformat.loadAllDataIntoMemory();
-                unlink( outfname);
-                cond = fileformat.saveFile( outfname, EXS_LittleEndianExplicit);
-                status =  (cond.good()) ? YES : NO;
-              }
-              else
-                status = NO;
-        }
-        catch( ...)
-        {
-            status = NO;
-        }
+        status = HorosStoreSCUWriteFileInTransferSyntax(fname, outfname, EXS_LittleEndianExplicit, 1);
 	}
 	
 	return status;
@@ -570,14 +572,11 @@ static OFBool decompressFile(DcmFileFormat fileformat, const char *fname, char *
 
 static OFBool compressFile(DcmFileFormat fileformat, const char *fname, char *outfname)
 {
-	OFCondition cond;
 	OFBool status = YES;
     DcmDataset *dataset = fileformat.getDataset();
     
     if( dataset)
     {
-        DcmXfer filexfer( dataset->getOriginalXfer());
-        
         BOOL useDCMTKForJP2K = [[NSUserDefaults standardUserDefaults] boolForKey: @"useDCMTKForJP2K"];
         if( useDCMTKForJP2K == NO && opt_networkTransferSyntax == EXS_JPEG2000)
         {
@@ -591,7 +590,7 @@ static OFBool compressFile(DcmFileFormat fileformat, const char *fname, char *ou
             
             @try
             {
-                DCMTransferSyntax *tsx = [DCMTransferSyntax JPEG2000LossyTransferSyntax];
+	                DCMTransferSyntax *tsx = [DCMTransferSyntax JPEG2000LossyTransferSyntax];
                                         
                 [dcmObject writeToFile:outpath withTransferSyntax: tsx quality: opt_Quality AET:@"Horos" atomically:YES];
             }
@@ -624,61 +623,7 @@ static OFBool compressFile(DcmFileFormat fileformat, const char *fname, char *ou
         }
         else
         {
-            try
-            {
-                //NSLog(@"SEND - Compress DCMTK JPEG: %s", fname);
-                
-//                DcmItem *metaInfo = fileformat.getMetaInfo();
-                
-                DcmRepresentationParameter *params = nil;
-                DJ_RPLossy lossyParams( 90);
-                DJ_RPLossy JP2KParams( opt_Quality);
-                DJ_RPLossy JP2KParamsLossLess( DCMLosslessQuality);
-                DcmRLERepresentationParameter rleParams;
-                DJ_RPLossless losslessParams(6,0);
-                
-                if (opt_networkTransferSyntax == EXS_JPEGProcess14SV1TransferSyntax)
-                    params = &losslessParams;
-                else if (opt_networkTransferSyntax == EXS_JPEGProcess2_4TransferSyntax)
-                    params = &lossyParams; 
-                else if (opt_networkTransferSyntax == EXS_RLELossless)
-                    params = &rleParams;
-                else if (opt_networkTransferSyntax == EXS_JPEG2000LosslessOnly)
-                    params = &JP2KParamsLossLess; 
-                else if (opt_networkTransferSyntax == EXS_JPEG2000)
-                    params = &JP2KParams;
-                else if (opt_networkTransferSyntax == EXS_JPEGLSLossless)
-                    params = &JP2KParamsLossLess; 
-                else if (opt_networkTransferSyntax == EXS_JPEGLSLossy)
-                    params = &JP2KParams;
-                
-                // this causes the lossless JPEG version of the dataset to be created
-                dataset->chooseRepresentation(opt_networkTransferSyntax, params);
-
-                // check if everything went well
-                if (dataset->canWriteXfer(opt_networkTransferSyntax))
-                {
-                    // force the meta-header UIDs to be re-generated when storing the file 
-                    // since the UIDs in the data set may have changed 
-                    //delete metaInfo->remove(DCM_MediaStorageSOPClassUID);
-                    //delete metaInfo->remove(DCM_MediaStorageSOPInstanceUID);
-                    
-                    // store in lossless JPEG format
-                    
-                    fileformat.loadAllDataIntoMemory();
-                    
-                    unlink( outfname);
-                    
-                    cond = fileformat.saveFile( outfname, opt_networkTransferSyntax);
-                    status =  (cond.good()) ? YES : NO;
-                }
-                else
-                    status = NO;
-            }
-            catch(...)
-            {
-                status = NO;
-            }
+            status = HorosStoreSCUWriteFileInTransferSyntax(fname, outfname, opt_networkTransferSyntax, opt_Quality);
         }
     }
     else status = NO;
@@ -1109,7 +1054,6 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
 //	
 //	if ([fileManager createDirectoryAtPath:tempFolder attributes:nil]) NSLog(@"created Folder: %@", tempFolder);
 	
-	OFCondition cond;
 	const char *opt_peer = NULL;
     OFCmdUnsignedInt opt_port = 104;
     const char *opt_peerTitle = PEERAPPLICATIONTITLE;
@@ -1265,6 +1209,7 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
 //	if( _secureConnection)
 //		[DDKeychain lockTmpFiles];
 	NSString *uniqueStringID = [NSString stringWithFormat:@"%d.%d.%d", getpid(), inc++, (int) random()];
+	OFCondition cond;
 	
 	@try
 	{
@@ -1374,20 +1319,7 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
 			}
 		  }
 
-	#ifdef ON_THE_FLY_COMPRESSION
-		// register global JPEG decompression codecs
-	   // DJDecoderRegistration::registerCodecs();
-
-		// register global JPEG compression codecs
-	  //  DJEncoderRegistration::registerCodecs();
-
-		// register RLE compression codec
-	 //   DcmRLEEncoderRegistration::registerCodecs();
-
-		// register RLE decompression codec
-	//    DcmRLEDecoderRegistration::registerCodecs();
-	#endif
-
+	
 		/* make sure data dictionary is loaded */
 		if (!dcmDataDict.isDictionaryLoaded()) {
 			fprintf(stderr, "Warning: no data dictionary loaded, check environment variable: %s\n",
@@ -1814,16 +1746,6 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
 //		
 //		localException = [[NSException exceptionWithName:@"DICOM Network Failure (STORE-SCU)" reason:@"Unsuccessful Store Encountered" userInfo:nil] retain];
 //    }
-
-#ifdef ON_THE_FLY_COMPRESSION
-    // deregister JPEG codecs
-   // DJDecoderRegistration::cleanup();
-   // DJEncoderRegistration::cleanup();
-
-    // deregister RLE codecs
-  //  DcmRLEDecoderRegistration::cleanup();
-  //  DcmRLEEncoderRegistration::cleanup();
-#endif
 
 //#ifdef DEBUG
 //    dcmDataDict.clear();  /* useful for debugging with dmalloc */

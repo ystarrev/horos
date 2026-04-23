@@ -50,25 +50,24 @@
 #import <Quartz/Quartz.h>
 
 #undef verify
-#include "osconfig.h" /* make sure OS specific configuration is included first */
-#include "dcmjpeg/djdecode.h"  /* for dcmjpeg decoders */
-#include "dcmjpeg/djencode.h"  /* for dcmjpeg encoders */
-#include "dcrledrg.h"  /* for DcmRLEDecoderRegistration */
-#include "dcrleerg.h"  /* for DcmRLEEncoderRegistration */
-#include "djrploss.h"
-#include "djrplol.h"
-#include "dcpixel.h"
-#include "dcrlerp.h"
-#include "dcdicdir.h"
-#include "dcdatset.h"
-#include "dcmetinf.h"
-#include "dcfilefo.h"
-#include "dcdebug.h"
-#include "dcuid.h"
-#include "dcdict.h"
-#include "dcdeftag.h"
-#include "dcmjpls/djdecode.h" //JPEG-LS
-#include "dcmjpls/djencode.h" //JPEG-LS
+#include <dcmtk/config/osconfig.h> /* make sure OS specific configuration is included first */
+#include <dcmtk/dcmjpeg/djdecode.h>  /* for dcmjpeg decoders */
+#include <dcmtk/dcmjpeg/djencode.h>  /* for dcmjpeg encoders */
+#include <dcmtk/dcmdata/dcrledrg.h>  /* for DcmRLEDecoderRegistration */
+#include <dcmtk/dcmdata/dcrleerg.h>  /* for DcmRLEEncoderRegistration */
+#include <dcmtk/dcmjpeg/djrploss.h>
+#include <dcmtk/dcmjpeg/djrplol.h>
+#include <dcmtk/dcmdata/dcpixel.h>
+#include <dcmtk/dcmdata/dcrlerp.h>
+#include <dcmtk/dcmdata/dcdicdir.h>
+#include <dcmtk/dcmdata/dcdatset.h>
+#include <dcmtk/dcmdata/dcmetinf.h>
+#include <dcmtk/dcmdata/dcfilefo.h>
+#include <dcmtk/dcmdata/dcuid.h>
+#include <dcmtk/dcmdata/dcdict.h>
+#include <dcmtk/dcmdata/dcdeftag.h>
+#include <dcmtk/dcmjpls/djdecode.h> //JPEG-LS
+#include <dcmtk/dcmjpls/djencode.h> //JPEG-LS
 
 #include "options.h"
 #include "url.h"
@@ -172,10 +171,9 @@ int main(int argc, const char *argv[])
 		// register global JPEG compression codecs
 		DJEncoderRegistration::registerCodecs(
 			ECC_lossyRGB,
-			EUC_never,
+			EUC_default,
 			OFFalse,
 			OFFalse,
-			0,
 			0,
 			0,
 			OFTrue,
@@ -351,7 +349,7 @@ int main(int argc, const char *argv[])
                                     break;
                                     
                                     case compression_JPEG:
-                                        if( original_xfer.getXfer() == EXS_JPEGProcess14SV1TransferSyntax)
+                                        if( original_xfer.getXfer() == EXS_JPEGProcess14SV1)
                                             alreadyCompressed = YES;
                                     break;
                                 }
@@ -423,7 +421,7 @@ int main(int argc, const char *argv[])
                                     if( compression == compression_JPEG)
                                     {
                                         params = &losslessParams;
-                                        tSyntax = EXS_JPEGProcess14SV1TransferSyntax;
+                                        tSyntax = EXS_JPEGProcess14SV1;
                                     }
                                     else if( compression == compression_JPEGLS)
                                     {
@@ -883,5 +881,3 @@ int main(int argc, const char *argv[])
 	
 	return 0;
 }
-
-

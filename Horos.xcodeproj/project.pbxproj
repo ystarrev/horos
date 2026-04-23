@@ -13471,6 +13471,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				GCC_PREFIX_HEADER = Decompress/prefix.pch;
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
+					$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/wlib,
 					$CONFIGURATION_TEMP_DIR/Grok.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/lib,
@@ -13478,6 +13479,18 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
+					"-ldcmjpeg",
+					"-ldcmjpls",
+					"-ldcmimgle",
+					"-ldcmimage",
+					"-ldcmdata",
+					"-ldcmtkcharls",
+					"-loflog",
+					"-loficonv",
+					"-lofstd",
+					"-lijg8",
+					"-lijg12",
+					"-lijg16",
 					"-lGDCM",
 					"-lopenjp2",
 					"-lCharLS",
@@ -13485,6 +13498,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).decompress";
 				PRODUCT_NAME = Decompress;
 					SYSTEM_HEADER_SEARCH_PATHS = (
+						$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
 						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
 						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
 						$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,
@@ -13496,7 +13510,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 					);
 				USER_HEADER_SEARCH_PATHS = (
 					"$(inherited)",
-					"Binaries/dcmtk-source",
 				);
 			};
 			name = Release;
@@ -13938,6 +13951,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				GCC_PREFIX_HEADER = Decompress/prefix.pch;
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
+					$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/wlib,
 					$CONFIGURATION_TEMP_DIR/Grok.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/lib,
@@ -13945,6 +13959,18 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
+					"-ldcmjpeg",
+					"-ldcmjpls",
+					"-ldcmimgle",
+					"-ldcmimage",
+					"-ldcmdata",
+					"-ldcmtkcharls",
+					"-loflog",
+					"-loficonv",
+					"-lofstd",
+					"-lijg8",
+					"-lijg12",
+					"-lijg16",
 					"-lGDCM",
 					"-lopenjp2",
 					"-lCharLS",
@@ -13953,6 +13979,7 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 				PRODUCT_NAME = Decompress;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 					SYSTEM_HEADER_SEARCH_PATHS = (
+						$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
 						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
 						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
 						$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,
@@ -13964,7 +13991,6 @@ F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; las
 					);
 				USER_HEADER_SEARCH_PATHS = (
 					"$(inherited)",
-					"Binaries/dcmtk-source",
 				);
 			};
 			name = Debug;

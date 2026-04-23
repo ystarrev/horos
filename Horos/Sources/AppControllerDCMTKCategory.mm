@@ -39,14 +39,13 @@
 
 #undef verify
 
-#include "osconfig.h"
-#include "dcmjpeg/djdecode.h"  /* for dcmjpeg decoders */
-#include "dcmjpeg/djencode.h"  /* for dcmjpeg encoders */
-#include "dcrledrg.h"  /* for DcmRLEDecoderRegistration */
-#include "dcrleerg.h"  /* for DcmRLEEncoderRegistration */
-
-#include "dcmjpls/djdecode.h" //JPEG-LS
-#include "dcmjpls/djencode.h" //JPEG-LS
+#include <dcmtk/config/osconfig.h>
+#include <dcmtk/dcmjpeg/djdecode.h>  /* for dcmjpeg decoders */
+#include <dcmtk/dcmjpeg/djencode.h>  /* for dcmjpeg encoders */
+#include <dcmtk/dcmdata/dcrledrg.h>  /* for DcmRLEDecoderRegistration */
+#include <dcmtk/dcmdata/dcrleerg.h>  /* for DcmRLEEncoderRegistration */
+#include <dcmtk/dcmjpls/djdecode.h> //JPEG-LS
+#include <dcmtk/dcmjpls/djencode.h> //JPEG-LS
 
 extern int gPutSrcAETitleInSourceApplicationEntityTitle, gPutDstAETitleInPrivateInformationCreatorUID;
 
@@ -61,10 +60,9 @@ extern int gPutSrcAETitleInSourceApplicationEntityTitle, gPutDstAETitleInPrivate
     // register global JPEG compression codecs
     DJEncoderRegistration::registerCodecs(
 	 	ECC_lossyRGB,
-		EUC_never,
+		EUC_default,
 		OFFalse,
 		OFFalse,
-		0,
 		0,
 		0,
 		OFTrue,

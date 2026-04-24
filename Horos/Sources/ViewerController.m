@@ -9203,13 +9203,21 @@ static int avoidReentryRefreshDatabase = 0;
                 isExecuting = ([viewer->loadingThread isExecuting] && viewer->requestLoadingCancel == NO);
             }
             
-            while(isExecuting && viewer.window.isVisible == NO)
+            __block BOOL viewerWindowVisible = NO;
+            dispatch_sync(dispatch_get_main_queue(), ^{
+                viewerWindowVisible = viewer.window.isVisible;
+            });
+            
+            while(isExecuting && viewerWindowVisible == NO)
             {
                 [NSThread sleepForTimeInterval: 0.01];
                 @synchronized( viewer->loadingThread)
                 {
                     isExecuting = [viewer->loadingThread isExecuting];
                 }
+                dispatch_sync(dispatch_get_main_queue(), ^{
+                    viewerWindowVisible = viewer.window.isVisible;
+                });
             }
             
             for( NSArray *a in pixListArray)
@@ -13138,12 +13146,13 @@ static float oldsetww, oldsetwl;
                             NSString *str = [study roiPathForImage: image inArray: roisArray];
                             
                             if (str == nil)
-                                str = [database uniquePathForNewDataFileWithExtension:@"dcm"];
+                            {
+                                str = [image SRPathForFrame:[[image valueForKey:@"frameID"] intValue]];
+                                [[NSFileManager defaultManager] createDirectoryAtPath:[str stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
+                            }
                             
                             else if( [[NSFileManager defaultManager] fileExistsAtPath: str] && [str isEqualToString: [image SRPath]]) // Old ROIs folder -> move it to DATABASE.index file
                             {
-                                [[NSFileManager defaultManager] removeItemAtPath: [image SRPath] error: nil];
-                                str = [database uniquePathForNewDataFileWithExtension: @"dcm"];
                                 forceArchive = YES;
                             }
                             

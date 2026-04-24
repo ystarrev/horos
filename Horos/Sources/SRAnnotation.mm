@@ -799,9 +799,9 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
         if (studyDescription.length)
             document->setStudyDescription(studyDescription.UTF8String);
 
-        sourcePatientBirthDate = HorosSRAnnotationCopyField(image.completePath, @"PatientsBirthDate");
-        sourcePatientID = HorosSRAnnotationCopyField(image.completePath, @"PatientID");
-        sourcePatientSex = HorosSRAnnotationCopyField(image.completePath, @"PatientsSex");
+        sourcePatientBirthDate = [HorosSRAnnotationCopyField(image.completePath, @"PatientsBirthDate") retain];
+        sourcePatientID = [HorosSRAnnotationCopyField(image.completePath, @"PatientID") retain];
+        sourcePatientSex = [HorosSRAnnotationCopyField(image.completePath, @"PatientsSex") retain];
         
         if( _DICOMSRDescription.length)
         {

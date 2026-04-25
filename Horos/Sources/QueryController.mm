@@ -64,16 +64,15 @@
 #import "DicomFile.h"
 #import "N2Debug.h"
 
-#include "osconfig.h"
+#include <dcmtk/config/osconfig.h>
 
-#include "dcvrsl.h"
-#include "ofcast.h"
-#include "ofstd.h"
-#include "dctk.h"
-#include "dcuid.h"
+#include <dcmtk/dcmdata/dcvrsl.h>
+#include <dcmtk/ofstd/ofcast.h>
+#include <dcmtk/ofstd/ofstd.h>
+#include <dcmtk/dcmdata/dctk.h>
+#include <dcmtk/dcmdata/dcuid.h>
 
-#define INCLUDE_CSTDIO
-#include "ofstdinc.h"
+#include <stdio.h>
 
 #include "url.h"
 
@@ -1840,6 +1839,55 @@ extern "C"
 	return nil;
 }
 
+- (float)localFileCountForQueryObject:(NSManagedObject *)object
+{
+	if( object == nil)
+		return 0;
+	
+	[[object managedObjectContext] refreshObject:object mergeChanges:YES];
+	
+	float rawFiles = [[object valueForKey:@"rawNoFiles"] floatValue];
+	float noFiles = [[object valueForKey:@"noFiles"] floatValue];
+	
+	return MAX(rawFiles, noFiles);
+}
+
+- (BOOL)queryObjectWasCompletelyRetrieved:(DCMTKQueryNode *)item expectedFileCount:(float)expectedFileCount
+{
+	NSUInteger completed = [item countOfSuccessfulSuboperations];
+	NSUInteger total = [item countOfSuboperations];
+	
+	if( total == 0 || completed != total)
+		return NO;
+	
+	return expectedFileCount == 0 || completed >= expectedFileCount;
+}
+
+- (float)availabilityPercentageForQueryObject:(DCMTKQueryNode *)item localFileCount:(float *)localFileCount totalFileCount:(float *)totalFileCount
+{
+	float localFiles = localFileCount ? *localFileCount : 0;
+	float totalFiles = totalFileCount ? *totalFileCount : 0;
+	float percentage = 0;
+	
+	if( [self queryObjectWasCompletelyRetrieved: item expectedFileCount: totalFiles])
+	{
+		localFiles = MAX(localFiles, (float)[item countOfSuccessfulSuboperations]);
+		totalFiles = MAX(totalFiles, localFiles);
+		percentage = 1.0;
+	}
+	else if( totalFiles != 0.0)
+		percentage = localFiles / totalFiles;
+	
+	if( percentage > 1.0) percentage = 1.0;
+	
+	if( localFileCount)
+		*localFileCount = localFiles;
+	if( totalFileCount)
+		*totalFileCount = totalFiles;
+	
+	return percentage;
+}
+
 - (NSString *)outlineView:(NSOutlineView *)ov toolTipForCell:(NSCell *)cell rect:(NSRectPointer)rect tableColumn:(NSTableColumn *)tableColumn item:(id)item mouseLocation:(NSPoint)mouseLocation;
 {
 	@try
@@ -1854,13 +1902,9 @@ extern "C"
 				
 				if( [studyArray count] > 0)
 				{
-					float localFiles = [[[studyArray objectAtIndex: 0] valueForKey: @"rawNoFiles"] floatValue];
+					float localFiles = [self localFileCountForQueryObject: [studyArray objectAtIndex: 0]];
 					float totalFiles = [[item valueForKey:@"numberImages"] floatValue];
-					float percentage = 0;
-					
-					if( totalFiles != 0.0)
-						percentage = localFiles / totalFiles;
-					if( percentage > 1.0) percentage = 1.0;
+					float percentage = [self availabilityPercentageForQueryObject: item localFileCount: &localFiles totalFileCount: &totalFiles];
 					
 					return [NSString stringWithFormat:@"%@\n%d%% (%d/%d)", [cell title], (int)(percentage*100), (int)localFiles, (int)totalFiles];
 				}
@@ -1874,14 +1918,9 @@ extern "C"
 				
 				if( [seriesArray count] > 0)
 				{
-					float localFiles = [[[seriesArray objectAtIndex: 0] valueForKey: @"rawNoFiles"] floatValue];
+					float localFiles = [self localFileCountForQueryObject: [seriesArray objectAtIndex: 0]];
 					float totalFiles = [[item valueForKey:@"numberImages"] floatValue];
-					float percentage = 0;
-					
-					if( totalFiles != 0.0)
-						percentage = localFiles / totalFiles;
-						
-					if(percentage > 1.0) percentage = 1.0;
+					float percentage = [self availabilityPercentageForQueryObject: item localFileCount: &localFiles totalFileCount: &totalFiles];
 					
 					return [NSString stringWithFormat:@"%@\n%d%% (%d/%d)", [cell title], (int)(percentage*100), (int)localFiles, (int)totalFiles];
 				}
@@ -1940,12 +1979,9 @@ extern "C"
 				
 				if( [studyArray count] > 0)
 				{
-					float percentage = 0;
-					
-					if( [[item valueForKey:@"numberImages"] floatValue] != 0.0)
-						percentage = [[[studyArray objectAtIndex: 0] valueForKey: @"rawNoFiles"] floatValue] / [[item valueForKey:@"numberImages"] floatValue];
-						
-					if(percentage > 1.0) percentage = 1.0;
+					float localFiles = [self localFileCountForQueryObject: [studyArray objectAtIndex: 0]];
+					float totalFiles = [[item valueForKey:@"numberImages"] floatValue];
+					float percentage = [self availabilityPercentageForQueryObject: item localFileCount: &localFiles totalFileCount: &totalFiles];
 
 					[(ImageAndTextCell *)cell setImage:[NSImage pieChartImageWithPercentage:percentage]];
 				}
@@ -1959,12 +1995,9 @@ extern "C"
 				
 				if( [seriesArray count] > 0)
 				{
-					float percentage = 0;
-					
-					if( [[item valueForKey:@"numberImages"] floatValue] != 0.0)
-						percentage = [[[seriesArray objectAtIndex: 0] valueForKey: @"rawNoFiles"] floatValue] / [[item valueForKey:@"numberImages"] floatValue];
-						
-					if(percentage > 1.0) percentage = 1.0;
+					float localFiles = [self localFileCountForQueryObject: [seriesArray objectAtIndex: 0]];
+					float totalFiles = [[item valueForKey:@"numberImages"] floatValue];
+					float percentage = [self availabilityPercentageForQueryObject: item localFileCount: &localFiles totalFileCount: &totalFiles];
 					
 					[(ImageAndTextCell *)cell setImage:[NSImage pieChartImageWithPercentage:percentage]];
 				}
@@ -3820,6 +3853,10 @@ extern "C"
 		for( NSUInteger i = 0; i < [array count] ; i++)
 		{
 			DCMTKQueryNode *object = [[array objectAtIndex: i] retain];
+			__block NSInteger selectedSendToIndex = 0;
+			dispatch_sync(dispatch_get_main_queue(), ^{
+				selectedSendToIndex = [sendToPopup indexOfSelectedItem];
+			});
 			
 			[dictionary setObject: [[[[object extraParameters] valueForKey: @"retrieveMode"] copy] autorelease] forKey:@"retrieveMode"];
 			[dictionary setObject: [[[object valueForKey:@"calledAET"] copy] autorelease] forKey:@"calledAET"];
@@ -3831,9 +3868,9 @@ extern "C"
 			
 			NSDictionary *dstDict = nil;
 			
-			if( [sendToPopup indexOfSelectedItem] != 0)
+			if( selectedSendToIndex != 0)
 			{
-				NSInteger index = [sendToPopup indexOfSelectedItem] -2;
+				NSInteger index = selectedSendToIndex -2;
 				
 				dstDict = [[[[DCMNetServiceDelegate DICOMServersList] objectAtIndex: index] copy] autorelease];
 				
@@ -3855,8 +3892,15 @@ extern "C"
 				
 				if( [object isMemberOfClass: [DCMTKSeriesQueryNode class]])
 				{
-					if( [outlineView parentForItem: object])
-						[d setObject: [outlineView parentForItem: object] forKey:@"study"];	// for WADO retrieve at Series level
+					__block id parentItem = nil;
+					dispatch_sync(dispatch_get_main_queue(), ^{
+						parentItem = [[outlineView parentForItem: object] retain];
+					});
+					if( parentItem)
+					{
+						[d setObject: parentItem forKey:@"study"];	// for WADO retrieve at Series level
+						[parentItem release];
+					}
 				}
 				
 				if( [dictionary objectForKey: @"moveDestination"])
@@ -3917,6 +3961,10 @@ extern "C"
 				N2LogExceptionWithStackTrace( e);
 			}
 			
+			dispatch_async(dispatch_get_main_queue(), ^{
+				[outlineView reloadItem: object];
+			});
+			
 			@synchronized( previousAutoRetrieve)
 			{
 				[previousAutoRetrieve removeObjectForKey: [QueryController stringIDForStudy: object]];
@@ -3949,7 +3997,12 @@ extern "C"
 		
 		[NSThread sleepForTimeInterval: 0.5];	// To allow errorMessage on the main thread...
 		
-		if( [[self window] isVisible])
+		__block BOOL windowVisible = NO;
+		dispatch_sync(dispatch_get_main_queue(), ^{
+			windowVisible = [[self window] isVisible];
+		});
+		
+		if( windowVisible)
 		{
 			FILE * pFile = fopen( "/tmp/kill_all_storescu", "r");
 			if( pFile)
@@ -4734,7 +4787,7 @@ extern "C"
 		}
     }
 	
-	dcmDataDict.unlock();
+	dcmDataDict.wrunlock();
 	
 	return array;
 }
@@ -4803,7 +4856,17 @@ extern "C"
 			currentQueryController = self;
 			[[self window] setTitle: NSLocalizedString( @"DICOM Query/Retrieve", nil)];
 
-			if( [[AppController sharedAppController] isStoreSCPRunning] == NO)
+			BOOL listenerConfigured = ([[NSUserDefaults standardUserDefaults] boolForKey: @"STORESCP"] && [[NSUserDefaults standardUserDefaults] boolForKey: @"USESTORESCP"])
+				|| [[NSUserDefaults standardUserDefaults] boolForKey: @"STORESCPTLS"]
+				|| [[NSUserDefaults standardUserDefaults] boolForKey: @"NinjaSTORESCP"];
+			
+			if( listenerConfigured)
+			{
+				for( int i = 0; i < 20 && [[AppController sharedAppController] isStoreSCPRunning] == NO; i++)
+					[NSThread sleepForTimeInterval: 0.1];
+			}
+			
+			if( listenerConfigured == NO && [[AppController sharedAppController] isStoreSCPRunning] == NO)
 				NSRunCriticalAlertPanel(NSLocalizedString( @"DICOM Query & Retrieve",nil), NSLocalizedString( @"Retrieve cannot work if the DICOM Listener is not activated. See Preferences - Listener.",nil),NSLocalizedString( @"OK",nil), nil, nil);
             
             if( [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepQRWindowOnTop"])

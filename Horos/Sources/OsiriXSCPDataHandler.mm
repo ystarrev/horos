@@ -56,7 +56,8 @@
 #import "MutableArrayCategory.h"
 #import "DCMAbstractSyntaxUID.h"
 
-#include "dctk.h"
+#include <dcmtk/dcmdata/dctk.h>
+#include "DCMTKTagCompatibility.h"
 
 char currentDestinationMoveAET[ 60] = "";
 
@@ -796,7 +797,7 @@ extern BOOL forkedProcess;
 	@catch ( NSException *e)
 	{
 		N2LogExceptionWithStackTrace(e);
-		dataset->print(COUT);
+		dataset->print(std::cout);
 	}
 	
 	return compoundPredicate;
@@ -1017,7 +1018,7 @@ extern BOOL forkedProcess;
             @catch( NSException *e)
             {
                 N2LogException( e);
-                dataset->print(COUT);
+                dataset->print(std::cout);
             }
 		}
 		
@@ -1228,7 +1229,7 @@ extern BOOL forkedProcess;
             @catch( NSException *e)
             {
                 N2LogException( e);
-                dataset->print(COUT);
+                dataset->print(std::cout);
             }
         }
     
@@ -1239,7 +1240,7 @@ extern BOOL forkedProcess;
 	@catch( NSException *e)
 	{
 		N2LogException( e);
-		dataset->print(COUT);
+		dataset->print(std::cout);
 	}
 }
 
@@ -1477,7 +1478,7 @@ extern BOOL forkedProcess;
             @catch( NSException *e)
             {
                 N2LogException( e);
-                dataset->print(COUT);
+                dataset->print(std::cout);
             }
 		}
 		dataset->putAndInsertString(DCM_QueryRetrieveLevel, "IMAGE");
@@ -1488,7 +1489,7 @@ extern BOOL forkedProcess;
 	@catch( NSException *e)
 	{
 		NSLog( @"********* imageDatasetForFetchedObject exception: %@", e);
-		dataset->print(COUT);
+		dataset->print(std::cout);
 	}
 }
 

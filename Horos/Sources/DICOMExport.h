@@ -46,16 +46,15 @@
 #ifdef __cplusplus
 
 #ifdef OSIRIX_VIEWER
-#include "osconfig.h"
-#include "dcfilefo.h"
-#include "dcdeftag.h"
-#include "ofstd.h"
+#include <dcmtk/config/osconfig.h>
+#include <dcmtk/dcmdata/dcfilefo.h>
+#include "DCMTKTagCompatibility.h"
+#include <dcmtk/ofstd/ofstd.h>
 
-#include "dctk.h"
-#include "dcdebug.h"
-#include "cmdlnarg.h"
-#include "ofconapp.h"
-#include "dcuid.h"       /* for dcmtk version name */
+#include <dcmtk/dcmdata/dctk.h>
+#include <dcmtk/dcmdata/cmdlnarg.h>
+#include <dcmtk/ofstd/ofconapp.h>
+#include <dcmtk/dcmdata/dcuid.h>       /* for dcmtk version name */
 #else
 typedef char* DcmFileFormat;
 #endif

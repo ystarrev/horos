@@ -60,29 +60,50 @@
 #include <libkern/OSAtomic.h>
 
 #undef verify
-#include "dccodec.h"
+#include <dcmtk/dcmdata/dccodec.h>
 
-#include "osconfig.h" /* make sure OS specific configuration is included first */
+#include <dcmtk/config/osconfig.h> /* make sure OS specific configuration is included first */
 
-#include "dctag.h"
-#include "ofstring.h"
-#include "dimse.h"
-#include "diutil.h"
-#include "dcdatset.h"
-#include "dcmetinf.h"
-#include "dcfilefo.h"
-#include "dcdebug.h"
-#include "dcdict.h"
-#include "dcdeftag.h"
+#include <dcmtk/dcmdata/dctag.h>
+#include <dcmtk/ofstd/ofstring.h>
+#include <dcmtk/dcmnet/dimse.h>
+#include <dcmtk/dcmnet/diutil.h>
+#include <dcmtk/dcmdata/dcdatset.h>
+#include <dcmtk/dcmdata/dcmetinf.h>
+#include <dcmtk/dcmdata/dcfilefo.h>
+#include <dcmtk/dcmdata/dcdict.h>
+#include "DCMTKTagCompatibility.h"
 //#include "cmdlnarg.h"
-#include "ofconapp.h"
-#include "dcuid.h"     /* for dcmtk version name */
-#include "dicom.h"     /* for DICOM_APPLICATION_REQUESTOR */
-#include "dcostrmz.h"  /* for dcmZlibCompressionLevel */
+#include <dcmtk/ofstd/ofconapp.h>
+#include <dcmtk/dcmdata/dcuid.h>     /* for dcmtk version name */
+#include <dcmtk/dcmnet/dicom.h>     /* for DICOM_APPLICATION_REQUESTOR */
+#include <dcmtk/dcmdata/dcostrmz.h>  /* for dcmZlibCompressionLevel */
 
 #ifdef WITH_OPENSSL
-#include "tlstrans.h"
-#include "tlslayer.h"
+#include <dcmtk/dcmtls/tlstrans.h>
+#include <dcmtk/dcmtls/tlslayer.h>
+#include <dcmtk/dcmtls/tlsciphr.h>
+#ifndef SSL_FILETYPE_PEM
+#define SSL_FILETYPE_PEM DCF_Filetype_PEM
+#endif
+#ifndef SSL_FILETYPE_ASN1
+#define SSL_FILETYPE_ASN1 DCF_Filetype_ASN1
+#endif
+#ifndef SSL3_TXT_RSA_DES_192_CBC3_SHA
+#define SSL3_TXT_RSA_DES_192_CBC3_SHA "DES-CBC3-SHA"
+#endif
+#ifndef EXS_JPEGProcess14SV1TransferSyntax
+#define EXS_JPEGProcess14SV1TransferSyntax EXS_JPEGProcess14SV1
+#endif
+#ifndef EXS_JPEGProcess1TransferSyntax
+#define EXS_JPEGProcess1TransferSyntax EXS_JPEGProcess1
+#endif
+#ifndef EXS_JPEGProcess2_4TransferSyntax
+#define EXS_JPEGProcess2_4TransferSyntax EXS_JPEGProcess2_4
+#endif
+#ifndef UID_GETPatientStudyOnlyQueryRetrieveInformationModel
+#define UID_GETPatientStudyOnlyQueryRetrieveInformationModel UID_RETIRED_GETPatientStudyOnlyQueryRetrieveInformationModel
+#endif
 #endif
 
 #define OFFIS_CONSOLE_APPLICATION "DCMTKQueryNode"
@@ -2098,20 +2119,25 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				{
 					current = [suite cStringUsingEncoding:NSUTF8StringEncoding];
 					
-					if (NULL == (currentOpenSSL = DcmTLSTransportLayer::findOpenSSLCipherSuiteName(current)))
+					size_t cipherSuiteIndex = DcmTLSCiphersuiteHandler::lookupCiphersuite(current);
+					if (cipherSuiteIndex == DcmTLSCiphersuiteHandler::unknownCipherSuiteIndex)
+						cipherSuiteIndex = DcmTLSCiphersuiteHandler::lookupCiphersuiteByOpenSSLName(current);
+
+					if (cipherSuiteIndex == DcmTLSCiphersuiteHandler::unknownCipherSuiteIndex)
 					{
 						NSLog(@"ciphersuite '%s' is unknown.", current);
 						NSLog(@"Known ciphersuites are:");
-						unsigned long numSuites = DcmTLSTransportLayer::getNumberOfCipherSuites();
-						for (unsigned long cs=0; cs < numSuites; cs++)
+						size_t numSuites = DcmTLSCiphersuiteHandler::getNumberOfCipherSuites();
+						for (size_t cs=0; cs < numSuites; cs++)
 						{
-							NSLog(@"%s", DcmTLSTransportLayer::getTLSCipherSuiteName(cs));
+							NSLog(@"%s", DcmTLSCiphersuiteHandler::getTLSCipherSuiteName(cs));
 						}
 						
                         [[NSException exceptionWithName:@"DICOM Network Failure (TLS query)" reason:[NSString stringWithFormat:@"Ciphersuite '%s' is unknown.", current] userInfo:nil] raise];
 					}
 					else
 					{
+						currentOpenSSL = DcmTLSCiphersuiteHandler::getOpenSSLCipherSuiteName(cipherSuiteIndex);
 						if (opt_ciphersuites.length() > 0) opt_ciphersuites += ":";
 						opt_ciphersuites += currentOpenSSL;
 					}
@@ -2141,7 +2167,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 			if (_secureConnection)
 			{
 				[DDKeychain generatePseudoRandomFileToPath:TLS_SEED_FILE];
-				tLayer = new DcmTLSTransportLayer(DICOM_APPLICATION_REQUESTOR, _readSeedFile);
+				tLayer = new DcmTLSTransportLayer(NET_REQUESTOR, _readSeedFile, OFTrue);
 				if (tLayer == NULL)
 				{
 					NSLog(@"unable to create TLS transport layer");
@@ -2156,7 +2182,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 					
 					for (NSString *cert in trustedCertificates)
 					{
-						if (TCS_ok != tLayer->addTrustedCertificateFile([[trustedCertificatesDir stringByAppendingPathComponent:cert] cStringUsingEncoding:NSUTF8StringEncoding], _keyFileFormat))
+						if (tLayer->addTrustedCertificateFile([[trustedCertificatesDir stringByAppendingPathComponent:cert] cStringUsingEncoding:NSUTF8StringEncoding], (DcmKeyFileFormat)_keyFileFormat).bad())
 						{
 							[[NSException exceptionWithName:@"DICOM Network Failure (TLS query)" reason:[NSString stringWithFormat:@"Unable to load certificate file %@", [trustedCertificatesDir stringByAppendingPathComponent:cert]] userInfo:nil] raise];
 						}
@@ -2170,7 +2196,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 							//				do
 							//				{
 							//					app.checkValue(cmd.getValue(current));
-							//					if (TCS_ok != tLayer->addTrustedCertificateDir(current, opt_keyFileFormat))
+							//					if (tLayer->addTrustedCertificateDir(current, opt_keyFileFormat))
 							//					{
 							//						CERR << "warning unable to load certificates from directory '" << current << "', ignoring" << endl;
 							//					}
@@ -2192,12 +2218,12 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 					NSString *_privateKeyFile = [DICOMTLS keyPathForServerAddress:_hostname port:_port AETitle:_calledAET withStringID:uniqueStringID]; // generates the PEM file for the private key
 					NSString *_certificateFile = [DICOMTLS certificatePathForServerAddress:_hostname port:_port AETitle:_calledAET withStringID:uniqueStringID]; // generates the PEM file for the certificate
 					
-					if (TCS_ok != tLayer->setPrivateKeyFile([_privateKeyFile cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM))
+					if (tLayer->setPrivateKeyFile([_privateKeyFile cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM).bad())
 					{
 						[[NSException exceptionWithName:@"DICOM Network Failure (TLS query)" reason:[NSString stringWithFormat:@"Unable to load private TLS key from %@", _privateKeyFile] userInfo:nil] raise];
 					}
 					
-					if (TCS_ok != tLayer->setCertificateFile([_certificateFile cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM))
+					if (tLayer->setCertificateFile([_certificateFile cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM, TSP_Profile_None).bad())
 					{
 						[[NSException exceptionWithName:@"DICOM Network Failure (TLS query)" reason:[NSString stringWithFormat:@"Unable to load certificate from %@", _certificateFile] userInfo:nil] raise];
 					}
@@ -2208,7 +2234,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 					}
 				}
 				
-				if (TCS_ok != tLayer->setCipherSuites(opt_ciphersuites.c_str()))
+				if (tLayer->setCipherSuites(opt_ciphersuites.c_str()).bad())
 				{
 					[[NSException exceptionWithName:@"DICOM Network Failure (TLS query)" reason:@"Unable to set selected cipher suites" userInfo:nil] raise];
 				}
@@ -2699,8 +2725,9 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
     }
 
     /* finally conduct transmission of data */
+    int responseCount = 0;
     OFCondition cond = DIMSE_findUser(assoc, presId, &req, dataset,
-                          progressCallback, &callbackData,
+                          responseCount, progressCallback, &callbackData,
                           DIMSE_NONBLOCKING, _dimse_timeout,	// DIMSE_BLOCKING - _blockMode ANR 2009
                           &rsp, &statusDetail);
 
@@ -2881,7 +2908,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 		else
 		{
 			/* set the destination to be me */
-			ASC_getAPTitles(assoc->params, req.MoveDestination, NULL, NULL);
+			ASC_getAPTitles(assoc->params, req.MoveDestination, sizeof(req.MoveDestination), NULL, 0, NULL, 0);
 		}
 		
 		cond = DIMSE_moveUser(assoc, presId, &req, dataset,
@@ -2995,7 +3022,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 //	else
 //	{
 //		/* set the destination to be me */
-//		ASC_getAPTitles(assoc->params, req.MoveDestination, NULL, NULL);
+//		ASC_getAPTitles(assoc->params, req.MoveDestination, sizeof(req.MoveDestination), NULL, 0, NULL, 0);
 //	}
 	
 	OFCondition cond;

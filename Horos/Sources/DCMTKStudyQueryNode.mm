@@ -45,7 +45,7 @@
 #import "DicomStudy.h"
 
 #undef verify
-#include "dcdeftag.h"
+#include "DCMTKTagCompatibility.h"
 
 
 @implementation DCMTKStudyQueryNode

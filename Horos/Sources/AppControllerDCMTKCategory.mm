@@ -40,6 +40,7 @@
 #undef verify
 
 #include <dcmtk/config/osconfig.h>
+#include <dcmtk/dcmdata/dcdict.h>
 #include <dcmtk/dcmjpeg/djdecode.h>  /* for dcmjpeg decoders */
 #include <dcmtk/dcmjpeg/djencode.h>  /* for dcmjpeg encoders */
 #include <dcmtk/dcmdata/dcrledrg.h>  /* for DcmRLEDecoderRegistration */
@@ -53,6 +54,18 @@ extern int gPutSrcAETitleInSourceApplicationEntityTitle, gPutDstAETitleInPrivate
 
 - (void)initDCMTK
 {
+    NSString *dictionaryPath = [[NSBundle mainBundle] pathForResource: @"dicom" ofType: @"dic"];
+    if( dictionaryPath)
+    {
+        setenv( DCM_DICT_ENVIRONMENT_VARIABLE, [dictionaryPath fileSystemRepresentation], 1);
+        if( dcmDataDict.isDictionaryLoaded() == OFFalse)
+        {
+            DcmDataDictionary& dictionary = dcmDataDict.wrlock();
+            dictionary.reloadDictionaries( OFFalse, OFTrue);
+            dcmDataDict.wrunlock();
+        }
+    }
+    
     // register global JPEG decompression codecs
     DJDecoderRegistration::registerCodecs();
     DJLSDecoderRegistration::registerCodecs();

@@ -39,7 +39,7 @@
 #import <Cocoa/Cocoa.h>
 
 #ifdef __cplusplus
-#include "dsrdoc.h"
+class DSRDocument;
 #else
 typedef char DSRDocument;
 #endif

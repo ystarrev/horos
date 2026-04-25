@@ -38,7 +38,7 @@
 #import "DicomDatabase+Scan.h"
 #import "NSThread+N2.h"
 #import "NSDate+N2.h"
-#import "dcdicdir.h"
+#include <dcmtk/dcmdata/dcdicdir.h>
 #import "NSString+N2.h"
 #import "NSFileManager+N2.h"
 #import "DicomImage.h"

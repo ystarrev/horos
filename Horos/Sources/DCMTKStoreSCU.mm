@@ -48,17 +48,16 @@
 #import "N2Stuff.h"
 #import <dlfcn.h>
 #undef verify
-#include "osconfig.h" /* make sure OS specific configuration is included first */
+#include <dcmtk/config/osconfig.h> /* make sure OS specific configuration is included first */
 
 #define  ON_THE_FLY_COMPRESSION 1
 
-#define INCLUDE_CSTDLIB
-#define INCLUDE_CSTDIO
-#define INCLUDE_CSTRING
-#define INCLUDE_CERRNO
-#define INCLUDE_CSTDARG
-#define INCLUDE_CCTYPE
-#include "ofstdinc.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <stdarg.h>
+#include <ctype.h>
 
 BEGIN_EXTERN_C
 #ifdef HAVE_SYS_FILE_H
@@ -70,23 +69,22 @@ END_EXTERN_C
 #include <GUSI.h>
 #endif
 
-#include "ofstring.h"
-#include "dimse.h"
-#include "diutil.h"
-#include "dcdatset.h"
-#include "dcmetinf.h"
-#include "dcfilefo.h"
-#include "dcdebug.h"
-#include "dcuid.h"
-#include "dcdict.h"
-#include "dcdeftag.h"
+#include <dcmtk/ofstd/ofstring.h>
+#include <dcmtk/dcmnet/dimse.h>
+#include <dcmtk/dcmnet/diutil.h>
+#include <dcmtk/dcmdata/dcdatset.h>
+#include <dcmtk/dcmdata/dcmetinf.h>
+#include <dcmtk/dcmdata/dcfilefo.h>
+#include <dcmtk/dcmdata/dcuid.h>
+#include <dcmtk/dcmdata/dcdict.h>
+#include <dcmtk/dcmdata/dcdeftag.h>
 //#include "cmdlnarg.h"
-#include "ofconapp.h"
-#include "dcuid.h"     /* for dcmtk version name */
-#include "dicom.h"     /* for DICOM_APPLICATION_REQUESTOR */
-#include "dcostrmz.h"  /* for dcmZlibCompressionLevel */
-#include "dcasccfg.h"  /* for class DcmAssociationConfiguration */
-#include "dcasccff.h"  /* for class DcmAssociationConfigurationFile */
+#include <dcmtk/ofstd/ofconapp.h>
+#include <dcmtk/dcmdata/dcuid.h>     /* for dcmtk version name */
+#include <dcmtk/dcmnet/dicom.h>     /* for DICOM_APPLICATION_REQUESTOR */
+#include <dcmtk/dcmdata/dcostrmz.h>  /* for dcmZlibCompressionLevel */
+#include <dcmtk/dcmnet/dcasccfg.h>  /* for class DcmAssociationConfiguration */
+#include <dcmtk/dcmnet/dcasccff.h>  /* for class DcmAssociationConfigurationFile */
 
 #ifdef ON_THE_FLY_COMPRESSION
 typedef int (*HorosModernDCMTKWriteFileInTransferSyntaxFn)(const char*, const char*, const char*, int);
@@ -112,19 +110,42 @@ static BOOL HorosStoreSCUWriteFileInTransferSyntax(const char* inputPath, const 
     return writeFn(inputPath, outputPath, transferSyntaxUID, quality) != 0;
 }
 
-#include "djdecode.h"  /* for dcmjpeg decoders */
-#include "djencode.h"  /* for dcmjpeg encoders */
-#include "dcrledrg.h"  /* for DcmRLEDecoderRegistration */
-#include "dcrleerg.h"  /* for DcmRLEEncoderRegistration */
-#include "djrploss.h"
-#include "djrplol.h"
-#include "dcpixel.h"
-#include "dcrlerp.h"
+#include <dcmtk/dcmjpeg/djdecode.h>  /* for dcmjpeg decoders */
+#include <dcmtk/dcmjpeg/djencode.h>  /* for dcmjpeg encoders */
+#include <dcmtk/dcmdata/dcrledrg.h>  /* for DcmRLEDecoderRegistration */
+#include <dcmtk/dcmdata/dcrleerg.h>  /* for DcmRLEEncoderRegistration */
+#include <dcmtk/dcmjpeg/djrploss.h>
+#include <dcmtk/dcmjpeg/djrplol.h>
+#include <dcmtk/dcmdata/dcpixel.h>
+#include <dcmtk/dcmdata/dcrlerp.h>
+#include "DCMTKTagCompatibility.h"
 #endif
 
 #ifdef WITH_OPENSSL
-#include "tlstrans.h"
-#include "tlslayer.h"
+#include <dcmtk/dcmtls/tlstrans.h>
+#include <dcmtk/dcmtls/tlslayer.h>
+#include <dcmtk/dcmtls/tlsciphr.h>
+#ifndef SSL_FILETYPE_PEM
+#define SSL_FILETYPE_PEM DCF_Filetype_PEM
+#endif
+#ifndef SSL_FILETYPE_ASN1
+#define SSL_FILETYPE_ASN1 DCF_Filetype_ASN1
+#endif
+#ifndef TLS1_TXT_RSA_WITH_AES_128_SHA
+#define TLS1_TXT_RSA_WITH_AES_128_SHA "AES128-SHA"
+#endif
+#ifndef SSL3_TXT_RSA_DES_192_CBC3_SHA
+#define SSL3_TXT_RSA_DES_192_CBC3_SHA "DES-CBC3-SHA"
+#endif
+#ifndef EXS_JPEGProcess14SV1TransferSyntax
+#define EXS_JPEGProcess14SV1TransferSyntax EXS_JPEGProcess14SV1
+#endif
+#ifndef EXS_JPEGProcess1TransferSyntax
+#define EXS_JPEGProcess1TransferSyntax EXS_JPEGProcess1
+#endif
+#ifndef EXS_JPEGProcess2_4TransferSyntax
+#define EXS_JPEGProcess2_4TransferSyntax EXS_JPEGProcess2_4
+#endif
 #endif
 
 #ifdef WITH_ZLIB
@@ -684,7 +705,7 @@ storeSCU(T_ASC_Association * assoc, const char *fname)
 
     /* figure out which SOP class and SOP instance is encapsulated in the file */
     if (!DU_findSOPClassAndInstanceInDataSet(dcmff.getDataset(),
-        sopClass, sopInstance, opt_correctUIDPadding)) {
+        sopClass, sizeof(sopClass), sopInstance, sizeof(sopInstance), opt_correctUIDPadding)) {
         errmsg("No SOP Class & Instance UIDs in file: %s", fname);
         return DIMSE_BADDATA;
     }
@@ -757,7 +778,7 @@ storeSCU(T_ASC_Association * assoc, const char *fname)
 		
 		/* figure out which SOP class and SOP instance is encapsulated in the file */
 		if (!DU_findSOPClassAndInstanceInDataSet(dcmff.getDataset(),
-			sopClass, sopInstance, opt_correctUIDPadding)) {
+			sopClass, sizeof(sopClass), sopInstance, sizeof(sopInstance), opt_correctUIDPadding)) {
 			errmsg("No SOP Class & Instance UIDs in file: %s", outfname);
 			return DIMSE_BADDATA;
 		}
@@ -805,7 +826,7 @@ storeSCU(T_ASC_Association * assoc, const char *fname)
     cond = DIMSE_storeUser(assoc, presId, &req,
         NULL, dcmff.getDataset(), progressCallback, NULL,
         opt_blockMode, opt_dimse_timeout,
-        &rsp, &statusDetail, NULL, DU_fileSize(fname));
+        &rsp, &statusDetail, NULL, OFstatic_cast(long, OFStandard::getFileSize(fname)));
 
     /*
      * If store command completed normally, with a status
@@ -1085,9 +1106,6 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
 	opt_verbose = [[NSUserDefaults standardUserDefaults] boolForKey: @"verbose_dcmtkStoreScu"];
 	opt_showPresentationContexts = [[NSUserDefaults standardUserDefaults] boolForKey: @"verbose_dcmtkStoreScu"];
 	opt_debug = [[NSUserDefaults standardUserDefaults] boolForKey: @"verbose_dcmtkStoreScu"];
-	DUL_Debug( [[NSUserDefaults standardUserDefaults] boolForKey: @"verbose_dcmtkStoreScu"]);
-	DIMSE_debug( [[NSUserDefaults standardUserDefaults] boolForKey: @"verbose_dcmtkStoreScu"]);
-	SetDebugLevel( [[NSUserDefaults standardUserDefaults] boolForKey: @"verbose_dcmtkStoreScu"]);
 	
 	switch (_transferSyntax)
 	{
@@ -1229,14 +1247,18 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
                     {
                         current = [suite cStringUsingEncoding:NSUTF8StringEncoding];
                         
-                        if (NULL == (currentOpenSSL = DcmTLSTransportLayer::findOpenSSLCipherSuiteName(current)))
+                        size_t cipherSuiteIndex = DcmTLSCiphersuiteHandler::lookupCiphersuite(current);
+                        if (cipherSuiteIndex == DcmTLSCiphersuiteHandler::unknownCipherSuiteIndex)
+                            cipherSuiteIndex = DcmTLSCiphersuiteHandler::lookupCiphersuiteByOpenSSLName(current);
+
+                        if (cipherSuiteIndex == DcmTLSCiphersuiteHandler::unknownCipherSuiteIndex)
                         {
                             NSLog(@"ciphersuite '%s' is unknown.", current);
                             NSLog(@"Known ciphersuites are:");
-                            unsigned long numSuites = DcmTLSTransportLayer::getNumberOfCipherSuites();
-                            for (unsigned long cs=0; cs < numSuites; cs++)
+                            size_t numSuites = DcmTLSCiphersuiteHandler::getNumberOfCipherSuites();
+                            for (size_t cs=0; cs < numSuites; cs++)
                             {
-                                NSLog(@"%s", DcmTLSTransportLayer::getTLSCipherSuiteName(cs));
+                                NSLog(@"%s", DcmTLSCiphersuiteHandler::getTLSCipherSuiteName(cs));
                             }
                             
                             localException = [[NSException exceptionWithName:@"DICOM Network Failure (STORE-SCU TLS)" reason:[NSString stringWithFormat:@"Ciphersuite '%s' is unknown.", current] userInfo:nil] retain];
@@ -1244,6 +1266,7 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
                         }
                         else
                         {
+                            currentOpenSSL = DcmTLSCiphersuiteHandler::getOpenSSLCipherSuiteName(cipherSuiteIndex);
                             if (opt_ciphersuites.length() > 0) opt_ciphersuites += ":";
                             opt_ciphersuites += currentOpenSSL;
                         }
@@ -1289,7 +1312,7 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
 			{
 			  if (opt_proposeOnlyRequiredPresentationContexts)
 			  {
-				  if (!DU_findSOPClassAndInstanceInFile(currentFilename, sopClassUID, sopInstanceUID))
+				  if (!DU_findSOPClassAndInstanceInFile(currentFilename, sopClassUID, sizeof(sopClassUID), sopInstanceUID, sizeof(sopInstanceUID)))
 				  {
 					ignoreName = OFTrue;
 					errormsg = "missing SOP class (or instance) in file: ";
@@ -1342,7 +1365,7 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
         {
             @synchronized( opensslSync)
             {
-                tLayer = new DcmTLSTransportLayer(DICOM_APPLICATION_REQUESTOR, _readSeedFile);
+                tLayer = new DcmTLSTransportLayer(NET_REQUESTOR, _readSeedFile, OFTrue);
                 if (tLayer == NULL)
                 {
                     NSLog(@"unable to create TLS transport layer");
@@ -1358,7 +1381,7 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
                     
                     for (NSString *cert in trustedCertificates)
                     {
-                        if (TCS_ok != tLayer->addTrustedCertificateFile([[trustedCertificatesDir stringByAppendingPathComponent:cert] cStringUsingEncoding:NSUTF8StringEncoding], _keyFileFormat))
+                        if (tLayer->addTrustedCertificateFile([[trustedCertificatesDir stringByAppendingPathComponent:cert] cStringUsingEncoding:NSUTF8StringEncoding], (DcmKeyFileFormat)_keyFileFormat).bad())
                         {
                             localException = [[NSException exceptionWithName:@"DICOM Network Failure (STORE-SCU TLS)" reason:[NSString stringWithFormat:@"Unable to load certificate file %@", [trustedCertificatesDir stringByAppendingPathComponent:cert]] userInfo:nil] retain];
                             [localException raise];
@@ -1374,7 +1397,7 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
                             //				do
                             //				{
                             //					app.checkValue(cmd.getValue(current));
-                            //					if (TCS_ok != tLayer->addTrustedCertificateDir(current, opt_keyFileFormat))
+                            //					if (tLayer->addTrustedCertificateDir(current, opt_keyFileFormat))
                             //					{
                             //						CERR << "warning unable to load certificates from directory '" << current << "', ignoring" << endl;
                             //					}
@@ -1397,13 +1420,13 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
                     NSString *_privateKeyFile = [DICOMTLS keyPathForServerAddress:_hostname port:_port AETitle:_calledAET withStringID:uniqueStringID]; // generates the PEM file for the private key
                     NSString *_certificateFile = [DICOMTLS certificatePathForServerAddress:_hostname port:_port AETitle:_calledAET withStringID:uniqueStringID]; // generates the PEM file for the certificate		
                     
-                    if (TCS_ok != tLayer->setPrivateKeyFile([_privateKeyFile cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM))
+                    if (tLayer->setPrivateKeyFile([_privateKeyFile cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM).bad())
                     {
                         localException = [[NSException exceptionWithName:@"DICOM Network Failure (STORE-SCU TLS)" reason:[NSString stringWithFormat:@"Unable to load private TLS key from %@", _privateKeyFile] userInfo:nil] retain];
                         [localException raise];
                     }
                     
-                    if (TCS_ok != tLayer->setCertificateFile([_certificateFile cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM))
+                    if (tLayer->setCertificateFile([_certificateFile cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM, TSP_Profile_None).bad())
                     {
                         localException = [[NSException exceptionWithName:@"DICOM Network Failure (STORE-SCU TLS)" reason:[NSString stringWithFormat:@"Unable to load certificate from %@", _certificateFile] userInfo:nil] retain];
                         [localException raise];
@@ -1416,7 +1439,7 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
                     }
                 }
                 
-                if (TCS_ok != tLayer->setCipherSuites(opt_ciphersuites.c_str()))
+                if (tLayer->setCipherSuites(opt_ciphersuites.c_str()).bad())
                 {
                     localException = [[NSException exceptionWithName:@"DICOM Network Failure (STORE-SCU TLS)" reason:@"Unable to set selected cipher suites" userInfo:nil] retain];
                     [localException raise];
@@ -1526,7 +1549,7 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
         /* dump the connection parameters if in debug mode*/
         if (opt_debug)
         {
-            ostream& out = ofConsole.lockCout();     
+            std::ostream& out = ofConsole.lockCout();     
             ASC_dumpConnectionParameters(assoc, out);
             ofConsole.unlockCout();
         }

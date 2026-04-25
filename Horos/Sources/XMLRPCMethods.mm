@@ -59,7 +59,6 @@
 #import "WADODownload.h"
 #import "NSManagedObject+N2.h"
 #import "Notifications.h"
-#import "dcdeftag.h"
 #import "WaitRendering.h"
 
 @interface XMLRPCInterfaceConnection : N2XMLRPCConnection

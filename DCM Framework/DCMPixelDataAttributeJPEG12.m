@@ -39,9 +39,9 @@
 #import "DCMPixelDataAttributeJPEG12.h"
 #import "DCMPixelDataAttributeJPEG8.h"
 #import "DCM.h"
-#include "jinclude12.h"
-#include "jpeglib12.h"
-#include "jerror12.h"
+#include "../DCMTK/dcmjpeg/libijg12/jinclude12.h"
+#include "../DCMTK/dcmjpeg/libijg12/jpeglib12.h"
+#include "../DCMTK/dcmjpeg/libijg12/jerror12.h"
 //#import <stdio.h>
 //#import "jpegdatasrc.h"
 

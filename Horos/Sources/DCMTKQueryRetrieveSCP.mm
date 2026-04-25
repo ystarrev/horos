@@ -39,19 +39,19 @@
 #import "AppController.h"
 #import "DICOMTLS.h"
 #import "ContextCleaner.h"
+#import "DicomDatabase.h"
 
 #undef verify
 
-#include "osconfig.h"    /* make sure OS specific configuration is included first */
+#include <dcmtk/config/osconfig.h>    /* make sure OS specific configuration is included first */
 
-#define INCLUDE_CSTDLIB
-#define INCLUDE_CSTDIO
-#define INCLUDE_CSTRING
-#define INCLUDE_CSTDARG
-#define INCLUDE_CERRNO
-#define INCLUDE_CTIME
-#define INCLUDE_LIBC
-#include "ofstdinc.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdarg.h>
+#include <errno.h>
+#include <time.h>
+#include <unistd.h>
 
 BEGIN_EXTERN_C
 #ifdef HAVE_SYS_FILE_H
@@ -86,16 +86,16 @@ BEGIN_EXTERN_C
 #endif
 END_EXTERN_C
 
-#include "dicom.h"
-#include "dcmqropt.h"
-#include "dimse.h"
-#include "dcmqrcnf.h"
-#include "dcmqrsrv.h"
-#include "dcdict.h"
-#include "dcdebug.h"
-#include "cmdlnarg.h"
-#include "ofconapp.h"
-#include "dcuid.h"       /* for dcmtk version name */
+#include <dcmtk/dcmnet/dicom.h>
+#include <dcmtk/dcmqrdb/dcmqropt.h>
+#include <dcmtk/dcmnet/dimse.h>
+#include <dcmtk/dcmqrdb/dcmqrcnf.h>
+#include <dcmtk/dcmqrdb/dcmqrsrv.h>
+#include <dcmtk/dcmdata/dcdict.h>
+#include <dcmtk/dcmdata/cmdlnarg.h>
+#include <dcmtk/ofstd/ofconapp.h>
+#include <dcmtk/dcmdata/dcuid.h>       /* for dcmtk version name */
+#include <dcmtk/dcmnet/dcasccfg.h>
 
 //#ifdef WITH_SQL_DATABASE
 #include "dcmqrdbq.h"
@@ -109,8 +109,22 @@ END_EXTERN_C
 #ifdef UI
 #undef UI // For MacOS 10.7 compilation
 #endif
-#include "tlstrans.h"
-#include "tlslayer.h"
+#include <dcmtk/dcmtls/tlstrans.h>
+#include <dcmtk/dcmtls/tlslayer.h>
+#include <dcmtk/dcmtls/tlsciphr.h>
+#include <dcmtk/dcmtls/tlsopt.h>
+#ifndef SSL_FILETYPE_PEM
+#define SSL_FILETYPE_PEM DCF_Filetype_PEM
+#endif
+#ifndef SSL_FILETYPE_ASN1
+#define SSL_FILETYPE_ASN1 DCF_Filetype_ASN1
+#endif
+#ifndef TLS1_TXT_RSA_WITH_AES_128_SHA
+#define TLS1_TXT_RSA_WITH_AES_128_SHA "AES128-SHA"
+#endif
+#ifndef SSL3_TXT_RSA_DES_192_CBC3_SHA
+#define SSL3_TXT_RSA_DES_192_CBC3_SHA "DES-CBC3-SHA"
+#endif
 #endif
 
 #ifdef WITH_ZLIB
@@ -131,29 +145,8 @@ END_EXTERN_C
 DcmQueryRetrieveSCP *scp = nil;
 DcmQueryRetrieveSCP *scptls = nil;
 
-OFCondition mainStoreSCP(T_ASC_Association * assoc, T_DIMSE_C_StoreRQ * request, T_ASC_PresentationContextID presId, DcmQueryRetrieveDatabaseHandle *dbHandle)
+OFCondition mainStoreSCP(T_ASC_Association * /* assoc */, T_DIMSE_C_StoreRQ * /* request */, T_ASC_PresentationContextID /* presId */, DcmQueryRetrieveDatabaseHandle * /* dbHandle */)
 {
-	OFBool isTLS = assoc->params->DULparams.useSecureLayer;
-	if(!isTLS)
-	{
-		if( scp == nil)
-		{
-			NSLog( @"***** scp == nil !");
-			return EC_IllegalCall;
-		}
-		else
-			return scp->storeSCP( assoc, request, presId, *dbHandle, FALSE);
-	}
-	else
-	{
-		if( scptls == nil)
-		{
-			NSLog( @"***** scptls == nil !");
-			return EC_IllegalCall;
-		}
-		else
-			return scptls->storeSCP( assoc, request, presId, *dbHandle, FALSE);
-	}
 	return EC_IllegalCall;
 }
 
@@ -227,8 +220,7 @@ void errmsg(const char* msg, ...)
     OFCmdUnsignedInt overrideMaxPDU = 0;
     DcmQueryRetrieveOptions options;
 
-	//verbose
-	options.verbose_= 0;
+	// verbose logging is controlled by DCMTK log configuration in modern DCMTK.
 	
 	//single process
 	options.singleProcess_ = [[NSUserDefaults standardUserDefaults] boolForKey: @"SingleProcessMultiThreadedListener"];
@@ -369,7 +361,7 @@ void errmsg(const char* msg, ...)
 	
 	if([[_params objectForKey:@"TLSEnabled"] boolValue])
 	{
-		tLayer = new DcmTLSTransportLayer(DICOM_APPLICATION_ACCEPTOR, [TLS_SEED_FILE cStringUsingEncoding:NSUTF8StringEncoding]); // joris DICOM_APPLICATION_ACCEPTOR for server!!
+		tLayer = new DcmTLSTransportLayer(NET_ACCEPTOR, [TLS_SEED_FILE cStringUsingEncoding:NSUTF8StringEncoding], OFTrue); // joris DICOM_APPLICATION_ACCEPTOR for server!!
 		if (tLayer == NULL)
 		{
 			[[AppController sharedAppController] performSelectorOnMainThread: @selector(displayListenerError:) withObject: @"unable to create TLS transport layer" waitUntilDone: NO];
@@ -386,7 +378,7 @@ void errmsg(const char* msg, ...)
 			
 			for (NSString *cert in trustedCertificates)
 			{
-				if (TCS_ok != tLayer->addTrustedCertificateFile([[trustedCertificatesDir stringByAppendingPathComponent:cert] cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM))
+				if (tLayer->addTrustedCertificateFile([[trustedCertificatesDir stringByAppendingPathComponent:cert] cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM).bad())
 				{
 					NSString *errMessage = [NSString stringWithFormat: @"DICOM Network Failure (storescp TLS) : Unable to load certificate file %@. You can turn OFF TLS Listener in Preferences->Listener.", [trustedCertificatesDir stringByAppendingPathComponent:cert]];
 					[[AppController sharedAppController] performSelectorOnMainThread: @selector(displayListenerError:) withObject: errMessage waitUntilDone: NO];
@@ -403,7 +395,7 @@ void errmsg(const char* msg, ...)
 			//				do
 			//				{
 			//					app.checkValue(cmd.getValue(current));
-			//					if (TCS_ok != tLayer->addTrustedCertificateDir(current, opt_keyFileFormat))
+			//					if (tLayer->addTrustedCertificateDir(current, opt_keyFileFormat))
 			//					{
 			//						CERR << "warning unable to load certificates from directory '" << current << "', ignoring" << endl;
 			//					}
@@ -426,14 +418,14 @@ void errmsg(const char* msg, ...)
 			NSString *_privateKeyFile = [DICOMTLS keyPathForLabel:TLS_KEYCHAIN_IDENTITY_NAME_SERVER withStringID:@"StoreSCPTLS"]; // generates the PEM file for the private key
 			NSString *_certificateFile = [DICOMTLS certificatePathForLabel:TLS_KEYCHAIN_IDENTITY_NAME_SERVER withStringID:@"StoreSCPTLS"]; // generates the PEM file for the certificate
 			
-			if (TCS_ok != tLayer->setPrivateKeyFile([_privateKeyFile cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM))
+			if (tLayer->setPrivateKeyFile([_privateKeyFile cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM).bad())
 			{
 				NSString *errMessage = [NSString stringWithFormat: @"DICOM Network Failure (storescp TLS) : Unable to load private TLS key from %@. You can turn OFF TLS Listener in Preferences->Listener.", _privateKeyFile];
 				[[AppController sharedAppController] performSelectorOnMainThread: @selector(displayListenerError:) withObject: errMessage waitUntilDone: NO];
 				return;
 			}
 			
-			if (TCS_ok != tLayer->setCertificateFile([_certificateFile cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM))
+			if (tLayer->setCertificateFile([_certificateFile cStringUsingEncoding:NSUTF8StringEncoding], SSL_FILETYPE_PEM, TSP_Profile_None).bad())
 			{
 				NSString *errMessage = [NSString stringWithFormat: @"DICOM Network Failure (storescp TLS) : Unable to load certificate from %@. You can turn OFF TLS Listener in Preferences->Listener.", _certificateFile];
 				[[AppController sharedAppController] performSelectorOnMainThread: @selector(displayListenerError:) withObject: errMessage waitUntilDone: NO];
@@ -471,15 +463,19 @@ void errmsg(const char* msg, ...)
 			{
 				current = [suite cStringUsingEncoding:NSUTF8StringEncoding];
 				
-				if (NULL == (currentOpenSSL = DcmTLSTransportLayer::findOpenSSLCipherSuiteName(current)))
+				size_t cipherSuiteIndex = DcmTLSCiphersuiteHandler::lookupCiphersuite(current);
+				if (cipherSuiteIndex == DcmTLSCiphersuiteHandler::unknownCipherSuiteIndex)
+					cipherSuiteIndex = DcmTLSCiphersuiteHandler::lookupCiphersuiteByOpenSSLName(current);
+
+				if (cipherSuiteIndex == DcmTLSCiphersuiteHandler::unknownCipherSuiteIndex)
 				{
 					NSLog(@"ciphersuite '%s' is unknown.", current);
 					NSLog(@"Known ciphersuites are:");
 					
-					unsigned long numSuites = DcmTLSTransportLayer::getNumberOfCipherSuites();
-					for (unsigned long cs=0; cs < numSuites; cs++)
+					size_t numSuites = DcmTLSCiphersuiteHandler::getNumberOfCipherSuites();
+					for (size_t cs=0; cs < numSuites; cs++)
 					{
-						NSLog(@"%s", DcmTLSTransportLayer::getTLSCipherSuiteName(cs));
+						NSLog(@"%s", DcmTLSCiphersuiteHandler::getTLSCipherSuiteName(cs));
 					}
 					
 					NSString *errMessage = [NSString stringWithFormat: @"DICOM Network Failure (storescp TLS) : Ciphersuite '%s' is unknown. You can turn OFF TLS Listener in Preferences->Listener.", current];
@@ -488,13 +484,14 @@ void errmsg(const char* msg, ...)
 				}
 				else
 				{
+					currentOpenSSL = DcmTLSCiphersuiteHandler::getOpenSSLCipherSuiteName(cipherSuiteIndex);
 					if (opt_ciphersuites.length() > 0) opt_ciphersuites += ":";
 					opt_ciphersuites += currentOpenSSL;
 				}
 				
 			}
 		
-			if (TCS_ok != tLayer->setCipherSuites(opt_ciphersuites.c_str()))
+			if (tLayer->setCipherSuites(opt_ciphersuites.c_str()).bad())
 			{
 				NSString *errMessage = [NSString stringWithFormat: @"DICOM Network Failure (storescp TLS) : Unable to set selected cipher suites. You can turn OFF TLS Listener in Preferences->Listener."];
 				[[AppController sharedAppController] performSelectorOnMainThread: @selector(displayListenerError:) withObject: errMessage waitUntilDone: NO];
@@ -527,8 +524,41 @@ void errmsg(const char* msg, ...)
 	
 	
 
-// Have this to avoid errors until I can get rid of it
+	NSString *storageArea = [[DicomDatabase activeLocalDatabase] incomingDirPath];
+	NSString *configPath = [NSTemporaryDirectory() stringByAppendingPathComponent: [NSString stringWithFormat: @"Horos-dcmqrscp-%d-%@.cfg", (int) getpid(), _aeTitle]];
+	NSString *configText = [NSString stringWithFormat:
+		@"NetworkTCPPort %d\n"
+		@"MaxPDUSize %lu\n"
+		@"MaxAssociations %d\n"
+		@"HostTable BEGIN\n"
+		@"HostTable END\n"
+		@"VendorTable BEGIN\n"
+		@"VendorTable END\n"
+		@"AETable BEGIN\n"
+		@"%@ \"%@\" RW (20000, 1024mb) ANY\n"
+		@"AETable END\n",
+		_port,
+		(unsigned long) options.maxPDU_,
+		(int) options.maxAssociations_,
+		_aeTitle,
+		storageArea];
+	
+	if( [configText writeToFile: configPath atomically: YES encoding: NSUTF8StringEncoding error: nil] == NO)
+	{
+		[[AppController sharedAppController] performSelectorOnMainThread: @selector(displayListenerError:) withObject: @"Unable to create DICOM listener configuration." waitUntilDone: NO];
+		ASC_dropNetwork(&options.net_);
+		return;
+	}
+	
 DcmQueryRetrieveConfig config;
+	if( !config.init( [configPath fileSystemRepresentation]))
+	{
+		[[AppController sharedAppController] performSelectorOnMainThread: @selector(displayListenerError:) withObject: @"Unable to read DICOM listener configuration." waitUntilDone: NO];
+		ASC_dropNetwork(&options.net_);
+		return;
+	}
+DcmAssociationConfiguration asccfg;
+DcmTLSOptions tlsOptions(NET_ACCEPTORREQUESTOR);
 
 //#ifdef WITH_SQL_DATABASE
     // use SQL database
@@ -543,15 +573,14 @@ DcmQueryRetrieveConfig config;
 
 	DcmQueryRetrieveSCP *localSCP = nil;
 	
-	localSCP = new DcmQueryRetrieveSCP(config, options, factory);
+	localSCP = new DcmQueryRetrieveSCP(config, options, factory, asccfg, tlsOptions);
 	
 	if([[_params objectForKey:@"TLSEnabled"] boolValue])
 		scptls = localSCP;
 	else
 		scp = localSCP;
 	
-	localSCP->setDatabaseFlags(OFFalse, OFFalse, options.debug_);
-	localSCP->setSecureConnection([[_params objectForKey:@"TLSEnabled"] boolValue]);
+	localSCP->setDatabaseFlags(OFFalse, OFFalse);
 	
 	_abort = NO;
 	running = YES;

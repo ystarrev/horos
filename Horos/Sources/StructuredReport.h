@@ -14,9 +14,13 @@
 
 #import <Cocoa/Cocoa.h>
 
+#ifdef __cplusplus
+class DSRDocument;
+#else
+typedef char DSRDocument;
+#endif
 
-#undef verify
-#include "dsrdoc.h"
+
 
 /** \brief  DICOM Structured Report */
 

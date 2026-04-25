@@ -1830,6 +1830,17 @@ static BOOL protectionAgainstReentry = NO;
                     
                     NSString *SOPClassUID = [curDict objectForKey:@"SOPClassUID"];
                     
+                    if( importedFiles &&
+                       [[curDict objectForKey: @"seriesDICOMUID"] length] &&
+                       ([[curDict objectForKey: @"modality"] isEqualToString:@"MG"] ||
+                        [[curDict objectForKey: @"modality"] isEqualToString:@"CR"] ||
+                        [[curDict objectForKey: @"modality"] isEqualToString:@"DR"] ||
+                        [[curDict objectForKey: @"modality"] isEqualToString:@"DX"] ||
+                        [[curDict objectForKey: @"modality"] isEqualToString:@"RF"]))
+                    {
+                        [curDict setObject: [curDict objectForKey: @"seriesDICOMUID"] forKey: @"seriesID"];
+                    }
+
                     if ([DCMAbstractSyntaxUID isStructuredReport: SOPClassUID])
                     {
                         // Check if it is an OsiriX Annotations SR
@@ -2175,11 +2186,13 @@ static BOOL protectionAgainstReentry = NO;
                                     if ([curDict objectForKey: @"seriesDICOMUID"]) [seriesTable setValue:[curDict objectForKey: @"seriesDICOMUID"] forKey:@"seriesDICOMUID"];
                                     if ([curDict objectForKey: @"SOPClassUID"]) [seriesTable setValue:[curDict objectForKey: @"SOPClassUID"] forKey:@"seriesSOPClassUID"];
                                     [seriesTable setValue:[curDict objectForKey: [@"seriesID" stringByAppendingString:SeriesNum]] forKey:@"seriesInstanceUID"];
-                                    [seriesTable setValue:[curDict objectForKey: [@"seriesDescription" stringByAppendingString:SeriesNum]] forKey:@"name"];
+                                    NSString *seriesName = [curDict objectForKey: [@"seriesDescription" stringByAppendingString:SeriesNum]];
+                                    NSString *protocolName = [curDict objectForKey: @"protocolName"];
+                                    [seriesTable setValue:seriesName forKey:@"name"];
                                     [seriesTable setValue:[curDict objectForKey: @"modality"] forKey:@"modality"];
                                     [seriesTable setValue:[curDict objectForKey: [@"seriesNumber" stringByAppendingString:SeriesNum]] forKey:@"id"];
                                     [seriesTable setValue:[curDict objectForKey: @"studyDate"] forKey:@"date"];
-                                    [seriesTable setValue:[curDict objectForKey: @"protocolName"] forKey:@"seriesDescription"];
+                                    [seriesTable setValue:protocolName.length ? protocolName : seriesName forKey:@"seriesDescription"];
                                     
                                     // Relations
                                     [seriesTable setValue:study forKey:@"study"];
@@ -2187,6 +2200,17 @@ static BOOL protectionAgainstReentry = NO;
                                     if (([[study valueForKey:@"modality"] isEqualToString:@"OT"]  || [[study valueForKey:@"modality"] isEqualToString:@"SC"])
                                         && !([[curDict objectForKey: @"modality"] isEqualToString:@"OT"] || [[curDict objectForKey: @"modality"] isEqualToString:@"SC"]))
                                         [study setValue:[curDict objectForKey: @"modality"] forKey:@"modality"];
+                                }
+                                else
+                                {
+                                    NSString *seriesName = [curDict objectForKey: [@"seriesDescription" stringByAppendingString:SeriesNum]];
+                                    NSString *existingSeriesName = [seriesTable valueForKey:@"name"];
+                                    if( seriesName.length && (existingSeriesName.length == 0 || [existingSeriesName isEqualToString: @"unnamed"]))
+                                        [seriesTable setValue: seriesName forKey:@"name"];
+
+                                    NSString *existingSeriesDescription = [seriesTable valueForKey:@"seriesDescription"];
+                                    if( seriesName.length && existingSeriesDescription.length == 0)
+                                        [seriesTable setValue: seriesName forKey:@"seriesDescription"];
                                 }
                                 
                                 curSerieID = curDictSeriesID;
@@ -2207,6 +2231,7 @@ static BOOL protectionAgainstReentry = NO;
                             for( int f = 0 ; f < numberOfFrames; f++)
                             {
                                 image = nil;
+                                BOOL foundImageInDifferentSeries = NO;
                                 
                                 NSString *SOPUID = [curDict objectForKey: [@"SOPUID" stringByAppendingString: SeriesNum]];
                                 
@@ -2221,11 +2246,22 @@ static BOOL protectionAgainstReentry = NO;
                                         }
                                     }
                                 }
+
+                                if( image == nil && SOPUID.length)
+                                {
+                                    NSFetchRequest *existingImageRequest = [NSFetchRequest fetchRequestWithEntityName:@"Image"];
+                                    existingImageRequest.fetchLimit = 1;
+                                    existingImageRequest.predicate = [NSPredicate predicateWithFormat:@"compressedSopInstanceUID == %@ AND (frameID == %@ OR frameID == nil)", [DicomImage sopInstanceUIDEncodeString:SOPUID], [NSNumber numberWithInt:f]];
+                                    image = [[self.managedObjectContext executeFetchRequest:existingImageRequest error:nil] lastObject];
+                                    if( image)
+                                        foundImageInDifferentSeries = YES;
+                                }
                                 
                                 if( image)
                                 {
                                     // Does this image contain a valid image path? If not replace it, with the new one
-                                    if ([[NSFileManager defaultManager] fileExistsAtPath:[DicomImage completePathForLocalPath: [image valueForKey:@"path"] directory:self.dataBaseDirPath]] == YES &&
+                                    if (foundImageInDifferentSeries == NO &&
+                                        [[NSFileManager defaultManager] fileExistsAtPath:[DicomImage completePathForLocalPath: [image valueForKey:@"path"] directory:self.dataBaseDirPath]] == YES &&
                                         inParseExistingObject == NO &&
                                         ![NSUserDefaults.standardUserDefaults boolForKey:@"REPLACE_WITH_NEW_INCOMING_FILE"])
                                     {

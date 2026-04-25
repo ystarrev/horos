@@ -57,6 +57,39 @@ static char* HorosModernDCMTKDuplicateCString(const char* value)
     return copy;
 }
 
+static char* HorosModernDCMTKDuplicateOFString(const OFString& value)
+{
+    if (value.empty())
+        return nullptr;
+
+    std::string sanitized;
+    sanitized.reserve(value.size());
+    for (size_t index = 0; index < value.size(); ++index)
+    {
+        const char c = value[index];
+        if (c != '\0')
+            sanitized.push_back(c);
+    }
+
+    while (!sanitized.empty() && (sanitized.back() == '\0' || sanitized.back() == ' '))
+        sanitized.pop_back();
+
+    if (sanitized.empty())
+        return nullptr;
+
+    return HorosModernDCMTKDuplicateCString(sanitized.c_str());
+}
+
+static void HorosModernDCMTKEnsureDataDictionary()
+{
+    if (dcmDataDict.isDictionaryLoaded())
+        return;
+
+    DcmDataDictionary& dictionary = dcmDataDict.wrlock();
+    dictionary.reloadDictionaries(OFFalse, OFTrue);
+    dcmDataDict.wrunlock();
+}
+
 static void HorosModernDCMTKEnsureCodecRegistration()
 {
     static bool registered = false;
@@ -97,9 +130,9 @@ static void HorosModernDCMTKAssignTagString(DcmItem* item, const DcmTagKey& key,
     if (item == nullptr || destination == nullptr)
         return;
 
-    const char* value = nullptr;
-    if (item->findAndGetString(key, value, OFFalse).good() && value != nullptr)
-        *destination = HorosModernDCMTKDuplicateCString(value);
+    OFString value;
+    if (item->findAndGetOFString(key, value, OFFalse).good() && !value.empty())
+        *destination = HorosModernDCMTKDuplicateOFString(value);
 }
 
 static bool HorosModernDCMTKKeyObjectTitle(int titleCode, const char*& codeValue, const char*& codeMeaning)
@@ -253,6 +286,8 @@ int HorosModernDCMTKIsDICOMFile(const char* path)
     if (path == nullptr || path[0] == '\0')
         return 0;
 
+    HorosModernDCMTKEnsureDataDictionary();
+
     DcmFileFormat fileformat;
     return fileformat.loadFile(path).good() ? 1 : 0;
 }
@@ -268,14 +303,16 @@ char* HorosModernDCMTKCopySpecificCharacterSet(const char* path)
     if (path == nullptr || path[0] == '\0')
         return nullptr;
 
+    HorosModernDCMTKEnsureDataDictionary();
+
     DcmFileFormat fileformat;
     if (!fileformat.loadFile(path).good())
         return nullptr;
 
     DcmDataset* dataset = fileformat.getDataset();
-    const char* value = nullptr;
-    if (dataset != nullptr && dataset->findAndGetString(DCM_SpecificCharacterSet, value, OFFalse).good() && value != nullptr)
-        return HorosModernDCMTKDuplicateCString(value);
+    OFString value;
+    if (dataset != nullptr && dataset->findAndGetOFString(DCM_SpecificCharacterSet, value, OFFalse).good() && !value.empty())
+        return HorosModernDCMTKDuplicateOFString(value);
 
     return nullptr;
 }
@@ -284,6 +321,8 @@ char* HorosModernDCMTKCopyField(const char* path, const char* fieldName)
 {
     if (path == nullptr || path[0] == '\0' || fieldName == nullptr || fieldName[0] == '\0')
         return nullptr;
+
+    HorosModernDCMTKEnsureDataDictionary();
 
     DcmTagKey key(0xffff, 0xffff);
 
@@ -303,11 +342,11 @@ char* HorosModernDCMTKCopyField(const char* path, const char* fieldName)
     OFString value;
     DcmDataset* dataset = fileformat.getDataset();
     if (dataset != nullptr && dataset->findAndGetOFString(key, value, OFFalse).good() && !value.empty())
-        return HorosModernDCMTKDuplicateCString(value.c_str());
+        return HorosModernDCMTKDuplicateOFString(value);
 
     DcmMetaInfo* metaInfo = HorosModernDCMTKMetaInfo(fileformat);
     if (metaInfo != nullptr && metaInfo->findAndGetOFString(key, value, OFFalse).good() && !value.empty())
-        return HorosModernDCMTKDuplicateCString(value.c_str());
+        return HorosModernDCMTKDuplicateOFString(value);
 
     return nullptr;
 }
@@ -317,6 +356,8 @@ char* HorosModernDCMTKCopyFieldByTag(const char* path, unsigned short group, uns
     if (path == nullptr || path[0] == '\0')
         return nullptr;
 
+    HorosModernDCMTKEnsureDataDictionary();
+
     DcmFileFormat fileformat;
     if (!fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).good())
         return nullptr;
@@ -325,11 +366,11 @@ char* HorosModernDCMTKCopyFieldByTag(const char* path, unsigned short group, uns
     OFString value;
     DcmDataset* dataset = fileformat.getDataset();
     if (dataset != nullptr && dataset->findAndGetOFString(key, value, OFFalse).good() && !value.empty())
-        return HorosModernDCMTKDuplicateCString(value.c_str());
+        return HorosModernDCMTKDuplicateOFString(value);
 
     DcmMetaInfo* metaInfo = HorosModernDCMTKMetaInfo(fileformat);
     if (metaInfo != nullptr && metaInfo->findAndGetOFString(key, value, OFFalse).good() && !value.empty())
-        return HorosModernDCMTKDuplicateCString(value.c_str());
+        return HorosModernDCMTKDuplicateOFString(value);
 
     return nullptr;
 }
@@ -344,6 +385,8 @@ int HorosModernDCMTKCopyBufferByTag(const char* path, unsigned short group, unsi
 
     if (path == nullptr || path[0] == '\0')
         return 0;
+
+    HorosModernDCMTKEnsureDataDictionary();
 
     DcmFileFormat fileformat;
     if (!fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).good())
@@ -383,6 +426,8 @@ int HorosModernDCMTKCopyFileDataInTransferSyntax(const char* path,
 
     if (path == nullptr || path[0] == '\0' || transferSyntaxUID == nullptr || transferSyntaxUID[0] == '\0' || buffer == nullptr || length == nullptr)
         return 0;
+
+    HorosModernDCMTKEnsureDataDictionary();
 
     DcmFileFormat fileformat;
     OFCondition status = fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect);
@@ -509,6 +554,8 @@ int HorosModernDCMTKWriteFileInTransferSyntax(const char* inputPath,
         transferSyntaxUID == nullptr || transferSyntaxUID[0] == '\0')
         return 0;
 
+    HorosModernDCMTKEnsureDataDictionary();
+
     DcmFileFormat fileformat;
     OFCondition status = fileformat.loadFile(inputPath, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect);
     if (status.bad())
@@ -579,6 +626,8 @@ int HorosModernDCMTKReplaceTagValue(const char* path, unsigned short group, unsi
     if (path == nullptr || path[0] == '\0')
         return 0;
 
+    HorosModernDCMTKEnsureDataDictionary();
+
     DcmFileFormat fileformat;
     OFCondition status = fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect);
     if (status.bad())
@@ -620,6 +669,8 @@ int HorosModernDCMTKGetDecompressionInfo(const char* path, int* isEncapsulated, 
     if (path == nullptr || path[0] == '\0')
         return 0;
 
+    HorosModernDCMTKEnsureDataDictionary();
+
     DcmFileFormat fileformat;
     if (!fileformat.loadFile(path).good())
         return 0;
@@ -648,13 +699,13 @@ int HorosModernDCMTKGetDecompressionInfo(const char* path, int* isEncapsulated, 
             *columns = value;
     }
 
-    const char* stringValue = nullptr;
-    if (modality && dataset->findAndGetString(DCM_Modality, stringValue, OFFalse).good() && stringValue != nullptr)
-        *modality = HorosModernDCMTKDuplicateCString(stringValue);
+    OFString stringValue;
+    if (modality && dataset->findAndGetOFString(DCM_Modality, stringValue, OFFalse).good() && !stringValue.empty())
+        *modality = HorosModernDCMTKDuplicateOFString(stringValue);
 
-    stringValue = nullptr;
-    if (sopClassUID && dataset->findAndGetString(DCM_SOPClassUID, stringValue, OFFalse).good() && stringValue != nullptr)
-        *sopClassUID = HorosModernDCMTKDuplicateCString(stringValue);
+    stringValue.clear();
+    if (sopClassUID && dataset->findAndGetOFString(DCM_SOPClassUID, stringValue, OFFalse).good() && !stringValue.empty())
+        *sopClassUID = HorosModernDCMTKDuplicateOFString(stringValue);
 
     return 1;
 }
@@ -665,6 +716,8 @@ int HorosModernDCMTKGetBasicMetadata(const char* path, HorosModernDCMTKBasicMeta
 
     if (path == nullptr || path[0] == '\0' || metadata == nullptr)
         return 0;
+
+    HorosModernDCMTKEnsureDataDictionary();
 
     DcmFileFormat fileformat;
     if (!fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).good())
@@ -724,6 +777,8 @@ int HorosModernDCMTKCopyImageGeometry(const char* path, double* origin3, double*
     if (path == nullptr || path[0] == '\0')
         return 0;
 
+    HorosModernDCMTKEnsureDataDictionary();
+
     DcmFileFormat fileformat;
     if (!fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).good())
         return 0;
@@ -770,6 +825,8 @@ int HorosModernDCMTKCopyFrameGeometry(const char* path, double** sliceLocations,
 
     if (path == nullptr || path[0] == '\0')
         return 0;
+
+    HorosModernDCMTKEnsureDataDictionary();
 
     DcmFileFormat fileformat;
     if (!fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).good())
@@ -910,6 +967,8 @@ int HorosModernDCMTKCopyEncapsulatedDocument(const char* path, unsigned char** b
     if (path == nullptr || path[0] == '\0')
         return 0;
 
+    HorosModernDCMTKEnsureDataDictionary();
+
     DcmFileFormat fileformat;
     if (!fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).good())
         return 0;
@@ -941,6 +1000,8 @@ int HorosModernDCMTKWriteBufferByTag(const char* path, unsigned short group, uns
     if (path == nullptr || path[0] == '\0' || buffer == nullptr || length == 0)
         return 0;
 
+    HorosModernDCMTKEnsureDataDictionary();
+
     DcmFileFormat fileformat;
     if (!fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).good())
         return 0;
@@ -963,14 +1024,16 @@ char* HorosModernDCMTKCopyStructuredReportHTML(const char* path)
     if (path == nullptr || path[0] == '\0')
         return nullptr;
 
+    HorosModernDCMTKEnsureDataDictionary();
+
     DcmFileFormat fileformat;
     if (!fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).good())
         return nullptr;
 
-    const char* sopClassUID = nullptr;
-    if (fileformat.getDataset()->findAndGetString(DCM_SOPClassUID, sopClassUID, OFFalse).bad() ||
-        sopClassUID == nullptr ||
-        DSRTypes::sopClassUIDToDocumentType(sopClassUID) == DSRTypes::DT_invalid) {
+    OFString sopClassUID;
+    if (fileformat.getDataset()->findAndGetOFString(DCM_SOPClassUID, sopClassUID, OFFalse).bad() ||
+        sopClassUID.empty() ||
+        DSRTypes::sopClassUIDToDocumentType(sopClassUID.c_str()) == DSRTypes::DT_invalid) {
         return nullptr;
     }
 
@@ -1018,13 +1081,15 @@ static bool HorosModernDCMTKLoadStructuredReport(const char* path, DcmFileFormat
     if (path == nullptr || path[0] == '\0')
         return false;
 
+    HorosModernDCMTKEnsureDataDictionary();
+
     if (!fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).good())
         return false;
 
-    const char* sopClassUID = nullptr;
-    if (fileformat.getDataset()->findAndGetString(DCM_SOPClassUID, sopClassUID, OFFalse).bad() ||
-        sopClassUID == nullptr ||
-        DSRTypes::sopClassUIDToDocumentType(sopClassUID) == DSRTypes::DT_invalid)
+    OFString sopClassUID;
+    if (fileformat.getDataset()->findAndGetOFString(DCM_SOPClassUID, sopClassUID, OFFalse).bad() ||
+        sopClassUID.empty() ||
+        DSRTypes::sopClassUIDToDocumentType(sopClassUID.c_str()) == DSRTypes::DT_invalid)
         return false;
 
     const size_t readFlags =
@@ -1180,7 +1245,7 @@ char* HorosModernDCMTKCopyStructuredReportNamedTextValue(const char* path,
 
         const OFString value = item.getStringValue();
         if (!value.empty())
-            return HorosModernDCMTKDuplicateCString(value.c_str());
+            return HorosModernDCMTKDuplicateOFString(value);
     } while (tree.iterate());
 
     return nullptr;

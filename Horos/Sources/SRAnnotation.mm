@@ -49,8 +49,11 @@
 #import "DICOMToNSString.h"
 
 #include <dlfcn.h>
-#include "osconfig.h"   /* make sure OS specific configuration is included first */
-#include "dsrtypes.h"
+#include <dcmtk/config/osconfig.h>   /* make sure OS specific configuration is included first */
+#define DicomImage DCMTKDicomImage
+#include "../../DCMTK/dcmsr/include/dcmtk/dcmsr/dsrdoc.h"
+#include "../../DCMTK/dcmsr/include/dcmtk/dcmsr/dsrtypes.h"
+#undef DicomImage
 
 typedef char* (*HorosModernDCMTKCopyFieldFn)(const char* path, const char* fieldName);
 typedef int (*HorosModernDCMTKCopyEncapsulatedDocumentFn)(const char* path, unsigned char** buffer, unsigned long* length);
@@ -248,7 +251,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 
 	NSString *tempXMLPath = [[NSTemporaryDirectory() stringByAppendingPathComponent:[[NSProcessInfo processInfo] globallyUniqueString]] stringByAppendingPathExtension:@"xml"];
 	size_t writeFlags = 0;
-	ofstream stream([tempXMLPath UTF8String]);
+	std::ofstream stream([tempXMLPath UTF8String]);
 	document->writeXML(stream, writeFlags);
 	stream.close();
 
@@ -789,11 +792,11 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 
         NSString *patientName = HorosSRAnnotationCopyField(image.completePath, @"PatientsName");
         if (patientName.length)
-            document->setPatientsName(patientName.UTF8String);
+            document->setPatientName(patientName.UTF8String);
 
         NSString *referringPhysician = HorosSRAnnotationCopyField(image.completePath, @"ReferringPhysiciansName");
         if (referringPhysician.length)
-            document->setReferringPhysiciansName(referringPhysician.UTF8String);
+            document->setReferringPhysicianName(referringPhysician.UTF8String);
 
         NSString *studyDescription = HorosSRAnnotationCopyField(image.completePath, @"StudyDescription");
         if (studyDescription.length)
@@ -828,10 +831,10 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
         document->setSpecificCharacterSet( "ISO_IR 192"); // UTF-8
         
         if( [study valueForKey:@"name"])
-            document->setPatientsName([[study valueForKey:@"name"] UTF8String]);
+            document->setPatientName([[study valueForKey:@"name"] UTF8String]);
         
         if ([study valueForKey:@"referringPhysician"])
-            document->setReferringPhysiciansName([[study valueForKey:@"referringPhysician"] UTF8String]);
+            document->setReferringPhysicianName([[study valueForKey:@"referringPhysician"] UTF8String]);
         
         if( _DICOMSRDescription)
             document->setSeriesDescription( [_DICOMSRDescription UTF8String]);
@@ -841,12 +844,12 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
     }
     
 	if (canonicalPatientBirthDate.length)
-		document->setPatientsBirthDate([canonicalPatientBirthDate UTF8String]);
+		document->setPatientBirthDate([canonicalPatientBirthDate UTF8String]);
 	else if ([study valueForKey:@"dateOfBirth"])
-		document->setPatientsBirthDate([[[study valueForKey:@"dateOfBirth"] descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil] UTF8String]);
+		document->setPatientBirthDate([[[study valueForKey:@"dateOfBirth"] descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil] UTF8String]);
 		
 	if ([study valueForKey:@"patientSex"])
-		document->setPatientsSex([[study valueForKey:@"patientSex"] UTF8String]);
+		document->setPatientSex([[study valueForKey:@"patientSex"] UTF8String]);
 	
 	NSString *patientID = [study valueForKey:@"patientID"];
 	if (canonicalPatientID.length)
@@ -914,7 +917,9 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 			HorosSRAnnotationSymbol<HorosModernDCMTKWriteCompatibilityROIStructuredReportFn>("HorosModernDCMTKWriteCompatibilityROIStructuredReport");
 		NSString *studyInstanceUID = [study valueForKey:@"studyInstanceUID"];
 		NSString *seriesInstanceUID = _seriesInstanceUID ?: [self seriesInstanceUID];
-		const char *generatedSOPInstanceUID = document->getSOPInstanceUID();
+		OFString generatedSOPInstanceUIDStorage;
+		document->getSOPInstanceUID(generatedSOPInstanceUIDStorage);
+		const char *generatedSOPInstanceUID = generatedSOPInstanceUIDStorage.c_str();
 		NSString *studyDescription = [study valueForKey:@"studyName"];
 		if (studyDescription.length == 0)
 			studyDescription = [study valueForKey:@"name"];
@@ -983,7 +988,9 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 			HorosSRAnnotationSymbol<HorosModernDCMTKWriteCompatibilityStructuredReportFn>("HorosModernDCMTKWriteCompatibilityStructuredReport");
 		NSString *studyInstanceUID = [study valueForKey:@"studyInstanceUID"];
 		NSString *seriesInstanceUID = _seriesInstanceUID ?: [self seriesInstanceUID];
-		const char *generatedSOPInstanceUID = document->getSOPInstanceUID();
+		OFString generatedSOPInstanceUIDStorage;
+		document->getSOPInstanceUID(generatedSOPInstanceUIDStorage);
+		const char *generatedSOPInstanceUID = generatedSOPInstanceUIDStorage.c_str();
 		NSString *studyDescription = [study valueForKey:@"studyName"];
 		if (studyDescription.length == 0)
 			studyDescription = [study valueForKey:@"name"];
@@ -1064,7 +1071,9 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 			HorosSRAnnotationSymbol<HorosModernDCMTKReplaceTagValueFn>("HorosModernDCMTKReplaceTagValue");
 		HorosModernDCMTKWriteBufferByTagFn writeBufferFn =
 			HorosSRAnnotationSymbol<HorosModernDCMTKWriteBufferByTagFn>("HorosModernDCMTKWriteBufferByTag");
-		const char *generatedSOPInstanceUID = document->getSOPInstanceUID();
+		OFString generatedSOPInstanceUIDStorage;
+		document->getSOPInstanceUID(generatedSOPInstanceUIDStorage);
+		const char *generatedSOPInstanceUID = generatedSOPInstanceUIDStorage.c_str();
 		NSString *studyInstanceUID = [study valueForKey:@"studyInstanceUID"];
 		NSString *studyDescription = [study valueForKey:@"studyName"];
 		if (studyDescription.length == 0)
@@ -1123,7 +1132,11 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 - (NSString *)seriesInstanceUID
 {
 	if (!_seriesInstanceUID)
-		_seriesInstanceUID =  [[NSString stringWithUTF8String:document->getSeriesInstanceUID()] retain];
+	{
+		OFString seriesInstanceUID;
+		document->getSeriesInstanceUID(seriesInstanceUID);
+		_seriesInstanceUID = [[NSString stringWithUTF8String:seriesInstanceUID.c_str()] retain];
+	}
 	return _seriesInstanceUID;
 }
 
@@ -1134,23 +1147,26 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 }
 
 - (NSString *)sopInstanceUID{
-	return [NSString stringWithUTF8String:document->getSOPInstanceUID()];
+	OFString sopInstanceUID;
+	document->getSOPInstanceUID(sopInstanceUID);
+	return [NSString stringWithUTF8String:sopInstanceUID.c_str()];
 }
 
 - (NSString *)sopClassUID{
-	return [NSString stringWithUTF8String:document->getSOPClassUID()];
+	OFString sopClassUID;
+	document->getSOPClassUID(sopClassUID);
+	return [NSString stringWithUTF8String:sopClassUID.c_str()];
 }
 
 - (NSString *)seriesDescription{
-
-	const char* seriesDescription = document->getSeriesDescription();
-	if( seriesDescription) return [NSString stringWithUTF8String:seriesDescription];
+	OFString seriesDescription;
+	if (document->getSeriesDescription(seriesDescription).good()) return [NSString stringWithUTF8String:seriesDescription.c_str()];
 	else return @"";
 }
 
 - (NSString *)seriesNumber{
-	const char* seriesNumber = document->getSeriesNumber();
-	if( seriesNumber) return [NSString stringWithUTF8String:seriesNumber];
+	OFString seriesNumber;
+	if (document->getSeriesNumber(seriesNumber).good()) return [NSString stringWithUTF8String:seriesNumber.c_str()];
 	else return @"";
 }
 @end

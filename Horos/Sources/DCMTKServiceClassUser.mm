@@ -38,9 +38,15 @@
 
 #import "DCMTKServiceClassUser.h"
 
-#include "tlstrans.h"
-#include "tlslayer.h"
-#include "ofstring.h"
+#include <dcmtk/dcmtls/tlstrans.h>
+#include <dcmtk/dcmtls/tlslayer.h>
+#ifndef SSL_FILETYPE_PEM
+#define SSL_FILETYPE_PEM DCF_Filetype_PEM
+#endif
+#ifndef SSL_FILETYPE_ASN1
+#define SSL_FILETYPE_ASN1 DCF_Filetype_ASN1
+#endif
+#include <dcmtk/ofstd/ofstring.h>
 
 
 @implementation DCMTKServiceClassUser

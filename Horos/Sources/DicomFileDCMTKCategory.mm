@@ -143,6 +143,55 @@ static NSString* HorosModernDCMTKBridgeString(const char* value, NSStringEncodin
     return [NSString stringWithCString:value encoding:encoding];
 }
 
+static NSString* HorosModernDCMTKDecodeHexDumpString(NSString *value)
+{
+    if (value.length == 0)
+        return nil;
+
+    NSCharacterSet *hexSet = [NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdefABCDEF"];
+    NSArray<NSString *> *tokens = [value componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSMutableData *data = [NSMutableData data];
+    BOOL sawByte = NO;
+
+    for (NSString *token in tokens)
+    {
+        if (token.length == 0)
+            continue;
+        if ([token rangeOfCharacterFromSet:[hexSet invertedSet]].location != NSNotFound)
+            return nil;
+        if (token.length == 8 && data.length > 0)
+            continue;
+        if (token.length != 2)
+            return nil;
+
+        unsigned int byte = 0;
+        if ([[NSScanner scannerWithString:token] scanHexInt:&byte] == NO || byte > 0xff)
+            return nil;
+        if (byte == 0)
+            continue;
+        unsigned char c = (unsigned char)byte;
+        [data appendBytes:&c length:1];
+        sawByte = YES;
+    }
+
+    if (sawByte == NO || data.length == 0)
+        return nil;
+
+    while (data.length > 0)
+    {
+        unsigned char last = 0;
+        [data getBytes:&last range:NSMakeRange(data.length - 1, 1)];
+        if (last != 0 && last != ' ')
+            break;
+        [data setLength:data.length - 1];
+    }
+
+    if (data.length == 0)
+        return nil;
+
+    return [[[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding] autorelease];
+}
+
 static NSString* HorosModernDCMTKCopyFieldString(const char* path,
                                                  NSString *fieldName,
                                                  NSStringEncoding encoding,
@@ -190,6 +239,9 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     if (value == NULL)
         return nil;
     NSString *stringValue = [DicomFile stringWithBytes:value encodings:encodings];
+    NSString *decodedHexValue = HorosModernDCMTKDecodeHexDumpString(stringValue);
+    if (decodedHexValue)
+        stringValue = [DicomFile stringWithBytes:(char *)[decodedHexValue UTF8String] encodings:encodings];
     if (freeStringFn)
         freeStringFn(value);
     return stringValue;
@@ -476,6 +528,8 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     NSString *sopClassUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.sopClassUID, NSASCIIStringEncoding) : nil;
     if (sopClassUID == nil)
         sopClassUID = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"SOPClassUID", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+    if (sopClassUID == nil)
+        sopClassUID = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, 0x0008, 0x0016, encoding.data(), copyFieldByTagFn, freeStringFn);
     if (sopClassUID)
         [dicomElements setObject:sopClassUID forKey:@"SOPClassUID"];
     
@@ -498,6 +552,8 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     NSString *sopInstanceUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.sopInstanceUID, NSISOLatin1StringEncoding) : nil;
     if (sopInstanceUID == nil)
         sopInstanceUID = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"SOPInstanceUID", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (sopInstanceUID == nil)
+        sopInstanceUID = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, 0x0008, 0x0018, encoding.data(), copyFieldByTagFn, freeStringFn);
     if (sopInstanceUID)
         SOPUID = [sopInstanceUID retain];
     else
@@ -505,6 +561,8 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     if (SOPUID) [dicomElements setObject:SOPUID forKey:@"SOPUID"];
     
     NSString *studyValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"StudyDescription", encoding.data(), copyFieldFn, freeStringFn);
+    if (studyValue == nil)
+        studyValue = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, 0x0008, 0x1030, encoding.data(), copyFieldByTagFn, freeStringFn);
     if (studyValue)
         study = [studyValue retain];
     if( !study)
@@ -514,8 +572,12 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     NSString *modalityString = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.modality, NSASCIIStringEncoding) : nil;
     if (modalityString == nil)
         modalityString = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"Modality", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+    if (modalityString == nil)
+        modalityString = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, 0x0008, 0x0060, encoding.data(), copyFieldByTagFn, freeStringFn);
     if (modalityString)
         Modality = [[NSString alloc] initWithString:modalityString];
+    else if ([DCMAbstractSyntaxUID isStructuredReport:sopClassUID])
+        Modality = [[NSString alloc] initWithString:@"SR"];
     else
         Modality = [[NSString alloc] initWithString:@"OT"];
     [dicomElements setObject:Modality forKey:@"modality"];
@@ -575,9 +637,13 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     
     NSString *seriesDescriptionValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"SeriesDescription", encoding.data(), copyFieldFn, freeStringFn);
     if (seriesDescriptionValue == nil)
+        seriesDescriptionValue = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, 0x0008, 0x103e, encoding.data(), copyFieldByTagFn, freeStringFn);
+    if (seriesDescriptionValue == nil)
         seriesDescriptionValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"PerformedProcedureStepDescription", encoding.data(), copyFieldFn, freeStringFn);
     if (seriesDescriptionValue == nil)
         seriesDescriptionValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"AcquisitionDeviceProcessingDescription", encoding.data(), copyFieldFn, freeStringFn);
+    if (seriesDescriptionValue == nil && [DCMAbstractSyntaxUID isStructuredReport:sopClassUID])
+        seriesDescriptionValue = @"Structured Report";
     if (seriesDescriptionValue)
         serie = [seriesDescriptionValue retain];
     
@@ -586,6 +652,8 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     [dicomElements setObject:serie forKey:@"seriesDescription"];
     
     NSString *institutionValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"InstitutionName", encoding.data(), copyFieldFn, freeStringFn);
+    if (institutionValue == nil)
+        institutionValue = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, 0x0008, 0x0080, encoding.data(), copyFieldByTagFn, freeStringFn);
     if (institutionValue)
         institution = [institutionValue retain];
     if( institution) [dicomElements setObject: institution forKey:@"institutionName"];
@@ -617,6 +685,8 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     }
     
     NSString *accessionValue = HorosModernDCMTKDecodeFieldString(filePath.UTF8String, @"AccessionNumber", encoding.data(), copyFieldFn, freeStringFn);
+    if (accessionValue == nil)
+        accessionValue = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, 0x0008, 0x0050, encoding.data(), copyFieldByTagFn, freeStringFn);
     if (accessionValue)
         accessionNumber = [accessionValue retain];
     if( accessionNumber) [dicomElements setObject:accessionNumber forKey:@"accessionNumber"];
@@ -637,6 +707,8 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     if( patientName) [dicomElements setObject:patientName forKey:@"patientName"];
     
     NSString *patientIDValue = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"PatientID", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (patientIDValue == nil)
+        patientIDValue = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, 0x0010, 0x0020, encoding.data(), copyFieldByTagFn, freeStringFn);
     if (patientIDValue)
         patientID = [[NSString alloc] initWithString:patientIDValue];
     if( patientID) [dicomElements setObject:patientID forKey:@"patientID"];
@@ -669,6 +741,10 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     }
     
     NSString *patientSexValue = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"PatientsSex", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (patientSexValue == nil)
+        patientSexValue = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"PatientSex", NSISOLatin1StringEncoding, copyFieldFn, freeStringFn);
+    if (patientSexValue == nil)
+        patientSexValue = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, 0x0010, 0x0040, encoding.data(), copyFieldByTagFn, freeStringFn);
     if (patientSexValue)
         patientSex = [[NSString alloc] initWithString:patientSexValue];
     if( patientSex) [dicomElements setObject:patientSex forKey:@"patientSex"];
@@ -781,6 +857,8 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     NSString *seriesInstanceUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.seriesInstanceUID, NSASCIIStringEncoding) : nil;
     if (seriesInstanceUID == nil)
         seriesInstanceUID = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"SeriesInstanceUID", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+    if (seriesInstanceUID == nil)
+        seriesInstanceUID = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, 0x0020, 0x000e, encoding.data(), copyFieldByTagFn, freeStringFn);
     if (seriesInstanceUID)
     {
         self.serieID = seriesInstanceUID;
@@ -810,6 +888,8 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     NSString *studyInstanceUID = hasBridgeMetadata ? HorosModernDCMTKBridgeString(bridgeMetadata.studyInstanceUID, NSASCIIStringEncoding) : nil;
     if (studyInstanceUID == nil)
         studyInstanceUID = HorosModernDCMTKCopyFieldString(filePath.UTF8String, @"StudyInstanceUID", NSASCIIStringEncoding, copyFieldFn, freeStringFn);
+    if (studyInstanceUID == nil)
+        studyInstanceUID = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, 0x0020, 0x000d, encoding.data(), copyFieldByTagFn, freeStringFn);
     if (studyInstanceUID)
         studyID = [[NSString alloc] initWithString:studyInstanceUID];
     else

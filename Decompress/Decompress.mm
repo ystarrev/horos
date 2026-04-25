@@ -89,7 +89,7 @@ NSMutableDictionary		*DATABASECOLUMNS = 0L;
 //short					Altivec = 0;
 short					UseOpenJpeg = 1, Use_kdu_IfAvailable = 0;
 
-extern void dcmtkSetJPEGColorSpace( int);
+static void dcmtkSetJPEGColorSpace( int) {}
 
 /*
 void myunlink(const char * path) {

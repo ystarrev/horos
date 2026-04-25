@@ -37,10 +37,10 @@
 
 #import "DicomDir.h"
 #import "N2Debug.h"
-#include "dcddirif.h"
-#include "ofstd.h"
+#include <dcmtk/dcmdata/dcddirif.h>
+#include <dcmtk/ofstd/ofstd.h>
 
-#include "ddpiimpl.h"     /* for class DicomDirImageImplementation */
+#include <dcmtk/dcmjpeg/ddpiimpl.h>     /* for class DicomDirImageImplementation */
 
 
 @implementation DicomDir
@@ -55,8 +55,7 @@
             ddir.disableTransferSyntaxCheck(); // -Nxc
             ddir.enableInventMode(OFTrue); // +I
             
-        //  ddir.enableIconImageMode(); // +X
-            ddir.enableOneIconPerSeriesMode(); // OsiriX addition
+            ddir.enableIconImageMode(); // +X; modern DCMTK no longer has Horos' one-icon-per-series extension
             ddir.setIconSize(128); // we let DicomDirInterface pick the icon size.. which, depending on the modality, will be either 128 or 64
 
             DicomDirImageImplementation imagePlugin;
@@ -66,7 +65,7 @@
             OFStandard::searchDirectoryRecursively("", fileNames, NULL, path.fileSystemRepresentation); // +r +id burnFolder
             
             NSString* dicomdirPath = [path stringByAppendingPathComponent:[NSString stringWithUTF8String:DEFAULT_DICOMDIR_NAME]];
-            OFCondition result = ddir.createNewDicomDir(DicomDirInterface::AP_USBandFlash, [dicomdirPath fileSystemRepresentation], DEFAULT_FILESETID); // -Pfl
+            OFCondition result = ddir.createNewDicomDir(DicomDirInterface::AP_USBandFlashJPEG, [dicomdirPath fileSystemRepresentation], DEFAULT_FILESETID); // -Pfl
             if (!result.good())
                 [NSException raise:NSGenericException format:@"Couldn't create new DICOMDIR file: %s", result.text()];
                 

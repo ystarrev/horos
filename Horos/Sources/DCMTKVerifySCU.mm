@@ -72,27 +72,31 @@
 
 
 #include "DCMTKVerifySCU.h"
-#include "osconfig.h"    /* make sure OS specific configuration is included first */
+#include <dcmtk/config/osconfig.h>    /* make sure OS specific configuration is included first */
 
-#define INCLUDE_CSTDLIB
-#define INCLUDE_CSTDIO
-#define INCLUDE_CSTRING
-#define INCLUDE_CSTDARG
-#include "ofstdinc.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdarg.h>
 
-#include "dimse.h"
-#include "diutil.h"
-#include "dcfilefo.h"
-#include "dcdebug.h"
-#include "dcdict.h"
-#include "dcuid.h"
-#include "cmdlnarg.h"
-#include "ofconapp.h"
-//#include "dcuid.h"    /* for dcmtk version name */
+#include <dcmtk/dcmnet/dimse.h>
+#include <dcmtk/dcmnet/diutil.h>
+#include <dcmtk/dcmdata/dcfilefo.h>
+#include <dcmtk/dcmdata/dcdict.h>
+#include <dcmtk/dcmdata/dcuid.h>
+#include <dcmtk/dcmdata/cmdlnarg.h>
+#include <dcmtk/ofstd/ofconapp.h>
+//#include <dcmtk/dcmdata/dcuid.h>    /* for dcmtk version name */
 
 #ifdef WITH_OPENSSL
-#include "tlstrans.h"
-#include "tlslayer.h"
+#include <dcmtk/dcmtls/tlstrans.h>
+#include <dcmtk/dcmtls/tlslayer.h>
+#ifndef SSL_FILETYPE_PEM
+#define SSL_FILETYPE_PEM DCF_Filetype_PEM
+#endif
+#ifndef SSL_FILETYPE_ASN1
+#define SSL_FILETYPE_ASN1 DCF_Filetype_ASN1
+#endif
 #endif
 
 #ifdef WITH_ZLIB

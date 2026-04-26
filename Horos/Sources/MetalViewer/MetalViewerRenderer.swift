@@ -466,26 +466,19 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func loadSlice(at index: Int) {
-        let loadSliceStart = CFAbsoluteTimeGetCurrent()
         guard pixList.indices.contains(index) else { return }
         let pix = pixList[index]
 
-        let checkLoadStart = CFAbsoluteTimeGetCurrent()
         pix.checkLoad()
-        metalRendererTimingLog("MetalViewerRenderer pix.checkLoad slice \(index)", since: checkLoadStart)
-        let minMaxStart = CFAbsoluteTimeGetCurrent()
         pix.computePixMinPixMax()
-        metalRendererTimingLog("MetalViewerRenderer computePixMinPixMax slice \(index)", since: minMaxStart)
 
         let width = max(Int(pix.pwidth), 1)
         let height = max(Int(pix.pheight), 1)
         imageAspectRatio = Float(width) * Float(max(pix.pixelSpacingX, 1)) / max(Float(height) * Float(max(pix.pixelSpacingY, 1)), 1)
 
-        let textureStart = CFAbsoluteTimeGetCurrent()
         guard let texture = makeTexture(for: pix) else {
             return
         }
-        metalRendererTimingLog("MetalViewerRenderer makeTexture slice \(index)", since: textureStart)
         baseTexture = texture
 
         if let customWindow = customSeriesWindowLevel {
@@ -500,12 +493,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         if let overlayPix = currentOverlayPix {
-            let overlayCheckLoadStart = CFAbsoluteTimeGetCurrent()
             overlayPix.checkLoad()
-            metalRendererTimingLog("MetalViewerRenderer overlay pix.checkLoad slice \(index)", since: overlayCheckLoadStart)
-            let overlayMinMaxStart = CFAbsoluteTimeGetCurrent()
             overlayPix.computePixMinPixMax()
-            metalRendererTimingLog("MetalViewerRenderer overlay computePixMinPixMax slice \(index)", since: overlayMinMaxStart)
 
             let overlayDefaultWW = overlayPix.ww > 0 ? overlayPix.ww : overlayPix.fullww
             let overlayDefaultWL = overlayPix.wl != 0 ? overlayPix.wl : overlayPix.fullwl
@@ -519,7 +508,6 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         stateDidChange?(stateDescription)
-        metalRendererTimingLog("MetalViewerRenderer loadSlice \(index) total", since: loadSliceStart)
     }
 
     private func windowLevelDefaults(for pix: DCMPix) -> MetalViewerWindowLevel {
@@ -681,13 +669,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         var loadedImagePointers = Array<UnsafeMutablePointer<Float>?>(repeating: nil, count: depth)
 
         for (sliceIndex, pix) in pixList.enumerated() {
-            let sliceLoadStart = CFAbsoluteTimeGetCurrent()
             pix.checkLoad()
             pix.computePixMinPixMax()
             loadedImagePointers[sliceIndex] = pix.fImage
-            if sliceIndex < 3 || sliceIndex == depth - 1 {
-                metalRendererTimingLog("MetalViewerRenderer makeVolumeData load source slice \(sliceIndex)", since: sliceLoadStart)
-            }
         }
 
         let copyStart = CFAbsoluteTimeGetCurrent()

@@ -3,6 +3,10 @@ import CoreGraphics
 
 private let metalViewerScoutTextColor = NSColor(calibratedRed: 0.18, green: 1.0, blue: 0.28, alpha: 1.0)
 
+private final class MetalViewerScoutDocumentView: NSView {
+    override var isFlipped: Bool { true }
+}
+
 private enum MetalViewerScoutLayout {
     static let fallbackThumbnailWidth: CGFloat = 128
     static let thumbnailAspectRatio: CGFloat = 1.0
@@ -40,7 +44,7 @@ final class MetalViewerScoutView: NSScrollView {
         stackView.spacing = 10
         stackView.edgeInsets = NSEdgeInsets(top: 12, left: 4, bottom: 12, right: 4)
 
-        let documentView = NSView()
+        let documentView = MetalViewerScoutDocumentView()
         documentView.translatesAutoresizingMaskIntoConstraints = false
         documentView.addSubview(stackView)
         self.documentView = documentView
@@ -133,7 +137,11 @@ final class MetalViewerScoutView: NSScrollView {
         pendingThumbnailRefresh = nil
         guard let documentView else { return }
 
-        documentView.layoutSubtreeIfNeeded()
+        guard documentView.bounds.height > 0 else {
+            scheduleVisibleThumbnailLoad()
+            return
+        }
+
         let visibleRect = contentView.documentVisibleRect.insetBy(dx: 0, dy: -240)
         for item in itemViews {
             let itemFrame = item.convert(item.bounds, to: documentView)
@@ -142,11 +150,17 @@ final class MetalViewerScoutView: NSScrollView {
         }
     }
 
-    private func scrollToTop() {
+    private func scrollToTop(retryCount: Int = 0) {
         guard let documentView else { return }
-        documentView.layoutSubtreeIfNeeded()
-        let topY = max(0, documentView.bounds.height - contentView.bounds.height)
-        contentView.scroll(to: NSPoint(x: 0, y: topY))
+
+        guard documentView.bounds.height > 0 || retryCount >= 3 else {
+            DispatchQueue.main.async { [weak self] in
+                self?.scrollToTop(retryCount: retryCount + 1)
+            }
+            return
+        }
+
+        contentView.scroll(to: .zero)
         reflectScrolledClipView(contentView)
     }
 

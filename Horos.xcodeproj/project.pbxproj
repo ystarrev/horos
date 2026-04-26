@@ -561,8 +561,6 @@
 		7E172F590933CAE00057BCE8 /* DCMObjectDBImport.m in Sources */ = {isa = PBXBuildFile; fileRef = 7E172F550933CAE00057BCE8 /* DCMObjectDBImport.m */; };
 		7E172F660933D5FF0057BCE8 /* DCMObjectPixelDataImport.h in Headers */ = {isa = PBXBuildFile; fileRef = 7E172F620933D5FF0057BCE8 /* DCMObjectPixelDataImport.h */; };
 		7E172F670933D5FF0057BCE8 /* DCMObjectPixelDataImport.m in Sources */ = {isa = PBXBuildFile; fileRef = 7E172F630933D5FF0057BCE8 /* DCMObjectPixelDataImport.m */; };
-		7E226ABE06BEF625003B09E5 /* jpegdatasrc.h in Headers */ = {isa = PBXBuildFile; fileRef = 7E2269C406BEF624003B09E5 /* jpegdatasrc.h */; };
-		7E226ABF06BEF625003B09E5 /* jpegdatasrc.m in Sources */ = {isa = PBXBuildFile; fileRef = 7E2269C506BEF624003B09E5 /* jpegdatasrc.m */; };
 		7E2BE3D10715DB9A0017898A /* route.tif in Resources */ = {isa = PBXBuildFile; fileRef = 7E2BE3D00715DB9A0017898A /* route.tif */; };
 		7E2BE3DA0715DBC50017898A /* cd.icns in Resources */ = {isa = PBXBuildFile; fileRef = 7E2BE3D90715DBC50017898A /* cd.icns */; };
 		7E2BE3E30715DBD40017898A /* GeneralPreferences.tif in Resources */ = {isa = PBXBuildFile; fileRef = 7E2BE3E20715DBD40017898A /* GeneralPreferences.tif */; };
@@ -2557,8 +2555,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		7E172F550933CAE00057BCE8 /* DCMObjectDBImport.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = DCMObjectDBImport.m; path = Horos/Sources/DCMObjectDBImport.m; sourceTree = SOURCE_ROOT; };
 		7E172F620933D5FF0057BCE8 /* DCMObjectPixelDataImport.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DCMObjectPixelDataImport.h; path = Horos/Sources/DCMObjectPixelDataImport.h; sourceTree = SOURCE_ROOT; };
 		7E172F630933D5FF0057BCE8 /* DCMObjectPixelDataImport.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = DCMObjectPixelDataImport.m; path = Horos/Sources/DCMObjectPixelDataImport.m; sourceTree = SOURCE_ROOT; };
-		7E2269C406BEF624003B09E5 /* jpegdatasrc.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = jpegdatasrc.h; path = "DCM Framework/jpegdatasrc.h"; sourceTree = SOURCE_ROOT; };
-		7E2269C506BEF624003B09E5 /* jpegdatasrc.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = jpegdatasrc.m; path = "DCM Framework/jpegdatasrc.m"; sourceTree = SOURCE_ROOT; };
 		7E2BE3D00715DB9A0017898A /* route.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = route.tif; sourceTree = "<group>"; };
 		7E2BE3D90715DBC50017898A /* cd.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = cd.icns; sourceTree = "<group>"; };
 		7E2BE3E20715DBD40017898A /* GeneralPreferences.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = GeneralPreferences.tif; sourceTree = "<group>"; };
@@ -3608,10 +3604,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		CE94FC011053FFD3006D92E4 /* CurveFitter.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CurveFitter.m; sourceTree = "<group>"; };
 		CE96D0DB0BEE6F9800C4E397 /* XMLControllerDCMTKCategory.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = XMLControllerDCMTKCategory.h; sourceTree = "<group>"; };
 		CE96D0DC0BEE6F9800C4E397 /* XMLControllerDCMTKCategory.mm */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.objcpp; path = XMLControllerDCMTKCategory.mm; sourceTree = "<group>"; };
-		CE96D0F20BEE71E800C4E397 /* mdfconen.cc */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = mdfconen.cc; path = "Binaries/dcmtk-source/sample apps/dcmdump/mdfconen.cc"; sourceTree = SOURCE_ROOT; };
-		CE96D0F30BEE71E800C4E397 /* mdfconen.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = mdfconen.h; path = "Binaries/dcmtk-source/sample apps/dcmdump/mdfconen.h"; sourceTree = SOURCE_ROOT; };
-		CE96D1160BEE732900C4E397 /* mdfdsman.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = mdfdsman.h; path = "Binaries/dcmtk-source/sample apps/dcmdump/mdfdsman.h"; sourceTree = SOURCE_ROOT; };
-		CE96D1170BEE732900C4E397 /* mdfdsman.cc */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = mdfdsman.cc; path = "Binaries/dcmtk-source/sample apps/dcmdump/mdfdsman.cc"; sourceTree = SOURCE_ROOT; };
 		CE9762FC08FABDA600E6F8B0 /* ROIManagerController.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = ROIManagerController.m; sourceTree = "<group>"; };
 		CE9762FD08FABDA600E6F8B0 /* ROIManagerController.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = ROIManagerController.h; sourceTree = "<group>"; };
 		CE9762FE08FABDA600E6F8B0 /* PaletteController.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = PaletteController.h; sourceTree = "<group>"; };
@@ -4332,8 +4324,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 				CE79D9860FD84C350043DD73 /* DCMAbstractSyntaxUID.h */,
 				CE79D9870FD84C350043DD73 /* DCMAbstractSyntaxUID.m */,
 				7E0B3A13067526A600908593 /* DCM.h */,
-				7E2269C406BEF624003B09E5 /* jpegdatasrc.h */,
-				7E2269C506BEF624003B09E5 /* jpegdatasrc.m */,
 				7ECBB8210683A68D00FF3FF4 /* DCMPixelDataAttribute.h */,
 				7ECBB8220683A68D00FF3FF4 /* DCMPixelDataAttribute.mm */,
 				BFAEB3F606BF3BD900C7EF1E /* DCMPixelDataAttributeJPEG8.h */,
@@ -4948,10 +4938,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 				AB4A6DF4056EC14E009E6C6E /* XMLController.m */,
 				CE96D0DB0BEE6F9800C4E397 /* XMLControllerDCMTKCategory.h */,
 				CE96D0DC0BEE6F9800C4E397 /* XMLControllerDCMTKCategory.mm */,
-				CE96D0F30BEE71E800C4E397 /* mdfconen.h */,
-				CE96D0F20BEE71E800C4E397 /* mdfconen.cc */,
-				CE96D1160BEE732900C4E397 /* mdfdsman.h */,
-				CE96D1170BEE732900C4E397 /* mdfdsman.cc */,
 			);
 			name = XML;
 			sourceTree = "<group>";
@@ -6072,7 +6058,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 				7EE0DC3E067A5138003E745F /* DCMSequenceAttribute.h in Headers */,
 				7ECBB8230683A68D00FF3FF4 /* DCMPixelDataAttribute.h in Headers */,
 				BF61E58E06A5BB9E001C0B29 /* DCMCalendarDate.h in Headers */,
-				7E226ABE06BEF625003B09E5 /* jpegdatasrc.h in Headers */,
 				BFAEB3FA06BF3BD900C7EF1E /* DCMPixelDataAttributeJPEG8.h in Headers */,
 				BFAEB40A06BF3BEE00C7EF1E /* DCMPixelDataAttributeJPEG12.h in Headers */,
 				BFAEB41A06BF3BFA00C7EF1E /* DCMPixelDataAttributeJPEG16.h in Headers */,
@@ -7668,7 +7653,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 				7EE0DC3F067A5138003E745F /* DCMSequenceAttribute.m in Sources */,
 				7ECBB8240683A68D00FF3FF4 /* DCMPixelDataAttribute.mm in Sources */,
 				BF61E58F06A5BB9E001C0B29 /* DCMCalendarDate.m in Sources */,
-				7E226ABF06BEF625003B09E5 /* jpegdatasrc.m in Sources */,
 				BFAEB3FB06BF3BD900C7EF1E /* DCMPixelDataAttributeJPEG8.m in Sources */,
 				BFAEB40B06BF3BEE00C7EF1E /* DCMPixelDataAttributeJPEG12.m in Sources */,
 				BFAEB41B06BF3BFA00C7EF1E /* DCMPixelDataAttributeJPEG16.m in Sources */,
@@ -9298,18 +9282,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
 				SKIP_INSTALL = NO;
 					SYSTEM_HEADER_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/DCMTK/dcmsr/include",
-					"$(PROJECT_DIR)/DCMTK/dcmpstat/include",
-					"$(PROJECT_DIR)/DCMTK/dcmtls/include",
-					"$(PROJECT_DIR)/DCMTK/dcmqrdb/include",
-					"$(PROJECT_DIR)/DCMTK/dcmnet/include",
-					"$(PROJECT_DIR)/DCMTK/oflog/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpls/include",
-					"$(PROJECT_DIR)/DCMTK/dcmdata/include",
-					"$(PROJECT_DIR)/DCMTK/dcmimgle/include",
-					"$(PROJECT_DIR)/DCMTK/dcmimage/include",
-					"$(PROJECT_DIR)/DCMTK/ofstd/include",
 						$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
 					$CONFIGURATION_TEMP_DIR/DCMTK.build/CMake/config/include,
 						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
@@ -9355,21 +9327,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 					"$(PROJECT_DIR)/NSFont_OpenGL",
 				);
 				SYSTEM_HEADER_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/DCMTK/oflog/include",
-					"$(PROJECT_DIR)/DCMTK/dcmdata/include",
-					"$(PROJECT_DIR)/DCMTK/dcmnet/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpls/include",
-					"$(PROJECT_DIR)/DCMTK/dcmimgle/include",
-					"$(PROJECT_DIR)/DCMTK/dcmimage/include",
-					"$(PROJECT_DIR)/DCMTK/dcmsr/include",
-					"$(PROJECT_DIR)/DCMTK/dcmpstat/include",
-					"$(PROJECT_DIR)/DCMTK/dcmtls/include",
-					"$(PROJECT_DIR)/DCMTK/dcmqrdb/include",
-					"$(PROJECT_DIR)/DCMTK/ofstd/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/libijg8",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/libijg12",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/libijg16",
 					$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
 					$CONFIGURATION_TEMP_DIR/DCMTK.build/CMake/config/include,
 					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
@@ -9378,10 +9335,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/include,
 				);
 				USER_HEADER_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/DCMTK/ofstd/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/libijg8",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/libijg12",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/libijg16",
 					$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
 					$CONFIGURATION_TEMP_DIR/DCMTK.build/CMake/config/include,
 					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
@@ -9397,12 +9350,20 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 					$CONFIGURATION_TEMP_DIR/Grok.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/lib,
 				);
-				OTHER_CFLAGS = "$(inherited)";
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-lopenjp2",
-					"-lCharLS",
-				);
+					OTHER_CFLAGS = "$(inherited)";
+					OTHER_LDFLAGS = (
+						"$(inherited)",
+						"-ldcmjpeg",
+						"-ldcmdata",
+						"-loflog",
+						"-loficonv",
+						"-lofstd",
+						"-lijg8",
+						"-lijg12",
+						"-lijg16",
+						"-lopenjp2",
+						"-lCharLS",
+					);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).dcm";
 				PRODUCT_NAME = DCM;
 			};
@@ -9512,18 +9473,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).decompress";
 				PRODUCT_NAME = Decompress;
 					SYSTEM_HEADER_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/DCMTK/dcmsr/include",
-					"$(PROJECT_DIR)/DCMTK/dcmpstat/include",
-					"$(PROJECT_DIR)/DCMTK/dcmtls/include",
-					"$(PROJECT_DIR)/DCMTK/dcmqrdb/include",
-					"$(PROJECT_DIR)/DCMTK/dcmnet/include",
-					"$(PROJECT_DIR)/DCMTK/oflog/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpls/include",
-					"$(PROJECT_DIR)/DCMTK/dcmdata/include",
-					"$(PROJECT_DIR)/DCMTK/dcmimgle/include",
-					"$(PROJECT_DIR)/DCMTK/dcmimage/include",
-					"$(PROJECT_DIR)/DCMTK/ofstd/include",
 						$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
 					$CONFIGURATION_TEMP_DIR/DCMTK.build/CMake/config/include,
 						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
@@ -9749,21 +9698,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 					"$(PROJECT_DIR)/NSFont_OpenGL",
 				);
 				SYSTEM_HEADER_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/DCMTK/oflog/include",
-					"$(PROJECT_DIR)/DCMTK/dcmdata/include",
-					"$(PROJECT_DIR)/DCMTK/dcmnet/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpls/include",
-					"$(PROJECT_DIR)/DCMTK/dcmimgle/include",
-					"$(PROJECT_DIR)/DCMTK/dcmimage/include",
-					"$(PROJECT_DIR)/DCMTK/dcmsr/include",
-					"$(PROJECT_DIR)/DCMTK/dcmpstat/include",
-					"$(PROJECT_DIR)/DCMTK/dcmtls/include",
-					"$(PROJECT_DIR)/DCMTK/dcmqrdb/include",
-					"$(PROJECT_DIR)/DCMTK/ofstd/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/libijg8",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/libijg12",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/libijg16",
 					$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
 					$CONFIGURATION_TEMP_DIR/DCMTK.build/CMake/config/include,
 					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
@@ -9772,10 +9706,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/include,
 				);
 				USER_HEADER_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/DCMTK/ofstd/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/libijg8",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/libijg12",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/libijg16",
 					$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
 					$CONFIGURATION_TEMP_DIR/DCMTK.build/CMake/config/include,
 					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
@@ -9791,12 +9721,20 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 					$CONFIGURATION_TEMP_DIR/Grok.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/lib,
 				);
-				OTHER_CFLAGS = "$(inherited)";
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-lopenjp2",
-					"-lCharLS",
-				);
+					OTHER_CFLAGS = "$(inherited)";
+					OTHER_LDFLAGS = (
+						"$(inherited)",
+						"-ldcmjpeg",
+						"-ldcmdata",
+						"-loflog",
+						"-loficonv",
+						"-lofstd",
+						"-lijg8",
+						"-lijg12",
+						"-lijg16",
+						"-lopenjp2",
+						"-lCharLS",
+					);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).dcm";
 				PRODUCT_NAME = DCM;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -9918,18 +9856,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
 				SKIP_INSTALL = NO;
 					SYSTEM_HEADER_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/DCMTK/dcmsr/include",
-					"$(PROJECT_DIR)/DCMTK/dcmpstat/include",
-					"$(PROJECT_DIR)/DCMTK/dcmtls/include",
-					"$(PROJECT_DIR)/DCMTK/dcmqrdb/include",
-					"$(PROJECT_DIR)/DCMTK/dcmnet/include",
-					"$(PROJECT_DIR)/DCMTK/oflog/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpls/include",
-					"$(PROJECT_DIR)/DCMTK/dcmdata/include",
-					"$(PROJECT_DIR)/DCMTK/dcmimgle/include",
-					"$(PROJECT_DIR)/DCMTK/dcmimage/include",
-					"$(PROJECT_DIR)/DCMTK/ofstd/include",
 						$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
 					$CONFIGURATION_TEMP_DIR/DCMTK.build/CMake/config/include,
 						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
@@ -10152,18 +10078,6 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 				PRODUCT_NAME = Decompress;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 					SYSTEM_HEADER_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/DCMTK/dcmsr/include",
-					"$(PROJECT_DIR)/DCMTK/dcmpstat/include",
-					"$(PROJECT_DIR)/DCMTK/dcmtls/include",
-					"$(PROJECT_DIR)/DCMTK/dcmqrdb/include",
-					"$(PROJECT_DIR)/DCMTK/dcmnet/include",
-					"$(PROJECT_DIR)/DCMTK/oflog/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpeg/include",
-					"$(PROJECT_DIR)/DCMTK/dcmjpls/include",
-					"$(PROJECT_DIR)/DCMTK/dcmdata/include",
-					"$(PROJECT_DIR)/DCMTK/dcmimgle/include",
-					"$(PROJECT_DIR)/DCMTK/dcmimage/include",
-					"$(PROJECT_DIR)/DCMTK/ofstd/include",
 						$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
 					$CONFIGURATION_TEMP_DIR/DCMTK.build/CMake/config/include,
 						$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,

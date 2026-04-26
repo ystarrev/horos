@@ -678,9 +678,7 @@ extern "C"
 				}
 			}
 			
-			// pseudo random generator options.
-			// We initialize the pseudo-random number generator with the content of the screen which is is hardly predictable for an attacker
-			// see http://www.mevis-research.de/~meyer/dcmtk/docs_352/dcmtls/randseed.txt
+			// Seed DCMTK TLS with app-generated entropy.
 			[DDKeychain generatePseudoRandomFileToPath:TLS_SEED_FILE];
 			[args addObject:@"--seed"]; // seed random generator with contents of f
 			[args addObject:TLS_SEED_FILE];		

@@ -5985,7 +5985,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     [annotationsDictionary removeAllObjects];
     [self loadCustomImageAnnotationsPapyLink:-1 DCMLink:nil];
 #endif
-    NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK decode success frame=%lu size=%ldx%ld path=%@ in %.3f s", requestedFrame, width, height, [self.srcFile lastPathComponent], CFAbsoluteTimeGetCurrent() - startTime);
     return YES;
 }
 
@@ -7276,8 +7275,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 - (void) CheckLoadIn
 {
-    BOOL hadImageAtEntry = fImage != nil;
-    CFAbsoluteTime checkLoadStart = CFAbsoluteTimeGetCurrent();
     BOOL USECUSTOMTIFF = NO;
     
     if( fImage == nil)
@@ -8270,8 +8267,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             }
         }
     }
-    if (hadImageAtEntry == NO && fImage != nil)
-        NSLog(@"HOROS_METAL_TIMING DCMPix CheckLoadIn loaded path=%@ frame=%ld size=%ldx%ld in %.3f s", [self.srcFile lastPathComponent], (long)frameNo, width, height, CFAbsoluteTimeGetCurrent() - checkLoadStart);
 }
 #pragma GCC diagnostic warning "-Wdeprecated-declarations"
 

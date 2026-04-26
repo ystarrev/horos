@@ -25,11 +25,11 @@
 #include <dcmtk/config/osconfig.h>    /* make sure OS specific configuration is included first */
 #include <dcmtk/ofstd/ofstream.h>
 #define DicomImage DCMTKDicomImage
-#include "../../DCMTK/dcmsr/include/dcmtk/dcmsr/dsrdoc.h"
+#include <dcmtk/dcmsr/dsrdoc.h>
 #include <dcmtk/dcmdata/dcuid.h>
-#include "../../DCMTK/dcmsr/include/dcmtk/dcmsr/dsrtypes.h"
-#include "../../DCMTK/dcmsr/include/dcmtk/dcmsr/dsrimgtn.h"
-#include "../../DCMTK/dcmsr/include/dcmtk/dcmsr/dsrdoctr.h"
+#include <dcmtk/dcmsr/dsrtypes.h>
+#include <dcmtk/dcmsr/dsrimgtn.h>
+#include <dcmtk/dcmsr/dsrdoctr.h>
 #undef DicomImage
 
 typedef char* (*HorosModernDCMTKCopyStructuredReportHTMLFn)(const char* path);

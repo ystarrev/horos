@@ -106,6 +106,7 @@ enum photometricmode{DCM_UNKNOWN_PHOTOMETRIC, DCM_MONOCHROME1,  DCM_MONOCHROME2,
 - (void)convertHostToLittleEndian;
 - (void)convertHostToBigEndian;
 - (NSData *)convertJPEG8ToHost:(NSData *)jpegData;
+- (NSData *)convertEncapsulatedJPEGToHost:(NSData *)jpegData;
 - (NSData *)convertJPEG2000ToHost:(NSData *)jpegData;
 - (NSData *)convertRLEToHost:(NSData *)rleData;
 - (NSData *)convertJPEGLSToHost:(NSData *)jpegLsData;

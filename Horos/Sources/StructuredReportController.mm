@@ -30,7 +30,7 @@
 
 #include <dcmtk/ofstd/ofstream.h>
 #define DicomImage DCMTKDicomImage
-#include "../../DCMTK/dcmsr/include/dcmtk/dcmsr/dsrdoc.h"
+#include <dcmtk/dcmsr/dsrdoc.h>
 #include <dcmtk/dcmdata/dcuid.h>
 #undef DicomImage
 #include <dcmtk/dcmdata/dcfilefo.h>

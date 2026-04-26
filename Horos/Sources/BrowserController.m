@@ -13491,6 +13491,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 - (void)openMetalViewerForImages:(NSArray*)loadList
 {
+    CFAbsoluteTime launchStart = CFAbsoluteTimeGetCurrent();
     if ([loadList count] == 0)
         return;
     
@@ -13504,6 +13505,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     
     viewerPix = [[NSMutableArray alloc] initWithCapacity:0];
     correspondingObjects = [[NSMutableArray alloc] initWithCapacity:0];
+    CFAbsoluteTime pixBuildStart = CFAbsoluteTimeGetCurrent();
     
     if (multiFrame)
     {
@@ -13547,6 +13549,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
         [correspondingObjects release];
         return;
     }
+    NSLog(@"HOROS_METAL_TIMING BrowserController built %lu DCMPix objects in %.3f s", (unsigned long)[viewerPix count], CFAbsoluteTimeGetCurrent() - pixBuildStart);
     
     NSManagedObject *firstObject = [correspondingObjects objectAtIndex:0];
     NSString *patientName = [firstObject valueForKeyPath:@"series.study.name"] ?: NSLocalizedString(@"Patient", nil);
@@ -13557,7 +13560,9 @@ constrainSplitPosition:(CGFloat)proposedPosition
     Class launcherClass = NSClassFromString(@"HorosMetalViewerLauncher");
     if (launcherClass)
     {
+        CFAbsoluteTime swiftLaunchStart = CFAbsoluteTimeGetCurrent();
         [launcherClass launchWithContext:context];
+        NSLog(@"HOROS_METAL_TIMING BrowserController Swift launch call returned in %.3f s", CFAbsoluteTimeGetCurrent() - swiftLaunchStart);
     }
     else
     {
@@ -13566,6 +13571,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     
     [viewerPix release];
     [correspondingObjects release];
+    NSLog(@"HOROS_METAL_TIMING BrowserController openMetalViewerForImages total %.3f s", CFAbsoluteTimeGetCurrent() - launchStart);
 }
 
 - (void) viewerDICOM: (id)sender

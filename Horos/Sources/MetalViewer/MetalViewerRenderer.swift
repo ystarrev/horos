@@ -7,6 +7,10 @@ import simd
 private let registrationHistogramBins = 64
 private let useGPUPyramidGeneration = true
 
+private func metalRendererTimingLog(_ message: String, since start: CFAbsoluteTime) {
+    print(String(format: "HOROS_METAL_TIMING %@ %.3f s", message, CFAbsoluteTimeGetCurrent() - start))
+}
+
 private struct MetalUniforms {
     var scale: SIMD2<Float>
     var offset: SIMD2<Float>
@@ -171,6 +175,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private(set) var currentSliceIndex = 0
     private(set) var windowLevel: Float = 0
     private(set) var windowWidth: Float = 1
+    private var defaultSeriesWindowLevel: MetalViewerWindowLevel?
+    private var customSeriesWindowLevel: MetalViewerWindowLevel?
     private(set) var overlayWindowLevel: Float = 0
     private(set) var overlayWindowWidth: Float = 1
     private var baseRegistrationWindowLevel: Float = 0
@@ -190,6 +196,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     var stateDidChange: ((String) -> Void)?
     var registrationDidChange: ((Bool, String, Float) -> Void)?
+    var windowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)?
 
     var currentPix: DCMPix? {
         guard pixList.indices.contains(currentSliceIndex) else { return nil }
@@ -232,9 +239,15 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return "\(sliceText)  WL \(Int(windowLevel.rounded()))  WW \(Int(windowWidth.rounded()))  Zoom \(zoomText)%\(registrationText)\(progressText)"
     }
 
-    init(device: MTLDevice, pixList: [DCMPix]) {
+    init(
+        device: MTLDevice,
+        pixList: [DCMPix],
+        windowLevelState: MetalViewerWindowLevelState = MetalViewerWindowLevelState()
+    ) {
         self.deviceRef = device
         self.pixList = pixList
+        self.defaultSeriesWindowLevel = windowLevelState.defaultWindow
+        self.customSeriesWindowLevel = windowLevelState.customWindow
 
         guard let commandQueue = device.makeCommandQueue() else {
             fatalError("Could not create Metal command queue.")
@@ -358,9 +371,43 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     func updateWindowLevel(wl: Float, ww: Float) {
-        windowLevel = wl
-        windowWidth = max(1, ww)
+        let window = MetalViewerWindowLevel(level: wl, width: max(1, ww))
+        applyWindowLevel(window)
+        customSeriesWindowLevel = window
+        notifyWindowLevelStateDidChange()
         stateDidChange?(stateDescription)
+    }
+
+    func applyWindowLevel(_ window: MetalViewerWindowLevel, asCustom: Bool) {
+        applyWindowLevel(window)
+        if asCustom {
+            customSeriesWindowLevel = window
+        } else {
+            defaultSeriesWindowLevel = window
+            customSeriesWindowLevel = nil
+        }
+        notifyWindowLevelStateDidChange()
+        stateDidChange?(stateDescription)
+    }
+
+    func applyDefaultWindowLevelPreset() {
+        guard pixList.indices.contains(currentSliceIndex) else { return }
+        let pix = pixList[currentSliceIndex]
+        let width = pix.savedWW > 0 ? pix.savedWW : windowLevelDefaults(for: pix).width
+        let level = pix.savedWW > 0 ? pix.savedWL : windowLevelDefaults(for: pix).level
+        applyWindowLevel(MetalViewerWindowLevel(level: level, width: width), asCustom: false)
+    }
+
+    func applyFullDynamicWindowLevelPreset() {
+        guard pixList.indices.contains(currentSliceIndex) else { return }
+        let pix = pixList[currentSliceIndex]
+        applyWindowLevel(MetalViewerWindowLevel(level: pix.fullwl, width: max(1, pix.fullww)), asCustom: false)
+    }
+
+    func applyRobustSeriesWindowLevelPreset() {
+        guard pixList.indices.contains(currentSliceIndex) else { return }
+        let window = robustSeriesWindowLevel() ?? windowLevelDefaults(for: pixList[currentSliceIndex])
+        applyWindowLevel(window, asCustom: false)
     }
 
     func commitWindowLevel() {
@@ -369,9 +416,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     func resetWindowLevel() {
         guard pixList.indices.contains(currentSliceIndex) else { return }
-        let pix = pixList[currentSliceIndex]
-        windowWidth = max(1, pix.fullww)
-        windowLevel = pix.fullwl
+        customSeriesWindowLevel = nil
+        let defaultWindow = defaultSeriesWindowLevel ?? windowLevelDefaults(for: pixList[currentSliceIndex])
+        defaultSeriesWindowLevel = defaultWindow
+        applyWindowLevel(defaultWindow)
+        notifyWindowLevelStateDidChange()
         stateDidChange?(stateDescription)
     }
 
@@ -417,29 +466,46 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func loadSlice(at index: Int) {
+        let loadSliceStart = CFAbsoluteTimeGetCurrent()
         guard pixList.indices.contains(index) else { return }
         let pix = pixList[index]
 
+        let checkLoadStart = CFAbsoluteTimeGetCurrent()
         pix.checkLoad()
+        metalRendererTimingLog("MetalViewerRenderer pix.checkLoad slice \(index)", since: checkLoadStart)
+        let minMaxStart = CFAbsoluteTimeGetCurrent()
         pix.computePixMinPixMax()
+        metalRendererTimingLog("MetalViewerRenderer computePixMinPixMax slice \(index)", since: minMaxStart)
 
         let width = max(Int(pix.pwidth), 1)
         let height = max(Int(pix.pheight), 1)
         imageAspectRatio = Float(width) * Float(max(pix.pixelSpacingX, 1)) / max(Float(height) * Float(max(pix.pixelSpacingY, 1)), 1)
 
+        let textureStart = CFAbsoluteTimeGetCurrent()
         guard let texture = makeTexture(for: pix) else {
             return
         }
+        metalRendererTimingLog("MetalViewerRenderer makeTexture slice \(index)", since: textureStart)
         baseTexture = texture
 
-        let defaultWW = pix.ww > 0 ? pix.ww : pix.fullww
-        let defaultWL = pix.wl != 0 ? pix.wl : pix.fullwl
-        windowWidth = max(1, defaultWW)
-        windowLevel = defaultWL
+        if let customWindow = customSeriesWindowLevel {
+            applyWindowLevel(customWindow)
+        } else if let defaultWindow = defaultSeriesWindowLevel {
+            applyWindowLevel(defaultWindow)
+        } else {
+            let defaultWindow = windowLevelDefaults(for: pix)
+            defaultSeriesWindowLevel = defaultWindow
+            applyWindowLevel(defaultWindow)
+            notifyWindowLevelStateDidChange()
+        }
 
         if let overlayPix = currentOverlayPix {
+            let overlayCheckLoadStart = CFAbsoluteTimeGetCurrent()
             overlayPix.checkLoad()
+            metalRendererTimingLog("MetalViewerRenderer overlay pix.checkLoad slice \(index)", since: overlayCheckLoadStart)
+            let overlayMinMaxStart = CFAbsoluteTimeGetCurrent()
             overlayPix.computePixMinPixMax()
+            metalRendererTimingLog("MetalViewerRenderer overlay computePixMinPixMax slice \(index)", since: overlayMinMaxStart)
 
             let overlayDefaultWW = overlayPix.ww > 0 ? overlayPix.ww : overlayPix.fullww
             let overlayDefaultWL = overlayPix.wl != 0 ? overlayPix.wl : overlayPix.fullwl
@@ -453,18 +519,104 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         stateDidChange?(stateDescription)
+        metalRendererTimingLog("MetalViewerRenderer loadSlice \(index) total", since: loadSliceStart)
+    }
+
+    private func windowLevelDefaults(for pix: DCMPix) -> MetalViewerWindowLevel {
+        let modality = pix.modalityString?.uppercased() ?? ""
+        if modality == "MR",
+           pix.savedWW <= 0,
+           pix.ww <= 0,
+           let robustWindow = robustSeriesWindowLevel() {
+            return robustWindow
+        }
+
+        let defaultWW = pix.ww > 0 ? pix.ww : pix.fullww
+        let defaultWL = pix.wl != 0 ? pix.wl : pix.fullwl
+        return MetalViewerWindowLevel(level: defaultWL, width: max(1, defaultWW))
+    }
+
+    private func robustSeriesWindowLevel() -> MetalViewerWindowLevel? {
+        guard pixList.isEmpty == false else { return nil }
+
+        let maxSliceSamples = 17
+        let sliceStep = max(1, pixList.count / maxSliceSamples)
+        var sliceIndexes = Array(stride(from: 0, to: pixList.count, by: sliceStep))
+        if let lastIndex = pixList.indices.last, sliceIndexes.contains(lastIndex) == false {
+            sliceIndexes.append(lastIndex)
+        }
+
+        var samples: [Float] = []
+        samples.reserveCapacity(80_000)
+
+        for sliceIndex in sliceIndexes {
+            let pix = pixList[sliceIndex]
+            pix.checkLoad()
+            guard let pixels = pix.fImage else { continue }
+
+            let pixelCount = max(Int(pix.pwidth) * Int(pix.pheight), 0)
+            guard pixelCount > 0 else { continue }
+
+            let pixelStep = max(1, pixelCount / 5_000)
+            var index = 0
+            while index < pixelCount {
+                let value = pixels[index]
+                if value.isFinite && abs(value) > Float.ulpOfOne {
+                    samples.append(value)
+                }
+                index += pixelStep
+            }
+        }
+
+        guard samples.count >= 32 else { return nil }
+        samples.sort()
+
+        let lowIndex = percentileIndex(0.005, count: samples.count)
+        let highIndex = percentileIndex(0.995, count: samples.count)
+        let low = samples[lowIndex]
+        let high = samples[max(highIndex, lowIndex)]
+        let width = max(high - low, 1)
+        return MetalViewerWindowLevel(level: low + width * 0.5, width: width)
+    }
+
+    private func percentileIndex(_ percentile: Float, count: Int) -> Int {
+        guard count > 1 else { return 0 }
+        let clamped = min(max(percentile, 0), 1)
+        return min(max(Int((Float(count - 1) * clamped).rounded()), 0), count - 1)
+    }
+
+    private func applyWindowLevel(_ window: MetalViewerWindowLevel) {
+        windowLevel = window.level
+        windowWidth = max(1, window.width)
+    }
+
+    private func notifyWindowLevelStateDidChange() {
+        windowLevelStateDidChange?(
+            MetalViewerWindowLevelState(
+                defaultWindow: defaultSeriesWindowLevel,
+                customWindow: customSeriesWindowLevel
+            )
+        )
     }
 
     private func prepareBaseVolumeIfNeeded() {
+        let prepareStart = CFAbsoluteTimeGetCurrent()
         guard baseVolumeTexture == nil else { return }
+        let geometryStart = CFAbsoluteTimeGetCurrent()
         fixedVoxelToWorld = volumeVoxelToWorldMatrix(for: pixList)
+        metalRendererTimingLog("MetalViewerRenderer volume geometry", since: geometryStart)
+        let volumeDataStart = CFAbsoluteTimeGetCurrent()
         let fullResolutionVolume = makeVolumeData(for: pixList)
+        metalRendererTimingLog("MetalViewerRenderer makeVolumeData", since: volumeDataStart)
         baseVolumeData = fullResolutionVolume.data
         baseVolumeDimensions = fullResolutionVolume.dimensions
+        let registrationWindowStart = CFAbsoluteTimeGetCurrent()
         let baseRegistrationWindow = registrationWindow(for: fullResolutionVolume.data, pixList: pixList)
+        metalRendererTimingLog("MetalViewerRenderer registrationWindow", since: registrationWindowStart)
         baseRegistrationWindowLevel = baseRegistrationWindow.level
         baseRegistrationWindowWidth = baseRegistrationWindow.width
         baseVolumeCenterWorld = volumeCenterWorld(for: pixList, voxelToWorld: fixedVoxelToWorld)
+        let informativeStart = CFAbsoluteTimeGetCurrent()
         baseInformativeCenterWorld = informativeCenterWorld(
             for: fullResolutionVolume.data,
             dimensions: fullResolutionVolume.dimensions,
@@ -472,14 +624,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             level: baseRegistrationWindow.level,
             width: baseRegistrationWindow.width
         )
+        metalRendererTimingLog("MetalViewerRenderer informativeCenterWorld", since: informativeStart)
         baseIsThinSlab = isThinSlab(dimensions: fullResolutionVolume.dimensions, voxelToWorld: fixedVoxelToWorld)
         baseSlabGeometry = baseIsThinSlab ? slabGeometry(dimensions: fullResolutionVolume.dimensions, voxelToWorld: fixedVoxelToWorld) : nil
+        let texture3DStart = CFAbsoluteTimeGetCurrent()
         baseVolumeTexture = makeTexture3D(from: fullResolutionVolume.data, dimensions: fullResolutionVolume.dimensions)
+        metalRendererTimingLog("MetalViewerRenderer makeTexture3D base", since: texture3DStart)
+        let levelsStart = CFAbsoluteTimeGetCurrent()
         baseVolumeLevels = makeVolumeLevels(
             from: fullResolutionVolume.data,
             dimensions: fullResolutionVolume.dimensions,
             baseVoxelToWorld: fixedVoxelToWorld
         )
+        metalRendererTimingLog("MetalViewerRenderer makeVolumeLevels", since: levelsStart)
+        metalRendererTimingLog("MetalViewerRenderer prepareBaseVolumeIfNeeded total", since: prepareStart)
     }
 
     private func makeTexture(for pix: DCMPix) -> MTLTexture? {
@@ -510,6 +668,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func makeVolumeData(for pixList: [DCMPix]) -> (data: [Float], dimensions: SIMD3<Int>) {
+        let makeVolumeStart = CFAbsoluteTimeGetCurrent()
         guard let firstPix = pixList.first else {
             return ([Float](), SIMD3<Int>(1, 1, 1))
         }
@@ -522,11 +681,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         var loadedImagePointers = Array<UnsafeMutablePointer<Float>?>(repeating: nil, count: depth)
 
         for (sliceIndex, pix) in pixList.enumerated() {
+            let sliceLoadStart = CFAbsoluteTimeGetCurrent()
             pix.checkLoad()
             pix.computePixMinPixMax()
             loadedImagePointers[sliceIndex] = pix.fImage
+            if sliceIndex < 3 || sliceIndex == depth - 1 {
+                metalRendererTimingLog("MetalViewerRenderer makeVolumeData load source slice \(sliceIndex)", since: sliceLoadStart)
+            }
         }
 
+        let copyStart = CFAbsoluteTimeGetCurrent()
         volume.withUnsafeMutableBufferPointer { destinationBuffer in
             guard let destinationBase = destinationBuffer.baseAddress else { return }
             DispatchQueue.concurrentPerform(iterations: depth) { sliceIndex in
@@ -537,6 +701,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 }
             }
         }
+        metalRendererTimingLog("MetalViewerRenderer makeVolumeData copy \(depth) slices", since: copyStart)
+        metalRendererTimingLog("MetalViewerRenderer makeVolumeData total \(width)x\(height)x\(depth)", since: makeVolumeStart)
 
         return (volume, SIMD3<Int>(width, height, depth))
     }

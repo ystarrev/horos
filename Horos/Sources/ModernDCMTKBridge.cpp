@@ -6,6 +6,7 @@
 #include <dcmtk/dcmdata/dcdicent.h>
 #include <dcmtk/dcmdata/dcdict.h>
 #include <dcmtk/dcmdata/dcmetinf.h>
+#include <dcmtk/dcmdata/dcpixel.h>
 #include <dcmtk/dcmdata/dcuid.h>
 #include <dcmtk/dcmsr/dsrdoc.h>
 #include <dcmtk/dcmsr/dsrtypes.h>
@@ -38,10 +39,47 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <sstream>
+#include <string>
 #include <vector>
 
 static bool HorosModernDCMTKLoadStructuredReport(const char* path, DcmFileFormat& fileformat, DSRDocument& document);
+
+static void HorosModernDCMTKClearDecodedFrame(HorosModernDCMTKDecodedFrame* frame)
+{
+    if (frame == nullptr)
+        return;
+
+    frame->pixels = nullptr;
+    frame->pixelCount = 0;
+    frame->rows = 0;
+    frame->columns = 0;
+    frame->bitsAllocated = 0;
+    frame->bitsStored = 0;
+    frame->pixelRepresentation = 0;
+    frame->slope = 1.0;
+    frame->intercept = 0.0;
+    frame->windowCenter = 0.0;
+    frame->windowWidth = 0.0;
+    frame->pixelSpacingX = 1.0;
+    frame->pixelSpacingY = 1.0;
+    frame->sliceThickness = 0.0;
+    frame->spacingBetweenSlices = 0.0;
+    frame->origin[0] = frame->origin[1] = frame->origin[2] = 0.0;
+    frame->orientation[0] = 1.0;
+    frame->orientation[1] = 0.0;
+    frame->orientation[2] = 0.0;
+    frame->orientation[3] = 0.0;
+    frame->orientation[4] = 1.0;
+    frame->orientation[5] = 0.0;
+    frame->orientation[6] = 0.0;
+    frame->orientation[7] = 0.0;
+    frame->orientation[8] = 1.0;
+    frame->isOriginDefined = 0;
+    frame->isRGB = 0;
+    frame->failureReason = nullptr;
+}
 
 static char* HorosModernDCMTKDuplicateCString(const char* value)
 {
@@ -78,6 +116,18 @@ static char* HorosModernDCMTKDuplicateOFString(const OFString& value)
         return nullptr;
 
     return HorosModernDCMTKDuplicateCString(sanitized.c_str());
+}
+
+static int HorosModernDCMTKDecodedFrameFail(HorosModernDCMTKDecodedFrame* frame, const std::string& reason)
+{
+    if (frame != nullptr)
+    {
+        if (frame->failureReason != nullptr)
+            std::free(frame->failureReason);
+        frame->failureReason = HorosModernDCMTKDuplicateCString(reason.c_str());
+    }
+
+    return 0;
 }
 
 static void HorosModernDCMTKEnsureDataDictionary()
@@ -957,6 +1007,223 @@ int HorosModernDCMTKCopyFrameGeometry(const char* path, double** sliceLocations,
     return (locations.empty() && triggers.empty()) ? 0 : 1;
 }
 
+int HorosModernDCMTKCopyDecodedFrame(const char* path, unsigned long frameIndex, HorosModernDCMTKDecodedFrame* frame)
+{
+    HorosModernDCMTKClearDecodedFrame(frame);
+
+    if (path == nullptr || path[0] == '\0' || frame == nullptr)
+        return HorosModernDCMTKDecodedFrameFail(frame, "invalid arguments");
+
+    HorosModernDCMTKEnsureDataDictionary();
+    HorosModernDCMTKEnsureCodecRegistration();
+
+    DcmFileFormat fileformat;
+    OFCondition status = fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect);
+    if (status.bad())
+    {
+        std::ostringstream reason;
+        reason << "loadFile failed: " << status.text();
+        return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
+    }
+
+    DcmDataset* dataset = fileformat.getDataset();
+    if (dataset == nullptr)
+        return HorosModernDCMTKDecodedFrameFail(frame, "missing dataset");
+
+    OFString sopClassUID;
+    if (dataset->findAndGetOFString(DCM_SOPClassUID, sopClassUID, OFFalse).good() &&
+        sopClassUID.find("1.2.840.10008.5.1.4.1.1.88") == 0)
+        return HorosModernDCMTKDecodedFrameFail(frame, "structured report SOP class");
+
+    Uint16 rows = 0;
+    Uint16 columns = 0;
+    Uint16 samplesPerPixel = 1;
+    Uint16 bitsAllocated = 0;
+    Uint16 bitsStored = 0;
+    Uint16 pixelRepresentation = 0;
+
+    if (dataset->findAndGetUint16(DCM_Rows, rows).bad() ||
+        dataset->findAndGetUint16(DCM_Columns, columns).bad() ||
+        dataset->findAndGetUint16(DCM_BitsAllocated, bitsAllocated).bad() ||
+        dataset->findAndGetUint16(DCM_BitsStored, bitsStored).bad())
+        return HorosModernDCMTKDecodedFrameFail(frame, "missing required image attributes");
+
+    dataset->findAndGetUint16(DCM_SamplesPerPixel, samplesPerPixel);
+    dataset->findAndGetUint16(DCM_PixelRepresentation, pixelRepresentation);
+
+    OFString photometricInterpretation;
+    if (dataset->findAndGetOFString(DCM_PhotometricInterpretation, photometricInterpretation, OFFalse).good() &&
+        photometricInterpretation != "MONOCHROME2")
+    {
+        std::ostringstream reason;
+        reason << "unsupported photometric interpretation: " << photometricInterpretation.c_str();
+        return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
+    }
+
+    if (rows == 0 || columns == 0 || samplesPerPixel != 1)
+    {
+        std::ostringstream reason;
+        reason << "unsupported dimensions/samples rows=" << rows << " columns=" << columns << " samples=" << samplesPerPixel;
+        return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
+    }
+    if (bitsAllocated != 8 && bitsAllocated != 16 && bitsAllocated != 32)
+    {
+        std::ostringstream reason;
+        reason << "unsupported bits allocated: " << bitsAllocated;
+        return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
+    }
+    if (bitsStored == 0 || bitsStored > bitsAllocated)
+        bitsStored = bitsAllocated;
+
+    long int frameCount = 1;
+    OFCondition numberOfFramesStatus = dataset->findAndGetLongInt(DCM_NumberOfFrames, frameCount);
+    if (numberOfFramesStatus.bad() || frameCount < 1)
+        frameCount = 1;
+    if (frameCount < 1 || frameIndex >= static_cast<unsigned long>(frameCount))
+    {
+        std::ostringstream reason;
+        reason << "frame index out of range frame=" << frameIndex << " count=" << frameCount;
+        return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
+    }
+
+    DcmElement* element = nullptr;
+    if (dataset->findAndGetElement(DCM_PixelData, element).bad() || element == nullptr)
+        return HorosModernDCMTKDecodedFrameFail(frame, "missing PixelData");
+
+    DcmPixelData* pixelData = dynamic_cast<DcmPixelData*>(element);
+    if (pixelData == nullptr)
+        return HorosModernDCMTKDecodedFrameFail(frame, "PixelData is not DcmPixelData");
+
+    const E_TransferSyntax originalXfer = dataset->getOriginalXfer();
+    const DcmXfer xfer(originalXfer);
+    Uint32 frameSize = 0;
+    status = pixelData->getUncompressedFrameSize(dataset, frameSize, xfer.usesEncapsulatedFormat() ? OFFalse : OFTrue);
+    if (status.bad() || frameSize == 0)
+    {
+        std::ostringstream reason;
+        reason << "getUncompressedFrameSize failed status=" << status.text()
+               << " transferSyntax=" << xfer.getXferName()
+               << " encapsulated=" << (xfer.usesEncapsulatedFormat() ? "yes" : "no")
+               << " frameSize=" << frameSize;
+        return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
+    }
+
+    const Uint32 bufferSize = (frameSize & 1) ? frameSize + 1 : frameSize;
+    std::vector<unsigned char> raw(bufferSize);
+    Uint32 startFragment = 0;
+    OFString colorModel;
+    status = pixelData->getUncompressedFrame(dataset, static_cast<Uint32>(frameIndex), startFragment, raw.data(), bufferSize, colorModel, nullptr);
+    if (status.bad())
+    {
+        std::ostringstream reason;
+        reason << "getUncompressedFrame failed status=" << status.text()
+               << " transferSyntax=" << xfer.getXferName()
+               << " colorModel=" << colorModel.c_str();
+        return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
+    }
+
+    const unsigned long pixelCount = static_cast<unsigned long>(rows) * static_cast<unsigned long>(columns);
+    if (frameSize < pixelCount * (bitsAllocated / 8))
+    {
+        std::ostringstream reason;
+        reason << "decoded frame too small frameSize=" << frameSize
+               << " expected=" << pixelCount * (bitsAllocated / 8);
+        return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
+    }
+
+    float* pixels = static_cast<float*>(std::malloc(sizeof(float) * pixelCount));
+    if (pixels == nullptr)
+        return HorosModernDCMTKDecodedFrameFail(frame, "pixel allocation failed");
+
+    Float64 slope = 1.0;
+    Float64 intercept = 0.0;
+    Float64 windowCenter = 0.0;
+    Float64 windowWidth = 0.0;
+    dataset->findAndGetFloat64(DCM_RescaleSlope, slope);
+    if (slope == 0.0)
+        slope = 1.0;
+    dataset->findAndGetFloat64(DCM_RescaleIntercept, intercept);
+    dataset->findAndGetFloat64(DCM_WindowCenter, windowCenter, 0);
+    dataset->findAndGetFloat64(DCM_WindowWidth, windowWidth, 0);
+
+    const bool isSigned = pixelRepresentation != 0;
+    if (bitsAllocated == 8)
+    {
+        const Uint8* source = reinterpret_cast<const Uint8*>(raw.data());
+        for (unsigned long index = 0; index < pixelCount; ++index)
+        {
+            int value = isSigned ? static_cast<Sint8>(source[index]) : static_cast<int>(source[index]);
+            pixels[index] = static_cast<float>(static_cast<double>(value) * slope + intercept);
+        }
+    }
+    else if (bitsAllocated == 16)
+    {
+        const Uint16* source = reinterpret_cast<const Uint16*>(raw.data());
+        for (unsigned long index = 0; index < pixelCount; ++index)
+        {
+            int value = isSigned ? static_cast<Sint16>(source[index]) : static_cast<int>(source[index]);
+            pixels[index] = static_cast<float>(static_cast<double>(value) * slope + intercept);
+        }
+    }
+    else
+    {
+        const Uint32* source = reinterpret_cast<const Uint32*>(raw.data());
+        for (unsigned long index = 0; index < pixelCount; ++index)
+        {
+            double value = isSigned ? static_cast<double>(static_cast<Sint32>(source[index])) : static_cast<double>(source[index]);
+            pixels[index] = static_cast<float>(value * slope + intercept);
+        }
+    }
+
+    frame->pixels = pixels;
+    frame->pixelCount = pixelCount;
+    frame->rows = rows;
+    frame->columns = columns;
+    frame->bitsAllocated = bitsAllocated;
+    frame->bitsStored = bitsStored;
+    frame->pixelRepresentation = pixelRepresentation;
+    frame->slope = slope;
+    frame->intercept = intercept;
+    frame->windowCenter = windowCenter;
+    frame->windowWidth = windowWidth;
+    frame->isRGB = 0;
+
+    Float64 value = 0.0;
+    if (dataset->findAndGetFloat64(DCM_PixelSpacing, value, 0).good())
+        frame->pixelSpacingY = value;
+    if (dataset->findAndGetFloat64(DCM_PixelSpacing, value, 1).good())
+        frame->pixelSpacingX = value;
+    if (frame->pixelSpacingX == 1.0 && frame->pixelSpacingY == 1.0)
+    {
+        if (dataset->findAndGetFloat64(DCM_ImagerPixelSpacing, value, 0).good())
+            frame->pixelSpacingY = value;
+        if (dataset->findAndGetFloat64(DCM_ImagerPixelSpacing, value, 1).good())
+            frame->pixelSpacingX = value;
+    }
+
+    dataset->findAndGetFloat64(DCM_SliceThickness, frame->sliceThickness);
+    dataset->findAndGetFloat64(DCM_SpacingBetweenSlices, frame->spacingBetweenSlices);
+
+    if (dataset->findAndGetFloat64(DCM_ImagePositionPatient, frame->origin[0], 0).good() &&
+        dataset->findAndGetFloat64(DCM_ImagePositionPatient, frame->origin[1], 1).good() &&
+        dataset->findAndGetFloat64(DCM_ImagePositionPatient, frame->origin[2], 2).good())
+        frame->isOriginDefined = 1;
+
+    if (dataset->findAndGetFloat64(DCM_ImageOrientationPatient, frame->orientation[0], 0).good() &&
+        dataset->findAndGetFloat64(DCM_ImageOrientationPatient, frame->orientation[1], 1).good() &&
+        dataset->findAndGetFloat64(DCM_ImageOrientationPatient, frame->orientation[2], 2).good() &&
+        dataset->findAndGetFloat64(DCM_ImageOrientationPatient, frame->orientation[3], 3).good() &&
+        dataset->findAndGetFloat64(DCM_ImageOrientationPatient, frame->orientation[4], 4).good() &&
+        dataset->findAndGetFloat64(DCM_ImageOrientationPatient, frame->orientation[5], 5).good())
+    {
+        frame->orientation[6] = frame->orientation[1] * frame->orientation[5] - frame->orientation[2] * frame->orientation[4];
+        frame->orientation[7] = frame->orientation[2] * frame->orientation[3] - frame->orientation[0] * frame->orientation[5];
+        frame->orientation[8] = frame->orientation[0] * frame->orientation[4] - frame->orientation[1] * frame->orientation[3];
+    }
+
+    return 1;
+}
+
 int HorosModernDCMTKCopyEncapsulatedDocument(const char* path, unsigned char** buffer, unsigned long* length)
 {
     if (buffer)
@@ -1631,6 +1898,19 @@ void HorosModernDCMTKFreeBasicMetadata(HorosModernDCMTKBasicMetadata* metadata)
 void HorosModernDCMTKFreeBuffer(void* buffer)
 {
     std::free(buffer);
+}
+
+void HorosModernDCMTKFreeDecodedFrame(HorosModernDCMTKDecodedFrame* frame)
+{
+    if (frame == nullptr)
+        return;
+
+    if (frame->pixels != nullptr)
+        std::free(frame->pixels);
+    if (frame->failureReason != nullptr)
+        std::free(frame->failureReason);
+
+    HorosModernDCMTKClearDecodedFrame(frame);
 }
 
 void HorosModernDCMTKFreeString(char* value)

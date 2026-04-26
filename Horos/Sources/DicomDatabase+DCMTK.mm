@@ -56,6 +56,8 @@
 // Maximum of 200 files: no more than 10 min...
 
 typedef int (*HorosModernDCMTKGetDecompressionInfoFn)(const char* path, int* isEncapsulated, unsigned short* rows, unsigned short* columns, char** modality, char** sopClassUID);
+typedef char* (*HorosModernDCMTKCopyFieldByTagFn)(const char* path, unsigned short group, unsigned short element);
+typedef int (*HorosModernDCMTKWriteFileInTransferSyntaxFn)(const char* inputPath, const char* outputPath, const char* transferSyntaxUID, int quality);
 typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
 
 static void* HorosModernDCMTKBridgeHandle()
@@ -90,6 +92,173 @@ static NSString* HorosModernDCMTKCopiedString(char* value)
     if (freeStringFn)
         freeStringFn(value);
     return string;
+}
+
+static NSString* HorosModernDCMTKCopyTagString(NSString *sourcePath, unsigned short group, unsigned short element)
+{
+    HorosModernDCMTKCopyFieldByTagFn copyFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyFieldByTagFn>("HorosModernDCMTKCopyFieldByTag");
+    if (copyFn == nullptr)
+        return nil;
+
+    return HorosModernDCMTKCopiedString(copyFn(sourcePath.fileSystemRepresentation, group, element));
+}
+
+static BOOL HorosModernDCMTKWriteTransferSyntax(NSString *sourcePath, NSString *destinationPath, NSString *transferSyntaxUID, int quality)
+{
+    HorosModernDCMTKWriteFileInTransferSyntaxFn writeFn = HorosModernDCMTKSymbol<HorosModernDCMTKWriteFileInTransferSyntaxFn>("HorosModernDCMTKWriteFileInTransferSyntax");
+    if (writeFn == nullptr)
+        return NO;
+
+    return writeFn(sourcePath.fileSystemRepresentation,
+                   destinationPath.fileSystemRepresentation,
+                   transferSyntaxUID.UTF8String,
+                   quality) ? YES : NO;
+}
+
+static BOOL HorosModernDCMTKMoveFile(NSString *sourcePath, NSString *destinationPath)
+{
+    if ([sourcePath isEqualToString:destinationPath])
+        return YES;
+
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    [fileManager removeItemAtPath:destinationPath error:nil];
+
+    NSError *moveError = nil;
+    if ([fileManager moveItemAtPath:sourcePath toPath:destinationPath error:&moveError])
+        return YES;
+
+    NSLog(@"failed to move file %@ to %@: %@", sourcePath, destinationPath, moveError);
+    return NO;
+}
+
+static NSString* HorosModernDCMTKCompressionTransferSyntax(int compression, int quality)
+{
+    if (compression == compression_JPEG)
+        return @"1.2.840.10008.1.2.4.70";
+
+    if (compression == compression_JPEG2000)
+        return (quality == 0) ? @"1.2.840.10008.1.2.4.90" : @"1.2.840.10008.1.2.4.91";
+
+    if (compression == compression_JPEGLS)
+        return (quality == 0) ? @"1.2.840.10008.1.2.4.80" : @"1.2.840.10008.1.2.4.81";
+
+    return nil;
+}
+
+static BOOL HorosModernDCMTKTransferSyntaxAlreadyMatchesCompression(NSString *transferSyntaxUID, int compression)
+{
+    if (transferSyntaxUID.length == 0)
+        return NO;
+
+    if (compression == compression_JPEG)
+        return [transferSyntaxUID isEqualToString:@"1.2.840.10008.1.2.4.70"];
+
+    if (compression == compression_JPEG2000)
+        return [transferSyntaxUID isEqualToString:@"1.2.840.10008.1.2.4.90"] || [transferSyntaxUID isEqualToString:@"1.2.840.10008.1.2.4.91"];
+
+    if (compression == compression_JPEGLS)
+        return [transferSyntaxUID isEqualToString:@"1.2.840.10008.1.2.4.80"] || [transferSyntaxUID isEqualToString:@"1.2.840.10008.1.2.4.81"];
+
+    return NO;
+}
+
+static BOOL HorosModernDCMTKProcessCompressedFile(NSString *sourcePath, NSString *destinationDirectory)
+{
+    if (sourcePath.length == 0)
+        return NO;
+
+    BOOL replaceSource = (destinationDirectory == nil || [destinationDirectory isEqualToString:@"sameAsDestination"]);
+    NSString *finalPath = replaceSource ? sourcePath : [destinationDirectory stringByAppendingPathComponent:sourcePath.lastPathComponent];
+
+    int isEncapsulated = 0;
+    unsigned short rows = 0;
+    unsigned short columns = 0;
+    char *modalityCString = nullptr;
+    char *sopClassUIDCString = nullptr;
+    HorosModernDCMTKGetDecompressionInfoFn infoFn = HorosModernDCMTKSymbol<HorosModernDCMTKGetDecompressionInfoFn>("HorosModernDCMTKGetDecompressionInfo");
+    if (infoFn == nullptr || infoFn(sourcePath.fileSystemRepresentation, &isEncapsulated, &rows, &columns, &modalityCString, &sopClassUIDCString) == 0)
+        return NO;
+
+    NSString *modality = HorosModernDCMTKCopiedString(modalityCString) ?: @"OT";
+    NSString *SOPClassUID = HorosModernDCMTKCopiedString(sopClassUIDCString) ?: @"";
+    if ([DCMAbstractSyntaxUID isImageStorage:SOPClassUID] == NO ||
+        [SOPClassUID isEqualToString:[DCMAbstractSyntaxUID pdfStorageClassUID]] ||
+        [SOPClassUID isEqualToString:[DCMAbstractSyntaxUID EncapsulatedCDAStorage]] ||
+        [DCMAbstractSyntaxUID isStructuredReport:SOPClassUID])
+    {
+        return replaceSource ? YES : HorosModernDCMTKMoveFile(sourcePath, finalPath);
+    }
+
+    int resolution = 0;
+    if (resolution == 0 || resolution > rows)
+        resolution = rows;
+    if (resolution == 0 || resolution > columns)
+        resolution = columns;
+
+    int quality = 0;
+    int compression = [BrowserController compressionForModality:modality quality:&quality resolution:resolution];
+    NSString *targetSyntax = HorosModernDCMTKCompressionTransferSyntax(compression, quality);
+    if (targetSyntax == nil)
+        return replaceSource ? YES : HorosModernDCMTKMoveFile(sourcePath, finalPath);
+
+    NSString *currentSyntax = HorosModernDCMTKCopyTagString(sourcePath, 0x0002, 0x0010);
+    if (isEncapsulated)
+        return replaceSource ? YES : HorosModernDCMTKMoveFile(sourcePath, finalPath);
+
+    if (HorosModernDCMTKTransferSyntaxAlreadyMatchesCompression(currentSyntax, compression))
+        return replaceSource ? YES : HorosModernDCMTKMoveFile(sourcePath, finalPath);
+
+    NSString *temporaryPath = [finalPath.stringByDeletingLastPathComponent stringByAppendingPathComponent:[NSString stringWithFormat:@".%@.%@.tmp", finalPath.lastPathComponent, [[NSProcessInfo processInfo] globallyUniqueString]]];
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    [fileManager removeItemAtPath:temporaryPath error:nil];
+
+    if (HorosModernDCMTKWriteTransferSyntax(sourcePath, temporaryPath, targetSyntax, quality) == NO)
+    {
+        [fileManager removeItemAtPath:temporaryPath error:nil];
+        NSLog(@"failed to compress file: %@", sourcePath);
+        return NO;
+    }
+
+    if (HorosModernDCMTKMoveFile(temporaryPath, finalPath) == NO)
+        return NO;
+
+    if (replaceSource == NO)
+        [fileManager removeItemAtPath:sourcePath error:nil];
+
+    return YES;
+}
+
+static BOOL HorosModernDCMTKDecompressFile(NSString *sourcePath, NSString *destinationDirectory)
+{
+    if (sourcePath.length == 0)
+        return NO;
+
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    BOOL replaceSource = (destinationDirectory == nil || [destinationDirectory isEqualToString:@"sameAsDestination"]);
+    NSString *finalPath = replaceSource ? sourcePath : [destinationDirectory stringByAppendingPathComponent:sourcePath.lastPathComponent];
+    NSString *temporaryPath = [finalPath.stringByDeletingLastPathComponent stringByAppendingPathComponent:[NSString stringWithFormat:@".%@.%@.tmp", finalPath.lastPathComponent, [[NSProcessInfo processInfo] globallyUniqueString]]];
+
+    [fileManager removeItemAtPath:temporaryPath error:nil];
+    if (HorosModernDCMTKWriteTransferSyntax(sourcePath, temporaryPath, @"1.2.840.10008.1.2.1", 100) == NO)
+    {
+        [fileManager removeItemAtPath:temporaryPath error:nil];
+        NSLog(@"failed to decompress file: %@", sourcePath);
+        return NO;
+    }
+
+    [fileManager removeItemAtPath:finalPath error:nil];
+    NSError *moveError = nil;
+    if ([fileManager moveItemAtPath:temporaryPath toPath:finalPath error:&moveError] == NO)
+    {
+        [fileManager removeItemAtPath:temporaryPath error:nil];
+        NSLog(@"failed to move decompressed file %@ to %@: %@", temporaryPath, finalPath, moveError);
+        return NO;
+    }
+
+    if (replaceSource == NO)
+        [fileManager removeItemAtPath:sourcePath error:nil];
+
+    return YES;
 }
 
 @implementation DicomDatabase (DCMTK)
@@ -161,54 +330,16 @@ static NSString* HorosModernDCMTKCopiedString(char* value)
             thread.progress = 1.0*i/total;
         
         NSRange range = NSMakeRange( i, no);
-        
-        id *objs = (id*) malloc( no * sizeof( id));
-        if( objs)
+        for (NSUInteger fileIndex = range.location; fileIndex < NSMaxRange(range); fileIndex++)
         {
-            [paths getObjects: objs range: range];
-            
-            NSArray *subArray = [NSArray arrayWithObjects: objs count: no];
-            
-            NSTask *theTask = [[NSTask alloc] init];
             @try
             {
-                [theTask setLaunchPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"Decompress"]];
-                [theTask setArguments:[[NSArray arrayWithObjects: dest, @"compress", nil] arrayByAddingObjectsFromArray: subArray]];
-                [theTask launch];
-                
-                NSTimeInterval timeout = TIMEOUT * subArray.count;
-                if( timeout < 600)
-                    timeout = 600;
-                NSTimeInterval taskStart = [NSDate timeIntervalSinceReferenceDate];
-                while( [theTask isRunning])
-                {
-                    [NSThread sleepForTimeInterval: 0.1];
-                    if( [NSDate timeIntervalSinceReferenceDate] - taskStart > timeout)
-                        break;
-                }
-                
-                if( [theTask isRunning])
-                {
-                    N2LogStackTrace( @"***** task timeout reached -> terminate the NSTask : %@", paths);
-                    [theTask terminate];
-                }
-                else if( [theTask terminationReason] == NSTaskTerminationReasonUncaughtSignal)
-                {
-                    N2LogStackTrace( @"***** Decompress process crashed.");
-                    
-                    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"DELETEFILELISTENER"])
-                    {
-                        for( NSString *path in paths)
-                            [[NSFileManager defaultManager] moveItemAtPath: path toPath: [[[DicomDatabase defaultDatabase] errorsDirPath] stringByAppendingPathComponent: [path lastPathComponent]] error: nil];
-                    }
-                }
-                
-            } @catch (NSException *e) {
+                HorosModernDCMTKProcessCompressedFile([paths objectAtIndex:fileIndex], dest);
+            }
+            @catch (NSException *e)
+            {
                 N2LogExceptionWithStackTrace(e);
             }
-            
-            [theTask release];
-            free( objs);
         }
         
         i += no;
@@ -341,44 +472,16 @@ static NSString* HorosModernDCMTKCopiedString(char* value)
         
         NSRange range = NSMakeRange( i, no);
         
-        id *objs = (id*) malloc( no * sizeof( id));
-        if( objs)
+        for (NSUInteger fileIndex = range.location; fileIndex < NSMaxRange(range); fileIndex++)
         {
-            [files getObjects: objs range: range];
-            
-            NSArray* subArray = [NSArray arrayWithObjects:objs count:no];
-            
-            NSTask* theTask = [[NSTask alloc] init];
             @try
             {
-                [theTask setLaunchPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"Decompress"]];
-                [theTask setArguments:[[NSArray arrayWithObjects: dest, @"decompressList", nil] arrayByAddingObjectsFromArray: subArray]];
-                [theTask launch];
-                
-                NSTimeInterval timeout = TIMEOUT * subArray.count;
-                if( timeout < 600)
-                    timeout = 600;
-                NSTimeInterval taskStart = [NSDate timeIntervalSinceReferenceDate];
-                while( [theTask isRunning])
-                {
-                    [NSThread sleepForTimeInterval: 0.1];
-                    if( [NSDate timeIntervalSinceReferenceDate] - taskStart > timeout)
-                        break;
-                }
-                
-                if( [theTask isRunning])
-                {
-                    N2LogStackTrace( @"***** task timeout reached -> terminate the NSTask : %@", files);
-                    [theTask terminate];
-                }
+                HorosModernDCMTKDecompressFile([files objectAtIndex:fileIndex], dest);
             }
             @catch (NSException *e)
             {
                 N2LogExceptionWithStackTrace(e);
             }
-            
-            [theTask release];
-            free(objs);
         }
         
         i += no;

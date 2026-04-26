@@ -331,6 +331,7 @@ final class MetalViewerPaneView: NSView {
         private func drawAnnotations(state: State) {
             let annotationsDictionary = state.pix.annotationsDictionary as? [String: Any] ?? [:]
             guard annotationsDictionary.isEmpty == false else {
+                drawDefaultAnnotations(state: state)
                 drawMadeInHoros()
                 return
             }
@@ -424,6 +425,56 @@ final class MetalViewerPaneView: NSView {
             }
 
             drawMadeInHoros()
+        }
+
+        private func drawDefaultAnnotations(state: State) {
+            let lineHeight = Self.lineHeight
+            let leftX = bounds.minX + 6
+            let rightX = bounds.maxX - 2
+            var topLeftY = bounds.minY + lineHeight + 2
+            var topRightY = bounds.minY + lineHeight + 2
+            var lowerLeftY = bounds.maxY - 2
+            var lowerRightY = bounds.maxY - 2 - lineHeight
+
+            func drawTopLeft(_ text: String) {
+                drawString(text, atX: leftX, y: topLeftY, align: .left)
+                topLeftY += lineHeight
+            }
+
+            func drawTopRight(_ text: String) {
+                drawString(text, atX: rightX, y: topRightY, align: .right)
+                topRightY += lineHeight
+            }
+
+            func drawLowerLeft(_ text: String) {
+                drawString(text, atX: leftX, y: lowerLeftY, align: .left)
+                lowerLeftY -= lineHeight
+            }
+
+            func drawLowerRight(_ text: String) {
+                drawString(text, atX: rightX, y: lowerRightY, align: .right)
+                lowerRightY -= lineHeight
+            }
+
+            drawTopLeft(patientName(for: state.pix) ?? state.series.studyTitle)
+            drawTopLeft(state.series.title)
+
+            drawTopRight(String(format: "WL: %d WW: %d", Int(state.windowLevel.rounded()), Int(state.windowWidth.rounded())))
+            drawTopRight("Im: \(state.sliceIndex + 1)/\(state.sliceCount)")
+
+            if state.pix.sliceThickness != 0 {
+                drawLowerRight(String(format: "Thickness: %0.2f mm", state.pix.sliceThickness))
+            }
+            if state.pix.sliceLocation != 0 {
+                drawLowerRight(String(format: "Location: %0.2f mm", state.pix.sliceLocation))
+            }
+
+            drawLowerLeft(String(format: "Zoom: %.0f%%", state.zoomScale * 100.0))
+            if let mouseState = state.mouseState {
+                drawLowerLeft(String(format: "X: %d px Y: %d px Value: %.2f", Int(mouseState.pixelPoint.x), Int(mouseState.pixelPoint.y), mouseState.pixelValue))
+            }
+
+            drawOrientation(state: state, in: bounds)
         }
 
         private func drawOverlaySeriesInfo(state: State) {
@@ -712,6 +763,7 @@ final class MetalViewerPaneView: NSView {
     var activateHandler: (() -> Void)?
     var closeHandler: (() -> Void)?
     var seriesDropHandler: ((String, Bool) -> Void)?
+    var windowLevelInteractionHandler: (() -> Void)?
     var canClose: Bool = true {
         didSet { updateCloseButtonVisibility() }
     }
@@ -832,13 +884,24 @@ final class MetalViewerPaneView: NSView {
             return
         }
 
-        let metalView = MetalImageView(frame: .zero, pixList: series.loadedPixList())
+        let metalView = MetalImageView(
+            frame: .zero,
+            pixList: series.loadedPixList(),
+            windowLevelState: series.windowLevelState,
+            windowLevelStateDidChange: { [weak series] state in
+                series?.windowLevelState = state
+            }
+        )
         metalView.translatesAutoresizingMaskIntoConstraints = false
         metalView.activateHandler = { [weak self] in
             self?.activateHandler?()
         }
         metalView.interactionEventHandler = { [weak self] in
             self?.dismissRegistrationStatusIfNeeded()
+        }
+        metalView.windowLevelInteractionHandler = { [weak self] in
+            self?.series.windowLevelPresetTitle = NSLocalizedString("Other", comment: "")
+            self?.windowLevelInteractionHandler?()
         }
         metalView.titleDidChange = { [weak self] state in
             self?.currentStateDescription = state
@@ -971,6 +1034,35 @@ final class MetalViewerPaneView: NSView {
     func setReferenceLine(_ line: MetalViewerReferenceLine?) {
         referenceLineOverlay.referenceLine = line
         updateReferenceLineOverlay()
+    }
+
+    var currentWindowLevel: MetalViewerWindowLevel? {
+        guard let renderer = metalView?.renderer else { return nil }
+        return MetalViewerWindowLevel(level: renderer.windowLevel, width: renderer.windowWidth)
+    }
+
+    func applyWindowLevel(_ window: MetalViewerWindowLevel) {
+        guard let renderer = metalView?.renderer else { return }
+        renderer.applyWindowLevel(window, asCustom: true)
+        updateAnnotationOverlay()
+    }
+
+    func applyDefaultWindowLevelPreset() {
+        guard let renderer = metalView?.renderer else { return }
+        renderer.applyDefaultWindowLevelPreset()
+        updateAnnotationOverlay()
+    }
+
+    func applyFullDynamicWindowLevelPreset() {
+        guard let renderer = metalView?.renderer else { return }
+        renderer.applyFullDynamicWindowLevelPreset()
+        updateAnnotationOverlay()
+    }
+
+    func applyRobustSeriesWindowLevelPreset() {
+        guard let renderer = metalView?.renderer else { return }
+        renderer.applyRobustSeriesWindowLevelPreset()
+        updateAnnotationOverlay()
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {

@@ -2,6 +2,16 @@ import AppKit
 import Foundation
 import simd
 
+struct MetalViewerWindowLevel: Equatable {
+    var level: Float
+    var width: Float
+}
+
+struct MetalViewerWindowLevelState {
+    var defaultWindow: MetalViewerWindowLevel?
+    var customWindow: MetalViewerWindowLevel?
+}
+
 final class MetalViewerSeries {
     let identifier: String
     let title: String
@@ -11,12 +21,15 @@ final class MetalViewerSeries {
     let studyNumber: Int
     let showsStudyHeader: Bool
     let imageCount: Int
+    let modality: String
 
     private let imageObjects: [NSManagedObject]
     private let isBonjour: Bool
     private var cachedPixList: [DCMPix]?
     private var cachedVolumeBacking: NSData?
     private var cachedStructuredReportHTML: String?
+    var windowLevelState = MetalViewerWindowLevelState()
+    var windowLevelPresetTitle = NSLocalizedString("Default WL & WW", comment: "")
 
     init(
         identifier: String = UUID().uuidString,
@@ -40,6 +53,7 @@ final class MetalViewerSeries {
         self.imageObjects = imageObjects
         self.isBonjour = isBonjour
         self.imageCount = imageObjects.isEmpty ? (initialPixList?.count ?? 0) : imageObjects.count
+        self.modality = Self.modality(for: imageObjects, initialPixList: initialPixList)
         self.cachedPixList = initialPixList
         self.cachedVolumeBacking = nil
         self.cachedStructuredReportHTML = nil
@@ -175,6 +189,18 @@ final class MetalViewerSeries {
         }
 
         return nil
+    }
+
+    private static func modality(for imageObjects: [NSManagedObject], initialPixList: [DCMPix]?) -> String {
+        if let modality = imageObjects.first?.value(forKeyPath: "series.modality") as? String,
+           modality.isEmpty == false {
+            return modality.uppercased()
+        }
+        if let modality = initialPixList?.first?.modalityString,
+           modality.isEmpty == false {
+            return modality.uppercased()
+        }
+        return "OT"
     }
 
     private func structuredReportCandidatePaths() -> [String] {

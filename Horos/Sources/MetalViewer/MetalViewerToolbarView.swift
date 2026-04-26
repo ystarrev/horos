@@ -1,7 +1,20 @@
 import AppKit
 
 final class MetalViewerToolbarView: NSView {
+    enum WLWWCommand {
+        case other
+        case defaultWindow
+        case robustSeries
+        case fullDynamic
+        case preset(String)
+        case addCurrent
+        case setManually
+    }
+
     private let contentStack = NSStackView()
+    private let wlwwPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let opacityPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    var wlwwSelectionHandler: ((WLWWCommand) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -48,6 +61,64 @@ final class MetalViewerToolbarView: NSView {
     }
 
     func updateStatus(_ status: String) {
+    }
+
+    func reloadWLWWMenu(
+        selectedTitle: String = NSLocalizedString("Default WL & WW", comment: ""),
+        modality: String = "OT"
+    ) {
+        wlwwPopup.removeAllItems()
+        let normalizedModality = modality.uppercased()
+        let isMR = normalizedModality == "MR"
+
+        func addItem(_ title: String, command: WLWWCommand?, state: NSControl.StateValue = .off) {
+            let item = NSMenuItem(title: title, action: #selector(wlwwSelectionDidChange(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = command
+            item.state = state
+            wlwwPopup.menu?.addItem(item)
+        }
+
+        addItem(NSLocalizedString("Other", comment: ""), command: .other, state: selectedTitle == NSLocalizedString("Other", comment: "") ? .on : .off)
+        addItem(NSLocalizedString("Default WL & WW", comment: ""), command: .defaultWindow, state: selectedTitle == NSLocalizedString("Default WL & WW", comment: "") ? .on : .off)
+        if isMR {
+            addItem(NSLocalizedString("Robust MRI series", comment: ""), command: .robustSeries, state: selectedTitle == NSLocalizedString("Robust MRI series", comment: "") ? .on : .off)
+        }
+        addItem(NSLocalizedString("Full dynamic", comment: ""), command: .fullDynamic, state: selectedTitle == NSLocalizedString("Full dynamic", comment: "") ? .on : .off)
+        wlwwPopup.menu?.addItem(.separator())
+
+        let presetKeys: [String]
+        if let wlwwDictionary = UserDefaults.standard.dictionary(forKey: "WLWW3") {
+            presetKeys = Array(wlwwDictionary.keys)
+        } else {
+            presetKeys = []
+        }
+        let presetNames = presetKeys
+            .filter { shouldShowPreset(named: $0, modality: normalizedModality) }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        for (index, name) in presetNames.enumerated() {
+            let title = "\(index + 1) - \(name)"
+            addItem(title, command: .preset(name), state: selectedTitle == title || selectedTitle == name ? .on : .off)
+        }
+
+        wlwwPopup.menu?.addItem(.separator())
+        addItem(NSLocalizedString("Add Current WL/WW", comment: ""), command: .addCurrent)
+        addItem(NSLocalizedString("Set WL/WW Manually", comment: ""), command: .setManually)
+
+        selectWLWWTitle(selectedTitle)
+    }
+
+    func selectWLWWTitle(_ title: String) {
+        if let item = wlwwPopup.itemTitles.first(where: { $0 == title || $0.hasSuffix(" - \(title)") }) {
+            wlwwPopup.selectItem(withTitle: item)
+        } else {
+            wlwwPopup.selectItem(withTitle: NSLocalizedString("Other", comment: ""))
+        }
+
+        for item in wlwwPopup.itemArray {
+            guard item.isSeparatorItem == false else { continue }
+            item.state = item == wlwwPopup.selectedItem ? .on : .off
+        }
     }
 
     private func makeAnnotationsContent() -> NSView {
@@ -131,23 +202,20 @@ final class MetalViewerToolbarView: NSView {
     }
 
     private func makeWLWWContent() -> NSView {
-        let labels = ["WL/WW:", "Opacity:"]
-        let values = ["Other", "Linear Table"]
+        configurePopup(wlwwPopup)
+        reloadWLWWMenu()
 
-        let rows = zip(labels, values).map { label, value in
+        configurePopup(opacityPopup)
+        opacityPopup.addItems(withTitles: [NSLocalizedString("Linear Table", comment: "")])
+
+        let rows = [
+            (NSLocalizedString("WL/WW:", comment: ""), wlwwPopup),
+            (NSLocalizedString("Opacity:", comment: ""), opacityPopup),
+        ].map { label, popup in
             let labelField = NSTextField(labelWithString: label)
             labelField.font = NSFont.systemFont(ofSize: 10)
             labelField.textColor = NSColor(calibratedWhite: 0.82, alpha: 1)
             labelField.alignment = .right
-
-            let popup = NSPopUpButton()
-            popup.translatesAutoresizingMaskIntoConstraints = false
-            popup.controlSize = .mini
-            popup.addItems(withTitles: [value])
-            popup.selectItem(at: 0)
-            NSLayoutConstraint.activate([
-                popup.widthAnchor.constraint(equalToConstant: 116),
-            ])
 
             let row = NSStackView(views: [labelField, popup])
             row.orientation = .horizontal
@@ -173,6 +241,43 @@ final class MetalViewerToolbarView: NSView {
             vertical.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
         return container
+    }
+
+    private func configurePopup(_ popup: NSPopUpButton) {
+        popup.translatesAutoresizingMaskIntoConstraints = false
+        popup.controlSize = .mini
+        NSLayoutConstraint.activate([
+            popup.widthAnchor.constraint(equalToConstant: 140),
+        ])
+    }
+
+    private func shouldShowPreset(named name: String, modality: String) -> Bool {
+        let uppercasedName = name.uppercased()
+        let knownPrefixes = ["CT", "MR", "MRI", "PT", "PET", "NM", "US", "XA", "RF", "CR", "DX", "MG"]
+        let matchingPrefixes = knownPrefixes.filter {
+            uppercasedName == $0 || uppercasedName.hasPrefix("\($0) ") || uppercasedName.hasPrefix("\($0)-")
+        }
+
+        guard matchingPrefixes.isEmpty == false else {
+            return true
+        }
+
+        if modality == "MR" {
+            return matchingPrefixes.contains("MR") || matchingPrefixes.contains("MRI")
+        }
+        if modality == "PT" {
+            return matchingPrefixes.contains("PT") || matchingPrefixes.contains("PET")
+        }
+        return matchingPrefixes.contains(modality)
+    }
+
+    @objc
+    private func wlwwSelectionDidChange(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem,
+              let command = item.representedObject as? WLWWCommand else {
+            return
+        }
+        wlwwSelectionHandler?(command)
     }
 
     private func makeIconButtonContent(imageName: String, alternateImageName: String? = nil) -> NSView {

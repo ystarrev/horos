@@ -7245,6 +7245,11 @@ F4A10000000100000000000C /* Metal3DViewerLauncher.swift in Sources */ = {isa = P
 		};
 		5F1E2A6E2411AE7E00365A0C /* Make */ = {
 			isa = PBXShellScriptBuildPhase;
+			inputPaths = (
+				"$(PROJECT_DIR)/Horos/Scripts/DCMTK/Make.sh",
+				"$(PROJECT_DIR)/Horos/Sources/ModernDCMTKBridge.cpp",
+				"$(PROJECT_DIR)/Horos/Sources/ModernDCMTKBridge.h",
+			);
 			name = Make;
 			outputPaths = (
 				"$(BUILT_PRODUCTS_DIR)/DCMTK/dcmdump",

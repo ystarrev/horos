@@ -33,6 +33,29 @@ typedef struct HorosModernDCMTKBasicMetadata {
     int numberOfFrames;
 } HorosModernDCMTKBasicMetadata;
 
+typedef struct HorosModernDCMTKDecodedFrame {
+    float* pixels;
+    unsigned long pixelCount;
+    unsigned short rows;
+    unsigned short columns;
+    unsigned short bitsAllocated;
+    unsigned short bitsStored;
+    unsigned short pixelRepresentation;
+    double slope;
+    double intercept;
+    double windowCenter;
+    double windowWidth;
+    double pixelSpacingX;
+    double pixelSpacingY;
+    double sliceThickness;
+    double spacingBetweenSlices;
+    double origin[3];
+    double orientation[9];
+    int isOriginDefined;
+    int isRGB;
+    char* failureReason;
+} HorosModernDCMTKDecodedFrame;
+
 int HorosModernDCMTKIsDICOMFile(const char* path);
 char* HorosModernDCMTKCopyGeneratedUID(void);
 char* HorosModernDCMTKCopySpecificCharacterSet(const char* path);
@@ -44,6 +67,7 @@ int HorosModernDCMTKGetDecompressionInfo(const char* path, int* isEncapsulated, 
 int HorosModernDCMTKGetBasicMetadata(const char* path, HorosModernDCMTKBasicMetadata* metadata);
 int HorosModernDCMTKCopyImageGeometry(const char* path, double* origin3, double* orientation9);
 int HorosModernDCMTKCopyFrameGeometry(const char* path, double** sliceLocations, int* sliceCount, double** triggerDelays, int* triggerCount);
+int HorosModernDCMTKCopyDecodedFrame(const char* path, unsigned long frameIndex, HorosModernDCMTKDecodedFrame* frame);
 int HorosModernDCMTKCopyEncapsulatedDocument(const char* path, unsigned char** buffer, unsigned long* length);
 int HorosModernDCMTKCopyFileDataInTransferSyntax(const char* path,
                                                  const char* transferSyntaxUID,
@@ -135,6 +159,7 @@ int HorosModernDCMTKWriteKeyObjectReport(const char* path,
 int HorosModernDCMTKWriteStructuredReportFromXML(const char* xmlPath, const char* dicomPath);
 int HorosModernDCMTKReplaceTagValue(const char* path, unsigned short group, unsigned short element, const char* value, int removeIfEmpty);
 void HorosModernDCMTKFreeBasicMetadata(HorosModernDCMTKBasicMetadata* metadata);
+void HorosModernDCMTKFreeDecodedFrame(HorosModernDCMTKDecodedFrame* frame);
 void HorosModernDCMTKFreeString(char* value);
 void HorosModernDCMTKFreeBuffer(void* buffer);
 

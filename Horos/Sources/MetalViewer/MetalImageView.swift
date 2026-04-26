@@ -31,14 +31,20 @@ final class MetalImageView: MTKView {
     var activateHandler: (() -> Void)?
     var interactionEventHandler: (() -> Void)?
     var annotationStateDidChange: (() -> Void)?
+    var windowLevelInteractionHandler: (() -> Void)?
     private(set) var mouseAnnotationState: MouseAnnotationState?
 
-    init(frame frameRect: NSRect, pixList: [DCMPix]) {
+    init(
+        frame frameRect: NSRect,
+        pixList: [DCMPix],
+        windowLevelState: MetalViewerWindowLevelState = MetalViewerWindowLevelState(),
+        windowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)? = nil
+    ) {
         guard let device = MTLCreateSystemDefaultDevice() else {
             fatalError("Metal is not available on this Mac.")
         }
 
-        renderer = MetalViewerRenderer(device: device, pixList: pixList)
+        renderer = MetalViewerRenderer(device: device, pixList: pixList, windowLevelState: windowLevelState)
         super.init(frame: frameRect, device: device)
 
         self.delegate = renderer
@@ -54,6 +60,7 @@ final class MetalImageView: MTKView {
             self?.needsDisplay = true
             self?.annotationStateDidChange?()
         }
+        renderer.windowLevelStateDidChange = windowLevelStateDidChange
         renderer.resetAndLoadInitialSlice()
         titleDidChange?(renderer.stateDescription)
     }
@@ -128,6 +135,7 @@ final class MetalImageView: MTKView {
                 wl: wlAnchor - deltaY * max(abs(wlAnchor), 128) * 0.003,
                 ww: wwAnchor + deltaX * max(abs(wwAnchor), 256) * 0.003
             )
+            windowLevelInteractionHandler?()
         case .pan:
             renderer.setPanOffset(panAnchor + SIMD2<Float>(deltaX, deltaY))
         }

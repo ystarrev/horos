@@ -53,7 +53,9 @@
 #import "NSUserDefaults+OsiriX.h"
 #import "DicomDatabase.h"
 #import "DicomFileDCMTKCategory.h"
+#import "ModernDCMTKBridge.h"
 #include <signal.h>
+#include <dlfcn.h>
 
 #ifdef OSIRIX_VIEWER
 #import "NSThread+N2.h"
@@ -88,6 +90,88 @@
 #import "Point3D.h"
 
 #import "math.h"
+
+typedef int (*HorosDCMPixModernDCMTKCopyDecodedFrameFunction)(const char*, unsigned long, HorosModernDCMTKDecodedFrame*);
+typedef void (*HorosDCMPixModernDCMTKFreeDecodedFrameFunction)(HorosModernDCMTKDecodedFrame*);
+typedef char* (*HorosDCMPixModernDCMTKCopyFieldByTagFunction)(const char*, unsigned short, unsigned short);
+typedef void (*HorosDCMPixModernDCMTKFreeStringFunction)(char*);
+
+static void* HorosDCMPixModernDCMTKBridgeHandle(void)
+{
+    static void* handle = NULL;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSBundle *bundle = [NSBundle mainBundle];
+        NSArray<NSString *> *basePaths = @[
+            bundle.resourcePath ?: @"",
+            bundle.privateFrameworksPath ?: @"",
+            bundle.sharedFrameworksPath ?: @"",
+            bundle.builtInPlugInsPath ?: @""
+        ];
+        NSArray<NSString *> *relativePaths = @[
+            @"libHorosModernDCMTKBridge.dylib",
+            @"DCMTK/libHorosModernDCMTKBridge.dylib"
+        ];
+        NSString *resolvedPath = nil;
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        for (NSString *basePath in basePaths)
+        {
+            if (basePath.length == 0)
+                continue;
+            for (NSString *relativePath in relativePaths)
+            {
+                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
+                if ([fileManager fileExistsAtPath:candidate])
+                {
+                    resolvedPath = candidate;
+                    break;
+                }
+            }
+            if (resolvedPath)
+                break;
+        }
+
+        if (resolvedPath)
+        {
+            handle = dlopen(resolvedPath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+            if (handle == NULL)
+                NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK bridge failed to load at %@: %s", resolvedPath, dlerror());
+        }
+        else
+        {
+            NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK bridge not found in bundle search paths.");
+        }
+    });
+
+    return handle;
+}
+
+static void* HorosDCMPixModernDCMTKSymbol(const char* name)
+{
+    void* handle = HorosDCMPixModernDCMTKBridgeHandle();
+    if (handle == NULL)
+        return NULL;
+    void *symbol = dlsym(handle, name);
+    if (symbol == NULL)
+    {
+        static NSMutableSet *missingSymbols = nil;
+        static dispatch_once_t onceToken;
+        dispatch_once(&onceToken, ^{
+            missingSymbols = [[NSMutableSet alloc] init];
+        });
+
+        NSString *symbolName = [NSString stringWithUTF8String:name] ?: @"<unknown>";
+        @synchronized(missingSymbols)
+        {
+            if ([missingSymbols containsObject:symbolName] == NO)
+            {
+                [missingSymbols addObject:symbolName];
+                NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK bridge missing symbol %@: %s", symbolName, dlerror());
+            }
+        }
+    }
+    return symbol;
+}
 #import "altivecFunctions.h"
 #import "DICOMToNSString.h"
 
@@ -5797,8 +5881,117 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     }
 }
 
+- (BOOL)loadDICOMModernDCMTK
+{
+    CFAbsoluteTime startTime = CFAbsoluteTimeGetCurrent();
+    HorosDCMPixModernDCMTKCopyDecodedFrameFunction copyDecodedFrame =
+        (HorosDCMPixModernDCMTKCopyDecodedFrameFunction)HorosDCMPixModernDCMTKSymbol("HorosModernDCMTKCopyDecodedFrame");
+    HorosDCMPixModernDCMTKFreeDecodedFrameFunction freeDecodedFrame =
+        (HorosDCMPixModernDCMTKFreeDecodedFrameFunction)HorosDCMPixModernDCMTKSymbol("HorosModernDCMTKFreeDecodedFrame");
+
+    if (copyDecodedFrame == NULL || freeDecodedFrame == NULL)
+        return NO;
+
+    HorosModernDCMTKDecodedFrame decodedFrame;
+    memset(&decodedFrame, 0, sizeof(decodedFrame));
+
+    const unsigned long requestedFrame = frameNo < 0 ? 0 : (unsigned long)frameNo;
+    if (copyDecodedFrame([self.srcFile fileSystemRepresentation], requestedFrame, &decodedFrame) == 0)
+    {
+        NSString *failureReason = decodedFrame.failureReason != NULL ? [NSString stringWithUTF8String:decodedFrame.failureReason] : @"unknown";
+        NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK decode unsupported/fail frame=%lu path=%@ reason=\"%@\" in %.3f s", requestedFrame, [self.srcFile lastPathComponent], failureReason, CFAbsoluteTimeGetCurrent() - startTime);
+        freeDecodedFrame(&decodedFrame);
+        return NO;
+    }
+
+    if (decodedFrame.pixels == NULL || decodedFrame.rows == 0 || decodedFrame.columns == 0 || decodedFrame.pixelCount == 0)
+    {
+        freeDecodedFrame(&decodedFrame);
+        return NO;
+    }
+
+    height = decodedFrame.rows;
+    width = decodedFrame.columns;
+    bitsAllocated = decodedFrame.bitsAllocated;
+    bitsStored = decodedFrame.bitsStored;
+    fIsSigned = decodedFrame.pixelRepresentation != 0;
+    isRGB = decodedFrame.isRGB ? YES : NO;
+
+    slope = decodedFrame.slope;
+    offset = decodedFrame.intercept;
+    savedWL = decodedFrame.windowCenter;
+    savedWW = decodedFrame.windowWidth;
+    if (savedWW < 0)
+        savedWW = -savedWW;
+    if (savedWW != 0 && isRGB == NO)
+    {
+        wl = savedWL;
+        ww = savedWW;
+    }
+    else
+    {
+        wl = 0;
+        ww = 0;
+    }
+
+    if (decodedFrame.pixelSpacingX > 0)
+        pixelSpacingX = decodedFrame.pixelSpacingX;
+    if (decodedFrame.pixelSpacingY > 0)
+        pixelSpacingY = decodedFrame.pixelSpacingY;
+    if (pixelSpacingY != 0 && pixelSpacingX != 0)
+        pixelRatio = pixelSpacingY / pixelSpacingX;
+
+    sliceThickness = decodedFrame.sliceThickness;
+    spacingBetweenSlices = decodedFrame.spacingBetweenSlices;
+    if (spacingBetweenSlices != 0)
+        sliceInterval = spacingBetweenSlices;
+    else if (sliceThickness != 0)
+        sliceInterval = sliceThickness;
+
+    if (decodedFrame.isOriginDefined)
+    {
+        originX = decodedFrame.origin[0];
+        originY = decodedFrame.origin[1];
+        originZ = decodedFrame.origin[2];
+        isOriginDefined = YES;
+    }
+
+    for (int index = 0; index < 9; ++index)
+        orientation[index] = decodedFrame.orientation[index];
+
+    if (fExternalOwnedImage)
+    {
+        const size_t copiedPixels = MIN((size_t)decodedFrame.pixelCount, (size_t)width * (size_t)height);
+        [self kill8bitsImage];
+        memcpy(fExternalOwnedImage, decodedFrame.pixels, copiedPixels * sizeof(float));
+        fImage = fExternalOwnedImage;
+        freeDecodedFrame(&decodedFrame);
+    }
+    else
+    {
+        [self setfImage:decodedFrame.pixels];
+        decodedFrame.pixels = NULL;
+        freeDecodedFrame(&decodedFrame);
+    }
+
+    if (shutterRect.size.width == 0)
+        shutterRect.size.width = width;
+    if (shutterRect.size.height == 0)
+        shutterRect.size.height = height;
+
+    needToCompute8bitRepresentation = YES;
+    VOILUTApplied = NO;
+#ifdef OSIRIX_VIEWER
+    [annotationsDictionary removeAllObjects];
+    [self loadCustomImageAnnotationsPapyLink:-1 DCMLink:nil];
+#endif
+    NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK decode success frame=%lu size=%ldx%ld path=%@ in %.3f s", requestedFrame, width, height, [self.srcFile lastPathComponent], CFAbsoluteTimeGetCurrent() - startTime);
+    return YES;
+}
+
 - (BOOL)loadDICOMDCMFramework
 {
+    CFAbsoluteTime startTime = CFAbsoluteTimeGetCurrent();
     // Memory test: DCMFramework requires a lot of memory...
     unsigned long long fileSize = [[[NSFileManager defaultManager] attributesOfItemAtPath:self.srcFile error:NULL] fileSize];
     fileSize *= 1.5;
@@ -6868,6 +7061,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     [purgeCacheLock unlockWithCondition: [purgeCacheLock condition]-1];
     [pool release];
     
+    NSLog(@"HOROS_METAL_TIMING DCMPix legacy DCMFramework decode %@ path=%@ in %.3f s", returnValue ? @"success" : @"fail", [self.srcFile lastPathComponent], CFAbsoluteTimeGetCurrent() - startTime);
     return returnValue;
 }
 
@@ -7082,6 +7276,8 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 - (void) CheckLoadIn
 {
+    BOOL hadImageAtEntry = fImage != nil;
+    CFAbsoluteTime checkLoadStart = CFAbsoluteTimeGetCurrent();
     BOOL USECUSTOMTIFF = NO;
     
     if( fImage == nil)
@@ -7146,7 +7342,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                             //only try again if it's strict DICOM
                             if (success == NO && [DCMObject isDICOM:[NSData dataWithContentsOfFile:self.srcFile]])
                             {
-                                success = [self loadDICOMDCMFramework];
+                                success = [self loadDICOMModernDCMTK];
+                                if (success == NO)
+                                    success = [self loadDICOMDCMFramework];
                             }
                             
                             [[NSFileManager defaultManager] removeItemAtPath: recoveryPath error: nil];
@@ -7160,7 +7358,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 }
                 else
                 {
-                    success = [self loadDICOMDCMFramework];
+                    success = [self loadDICOMModernDCMTK];
+                    if (success == NO)
+                        success = [self loadDICOMDCMFramework];
                     
                     if (success == NO &&
                         [DCMObject isDICOM:[NSData dataWithContentsOfFile:self.srcFile]]) {
@@ -8070,6 +8270,8 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             }
         }
     }
+    if (hadImageAtEntry == NO && fImage != nil)
+        NSLog(@"HOROS_METAL_TIMING DCMPix CheckLoadIn loaded path=%@ frame=%ld size=%ldx%ld in %.3f s", [self.srcFile lastPathComponent], (long)frameNo, width, height, CFAbsoluteTimeGetCurrent() - checkLoadStart);
 }
 #pragma GCC diagnostic warning "-Wdeprecated-declarations"
 
@@ -10530,8 +10732,42 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
 #ifdef OSIRIX_VIEWER
 
-- (NSString*) getDICOMFieldValueForGroup:(int)group element:(int)element DCMLink:(DCMObject*)dcmObject
+- (NSString*) getDICOMFieldValueForGroup:(int)group element:(int)element DCMLink:(DCMObject*)dcmObject encodings:(NSStringEncoding*)modernEncodings
 {
+    if( dcmObject == nil)
+    {
+        HorosDCMPixModernDCMTKCopyFieldByTagFunction copyFieldByTag =
+            (HorosDCMPixModernDCMTKCopyFieldByTagFunction)HorosDCMPixModernDCMTKSymbol("HorosModernDCMTKCopyFieldByTag");
+        HorosDCMPixModernDCMTKFreeStringFunction freeString =
+            (HorosDCMPixModernDCMTKFreeStringFunction)HorosDCMPixModernDCMTKSymbol("HorosModernDCMTKFreeString");
+
+        if( copyFieldByTag && freeString && self.srcFile)
+        {
+            char *field = copyFieldByTag([self.srcFile fileSystemRepresentation], (unsigned short)group, (unsigned short)element);
+            if( field)
+            {
+                NSStringEncoding fallbackEncodings[10] = {0};
+                if( modernEncodings == NULL)
+                {
+                    fallbackEncodings[0] = NSISOLatin1StringEncoding;
+                    modernEncodings = fallbackEncodings;
+                }
+
+                NSString *result = [DicomFile stringWithBytes:field encodings:modernEncodings];
+                if( result == nil)
+                    result = [NSString stringWithUTF8String:field];
+                if( result == nil)
+                    result = [NSString stringWithCString:field encoding:NSISOLatin1StringEncoding];
+                if( result && [result rangeOfString:@"\\"].location != NSNotFound)
+                    result = [[result componentsSeparatedByString:@"\\"] componentsJoinedByString:@" / "];
+                freeString(field);
+                return result;
+            }
+        }
+
+        return nil;
+    }
+
     DCMAttribute *attr = [dcmObject attributeForTag: [DCMAttributeTag tagWithGroup: group element: element]];
     
     if( attr)
@@ -10591,6 +10827,11 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         return result;
     }
     return nil;
+}
+
+- (NSString*) getDICOMFieldValueForGroup:(int)group element:(int)element DCMLink:(DCMObject*)dcmObject
+{
+    return [self getDICOMFieldValueForGroup:group element:element DCMLink:dcmObject encodings:NULL];
 }
 
 
@@ -10716,6 +10957,20 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         
         // image sides (LowerLeft, LowerMiddle, LowerRight, MiddleLeft, MiddleRight, TopLeft, TopMiddle, TopRight) & sameAsDefault
         NSArray *keys = [annotationsForModality allKeys];
+        NSStringEncoding modernEncodings[10] = {0};
+        if( dcmObject == nil)
+        {
+            modernEncodings[0] = NSISOLatin1StringEncoding;
+            NSArray *characterSets = [DicomFile getEncodingArrayForFile:self.srcFile];
+            if( [characterSets count] > 0)
+            {
+                NSUInteger count = MIN([characterSets count], (NSUInteger)10);
+                for( NSUInteger index = 0; index < count; ++index)
+                    modernEncodings[index] = [NSString encodingForDICOMCharacterSet:[characterSets objectAtIndex:index]];
+                for( NSUInteger index = count; index < 10; ++index)
+                    modernEncodings[index] = modernEncodings[count - 1];
+            }
+        }
         
         for( NSString *key in keys)
         {
@@ -10752,10 +11007,8 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                                     {
                                         value = [NSString stringWithFormat:@"%.6g", [echotime floatValue]];;
                                     }
-                                    else if (dcmObject)
-                                        value = [self getDICOMFieldValueForGroup:[[field objectForKey:@"group"] intValue] element:[[field objectForKey:@"element"] intValue] DCMLink:dcmObject];
                                     else
-                                        value = nil;
+                                        value = [self getDICOMFieldValueForGroup:[[field objectForKey:@"group"] intValue] element:[[field objectForKey:@"element"] intValue] DCMLink:dcmObject encodings:dcmObject == nil ? modernEncodings : NULL];
                                     
                                     if( [[field objectForKey:@"group"] intValue] == 0x0010 && [[field objectForKey:@"element"] intValue] == 0x0010)
                                         value = @"PatientName";

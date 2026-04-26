@@ -36,46 +36,23 @@
  ============================================================================*/
 
 #import "DicomCompressor.h"
+#import "DicomDatabase+DCMTK.h"
 #import "NSFileManager+N2.h"
-#include <algorithm>
 
 @implementation DicomCompressor
 
-const NSUInteger MaxFilesPassedToDecompress = 200;
-
 +(void)executeDecompressOnFiles:(NSArray*)filePaths toDirectory:(NSString*)dirPath withOptionsPath:(NSString*)optionsPlistPath action:(Compression)action {
 	if (!dirPath) dirPath = @"sameAsDestination";
-	NSMutableArray* args = [NSMutableArray arrayWithObjects: dirPath, NULL];
-	
-	if (optionsPlistPath) {
-		[args addObject:@"SettingsPlist"];
-		[args addObject:optionsPlistPath];
-	}
-	
-	NSString* actionString;
+    (void)optionsPlistPath;
+
 	switch (action) {
-		case CompressionDecompress: actionString = @"decompressList"; break;
-		case CompressionCompress: actionString = @"compress"; break;
-		default: [NSException raise:NSGenericException format:@"Invalid action for [DicomCompressorDecompressor executeDecompressOnFiles:toDirectory:withOptionsPath:action:]"];
-	}
-	[args addObject:actionString];
-	
-	for (NSUInteger i = 0; i < filePaths.count; i += MaxFilesPassedToDecompress)
-    {
-		NSMutableArray* iargs = [NSMutableArray arrayWithArray:args];
-		[iargs addObjectsFromArray:[filePaths subarrayWithRange:NSMakeRange(i, std::min(MaxFilesPassedToDecompress, (int)filePaths.count-i))]];
-		
-		NSTask* task = [[NSTask alloc] init];
-		[task setArguments:iargs];
-		[task setLaunchPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"Decompress"]];
-		[task launch];
-		
-		while ([task isRunning]) [NSThread sleepForTimeInterval:0.01];
-		
-		[task release];
-        
-        if ([[NSThread currentThread] isCancelled])
+		case CompressionDecompress:
+            [DicomDatabase decompressDicomFilesAtPaths:filePaths intoDirAtPath:dirPath];
             return;
+		case CompressionCompress:
+            [DicomDatabase compressDicomFilesAtPaths:filePaths intoDirAtPath:dirPath];
+            return;
+		default: [NSException raise:NSGenericException format:@"Invalid action for [DicomCompressorDecompressor executeDecompressOnFiles:toDirectory:withOptionsPath:action:]"];
 	}
 }
 

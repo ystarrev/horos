@@ -152,9 +152,9 @@
     CGContextRef bitmap = CGBitmapContextCreate(mData, mWidth, mHeight, 8, mByteWidth,
                                     cSpace,  
 	#if __BIG_ENDIAN__
-		(CGBitmapInfo)(kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Big) /* XRGB Big Endian */);
+		((CGBitmapInfo)kCGImageAlphaNoneSkipFirst | (CGBitmapInfo)kCGBitmapByteOrder32Big) /* XRGB Big Endian */);
 	#else
-		(CGBitmapInfo)(kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little) /* XRGB Little Endian */);
+		((CGBitmapInfo)kCGImageAlphaNoneSkipFirst | (CGBitmapInfo)kCGBitmapByteOrder32Little) /* XRGB Little Endian */);
 	#endif                                    
     NSAssert( bitmap != NULL, @"CGBitmapContextCreate failure");
 

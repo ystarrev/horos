@@ -626,7 +626,7 @@
 //------------------------------------------------------------------------------------------------------------------------------------
 #pragma mark•
 
-- (BOOL) validateMenuItem:(id)sender
+- (BOOL) validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)sender
 {
 	if( [sender action] == @selector(terminate:))
 		return (burning == NO);		// No quitting while a burn is going on

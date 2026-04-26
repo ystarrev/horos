@@ -1573,8 +1573,8 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
 
         /* dump general information concerning the establishment of the network connection if required */
         if (opt_verbose) {
-            printf("Association Accepted (Max Send PDV: %u)\n",
-                    assoc->sendPDVLength);
+            printf("Association Accepted (Max Send PDV: %lu)\n",
+                    (unsigned long)assoc->sendPDVLength);
         }
 
          /* do the real work, i.e. for all files which were specified in the */

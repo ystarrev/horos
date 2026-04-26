@@ -350,9 +350,9 @@
     [self setNeedsDisplay:YES];
 }
 
-- (NSDragOperation)draggingSourceOperationMaskForLocal:(BOOL)isLocal {
-    if (isLocal) return NSDragOperationEvery;
-    else return NSDragOperationCopy;
+- (NSDragOperation)draggingSession:(NSDraggingSession *)session sourceOperationMaskForDraggingContext:(NSDraggingContext)context {
+    if (context == NSDraggingContextOutsideApplication) return NSDragOperationCopy;
+    else return NSDragOperationEvery;
 }
 
 -(NSMenu*)menuForEvent:(NSEvent*)event

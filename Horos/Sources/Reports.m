@@ -183,7 +183,7 @@
                 lastObj = [lastObj readableDescription];
             
             if( [lastObj isKindOfClass: [DCMAttribute class]])
-                lastObj = [lastObj value];
+                lastObj = [(DCMAttribute*)lastObj value];
             
             if( [lastObj isKindOfClass: [NSString class]])
                 return lastObj;

@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "BrowserControllerDCMTKCategory.h"
+#import "DicomFileDCMTKCategory.h"
 #import "DCMObject.h"
 #import "DCM.h"
 #import "DCMTransferSyntax.h"

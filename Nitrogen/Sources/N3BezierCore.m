@@ -125,12 +125,12 @@ static N3Vector _N3BezierCoreLastMoveTo(N3BezierCoreRef bezierCore);
 #pragma mark N3BezierCore
 
 
-N3BezierCoreRef N3BezierCoreCreate()
+N3BezierCoreRef N3BezierCoreCreate(void)
 {
     return N3BezierCoreCreateMutable();
 }
 
-N3MutableBezierCoreRef N3BezierCoreCreateMutable()
+N3MutableBezierCoreRef N3BezierCoreCreateMutable(void)
 {
     N3MutableBezierCoreRef bezierCore;
 
@@ -1166,7 +1166,6 @@ static N3Vector _N3BezierCoreLastMoveTo(N3BezierCoreRef bezierCore)
 	
 	return lastMoveTo;
 }
-
 
 
 

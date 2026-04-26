@@ -1149,7 +1149,7 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
     //	[removedItem retain];
 }
 
-- (BOOL) validateToolbarItem: (NSToolbarItem *) toolbarItem
+- (BOOL) validateUserInterfaceItem: (id<NSValidatedUserInterfaceItem>)item
 {
 #ifdef EXPORTTOOLBARITEM
     return YES;

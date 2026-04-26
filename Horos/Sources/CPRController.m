@@ -219,7 +219,7 @@ static float deg2rad = M_PI / 180.0;
         
 		if( [[NSUserDefaults standardUserDefaults] integerForKey: @"ANNOTATIONS"] == annotNone)
 			[[NSUserDefaults standardUserDefaults] setInteger: annotGraphics forKey: @"ANNOTATIONS"];
-		
+
 		viewer2D = viewer;
 		
 		self = [super initWithWindowNibName:@"CPR"];
@@ -233,7 +233,7 @@ static float deg2rad = M_PI / 180.0;
             
 			return nil;
 		}
-		
+
         [[self window] setWindowController: self];
 		[[[self window] toolbar] setDelegate: self];
         
@@ -349,7 +349,7 @@ static float deg2rad = M_PI / 180.0;
 			blendedMprView1 = [[DCMView alloc] initWithFrame: [mprView1 frame]];
 			blendedMprView2 = [[DCMView alloc] initWithFrame: [mprView2 frame]];
 			blendedMprView3 = [[DCMView alloc] initWithFrame: [mprView3 frame]];
-			
+
 			emptyPix = [[[[fusedViewer2D imageView] curDCM] copy] autorelease];
 			[blendedMprView1 setPixels: [NSMutableArray arrayWithObject: emptyPix] files: [NSArray arrayWithObject: [files lastObject]] rois:nil firstImage:0 level:'i' reset:YES];
 			
@@ -498,13 +498,13 @@ static float deg2rad = M_PI / 180.0;
         
         [self setupToolbar];
 	}
-	
+
 	@catch (NSException *e)
 	{
 		NSLog( @"CPR Init failed: %@", e);
 		return nil;
 	}
-	
+
 	return self;
 }
 
@@ -547,7 +547,7 @@ static float deg2rad = M_PI / 180.0;
 		[selectedView restoreCamera];
 		[selectedView updateViewMPR];
 	}
-	
+
 	if( view)
 		if( [[self window] firstResponder] != view)
 			[[self window] makeFirstResponder: view];
@@ -721,7 +721,7 @@ static float deg2rad = M_PI / 180.0;
 		[horizontalSplit2 setVertical: NO];
 		[verticalSplit setVertical: YES];
 	}
-	
+
 //    [shadingsPresetsController setWindowController: self];
 //    [shadingsPresetsController addObserver:self forKeyPath:@"selectedObjects" options:0 context:CPRController.class];
     
@@ -924,7 +924,7 @@ static float deg2rad = M_PI / 180.0;
 	if( sender && [sender isKeyView] == YES && avoidReentry == NO)
 	{
 		avoidReentry = YES;
-		
+
 		float x, y, z;
 		Camera *cam = sender.camera;
 		Point3D *position = cam.position;
@@ -4097,38 +4097,39 @@ static float deg2rad = M_PI / 180.0;
     return array;
 }
 
-- (BOOL)validateMenuItem:(NSMenuItem *)item
+- (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item
 {
+	if( [(id)item isKindOfClass: [NSToolbarItem class]])
+	{
+		NSToolbarItem *toolbarItem = (NSToolbarItem *)item;
+		if ([[toolbarItem itemIdentifier] isEqualToString: @"tbStraightenedCPRAngle"])
+		{
+			if( [curvedPath.nodes count] < 3)
+				return NO;
+		}
+
+		if ([[toolbarItem itemIdentifier] isEqualToString: @"Export.icns"])
+		{
+			if( [curvedPath.nodes count] < 3)
+				return NO;
+		}
+
+		if ([[toolbarItem itemIdentifier] isEqualToString: @"curvedPath.icns"])
+		{
+			if( [curvedPath.nodes count] < 3)
+				return NO;
+		}
+
+		return YES;
+	}
+
 	if( [item action] == @selector(exportDICOMFile:))
 	{
 		if( [curvedPath.nodes count] < 3)
 			return NO;
 	}
-	
-    if( [item action] == @selector(saveBezierPath:))
-	{
-		if( [curvedPath.nodes count] < 3)
-			return NO;
-	}
-    
-	return YES;
-}
 
-- (BOOL) validateToolbarItem: (NSToolbarItem *) toolbarItem
-{
-	if ([[toolbarItem itemIdentifier] isEqualToString: @"tbStraightenedCPRAngle"])
-	{
-		if( [curvedPath.nodes count] < 3)
-			return NO;
-	}
-	
-	if ([[toolbarItem itemIdentifier] isEqualToString: @"Export.icns"])
-	{
-		if( [curvedPath.nodes count] < 3)
-			return NO;
-	}
-    
-    if ([[toolbarItem itemIdentifier] isEqualToString: @"curvedPath.icns"])
+    if( [item action] == @selector(saveBezierPath:))
 	{
 		if( [curvedPath.nodes count] < 3)
 			return NO;

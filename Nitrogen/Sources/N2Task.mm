@@ -93,7 +93,9 @@ static int getfd(id object, BOOL read, int def) { // http://www.quantum-step.com
 	
 	const char* exec = self.launchPath.fileSystemRepresentation;
 	
-	const char* argv[self.arguments.count+2];
+	const char** argv = (const char**)calloc(self.arguments.count+2, sizeof(const char*));
+	if (argv == NULL)
+		[NSException raise:NSMallocException format:@"N2Task failed to allocate argv"];
 	argv[0] = self.launchPath.UTF8String;
 	for (int i = 0; i < self.arguments.count; ++i)
 		argv[i+1] = [[self.arguments objectAtIndex:i] UTF8String];
@@ -103,7 +105,11 @@ static int getfd(id object, BOOL read, int def) { // http://www.quantum-step.com
 	
 	_launchTime = [NSDate timeIntervalSinceReferenceDate];
 	
-	const char* env[self.environment.count+1];
+	const char** env = (const char**)calloc(self.environment.count+1, sizeof(const char*));
+	if (env == NULL) {
+		free(argv);
+		[NSException raise:NSMallocException format:@"N2Task failed to allocate env"];
+	}
 	env[self.environment.count] = NULL;
 	int ienv = 0;
 	for (NSString* kenv in self.environment) {
@@ -157,6 +163,8 @@ static int getfd(id object, BOOL read, int def) { // http://www.quantum-step.com
 				[[self.standardError fileHandleForWriting] closeFile];
 		}
 	}
+	free(argv);
+	free(env);
 }
 
 -(void)terminate {
@@ -263,4 +271,3 @@ static int getfd(id object, BOOL read, int def) { // http://www.quantum-step.com
 }
 
 @end
-

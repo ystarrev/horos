@@ -412,8 +412,8 @@ static const char* transferSyntaxes[] = {
 	
 	    /* dump general information concerning the establishment of the network connection if required */
     if (_verbose) {
-        printf("Association Accepted (Max Send PDV: %u)\n",
-                assoc->sendPDVLength);
+        printf("Association Accepted (Max Send PDV: %lu)\n",
+                (unsigned long)assoc->sendPDVLength);
     }
 	
 	 /* do the real work, i.e. send a number of C-ECHO-RQ messages to the DICOM application */
@@ -602,5 +602,4 @@ static const char* transferSyntaxes[] = {
 
 
 @end
-
 

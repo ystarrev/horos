@@ -60,7 +60,7 @@ typedef char* (*HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn)(const char*
 typedef char* (*HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn)(const char* path);
 typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
 
-static void* PreviewModernDCMTKBridgeHandle()
+static void* PreviewModernDCMTKBridgeHandle(void)
 {
     static void* handle = NULL;
     static dispatch_once_t onceToken;

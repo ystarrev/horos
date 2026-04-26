@@ -89,8 +89,11 @@
 	return nil;
 }
 
-- (BOOL)validateMenuItem:(NSMenuItem *)item
+- (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)validatedItem
 {
+	if( [(id)validatedItem isKindOfClass: [NSMenuItem class]] == NO)
+		return YES;
+	NSMenuItem *item = (NSMenuItem *)validatedItem;
 	BOOL valid = NO;
 	
 	if( [item action] == @selector(ApplyCLUT:))

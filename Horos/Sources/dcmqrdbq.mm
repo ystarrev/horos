@@ -1288,7 +1288,7 @@ OFCondition DcmQueryRetrieveOsiriXDatabaseHandle::storeRequest(
 		return EC_Normal;
 	
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-	NSString *sourcePath = [NSString stringWithFileSystemRepresentation: imageFileName length: strlen( imageFileName)];
+	NSString *sourcePath = [[NSFileManager defaultManager] stringWithFileSystemRepresentation: imageFileName length: strlen( imageFileName)];
 	NSString *destinationPath = [[[DicomDatabase activeLocalDatabase] incomingDirPath] stringByAppendingPathComponent: [sourcePath lastPathComponent]];
 	
 	if( [[NSFileManager defaultManager] moveItemAtPath: sourcePath toPath: destinationPath error: nil] == NO)
@@ -1377,7 +1377,6 @@ DcmQueryRetrieveDatabaseHandle *DcmQueryRetrieveOsiriXDatabaseHandleFactory::cre
 {
   return new DcmQueryRetrieveOsiriXDatabaseHandle( callingAETitle, result);
 }
-
 
 
 

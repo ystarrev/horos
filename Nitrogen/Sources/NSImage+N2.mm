@@ -174,7 +174,11 @@
 	if ([color colorSpaceName] != NSCalibratedRGBColorSpace)
 		color = [color colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
 	NSInteger componentsCount = [color numberOfComponents];
-	CGFloat components[componentsCount];
+	CGFloat *components = (CGFloat *)malloc(componentsCount * sizeof(CGFloat));
+	if (components == NULL) {
+		[bitmap release];
+		return box;
+	}
 	[color getComponents:components];
 	
 	const size_t rowBytes = [bitmap bytesPerRow], pixelBytes = [bitmap bitsPerPixel]/8;
@@ -223,6 +227,7 @@ end_size_y:
 	if (y >= box.origin.y)
 		box.size.height = y-box.origin.y+1;
 	
+	free(components);
 	[bitmap release];
 	
 	//if (![self isFlipped])

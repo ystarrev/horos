@@ -1027,8 +1027,6 @@ static NSRecursiveLock *dbModifyLock = nil;
         }
     }
     
-    NSString *previousValue = [self primitiveValueForKey: @"comment"];
-    
     [self willChangeValueForKey: @"comment"];
     [self setPrimitiveValue: c forKey: @"comment"];
     [self didChangeValueForKey: @"comment"];
@@ -1037,8 +1035,6 @@ static NSRecursiveLock *dbModifyLock = nil;
 
 - (void) setComment2: (NSString*) c
 {
-    NSString *previousValue = [self primitiveValueForKey: @"comment2"];
-    
     [self willChangeValueForKey: @"comment2"];
     [self setPrimitiveValue: c forKey: @"comment2"];
     [self didChangeValueForKey: @"comment2"];
@@ -1047,8 +1043,6 @@ static NSRecursiveLock *dbModifyLock = nil;
 
 - (void) setComment3: (NSString*) c
 {
-    NSString *previousValue = [self primitiveValueForKey: @"comment3"];
-    
     [self willChangeValueForKey: @"comment3"];
     [self setPrimitiveValue: c forKey: @"comment3"];
     [self didChangeValueForKey: @"comment3"];
@@ -1057,8 +1051,6 @@ static NSRecursiveLock *dbModifyLock = nil;
 
 - (void) setComment4: (NSString*) c
 {
-    NSString *previousValue = [self primitiveValueForKey: @"comment4"];
-    
     [self willChangeValueForKey: @"comment4"];
     [self setPrimitiveValue: c forKey: @"comment4"];
     [self didChangeValueForKey: @"comment4"];

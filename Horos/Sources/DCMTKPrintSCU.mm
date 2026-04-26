@@ -42,6 +42,7 @@
 #include <dcmtk/config/osconfig.h>    /* make sure OS specific configuration is included first */
 
 #include <ctype.h>
+#include <limits.h>
 
 #include <dcmtk/ofstd/ofstream.h>
 #include <dcmtk/dcmpstat/dviface.h>
@@ -112,8 +113,8 @@
     _annotationIllumination = OFTrue;
     _annotationString = NULL;
 
-	_illumination = (OFCmdUnsignedInt)-1;
-	_reflection = (OFCmdUnsignedInt)-1;	
+	_illumination = UINT_MAX;
+	_reflection = UINT_MAX;
 	
 	_filenames = [filesToSend retain];
 	}

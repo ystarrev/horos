@@ -39,6 +39,7 @@
 #import <Accelerate/Accelerate.h>
 #include <algorithm>
 #include <stack>
+#include <vector>
 
 @implementation NSBitmapImageRep (N2)
 
@@ -68,29 +69,29 @@
 -(void)setColor:(NSColor*)color { // _deprecated
     NSColorSpace* colorSpace = [self colorSpace];
     size_t spp = [self samplesPerPixel];
-    NSUInteger samples[spp];
-    CGFloat fsamples[spp];
+    std::vector<NSUInteger> samples(spp);
+    std::vector<CGFloat> fsamples(spp);
 	for (int y = self.pixelsHigh-1; y >= 0; --y)
 		for (int x = self.pixelsWide-1; x >= 0; --x) {
-			[self getPixel:samples atX:x y:y];
+			[self getPixel:samples.data() atX:x y:y];
             for (int i = 0; i < spp; ++i)
                 fsamples[i] = samples[i]*1.0/255;
             
-            NSColor* xycolor = [NSColor colorWithColorSpace:colorSpace components:fsamples count:spp];
+            NSColor* xycolor = [NSColor colorWithColorSpace:colorSpace components:fsamples.data() count:spp];
             
             CGFloat brightness, alpha;
             [[xycolor colorUsingColorSpaceName:NSCalibratedRGBColorSpace] getHue:NULL saturation:NULL brightness:&brightness alpha:&alpha];
             NSColor* fixedColor = [NSColor colorWithDeviceHue:[color hueComponent] saturation:[color saturationComponent] brightness:std::max((CGFloat).75, brightness) alpha:alpha];
             
             xycolor = [fixedColor colorUsingColorSpace:colorSpace];
-            [color getComponents:fsamples];
+            [color getComponents:fsamples.data()];
             if (self.hasAlpha)
                 fsamples[spp-1] = alpha;
             
             for (int i = 0; i < spp; ++i)
                 samples[i] = floor(fsamples[i]*255);
             
-            [self setPixel:samples atX:x y:y];
+            [self setPixel:samples.data() atX:x y:y];
 		}
 }
 
@@ -122,7 +123,7 @@ struct P {
 -(void)ATMask:(float)level { // this method is deprecated
 	NSSize size = [self size];
 	int width = size.width, height = size.height;
-	float v[width][height];
+	std::vector<float> v(width * height);
 	
 	unsigned char* bitmapData = [self bitmapData];
 	size_t bpp = [self bytesPerPlane], bpr = [self bytesPerRow];
@@ -131,14 +132,12 @@ struct P {
 //#pragma omp parallel for default(shared)
 	for (int x = 0; x < width; ++x)
 		for (int y = 0; y < height; ++y)
-			v[x][y] = bitmapData[y*bpr+x*bpp+3];
+			v[x*height+y] = bitmapData[y*bpr+x*bpp+3];
 	//v[x][y] = [[self colorAtX:x y:y] alphaComponent];
 	
 	NSLog(@"time2!!!!!! %f", [NSDate timeIntervalSinceReferenceDate]);
-	BOOL mask[width][height];
-	memset(mask, YES, sizeof(mask));
-	BOOL visited[width][height];
-	memset(visited, NO, sizeof(visited));
+	std::vector<BOOL> mask(width * height, YES);
+	std::vector<BOOL> visited(width * height, NO);
 	
 	NSLog(@"time3!!!!!! %f", [NSDate timeIntervalSinceReferenceDate]);
 	std::stack<P> ps;
@@ -155,23 +154,23 @@ struct P {
 		P p = ps.top();
 		ps.pop();
 		
-		if (visited[p.x][p.y]) continue;
-		visited[p.x][p.y] = YES;
+		if (visited[p.x*height+p.y]) continue;
+		visited[p.x*height+p.y] = YES;
 		
-		if (!v[p.x][p.y]) {
-			mask[p.x][p.y] = NO;
-			if (p.x > 0 && !visited[p.x-1][p.y]) ps.push(P(p.x-1, p.y));
-			if (p.y > 0 && !visited[p.x][p.y-1]) ps.push(P(p.x, p.y-1));
-			if (p.x < width-1 && !visited[p.x+1][p.y]) ps.push(P(p.x+1, p.y));
-			if (p.y < height-1 && !visited[p.x][p.y+1]) ps.push(P(p.x, p.y+1));
+		if (!v[p.x*height+p.y]) {
+			mask[p.x*height+p.y] = NO;
+			if (p.x > 0 && !visited[(p.x-1)*height+p.y]) ps.push(P(p.x-1, p.y));
+			if (p.y > 0 && !visited[p.x*height+p.y-1]) ps.push(P(p.x, p.y-1));
+			if (p.x < width-1 && !visited[(p.x+1)*height+p.y]) ps.push(P(p.x+1, p.y));
+			if (p.y < height-1 && !visited[p.x*height+p.y+1]) ps.push(P(p.x, p.y+1));
 		}
 	}
 	
 	NSLog(@"time5!!!!!! %f", [NSDate timeIntervalSinceReferenceDate]);
 	for (int y = 0; y < height/2; ++y)
 		for (int x = 0; x < width; ++x)
-			if (mask[x][y])
-				bitmapData[y*bpr+x*bpp+3] = std::max(v[x][y], level);
+			if (mask[x*height+y])
+				bitmapData[y*bpr+x*bpp+3] = std::max(v[x*height+y], level);
 	NSLog(@"time6!!!!!! %f", [NSDate timeIntervalSinceReferenceDate]);
 }
 

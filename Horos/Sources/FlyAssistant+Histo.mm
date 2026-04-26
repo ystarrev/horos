@@ -200,9 +200,11 @@
     
     int limit = histoSize;
     int size = limit + 2 * window;
-    vImagePixelCount original[size];// = (vImagePixelCount *)malloc(  * sizeof(vImagePixelCount) );
-    
     if( window > limit)
+        return;
+
+    vImagePixelCount *original = (vImagePixelCount *)calloc(size + 1, sizeof(vImagePixelCount));
+    if( original == NULL)
         return;
     
     // body copy
@@ -234,7 +236,7 @@
         inputHisto[i] /= weight;
     }
     
-//    free(original);
+    free(original);
 }
 
 - (void) determineThresholdIntervalFrom:(int)value On:(const std::vector<int> &)histo WithStep:(const int)delta
@@ -379,7 +381,11 @@
     
     if( tmpResult.data)
     {
-        float kernel[x*y];
+        float *kernel = (float *)malloc(x*y*sizeof(float));
+        if( kernel == NULL) {
+            free(tmpResult.data);
+            return;
+        }
         for (unsigned int i = 0; i < x * y; ++i) {
             kernel[i] = 1;
         }
@@ -390,14 +396,19 @@
             err = vImageErode_PlanarF(buffer, &tmpResult, 0, 0, kernel, x, y, kvImageNoFlags );
             if (err != kvImageNoError) {
                 [self mmError:err];
+                free(kernel);
+                free(tmpResult.data);
                 return;
             }
             err = vImageDilate_PlanarF(&tmpResult, buffer, 0, 0, kernel, x, y, kvImageNoFlags );
             if (err != kvImageNoError) {
                 [self mmError:err];
+                free(kernel);
+                free(tmpResult.data);
                 return;
             }
         }
+        free(kernel);
         free(tmpResult.data);
     }
 }
@@ -412,7 +423,11 @@
     
     if( tmpResult.data)
     {
-        float kernel[x*y];
+        float *kernel = (float *)malloc(x*y*sizeof(float));
+        if( kernel == NULL) {
+            free(tmpResult.data);
+            return;
+        }
         for (unsigned int i = 0; i < x * y; ++i) {
             kernel[i] = 1;
         }
@@ -422,14 +437,19 @@
             err = vImageDilate_PlanarF(buffer, &tmpResult, 0, 0, kernel, x, y, kvImageNoFlags);
             if (err != kvImageNoError) {
                 [self mmError:err];
+                free(kernel);
+                free(tmpResult.data);
                 return;
             }
             err = vImageErode_PlanarF(&tmpResult, buffer, 0, 0, kernel, x, y, kvImageNoFlags);
             if (err != kvImageNoError) {
                 [self mmError:err];
+                free(kernel);
+                free(tmpResult.data);
                 return;
             }
         }
+        free(kernel);
         free(tmpResult.data);
     }
 }

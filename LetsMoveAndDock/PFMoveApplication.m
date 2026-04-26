@@ -79,7 +79,7 @@ static BOOL CopyBundle(NSString *srcPath, NSString *dstPath);
 static void Relaunch(NSString *destinationPath);
 
 // Main worker function
-void PFMoveToApplicationsFolderIfNecessary() {
+void PFMoveToApplicationsFolderIfNecessary(void) {
 	// Skip if user suppressed the alert before
 	if ([[NSUserDefaults standardUserDefaults] boolForKey:AlertSuppressKey]) return;
 
@@ -319,7 +319,7 @@ static BOOL IsInDownloadsFolder(NSString *path) {
 	return [[[path stringByDeletingLastPathComponent] lastPathComponent] isEqualToString:@"Downloads"];
 }
 
-static BOOL IsLaunchedFromDMG() {
+static BOOL IsLaunchedFromDMG(void) {
 	// Guess if we have launched from a disk image
 	NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
 	NSFileManager *fm = [NSFileManager defaultManager];

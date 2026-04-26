@@ -81,13 +81,17 @@
     NSString *pre = [dirPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%@_%@_%u_%lu_XXXXXX", [[NSBundle mainBundle] objectForInfoDictionaryKey:(NSString*)kCFBundleNameKey], [[NSDate date] descriptionWithCalendarFormat:@"%Y%m%d%H%M%S" timeZone:NULL locale:NULL], getpid(), (long)[NSThread currentThread]]];
     
     NSUInteger len = pre.length+1;
-    char temp[len];
+    char *temp = (char *)malloc(len + 1);
+    if (temp == NULL)
+        return nil;
     [pre getBytes:temp maxLength:len usedLength:&len encoding:NSUTF8StringEncoding options:0 range:NSMakeRange(0, pre.length) remainingRange:NULL];
     temp[len] = 0;
     
     mkstemp(temp);
     
-	return [NSString stringWithUTF8String:temp];
+	NSString *result = [NSString stringWithUTF8String:temp];
+    free(temp);
+	return result;
 }
 
 -(NSString*)tmpDirPath {

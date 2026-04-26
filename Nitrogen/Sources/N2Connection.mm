@@ -367,7 +367,9 @@ NSString* N2ConnectionStatusDidChangeNotification = @"N2ConnectionStatusDidChang
         case NSStreamEventHasBytesAvailable: {
             // DLog(@"%@ has bytes available", self);
             NSUInteger maxLength = _maximumReadSizePerEvent? _maximumReadSizePerEvent : 8192; // was 2048 but bigger buffer = less iterations
-            uint8_t buffer[maxLength];
+            uint8_t *buffer = (uint8_t *)malloc(maxLength);
+            if (buffer == NULL)
+                break;
             NSInteger length;
             do {
                 if ((length = [_inputStream read:buffer maxLength:maxLength]) > 0) {
@@ -398,6 +400,7 @@ NSString* N2ConnectionStatusDidChangeNotification = @"N2ConnectionStatusDidChang
                     }
                 }
             } while (length > 0);
+            free(buffer);
         } break;
             
         case NSStreamEventHasSpaceAvailable: {
@@ -525,6 +528,5 @@ NSString* N2ConnectionStatusDidChangeNotification = @"N2ConnectionStatusDidChang
 }
 
 @end
-
 
 

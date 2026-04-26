@@ -3773,7 +3773,7 @@ extern "C"
 			if( months < 1)
             {
                 if( days < 0) yearOld = @"";
-                else yearOld = [NSString stringWithFormat: NSLocalizedString( @"%d d", @"d = day"), days];
+                else yearOld = [NSString stringWithFormat: NSLocalizedString( @"%d d", @"d = day"), (int) days];
             }
             else yearOld = [NSString stringWithFormat: @"%d%@", (int) months, NSLocalizedString( @" m", @"m = month")];
         }
@@ -3922,8 +3922,8 @@ extern "C"
 			
 			if( [object isMemberOfClass:[DCMTKStudyQueryNode class]])
 			{
-				if( [array count] == 1) status = [NSString stringWithFormat: NSLocalizedString( @"%d study", nil), [array count]];
-				else status = [NSString stringWithFormat: NSLocalizedString( @"%d studies", nil), [array count]];
+				if( [array count] == 1) status = [NSString stringWithFormat: NSLocalizedString( @"%lu study", nil), (unsigned long) [array count]];
+				else status = [NSString stringWithFormat: NSLocalizedString( @"%lu studies", nil), (unsigned long) [array count]];
                 
                 if( [object name])
                     status = [status stringByAppendingFormat:@" - %@", [object name]];
@@ -3931,7 +3931,7 @@ extern "C"
 			
 			if( [object isMemberOfClass:[DCMTKSeriesQueryNode class]])
 			{
-				status = [NSString stringWithFormat: NSLocalizedString( @"%d series", nil), [array count]];
+				status = [NSString stringWithFormat: NSLocalizedString( @"%lu series", nil), (unsigned long) [array count]];
                 
                 if( [object theDescription])
                     status = [status stringByAppendingFormat:@" - %@", [object theDescription]];

@@ -839,11 +839,14 @@ static SyncSeriesScope globalSyncSeriesScope;
 #pragma mark-
 #pragma mark Tools Selection
 
-- (BOOL)validateMenuItem:(NSMenuItem *)item
+- (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)validatedItem
 {
 #ifdef EXPORTTOOLBARITEM
     return YES;
 #endif
+    if( [(id)validatedItem isKindOfClass: [NSMenuItem class]] == NO)
+        return YES;
+    NSMenuItem *item = (NSMenuItem *)validatedItem;
     
     BOOL valid = NO;
     

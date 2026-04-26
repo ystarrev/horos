@@ -78,7 +78,7 @@
 //
 //}
 
-long vramSize()
+long vramSize(void)
 {
 	int					i = 0;
 	short				MAXDISPLAYS = 8;
@@ -117,7 +117,7 @@ long vramSize()
 }
 
 
-BOOL useQuartz() {
+BOOL useQuartz(void) {
 	return NO;				// Disable quartz about screen:  DDP (060224)
 	
 	/*

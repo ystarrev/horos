@@ -58,18 +58,31 @@
 	}
 	
 	NSInteger numberOfComponents = [c1 numberOfComponents];
-	CGFloat c1components[numberOfComponents], c2components[numberOfComponents];
+	CGFloat *c1components = (CGFloat *)malloc(numberOfComponents * sizeof(CGFloat));
+	CGFloat *c2components = (CGFloat *)malloc(numberOfComponents * sizeof(CGFloat));
+	if (c1components == NULL || c2components == NULL) {
+		free(c1components);
+		free(c2components);
+		return NO;
+	}
 	[c1 getComponents:c1components]; [c2 getComponents:c2components];
 	
-	if (c1components[numberOfComponents-1] <= alphaThreshold || c2components[numberOfComponents-1] <= alphaThreshold)
+	if (c1components[numberOfComponents-1] <= alphaThreshold || c2components[numberOfComponents-1] <= alphaThreshold) {
+		free(c1components);
+		free(c2components);
 		return YES;
+	}
 	
 	for (NSInteger i = 0; i < numberOfComponents-1; ++i)
 		if (c1components[i] != c2components[i]) {
 //			NSLog(@"component %d not equal in [%@] and [%@]", i, [c1 description], [c2 description]);
+			free(c1components);
+			free(c2components);
 			return NO;
 		}
 	
+	free(c1components);
+	free(c2components);
 	return YES;
 }
 

@@ -555,7 +555,7 @@ static float deg2rad = M_PI / 180.0f;
 		{
 			if( [[NSUserDefaults standardUserDefaults] boolForKey: @"useDCMTKForDicomExport"])
 			{
-				const char *string = nil, *modality = nil;
+				const char *modality = nil;
 				unsigned char *squaredata = nil;
 				
 				if( spacingX != 0 && spacingY != 0)

@@ -41,13 +41,13 @@
 @implementation sourcesTableView
 
 
-- (NSDragOperation)draggingSourceOperationMaskForLocal:(BOOL)flag
+- (NSDragOperation)draggingSession:(NSDraggingSession *)session sourceOperationMaskForDraggingContext:(NSDraggingContext)context
 {
-	if (!flag) {
+	if (context == NSDraggingContextOutsideApplication) {
 		// link for external dragged URLs
 		return NSDragOperationLink;
 	}
-	return [super draggingSourceOperationMaskForLocal:flag];
+	return [super draggingSession:session sourceOperationMaskForDraggingContext:context];
 }
 
 @end

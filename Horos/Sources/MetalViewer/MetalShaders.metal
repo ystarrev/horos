@@ -605,8 +605,81 @@ kernel void metalViewerRegistrationJointHistogram(
             const uint overlayBin = min(uint(overlayNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
             const uint histogramIndex = overlayBin * kRegistrationHistogramBins + baseBin;
             atomic_fetch_add_explicit(&jointHistogram[histogramIndex], 1, memory_order_relaxed);
-            atomic_fetch_add_explicit(&jointHistogram[kRegistrationHistogramBins * kRegistrationHistogramBins], 1, memory_order_relaxed);
         }
+    }
+}
+
+kernel void metalViewerRegistrationSamplingProbe(
+    texture3d<float, access::sample> baseTexture [[texture(0)]],
+    texture3d<float, access::sample> overlayTexture [[texture(1)]],
+    constant RegistrationUniforms &uniforms [[buffer(0)]],
+    device uint *threadgroupCounts [[buffer(1)]],
+    uint3 gid [[thread_position_in_grid]],
+    uint3 threadPosition [[thread_position_in_threadgroup]],
+    uint3 threadgroupPosition [[threadgroup_position_in_grid]],
+    uint3 threadgroupsPerGrid [[threadgroups_per_grid]]
+) {
+    threadgroup atomic_uint localCount;
+    if (all(threadPosition == uint3(0))) {
+        atomic_store_explicit(&localCount, 0, memory_order_relaxed);
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    bool accepted = false;
+    if (gid.x < uniforms.baseTextureSize.x && gid.y < uniforms.baseTextureSize.y && gid.z < uniforms.baseTextureSize.z) {
+        constexpr sampler metricSampler(coord::normalized, address::clamp_to_zero, filter::linear);
+
+        const float3 baseSize = float3(uniforms.baseTextureSize);
+        const float3 baseCoord = (float3(gid) + 0.5) / baseSize;
+        const float4 fixedVoxel = float4(float3(gid), 1.0);
+        const float4 worldPoint = uniforms.fixedVoxelToWorld * fixedVoxel;
+        const float3 translatedWorldPoint = worldPoint.xyz - uniforms.overlayTranslationWorld;
+        const float3 centeredWorldPoint = translatedWorldPoint - uniforms.movingRotationCenterWorld;
+        const float4 rotatedWorldPoint = uniforms.movingInverseRotation * float4(centeredWorldPoint, 1.0);
+        const float4 movingVoxel = uniforms.movingWorldToVoxel * float4(rotatedWorldPoint.xyz + uniforms.movingRotationCenterWorld, 1.0);
+        const float3 overlaySize = float3(overlayTexture.get_width(), overlayTexture.get_height(), overlayTexture.get_depth());
+        const float3 overlayCoord = (movingVoxel.xyz + 0.5) / overlaySize;
+
+        if (overlayCoord.x >= 0.0 && overlayCoord.x <= 1.0 &&
+            overlayCoord.y >= 0.0 && overlayCoord.y <= 1.0 &&
+            overlayCoord.z >= 0.0 && overlayCoord.z <= 1.0) {
+            const float basePixelValue = baseTexture.sample(metricSampler, baseCoord).r;
+            const float overlayPixelValue = overlayTexture.sample(metricSampler, overlayCoord).r;
+            accepted = true;
+
+            if (uniforms.metricOptions.x > 0.5 && uniforms.metricOptions.x < 1.5) {
+                const float boneLower = uniforms.metricOptions.y;
+                const float boneUpper = uniforms.metricOptions.z;
+                const bool baseIsBone = basePixelValue >= boneLower && basePixelValue <= boneUpper;
+                const bool overlayIsBone = overlayPixelValue >= boneLower && overlayPixelValue <= boneUpper;
+                if (!(baseIsBone && overlayIsBone)) {
+                    accepted = false;
+                }
+            }
+
+            if (accepted && uniforms.metricOptions.x > 1.5) {
+                const float gradientThreshold = uniforms.metricOptions.y;
+                const float baseGradient = metalViewerGradientMagnitudeNormalized(baseTexture, metricSampler, baseCoord, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
+                const float overlayGradient = metalViewerGradientMagnitudeNormalized(overlayTexture, metricSampler, overlayCoord, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
+                if (max(baseGradient, overlayGradient) < gradientThreshold) {
+                    accepted = false;
+                }
+            }
+
+            if (accepted) {
+                const float baseNormalized = metalViewerNormalizedValue(basePixelValue, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
+                const float overlayNormalized = metalViewerNormalizedValue(overlayPixelValue, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
+                const uint baseBin = min(uint(baseNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
+                const uint overlayBin = min(uint(overlayNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
+                atomic_fetch_add_explicit(&localCount, 1, memory_order_relaxed);
+            }
+        }
+    }
+
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (all(threadPosition == uint3(0))) {
+        const uint index = (threadgroupPosition.z * threadgroupsPerGrid.y + threadgroupPosition.y) * threadgroupsPerGrid.x + threadgroupPosition.x;
+        threadgroupCounts[index] = atomic_load_explicit(&localCount, memory_order_relaxed);
     }
 }
 

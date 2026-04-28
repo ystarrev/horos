@@ -1,8 +1,6 @@
 import AppKit
 import WebKit
 
-private let metalViewerStudyBadgeColor = NSColor(calibratedRed: 1.0, green: 0.36, blue: 0.72, alpha: 1.0)
-
 final class MetalViewerPaneView: NSView {
     private final class RegistrationStatusView: NSView {
         private let backgroundView = NSVisualEffectView()
@@ -179,28 +177,46 @@ final class MetalViewerPaneView: NSView {
                 return
             }
 
-            let start = CGPoint(
-                x: imageRect.minX + (referenceLine.start.x / imageSize.width) * imageRect.width,
-                y: imageRect.minY + (referenceLine.start.y / imageSize.height) * imageRect.height
-            )
-            let end = CGPoint(
-                x: imageRect.minX + (referenceLine.end.x / imageSize.width) * imageRect.width,
-                y: imageRect.minY + (referenceLine.end.y / imageSize.height) * imageRect.height
-            )
-
-            let shadowPath = NSBezierPath()
-            shadowPath.move(to: start)
-            shadowPath.line(to: end)
-            shadowPath.lineWidth = 4
-            NSColor.black.withAlphaComponent(0.45).setStroke()
-            shadowPath.stroke()
+            drawReferenceSlab(referenceLine)
 
             let linePath = NSBezierPath()
-            linePath.move(to: start)
-            linePath.line(to: end)
-            linePath.lineWidth = 2
-            NSColor.systemPink.setStroke()
+            linePath.move(to: viewPoint(for: referenceLine.start))
+            linePath.line(to: viewPoint(for: referenceLine.end))
+            linePath.lineWidth = 1.0 / max(window?.backingScaleFactor ?? 1.0, 1.0)
+            linePath.lineCapStyle = .butt
+            NSColor.systemRed.setStroke()
             linePath.stroke()
+        }
+
+        private func drawReferenceSlab(_ referenceLine: MetalViewerReferenceLine) {
+            guard let offset = referenceLine.thicknessOffset,
+                  abs(offset.dx) > 0.000001 || abs(offset.dy) > 0.000001 else {
+                return
+            }
+
+            let startPlus = viewPoint(for: CGPoint(x: referenceLine.start.x + offset.dx, y: referenceLine.start.y + offset.dy))
+            let endPlus = viewPoint(for: CGPoint(x: referenceLine.end.x + offset.dx, y: referenceLine.end.y + offset.dy))
+            let endMinus = viewPoint(for: CGPoint(x: referenceLine.end.x - offset.dx, y: referenceLine.end.y - offset.dy))
+            let startMinus = viewPoint(for: CGPoint(x: referenceLine.start.x - offset.dx, y: referenceLine.start.y - offset.dy))
+
+            let slabPath = NSBezierPath()
+            slabPath.move(to: startPlus)
+            slabPath.line(to: endPlus)
+            slabPath.line(to: endMinus)
+            slabPath.line(to: startMinus)
+            slabPath.close()
+            NSColor.systemRed.withAlphaComponent(0.30).setFill()
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(rect: imageRect).addClip()
+            slabPath.fill()
+            NSGraphicsContext.restoreGraphicsState()
+        }
+
+        private func viewPoint(for slicePoint: CGPoint) -> CGPoint {
+            CGPoint(
+                x: imageRect.minX + (slicePoint.x / imageSize.width) * imageRect.width,
+                y: imageRect.minY + (slicePoint.y / imageSize.height) * imageRect.height
+            )
         }
 
         private func drawScales() {
@@ -302,30 +318,8 @@ final class MetalViewerPaneView: NSView {
                 return
             }
 
-            drawStudyMarker(state: overlayState)
             drawAnnotations(state: overlayState)
             drawOverlaySeriesInfo(state: overlayState)
-        }
-
-        private func drawStudyMarker(state: State) {
-            let badgeRect = CGRect(x: 5, y: 4, width: 30, height: 24)
-            let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: 10, yRadius: 10)
-            metalViewerStudyBadgeColor.setFill()
-            badgePath.fill()
-
-            let badgeString = "\(state.series.studyNumber)" as NSString
-            let badgeAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont(name: "Helvetica", size: 20) ?? NSFont.systemFont(ofSize: 20, weight: .medium),
-                .foregroundColor: NSColor.white,
-            ]
-            let badgeSize = badgeString.size(withAttributes: badgeAttributes)
-            badgeString.draw(
-                at: CGPoint(
-                    x: badgeRect.midX - badgeSize.width / 2,
-                    y: badgeRect.midY - badgeSize.height / 2 - 1
-                ),
-                withAttributes: badgeAttributes
-            )
         }
 
         private func drawAnnotations(state: State) {
@@ -417,8 +411,12 @@ final class MetalViewerPaneView: NSView {
                 for (index, annotation) in orderedAnnotations.enumerated() {
                     let strings = resolve(annotation: annotation, key: key, index: index, state: state)
                     for string in strings where string.isEmpty == false {
-                        let xAdd = (key == "TopLeft" && yRaster - increment < 32) ? 30 : 0
-                        drawString(string, atX: xRaster + CGFloat(xAdd), y: yRaster, align: lineAlign)
+                        if isSeriesNumber(string, state: state),
+                           let studySeriesNumber = studySeriesNumberString(state: state) {
+                            drawAttributedString(studySeriesNumber, atX: xRaster, y: yRaster, align: lineAlign)
+                        } else {
+                            drawString(string, atX: xRaster, y: yRaster, align: lineAlign)
+                        }
                         yRaster += increment
                     }
                 }
@@ -446,6 +444,14 @@ final class MetalViewerPaneView: NSView {
                 topRightY += lineHeight
             }
 
+            func drawTopRightStudySeriesNumber() {
+                guard let text = studySeriesNumberString(state: state) else {
+                    return
+                }
+                drawAttributedString(text, atX: rightX, y: topRightY, align: .right)
+                topRightY += lineHeight
+            }
+
             func drawLowerLeft(_ text: String) {
                 drawString(text, atX: leftX, y: lowerLeftY, align: .left)
                 lowerLeftY -= lineHeight
@@ -456,9 +462,9 @@ final class MetalViewerPaneView: NSView {
                 lowerRightY -= lineHeight
             }
 
-            drawTopLeft(patientName(for: state.pix) ?? state.series.studyTitle)
             drawTopLeft(state.series.title)
 
+            drawTopRightStudySeriesNumber()
             drawTopRight(String(format: "WL: %d WW: %d", Int(state.windowLevel.rounded()), Int(state.windowWidth.rounded())))
             drawTopRight("Im: \(state.sliceIndex + 1)/\(state.sliceCount)")
 
@@ -510,6 +516,10 @@ final class MetalViewerPaneView: NSView {
         }
 
         private func resolve(annotation: [Any], key: String, index: Int, state: State) -> [String] {
+            guard annotationContainsPatientIdentity(annotation, state: state) == false else {
+                return []
+            }
+
             var primary = ""
             var secondary: [String] = []
 
@@ -565,6 +575,8 @@ final class MetalViewerPaneView: NSView {
                     }
                 case "PatientName":
                     primary += patientName(for: state.pix) ?? ""
+                case "PatientID":
+                    primary += patientID(for: state.pix) ?? ""
                 case "Orientation":
                     break
                 default:
@@ -586,6 +598,29 @@ final class MetalViewerPaneView: NSView {
             }
 
             return secondary
+        }
+
+        private func annotationContainsPatientIdentity(_ annotation: [Any], state: State) -> Bool {
+            let patientName = patientName(for: state.pix)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let patientID = patientID(for: state.pix)?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            for item in annotation {
+                guard let value = item as? String else {
+                    continue
+                }
+                let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmedValue == "PatientName" || trimmedValue == "PatientsName" || trimmedValue == "PatientID" {
+                    return true
+                }
+                if let patientName, patientName.isEmpty == false, trimmedValue == patientName {
+                    return true
+                }
+                if let patientID, patientID.isEmpty == false, trimmedValue == patientID {
+                    return true
+                }
+            }
+
+            return false
         }
 
         private func drawOrientation(state: State, in rect: CGRect) {
@@ -627,6 +662,28 @@ final class MetalViewerPaneView: NSView {
             drawString("Made In Horos", atX: bounds.maxX - 2, y: bounds.maxY - 2, align: .right)
         }
 
+        private func isSeriesNumber(_ text: String, state: State) -> Bool {
+            let seriesNumber = state.series.seriesNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard seriesNumber.isEmpty == false else {
+                return false
+            }
+            return text.trimmingCharacters(in: .whitespacesAndNewlines) == seriesNumber
+        }
+
+        private func studySeriesNumberString(state: State) -> NSAttributedString? {
+            let seriesNumber = state.series.seriesNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = NSMutableAttributedString(
+                string: "\(state.series.studyNumber)",
+                attributes: Self.studyNumberTextAttributes
+            )
+
+            if seriesNumber.isEmpty == false {
+                text.append(NSAttributedString(string: "-\(seriesNumber)", attributes: Self.textAttributes))
+            }
+
+            return text
+        }
+
         private func drawString(_ text: String, atX x: CGFloat, y: CGFloat, align: TextAlign) {
             guard text.isEmpty == false else {
                 return
@@ -646,6 +703,26 @@ final class MetalViewerPaneView: NSView {
 
             string.draw(at: CGPoint(x: drawPoint.x + 1, y: drawPoint.y + 1), withAttributes: Self.shadowAttributes)
             string.draw(at: drawPoint, withAttributes: Self.textAttributes)
+        }
+
+        private func drawAttributedString(_ text: NSAttributedString, atX x: CGFloat, y: CGFloat, align: TextAlign) {
+            guard text.length > 0 else {
+                return
+            }
+
+            let size = text.size()
+            let drawPoint: CGPoint
+            switch align {
+            case .left:
+                drawPoint = CGPoint(x: x, y: y)
+            case .right:
+                drawPoint = CGPoint(x: x - size.width, y: y)
+            case .center:
+                drawPoint = CGPoint(x: x - size.width / 2, y: y)
+            }
+
+            (text.string as NSString).draw(at: CGPoint(x: drawPoint.x + 1, y: drawPoint.y + 1), withAttributes: Self.shadowAttributes)
+            text.draw(at: drawPoint)
         }
 
         private func drawOverlayString(_ text: String, atX x: CGFloat, y: CGFloat, align: TextAlign) {
@@ -674,6 +751,13 @@ final class MetalViewerPaneView: NSView {
                 return nil
             }
             return imageObject.value(forKeyPath: "series.study.name") as? String
+        }
+
+        private func patientID(for pix: DCMPix) -> String? {
+            guard let imageObject = pix.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSObject else {
+                return nil
+            }
+            return imageObject.value(forKeyPath: "series.study.patientID") as? String
         }
 
         private func orientationText(for vector: [Float], inverted: Bool) -> String {
@@ -727,6 +811,10 @@ final class MetalViewerPaneView: NSView {
         private static let textAttributes: [NSAttributedString.Key: Any] = [
             .font: mainFont,
             .foregroundColor: textColor,
+        ]
+        private static let studyNumberTextAttributes: [NSAttributedString.Key: Any] = [
+            .font: mainFont,
+            .foregroundColor: NSColor.systemRed,
         ]
         private static let shadowAttributes: [NSAttributedString.Key: Any] = [
             .font: mainFont,

@@ -168,6 +168,14 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         scoutView.openSeriesHandler = { [weak self] series in
             self?.addPane(for: series, makeActive: true)
         }
+        scoutView.overlaySeriesHandler = { [weak self] series in
+            guard let self else { return }
+            guard let targetPane = self.activePaneView ?? self.paneViews.first else {
+                NSSound.beep()
+                return
+            }
+            self.assignSeries(withIdentifier: series.identifier, to: targetPane, overlay: true)
+        }
 
         DispatchQueue.main.async { [weak self] in
             self?.preloadActiveSeries(firstSeries)
@@ -394,6 +402,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             }
         }
         self.study = study
+        window?.title = study.title
         scoutView.reload(series: study.series, loadThumbnailsImmediately: false)
         let selectedIdentifier = activePaneView?.series.identifier ?? study.initialSeriesIdentifier
         scoutView.setSelectedSeries(identifier: selectedIdentifier)

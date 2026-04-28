@@ -15,6 +15,7 @@ final class MetalImageView: MTKView {
     private var panAnchor = SIMD2<Float>(repeating: 0)
     private var interactionMode: InteractionMode = .windowLevel
     private var trackingAreaRef: NSTrackingArea?
+    private var preciseScrollSliceAccumulator: CGFloat = 0
 
     private enum InteractionMode {
         case windowLevel
@@ -25,6 +26,9 @@ final class MetalImageView: MTKView {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         return flags.contains(.shift) ? .pan : .windowLevel
     }
+
+    private static let preciseScrollPointsPerSlice: CGFloat = 18
+    private static let momentumScrollPointsPerSlice: CGFloat = 60
 
     let renderer: MetalViewerRenderer
     var titleDidChange: ((String) -> Void)?
@@ -97,8 +101,36 @@ final class MetalImageView: MTKView {
     override func scrollWheel(with event: NSEvent) {
         interactionEventHandler?()
         let delta = event.scrollingDeltaY == 0 ? event.scrollingDeltaX : event.scrollingDeltaY
-        let step = delta > 0 ? 1 : -1
-        renderer.stepSlice(by: step)
+        let phase = event.momentumPhase.isEmpty ? event.phase : event.momentumPhase
+
+        if phase.contains(.began) {
+            preciseScrollSliceAccumulator = 0
+        }
+
+        if event.hasPreciseScrollingDeltas {
+            preciseScrollSliceAccumulator += delta
+            let scrollPointsPerSlice = event.momentumPhase.isEmpty ? Self.preciseScrollPointsPerSlice : Self.momentumScrollPointsPerSlice
+            let stepCount = Int(preciseScrollSliceAccumulator / scrollPointsPerSlice)
+            if stepCount != 0 {
+                renderer.stepSlice(by: stepCount)
+                preciseScrollSliceAccumulator -= CGFloat(stepCount) * scrollPointsPerSlice
+            }
+        } else if delta != 0 {
+            renderer.stepSlice(by: delta > 0 ? 1 : -1)
+        }
+
+        if phase.contains(.ended) || phase.contains(.cancelled) {
+            preciseScrollSliceAccumulator = 0
+        }
+        updateMouseAnnotationState(from: convert(event.locationInWindow, from: nil))
+    }
+
+    override func magnify(with event: NSEvent) {
+        interactionEventHandler?()
+        activateHandler?()
+        window?.makeFirstResponder(self)
+        let zoomFactor = min(max(1.0 + Float(event.magnification), 0.1), 10.0)
+        renderer.zoom(by: zoomFactor)
         updateMouseAnnotationState(from: convert(event.locationInWindow, from: nil))
     }
 

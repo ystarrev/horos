@@ -19416,9 +19416,9 @@ restart:
     }
     else if ([itemIdent isEqualToString: MetalToolbarItemIdentifier])
     {
-        [toolbarItem setLabel: NSLocalizedString(@"2D Metal", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"2D Metal", nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"2D Metal", nil)];
+        [toolbarItem setLabel: NSLocalizedString(@"Planar", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString(@"Planar", nil)];
+        [toolbarItem setToolTip: NSLocalizedString(@"Planar", nil)];
         NSImage *metalImage = [NSImage imageNamed: MetalToolbarItemIdentifier];
         if (metalImage == nil)
         {

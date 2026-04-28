@@ -2,6 +2,7 @@ import AppKit
 import CoreGraphics
 
 private let metalViewerScoutTextColor = NSColor(calibratedRed: 0.18, green: 1.0, blue: 0.28, alpha: 1.0)
+private let metalViewerScoutStudyNumberTextColor = NSColor.systemRed
 
 private final class MetalViewerScoutDocumentView: NSView {
     override var isFlipped: Bool { true }
@@ -26,6 +27,7 @@ final class MetalViewerScoutView: NSScrollView {
 
     var selectionHandler: ((MetalViewerSeries) -> Void)?
     var openSeriesHandler: ((MetalViewerSeries) -> Void)?
+    var overlaySeriesHandler: ((MetalViewerSeries) -> Void)?
 
     init(series: [MetalViewerSeries]) {
         super.init(frame: .zero)
@@ -92,6 +94,10 @@ final class MetalViewerScoutView: NSScrollView {
                 item.onOpen = { [weak self] openedSeries in
                     self?.setSelectedSeries(identifier: openedSeries.identifier)
                     self?.openSeriesHandler?(openedSeries)
+                }
+                item.onOverlay = { [weak self] overlaySeries in
+                    self?.setSelectedSeries(identifier: overlaySeries.identifier)
+                    self?.overlaySeriesHandler?(overlaySeries)
                 }
                 groupView.addItem(item)
                 itemViews.append(item)
@@ -234,6 +240,7 @@ private final class MetalViewerScoutItemView: NSView {
 
     var onSelect: ((MetalViewerSeries) -> Void)?
     var onOpen: ((MetalViewerSeries) -> Void)?
+    var onOverlay: ((MetalViewerSeries) -> Void)?
 
     var isSelected: Bool = false {
         didSet { updateAppearance() }
@@ -259,7 +266,7 @@ private final class MetalViewerScoutItemView: NSView {
         configureOverlayLabel(timeOverlayLabel, alignment: .left)
         configureOverlayLabel(titleOverlayLabel, alignment: .left)
         configureOverlayLabel(countOverlayLabel, alignment: .left)
-        topOverlayLabel.stringValue = series.studyDate.map { "\(series.studyNumber)  \(Self.studyDateFormatter.string(from: $0))" } ?? "\(series.studyNumber)"
+        topOverlayLabel.attributedStringValue = Self.studySeriesAttributedString(for: series)
         timeOverlayLabel.stringValue = series.studyDate.map { Self.studyTimeFormatter.string(from: $0) } ?? ""
         titleOverlayLabel.stringValue = series.title
         updateCountLabel(isStructuredReport: false)
@@ -319,6 +326,9 @@ private final class MetalViewerScoutItemView: NSView {
         }
 
         cancelPendingDrag()
+        guard event.modifierFlags.contains(.control) == false else {
+            return
+        }
         dragTimer = Timer.scheduledTimer(withTimeInterval: 0.18, repeats: false) { [weak self] _ in
             self?.beginLongPressDrag()
         }
@@ -344,16 +354,25 @@ private final class MetalViewerScoutItemView: NSView {
         cancelPendingDrag()
         removeDragPreview()
 
-        if event.clickCount < 2,
-           didStartDrag == false,
-           event.modifierFlags.contains(.control) == false {
-            onSelect?(series)
+        if event.clickCount < 2, didStartDrag == false {
+            if event.modifierFlags.contains(.control) {
+                showContextMenu(with: event)
+            } else {
+                onSelect?(series)
+            }
         }
 
         super.mouseUp(with: event)
         mouseDownPoint = nil
         mouseDownEvent = nil
         didStartDrag = false
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        loadThumbnailIfNeeded()
+        cancelPendingDrag()
+        removeDragPreview()
+        showContextMenu(with: event)
     }
 
     private func updateAppearance() {
@@ -377,6 +396,27 @@ private final class MetalViewerScoutItemView: NSView {
         countOverlayLabel.stringValue = "\(series.imageCount) \(unit)\(series.imageCount == 1 ? "" : "s")"
     }
 
+    private func showContextMenu(with event: NSEvent) {
+        let menu = NSMenu()
+        let openItem = NSMenuItem(title: NSLocalizedString("Open in New Pane", comment: ""), action: #selector(openInNewPaneMenuItem(_:)), keyEquivalent: "")
+        openItem.target = self
+        menu.addItem(openItem)
+
+        let overlayItem = NSMenuItem(title: NSLocalizedString("Overlay on Current Pane", comment: ""), action: #selector(overlayOnCurrentPaneMenuItem(_:)), keyEquivalent: "")
+        overlayItem.target = self
+        menu.addItem(overlayItem)
+
+        menu.popUp(positioning: nil, at: convert(event.locationInWindow, from: nil), in: self)
+    }
+
+    @objc private func openInNewPaneMenuItem(_ sender: NSMenuItem) {
+        onOpen?(series)
+    }
+
+    @objc private func overlayOnCurrentPaneMenuItem(_ sender: NSMenuItem) {
+        onOverlay?(series)
+    }
+
     private func configureOverlayLabel(_ label: NSTextField, alignment: NSTextAlignment) {
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = NSFont.systemFont(ofSize: 11, weight: .regular)
@@ -387,6 +427,29 @@ private final class MetalViewerScoutItemView: NSView {
         label.isBordered = false
         label.isEditable = false
         label.isSelectable = false
+    }
+
+    private static func studySeriesAttributedString(for series: MetalViewerSeries) -> NSAttributedString {
+        let font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        let studyAttributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: metalViewerScoutStudyNumberTextColor,
+        ]
+        let seriesAttributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: metalViewerScoutTextColor,
+        ]
+        let text = NSMutableAttributedString(string: "\(series.studyNumber)", attributes: studyAttributes)
+        let seriesNumber = series.seriesNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if seriesNumber.isEmpty == false {
+            text.append(NSAttributedString(string: "-\(seriesNumber)", attributes: seriesAttributes))
+        }
+        if let studyDate = series.studyDate {
+            text.append(NSAttributedString(string: "  \(Self.studyDateFormatter.string(from: studyDate))", attributes: seriesAttributes))
+        }
+
+        return text
     }
 
     private static func placeholderThumbnail(size: NSSize) -> NSImage {

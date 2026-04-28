@@ -83,10 +83,37 @@ final class MetalViewerLauncher: NSObject {
         window.setFrame(screen.visibleFrame.integral, display: true)
     }
 
+    private class func patientWindowTitle(patientName: String?, patientID: String?, fallbackTitle: String) -> String {
+        let name = patientName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let identifier = patientID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if name.isEmpty == false, identifier.isEmpty == false {
+            return "\(name) (\(identifier))"
+        }
+        if name.isEmpty == false {
+            return name
+        }
+        if identifier.isEmpty == false {
+            return identifier
+        }
+        return fallbackTitle
+    }
+
+    private class func seriesNumber(from seriesObject: NSManagedObject?) -> String {
+        if let value = seriesObject?.value(forKey: "id") as? NSNumber {
+            return value.stringValue
+        }
+        if let value = seriesObject?.value(forKey: "id") as? String {
+            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return ""
+    }
+
     private class func buildInitialStudy(from frames: [DCMPix], fallbackTitle: String) -> MetalViewerStudy {
         guard let currentImageObject = frames.first?.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSManagedObject else {
             let series = MetalViewerSeries(
                 title: fallbackTitle,
+                seriesNumber: "",
                 studyIdentifier: UUID().uuidString,
                 studyTitle: fallbackTitle,
                 studyDate: nil,
@@ -106,14 +133,16 @@ final class MetalViewerLauncher: NSObject {
         let seriesTitle = ((currentSeriesObject?.value(forKey: "name") as? String)?.isEmpty == false ? (currentSeriesObject?.value(forKey: "name") as? String) : nil)
             ?? ((currentSeriesObject?.value(forKey: "seriesDescription") as? String)?.isEmpty == false ? (currentSeriesObject?.value(forKey: "seriesDescription") as? String) : nil)
             ?? fallbackTitle
-        let studyTitle = ((currentImageObject.value(forKeyPath: "series.study.name") as? String)?.isEmpty == false ? (currentImageObject.value(forKeyPath: "series.study.name") as? String) : nil)
-            ?? fallbackTitle
+        let patientName = currentImageObject.value(forKeyPath: "series.study.name") as? String
+        let patientID = currentImageObject.value(forKeyPath: "series.study.patientID") as? String
+        let studyTitle = patientWindowTitle(patientName: patientName, patientID: patientID, fallbackTitle: fallbackTitle)
         let studyIdentifier = (currentImageObject.value(forKeyPath: "series.study.studyInstanceUID") as? String)
             ?? String(describing: currentImageObject.value(forKeyPath: "series.study") ?? UUID().uuidString)
         let studyDate = currentImageObject.value(forKeyPath: "series.study.date") as? Date
         let series = MetalViewerSeries(
             identifier: currentSeriesID,
             title: seriesTitle,
+            seriesNumber: seriesNumber(from: currentSeriesObject),
             studyIdentifier: studyIdentifier,
             studyTitle: studyTitle,
             studyDate: studyDate,
@@ -131,6 +160,7 @@ final class MetalViewerLauncher: NSObject {
               let currentStudy = currentImageObject.value(forKeyPath: "series.study") as? DicomStudy else {
             let series = MetalViewerSeries(
                 title: fallbackTitle,
+                seriesNumber: "",
                 studyIdentifier: UUID().uuidString,
                 studyTitle: fallbackTitle,
                 studyDate: nil,
@@ -175,7 +205,7 @@ final class MetalViewerLauncher: NSObject {
         let currentSeriesObject = currentImageObject.value(forKeyPath: "series") as? NSManagedObject
         var currentSeriesID = currentSeriesObject?.objectID.uriRepresentation().absoluteString
             ?? String(describing: currentImageObject.value(forKeyPath: "series.id") ?? "current-series")
-        let studyTitle = (currentStudy.name?.isEmpty == false ? currentStudy.name : fallbackTitle) ?? fallbackTitle
+        let studyTitle = patientWindowTitle(patientName: currentStudy.name, patientID: currentStudy.patientID, fallbackTitle: fallbackTitle)
 
         var flattenedSeries: [MetalViewerSeries] = []
 
@@ -199,6 +229,7 @@ final class MetalViewerLauncher: NSObject {
                     frames: frames
                 )
                 let studyIdentifier = study.studyInstanceUID ?? String(describing: study.objectID)
+                let displaySeriesNumber = seriesNumber(from: seriesObject)
 
                 for imageGroup in imageGroups {
                     if imageGroup.containsCurrentImage {
@@ -209,6 +240,7 @@ final class MetalViewerLauncher: NSObject {
                         MetalViewerSeries(
                             identifier: imageGroup.identifier,
                             title: imageGroup.title,
+                            seriesNumber: displaySeriesNumber,
                             studyIdentifier: studyIdentifier,
                             studyTitle: study.name ?? study.studyName ?? fallbackTitle,
                             studyDate: study.date,
@@ -228,6 +260,7 @@ final class MetalViewerLauncher: NSObject {
             let series = MetalViewerSeries(
                 identifier: currentSeriesID,
                 title: fallbackTitle,
+                seriesNumber: seriesNumber(from: currentSeriesObject),
                 studyIdentifier: currentStudy.studyInstanceUID ?? UUID().uuidString,
                 studyTitle: studyTitle,
                 studyDate: currentStudy.date,

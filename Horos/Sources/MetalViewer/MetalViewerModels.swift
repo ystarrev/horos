@@ -15,6 +15,7 @@ struct MetalViewerWindowLevelState {
 final class MetalViewerSeries {
     let identifier: String
     let title: String
+    let seriesNumber: String
     let studyIdentifier: String
     let studyTitle: String
     let studyDate: Date?
@@ -34,6 +35,7 @@ final class MetalViewerSeries {
     init(
         identifier: String = UUID().uuidString,
         title: String,
+        seriesNumber: String,
         studyIdentifier: String,
         studyTitle: String,
         studyDate: Date?,
@@ -45,6 +47,7 @@ final class MetalViewerSeries {
     ) {
         self.identifier = identifier
         self.title = title
+        self.seriesNumber = seriesNumber
         self.studyIdentifier = studyIdentifier
         self.studyTitle = studyTitle
         self.studyDate = studyDate
@@ -310,29 +313,34 @@ struct MetalViewerSliceGeometry {
 struct MetalViewerReferenceLine {
     let start: CGPoint
     let end: CGPoint
+    let thicknessOffset: CGVector?
 }
 
 enum MetalViewerReferenceLineCalculator {
     static func line(active: MetalViewerSliceGeometry, target: MetalViewerSliceGeometry) -> MetalViewerReferenceLine? {
-        let targetPlanePoint = dicomPoint(for: target.pix, x: 0, y: 0)
+        let planeAngleSin = simd_length(simd_cross(active.normal, target.normal))
+        guard planeAngleSin >= Self.minimumReferenceAngleSin else {
+            return nil
+        }
 
-        let activeCorners = [
-            dicomPoint(for: active.pix, x: 0, y: 0),
-            dicomPoint(for: active.pix, x: active.width, y: 0),
-            dicomPoint(for: active.pix, x: active.width, y: active.height),
-            dicomPoint(for: active.pix, x: 0, y: active.height),
+        let activePlanePoint = dicomPoint(for: active.pix, x: 0, y: 0)
+        let targetCorners = [
+            dicomPoint(for: target.pix, x: 0, y: 0),
+            dicomPoint(for: target.pix, x: target.width, y: 0),
+            dicomPoint(for: target.pix, x: target.width, y: target.height),
+            dicomPoint(for: target.pix, x: 0, y: target.height),
         ]
 
         let edges = [
-            (activeCorners[0], activeCorners[1]),
-            (activeCorners[1], activeCorners[2]),
-            (activeCorners[2], activeCorners[3]),
-            (activeCorners[3], activeCorners[0]),
+            (targetCorners[0], targetCorners[1]),
+            (targetCorners[1], targetCorners[2]),
+            (targetCorners[2], targetCorners[3]),
+            (targetCorners[3], targetCorners[0]),
         ]
 
         var intersections: [CGPoint] = []
         for edge in edges {
-            guard let worldPoint = intersectSegment(edge.0, edge.1, planeNormal: target.normal, planePoint: targetPlanePoint) else {
+            guard let worldPoint = intersectSegment(edge.0, edge.1, planeNormal: active.normal, planePoint: activePlanePoint) else {
                 continue
             }
 
@@ -350,8 +358,69 @@ enum MetalViewerReferenceLineCalculator {
             return nil
         }
 
-        return MetalViewerReferenceLine(start: intersections[0], end: intersections[1])
+        guard let lineEndpoints = farthestPair(in: intersections) else {
+            return nil
+        }
+
+        return MetalViewerReferenceLine(
+            start: lineEndpoints.start,
+            end: lineEndpoints.end,
+            thicknessOffset: thicknessOffset(active: active, target: target)
+        )
     }
+
+    private static func farthestPair(in points: [CGPoint]) -> (start: CGPoint, end: CGPoint)? {
+        guard points.count >= 2 else {
+            return nil
+        }
+
+        var result = (start: points[0], end: points[1])
+        var maxDistance = hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+
+        for startIndex in 0..<(points.count - 1) {
+            for endIndex in (startIndex + 1)..<points.count {
+                let distance = hypot(points[startIndex].x - points[endIndex].x, points[startIndex].y - points[endIndex].y)
+                if distance > maxDistance {
+                    maxDistance = distance
+                    result = (start: points[startIndex], end: points[endIndex])
+                }
+            }
+        }
+
+        return result
+    }
+
+    private static func thicknessOffset(active: MetalViewerSliceGeometry, target: MetalViewerSliceGeometry) -> CGVector? {
+        let thickness = Double(active.pix.sliceThickness)
+        guard thickness.isFinite, thickness > 0 else {
+            return nil
+        }
+
+        let lineDirection = simd_cross(active.normal, target.normal)
+        let lineDirectionLength = simd_length(lineDirection)
+        guard lineDirectionLength > 0.000001 else {
+            return nil
+        }
+
+        let targetLineDirection = lineDirection / lineDirectionLength
+        let targetThicknessDirection = simd_normalize(simd_cross(target.normal, targetLineDirection))
+        let distancePerMM = abs(simd_dot(active.normal, targetThicknessDirection))
+        guard distancePerMM > 0.000001 else {
+            return nil
+        }
+
+        let halfSlabDistance = (thickness * 0.5) / distancePerMM
+        let offsetWorld = targetThicknessDirection * halfSlabDistance
+        let dx = simd_dot(offsetWorld, target.row) / target.spacingX
+        let dy = simd_dot(offsetWorld, target.column) / target.spacingY
+        guard dx.isFinite, dy.isFinite else {
+            return nil
+        }
+
+        return CGVector(dx: dx, dy: dy)
+    }
+
+    private static let minimumReferenceAngleSin = 0.17364817766693033
 
     private static func dicomPoint(for pix: DCMPix, x: Double, y: Double) -> SIMD3<Double> {
         var point = [Double](repeating: 0, count: 3)

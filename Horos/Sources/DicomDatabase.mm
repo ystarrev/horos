@@ -114,6 +114,63 @@ NSString* const CurrentDatabaseVersion = @"2.5";
 static NSString* const SqlFileName = @"Database.sql";
 NSString* const OsirixDataDirName = @"Horos Data";
 NSString* const O2ScreenCapturesSeriesName = NSLocalizedString(@"OsiriX Screen Captures", nil);;
+static NSString* const HorosIncomingImportMinBatchSizeDefaultsKey = @"HorosIncomingImportMinBatchSize";
+static NSString* const HorosIncomingImportCoalescingDelayDefaultsKey = @"HorosIncomingImportCoalescingDelay";
+
+static NSUInteger HorosIncomingImportMinBatchSize(void)
+{
+    NSInteger value = [[NSUserDefaults standardUserDefaults] integerForKey:HorosIncomingImportMinBatchSizeDefaultsKey];
+    if (value <= 0)
+        value = 200;
+    if (value < 1)
+        value = 1;
+    if (value > 30000)
+        value = 30000;
+    return (NSUInteger)value;
+}
+
+static NSTimeInterval HorosIncomingImportCoalescingDelay(void)
+{
+    id configuredValue = [[NSUserDefaults standardUserDefaults] objectForKey:HorosIncomingImportCoalescingDelayDefaultsKey];
+    if (configuredValue == nil)
+        return 2.0;
+
+    NSTimeInterval value = [configuredValue doubleValue];
+    if (value < 0)
+        value = 0;
+    if (value > 30)
+        value = 30;
+    return value;
+}
+
+static NSUInteger HorosIncomingDirectoryPendingFileCount(NSString *incomingDirPath, NSUInteger limit)
+{
+    if (incomingDirPath.length == 0)
+        return 0;
+
+    NSUInteger count = 0;
+    N2DirectoryEnumerator *enumer = [NSFileManager.defaultManager enumeratorAtPath:incomingDirPath limitTo:-1];
+    NSString *pathname = nil;
+    while ((pathname = [enumer nextObject]))
+    {
+        NSString *lastPathComponent = [pathname lastPathComponent];
+        if (lastPathComponent.length == 0 || [lastPathComponent characterAtIndex:0] == '.')
+            continue;
+
+        NSDictionary *fattrs = [enumer fileAttributes];
+        if ([[fattrs objectForKey:NSFileType] isEqualToString:NSFileTypeDirectory])
+            continue;
+
+        if ([[fattrs objectForKey:NSFileSize] longLongValue] <= 0)
+            continue;
+
+        count++;
+        if (limit && count >= limit)
+            break;
+    }
+
+    return count;
+}
 
 +(NSString*)baseDirPathForPath:(NSString*)path {
     // were we given a path inside a OsirixDataDirName dir?
@@ -1546,6 +1603,7 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
         [DicomFile setFilesAreFromCDMedia:isCDMedia];
         
         NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
+        NSTimeInterval parseStart = start;
         
         for (NSUInteger i = chunkRange.location; i < chunkRange.location+chunkRange.length; ++i)
         {
@@ -1636,6 +1694,11 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
                 break;
             }
         }
+
+        NSLog(@"DICOM import: parsed %lu/%lu paths into dictionaries in %.3f s",
+              (unsigned long)dicomFilesArray.count,
+              (unsigned long)chunkRange.length,
+              [NSDate timeIntervalSinceReferenceDate] - parseStart);
         
         [thread enterOperationIgnoringLowerLevels];
         thread.status = [NSString stringWithFormat:NSLocalizedString(@"Adding %@", nil), N2LocalizedSingularPluralCount(dicomFilesArray.count, NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil))];
@@ -1744,6 +1807,11 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
 
 static BOOL protectionAgainstReentry = NO;
 
+static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
+{
+    return [NSString stringWithFormat:@"%@\n%d", sopUID, frameID];
+}
+
 -(NSArray*)addFilesDescribedInDictionaries:(NSArray*)dicomFilesArray postNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX returnArray: (BOOL) returnArray
 {
     return [self addFilesDescribedInDictionaries: dicomFilesArray postNotifications: postNotifications rereadExistingItems: rereadExistingItems generatedByOsiriX: generatedByOsiriX importedFiles: NO returnArray: returnArray];
@@ -1783,7 +1851,22 @@ static BOOL protectionAgainstReentry = NO;
     
     @try
     {
-        NSMutableArray* studiesArray = [[self objectsForEntity:self.studyEntity] mutableCopy];
+        NSTimeInterval addFilesStartTime = [NSDate timeIntervalSinceReferenceDate];
+        NSMutableSet *studyInstanceUIDsToFetch = [NSMutableSet set];
+        for (NSDictionary *dicomFileDictionary in dicomFilesArray)
+        {
+            NSString *studyInstanceUID = [dicomFileDictionary objectForKey:@"studyID"];
+            if (studyInstanceUID.length)
+                [studyInstanceUIDsToFetch addObject:studyInstanceUID];
+        }
+
+        NSArray *existingStudies = nil;
+        if (studyInstanceUIDsToFetch.count)
+            existingStudies = [self objectsForEntity:self.studyEntity predicate:[NSPredicate predicateWithFormat:@"studyInstanceUID IN %@", [studyInstanceUIDsToFetch allObjects]]];
+        else
+            existingStudies = [NSArray array];
+
+        NSMutableArray* studiesArray = [existingStudies mutableCopy];
         NSMutableArray* modifiedStudiesArray = [NSMutableArray array];
         
         NSDate *defaultDate = [NSCalendarDate dateWithYear:1901 month:1 day:1 hour:0 minute:0 second:0 timeZone:nil];
@@ -1792,6 +1875,49 @@ static BOOL protectionAgainstReentry = NO;
         DicomSeries *seriesTable = nil;
         DicomImage *image = nil;
         NSMutableArray *studiesArrayStudyInstanceUID = [[studiesArray valueForKey:@"studyInstanceUID"] mutableCopy];
+        NSLog(@"DICOM import: fetched %lu existing studies for %lu incoming study UIDs in %.3f s",
+              (unsigned long)studiesArray.count,
+              (unsigned long)studyInstanceUIDsToFetch.count,
+              [NSDate timeIntervalSinceReferenceDate] - addFilesStartTime);
+
+        NSTimeInterval existingImageFetchStartTime = [NSDate timeIntervalSinceReferenceDate];
+        NSMutableSet *incomingSOPUIDs = [NSMutableSet set];
+        for (NSDictionary *dicomFileDictionary in dicomFilesArray)
+        {
+            int NoOfSeries = [[dicomFileDictionary objectForKey:@"numberOfSeries"] intValue];
+            for (int i = 0; i < NoOfSeries; i++)
+            {
+                NSString *SeriesNum = i ? [NSString stringWithFormat:@"%d", i] : @"";
+                NSString *SOPUID = [dicomFileDictionary objectForKey:[@"SOPUID" stringByAppendingString:SeriesNum]];
+                if (SOPUID.length)
+                    [incomingSOPUIDs addObject:SOPUID];
+            }
+        }
+
+        NSMutableDictionary *existingImagesBySOPFrame = [NSMutableDictionary dictionary];
+        if (incomingSOPUIDs.count && existingStudies.count)
+        {
+            for (DicomStudy *existingStudy in existingStudies)
+            {
+                for (DicomSeries *existingSeries in [[existingStudy valueForKey:@"series"] allObjects])
+                {
+                    for (DicomImage *existingImage in [[existingSeries valueForKey:@"images"] allObjects])
+                    {
+                        NSString *existingSOPUID = existingImage.sopInstanceUID;
+                        if (existingSOPUID.length && [incomingSOPUIDs containsObject:existingSOPUID])
+                            [existingImagesBySOPFrame setObject:existingImage forKey:HorosDICOMImportImageLookupKey(existingSOPUID, [existingImage.frameID intValue])];
+                    }
+                }
+            }
+        }
+
+        NSLog(@"DICOM import: prefetched %lu existing images from %lu matching studies for %lu incoming SOP UIDs in %.3f s",
+              (unsigned long)existingImagesBySOPFrame.count,
+              (unsigned long)existingStudies.count,
+              (unsigned long)incomingSOPUIDs.count,
+              [NSDate timeIntervalSinceReferenceDate] - existingImageFetchStartTime);
+
+        NSMutableDictionary *seriesImagesBySOPFrame = [NSMutableDictionary dictionary];
         NSString *curPatientUID = nil, *curStudyID = nil, *curSerieID = nil;
         BOOL newObject = NO;
         
@@ -2223,7 +2349,20 @@ static BOOL protectionAgainstReentry = NO;
                             if (dataDirPath && [newFile hasPrefix:dataDirPath])
                                 local = YES;
                             
-                            NSArray	*imagesArray = [[seriesTable valueForKey:@"images"] allObjects];
+                            NSValue *seriesCacheKey = [NSValue valueWithNonretainedObject:seriesTable];
+                            NSMutableDictionary *imagesBySOPFrame = [seriesImagesBySOPFrame objectForKey:seriesCacheKey];
+                            if (imagesBySOPFrame == nil)
+                            {
+                                imagesBySOPFrame = [NSMutableDictionary dictionary];
+                                for (DicomImage *seriesImage in [[seriesTable valueForKey:@"images"] allObjects])
+                                {
+                                    NSString *seriesImageSOPUID = seriesImage.sopInstanceUID;
+                                    if (seriesImageSOPUID.length)
+                                        [imagesBySOPFrame setObject:seriesImage forKey:HorosDICOMImportImageLookupKey(seriesImageSOPUID, [seriesImage.frameID intValue])];
+                                }
+                                [seriesImagesBySOPFrame setObject:imagesBySOPFrame forKey:seriesCacheKey];
+                            }
+
                             int numberOfFrames = [[curDict objectForKey: @"numberOfFrames"] intValue];
                             if (numberOfFrames == 0)
                                 numberOfFrames = 1;
@@ -2234,25 +2373,14 @@ static BOOL protectionAgainstReentry = NO;
                                 BOOL foundImageInDifferentSeries = NO;
                                 
                                 NSString *SOPUID = [curDict objectForKey: [@"SOPUID" stringByAppendingString: SeriesNum]];
-                                
-                                @autoreleasepool
-                                {
-                                    for( DicomImage *ii in imagesArray)
-                                    {
-                                        if( [ii.sopInstanceUID isEqualToString: SOPUID] && [ii.frameID intValue] == f)
-                                        {
-                                            image = ii;
-                                            break;
-                                        }
-                                    }
-                                }
 
-                                if( image == nil && SOPUID.length)
+                                NSString *imageLookupKey = SOPUID.length ? HorosDICOMImportImageLookupKey(SOPUID, f) : nil;
+                                if (imageLookupKey)
+                                    image = [imagesBySOPFrame objectForKey:imageLookupKey];
+
+                                if( image == nil && imageLookupKey)
                                 {
-                                    NSFetchRequest *existingImageRequest = [NSFetchRequest fetchRequestWithEntityName:@"Image"];
-                                    existingImageRequest.fetchLimit = 1;
-                                    existingImageRequest.predicate = [NSPredicate predicateWithFormat:@"compressedSopInstanceUID == %@ AND (frameID == %@ OR frameID == nil)", [DicomImage sopInstanceUIDEncodeString:SOPUID], [NSNumber numberWithInt:f]];
-                                    image = [[self.managedObjectContext executeFetchRequest:existingImageRequest error:nil] lastObject];
+                                    image = [existingImagesBySOPFrame objectForKey:imageLookupKey];
                                     if( image)
                                         foundImageInDifferentSeries = YES;
                                 }
@@ -2392,6 +2520,11 @@ static BOOL protectionAgainstReentry = NO;
                                     
                                     // Relations
                                     [image setValue:seriesTable forKey:@"series"];
+                                    if (imageLookupKey)
+                                    {
+                                        [imagesBySOPFrame setObject:image forKey:imageLookupKey];
+                                        [existingImagesBySOPFrame setObject:image forKey:imageLookupKey];
+                                    }
                                     
                                     if (DICOMSR == NO)
                                     {
@@ -2630,6 +2763,8 @@ static BOOL protectionAgainstReentry = NO;
         [studiesArrayStudyInstanceUID release];
         [studiesArray release];
         
+        NSTimeInterval importObjectsEndTime = [NSDate timeIntervalSinceReferenceDate];
+
         for (DicomStudy* study in modifiedStudiesArray)
         {
             // Compute no of images in studies/series
@@ -2637,6 +2772,8 @@ static BOOL protectionAgainstReentry = NO;
             // Reapply annotations from DICOMSR file
             [study reapplyAnnotationsFromDICOMSR];
         }
+
+        NSTimeInterval studyRefreshEndTime = [NSDate timeIntervalSinceReferenceDate];
         
         thread.status = NSLocalizedString(@"Synchronizing database...", nil);
         thread.progress = -1;
@@ -2647,6 +2784,14 @@ static BOOL protectionAgainstReentry = NO;
             [self.managedObjectContext save:NULL];
             protectionAgainstReentry = NO;
         }
+
+        NSLog(@"DICOM import: added %lu dictionaries in %.3f s, refreshed %lu studies in %.3f s, saved in %.3f s, total %.3f s",
+              (unsigned long)dicomFilesArray.count,
+              importObjectsEndTime - addFilesStartTime,
+              (unsigned long)modifiedStudiesArray.count,
+              studyRefreshEndTime - importObjectsEndTime,
+              [NSDate timeIntervalSinceReferenceDate] - studyRefreshEndTime,
+              [NSDate timeIntervalSinceReferenceDate] - addFilesStartTime);
     }
     @catch (NSException* e)
     {
@@ -3007,9 +3152,8 @@ static BOOL protectionAgainstReentry = NO;
     
     [NSFileManager.defaultManager confirmNoIndexDirectoryAtPath:self.decompressionDirPath];
     
-    N2DirectoryEnumerator *enumer = [NSFileManager.defaultManager enumeratorAtPath:self.incomingDirPath limitTo:-1];
-    
     [_importFilesFromIncomingDirLock lock];
+    N2DirectoryEnumerator *enumer = nil;
     @try {
         if ([self isFileSystemFreeSizeLimitReached]) {
             [self cleanForFreeSpace];
@@ -3026,6 +3170,43 @@ static BOOL protectionAgainstReentry = NO;
         int maxNumberOfFiles = [[NSUserDefaults standardUserDefaults] integerForKey:@"maxNumberOfFilesForCheckIncoming"];
         if (maxNumberOfFiles < 100) maxNumberOfFiles = 100;
         if (maxNumberOfFiles > 30000) maxNumberOfFiles = 30000;
+
+        NSUInteger minBatchSize = MIN(HorosIncomingImportMinBatchSize(), (NSUInteger)maxNumberOfFiles);
+        NSTimeInterval coalescingDelay = HorosIncomingImportCoalescingDelay();
+        if (showGUI.boolValue && coalescingDelay > 0 && minBatchSize > 1)
+        {
+            NSTimeInterval coalescingStart = [NSDate timeIntervalSinceReferenceDate];
+            NSTimeInterval lastGrowthTime = coalescingStart;
+            NSUInteger lastPendingCount = 0;
+
+            while (thread.isCancelled == NO)
+            {
+                NSUInteger pendingCount = HorosIncomingDirectoryPendingFileCount(self.incomingDirPath, minBatchSize);
+                NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+
+                if (pendingCount >= minBatchSize)
+                    break;
+
+                if (pendingCount != lastPendingCount)
+                {
+                    lastPendingCount = pendingCount;
+                    lastGrowthTime = now;
+                }
+
+                if (pendingCount > 0 && now - lastGrowthTime >= coalescingDelay)
+                    break;
+
+                if (pendingCount == 0 && now - coalescingStart >= 0.5)
+                    break;
+
+                if (now - coalescingStart >= coalescingDelay * 4)
+                    break;
+
+                [NSThread sleepForTimeInterval:0.1];
+            }
+        }
+
+        enumer = [NSFileManager.defaultManager enumeratorAtPath:self.incomingDirPath limitTo:-1];
         
         NSString *pathname;
         // NSDirectoryEnumerator *enumer = [NSFileManager.defaultManager enumeratorAtPath:self.incomingDirPath];

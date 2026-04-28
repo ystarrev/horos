@@ -50,7 +50,7 @@ static MoveManager *sharedManager = nil;
 
 - (id)init{
 	if (self = [super init])
-		_set = [[NSMutableSet alloc] init];
+		_set = [[NSCountedSet alloc] init];
 	return self;
 }
 

@@ -128,6 +128,47 @@ static int inc = 0;
 static int debugLevel = 0;
 //static int wadoUnique = 0;	//wadoUniqueThreadID = 0;
 
+static NSString * const HorosAllowConcurrentMoveForSameNodeKey = @"HorosAllowConcurrentMoveForSameNode";
+
+static NSRecursiveLock *HorosDCMTKVerboseLogLock(void)
+{
+    static NSRecursiveLock *lock = nil;
+    @synchronized( @"HorosDCMTKVerboseLogLock")
+    {
+        if( lock == nil)
+            lock = [[NSRecursiveLock alloc] init];
+    }
+
+    return lock;
+}
+
+static BOOL HorosAllowsConcurrentMoveForSameNode(void)
+{
+    return [[[NSThread currentThread].threadDictionary objectForKey: HorosAllowConcurrentMoveForSameNodeKey] boolValue];
+}
+
+static int HorosRetrieveAssociationCount(NSUInteger itemCount)
+{
+    if (itemCount == 0)
+        return 0;
+
+    NSInteger noOfAssociations = 1;
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if ([defaults boolForKey: @"MultipleAssociationsRetrieve"])
+    {
+        noOfAssociations = 4;
+        NSInteger configuredAssociations = [defaults integerForKey: @"NoOfMultipleAssociationsRetrieve"];
+        if (configuredAssociations > 1)
+            noOfAssociations = MAX(configuredAssociations, noOfAssociations);
+    }
+
+    noOfAssociations = MIN(noOfAssociations, 4);
+    noOfAssociations = MIN(noOfAssociations, (NSInteger)itemCount);
+    noOfAssociations = MAX(noOfAssociations, 1);
+
+    return (int)noOfAssociations;
+}
+
 typedef struct {
     T_ASC_Association *assoc;
     T_ASC_PresentationContextID presId;
@@ -1220,12 +1261,12 @@ subOpCallback(void * /*subOpCallbackData*/ ,
         NSArray *childrenArray = [self children];
         
         // search the images
-        if( childrenArray == nil)
+        if( childrenArray == nil || childrenArray.count == 0)
             [self queryWithValues: nil];
-        
+
         childrenArray = [self children];
     }
-    
+
     [pool release];
 }
 
@@ -1247,12 +1288,14 @@ subOpCallback(void * /*subOpCallbackData*/ ,
         }
         else // DICOM retrieve
         {
-            NSMutableArray *localObjectUIDs = [NSMutableArray array];
+            NSMutableSet *localObjectUIDs = [NSMutableSet set];
             BOOL localSeriesAlreadyExists = NO;
             
             BOOL retrievedDone = NO;
+            BOOL tryImageLevelRetrieve = [[NSUserDefaults standardUserDefaults] boolForKey: @"TryIMAGELevelDICOMRetrieveIfLocalImages"];
+            BOOL multipleAssociationsRetrieve = [[NSUserDefaults standardUserDefaults] boolForKey: @"MultipleAssociationsRetrieve"];
             
-            if( !_noSmartMode && [[NSUserDefaults standardUserDefaults] boolForKey: @"TryIMAGELevelDICOMRetrieveIfLocalImages"])
+            if( !_noSmartMode && (tryImageLevelRetrieve || multipleAssociationsRetrieve))
             {
                 NSString *studyInstanceUID = nil;
                 
@@ -1296,7 +1339,11 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                                         localSeriesAlreadyExists = YES;
                                 }
                                 
-                                [localObjectUIDs addObjectsFromArray: [[[s images] valueForKey: @"sopInstanceUID"] allObjects]];
+                                for( NSString *localSOPInstanceUID in [[[s images] valueForKey: @"sopInstanceUID"] allObjects])
+                                {
+                                    if( localSOPInstanceUID.length)
+                                        [localObjectUIDs addObject: localSOPInstanceUID];
+                                }
                             }
                         }
                         @catch (NSException* e)
@@ -1320,10 +1367,10 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                 {
                     if( localSeriesAlreadyExists == NO)
                         [localObjectUIDs removeAllObjects];
-                    else
-                        shouldTryImageLevelRetrieve = YES;
+
+                    shouldTryImageLevelRetrieve = YES;
                 }
-                else if( [[NSUserDefaults standardUserDefaults] boolForKey: @"MultipleAssociationsRetrieve"])
+                else
                     shouldTryImageLevelRetrieve = YES;
                 
                 if( shouldTryImageLevelRetrieve && [[NSThread currentThread] isCancelled] == NO) // We have already local images, or are explicitly parallelizing a study-level retrieve
@@ -1331,12 +1378,12 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                     NSThread *WADOCFind = [[[NSThread alloc] initWithTarget: self selector: @selector( CFINDThread:) object: studyInstanceUID] autorelease];
                     
                     [WADOCFind start];
-                    [NSThread sleepForTimeInterval: 0.1];
                     
-                    while( (WADOCFind.isExecuting || self.childrenCount) && [[NSThread currentThread] isCancelled] == NO)
+                    while( WADOCFind.isFinished == NO && [[NSThread currentThread] isCancelled] == NO)
+                        [NSThread sleepForTimeInterval: 0.05];
+
+                    if( [[NSThread currentThread] isCancelled] == NO)
                     {
-                        if( self.childrenCount > 50 || WADOCFind.isExecuting == NO)
-                        {
                             NSMutableDictionary *seriesUIDsToRetrieve = [NSMutableDictionary dictionary];
                             NSMutableArray *imagesUIDsWithoutSeriesInstanceUID = [NSMutableArray array];
                             
@@ -1407,10 +1454,11 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                             {
                                 if( [seriesUIDsToRetrieve count])
                                 {
-                                    int noOfAssociations = 1;
+                                    NSUInteger numberOfImagesToRetrieve = 0;
+                                    for( NSArray *imageUIDs in seriesUIDsToRetrieve.allValues)
+                                        numberOfImagesToRetrieve += imageUIDs.count;
                                     
-//                                    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"MultipleAssociationsRetrieve"] && [[NSUserDefaults standardUserDefaults] integerForKey: @"NoOfMultipleAssociationsRetrieve"] > 1)
-//                                        noOfAssociations = [[NSUserDefaults standardUserDefaults] integerForKey: @"NoOfMultipleAssociationsRetrieve"];
+                                    int noOfAssociations = HorosRetrieveAssociationCount(numberOfImagesToRetrieve);
                                     
                                     NSMutableArray *threads = [NSMutableArray array];
                                     NSThread *mainThread = [NSThread currentThread];
@@ -1419,57 +1467,71 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                                     {
                                         [threads addObject: [NSThread performBlockInBackground: ^
                                                              {
-                                                                 NSRange range = NSMakeRange( i * (seriesUIDsToRetrieve.count / noOfAssociations), seriesUIDsToRetrieve.count / noOfAssociations);
-                                                                 
-                                                                 if( i == noOfAssociations-1)
-                                                                     range.length = seriesUIDsToRetrieve.count - range.location;
-                                                                 
-                                                                 //To avoid incompatible PACS, retrieve each series independently
-                                                                 for( NSString *seriesInstanceUID in [seriesUIDsToRetrieve.allKeys subarrayWithRange: range])
+                                                                 [[NSThread currentThread].threadDictionary setObject: @YES forKey: HorosAllowConcurrentMoveForSameNodeKey];
+                                                                 @try
                                                                  {
-                                                                     DcmDataset dataset;
-                                                                     
-                                                                     dataset.putAndInsertString(DCM_QueryRetrieveLevel, "IMAGE");
-                                                                     dataset.putAndInsertOFStringArray(DCM_SOPInstanceUID, [[[seriesUIDsToRetrieve objectForKey: seriesInstanceUID] componentsJoinedByString:@"\\"] UTF8String]);
-                                                                     dataset.putAndInsertOFStringArray(DCM_SeriesInstanceUID, [seriesInstanceUID UTF8String]);
-                                                                     dataset.putAndInsertOFStringArray(DCM_StudyInstanceUID, [studyInstanceUID UTF8String]);
-                                                                     
-                                                                     if( [[dict valueForKey: @"retrieveMode"] intValue] == CGETRetrieveMode && retrieveMode == CGETRetrieveMode)
+                                                                     //To avoid incompatible PACS, retrieve each series independently
+                                                                     for( NSString *seriesInstanceUID in seriesUIDsToRetrieve.allKeys)
                                                                      {
-                                                                         if( [DCMTKQueryRetrieveSCP storeSCP] == NO)
-                                                                             [[NSException exceptionWithName: @"DICOM Network Failure" reason: NSLocalizedString( @"DICOM Listener is not activated", nil) userInfo:nil] raise];
-                                                                         
-                                                                         else
+                                                                         NSArray *imageUIDs = [seriesUIDsToRetrieve objectForKey: seriesInstanceUID];
+                                                                         NSUInteger chunkSize = (imageUIDs.count + noOfAssociations - 1) / noOfAssociations;
+                                                                         NSRange range = NSMakeRange(i * chunkSize, chunkSize);
+
+                                                                         if( range.location >= imageUIDs.count)
+                                                                             continue;
+
+                                                                         if( NSMaxRange(range) > imageUIDs.count)
+                                                                             range.length = imageUIDs.count - range.location;
+
+                                                                         NSArray *imageUIDsForAssociation = [imageUIDs subarrayWithRange: range];
+                                                                         DcmDataset dataset;
+
+                                                                         dataset.putAndInsertString(DCM_QueryRetrieveLevel, "IMAGE");
+                                                                         dataset.putAndInsertOFStringArray(DCM_SOPInstanceUID, [[imageUIDsForAssociation componentsJoinedByString:@"\\"] UTF8String]);
+                                                                         dataset.putAndInsertOFStringArray(DCM_SeriesInstanceUID, [seriesInstanceUID UTF8String]);
+                                                                         dataset.putAndInsertOFStringArray(DCM_StudyInstanceUID, [studyInstanceUID UTF8String]);
+
+                                                                         if( [[dict valueForKey: @"retrieveMode"] intValue] == CGETRetrieveMode && retrieveMode == CGETRetrieveMode)
                                                                          {
-                                                                             if ([self setupNetworkWithSyntax: UID_GETStudyRootQueryRetrieveInformationModel dataset: &dataset destination: [dict objectForKey:@"moveDestination"]])
-                                                                             {
-                                                                             }
+                                                                             if( [DCMTKQueryRetrieveSCP storeSCP] == NO)
+                                                                                 [[NSException exceptionWithName: @"DICOM Network Failure" reason: NSLocalizedString( @"DICOM Listener is not activated", nil) userInfo:nil] raise];
+
                                                                              else
                                                                              {
-                                                                                 NSLog( @"***** IMAGE Level retrieve failed... try STUDY/SERIES Level retrieve");
-                                                                                 [[NSThread currentThread] cancel];
+                                                                                 if ([self setupNetworkWithSyntax: UID_GETStudyRootQueryRetrieveInformationModel dataset: &dataset destination: [dict objectForKey:@"moveDestination"]])
+                                                                                 {
+                                                                                 }
+                                                                                 else
+                                                                                 {
+                                                                                     NSLog( @"***** IMAGE Level retrieve failed... try STUDY/SERIES Level retrieve");
+                                                                                     [[NSThread currentThread] cancel];
+                                                                                 }
                                                                              }
                                                                          }
-                                                                     }
-                                                                     else
-                                                                     {
-                                                                         if( [DCMTKQueryRetrieveSCP storeSCP] == NO && [dict objectForKey: @"moveDestination"] == nil)
-                                                                             [[NSException exceptionWithName: @"DICOM Network Failure" reason: NSLocalizedString( @"DICOM Listener is not activated", nil) userInfo:nil] raise];
-                                                                         
                                                                          else
                                                                          {
-                                                                             if ([self setupNetworkWithSyntax:UID_MOVEStudyRootQueryRetrieveInformationModel dataset: &dataset destination: [dict objectForKey: @"moveDestination"]])
-                                                                             {
-                                                                             }
+                                                                             if( [DCMTKQueryRetrieveSCP storeSCP] == NO && [dict objectForKey: @"moveDestination"] == nil)
+                                                                                 [[NSException exceptionWithName: @"DICOM Network Failure" reason: NSLocalizedString( @"DICOM Listener is not activated", nil) userInfo:nil] raise];
+
                                                                              else
                                                                              {
-                                                                                 NSLog( @"***** IMAGE Level retrieve failed... try STUDY/SERIES Level retrieve");
-                                                                                 [[NSThread currentThread] cancel];
+                                                                                 if ([self setupNetworkWithSyntax:UID_MOVEStudyRootQueryRetrieveInformationModel dataset: &dataset destination: [dict objectForKey: @"moveDestination"]])
+                                                                                 {
+                                                                                 }
+                                                                                 else
+                                                                                 {
+                                                                                     NSLog( @"***** IMAGE Level retrieve failed... try STUDY/SERIES Level retrieve");
+                                                                                     [[NSThread currentThread] cancel];
+                                                                                 }
                                                                              }
                                                                          }
+
+                                                                         if( [mainThread isCancelled]) break;
                                                                      }
-                                                                     
-                                                                     if( [mainThread isCancelled]) break;
+                                                                 }
+                                                                 @finally
+                                                                 {
+                                                                     [[NSThread currentThread].threadDictionary removeObjectForKey: HorosAllowConcurrentMoveForSameNodeKey];
                                                                  }
                                                              }
                                                              ]];
@@ -1481,7 +1543,7 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                                         executing = NO;
                                         
                                         for( NSThread *t in threads)
-                                            if( t.isExecuting) executing = YES;
+                                            if( t.isFinished == NO) executing = YES;
                                         
                                         if( [[NSThread currentThread] isCancelled])
                                             for( NSThread *t in threads)
@@ -1498,10 +1560,7 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                                 }
                                 else
                                 {
-                                    int noOfAssociations = 1;
-                                    
-//                                    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"MultipleAssociationsRetrieve"] && [[NSUserDefaults standardUserDefaults] integerForKey: @"NoOfMultipleAssociationsRetrieve"] > 1)
-//                                        noOfAssociations = [[NSUserDefaults standardUserDefaults] integerForKey: @"NoOfMultipleAssociationsRetrieve"];
+                                    int noOfAssociations = HorosRetrieveAssociationCount(imagesUIDsWithoutSeriesInstanceUID.count);
                                     
                                     NSMutableArray *threads = [NSMutableArray array];
                                     
@@ -1509,52 +1568,60 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                                     {
                                         [threads addObject: [NSThread performBlockInBackground: ^
                                                              {
-                                                                 DcmDataset dataset;
-                                                                 
-                                                                 NSRange range = NSMakeRange( i * (imagesUIDsWithoutSeriesInstanceUID.count / noOfAssociations), imagesUIDsWithoutSeriesInstanceUID.count / noOfAssociations);
-                                                                 
-                                                                 if( i == noOfAssociations-1)
-                                                                     range.length = imagesUIDsWithoutSeriesInstanceUID.count - range.location;
-                                                                 
-                                                                 NSArray *subArray = [imagesUIDsWithoutSeriesInstanceUID subarrayWithRange: range];
-                                                                 
-                                                                 dataset.putAndInsertString(DCM_QueryRetrieveLevel, "IMAGE");
-                                                                 dataset.putAndInsertOFStringArray(DCM_SOPInstanceUID, [[subArray componentsJoinedByString:@"\\"] UTF8String]);
-                                                                 dataset.putAndInsertOFStringArray(DCM_StudyInstanceUID, [studyInstanceUID UTF8String]);
-                                                                 
-                                                                 if( [[dict valueForKey: @"retrieveMode"] intValue] == CGETRetrieveMode && retrieveMode == CGETRetrieveMode)
+                                                                 [[NSThread currentThread].threadDictionary setObject: @YES forKey: HorosAllowConcurrentMoveForSameNodeKey];
+                                                                 @try
                                                                  {
-                                                                     if( [DCMTKQueryRetrieveSCP storeSCP] == NO)
-                                                                         [[NSException exceptionWithName: @"DICOM Network Failure" reason: NSLocalizedString( @"DICOM Listener is not activated", nil) userInfo:nil] raise];
-                                                                     
-                                                                     else
+                                                                     DcmDataset dataset;
+
+                                                                     NSRange range = NSMakeRange( i * (imagesUIDsWithoutSeriesInstanceUID.count / noOfAssociations), imagesUIDsWithoutSeriesInstanceUID.count / noOfAssociations);
+
+                                                                     if( i == noOfAssociations-1)
+                                                                         range.length = imagesUIDsWithoutSeriesInstanceUID.count - range.location;
+
+                                                                     NSArray *subArray = [imagesUIDsWithoutSeriesInstanceUID subarrayWithRange: range];
+
+                                                                     dataset.putAndInsertString(DCM_QueryRetrieveLevel, "IMAGE");
+                                                                     dataset.putAndInsertOFStringArray(DCM_SOPInstanceUID, [[subArray componentsJoinedByString:@"\\"] UTF8String]);
+                                                                     dataset.putAndInsertOFStringArray(DCM_StudyInstanceUID, [studyInstanceUID UTF8String]);
+
+                                                                     if( [[dict valueForKey: @"retrieveMode"] intValue] == CGETRetrieveMode && retrieveMode == CGETRetrieveMode)
                                                                      {
-                                                                         if ([self setupNetworkWithSyntax: UID_GETStudyRootQueryRetrieveInformationModel dataset: &dataset destination: [dict objectForKey:@"moveDestination"]])
-                                                                         {
-                                                                         }
+                                                                         if( [DCMTKQueryRetrieveSCP storeSCP] == NO)
+                                                                             [[NSException exceptionWithName: @"DICOM Network Failure" reason: NSLocalizedString( @"DICOM Listener is not activated", nil) userInfo:nil] raise];
+
                                                                          else
                                                                          {
-                                                                             NSLog( @"***** IMAGE Level retrieve failed... try STUDY/SERIES Level retrieve");
-                                                                             [[NSThread currentThread] cancel];
+                                                                             if ([self setupNetworkWithSyntax: UID_GETStudyRootQueryRetrieveInformationModel dataset: &dataset destination: [dict objectForKey:@"moveDestination"]])
+                                                                             {
+                                                                             }
+                                                                             else
+                                                                             {
+                                                                                 NSLog( @"***** IMAGE Level retrieve failed... try STUDY/SERIES Level retrieve");
+                                                                                 [[NSThread currentThread] cancel];
+                                                                             }
+                                                                         }
+                                                                     }
+                                                                     else
+                                                                     {
+                                                                         if( [DCMTKQueryRetrieveSCP storeSCP] == NO && [dict objectForKey: @"moveDestination"] == nil)
+                                                                             [[NSException exceptionWithName: @"DICOM Network Failure" reason: NSLocalizedString( @"DICOM Listener is not activated", nil) userInfo:nil] raise];
+
+                                                                         else
+                                                                         {
+                                                                             if ([self setupNetworkWithSyntax:UID_MOVEStudyRootQueryRetrieveInformationModel dataset: &dataset destination: [dict objectForKey: @"moveDestination"]])
+                                                                             {
+                                                                             }
+                                                                             else
+                                                                             {
+                                                                                 NSLog( @"***** IMAGE Level retrieve failed... try STUDY/SERIES Level retrieve");
+                                                                                 [[NSThread currentThread] cancel];
+                                                                             }
                                                                          }
                                                                      }
                                                                  }
-                                                                 else
+                                                                 @finally
                                                                  {
-                                                                     if( [DCMTKQueryRetrieveSCP storeSCP] == NO && [dict objectForKey: @"moveDestination"] == nil)
-                                                                         [[NSException exceptionWithName: @"DICOM Network Failure" reason: NSLocalizedString( @"DICOM Listener is not activated", nil) userInfo:nil] raise];
-                                                                     
-                                                                     else
-                                                                     {
-                                                                         if ([self setupNetworkWithSyntax:UID_MOVEStudyRootQueryRetrieveInformationModel dataset: &dataset destination: [dict objectForKey: @"moveDestination"]])
-                                                                         {
-                                                                         }
-                                                                         else
-                                                                         {
-                                                                             NSLog( @"***** IMAGE Level retrieve failed... try STUDY/SERIES Level retrieve");
-                                                                             [[NSThread currentThread] cancel];
-                                                                         }
-                                                                     }
+                                                                     [[NSThread currentThread].threadDictionary removeObjectForKey: HorosAllowConcurrentMoveForSameNodeKey];
                                                                  }
                                                              }
                                                              ]];
@@ -1566,7 +1633,7 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                                         executing = NO;
                                         
                                         for( NSThread *t in threads)
-                                            if( t.isExecuting) executing = YES;
+                                            if( t.isFinished == NO) executing = YES;
                                         
                                         if( [[NSThread currentThread] isCancelled])
                                             for( NSThread *t in threads)
@@ -1584,14 +1651,17 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                             }
                             else
                             {
-                                if (!childrenArray.count) { // this message is misleaging without this condition: the IMAGE level DID work, but we already have all the images locally
+                                if (childrenArray.count)
+                                {
+                                    // IMAGE-level C-FIND worked and every returned instance is already local.
+                                    retrievedDone = YES;
+                                }
+                                else
+                                {
                                     NSLog( @"***** IMAGE Level retrieve failed... try STUDY/SERIES Level retrieve");
                                     localObjectUIDs = nil;
                                 }
                             }
-                        }
-                        
-                        [NSThread sleepForTimeInterval: 0.1];
                     }
                     [self purgeChildren];
                     
@@ -2316,12 +2386,13 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				strcmp(abstractSyntax, UID_GETStudyRootQueryRetrieveInformationModel) == 0 ||
 				strcmp(abstractSyntax, UID_GETPatientStudyOnlyQueryRetrieveInformationModel) == 0)
 				{
-				
 				}
 				else
 				{
+					[HorosDCMTKVerboseLogLock() lock];
 					printf("Request Parameters:\n");
 					ASC_dumpParameters(params, COUT);
+					[HorosDCMTKVerboseLogLock() unlock];
 				}
 			}
 			
@@ -2412,8 +2483,10 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				}
 				else
 				{
+					[HorosDCMTKVerboseLogLock() lock];
 					printf("Association Parameters Negotiated:\n");
 					ASC_dumpParameters(params, COUT);
+					[HorosDCMTKVerboseLogLock() unlock];
 				}
 			}
 			
@@ -2718,10 +2791,12 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
     /* if required, dump some more general information */
     if (_verbose)
 	{
+        [HorosDCMTKVerboseLogLock() lock];
         printf("Find SCU RQ: MsgID %d\n", msgId);
         printf("REQUEST:\n");
         dataset->print(COUT);
         printf("--------\n");
+        [HorosDCMTKVerboseLogLock() unlock];
     }
 
     /* finally conduct transmission of data */
@@ -2760,7 +2835,9 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				
         if (_verbose)
 		{
+            [HorosDCMTKVerboseLogLock() lock];
             DIMSE_printCFindRSP(stdout, &rsp);
+            [HorosDCMTKVerboseLogLock() unlock];
         }
 		else
 		{
@@ -2775,18 +2852,22 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 	else
 	{
         if (_verbose) {
+            [HorosDCMTKVerboseLogLock() lock];
             errmsg("Find Failed\n Condition:\n");
             //dataset->print(COUT);
             DimseCondition::dump(cond);
             NSLog(@"Dimse Status: %@", [NSString stringWithUTF8String: DU_cfindStatusString(rsp.DimseStatus)]);
+            [HorosDCMTKVerboseLogLock() unlock];
         }
     }
 
     /* dump status detail information if there is some */
     if (statusDetail != NULL) {
         if (_verbose) {
+            [HorosDCMTKVerboseLogLock() lock];
             printf("  Status Detail:\n");
             statusDetail->print(COUT);
+            [HorosDCMTKVerboseLogLock() unlock];
         }
         delete statusDetail;
     }
@@ -2833,7 +2914,8 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 	OFCondition cond = EC_Normal;
     /* as long as no error occured and the counter does not equal 0 */
 	//only do move if we aren't already moving
-    while (cond == EC_Normal && n-- && ![[MoveManager sharedManager] containsMove:self]) {
+    BOOL allowConcurrentMove = HorosAllowsConcurrentMoveForSameNode();
+    while (cond == EC_Normal && n-- && (allowConcurrentMove || ![[MoveManager sharedManager] containsMove:self])) {
         /* process file (read file, send C-FIND-RQ, receive C-FIND-RSP messages) */
         cond = [self moveSCU:assoc network:(T_ASC_Network *)net dataset:dataset destination: destination];
     }
@@ -2850,7 +2932,8 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 	OFCondition cond = EC_Normal;
     /* as long as no error occured and the counter does not equal 0 */
 	//only do move if we aren't already moving
-    while (cond == EC_Normal && n-- && ![[MoveManager sharedManager] containsMove:self]) {
+    BOOL allowConcurrentMove = HorosAllowsConcurrentMoveForSameNode();
+    while (cond == EC_Normal && n-- && (allowConcurrentMove || ![[MoveManager sharedManager] containsMove:self])) {
         /* process file (read file, send C-FIND-RQ, receive C-FIND-RSP messages) */
         cond = [self getSCU:assoc network:(T_ASC_Network *)net dataset:dataset];
     }
@@ -2888,9 +2971,11 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 	{
 		if (_verbose)
 		{
+			[HorosDCMTKVerboseLogLock() lock];
 			printf("Move SCU RQ: MsgID %d\n", msgId);
 			printf("Request:\n");
 			dataset->print(COUT);
+			[HorosDCMTKVerboseLogLock() unlock];
 		}
 
 		/* prepare the callback data */
@@ -2939,11 +3024,13 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 			
 			if (_verbose)
 			{
+				[HorosDCMTKVerboseLogLock() lock];
 				DIMSE_printCMoveRSP(stdout, &rsp);
 				if (rspIds != NULL) {
 					printf("Response Identifiers:\n");
 					rspIds->print(COUT);
 				}
+				[HorosDCMTKVerboseLogLock() unlock];
 			}
 		}
 		else
@@ -3000,9 +3087,11 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 
     if (_verbose)
 	{
+        [HorosDCMTKVerboseLogLock() lock];
         printf("Get SCU RQ: MsgID %d\n", msgId);
         printf("Request:\n");
         dataset->print(COUT);
+        [HorosDCMTKVerboseLogLock() unlock];
     }
 	
     /* prepare the callback data */
@@ -3052,12 +3141,14 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 		
         if (_verbose)
 		{
+            [HorosDCMTKVerboseLogLock() lock];
             DIMSE_printCGetRSP(stdout, &rsp);
             if (rspIds != NULL)
 			{
                 printf("Response Identifiers:\n");
                 rspIds->print(COUT);
 			}
+            [HorosDCMTKVerboseLogLock() unlock];
         }
     }
 	else

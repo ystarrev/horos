@@ -217,6 +217,7 @@ NSString* asciiString(NSString* str)
 -(void)initContextualMenus;
 -(void)observeScrollerStyleDidChangeNotification:(NSNotification*)n;
 -(void)removeAlbumObject:(DicomAlbum*)album;
+-(void)openMetalViewerForDatabaseObject:(NSManagedObject*)item;
 
 -(void)saveLoadAlbumsSortDescriptors;
 
@@ -7881,7 +7882,7 @@ static NSConditionLock *threadLock = nil;
             }
             else
             {
-                [self databaseOpenStudy: item];
+                [self openMetalViewerForDatabaseObject:item];
             }
         }
         else
@@ -9337,7 +9338,7 @@ static BOOL withReset = NO;
     
     if( [theCell tag] >= 0)
     {
-        [self viewerDICOM: [[oMatrix menu] itemAtIndex:0]];
+        [self openMetalViewer: [[oMatrix menu] itemAtIndex:0]];
     }
 }
 
@@ -13560,6 +13561,24 @@ constrainSplitPosition:(CGFloat)proposedPosition
     Class launcherClass = NSClassFromString(@"HorosMetalViewerLauncher");
     if (launcherClass)
     {
+        NSDate *openedDate = [NSDate date];
+        NSMutableSet *openedSeries = [NSMutableSet set];
+        NSMutableSet *openedStudies = [NSMutableSet set];
+        for (NSManagedObject *imageObject in correspondingObjects)
+        {
+            NSManagedObject *series = [imageObject valueForKey:@"series"];
+            NSManagedObject *study = [imageObject valueForKeyPath:@"series.study"];
+            if (series)
+                [openedSeries addObject:series];
+            if (study)
+                [openedStudies addObject:study];
+        }
+        for (NSManagedObject *series in openedSeries)
+            [series setValue:openedDate forKey:@"dateOpened"];
+        for (NSManagedObject *study in openedStudies)
+            [study setValue:openedDate forKey:@"dateOpened"];
+        [self.database save];
+
         CFAbsoluteTime swiftLaunchStart = CFAbsoluteTimeGetCurrent();
         [launcherClass launchWithContext:context];
         NSLog(@"HOROS_METAL_TIMING BrowserController Swift launch call returned in %.3f s", CFAbsoluteTimeGetCurrent() - swiftLaunchStart);
@@ -13572,6 +13591,27 @@ constrainSplitPosition:(CGFloat)proposedPosition
     [viewerPix release];
     [correspondingObjects release];
     NSLog(@"HOROS_METAL_TIMING BrowserController openMetalViewerForImages total %.3f s", CFAbsoluteTimeGetCurrent() - launchStart);
+}
+
+- (void)openMetalViewerForDatabaseObject:(NSManagedObject*)item
+{
+    NSMutableArray *loadList = [NSMutableArray array];
+    NSString *itemType = [item valueForKey:@"type"];
+
+    if( [itemType isEqualToString:@"Image"])
+        [loadList addObject:item];
+    else if( [itemType isEqualToString:@"Series"])
+        [loadList addObjectsFromArray:[self childrenArray:item onlyImages:YES]];
+    else if( [itemType isEqualToString:@"Study"])
+    {
+        for( NSManagedObject *series in [self childrenArray:item onlyImages:YES])
+            [loadList addObjectsFromArray:[self childrenArray:series onlyImages:YES]];
+    }
+
+    if( [loadList count])
+        [self openMetalViewerForImages:loadList];
+    else
+        NSBeep();
 }
 
 - (void) viewerDICOM: (id)sender

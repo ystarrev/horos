@@ -2303,6 +2303,12 @@ extern "C"
 
 -(void) realtimeCFindResults: (NSNotification*) notification
 {
+    if( [NSThread isMainThread] == NO)
+    {
+        [self performSelectorOnMainThread: _cmd withObject: notification waitUntilDone: NO];
+        return;
+    }
+
     if( [notification object] == [queryManager rootNode] && temporaryCFindResultArray)
     {
         if( [[self window] isVisible] && [[NSDate date] timeIntervalSinceReferenceDate] - lastTemporaryCFindResultUpdate > 1)
@@ -2339,10 +2345,7 @@ extern "C"
                     }
                 }
                 
-                if( [NSThread isMainThread])
-                    [self refreshList: temporaryCFindResultArray];
-                else
-                    [self performSelectorOnMainThread:@selector(refreshList:) withObject: temporaryCFindResultArray waitUntilDone: NO];
+                [self refreshList: temporaryCFindResultArray];
             }
             
             lastTemporaryCFindResultUpdate = [[NSDate date] timeIntervalSinceReferenceDate];
@@ -3844,7 +3847,8 @@ extern "C"
 		NSAutoreleasePool *subPool = [[NSAutoreleasePool alloc] init];
 		NSMutableDictionary *dictionary = [[NSMutableDictionary alloc] initWithDictionary: [queryManager parameters] copyItems: YES];
 		
-		NSLog( @"Retrieve START");
+		CFAbsoluteTime retrieveStartTime = CFAbsoluteTimeGetCurrent();
+		NSLog( @"Retrieve START: %lu item(s)", (unsigned long) [array count]);
 		
 		BOOL allowNonCMOVE = YES;
 		
@@ -3939,6 +3943,9 @@ extern "C"
 			
 			[NSThread currentThread].status = [status stringByReplacingOccurrencesOfString: @"^" withString: @" "];
 			
+			CFAbsoluteTime itemRetrieveStartTime = CFAbsoluteTimeGetCurrent();
+			NSLog( @"Retrieve ITEM START: %@ %@", NSStringFromClass( [object class]), [object uid]);
+
 			@try
 			{
 				FILE * pFile = fopen ("/tmp/kill_all_storescu", "r");
@@ -3951,12 +3958,15 @@ extern "C"
 					else
 						[object move: d retrieveMode: CMOVERetrieveMode];
 				}
+
+				NSLog( @"Retrieve ITEM END: %@ %@ after %.3f s", NSStringFromClass( [object class]), [object uid], CFAbsoluteTimeGetCurrent() - itemRetrieveStartTime);
 			}
 			@catch (NSException * e)
 			{
-                NSLog( @"dictionary: %@", d);
-                NSLog( @"object: %@, %@", object, [object uid]);
+				NSLog( @"dictionary: %@", d);
+				NSLog( @"object: %@, %@", object, [object uid]);
 				N2LogExceptionWithStackTrace( e);
+				NSLog( @"Retrieve ITEM FAILED: %@ %@ after %.3f s", NSStringFromClass( [object class]), [object uid], CFAbsoluteTimeGetCurrent() - itemRetrieveStartTime);
 			}
 			
 			dispatch_async(dispatch_get_main_queue(), ^{
@@ -3993,6 +4003,9 @@ extern "C"
 			}
 		}
 		
+		CFAbsoluteTime retrieveMoveEndTime = CFAbsoluteTimeGetCurrent();
+		NSLog( @"Retrieve MOVE PHASE END after %.3f s", retrieveMoveEndTime - retrieveStartTime);
+
 		[NSThread sleepForTimeInterval: 0.5];	// To allow errorMessage on the main thread...
 		
 		__block BOOL windowVisible = NO;
@@ -4012,7 +4025,7 @@ extern "C"
 			}
 		}
 		
-		NSLog(@"Retrieve END");
+		NSLog(@"Retrieve END after %.3f s", CFAbsoluteTimeGetCurrent() - retrieveStartTime);
 	}
 	@catch (NSException *e)
 	{
@@ -4056,7 +4069,7 @@ extern "C"
 		{
 			NSPredicate	*predicate = [NSPredicate predicateWithFormat: @"(studyInstanceUID == %@)", [item valueForKey:@"uid"]];
 			
-			[request setEntity: [[BrowserController.currentBrowser.database.managedObjectModel entitiesByName] objectForKey:@"Study"]];
+			[request setEntity: [NSEntityDescription entityForName: @"Study" inManagedObjectContext: context]];
 			[request setPredicate: predicate];
 			
 			studyArray = [context executeFetchRequest:request error:&error];
@@ -4085,25 +4098,15 @@ extern "C"
 		{
 			NSPredicate	*predicate = [NSPredicate predicateWithFormat:  @"(seriesDICOMUID == %@)", [item valueForKey:@"uid"]];
 			
-			NSLog( @"%@",  [predicate description]);
-			
-			[request setEntity: [[BrowserController.currentBrowser.database.managedObjectModel entitiesByName] objectForKey:@"Series"]];
+			[request setEntity: [NSEntityDescription entityForName: @"Series" inManagedObjectContext: context]];
 			[request setPredicate: predicate];
 			
 			seriesArray = [context executeFetchRequest:request error:&error];
 			if( [seriesArray count] > 0)
 			{
-				NSLog( @"%@",  [seriesArray description]);
-				
 				NSManagedObject	*series = [seriesArray objectAtIndex: 0];
 				
-				[[BrowserController currentBrowser] openViewerFromImages: [NSArray arrayWithObject: [[BrowserController currentBrowser] childrenArray: series]] movie: NO viewer :nil keyImagesOnly:NO];
-				
-				if( [[NSUserDefaults standardUserDefaults] boolForKey: @"AUTOTILING"])
-					[NSApp sendAction: @selector(tileWindows:) to:nil from: self];
-				else
-					[[AppController sharedAppController] checkAllWindowsAreVisible: self makeKey: YES];
-					
+				[[BrowserController currentBrowser] openMetalViewerForImages:[[BrowserController currentBrowser] childrenArray:series]];
 				success = YES;
 			}
 		}

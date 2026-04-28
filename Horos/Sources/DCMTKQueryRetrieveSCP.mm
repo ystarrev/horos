@@ -220,7 +220,8 @@ void errmsg(const char* msg, ...)
     OFCmdUnsignedInt overrideMaxPDU = 0;
     DcmQueryRetrieveOptions options;
 
-	// verbose logging is controlled by DCMTK log configuration in modern DCMTK.
+	// DCMTK 3.7 defaults to INFO logging, which is noisy and expensive during C-MOVE receives.
+	DCM_dcmqrdbLogger.setLogLevel(OFLogger::WARN_LOG_LEVEL);
 	
 	//single process
 	options.singleProcess_ = [[NSUserDefaults standardUserDefaults] boolForKey: @"SingleProcessMultiThreadedListener"];

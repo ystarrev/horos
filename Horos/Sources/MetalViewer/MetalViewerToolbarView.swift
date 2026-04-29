@@ -1,6 +1,11 @@
 import AppKit
 
 final class MetalViewerToolbarView: NSView {
+    enum ViewerMode: Int {
+        case stack2D = 0
+        case mpr = 1
+    }
+
     enum WLWWCommand {
         case other
         case defaultWindow
@@ -12,8 +17,10 @@ final class MetalViewerToolbarView: NSView {
     }
 
     private let contentStack = NSStackView()
+    private let viewerModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let wlwwPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let opacityPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    var viewerModeSelectionHandler: ((ViewerMode) -> Void)?
     var wlwwSelectionHandler: ((WLWWCommand) -> Void)?
 
     override init(frame frameRect: NSRect) {
@@ -36,6 +43,7 @@ final class MetalViewerToolbarView: NSView {
             ("WL/WW & CLUT", makeWLWWContent()),
             ("Sync", makeIconButtonContent(imageName: "Sync.pdf", alternateImageName: "SyncLock.pdf")),
             ("Propagate", makeIconButtonContent(imageName: "Propagate", alternateImageName: "PropagateOn")),
+            ("View", makeViewerModeContent()),
         ]
 
         items.forEach { title, view in
@@ -121,6 +129,10 @@ final class MetalViewerToolbarView: NSView {
         }
     }
 
+    func selectViewerMode(_ mode: ViewerMode) {
+        viewerModePopup.selectItem(withTag: mode.rawValue)
+    }
+
     private func makeAnnotationsContent() -> NSView {
         let grid = NSGridView(views: [
             [makeToolbarRadio("None", selected: false), makeToolbarRadio("Basic", selected: false)],
@@ -141,6 +153,40 @@ final class MetalViewerToolbarView: NSView {
             grid.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
         return container
+    }
+
+    private func makeViewerModeContent() -> NSView {
+        viewerModePopup.translatesAutoresizingMaskIntoConstraints = false
+        viewerModePopup.controlSize = .small
+        viewerModePopup.bezelStyle = .texturedRounded
+        viewerModePopup.target = self
+        viewerModePopup.action = #selector(viewerModeDidChange(_:))
+        viewerModePopup.removeAllItems()
+        addViewerModeMenuItem(title: NSLocalizedString("2D", comment: ""), imageName: "Stack", mode: .stack2D)
+        addViewerModeMenuItem(title: NSLocalizedString("MPR", comment: ""), imageName: "MPR", mode: .mpr)
+        selectViewerMode(.stack2D)
+
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(viewerModePopup)
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(equalToConstant: 74),
+            container.heightAnchor.constraint(equalToConstant: 42),
+
+            viewerModePopup.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            viewerModePopup.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            viewerModePopup.widthAnchor.constraint(equalToConstant: 68),
+        ])
+        return container
+    }
+
+    private func addViewerModeMenuItem(title: String, imageName: String, mode: ViewerMode) {
+        viewerModePopup.addItem(withTitle: title)
+        guard let item = viewerModePopup.lastItem else {
+            return
+        }
+        item.tag = mode.rawValue
+        item.image = toolbarMenuImage(named: imageName)
     }
 
     private func makeMouseToolsContent() -> NSView {
@@ -280,6 +326,14 @@ final class MetalViewerToolbarView: NSView {
         wlwwSelectionHandler?(command)
     }
 
+    @objc
+    private func viewerModeDidChange(_ sender: NSPopUpButton) {
+        guard let mode = ViewerMode(rawValue: sender.selectedItem?.tag ?? ViewerMode.stack2D.rawValue) else {
+            return
+        }
+        viewerModeSelectionHandler?(mode)
+    }
+
     private func makeIconButtonContent(imageName: String, alternateImageName: String? = nil) -> NSView {
         let button = NSButton(image: toolbarImage(named: imageName), target: nil, action: nil)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -318,6 +372,12 @@ final class MetalViewerToolbarView: NSView {
             return image
         }
         return NSImage(size: NSSize(width: 24, height: 24))
+    }
+
+    private func toolbarMenuImage(named name: String) -> NSImage {
+        let image = (toolbarImage(named: name).copy() as? NSImage) ?? toolbarImage(named: name)
+        image.size = NSSize(width: 18, height: 18)
+        return image
     }
 }
 

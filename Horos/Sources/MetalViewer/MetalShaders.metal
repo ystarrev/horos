@@ -25,6 +25,27 @@ struct MetalUniforms {
     uint hasOverlay;
 };
 
+struct MetalMPRVertex {
+    float3 position;
+    float3 baseVoxel;
+};
+
+struct MetalMPRUniforms {
+    float4x4 viewProjectionMatrix;
+    float baseWindowLevel;
+    float baseWindowWidth;
+    float overlayWindowLevel;
+    float overlayWindowWidth;
+    float overlayBlend;
+    float3 overlayTranslationWorld;
+    float3 movingRotationCenterWorld;
+    uint3 fixedVolumeSize;
+    float4x4 movingInverseRotation;
+    float4x4 fixedVoxelToWorld;
+    float4x4 movingWorldToVoxel;
+    uint hasOverlay;
+};
+
 struct MetalPreviewUniforms {
     float2 scale;
     float2 offset;
@@ -60,6 +81,15 @@ struct DownsampleUniforms {
 struct RasterizerData {
     float4 position [[position]];
     float2 texCoord;
+};
+
+struct MetalMPRRasterizerData {
+    float4 position [[position]];
+    float3 baseVoxel;
+};
+
+struct MetalMPRBorderRasterizerData {
+    float4 position [[position]];
 };
 
 struct Metal3DVertex {
@@ -175,6 +205,39 @@ vertex RasterizerData metalPreviewVertex(
     float2 scaledPosition = vertices[vertexID].position * uniforms.scale + uniforms.offset;
     out.position = float4(scaledPosition, 0.0, 1.0);
     out.texCoord = vertices[vertexID].texCoord;
+    return out;
+}
+
+vertex MetalMPRRasterizerData metalViewerMPRVertex(
+    const device MetalMPRVertex *vertices [[buffer(0)]],
+    constant MetalMPRUniforms &uniforms [[buffer(1)]],
+    uint vertexID [[vertex_id]]
+) {
+    MetalMPRRasterizerData out;
+    out.position = uniforms.viewProjectionMatrix * float4(vertices[vertexID].position, 1.0);
+    out.baseVoxel = vertices[vertexID].baseVoxel;
+    return out;
+}
+
+vertex MetalMPRBorderRasterizerData metalViewerMPRBorderVertex(
+    const device MetalMPRVertex *vertices [[buffer(0)]],
+    constant MetalMPRUniforms &uniforms [[buffer(1)]],
+    uint vertexID [[vertex_id]]
+) {
+    MetalMPRBorderRasterizerData out;
+    out.position = uniforms.viewProjectionMatrix * float4(vertices[vertexID].position, 1.0);
+    return out;
+}
+
+vertex MetalMPRRasterizerData metalViewerMPRPlaneHighlightVertex(
+    const device MetalMPRVertex *vertices [[buffer(0)]],
+    constant MetalMPRUniforms &uniforms [[buffer(1)]],
+    uint vertexID [[vertex_id]]
+) {
+    MetalMPRRasterizerData out;
+    out.position = uniforms.viewProjectionMatrix * float4(vertices[vertexID].position, 1.0);
+    out.position.z = max(out.position.z - 0.0005 * out.position.w, 0.0);
+    out.baseVoxel = vertices[vertexID].baseVoxel;
     return out;
 }
 
@@ -538,6 +601,70 @@ fragment float4 metalViewerFragment(
     const float overlayNormalized = clamp((overlayPixelValue - overlayMinValue) / uniforms.overlayWindowWidth, 0.0, 1.0);
 
     return float4(overlayNormalized * uniforms.overlayBlend, baseNormalized * (1.0 - uniforms.overlayBlend), 0.0, 1.0);
+}
+
+fragment float4 metalViewerMPRFragment(
+    MetalMPRRasterizerData in [[stage_in]],
+    constant MetalMPRUniforms &uniforms [[buffer(0)]],
+    texture3d<float> baseTexture [[texture(0)]],
+    texture3d<float> overlayTexture [[texture(1)]],
+    sampler imageSampler [[sampler(0)]]
+) {
+    const float3 baseSize = float3(baseTexture.get_width(), baseTexture.get_height(), baseTexture.get_depth());
+    const float3 baseCoord = (in.baseVoxel + 0.5) / baseSize;
+
+    if (baseCoord.x < 0.0 || baseCoord.x > 1.0 ||
+        baseCoord.y < 0.0 || baseCoord.y > 1.0 ||
+        baseCoord.z < 0.0 || baseCoord.z > 1.0) {
+        discard_fragment();
+    }
+
+    const float basePixelValue = baseTexture.sample(imageSampler, baseCoord).r;
+    const float baseMinValue = uniforms.baseWindowLevel - uniforms.baseWindowWidth * 0.5;
+    const float baseNormalized = clamp((basePixelValue - baseMinValue) / uniforms.baseWindowWidth, 0.0, 1.0);
+
+    if (uniforms.hasOverlay == 0) {
+        return float4(baseNormalized, baseNormalized, baseNormalized, 1.0);
+    }
+
+    const float4 fixedVoxel = float4(in.baseVoxel, 1.0);
+    const float4 worldPoint = uniforms.fixedVoxelToWorld * fixedVoxel;
+    const float3 translatedWorldPoint = worldPoint.xyz - uniforms.overlayTranslationWorld;
+    const float3 centeredWorldPoint = translatedWorldPoint - uniforms.movingRotationCenterWorld;
+    const float4 rotatedWorldPoint = uniforms.movingInverseRotation * float4(centeredWorldPoint, 1.0);
+    const float4 movingVoxel = uniforms.movingWorldToVoxel * float4(rotatedWorldPoint.xyz + uniforms.movingRotationCenterWorld, 1.0);
+    const float3 overlaySize = float3(overlayTexture.get_width(), overlayTexture.get_height(), overlayTexture.get_depth());
+    const float3 overlayCoord = (movingVoxel.xyz + 0.5) / overlaySize;
+
+    if (overlayCoord.x < 0.0 || overlayCoord.x > 1.0 ||
+        overlayCoord.y < 0.0 || overlayCoord.y > 1.0 ||
+        overlayCoord.z < 0.0 || overlayCoord.z > 1.0) {
+        return float4(0.0, baseNormalized, 0.0, 1.0);
+    }
+
+    const float overlayPixelValue = overlayTexture.sample(imageSampler, overlayCoord).r;
+    const float overlayMinValue = uniforms.overlayWindowLevel - uniforms.overlayWindowWidth * 0.5;
+    const float overlayNormalized = clamp((overlayPixelValue - overlayMinValue) / uniforms.overlayWindowWidth, 0.0, 1.0);
+
+    return float4(overlayNormalized * uniforms.overlayBlend, baseNormalized * (1.0 - uniforms.overlayBlend), 0.0, 1.0);
+}
+
+fragment float4 metalViewerMPRBorderFragment(
+    MetalMPRBorderRasterizerData in [[stage_in]]
+) {
+    return float4(0.18, 1.0, 0.28, 1.0);
+}
+
+fragment float4 metalViewerMPRIntersectionFragment(
+    MetalMPRBorderRasterizerData in [[stage_in]]
+) {
+    return float4(1.0, 0.0, 0.0, 1.0);
+}
+
+fragment float4 metalViewerMPRPlaneHighlightFragment(
+    MetalMPRRasterizerData in [[stage_in]]
+) {
+    return float4(1.0, 0.0, 0.0, 1.0);
 }
 
 fragment float4 metalPreviewFragment(

@@ -36,6 +36,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private let seriesPreloader = MetalViewerSeriesPreloader()
     private var isRestoringSplitPosition = true
     private var selectedWLWWTitle = NSLocalizedString("Default WL & WW", comment: "")
+    private var viewerMode: MetalViewerToolbarView.ViewerMode = .stack2D
 
     init(study: MetalViewerStudy) {
         let initStart = CFAbsoluteTimeGetCurrent()
@@ -117,6 +118,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
         toolbarView.wlwwSelectionHandler = { [weak self] command in
             self?.applyWLWWCommand(command)
+        }
+        toolbarView.viewerModeSelectionHandler = { [weak self] mode in
+            self?.applyViewerMode(mode)
         }
 
         NSLayoutConstraint.activate([
@@ -252,6 +256,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
 
         let pane = MetalViewerPaneView(series: series)
+        pane.setDisplayMode(viewerMode == .mpr ? .mpr : .stack2D)
         pane.activateHandler = { [weak self, weak pane] in
             guard let self, let pane else { return }
             self.setActivePane(pane)
@@ -415,7 +420,22 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             return
         }
 
-        toolbarView.updateStatus("\(activePaneView.series.title)  •  \(activePaneView.currentStateDescription)")
+        let modeTitle = viewerMode == .mpr ? NSLocalizedString("MPR", comment: "") : NSLocalizedString("2D", comment: "")
+        toolbarView.updateStatus("\(activePaneView.series.title)  •  \(modeTitle)  •  \(activePaneView.currentStateDescription)")
+    }
+
+    private func applyViewerMode(_ mode: MetalViewerToolbarView.ViewerMode) {
+        viewerMode = mode
+        let displayMode: MetalViewerDisplayMode = mode == .mpr ? .mpr : .stack2D
+        guard let activePaneView else {
+            toolbarView.selectViewerMode(mode)
+            updateToolbarStatus()
+            return
+        }
+        activePaneView.setDisplayMode(displayMode)
+        toolbarView.selectViewerMode(mode)
+        updateToolbarStatus()
+        updateReferenceLines()
     }
 
     private func applyWLWWCommand(_ command: MetalViewerToolbarView.WLWWCommand) {

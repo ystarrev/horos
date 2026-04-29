@@ -6,6 +6,7 @@ import simd
 
 private let registrationHistogramBins = 64
 private let useGPUPyramidGeneration = true
+private let maximumMPRPlaneTiltRadians = Float.pi / 4
 
 private func metalRendererTimingLog(_ message: String, since start: CFAbsoluteTime) {
     print(String(format: "HOROS_METAL_TIMING %@ %.3f s", message, CFAbsoluteTimeGetCurrent() - start))
@@ -23,6 +24,22 @@ private struct MetalUniforms {
     var movingRotationCenterWorld: SIMD3<Float>
     var fixedVolumeSize: SIMD3<UInt32>
     var currentSliceIndex: Float
+    var movingInverseRotation: simd_float4x4
+    var fixedVoxelToWorld: simd_float4x4
+    var movingWorldToVoxel: simd_float4x4
+    var hasOverlay: UInt32
+}
+
+private struct MetalMPRUniforms {
+    var viewProjectionMatrix: simd_float4x4
+    var baseWindowLevel: Float
+    var baseWindowWidth: Float
+    var overlayWindowLevel: Float
+    var overlayWindowWidth: Float
+    var overlayBlend: Float
+    var overlayTranslationWorld: SIMD3<Float>
+    var movingRotationCenterWorld: SIMD3<Float>
+    var fixedVolumeSize: SIMD3<UInt32>
     var movingInverseRotation: simd_float4x4
     var fixedVoxelToWorld: simd_float4x4
     var movingWorldToVoxel: simd_float4x4
@@ -138,10 +155,52 @@ private struct MetalVertex {
     var texCoord: SIMD2<Float>
 }
 
+private struct MetalMPRVertex {
+    var position: SIMD3<Float>
+    var baseVoxel: SIMD3<Float>
+}
+
+private enum MetalMPRPlane: Int {
+    case sagittal = 0
+    case coronal = 1
+    case axial = 2
+}
+
+private struct MetalMPRPlaneHit {
+    let plane: MetalMPRPlane
+    let baseVoxel: SIMD3<Float>
+    let depth: Float
+}
+
+private struct MetalMPRPlaneDragState {
+    let plane: MetalMPRPlane
+    let startPoint: SIMD2<Float>
+    let startPlaneVoxel: Float
+    let screenDeltaPerVoxel: SIMD2<Float>
+}
+
+private struct MetalMPRPlaneTiltDragState {
+    let plane: MetalMPRPlane
+    let componentIndex: Int
+    let startPoint: SIMD2<Float>
+    let startAngle: Float
+    let screenDeltaPerRadian: SIMD2<Float>
+}
+
+enum MetalViewerDisplayMode {
+    case stack2D
+    case mpr
+}
+
 final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private let deviceRef: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let pipelineState: MTLRenderPipelineState
+    private let mprPipelineState: MTLRenderPipelineState
+    private let mprPlaneHighlightPipelineState: MTLRenderPipelineState
+    private let mprBorderPipelineState: MTLRenderPipelineState
+    private let mprIntersectionPipelineState: MTLRenderPipelineState
+    private let mprDepthStencilState: MTLDepthStencilState
     private let registrationPipelineState: MTLComputePipelineState
     private let registrationSamplingProbePipelineState: MTLComputePipelineState
     private let gaussianBlurPipelineState: MTLComputePipelineState
@@ -188,6 +247,21 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private(set) var overlayTranslationPixels = SIMD2<Float>(repeating: 0)
     private(set) var zoomScale: Float = 1
     private(set) var panOffset = SIMD2<Float>(repeating: 0)
+    private(set) var displayMode: MetalViewerDisplayMode = .stack2D
+    private var mprRotation = simd_normalize(
+        simd_quatf(angle: -0.65, axis: SIMD3<Float>(0, 0, 1)) *
+        simd_quatf(angle: -0.55, axis: SIMD3<Float>(1, 0, 0))
+    )
+    private var mprPlaneVoxel = SIMD3<Float>(repeating: 0)
+    private var mprAxialTilt = SIMD2<Float>(repeating: 0)
+    private var mprCoronalTilt = SIMD2<Float>(repeating: 0)
+    private var mprSagittalTilt = SIMD2<Float>(repeating: 0)
+    private var mprAxialTiltPivot = SIMD2<Float>(repeating: 0)
+    private var mprCoronalTiltPivot = SIMD2<Float>(repeating: 0)
+    private var mprSagittalTiltPivot = SIMD2<Float>(repeating: 0)
+    private var hoveredMPRPlane: MetalMPRPlane?
+    private var mprPlaneDragState: MetalMPRPlaneDragState?
+    private var mprPlaneTiltDragState: MetalMPRPlaneTiltDragState?
     private var registrationGeneration: UInt = 0
     private var registrationInProgress = false
     private var registrationProgress: Float = 0
@@ -213,7 +287,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     var stateDescription: String {
-        let sliceText = pixList.count > 1 ? "Slice \(currentSliceIndex + 1)/\(pixList.count)" : "Slice 1/1"
+        let sliceText: String
+        switch displayMode {
+        case .stack2D:
+            sliceText = pixList.count > 1 ? "Slice \(currentSliceIndex + 1)/\(pixList.count)" : "Slice 1/1"
+        case .mpr:
+            sliceText = "MPR"
+        }
         let zoomText = Int((zoomScale * 100).rounded())
         let registrationText: String
         if overlayVolumeTexture != nil {
@@ -276,6 +356,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         guard let library = device.makeDefaultLibrary(),
               let vertexFunction = library.makeFunction(name: "metalViewerVertex"),
               let fragmentFunction = library.makeFunction(name: "metalViewerFragment"),
+              let mprVertexFunction = library.makeFunction(name: "metalViewerMPRVertex"),
+              let mprFragmentFunction = library.makeFunction(name: "metalViewerMPRFragment"),
+              let mprPlaneHighlightVertexFunction = library.makeFunction(name: "metalViewerMPRPlaneHighlightVertex"),
+              let mprPlaneHighlightFragmentFunction = library.makeFunction(name: "metalViewerMPRPlaneHighlightFragment"),
+              let mprBorderVertexFunction = library.makeFunction(name: "metalViewerMPRBorderVertex"),
+              let mprBorderFragmentFunction = library.makeFunction(name: "metalViewerMPRBorderFragment"),
+              let mprIntersectionFragmentFunction = library.makeFunction(name: "metalViewerMPRIntersectionFragment"),
               let registrationFunction = library.makeFunction(name: "metalViewerRegistrationJointHistogram"),
               let registrationSamplingProbeFunction = library.makeFunction(name: "metalViewerRegistrationSamplingProbe"),
               let gaussianBlurFunction = library.makeFunction(name: "metalViewerGaussianBlur3D"),
@@ -287,9 +374,38 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         pipelineDescriptor.vertexFunction = vertexFunction
         pipelineDescriptor.fragmentFunction = fragmentFunction
         pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+
+        let mprPipelineDescriptor = MTLRenderPipelineDescriptor()
+        mprPipelineDescriptor.vertexFunction = mprVertexFunction
+        mprPipelineDescriptor.fragmentFunction = mprFragmentFunction
+        mprPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        mprPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+
+        let mprPlaneHighlightPipelineDescriptor = MTLRenderPipelineDescriptor()
+        mprPlaneHighlightPipelineDescriptor.vertexFunction = mprPlaneHighlightVertexFunction
+        mprPlaneHighlightPipelineDescriptor.fragmentFunction = mprPlaneHighlightFragmentFunction
+        mprPlaneHighlightPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        mprPlaneHighlightPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+
+        let mprBorderPipelineDescriptor = MTLRenderPipelineDescriptor()
+        mprBorderPipelineDescriptor.vertexFunction = mprBorderVertexFunction
+        mprBorderPipelineDescriptor.fragmentFunction = mprBorderFragmentFunction
+        mprBorderPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        mprBorderPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+
+        let mprIntersectionPipelineDescriptor = MTLRenderPipelineDescriptor()
+        mprIntersectionPipelineDescriptor.vertexFunction = mprBorderVertexFunction
+        mprIntersectionPipelineDescriptor.fragmentFunction = mprIntersectionFragmentFunction
+        mprIntersectionPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        mprIntersectionPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
 
         do {
             pipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+            mprPipelineState = try device.makeRenderPipelineState(descriptor: mprPipelineDescriptor)
+            mprPlaneHighlightPipelineState = try device.makeRenderPipelineState(descriptor: mprPlaneHighlightPipelineDescriptor)
+            mprBorderPipelineState = try device.makeRenderPipelineState(descriptor: mprBorderPipelineDescriptor)
+            mprIntersectionPipelineState = try device.makeRenderPipelineState(descriptor: mprIntersectionPipelineDescriptor)
             registrationPipelineState = try device.makeComputePipelineState(function: registrationFunction)
             registrationSamplingProbePipelineState = try device.makeComputePipelineState(function: registrationSamplingProbeFunction)
             gaussianBlurPipelineState = try device.makeComputePipelineState(function: gaussianBlurFunction)
@@ -297,6 +413,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         } catch {
             fatalError("Could not create Metal pipeline: \(error)")
         }
+
+        let mprDepthStencilDescriptor = MTLDepthStencilDescriptor()
+        mprDepthStencilDescriptor.depthCompareFunction = .lessEqual
+        mprDepthStencilDescriptor.isDepthWriteEnabled = true
+        guard let mprDepthStencilState = device.makeDepthStencilState(descriptor: mprDepthStencilDescriptor) else {
+            fatalError("Could not create Metal MPR depth stencil state.")
+        }
+        self.mprDepthStencilState = mprDepthStencilState
 
         let samplerDescriptor = MTLSamplerDescriptor()
         samplerDescriptor.minFilter = .linear
@@ -312,6 +436,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     func resetAndLoadInitialSlice() {
         currentSliceIndex = 0
         loadSlice(at: currentSliceIndex)
+        resetMPRPlaneToCurrentSlice()
     }
 
     func setOverlayPixList(_ overlayPixList: [DCMPix]) {
@@ -381,6 +506,166 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         guard nextIndex != currentSliceIndex else { return }
         currentSliceIndex = nextIndex
         loadSlice(at: currentSliceIndex)
+        if displayMode == .mpr {
+            resetMPRPlaneToCurrentSlice()
+        }
+    }
+
+    func setDisplayMode(_ mode: MetalViewerDisplayMode) {
+        guard displayMode != mode else { return }
+        displayMode = mode
+        hoveredMPRPlane = nil
+        mprPlaneDragState = nil
+        mprPlaneTiltDragState = nil
+        if mode == .mpr {
+            prepareBaseVolumeIfNeeded()
+            resetMPRPlaneToCurrentSlice()
+        }
+        stateDidChange?(stateDescription)
+    }
+
+    func rotateMPR(from previousPoint: CGPoint, to currentPoint: CGPoint, in bounds: CGRect) {
+        guard displayMode == .mpr else { return }
+        let start = mprArcballVector(for: previousPoint, in: bounds)
+        let end = mprArcballVector(for: currentPoint, in: bounds)
+        let axis = simd_cross(start, end)
+        let axisLength = simd_length(axis)
+        guard axisLength > 0.0001 else { return }
+
+        let dot = min(max(simd_dot(start, end), -1), 1)
+        let angle = atan2(axisLength, dot)
+        let dragRotation = simd_quatf(angle: angle, axis: axis / axisLength)
+        mprRotation = simd_normalize(dragRotation * mprRotation)
+        stateDidChange?(stateDescription)
+    }
+
+    func beginMPRPlaneDrag(at point: CGPoint, in bounds: CGRect) -> Bool {
+        guard displayMode == .mpr else { return false }
+        prepareBaseVolumeIfNeeded()
+        guard let hit = mprPlaneHit(at: point, in: bounds),
+              mprHitIsInsidePlaneInterior(hit) else {
+            mprPlaneDragState = nil
+            return false
+        }
+
+        guard let screenDeltaPerVoxel = mprScreenDeltaPerVoxel(for: hit.plane, at: hit.baseVoxel, in: bounds),
+              simd_length_squared(screenDeltaPerVoxel) > 0.0001 else {
+            mprPlaneDragState = nil
+            return false
+        }
+
+        mprPlaneDragState = MetalMPRPlaneDragState(
+            plane: hit.plane,
+            startPoint: SIMD2<Float>(Float(point.x), Float(point.y)),
+            startPlaneVoxel: mprVoxelValue(for: hit.plane),
+            screenDeltaPerVoxel: screenDeltaPerVoxel
+        )
+        mprPlaneTiltDragState = nil
+        hoveredMPRPlane = hit.plane
+        stateDidChange?(stateDescription)
+        return true
+    }
+
+    func beginMPRPlaneTiltDrag(at point: CGPoint, in bounds: CGRect) -> Bool {
+        guard displayMode == .mpr else { return false }
+        prepareBaseVolumeIfNeeded()
+        guard let hit = mprPlaneHit(at: point, in: bounds),
+              mprHitIsInsidePlaneInterior(hit) == false,
+              let componentIndex = mprTiltComponent(for: hit) else {
+            mprPlaneTiltDragState = nil
+            return false
+        }
+
+        setMPRTiltPivotValue(
+            mprCurrentTiltPivotValue(for: hit.plane, componentIndex: componentIndex),
+            for: hit.plane,
+            componentIndex: componentIndex
+        )
+        guard let screenDeltaPerRadian = mprScreenDeltaPerRadian(
+            for: hit.plane,
+            componentIndex: componentIndex,
+            at: hit.baseVoxel,
+            in: bounds
+        ),
+              simd_length_squared(screenDeltaPerRadian) > 0.0001 else {
+            mprPlaneTiltDragState = nil
+            return false
+        }
+
+        mprPlaneTiltDragState = MetalMPRPlaneTiltDragState(
+            plane: hit.plane,
+            componentIndex: componentIndex,
+            startPoint: SIMD2<Float>(Float(point.x), Float(point.y)),
+            startAngle: mprTiltValue(for: hit.plane, componentIndex: componentIndex),
+            screenDeltaPerRadian: screenDeltaPerRadian
+        )
+        mprPlaneDragState = nil
+        hoveredMPRPlane = hit.plane
+        stateDidChange?(stateDescription)
+        return true
+    }
+
+    func dragMPRPlane(to point: CGPoint) {
+        guard let mprPlaneDragState else { return }
+        let currentPoint = SIMD2<Float>(Float(point.x), Float(point.y))
+        let mouseDelta = currentPoint - mprPlaneDragState.startPoint
+        let screenDelta = mprPlaneDragState.screenDeltaPerVoxel
+        let voxelDelta = simd_dot(mouseDelta, screenDelta) / max(simd_length_squared(screenDelta), 0.0001)
+        setMPRVoxelValue(
+            mprPlaneDragState.startPlaneVoxel + voxelDelta,
+            for: mprPlaneDragState.plane
+        )
+        stateDidChange?(stateDescription)
+    }
+
+    func dragMPRPlaneTilt(to point: CGPoint) {
+        guard let mprPlaneTiltDragState else { return }
+        let currentPoint = SIMD2<Float>(Float(point.x), Float(point.y))
+        let mouseDelta = currentPoint - mprPlaneTiltDragState.startPoint
+        let screenDelta = mprPlaneTiltDragState.screenDeltaPerRadian
+        let angleDelta = simd_dot(mouseDelta, screenDelta) / max(simd_length_squared(screenDelta), 0.0001)
+        setMPRTiltValue(
+            mprPlaneTiltDragState.startAngle + angleDelta,
+            for: mprPlaneTiltDragState.plane,
+            componentIndex: mprPlaneTiltDragState.componentIndex
+        )
+        stateDidChange?(stateDescription)
+    }
+
+    func endMPRPlaneDrag() {
+        mprPlaneDragState = nil
+        mprPlaneTiltDragState = nil
+    }
+
+    func moveMPRPlane(axis: Int, by delta: Float) {
+        guard displayMode == .mpr else { return }
+        prepareBaseVolumeIfNeeded()
+        switch axis {
+        case 0:
+            mprPlaneVoxel.x = min(max(mprPlaneVoxel.x + delta, 0), Float(max(baseVolumeDimensions.x - 1, 0)))
+        case 1:
+            mprPlaneVoxel.y = min(max(mprPlaneVoxel.y + delta, 0), Float(max(baseVolumeDimensions.y - 1, 0)))
+        default:
+            mprPlaneVoxel.z = min(max(mprPlaneVoxel.z + delta, 0), Float(max(baseVolumeDimensions.z - 1, 0)))
+        }
+        stateDidChange?(stateDescription)
+    }
+
+    func updateMPRHover(at point: CGPoint?, in bounds: CGRect) {
+        guard mprPlaneDragState == nil, mprPlaneTiltDragState == nil else { return }
+        guard displayMode == .mpr, let point else {
+            if hoveredMPRPlane != nil {
+                hoveredMPRPlane = nil
+                stateDidChange?(stateDescription)
+            }
+            return
+        }
+
+        prepareBaseVolumeIfNeeded()
+        let nextPlane = mprPlane(at: point, in: bounds)
+        guard hoveredMPRPlane != nextPlane else { return }
+        hoveredMPRPlane = nextPlane
+        stateDidChange?(stateDescription)
     }
 
     func updateWindowLevel(wl: Float, ww: Float) {
@@ -521,6 +806,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         stateDidChange?(stateDescription)
+    }
+
+    private func resetMPRPlaneToCurrentSlice() {
+        let width = Float(max(baseVolumeDimensions.x, Int(currentPix?.pwidth ?? 1)))
+        let height = Float(max(baseVolumeDimensions.y, Int(currentPix?.pheight ?? 1)))
+        let depth = Float(max(baseVolumeDimensions.z, pixList.count))
+        mprPlaneVoxel = SIMD3<Float>(
+            max(width - 1, 0) * 0.5,
+            max(height - 1, 0) * 0.5,
+            min(Float(currentSliceIndex), max(depth - 1, 0))
+        )
+        resetMPRTiltPivots()
     }
 
     private func windowLevelDefaults(for pix: DCMPix) -> MetalViewerWindowLevel {
@@ -2004,6 +2301,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     func draw(in view: MTKView) {
+        if displayMode == .mpr {
+            drawMPR(in: view)
+            return
+        }
+
         guard let renderPassDescriptor = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable,
               let baseTexture else {
@@ -2062,5 +2364,926 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         commandBuffer.present(drawable)
         commandBuffer.commit()
+    }
+
+    private func drawMPR(in view: MTKView) {
+        prepareBaseVolumeIfNeeded()
+        guard let renderPassDescriptor = view.currentRenderPassDescriptor,
+              let drawable = view.currentDrawable,
+              let baseVolumeTexture else {
+            return
+        }
+        renderPassDescriptor.depthAttachment.clearDepth = 1.0
+        renderPassDescriptor.depthAttachment.loadAction = .clear
+        renderPassDescriptor.depthAttachment.storeAction = .dontCare
+
+        let vertices = makeMPRVertices()
+        guard vertices.isEmpty == false,
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+            return
+        }
+
+        let offset = SIMD2<Float>(
+            Float((CGFloat(panOffset.x) / max(view.bounds.width, 1)) * 2.0),
+            Float((CGFloat(panOffset.y) / max(view.bounds.height, 1)) * 2.0)
+        )
+        let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset)
+        var uniforms = MetalMPRUniforms(
+            viewProjectionMatrix: viewProjectionMatrix,
+            baseWindowLevel: windowLevel,
+            baseWindowWidth: max(windowWidth, 1),
+            overlayWindowLevel: overlayWindowLevel,
+            overlayWindowWidth: max(overlayWindowWidth, 1),
+            overlayBlend: overlayBlend,
+            overlayTranslationWorld: overlayTranslationWorld,
+            movingRotationCenterWorld: movingRotationCenterWorld,
+            fixedVolumeSize: SIMD3<UInt32>(
+                UInt32(max(baseVolumeTexture.width, 1)),
+                UInt32(max(baseVolumeTexture.height, 1)),
+                UInt32(max(baseVolumeTexture.depth, 1))
+            ),
+            movingInverseRotation: rotationMatrix(for: -overlayRotationRadians),
+            fixedVoxelToWorld: fixedVoxelToWorld,
+            movingWorldToVoxel: movingWorldToVoxel,
+            hasOverlay: overlayVolumeTexture == nil ? 0 : 1
+        )
+
+        encoder.setRenderPipelineState(mprPipelineState)
+        encoder.setDepthStencilState(mprDepthStencilState)
+        vertices.withUnsafeBytes { vertexBytes in
+            guard let vertexBaseAddress = vertexBytes.baseAddress else {
+                return
+            }
+            encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
+            encoder.setFragmentBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 0)
+            encoder.setFragmentTexture(baseVolumeTexture, index: 0)
+            encoder.setFragmentTexture(overlayVolumeTexture, index: 1)
+            encoder.setFragmentSamplerState(samplerState, index: 0)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
+        }
+
+        let highlightVertices = makeMPRPlaneHighlightVertices()
+        if highlightVertices.isEmpty == false {
+            encoder.setRenderPipelineState(mprPlaneHighlightPipelineState)
+            encoder.setDepthStencilState(mprDepthStencilState)
+            highlightVertices.withUnsafeBytes { vertexBytes in
+                guard let vertexBaseAddress = vertexBytes.baseAddress else {
+                    return
+                }
+                encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+                encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
+                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: highlightVertices.count)
+            }
+        }
+
+        let borderVertices = makeMPRBorderVertices()
+        encoder.setRenderPipelineState(mprBorderPipelineState)
+        encoder.setDepthStencilState(mprDepthStencilState)
+        borderVertices.withUnsafeBytes { vertexBytes in
+            guard let vertexBaseAddress = vertexBytes.baseAddress else {
+                return
+            }
+            encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: borderVertices.count)
+        }
+
+        let intersectionVertices = makeMPRIntersectionVertices()
+        encoder.setRenderPipelineState(mprIntersectionPipelineState)
+        encoder.setDepthStencilState(mprDepthStencilState)
+        intersectionVertices.withUnsafeBytes { vertexBytes in
+            guard let vertexBaseAddress = vertexBytes.baseAddress else {
+                return
+            }
+            encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: intersectionVertices.count)
+        }
+        encoder.endEncoding()
+
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+    }
+
+    private func mprMaxVoxel() -> SIMD3<Float> {
+        SIMD3<Float>(
+            Float(max(baseVolumeDimensions.x - 1, 0)),
+            Float(max(baseVolumeDimensions.y - 1, 0)),
+            Float(max(baseVolumeDimensions.z - 1, 0))
+        )
+    }
+
+    private func mprPlaneCorners(for plane: MetalMPRPlane) -> [SIMD3<Float>] {
+        let maxVoxel = mprMaxVoxel()
+        guard maxVoxel.x > 0, maxVoxel.y > 0, maxVoxel.z > 0 else {
+            return []
+        }
+
+        switch plane {
+        case .axial:
+            return [
+                mprPlaneVoxel(for: .axial, first: 0, second: 0),
+                mprPlaneVoxel(for: .axial, first: maxVoxel.x, second: 0),
+                mprPlaneVoxel(for: .axial, first: maxVoxel.x, second: maxVoxel.y),
+                mprPlaneVoxel(for: .axial, first: 0, second: maxVoxel.y),
+            ]
+        case .coronal:
+            return [
+                mprPlaneVoxel(for: .coronal, first: 0, second: 0),
+                mprPlaneVoxel(for: .coronal, first: maxVoxel.x, second: 0),
+                mprPlaneVoxel(for: .coronal, first: maxVoxel.x, second: maxVoxel.z),
+                mprPlaneVoxel(for: .coronal, first: 0, second: maxVoxel.z),
+            ]
+        case .sagittal:
+            return [
+                mprPlaneVoxel(for: .sagittal, first: 0, second: 0),
+                mprPlaneVoxel(for: .sagittal, first: maxVoxel.y, second: 0),
+                mprPlaneVoxel(for: .sagittal, first: maxVoxel.y, second: maxVoxel.z),
+                mprPlaneVoxel(for: .sagittal, first: 0, second: maxVoxel.z),
+            ]
+        }
+    }
+
+    private func mprPlaneVoxel(for plane: MetalMPRPlane, first: Float, second: Float) -> SIMD3<Float> {
+        mprPlaneVoxel(for: plane, first: first, second: second, overridingComponent: nil, angle: nil)
+    }
+
+    private func mprPlaneVoxel(
+        for plane: MetalMPRPlane,
+        first: Float,
+        second: Float,
+        overridingComponent componentIndex: Int?,
+        angle overrideAngle: Float?
+    ) -> SIMD3<Float> {
+        let maxVoxel = mprMaxVoxel()
+        let sagittalX = min(max(mprPlaneVoxel.x, 0), maxVoxel.x)
+        let coronalY = min(max(mprPlaneVoxel.y, 0), maxVoxel.y)
+        let axialZ = min(max(mprPlaneVoxel.z, 0), maxVoxel.z)
+
+        switch plane {
+        case .axial:
+            let tilt = mprTilt(for: .axial, overridingComponent: componentIndex, angle: overrideAngle)
+            let axialX = first
+            let axialY = second
+            let z = axialZ +
+                (axialX - mprAxialTiltPivot.x) * tan(tilt.x) +
+                (axialY - mprAxialTiltPivot.y) * tan(tilt.y)
+            return SIMD3<Float>(axialX, axialY, z)
+        case .coronal:
+            let tilt = mprTilt(for: .coronal, overridingComponent: componentIndex, angle: overrideAngle)
+            let coronalX = first
+            let coronalZ = second
+            let y = coronalY +
+                (coronalX - mprCoronalTiltPivot.x) * tan(tilt.x) +
+                (coronalZ - mprCoronalTiltPivot.y) * tan(tilt.y)
+            return SIMD3<Float>(coronalX, y, coronalZ)
+        case .sagittal:
+            let tilt = mprTilt(for: .sagittal, overridingComponent: componentIndex, angle: overrideAngle)
+            let sagittalY = first
+            let sagittalZ = second
+            let x = sagittalX +
+                (sagittalY - mprSagittalTiltPivot.x) * tan(tilt.x) +
+                (sagittalZ - mprSagittalTiltPivot.y) * tan(tilt.y)
+            return SIMD3<Float>(x, sagittalY, sagittalZ)
+        }
+    }
+
+    private func mprTilt(
+        for plane: MetalMPRPlane,
+        overridingComponent componentIndex: Int?,
+        angle overrideAngle: Float?
+    ) -> SIMD2<Float> {
+        var tilt: SIMD2<Float>
+        switch plane {
+        case .axial:
+            tilt = mprAxialTilt
+        case .coronal:
+            tilt = mprCoronalTilt
+        case .sagittal:
+            tilt = mprSagittalTilt
+        }
+        if let componentIndex, let overrideAngle {
+            if componentIndex == 0 {
+                tilt.x = overrideAngle
+            } else {
+                tilt.y = overrideAngle
+            }
+        }
+        return tilt
+    }
+
+    private func makeMPRVertices() -> [MetalMPRVertex] {
+        var vertices: [MetalMPRVertex] = []
+        vertices.reserveCapacity(18)
+        appendMPRPlane(to: &vertices, corners: mprPlaneCorners(for: .axial))
+        appendMPRPlane(to: &vertices, corners: mprPlaneCorners(for: .coronal))
+        appendMPRPlane(to: &vertices, corners: mprPlaneCorners(for: .sagittal))
+
+        return vertices
+    }
+
+    private func makeMPRPlaneHighlightVertices() -> [MetalMPRVertex] {
+        guard let hoveredMPRPlane else { return [] }
+        let maxX = Float(max(baseVolumeDimensions.x - 1, 0))
+        let maxY = Float(max(baseVolumeDimensions.y - 1, 0))
+        let maxZ = Float(max(baseVolumeDimensions.z - 1, 0))
+        guard maxX > 0, maxY > 0, maxZ > 0 else {
+            return []
+        }
+
+        var vertices: [MetalMPRVertex] = []
+        vertices.reserveCapacity(24)
+
+        switch hoveredMPRPlane {
+        case .axial:
+            appendMPRHighlightBorder(
+                to: &vertices,
+                minU: 0,
+                maxU: maxX,
+                minV: 0,
+                maxV: maxY,
+                uInset: mprVoxelInset(forAxis: 0),
+                vInset: mprVoxelInset(forAxis: 1)
+            ) { u, v in
+                self.mprPlaneVoxel(for: .axial, first: u, second: v)
+            }
+        case .coronal:
+            appendMPRHighlightBorder(
+                to: &vertices,
+                minU: 0,
+                maxU: maxX,
+                minV: 0,
+                maxV: maxZ,
+                uInset: mprVoxelInset(forAxis: 0),
+                vInset: mprVoxelInset(forAxis: 2)
+            ) { u, v in
+                self.mprPlaneVoxel(for: .coronal, first: u, second: v)
+            }
+        case .sagittal:
+            appendMPRHighlightBorder(
+                to: &vertices,
+                minU: 0,
+                maxU: maxY,
+                minV: 0,
+                maxV: maxZ,
+                uInset: mprVoxelInset(forAxis: 1),
+                vInset: mprVoxelInset(forAxis: 2)
+            ) { u, v in
+                self.mprPlaneVoxel(for: .sagittal, first: u, second: v)
+            }
+        }
+
+        return vertices
+    }
+
+    private func makeMPRBorderVertices() -> [MetalMPRVertex] {
+        var vertices: [MetalMPRVertex] = []
+        vertices.reserveCapacity(24)
+        appendMPRPlaneBorder(to: &vertices, corners: mprPlaneCorners(for: .axial))
+        appendMPRPlaneBorder(to: &vertices, corners: mprPlaneCorners(for: .coronal))
+        appendMPRPlaneBorder(to: &vertices, corners: mprPlaneCorners(for: .sagittal))
+
+        return vertices
+    }
+
+    private func makeMPRIntersectionVertices() -> [MetalMPRVertex] {
+        var vertices: [MetalMPRVertex] = []
+        vertices.reserveCapacity(6)
+        appendMPRPlaneIntersection(to: &vertices, firstPlane: .axial, secondPlane: .coronal)
+        appendMPRPlaneIntersection(to: &vertices, firstPlane: .axial, secondPlane: .sagittal)
+        appendMPRPlaneIntersection(to: &vertices, firstPlane: .coronal, secondPlane: .sagittal)
+        return vertices
+    }
+
+    private func appendMPRPlaneIntersection(
+        to vertices: inout [MetalMPRVertex],
+        firstPlane: MetalMPRPlane,
+        secondPlane: MetalMPRPlane
+    ) {
+        guard let segment = mprIntersectionSegment(
+            firstCorners: mprPlaneCorners(for: firstPlane),
+            secondCorners: mprPlaneCorners(for: secondPlane)
+        ) else {
+            return
+        }
+        vertices.append(MetalMPRVertex(position: mprDisplayPosition(for: segment.0), baseVoxel: segment.0))
+        vertices.append(MetalMPRVertex(position: mprDisplayPosition(for: segment.1), baseVoxel: segment.1))
+    }
+
+    private func appendMPRPlane(to vertices: inout [MetalMPRVertex], corners: [SIMD3<Float>]) {
+        guard corners.count == 4 else { return }
+        let planeVertices = [
+            corners[0], corners[1], corners[2],
+            corners[0], corners[2], corners[3],
+        ]
+        vertices.append(contentsOf: planeVertices.map {
+            MetalMPRVertex(position: mprDisplayPosition(for: $0), baseVoxel: $0)
+        })
+    }
+
+    private func mprIntersectionSegment(
+        firstCorners: [SIMD3<Float>],
+        secondCorners: [SIMD3<Float>]
+    ) -> (SIMD3<Float>, SIMD3<Float>)? {
+        guard firstCorners.count == 4,
+              secondCorners.count == 4,
+              let firstPlaneEquation = mprPlaneEquation(for: firstCorners),
+              let secondPlaneEquation = mprPlaneEquation(for: secondCorners) else {
+            return nil
+        }
+
+        var points: [SIMD3<Float>] = []
+        appendMPRQuadEdgeIntersections(
+            to: &points,
+            edgeCorners: firstCorners,
+            targetCorners: secondCorners,
+            targetPlane: secondPlaneEquation
+        )
+        appendMPRQuadEdgeIntersections(
+            to: &points,
+            edgeCorners: secondCorners,
+            targetCorners: firstCorners,
+            targetPlane: firstPlaneEquation
+        )
+
+        var uniquePoints: [SIMD3<Float>] = []
+        for point in points where uniquePoints.contains(where: { simd_distance_squared($0, point) < 0.0001 }) == false {
+            uniquePoints.append(point)
+        }
+
+        guard uniquePoints.count >= 2 else { return nil }
+        var bestPair = (uniquePoints[0], uniquePoints[1])
+        var bestDistance = simd_distance_squared(uniquePoints[0], uniquePoints[1])
+        for firstIndex in 0..<(uniquePoints.count - 1) {
+            for secondIndex in (firstIndex + 1)..<uniquePoints.count {
+                let distance = simd_distance_squared(uniquePoints[firstIndex], uniquePoints[secondIndex])
+                if distance > bestDistance {
+                    bestDistance = distance
+                    bestPair = (uniquePoints[firstIndex], uniquePoints[secondIndex])
+                }
+            }
+        }
+        return bestDistance > 0.0001 ? bestPair : nil
+    }
+
+    private func appendMPRQuadEdgeIntersections(
+        to points: inout [SIMD3<Float>],
+        edgeCorners: [SIMD3<Float>],
+        targetCorners: [SIMD3<Float>],
+        targetPlane: (normal: SIMD3<Float>, d: Float)
+    ) {
+        let edges = [
+            (edgeCorners[0], edgeCorners[1]),
+            (edgeCorners[1], edgeCorners[2]),
+            (edgeCorners[2], edgeCorners[3]),
+            (edgeCorners[3], edgeCorners[0]),
+        ]
+
+        for edge in edges {
+            guard let intersection = mprSegmentPlaneIntersection(
+                from: edge.0,
+                to: edge.1,
+                plane: targetPlane
+            ), mprPoint(intersection, isInsideQuad: targetCorners) else {
+                continue
+            }
+            points.append(intersection)
+        }
+    }
+
+    private func mprPlaneEquation(for corners: [SIMD3<Float>]) -> (normal: SIMD3<Float>, d: Float)? {
+        guard corners.count >= 3 else { return nil }
+        let normal = simd_cross(corners[1] - corners[0], corners[2] - corners[0])
+        guard simd_length_squared(normal) > 0.000001 else { return nil }
+        let normalized = simd_normalize(normal)
+        return (normalized, -simd_dot(normalized, corners[0]))
+    }
+
+    private func mprSegmentPlaneIntersection(
+        from start: SIMD3<Float>,
+        to end: SIMD3<Float>,
+        plane: (normal: SIMD3<Float>, d: Float)
+    ) -> SIMD3<Float>? {
+        let startDistance = simd_dot(plane.normal, start) + plane.d
+        let endDistance = simd_dot(plane.normal, end) + plane.d
+        let denominator = startDistance - endDistance
+
+        if abs(startDistance) < 0.0001, abs(endDistance) < 0.0001 {
+            return nil
+        }
+        guard abs(denominator) > 0.000001 else { return nil }
+
+        let t = startDistance / denominator
+        guard t >= -0.0001, t <= 1.0001 else { return nil }
+        return start + (end - start) * min(max(t, 0), 1)
+    }
+
+    private func mprPoint(_ point: SIMD3<Float>, isInsideQuad corners: [SIMD3<Float>]) -> Bool {
+        guard corners.count == 4 else { return false }
+        return mprPoint(point, isInsideTriangle: [corners[0], corners[1], corners[2]]) ||
+            mprPoint(point, isInsideTriangle: [corners[0], corners[2], corners[3]])
+    }
+
+    private func mprPoint(_ point: SIMD3<Float>, isInsideTriangle corners: [SIMD3<Float>]) -> Bool {
+        guard corners.count == 3 else { return false }
+        let v0 = corners[1] - corners[0]
+        let v1 = corners[2] - corners[0]
+        let v2 = point - corners[0]
+        let dot00 = simd_dot(v0, v0)
+        let dot01 = simd_dot(v0, v1)
+        let dot02 = simd_dot(v0, v2)
+        let dot11 = simd_dot(v1, v1)
+        let dot12 = simd_dot(v1, v2)
+        let denominator = dot00 * dot11 - dot01 * dot01
+        guard abs(denominator) > 0.000001 else { return false }
+        let u = (dot11 * dot02 - dot01 * dot12) / denominator
+        let v = (dot00 * dot12 - dot01 * dot02) / denominator
+        return u >= -0.0001 && v >= -0.0001 && u + v <= 1.0001
+    }
+
+    private func appendMPRHighlightBorder(
+        to vertices: inout [MetalMPRVertex],
+        minU: Float,
+        maxU: Float,
+        minV: Float,
+        maxV: Float,
+        uInset: Float,
+        vInset: Float,
+        makeVoxel: (Float, Float) -> SIMD3<Float>
+    ) {
+        let clampedUInset = min(max(uInset, 0), (maxU - minU) * 0.5)
+        let clampedVInset = min(max(vInset, 0), (maxV - minV) * 0.5)
+        let innerMinU = minU + clampedUInset
+        let innerMaxU = maxU - clampedUInset
+        let innerMinV = minV + clampedVInset
+        let innerMaxV = maxV - clampedVInset
+
+        appendMPRQuad(to: &vertices, corners: [
+            makeVoxel(minU, minV), makeVoxel(maxU, minV), makeVoxel(innerMaxU, innerMinV), makeVoxel(innerMinU, innerMinV),
+        ])
+        appendMPRQuad(to: &vertices, corners: [
+            makeVoxel(minU, innerMaxV), makeVoxel(innerMaxU, innerMaxV), makeVoxel(maxU, maxV), makeVoxel(minU, maxV),
+        ])
+        appendMPRQuad(to: &vertices, corners: [
+            makeVoxel(minU, minV), makeVoxel(innerMinU, minV), makeVoxel(innerMinU, maxV), makeVoxel(minU, maxV),
+        ])
+        appendMPRQuad(to: &vertices, corners: [
+            makeVoxel(innerMaxU, minV), makeVoxel(maxU, minV), makeVoxel(maxU, maxV), makeVoxel(innerMaxU, maxV),
+        ])
+    }
+
+    private func appendMPRQuad(to vertices: inout [MetalMPRVertex], corners: [SIMD3<Float>]) {
+        guard corners.count == 4 else { return }
+        let quadVertices = [
+            corners[0], corners[1], corners[2],
+            corners[0], corners[2], corners[3],
+        ]
+        vertices.append(contentsOf: quadVertices.map {
+            MetalMPRVertex(position: mprDisplayPosition(for: $0), baseVoxel: $0)
+        })
+    }
+
+    private func mprVoxelInset(forAxis axis: Int) -> Float {
+        let column: SIMD3<Float>
+        switch axis {
+        case 0:
+            column = SIMD3<Float>(fixedVoxelToWorld.columns.0.x, fixedVoxelToWorld.columns.0.y, fixedVoxelToWorld.columns.0.z)
+        case 1:
+            column = SIMD3<Float>(fixedVoxelToWorld.columns.1.x, fixedVoxelToWorld.columns.1.y, fixedVoxelToWorld.columns.1.z)
+        default:
+            column = SIMD3<Float>(fixedVoxelToWorld.columns.2.x, fixedVoxelToWorld.columns.2.y, fixedVoxelToWorld.columns.2.z)
+        }
+        return 10.0 / max(simd_length(column), 0.0001)
+    }
+
+    private func mprPlane(at point: CGPoint, in bounds: CGRect) -> MetalMPRPlane? {
+        mprPlaneHit(at: point, in: bounds)?.plane
+    }
+
+    private func mprPlaneHit(at point: CGPoint, in bounds: CGRect) -> MetalMPRPlaneHit? {
+        let maxX = Float(max(baseVolumeDimensions.x - 1, 0))
+        let maxY = Float(max(baseVolumeDimensions.y - 1, 0))
+        let maxZ = Float(max(baseVolumeDimensions.z - 1, 0))
+        guard maxX > 0, maxY > 0, maxZ > 0 else {
+            return nil
+        }
+
+        let planeCorners: [(MetalMPRPlane, [SIMD3<Float>])] = [
+            (.axial, mprPlaneCorners(for: .axial)),
+            (.coronal, mprPlaneCorners(for: .coronal)),
+            (.sagittal, mprPlaneCorners(for: .sagittal)),
+        ]
+
+        let offset = SIMD2<Float>(
+            Float((CGFloat(panOffset.x) / max(bounds.width, 1)) * 2.0),
+            Float((CGFloat(panOffset.y) / max(bounds.height, 1)) * 2.0)
+        )
+        let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset)
+        let hitPoint = SIMD2<Float>(Float(point.x), Float(point.y))
+        var bestHit: MetalMPRPlaneHit?
+        var bestDepth = Float.greatestFiniteMagnitude
+
+        for (plane, corners) in planeCorners {
+            let projectedCorners = corners.map {
+                mprProjectedPoint(for: $0, viewProjectionMatrix: viewProjectionMatrix, bounds: bounds)
+            }
+            guard projectedCorners.allSatisfy({ $0 != nil }) else { continue }
+            let points = projectedCorners.compactMap { $0 }
+            guard let hit = mprHit(
+                at: hitPoint,
+                insideQuadWithProjectedCorners: points,
+                baseCorners: corners
+            ) else { continue }
+            if hit.depth < bestDepth {
+                bestDepth = hit.depth
+                bestHit = MetalMPRPlaneHit(plane: plane, baseVoxel: hit.baseVoxel, depth: hit.depth)
+            }
+        }
+
+        return bestHit
+    }
+
+    private func mprProjectedPoint(
+        for baseVoxel: SIMD3<Float>,
+        viewProjectionMatrix: simd_float4x4,
+        bounds: CGRect
+    ) -> SIMD3<Float>? {
+        let clip = viewProjectionMatrix * SIMD4<Float>(mprDisplayPosition(for: baseVoxel), 1)
+        guard abs(clip.w) > 0.0001 else { return nil }
+        let normalized = SIMD3<Float>(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w)
+        return SIMD3<Float>(
+            (normalized.x * 0.5 + 0.5) * Float(bounds.width),
+            (normalized.y * 0.5 + 0.5) * Float(bounds.height),
+            normalized.z
+        )
+    }
+
+    private func mprHit(
+        at point: SIMD2<Float>,
+        insideQuadWithProjectedCorners projectedCorners: [SIMD3<Float>],
+        baseCorners: [SIMD3<Float>]
+    ) -> (depth: Float, baseVoxel: SIMD3<Float>)? {
+        guard projectedCorners.count == 4, baseCorners.count == 4 else { return nil }
+        return mprHit(
+            at: point,
+            insideTriangleWithProjectedCorners: [projectedCorners[0], projectedCorners[1], projectedCorners[2]],
+            baseCorners: [baseCorners[0], baseCorners[1], baseCorners[2]]
+        ) ?? mprHit(
+            at: point,
+            insideTriangleWithProjectedCorners: [projectedCorners[0], projectedCorners[2], projectedCorners[3]],
+            baseCorners: [baseCorners[0], baseCorners[2], baseCorners[3]]
+        )
+    }
+
+    private func mprHit(
+        at point: SIMD2<Float>,
+        insideTriangleWithProjectedCorners projectedCorners: [SIMD3<Float>],
+        baseCorners: [SIMD3<Float>]
+    ) -> (depth: Float, baseVoxel: SIMD3<Float>)? {
+        guard projectedCorners.count == 3, baseCorners.count == 3 else { return nil }
+        let a = projectedCorners[0]
+        let b = projectedCorners[1]
+        let c = projectedCorners[2]
+        let denominator = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y)
+        guard abs(denominator) > 0.0001 else { return nil }
+        let alpha = ((b.y - c.y) * (point.x - c.x) + (c.x - b.x) * (point.y - c.y)) / denominator
+        let beta = ((c.y - a.y) * (point.x - c.x) + (a.x - c.x) * (point.y - c.y)) / denominator
+        let gamma = 1 - alpha - beta
+        guard alpha >= 0 && beta >= 0 && gamma >= 0 else { return nil }
+        return (
+            depth: alpha * a.z + beta * b.z + gamma * c.z,
+            baseVoxel: alpha * baseCorners[0] + beta * baseCorners[1] + gamma * baseCorners[2]
+        )
+    }
+
+    private func mprHitIsInsidePlaneInterior(_ hit: MetalMPRPlaneHit) -> Bool {
+        guard let region = mprPlaneHitRegion(for: hit) else { return false }
+        return region.isInterior
+    }
+
+    private func mprTiltComponent(for hit: MetalMPRPlaneHit) -> Int? {
+        guard let region = mprPlaneHitRegion(for: hit), region.isInterior == false else {
+            return nil
+        }
+        return region.componentIndex
+    }
+
+    private func mprPlaneHitRegion(for hit: MetalMPRPlaneHit) -> (isInterior: Bool, componentIndex: Int?)? {
+        let maxX = Float(max(baseVolumeDimensions.x - 1, 0))
+        let maxY = Float(max(baseVolumeDimensions.y - 1, 0))
+        let maxZ = Float(max(baseVolumeDimensions.z - 1, 0))
+        let local: SIMD2<Float>
+        let maxLocal: SIMD2<Float>
+        let inset: SIMD2<Float>
+
+        switch hit.plane {
+        case .axial:
+            local = SIMD2<Float>(hit.baseVoxel.x, hit.baseVoxel.y)
+            maxLocal = SIMD2<Float>(maxX, maxY)
+            inset = SIMD2<Float>(mprVoxelInset(forAxis: 0), mprVoxelInset(forAxis: 1))
+        case .coronal:
+            local = SIMD2<Float>(hit.baseVoxel.x, hit.baseVoxel.z)
+            maxLocal = SIMD2<Float>(maxX, maxZ)
+            inset = SIMD2<Float>(mprVoxelInset(forAxis: 0), mprVoxelInset(forAxis: 2))
+        case .sagittal:
+            local = SIMD2<Float>(hit.baseVoxel.y, hit.baseVoxel.z)
+            maxLocal = SIMD2<Float>(maxY, maxZ)
+            inset = SIMD2<Float>(mprVoxelInset(forAxis: 1), mprVoxelInset(forAxis: 2))
+        }
+
+        let clampedInset = SIMD2<Float>(
+            min(max(inset.x, 0), maxLocal.x * 0.5),
+            min(max(inset.y, 0), maxLocal.y * 0.5)
+        )
+        let isInterior = local.x > clampedInset.x &&
+            local.x < maxLocal.x - clampedInset.x &&
+            local.y > clampedInset.y &&
+            local.y < maxLocal.y - clampedInset.y
+        if isInterior {
+            return (isInterior: true, componentIndex: nil)
+        }
+
+        let horizontalEdgeDistance = min(local.x, maxLocal.x - local.x)
+        let verticalEdgeDistance = min(local.y, maxLocal.y - local.y)
+        let horizontalScore = horizontalEdgeDistance / max(clampedInset.x, 0.0001)
+        let verticalScore = verticalEdgeDistance / max(clampedInset.y, 0.0001)
+        return (isInterior: false, componentIndex: horizontalScore <= verticalScore ? 0 : 1)
+    }
+
+    private func mprScreenDeltaPerVoxel(
+        for plane: MetalMPRPlane,
+        at baseVoxel: SIMD3<Float>,
+        in bounds: CGRect
+    ) -> SIMD2<Float>? {
+        let offset = SIMD2<Float>(
+            Float((CGFloat(panOffset.x) / max(bounds.width, 1)) * 2.0),
+            Float((CGFloat(panOffset.y) / max(bounds.height, 1)) * 2.0)
+        )
+        let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset)
+        guard let projectedStart = mprProjectedPoint(
+            for: baseVoxel,
+            viewProjectionMatrix: viewProjectionMatrix,
+            bounds: bounds
+        ),
+              let projectedEnd = mprProjectedPoint(
+                for: baseVoxel + mprNormalVoxelStep(for: plane),
+                viewProjectionMatrix: viewProjectionMatrix,
+                bounds: bounds
+              ) else {
+            return nil
+        }
+        return SIMD2<Float>(projectedEnd.x - projectedStart.x, projectedEnd.y - projectedStart.y)
+    }
+
+    private func mprScreenDeltaPerRadian(
+        for plane: MetalMPRPlane,
+        componentIndex: Int,
+        at baseVoxel: SIMD3<Float>,
+        in bounds: CGRect
+    ) -> SIMD2<Float>? {
+        let local = mprPlaneLocalCoordinates(for: plane, baseVoxel: baseVoxel)
+        let angleStep: Float = 0.01
+        let offset = SIMD2<Float>(
+            Float((CGFloat(panOffset.x) / max(bounds.width, 1)) * 2.0),
+            Float((CGFloat(panOffset.y) / max(bounds.height, 1)) * 2.0)
+        )
+        let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset)
+        let startVoxel = mprPlaneVoxel(for: plane, first: local.x, second: local.y)
+        let startAngle = mprTiltValue(for: plane, componentIndex: componentIndex)
+        let endVoxel = mprPlaneVoxel(
+            for: plane,
+            first: local.x,
+            second: local.y,
+            overridingComponent: componentIndex,
+            angle: startAngle + angleStep
+        )
+        guard let projectedStart = mprProjectedPoint(
+            for: startVoxel,
+            viewProjectionMatrix: viewProjectionMatrix,
+            bounds: bounds
+        ),
+              let projectedEnd = mprProjectedPoint(
+                for: endVoxel,
+                viewProjectionMatrix: viewProjectionMatrix,
+                bounds: bounds
+              ) else {
+            return nil
+        }
+        return SIMD2<Float>(
+            (projectedEnd.x - projectedStart.x) / angleStep,
+            (projectedEnd.y - projectedStart.y) / angleStep
+        )
+    }
+
+    private func mprPlaneLocalCoordinates(for plane: MetalMPRPlane, baseVoxel: SIMD3<Float>) -> SIMD2<Float> {
+        switch plane {
+        case .axial:
+            return SIMD2<Float>(baseVoxel.x, baseVoxel.y)
+        case .coronal:
+            return SIMD2<Float>(baseVoxel.x, baseVoxel.z)
+        case .sagittal:
+            return SIMD2<Float>(baseVoxel.y, baseVoxel.z)
+        }
+    }
+
+    private func mprNormalVoxelStep(for plane: MetalMPRPlane) -> SIMD3<Float> {
+        switch plane {
+        case .sagittal:
+            return SIMD3<Float>(1, 0, 0)
+        case .coronal:
+            return SIMD3<Float>(0, 1, 0)
+        case .axial:
+            return SIMD3<Float>(0, 0, 1)
+        }
+    }
+
+    private func mprVoxelValue(for plane: MetalMPRPlane) -> Float {
+        switch plane {
+        case .sagittal:
+            return mprPlaneVoxel.x
+        case .coronal:
+            return mprPlaneVoxel.y
+        case .axial:
+            return mprPlaneVoxel.z
+        }
+    }
+
+    private func mprTiltValue(for plane: MetalMPRPlane, componentIndex: Int) -> Float {
+        switch plane {
+        case .axial:
+            return componentIndex == 0 ? mprAxialTilt.x : mprAxialTilt.y
+        case .coronal:
+            return componentIndex == 0 ? mprCoronalTilt.x : mprCoronalTilt.y
+        case .sagittal:
+            return componentIndex == 0 ? mprSagittalTilt.x : mprSagittalTilt.y
+        }
+    }
+
+    private func resetMPRTiltPivots() {
+        mprAxialTiltPivot = SIMD2<Float>(mprPlaneVoxel.x, mprPlaneVoxel.y)
+        mprCoronalTiltPivot = SIMD2<Float>(mprPlaneVoxel.x, mprPlaneVoxel.z)
+        mprSagittalTiltPivot = SIMD2<Float>(mprPlaneVoxel.y, mprPlaneVoxel.z)
+    }
+
+    private func mprCurrentTiltPivotValue(for plane: MetalMPRPlane, componentIndex: Int) -> Float {
+        switch plane {
+        case .axial:
+            return componentIndex == 0 ? mprPlaneVoxel.x : mprPlaneVoxel.y
+        case .coronal:
+            return componentIndex == 0 ? mprPlaneVoxel.x : mprPlaneVoxel.z
+        case .sagittal:
+            return componentIndex == 0 ? mprPlaneVoxel.y : mprPlaneVoxel.z
+        }
+    }
+
+    private func setMPRTiltPivotValue(_ value: Float, for plane: MetalMPRPlane, componentIndex: Int) {
+        switch plane {
+        case .axial:
+            if componentIndex == 0 {
+                mprAxialTiltPivot.x = value
+            } else {
+                mprAxialTiltPivot.y = value
+            }
+        case .coronal:
+            if componentIndex == 0 {
+                mprCoronalTiltPivot.x = value
+            } else {
+                mprCoronalTiltPivot.y = value
+            }
+        case .sagittal:
+            if componentIndex == 0 {
+                mprSagittalTiltPivot.x = value
+            } else {
+                mprSagittalTiltPivot.y = value
+            }
+        }
+    }
+
+    private func setMPRVoxelValue(_ value: Float, for plane: MetalMPRPlane) {
+        switch plane {
+        case .sagittal:
+            mprPlaneVoxel.x = min(max(value, 0), Float(max(baseVolumeDimensions.x - 1, 0)))
+        case .coronal:
+            mprPlaneVoxel.y = min(max(value, 0), Float(max(baseVolumeDimensions.y - 1, 0)))
+        case .axial:
+            mprPlaneVoxel.z = min(max(value, 0), Float(max(baseVolumeDimensions.z - 1, 0)))
+        }
+    }
+
+    private func setMPRTiltValue(_ value: Float, for plane: MetalMPRPlane, componentIndex: Int) {
+        let clampedValue = min(max(value, -maximumMPRPlaneTiltRadians), maximumMPRPlaneTiltRadians)
+        switch plane {
+        case .axial:
+            if componentIndex == 0 {
+                mprAxialTilt.x = clampedValue
+            } else {
+                mprAxialTilt.y = clampedValue
+            }
+        case .coronal:
+            if componentIndex == 0 {
+                mprCoronalTilt.x = clampedValue
+            } else {
+                mprCoronalTilt.y = clampedValue
+            }
+        case .sagittal:
+            if componentIndex == 0 {
+                mprSagittalTilt.x = clampedValue
+            } else {
+                mprSagittalTilt.y = clampedValue
+            }
+        }
+    }
+
+    private func appendMPRPlaneBorder(to vertices: inout [MetalMPRVertex], corners: [SIMD3<Float>]) {
+        guard corners.count == 4 else { return }
+        let borderVertices = [
+            corners[0], corners[1],
+            corners[1], corners[2],
+            corners[2], corners[3],
+            corners[3], corners[0],
+        ]
+        vertices.append(contentsOf: borderVertices.map {
+            MetalMPRVertex(position: mprDisplayPosition(for: $0), baseVoxel: $0)
+        })
+    }
+
+    private func mprDisplayPosition(for baseVoxel: SIMD3<Float>) -> SIMD3<Float> {
+        let world = fixedVoxelToWorld * SIMD4<Float>(baseVoxel, 1)
+        let delta = SIMD3<Float>(world.x, world.y, world.z) - baseVolumeCenterWorld
+        return delta * mprDisplayScale()
+    }
+
+    private func mprDisplayScale() -> Float {
+        let width = Float(max(baseVolumeDimensions.x - 1, 1))
+        let height = Float(max(baseVolumeDimensions.y - 1, 1))
+        let depth = Float(max(baseVolumeDimensions.z - 1, 1))
+        let corners = [
+            SIMD3<Float>(0, 0, 0),
+            SIMD3<Float>(width, 0, 0),
+            SIMD3<Float>(width, height, 0),
+            SIMD3<Float>(0, height, 0),
+            SIMD3<Float>(0, 0, depth),
+            SIMD3<Float>(width, 0, depth),
+            SIMD3<Float>(width, height, depth),
+            SIMD3<Float>(0, height, depth),
+        ]
+        let maxDistance = corners
+            .map { simd_length(mprDisplayWorldPosition(for: $0) - baseVolumeCenterWorld) }
+            .max() ?? 1
+        return 0.92 / max(maxDistance, 0.0001)
+    }
+
+    private func mprDisplayWorldPosition(for baseVoxel: SIMD3<Float>) -> SIMD3<Float> {
+        let world = fixedVoxelToWorld * SIMD4<Float>(baseVoxel, 1)
+        return SIMD3<Float>(world.x, world.y, world.z)
+    }
+
+    private func mprViewProjectionMatrix(offset: SIMD2<Float>) -> simd_float4x4 {
+        var scaleMatrix = matrix_identity_float4x4
+        scaleMatrix.columns.0.x = zoomScale
+        scaleMatrix.columns.1.y = zoomScale
+        scaleMatrix.columns.2.z = zoomScale
+
+        var translationMatrix = matrix_identity_float4x4
+        translationMatrix.columns.3.x = offset.x
+        translationMatrix.columns.3.y = offset.y
+
+        var depthRangeMatrix = matrix_identity_float4x4
+        depthRangeMatrix.columns.2.z = 0.5
+        depthRangeMatrix.columns.3.z = 0.5
+
+        return translationMatrix * depthRangeMatrix * scaleMatrix * mprRotationMatrix()
+    }
+
+    private func mprArcballVector(for point: CGPoint, in bounds: CGRect) -> SIMD3<Float> {
+        let radius = Float(max(min(bounds.width, bounds.height), 1)) * 0.5
+        let x = Float(bounds.midX - point.x) / radius
+        let y = Float(bounds.midY - point.y) / radius
+        let distance = sqrt(x * x + y * y)
+        let sphereRadius: Float = 1.0
+        let sphereShoulder = sphereRadius * Float(1.0 / sqrt(2.0))
+
+        if distance < sphereShoulder {
+            return simd_normalize(SIMD3<Float>(x, y, sqrt(sphereRadius * sphereRadius - distance * distance)))
+        }
+
+        return simd_normalize(SIMD3<Float>(x, y, (sphereRadius * sphereRadius * 0.5) / max(distance, 0.0001)))
+    }
+
+    private func mprRotationMatrix() -> simd_float4x4 {
+        let vector = simd_normalize(mprRotation).vector
+        let x = vector.x
+        let y = vector.y
+        let z = vector.z
+        let w = vector.w
+
+        return simd_float4x4(
+            SIMD4<Float>(1 - 2 * y * y - 2 * z * z, 2 * x * y + 2 * w * z, 2 * x * z - 2 * w * y, 0),
+            SIMD4<Float>(2 * x * y - 2 * w * z, 1 - 2 * x * x - 2 * z * z, 2 * y * z + 2 * w * x, 0),
+            SIMD4<Float>(2 * x * z + 2 * w * y, 2 * y * z - 2 * w * x, 1 - 2 * x * x - 2 * y * y, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
     }
 }

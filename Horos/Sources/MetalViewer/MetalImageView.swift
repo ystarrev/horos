@@ -14,12 +14,21 @@ final class MetalImageView: MTKView {
     private var wwAnchor: Float = 0
     private var panAnchor = SIMD2<Float>(repeating: 0)
     private var interactionMode: InteractionMode = .windowLevel
+    private var mprDragMode: MPRDragMode = .none
     private var trackingAreaRef: NSTrackingArea?
     private var preciseScrollSliceAccumulator: CGFloat = 0
 
     private enum InteractionMode {
         case windowLevel
         case pan
+    }
+
+    private enum MPRDragMode {
+        case none
+        case rotate
+        case pan
+        case plane
+        case planeTilt
     }
 
     private func interactionMode(for event: NSEvent) -> InteractionMode {
@@ -56,6 +65,7 @@ final class MetalImageView: MTKView {
         self.enableSetNeedsDisplay = true
         self.isPaused = true
         self.colorPixelFormat = .bgra8Unorm
+        self.depthStencilPixelFormat = .depth32Float
         self.clearColor = MTLClearColorMake(0, 0, 0, 1)
         self.preferredFramesPerSecond = 60
 
@@ -112,11 +122,11 @@ final class MetalImageView: MTKView {
             let scrollPointsPerSlice = event.momentumPhase.isEmpty ? Self.preciseScrollPointsPerSlice : Self.momentumScrollPointsPerSlice
             let stepCount = Int(preciseScrollSliceAccumulator / scrollPointsPerSlice)
             if stepCount != 0 {
-                renderer.stepSlice(by: stepCount)
+                stepThroughCurrentMode(by: stepCount, event: event)
                 preciseScrollSliceAccumulator -= CGFloat(stepCount) * scrollPointsPerSlice
             }
         } else if delta != 0 {
-            renderer.stepSlice(by: delta > 0 ? 1 : -1)
+            stepThroughCurrentMode(by: delta > 0 ? 1 : -1, event: event)
         }
 
         if phase.contains(.ended) || phase.contains(.cancelled) {
@@ -143,6 +153,22 @@ final class MetalImageView: MTKView {
         wwAnchor = renderer.windowWidth
         panAnchor = renderer.panOffset
         interactionMode = interactionMode(for: event)
+        if renderer.displayMode == .mpr {
+            switch interactionMode {
+            case .pan:
+                mprDragMode = .pan
+            case .windowLevel:
+                if renderer.beginMPRPlaneDrag(at: dragAnchor, in: bounds) {
+                    mprDragMode = .plane
+                } else if renderer.beginMPRPlaneTiltDrag(at: dragAnchor, in: bounds) {
+                    mprDragMode = .planeTilt
+                } else {
+                    mprDragMode = .rotate
+                }
+            }
+        } else {
+            mprDragMode = .none
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -156,10 +182,31 @@ final class MetalImageView: MTKView {
             wlAnchor = renderer.windowLevel
             wwAnchor = renderer.windowWidth
             panAnchor = renderer.panOffset
+            if renderer.displayMode == .mpr, mprDragMode != .plane, mprDragMode != .planeTilt {
+                mprDragMode = currentInteractionMode == .pan ? .pan : .rotate
+            }
         }
 
         let deltaX = Float(currentPoint.x - dragAnchor.x)
         let deltaY = Float(currentPoint.y - dragAnchor.y)
+
+        if renderer.displayMode == .mpr {
+            switch mprDragMode {
+            case .plane:
+                renderer.dragMPRPlane(to: currentPoint)
+            case .planeTilt:
+                renderer.dragMPRPlaneTilt(to: currentPoint)
+            case .rotate:
+                renderer.rotateMPR(from: dragAnchor, to: currentPoint, in: bounds)
+                dragAnchor = currentPoint
+            case .pan:
+                renderer.setPanOffset(panAnchor + SIMD2<Float>(deltaX, deltaY))
+            case .none:
+                break
+            }
+            updateMouseAnnotationState(from: currentPoint)
+            return
+        }
 
         switch interactionMode {
         case .windowLevel:
@@ -176,7 +223,9 @@ final class MetalImageView: MTKView {
 
     override func mouseUp(with event: NSEvent) {
         interactionEventHandler?()
-        if interactionMode == .windowLevel {
+        renderer.endMPRPlaneDrag()
+        mprDragMode = .none
+        if interactionMode == .windowLevel, renderer.displayMode == .stack2D {
             renderer.commitWindowLevel()
         }
     }
@@ -191,10 +240,12 @@ final class MetalImageView: MTKView {
 
     override func mouseMoved(with event: NSEvent) {
         interactionEventHandler?()
-        updateMouseAnnotationState(from: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        updateMouseAnnotationState(from: point)
     }
 
     override func mouseExited(with event: NSEvent) {
+        renderer.updateMPRHover(at: nil, in: bounds)
         if mouseAnnotationState != nil {
             mouseAnnotationState = nil
             annotationStateDidChange?()
@@ -227,7 +278,41 @@ final class MetalImageView: MTKView {
         renderer.imageRect(in: bounds)
     }
 
+    func setDisplayMode(_ mode: MetalViewerDisplayMode) {
+        renderer.setDisplayMode(mode)
+        mouseAnnotationState = nil
+        annotationStateDidChange?()
+    }
+
+    private func stepThroughCurrentMode(by stepCount: Int, event: NSEvent) {
+        if renderer.displayMode == .mpr {
+            renderer.moveMPRPlane(axis: mprScrollAxis(for: event), by: -Float(stepCount))
+        } else {
+            renderer.stepSlice(by: stepCount)
+        }
+    }
+
+    private func mprScrollAxis(for event: NSEvent) -> Int {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags.contains(.option) {
+            return 0
+        }
+        if flags.contains(.shift) {
+            return 1
+        }
+        return 2
+    }
+
     private func updateMouseAnnotationState(from point: CGPoint) {
+        guard renderer.displayMode == .stack2D else {
+            renderer.updateMPRHover(at: point, in: bounds)
+            if mouseAnnotationState != nil {
+                mouseAnnotationState = nil
+                annotationStateDidChange?()
+            }
+            return
+        }
+
         guard let pix = renderer.currentPix else {
             if mouseAnnotationState != nil {
                 mouseAnnotationState = nil

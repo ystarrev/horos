@@ -155,6 +155,10 @@ final class MetalViewerPaneView: NSView {
             didSet { needsDisplay = true }
         }
 
+        var showsScales = true {
+            didSet { needsDisplay = true }
+        }
+
         override var isFlipped: Bool { true }
 
         override func hitTest(_ point: NSPoint) -> NSView? {
@@ -171,7 +175,9 @@ final class MetalViewerPaneView: NSView {
                 return
             }
 
-            drawScales()
+            if showsScales {
+                drawScales()
+            }
 
             guard let referenceLine else {
                 return
@@ -843,6 +849,7 @@ final class MetalViewerPaneView: NSView {
     private var trackingAreaRef: NSTrackingArea?
     private var isHovering = false
     private var dismissRegistrationStatusOnMouseMove = false
+    private var displayMode: MetalViewerDisplayMode = .stack2D
 
     private(set) var series: MetalViewerSeries
     private(set) var overlaySeries: MetalViewerSeries?
@@ -1029,6 +1036,8 @@ final class MetalViewerPaneView: NSView {
         ])
 
         self.metalView = metalView
+        metalView.setDisplayMode(displayMode)
+        referenceLineOverlay.showsScales = displayMode == .stack2D
         metalView.renderer.registrationDidChange = { [weak self] isRunning, message, progress in
             self?.registrationStatusView.update(isRunning: isRunning, message: message, progress: progress)
             self?.dismissRegistrationStatusOnMouseMove = !isRunning && message.isEmpty == false
@@ -1111,7 +1120,21 @@ final class MetalViewerPaneView: NSView {
     }
 
     func currentSliceGeometry() -> MetalViewerSliceGeometry? {
-        metalView?.currentSliceGeometry
+        guard metalView?.renderer.displayMode == .stack2D else {
+            return nil
+        }
+        return metalView?.currentSliceGeometry
+    }
+
+    func setDisplayMode(_ mode: MetalViewerDisplayMode) {
+        displayMode = mode
+        metalView?.setDisplayMode(mode)
+        referenceLineOverlay.showsScales = mode == .stack2D
+        if mode == .mpr {
+            referenceLineOverlay.referenceLine = nil
+        }
+        updateAnnotationOverlay()
+        updateReferenceLineOverlay()
     }
 
     func focusImageView() {

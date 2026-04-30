@@ -2539,8 +2539,22 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         let slabAwareRegistration = baseIsThinSlab || overlayIsThinSlab
-        let rigidSteps: [RigidStep] = slabAwareRegistration
-            ? [
+        let ctToCTRegistration = isCTToCTRegistration()
+        let rigidSteps: [RigidStep]
+        if ctToCTRegistration && slabAwareRegistration {
+            rigidSteps = [
+                RigidStep(translationMM: 12, rotationRadians: 0, maxIterations: 14, allowsRotation: false),
+                RigidStep(translationMM: 6, rotationRadians: 1.5 * .pi / 180, maxIterations: 12, allowsRotation: true),
+                RigidStep(translationMM: 2, rotationRadians: 0.4 * .pi / 180, maxIterations: 10, allowsRotation: true)
+            ]
+        } else if ctToCTRegistration {
+            rigidSteps = [
+                RigidStep(translationMM: 24, rotationRadians: 6 * .pi / 180, maxIterations: 18, allowsRotation: true),
+                RigidStep(translationMM: 8, rotationRadians: 2 * .pi / 180, maxIterations: 14, allowsRotation: true),
+                RigidStep(translationMM: 2, rotationRadians: 0.5 * .pi / 180, maxIterations: 10, allowsRotation: true)
+            ]
+        } else if slabAwareRegistration {
+            rigidSteps = [
                 RigidStep(translationMM: 12, rotationRadians: 0, maxIterations: 24, allowsRotation: false),
                 RigidStep(translationMM: 8, rotationRadians: 0, maxIterations: 20, allowsRotation: false),
                 RigidStep(translationMM: 6, rotationRadians: 2 * .pi / 180, maxIterations: 20, allowsRotation: true),
@@ -2548,7 +2562,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 RigidStep(translationMM: 2, rotationRadians: 0.6 * .pi / 180, maxIterations: 16, allowsRotation: true),
                 RigidStep(translationMM: 1, rotationRadians: 0.25 * .pi / 180, maxIterations: 14, allowsRotation: true)
             ]
-            : [
+        } else {
+            rigidSteps = [
                 RigidStep(translationMM: 40, rotationRadians: 12 * .pi / 180, maxIterations: 32, allowsRotation: true),
                 RigidStep(translationMM: 20, rotationRadians: 6 * .pi / 180, maxIterations: 28, allowsRotation: true),
                 RigidStep(translationMM: 10, rotationRadians: 3 * .pi / 180, maxIterations: 24, allowsRotation: true),
@@ -2556,10 +2571,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 RigidStep(translationMM: 2, rotationRadians: 0.75 * .pi / 180, maxIterations: 18, allowsRotation: true),
                 RigidStep(translationMM: 1, rotationRadians: 0.35 * .pi / 180, maxIterations: 16, allowsRotation: true)
             ]
+        }
 
         let levelPairs = Array(zip(baseVolumeLevels, overlayVolumeLevels))
         guard levelPairs.isEmpty == false else { return (initialGuess, .greatestFiniteMagnitude) }
-        let seeded = coarseSeedSearch(startingAt: initialGuess, level: levelPairs[0], totalLevels: levelPairs.count)
+        let seeded = coarseSeedSearch(
+            startingAt: initialGuess,
+            level: levelPairs[0],
+            totalLevels: levelPairs.count,
+            fastAxisOnly: ctToCTRegistration
+        )
         var best = seeded.state
         var bestMetric = seeded.metric
 
@@ -2627,31 +2648,33 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 )
             }
 
-            let refinement = smoothDescentRefinement(
-                startingAt: best,
-                startingMetric: bestMetric,
-                level: levelPair,
-                levelIndex: levelIndex,
-                totalLevels: levelPairs.count,
-                useBoneOnly: useBoneOnly,
-                generation: generation
-            )
-            best = refinement.state
-            bestMetric = refinement.metric
-            print(String(
-                format: "HOROS_METAL_TIMING MetalViewerRenderer registration level=%d/%d smoothDescent metric=%.6f",
-                levelIndex + 1,
-                levelPairs.count,
-                bestMetric
-            ))
-            publishRegistrationUpdate(
-                state: best,
-                inProgress: true,
-                progress: Float(levelIndex + 1) / Float(max(levelPairs.count, 1)),
-                message: "Registering 3D L\(levelIndex + 1)/\(levelPairs.count) refine",
-                residualError: bestMetric,
-                generation: generation
-            )
+            if ctToCTRegistration == false {
+                let refinement = smoothDescentRefinement(
+                    startingAt: best,
+                    startingMetric: bestMetric,
+                    level: levelPair,
+                    levelIndex: levelIndex,
+                    totalLevels: levelPairs.count,
+                    useBoneOnly: useBoneOnly,
+                    generation: generation
+                )
+                best = refinement.state
+                bestMetric = refinement.metric
+                print(String(
+                    format: "HOROS_METAL_TIMING MetalViewerRenderer registration level=%d/%d smoothDescent metric=%.6f",
+                    levelIndex + 1,
+                    levelPairs.count,
+                    bestMetric
+                ))
+                publishRegistrationUpdate(
+                    state: best,
+                    inProgress: true,
+                    progress: Float(levelIndex + 1) / Float(max(levelPairs.count, 1)),
+                    message: "Registering 3D L\(levelIndex + 1)/\(levelPairs.count) refine",
+                    residualError: bestMetric,
+                    generation: generation
+                )
+            }
         }
 
         metalRendererTimingLog("MetalViewerRenderer optimizeOverlayTransform total", since: optimizeStart)
@@ -2661,41 +2684,54 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private func coarseSeedSearch(
         startingAt initialState: RigidTransformState,
         level: (VolumeLevel, VolumeLevel),
-        totalLevels: Int
+        totalLevels: Int,
+        fastAxisOnly: Bool
     ) -> (state: RigidTransformState, metric: Float) {
         let seedStart = CFAbsoluteTimeGetCurrent()
         let slabAwareRegistration = baseIsThinSlab || overlayIsThinSlab
-        let translationOffsets: [Float] = slabAwareRegistration ? [-24, 0, 24] : [-60, 0, 60]
-        let useBoneOnly = shouldUseBoneOnlyMetric(forLevelIndex: 0, totalLevels: totalLevels)
-        var bestState = initialState
-        var bestMetric = metricValue(
-            for: initialState,
-            level: level,
-            levelIndex: 0,
-            totalLevels: totalLevels,
-            useBoneOnly: useBoneOnly
-        )
-        var evaluatedSeeds = 1
-
-        for xOffset in translationOffsets {
-            for yOffset in translationOffsets {
-                for zOffset in translationOffsets {
-                    guard xOffset != 0 || yOffset != 0 || zOffset != 0 else { continue }
-                    var candidate = initialState
-                    candidate.translationWorld += SIMD3<Float>(xOffset, yOffset, zOffset)
-                    let candidateMetric = metricValue(
-                        for: candidate,
-                        level: level,
-                        levelIndex: 0,
-                        totalLevels: totalLevels,
-                        useBoneOnly: useBoneOnly
-                    )
-                    evaluatedSeeds += 1
-                    if candidateMetric < bestMetric {
-                        bestMetric = candidateMetric
-                        bestState = candidate
+        let seedDistance: Float = slabAwareRegistration ? 24 : 60
+        let translationSeeds: [SIMD3<Float>]
+        if fastAxisOnly {
+            translationSeeds = [
+                SIMD3<Float>(repeating: 0),
+                SIMD3<Float>(-seedDistance, 0, 0),
+                SIMD3<Float>(seedDistance, 0, 0),
+                SIMD3<Float>(0, -seedDistance, 0),
+                SIMD3<Float>(0, seedDistance, 0),
+                SIMD3<Float>(0, 0, -seedDistance),
+                SIMD3<Float>(0, 0, seedDistance)
+            ]
+        } else {
+            let translationOffsets: [Float] = [-seedDistance, 0, seedDistance]
+            var seeds: [SIMD3<Float>] = []
+            for xOffset in translationOffsets {
+                for yOffset in translationOffsets {
+                    for zOffset in translationOffsets {
+                        seeds.append(SIMD3<Float>(xOffset, yOffset, zOffset))
                     }
                 }
+            }
+            translationSeeds = seeds
+        }
+        let useBoneOnly = shouldUseBoneOnlyMetric(forLevelIndex: 0, totalLevels: totalLevels)
+        var bestState = initialState
+        var bestMetric = Float.greatestFiniteMagnitude
+        var evaluatedSeeds = 0
+
+        for translationSeed in translationSeeds {
+            var candidate = initialState
+            candidate.translationWorld += translationSeed
+            let candidateMetric = metricValue(
+                for: candidate,
+                level: level,
+                levelIndex: 0,
+                totalLevels: totalLevels,
+                useBoneOnly: useBoneOnly
+            )
+            evaluatedSeeds += 1
+            if candidateMetric < bestMetric {
+                bestMetric = candidateMetric
+                bestState = candidate
             }
         }
 
@@ -3208,16 +3244,19 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    private func metricOptions(forLevelIndex _: Int, totalLevels _: Int, useBoneOnly _: Bool) -> SIMD4<Float> {
+    private func isCTToCTRegistration() -> Bool {
         guard let basePix = pixList.first,
               let overlayPix = overlayPixList.first else {
-            return .zero
+            return false
         }
 
         let baseModality = basePix.modalityString?.uppercased() ?? ""
         let overlayModality = overlayPix.modalityString?.uppercased() ?? ""
-        let isCTToCT = baseModality.contains("CT") && overlayModality.contains("CT")
-        if isCTToCT {
+        return baseModality.contains("CT") && overlayModality.contains("CT")
+    }
+
+    private func metricOptions(forLevelIndex _: Int, totalLevels _: Int, useBoneOnly _: Bool) -> SIMD4<Float> {
+        if isCTToCTRegistration() {
             return SIMD4<Float>(3, -700, 3000, 0)
         }
 

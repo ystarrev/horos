@@ -1054,7 +1054,13 @@ final class MetalViewerPaneView: NSView {
         window?.displayIfNeeded()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
             guard let self else { return }
-            self.metalView?.renderer.setOverlayPixList(series.loadedPixList())
+            self.metalView?.renderer.setOverlayPixList(
+                series.loadedPixList(),
+                windowLevelState: series.windowLevelState,
+                windowLevelStateDidChange: { [weak series] state in
+                    series?.windowLevelState = state
+                }
+            )
             self.overlayBlendSlider.doubleValue = 0.5
             self.overlayBlendSlider.isHidden = false
             self.currentStateDescription = self.metalView?.renderer.stateDescription ?? self.currentStateDescription
@@ -1149,7 +1155,7 @@ final class MetalViewerPaneView: NSView {
 
     var currentWindowLevel: MetalViewerWindowLevel? {
         guard let renderer = metalView?.renderer else { return nil }
-        return MetalViewerWindowLevel(level: renderer.windowLevel, width: renderer.windowWidth)
+        return MetalViewerWindowLevel(level: renderer.activeWindowLevel, width: renderer.activeWindowWidth)
     }
 
     func applyWindowLevel(_ window: MetalViewerWindowLevel) {

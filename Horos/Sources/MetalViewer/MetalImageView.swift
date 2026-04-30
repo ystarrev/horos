@@ -2,6 +2,105 @@ import AppKit
 import MetalKit
 import simd
 
+private final class MetalMPRPreviewOverlayView: NSView {
+    weak var owner: MetalImageView?
+
+    override var isFlipped: Bool { true }
+    override var isOpaque: Bool { false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let owner,
+              owner.renderer.displayMode == .mpr,
+              let layout = owner.renderer.mprPreviewOverlayLayout(in: bounds) else {
+            return
+        }
+
+        NSColor(calibratedWhite: 0.18, alpha: 0.9).setFill()
+        layout.dividerRect.fill()
+        NSColor(calibratedWhite: 0.55, alpha: 0.8).setFill()
+        CGRect(x: layout.dividerRect.midX - 0.5, y: layout.dividerRect.minY, width: 1, height: layout.dividerRect.height).fill()
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: NSColor(calibratedWhite: 0.95, alpha: 0.95),
+            .shadow: {
+                let shadow = NSShadow()
+                shadow.shadowColor = NSColor.black.withAlphaComponent(0.85)
+                shadow.shadowBlurRadius = 3
+                shadow.shadowOffset = .zero
+                return shadow
+            }(),
+        ]
+
+        for pane in layout.previewPanes {
+            drawLabel(pane.left, at: CGPoint(x: pane.rect.minX + 8, y: pane.rect.midY), alignment: .left, attributes: attributes)
+            drawLabel(pane.right, at: CGPoint(x: pane.rect.maxX - 8, y: pane.rect.midY), alignment: .right, attributes: attributes)
+            drawLabel(pane.top, at: CGPoint(x: pane.rect.midX, y: pane.rect.minY + 8), alignment: .center, attributes: attributes)
+            drawLabel(pane.bottom, at: CGPoint(x: pane.rect.midX, y: pane.rect.maxY - 8), alignment: .center, attributes: attributes)
+        }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let owner,
+              owner.renderer.displayMode == .mpr,
+              let layout = owner.renderer.mprPreviewOverlayLayout(in: bounds),
+              layout.dividerRect.insetBy(dx: -5, dy: 0).contains(point) else {
+            return nil
+        }
+        return self
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard let owner,
+              owner.renderer.displayMode == .mpr,
+              let layout = owner.renderer.mprPreviewOverlayLayout(in: bounds) else {
+            return
+        }
+        addCursorRect(layout.dividerRect.insetBy(dx: -5, dy: 0), cursor: .resizeLeftRight)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        owner?.beginMPRPreviewDividerDrag(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        owner?.dragMPRPreviewDivider(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        owner?.endMPRPreviewDividerDrag(with: event)
+    }
+
+    private enum LabelAlignment {
+        case left
+        case right
+        case center
+    }
+
+    private func drawLabel(
+        _ label: String,
+        at point: CGPoint,
+        alignment: LabelAlignment,
+        attributes: [NSAttributedString.Key: Any]
+    ) {
+        let attributed = NSAttributedString(string: label, attributes: attributes)
+        let size = attributed.size()
+        let originX: CGFloat
+        switch alignment {
+        case .left:
+            originX = point.x
+        case .right:
+            originX = point.x - size.width
+        case .center:
+            originX = point.x - size.width * 0.5
+        }
+
+        attributed.draw(at: CGPoint(x: originX, y: point.y - size.height * 0.5))
+    }
+}
+
 final class MetalImageView: MTKView {
     struct MouseAnnotationState {
         let pixelPoint: CGPoint
@@ -15,8 +114,10 @@ final class MetalImageView: MTKView {
     private var panAnchor = SIMD2<Float>(repeating: 0)
     private var interactionMode: InteractionMode = .windowLevel
     private var mprDragMode: MPRDragMode = .none
+    private var isDraggingMPRPreviewDivider = false
     private var trackingAreaRef: NSTrackingArea?
     private var preciseScrollSliceAccumulator: CGFloat = 0
+    private let mprPreviewOverlayView = MetalMPRPreviewOverlayView(frame: .zero)
 
     private enum InteractionMode {
         case windowLevel
@@ -69,9 +170,23 @@ final class MetalImageView: MTKView {
         self.clearColor = MTLClearColorMake(0, 0, 0, 1)
         self.preferredFramesPerSecond = 60
 
+        mprPreviewOverlayView.owner = self
+        mprPreviewOverlayView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(mprPreviewOverlayView)
+        NSLayoutConstraint.activate([
+            mprPreviewOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            mprPreviewOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            mprPreviewOverlayView.topAnchor.constraint(equalTo: topAnchor),
+            mprPreviewOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+
         renderer.stateDidChange = { [weak self] state in
             self?.titleDidChange?(state)
             self?.needsDisplay = true
+            self?.mprPreviewOverlayView.needsDisplay = true
+            if let overlayView = self?.mprPreviewOverlayView {
+                overlayView.window?.invalidateCursorRects(for: overlayView)
+            }
             self?.annotationStateDidChange?()
         }
         renderer.windowLevelStateDidChange = windowLevelStateDidChange
@@ -85,6 +200,12 @@ final class MetalImageView: MTKView {
     }
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func layout() {
+        super.layout()
+        mprPreviewOverlayView.needsDisplay = true
+        mprPreviewOverlayView.window?.invalidateCursorRects(for: mprPreviewOverlayView)
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -149,8 +270,8 @@ final class MetalImageView: MTKView {
         activateHandler?()
         window?.makeFirstResponder(self)
         dragAnchor = convert(event.locationInWindow, from: nil)
-        wlAnchor = renderer.windowLevel
-        wwAnchor = renderer.windowWidth
+        wlAnchor = renderer.activeWindowLevel
+        wwAnchor = renderer.activeWindowWidth
         panAnchor = renderer.panOffset
         interactionMode = interactionMode(for: event)
         if renderer.displayMode == .mpr {
@@ -179,8 +300,8 @@ final class MetalImageView: MTKView {
         if currentInteractionMode != interactionMode {
             interactionMode = currentInteractionMode
             dragAnchor = currentPoint
-            wlAnchor = renderer.windowLevel
-            wwAnchor = renderer.windowWidth
+            wlAnchor = renderer.activeWindowLevel
+            wwAnchor = renderer.activeWindowWidth
             panAnchor = renderer.panOffset
             if renderer.displayMode == .mpr, mprDragMode != .plane, mprDragMode != .planeTilt {
                 mprDragMode = currentInteractionMode == .pan ? .pan : .rotate
@@ -228,6 +349,27 @@ final class MetalImageView: MTKView {
         if interactionMode == .windowLevel, renderer.displayMode == .stack2D {
             renderer.commitWindowLevel()
         }
+    }
+
+    func beginMPRPreviewDividerDrag(with event: NSEvent) {
+        interactionEventHandler?()
+        activateHandler?()
+        window?.makeFirstResponder(self)
+        isDraggingMPRPreviewDivider = true
+        updateMPRPreviewDivider(with: event)
+    }
+
+    func dragMPRPreviewDivider(with event: NSEvent) {
+        guard isDraggingMPRPreviewDivider else { return }
+        interactionEventHandler?()
+        updateMPRPreviewDivider(with: event)
+    }
+
+    func endMPRPreviewDividerDrag(with event: NSEvent) {
+        guard isDraggingMPRPreviewDivider else { return }
+        interactionEventHandler?()
+        updateMPRPreviewDivider(with: event)
+        isDraggingMPRPreviewDivider = false
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -301,6 +443,14 @@ final class MetalImageView: MTKView {
             return 1
         }
         return 2
+    }
+
+    private func updateMPRPreviewDivider(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        renderer.setMPRPreviewDividerLocation(point.x, in: bounds)
+        needsDisplay = true
+        mprPreviewOverlayView.needsDisplay = true
+        mprPreviewOverlayView.window?.invalidateCursorRects(for: mprPreviewOverlayView)
     }
 
     private func updateMouseAnnotationState(from point: CGPoint) {

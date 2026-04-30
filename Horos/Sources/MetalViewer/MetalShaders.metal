@@ -78,6 +78,13 @@ struct DownsampleUniforms {
     uint factor;
 };
 
+struct GantryTiltResampleUniforms {
+    uint4 outputSize;
+    float4x4 outputVoxelToWorld;
+    float4x4 sourceWorldToVoxel;
+    float4 backgroundValue;
+};
+
 struct RasterizerData {
     float4 position [[position]];
     float2 texCoord;
@@ -716,10 +723,19 @@ kernel void metalViewerRegistrationJointHistogram(
                 }
             }
 
+            if (uniforms.metricOptions.x > 2.5 && uniforms.metricOptions.x < 3.5) {
+                const float bodyLower = uniforms.metricOptions.y;
+                const float bodyUpper = uniforms.metricOptions.z;
+                const bool baseIsBody = basePixelValue >= bodyLower && basePixelValue <= bodyUpper;
+                if (!baseIsBody) {
+                    return;
+                }
+            }
+
             const float baseNormalized = metalViewerNormalizedValue(basePixelValue, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
             const float overlayNormalized = metalViewerNormalizedValue(overlayPixelValue, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
 
-            if (uniforms.metricOptions.x > 1.5) {
+            if (uniforms.metricOptions.x > 1.5 && uniforms.metricOptions.x < 2.5) {
                 const float gradientThreshold = uniforms.metricOptions.y;
                 const float baseGradient = metalViewerGradientMagnitudeNormalized(baseTexture, metricSampler, baseCoord, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
                 const float overlayGradient = metalViewerGradientMagnitudeNormalized(overlayTexture, metricSampler, overlayCoord, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
@@ -784,7 +800,16 @@ kernel void metalViewerRegistrationSamplingProbe(
                 }
             }
 
-            if (accepted && uniforms.metricOptions.x > 1.5) {
+            if (accepted && uniforms.metricOptions.x > 2.5 && uniforms.metricOptions.x < 3.5) {
+                const float bodyLower = uniforms.metricOptions.y;
+                const float bodyUpper = uniforms.metricOptions.z;
+                const bool baseIsBody = basePixelValue >= bodyLower && basePixelValue <= bodyUpper;
+                if (!baseIsBody) {
+                    accepted = false;
+                }
+            }
+
+            if (accepted && uniforms.metricOptions.x > 1.5 && uniforms.metricOptions.x < 2.5) {
                 const float gradientThreshold = uniforms.metricOptions.y;
                 const float baseGradient = metalViewerGradientMagnitudeNormalized(baseTexture, metricSampler, baseCoord, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
                 const float overlayGradient = metalViewerGradientMagnitudeNormalized(overlayTexture, metricSampler, overlayCoord, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
@@ -865,4 +890,39 @@ kernel void metalViewerDownsample3D(
     }
 
     destinationTexture.write(float4(count > 0 ? sum / float(count) : 0.0), gid);
+}
+
+kernel void metalViewerGantryTiltResample3D(
+    texture3d<float, access::sample> sourceTexture [[texture(0)]],
+    texture3d<float, access::write> destinationTexture [[texture(1)]],
+    constant GantryTiltResampleUniforms &uniforms [[buffer(0)]],
+    uint3 gid [[thread_position_in_grid]]
+) {
+    if (gid.x >= uniforms.outputSize.x || gid.y >= uniforms.outputSize.y || gid.z >= uniforms.outputSize.z) {
+        return;
+    }
+
+    constexpr sampler volumeSampler(coord::normalized, address::clamp_to_edge, filter::linear);
+    const float3 sourceSize = float3(
+        sourceTexture.get_width(),
+        sourceTexture.get_height(),
+        sourceTexture.get_depth()
+    );
+    const float4 outputVoxel = float4(float3(gid), 1.0);
+    const float4 world = uniforms.outputVoxelToWorld * outputVoxel;
+    const float4 sourceVoxel = uniforms.sourceWorldToVoxel * world;
+    const bool inside = sourceVoxel.x >= 0.0 &&
+        sourceVoxel.y >= 0.0 &&
+        sourceVoxel.z >= 0.0 &&
+        sourceVoxel.x <= sourceSize.x - 1.0 &&
+        sourceVoxel.y <= sourceSize.y - 1.0 &&
+        sourceVoxel.z <= sourceSize.z - 1.0;
+    float value = uniforms.backgroundValue.x;
+
+    if (inside) {
+        const float3 sampleCoordinate = (sourceVoxel.xyz + 0.5) / sourceSize;
+        value = sourceTexture.sample(volumeSampler, sampleCoordinate).r;
+    }
+
+    destinationTexture.write(float4(value), gid);
 }

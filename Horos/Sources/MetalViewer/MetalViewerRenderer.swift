@@ -3329,7 +3329,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             Float((CGFloat(panOffset.x) / max(mainBounds.width, 1)) * 2.0),
             Float((CGFloat(panOffset.y) / max(mainBounds.height, 1)) * 2.0)
         )
-        let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset)
+        let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset, viewportSize: mainBounds.size)
         var uniforms = MetalMPRUniforms(
             viewProjectionMatrix: viewProjectionMatrix,
             baseWindowLevel: windowLevel,
@@ -4091,7 +4091,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             Float((CGFloat(panOffset.x) / max(interaction.bounds.width, 1)) * 2.0),
             Float((CGFloat(panOffset.y) / max(interaction.bounds.height, 1)) * 2.0)
         )
-        let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset)
+        let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset, viewportSize: interaction.bounds.size)
         let hitPoint = SIMD2<Float>(Float(interaction.point.x), Float(interaction.point.y))
         var bestHit: MetalMPRPlaneHit?
         var bestDepth = Float.greatestFiniteMagnitude
@@ -4232,7 +4232,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             Float((CGFloat(panOffset.x) / max(bounds.width, 1)) * 2.0),
             Float((CGFloat(panOffset.y) / max(bounds.height, 1)) * 2.0)
         )
-        let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset)
+        let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset, viewportSize: bounds.size)
         guard let projectedStart = mprProjectedPoint(
             for: baseVoxel,
             viewProjectionMatrix: viewProjectionMatrix,
@@ -4260,7 +4260,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             Float((CGFloat(panOffset.x) / max(bounds.width, 1)) * 2.0),
             Float((CGFloat(panOffset.y) / max(bounds.height, 1)) * 2.0)
         )
-        let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset)
+        let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset, viewportSize: bounds.size)
         let startVoxel = mprPlaneVoxel(for: plane, first: local.x, second: local.y)
         let startAngle = mprTiltValue(for: plane, componentIndex: componentIndex)
         let endVoxel = mprPlaneVoxel(
@@ -4451,7 +4451,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return SIMD3<Float>(world.x, world.y, world.z)
     }
 
-    private func mprViewProjectionMatrix(offset: SIMD2<Float>) -> simd_float4x4 {
+    private func mprViewProjectionMatrix(offset: SIMD2<Float>, viewportSize: CGSize) -> simd_float4x4 {
+        let width = Float(max(viewportSize.width, 1))
+        let height = Float(max(viewportSize.height, 1))
+        let horizontalAspectScale = min(1, height / width)
+        let verticalAspectScale = min(1, width / height)
+
+        var aspectMatrix = matrix_identity_float4x4
+        aspectMatrix.columns.0.x = horizontalAspectScale
+        aspectMatrix.columns.1.y = verticalAspectScale
+
         var scaleMatrix = matrix_identity_float4x4
         scaleMatrix.columns.0.x = zoomScale
         scaleMatrix.columns.1.y = zoomScale
@@ -4465,7 +4474,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         depthRangeMatrix.columns.2.z = 0.5
         depthRangeMatrix.columns.3.z = 0.5
 
-        return translationMatrix * depthRangeMatrix * scaleMatrix * mprRotationMatrix()
+        return translationMatrix * depthRangeMatrix * aspectMatrix * scaleMatrix * mprRotationMatrix()
     }
 
     private func mprArcballVector(for point: CGPoint, in bounds: CGRect) -> SIMD3<Float> {

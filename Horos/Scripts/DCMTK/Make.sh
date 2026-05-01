@@ -10,6 +10,9 @@ copy_include_dir="${copy_dir}/include"
 bridge_script="$PROJECT_DIR/Horos/Scripts/DCMTK/Make.sh"
 bridge_src="$PROJECT_DIR/Horos/Sources/ModernDCMTKBridge.cpp"
 bridge_header="$PROJECT_DIR/Horos/Sources/ModernDCMTKBridge.h"
+opj_support_src="$PROJECT_DIR/Horos/Sources/OPJSupport.cpp"
+openjpeg_install="$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install"
+openjpeg_lib="${openjpeg_install}/lib/libopenjp2.a"
 bridge_output="${copy_dir}/libHorosModernDCMTKBridge.dylib"
 cmake_cache="${cmake_dir}/CMakeCache.txt"
 
@@ -25,7 +28,7 @@ else
 fi
 
 if [ -d "${copy_dir}" ] && [ ! -f "${copy_dir}/.incomplete" ]; then
-    if [ ! -f "${bridge_src}" ] || { [ -f "${bridge_output}" ] && [ "${bridge_src}" -ot "${bridge_output}" ] && { [ ! -f "${bridge_header}" ] || [ "${bridge_header}" -ot "${bridge_output}" ]; } && { [ ! -f "${bridge_script}" ] || [ "${bridge_script}" -ot "${bridge_output}" ]; }; }; then
+    if [ ! -f "${bridge_src}" ] || { [ -f "${bridge_output}" ] && [ "${bridge_src}" -ot "${bridge_output}" ] && { [ ! -f "${bridge_header}" ] || [ "${bridge_header}" -ot "${bridge_output}" ]; } && { [ ! -f "${opj_support_src}" ] || [ "${opj_support_src}" -ot "${bridge_output}" ]; } && { [ ! -f "${openjpeg_lib}" ] || [ "${openjpeg_lib}" -ot "${bridge_output}" ]; } && { [ ! -f "${bridge_script}" ] || [ "${bridge_script}" -ot "${bridge_output}" ]; }; }; then
         touch "$TARGET_TEMP_DIR/Make.stamp"
         exit 0
     fi
@@ -127,11 +130,30 @@ if [ -f "${bridge_src}" ]; then
         bridge_link_args+=("${oficonv_lib}")
     fi
 
+    bridge_sources=("${bridge_src}")
+    bridge_include_args=(
+        -I"${install_dir}/include"
+        -I"${install_dir}/include/dcmtk"
+    )
+    bridge_extra_link_args=()
+    if [ -f "${opj_support_src}" ] && [ -f "${openjpeg_lib}" ]; then
+        bridge_sources+=("${opj_support_src}")
+        bridge_include_args+=(
+            -I"${PROJECT_DIR}/Horos/Sources"
+            -I"${openjpeg_install}/include"
+            -I"${openjpeg_install}/include/OpenJPEG"
+            -DHOROS_MODERN_BRIDGE_HAS_OPENJPEG=1
+        )
+        bridge_extra_link_args+=("${openjpeg_lib}")
+    else
+        echo >&2 "warning: OpenJPEG support not available for modern DCMTK bridge"
+    fi
+
     c++ -dynamiclib -std=c++17 -fPIC \
-        -I"${install_dir}/include" \
-        -I"${install_dir}/include/dcmtk" \
-        "${bridge_src}" \
+        "${bridge_include_args[@]}" \
+        "${bridge_sources[@]}" \
         "${bridge_link_args[@]}" \
+        "${bridge_extra_link_args[@]}" \
         -liconv -lz -lxml2 \
         -Wl,-install_name,@rpath/libHorosModernDCMTKBridge.dylib \
         -o "${bridge_output}"

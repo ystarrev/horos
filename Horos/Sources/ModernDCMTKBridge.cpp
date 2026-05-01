@@ -7,6 +7,8 @@
 #include <dcmtk/dcmdata/dcdict.h>
 #include <dcmtk/dcmdata/dcmetinf.h>
 #include <dcmtk/dcmdata/dcpixel.h>
+#include <dcmtk/dcmdata/dcpixseq.h>
+#include <dcmtk/dcmdata/dcpxitem.h>
 #include <dcmtk/dcmdata/dcuid.h>
 #include <dcmtk/dcmsr/dsrdoc.h>
 #include <dcmtk/dcmsr/dsrtypes.h>
@@ -35,6 +37,14 @@
 #endif
 #include <dcmtk/ofstd/ofstd.h>
 #include <dcmtk/ofstd/ofstrutl.h>
+
+#ifndef HOROS_MODERN_BRIDGE_HAS_OPENJPEG
+#define HOROS_MODERN_BRIDGE_HAS_OPENJPEG 0
+#endif
+
+#if HOROS_MODERN_BRIDGE_HAS_OPENJPEG
+#include "OPJSupport.h"
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -161,6 +171,255 @@ static void HorosModernDCMTKEnsureCodecRegistration()
 
     registered = true;
 }
+
+static OFCondition HorosModernDCMTKChooseUncompressedRepresentation(DcmDataset* dataset, std::string& failureReason)
+{
+    if (dataset == nullptr)
+    {
+        failureReason = "missing dataset";
+        return EC_IllegalParameter;
+    }
+
+    OFCondition status = dataset->chooseRepresentation(EXS_LittleEndianExplicit, nullptr);
+    if (status.bad())
+    {
+        std::ostringstream reason;
+        reason << "chooseRepresentation failed status=" << status.text();
+        failureReason = reason.str();
+        return status;
+    }
+
+    if (!dataset->canWriteXfer(EXS_LittleEndianExplicit))
+    {
+        failureReason = "chooseRepresentation failed: cannot write Explicit VR Little Endian";
+        return EC_CannotChangeRepresentation;
+    }
+
+    return EC_Normal;
+}
+
+static bool HorosModernDCMTKIsJPEG2000TransferSyntax(E_TransferSyntax transferSyntax)
+{
+    return transferSyntax == EXS_JPEG2000LosslessOnly ||
+           transferSyntax == EXS_JPEG2000 ||
+           transferSyntax == EXS_JPEG2000MulticomponentLosslessOnly ||
+           transferSyntax == EXS_JPEG2000Multicomponent;
+}
+
+static int HorosModernDCMTKSignExtendStoredBits(unsigned int value, Uint16 bitsStored)
+{
+    if (bitsStored == 0)
+        return static_cast<int>(value);
+    if (bitsStored >= 32)
+        return static_cast<int>(value);
+
+    const unsigned int mask = 1U << (bitsStored - 1);
+    const unsigned int storedMask = (1U << bitsStored) - 1U;
+    const unsigned int storedValue = value & storedMask;
+    return static_cast<int>((storedValue ^ mask) - mask);
+}
+
+#if HOROS_MODERN_BRIDGE_HAS_OPENJPEG
+static bool HorosModernDCMTKAppendPixelItemBytes(DcmPixelSequence* pixelSequence,
+                                                 unsigned long itemIndex,
+                                                 std::vector<unsigned char>& compressed,
+                                                 std::string& failureReason)
+{
+    DcmPixelItem* pixelItem = nullptr;
+    OFCondition status = pixelSequence->getItem(pixelItem, itemIndex);
+    if (status.bad() || pixelItem == nullptr)
+    {
+        std::ostringstream reason;
+        reason << "missing JPEG 2000 fragment item=" << itemIndex << " status=" << status.text();
+        failureReason = reason.str();
+        return false;
+    }
+
+    Uint8* itemBytes = nullptr;
+    status = pixelItem->getUint8Array(itemBytes);
+    const Uint32 itemLength = pixelItem->getLength();
+    if (status.bad() || itemBytes == nullptr || itemLength == 0)
+    {
+        std::ostringstream reason;
+        reason << "empty JPEG 2000 fragment item=" << itemIndex << " status=" << status.text();
+        failureReason = reason.str();
+        return false;
+    }
+
+    compressed.insert(compressed.end(), itemBytes, itemBytes + itemLength);
+    return true;
+}
+
+static bool HorosModernDCMTKCopyJPEG2000FrameBytes(DcmPixelData* pixelData,
+                                                   E_TransferSyntax transferSyntax,
+                                                   unsigned long frameIndex,
+                                                   long int frameCount,
+                                                   std::vector<unsigned char>& compressed,
+                                                   std::string& failureReason)
+{
+    DcmPixelSequence* pixelSequence = nullptr;
+    OFCondition status = pixelData->getEncapsulatedRepresentation(transferSyntax, nullptr, pixelSequence);
+    if (status.bad() || pixelSequence == nullptr)
+    {
+        std::ostringstream reason;
+        reason << "missing encapsulated JPEG 2000 representation status=" << status.text();
+        failureReason = reason.str();
+        return false;
+    }
+
+    const unsigned long itemCount = pixelSequence->card();
+    if (itemCount < 2)
+    {
+        std::ostringstream reason;
+        reason << "JPEG 2000 pixel sequence has no frame fragments itemCount=" << itemCount;
+        failureReason = reason.str();
+        return false;
+    }
+
+    // Item 0 is the Basic Offset Table. Most Horos preview data is one DICOM
+    // frame per file; concatenate all fragments in that case.
+    if (frameCount <= 1)
+    {
+        for (unsigned long itemIndex = 1; itemIndex < itemCount; ++itemIndex)
+        {
+            if (!HorosModernDCMTKAppendPixelItemBytes(pixelSequence, itemIndex, compressed, failureReason))
+                return false;
+        }
+        return !compressed.empty();
+    }
+
+    // Common multi-frame case: one compressed fragment per frame after the
+    // offset table. More complex multi-fragment frames still use DCMTK's codec.
+    const unsigned long itemIndex = frameIndex + 1;
+    if (itemIndex < itemCount)
+        return HorosModernDCMTKAppendPixelItemBytes(pixelSequence, itemIndex, compressed, failureReason);
+
+    std::ostringstream reason;
+    reason << "unsupported JPEG 2000 frame layout frame=" << frameIndex
+           << " frames=" << frameCount
+           << " itemCount=" << itemCount;
+    failureReason = reason.str();
+    return false;
+}
+
+static float* HorosModernDCMTKCopyOpenJPEGDecodedPixels(DcmPixelData* pixelData,
+                                                        E_TransferSyntax transferSyntax,
+                                                        unsigned long frameIndex,
+                                                        long int frameCount,
+                                                        unsigned long pixelCount,
+                                                        Uint16 bitsAllocated,
+                                                        Uint16 bitsStored,
+                                                        Uint16 pixelRepresentation,
+                                                        Float64 slope,
+                                                        Float64 intercept,
+                                                        std::string& failureReason)
+{
+    if (!HorosModernDCMTKIsJPEG2000TransferSyntax(transferSyntax))
+    {
+        failureReason = "transfer syntax is not JPEG 2000";
+        return nullptr;
+    }
+
+    std::vector<unsigned char> compressed;
+    if (!HorosModernDCMTKCopyJPEG2000FrameBytes(pixelData, transferSyntax, frameIndex, frameCount, compressed, failureReason))
+        return nullptr;
+
+    long decodedLength = 0;
+    int colorModel = 0;
+    OPJSupport opj;
+    void* decoded = opj.decompressJPEG2K(static_cast<void*>(compressed.data()),
+                                         static_cast<long>(compressed.size()),
+                                         &decodedLength,
+                                         &colorModel);
+    if (decoded == nullptr || decodedLength <= 0)
+    {
+        failureReason = "OpenJPEG failed to decode JPEG 2000 frame";
+        return nullptr;
+    }
+
+    if (colorModel != 0)
+    {
+        std::ostringstream reason;
+        reason << "OpenJPEG decoded unsupported color model=" << colorModel;
+        failureReason = reason.str();
+        std::free(decoded);
+        return nullptr;
+    }
+
+    if (pixelCount == 0 || decodedLength < 0 || static_cast<unsigned long>(decodedLength) < pixelCount)
+    {
+        std::ostringstream reason;
+        reason << "OpenJPEG decoded frame too small length=" << decodedLength << " pixels=" << pixelCount;
+        failureReason = reason.str();
+        std::free(decoded);
+        return nullptr;
+    }
+
+    const unsigned long decodedBytesPerPixel = static_cast<unsigned long>(decodedLength) / pixelCount;
+    if (decodedBytesPerPixel == 0)
+    {
+        std::ostringstream reason;
+        reason << "OpenJPEG decoded invalid bytesPerPixel length=" << decodedLength << " pixels=" << pixelCount;
+        failureReason = reason.str();
+        std::free(decoded);
+        return nullptr;
+    }
+
+    float* pixels = static_cast<float*>(std::malloc(sizeof(float) * pixelCount));
+    if (pixels == nullptr)
+    {
+        failureReason = "pixel allocation failed";
+        std::free(decoded);
+        return nullptr;
+    }
+
+    const bool isSigned = pixelRepresentation != 0;
+    if (decodedBytesPerPixel == 1)
+    {
+        const Uint8* source = reinterpret_cast<const Uint8*>(decoded);
+        for (unsigned long index = 0; index < pixelCount; ++index)
+        {
+            int value = isSigned ? static_cast<Sint8>(source[index]) : static_cast<int>(source[index]);
+            if (isSigned && bitsStored > 0 && bitsStored < bitsAllocated)
+                value = HorosModernDCMTKSignExtendStoredBits(static_cast<unsigned int>(source[index]), bitsStored);
+            pixels[index] = static_cast<float>(static_cast<double>(value) * slope + intercept);
+        }
+    }
+    else if (decodedBytesPerPixel == 2)
+    {
+        const Uint16* source = reinterpret_cast<const Uint16*>(decoded);
+        for (unsigned long index = 0; index < pixelCount; ++index)
+        {
+            int value = isSigned ? static_cast<int>(static_cast<Sint16>(source[index])) : static_cast<int>(source[index]);
+            if (isSigned && bitsStored > 0 && bitsStored < bitsAllocated)
+                value = HorosModernDCMTKSignExtendStoredBits(static_cast<int>(source[index]), bitsStored);
+            pixels[index] = static_cast<float>(static_cast<double>(value) * slope + intercept);
+        }
+    }
+    else if (decodedBytesPerPixel == 4)
+    {
+        const Uint32* source = reinterpret_cast<const Uint32*>(decoded);
+        for (unsigned long index = 0; index < pixelCount; ++index)
+        {
+            double value = isSigned ? static_cast<double>(static_cast<Sint32>(source[index])) : static_cast<double>(source[index]);
+            pixels[index] = static_cast<float>(value * slope + intercept);
+        }
+    }
+    else
+    {
+        std::ostringstream reason;
+        reason << "OpenJPEG decoded unsupported bytesPerPixel=" << decodedBytesPerPixel
+               << " length=" << decodedLength;
+        failureReason = reason.str();
+        std::free(decoded);
+        std::free(pixels);
+        return nullptr;
+    }
+
+    std::free(decoded);
+    return pixels;
+}
+#endif
 
 static DcmMetaInfo* HorosModernDCMTKMetaInfo(DcmFileFormat& fileformat)
 {
@@ -1086,55 +1345,6 @@ int HorosModernDCMTKCopyDecodedFrame(const char* path, unsigned long frameIndex,
         return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
     }
 
-    DcmElement* element = nullptr;
-    if (dataset->findAndGetElement(DCM_PixelData, element).bad() || element == nullptr)
-        return HorosModernDCMTKDecodedFrameFail(frame, "missing PixelData");
-
-    DcmPixelData* pixelData = dynamic_cast<DcmPixelData*>(element);
-    if (pixelData == nullptr)
-        return HorosModernDCMTKDecodedFrameFail(frame, "PixelData is not DcmPixelData");
-
-    const E_TransferSyntax originalXfer = dataset->getOriginalXfer();
-    const DcmXfer xfer(originalXfer);
-    Uint32 frameSize = 0;
-    status = pixelData->getUncompressedFrameSize(dataset, frameSize, xfer.usesEncapsulatedFormat() ? OFFalse : OFTrue);
-    if (status.bad() || frameSize == 0)
-    {
-        std::ostringstream reason;
-        reason << "getUncompressedFrameSize failed status=" << status.text()
-               << " transferSyntax=" << xfer.getXferName()
-               << " encapsulated=" << (xfer.usesEncapsulatedFormat() ? "yes" : "no")
-               << " frameSize=" << frameSize;
-        return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
-    }
-
-    const Uint32 bufferSize = (frameSize & 1) ? frameSize + 1 : frameSize;
-    std::vector<unsigned char> raw(bufferSize);
-    Uint32 startFragment = 0;
-    OFString colorModel;
-    status = pixelData->getUncompressedFrame(dataset, static_cast<Uint32>(frameIndex), startFragment, raw.data(), bufferSize, colorModel, nullptr);
-    if (status.bad())
-    {
-        std::ostringstream reason;
-        reason << "getUncompressedFrame failed status=" << status.text()
-               << " transferSyntax=" << xfer.getXferName()
-               << " colorModel=" << colorModel.c_str();
-        return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
-    }
-
-    const unsigned long pixelCount = static_cast<unsigned long>(rows) * static_cast<unsigned long>(columns);
-    if (frameSize < pixelCount * (bitsAllocated / 8))
-    {
-        std::ostringstream reason;
-        reason << "decoded frame too small frameSize=" << frameSize
-               << " expected=" << pixelCount * (bitsAllocated / 8);
-        return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
-    }
-
-    float* pixels = static_cast<float*>(std::malloc(sizeof(float) * pixelCount));
-    if (pixels == nullptr)
-        return HorosModernDCMTKDecodedFrameFail(frame, "pixel allocation failed");
-
     Float64 slope = 1.0;
     Float64 intercept = 0.0;
     Float64 windowCenter = 0.0;
@@ -1146,32 +1356,163 @@ int HorosModernDCMTKCopyDecodedFrame(const char* path, unsigned long frameIndex,
     dataset->findAndGetFloat64(DCM_WindowCenter, windowCenter, 0);
     dataset->findAndGetFloat64(DCM_WindowWidth, windowWidth, 0);
 
-    const bool isSigned = pixelRepresentation != 0;
-    if (bitsAllocated == 8)
+    const unsigned long pixelCount = static_cast<unsigned long>(rows) * static_cast<unsigned long>(columns);
+
+    DcmElement* element = nullptr;
+    if (dataset->findAndGetElement(DCM_PixelData, element).bad() || element == nullptr)
+        return HorosModernDCMTKDecodedFrameFail(frame, "missing PixelData");
+
+    DcmPixelData* pixelData = dynamic_cast<DcmPixelData*>(element);
+    if (pixelData == nullptr)
+        return HorosModernDCMTKDecodedFrameFail(frame, "PixelData is not DcmPixelData");
+
+    const E_TransferSyntax originalXfer = dataset->getOriginalXfer();
+    const DcmXfer xfer(originalXfer);
+    bool pixelDataIsUncompressed = !xfer.usesEncapsulatedFormat();
+    float* pixels = nullptr;
+
+#if HOROS_MODERN_BRIDGE_HAS_OPENJPEG
+    if (xfer.usesEncapsulatedFormat() &&
+        HorosModernDCMTKIsJPEG2000TransferSyntax(originalXfer) &&
+        bitsAllocated != bitsStored)
     {
-        const Uint8* source = reinterpret_cast<const Uint8*>(raw.data());
-        for (unsigned long index = 0; index < pixelCount; ++index)
+        std::string openJPEGReason;
+        pixels = HorosModernDCMTKCopyOpenJPEGDecodedPixels(pixelData,
+                                                           originalXfer,
+                                                           frameIndex,
+                                                           frameCount,
+                                                           pixelCount,
+                                                           bitsAllocated,
+                                                           bitsStored,
+                                                           pixelRepresentation,
+                                                           slope,
+                                                           intercept,
+                                                           openJPEGReason);
+        if (pixels == nullptr)
         {
-            int value = isSigned ? static_cast<Sint8>(source[index]) : static_cast<int>(source[index]);
-            pixels[index] = static_cast<float>(static_cast<double>(value) * slope + intercept);
+            std::ostringstream reason;
+            reason << "OpenJPEG JPEG 2000 decode failed: " << openJPEGReason
+                   << " transferSyntax=" << xfer.getXferName()
+                   << " bitsAllocated=" << bitsAllocated
+                   << " bitsStored=" << bitsStored;
+            return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
         }
     }
-    else if (bitsAllocated == 16)
+#endif
+
+    if (pixels == nullptr && xfer.usesEncapsulatedFormat() && bitsAllocated != bitsStored)
     {
-        const Uint16* source = reinterpret_cast<const Uint16*>(raw.data());
-        for (unsigned long index = 0; index < pixelCount; ++index)
+        std::string decodeReason;
+        status = HorosModernDCMTKChooseUncompressedRepresentation(dataset, decodeReason);
+        if (status.bad())
         {
-            int value = isSigned ? static_cast<Sint16>(source[index]) : static_cast<int>(source[index]);
-            pixels[index] = static_cast<float>(static_cast<double>(value) * slope + intercept);
+            std::ostringstream reason;
+            reason << decodeReason
+                   << " transferSyntax=" << xfer.getXferName()
+                   << " bitsAllocated=" << bitsAllocated
+                   << " bitsStored=" << bitsStored;
+            return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
         }
+
+        element = nullptr;
+        if (dataset->findAndGetElement(DCM_PixelData, element).bad() || element == nullptr)
+            return HorosModernDCMTKDecodedFrameFail(frame, "missing PixelData after decompression");
+
+        pixelData = dynamic_cast<DcmPixelData*>(element);
+        if (pixelData == nullptr)
+            return HorosModernDCMTKDecodedFrameFail(frame, "PixelData is not DcmPixelData after decompression");
+
+        pixelDataIsUncompressed = true;
     }
-    else
+
+    Uint32 frameSize = 0;
+    if (pixels == nullptr)
     {
-        const Uint32* source = reinterpret_cast<const Uint32*>(raw.data());
-        for (unsigned long index = 0; index < pixelCount; ++index)
+        status = pixelData->getUncompressedFrameSize(dataset, frameSize, pixelDataIsUncompressed ? OFTrue : OFFalse);
+        if ((status.bad() || frameSize == 0) && xfer.usesEncapsulatedFormat() && !pixelDataIsUncompressed)
         {
-            double value = isSigned ? static_cast<double>(static_cast<Sint32>(source[index])) : static_cast<double>(source[index]);
-            pixels[index] = static_cast<float>(value * slope + intercept);
+            std::string decodeReason;
+            OFCondition decodeStatus = HorosModernDCMTKChooseUncompressedRepresentation(dataset, decodeReason);
+            if (decodeStatus.good())
+            {
+                element = nullptr;
+                if (dataset->findAndGetElement(DCM_PixelData, element).good() && element != nullptr)
+                {
+                    DcmPixelData* decompressedPixelData = dynamic_cast<DcmPixelData*>(element);
+                    if (decompressedPixelData != nullptr)
+                    {
+                        pixelData = decompressedPixelData;
+                        pixelDataIsUncompressed = true;
+                        frameSize = 0;
+                        status = pixelData->getUncompressedFrameSize(dataset, frameSize, OFTrue);
+                    }
+                }
+            }
+        }
+        if (status.bad() || frameSize == 0)
+        {
+            std::ostringstream reason;
+            reason << "getUncompressedFrameSize failed status=" << status.text()
+                   << " transferSyntax=" << xfer.getXferName()
+                   << " encapsulated=" << (xfer.usesEncapsulatedFormat() ? "yes" : "no")
+                   << " pixelDataIsUncompressed=" << (pixelDataIsUncompressed ? "yes" : "no")
+                   << " frameSize=" << frameSize;
+            return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
+        }
+
+        const Uint32 bufferSize = (frameSize & 1) ? frameSize + 1 : frameSize;
+        std::vector<unsigned char> raw(bufferSize);
+        Uint32 startFragment = 0;
+        OFString colorModel;
+        status = pixelData->getUncompressedFrame(dataset, static_cast<Uint32>(frameIndex), startFragment, raw.data(), bufferSize, colorModel, nullptr);
+        if (status.bad())
+        {
+            std::ostringstream reason;
+            reason << "getUncompressedFrame failed status=" << status.text()
+                   << " transferSyntax=" << xfer.getXferName()
+                   << " colorModel=" << colorModel.c_str();
+            return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
+        }
+
+        if (frameSize < pixelCount * (bitsAllocated / 8))
+        {
+            std::ostringstream reason;
+            reason << "decoded frame too small frameSize=" << frameSize
+                   << " expected=" << pixelCount * (bitsAllocated / 8);
+            return HorosModernDCMTKDecodedFrameFail(frame, reason.str());
+        }
+
+        pixels = static_cast<float*>(std::malloc(sizeof(float) * pixelCount));
+        if (pixels == nullptr)
+            return HorosModernDCMTKDecodedFrameFail(frame, "pixel allocation failed");
+
+        const bool isSigned = pixelRepresentation != 0;
+        if (bitsAllocated == 8)
+        {
+            const Uint8* source = reinterpret_cast<const Uint8*>(raw.data());
+            for (unsigned long index = 0; index < pixelCount; ++index)
+            {
+                int value = isSigned ? static_cast<Sint8>(source[index]) : static_cast<int>(source[index]);
+                pixels[index] = static_cast<float>(static_cast<double>(value) * slope + intercept);
+            }
+        }
+        else if (bitsAllocated == 16)
+        {
+            const Uint16* source = reinterpret_cast<const Uint16*>(raw.data());
+            for (unsigned long index = 0; index < pixelCount; ++index)
+            {
+                int value = isSigned ? static_cast<Sint16>(source[index]) : static_cast<int>(source[index]);
+                pixels[index] = static_cast<float>(static_cast<double>(value) * slope + intercept);
+            }
+        }
+        else
+        {
+            const Uint32* source = reinterpret_cast<const Uint32*>(raw.data());
+            for (unsigned long index = 0; index < pixelCount; ++index)
+            {
+                double value = isSigned ? static_cast<double>(static_cast<Sint32>(source[index])) : static_cast<double>(source[index]);
+                pixels[index] = static_cast<float>(value * slope + intercept);
+            }
         }
     }
 

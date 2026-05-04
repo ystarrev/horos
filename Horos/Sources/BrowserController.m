@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #include <objc/runtime.h>
+#include <math.h>
 
 #include "options.h"
 
@@ -164,6 +165,35 @@
 
 //#define DATABASEVERSION @"2.5"
 
+static NSString * const HorosSuppressDeleteImagesConfirmationKey = @"HorosSuppressDeleteImagesConfirmation";
+
+static NSInteger HorosRunDeleteImagesConfirmationAlert(NSString *level)
+{
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: HorosSuppressDeleteImagesConfirmationKey])
+        return NSAlertDefaultReturn;
+
+    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+    [alert setAlertStyle: NSWarningAlertStyle];
+    [alert setMessageText: NSLocalizedString(@"Delete images", nil)];
+    [alert setInformativeText: [NSString stringWithFormat: NSLocalizedString(@"Are you sure you want to delete the selected images? (%@)", nil), level]];
+    [alert addButtonWithTitle: NSLocalizedString(@"OK", nil)];
+    [alert addButtonWithTitle: NSLocalizedString(@"Cancel", nil)];
+
+    NSButton *suppressCheckbox = [[[NSButton alloc] initWithFrame: NSMakeRect(0, 0, 240, 24)] autorelease];
+    [suppressCheckbox setButtonType: NSSwitchButton];
+    [suppressCheckbox setTitle: NSLocalizedString(@"Don't show this again", nil)];
+    [suppressCheckbox setState: NSControlStateValueOff];
+    [alert setAccessoryView: suppressCheckbox];
+
+    NSInteger result = [alert runModal];
+    if( result == NSAlertFirstButtonReturn && [suppressCheckbox state] == NSControlStateValueOn)
+        [[NSUserDefaults standardUserDefaults] setBool: YES forKey: HorosSuppressDeleteImagesConfirmationKey];
+
+    if( result == NSAlertFirstButtonReturn)
+        return NSAlertDefaultReturn;
+    return NSAlertAlternateReturn;
+}
+
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreServices/CoreServices.h>
 #include <IOKit/IOKitLib.h>
@@ -258,6 +288,88 @@ static NSString* BrowserControllerClassHelperContext = @"BrowserControllerClassH
 }
 
 @end
+
+@interface HorosBrowserToolbarFixedWidthView : NSView
+{
+    NSSize _toolbarSize;
+    NSView *_wrappedView;
+}
+
+- (id)initWithWrappedView:(NSView *)view size:(NSSize)size;
+
+@end
+
+@implementation HorosBrowserToolbarFixedWidthView
+
+- (id)initWithWrappedView:(NSView *)view size:(NSSize)size
+{
+    static const CGFloat kHorizontalPadding = 12.0;
+    static const CGFloat kVerticalPadding = 8.0;
+    static const CGFloat kWidthBoost = 8.0;
+    static const CGFloat kHeightBoost = 4.0;
+    static const CGFloat kVerticalOffset = -2.0;
+
+    _toolbarSize = NSMakeSize(ceil(size.width + kHorizontalPadding), ceil(size.height + kVerticalPadding));
+    self = [super initWithFrame:NSMakeRect(0, 0, _toolbarSize.width, _toolbarSize.height)];
+    if (self)
+    {
+        _wrappedView = [view retain];
+        [self setAutoresizingMask:0];
+        [self setTranslatesAutoresizingMaskIntoConstraints:NO];
+        [self setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+        [self setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+        [self setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationVertical];
+        [self setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationVertical];
+
+        [_wrappedView removeFromSuperviewWithoutNeedingDisplay];
+        [_wrappedView setAutoresizingMask:NSViewNotSizable];
+        [self addSubview:_wrappedView];
+
+        NSRect wrappedFrame = NSMakeRect(floor((_toolbarSize.width - size.width - kWidthBoost) / 2.0),
+                                         floor((_toolbarSize.height - size.height - kHeightBoost) / 2.0) + kVerticalOffset,
+                                         ceil(size.width + kWidthBoost),
+                                         ceil(size.height + kHeightBoost));
+        [_wrappedView setFrame: wrappedFrame];
+    }
+    return self;
+}
+
+- (NSSize)intrinsicContentSize
+{
+    return _toolbarSize;
+}
+
+- (void)dealloc
+{
+    [_wrappedView release];
+    [super dealloc];
+}
+
+@end
+
+static NSView *HorosBrowserToolbarSizedView(NSView *view)
+{
+    if (!view)
+        return nil;
+
+    if ([[view superview] isKindOfClass:[HorosBrowserToolbarFixedWidthView class]])
+        return [view superview];
+
+    NSSize size = [view frame].size;
+    if (size.width < 1 || size.height < 1)
+        size = [view fittingSize];
+    if (size.width < 1)
+        size.width = 32;
+    if (size.height < 1)
+        size.height = 32;
+
+    return [[[HorosBrowserToolbarFixedWidthView alloc] initWithWrappedView:view size:size] autorelease];
+}
+
+static void HorosBrowserSetToolbarItemSizedView(NSToolbarItem *toolbarItem, NSView *view)
+{
+    [toolbarItem setView:HorosBrowserToolbarSizedView(view)];
+}
 
 @implementation BrowserController
 
@@ -6050,12 +6162,12 @@ static NSConditionLock *threadLock = nil;
             result = NSRunInformationalAlertPanel(NSLocalizedString(@"Delete/Remove images", nil), NSLocalizedString(@"Do you want to only remove the selected images from the current album or delete them from the database? (%@)", nil), NSLocalizedString(@"Delete",nil), NSLocalizedString(@"Cancel",nil), NSLocalizedString(@"Remove from current album",nil), level);
         else
         {
-            result = NSRunInformationalAlertPanel(NSLocalizedString(@"Delete images", nil), NSLocalizedString(@"Are you sure you want to delete the selected images? (%@)", nil), NSLocalizedString(@"OK",nil), NSLocalizedString(@"Cancel",nil), nil, level);
+            result = HorosRunDeleteImagesConfirmationAlert(level);
         }
     }
     else
     {
-        result = NSRunInformationalAlertPanel(NSLocalizedString(@"Delete images", nil), NSLocalizedString(@"Are you sure you want to delete the selected images? (%@)", nil), NSLocalizedString(@"OK",nil), NSLocalizedString(@"Cancel",nil), nil, level);
+        result = HorosRunDeleteImagesConfirmationAlert(level);
     }
     
     [context retain];
@@ -14504,8 +14616,6 @@ static NSArray*	openSubSeriesArray = nil;
             [databaseOutline setAllowsTypeSelect: NO];
             
             [self setupToolbar];
-            
-            [toolbar setVisible:YES];
             //		[self showDatabase: self];
             
             // NSMenu for DatabaseOutline
@@ -19140,7 +19250,7 @@ restart:
                     break;
             }
             
-            [item setView: reportTemplatesView];
+            HorosBrowserSetToolbarItemSizedView(item, reportTemplatesView);
             
             
             reportToolbarItemType = -1;
@@ -19297,9 +19407,9 @@ restart:
     // Create a new toolbar instance, and attach it to our document window 
     toolbar = [[NSToolbar alloc] initWithIdentifier: DatabaseToolbarIdentifier];
     
-    // Set up toolbar properties: Allow customization, give a default display mode, and remember state in user defaults 
+    // Set up toolbar properties: Allow customization, give a default display mode.
     [toolbar setAllowsUserCustomization: YES];
-    [toolbar setAutosavesConfiguration: YES];
+    [toolbar setAutosavesConfiguration: NO];
     //    [toolbar setDisplayMode: NSToolbarDisplayModeIconOnly];
     
     // We are the delegate
@@ -19583,7 +19693,7 @@ restart:
         [toolbarItem setToolTip: NSLocalizedString(@"Search", nil)];
         
         // Use a custom view, a text field, for the search item 
-        [toolbarItem setView: searchView];
+        HorosBrowserSetToolbarItemSizedView(toolbarItem, searchView);
     }
     else if ([itemIdent isEqualToString: TimeIntervalToolbarItemIdentifier])
     {
@@ -19592,7 +19702,7 @@ restart:
         [toolbarItem setToolTip: NSLocalizedString(@"Time Interval", nil)];
         
         // Use a custom view, a text field, for the search item 
-        [toolbarItem setView: timeIntervalView];
+        HorosBrowserSetToolbarItemSizedView(toolbarItem, timeIntervalView);
     }
     else if ([itemIdent isEqualToString: ModalityFilterToolbarItemIdentifier])
     {
@@ -19601,7 +19711,7 @@ restart:
         [toolbarItem setToolTip: NSLocalizedString(@"Modality", nil)];
         
         // Use a custom view, a text field, for the search item
-        [toolbarItem setView: modalityFilterView];
+        HorosBrowserSetToolbarItemSizedView(toolbarItem, modalityFilterView);
     }
     else if ([itemIdent isEqualToString: ResetSplitViewsItemIdentifier])
     {

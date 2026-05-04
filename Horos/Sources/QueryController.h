@@ -140,6 +140,7 @@ enum
     IBOutlet NSButton                       *authButton;
     
     NSMutableSet                            *performingQueryThreads;
+    NSMutableArray                          *pendingRetrieveAndViewItems;
 }
 
 @property (readonly) NSRecursiveLock *autoQueryLock;

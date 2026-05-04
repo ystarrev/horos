@@ -86,6 +86,24 @@ static NSString *ReferringPhysician = @"ReferringPhysiciansName";
 static NSString *InstitutionName = @"InstitutionName";
 static NSString *InterpretationStatusID = @"InterpretationStatusID";
 
+static BOOL HorosQueryStringContains(NSString *string, NSString *needle)
+{
+    return string.length > 0 && needle.length > 0 && [string rangeOfString: needle options: NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch | NSWidthInsensitiveSearch].location != NSNotFound;
+}
+
+static BOOL HorosQuerySeriesLooksLikeLocalizer(id item)
+{
+    NSString *description = [item valueForKey: @"theDescription"];
+    NSString *name = [item valueForKey: @"name"];
+
+    return HorosQueryStringContains(description, @"scout") ||
+           HorosQueryStringContains(description, @"localizer") ||
+           HorosQueryStringContains(description, @"localiser") ||
+           HorosQueryStringContains(name, @"scout") ||
+           HorosQueryStringContains(name, @"localizer") ||
+           HorosQueryStringContains(name, @"localiser");
+}
+
 static QueryController *currentQueryController = nil;
 static QueryController *currentAutoQueryController = nil;
 static NSMutableArray *studyArrayInstanceUID = [[NSMutableArray alloc] init], *studyArrayID = [[NSMutableArray alloc] init];
@@ -99,6 +117,13 @@ extern "C"
 {
 	extern const char *GetPrivateIP();
 };
+
+@interface QueryController ()
+- (BOOL)openAvailableLocalImagesForQueryItem:(id)item;
+- (void)addPendingRetrieveAndViewItem:(id)item;
+- (void)removePendingRetrieveAndViewItem:(id)item;
+- (void)openPendingRetrieveAndViewItemsIfPossible;
+@end
 
 @implementation QueryController
 
@@ -1366,15 +1391,37 @@ extern "C"
 		{
 			if( [indices containsIndex: i])
 			{
-				NSArray *studyArray = [self localStudy: [outlineView itemAtRow: i] context: nil];
+				id queryItem = [outlineView itemAtRow: i];
+				NSArray *localArray = nil;
 
-				if( [studyArray count] > 0)
+				if( [queryItem isMemberOfClass:[DCMTKStudyQueryNode class]] == YES)
+					localArray = [self localStudy: queryItem context: nil];
+				else if( [queryItem isMemberOfClass:[DCMTKSeriesQueryNode class]] == YES)
+					localArray = [self localSeries: queryItem context: nil];
+
+				if( [localArray count] > 0)
 				{
 					valid = YES;
+					break;
 				}
 			}
 		}
     }
+	else if( [item action] == @selector(retrieve:))
+	{
+		NSIndexSet* indices = [outlineView selectedRowIndexes];
+		if( [indices count] == 0)
+			return NO;
+
+		for( NSUInteger i = [indices firstIndex]; i != [indices lastIndex]+1; i++)
+		{
+			if( [indices containsIndex: i] && [self queryItemNeedsRetrieve: [outlineView itemAtRow: i]])
+			{
+				valid = YES;
+				break;
+			}
+		}
+	}
 	else valid = YES;
 	
     return valid;
@@ -1389,7 +1436,10 @@ extern "C"
     {
         if( [indices containsIndex: i])
         {
-            if( [[outlineView itemAtRow: i] isMemberOfClass:[DCMTKStudyQueryNode class]])
+            id queryItem = [outlineView itemAtRow: i];
+            if( [queryItem isMemberOfClass:[DCMTKStudyQueryNode class]] && [[self localStudy: queryItem context: nil] count] > 0)
+                somethingToDelete = YES;
+            else if( [queryItem isMemberOfClass:[DCMTKSeriesQueryNode class]] && [[self localSeries: queryItem context: nil] count] > 0)
                 somethingToDelete = YES;
         } 
     }
@@ -1397,7 +1447,7 @@ extern "C"
     if( somethingToDelete == NO)
     {
         if( indices.count > 0)
-            NSRunInformationalAlertPanel(NSLocalizedString(@"Delete images", nil), NSLocalizedString(@"Select a study to delete it. You cannot delete series from this window, go to the Database window to delete series.", nil), NSLocalizedString(@"OK",nil), nil, nil);
+            NSRunInformationalAlertPanel(NSLocalizedString(@"Delete images", nil), NSLocalizedString(@"Select a study or series with local images to delete it.", nil), NSLocalizedString(@"OK",nil), nil, nil);
     }
     else
     {
@@ -1412,15 +1462,40 @@ extern "C"
             {
                 if( [indices containsIndex: i])
                 {
-                    if( [[outlineView itemAtRow: i] isMemberOfClass:[DCMTKStudyQueryNode class]])
+                    id queryItem = [outlineView itemAtRow: i];
+
+                    if( [queryItem isMemberOfClass:[DCMTKStudyQueryNode class]])
                     {
-                        NSArray *studyArray = [self localStudy: [outlineView itemAtRow: i] context: nil];
+                        NSArray *studyArray = [self localStudy: queryItem context: nil];
                         
                         if( [studyArray count] > 0)
                         {
-                            NSManagedObject	*series =  [[[BrowserController currentBrowser] childrenArray: [studyArray objectAtIndex: 0] onlyImages: NO] objectAtIndex:0];
-                            [[BrowserController currentBrowser] findAndSelectFile:nil image:[[series valueForKey:@"images"] anyObject] shouldExpand:NO extendingSelection: extendingSelection];
-                            extendingSelection = YES;
+                            NSArray *seriesArray = [[BrowserController currentBrowser] childrenArray: [studyArray objectAtIndex: 0] onlyImages: NO];
+                            if( [seriesArray count] > 0)
+                            {
+                                NSManagedObject	*series = [seriesArray objectAtIndex:0];
+                                DicomImage *image = (DicomImage*) [[series valueForKey:@"images"] anyObject];
+                                if( image)
+                                {
+                                    [[BrowserController currentBrowser] findAndSelectFile:nil image:image shouldExpand:NO extendingSelection: extendingSelection];
+                                    extendingSelection = YES;
+                                }
+                            }
+                        }
+                    }
+                    else if( [queryItem isMemberOfClass:[DCMTKSeriesQueryNode class]])
+                    {
+                        NSArray *seriesArray = [self localSeries: queryItem context: nil];
+
+                        if( [seriesArray count] > 0)
+                        {
+                            NSManagedObject	*series = [seriesArray objectAtIndex:0];
+                            DicomImage *image = (DicomImage*) [[series valueForKey:@"images"] anyObject];
+                            if( image)
+                            {
+                                [[BrowserController currentBrowser] findAndSelectFile:nil image:image shouldExpand:YES extendingSelection: extendingSelection];
+                                extendingSelection = YES;
+                            }
                         }
                     }
                     else
@@ -1674,6 +1749,27 @@ extern "C"
 		@try
 		{
 			seriesArray = [[[study valueForKey:@"series"] allObjects] filteredArrayUsingPredicate: [NSPredicate predicateWithFormat: @"(seriesDICOMUID == %@)", [item valueForKey:@"uid"]]];
+			if( [seriesArray count] == 0 && HorosQuerySeriesLooksLikeLocalizer(item))
+			{
+				NSString *studyUID = [study valueForKey: @"studyInstanceUID"];
+				NSString *localizerSeriesUID = nil;
+				if( [studyUID length] > 0)
+					localizerSeriesUID = [@"LOCALIZER" stringByAppendingString: studyUID];
+
+				seriesArray = [[[study valueForKey:@"series"] allObjects] filteredArrayUsingPredicate: [NSPredicate predicateWithBlock:^BOOL(id evaluatedObject, NSDictionary *bindings) {
+					NSString *seriesDICOMUID = [evaluatedObject valueForKey: @"seriesDICOMUID"];
+					NSString *name = [evaluatedObject valueForKey: @"name"];
+					NSString *seriesDescription = [evaluatedObject valueForKey: @"seriesDescription"];
+
+					if( localizerSeriesUID && [seriesDICOMUID isEqualToString: localizerSeriesUID])
+						return YES;
+
+					return HorosQueryStringContains(name, @"localizer") ||
+						   HorosQueryStringContains(name, @"localiser") ||
+						   HorosQueryStringContains(seriesDescription, @"localizer") ||
+						   HorosQueryStringContains(seriesDescription, @"localiser");
+				}]];
+			}
 		}
 		@catch (NSException * e)
 		{
@@ -1884,6 +1980,39 @@ extern "C"
 		*totalFileCount = totalFiles;
 	
 	return percentage;
+}
+
+- (BOOL)queryItemNeedsRetrieve:(id)queryItem
+{
+	if( [queryItem isMemberOfClass:[DCMTKStudyQueryNode class]] == YES)
+	{
+		NSArray *studyArray = [self localStudy: queryItem context: nil];
+		if( [studyArray count] > 0)
+		{
+			float localFiles = [self localFileCountForQueryObject: [studyArray objectAtIndex: 0]];
+			float totalFiles = [[queryItem valueForKey:@"numberImages"] floatValue];
+			float percentage = [self availabilityPercentageForQueryObject: queryItem localFileCount: &localFiles totalFileCount: &totalFiles];
+			return percentage < 1.0;
+		}
+
+		return YES;
+	}
+
+	if( [queryItem isMemberOfClass:[DCMTKSeriesQueryNode class]] == YES)
+	{
+		NSArray *seriesArray = [self localSeries: queryItem context: nil];
+		if( [seriesArray count] > 0)
+		{
+			float localFiles = [self localFileCountForQueryObject: [seriesArray objectAtIndex: 0]];
+			float totalFiles = [[queryItem valueForKey:@"numberImages"] floatValue];
+			float percentage = [self availabilityPercentageForQueryObject: queryItem localFileCount: &localFiles totalFileCount: &totalFiles];
+			return percentage < 1.0;
+		}
+
+		return YES;
+	}
+
+	return YES;
 }
 
 - (NSString *)outlineView:(NSOutlineView *)ov toolTipForCell:(NSCell *)cell rect:(NSRectPointer)rect tableColumn:(NSTableColumn *)tableColumn item:(id)item mouseLocation:(NSPoint)mouseLocation;
@@ -4049,11 +4178,38 @@ extern "C"
 	
 	if( checkAndViewTry < 0)
 		return;
+
+	@synchronized( self)
+	{
+		if( [pendingRetrieveAndViewItems containsObject: item] == NO)
+			return;
+	}
 	
     DicomDatabase *db = [DicomDatabase activeLocalDatabase];
     [[BrowserController currentBrowser] setDatabase:db];
 	[db initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
-	
+
+	BOOL success = [self openAvailableLocalImagesForQueryItem: item];
+
+	if( !success)
+	{
+		[db initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
+
+		if( checkAndViewTry-- > 0 && [sendToPopup indexOfSelectedItem] == 0)
+			[self performSelector:@selector(checkAndView:) withObject:item afterDelay:1.0];
+		else if( [sendToPopup indexOfSelectedItem] != 0)
+			[self removePendingRetrieveAndViewItem: item];
+	}
+}
+
+- (BOOL) openAvailableLocalImagesForQueryItem:(id) item
+{
+	if( item == nil || [[self window] isVisible] == NO)
+		return NO;
+
+    DicomDatabase *db = [DicomDatabase activeLocalDatabase];
+    [[BrowserController currentBrowser] setDatabase:db];
+
 	NSError *error = nil;
 	NSFetchRequest *request = [[[NSFetchRequest alloc] init] autorelease];
 	NSManagedObjectContext *context = [[DicomDatabase activeLocalDatabase] managedObjectContext];
@@ -4076,20 +4232,16 @@ extern "C"
 			if( [studyArray count] > 0)
 			{
 				NSManagedObject	*study = [studyArray objectAtIndex: 0];
-				NSArray *seriesArray = [[BrowserController currentBrowser] childrenArray: study];
-				
-				if( [seriesArray count])
+				NSArray *studySeriesArray = [[BrowserController currentBrowser] childrenArray: study onlyImages: YES];
+				NSMutableArray *loadList = [NSMutableArray array];
+
+				for( NSManagedObject *series in studySeriesArray)
+					[loadList addObjectsFromArray:[[BrowserController currentBrowser] childrenArray: series onlyImages: YES]];
+
+				if( [loadList count])
 				{
-					NSManagedObject	*series =  [seriesArray objectAtIndex: 0];
-					
-					if( [[BrowserController currentBrowser] findAndSelectFile:nil image:[[series valueForKey:@"images"] anyObject] shouldExpand:NO] == NO)
-					{
-						[[BrowserController currentBrowser] showEntireDatabase];
-						if( [[BrowserController currentBrowser] findAndSelectFile:nil image:[[series valueForKey:@"images"] anyObject] shouldExpand:NO]) success = YES;
-					}
-					else success = YES;
-					
-					if( success) [[BrowserController currentBrowser] databaseOpenStudy: study];
+					[[BrowserController currentBrowser] openMetalViewerForImages: loadList];
+					success = YES;
 				}
 			}
 		}
@@ -4105,22 +4257,15 @@ extern "C"
 			if( [seriesArray count] > 0)
 			{
 				NSManagedObject	*series = [seriesArray objectAtIndex: 0];
-				
-				[[BrowserController currentBrowser] openMetalViewerForImages:[[BrowserController currentBrowser] childrenArray:series]];
-				success = YES;
+				NSArray *images = [[BrowserController currentBrowser] childrenArray:series];
+
+				if( [images count])
+				{
+					[[BrowserController currentBrowser] openMetalViewerForImages: images];
+					success = YES;
+				}
 			}
 		}
-		
-		if( !success)
-		{
-            [db initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
-			
-			if( checkAndViewTry-- > 0 && [sendToPopup indexOfSelectedItem] == 0)
-				[self performSelector:@selector(checkAndView:) withObject:item afterDelay:1.0];
-			else
-				success = YES;
-		}
-				
 	}
 	@catch (NSException * e)
 	{
@@ -4128,6 +4273,50 @@ extern "C"
 	}
 	
 	[context unlock];
+
+	if( success)
+		[self removePendingRetrieveAndViewItem: item];
+
+	return success;
+}
+
+- (void) addPendingRetrieveAndViewItem:(id) item
+{
+	if( item == nil)
+		return;
+
+	@synchronized( self)
+	{
+		if( pendingRetrieveAndViewItems == nil)
+			pendingRetrieveAndViewItems = [[NSMutableArray array] retain];
+
+		if( [pendingRetrieveAndViewItems containsObject: item] == NO)
+			[pendingRetrieveAndViewItems addObject: item];
+	}
+}
+
+- (void) removePendingRetrieveAndViewItem:(id) item
+{
+	if( item == nil)
+		return;
+
+	@synchronized( self)
+	{
+		[pendingRetrieveAndViewItems removeObject: item];
+	}
+}
+
+- (void) openPendingRetrieveAndViewItemsIfPossible
+{
+	NSArray *pendingItems = nil;
+
+	@synchronized( self)
+	{
+		pendingItems = [[pendingRetrieveAndViewItems copy] autorelease];
+	}
+
+	for( id item in pendingItems)
+		[self openAvailableLocalImagesForQueryItem: item];
 }
 
 - (IBAction) view:(id) sender
@@ -4137,7 +4326,10 @@ extern "C"
 	{
 		checkAndViewTry = 20;
 		if( item)
+		{
+			[self addPendingRetrieveAndViewItem: item];
             [self checkAndView: item];
+		}
 	}
 }
 
@@ -4969,6 +5161,7 @@ extern "C"
 	[queryFilters release];
 	[sourcesArray release];
 	[resultArray release];
+	[pendingRetrieveAndViewItems release];
 	[QueryTimer invalidate];
 	[QueryTimer release];
     [performingQueryThreads release];
@@ -5234,6 +5427,7 @@ extern "C"
 -(void)observeDatabaseAddNotification:(NSNotification*)notification
 {
 	[self performSelectorOnMainThread:@selector(refresh:) withObject:self waitUntilDone:NO];
+	[self performSelectorOnMainThread:@selector(openPendingRetrieveAndViewItemsIfPossible) withObject:nil waitUntilDone:NO];
 }
 
 - (BOOL)splitView:(NSSplitView *)splitView shouldAdjustSizeOfSubview:(NSView *)subview

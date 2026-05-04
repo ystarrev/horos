@@ -649,10 +649,30 @@ void exceptionHandler(NSException *exception)
 
 @end
 
+static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize size)
+{
+}
+
 @implementation AppController
 
 @synthesize checkAllWindowsAreVisibleIsOff, filtersMenu, windowsTilingMenuRows, recentStudiesMenu, windowsTilingMenuColumns, isSessionInactive, dicomBonjourPublisher = BonjourDICOMService, XMLRPCServer;
 @synthesize bonjourPublisher = _bonjourPublisher;
+
++ (void)load
+{
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setBool:NO forKey:@"NSQuitAlwaysKeepsWindows"];
+    [defaults setBool:YES forKey:@"ApplePersistenceIgnoreState"];
+
+    Method minSizeMethod = class_getInstanceMethod([NSToolbarItem class], @selector(setMinSize:));
+    Method maxSizeMethod = class_getInstanceMethod([NSToolbarItem class], @selector(setMaxSize:));
+    IMP ignoreSizeSetter = (IMP)HorosIgnoreDeprecatedToolbarItemSizeSetter;
+
+    if (minSizeMethod)
+        method_setImplementation(minSizeMethod, ignoreSizeSetter);
+    if (maxSizeMethod)
+        method_setImplementation(maxSizeMethod, ignoreSizeSetter);
+}
 
 + (NSOperatingSystemVersion)operatingSystemVersion {
     NSProcessInfo *info = [NSProcessInfo processInfo];
@@ -3308,6 +3328,16 @@ static BOOL initialized = NO;
 	return NO;
 }
 
+- (BOOL)applicationShouldSaveApplicationState:(NSApplication *)sender
+{
+    return NO;
+}
+
+- (BOOL)applicationShouldRestoreApplicationState:(NSApplication *)sender
+{
+    return NO;
+}
+
 - (void) applicationDidFinishLaunching:(NSNotification*) aNotification
 {
 	unlink( "/tmp/kill_all_storescu");
@@ -3329,14 +3359,15 @@ static BOOL initialized = NO;
     // stringent for later releases (e.g., properly signed, notarized).
     //
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
-    [center requestAuthorizationWithOptions:(UNAuthorizationOptionSound | UNAuthorizationOptionAlert)
-                          completionHandler:^(BOOL granted, NSError * _Nullable error) {
-        if (!error) {
-            NSLog(@"User Notification authorization request succeeded");
-        }
-        else {
-            NSLog(@"User Notification authorization request failed, error=[%@]", error.localizedDescription);
-        }
+    [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings * _Nonnull settings) {
+        if (settings.authorizationStatus != UNAuthorizationStatusNotDetermined)
+            return;
+
+        [center requestAuthorizationWithOptions:(UNAuthorizationOptionSound | UNAuthorizationOptionAlert)
+                              completionHandler:^(BOOL granted, NSError * _Nullable error) {
+            if (error)
+                NSLog(@"User Notification authorization request failed, error=[%@]", error.localizedDescription);
+        }];
     }];
     
 //	if ([[NSUserDefaultsController sharedUserDefaultsController] boolForKey: @"ActivityWindowVisibleFlag"])
@@ -5564,7 +5595,7 @@ static NSMutableDictionary* _receivingDict = nil;
 
 -(void)_receivingIconUpdate {
 	if (!_receivingDict.count)
-		[NSApp setApplicationIconImage:[NSImage imageNamed:@"Horos.icns"]];
+		[NSApp setApplicationIconImage:nil];
 	else [NSApp setApplicationIconImage:[NSImage imageNamed:@"OsirixDownload.icns"]];
 }
 

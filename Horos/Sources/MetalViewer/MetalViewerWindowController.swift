@@ -390,7 +390,8 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         updateReferenceLines()
     }
 
-    func updateStudy(_ study: MetalViewerStudy) {
+    @discardableResult
+    func updateStudy(_ study: MetalViewerStudy, selectInitialSeries: Bool = false) -> Int {
         let updateStart = CFAbsoluteTimeGetCurrent()
         var previousWindowLevelStates: [String: MetalViewerWindowLevelState] = [:]
         var previousWindowLevelPresetTitles: [String: String] = [:]
@@ -409,9 +410,44 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         self.study = study
         window?.title = study.title
         scoutView.reload(series: study.series, loadThumbnailsImmediately: false)
-        let selectedIdentifier = activePaneView?.series.identifier ?? study.initialSeriesIdentifier
+        let selectedIdentifier = selectInitialSeries ? study.initialSeriesIdentifier : (activePaneView?.series.identifier ?? study.initialSeriesIdentifier)
         scoutView.setSelectedSeries(identifier: selectedIdentifier)
+
+        var refreshedPaneCount = 0
+        for pane in paneViews {
+            guard let updatedSeries = study.series.first(where: { $0.identifier == pane.series.identifier }) else {
+                continue
+            }
+            let updatedOverlaySeries = pane.overlaySeries.flatMap { overlaySeries in
+                study.series.first(where: { $0.identifier == overlaySeries.identifier })
+            }
+            if pane.refreshAfterDatabaseUpdate(series: updatedSeries, overlaySeries: updatedOverlaySeries) {
+                refreshedPaneCount += 1
+                if pane === activePaneView {
+                    preloadActiveSeries(updatedSeries)
+                }
+            }
+        }
+
+        if selectInitialSeries,
+           let selectedSeries = study.series.first(where: { $0.identifier == study.initialSeriesIdentifier }),
+           let targetPane = activePaneView ?? paneViews.first {
+            targetPane.display(series: selectedSeries)
+            preloadActiveSeries(selectedSeries)
+            selectedWLWWTitle = selectedSeries.windowLevelPresetTitle
+            toolbarView.reloadWLWWMenu(selectedTitle: selectedWLWWTitle, modality: selectedSeries.modality)
+            setActivePane(targetPane)
+            refreshedPaneCount += 1
+        }
+
+        if let activeSeries = activePaneView?.series {
+            selectedWLWWTitle = activeSeries.windowLevelPresetTitle
+            toolbarView.reloadWLWWMenu(selectedTitle: selectedWLWWTitle, modality: activeSeries.modality)
+        }
+        updateToolbarStatus()
+        updateReferenceLines()
         metalWindowTimingLog("MetalViewerWindowController updateStudy", since: updateStart)
+        return refreshedPaneCount
     }
 
     private func updateToolbarStatus() {

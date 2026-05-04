@@ -124,6 +124,7 @@ struct Metal3DVolumeUniforms {
     float padding3;
     uint3 volumeDimensions;
     uint cropEnabled;
+    float3 voxelSpacing;
     uint maxSteps;
     float windowLevel;
     float windowWidth;
@@ -338,16 +339,18 @@ static inline float3 metal3DGradient(
     float3 texCoord,
     texture3d<float> volumeTexture,
     sampler volumeSampler,
-    uint3 dimensions
+    uint3 dimensions,
+    float3 voxelSpacing
 ) {
-    float3 delta = 1.5 / max(float3(dimensions - uint3(1)), float3(1.0));
+    float3 sampleRadius = float3(1.5, 1.5, 2.75);
+    float3 delta = sampleRadius / max(float3(dimensions - uint3(1)), float3(1.0));
     float sampleX1 = volumeTexture.sample(volumeSampler, clamp(texCoord + float3(delta.x, 0.0, 0.0), 0.0, 1.0)).r;
     float sampleX0 = volumeTexture.sample(volumeSampler, clamp(texCoord - float3(delta.x, 0.0, 0.0), 0.0, 1.0)).r;
     float sampleY1 = volumeTexture.sample(volumeSampler, clamp(texCoord + float3(0.0, delta.y, 0.0), 0.0, 1.0)).r;
     float sampleY0 = volumeTexture.sample(volumeSampler, clamp(texCoord - float3(0.0, delta.y, 0.0), 0.0, 1.0)).r;
     float sampleZ1 = volumeTexture.sample(volumeSampler, clamp(texCoord + float3(0.0, 0.0, delta.z), 0.0, 1.0)).r;
     float sampleZ0 = volumeTexture.sample(volumeSampler, clamp(texCoord - float3(0.0, 0.0, delta.z), 0.0, 1.0)).r;
-    return float3(sampleX1 - sampleX0, sampleY1 - sampleY0, sampleZ1 - sampleZ0);
+    return float3(sampleX1 - sampleX0, sampleY1 - sampleY0, sampleZ1 - sampleZ0) / max(sampleRadius * voxelSpacing, float3(0.0001));
 }
 
 fragment Metal3DFragmentOutput metal3DVolumeFragment(
@@ -359,18 +362,17 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
     sampler textureSampler [[sampler(0)]]
 ) {
     float2 ndc = float2(in.uv.x * 2.0 - 1.0, in.uv.y * 2.0 - 1.0);
-    float3 rayDirection = normalize(
-        uniforms.cameraForward +
+    float3 rayOrigin = uniforms.cameraPosition +
         ndc.x * uniforms.aspectRatio * uniforms.tanHalfFovY * uniforms.cameraRight +
-        ndc.y * uniforms.tanHalfFovY * uniforms.cameraUp
-    );
+        ndc.y * uniforms.tanHalfFovY * uniforms.cameraUp;
+    float3 rayDirection = normalize(uniforms.cameraForward);
 
     float3 marchingBoxMin = uniforms.cropEnabled != 0 ? max(uniforms.boxMin, uniforms.cropBoxMin) : uniforms.boxMin;
     float3 marchingBoxMax = uniforms.cropEnabled != 0 ? min(uniforms.boxMax, uniforms.cropBoxMax) : uniforms.boxMax;
 
     float tMin = 0.0;
     float tMax = 0.0;
-    if (!metal3DIntersectBox(uniforms.cameraPosition, rayDirection, marchingBoxMin, marchingBoxMax, tMin, tMax)) {
+    if (!metal3DIntersectBox(rayOrigin, rayDirection, marchingBoxMin, marchingBoxMax, tMin, tMax)) {
         Metal3DFragmentOutput output;
         output.color = float4(0.0, 0.0, 0.0, 1.0);
         output.depth = 1.0;
@@ -379,12 +381,16 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
 
     float4 accumulated = float4(0.0);
     float t = max(tMin, 0.0);
+    float rayJitter = metal3DHash(float3(floor(in.position.xy), 19.19));
+    t = min(t + uniforms.stepSize * rayJitter, tMax);
     float previousScalar = 0.0;
     float previousT = t;
     bool havePreviousScalar = false;
+    float visibleDepth = 1.0;
+    bool hasVisibleDepth = false;
 
-    for (uint stepIndex = 0; stepIndex < uniforms.maxSteps && t <= tMax && accumulated.a < 0.985; ++stepIndex, t += uniforms.stepSize) {
-        float3 position = uniforms.cameraPosition + rayDirection * t;
+    for (uint stepIndex = 0; stepIndex < uniforms.maxSteps && t <= tMax && accumulated.a <= (1.0 - 1.0 / 255.0); ++stepIndex, t += uniforms.stepSize) {
+        float3 position = rayOrigin + rayDirection * t;
         float3 texCoord = metal3DTextureCoordinate(position, uniforms.boxMin, uniforms.boxMax);
 
         if (any(texCoord < 0.0) || any(texCoord > 1.0)) {
@@ -418,7 +424,7 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
 
             for (uint refineStep = 0; refineStep < 10; ++refineStep) {
                 float refinedMid = 0.5 * (refinedNear + refinedFar);
-                float3 refinedPosition = uniforms.cameraPosition + rayDirection * refinedMid;
+                float3 refinedPosition = rayOrigin + rayDirection * refinedMid;
                 float3 refinedCoord = metal3DTextureCoordinate(refinedPosition, uniforms.boxMin, uniforms.boxMax);
                 refinedScalar = volumeTexture.sample(textureSampler, clamp(refinedCoord, 0.0, 1.0)).r;
                 if (refinedScalar >= surfaceThreshold) {
@@ -436,7 +442,7 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
                 interpolation = clamp((surfaceThreshold - nearScalar) / scalarSpan, 0.0, 1.0);
             }
             float hitT = mix(refinedNear, refinedFar, interpolation);
-            float3 hitPosition = uniforms.cameraPosition + rayDirection * hitT;
+            float3 hitPosition = rayOrigin + rayDirection * hitT;
             float3 hitCoord = metal3DTextureCoordinate(hitPosition, uniforms.boxMin, uniforms.boxMax);
             float hitScalar = mix(nearScalar, farScalar, interpolation);
             float hitOpacity = uniforms.useRawOpacityCurve != 0
@@ -462,11 +468,11 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
             havePreviousScalar = true;
             float3 shadedColor = color;
             if (uniforms.shading > 0.5) {
-                float3 gradient = metal3DGradient(hitCoord, volumeTexture, textureSampler, uniforms.volumeDimensions);
+                float3 gradient = metal3DGradient(hitCoord, volumeTexture, textureSampler, uniforms.volumeDimensions, uniforms.voxelSpacing);
                 float gradientLength = length(gradient);
                 if (gradientLength > 1e-5) {
                     float3 normal = normalize(gradient);
-                    float3 viewDirection = normalize(uniforms.cameraPosition - hitPosition);
+                    float3 viewDirection = normalize(-rayDirection);
                     if (dot(normal, viewDirection) < 0.0) {
                         normal = -normal;
                     }
@@ -491,7 +497,7 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
             return output;
         } else {
             opacity = metal3DOpacityAt(scalar, uniforms.windowLevel, uniforms.windowWidth, opacityTexture, textureSampler);
-            if (opacity <= 0.03) {
+            if (opacity <= 0.0) {
                 previousScalar = scalar;
                 previousT = t;
                 havePreviousScalar = true;
@@ -503,11 +509,11 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
             havePreviousScalar = true;
         }
         if (uniforms.shading > 0.5) {
-            float3 gradient = metal3DGradient(texCoord, volumeTexture, textureSampler, uniforms.volumeDimensions);
+            float3 gradient = metal3DGradient(texCoord, volumeTexture, textureSampler, uniforms.volumeDimensions, uniforms.voxelSpacing);
             float gradientLength = length(gradient);
             if (gradientLength > 1e-5) {
                 float3 normal = normalize(gradient);
-                float3 viewDirection = normalize(uniforms.cameraPosition - position);
+                float3 viewDirection = normalize(-rayDirection);
                 if (dot(normal, viewDirection) < 0.0) {
                     normal = -normal;
                 }
@@ -523,15 +529,20 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
             }
         }
 
-        float sampleAlpha = 1.0 - exp(-clamp(opacity, 0.0, 1.0) * uniforms.density * uniforms.stepSize);
-        if (sampleAlpha <= 0.0025) {
+        float sampleAlpha = clamp(opacity, 0.0, 1.0);
+        if (sampleAlpha <= 0.0) {
             continue;
         }
         accumulated.rgb += (1.0 - accumulated.a) * sampleAlpha * color;
         accumulated.a += (1.0 - accumulated.a) * sampleAlpha;
+        if (!hasVisibleDepth && accumulated.a >= 0.02) {
+            float4 clipPosition = uniforms.viewProjectionMatrix * float4(position, 1.0);
+            visibleDepth = saturate(clipPosition.z / clipPosition.w);
+            hasVisibleDepth = true;
+        }
     }
 
-    if (accumulated.a < uniforms.alphaFloor) {
+    if (accumulated.a <= max(uniforms.alphaFloor, 0.0001)) {
         Metal3DFragmentOutput output;
         output.color = float4(0.0, 0.0, 0.0, 1.0);
         output.depth = 1.0;
@@ -541,7 +552,7 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
     float3 finalColor = accumulated.rgb;
     Metal3DFragmentOutput output;
     output.color = float4(finalColor, 1.0);
-    output.depth = 0.9999;
+    output.depth = hasVisibleDepth ? visibleDepth : 0.9999;
     return output;
 }
 
@@ -610,6 +621,52 @@ fragment float4 metalViewerFragment(
     return float4(overlayNormalized * uniforms.overlayBlend, baseNormalized * (1.0 - uniforms.overlayBlend), 0.0, 1.0);
 }
 
+static float metalViewerCubicWeight(float x) {
+    x = abs(x);
+    if (x <= 1.0) {
+        return (1.5 * x - 2.5) * x * x + 1.0;
+    }
+    if (x < 2.0) {
+        return ((-0.5 * x + 2.5) * x - 4.0) * x + 2.0;
+    }
+    return 0.0;
+}
+
+static float metalViewerMPRSample(
+    texture3d<float> volumeTexture,
+    sampler imageSampler,
+    float3 normalizedCoord
+) {
+    const float depth = float(volumeTexture.get_depth());
+    if (depth < 4.0) {
+        return volumeTexture.sample(imageSampler, normalizedCoord).r;
+    }
+
+    const float z = normalizedCoord.z * depth - 0.5;
+    const float zBase = floor(z);
+    const float zFraction = z - zBase;
+    float weightedValue = 0.0;
+    float totalWeight = 0.0;
+    float minimumSample = 3.402823466e+38F;
+    float maximumSample = -3.402823466e+38F;
+
+    for (int offset = -1; offset <= 2; ++offset) {
+        const float sampleZ = clamp(zBase + float(offset), 0.0, depth - 1.0);
+        const float weight = metalViewerCubicWeight(float(offset) - zFraction);
+        const float3 sampleCoord = float3(
+            normalizedCoord.xy,
+            (sampleZ + 0.5) / depth
+        );
+        const float sampleValue = volumeTexture.sample(imageSampler, sampleCoord).r;
+        weightedValue += sampleValue * weight;
+        totalWeight += weight;
+        minimumSample = min(minimumSample, sampleValue);
+        maximumSample = max(maximumSample, sampleValue);
+    }
+
+    return clamp(weightedValue / max(totalWeight, 0.0001), minimumSample, maximumSample);
+}
+
 fragment float4 metalViewerMPRFragment(
     MetalMPRRasterizerData in [[stage_in]],
     constant MetalMPRUniforms &uniforms [[buffer(0)]],
@@ -626,7 +683,7 @@ fragment float4 metalViewerMPRFragment(
         discard_fragment();
     }
 
-    const float basePixelValue = baseTexture.sample(imageSampler, baseCoord).r;
+    const float basePixelValue = metalViewerMPRSample(baseTexture, imageSampler, baseCoord);
     const float baseMinValue = uniforms.baseWindowLevel - uniforms.baseWindowWidth * 0.5;
     const float baseNormalized = clamp((basePixelValue - baseMinValue) / uniforms.baseWindowWidth, 0.0, 1.0);
 
@@ -649,7 +706,7 @@ fragment float4 metalViewerMPRFragment(
         return float4(0.0, baseNormalized, 0.0, 1.0);
     }
 
-    const float overlayPixelValue = overlayTexture.sample(imageSampler, overlayCoord).r;
+    const float overlayPixelValue = metalViewerMPRSample(overlayTexture, imageSampler, overlayCoord);
     const float overlayMinValue = uniforms.overlayWindowLevel - uniforms.overlayWindowWidth * 0.5;
     const float overlayNormalized = clamp((overlayPixelValue - overlayMinValue) / uniforms.overlayWindowWidth, 0.0, 1.0);
 

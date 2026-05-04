@@ -11,6 +11,42 @@ private func metalTimingLog(_ message: String, since start: CFAbsoluteTime? = ni
 @objc(HorosMetalViewerLauncher)
 final class MetalViewerLauncher: NSObject {
     private static var retainedControllers: [MetalViewerWindowController] = []
+    private static var refreshContexts: [ObjectIdentifier: ViewerRefreshContext] = [:]
+    private static var databaseAddObserver: NSObjectProtocol?
+    private static var pendingDatabaseRefresh: DispatchWorkItem?
+    private static var pendingRefreshIdentifiers: RefreshIdentifiers?
+
+    private struct ViewerRefreshContext {
+        let frames: [DCMPix]
+        let fallbackTitle: String
+        let identifiers: RefreshIdentifiers
+    }
+
+    private struct RefreshIdentifiers {
+        var studyUIDs: Set<String> = []
+        var patientUIDs: Set<String> = []
+        var seriesUIDs: Set<String> = []
+        var objectURIs: Set<String> = []
+
+        var isEmpty: Bool {
+            return studyUIDs.isEmpty && patientUIDs.isEmpty && seriesUIDs.isEmpty && objectURIs.isEmpty
+        }
+
+        mutating func formUnion(_ other: RefreshIdentifiers) {
+            studyUIDs.formUnion(other.studyUIDs)
+            patientUIDs.formUnion(other.patientUIDs)
+            seriesUIDs.formUnion(other.seriesUIDs)
+            objectURIs.formUnion(other.objectURIs)
+        }
+
+        func intersects(_ other: RefreshIdentifiers) -> Bool {
+            if studyUIDs.isDisjoint(with: other.studyUIDs) == false { return true }
+            if patientUIDs.isDisjoint(with: other.patientUIDs) == false { return true }
+            if seriesUIDs.isDisjoint(with: other.seriesUIDs) == false { return true }
+            if objectURIs.isDisjoint(with: other.objectURIs) == false { return true }
+            return false
+        }
+    }
 
     private struct SeriesImageGroup {
         let identifier: String
@@ -31,6 +67,28 @@ final class MetalViewerLauncher: NSObject {
             return
         }
 
+        let launchIdentifiers = refreshIdentifiers(from: frames)
+        if let existingController = existingController(matching: launchIdentifiers) {
+            let controllerIdentifier = ObjectIdentifier(existingController)
+            refreshContexts[controllerIdentifier] = ViewerRefreshContext(
+                frames: frames,
+                fallbackTitle: title,
+                identifiers: launchIdentifiers
+            )
+            ensureDatabaseAddObserver()
+
+            let fullStudyStart = CFAbsoluteTimeGetCurrent()
+            let fullStudy = buildStudy(from: frames, fallbackTitle: title)
+            metalTimingLog("MetalViewerLauncher build reused study", since: fullStudyStart)
+            let updateStart = CFAbsoluteTimeGetCurrent()
+            existingController.updateStudy(fullStudy, selectInitialSeries: true)
+            metalTimingLog("MetalViewerLauncher update reused window", since: updateStart)
+            existingController.window?.makeKeyAndOrderFront(NSApp)
+            NSApp.activate(ignoringOtherApps: true)
+            metalTimingLog("MetalViewerLauncher reused existing window total", since: launchStart)
+            return
+        }
+
         let initialStudyStart = CFAbsoluteTimeGetCurrent()
         let study = buildInitialStudy(from: frames, fallbackTitle: title)
         metalTimingLog("MetalViewerLauncher buildInitialStudy", since: initialStudyStart)
@@ -38,6 +96,13 @@ final class MetalViewerLauncher: NSObject {
         let controller = MetalViewerWindowController(study: study)
         metalTimingLog("MetalViewerLauncher create window controller", since: controllerStart)
         retainedControllers.append(controller)
+        let controllerIdentifier = ObjectIdentifier(controller)
+        refreshContexts[controllerIdentifier] = ViewerRefreshContext(
+            frames: frames,
+            fallbackTitle: title,
+            identifiers: launchIdentifiers
+        )
+        ensureDatabaseAddObserver()
 
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
@@ -46,6 +111,7 @@ final class MetalViewerLauncher: NSObject {
         ) { [weak controller] _ in
             guard let controller else { return }
             retainedControllers.removeAll { $0 === controller }
+            refreshContexts.removeValue(forKey: ObjectIdentifier(controller))
         }
 
         let presentationStart = CFAbsoluteTimeGetCurrent()
@@ -72,6 +138,120 @@ final class MetalViewerLauncher: NSObject {
             controller.updateStudy(fullStudy)
             metalTimingLog("MetalViewerLauncher update full study", since: updateStart)
         }
+    }
+
+    private class func ensureDatabaseAddObserver() {
+        guard databaseAddObserver == nil else { return }
+
+        databaseAddObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("OsirixAddToDBNotification"),
+            object: nil,
+            queue: .main
+        ) { notification in
+            Self.scheduleDatabaseRefresh(for: notification)
+        }
+    }
+
+    private class func existingController(matching identifiers: RefreshIdentifiers) -> MetalViewerWindowController? {
+        guard identifiers.isEmpty == false else { return nil }
+
+        for controller in retainedControllers {
+            guard let context = refreshContexts[ObjectIdentifier(controller)] else { continue }
+            if context.identifiers.intersects(identifiers) {
+                return controller
+            }
+        }
+
+        return nil
+    }
+
+    private class func scheduleDatabaseRefresh(for notification: Notification) {
+        let identifiers = refreshIdentifiers(from: notification)
+        if identifiers == nil {
+            pendingRefreshIdentifiers = nil
+        } else if identifiers!.isEmpty {
+            return
+        } else if pendingRefreshIdentifiers == nil {
+            pendingRefreshIdentifiers = identifiers
+        } else {
+            pendingRefreshIdentifiers?.formUnion(identifiers!)
+        }
+
+        pendingDatabaseRefresh?.cancel()
+
+        let workItem = DispatchWorkItem {
+            let identifiers = pendingRefreshIdentifiers
+            pendingRefreshIdentifiers = nil
+            Self.refreshOpenViewersFromDatabase(matching: identifiers)
+        }
+        pendingDatabaseRefresh = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: workItem)
+    }
+
+    private class func refreshOpenViewersFromDatabase(matching importedIdentifiers: RefreshIdentifiers?) {
+        for controller in retainedControllers {
+            let controllerIdentifier = ObjectIdentifier(controller)
+            guard let context = refreshContexts[controllerIdentifier] else { continue }
+            if let importedIdentifiers = importedIdentifiers {
+                if importedIdentifiers.isEmpty == false,
+                   context.identifiers.isEmpty == false,
+                   context.identifiers.intersects(importedIdentifiers) == false {
+                    continue
+                }
+            }
+
+            let refreshStart = CFAbsoluteTimeGetCurrent()
+            let updatedStudy = buildStudy(from: context.frames, fallbackTitle: context.fallbackTitle)
+            let changedPaneCount = controller.updateStudy(updatedStudy)
+            if changedPaneCount > 0 {
+                metalTimingLog("MetalViewerLauncher refreshed open viewer panes=\(changedPaneCount)", since: refreshStart)
+            }
+        }
+    }
+
+    private class func refreshIdentifiers(from notification: Notification) -> RefreshIdentifiers? {
+        guard let images = notification.userInfo?["OsiriXAddToDBArray"] as? [NSManagedObject] else {
+            return nil
+        }
+
+        return refreshIdentifiers(from: images)
+    }
+
+    private class func refreshIdentifiers(from frames: [DCMPix]) -> RefreshIdentifiers {
+        let imageObjects = frames.compactMap {
+            $0.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSManagedObject
+        }
+        return refreshIdentifiers(from: imageObjects)
+    }
+
+    private class func refreshIdentifiers(from imageObjects: [NSManagedObject]) -> RefreshIdentifiers {
+        var identifiers = RefreshIdentifiers()
+
+        for imageObject in imageObjects {
+            identifiers.objectURIs.insert(imageObject.objectID.uriRepresentation().absoluteString)
+
+            if let studyUID = imageObject.value(forKeyPath: "series.study.studyInstanceUID") as? String, studyUID.isEmpty == false {
+                identifiers.studyUIDs.insert(studyUID)
+            }
+
+            if let patientUID = imageObject.value(forKeyPath: "series.study.patientUID") as? String, patientUID.isEmpty == false {
+                identifiers.patientUIDs.insert(patientUID)
+            }
+
+            if let series = imageObject.value(forKey: "series") as? NSManagedObject {
+                identifiers.seriesUIDs.insert(series.objectID.uriRepresentation().absoluteString)
+
+                if let seriesDICOMUID = series.value(forKey: "seriesDICOMUID") as? String, seriesDICOMUID.isEmpty == false {
+                    identifiers.seriesUIDs.insert(seriesDICOMUID)
+                }
+
+                if let seriesInstanceUID = series.value(forKey: "seriesInstanceUID") as? String, seriesInstanceUID.isEmpty == false {
+                    identifiers.seriesUIDs.insert(seriesInstanceUID)
+                }
+            }
+        }
+
+        return identifiers
     }
 
     private class func applyFastPresentationFrame(to window: NSWindow?) {
@@ -172,6 +352,8 @@ final class MetalViewerLauncher: NSObject {
             )
             return MetalViewerStudy(title: fallbackTitle, series: [series], initialSeriesIdentifier: series.identifier)
         }
+
+        refreshObjectGraphAfterImport(currentImageObject)
 
         let browser = BrowserController.currentBrowser()
         let currentPatientUID = currentStudy.patientUID ?? ""
@@ -276,6 +458,17 @@ final class MetalViewerLauncher: NSObject {
         return MetalViewerStudy(title: studyTitle, series: flattenedSeries, initialSeriesIdentifier: currentSeriesID)
     }
 
+    private class func refreshObjectGraphAfterImport(_ currentImageObject: NSManagedObject) {
+        guard let context = currentImageObject.managedObjectContext else { return }
+
+        if let currentSeries = currentImageObject.value(forKey: "series") as? NSManagedObject {
+            context.refresh(currentSeries, mergeChanges: true)
+        }
+        if let currentStudy = currentImageObject.value(forKeyPath: "series.study") as? NSManagedObject {
+            context.refresh(currentStudy, mergeChanges: true)
+        }
+    }
+
     private class func splitSeriesImages(
         _ images: [NSManagedObject],
         seriesObject: NSManagedObject,
@@ -284,7 +477,8 @@ final class MetalViewerLauncher: NSObject {
         frames: [DCMPix]
     ) -> [SeriesImageGroup] {
         let sortedImages = sortImages(images)
-        let cachedFramesForSeries = filteredFrames(frames, matching: sortedImages)
+        let filteredFramesForSeries = filteredFrames(frames, matching: sortedImages)
+        let cachedFramesForSeries = filteredFramesForSeries.count == sortedImages.count ? filteredFramesForSeries : []
         guard sortedImages.count > 1 else {
             let containsCurrentImage = sortedImages.first?.objectID == currentImageObject.objectID
             return [
@@ -293,7 +487,7 @@ final class MetalViewerLauncher: NSObject {
                     title: baseTitle,
                     imageObjects: sortedImages,
                     containsCurrentImage: containsCurrentImage,
-                    initialPixList: containsCurrentImage ? cachedFramesForSeries : nil
+                    initialPixList: containsCurrentImage && cachedFramesForSeries.isEmpty == false ? cachedFramesForSeries : nil
                 )
             ]
         }
@@ -305,7 +499,7 @@ final class MetalViewerLauncher: NSObject {
                 title: baseTitle,
                 imageObjects: sortedImages,
                 containsCurrentImage: containsCurrentImage,
-                initialPixList: containsCurrentImage ? cachedFramesForSeries : nil
+                initialPixList: containsCurrentImage && cachedFramesForSeries.isEmpty == false ? cachedFramesForSeries : nil
             )
         ]
     }

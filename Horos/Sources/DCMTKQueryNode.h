@@ -61,7 +61,7 @@
 	NSNumber *_numberImages;
 	NSString *_specificCharacterSet;
 	NSManagedObject *_logEntry;
-	BOOL showErrorMessage, firstWadoErrorDisplayed, _dontCatchExceptions, _isAutoRetrieve, _noSmartMode;
+	BOOL showErrorMessage, firstWadoErrorDisplayed, _dontCatchExceptions, _isAutoRetrieve, _noSmartMode, _suppressQueryFailureMessages;
 	OFCondition globalCondition;
     NSUInteger _countOfSuboperations, _countOfSuccessfulSuboperations;
 }

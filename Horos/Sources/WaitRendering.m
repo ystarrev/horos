@@ -41,6 +41,16 @@
 
 @implementation WaitRendering
 
+- (void)orderWindowFrontWithoutForcingKey:(id)sender
+{
+	NSWindow *window = [self window];
+
+	if( [window canBecomeKeyWindow])
+		[window makeKeyAndOrderFront: sender];
+	else
+		[window orderFront: sender];
+}
+
 - (void) showWindow: (id) sender
 {
 	NSMutableArray *winList = [NSMutableArray array];
@@ -56,14 +66,13 @@
 		[[self window] center];
 		[[self window] setFrame: NSMakeRect( [[self window] frame].origin.x, [[self window] frame].origin.y - [winList count] * (5 + [[self window] frame].size.height), [[self window] frame].size.width, [[self window] frame].size.height) display: NO];
 	}
-	[super showWindow: sender];
-	[[self window] makeKeyAndOrderFront: sender];
+	[self orderWindowFrontWithoutForcingKey: sender];
 	
 	[self run];
 	
 	[[self window] display];
 	[[self window] flushWindow];
-	[[self window] makeKeyAndOrderFront: sender];
+	[self orderWindowFrontWithoutForcingKey: sender];
 	
 	displayedTime = [NSDate timeIntervalSinceReferenceDate];
 }

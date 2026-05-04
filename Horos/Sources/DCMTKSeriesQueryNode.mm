@@ -140,6 +140,9 @@
             
             if (dataset ->findAndGetString(DCM_Modality, string).good() && string != nil)	
                 _modality = [[NSString alloc] initWithCString:string encoding:NSISOLatin1StringEncoding];
+
+            if( [_theDescription length] == 0 && _modality && [_modality caseInsensitiveCompare: @"SR"] == NSOrderedSame)
+                _theDescription = [NSLocalizedString( @"Diagnostic Imaging Report", nil) retain];
                 
             if (dataset ->findAndGetString(DCM_NumberOfSeriesRelatedInstances, string).good() && string != nil)
             {

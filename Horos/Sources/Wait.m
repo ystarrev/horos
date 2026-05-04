@@ -42,6 +42,16 @@
 
 @implementation Wait
 
+- (void)orderWindowFrontWithoutForcingKey:(id)sender
+{
+	NSWindow *window = [self window];
+
+	if( [window canBecomeKeyWindow])
+		[window makeKeyAndOrderFront: sender];
+	else
+		[window orderFront: sender];
+}
+
 - (void) showWindow: (id) sender
 {
 	NSMutableArray *winList = [NSMutableArray array];
@@ -54,13 +64,12 @@
 	[[self window] center];
 	[[self window] setFrameTopLeftPoint: NSMakePoint( [[self window] frame].origin.x, [[self window] frame].origin.y - [winList count] * (10 + [[self window] frame].size.height))];
 	
-	[super showWindow: sender];
-	[[self window] makeKeyAndOrderFront: sender];
+	[self orderWindowFrontWithoutForcingKey: sender];
 	[[self window] setDelegate: self];
 	
 	[[self window] display];
 	[[self window] flushWindow];
-	[[self window] makeKeyAndOrderFront: sender];
+	[self orderWindowFrontWithoutForcingKey: sender];
 	
 	displayedTime = [NSDate timeIntervalSinceReferenceDate];
 	aborted = NO;

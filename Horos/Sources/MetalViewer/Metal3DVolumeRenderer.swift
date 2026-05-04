@@ -51,6 +51,23 @@ private struct Metal3DVertex {
     var uv: SIMD2<Float>
 }
 
+private struct Metal3DVolumeCropBounds {
+    var minX: Int
+    var maxX: Int
+    var minY: Int
+    var maxY: Int
+    var minZ: Int
+    var maxZ: Int
+
+    var dimensions: SIMD3<Int> {
+        SIMD3<Int>(
+            max(maxX - minX + 1, 1),
+            max(maxY - minY + 1, 1),
+            max(maxZ - minZ + 1, 1)
+        )
+    }
+}
+
 private struct Metal3DVolumeUniforms {
     var cameraPosition: SIMD3<Float>
     var tanHalfFovY: Float
@@ -71,6 +88,7 @@ private struct Metal3DVolumeUniforms {
     var padding3: Float = 0
     var volumeDimensions: SIMD3<UInt32>
     var cropEnabled: UInt32
+    var voxelSpacing: SIMD3<Float>
     var maxSteps: UInt32
     var windowLevel: Float
     var windowWidth: Float
@@ -121,7 +139,12 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private let pixList: [DCMPix]
     private let cropHandleColor = SIMD4<Float>(0.16, 0.98, 0.32, 1.0)
     private let cropHandleHighlightColor = SIMD4<Float>(1.0, 0.18, 0.82, 1.0)
+    private let fullSourceDimensions: SIMD3<Int>
+    private let sourceCropBounds: Metal3DVolumeCropBounds
+    private let sourceDimensions: SIMD3<Int>
+    private let sourceVoxelSpacing: SIMD3<Float>
     private let volumeDimensions: SIMD3<Int>
+    private let voxelSpacing: SIMD3<Float>
     private let boxMin: SIMD3<Float>
     private let boxMax: SIMD3<Float>
     private var cropBoxMin = SIMD3<Float>(repeating: -0.28)
@@ -130,11 +153,10 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private let valueFactor: Float
     private let offset16: Float
     private let transferTextureWidth = 4096
-    private let boneModeEnabled: Bool
-    private let shadingAmbient: Float = 0.26
-    private let shadingDiffuse: Float = 0.28
-    private let shadingSpecular: Float = 0.035
-    private let shadingSpecularPower: Float = 36.0
+    private let shadingAmbient: Float = 0.15
+    private let shadingDiffuse: Float = 0.9
+    private let shadingSpecular: Float = 0.3
+    private let shadingSpecularPower: Float = 15.0
     private let boneLowerHU: Float = 160.0
     private let boneUpperHU: Float = 2200.0
     private let boneSurfaceHU: Float = 300.0
@@ -164,6 +186,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var currentOpacityPoints = [String]()
     private var cameraRotation: simd_quatf
     private var orbitRadius: Float
+    private var orthographicZoomScale: Float = 1.0
 
     init(device: MTLDevice, pixList: [DCMPix], volumeData: Data) {
         self.deviceRef = device
@@ -179,10 +202,19 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let width = max(Int(firstPix.pwidth), 1)
         let height = max(Int(firstPix.pheight), 1)
         let depth = max(pixList.count, 1)
-        self.volumeDimensions = SIMD3<Int>(width, height, depth)
+        let fullSourceDimensions = SIMD3<Int>(width, height, depth)
+        self.fullSourceDimensions = fullSourceDimensions
 
-        let spacing = Self.voxelSpacing(for: pixList)
-        let extent = Self.volumeExtent(dimensions: self.volumeDimensions, spacing: spacing)
+        let sourceSpacing = Self.voxelSpacing(for: pixList)
+        self.sourceVoxelSpacing = sourceSpacing
+        let cropBounds = Self.volumeCropBounds(for: pixList, dimensions: fullSourceDimensions, spacing: sourceSpacing)
+        self.sourceCropBounds = cropBounds
+        let sourceDimensions = cropBounds.dimensions
+        self.sourceDimensions = sourceDimensions
+        let textureGeometry = Self.isotropicTextureGeometry(sourceDimensions: sourceDimensions, sourceSpacing: sourceSpacing)
+        self.volumeDimensions = textureGeometry.dimensions
+        self.voxelSpacing = textureGeometry.spacing
+        let extent = Self.volumeExtent(dimensions: self.volumeDimensions, spacing: self.voxelSpacing)
         self.boxMin = -extent * 0.5
         self.boxMax = extent * 0.5
         let yaw = simd_quatf(angle: Float(35.0 * .pi / 180.0), axis: SIMD3<Float>(0, 1, 0))
@@ -193,7 +225,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let scalarMapping = Self.scalarMapping(for: pixList)
         self.valueFactor = scalarMapping.valueFactor
         self.offset16 = scalarMapping.offset16
-        self.boneModeEnabled = Self.shouldUseBoneMode(for: firstPix)
         _ = volumeData
 
         guard let commandQueue = device.makeCommandQueue() else {
@@ -274,10 +305,9 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         self.rawVolume = makeRawVolume()
 
         volumeTexture = makeVolumeTexture()
-        applyWLPreset(named: boneModeEnabled ? Metal3DDefaults.fullDynamic : Metal3DDefaults.defaultWLWW)
+        applyWLPreset(named: Metal3DDefaults.defaultWLWW)
         applyCLUT(named: defaultCLUTName())
         applyOpacity(named: defaultOpacityName())
-        shadingEnabled = boneModeEnabled || shadingEnabled
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
@@ -288,7 +318,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         guard let renderPassDescriptor = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable,
               let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor),
               let volumeTexture else {
             return
         }
@@ -296,6 +325,9 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         renderPassDescriptor.depthAttachment.loadAction = .clear
         renderPassDescriptor.depthAttachment.storeAction = .store
         renderPassDescriptor.depthAttachment.clearDepth = 1.0
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+            return
+        }
 
         let camera = currentCameraState(for: view.drawableSize)
         var uniforms = makeUniforms(for: view.drawableSize, camera: camera)
@@ -594,7 +626,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
     func zoom(delta: Float) {
         let zoomScale = exp(delta * 0.0015)
-        orbitRadius = min(max(orbitRadius / zoomScale, 0.25), 8.0)
+        orthographicZoomScale = min(max(orthographicZoomScale * zoomScale, 0.25), 16.0)
     }
 
     private func sanitizeWLPresetName(_ name: String) -> String {
@@ -608,9 +640,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func defaultCLUTName() -> String {
-        if boneModeEnabled {
-            return Metal3DDefaults.noCLUT
-        }
         let dictionary = UserDefaults.standard.dictionary(forKey: "CLUT") ?? [:]
         if pixList.first?.isRGB == false, dictionary[Metal3DDefaults.vrBonesCLUT] != nil {
             return Metal3DDefaults.vrBonesCLUT
@@ -619,9 +648,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func defaultOpacityName() -> String {
-        if boneModeEnabled {
-            return Metal3DDefaults.linearOpacity
-        }
         let dictionary = UserDefaults.standard.dictionary(forKey: "OPACITY") ?? [:]
         if pixList.first?.isRGB == false, dictionary[Metal3DDefaults.vrOpacity] != nil {
             return Metal3DDefaults.vrOpacity
@@ -639,11 +665,11 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
     private func makeUniforms(for drawableSize: CGSize, camera: CameraState) -> Metal3DVolumeUniforms {
 
-        let diagonal = simd_length(boxMax - boxMin)
-        let stepSize = max(diagonal / 300.0, 0.0030)
-        let density: Float = 10.5
-        let alphaFloor: Float = 0.07
-        let maxSteps: UInt32 = 768
+        let stepSize = rayMarchStepSize()
+        let density: Float = 1.0
+        let alphaFloor: Float = 0.0
+        let rayLength = simd_length((cropEnabled ? cropBoxMax - cropBoxMin : boxMax - boxMin))
+        let maxSteps = UInt32(min(max(Int(ceil(rayLength / max(stepSize, 0.0001))) + 8, 256), 8192))
 
         return Metal3DVolumeUniforms(
             cameraPosition: camera.position,
@@ -665,10 +691,11 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 UInt32(max(volumeDimensions.z, 1))
             ),
             cropEnabled: cropEnabled ? 1 : 0,
+            voxelSpacing: voxelSpacing,
             maxSteps: maxSteps,
             windowLevel: windowLevel,
             windowWidth: windowWidth,
-            boneRenderingOptions: boneRenderingOptions(),
+            boneRenderingOptions: .zero,
             opacityDomainMin: histogramDomainMin,
             opacityDomainMax: histogramDomainMax,
             useRawOpacityCurve: customOpacityControlPoints.isEmpty ? 0 : 1,
@@ -703,12 +730,13 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let rotatedUp = simd_act(cameraRotation, SIMD3<Float>(0, 1, 0))
         let cameraRight = simd_normalize(simd_cross(cameraForward, rotatedUp))
         let cameraUp = simd_normalize(simd_cross(cameraRight, cameraForward))
-        let tanHalfFovY = tan(Float(26.0 * .pi / 180.0))
+        let baseHalfViewHeight = max(simd_length(boxMax - boxMin) * 0.55, 0.55)
+        let halfViewHeight = baseHalfViewHeight / max(orthographicZoomScale, 0.001)
         let nearPlane: Float = 0.01
         let farPlane: Float = 20.0
         let viewMatrix = Self.lookAtMatrix(eye: cameraPosition, center: target, up: cameraUp)
-        let projectionMatrix = Self.perspectiveMatrix(
-            verticalFov: Float(52.0 * .pi / 180.0),
+        let projectionMatrix = Self.orthographicMatrix(
+            halfHeight: halfViewHeight,
             aspectRatio: aspectRatio,
             nearPlane: nearPlane,
             farPlane: farPlane
@@ -718,7 +746,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             forward: cameraForward,
             right: cameraRight,
             up: cameraUp,
-            tanHalfFovY: tanHalfFovY,
+            tanHalfFovY: halfViewHeight,
             aspectRatio: aspectRatio,
             viewProjectionMatrix: projectionMatrix * viewMatrix
         )
@@ -848,113 +876,22 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         ))
     }
 
-    private static func perspectiveMatrix(verticalFov: Float, aspectRatio: Float, nearPlane: Float, farPlane: Float) -> simd_float4x4 {
-        let yScale = 1 / tan(verticalFov * 0.5)
-        let xScale = yScale / aspectRatio
-        let zScale = farPlane / (nearPlane - farPlane)
-        let wzScale = (farPlane * nearPlane) / (nearPlane - farPlane)
+    private static func orthographicMatrix(halfHeight: Float, aspectRatio: Float, nearPlane: Float, farPlane: Float) -> simd_float4x4 {
+        let halfWidth = max(halfHeight * aspectRatio, 0.0001)
+        let yScale = 1.0 / max(halfHeight, 0.0001)
+        let xScale = 1.0 / halfWidth
+        let zScale = 1.0 / (nearPlane - farPlane)
+        let wzScale = nearPlane / (nearPlane - farPlane)
         return simd_float4x4(columns: (
             SIMD4<Float>(xScale, 0, 0, 0),
             SIMD4<Float>(0, yScale, 0, 0),
-            SIMD4<Float>(0, 0, zScale, -1),
-            SIMD4<Float>(0, 0, wzScale, 0)
+            SIMD4<Float>(0, 0, zScale, 0),
+            SIMD4<Float>(0, 0, wzScale, 1)
         ))
     }
 
-    private func isOccludedByVolume(point: SIMD3<Float>, camera: CameraState, allowance: Float) -> Bool {
-        guard boneModeEnabled else { return false }
-
-        let toPoint = point - camera.position
-        let targetDistance = simd_length(toPoint)
-        guard targetDistance > 0.0001 else { return false }
-
-        let rayDirection = toPoint / targetDistance
-        guard let intersection = intersectBox(rayOrigin: camera.position, rayDirection: rayDirection, boxMin: boxMin, boxMax: boxMax) else {
-            return false
-        }
-
-        let diagonal = simd_length(boxMax - boxMin)
-        let step = max(diagonal / 600.0, 0.0015)
-        let endDistance = min(intersection.tMax, targetDistance)
-        var t = max(intersection.tMin, 0)
-        var previousScalar: Float?
-
-        while t <= endDistance {
-            let worldPoint = camera.position + rayDirection * t
-            let scalar = sampleVolume(worldPoint: worldPoint)
-            if scalar >= boneLowerHU, scalar <= boneUpperHU {
-                let crossed = previousScalar == nil ? scalar >= boneSurfaceHU : (previousScalar! < boneSurfaceHU && scalar >= boneSurfaceHU)
-                if crossed && t < targetDistance - max(allowance, step * 0.5) {
-                    return true
-                }
-            }
-            previousScalar = scalar
-            t += step
-        }
-
+    private func isOccludedByVolume(point _: SIMD3<Float>, camera _: CameraState, allowance _: Float) -> Bool {
         return false
-    }
-
-    private func intersectBox(rayOrigin: SIMD3<Float>, rayDirection: SIMD3<Float>, boxMin: SIMD3<Float>, boxMax: SIMD3<Float>) -> (tMin: Float, tMax: Float)? {
-        let safeDirection = SIMD3<Float>(
-            abs(rayDirection.x) < 1e-5 ? 1e-5 : rayDirection.x,
-            abs(rayDirection.y) < 1e-5 ? 1e-5 : rayDirection.y,
-            abs(rayDirection.z) < 1e-5 ? 1e-5 : rayDirection.z
-        )
-        let inverseDirection = 1.0 / safeDirection
-        let t0 = (boxMin - rayOrigin) * inverseDirection
-        let t1 = (boxMax - rayOrigin) * inverseDirection
-        let tSmall = simd.min(t0, t1)
-        let tLarge = simd.max(t0, t1)
-        let tMin = max(max(tSmall.x, tSmall.y), tSmall.z)
-        let tMax = min(min(tLarge.x, tLarge.y), tLarge.z)
-        return tMax >= max(tMin, 0) ? (tMin, tMax) : nil
-    }
-
-    private func sampleVolume(worldPoint: SIMD3<Float>) -> Float {
-        let normalized = (worldPoint - boxMin) / (boxMax - boxMin)
-        let clamped = simd_clamp(normalized, SIMD3<Float>(repeating: 0), SIMD3<Float>(repeating: 1))
-
-        let fx = clamped.x * Float(max(volumeDimensions.x - 1, 1))
-        let fy = clamped.y * Float(max(volumeDimensions.y - 1, 1))
-        let fz = clamped.z * Float(max(volumeDimensions.z - 1, 1))
-
-        let x0 = Int(floor(fx))
-        let y0 = Int(floor(fy))
-        let z0 = Int(floor(fz))
-        let x1 = min(x0 + 1, max(volumeDimensions.x - 1, 0))
-        let y1 = min(y0 + 1, max(volumeDimensions.y - 1, 0))
-        let z1 = min(z0 + 1, max(volumeDimensions.z - 1, 0))
-
-        let tx = fx - Float(x0)
-        let ty = fy - Float(y0)
-        let tz = fz - Float(z0)
-
-        let c000 = voxelValue(x: x0, y: y0, z: z0)
-        let c100 = voxelValue(x: x1, y: y0, z: z0)
-        let c010 = voxelValue(x: x0, y: y1, z: z0)
-        let c110 = voxelValue(x: x1, y: y1, z: z0)
-        let c001 = voxelValue(x: x0, y: y0, z: z1)
-        let c101 = voxelValue(x: x1, y: y0, z: z1)
-        let c011 = voxelValue(x: x0, y: y1, z: z1)
-        let c111 = voxelValue(x: x1, y: y1, z: z1)
-
-        let c00 = c000 + (c100 - c000) * tx
-        let c10 = c010 + (c110 - c010) * tx
-        let c01 = c001 + (c101 - c001) * tx
-        let c11 = c011 + (c111 - c011) * tx
-        let c0 = c00 + (c10 - c00) * ty
-        let c1 = c01 + (c11 - c01) * ty
-        return c0 + (c1 - c0) * tz
-    }
-
-    private func voxelValue(x: Int, y: Int, z: Int) -> Float {
-        let clampedX = min(max(x, 0), max(volumeDimensions.x - 1, 0))
-        let clampedY = min(max(y, 0), max(volumeDimensions.y - 1, 0))
-        let clampedZ = min(max(z, 0), max(volumeDimensions.z - 1, 0))
-        let sliceStride = max(volumeDimensions.x * volumeDimensions.y, 1)
-        let index = clampedZ * sliceStride + clampedY * max(volumeDimensions.x, 1) + clampedX
-        return rawVolume[index]
     }
 
     private func project(point: SIMD3<Float>, camera: CameraState, in bounds: CGRect) -> CGPoint? {
@@ -962,8 +899,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let depth = simd_dot(relative, camera.forward)
         guard depth > 0.0001 else { return nil }
 
-        let x = simd_dot(relative, camera.right) / (depth * camera.aspectRatio * camera.tanHalfFovY)
-        let y = simd_dot(relative, camera.up) / (depth * camera.tanHalfFovY)
+        let x = simd_dot(relative, camera.right) / (camera.aspectRatio * camera.tanHalfFovY)
+        let y = simd_dot(relative, camera.up) / camera.tanHalfFovY
 
         let screenX = bounds.minX + CGFloat((x * 0.5 + 0.5)) * bounds.width
         let screenY = bounds.minY + CGFloat((y * 0.5 + 0.5)) * bounds.height
@@ -992,30 +929,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             SIMD2<Float>($0.x, min(max($0.y, 0), 1))
         }
         opacityTexture = makeOpacityTransferTexture()
-    }
-
-    private func boneRenderingOptions() -> SIMD4<Float> {
-        guard boneModeEnabled else {
-            return .zero
-        }
-
-        let lower = boneLowerHU
-        let upper = boneUpperHU
-        let surface = boneSurfaceHU
-        guard upper > lower, surface > lower, surface < upper else {
-            return .zero
-        }
-
-        return SIMD4<Float>(1, lower, upper, surface)
-    }
-
-    private static func shouldUseBoneMode(for firstPix: DCMPix) -> Bool {
-        let modality = firstPix.modalityString?.uppercased() ?? ""
-        let rescale = firstPix.rescaleType?.uppercased() ?? ""
-        let seriesMinimum = Float(firstPix.minValueOfSeries)
-        let seriesMaximum = Float(firstPix.maxValueOfSeries)
-        let looksLikeCTRange = seriesMinimum < 200 && seriesMaximum > 1200
-        return modality.contains("CT") || rescale == "HU" || (firstPix.isRGB == false && looksLikeCTRange)
     }
 
     private func makeVolumeTexture() -> MTLTexture? {
@@ -1066,10 +979,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private func makeOpacityTransferTexture() -> MTLTexture? {
         let width = transferTextureWidth
         var values = [Float](repeating: 0, count: width)
-        let start = valueFactor * (offset16 + windowLevel - windowWidth * 0.5)
-        let end = valueFactor * (offset16 + windowLevel + windowWidth * 0.5)
-        let span = max(end - start, 0.0001)
-        let textureDomainScale = Metal3DDefaults.maxDynamicValue / Float(max(width - 1, 1))
 
         if customOpacityControlPoints.isEmpty == false {
             let points = customOpacityControlPoints
@@ -1098,32 +1007,31 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             }
         } else if currentOpacityPoints.isEmpty {
             for index in 0..<width {
-                let convertedSample = Float(index) * textureDomainScale
-                let clamped = min(max((convertedSample - start) / span, 0), 1)
-                values[index] = clamped / superSampling
+                values[index] = (Float(index) / Float(max(width - 1, 1))) / superSampling
             }
         } else {
             var points = [(x: Float, y: Float)]()
             for string in currentOpacityPoints {
                 var point = NSPointFromString(string)
                 point.x -= 1000
-                let mappedX = start + (Float(point.x) / 256.0) * span
+                let mappedX = min(max(Float(point.x) / 256.0, 0), 1)
                 points.append((x: mappedX, y: Float(point.y) / superSampling))
             }
+            points.sort { $0.x < $1.x }
 
             for index in 0..<width {
-                let sample = Float(index) * textureDomainScale
-                if sample <= start {
+                let sample = Float(index) / Float(max(width - 1, 1))
+                if sample <= 0 {
                     values[index] = 0
                     continue
                 }
-                if sample >= end {
+                if sample >= 1 {
                     values[index] = points.last?.y ?? (1.0 / superSampling)
                     continue
                 }
 
                 if let first = points.first, sample <= first.x {
-                    values[index] = first.x > start ? ((sample - start) / max(first.x - start, 0.0001)) * first.y : first.y
+                    values[index] = first.x > 0 ? (sample / max(first.x, 0.0001)) * first.y : first.y
                     continue
                 }
 
@@ -1141,14 +1049,48 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
                 if assigned == false {
                     let last = points.last?.y ?? (1.0 / superSampling)
-                    values[index] = last + (1.0 / superSampling - last) * ((sample - (points.last?.x ?? end)) / max(end - (points.last?.x ?? end), 0.0001))
+                    let lastX = points.last?.x ?? 1
+                    values[index] = last + (1.0 / superSampling - last) * ((sample - lastX) / max(1 - lastX, 0.0001))
                 }
             }
         }
+        applyVTKCompositeOpacityCorrection(to: &values)
         let data = values.withUnsafeBufferPointer { buffer in
             Data(buffer: buffer)
         }
         return makeFloat1DTexture(data: data, width: values.count)
+    }
+
+    private func applyVTKCompositeOpacityCorrection(to values: inout [Float]) {
+        let factor = opacityCorrectionFactor()
+        guard abs(factor - 1.0) > 0.0001 else { return }
+
+        for index in values.indices {
+            let opacity = min(max(values[index], 0), 1)
+            if opacity > 0.0001 {
+                values[index] = Float(1.0 - pow(1.0 - Double(opacity), Double(factor)))
+            } else {
+                values[index] = opacity
+            }
+        }
+    }
+
+    private func rayMarchStepSize() -> Float {
+        max(minimumNormalizedVoxelSpacing(), 0.000125)
+    }
+
+    private func opacityCorrectionFactor() -> Float {
+        return max(superSampling, 0.0001)
+    }
+
+    private func minimumNormalizedVoxelSpacing() -> Float {
+        let extent = boxMax - boxMin
+        let spacing = SIMD3<Float>(
+            extent.x / max(Float(volumeDimensions.x - 1), 1.0),
+            extent.y / max(Float(volumeDimensions.y - 1), 1.0),
+            extent.z / max(Float(volumeDimensions.z - 1), 1.0)
+        )
+        return max(min(min(spacing.x, spacing.y), spacing.z), 0.0001)
     }
 
     private func defaultOpacityControlPoints() -> [SIMD2<Float>] {
@@ -1164,15 +1106,10 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private func makeColorTransferTexture() -> MTLTexture? {
         let width = transferTextureWidth
         var pixels = [SIMD4<UInt8>](repeating: SIMD4<UInt8>(0, 0, 0, 255), count: width)
-        let start = valueFactor * (offset16 + windowLevel - windowWidth * 0.5)
-        let end = valueFactor * (offset16 + windowLevel + windowWidth * 0.5)
-        let span = max(end - start, 0.0001)
-        let textureDomainScale = Metal3DDefaults.maxDynamicValue / Float(max(width - 1, 1))
 
         for index in 0..<width {
-            let sample = Float(index) * textureDomainScale
-            let normalized = min(max((sample - start) / span, 0), 1)
-            let lutIndex = min(max(Int((normalized * 255.0).rounded()), 0), 255)
+            let fraction = Float(index) / Float(max(width - 1, 1))
+            let lutIndex = min(max(Int((fraction * 255.0).rounded()), 0), 255)
             pixels[index] = currentCLUTPixels[lutIndex]
         }
 
@@ -1265,6 +1202,112 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return SIMD3<Float>(rowSpacing, columnSpacing, sliceSpacing)
     }
 
+    private static func volumeCropBounds(
+        for pixList: [DCMPix],
+        dimensions: SIMD3<Int>,
+        spacing: SIMD3<Float>
+    ) -> Metal3DVolumeCropBounds {
+        let fullBounds = Metal3DVolumeCropBounds(
+            minX: 0,
+            maxX: max(dimensions.x - 1, 0),
+            minY: 0,
+            maxY: max(dimensions.y - 1, 0),
+            minZ: 0,
+            maxZ: max(dimensions.z - 1, 0)
+        )
+
+        guard let firstPix = pixList.first, shouldCropAir(for: firstPix) else {
+            return fullBounds
+        }
+
+        let start = CFAbsoluteTimeGetCurrent()
+        let threshold: Float = -900
+        let fullWidth = max(dimensions.x, 1)
+        let fullHeight = max(dimensions.y, 1)
+        let fullDepth = min(max(dimensions.z, 1), pixList.count)
+        let fullSliceElementCount = fullWidth * fullHeight
+        var minX = fullWidth
+        var maxX = -1
+        var minY = fullHeight
+        var maxY = -1
+        var minZ = fullDepth
+        var maxZ = -1
+
+        for sliceIndex in 0..<fullDepth {
+            let pix = pixList[sliceIndex]
+            pix.checkLoad()
+            guard let source = pix.fImage else { continue }
+
+            var sliceHasContent = false
+            for y in 0..<fullHeight {
+                let rowOffset = y * fullWidth
+                for x in 0..<fullWidth {
+                    let index = rowOffset + x
+                    guard index < fullSliceElementCount, source[index] > threshold else { continue }
+
+                    minX = min(minX, x)
+                    maxX = max(maxX, x)
+                    minY = min(minY, y)
+                    maxY = max(maxY, y)
+                    sliceHasContent = true
+                }
+            }
+
+            if sliceHasContent {
+                minZ = min(minZ, sliceIndex)
+                maxZ = max(maxZ, sliceIndex)
+            }
+        }
+
+        guard maxX >= minX, maxY >= minY, maxZ >= minZ else {
+            return fullBounds
+        }
+
+        let marginX = max(Int((12.0 / Double(max(spacing.x, 0.0001))).rounded()), 4)
+        let marginY = max(Int((12.0 / Double(max(spacing.y, 0.0001))).rounded()), 4)
+        let marginZ = max(Int((8.0 / Double(max(spacing.z, 0.0001))).rounded()), 1)
+        let cropBounds = Metal3DVolumeCropBounds(
+            minX: max(minX - marginX, 0),
+            maxX: min(maxX + marginX, fullWidth - 1),
+            minY: max(minY - marginY, 0),
+            maxY: min(maxY + marginY, fullHeight - 1),
+            minZ: max(minZ - marginZ, 0),
+            maxZ: min(maxZ + marginZ, fullDepth - 1)
+        )
+
+        let cropDimensions = cropBounds.dimensions
+        if cropDimensions.x >= fullWidth, cropDimensions.y >= fullHeight, cropDimensions.z >= fullDepth {
+            return fullBounds
+        }
+
+        NSLog(
+            "HOROS_METAL_TIMING Metal3DVolumeRenderer airCrop source=%ldx%ldx%ld crop=(%ld:%ld,%ld:%ld,%ld:%ld) output=%ldx%ldx%ld %.3f s",
+            dimensions.x,
+            dimensions.y,
+            dimensions.z,
+            cropBounds.minX,
+            cropBounds.maxX,
+            cropBounds.minY,
+            cropBounds.maxY,
+            cropBounds.minZ,
+            cropBounds.maxZ,
+            cropDimensions.x,
+            cropDimensions.y,
+            cropDimensions.z,
+            CFAbsoluteTimeGetCurrent() - start
+        )
+
+        return cropBounds
+    }
+
+    private static func shouldCropAir(for firstPix: DCMPix) -> Bool {
+        let modality = firstPix.modalityString?.uppercased() ?? ""
+        let rescale = firstPix.rescaleType?.uppercased() ?? ""
+        let seriesMinimum = Float(firstPix.minValueOfSeries)
+        let seriesMaximum = Float(firstPix.maxValueOfSeries)
+        return modality.contains("CT") || rescale == "HU" || (seriesMinimum < -500 && seriesMaximum > 300)
+    }
+
     private static func volumeExtent(dimensions: SIMD3<Int>, spacing: SIMD3<Float>) -> SIMD3<Float> {
         let rawExtent = SIMD3<Float>(
             max(Float(dimensions.x - 1), 1) * spacing.x,
@@ -1273,6 +1316,29 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         )
         let maxComponent = max(max(rawExtent.x, rawExtent.y), max(rawExtent.z, 1))
         return rawExtent / maxComponent
+    }
+
+    private static func isotropicTextureGeometry(
+        sourceDimensions: SIMD3<Int>,
+        sourceSpacing: SIMD3<Float>
+    ) -> (dimensions: SIMD3<Int>, spacing: SIMD3<Float>) {
+        let inPlaneSpacing = max(min(sourceSpacing.x, sourceSpacing.y), 0.0001)
+        let sourceDepth = max(sourceDimensions.z, 1)
+        guard sourceDepth > 1, sourceSpacing.z > inPlaneSpacing * 1.15 else {
+            return (sourceDimensions, sourceSpacing)
+        }
+
+        let physicalDepth = Float(sourceDepth - 1) * sourceSpacing.z
+        let targetDepth = Int((physicalDepth / inPlaneSpacing).rounded()) + 1
+        let depthLimit = max(sourceDepth, min(targetDepth, 640))
+        let outputDepth = max(sourceDepth, min(targetDepth, depthLimit))
+        guard outputDepth > sourceDepth else {
+            return (sourceDimensions, sourceSpacing)
+        }
+
+        var outputSpacing = sourceSpacing
+        outputSpacing.z = physicalDepth / Float(max(outputDepth - 1, 1))
+        return (SIMD3<Int>(sourceDimensions.x, sourceDimensions.y, outputDepth), outputSpacing)
     }
 
     private static func scalarMapping(for pixList: [DCMPix]) -> (valueFactor: Float, offset16: Float) {
@@ -1301,20 +1367,115 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func makeRawVolume() -> [Float] {
-        let sliceElementCount = max(volumeDimensions.x * volumeDimensions.y, 1)
-        var converted = [Float](repeating: 0, count: sliceElementCount * max(volumeDimensions.z, 1))
+        let sliceElementCount = max(sourceDimensions.x * sourceDimensions.y, 1)
+        var converted = [Float](repeating: 0, count: sliceElementCount * max(sourceDimensions.z, 1))
+        let fullWidth = max(fullSourceDimensions.x, 1)
+        let cropWidth = max(sourceDimensions.x, 1)
+        let cropHeight = max(sourceDimensions.y, 1)
 
-        for (sliceIndex, pix) in pixList.enumerated() {
+        for sourceZ in sourceCropBounds.minZ...sourceCropBounds.maxZ {
+            guard sourceZ >= 0, sourceZ < pixList.count else { continue }
+            let croppedZ = sourceZ - sourceCropBounds.minZ
+            guard croppedZ >= 0, croppedZ < sourceDimensions.z else { continue }
+            let pix = pixList[sourceZ]
             pix.checkLoad()
             pix.computePixMinPixMax()
             guard let source = pix.fImage else { continue }
 
-            let destinationOffset = sliceIndex * sliceElementCount
-            for elementIndex in 0..<sliceElementCount {
-                converted[destinationOffset + elementIndex] = source[elementIndex]
+            let destinationOffset = croppedZ * sliceElementCount
+            for croppedY in 0..<cropHeight {
+                let sourceY = sourceCropBounds.minY + croppedY
+                let sourceOffset = sourceY * fullWidth + sourceCropBounds.minX
+                let rowDestinationOffset = destinationOffset + croppedY * cropWidth
+                for croppedX in 0..<cropWidth {
+                    converted[rowDestinationOffset + croppedX] = source[sourceOffset + croppedX]
+                }
             }
         }
 
-        return converted
+        if sourceDimensions.x == volumeDimensions.x,
+           sourceDimensions.y == volumeDimensions.y,
+           sourceDimensions.z == volumeDimensions.z {
+            return converted
+        }
+
+        return resampleVolumeAlongZ(converted)
+    }
+
+    private func resampleVolumeAlongZ(_ sourceVolume: [Float]) -> [Float] {
+        let start = CFAbsoluteTimeGetCurrent()
+        let width = max(sourceDimensions.x, 1)
+        let height = max(sourceDimensions.y, 1)
+        let sourceDepth = max(sourceDimensions.z, 1)
+        let outputDepth = max(volumeDimensions.z, 1)
+        let sliceElementCount = max(width * height, 1)
+        var output = [Float](repeating: 0, count: sliceElementCount * outputDepth)
+
+        guard sourceDepth > 1, outputDepth > 1 else {
+            return sourceVolume
+        }
+
+        for outputZ in 0..<outputDepth {
+            let physicalZ = Float(outputZ) * voxelSpacing.z
+            let sourceZ = min(max(physicalZ / max(sourceVoxelSpacing.z, 0.0001), 0), Float(sourceDepth - 1))
+            let baseZ = min(max(Int(floor(sourceZ)), 0), sourceDepth - 1)
+            let fraction = sourceZ - Float(baseZ)
+            let z0 = min(max(baseZ - 1, 0), sourceDepth - 1)
+            let z1 = baseZ
+            let z2 = min(baseZ + 1, sourceDepth - 1)
+            let z3 = min(baseZ + 2, sourceDepth - 1)
+            let offset0 = z0 * sliceElementCount
+            let offset1 = z1 * sliceElementCount
+            let offset2 = z2 * sliceElementCount
+            let offset3 = z3 * sliceElementCount
+            let outputOffset = outputZ * sliceElementCount
+
+            if fraction <= 0.0001 {
+                for index in 0..<sliceElementCount {
+                    output[outputOffset + index] = sourceVolume[offset1 + index]
+                }
+            } else {
+                for index in 0..<sliceElementCount {
+                    let sample0 = sourceVolume[offset0 + index]
+                    let sample1 = sourceVolume[offset1 + index]
+                    let sample2 = sourceVolume[offset2 + index]
+                    let sample3 = sourceVolume[offset3 + index]
+                    let interpolated = Self.catmullRom(sample0, sample1, sample2, sample3, fraction)
+                    let minimum = min(min(sample0, sample1), min(sample2, sample3))
+                    let maximum = max(max(sample0, sample1), max(sample2, sample3))
+                    output[outputOffset + index] = min(max(interpolated, minimum), maximum)
+                }
+            }
+        }
+
+        NSLog(
+            "HOROS_METAL_TIMING Metal3DVolumeRenderer isotropicZResampleCubic source=%ldx%ldx%ld spacing=%.3fx%.3fx%.3f output=%ldx%ldx%ld spacing=%.3fx%.3fx%.3f %.3f s",
+            sourceDimensions.x,
+            sourceDimensions.y,
+            sourceDimensions.z,
+            Double(sourceVoxelSpacing.x),
+            Double(sourceVoxelSpacing.y),
+            Double(sourceVoxelSpacing.z),
+            volumeDimensions.x,
+            volumeDimensions.y,
+            volumeDimensions.z,
+            Double(voxelSpacing.x),
+            Double(voxelSpacing.y),
+            Double(voxelSpacing.z),
+            CFAbsoluteTimeGetCurrent() - start
+        )
+
+        return output
+    }
+
+    private static func catmullRom(_ p0: Float, _ p1: Float, _ p2: Float, _ p3: Float, _ t: Float) -> Float {
+        let t2 = t * t
+        let t3 = t2 * t
+        return 0.5 * (
+            (2.0 * p1) +
+            (-p0 + p2) * t +
+            (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 +
+            (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3
+        )
     }
 }

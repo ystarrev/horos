@@ -622,6 +622,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
+    func setSliceIndex(_ index: Int) {
+        guard pixList.isEmpty == false else { return }
+        let nextIndex = max(0, min(pixList.count - 1, index))
+        guard nextIndex != currentSliceIndex else {
+            stateDidChange?(stateDescription)
+            return
+        }
+        currentSliceIndex = nextIndex
+        loadSlice(at: currentSliceIndex)
+        if displayMode == .mpr {
+            resetMPRPlaneToCurrentSlice()
+        }
+    }
+
     func setDisplayMode(_ mode: MetalViewerDisplayMode) {
         guard displayMode != mode else { return }
         displayMode = mode
@@ -3757,7 +3771,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         var vertices: [MetalMPRVertex] = []
-        vertices.reserveCapacity(24)
+        vertices.reserveCapacity(120)
 
         switch hoveredMPRPlane {
         case .axial:
@@ -3767,8 +3781,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 maxU: maxX,
                 minV: 0,
                 maxV: maxY,
-                uInset: mprVoxelInset(forAxis: 0),
-                vInset: mprVoxelInset(forAxis: 1)
+                uInset: mprHighlightVoxelInset(forAxis: 0),
+                vInset: mprHighlightVoxelInset(forAxis: 1)
             ) { u, v in
                 self.mprPlaneVoxel(for: .axial, first: u, second: v)
             }
@@ -3779,8 +3793,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 maxU: maxX,
                 minV: 0,
                 maxV: maxZ,
-                uInset: mprVoxelInset(forAxis: 0),
-                vInset: mprVoxelInset(forAxis: 2)
+                uInset: mprHighlightVoxelInset(forAxis: 0),
+                vInset: mprHighlightVoxelInset(forAxis: 2)
             ) { u, v in
                 self.mprPlaneVoxel(for: .coronal, first: u, second: v)
             }
@@ -3791,8 +3805,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 maxU: maxY,
                 minV: 0,
                 maxV: maxZ,
-                uInset: mprVoxelInset(forAxis: 1),
-                vInset: mprVoxelInset(forAxis: 2)
+                uInset: mprHighlightVoxelInset(forAxis: 1),
+                vInset: mprHighlightVoxelInset(forAxis: 2)
             ) { u, v in
                 self.mprPlaneVoxel(for: .sagittal, first: u, second: v)
             }
@@ -4046,23 +4060,73 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     ) {
         let clampedUInset = min(max(uInset, 0), (maxU - minU) * 0.5)
         let clampedVInset = min(max(vInset, 0), (maxV - minV) * 0.5)
+        guard clampedUInset > 0, clampedVInset > 0 else { return }
+
         let innerMinU = minU + clampedUInset
         let innerMaxU = maxU - clampedUInset
         let innerMinV = minV + clampedVInset
         let innerMaxV = maxV - clampedVInset
 
         appendMPRQuad(to: &vertices, corners: [
-            makeVoxel(minU, minV), makeVoxel(maxU, minV), makeVoxel(innerMaxU, innerMinV), makeVoxel(innerMinU, innerMinV),
+            makeVoxel(innerMinU, minV), makeVoxel(innerMaxU, minV), makeVoxel(innerMaxU, innerMinV), makeVoxel(innerMinU, innerMinV),
         ])
         appendMPRQuad(to: &vertices, corners: [
-            makeVoxel(minU, innerMaxV), makeVoxel(innerMaxU, innerMaxV), makeVoxel(maxU, maxV), makeVoxel(minU, maxV),
+            makeVoxel(innerMinU, innerMaxV), makeVoxel(innerMaxU, innerMaxV), makeVoxel(innerMaxU, maxV), makeVoxel(innerMinU, maxV),
         ])
         appendMPRQuad(to: &vertices, corners: [
-            makeVoxel(minU, minV), makeVoxel(innerMinU, minV), makeVoxel(innerMinU, maxV), makeVoxel(minU, maxV),
+            makeVoxel(minU, innerMinV), makeVoxel(innerMinU, innerMinV), makeVoxel(innerMinU, innerMaxV), makeVoxel(minU, innerMaxV),
         ])
         appendMPRQuad(to: &vertices, corners: [
-            makeVoxel(innerMaxU, minV), makeVoxel(maxU, minV), makeVoxel(maxU, maxV), makeVoxel(innerMaxU, maxV),
+            makeVoxel(innerMaxU, innerMinV), makeVoxel(maxU, innerMinV), makeVoxel(maxU, innerMaxV), makeVoxel(innerMaxU, innerMaxV),
         ])
+
+        appendMPRHighlightCorner(to: &vertices, centerU: innerMinU, centerV: innerMinV, outerU: minU, outerV: minV, uRadius: clampedUInset, vRadius: clampedVInset, makeVoxel: makeVoxel)
+        appendMPRHighlightCorner(to: &vertices, centerU: innerMaxU, centerV: innerMinV, outerU: maxU, outerV: minV, uRadius: clampedUInset, vRadius: clampedVInset, makeVoxel: makeVoxel)
+        appendMPRHighlightCorner(to: &vertices, centerU: innerMaxU, centerV: innerMaxV, outerU: maxU, outerV: maxV, uRadius: clampedUInset, vRadius: clampedVInset, makeVoxel: makeVoxel)
+        appendMPRHighlightCorner(to: &vertices, centerU: innerMinU, centerV: innerMaxV, outerU: minU, outerV: maxV, uRadius: clampedUInset, vRadius: clampedVInset, makeVoxel: makeVoxel)
+    }
+
+    private func appendMPRHighlightCorner(
+        to vertices: inout [MetalMPRVertex],
+        centerU: Float,
+        centerV: Float,
+        outerU: Float,
+        outerV: Float,
+        uRadius: Float,
+        vRadius: Float,
+        makeVoxel: (Float, Float) -> SIMD3<Float>
+    ) {
+        let segmentCount = 8
+        let uSign: Float = outerU < centerU ? -1 : 1
+        let vSign: Float = outerV < centerV ? -1 : 1
+        let startAngle: Float
+        let endAngle: Float
+        if uSign < 0, vSign < 0 {
+            startAngle = Float.pi
+            endAngle = Float.pi * 1.5
+        } else if uSign > 0, vSign < 0 {
+            startAngle = Float.pi * 1.5
+            endAngle = Float.pi * 2
+        } else if uSign > 0, vSign > 0 {
+            startAngle = 0
+            endAngle = Float.pi * 0.5
+        } else {
+            startAngle = Float.pi * 0.5
+            endAngle = Float.pi
+        }
+
+        let center = makeVoxel(centerU, centerV)
+        for segmentIndex in 0..<segmentCount {
+            let t0 = Float(segmentIndex) / Float(segmentCount)
+            let t1 = Float(segmentIndex + 1) / Float(segmentCount)
+            let a0 = startAngle + (endAngle - startAngle) * t0
+            let a1 = startAngle + (endAngle - startAngle) * t1
+            let p0 = makeVoxel(centerU + cos(a0) * uRadius, centerV + sin(a0) * vRadius)
+            let p1 = makeVoxel(centerU + cos(a1) * uRadius, centerV + sin(a1) * vRadius)
+            vertices.append(MetalMPRVertex(position: mprDisplayPosition(for: center), baseVoxel: center))
+            vertices.append(MetalMPRVertex(position: mprDisplayPosition(for: p0), baseVoxel: p0))
+            vertices.append(MetalMPRVertex(position: mprDisplayPosition(for: p1), baseVoxel: p1))
+        }
     }
 
     private func appendMPRQuad(to vertices: inout [MetalMPRVertex], corners: [SIMD3<Float>]) {
@@ -4077,6 +4141,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func mprVoxelInset(forAxis axis: Int) -> Float {
+        mprVoxelInset(forAxis: axis, radiusMM: 10.0)
+    }
+
+    private func mprHighlightVoxelInset(forAxis axis: Int) -> Float {
+        mprVoxelInset(forAxis: axis, radiusMM: 2.0)
+    }
+
+    private func mprVoxelInset(forAxis axis: Int, radiusMM: Float) -> Float {
         let column: SIMD3<Float>
         switch axis {
         case 0:
@@ -4086,7 +4158,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         default:
             column = SIMD3<Float>(fixedVoxelToWorld.columns.2.x, fixedVoxelToWorld.columns.2.y, fixedVoxelToWorld.columns.2.z)
         }
-        return 10.0 / max(simd_length(column), 0.0001)
+        return radiusMM / max(simd_length(column), 0.0001)
     }
 
     private func mprMainInteractionBounds(in bounds: CGRect) -> CGRect {

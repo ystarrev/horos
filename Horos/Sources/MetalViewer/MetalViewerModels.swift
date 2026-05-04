@@ -63,7 +63,20 @@ final class MetalViewerSeries {
     }
 
     var isStructuredReport: Bool {
-        structuredReportHTML() != nil
+        if modality == "SR" {
+            return true
+        }
+
+        if imageObjects.contains(where: { Self.isStructuredReport(imageObject: $0) }) {
+            return true
+        }
+
+        if let cachedPixList,
+           cachedPixList.contains(where: { Self.isStructuredReportSOPClassUID($0.value(forKey: "SOPClassUID") as? String) }) {
+            return true
+        }
+
+        return structuredReportHTML() != nil
     }
 
     func structuredReportHTML() -> String? {
@@ -222,8 +235,7 @@ final class MetalViewerSeries {
 
         if let cachedPixList {
             for pix in cachedPixList {
-                if let sopClassUID = pix.value(forKey: "SOPClassUID") as? String,
-                   sopClassUID.hasPrefix("1.2.840.10008.5.1.4.1.1.88") {
+                if Self.isStructuredReportSOPClassUID(pix.value(forKey: "SOPClassUID") as? String) {
                     appendPath(pix.srcFile)
                 }
             }
@@ -236,11 +248,25 @@ final class MetalViewerSeries {
     }
 
     private static func isStructuredReport(imageObject: NSManagedObject) -> Bool {
+        if isStructuredReportSOPClassUID(imageObject.value(forKeyPath: "series.seriesSOPClassUID") as? String) {
+            return true
+        }
+
+        if let modality = imageObject.value(forKeyPath: "series.modality") as? String,
+           modality.uppercased() == "SR" {
+            return true
+        }
+
         if imageObject.responds(to: NSSelectorFromString("sopClassUID")),
            let value = imageObject.perform(NSSelectorFromString("sopClassUID"))?.takeUnretainedValue() as? String {
-            return value.hasPrefix("1.2.840.10008.5.1.4.1.1.88")
+            return isStructuredReportSOPClassUID(value)
         }
+
         return false
+    }
+
+    private static func isStructuredReportSOPClassUID(_ sopClassUID: String?) -> Bool {
+        sopClassUID?.hasPrefix("1.2.840.10008.5.1.4.1.1.88") == true
     }
 }
 

@@ -50,6 +50,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -302,6 +303,61 @@ static bool HorosModernDCMTKCopyJPEG2000FrameBytes(DcmPixelData* pixelData,
     return false;
 }
 
+static bool HorosModernDCMTKCopyOpenJPEGRawDecodedFrame(DcmPixelData* pixelData,
+                                                        E_TransferSyntax transferSyntax,
+                                                        unsigned long frameIndex,
+                                                        long int frameCount,
+                                                        unsigned long pixelCount,
+                                                        std::vector<unsigned char>& decodedBytes,
+                                                        std::string& failureReason)
+{
+    if (!HorosModernDCMTKIsJPEG2000TransferSyntax(transferSyntax))
+    {
+        failureReason = "transfer syntax is not JPEG 2000";
+        return false;
+    }
+
+    std::vector<unsigned char> compressed;
+    if (!HorosModernDCMTKCopyJPEG2000FrameBytes(pixelData, transferSyntax, frameIndex, frameCount, compressed, failureReason))
+        return false;
+
+    long decodedLength = 0;
+    int colorModel = 0;
+    OPJSupport opj;
+    void* decoded = opj.decompressJPEG2K(static_cast<void*>(compressed.data()),
+                                         static_cast<long>(compressed.size()),
+                                         &decodedLength,
+                                         &colorModel);
+    if (decoded == nullptr || decodedLength <= 0)
+    {
+        failureReason = "OpenJPEG failed to decode JPEG 2000 frame";
+        return false;
+    }
+
+    if (colorModel != 0)
+    {
+        std::ostringstream reason;
+        reason << "OpenJPEG decoded unsupported color model=" << colorModel;
+        failureReason = reason.str();
+        std::free(decoded);
+        return false;
+    }
+
+    if (pixelCount == 0 || decodedLength < 0 || static_cast<unsigned long>(decodedLength) < pixelCount)
+    {
+        std::ostringstream reason;
+        reason << "OpenJPEG decoded frame too small length=" << decodedLength << " pixels=" << pixelCount;
+        failureReason = reason.str();
+        std::free(decoded);
+        return false;
+    }
+
+    const unsigned char* byteSource = static_cast<const unsigned char*>(decoded);
+    decodedBytes.assign(byteSource, byteSource + decodedLength);
+    std::free(decoded);
+    return true;
+}
+
 static float* HorosModernDCMTKCopyOpenJPEGDecodedPixels(DcmPixelData* pixelData,
                                                         E_TransferSyntax transferSyntax,
                                                         unsigned long frameIndex,
@@ -418,6 +474,297 @@ static float* HorosModernDCMTKCopyOpenJPEGDecodedPixels(DcmPixelData* pixelData,
 
     std::free(decoded);
     return pixels;
+}
+
+static bool HorosModernDCMTKWriteOpenJPEGDecompressedFile(DcmFileFormat& fileformat,
+                                                          const char* outputPath,
+                                                          E_TransferSyntax originalSyntax)
+{
+    if (outputPath == nullptr || outputPath[0] == '\0' || !HorosModernDCMTKIsJPEG2000TransferSyntax(originalSyntax))
+        return false;
+
+    DcmDataset* dataset = fileformat.getDataset();
+    if (dataset == nullptr)
+        return false;
+
+    Uint16 rows = 0;
+    Uint16 columns = 0;
+    Uint16 samplesPerPixel = 1;
+    Uint16 bitsAllocated = 0;
+    Uint16 bitsStored = 0;
+    if (dataset->findAndGetUint16(DCM_Rows, rows).bad() ||
+        dataset->findAndGetUint16(DCM_Columns, columns).bad() ||
+        dataset->findAndGetUint16(DCM_BitsAllocated, bitsAllocated).bad() ||
+        dataset->findAndGetUint16(DCM_BitsStored, bitsStored).bad())
+        return false;
+
+    dataset->findAndGetUint16(DCM_SamplesPerPixel, samplesPerPixel);
+    if (rows == 0 || columns == 0 || samplesPerPixel != 1)
+        return false;
+    if (bitsAllocated != 8 && bitsAllocated != 16 && bitsAllocated != 32)
+        return false;
+    if (bitsStored == 0 || bitsStored > bitsAllocated)
+        bitsStored = bitsAllocated;
+
+    long int frameCount = 1;
+    OFCondition numberOfFramesStatus = dataset->findAndGetLongInt(DCM_NumberOfFrames, frameCount);
+    if (numberOfFramesStatus.bad() || frameCount < 1)
+        frameCount = 1;
+
+    DcmElement* element = nullptr;
+    if (dataset->findAndGetElement(DCM_PixelData, element).bad() || element == nullptr)
+        return false;
+
+    DcmPixelData* pixelData = dynamic_cast<DcmPixelData*>(element);
+    if (pixelData == nullptr)
+        return false;
+
+    const unsigned long pixelCount = static_cast<unsigned long>(rows) * static_cast<unsigned long>(columns);
+    const unsigned long bytesPerPixel = bitsAllocated / 8;
+    const unsigned long expectedFrameBytes = pixelCount * bytesPerPixel;
+    if (expectedFrameBytes == 0)
+        return false;
+
+    std::vector<unsigned char> allFrames;
+    allFrames.reserve(expectedFrameBytes * static_cast<unsigned long>(frameCount));
+    for (long int frameIndex = 0; frameIndex < frameCount; ++frameIndex)
+    {
+        std::vector<unsigned char> decodedFrame;
+        std::string failureReason;
+        if (!HorosModernDCMTKCopyOpenJPEGRawDecodedFrame(pixelData,
+                                                         originalSyntax,
+                                                         static_cast<unsigned long>(frameIndex),
+                                                         frameCount,
+                                                         pixelCount,
+                                                         decodedFrame,
+                                                         failureReason))
+            return false;
+
+        if (decodedFrame.size() < expectedFrameBytes)
+            return false;
+
+        allFrames.insert(allFrames.end(), decodedFrame.data(), decodedFrame.data() + expectedFrameBytes);
+    }
+
+    OFCondition status = EC_Normal;
+    if (bitsAllocated == 8)
+    {
+        status = dataset->putAndInsertUint8Array(DCM_PixelData,
+                                                 reinterpret_cast<const Uint8*>(allFrames.data()),
+                                                 static_cast<unsigned long>(allFrames.size()),
+                                                 OFTrue);
+    }
+    else if (bitsAllocated == 16)
+    {
+        std::vector<Uint16> words(allFrames.size() / sizeof(Uint16));
+        std::memcpy(words.data(), allFrames.data(), words.size() * sizeof(Uint16));
+        status = dataset->putAndInsertUint16Array(DCM_PixelData,
+                                                  words.data(),
+                                                  static_cast<unsigned long>(words.size()),
+                                                  OFTrue);
+    }
+    else
+    {
+        std::vector<Uint32> words(allFrames.size() / sizeof(Uint32));
+        std::memcpy(words.data(), allFrames.data(), words.size() * sizeof(Uint32));
+        status = dataset->putAndInsertUint32Array(DCM_PixelData,
+                                                  words.data(),
+                                                  static_cast<unsigned long>(words.size()),
+                                                  OFTrue);
+    }
+
+    if (status.bad())
+        return false;
+
+    fileformat.loadAllDataIntoMemory();
+    status = fileformat.saveFile(outputPath, EXS_LittleEndianExplicit);
+    return status.good();
+}
+
+static int HorosModernDCMTKOpenJPEGCompressionRate(E_TransferSyntax requestedSyntax,
+                                                   int quality,
+                                                   Uint16 rows,
+                                                   Uint16 columns)
+{
+    if (requestedSyntax == EXS_JPEG2000LosslessOnly || quality <= 0)
+        return 0;
+
+    switch (quality)
+    {
+        case 1:
+            return 4;
+        case 2:
+            return (columns <= 600 || rows <= 600) ? 6 : 8;
+        case 3:
+            return 16;
+        default:
+            return 0;
+    }
+}
+
+static bool HorosModernDCMTKCopyNativeUncompressedFrame(DcmDataset* dataset,
+                                                        DcmPixelData* pixelData,
+                                                        unsigned long frameIndex,
+                                                        std::vector<unsigned char>& frameBytes)
+{
+    if (dataset == nullptr || pixelData == nullptr)
+        return false;
+
+    Uint32 frameSize = 0;
+    OFCondition status = pixelData->getUncompressedFrameSize(dataset, frameSize, OFFalse);
+    if (status.bad() || frameSize == 0)
+        return false;
+
+    const Uint32 bufferSize = (frameSize & 1) ? frameSize + 1 : frameSize;
+    frameBytes.assign(bufferSize, 0);
+
+    Uint32 startFragment = 0;
+    OFString colorModel;
+    status = pixelData->getUncompressedFrame(dataset,
+                                             static_cast<Uint32>(frameIndex),
+                                             startFragment,
+                                             reinterpret_cast<Uint8*>(frameBytes.data()),
+                                             bufferSize,
+                                             colorModel,
+                                             nullptr);
+    if (status.bad())
+        return false;
+
+    frameBytes.resize(frameSize);
+    return true;
+}
+
+static bool HorosModernDCMTKWriteOpenJPEGCompressedFile(DcmFileFormat& fileformat,
+                                                        const char* outputPath,
+                                                        E_TransferSyntax requestedSyntax,
+                                                        int quality)
+{
+    if (outputPath == nullptr || outputPath[0] == '\0')
+        return false;
+    if (requestedSyntax != EXS_JPEG2000LosslessOnly && requestedSyntax != EXS_JPEG2000)
+        return false;
+
+    DcmDataset* dataset = fileformat.getDataset();
+    if (dataset == nullptr)
+        return false;
+
+    Uint16 rows = 0;
+    Uint16 columns = 0;
+    Uint16 samplesPerPixel = 1;
+    Uint16 bitsAllocated = 0;
+    Uint16 bitsStored = 0;
+    Uint16 pixelRepresentation = 0;
+    if (dataset->findAndGetUint16(DCM_Rows, rows).bad() ||
+        dataset->findAndGetUint16(DCM_Columns, columns).bad() ||
+        dataset->findAndGetUint16(DCM_BitsAllocated, bitsAllocated).bad() ||
+        dataset->findAndGetUint16(DCM_BitsStored, bitsStored).bad())
+        return false;
+
+    dataset->findAndGetUint16(DCM_SamplesPerPixel, samplesPerPixel);
+    dataset->findAndGetUint16(DCM_PixelRepresentation, pixelRepresentation);
+    if (rows == 0 || columns == 0 || samplesPerPixel != 1)
+        return false;
+    if (bitsAllocated != 8 && bitsAllocated != 16 && bitsAllocated != 32)
+        return false;
+    if (bitsStored == 0 || bitsStored > bitsAllocated)
+        bitsStored = bitsAllocated;
+
+    long int frameCount = 1;
+    OFCondition numberOfFramesStatus = dataset->findAndGetLongInt(DCM_NumberOfFrames, frameCount);
+    if (numberOfFramesStatus.bad() || frameCount < 1)
+        frameCount = 1;
+
+    DcmElement* element = nullptr;
+    if (dataset->findAndGetElement(DCM_PixelData, element).bad() || element == nullptr)
+        return false;
+
+    DcmPixelData* sourcePixelData = dynamic_cast<DcmPixelData*>(element);
+    if (sourcePixelData == nullptr)
+        return false;
+
+    std::unique_ptr<DcmPixelData> compressedPixelData(new DcmPixelData(DCM_PixelData));
+    std::unique_ptr<DcmPixelSequence> pixelSequence(new DcmPixelSequence(DcmTag(DCM_PixelData, EVR_OB)));
+    std::unique_ptr<DcmPixelItem> offsetTable(new DcmPixelItem(DcmTag(DCM_Item, EVR_OB)));
+    OFCondition status = pixelSequence->insert(offsetTable.get());
+    if (status.bad())
+        return false;
+    offsetTable.release();
+
+    const int rate = HorosModernDCMTKOpenJPEGCompressionRate(requestedSyntax, quality, rows, columns);
+    unsigned long totalCompressedBytes = 0;
+    unsigned long totalUncompressedBytes = 0;
+
+    for (long int frameIndex = 0; frameIndex < frameCount; ++frameIndex)
+    {
+        std::vector<unsigned char> frameBytes;
+        if (!HorosModernDCMTKCopyNativeUncompressedFrame(dataset,
+                                                        sourcePixelData,
+                                                        static_cast<unsigned long>(frameIndex),
+                                                        frameBytes) ||
+            frameBytes.empty())
+            return false;
+
+        long compressedLength = 0;
+        OPJSupport opj;
+        unsigned char* compressedBytes = opj.compressJPEG2K(static_cast<void*>(frameBytes.data()),
+                                                            samplesPerPixel,
+                                                            rows,
+                                                            columns,
+                                                            bitsStored,
+                                                            static_cast<unsigned char>(bitsAllocated),
+                                                            pixelRepresentation != 0,
+                                                            rate,
+                                                            &compressedLength);
+        if (compressedBytes == nullptr || compressedLength <= 0)
+            return false;
+
+        const Uint8* fragmentBytes = reinterpret_cast<const Uint8*>(compressedBytes);
+        unsigned long fragmentLength = static_cast<unsigned long>(compressedLength);
+        std::vector<unsigned char> paddedCompressedBytes;
+        if (fragmentLength & 1)
+        {
+            paddedCompressedBytes.assign(compressedBytes, compressedBytes + fragmentLength);
+            paddedCompressedBytes.push_back(0);
+            fragmentBytes = reinterpret_cast<const Uint8*>(paddedCompressedBytes.data());
+            fragmentLength = static_cast<unsigned long>(paddedCompressedBytes.size());
+        }
+
+        std::unique_ptr<DcmPixelItem> fragment(new DcmPixelItem(DcmTag(DCM_Item, EVR_OB)));
+        status = fragment->putUint8Array(fragmentBytes, fragmentLength);
+        std::free(compressedBytes);
+        if (status.bad())
+            return false;
+
+        status = pixelSequence->insert(fragment.get());
+        if (status.bad())
+            return false;
+        fragment.release();
+
+        totalUncompressedBytes += static_cast<unsigned long>(frameBytes.size());
+        totalCompressedBytes += static_cast<unsigned long>(compressedLength);
+    }
+
+    compressedPixelData->putOriginalRepresentation(requestedSyntax, nullptr, pixelSequence.get());
+    pixelSequence.release();
+    status = dataset->insert(compressedPixelData.get(), OFTrue);
+    if (status.bad())
+        return false;
+    compressedPixelData.release();
+
+    if (requestedSyntax == EXS_JPEG2000 && totalCompressedBytes > 0)
+    {
+        dataset->putAndInsertString(DCM_LossyImageCompression, "01", OFTrue);
+        dataset->putAndInsertString(DCM_LossyImageCompressionMethod, "ISO_15444_1", OFTrue);
+
+        const double ratio = static_cast<double>(totalUncompressedBytes) / static_cast<double>(totalCompressedBytes);
+        char ratioString[64];
+        std::snprintf(ratioString, sizeof(ratioString), "%.3g", ratio);
+        dataset->putAndInsertString(DCM_LossyImageCompressionRatio, ratioString, OFTrue);
+    }
+
+    fileformat.loadAllDataIntoMemory();
+    status = fileformat.saveFile(outputPath, requestedSyntax);
+    return status.good();
 }
 #endif
 
@@ -887,6 +1234,23 @@ int HorosModernDCMTKWriteFileInTransferSyntax(const char* inputPath,
         (originalSyntax == EXS_JPEG2000LosslessOnly && requestedSyntax == EXS_JPEG2000) ||
         (originalSyntax == EXS_JPEGLSLossy && requestedSyntax == EXS_JPEGLSLossless) ||
         (originalSyntax == EXS_JPEGLSLossless && requestedSyntax == EXS_JPEGLSLossy);
+
+#if HOROS_MODERN_BRIDGE_HAS_OPENJPEG
+    if (requestedSyntax == EXS_LittleEndianExplicit &&
+        originalXfer.usesEncapsulatedFormat() &&
+        HorosModernDCMTKIsJPEG2000TransferSyntax(originalSyntax))
+    {
+        if (HorosModernDCMTKWriteOpenJPEGDecompressedFile(fileformat, outputPath, originalSyntax))
+            return 1;
+    }
+
+    if (!originalXfer.usesEncapsulatedFormat() &&
+        (requestedSyntax == EXS_JPEG2000LosslessOnly || requestedSyntax == EXS_JPEG2000))
+    {
+        if (HorosModernDCMTKWriteOpenJPEGCompressedFile(fileformat, outputPath, requestedSyntax, quality))
+            return 1;
+    }
+#endif
 
     if (!syntaxEquivalent)
     {

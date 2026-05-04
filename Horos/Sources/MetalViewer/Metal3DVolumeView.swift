@@ -231,6 +231,31 @@ final class Metal3DVolumeView: NSView {
         self.lastDragLocation = location
     }
 
+    override func rightMouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        activeCropPlane = nil
+        renderer?.setActiveCropPlane(nil)
+        lastDragLocation = convert(event.locationInWindow, from: nil)
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        guard let lastDragLocation else {
+            self.lastDragLocation = location
+            return
+        }
+
+        let deltaY = Float(location.y - lastDragLocation.y)
+        renderer?.zoom(delta: deltaY * 3.0)
+        metalView.setNeedsDisplay(metalView.bounds)
+        refreshCropHandles()
+        self.lastDragLocation = location
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        lastDragLocation = nil
+    }
+
     override func mouseUp(with event: NSEvent) {
         activeCropPlane = nil
         renderer?.setActiveCropPlane(nil)

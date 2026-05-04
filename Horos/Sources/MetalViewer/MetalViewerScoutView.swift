@@ -392,7 +392,7 @@ private final class MetalViewerScoutItemView: NSView {
     }
 
     private func updateCountLabel(isStructuredReport: Bool) {
-        let unit = isStructuredReport ? "page" : "image"
+        let unit = isStructuredReport ? "report" : "image"
         countOverlayLabel.stringValue = "\(series.imageCount) \(unit)\(series.imageCount == 1 ? "" : "s")"
     }
 
@@ -590,8 +590,8 @@ private final class MetalViewerScoutItemView: NSView {
     }
 
     private func makeThumbnail(for series: MetalViewerSeries) -> (image: NSImage?, isStructuredReport: Bool) {
-        if let html = series.structuredReportHTML() {
-            return (structuredReportThumbnail(forHTML: html, size: Self.thumbnailSize), true)
+        if series.isStructuredReport {
+            return (Self.structuredReportIconThumbnail(size: Self.thumbnailSize), true)
         }
 
         guard let pix = series.firstPreviewPix() else { return (nil, false) }
@@ -640,54 +640,72 @@ private final class MetalViewerScoutItemView: NSView {
         return (NSImage(cgImage: cgImage, size: NSSize(width: width, height: height)), false)
     }
 
-    private func structuredReportThumbnail(forHTML html: String, size: NSSize) -> NSImage? {
-        guard let data = html.data(using: .utf8) else { return nil }
-        guard let attributed = try? NSAttributedString(
-            data: data,
-            options: [
-                .documentType: NSAttributedString.DocumentType.html,
-                .characterEncoding: String.Encoding.utf8.rawValue
-            ],
-            documentAttributes: nil
-        ) else {
-            return nil
-        }
-
+    private static func structuredReportIconThumbnail(size: NSSize) -> NSImage {
         let image = NSImage(size: size)
         image.lockFocus()
-        NSColor.white.setFill()
+
+        NSColor(calibratedWhite: 0.10, alpha: 1).setFill()
         NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
 
-        let margin: CGFloat = 6
-        let targetRect = NSRect(x: margin, y: margin, width: max(size.width - margin * 2, 1), height: max(size.height - margin * 2, 1))
-
-        let pageSize = NSSize(width: 612, height: 792)
-        let textStorage = NSTextStorage(attributedString: attributed)
-        let layoutManager = NSLayoutManager()
-        let textContainer = NSTextContainer(containerSize: pageSize)
-        textContainer.lineFragmentPadding = 0
-        layoutManager.addTextContainer(textContainer)
-        textStorage.addLayoutManager(layoutManager)
-        layoutManager.ensureLayout(for: textContainer)
-
-        let contentImage = NSImage(size: pageSize)
-        contentImage.lockFocus()
-        NSColor.white.setFill()
-        NSBezierPath(rect: NSRect(origin: .zero, size: pageSize)).fill()
-        let glyphRange = layoutManager.glyphRange(for: textContainer)
-        layoutManager.drawBackground(forGlyphRange: glyphRange, at: .zero)
-        layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: .zero)
-        contentImage.unlockFocus()
-
-        let scale = min(targetRect.width / pageSize.width, targetRect.height / pageSize.height, 1.0)
-        let scaledSize = NSSize(width: pageSize.width * scale, height: pageSize.height * scale)
-        let drawRect = NSRect(
-            x: targetRect.midX - scaledSize.width * 0.5,
-            y: targetRect.midY - scaledSize.height * 0.5,
-            width: scaledSize.width,
-            height: scaledSize.height
+        let pageRect = NSRect(
+            x: size.width * 0.19,
+            y: size.height * 0.10,
+            width: size.width * 0.62,
+            height: size.height * 0.80
         )
-        contentImage.draw(in: drawRect, from: NSRect(origin: .zero, size: pageSize), operation: .sourceOver, fraction: 1.0)
+        let pagePath = NSBezierPath(roundedRect: pageRect, xRadius: 5, yRadius: 5)
+        NSColor(calibratedWhite: 0.94, alpha: 1).setFill()
+        pagePath.fill()
+
+        NSColor(calibratedWhite: 0.72, alpha: 1).setStroke()
+        pagePath.lineWidth = 1
+        pagePath.stroke()
+
+        let foldSize = min(pageRect.width, pageRect.height) * 0.18
+        let foldPath = NSBezierPath()
+        foldPath.move(to: NSPoint(x: pageRect.maxX - foldSize, y: pageRect.maxY))
+        foldPath.line(to: NSPoint(x: pageRect.maxX, y: pageRect.maxY - foldSize))
+        foldPath.line(to: NSPoint(x: pageRect.maxX - foldSize, y: pageRect.maxY - foldSize))
+        foldPath.close()
+        NSColor(calibratedWhite: 0.82, alpha: 1).setFill()
+        foldPath.fill()
+
+        let badgeRect = NSRect(
+            x: pageRect.midX - 12,
+            y: pageRect.maxY - 34,
+            width: 24,
+            height: 24
+        )
+        NSColor(calibratedRed: 0.03, green: 0.46, blue: 0.78, alpha: 1).setFill()
+        NSBezierPath(ovalIn: badgeRect).fill()
+
+        NSColor.white.setStroke()
+        let pulsePath = NSBezierPath()
+        pulsePath.lineWidth = 1.6
+        pulsePath.move(to: NSPoint(x: badgeRect.minX + 5, y: badgeRect.midY))
+        pulsePath.line(to: NSPoint(x: badgeRect.minX + 9, y: badgeRect.midY))
+        pulsePath.line(to: NSPoint(x: badgeRect.minX + 11, y: badgeRect.midY + 5))
+        pulsePath.line(to: NSPoint(x: badgeRect.minX + 15, y: badgeRect.midY - 6))
+        pulsePath.line(to: NSPoint(x: badgeRect.minX + 17, y: badgeRect.midY))
+        pulsePath.line(to: NSPoint(x: badgeRect.minX + 20, y: badgeRect.midY))
+        pulsePath.stroke()
+
+        let title = NSLocalizedString("Diagnostic\nImaging\nReport", comment: "")
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        paragraphStyle.lineBreakMode = .byWordWrapping
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+            .foregroundColor: NSColor(calibratedWhite: 0.18, alpha: 1),
+            .paragraphStyle: paragraphStyle
+        ]
+        let titleRect = NSRect(
+            x: pageRect.minX + 6,
+            y: pageRect.minY + 16,
+            width: pageRect.width - 12,
+            height: pageRect.height - 52
+        )
+        title.draw(in: titleRect, withAttributes: attributes)
 
         NSColor(calibratedWhite: 0.78, alpha: 1).setStroke()
         let border = NSBezierPath(rect: NSRect(x: 0.5, y: 0.5, width: size.width - 1, height: size.height - 1))

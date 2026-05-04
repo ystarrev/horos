@@ -1241,30 +1241,39 @@ subOpCallback(void * /*subOpCallbackData*/ ,
 - (void) CFINDThread: (NSString*) studyInstanceUID
 {
     NSAutoreleasePool *pool = [NSAutoreleasePool new];
+    BOOL previousSuppressQueryFailureMessages = _suppressQueryFailureMessages;
+    _suppressQueryFailureMessages = YES;
     
-    if( [self isKindOfClass:[DCMTKStudyQueryNode class]])
+    @try
     {
-        // We are at STUDY level, and we want to go direclty to IMAGE level
-        
-        DcmDataset dataset;
-        
-        dataset.insertEmptyElement(DCM_SeriesInstanceUID, OFTrue);
-        dataset.insertEmptyElement(DCM_SOPInstanceUID, OFTrue);
-        dataset.putAndInsertString(DCM_StudyInstanceUID, [studyInstanceUID UTF8String], OFTrue);
-        dataset.putAndInsertString(DCM_QueryRetrieveLevel, "IMAGE", OFTrue);
-        
-        [self queryWithValues: nil dataset: &dataset];
-    }
-    
-    if( [self isKindOfClass:[DCMTKSeriesQueryNode class]])
-    {
-        NSArray *childrenArray = [self children];
-        
-        // search the images
-        if( childrenArray == nil || childrenArray.count == 0)
-            [self queryWithValues: nil];
+        if( [self isKindOfClass:[DCMTKStudyQueryNode class]])
+        {
+            // We are at STUDY level, and we want to go direclty to IMAGE level
 
-        childrenArray = [self children];
+            DcmDataset dataset;
+
+            dataset.insertEmptyElement(DCM_SeriesInstanceUID, OFTrue);
+            dataset.insertEmptyElement(DCM_SOPInstanceUID, OFTrue);
+            dataset.putAndInsertString(DCM_StudyInstanceUID, [studyInstanceUID UTF8String], OFTrue);
+            dataset.putAndInsertString(DCM_QueryRetrieveLevel, "IMAGE", OFTrue);
+
+            [self queryWithValues: nil dataset: &dataset];
+        }
+        
+        if( [self isKindOfClass:[DCMTKSeriesQueryNode class]])
+        {
+            NSArray *childrenArray = [self children];
+
+            // search the images
+            if( childrenArray == nil || childrenArray.count == 0)
+                [self queryWithValues: nil];
+
+            childrenArray = [self children];
+        }
+    }
+    @finally
+    {
+        _suppressQueryFailureMessages = previousSuppressQueryFailureMessages;
     }
 
     [pool release];
@@ -2647,7 +2656,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 		{
 			NSString *response = [NSString stringWithFormat: @"%@  /  %@:%d\r\r%@\r%@", _calledAET, _hostname, _port, [e name], [e description]];
 			
-            if (_abortAssociation == NO)
+            if (_abortAssociation == NO && _suppressQueryFailureMessages == NO)
             {
                 if( showErrorMessage == YES)
                     [DCMTKQueryNode performSelectorOnMainThread:@selector(errorMessage:) withObject:[NSArray arrayWithObjects: NSLocalizedString(@"Query Failed (1)", nil), response, NSLocalizedString(@"Continue", nil), nil] waitUntilDone:NO];
@@ -2826,9 +2835,9 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				OFSTRINGSTREAM_FREESTR(tmpString)
 			  }
 			
-			if( showErrorMessage == YES && _abortAssociation == NO)
+			if( _suppressQueryFailureMessages == NO && showErrorMessage == YES && _abortAssociation == NO)
 				[DCMTKQueryNode performSelectorOnMainThread:@selector(errorMessage:) withObject:[NSArray arrayWithObjects: NSLocalizedString(@"Query Failed (2)", nil), response, NSLocalizedString(@"Continue", nil), nil] waitUntilDone:NO];
-			else
+			else if( _suppressQueryFailureMessages == NO)
 				[[AppController sharedAppController] notificationTitle: NSLocalizedString(@"Query Failed (2)", nil) description: response name: @"autoquery"];
 				
 		}

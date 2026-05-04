@@ -960,15 +960,20 @@ final class MetalViewerPaneView: NSView {
         registrationStatusView.removeFromSuperview()
 
         if let html = series.structuredReportHTML() {
-            contentView.layoutSubtreeIfNeeded()
-            let reportWebView = WKWebView(frame: contentView.bounds)
-            reportWebView.autoresizingMask = [.width, .height]
+            let reportWebView = WKWebView(frame: .zero)
+            reportWebView.translatesAutoresizingMaskIntoConstraints = false
             reportWebView.setValue(true, forKey: "drawsBackground")
             reportWebView.wantsLayer = true
             reportWebView.layer?.backgroundColor = NSColor.white.cgColor
             reportWebView.allowsMagnification = true
             reportWebView.magnification = 1.0
             contentView.addSubview(reportWebView)
+            NSLayoutConstraint.activate([
+                reportWebView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                reportWebView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                reportWebView.topAnchor.constraint(equalTo: contentView.topAnchor),
+                reportWebView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            ])
 
             reportWebView.loadHTMLString(html, baseURL: nil)
             self.reportWebView = reportWebView
@@ -1068,6 +1073,47 @@ final class MetalViewerPaneView: NSView {
             self.updateAnnotationOverlay()
             self.updateReferenceLineOverlay()
         }
+    }
+
+    func refreshAfterDatabaseUpdate(series updatedSeries: MetalViewerSeries, overlaySeries updatedOverlaySeries: MetalViewerSeries?) -> Bool {
+        let primaryImageCountChanged = updatedSeries.imageCount != series.imageCount
+        let overlayForRefresh = updatedOverlaySeries ?? overlaySeries
+        let overlayImageCountChanged: Bool
+        if let overlaySeries, let overlayForRefresh {
+            overlayImageCountChanged = overlayForRefresh.imageCount != overlaySeries.imageCount
+        } else {
+            overlayImageCountChanged = false
+        }
+
+        guard primaryImageCountChanged || overlayImageCountChanged else {
+            series = updatedSeries
+            if overlaySeries != nil {
+                overlaySeries = overlayForRefresh
+            }
+            updateAnnotationOverlay()
+            updateReferenceLineOverlay()
+            return false
+        }
+
+        let preservedDisplayMode = displayMode
+        let preservedSliceIndex = metalView?.renderer.currentSliceIndex ?? 0
+        let preservedOverlayBlend = overlayBlendSlider.doubleValue
+        let shouldRestoreOverlay = overlayForRefresh != nil && overlaySeries != nil
+
+        display(series: updatedSeries)
+        setDisplayMode(preservedDisplayMode)
+        metalView?.renderer.setSliceIndex(preservedSliceIndex)
+
+        if shouldRestoreOverlay, let overlayForRefresh {
+            overlay(series: overlayForRefresh)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
+                guard let self else { return }
+                self.overlayBlendSlider.doubleValue = preservedOverlayBlend
+                self.metalView?.renderer.setOverlayBlend(Float(preservedOverlayBlend))
+            }
+        }
+
+        return true
     }
 
     override func mouseDown(with event: NSEvent) {

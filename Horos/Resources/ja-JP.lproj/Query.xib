@@ -1452,8 +1452,6 @@
                     <toolbarItem implicitItemIdentifier="NSToolbarFlexibleSpaceItem" id="1118"/>
                     <toolbarItem implicitItemIdentifier="0B43AA69-31E5-44AA-B706-1735CB33FB64" label="Navigation" paletteLabel="Navigation" id="1105">
                         <nil key="toolTip"/>
-                        <size key="minSize" width="49" height="25"/>
-                        <size key="maxSize" width="53" height="25"/>
                         <segmentedControl key="view" verticalHuggingPriority="750" id="1107">
                             <rect key="frame" x="7" y="14" width="49" height="25"/>
                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
@@ -1471,8 +1469,6 @@
                     </toolbarItem>
                     <toolbarItem implicitItemIdentifier="49D15368-6723-47A7-8F90-2CD6E81BC31D" label="Delete" paletteLabel="Delete" image="NSRemoveTemplate" id="1114">
                         <nil key="toolTip"/>
-                        <size key="minSize" width="40" height="25"/>
-                        <size key="maxSize" width="40" height="25"/>
                         <button key="view" verticalHuggingPriority="750" id="1115">
                             <rect key="frame" x="1" y="14" width="40" height="25"/>
                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
@@ -1488,8 +1484,6 @@
                     </toolbarItem>
                     <toolbarItem implicitItemIdentifier="EDE26A27-4F8F-44D6-90DF-4D7D43114E1B" label="Create" paletteLabel="Create" image="NSAddTemplate" id="1122">
                         <nil key="toolTip"/>
-                        <size key="minSize" width="40" height="25"/>
-                        <size key="maxSize" width="40" height="25"/>
                         <button key="view" verticalHuggingPriority="750" id="1123">
                             <rect key="frame" x="1" y="14" width="40" height="25"/>
                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
@@ -1505,8 +1499,6 @@
                     </toolbarItem>
                     <toolbarItem implicitItemIdentifier="A9FB2C16-102A-4508-B57E-3A3E5D2040DD" label="Authentication" paletteLabel="Authentication" image="NSLockUnlockedTemplate" id="1103">
                         <nil key="toolTip"/>
-                        <size key="minSize" width="40" height="25"/>
-                        <size key="maxSize" width="40" height="25"/>
                         <button key="view" verticalHuggingPriority="750" id="1111">
                             <rect key="frame" x="22" y="14" width="40" height="25"/>
                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
@@ -1524,8 +1516,6 @@
                     </toolbarItem>
                     <toolbarItem implicitItemIdentifier="BE0D9FAA-22E1-4631-9644-AEE8E82702C6" label="Instances List" paletteLabel="Instances List" id="1165" userLabel="Toolbar Item - Instances List">
                         <nil key="toolTip"/>
-                        <size key="minSize" width="100" height="25"/>
-                        <size key="maxSize" width="212" height="25"/>
                         <popUpButton key="view" verticalHuggingPriority="750" id="1159">
                             <rect key="frame" x="0.0" y="14" width="212" height="25"/>
                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>

@@ -40,6 +40,40 @@
 
 @implementation QueryOutlineView
 
+- (NSMenu*)menuForEvent:(NSEvent*)event
+{
+    [[self window] makeFirstResponder:self];
+
+    NSPoint menuPoint = [self convertPoint:[event locationInWindow] fromView:nil];
+    NSInteger row = [self rowAtPoint:menuPoint];
+
+    if( row >= 0)
+    {
+        BOOL currentRowIsSelected = [[self selectedRowIndexes] containsIndex: row];
+        if( currentRowIsSelected == NO)
+            [self selectRowIndexes: [NSIndexSet indexSetWithIndex: row] byExtendingSelection: NO];
+    }
+
+    if( [self numberOfSelectedRows] <= 0)
+    {
+        NSMenu *tableViewMenu = [[self menu] copy];
+
+        for( NSInteger i = 0; i < [tableViewMenu numberOfItems]; i++)
+            [[tableViewMenu itemAtIndex: i] setEnabled: NO];
+
+        return [tableViewMenu autorelease];
+    }
+
+    return [self menu];
+}
+
+- (void)rightMouseDown:(NSEvent*)event
+{
+    [[self window] makeKeyAndOrderFront: self];
+    [[self window] makeFirstResponder: self];
+    [super rightMouseDown: event];
+}
+
 - (void)keyDown:(NSEvent *)event
 {
     if( [[event characters] length] == 0) return;

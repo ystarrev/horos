@@ -132,7 +132,7 @@ struct Metal3DVolumeUniforms {
     float opacityDomainMin;
     float opacityDomainMax;
     uint useRawOpacityCurve;
-    uint padding4;
+    uint usePreIntegratedTransfer;
     float shading;
     float ambient;
     float diffuse;
@@ -324,6 +324,24 @@ static inline float3 metal3DColorAt(
     return clutTexture.sample(transferSampler, float2(normalizedScalar, 0.5)).rgb;
 }
 
+static inline float4 metal3DPreIntegratedTransferAt(
+    float previousScalar,
+    float currentScalar,
+    float windowLevel,
+    float windowWidth,
+    float opacityDomainMin,
+    float opacityDomainMax,
+    uint useRawOpacityCurve,
+    texture2d<float> preIntegratedTransferTexture,
+    sampler transferSampler
+) {
+    float lowerBound = useRawOpacityCurve != 0 ? opacityDomainMin : windowLevel - windowWidth * 0.5;
+    float upperBound = useRawOpacityCurve != 0 ? opacityDomainMax : lowerBound + max(windowWidth, 1e-5);
+    float span = max(upperBound - lowerBound, 1e-5);
+    float2 coord = clamp((float2(previousScalar, currentScalar) - lowerBound) / span, 0.0, 1.0);
+    return preIntegratedTransferTexture.sample(transferSampler, coord);
+}
+
 static inline float3 metal3DBoneColor(float scalar, float lowerBound, float upperBound) {
     float t = clamp((scalar - lowerBound) / max(upperBound - lowerBound, 1e-5), 0.0, 1.0);
     float3 corticalBone = float3(0.62, 0.58, 0.44);
@@ -359,6 +377,7 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
     texture3d<float> volumeTexture [[texture(0)]],
     texture2d<float> clutTexture [[texture(1)]],
     texture2d<float> opacityTexture [[texture(2)]],
+    texture2d<float> preIntegratedTransferTexture [[texture(3)]],
     sampler textureSampler [[sampler(0)]]
 ) {
     float2 ndc = float2(in.uv.x * 2.0 - 1.0, in.uv.y * 2.0 - 1.0);
@@ -496,14 +515,31 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
             output.depth = saturate(clipPosition.z / clipPosition.w);
             return output;
         } else {
-            opacity = metal3DOpacityAt(scalar, uniforms.windowLevel, uniforms.windowWidth, opacityTexture, textureSampler);
+            if (uniforms.usePreIntegratedTransfer != 0) {
+                float fromScalar = havePreviousScalar ? previousScalar : scalar;
+                float4 transfer = metal3DPreIntegratedTransferAt(
+                    fromScalar,
+                    scalar,
+                    uniforms.windowLevel,
+                    uniforms.windowWidth,
+                    uniforms.opacityDomainMin,
+                    uniforms.opacityDomainMax,
+                    uniforms.useRawOpacityCurve,
+                    preIntegratedTransferTexture,
+                    textureSampler
+                );
+                opacity = transfer.a;
+                color = transfer.rgb;
+            } else {
+                opacity = metal3DOpacityAt(scalar, uniforms.windowLevel, uniforms.windowWidth, opacityTexture, textureSampler);
+                color = metal3DColorAt(scalar, uniforms.windowLevel, uniforms.windowWidth, clutTexture, textureSampler) * opacity;
+            }
             if (opacity <= 0.0) {
                 previousScalar = scalar;
                 previousT = t;
                 havePreviousScalar = true;
                 continue;
             }
-            color = metal3DColorAt(scalar, uniforms.windowLevel, uniforms.windowWidth, clutTexture, textureSampler);
             previousScalar = scalar;
             previousT = t;
             havePreviousScalar = true;
@@ -525,7 +561,7 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
                 float3 halfVector = normalize(lightDirection + viewDirection);
                 float specular = pow(max(dot(normal, halfVector), 0.0), max(uniforms.specularPower, 1.0));
                 color *= clamp(uniforms.ambient + uniforms.diffuse * diffuse * spotFactor, 0.20, 0.90);
-                color += uniforms.specular * specular * spotFactor;
+                color += opacity * uniforms.specular * specular * spotFactor;
             }
         }
 
@@ -533,7 +569,7 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
         if (sampleAlpha <= 0.0) {
             continue;
         }
-        accumulated.rgb += (1.0 - accumulated.a) * sampleAlpha * color;
+        accumulated.rgb += (1.0 - accumulated.a) * color;
         accumulated.a += (1.0 - accumulated.a) * sampleAlpha;
         if (!hasVisibleDepth && accumulated.a >= 0.02) {
             float4 clipPosition = uniforms.viewProjectionMatrix * float4(position, 1.0);

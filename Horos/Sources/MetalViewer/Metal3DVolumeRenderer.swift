@@ -96,7 +96,7 @@ private struct Metal3DVolumeUniforms {
     var opacityDomainMin: Float
     var opacityDomainMax: Float
     var useRawOpacityCurve: UInt32
-    var padding4: UInt32 = 0
+    var usePreIntegratedTransfer: UInt32
     var shading: Float
     var ambient: Float
     var diffuse: Float
@@ -153,6 +153,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private let valueFactor: Float
     private let offset16: Float
     private let transferTextureWidth = 4096
+    private let preIntegratedTransferTextureWidth = 256
+    private let preIntegratedTransferSamples = 8
     private let shadingAmbient: Float = 0.15
     private let shadingDiffuse: Float = 0.9
     private let shadingSpecular: Float = 0.3
@@ -167,6 +169,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var volumeTexture: MTLTexture?
     private var clutTexture: MTLTexture?
     private var opacityTexture: MTLTexture?
+    private var preIntegratedTransferTexture: MTLTexture?
     private var drawableSize = CGSize(width: 1, height: 1)
     private var rawVolume = [Float]()
     private var customOpacityControlPoints = [SIMD2<Float>]()
@@ -187,6 +190,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var cameraRotation: simd_quatf
     private var orbitRadius: Float
     private var orthographicZoomScale: Float = 1.0
+    private var preIntegrationEnabled = false
 
     init(device: MTLDevice, pixList: [DCMPix], volumeData: Data) {
         self.deviceRef = device
@@ -318,7 +322,9 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         guard let renderPassDescriptor = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable,
               let commandBuffer = commandQueue.makeCommandBuffer(),
-              let volumeTexture else {
+              let volumeTexture,
+              let clutTexture,
+              let opacityTexture else {
             return
         }
 
@@ -339,6 +345,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         encoder.setFragmentTexture(volumeTexture, index: 0)
         encoder.setFragmentTexture(clutTexture, index: 1)
         encoder.setFragmentTexture(opacityTexture, index: 2)
+        encoder.setFragmentTexture(preIntegratedTransferTexture ?? clutTexture, index: 3)
         encoder.setFragmentSamplerState(samplerState, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
 
@@ -661,6 +668,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         }
         clutTexture = makeColorTransferTexture()
         opacityTexture = makeOpacityTransferTexture()
+        preIntegratedTransferTexture = preIntegrationEnabled ? makePreIntegratedTransferTexture() : nil
     }
 
     private func makeUniforms(for drawableSize: CGSize, camera: CameraState) -> Metal3DVolumeUniforms {
@@ -699,6 +707,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             opacityDomainMin: histogramDomainMin,
             opacityDomainMax: histogramDomainMax,
             useRawOpacityCurve: customOpacityControlPoints.isEmpty ? 0 : 1,
+            usePreIntegratedTransfer: preIntegrationEnabled ? 1 : 0,
             shading: shadingEnabled ? 1.0 : 0.0,
             ambient: shadingAmbient,
             diffuse: shadingDiffuse,
@@ -911,6 +920,12 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         shadingEnabled = enabled
     }
 
+    func setPreIntegrationEnabled(_ enabled: Bool) {
+        guard preIntegrationEnabled != enabled else { return }
+        preIntegrationEnabled = enabled
+        preIntegratedTransferTexture = enabled ? makePreIntegratedTransferTexture() : nil
+    }
+
     func makeHistogramModel() -> Metal3DHistogramModel? {
         guard rawVolume.isEmpty == false else { return nil }
         return Metal3DHistogramModel(voxels: rawVolume)
@@ -928,7 +943,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         customOpacityControlPoints = points.sorted { $0.x < $1.x }.map {
             SIMD2<Float>($0.x, min(max($0.y, 0), 1))
         }
-        opacityTexture = makeOpacityTransferTexture()
+        rebuildTransferTextures()
     }
 
     private func makeVolumeTexture() -> MTLTexture? {
@@ -1061,6 +1076,176 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return makeFloat1DTexture(data: data, width: values.count)
     }
 
+    private func makePreIntegratedTransferTexture() -> MTLTexture? {
+        let width = max(preIntegratedTransferTextureWidth, 2)
+        let sampleCount = max(preIntegratedTransferSamples, 1)
+        let domain = preIntegratedTransferDomain()
+        let span = max(domain.max - domain.min, 0.0001)
+        let opacityPoints = normalizedOpacityControlPoints()
+        let rawOpacityPoints = customOpacityControlPoints.map { (x: $0.x, y: $0.y) }
+        var pixels = [SIMD4<UInt16>](repeating: SIMD4<UInt16>(repeating: 0), count: width * width)
+
+        for currentIndex in 0..<width {
+            let currentScalar = domain.min + (Float(currentIndex) / Float(width - 1)) * span
+            for previousIndex in 0..<width {
+                let previousScalar = domain.min + (Float(previousIndex) / Float(width - 1)) * span
+                var premultipliedColor = SIMD3<Float>(repeating: 0)
+                var accumulatedAlpha: Float = 0
+
+                for sampleIndex in 0..<sampleCount {
+                    let t = (Float(sampleIndex) + 0.5) / Float(sampleCount)
+                    let scalar = previousScalar + (currentScalar - previousScalar) * t
+                    let segmentOpacity = correctedOpacityForScalar(
+                        scalar,
+                        opacityPoints: opacityPoints,
+                        rawOpacityPoints: rawOpacityPoints
+                    )
+                    guard segmentOpacity > 0 else { continue }
+
+                    let subsegmentAlpha = Float(1.0 - pow(1.0 - Double(segmentOpacity), 1.0 / Double(sampleCount)))
+                    guard subsegmentAlpha > 0 else { continue }
+
+                    let visibility = (1.0 - accumulatedAlpha) * subsegmentAlpha
+                    premultipliedColor += visibility * colorForScalar(scalar)
+                    accumulatedAlpha += visibility
+                }
+
+                pixels[currentIndex * width + previousIndex] = SIMD4<UInt16>(
+                    Self.unorm16(premultipliedColor.x),
+                    Self.unorm16(premultipliedColor.y),
+                    Self.unorm16(premultipliedColor.z),
+                    Self.unorm16(accumulatedAlpha)
+                )
+            }
+        }
+
+        return makeRGBA16Unorm2DTexture(pixels: pixels, width: width, height: width)
+    }
+
+    private func preIntegratedTransferDomain() -> (min: Float, max: Float) {
+        if customOpacityControlPoints.isEmpty == false {
+            return (histogramDomainMin, histogramDomainMax)
+        }
+
+        let lower = windowLevel - windowWidth * 0.5
+        return (lower, lower + max(windowWidth, 1))
+    }
+
+    private func normalizedOpacityControlPoints() -> [(x: Float, y: Float)] {
+        currentOpacityPoints.compactMap { string -> (x: Float, y: Float)? in
+            var point = NSPointFromString(string)
+            point.x -= 1000
+            let x = min(max(Float(point.x) / 256.0, 0), 1)
+            let y = min(max(Float(point.y), 0), 1)
+            return (x: x, y: y)
+        }
+        .sorted { $0.x < $1.x }
+    }
+
+    private func correctedOpacityForScalar(
+        _ scalar: Float,
+        opacityPoints: [(x: Float, y: Float)],
+        rawOpacityPoints: [(x: Float, y: Float)]
+    ) -> Float {
+        let baseOpacity = baseOpacityForScalar(
+            scalar,
+            opacityPoints: opacityPoints,
+            rawOpacityPoints: rawOpacityPoints
+        )
+        let opacity = min(max(baseOpacity, 0), 1) / superSampling
+        let factor = opacityCorrectionFactor()
+        guard opacity > 0.0001, abs(factor - 1.0) > 0.0001 else {
+            return opacity
+        }
+        return Float(1.0 - pow(1.0 - Double(opacity), Double(factor)))
+    }
+
+    private func baseOpacityForScalar(
+        _ scalar: Float,
+        opacityPoints: [(x: Float, y: Float)],
+        rawOpacityPoints: [(x: Float, y: Float)]
+    ) -> Float {
+        if customOpacityControlPoints.isEmpty == false {
+            return interpolatedOpacity(scalar: scalar, points: rawOpacityPoints)
+        }
+
+        let normalizedScalar = normalizedWindowFraction(for: scalar)
+        guard opacityPoints.isEmpty == false else {
+            return normalizedScalar
+        }
+
+        if normalizedScalar <= 0 {
+            return 0
+        }
+        if normalizedScalar >= 1 {
+            return opacityPoints.last?.y ?? 1
+        }
+        if let first = opacityPoints.first, normalizedScalar <= first.x {
+            return first.x > 0 ? (normalizedScalar / max(first.x, 0.0001)) * first.y : first.y
+        }
+
+        return interpolatedOpacity(scalar: normalizedScalar, points: opacityPoints)
+    }
+
+    private func interpolatedOpacity(scalar: Float, points: [(x: Float, y: Float)]) -> Float {
+        guard let first = points.first else { return 0 }
+        if scalar <= first.x {
+            return first.y
+        }
+
+        guard let last = points.last else { return first.y }
+        if scalar >= last.x {
+            return last.y
+        }
+
+        for pointIndex in 1..<points.count {
+            let previous = points[pointIndex - 1]
+            let current = points[pointIndex]
+            if scalar <= current.x {
+                let t = (scalar - previous.x) / max(current.x - previous.x, 0.0001)
+                return previous.y + (current.y - previous.y) * t
+            }
+        }
+
+        return last.y
+    }
+
+    private func colorForScalar(_ scalar: Float) -> SIMD3<Float> {
+        let normalizedScalar = normalizedWindowFraction(for: scalar)
+        let lastIndex = max(currentCLUTPixels.count - 1, 0)
+        let scaledIndex = normalizedScalar * Float(lastIndex)
+        let lowerIndex = min(max(Int(floor(scaledIndex)), 0), lastIndex)
+        let upperIndex = min(lowerIndex + 1, lastIndex)
+        guard currentCLUTPixels.indices.contains(lowerIndex),
+              currentCLUTPixels.indices.contains(upperIndex) else {
+            return SIMD3<Float>(repeating: normalizedScalar)
+        }
+
+        let fraction = scaledIndex - Float(lowerIndex)
+        let lower = currentCLUTPixels[lowerIndex]
+        let upper = currentCLUTPixels[upperIndex]
+        let lowerColor = SIMD3<Float>(
+            Float(lower.x) / 255.0,
+            Float(lower.y) / 255.0,
+            Float(lower.z) / 255.0
+        )
+        let upperColor = SIMD3<Float>(
+            Float(upper.x) / 255.0,
+            Float(upper.y) / 255.0,
+            Float(upper.z) / 255.0
+        )
+        return lowerColor + (upperColor - lowerColor) * fraction
+    }
+
+    private func normalizedWindowFraction(for scalar: Float) -> Float {
+        let lower = windowLevel - windowWidth * 0.5
+        return min(max((scalar - lower) / max(windowWidth, 0.0001), 0), 1)
+    }
+
+    private static func unorm16(_ value: Float) -> UInt16 {
+        UInt16(clamping: Int((min(max(value, 0), 1) * 65535.0).rounded()))
+    }
+
     private func applyVTKCompositeOpacityCorrection(to values: inout [Float]) {
         let factor = opacityCorrectionFactor()
         guard abs(factor - 1.0) > 0.0001 else { return }
@@ -1137,6 +1322,33 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 mipmapLevel: 0,
                 withBytes: baseAddress,
                 bytesPerRow: pixels.count * MemoryLayout<SIMD4<UInt8>>.stride
+            )
+        }
+
+        return texture
+    }
+
+    private func makeRGBA16Unorm2DTexture(pixels: [SIMD4<UInt16>], width: Int, height: Int) -> MTLTexture? {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Unorm,
+            width: max(width, 1),
+            height: max(height, 1),
+            mipmapped: false
+        )
+        descriptor.usage = [.shaderRead]
+        descriptor.storageMode = .shared
+
+        guard let texture = deviceRef.makeTexture(descriptor: descriptor) else {
+            return nil
+        }
+
+        pixels.withUnsafeBytes { bytes in
+            guard let baseAddress = bytes.baseAddress else { return }
+            texture.replace(
+                region: MTLRegionMake2D(0, 0, max(width, 1), max(height, 1)),
+                mipmapLevel: 0,
+                withBytes: baseAddress,
+                bytesPerRow: max(width, 1) * MemoryLayout<SIMD4<UInt16>>.stride
             )
         }
 

@@ -70,6 +70,7 @@ final class Metal3DVolumeView: NSView {
     private var cropHandleProjections = [Metal3DCropPlane: Metal3DCropHandleProjection]()
     private var cropHandleViews = [Metal3DCropPlane: CropHandleView]()
     private var trackingAreaRef: NSTrackingArea?
+    private var isWindowLevelInteractionActive = false
     var wlwwInteractionHandler: ((String) -> Void)?
 
     private var cropApplied = false
@@ -93,6 +94,13 @@ final class Metal3DVolumeView: NSView {
     var shadingEnabled = true {
         didSet {
             renderer?.setShadingEnabled(shadingEnabled)
+            metalView.setNeedsDisplay(metalView.bounds)
+        }
+    }
+
+    var preIntegrationEnabled = true {
+        didSet {
+            renderer?.setPreIntegrationEnabled(preIntegrationEnabled)
             metalView.setNeedsDisplay(metalView.bounds)
         }
     }
@@ -218,6 +226,7 @@ final class Metal3DVolumeView: NSView {
         let deltaY = Float(location.y - lastDragLocation.y)
         let modifierFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if modifierFlags.contains(.control) {
+            beginWindowLevelInteractionIfNeeded()
             renderer?.adjustWindowLevelWidth(deltaX: deltaX, deltaY: deltaY)
             if let selectedWLPresetName {
                 wlwwInteractionHandler?(selectedWLPresetName)
@@ -259,6 +268,7 @@ final class Metal3DVolumeView: NSView {
     override func mouseUp(with event: NSEvent) {
         activeCropPlane = nil
         renderer?.setActiveCropPlane(nil)
+        endWindowLevelInteractionIfNeeded()
         if cropEnabled {
             let location = convert(event.locationInWindow, from: nil)
             updateHoveredCropPlane(at: location)
@@ -285,10 +295,23 @@ final class Metal3DVolumeView: NSView {
         renderer.setCropEnabled(cropApplied || cropEnabled)
         renderer.setCropOverlayVisible(cropEnabled)
         renderer.setShadingEnabled(shadingEnabled)
+        renderer.setPreIntegrationEnabled(preIntegrationEnabled)
         self.renderer = renderer
         metalView.delegate = renderer
         metalView.setNeedsDisplay(metalView.bounds)
         refreshCropHandles()
+    }
+
+    private func beginWindowLevelInteractionIfNeeded() {
+        guard isWindowLevelInteractionActive == false else { return }
+        isWindowLevelInteractionActive = true
+        renderer?.setPreIntegrationEnabled(false)
+    }
+
+    private func endWindowLevelInteractionIfNeeded() {
+        guard isWindowLevelInteractionActive else { return }
+        isWindowLevelInteractionActive = false
+        renderer?.setPreIntegrationEnabled(preIntegrationEnabled)
     }
 
     @discardableResult

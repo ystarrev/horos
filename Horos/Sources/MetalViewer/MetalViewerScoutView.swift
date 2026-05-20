@@ -12,6 +12,8 @@ private enum MetalViewerScoutLayout {
     static let fallbackThumbnailWidth: CGFloat = 128
     static let thumbnailAspectRatio: CGFloat = 1.0
     static let thumbnailInset: CGFloat = 4
+    static let studySeparatorSpacing: CGFloat = 4
+    static let studySeparatorThickness: CGFloat = 2
 }
 
 extension NSPasteboard.PasteboardType {
@@ -23,6 +25,7 @@ final class MetalViewerScoutView: NSScrollView {
     private let stackView = NSStackView()
     private var itemViews: [MetalViewerScoutItemView] = []
     private var groupViews: [MetalViewerScoutStudyGroupView] = []
+    private var separatorViews: [MetalViewerScoutStudySeparatorView] = []
     private var pendingThumbnailRefresh: DispatchWorkItem?
 
     var selectionHandler: ((MetalViewerSeries) -> Void)?
@@ -43,7 +46,7 @@ final class MetalViewerScoutView: NSScrollView {
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.orientation = .vertical
         stackView.alignment = .centerX
-        stackView.spacing = 10
+        stackView.spacing = MetalViewerScoutLayout.studySeparatorSpacing
         stackView.edgeInsets = NSEdgeInsets(top: 12, left: 4, bottom: 12, right: 4)
 
         let documentView = MetalViewerScoutDocumentView()
@@ -75,11 +78,24 @@ final class MetalViewerScoutView: NSScrollView {
             stackView.removeArrangedSubview(group)
             group.removeFromSuperview()
         }
+        separatorViews.forEach { separator in
+            stackView.removeArrangedSubview(separator)
+            separator.removeFromSuperview()
+        }
 
         itemViews = []
         groupViews = []
+        separatorViews = []
 
-        for studySeries in Self.groupedByStudy(series) {
+        for (index, studySeries) in Self.groupedByStudy(series).enumerated() {
+            if index > 0 {
+                let separator = MetalViewerScoutStudySeparatorView()
+                stackView.addArrangedSubview(separator)
+                separator.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -(stackView.edgeInsets.left + stackView.edgeInsets.right)).isActive = true
+                separator.heightAnchor.constraint(equalToConstant: MetalViewerScoutLayout.studySeparatorThickness).isActive = true
+                separatorViews.append(separator)
+            }
+
             let groupView = MetalViewerScoutStudyGroupView()
             stackView.addArrangedSubview(groupView)
             groupView.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -(stackView.edgeInsets.left + stackView.edgeInsets.right)).isActive = true
@@ -184,6 +200,22 @@ final class MetalViewerScoutView: NSScrollView {
     }
 }
 
+private final class MetalViewerScoutStudySeparatorView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.cornerRadius = MetalViewerScoutLayout.studySeparatorThickness / 2
+        layer?.backgroundColor = metalViewerScoutStudyNumberTextColor.withAlphaComponent(0.85).cgColor
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
 private final class MetalViewerScoutStudyGroupView: NSView {
     private let stackView = NSStackView()
 
@@ -193,7 +225,7 @@ private final class MetalViewerScoutStudyGroupView: NSView {
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
         layer?.cornerRadius = 12
-        layer?.borderWidth = 1
+        layer?.borderWidth = 2
         layer?.borderColor = metalViewerScoutTextColor.withAlphaComponent(0.85).cgColor
         layer?.backgroundColor = NSColor.clear.cgColor
 
@@ -253,7 +285,7 @@ private final class MetalViewerScoutItemView: NSView {
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
         layer?.cornerRadius = 10
-        layer?.borderWidth = 1
+        layer?.borderWidth = 2
 
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.imageScaling = .scaleProportionallyUpOrDown
@@ -266,10 +298,7 @@ private final class MetalViewerScoutItemView: NSView {
         configureOverlayLabel(timeOverlayLabel, alignment: .left)
         configureOverlayLabel(titleOverlayLabel, alignment: .left)
         configureOverlayLabel(countOverlayLabel, alignment: .left)
-        topOverlayLabel.attributedStringValue = Self.studySeriesAttributedString(for: series)
-        timeOverlayLabel.stringValue = series.studyDate.map { Self.studyTimeFormatter.string(from: $0) } ?? ""
-        titleOverlayLabel.stringValue = series.title
-        updateCountLabel(isStructuredReport: false)
+        updateOverlayLabels(isStructuredReport: series.modality == "SR")
 
         addSubview(imageView)
         imageView.addSubview(topOverlayLabel)
@@ -388,12 +417,22 @@ private final class MetalViewerScoutItemView: NSView {
         if let thumbnail = thumbnailResult.image {
             imageView.image = thumbnail
         }
-        updateCountLabel(isStructuredReport: thumbnailResult.isStructuredReport)
+        updateOverlayLabels(isStructuredReport: thumbnailResult.isStructuredReport)
     }
 
-    private func updateCountLabel(isStructuredReport: Bool) {
-        let unit = isStructuredReport ? "report" : "image"
-        countOverlayLabel.stringValue = "\(series.imageCount) \(unit)\(series.imageCount == 1 ? "" : "s")"
+    private func updateOverlayLabels(isStructuredReport: Bool) {
+        topOverlayLabel.attributedStringValue = Self.studySeriesAttributedString(
+            for: series,
+            includeSeriesNumber: isStructuredReport == false,
+            includeTime: isStructuredReport
+        )
+        timeOverlayLabel.stringValue = isStructuredReport ? "" : (series.studyDate.map { Self.studyTimeFormatter.string(from: $0) } ?? "")
+        titleOverlayLabel.stringValue = isStructuredReport ? "" : series.title
+        countOverlayLabel.stringValue = isStructuredReport ? "" : "\(series.imageCount) image\(series.imageCount == 1 ? "" : "s")"
+
+        timeOverlayLabel.isHidden = isStructuredReport
+        titleOverlayLabel.isHidden = isStructuredReport
+        countOverlayLabel.isHidden = isStructuredReport
     }
 
     private func showContextMenu(with event: NSEvent) {
@@ -429,7 +468,11 @@ private final class MetalViewerScoutItemView: NSView {
         label.isSelectable = false
     }
 
-    private static func studySeriesAttributedString(for series: MetalViewerSeries) -> NSAttributedString {
+    private static func studySeriesAttributedString(
+        for series: MetalViewerSeries,
+        includeSeriesNumber: Bool,
+        includeTime: Bool
+    ) -> NSAttributedString {
         let font = NSFont.systemFont(ofSize: 11, weight: .regular)
         let studyAttributes: [NSAttributedString.Key: Any] = [
             .font: font,
@@ -442,11 +485,14 @@ private final class MetalViewerScoutItemView: NSView {
         let text = NSMutableAttributedString(string: "\(series.studyNumber)", attributes: studyAttributes)
         let seriesNumber = series.seriesNumber.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if seriesNumber.isEmpty == false {
+        if includeSeriesNumber, seriesNumber.isEmpty == false {
             text.append(NSAttributedString(string: "-\(seriesNumber)", attributes: seriesAttributes))
         }
         if let studyDate = series.studyDate {
-            text.append(NSAttributedString(string: "  \(Self.studyDateFormatter.string(from: studyDate))", attributes: seriesAttributes))
+            let dateText = Self.studyDateFormatter.string(from: studyDate)
+            let metadataText = includeTime ? "\(dateText) \(Self.studyTimeFormatter.string(from: studyDate))" : dateText
+            let separator = includeTime ? " " : "  "
+            text.append(NSAttributedString(string: "\(separator)\(metadataText)", attributes: seriesAttributes))
         }
 
         return text
@@ -647,21 +693,23 @@ private final class MetalViewerScoutItemView: NSView {
         NSColor(calibratedWhite: 0.10, alpha: 1).setFill()
         NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
 
+        let pageWidth = size.width * 0.52
+        let pageHeight = size.height * 0.66
         let pageRect = NSRect(
-            x: size.width * 0.19,
-            y: size.height * 0.10,
-            width: size.width * 0.62,
-            height: size.height * 0.80
+            x: (size.width - pageWidth) * 0.5,
+            y: size.height * 0.12,
+            width: pageWidth,
+            height: pageHeight
         )
-        let pagePath = NSBezierPath(roundedRect: pageRect, xRadius: 5, yRadius: 5)
+        let pagePath = NSBezierPath(rect: pageRect)
         NSColor(calibratedWhite: 0.94, alpha: 1).setFill()
         pagePath.fill()
 
-        NSColor(calibratedWhite: 0.72, alpha: 1).setStroke()
+        NSColor(calibratedWhite: 0.64, alpha: 1).setStroke()
         pagePath.lineWidth = 1
         pagePath.stroke()
 
-        let foldSize = min(pageRect.width, pageRect.height) * 0.18
+        let foldSize = min(pageRect.width, pageRect.height) * 0.22
         let foldPath = NSBezierPath()
         foldPath.move(to: NSPoint(x: pageRect.maxX - foldSize, y: pageRect.maxY))
         foldPath.line(to: NSPoint(x: pageRect.maxX, y: pageRect.maxY - foldSize))
@@ -669,25 +717,29 @@ private final class MetalViewerScoutItemView: NSView {
         foldPath.close()
         NSColor(calibratedWhite: 0.82, alpha: 1).setFill()
         foldPath.fill()
+        NSColor(calibratedWhite: 0.68, alpha: 1).setStroke()
+        foldPath.lineWidth = 1
+        foldPath.stroke()
 
+        let badgeSize = min(pageRect.width, pageRect.height) * 0.24
         let badgeRect = NSRect(
-            x: pageRect.midX - 12,
-            y: pageRect.maxY - 34,
-            width: 24,
-            height: 24
+            x: pageRect.midX - badgeSize * 0.5,
+            y: pageRect.maxY - foldSize - badgeSize - 6,
+            width: badgeSize,
+            height: badgeSize
         )
         NSColor(calibratedRed: 0.03, green: 0.46, blue: 0.78, alpha: 1).setFill()
         NSBezierPath(ovalIn: badgeRect).fill()
 
         NSColor.white.setStroke()
         let pulsePath = NSBezierPath()
-        pulsePath.lineWidth = 1.6
-        pulsePath.move(to: NSPoint(x: badgeRect.minX + 5, y: badgeRect.midY))
-        pulsePath.line(to: NSPoint(x: badgeRect.minX + 9, y: badgeRect.midY))
-        pulsePath.line(to: NSPoint(x: badgeRect.minX + 11, y: badgeRect.midY + 5))
-        pulsePath.line(to: NSPoint(x: badgeRect.minX + 15, y: badgeRect.midY - 6))
-        pulsePath.line(to: NSPoint(x: badgeRect.minX + 17, y: badgeRect.midY))
-        pulsePath.line(to: NSPoint(x: badgeRect.minX + 20, y: badgeRect.midY))
+        pulsePath.lineWidth = 1.3
+        pulsePath.move(to: NSPoint(x: badgeRect.minX + badgeSize * 0.20, y: badgeRect.midY))
+        pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.36, y: badgeRect.midY))
+        pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.44, y: badgeRect.midY + badgeSize * 0.20))
+        pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.58, y: badgeRect.midY - badgeSize * 0.24))
+        pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.68, y: badgeRect.midY))
+        pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.82, y: badgeRect.midY))
         pulsePath.stroke()
 
         let title = NSLocalizedString("Diagnostic\nImaging\nReport", comment: "")
@@ -695,15 +747,15 @@ private final class MetalViewerScoutItemView: NSView {
         paragraphStyle.alignment = .center
         paragraphStyle.lineBreakMode = .byWordWrapping
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: 8, weight: .semibold),
             .foregroundColor: NSColor(calibratedWhite: 0.18, alpha: 1),
             .paragraphStyle: paragraphStyle
         ]
         let titleRect = NSRect(
-            x: pageRect.minX + 6,
-            y: pageRect.minY + 16,
-            width: pageRect.width - 12,
-            height: pageRect.height - 52
+            x: pageRect.minX + 5,
+            y: pageRect.minY + 12,
+            width: pageRect.width - 10,
+            height: max(28, badgeRect.minY - pageRect.minY - 14)
         )
         title.draw(in: titleRect, withAttributes: attributes)
 

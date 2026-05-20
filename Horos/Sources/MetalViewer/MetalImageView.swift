@@ -112,17 +112,17 @@ final class MetalImageView: MTKView {
     private var wlAnchor: Float = 0
     private var wwAnchor: Float = 0
     private var panAnchor = SIMD2<Float>(repeating: 0)
-    private var interactionMode: InteractionMode = .windowLevel
+    private var activeMouseButton: MetalViewerMouseButton = .left
+    private var activeMouseTool: MetalViewerMouseTool = .windowLevel
     private var mprDragMode: MPRDragMode = .none
+    private var mprScrollAxisOverride: Int?
     private var isDraggingMPRPreviewDivider = false
+    private var didChangeWindowLevelDuringDrag = false
+    private var didDragMouseInteraction = false
+    private var sliceDragAccumulator: CGFloat = 0
     private var trackingAreaRef: NSTrackingArea?
     private var preciseScrollSliceAccumulator: CGFloat = 0
     private let mprPreviewOverlayView = MetalMPRPreviewOverlayView(frame: .zero)
-
-    private enum InteractionMode {
-        case windowLevel
-        case pan
-    }
 
     private enum MPRDragMode {
         case none
@@ -130,11 +130,12 @@ final class MetalImageView: MTKView {
         case pan
         case plane
         case planeTilt
+        case previewPlane
     }
 
-    private func interactionMode(for event: NSEvent) -> InteractionMode {
+    private func mouseTool(for button: MetalViewerMouseButton, event: NSEvent) -> MetalViewerMouseTool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        return flags.contains(.shift) ? .pan : .windowLevel
+        return flags.contains(.shift) ? .pan : mouseToolAssignments.tool(for: button)
     }
 
     private static let preciseScrollPointsPerSlice: CGFloat = 18
@@ -146,6 +147,8 @@ final class MetalImageView: MTKView {
     var interactionEventHandler: (() -> Void)?
     var annotationStateDidChange: (() -> Void)?
     var windowLevelInteractionHandler: (() -> Void)?
+    var tumourSeedPlacementHandler: ((MetalViewerTumourSeedPlacement) -> Void)?
+    var mouseToolAssignments = MetalViewerMouseToolAssignments()
     private(set) var mouseAnnotationState: MouseAnnotationState?
 
     init(
@@ -231,6 +234,7 @@ final class MetalImageView: MTKView {
 
     override func scrollWheel(with event: NSEvent) {
         interactionEventHandler?()
+        let point = convert(event.locationInWindow, from: nil)
         let delta = event.scrollingDeltaY == 0 ? event.scrollingDeltaX : event.scrollingDeltaY
         let phase = event.momentumPhase.isEmpty ? event.phase : event.momentumPhase
 
@@ -238,22 +242,30 @@ final class MetalImageView: MTKView {
             preciseScrollSliceAccumulator = 0
         }
 
+        if renderer.displayMode == .mpr,
+           renderer.mprSlicePlaneAxis(at: point, in: bounds) == nil {
+            preciseScrollSliceAccumulator = 0
+            zoomFromScrollWheel(delta: delta)
+            updateMouseAnnotationState(from: point)
+            return
+        }
+
         if event.hasPreciseScrollingDeltas {
             preciseScrollSliceAccumulator += delta
             let scrollPointsPerSlice = event.momentumPhase.isEmpty ? Self.preciseScrollPointsPerSlice : Self.momentumScrollPointsPerSlice
             let stepCount = Int(preciseScrollSliceAccumulator / scrollPointsPerSlice)
             if stepCount != 0 {
-                stepThroughCurrentMode(by: stepCount, event: event)
+                stepThroughCurrentMode(by: stepCount, event: event, at: point)
                 preciseScrollSliceAccumulator -= CGFloat(stepCount) * scrollPointsPerSlice
             }
         } else if delta != 0 {
-            stepThroughCurrentMode(by: delta > 0 ? 1 : -1, event: event)
+            stepThroughCurrentMode(by: delta > 0 ? 1 : -1, event: event, at: point)
         }
 
         if phase.contains(.ended) || phase.contains(.cancelled) {
             preciseScrollSliceAccumulator = 0
         }
-        updateMouseAnnotationState(from: convert(event.locationInWindow, from: nil))
+        updateMouseAnnotationState(from: point)
     }
 
     override func magnify(with event: NSEvent) {
@@ -266,6 +278,30 @@ final class MetalImageView: MTKView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        beginMouseInteraction(with: event, button: .left)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        dragMouseInteraction(with: event, button: .left)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        endMouseInteraction(with: event, button: .left)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        beginMouseInteraction(with: event, button: .right)
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        dragMouseInteraction(with: event, button: .right)
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        endMouseInteraction(with: event, button: .right)
+    }
+
+    private func beginMouseInteraction(with event: NSEvent, button: MetalViewerMouseButton) {
         interactionEventHandler?()
         activateHandler?()
         window?.makeFirstResponder(self)
@@ -273,50 +309,178 @@ final class MetalImageView: MTKView {
         wlAnchor = renderer.activeWindowLevel
         wwAnchor = renderer.activeWindowWidth
         panAnchor = renderer.panOffset
-        interactionMode = interactionMode(for: event)
+        activeMouseButton = button
+        activeMouseTool = mouseTool(for: button, event: event)
+        didChangeWindowLevelDuringDrag = false
+        didDragMouseInteraction = false
+        sliceDragAccumulator = 0
+        mprScrollAxisOverride = nil
         if renderer.displayMode == .mpr {
-            switch interactionMode {
+            switch activeMouseTool {
             case .pan:
                 mprDragMode = .pan
-            case .windowLevel:
-                if renderer.beginMPRPlaneDrag(at: dragAnchor, in: bounds) {
+            case .windowLevel, .rotate:
+                if renderer.beginMPRPreviewPlaneDrag(at: dragAnchor, in: bounds) {
+                    mprDragMode = .previewPlane
+                } else if renderer.beginMPRPlaneDrag(at: dragAnchor, in: bounds) {
                     mprDragMode = .plane
                 } else if renderer.beginMPRPlaneTiltDrag(at: dragAnchor, in: bounds) {
                     mprDragMode = .planeTilt
                 } else {
                     mprDragMode = .rotate
                 }
+            case .scroll:
+                mprScrollAxisOverride = renderer.mprSlicePlaneAxis(at: dragAnchor, in: bounds)
+                mprDragMode = .none
+            case .zoom, .tumourSeed:
+                mprDragMode = .none
             }
         } else {
             mprDragMode = .none
         }
+        updateMouseAnnotationState(from: dragAnchor)
     }
 
-    override func mouseDragged(with event: NSEvent) {
+    private func dragMouseInteraction(with event: NSEvent, button: MetalViewerMouseButton) {
+        guard button == activeMouseButton else {
+            return
+        }
         interactionEventHandler?()
         let currentPoint = convert(event.locationInWindow, from: nil)
-        let currentInteractionMode = interactionMode(for: event)
+        let currentMouseTool = mouseTool(for: activeMouseButton, event: event)
 
-        if currentInteractionMode != interactionMode {
-            interactionMode = currentInteractionMode
+        if currentMouseTool != activeMouseTool,
+           mprDragMode != .plane,
+           mprDragMode != .planeTilt,
+           mprDragMode != .previewPlane {
+            activeMouseTool = currentMouseTool
             dragAnchor = currentPoint
             wlAnchor = renderer.activeWindowLevel
             wwAnchor = renderer.activeWindowWidth
             panAnchor = renderer.panOffset
-            if renderer.displayMode == .mpr, mprDragMode != .plane, mprDragMode != .planeTilt {
-                mprDragMode = currentInteractionMode == .pan ? .pan : .rotate
+            sliceDragAccumulator = 0
+            mprScrollAxisOverride = nil
+            if renderer.displayMode == .mpr {
+                switch currentMouseTool {
+                case .pan:
+                    mprDragMode = .pan
+                case .windowLevel, .rotate:
+                    if renderer.beginMPRPreviewPlaneDrag(at: currentPoint, in: bounds) {
+                        mprDragMode = .previewPlane
+                    } else {
+                        mprDragMode = .rotate
+                    }
+                case .scroll:
+                    mprScrollAxisOverride = renderer.mprSlicePlaneAxis(at: currentPoint, in: bounds)
+                    mprDragMode = .none
+                case .zoom, .tumourSeed:
+                    mprDragMode = .none
+                }
             }
         }
 
         let deltaX = Float(currentPoint.x - dragAnchor.x)
         let deltaY = Float(currentPoint.y - dragAnchor.y)
+        if hypot(currentPoint.x - dragAnchor.x, currentPoint.y - dragAnchor.y) > 3 {
+            didDragMouseInteraction = true
+        }
 
         if renderer.displayMode == .mpr {
+            dragMPRInteraction(
+                tool: activeMouseTool,
+                currentPoint: currentPoint,
+                deltaX: deltaX,
+                deltaY: deltaY,
+                event: event
+            )
+            updateMouseAnnotationState(from: currentPoint)
+            return
+        }
+
+        dragStackInteraction(
+            tool: activeMouseTool,
+            currentPoint: currentPoint,
+            deltaX: deltaX,
+            deltaY: deltaY,
+            event: event
+        )
+        updateMouseAnnotationState(from: currentPoint)
+    }
+
+    private func endMouseInteraction(with event: NSEvent, button: MetalViewerMouseButton) {
+        guard button == activeMouseButton else {
+            return
+        }
+        interactionEventHandler?()
+        renderer.endMPRPlaneDrag()
+        mprDragMode = .none
+        mprScrollAxisOverride = nil
+        sliceDragAccumulator = 0
+        let currentPoint = convert(event.locationInWindow, from: nil)
+        if activeMouseTool == .tumourSeed,
+           didDragMouseInteraction == false,
+           let placement = renderer.tumourSeedPlacement(at: currentPoint, in: bounds) {
+            tumourSeedPlacementHandler?(placement)
+        }
+        if didChangeWindowLevelDuringDrag, renderer.displayMode == .stack2D {
+            renderer.commitWindowLevel()
+        }
+        didChangeWindowLevelDuringDrag = false
+        didDragMouseInteraction = false
+        updateMouseAnnotationState(from: currentPoint)
+    }
+
+    private func dragStackInteraction(
+        tool: MetalViewerMouseTool,
+        currentPoint: CGPoint,
+        deltaX: Float,
+        deltaY: Float,
+        event: NSEvent
+    ) {
+        switch tool {
+        case .windowLevel:
+            renderer.updateWindowLevel(
+                wl: wlAnchor - deltaY * max(abs(wlAnchor), 128) * 0.003,
+                ww: wwAnchor + deltaX * max(abs(wwAnchor), 256) * 0.003
+            )
+            didChangeWindowLevelDuringDrag = true
+            windowLevelInteractionHandler?()
+        case .pan:
+            renderer.setPanOffset(panAnchor + SIMD2<Float>(deltaX, deltaY))
+        case .zoom:
+            zoomFromDrag(deltaY: deltaY, currentPoint: currentPoint)
+        case .scroll:
+            scrollFromDrag(to: currentPoint, event: event)
+        case .rotate:
+            renderer.rotateStack(from: dragAnchor, to: currentPoint, in: bounds)
+            dragAnchor = currentPoint
+        case .tumourSeed:
+            break
+        }
+    }
+
+    private func dragMPRInteraction(
+        tool: MetalViewerMouseTool,
+        currentPoint: CGPoint,
+        deltaX: Float,
+        deltaY: Float,
+        event: NSEvent
+    ) {
+        switch tool {
+        case .pan:
+            renderer.setPanOffset(panAnchor + SIMD2<Float>(deltaX, deltaY))
+        case .zoom:
+            zoomFromDrag(deltaY: deltaY, currentPoint: currentPoint)
+        case .scroll:
+            scrollOrScaleMPRFromDrag(to: currentPoint, deltaY: deltaY, event: event)
+        case .windowLevel, .rotate:
             switch mprDragMode {
             case .plane:
                 renderer.dragMPRPlane(to: currentPoint)
             case .planeTilt:
                 renderer.dragMPRPlaneTilt(to: currentPoint)
+            case .previewPlane:
+                renderer.dragMPRPreviewPlane(to: currentPoint, in: bounds)
             case .rotate:
                 renderer.rotateMPR(from: dragAnchor, to: currentPoint, in: bounds)
                 dragAnchor = currentPoint
@@ -325,30 +489,49 @@ final class MetalImageView: MTKView {
             case .none:
                 break
             }
-            updateMouseAnnotationState(from: currentPoint)
+        case .tumourSeed:
+            break
+        }
+    }
+
+    private func zoomFromDrag(deltaY: Float, currentPoint: CGPoint) {
+        let zoomFactor = min(max(Float(exp(Double(deltaY) * 0.01)), 0.05), 20)
+        renderer.zoom(by: zoomFactor)
+        dragAnchor = currentPoint
+        panAnchor = renderer.panOffset
+    }
+
+    private func zoomFromScrollWheel(delta: CGFloat) {
+        guard delta != 0 else { return }
+        let zoomFactor = min(max(Float(exp(Double(delta) * 0.0015)), 0.05), 20)
+        renderer.zoom(by: zoomFactor)
+    }
+
+    private func scrollFromDrag(to currentPoint: CGPoint, event: NSEvent) {
+        sliceDragAccumulator += currentPoint.y - dragAnchor.y
+        dragAnchor = currentPoint
+
+        let stepCount = Int(sliceDragAccumulator / 14)
+        guard stepCount != 0 else {
             return
         }
 
-        switch interactionMode {
-        case .windowLevel:
-            renderer.updateWindowLevel(
-                wl: wlAnchor - deltaY * max(abs(wlAnchor), 128) * 0.003,
-                ww: wwAnchor + deltaX * max(abs(wwAnchor), 256) * 0.003
-            )
-            windowLevelInteractionHandler?()
-        case .pan:
-            renderer.setPanOffset(panAnchor + SIMD2<Float>(deltaX, deltaY))
-        }
-        updateMouseAnnotationState(from: currentPoint)
+        stepThroughCurrentMode(by: stepCount, event: event, at: currentPoint)
+        sliceDragAccumulator -= CGFloat(stepCount * 14)
     }
 
-    override func mouseUp(with event: NSEvent) {
-        interactionEventHandler?()
-        renderer.endMPRPlaneDrag()
-        mprDragMode = .none
-        if interactionMode == .windowLevel, renderer.displayMode == .stack2D {
-            renderer.commitWindowLevel()
+    private func scrollOrScaleMPRFromDrag(to currentPoint: CGPoint, deltaY: Float, event: NSEvent) {
+        if mprScrollAxisOverride == nil {
+            mprScrollAxisOverride = renderer.mprSlicePlaneAxis(at: currentPoint, in: bounds)
         }
+
+        guard mprScrollAxisOverride != nil else {
+            sliceDragAccumulator = 0
+            zoomFromDrag(deltaY: deltaY, currentPoint: currentPoint)
+            return
+        }
+
+        scrollFromDrag(to: currentPoint, event: event)
     }
 
     func beginMPRPreviewDividerDrag(with event: NSEvent) {
@@ -370,14 +553,6 @@ final class MetalImageView: MTKView {
         interactionEventHandler?()
         updateMPRPreviewDivider(with: event)
         isDraggingMPRPreviewDivider = false
-    }
-
-    override func rightMouseDown(with event: NSEvent) {
-        interactionEventHandler?()
-        activateHandler?()
-        window?.makeFirstResponder(self)
-        renderer.resetWindowLevel()
-        updateMouseAnnotationState(from: convert(event.locationInWindow, from: nil))
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -426,15 +601,23 @@ final class MetalImageView: MTKView {
         annotationStateDidChange?()
     }
 
-    private func stepThroughCurrentMode(by stepCount: Int, event: NSEvent) {
+    private func stepThroughCurrentMode(by stepCount: Int, event: NSEvent, at point: CGPoint? = nil) {
         if renderer.displayMode == .mpr {
-            renderer.moveMPRPlane(axis: mprScrollAxis(for: event), by: -Float(stepCount))
+            renderer.moveMPRPlane(axis: mprScrollAxis(for: event, at: point), by: -Float(stepCount))
         } else {
             renderer.stepSlice(by: stepCount)
         }
     }
 
-    private func mprScrollAxis(for event: NSEvent) -> Int {
+    private func mprScrollAxis(for event: NSEvent, at point: CGPoint?) -> Int {
+        if let mprScrollAxisOverride {
+            return mprScrollAxisOverride
+        }
+        if let point,
+           let slicePlaneAxis = renderer.mprSlicePlaneAxis(at: point, in: bounds) {
+            return slicePlaneAxis
+        }
+
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if flags.contains(.option) {
             return 0
@@ -471,8 +654,8 @@ final class MetalImageView: MTKView {
             return
         }
 
-        let imageRect = displayedImageRect
-        guard imageRect.contains(point), pix.pwidth > 0, pix.pheight > 0 else {
+        guard let normalizedImagePoint = renderer.normalizedImagePoint(for: point, in: bounds),
+              let nextMouseAnnotationState = mouseAnnotationState(for: pix, normalizedImagePoint: normalizedImagePoint) else {
             if mouseAnnotationState != nil {
                 mouseAnnotationState = nil
                 annotationStateDidChange?()
@@ -480,21 +663,36 @@ final class MetalImageView: MTKView {
             return
         }
 
-        let normalizedX = (point.x - imageRect.minX) / imageRect.width
-        let normalizedY = (imageRect.maxY - point.y) / imageRect.height
-        let pixelX = max(0, min(CGFloat(pix.pwidth - 1), normalizedX * CGFloat(pix.pwidth)))
-        let pixelY = max(0, min(CGFloat(pix.pheight - 1), normalizedY * CGFloat(pix.pheight)))
-        let sampleX = min(max(Int(pixelX), 0), Int(pix.pwidth - 1))
-        let sampleY = min(max(Int(pixelY), 0), Int(pix.pheight - 1))
+        mouseAnnotationState = nextMouseAnnotationState
+        annotationStateDidChange?()
+    }
+
+    private func mouseAnnotationState(for pix: DCMPix, normalizedImagePoint: CGPoint) -> MouseAnnotationState? {
+        pix.checking.lock()
+        defer { pix.checking.unlock() }
+
+        pix.checkLoad()
+        let width = Int(pix.pwidth)
+        let height = Int(pix.pheight)
+        guard width > 0,
+              height > 0,
+              let imagePointer = pix.fImage else {
+            return nil
+        }
+
+        let pixelX = max(0, min(CGFloat(width - 1), normalizedImagePoint.x * CGFloat(width)))
+        let pixelY = max(0, min(CGFloat(height - 1), normalizedImagePoint.y * CGFloat(height)))
+        let sampleX = min(max(Int(pixelX), 0), width - 1)
+        let sampleY = min(max(Int(pixelY), 0), height - 1)
+        let pixelValue = imagePointer[sampleY * width + sampleX]
 
         var dicomCoords = [Float](repeating: 0, count: 3)
         pix.convertX(Float(pixelX), pixY: Float(pixelY), toDICOMCoords: &dicomCoords, pixelCenter: true)
 
-        mouseAnnotationState = MouseAnnotationState(
+        return MouseAnnotationState(
             pixelPoint: CGPoint(x: pixelX, y: pixelY),
-            pixelValue: pix.fImage?[sampleY * Int(pix.pwidth) + sampleX] ?? 0,
+            pixelValue: pixelValue,
             dicomPoint: SIMD3<Float>(dicomCoords[0], dicomCoords[1], dicomCoords[2])
         )
-        annotationStateDidChange?()
     }
 }

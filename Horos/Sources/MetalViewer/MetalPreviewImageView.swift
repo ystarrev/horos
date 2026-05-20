@@ -231,7 +231,17 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
     func draw(in view: MTKView) {
         guard let renderPassDescriptor = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable,
-              let imageTexture else {
+              let commandBuffer = commandQueue.makeCommandBuffer() else {
+            return
+        }
+
+        guard let imageTexture else {
+            guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+                return
+            }
+            encoder.endEncoding()
+            commandBuffer.present(drawable)
+            commandBuffer.commit()
             return
         }
 
@@ -256,8 +266,7 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
             windowWidth: windowWidth
         )
 
-        guard let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
             return
         }
 

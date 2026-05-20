@@ -170,7 +170,7 @@ enum {
     
     [_sourcesTableView registerForDraggedTypes:BrowserController.DatabaseObjectXIDsPasteboardTypes];
     
-    [_sourcesTableView selectRowIndexes:[NSIndexSet indexSetWithIndex:0] byExtendingSelection:NO];
+    [self selectCurrentDatabaseSource];
 }
 
 -(void)deallocSources
@@ -1466,6 +1466,5 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
 @implementation UnavaliableDataNodeException
 @end
-
 
 

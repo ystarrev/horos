@@ -50,6 +50,6 @@ final class Metal3DViewerLauncher: NSObject {
             retainedControllers.removeAll { $0 === controller }
         }
 
-        controller.presentAndZoomWindow()
+        controller.presentWindowOnViewerScreen()
     }
 }

@@ -2,3 +2,4 @@
 #import "BrowserController.h"
 #import "DicomStudy.h"
 #import "Sources/StructuredReportSupport.h"
+#import "Sources/MetalViewer/Metal3DSurfaceExtractor.h"

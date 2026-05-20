@@ -116,6 +116,7 @@ enum
 	QueryArrayController					*queryManager;
 	
 	BOOL									autoQuery, queryButtonPressed, performingCFind, avoidQueryControllerDeallocReentry;
+    BOOL                                    queryWindowHorizontalBorderLiveResize;
 	
 	NSInteger								autoRefreshQueryResults;
 	NSRecursiveLock							*autoQueryLock;

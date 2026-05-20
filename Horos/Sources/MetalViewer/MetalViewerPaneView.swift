@@ -1,4 +1,5 @@
 import AppKit
+import simd
 import WebKit
 
 final class MetalViewerPaneView: NSView {
@@ -155,6 +156,18 @@ final class MetalViewerPaneView: NSView {
             didSet { needsDisplay = true }
         }
 
+        var imageRotationRadians: CGFloat = 0 {
+            didSet { needsDisplay = true }
+        }
+
+        var sliceGeometry: MetalViewerSliceGeometry? {
+            didSet { needsDisplay = true }
+        }
+
+        var tumourSeeds: [MetalViewerTumourSeed] = [] {
+            didSet { needsDisplay = true }
+        }
+
         var showsScales = true {
             didSet { needsDisplay = true }
         }
@@ -178,6 +191,8 @@ final class MetalViewerPaneView: NSView {
             if showsScales {
                 drawScales()
             }
+
+            drawTumourSeeds()
 
             guard let referenceLine else {
                 return
@@ -219,10 +234,83 @@ final class MetalViewerPaneView: NSView {
         }
 
         private func viewPoint(for slicePoint: CGPoint) -> CGPoint {
-            CGPoint(
+            let point = CGPoint(
                 x: imageRect.minX + (slicePoint.x / imageSize.width) * imageRect.width,
                 y: imageRect.minY + (slicePoint.y / imageSize.height) * imageRect.height
             )
+            return rotatedImagePoint(point)
+        }
+
+        private func rotatedImagePoint(_ point: CGPoint) -> CGPoint {
+            guard abs(imageRotationRadians) > 0.000001 else {
+                return point
+            }
+
+            let center = CGPoint(x: imageRect.midX, y: imageRect.midY)
+            let translated = CGPoint(x: point.x - center.x, y: point.y - center.y)
+            let cosine = cos(imageRotationRadians)
+            let sine = sin(imageRotationRadians)
+            return CGPoint(
+                x: center.x + translated.x * cosine - translated.y * sine,
+                y: center.y + translated.x * sine + translated.y * cosine
+            )
+        }
+
+        private func drawTumourSeeds() {
+            guard let sliceGeometry,
+                  tumourSeeds.isEmpty == false,
+                  imageRect.width > 0,
+                  imageRect.height > 0 else {
+                return
+            }
+
+            let fillColor = NSColor.systemRed.withAlphaComponent(0.52)
+            let strokeColor = NSColor.systemRed
+            let highlightColor = NSColor.white.withAlphaComponent(0.32)
+            let scaleFactor = max(window?.backingScaleFactor ?? 1.0, 1.0)
+
+            for seed in tumourSeeds {
+                let radiusMM = max(seed.diameterMM * 0.5, 0.05)
+                let distanceFromSlice = simd_dot(seed.dicomPoint - sliceGeometry.origin, sliceGeometry.normal)
+                guard abs(distanceFromSlice) <= radiusMM else {
+                    continue
+                }
+
+                let crossSectionRadiusMM = sqrt(max(radiusMM * radiusMM - distanceFromSlice * distanceFromSlice, 0))
+                let slicePoint = sliceGeometry.slicePoint(from: seed.dicomPoint)
+                guard slicePoint.x.isFinite,
+                      slicePoint.y.isFinite,
+                      slicePoint.x >= -1,
+                      slicePoint.y >= -1,
+                      slicePoint.x <= sliceGeometry.width + 1,
+                      slicePoint.y <= sliceGeometry.height + 1 else {
+                    continue
+                }
+
+                let center = viewPoint(for: slicePoint)
+                let radiusX = CGFloat(crossSectionRadiusMM / sliceGeometry.spacingX) * imageRect.width / max(imageSize.width, 1)
+                let radiusY = CGFloat(crossSectionRadiusMM / sliceGeometry.spacingY) * imageRect.height / max(imageSize.height, 1)
+                let seedRect = CGRect(
+                    x: center.x - radiusX,
+                    y: center.y - radiusY,
+                    width: radiusX * 2,
+                    height: radiusY * 2
+                )
+
+                let path = NSBezierPath(ovalIn: seedRect)
+                fillColor.setFill()
+                path.fill()
+                path.lineWidth = max(1.5, scaleFactor)
+                strokeColor.setStroke()
+                path.stroke()
+
+                let highlightRect = seedRect.insetBy(dx: seedRect.width * 0.18, dy: seedRect.height * 0.18)
+                    .offsetBy(dx: -seedRect.width * 0.10, dy: -seedRect.height * 0.10)
+                let highlightPath = NSBezierPath(ovalIn: highlightRect)
+                highlightPath.lineWidth = max(1.0, scaleFactor * 0.75)
+                highlightColor.setStroke()
+                highlightPath.stroke()
+            }
         }
 
         private func drawScales() {
@@ -296,9 +384,11 @@ final class MetalViewerPaneView: NSView {
             let sliceIndex: Int
             let sliceCount: Int
             let zoomScale: Float
+            let rotationAngleDegrees: Float
             let windowLevel: Float
             let windowWidth: Float
             let mouseState: MetalImageView.MouseAnnotationState?
+            let showsSliceOrientation: Bool
         }
 
         private enum TextAlign {
@@ -385,14 +475,16 @@ final class MetalViewerPaneView: NSView {
 
             let orientationPositionKeys = ["TopMiddle", "MiddleLeft", "MiddleRight", "LowerMiddle"]
             var orientationDrawn = false
-            for key in orientationPositionKeys {
-                let lines = annotationsDictionary[key] as? [[Any]] ?? []
-                for line in lines {
-                    for item in line {
-                        if let value = item as? String, value == "Orientation" {
-                            if orientationDrawn == false {
-                                drawOrientation(state: state, in: size)
-                                orientationDrawn = true
+            if state.showsSliceOrientation {
+                for key in orientationPositionKeys {
+                    let lines = annotationsDictionary[key] as? [[Any]] ?? []
+                    for line in lines {
+                        for item in line {
+                            if let value = item as? String, value == "Orientation" {
+                                if orientationDrawn == false {
+                                    drawOrientation(state: state, in: size)
+                                    orientationDrawn = true
+                                }
                             }
                         }
                     }
@@ -486,7 +578,9 @@ final class MetalViewerPaneView: NSView {
                 drawLowerLeft(String(format: "X: %d px Y: %d px Value: %.2f", Int(mouseState.pixelPoint.x), Int(mouseState.pixelPoint.y), mouseState.pixelValue))
             }
 
-            drawOrientation(state: state, in: bounds)
+            if state.showsSliceOrientation {
+                drawOrientation(state: state, in: bounds)
+            }
         }
 
         private func drawOverlaySeriesInfo(state: State) {
@@ -542,7 +636,7 @@ final class MetalViewerPaneView: NSView {
                 case "Zoom":
                     primary += String(format: "Zoom: %.0f%%", state.zoomScale * 100.0)
                 case "Rotation Angle":
-                    primary += " Angle: 0"
+                    primary += String(format: " Angle: %0.0f", state.rotationAngleDegrees)
                 case "Image Position":
                     primary += "Im: \(state.sliceIndex + 1)/\(state.sliceCount)"
                 case "Mouse Position (px)":
@@ -843,6 +937,7 @@ final class MetalViewerPaneView: NSView {
     private let overlayBlendSlider = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
     private let annotationOverlay = AnnotationOverlayView()
     private let referenceLineOverlay = ReferenceLineOverlayView()
+    private let orientationOverlay = MetalOrientationOverlayView()
     private let registrationStatusView = RegistrationStatusView()
     private var metalView: MetalImageView?
     private var reportWebView: WKWebView?
@@ -850,6 +945,9 @@ final class MetalViewerPaneView: NSView {
     private var isHovering = false
     private var dismissRegistrationStatusOnMouseMove = false
     private var displayMode: MetalViewerDisplayMode = .stack2D
+    private var mouseToolAssignments = MetalViewerMouseToolAssignments()
+    private var tumourSeeds: [MetalViewerTumourSeed] = []
+    private var tumourSeedObserver: NSObjectProtocol?
 
     private(set) var series: MetalViewerSeries
     private(set) var overlaySeries: MetalViewerSeries?
@@ -883,6 +981,7 @@ final class MetalViewerPaneView: NSView {
 
         annotationOverlay.translatesAutoresizingMaskIntoConstraints = false
         referenceLineOverlay.translatesAutoresizingMaskIntoConstraints = false
+        orientationOverlay.translatesAutoresizingMaskIntoConstraints = false
 
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         closeButton.isBordered = false
@@ -920,12 +1019,27 @@ final class MetalViewerPaneView: NSView {
 
         updateAppearance()
         updateCloseButtonVisibility()
+
+        tumourSeedObserver = NotificationCenter.default.addObserver(
+            forName: MetalViewerTumourSeedStore.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.tumourSeedsDidChange(notification)
+        }
+
         display(series: series)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        if let tumourSeedObserver {
+            NotificationCenter.default.removeObserver(tumourSeedObserver)
+        }
     }
 
     override func updateTrackingAreas() {
@@ -948,6 +1062,7 @@ final class MetalViewerPaneView: NSView {
     func display(series: MetalViewerSeries) {
         self.series = series
         self.overlaySeries = nil
+        reloadTumourSeeds()
         overlayBlendSlider.doubleValue = 0.5
         overlayBlendSlider.isHidden = true
 
@@ -956,6 +1071,7 @@ final class MetalViewerPaneView: NSView {
         reportWebView?.removeFromSuperview()
         reportWebView = nil
         referenceLineOverlay.removeFromSuperview()
+        orientationOverlay.removeFromSuperview()
         annotationOverlay.removeFromSuperview()
         registrationStatusView.removeFromSuperview()
 
@@ -981,6 +1097,7 @@ final class MetalViewerPaneView: NSView {
             stateDidChange?(currentStateDescription)
             updateAnnotationOverlay()
             updateReferenceLineOverlay()
+            updateOrientationOverlay()
             return
         }
 
@@ -993,6 +1110,7 @@ final class MetalViewerPaneView: NSView {
             }
         )
         metalView.translatesAutoresizingMaskIntoConstraints = false
+        metalView.mouseToolAssignments = mouseToolAssignments
         metalView.activateHandler = { [weak self] in
             self?.activateHandler?()
         }
@@ -1008,15 +1126,27 @@ final class MetalViewerPaneView: NSView {
             self?.stateDidChange?(state)
             self?.updateAnnotationOverlay()
             self?.updateReferenceLineOverlay()
+            self?.updateOrientationOverlay()
         }
         metalView.annotationStateDidChange = { [weak self] in
             self?.updateAnnotationOverlay()
+        }
+        metalView.tumourSeedPlacementHandler = { [weak self] placement in
+            guard let self else { return }
+            do {
+                _ = try MetalViewerTumourSeedStore.shared.addSeed(placement: placement, for: self.series)
+                self.reloadTumourSeeds()
+            } catch {
+                NSSound.beep()
+                NSLog("MetalViewerPaneView failed to autosave tumour seed: %@", error.localizedDescription)
+            }
         }
 
         contentView.addSubview(metalView)
         contentView.addSubview(annotationOverlay, positioned: .above, relativeTo: metalView)
         contentView.addSubview(referenceLineOverlay, positioned: .above, relativeTo: annotationOverlay)
-        contentView.addSubview(registrationStatusView, positioned: .above, relativeTo: referenceLineOverlay)
+        contentView.addSubview(orientationOverlay, positioned: .above, relativeTo: referenceLineOverlay)
+        contentView.addSubview(registrationStatusView, positioned: .above, relativeTo: orientationOverlay)
         contentView.addSubview(overlayBlendSlider, positioned: .above, relativeTo: registrationStatusView)
 
         NSLayoutConstraint.activate([
@@ -1035,12 +1165,18 @@ final class MetalViewerPaneView: NSView {
             referenceLineOverlay.topAnchor.constraint(equalTo: contentView.topAnchor),
             referenceLineOverlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
+            orientationOverlay.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            orientationOverlay.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            orientationOverlay.topAnchor.constraint(equalTo: contentView.topAnchor),
+            orientationOverlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
             registrationStatusView.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
             registrationStatusView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -78),
             registrationStatusView.widthAnchor.constraint(equalToConstant: 360),
         ])
 
         self.metalView = metalView
+        metalView.renderer.setTumourSeeds(tumourSeeds)
         metalView.setDisplayMode(displayMode)
         referenceLineOverlay.showsScales = displayMode == .stack2D
         metalView.renderer.registrationDidChange = { [weak self] isRunning, message, progress in
@@ -1051,6 +1187,7 @@ final class MetalViewerPaneView: NSView {
         stateDidChange?(currentStateDescription)
         updateAnnotationOverlay()
         updateReferenceLineOverlay()
+        updateOrientationOverlay()
     }
 
     func overlay(series: MetalViewerSeries) {
@@ -1072,6 +1209,7 @@ final class MetalViewerPaneView: NSView {
             self.stateDidChange?(self.currentStateDescription)
             self.updateAnnotationOverlay()
             self.updateReferenceLineOverlay()
+            self.updateOrientationOverlay()
         }
     }
 
@@ -1086,12 +1224,16 @@ final class MetalViewerPaneView: NSView {
         }
 
         guard primaryImageCountChanged || overlayImageCountChanged else {
+            updatedSeries.retainLoadedPixelCache(from: series)
             series = updatedSeries
-            if overlaySeries != nil {
-                overlaySeries = overlayForRefresh
+            if let overlaySeries, let overlayForRefresh {
+                overlayForRefresh.retainLoadedPixelCache(from: overlaySeries)
+                self.overlaySeries = overlayForRefresh
             }
+            reloadTumourSeeds()
             updateAnnotationOverlay()
             updateReferenceLineOverlay()
+            updateOrientationOverlay()
             return false
         }
 
@@ -1142,6 +1284,7 @@ final class MetalViewerPaneView: NSView {
         super.layout()
         updateAnnotationOverlay()
         updateReferenceLineOverlay()
+        updateOrientationOverlay()
     }
 
     @objc private func closeButtonPressed(_ sender: Any?) {
@@ -1187,6 +1330,20 @@ final class MetalViewerPaneView: NSView {
         }
         updateAnnotationOverlay()
         updateReferenceLineOverlay()
+        updateOrientationOverlay()
+    }
+
+    func setMouseToolAssignments(_ assignments: MetalViewerMouseToolAssignments) {
+        mouseToolAssignments = assignments
+        metalView?.mouseToolAssignments = assignments
+    }
+
+    var currentScale: Float? {
+        metalView?.renderer.zoomScale
+    }
+
+    func setScale(_ scale: Float) {
+        metalView?.renderer.setZoomScale(scale)
     }
 
     func focusImageView() {
@@ -1261,24 +1418,65 @@ final class MetalViewerPaneView: NSView {
             sliceIndex: metalView.renderer.currentSliceIndex,
             sliceCount: metalView.renderer.pixList.count,
             zoomScale: metalView.renderer.zoomScale,
+            rotationAngleDegrees: metalView.renderer.displayedStackRotationDegrees,
             windowLevel: metalView.renderer.windowLevel,
             windowWidth: metalView.renderer.windowWidth,
-            mouseState: metalView.mouseAnnotationState
+            mouseState: metalView.mouseAnnotationState,
+            showsSliceOrientation: displayMode == .stack2D
         )
     }
 
+    private func updateOrientationOverlay() {
+        guard displayMode == .mpr, let metalView else {
+            orientationOverlay.overlayState = nil
+            return
+        }
+
+        orientationOverlay.overlayState = metalView.renderer.orientationOverlayState(in: metalView.bounds)
+    }
+
     private func updateReferenceLineOverlay() {
+        guard displayMode == .stack2D else {
+            referenceLineOverlay.imageRect = .zero
+            referenceLineOverlay.imageSize = CGSize(width: 1, height: 1)
+            referenceLineOverlay.pixelSpacing = CGSize(width: 1, height: 1)
+            referenceLineOverlay.imageRotationRadians = 0
+            referenceLineOverlay.sliceGeometry = nil
+            referenceLineOverlay.tumourSeeds = []
+            return
+        }
+
         guard let metalView,
               let geometry = metalView.currentSliceGeometry else {
             referenceLineOverlay.imageRect = .zero
             referenceLineOverlay.imageSize = CGSize(width: 1, height: 1)
             referenceLineOverlay.pixelSpacing = CGSize(width: 1, height: 1)
+            referenceLineOverlay.imageRotationRadians = 0
+            referenceLineOverlay.sliceGeometry = nil
+            referenceLineOverlay.tumourSeeds = []
             return
         }
 
         referenceLineOverlay.imageRect = metalView.displayedImageRect
         referenceLineOverlay.imageSize = CGSize(width: geometry.width, height: geometry.height)
         referenceLineOverlay.pixelSpacing = CGSize(width: geometry.spacingX, height: geometry.spacingY)
+        referenceLineOverlay.imageRotationRadians = CGFloat(metalView.renderer.stackRotationRadians)
+        referenceLineOverlay.sliceGeometry = geometry
+        referenceLineOverlay.tumourSeeds = tumourSeeds
+    }
+
+    private func tumourSeedsDidChange(_ notification: Notification) {
+        guard MetalViewerTumourSeedStore.notification(notification, matches: series.tumourSeedScope) else {
+            return
+        }
+        reloadTumourSeeds()
+    }
+
+    private func reloadTumourSeeds() {
+        tumourSeeds = MetalViewerTumourSeedStore.shared.seeds(for: series)
+        metalView?.renderer.setTumourSeeds(tumourSeeds)
+        referenceLineOverlay.tumourSeeds = tumourSeeds
+        updateReferenceLineOverlay()
     }
 
     private func draggingSeriesIdentifier(from draggingInfo: NSDraggingInfo) -> String? {

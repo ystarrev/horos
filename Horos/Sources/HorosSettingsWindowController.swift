@@ -1334,6 +1334,607 @@ private final class AnnotationsSettingsPaneViewController: HorosSettingsPaneView
     }
 }
 
+private final class ViewerScreensPreviewView: NSView {
+    private enum WindowRole {
+        case database
+        case query
+
+        var title: String {
+            switch self {
+            case .database: return "Database"
+            case .query: return "Query"
+            }
+        }
+
+        var fillColor: NSColor {
+            switch self {
+            case .database:
+                return NSColor(calibratedRed: 0.96, green: 0.43, blue: 0.12, alpha: 0.92)
+            case .query:
+                return NSColor(calibratedRed: 0.16, green: 0.70, blue: 0.30, alpha: 0.92)
+            }
+        }
+    }
+
+    private struct ScreenMap {
+        let desktopBounds: NSRect
+        let drawingRect: NSRect
+
+        var scale: CGFloat {
+            drawingRect.width / desktopBounds.width
+        }
+    }
+
+    private struct WindowRecord {
+        let role: WindowRole
+        let window: NSWindow
+        let previewFrame: NSRect
+    }
+
+    private struct DragState {
+        let role: WindowRole
+        let window: NSWindow
+        let offsetInPreviewFrame: NSPoint
+    }
+
+    private enum DefaultsKey {
+        static let nonViewerScreens = "NonViewerScreens"
+        static let reserveScreenForDatabase = "ReserveScreenForDB"
+        static let databaseWindowFrame = "DBWindowFrame"
+        static let queryWindowFrame = "NSWindow Frame QR"
+    }
+
+    private enum Drawing {
+        static let outerInset: CGFloat = 18
+        static let monitorCornerRadius: CGFloat = 3
+        static let menuBarHeight: CGFloat = 4
+    }
+
+    override var isFlipped: Bool { true }
+    private var dragState: DragState?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        commonInit()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard let record = windowRecord(at: point) else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        dragState = DragState(
+            role: record.role,
+            window: record.window,
+            offsetInPreviewFrame: NSPoint(x: point.x - record.previewFrame.minX, y: point.y - record.previewFrame.minY)
+        )
+        needsDisplay = true
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let dragState, let map = screenMap() else { return }
+
+        let point = convert(event.locationInWindow, from: nil)
+        let previewOrigin = NSPoint(
+            x: point.x - dragState.offsetInPreviewFrame.x,
+            y: point.y - dragState.offsetInPreviewFrame.y
+        )
+
+        var frame = dragState.window.frame
+        frame.origin = screenOrigin(forWindowSize: frame.size, previewOrigin: previewOrigin, map: map)
+        dragState.window.setFrame(frame, display: true)
+        persistFrame(for: dragState.window, role: dragState.role)
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragState = nil
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor(calibratedWhite: 0.12, alpha: 1).setFill()
+        bounds.fill()
+
+        guard let map = screenMap() else {
+            drawEmptyState()
+            return
+        }
+
+        let screens = NSScreen.screens
+        let viewerScreenNumbers = Self.viewerScreenNumbers(from: screens)
+        let records = screens.compactMap { screen -> (screen: NSScreen, frame: NSRect, usedForViewers: Bool)? in
+            let frame = previewFrame(for: screen.frame, map: map)
+            guard frame.width > 0, frame.height > 0 else { return nil }
+
+            let usedForViewers: Bool
+            if viewerScreenNumbers.isEmpty {
+                usedForViewers = true
+            } else if let screenNumber = screen.horosScreenNumber {
+                usedForViewers = viewerScreenNumbers.contains(screenNumber)
+            } else {
+                usedForViewers = true
+            }
+
+            return (screen, frame, usedForViewers)
+        }
+
+        for phase in [false, true] {
+            for record in records where record.usedForViewers == phase {
+                drawMonitor(record.screen, in: record.frame, usedForViewers: record.usedForViewers, hasExplicitViewerScreens: !viewerScreenNumbers.isEmpty)
+            }
+        }
+
+        for record in windowRecords(in: map) {
+            drawWindowRepresentation(record)
+        }
+    }
+
+    private func commonInit() {
+        wantsLayer = true
+        layer?.backgroundColor = NSColor(calibratedWhite: 0.12, alpha: 1).cgColor
+        layer?.cornerRadius = 12
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor(calibratedWhite: 0.25, alpha: 1).cgColor
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(refreshScreens(_:)),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(refreshScreens(_:)),
+            name: UserDefaults.didChangeNotification,
+            object: UserDefaults.standard
+        )
+
+        let windowNotifications: [Notification.Name] = [
+            NSWindow.didMoveNotification,
+            NSWindow.didResizeNotification,
+            NSWindow.didEndLiveResizeNotification,
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didBecomeMainNotification,
+            NSWindow.didMiniaturizeNotification,
+            NSWindow.didDeminiaturizeNotification,
+            NSWindow.didChangeScreenNotification,
+            NSWindow.willCloseNotification
+        ]
+
+        for name in windowNotifications {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(refreshScreens(_:)),
+                name: name,
+                object: nil
+            )
+        }
+    }
+
+    @objc private func refreshScreens(_ notification: Notification) {
+        needsDisplay = true
+    }
+
+    private func drawEmptyState() {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: NSColor(calibratedWhite: 0.70, alpha: 1),
+            .paragraphStyle: paragraph
+        ]
+        let text = NSAttributedString(string: "No displays detected", attributes: attributes)
+        let rect = NSRect(x: 0, y: bounds.midY - 10, width: bounds.width, height: 22)
+        text.draw(in: rect)
+    }
+
+    private func fittedRect(for sourceSize: NSSize, in destination: NSRect) -> NSRect {
+        let scale = min(destination.width / sourceSize.width, destination.height / sourceSize.height)
+        let size = NSSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
+        return NSRect(
+            x: destination.midX - size.width / 2,
+            y: destination.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        ).integral
+    }
+
+    private func screenMap() -> ScreenMap? {
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return nil }
+
+        let desktopBounds = screens.reduce(screens[0].frame) { partialResult, screen in
+            partialResult.union(screen.frame)
+        }
+        guard desktopBounds.width > 0, desktopBounds.height > 0 else { return nil }
+
+        let drawingRect = fittedRect(for: desktopBounds.size, in: bounds.insetBy(dx: Drawing.outerInset, dy: Drawing.outerInset))
+        return ScreenMap(desktopBounds: desktopBounds, drawingRect: drawingRect)
+    }
+
+    private func previewFrame(for screenFrame: NSRect, map: ScreenMap) -> NSRect {
+        let x = map.drawingRect.minX + (screenFrame.minX - map.desktopBounds.minX) * map.scale
+        let y = map.drawingRect.minY + (map.desktopBounds.maxY - screenFrame.maxY) * map.scale
+        let width = screenFrame.width * map.scale
+        let height = screenFrame.height * map.scale
+
+        return NSRect(x: x, y: y, width: width, height: height).integral.insetBy(dx: 0.5, dy: 0.5)
+    }
+
+    private func previewFrame(forWindowFrame windowFrame: NSRect, map: ScreenMap) -> NSRect {
+        let x = map.drawingRect.minX + (windowFrame.minX - map.desktopBounds.minX) * map.scale
+        let y = map.drawingRect.minY + (map.desktopBounds.maxY - windowFrame.maxY) * map.scale
+        let width = windowFrame.width * map.scale
+        let height = windowFrame.height * map.scale
+
+        return NSRect(x: x, y: y, width: width, height: height)
+    }
+
+    private func screenOrigin(forWindowSize windowSize: NSSize, previewOrigin: NSPoint, map: ScreenMap) -> NSPoint {
+        let x = map.desktopBounds.minX + (previewOrigin.x - map.drawingRect.minX) / map.scale
+        let maxY = map.desktopBounds.maxY - (previewOrigin.y - map.drawingRect.minY) / map.scale
+        let y = maxY - windowSize.height
+
+        let maxXOrigin = map.desktopBounds.maxX - windowSize.width
+        let maxYOrigin = map.desktopBounds.maxY - windowSize.height
+
+        return NSPoint(
+            x: clamp(x, lower: map.desktopBounds.minX, upper: max(map.desktopBounds.minX, maxXOrigin)),
+            y: clamp(y, lower: map.desktopBounds.minY, upper: max(map.desktopBounds.minY, maxYOrigin))
+        )
+    }
+
+    private func drawMonitor(_ screen: NSScreen, in frame: NSRect, usedForViewers: Bool, hasExplicitViewerScreens: Bool) {
+        let fillColor: NSColor
+        if !hasExplicitViewerScreens {
+            fillColor = NSColor(calibratedRed: 113.0 / 255.0, green: 142.0 / 255.0, blue: 170.5 / 255.0, alpha: 1)
+        } else if usedForViewers {
+            fillColor = NSColor(calibratedRed: 99.0 / 255.0, green: 157.0 / 255.0, blue: 214.0 / 255.0, alpha: 1)
+        } else {
+            fillColor = NSColor(calibratedWhite: 0.68, alpha: 1)
+        }
+
+        let path = NSBezierPath(roundedRect: frame, xRadius: Drawing.monitorCornerRadius, yRadius: Drawing.monitorCornerRadius)
+        fillColor.setFill()
+        path.fill()
+        path.lineWidth = 1
+        NSColor.black.withAlphaComponent(0.9).setStroke()
+        path.stroke()
+
+        if screenIsMenuBarScreen(screen) {
+            drawMenuBar(in: frame)
+        }
+    }
+
+    private func drawMenuBar(in frame: NSRect) {
+        let height = min(Drawing.menuBarHeight, max(2, floor(frame.height / 5)))
+        let menuRect = NSRect(x: frame.minX, y: frame.minY, width: frame.width, height: height)
+        let path = NSBezierPath(rect: menuRect)
+        NSColor.white.withAlphaComponent(0.95).setFill()
+        path.fill()
+        NSColor.black.withAlphaComponent(0.75).setStroke()
+        path.stroke()
+    }
+
+    private func drawWindowRepresentation(_ record: WindowRecord) {
+        let rect = record.previewFrame
+        guard rect.width >= 2, rect.height >= 2 else { return }
+
+        let path = NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5)
+        record.role.fillColor.setFill()
+        path.fill()
+
+        let isDragging = dragState?.window === record.window
+        path.lineWidth = isDragging ? 2 : 1
+        (isDragging ? NSColor.white : NSColor.black.withAlphaComponent(0.85)).setStroke()
+        path.stroke()
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byTruncatingTail
+        let fontSize = max(9, min(13, floor(rect.height / 4)))
+        let label = NSAttributedString(
+            string: record.role.title,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
+                .foregroundColor: NSColor.white,
+                .paragraphStyle: paragraph
+            ]
+        )
+        let labelHeight = ceil(label.size().height)
+        let labelRect = NSRect(
+            x: rect.minX + 4,
+            y: rect.midY - labelHeight / 2,
+            width: max(1, rect.width - 8),
+            height: labelHeight
+        )
+        label.draw(in: labelRect)
+    }
+
+    private func windowRecord(at point: NSPoint) -> WindowRecord? {
+        guard let map = screenMap() else { return nil }
+        return windowRecords(in: map).reversed().first { record in
+            record.previewFrame.contains(point)
+        }
+    }
+
+    private func windowRecords(in map: ScreenMap) -> [WindowRecord] {
+        NSApp.windows.compactMap { window in
+            guard window.isVisible,
+                  !window.isMiniaturized,
+                  let role = windowRole(for: window)
+            else {
+                return nil
+            }
+
+            return WindowRecord(
+                role: role,
+                window: window,
+                previewFrame: previewFrame(forWindowFrame: window.frame, map: map)
+            )
+        }
+    }
+
+    private func windowRole(for window: NSWindow) -> WindowRole? {
+        guard let controller = window.windowController else { return nil }
+        let className = NSStringFromClass(type(of: controller))
+
+        if className.contains("BrowserController") {
+            return .database
+        }
+
+        if className.contains("QueryController") {
+            guard window.title.range(of: "Auto", options: .caseInsensitive) == nil else { return nil }
+            return .query
+        }
+
+        return nil
+    }
+
+    private func persistFrame(for window: NSWindow, role: WindowRole) {
+        switch role {
+        case .database:
+            UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: DefaultsKey.databaseWindowFrame)
+        case .query:
+            UserDefaults.standard.set(savedFrameDescriptor(for: window), forKey: DefaultsKey.queryWindowFrame)
+        }
+    }
+
+    private func savedFrameDescriptor(for window: NSWindow) -> String {
+        let frame = window.frame
+        let screenFrame = (window.screen ?? NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero
+
+        return String(
+            format: "%.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f ",
+            Double(frame.origin.x),
+            Double(frame.origin.y),
+            Double(frame.size.width),
+            Double(frame.size.height),
+            Double(screenFrame.origin.x),
+            Double(screenFrame.origin.y),
+            Double(screenFrame.size.width),
+            Double(screenFrame.size.height)
+        )
+    }
+
+    private func clamp(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
+        min(max(value, lower), upper)
+    }
+
+    private func screenIsMenuBarScreen(_ screen: NSScreen) -> Bool {
+        guard let menuBarScreen = NSScreen.screens.first else { return false }
+        if let lhs = screen.horosScreenNumber, let rhs = menuBarScreen.horosScreenNumber {
+            return lhs == rhs
+        }
+        return screen === menuBarScreen
+    }
+
+    private static func viewerScreenNumbers(from screens: [NSScreen]) -> Set<UInt32> {
+        let defaults = UserDefaults.standard
+        let nonViewerNumbers: Set<UInt32>
+
+        if let storedValues = defaults.array(forKey: DefaultsKey.nonViewerScreens) {
+            nonViewerNumbers = Set(storedValues.compactMap { value in
+                if let number = value as? NSNumber {
+                    return number.uint32Value
+                }
+                if let intValue = value as? Int {
+                    return UInt32(intValue)
+                }
+                return nil
+            })
+        } else if defaults.integer(forKey: DefaultsKey.reserveScreenForDatabase) == 2 {
+            let mainScreen = NSScreen.main ?? screens.first
+            nonViewerNumbers = Set(screens.compactMap { screen in
+                if let mainScreen, screen === mainScreen {
+                    return nil
+                }
+                return screen.horosScreenNumber
+            })
+        } else {
+            nonViewerNumbers = []
+        }
+
+        return Set(screens.compactMap { screen in
+            guard let screenNumber = screen.horosScreenNumber else { return nil }
+            return nonViewerNumbers.contains(screenNumber) ? nil : screenNumber
+        })
+    }
+}
+
+private extension NSScreen {
+    var horosScreenNumber: UInt32? {
+        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+    }
+}
+
+private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewController {
+    private enum Layout {
+        static let sideInset: CGFloat = 42
+        static let contentWidth: CGFloat = 780
+    }
+
+    private let titleLabel = NSTextField(labelWithString: "Viewers")
+    private let subtitleLabel = NSTextField(wrappingLabelWithString: "Viewer window placement is moving into the new Swift settings pane while keeping the existing stored preferences unchanged.")
+    private let screensCardView = HorosSettingsPaneContainerView(frame: .zero)
+    private let screensTitleLabel = NSTextField(labelWithString: "Screens & Window size")
+    private let screensPreviewView = ViewerScreensPreviewView(frame: .zero)
+    private let viewerSwatch = NSView(frame: .zero)
+    private let nonViewerSwatch = NSView(frame: .zero)
+    private let menuBarSwatch = NSView(frame: .zero)
+    private let viewerLegendLabel = NSTextField(labelWithString: "Viewer windows")
+    private let nonViewerLegendLabel = NSTextField(labelWithString: "Not used for viewers")
+    private let menuBarLegendLabel = NSTextField(labelWithString: "Menu bar")
+    private let interpolationCardView = HorosSettingsPaneContainerView(frame: .zero)
+    private let interpolationTitleLabel = NSTextField(labelWithString: "Planar image interpolation")
+    private let interpolationPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let interpolationDetailLabel = NSTextField(wrappingLabelWithString: "")
+
+    init() {
+        super.init(paneTitle: "Viewers")
+    }
+
+    override func loadView() {
+        let rootView = HorosSettingsPaneContainerView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
+        rootView.wantsLayer = true
+        rootView.layer?.backgroundColor = NSColor(calibratedWhite: 0.14, alpha: 1).cgColor
+        view = rootView
+
+        configureControls()
+        layoutControls()
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        layoutControls()
+    }
+
+    private func configureControls() {
+        titleLabel.font = .systemFont(ofSize: 28, weight: .semibold)
+        titleLabel.textColor = NSColor(calibratedWhite: 0.95, alpha: 1)
+        view.addSubview(titleLabel)
+
+        subtitleLabel.font = .systemFont(ofSize: 14)
+        subtitleLabel.textColor = NSColor(calibratedWhite: 0.68, alpha: 1)
+        view.addSubview(subtitleLabel)
+
+        screensCardView.wantsLayer = true
+        screensCardView.layer?.backgroundColor = NSColor(calibratedWhite: 0.17, alpha: 1).cgColor
+        screensCardView.layer?.cornerRadius = 14
+        screensCardView.layer?.borderWidth = 1
+        screensCardView.layer?.borderColor = NSColor(calibratedWhite: 0.24, alpha: 1).cgColor
+        view.addSubview(screensCardView)
+
+        screensTitleLabel.font = .systemFont(ofSize: 18, weight: .medium)
+        screensTitleLabel.textColor = NSColor(calibratedWhite: 0.92, alpha: 1)
+        screensCardView.addSubview(screensTitleLabel)
+        screensCardView.addSubview(screensPreviewView)
+
+        configureSwatch(viewerSwatch, color: NSColor(calibratedRed: 99.0 / 255.0, green: 157.0 / 255.0, blue: 214.0 / 255.0, alpha: 1))
+        configureSwatch(nonViewerSwatch, color: NSColor(calibratedWhite: 0.68, alpha: 1))
+        configureSwatch(menuBarSwatch, color: .white)
+
+        for swatch in [viewerSwatch, nonViewerSwatch, menuBarSwatch] {
+            screensCardView.addSubview(swatch)
+        }
+
+        for label in [viewerLegendLabel, nonViewerLegendLabel, menuBarLegendLabel] {
+            label.font = .systemFont(ofSize: 12.5)
+            label.textColor = NSColor(calibratedWhite: 0.72, alpha: 1)
+            screensCardView.addSubview(label)
+        }
+
+        interpolationCardView.wantsLayer = true
+        interpolationCardView.layer?.backgroundColor = NSColor(calibratedWhite: 0.17, alpha: 1).cgColor
+        interpolationCardView.layer?.cornerRadius = 14
+        interpolationCardView.layer?.borderWidth = 1
+        interpolationCardView.layer?.borderColor = NSColor(calibratedWhite: 0.24, alpha: 1).cgColor
+        view.addSubview(interpolationCardView)
+
+        interpolationTitleLabel.font = .systemFont(ofSize: 18, weight: .medium)
+        interpolationTitleLabel.textColor = NSColor(calibratedWhite: 0.92, alpha: 1)
+        interpolationCardView.addSubview(interpolationTitleLabel)
+
+        interpolationPopup.controlSize = .regular
+        interpolationPopup.target = self
+        interpolationPopup.action = #selector(interpolationPopupDidChange(_:))
+        interpolationPopup.removeAllItems()
+        for mode in MetalViewerImageInterpolationMode.allCases {
+            interpolationPopup.addItem(withTitle: mode.title)
+            interpolationPopup.lastItem?.tag = mode.rawValue
+        }
+        interpolationPopup.selectItem(withTag: MetalViewerImageInterpolationMode.saved.rawValue)
+        interpolationCardView.addSubview(interpolationPopup)
+
+        interpolationDetailLabel.font = .systemFont(ofSize: 13)
+        interpolationDetailLabel.textColor = NSColor(calibratedWhite: 0.70, alpha: 1)
+        interpolationCardView.addSubview(interpolationDetailLabel)
+        updateInterpolationDetail()
+    }
+
+    private func layoutControls() {
+        let bounds = view.bounds
+        let contentWidth = min(Layout.contentWidth, bounds.width - Layout.sideInset * 2)
+
+        titleLabel.frame = NSRect(x: Layout.sideInset, y: 36, width: 320, height: 36)
+        subtitleLabel.frame = NSRect(x: Layout.sideInset, y: 80, width: contentWidth, height: 42)
+
+        screensCardView.frame = NSRect(x: Layout.sideInset, y: 148, width: contentWidth, height: 360)
+        screensTitleLabel.frame = NSRect(x: 22, y: 20, width: contentWidth - 44, height: 24)
+        screensPreviewView.frame = NSRect(x: 22, y: 58, width: contentWidth - 44, height: 238)
+
+        let legendY = screensPreviewView.frame.maxY + 20
+        viewerSwatch.frame = NSRect(x: 24, y: legendY + 3, width: 24, height: 12)
+        viewerLegendLabel.frame = NSRect(x: viewerSwatch.frame.maxX + 8, y: legendY, width: 112, height: 18)
+
+        nonViewerSwatch.frame = NSRect(x: viewerLegendLabel.frame.maxX + 22, y: legendY + 3, width: 24, height: 12)
+        nonViewerLegendLabel.frame = NSRect(x: nonViewerSwatch.frame.maxX + 8, y: legendY, width: 136, height: 18)
+
+        menuBarSwatch.frame = NSRect(x: nonViewerLegendLabel.frame.maxX + 22, y: legendY + 6, width: 24, height: 5)
+        menuBarLegendLabel.frame = NSRect(x: menuBarSwatch.frame.maxX + 8, y: legendY, width: 80, height: 18)
+
+        interpolationCardView.frame = NSRect(x: Layout.sideInset, y: screensCardView.frame.maxY + 24, width: contentWidth, height: 116)
+        interpolationTitleLabel.frame = NSRect(x: 22, y: 20, width: 260, height: 24)
+        interpolationPopup.frame = NSRect(x: contentWidth - 198, y: 17, width: 176, height: 28)
+        interpolationDetailLabel.frame = NSRect(x: 22, y: 56, width: contentWidth - 44, height: 42)
+    }
+
+    private func configureSwatch(_ swatch: NSView, color: NSColor) {
+        swatch.wantsLayer = true
+        swatch.layer?.backgroundColor = color.cgColor
+        swatch.layer?.cornerRadius = 2
+        swatch.layer?.borderWidth = 1
+        swatch.layer?.borderColor = NSColor.black.withAlphaComponent(0.65).cgColor
+    }
+
+    @objc private func interpolationPopupDidChange(_ sender: NSPopUpButton) {
+        let rawValue = sender.selectedItem?.tag ?? MetalViewerImageInterpolationMode.defaultMode.rawValue
+        let mode = MetalViewerImageInterpolationMode(rawValue: rawValue) ?? MetalViewerImageInterpolationMode.defaultMode
+        MetalViewerImageInterpolationMode.save(mode)
+        updateInterpolationDetail()
+    }
+
+    private func updateInterpolationDetail() {
+        interpolationDetailLabel.stringValue = MetalViewerImageInterpolationMode.saved.summary
+    }
+}
+
 private final class GeneralSettingsPaneViewController: HorosSettingsPaneViewController {
     private enum Layout {
         static let contentWidth: CGFloat = 780
@@ -1658,6 +2259,8 @@ final class HorosSettingsWindowController: NSWindowController {
         switch identifier {
         case "general":
             controller = GeneralSettingsPaneViewController()
+        case "viewers":
+            controller = ViewersSettingsPaneViewController()
         case "annotations":
             controller = AnnotationsSettingsPaneViewController()
         default:

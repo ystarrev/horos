@@ -3,6 +3,7 @@ import MetalKit
 
 final class Metal3DVolumeView: NSView {
     private let cropHandleHitPadding: CGFloat = 11
+    private let orientationCubeTopInset: CGFloat = 148
 
     private final class CropOverlayView: NSView {
         override init(frame frameRect: NSRect) {
@@ -64,13 +65,17 @@ final class Metal3DVolumeView: NSView {
 
     private let metalView: MTKView
     private let cropOverlayView = CropOverlayView(frame: .zero)
+    private let orientationOverlayView = MetalOrientationOverlayView(frame: .zero)
     private var renderer: Metal3DVolumeRenderer?
     private var lastDragLocation: NSPoint?
     private var activeCropPlane: Metal3DCropPlane?
+    private var isDraggingTrajectoryHandle = false
     private var cropHandleProjections = [Metal3DCropPlane: Metal3DCropHandleProjection]()
     private var cropHandleViews = [Metal3DCropPlane: CropHandleView]()
     private var trackingAreaRef: NSTrackingArea?
     private var isWindowLevelInteractionActive = false
+    private var tumourSeedScope: MetalViewerTumourSeedScope?
+    private var tumourSeedObserver: NSObjectProtocol?
     var wlwwInteractionHandler: ((String) -> Void)?
 
     private var cropApplied = false
@@ -105,6 +110,35 @@ final class Metal3DVolumeView: NSView {
         }
     }
 
+    var showSkin = true {
+        didSet {
+            renderer?.setShowSkin(showSkin)
+            metalView.setNeedsDisplay(metalView.bounds)
+        }
+    }
+
+    var showSkinSurface = false {
+        didSet {
+            renderer?.setShowSkinSurface(showSkinSurface)
+            metalView.setNeedsDisplay(metalView.bounds)
+        }
+    }
+
+    var skinClipDepthMM: Float = 6.0 {
+        didSet {
+            skinClipDepthMM = min(max(skinClipDepthMM, 0), 20)
+            renderer?.setSkinClipDepthMM(skinClipDepthMM)
+            metalView.setNeedsDisplay(metalView.bounds)
+        }
+    }
+
+    var showTumorSegmentation = true {
+        didSet {
+            renderer?.setShowTumorSegmentation(showTumorSegmentation)
+            metalView.setNeedsDisplay(metalView.bounds)
+        }
+    }
+
     override init(frame frameRect: NSRect) {
         metalView = MTKView(frame: .zero, device: MTLCreateSystemDefaultDevice())
         super.init(frame: frameRect)
@@ -127,6 +161,9 @@ final class Metal3DVolumeView: NSView {
         cropOverlayView.isHidden = true
         addSubview(cropOverlayView)
 
+        orientationOverlayView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(orientationOverlayView)
+
         NSLayoutConstraint.activate([
             metalView.leadingAnchor.constraint(equalTo: leadingAnchor),
             metalView.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -136,6 +173,10 @@ final class Metal3DVolumeView: NSView {
             cropOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
             cropOverlayView.topAnchor.constraint(equalTo: topAnchor),
             cropOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            orientationOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            orientationOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            orientationOverlayView.topAnchor.constraint(equalTo: topAnchor),
+            orientationOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
         for plane in Metal3DCropPlane.allCases {
@@ -145,12 +186,26 @@ final class Metal3DVolumeView: NSView {
             cropHandleViews[plane] = handleView
         }
 
+        tumourSeedObserver = NotificationCenter.default.addObserver(
+            forName: MetalViewerTumourSeedStore.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.tumourSeedsDidChange(notification)
+        }
+
         updateAppearance()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        if let tumourSeedObserver {
+            NotificationCenter.default.removeObserver(tumourSeedObserver)
+        }
     }
 
     override var acceptsFirstResponder: Bool {
@@ -175,6 +230,7 @@ final class Metal3DVolumeView: NSView {
     override func layout() {
         super.layout()
         refreshCropHandles()
+        refreshOrientationOverlay()
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -182,11 +238,21 @@ final class Metal3DVolumeView: NSView {
         renderer?.zoom(delta: Float(event.scrollingDeltaY))
         metalView.setNeedsDisplay(metalView.bounds)
         refreshCropHandles()
+        refreshOrientationOverlay()
     }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         let location = convert(event.locationInWindow, from: nil)
+        if trajectoryHandle(at: location) != nil {
+            isDraggingTrajectoryHandle = true
+            activeCropPlane = nil
+            renderer?.setActiveCropPlane(nil)
+            renderer?.setTrajectoryHandleHovered(true)
+            lastDragLocation = location
+            metalView.setNeedsDisplay(metalView.bounds)
+            return
+        }
         if cropEnabled, let hitPlane = cropPlane(at: location) {
             activeCropPlane = hitPlane
             renderer?.setActiveCropPlane(hitPlane)
@@ -200,6 +266,15 @@ final class Metal3DVolumeView: NSView {
     override func mouseDragged(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
         guard let lastDragLocation else {
+            self.lastDragLocation = location
+            return
+        }
+
+        if isDraggingTrajectoryHandle {
+            let screenDelta = CGVector(dx: location.x - lastDragLocation.x, dy: location.y - lastDragLocation.y)
+            renderer?.dragTrajectoryHandle(screenDelta: screenDelta, in: bounds)
+            renderer?.setTrajectoryHandleHovered(true)
+            metalView.setNeedsDisplay(metalView.bounds)
             self.lastDragLocation = location
             return
         }
@@ -237,11 +312,13 @@ final class Metal3DVolumeView: NSView {
 
         metalView.setNeedsDisplay(metalView.bounds)
         refreshCropHandles()
+        refreshOrientationOverlay()
         self.lastDragLocation = location
     }
 
     override func rightMouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        isDraggingTrajectoryHandle = false
         activeCropPlane = nil
         renderer?.setActiveCropPlane(nil)
         lastDragLocation = convert(event.locationInWindow, from: nil)
@@ -258,6 +335,7 @@ final class Metal3DVolumeView: NSView {
         renderer?.zoom(delta: deltaY * 3.0)
         metalView.setNeedsDisplay(metalView.bounds)
         refreshCropHandles()
+        refreshOrientationOverlay()
         self.lastDragLocation = location
     }
 
@@ -266,11 +344,17 @@ final class Metal3DVolumeView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        let wasDraggingTrajectoryHandle = isDraggingTrajectoryHandle
+        isDraggingTrajectoryHandle = false
         activeCropPlane = nil
         renderer?.setActiveCropPlane(nil)
         endWindowLevelInteractionIfNeeded()
+        let location = convert(event.locationInWindow, from: nil)
+        if wasDraggingTrajectoryHandle {
+            renderer?.finishTrajectoryHandleDrag()
+        }
+        updateHoveredTrajectoryHandle(at: location)
         if cropEnabled {
-            let location = convert(event.locationInWindow, from: nil)
             updateHoveredCropPlane(at: location)
         }
         lastDragLocation = nil
@@ -278,13 +362,15 @@ final class Metal3DVolumeView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard cropEnabled else { return }
         let location = convert(event.locationInWindow, from: nil)
-        updateHoveredCropPlane(at: location)
+        updateHoveredTrajectoryHandle(at: location)
+        if cropEnabled {
+            updateHoveredCropPlane(at: location)
+        }
     }
 
     override func mouseExited(with event: NSEvent) {
-        guard cropEnabled else { return }
+        renderer?.setTrajectoryHandleHovered(false)
         renderer?.setHoveredCropPlane(nil)
         metalView.setNeedsDisplay(metalView.bounds)
     }
@@ -292,14 +378,21 @@ final class Metal3DVolumeView: NSView {
     func configure(pixList: [DCMPix], volumeData: Data) {
         guard let device = metalView.device else { return }
         let renderer = Metal3DVolumeRenderer(device: device, pixList: pixList, volumeData: volumeData)
+        tumourSeedScope = MetalViewerTumourSeedStore.scope(forPixList: pixList)
         renderer.setCropEnabled(cropApplied || cropEnabled)
         renderer.setCropOverlayVisible(cropEnabled)
         renderer.setShadingEnabled(shadingEnabled)
         renderer.setPreIntegrationEnabled(preIntegrationEnabled)
         self.renderer = renderer
+        skinClipDepthMM = renderer.currentSkinClipDepthMM
+        renderer.setShowSkin(showSkin)
+        renderer.setShowSkinSurface(showSkinSurface)
+        renderer.setShowTumorSegmentation(showTumorSegmentation)
+        reloadTumourSeeds()
         metalView.delegate = renderer
         metalView.setNeedsDisplay(metalView.bounds)
         refreshCropHandles()
+        refreshOrientationOverlay()
     }
 
     private func beginWindowLevelInteractionIfNeeded() {
@@ -355,6 +448,43 @@ final class Metal3DVolumeView: NSView {
         renderer?.opacityControlPoints() ?? []
     }
 
+    func segmentationInput() -> Metal3DSegmentationInput? {
+        renderer?.segmentationInput()
+    }
+
+    @discardableResult
+    func setTumorSegmentationLabelmap(_ labelmap: Data) -> Metal3DTumorSegmentationStatistics {
+        let statistics = renderer?.setTumorSegmentationLabelmap(labelmap) ?? Metal3DTumorSegmentationStatistics(
+            surfaceCount: 0,
+            voxelVolumeML: 0,
+            labelVoxelCounts: [:]
+        )
+        metalView.setNeedsDisplay(metalView.bounds)
+        return statistics
+    }
+
+    func clearTumorSegmentation() {
+        renderer?.clearTumorSegmentation()
+        metalView.setNeedsDisplay(metalView.bounds)
+        refreshOrientationOverlay()
+    }
+
+    func setTumorLabelFilter(_ labels: Set<UInt8>?) {
+        renderer?.setTumorLabelFilter(labels)
+        metalView.setNeedsDisplay(metalView.bounds)
+    }
+
+    func showInitialSurgicalTrajectory() -> String? {
+        guard let renderer else {
+            return NSLocalizedString("The 3D renderer is not ready.", comment: "")
+        }
+        guard let message = renderer.showInitialSurgicalTrajectory() else {
+            metalView.setNeedsDisplay(metalView.bounds)
+            return nil
+        }
+        return message
+    }
+
     func setOpacityControlPoints(_ points: [SIMD2<Float>]) {
         renderer?.setOpacityControlPoints(points)
         metalView.setNeedsDisplay(metalView.bounds)
@@ -378,6 +508,15 @@ final class Metal3DVolumeView: NSView {
             }
         }
         return nil
+    }
+
+    private func trajectoryHandle(at location: CGPoint) -> Metal3DTrajectoryHandleProjection? {
+        guard let projection = renderer?.trajectoryHandleProjection(in: bounds) else {
+            return nil
+        }
+
+        let distance = hypot(location.x - projection.position.x, location.y - projection.position.y)
+        return distance <= projection.hitRadius ? projection : nil
     }
 
     private func refreshCropHandles() {
@@ -413,9 +552,38 @@ final class Metal3DVolumeView: NSView {
         }
     }
 
+    private func refreshOrientationOverlay() {
+        orientationOverlayView.overlayState = renderer?.orientationOverlayState(
+            in: bounds,
+            cubeTopInset: orientationCubeTopInset
+        )
+    }
+
     private func updateHoveredCropPlane(at location: CGPoint) {
         let hoveredPlane = cropPlane(at: location)
         renderer?.setHoveredCropPlane(hoveredPlane)
+        metalView.setNeedsDisplay(metalView.bounds)
+    }
+
+    private func updateHoveredTrajectoryHandle(at location: CGPoint) {
+        renderer?.setTrajectoryHandleHovered(trajectoryHandle(at: location) != nil)
+        metalView.setNeedsDisplay(metalView.bounds)
+    }
+
+    private func tumourSeedsDidChange(_ notification: Notification) {
+        guard let tumourSeedScope,
+              MetalViewerTumourSeedStore.notification(notification, matches: tumourSeedScope) else {
+            return
+        }
+        reloadTumourSeeds()
+    }
+
+    private func reloadTumourSeeds() {
+        guard let tumourSeedScope else {
+            renderer?.setTumourSeeds([])
+            return
+        }
+        renderer?.setTumourSeeds(MetalViewerTumourSeedStore.shared.seeds(for: tumourSeedScope))
         metalView.setNeedsDisplay(metalView.bounds)
     }
 }

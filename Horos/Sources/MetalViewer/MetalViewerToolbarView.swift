@@ -20,8 +20,16 @@ final class MetalViewerToolbarView: NSView {
     private let viewerModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let wlwwPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let opacityPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let syncScaleButton = NSButton(frame: .zero)
+    private let leftMouseButtonRadio = NSButton(radioButtonWithTitle: NSLocalizedString("Left Button", comment: ""), target: nil, action: nil)
+    private let rightMouseButtonRadio = NSButton(radioButtonWithTitle: NSLocalizedString("Right Button", comment: ""), target: nil, action: nil)
+    private var selectedMouseButton: MetalViewerMouseButton = .left
+    private var mouseToolAssignments = MetalViewerMouseToolAssignments()
+    private var mouseToolButtons: [MetalViewerMouseTool: NSButton] = [:]
     var viewerModeSelectionHandler: ((ViewerMode) -> Void)?
     var wlwwSelectionHandler: ((WLWWCommand) -> Void)?
+    var mouseToolSelectionHandler: ((MetalViewerMouseToolAssignments) -> Void)?
+    var syncScaleSelectionHandler: ((Bool) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -41,7 +49,7 @@ final class MetalViewerToolbarView: NSView {
             ("Annotations", makeAnnotationsContent()),
             ("Mouse button function", makeMouseToolsContent()),
             ("WL/WW & CLUT", makeWLWWContent()),
-            ("Sync", makeIconButtonContent(imageName: "Sync.pdf", alternateImageName: "SyncLock.pdf")),
+            ("Sync Scale", makeSyncScaleContent()),
             ("Propagate", makeIconButtonContent(imageName: "Propagate", alternateImageName: "PropagateOn")),
             ("View", makeViewerModeContent()),
         ]
@@ -133,6 +141,17 @@ final class MetalViewerToolbarView: NSView {
         viewerModePopup.selectItem(withTag: mode.rawValue)
     }
 
+    func selectMouseToolAssignments(_ assignments: MetalViewerMouseToolAssignments) {
+        mouseToolAssignments = assignments
+        updateMouseButtonRadioStates()
+        updateMouseToolHighlights()
+    }
+
+    func setSyncScaleEnabled(_ isEnabled: Bool) {
+        syncScaleButton.state = isEnabled ? .on : .off
+        updateSyncScaleButtonImage()
+    }
+
     private func makeAnnotationsContent() -> NSView {
         let grid = NSGridView(views: [
             [makeToolbarRadio("None", selected: false), makeToolbarRadio("Basic", selected: false)],
@@ -170,12 +189,12 @@ final class MetalViewerToolbarView: NSView {
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(viewerModePopup)
         NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(equalToConstant: 74),
+            container.widthAnchor.constraint(equalToConstant: 102),
             container.heightAnchor.constraint(equalToConstant: 42),
 
             viewerModePopup.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             viewerModePopup.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            viewerModePopup.widthAnchor.constraint(equalToConstant: 68),
+            viewerModePopup.widthAnchor.constraint(equalToConstant: 96),
         ])
         return container
     }
@@ -196,17 +215,22 @@ final class MetalViewerToolbarView: NSView {
         iconsStack.alignment = .centerY
         iconsStack.spacing = 6
 
-        let imageNames = ["WLWW", "Move", "Zoom", "Rotate", "Stack"]
-        for (index, imageName) in imageNames.enumerated() {
-            let button = NSButton(image: toolbarImage(named: imageName), target: nil, action: nil)
+        for tool in MetalViewerMouseTool.allCases {
+            let button = NSButton(image: mouseToolImage(for: tool), target: self, action: #selector(mouseToolButtonPressed(_:)))
             button.translatesAutoresizingMaskIntoConstraints = false
             button.isBordered = false
+            button.setButtonType(.toggle)
+            button.tag = tool.rawValue
             button.imageScaling = .scaleProportionallyDown
-            button.contentTintColor = index == 0 ? NSColor.controlAccentColor : .white
+            button.toolTip = mouseToolTooltip(tool)
+            button.setAccessibilityLabel(mouseToolTitle(tool))
+            button.wantsLayer = true
+            button.layer?.cornerRadius = 5
             NSLayoutConstraint.activate([
                 button.widthAnchor.constraint(equalToConstant: 24),
                 button.heightAnchor.constraint(equalToConstant: 24),
             ])
+            mouseToolButtons[tool] = button
             iconsStack.addArrangedSubview(button)
         }
 
@@ -215,6 +239,7 @@ final class MetalViewerToolbarView: NSView {
         chevron.isBordered = false
         chevron.font = NSFont.systemFont(ofSize: 16, weight: .medium)
         chevron.contentTintColor = .white
+        chevron.toolTip = NSLocalizedString("More mouse tool choices.", comment: "")
         NSLayoutConstraint.activate([
             chevron.widthAnchor.constraint(equalToConstant: 14),
         ])
@@ -225,8 +250,10 @@ final class MetalViewerToolbarView: NSView {
         buttonChoiceStack.orientation = .horizontal
         buttonChoiceStack.alignment = .centerY
         buttonChoiceStack.spacing = 12
-        buttonChoiceStack.addArrangedSubview(makeToolbarRadio("Left Button", selected: true, size: 10))
-        buttonChoiceStack.addArrangedSubview(makeToolbarRadio("Right Button", selected: false, size: 10))
+        configureMouseButtonRadio(leftMouseButtonRadio, buttonChoice: .left)
+        configureMouseButtonRadio(rightMouseButtonRadio, buttonChoice: .right)
+        buttonChoiceStack.addArrangedSubview(leftMouseButtonRadio)
+        buttonChoiceStack.addArrangedSubview(rightMouseButtonRadio)
 
         let vertical = NSStackView(views: [iconsStack, buttonChoiceStack])
         vertical.translatesAutoresizingMaskIntoConstraints = false
@@ -244,6 +271,8 @@ final class MetalViewerToolbarView: NSView {
             vertical.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 2),
             vertical.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
+        updateMouseButtonRadioStates()
+        updateMouseToolHighlights()
         return container
     }
 
@@ -332,6 +361,183 @@ final class MetalViewerToolbarView: NSView {
             return
         }
         viewerModeSelectionHandler?(mode)
+    }
+
+    private func configureMouseButtonRadio(_ radio: NSButton, buttonChoice: MetalViewerMouseButton) {
+        radio.font = NSFont.systemFont(ofSize: 10)
+        radio.setButtonType(.radio)
+        radio.tag = buttonChoice.rawValue
+        radio.target = self
+        radio.action = #selector(mouseButtonChoiceDidChange(_:))
+        switch buttonChoice {
+        case .left:
+            radio.toolTip = NSLocalizedString("Show and edit the tool assigned to the left mouse button.", comment: "")
+        case .right:
+            radio.toolTip = NSLocalizedString("Show and edit the tool assigned to the right mouse button.", comment: "")
+        }
+    }
+
+    @objc
+    private func mouseButtonChoiceDidChange(_ sender: NSButton) {
+        guard let buttonChoice = MetalViewerMouseButton(rawValue: sender.tag) else {
+            return
+        }
+        selectedMouseButton = buttonChoice
+        updateMouseButtonRadioStates()
+        updateMouseToolHighlights()
+    }
+
+    @objc
+    private func mouseToolButtonPressed(_ sender: NSButton) {
+        guard let tool = MetalViewerMouseTool(rawValue: sender.tag) else {
+            return
+        }
+        mouseToolAssignments.setTool(tool, for: selectedMouseButton)
+        updateMouseToolHighlights()
+        mouseToolSelectionHandler?(mouseToolAssignments)
+    }
+
+    @objc
+    private func syncScaleButtonPressed(_ sender: NSButton) {
+        updateSyncScaleButtonImage()
+        syncScaleSelectionHandler?(sender.state == .on)
+    }
+
+    private func updateMouseButtonRadioStates() {
+        leftMouseButtonRadio.state = selectedMouseButton == .left ? .on : .off
+        rightMouseButtonRadio.state = selectedMouseButton == .right ? .on : .off
+    }
+
+    private func updateMouseToolHighlights() {
+        let selectedTool = mouseToolAssignments.tool(for: selectedMouseButton)
+        for (tool, button) in mouseToolButtons {
+            let isSelected = tool == selectedTool
+            button.state = isSelected ? .on : .off
+            button.layer?.backgroundColor = isSelected ? NSColor.controlAccentColor.withAlphaComponent(0.25).cgColor : NSColor.clear.cgColor
+            button.layer?.borderColor = isSelected ? NSColor.controlAccentColor.cgColor : NSColor.clear.cgColor
+            button.layer?.borderWidth = isSelected ? 1 : 0
+            button.contentTintColor = tool == .tumourSeed ? nil : (isSelected ? NSColor.controlAccentColor : .white)
+        }
+    }
+
+    private func mouseToolImage(for tool: MetalViewerMouseTool) -> NSImage {
+        switch tool {
+        case .windowLevel:
+            return toolbarImage(named: "WLWW")
+        case .pan:
+            return toolbarImage(named: "Move")
+        case .zoom:
+            return toolbarImage(named: "Zoom")
+        case .rotate:
+            return toolbarImage(named: "Rotate")
+        case .scroll:
+            return toolbarImage(named: "Stack")
+        case .tumourSeed:
+            return tumourSeedTargetImage()
+        }
+    }
+
+    private func mouseToolTitle(_ tool: MetalViewerMouseTool) -> String {
+        switch tool {
+        case .windowLevel:
+            return NSLocalizedString("Window Level", comment: "")
+        case .pan:
+            return NSLocalizedString("Pan", comment: "")
+        case .zoom:
+            return NSLocalizedString("Zoom", comment: "")
+        case .rotate:
+            return NSLocalizedString("Rotate", comment: "")
+        case .scroll:
+            return NSLocalizedString("Scroll Through Slices", comment: "")
+        case .tumourSeed:
+            return NSLocalizedString("Tumour Seed", comment: "")
+        }
+    }
+
+    private func mouseToolTooltip(_ tool: MetalViewerMouseTool) -> String {
+        switch tool {
+        case .windowLevel:
+            return NSLocalizedString("Window Level: drag horizontally to change window width and vertically to change window level.", comment: "")
+        case .pan:
+            return NSLocalizedString("Pan: drag to move the image within the pane.", comment: "")
+        case .zoom:
+            return NSLocalizedString("Zoom: drag up to zoom in or down to zoom out.", comment: "")
+        case .rotate:
+            return NSLocalizedString("Rotate: drag around the image center to rotate the 2D image. In MPR, drag to rotate the view.", comment: "")
+        case .scroll:
+            return NSLocalizedString("Scroll: drag vertically to move through slices.", comment: "")
+        case .tumourSeed:
+            return NSLocalizedString("Tumour Seed: future tool for placing seed points used by segmentation.", comment: "")
+        }
+    }
+
+    private func tumourSeedTargetImage() -> NSImage {
+        let size = NSSize(width: 24, height: 24)
+        let image = NSImage(size: size)
+        image.lockFocus()
+
+        NSColor.clear.setFill()
+        NSRect(origin: .zero, size: size).fill()
+
+        let center = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
+        let outerRect = NSRect(x: 3, y: 3, width: 18, height: 18)
+        let middleRect = outerRect.insetBy(dx: 4, dy: 4)
+        let innerRect = outerRect.insetBy(dx: 7, dy: 7)
+
+        NSColor.systemRed.setFill()
+        NSBezierPath(ovalIn: outerRect).fill()
+        NSColor.white.setFill()
+        NSBezierPath(ovalIn: middleRect).fill()
+        NSColor.systemRed.setFill()
+        NSBezierPath(ovalIn: innerRect).fill()
+
+        let crosshair = NSBezierPath()
+        crosshair.lineWidth = 1.4
+        crosshair.move(to: CGPoint(x: center.x, y: 1.5))
+        crosshair.line(to: CGPoint(x: center.x, y: 6))
+        crosshair.move(to: CGPoint(x: center.x, y: 18))
+        crosshair.line(to: CGPoint(x: center.x, y: 22.5))
+        crosshair.move(to: CGPoint(x: 1.5, y: center.y))
+        crosshair.line(to: CGPoint(x: 6, y: center.y))
+        crosshair.move(to: CGPoint(x: 18, y: center.y))
+        crosshair.line(to: CGPoint(x: 22.5, y: center.y))
+        NSColor.white.setStroke()
+        crosshair.stroke()
+
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
+    }
+
+    private func makeSyncScaleContent() -> NSView {
+        syncScaleButton.translatesAutoresizingMaskIntoConstraints = false
+        syncScaleButton.isBordered = true
+        syncScaleButton.bezelStyle = .texturedRounded
+        syncScaleButton.setButtonType(.toggle)
+        syncScaleButton.imageScaling = .scaleProportionallyDown
+        syncScaleButton.target = self
+        syncScaleButton.action = #selector(syncScaleButtonPressed(_:))
+        syncScaleButton.toolTip = NSLocalizedString("Synchronize zoom scale between open viewer panes in this window.", comment: "")
+        syncScaleButton.setAccessibilityLabel(NSLocalizedString("Sync Scale", comment: ""))
+        updateSyncScaleButtonImage()
+
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(syncScaleButton)
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(equalToConstant: 68),
+            container.heightAnchor.constraint(equalToConstant: 42),
+
+            syncScaleButton.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            syncScaleButton.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            syncScaleButton.widthAnchor.constraint(equalToConstant: 34),
+            syncScaleButton.heightAnchor.constraint(equalToConstant: 34),
+        ])
+        return container
+    }
+
+    private func updateSyncScaleButtonImage() {
+        syncScaleButton.image = toolbarImage(named: syncScaleButton.state == .on ? "SyncLock.pdf" : "Sync.pdf")
     }
 
     private func makeIconButtonContent(imageName: String, alternateImageName: String? = nil) -> NSView {

@@ -13,12 +13,33 @@ private final class MetalViewerSplitView: NSSplitView {
     }
 }
 
+private final class MetalViewerWindow: NSWindow {
+    var tabKeyHandler: ((Bool) -> Bool)?
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown,
+           event.keyCode == 48,
+           shouldUseTabForPaneTraversal(event),
+           tabKeyHandler?(event.modifierFlags.contains(.shift)) == true {
+            return
+        }
+
+        super.sendEvent(event)
+    }
+
+    private func shouldUseTabForPaneTraversal(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return flags.intersection([.command, .control, .option]).isEmpty
+    }
+}
+
 final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate {
     private enum Layout {
         static let minimumScoutWidth: CGFloat = 172
         static let minimumPaneWidth: CGFloat = 480
         static let maximumPaneCount = 8
         static let scoutWidthAutosaveKey = "HorosMetalViewerScoutWidth"
+        static let syncScaleAutosaveKey = "HorosMetalViewerSyncScale"
     }
 
     private var study: MetalViewerStudy
@@ -37,6 +58,10 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private var isRestoringSplitPosition = true
     private var selectedWLWWTitle = NSLocalizedString("Default WL & WW", comment: "")
     private var viewerMode: MetalViewerToolbarView.ViewerMode = .stack2D
+    private var mouseToolAssignments = MetalViewerMouseToolAssignments()
+    private var isSyncScaleEnabled = UserDefaults.standard.bool(forKey: Layout.syncScaleAutosaveKey)
+    private var isApplyingSyncedScale = false
+    private var lastPaneScales: [ObjectIdentifier: Float] = [:]
 
     init(study: MetalViewerStudy) {
         let initStart = CFAbsoluteTimeGetCurrent()
@@ -54,7 +79,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         let contentHeight = min(max(contentWidth / aspectRatio, 700), 1200)
         let contentRect = NSRect(x: 0, y: 0, width: contentWidth, height: contentHeight)
 
-        let window = NSWindow(
+        let window = MetalViewerWindow(
             contentRect: contentRect,
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
@@ -112,6 +137,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
 
         super.init(window: window)
 
+        window.tabKeyHandler = { [weak self] moveBackward in
+            self?.moveActivePane(backward: moveBackward) ?? false
+        }
         contentSplitView.delegate = self
         contentSplitView.dividerDragEnded = { [weak self] in
             self?.saveSplitPosition()
@@ -121,6 +149,14 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
         toolbarView.viewerModeSelectionHandler = { [weak self] mode in
             self?.applyViewerMode(mode)
+        }
+        toolbarView.selectMouseToolAssignments(mouseToolAssignments)
+        toolbarView.mouseToolSelectionHandler = { [weak self] assignments in
+            self?.applyMouseToolAssignments(assignments)
+        }
+        toolbarView.setSyncScaleEnabled(isSyncScaleEnabled)
+        toolbarView.syncScaleSelectionHandler = { [weak self] isEnabled in
+            self?.setSyncScaleEnabled(isEnabled)
         }
 
         NSLayoutConstraint.activate([
@@ -156,7 +192,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             guard let self else { return }
             self.scoutView.setSelectedSeries(identifier: series.identifier)
             if let targetPane = self.activePaneView ?? self.paneViews.first {
+                let syncedScale = self.synchronizedScaleValue(excluding: targetPane) ?? targetPane.currentScale
                 targetPane.display(series: series)
+                self.applySyncedScaleIfNeeded(to: targetPane, preferredScale: syncedScale)
                 self.preloadActiveSeries(series)
                 self.selectedWLWWTitle = series.windowLevelPresetTitle
                 self.toolbarView.reloadWLWWMenu(selectedTitle: self.selectedWLWWTitle, modality: series.modality)
@@ -256,6 +294,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
 
         let pane = MetalViewerPaneView(series: series)
+        pane.setMouseToolAssignments(mouseToolAssignments)
         pane.setDisplayMode(viewerMode == .mpr ? .mpr : .stack2D)
         pane.activateHandler = { [weak self, weak pane] in
             guard let self, let pane else { return }
@@ -280,9 +319,12 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
                 self.updateToolbarStatus()
             }
             self.updateReferenceLines()
+            self.handlePaneScaleDidChange(pane)
         }
 
         paneViews.append(pane)
+        applySyncedScaleIfNeeded(to: pane)
+        recordScale(for: pane)
         rebuildPaneLayout()
 
         if makeActive {
@@ -306,6 +348,31 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         pane.focusImageView()
         updateToolbarStatus()
         updateReferenceLines()
+    }
+
+    @discardableResult
+    private func moveActivePane(backward: Bool) -> Bool {
+        guard paneViews.isEmpty == false else {
+            return false
+        }
+
+        guard paneViews.count > 1 else {
+            setActivePane(paneViews[0])
+            return true
+        }
+
+        let currentIndex: Int
+        if let activePaneView,
+           let activeIndex = paneViews.firstIndex(where: { $0 === activePaneView }) {
+            currentIndex = activeIndex
+        } else {
+            currentIndex = backward ? 0 : -1
+        }
+
+        let offset = backward ? -1 : 1
+        let nextIndex = (currentIndex + offset + paneViews.count) % paneViews.count
+        setActivePane(paneViews[nextIndex])
+        return true
     }
 
     private func rebuildPaneLayout() {
@@ -344,6 +411,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
 
         let wasActive = (activePaneView === pane)
         paneViews.removeAll { $0 === pane }
+        lastPaneScales.removeValue(forKey: ObjectIdentifier(pane))
         rebuildPaneLayout()
 
         if wasActive {
@@ -377,7 +445,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         if overlay {
             pane.overlay(series: series)
         } else {
+            let syncedScale = synchronizedScaleValue(excluding: pane) ?? pane.currentScale
             pane.display(series: series)
+            applySyncedScaleIfNeeded(to: pane, preferredScale: syncedScale)
             preloadActiveSeries(series)
             selectedWLWWTitle = series.windowLevelPresetTitle
             toolbarView.reloadWLWWMenu(selectedTitle: selectedWLWWTitle, modality: series.modality)
@@ -418,10 +488,12 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             guard let updatedSeries = study.series.first(where: { $0.identifier == pane.series.identifier }) else {
                 continue
             }
+            let syncedScale = synchronizedScaleValue(excluding: pane) ?? pane.currentScale
             let updatedOverlaySeries = pane.overlaySeries.flatMap { overlaySeries in
                 study.series.first(where: { $0.identifier == overlaySeries.identifier })
             }
             if pane.refreshAfterDatabaseUpdate(series: updatedSeries, overlaySeries: updatedOverlaySeries) {
+                applySyncedScaleIfNeeded(to: pane, preferredScale: syncedScale)
                 refreshedPaneCount += 1
                 if pane === activePaneView {
                     preloadActiveSeries(updatedSeries)
@@ -432,7 +504,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         if selectInitialSeries,
            let selectedSeries = study.series.first(where: { $0.identifier == study.initialSeriesIdentifier }),
            let targetPane = activePaneView ?? paneViews.first {
+            let syncedScale = synchronizedScaleValue(excluding: targetPane) ?? targetPane.currentScale
             targetPane.display(series: selectedSeries)
+            applySyncedScaleIfNeeded(to: targetPane, preferredScale: syncedScale)
             preloadActiveSeries(selectedSeries)
             selectedWLWWTitle = selectedSeries.windowLevelPresetTitle
             toolbarView.reloadWLWWMenu(selectedTitle: selectedWLWWTitle, modality: selectedSeries.modality)
@@ -472,6 +546,110 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         toolbarView.selectViewerMode(mode)
         updateToolbarStatus()
         updateReferenceLines()
+    }
+
+    private func applyMouseToolAssignments(_ assignments: MetalViewerMouseToolAssignments) {
+        mouseToolAssignments = assignments
+        for pane in paneViews {
+            pane.setMouseToolAssignments(assignments)
+        }
+    }
+
+    private func setSyncScaleEnabled(_ isEnabled: Bool) {
+        isSyncScaleEnabled = isEnabled
+        UserDefaults.standard.set(isEnabled, forKey: Layout.syncScaleAutosaveKey)
+        toolbarView.setSyncScaleEnabled(isEnabled)
+        recordAllPaneScales()
+
+        if isEnabled,
+           let sourcePane = activePaneView ?? paneViews.first,
+           let sourceScale = sourcePane.currentScale {
+            synchronizeScale(from: sourcePane, scale: sourceScale)
+        }
+    }
+
+    private func handlePaneScaleDidChange(_ pane: MetalViewerPaneView) {
+        guard let scale = pane.currentScale else {
+            lastPaneScales.removeValue(forKey: ObjectIdentifier(pane))
+            return
+        }
+
+        let identifier = ObjectIdentifier(pane)
+        let previousScale = lastPaneScales[identifier]
+        lastPaneScales[identifier] = scale
+
+        guard isSyncScaleEnabled,
+              isApplyingSyncedScale == false,
+              let previousScale,
+              abs(previousScale - scale) > 0.0001 else {
+            return
+        }
+
+        synchronizeScale(from: pane, scale: scale)
+    }
+
+    private func applySyncedScaleIfNeeded(to pane: MetalViewerPaneView, preferredScale: Float? = nil) {
+        guard isSyncScaleEnabled else {
+            recordScale(for: pane)
+            return
+        }
+
+        guard let scale = preferredScale ?? synchronizedScaleValue(excluding: pane) else {
+            recordScale(for: pane)
+            return
+        }
+
+        isApplyingSyncedScale = true
+        pane.setScale(scale)
+        recordScale(for: pane)
+        isApplyingSyncedScale = false
+    }
+
+    private func synchronizeScale(from sourcePane: MetalViewerPaneView, scale: Float) {
+        guard isSyncScaleEnabled,
+              scale.isFinite else {
+            return
+        }
+
+        isApplyingSyncedScale = true
+        for pane in paneViews where pane !== sourcePane {
+            pane.setScale(scale)
+            recordScale(for: pane)
+        }
+        recordScale(for: sourcePane)
+        isApplyingSyncedScale = false
+    }
+
+    private func synchronizedScaleValue(excluding excludedPane: MetalViewerPaneView?) -> Float? {
+        if let activePaneView,
+           activePaneView !== excludedPane,
+           let scale = activePaneView.currentScale {
+            return scale
+        }
+
+        for pane in paneViews where pane !== excludedPane {
+            if let scale = pane.currentScale {
+                return scale
+            }
+        }
+
+        return nil
+    }
+
+    private func recordScale(for pane: MetalViewerPaneView) {
+        let identifier = ObjectIdentifier(pane)
+        if let scale = pane.currentScale {
+            lastPaneScales[identifier] = scale
+        } else {
+            lastPaneScales.removeValue(forKey: identifier)
+        }
+    }
+
+    private func recordAllPaneScales() {
+        lastPaneScales.removeAll()
+        for pane in paneViews {
+            recordScale(for: pane)
+        }
     }
 
     private func applyWLWWCommand(_ command: MetalViewerToolbarView.WLWWCommand) {

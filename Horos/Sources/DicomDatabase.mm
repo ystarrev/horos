@@ -392,18 +392,57 @@ static NSRecursiveLock *databasesDictionaryLock = [[NSRecursiveLock alloc] init]
 }
 
 static DicomDatabase* activeLocalDatabase = nil;
+static NSString* const HorosActiveLocalDatabasePathDefaultsKey = @"HorosActiveLocalDatabasePath";
 
 +(DicomDatabase*)activeLocalDatabase {
-    return activeLocalDatabase? activeLocalDatabase : self.defaultDatabase;
+    @synchronized(self) {
+        if (activeLocalDatabase)
+            return activeLocalDatabase;
+
+        if ([NSUserDefaults canActivateAnyLocalDatabase])
+        {
+            NSString *path = [[NSUserDefaults standardUserDefaults] stringForKey:HorosActiveLocalDatabasePathDefaultsKey];
+            if (path.length)
+            {
+                NSString *baseDirPath = [self baseDirPathForPath:path];
+                if (baseDirPath.length && [[NSFileManager defaultManager] fileExistsAtPath:baseDirPath])
+                {
+                    NSString *name = nil;
+                    for (NSDictionary *databaseSource in [[NSUserDefaults standardUserDefaults] objectForKey:@"localDatabasePaths"])
+                    {
+                        if ([baseDirPath isEqualToString:[self baseDirPathForPath:[databaseSource objectForKey:@"Path"]]])
+                        {
+                            name = [databaseSource objectForKey:@"Description"];
+                            break;
+                        }
+                    }
+                    activeLocalDatabase = [[self databaseAtPath:baseDirPath name:name] retain];
+                    return activeLocalDatabase;
+                }
+            }
+        }
+
+        return self.defaultDatabase;
+    }
 }
 
 +(void)setActiveLocalDatabase:(DicomDatabase*)ldb {
     if (!ldb.isLocal)
         return;
-    if (ldb != self.activeLocalDatabase) {
-        [activeLocalDatabase release];
-        activeLocalDatabase = [ldb retain];
-        [NSNotificationCenter.defaultCenter postNotificationName:OsirixActiveLocalDatabaseDidChangeNotification object:nil];
+
+    @synchronized(self) {
+        DicomDatabase *currentActiveLocalDatabase = self.activeLocalDatabase;
+
+        if ([NSUserDefaults canActivateAnyLocalDatabase] && ldb.baseDirPath.length && ![ldb.baseDirPath isEqualToString:self.defaultDatabase.baseDirPath])
+            [[NSUserDefaults standardUserDefaults] setObject:ldb.baseDirPath forKey:HorosActiveLocalDatabasePathDefaultsKey];
+        else
+            [[NSUserDefaults standardUserDefaults] removeObjectForKey:HorosActiveLocalDatabasePathDefaultsKey];
+
+        if (ldb != currentActiveLocalDatabase) {
+            [activeLocalDatabase release];
+            activeLocalDatabase = [ldb retain];
+            [NSNotificationCenter.defaultCenter postNotificationName:OsirixActiveLocalDatabaseDidChangeNotification object:nil];
+        }
     }
 }
 

@@ -250,6 +250,7 @@ NSString* asciiString(NSString* str)
 -(void)openMetalViewerForDatabaseObject:(NSManagedObject*)item;
 
 -(void)saveLoadAlbumsSortDescriptors;
+-(void)saveDatabaseWindowFramePreference;
 
 @end
 
@@ -15026,7 +15027,7 @@ static NSArray*	openSubSeriesArray = nil;
 {
     //	[IncomingTimer invalidate];
     
-    [[NSUserDefaults standardUserDefaults] setObject: NSStringFromRect( self.window.frame) forKey: @"DBWindowFrame"];
+    [self saveDatabaseWindowFramePreference];
     
     NSLog( @"browserPrepareForClose");
     
@@ -19314,6 +19315,27 @@ restart:
 - (void)windowDidResignKey:(NSNotification *)notification
 {
     DatabaseIsEdited = NO;
+}
+
+- (void)saveDatabaseWindowFramePreference
+{
+    if (self.window)
+        [[NSUserDefaults standardUserDefaults] setObject:NSStringFromRect(self.window.frame) forKey:@"DBWindowFrame"];
+}
+
+- (void)windowDidMove:(NSNotification *)notification
+{
+    [self saveDatabaseWindowFramePreference];
+}
+
+- (void)windowDidResize:(NSNotification *)notification
+{
+    [self saveDatabaseWindowFramePreference];
+}
+
+- (void)windowDidEndLiveResize:(NSNotification *)notification
+{
+    [self saveDatabaseWindowFramePreference];
 }
 
 - (void)windowDidBecomeKey:(NSNotification *)notification

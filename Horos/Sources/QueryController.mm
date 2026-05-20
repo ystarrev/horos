@@ -85,6 +85,50 @@ static NSString *PatientBirthDate = @"PatientBirthDate";
 static NSString *ReferringPhysician = @"ReferringPhysiciansName";
 static NSString *InstitutionName = @"InstitutionName";
 static NSString *InterpretationStatusID = @"InterpretationStatusID";
+static NSString * const HorosQueryWindowFrameDefaultsKey = @"NSWindow Frame QR";
+static const NSSize HorosQueryWindowMinimumContentSize = {914, 672};
+
+static BOOL HorosScanSavedWindowFrameDescriptor(NSString *descriptor, NSRect *frame)
+{
+    if( descriptor.length == 0)
+        return NO;
+
+    double x, y, width, height;
+    NSScanner *scanner = [NSScanner scannerWithString: descriptor];
+
+    if( [scanner scanDouble:&x] && [scanner scanDouble:&y] && [scanner scanDouble:&width] && [scanner scanDouble:&height] && width > 0 && height > 0)
+    {
+        if( frame)
+            *frame = NSMakeRect( x, y, width, height);
+        return YES;
+    }
+
+    return NO;
+}
+
+static NSString *HorosSavedWindowFrameDescriptorForWindow(NSWindow *window)
+{
+    NSRect frame = window.frame;
+    NSScreen *screen = window.screen;
+
+    if( screen == nil)
+        screen = [NSScreen mainScreen];
+
+    if( screen == nil && [[NSScreen screens] count] > 0)
+        screen = [[NSScreen screens] objectAtIndex: 0];
+
+    NSRect screenFrame = screen ? screen.visibleFrame : NSZeroRect;
+
+    return [NSString stringWithFormat: @"%.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f ",
+            frame.origin.x,
+            frame.origin.y,
+            frame.size.width,
+            frame.size.height,
+            screenFrame.origin.x,
+            screenFrame.origin.y,
+            screenFrame.size.width,
+            screenFrame.size.height];
+}
 
 static BOOL HorosQueryStringContains(NSString *string, NSString *needle)
 {
@@ -123,6 +167,9 @@ extern "C"
 - (void)addPendingRetrieveAndViewItem:(id)item;
 - (void)removePendingRetrieveAndViewItem:(id)item;
 - (void)openPendingRetrieveAndViewItemsIfPossible;
+- (void)configureQueryWindowMinimumContentSize;
+- (void)restoreQueryWindowFramePreference;
+- (void)saveQueryWindowFramePreference;
 @end
 
 @implementation QueryController
@@ -4509,8 +4556,6 @@ extern "C"
     else
         [PatientModeMatrix selectTabViewItemAtIndex: [[NSUserDefaults standardUserDefaults] integerForKey: @"QRPatientModeMatrixIndex"]];
     
-//	[[self window] setFrameAutosaveName:@"QueryRetrieveWindow"];
-	
 	NSTableColumn *tableColumn = [outlineView tableColumnWithIdentifier: @"stateText"];
 	NSPopUpButtonCell *buttonCell = [[[NSPopUpButtonCell alloc] initTextCell: @"" pullsDown:NO] autorelease];
 //	[buttonCell setEditable: YES];
@@ -5018,6 +5063,9 @@ extern "C"
 		queryFilters = nil;
 		currentQueryKey = nil;
 		autoQuery = autoQR;
+
+        if( autoQuery == NO)
+            [self setShouldCascadeWindows: NO];
 		
 		pressedKeys = [[NSMutableString stringWithString:@""] retain];
 		queryFilters = [[NSMutableArray array] retain];
@@ -5037,12 +5085,12 @@ extern "C"
 		
 		[self refreshSources];
 		
-		[[self window] setDelegate:self];
-		
 		if( autoQuery == NO)
 		{
             self.window.toolbar = nil;
-            
+            [self configureQueryWindowMinimumContentSize];
+            [self restoreQueryWindowFramePreference];
+
 			[dateFilterMatrix selectCellWithTag: [[NSUserDefaults standardUserDefaults] integerForKey: @"QRLastDateFilterValue"]];
 			[self setDateQuery: dateFilterMatrix];
 			
@@ -5129,8 +5177,10 @@ extern "C"
                 [dicomFieldsMenu selectItemWithTitle: [[DICOMFieldsArray objectAtIndex:i] title]];
         }
         [dicomFieldsMenu setMenu: DICOMFieldsMenu];
+
+        [[self window] setDelegate:self];
 	}
-    
+
     return self;
 }
 
@@ -5192,6 +5242,82 @@ extern "C"
 		return;
 		
 	[outlineView reloadData];
+}
+
+- (void)configureQueryWindowMinimumContentSize
+{
+    if( autoQuery == NO && self.window)
+    {
+        NSRect minimumFrame = [self.window frameRectForContentRect:NSMakeRect( 0, 0, HorosQueryWindowMinimumContentSize.width, HorosQueryWindowMinimumContentSize.height)];
+        self.window.minSize = minimumFrame.size;
+
+        NSRect frame = self.window.frame;
+        if( NSWidth( frame) < minimumFrame.size.width || NSHeight( frame) < minimumFrame.size.height)
+        {
+            CGFloat maxY = NSMaxY( frame);
+            frame.size.width = MAX( NSWidth( frame), minimumFrame.size.width);
+            frame.size.height = MAX( NSHeight( frame), minimumFrame.size.height);
+            frame.origin.y = maxY - NSHeight( frame);
+            [self.window setFrame:frame display:NO];
+        }
+    }
+}
+
+- (void)restoreQueryWindowFramePreference
+{
+    if( autoQuery == NO && self.window)
+    {
+        NSString *frameString = [[NSUserDefaults standardUserDefaults] stringForKey:HorosQueryWindowFrameDefaultsKey];
+        NSRect frame;
+        if( HorosScanSavedWindowFrameDescriptor( frameString, &frame))
+        {
+            NSSize minimumFrameSize = self.window.minSize;
+            CGFloat maxY = NSMaxY( frame);
+            frame.size.width = MAX( frame.size.width, minimumFrameSize.width);
+            frame.size.height = MAX( frame.size.height, minimumFrameSize.height);
+            frame.origin.y = maxY - NSHeight( frame);
+            [self.window setFrame: frame display: NO];
+        }
+    }
+}
+
+- (void)saveQueryWindowFramePreference
+{
+    if( autoQuery == NO && self.window)
+        [[NSUserDefaults standardUserDefaults] setObject:HorosSavedWindowFrameDescriptorForWindow( self.window) forKey:HorosQueryWindowFrameDefaultsKey];
+}
+
+- (void)windowDidMove:(NSNotification *)notification
+{
+    [self saveQueryWindowFramePreference];
+}
+
+- (void)windowWillStartLiveResize:(NSNotification *)notification
+{
+    if( autoQuery == NO && notification.object == self.window)
+    {
+        NSPoint mouseLocation = self.window.mouseLocationOutsideOfEventStream;
+        NSSize frameSize = self.window.frame.size;
+        CGFloat edgeInset = 32;
+        BOOL nearVerticalEdge = mouseLocation.x <= edgeInset || mouseLocation.x >= frameSize.width - edgeInset;
+        BOOL nearHorizontalEdge = mouseLocation.y <= edgeInset || mouseLocation.y >= frameSize.height - edgeInset;
+
+        queryWindowHorizontalBorderLiveResize = nearVerticalEdge && !nearHorizontalEdge;
+    }
+}
+
+- (NSSize)windowWillResize:(NSWindow *)sender toSize:(NSSize)frameSize
+{
+    if( autoQuery == NO && sender == self.window && queryWindowHorizontalBorderLiveResize)
+        frameSize.height = NSHeight( sender.frame);
+
+    return frameSize;
+}
+
+- (void)windowDidEndLiveResize:(NSNotification *)notification
+{
+    queryWindowHorizontalBorderLiveResize = NO;
+    [self saveQueryWindowFramePreference];
 }
 
 - (void)windowDidLoad
@@ -5328,6 +5454,8 @@ extern "C"
 
 - (void)windowWillClose:(NSNotification *)notification
 {
+    [self saveQueryWindowFramePreference];
+
     [self saveTableColumns];
     
 	[[self window] setAcceptsMouseMovedEvents: NO];

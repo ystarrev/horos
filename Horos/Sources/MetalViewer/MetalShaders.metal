@@ -2,6 +2,10 @@
 using namespace metal;
 
 constant uint kRegistrationHistogramBins = 64;
+constant uint kMetalViewerInterpolationNearest = 0;
+constant uint kMetalViewerInterpolationLinear = 1;
+constant uint kMetalViewerInterpolationLanczos = 2;
+
 struct MetalVertex {
     float2 position;
     float2 texCoord;
@@ -10,6 +14,8 @@ struct MetalVertex {
 struct MetalUniforms {
     float2 scale;
     float2 offset;
+    float rotationRadians;
+    float drawableAspect;
     float baseWindowLevel;
     float baseWindowWidth;
     float overlayWindowLevel;
@@ -23,6 +29,8 @@ struct MetalUniforms {
     float4x4 fixedVoxelToWorld;
     float4x4 movingWorldToVoxel;
     uint hasOverlay;
+    uint useBaseVolumeTexture;
+    uint imageInterpolationMode;
 };
 
 struct MetalMPRVertex {
@@ -139,6 +147,7 @@ struct Metal3DVolumeUniforms {
     float specular;
     float specularPower;
     uint hasCLUT;
+    uint skinMaskEnabled;
     float4x4 viewProjectionMatrix;
 };
 
@@ -198,8 +207,17 @@ vertex RasterizerData metalViewerVertex(
     uint vertexID [[vertex_id]]
 ) {
     RasterizerData out;
-    float2 scaledPosition = vertices[vertexID].position * uniforms.scale + uniforms.offset;
-    out.position = float4(scaledPosition, 0.0, 1.0);
+    float2 scaledPosition = vertices[vertexID].position * uniforms.scale;
+    const float drawableAspect = max(uniforms.drawableAspect, 0.0001);
+    const float2 screenPosition = float2(scaledPosition.x * drawableAspect, scaledPosition.y);
+    const float cosine = cos(uniforms.rotationRadians);
+    const float sine = sin(uniforms.rotationRadians);
+    const float2 rotatedScreenPosition = float2(
+        screenPosition.x * cosine - screenPosition.y * sine,
+        screenPosition.x * sine + screenPosition.y * cosine
+    );
+    const float2 rotatedPosition = float2(rotatedScreenPosition.x / drawableAspect, rotatedScreenPosition.y);
+    out.position = float4(rotatedPosition + uniforms.offset, 0.0, 1.0);
     out.texCoord = vertices[vertexID].texCoord;
     return out;
 }
@@ -378,7 +396,9 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
     texture2d<float> clutTexture [[texture(1)]],
     texture2d<float> opacityTexture [[texture(2)]],
     texture2d<float> preIntegratedTransferTexture [[texture(3)]],
-    sampler textureSampler [[sampler(0)]]
+    texture3d<float> skinMaskTexture [[texture(4)]],
+    sampler textureSampler [[sampler(0)]],
+    sampler maskSampler [[sampler(1)]]
 ) {
     float2 ndc = float2(in.uv.x * 2.0 - 1.0, in.uv.y * 2.0 - 1.0);
     float3 rayOrigin = uniforms.cameraPosition +
@@ -413,6 +433,12 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
         float3 texCoord = metal3DTextureCoordinate(position, uniforms.boxMin, uniforms.boxMax);
 
         if (any(texCoord < 0.0) || any(texCoord > 1.0)) {
+            continue;
+        }
+
+        if (uniforms.skinMaskEnabled != 0 && skinMaskTexture.sample(maskSampler, texCoord).r > 0.5) {
+            previousT = t;
+            havePreviousScalar = false;
             continue;
         }
 
@@ -616,14 +642,115 @@ fragment float4 metal3DOverlayFragment(
     return float4(color, in.color.a * uniforms.color.a);
 }
 
+static float metalViewerTexelSample2DClamped(texture2d<float> imageTexture, sampler imageSampler, int2 pixel) {
+    const int width = int(imageTexture.get_width());
+    const int height = int(imageTexture.get_height());
+    const int2 clampedPixel = int2(
+        clamp(pixel.x, 0, max(width - 1, 0)),
+        clamp(pixel.y, 0, max(height - 1, 0))
+    );
+    const float2 textureSize = float2(float(imageTexture.get_width()), float(imageTexture.get_height()));
+    const float2 texCoord = (float2(float(clampedPixel.x), float(clampedPixel.y)) + 0.5) / textureSize;
+    return imageTexture.sample(imageSampler, texCoord).r;
+}
+
+static float metalViewerNearestSample2D(texture2d<float> imageTexture, sampler imageSampler, float2 texCoord) {
+    const float2 textureSize = float2(float(imageTexture.get_width()), float(imageTexture.get_height()));
+    const float2 pixel = clamp(texCoord, 0.0, 1.0) * textureSize - 0.5;
+    return metalViewerTexelSample2DClamped(imageTexture, imageSampler, int2(round(pixel)));
+}
+
+static float metalViewerSinc(float x) {
+    x = abs(x);
+    if (x < 1.0e-5) {
+        return 1.0;
+    }
+    const float pix = 3.14159265358979323846 * x;
+    return sin(pix) / pix;
+}
+
+static float metalViewerLanczosWeight(float x) {
+    x = abs(x);
+    if (x >= 3.0) {
+        return 0.0;
+    }
+    return metalViewerSinc(x) * metalViewerSinc(x / 3.0);
+}
+
+static float metalViewerLanczosSample2D(texture2d<float> imageTexture, sampler imageSampler, float2 texCoord) {
+    const float2 textureSize = float2(float(imageTexture.get_width()), float(imageTexture.get_height()));
+    const float2 pixel = clamp(texCoord, 0.0, 1.0) * textureSize - 0.5;
+    const int2 basePixel = int2(floor(pixel));
+    float weightedValue = 0.0;
+    float totalWeight = 0.0;
+    float minimumSample = 3.402823466e+38F;
+    float maximumSample = -3.402823466e+38F;
+
+    for (int yOffset = -2; yOffset <= 3; ++yOffset) {
+        const int sampleY = basePixel.y + yOffset;
+        const float yWeight = metalViewerLanczosWeight(pixel.y - float(sampleY));
+        for (int xOffset = -2; xOffset <= 3; ++xOffset) {
+            const int sampleX = basePixel.x + xOffset;
+            const float xWeight = metalViewerLanczosWeight(pixel.x - float(sampleX));
+            const float weight = xWeight * yWeight;
+            const float sampleValue = metalViewerTexelSample2DClamped(imageTexture, imageSampler, int2(sampleX, sampleY));
+            weightedValue += sampleValue * weight;
+            totalWeight += weight;
+            minimumSample = min(minimumSample, sampleValue);
+            maximumSample = max(maximumSample, sampleValue);
+        }
+    }
+
+    if (abs(totalWeight) < 1.0e-5) {
+        return metalViewerNearestSample2D(imageTexture, imageSampler, texCoord);
+    }
+
+    return clamp(weightedValue / totalWeight, minimumSample, maximumSample);
+}
+
+static float metalViewerImageSample2D(
+    texture2d<float> imageTexture,
+    sampler imageSampler,
+    float2 texCoord,
+    uint interpolationMode
+) {
+    if (interpolationMode == kMetalViewerInterpolationNearest) {
+        return metalViewerNearestSample2D(imageTexture, imageSampler, texCoord);
+    }
+
+    if (interpolationMode == kMetalViewerInterpolationLanczos) {
+        const float2 sourceFootprint = fwidth(texCoord) * float2(float(imageTexture.get_width()), float(imageTexture.get_height()));
+        if (max(sourceFootprint.x, sourceFootprint.y) <= 1.0) {
+            return metalViewerLanczosSample2D(imageTexture, imageSampler, texCoord);
+        }
+    }
+
+    return imageTexture.sample(imageSampler, texCoord).r;
+}
+
 fragment float4 metalViewerFragment(
     RasterizerData in [[stage_in]],
     constant MetalUniforms &uniforms [[buffer(0)]],
     texture2d<float> baseTexture [[texture(0)]],
     texture3d<float> overlayTexture [[texture(1)]],
+    texture3d<float> baseVolumeTexture [[texture(2)]],
     sampler imageSampler [[sampler(0)]]
 ) {
-    const float basePixelValue = baseTexture.sample(imageSampler, in.texCoord).r;
+    const float x = in.texCoord.x * max(float(uniforms.fixedVolumeSize.x) - 1.0, 0.0);
+    const float y = in.texCoord.y * max(float(uniforms.fixedVolumeSize.y) - 1.0, 0.0);
+    const float z = uniforms.currentSliceIndex;
+    const float3 fixedVoxelCoordinate = float3(x, y, z);
+    const float basePixelValue = uniforms.useBaseVolumeTexture == 0
+        ? metalViewerImageSample2D(
+            baseTexture,
+            imageSampler,
+            in.texCoord,
+            uniforms.imageInterpolationMode
+        )
+        : baseVolumeTexture.sample(
+            imageSampler,
+            (fixedVoxelCoordinate + 0.5) / max(float3(baseVolumeTexture.get_width(), baseVolumeTexture.get_height(), baseVolumeTexture.get_depth()), float3(1.0))
+        ).r;
     const float baseMinValue = uniforms.baseWindowLevel - uniforms.baseWindowWidth * 0.5;
     const float baseNormalized = clamp((basePixelValue - baseMinValue) / uniforms.baseWindowWidth, 0.0, 1.0);
 
@@ -631,11 +758,7 @@ fragment float4 metalViewerFragment(
         return float4(baseNormalized, baseNormalized, baseNormalized, 1.0);
     }
 
-    const float x = in.texCoord.x * max(float(uniforms.fixedVolumeSize.x) - 1.0, 0.0);
-    const float y = in.texCoord.y * max(float(uniforms.fixedVolumeSize.y) - 1.0, 0.0);
-    const float z = uniforms.currentSliceIndex;
-
-    const float4 fixedVoxel = float4(x, y, z, 1.0);
+    const float4 fixedVoxel = float4(fixedVoxelCoordinate, 1.0);
     const float4 worldPoint = uniforms.fixedVoxelToWorld * fixedVoxel;
     const float3 translatedWorldPoint = worldPoint.xyz - uniforms.overlayTranslationWorld;
     const float3 centeredWorldPoint = translatedWorldPoint - uniforms.movingRotationCenterWorld;

@@ -8,6 +8,117 @@ private func metalTimingLog(_ message: String, since start: CFAbsoluteTime? = ni
     }
 }
 
+enum MetalViewerScreenPlacement {
+    private enum DefaultsKey {
+        static let nonViewerScreens = "NonViewerScreens"
+        static let reserveScreenForDatabase = "ReserveScreenForDB"
+    }
+
+    static func applyPresentationFrame(to window: NSWindow?, display: Bool) {
+        guard let window, let screen = screenForNewViewerWindow(window) else { return }
+        window.setFrame(screen.visibleFrame.integral, display: display)
+    }
+
+    private static func screenForNewViewerWindow(_ window: NSWindow) -> NSScreen? {
+        let viewerScreens = screensUsedForViewers()
+
+        if let windowScreen = window.screen,
+           viewerScreens.contains(where: { sameScreen($0, windowScreen) }) {
+            return windowScreen
+        }
+
+        if let mainScreen = NSScreen.main,
+           viewerScreens.contains(where: { sameScreen($0, mainScreen) }) {
+            return mainScreen
+        }
+
+        return viewerScreens.first ?? NSScreen.main ?? NSScreen.screens.first
+    }
+
+    private static func screensUsedForViewers() -> [NSScreen] {
+        let allScreens = sortLeftToRight(NSScreen.screens)
+        guard allScreens.isEmpty == false else { return [] }
+
+        let defaults = UserDefaults.standard
+        let nonViewerScreenNumbers = configuredNonViewerScreenNumbers(defaults: defaults, screens: allScreens)
+        var viewerScreens = allScreens.filter { screen in
+            guard let screenNumber = screenNumber(for: screen) else { return true }
+            return nonViewerScreenNumbers.contains(screenNumber) == false
+        }
+
+        if viewerScreens.isEmpty {
+            viewerScreens = allScreens
+        }
+
+        if defaults.bool(forKey: DefaultsKey.reserveScreenForDatabase),
+           viewerScreens.count > 1,
+           let databaseScreen = BrowserController.currentBrowser()?.window?.screen {
+            viewerScreens.removeAll { sameScreen($0, databaseScreen) }
+        }
+
+        if viewerScreens.isEmpty {
+            viewerScreens = allScreens
+        }
+
+        return sortLeftToRight(viewerScreens)
+    }
+
+    private static func configuredNonViewerScreenNumbers(defaults: UserDefaults, screens: [NSScreen]) -> Set<UInt32> {
+        if defaults.object(forKey: DefaultsKey.nonViewerScreens) != nil {
+            return screenNumbers(from: defaults.array(forKey: DefaultsKey.nonViewerScreens) ?? [])
+        }
+
+        if defaults.integer(forKey: DefaultsKey.reserveScreenForDatabase) == 2 {
+            let mainScreen = NSScreen.main ?? screens.first
+            return Set(screens.compactMap { screen in
+                if let mainScreen, sameScreen(screen, mainScreen) {
+                    return nil
+                }
+                return screenNumber(for: screen)
+            })
+        }
+
+        return []
+    }
+
+    private static func screenNumbers(from values: [Any]) -> Set<UInt32> {
+        Set(values.compactMap { value in
+            if let number = value as? NSNumber {
+                return number.uint32Value
+            }
+            if let integer = value as? Int {
+                return UInt32(integer)
+            }
+            if let string = value as? String {
+                return UInt32(string)
+            }
+            return nil
+        })
+    }
+
+    private static func screenNumber(for screen: NSScreen) -> UInt32? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+    }
+
+    private static func sameScreen(_ lhs: NSScreen, _ rhs: NSScreen) -> Bool {
+        if let lhsNumber = screenNumber(for: lhs), let rhsNumber = screenNumber(for: rhs) {
+            return lhsNumber == rhsNumber
+        }
+        return lhs === rhs
+    }
+
+    private static func sortLeftToRight(_ screens: [NSScreen]) -> [NSScreen] {
+        screens.sorted {
+            let lhsCenterX = $0.frame.midX
+            let rhsCenterX = $1.frame.midX
+            if lhsCenterX == rhsCenterX {
+                return $0.frame.midY < $1.frame.midY
+            }
+            return lhsCenterX < rhsCenterX
+        }
+    }
+}
+
 @objc(HorosMetalViewerLauncher)
 final class MetalViewerLauncher: NSObject {
     private static var retainedControllers: [MetalViewerWindowController] = []
@@ -255,12 +366,7 @@ final class MetalViewerLauncher: NSObject {
     }
 
     private class func applyFastPresentationFrame(to window: NSWindow?) {
-        guard let window,
-              let screen = window.screen ?? NSScreen.main else {
-            return
-        }
-
-        window.setFrame(screen.visibleFrame.integral, display: true)
+        MetalViewerScreenPlacement.applyPresentationFrame(to: window, display: true)
     }
 
     private class func patientWindowTitle(patientName: String?, patientID: String?, fallbackTitle: String) -> String {

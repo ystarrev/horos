@@ -67,7 +67,6 @@ def raw_volume_to_nifti(job: dict, input_nii: Path) -> None:
     np, nib = require_numpy_and_nibabel()
 
     width, height, depth = [int(value) for value in job["dimensions"]]
-    spacing = [float(value) for value in job["spacingMM"]]
     expected_count = int(job["expectedVoxelCount"])
     input_path = Path(job["inputVolume"])
 
@@ -77,7 +76,17 @@ def raw_volume_to_nifti(job: dict, input_nii: Path) -> None:
 
     # Horos raw order is z, y, x with x fastest. NIfTI arrays are x, y, z here.
     image = volume.reshape((depth, height, width)).transpose(2, 1, 0)
-    affine = np.diag([spacing[0], spacing[1], spacing[2], 1.0])
+    matrix = job.get("referenceVoxelToPatientMatrix")
+    if isinstance(matrix, list):
+        affine = np.asarray(matrix, dtype=np.float64)
+        if affine.shape != (4, 4) or not np.isfinite(affine).all():
+            affine = None
+    else:
+        affine = None
+    if affine is None:
+        spacing = [float(value) for value in job["spacingMM"]]
+        affine = np.diag([spacing[0], spacing[1], spacing[2], 1.0])
+    affine = np.diag([-1.0, -1.0, 1.0, 1.0]) @ affine
     nib.save(nib.Nifti1Image(image.astype(np.float32), affine), str(input_nii))
 
 

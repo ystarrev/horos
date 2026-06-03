@@ -8,6 +8,14 @@ private final class MetalViewerScoutDocumentView: NSView {
     override var isFlipped: Bool { true }
 }
 
+private final class MetalViewerScoutClipView: NSClipView {
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var constrainedBounds = super.constrainBoundsRect(proposedBounds)
+        constrainedBounds.origin.x = 0
+        return constrainedBounds
+    }
+}
+
 private enum MetalViewerScoutLayout {
     static let fallbackThumbnailWidth: CGFloat = 128
     static let thumbnailAspectRatio: CGFloat = 1.0
@@ -42,6 +50,8 @@ final class MetalViewerScoutView: NSScrollView {
         hasVerticalScroller = true
         hasHorizontalScroller = false
         autohidesScrollers = true
+        horizontalScrollElasticity = .none
+        contentView = MetalViewerScoutClipView()
 
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.orientation = .vertical
@@ -138,6 +148,20 @@ final class MetalViewerScoutView: NSScrollView {
         for item in itemViews {
             item.isSelected = (item.series.identifier == identifier)
         }
+    }
+
+    func recalibrateLayoutForCurrentWidth() {
+        needsLayout = true
+        contentView.needsLayout = true
+        documentView?.needsLayout = true
+        layoutSubtreeIfNeeded()
+        contentView.layoutSubtreeIfNeeded()
+        documentView?.layoutSubtreeIfNeeded()
+        tile()
+        var bounds = contentView.bounds
+        bounds.origin.x = 0
+        contentView.scroll(to: contentView.constrainBoundsRect(bounds).origin)
+        reflectScrolledClipView(contentView)
     }
 
     override func reflectScrolledClipView(_ clipView: NSClipView) {

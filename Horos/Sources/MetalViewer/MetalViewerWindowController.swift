@@ -249,6 +249,15 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         restoreSavedSplitPosition()
     }
 
+    private func recalibrateScoutLayoutAfterPresentation() {
+        DispatchQueue.main.async { [weak self] in
+            self?.performScoutLayoutRecalibration()
+            DispatchQueue.main.async { [weak self] in
+                self?.performScoutLayoutRecalibration()
+            }
+        }
+    }
+
     private func restoreSavedSplitPosition() {
         defer { isRestoringSplitPosition = false }
 
@@ -260,6 +269,26 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         let width = clampedScoutWidth(CGFloat(savedWidth))
         contentSplitView.setPosition(width, ofDividerAt: 0)
         scoutWidthConstraint.constant = scoutContainer.frame.width
+    }
+
+    private func performScoutLayoutRecalibration() {
+        window?.contentView?.layoutSubtreeIfNeeded()
+        contentSplitView.layoutSubtreeIfNeeded()
+
+        let width = clampedScoutWidth(scoutContainer.frame.width > 0 ? scoutContainer.frame.width : scoutWidthConstraint.constant)
+        let widerWidth = clampedScoutWidth(width + 1)
+        let narrowerWidth = clampedScoutWidth(width - 1)
+        let nudgeWidth = widerWidth != width ? widerWidth : narrowerWidth
+
+        if nudgeWidth != width {
+            contentSplitView.setPosition(nudgeWidth, ofDividerAt: 0)
+            contentSplitView.layoutSubtreeIfNeeded()
+        }
+
+        contentSplitView.setPosition(width, ofDividerAt: 0)
+        contentSplitView.adjustSubviews()
+        scoutWidthConstraint.constant = scoutContainer.frame.width
+        scoutView.recalibrateLayoutForCurrentWidth()
     }
 
     private func saveSplitPosition() {
@@ -520,6 +549,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
         updateToolbarStatus()
         updateReferenceLines()
+        recalibrateScoutLayoutAfterPresentation()
         metalWindowTimingLog("MetalViewerWindowController updateStudy", since: updateStart)
         return refreshedPaneCount
     }

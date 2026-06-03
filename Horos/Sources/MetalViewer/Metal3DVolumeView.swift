@@ -63,9 +63,16 @@ final class Metal3DVolumeView: NSView {
         }
     }
 
+    private final class PassthroughLabel: NSTextField {
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            nil
+        }
+    }
+
     private let metalView: MTKView
     private let cropOverlayView = CropOverlayView(frame: .zero)
     private let orientationOverlayView = MetalOrientationOverlayView(frame: .zero)
+    private let gantryTiltCorrectionLabel = PassthroughLabel(labelWithString: NSLocalizedString("Gantry Tilt Corrected", comment: ""))
     private var renderer: Metal3DVolumeRenderer?
     private var lastDragLocation: NSPoint?
     private var activeCropPlane: Metal3DCropPlane?
@@ -75,6 +82,7 @@ final class Metal3DVolumeView: NSView {
     private var trackingAreaRef: NSTrackingArea?
     private var isWindowLevelInteractionActive = false
     private var tumourSeedScope: MetalViewerTumourSeedScope?
+    private var tumourSeedPixList: [DCMPix] = []
     private var tumourSeedObserver: NSObjectProtocol?
     var wlwwInteractionHandler: ((String) -> Void)?
 
@@ -164,6 +172,19 @@ final class Metal3DVolumeView: NSView {
         orientationOverlayView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(orientationOverlayView)
 
+        gantryTiltCorrectionLabel.translatesAutoresizingMaskIntoConstraints = false
+        gantryTiltCorrectionLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        gantryTiltCorrectionLabel.textColor = NSColor(calibratedRed: 0.18, green: 1.0, blue: 0.28, alpha: 1.0)
+        gantryTiltCorrectionLabel.shadow = {
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.85)
+            shadow.shadowOffset = NSSize(width: 1, height: -1)
+            shadow.shadowBlurRadius = 2
+            return shadow
+        }()
+        gantryTiltCorrectionLabel.isHidden = true
+        addSubview(gantryTiltCorrectionLabel)
+
         NSLayoutConstraint.activate([
             metalView.leadingAnchor.constraint(equalTo: leadingAnchor),
             metalView.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -177,6 +198,8 @@ final class Metal3DVolumeView: NSView {
             orientationOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
             orientationOverlayView.topAnchor.constraint(equalTo: topAnchor),
             orientationOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            gantryTiltCorrectionLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            gantryTiltCorrectionLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
         ])
 
         for plane in Metal3DCropPlane.allCases {
@@ -379,11 +402,13 @@ final class Metal3DVolumeView: NSView {
         guard let device = metalView.device else { return }
         let renderer = Metal3DVolumeRenderer(device: device, pixList: pixList, volumeData: volumeData)
         tumourSeedScope = MetalViewerTumourSeedStore.scope(forPixList: pixList)
+        tumourSeedPixList = pixList
         renderer.setCropEnabled(cropApplied || cropEnabled)
         renderer.setCropOverlayVisible(cropEnabled)
         renderer.setShadingEnabled(shadingEnabled)
         renderer.setPreIntegrationEnabled(preIntegrationEnabled)
         self.renderer = renderer
+        gantryTiltCorrectionLabel.isHidden = !renderer.isGantryTiltCorrected
         skinClipDepthMM = renderer.currentSkinClipDepthMM
         renderer.setShowSkin(showSkin)
         renderer.setShowSkinSurface(showSkinSurface)
@@ -579,11 +604,15 @@ final class Metal3DVolumeView: NSView {
     }
 
     private func reloadTumourSeeds() {
-        guard let tumourSeedScope else {
+        guard tumourSeedScope != nil else {
             renderer?.setTumourSeeds([])
             return
         }
-        renderer?.setTumourSeeds(MetalViewerTumourSeedStore.shared.seeds(for: tumourSeedScope))
+        guard tumourSeedPixList.isEmpty == false else {
+            renderer?.setTumourSeeds([])
+            return
+        }
+        renderer?.setTumourSeeds(MetalViewerTumourSeedStore.shared.seeds(forPixList: tumourSeedPixList))
         metalView.setNeedsDisplay(metalView.bounds)
     }
 }

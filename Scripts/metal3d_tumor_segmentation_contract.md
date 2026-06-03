@@ -25,6 +25,8 @@ The current first-step viewer contract exports one displayed/resampled volume:
 - `inputVolume`: float32 little-endian raw scalar volume
 - `dimensions`: `[width, height, depth]`
 - `spacingMM`: `[x, y, z]`
+- `referenceVoxelToPatientMatrix`: 4x4 voxel-to-DICOM-patient matrix in LPS
+  millimetres for the helper/labelmap grid
 
 The job also includes `selectedDICOMSeries` when the user selects local study
 series in the viewer. Each entry contains local series metadata plus `localPaths`
@@ -43,12 +45,17 @@ helpers that need a simple seed-locality bound.
 `metal3d_tumor_segmentation_candidate.py` is the current local candidate
 segmenter. When `selectedDICOMSeries` includes usable local DICOM paths, it
 loads the selected series, assigns likely T1/T1c/T2/FLAIR roles from the series
-metadata, resizes them to the displayed volume grid, and runs a deterministic
-multimodal heuristic. If fewer than two selected series can be decoded, it falls
-back to the displayed single-volume path. This is useful for local pipeline
-testing and rough candidate visualization, but it is not a trained or diagnostic
-tumour model. The candidate restricts its search to a conservative eroded
-inner-head mask to reduce skin, face, and sinus false positives.
+metadata, resamples them by DICOM patient-space geometry onto the displayed
+volume grid, and runs a deterministic multimodal heuristic. If DICOM geometry is
+missing, it falls back to shape resizing and reports that in `channelRegistration`.
+Selected channels are prepared in parallel; set
+`HOROS_TUMOR_SEGMENTATION_CHANNEL_WORKERS` to override the default cap of four
+workers.
+If fewer than two selected series can be decoded, it falls back to the displayed
+single-volume path. This is useful for local pipeline testing and rough candidate
+visualization, but it is not a trained or diagnostic tumour model. The candidate
+restricts its search to a conservative eroded inner-head mask to reduce skin,
+face, and sinus false positives.
 When `tumourSeeds` are present, the candidate prefers candidate components that
 touch a seed neighbourhood, keeps the result local to the seed region, and
 falls back to a 5 mm seed sphere if no candidate component touches a seed.
@@ -77,9 +84,10 @@ or:
 }
 ```
 
-The helper writes selected local DICOM series into nnU-Net channel files named
-`horos_0000.nii.gz`, `horos_0001.nii.gz`, etc. The default channel order is
-`flair,t1,t1c,t2`, matching common BraTS/Medical Segmentation Decathlon
+The helper resamples selected local DICOM series into the
+`referenceVoxelToPatientMatrix` grid, then writes them into nnU-Net channel files
+named `horos_0000.nii.gz`, `horos_0001.nii.gz`, etc. The default channel order
+is `flair,t1,t1c,t2`, matching common BraTS/Medical Segmentation Decathlon
 conventions; set `nnunet_channels` if a model expects a different order. nnU-Net
 labels with value `3` are remapped to Horos label `4` for enhancing tumour.
 If a configured model expects a seed channel, include `seed`, `tumourseed`, or
@@ -87,6 +95,12 @@ If a configured model expects a seed channel, include `seed`, `tumourseed`, or
 channel from `tumourSeeds`. When seeds are present, the helper also post-filters
 the returned labelmap to components touching the seed neighbourhood, with a
 5 mm seed-sphere fallback if the model output misses the seeds.
+
+`metal3d_tumor_segmentation_preview.py` is the optional verification helper used
+by Horos before launching segmentation. It writes the selected, resampled
+float32 channels into `input-channel-preview/` and records
+`input-channel-preview.json`, including role, registration mode, display window,
+and target-slice to source-slice mapping for synchronized visual review.
 
 `metal3d_tumor_segmentation_external.py` is the bridge for a real local backend.
 It converts the raw volume to `input-volume.nii.gz`, runs a command from

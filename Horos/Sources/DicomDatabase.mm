@@ -74,8 +74,91 @@
 #import "DicomDatabase+Clean.h"
 #import "DicomDatabase+Routing.h"
 #include <copyfile.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 NSString* const CurrentDatabaseVersion = @"2.5";
+
+static BOOL HorosCopyFileDataWithLargeBuffer(const char *sourcePath, const char *destinationPath, int *failureErrno)
+{
+    BOOL success = NO;
+    int sourceFD = -1, destinationFD = -1;
+    int savedErrno = 0;
+    void *buffer = NULL;
+    const size_t bufferSize = 1024 * 1024;
+    mode_t destinationMode = 0666;
+
+    sourceFD = open(sourcePath, O_RDONLY);
+    if (sourceFD < 0)
+        goto done;
+
+    destinationFD = open(destinationPath, O_WRONLY | O_CREAT | O_EXCL, destinationMode);
+    if (destinationFD < 0)
+        goto done;
+
+    buffer = malloc(bufferSize);
+    if (buffer == NULL)
+    {
+        errno = ENOMEM;
+        goto done;
+    }
+
+    while (YES)
+    {
+        ssize_t bytesRead = read(sourceFD, buffer, bufferSize);
+        if (bytesRead < 0 && errno == EINTR)
+            continue;
+        if (bytesRead == 0)
+            break;
+        if (bytesRead < 0)
+            goto done;
+
+        char *writeCursor = (char *)buffer;
+        ssize_t bytesLeft = bytesRead;
+        while (bytesLeft > 0)
+        {
+            ssize_t bytesWritten = write(destinationFD, writeCursor, bytesLeft);
+            if (bytesWritten < 0 && errno == EINTR)
+                continue;
+            if (bytesWritten <= 0)
+            {
+                if (bytesWritten == 0)
+                    errno = EIO;
+                goto done;
+            }
+
+            writeCursor += bytesWritten;
+            bytesLeft -= bytesWritten;
+        }
+    }
+
+    if (close(destinationFD) != 0)
+    {
+        destinationFD = -1;
+        goto done;
+    }
+    destinationFD = -1;
+    success = YES;
+
+done:
+    if (success == NO)
+        savedErrno = errno;
+    if (buffer)
+        free(buffer);
+    if (sourceFD >= 0)
+        close(sourceFD);
+    if (destinationFD >= 0)
+        close(destinationFD);
+    if (success == NO)
+        unlink(destinationPath);
+    if (failureErrno)
+        *failureErrno = savedErrno;
+
+    return success;
+}
 
 
 @interface DicomDatabase ()
@@ -1077,6 +1160,68 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
     return path;
 }
 
+-(NSString*)uniquePathForNewDataFileWithExtension:(NSString*)ext confirmedDataDirPath:(NSString*)dataDirPath confirmedSubFolderPaths:(NSMutableSet*)confirmedSubFolderPaths {
+    NSString* path = nil;
+
+    if (ext.length > 4 || ext.length < 3) {
+        if (ext.length)
+            NSLog(@"Warning: strange extension \"%@\", it will be replaced with \"dcm\"", ext);
+        ext = @"dcm";
+    }
+
+    @try
+    {
+        @synchronized(_dataFileIndex)
+        {
+            NSUInteger index = 0;
+            @synchronized(_dataFileIndex) {
+                if (!_dataFileIndex.unsignedIntegerValue)
+                    [self computeDataFileIndex];
+                [_dataFileIndex increment];
+                index = _dataFileIndex.unsignedIntegerValue;
+            }
+
+            unsigned long long defaultFolderSizeForDB = [BrowserController DefaultFolderSizeForDB];
+
+            BOOL fileExists = NO, firstExists = YES;
+            do {
+                unsigned long long subFolderInt = defaultFolderSizeForDB*(index/defaultFolderSizeForDB+1);
+                NSString* subFolderPath = [dataDirPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%llu", subFolderInt]];
+                if ([confirmedSubFolderPaths containsObject:subFolderPath] == NO)
+                {
+                    [NSFileManager.defaultManager confirmDirectoryAtPath:subFolderPath];
+                    [confirmedSubFolderPaths addObject:subFolderPath];
+                }
+
+                path = [subFolderPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%llu.%@", (unsigned long long)_dataFileIndex.unsignedIntegerValue, ext]];
+                fileExists = [NSFileManager.defaultManager fileExistsAtPath:path];
+
+                if (fileExists)
+                {
+                    if (firstExists)
+                    {
+                        firstExists = NO;
+                        @synchronized(_dataFileIndex) {
+                            [self computeDataFileIndex];
+                            index = _dataFileIndex.unsignedIntegerValue;
+                        }
+                    }
+                    else
+                        @synchronized (_dataFileIndex) {
+                            [_dataFileIndex increment];
+                            index = _dataFileIndex.unsignedIntegerValue;
+                        }
+                }
+            } while (fileExists);
+        }
+    }
+    @catch (NSException *exception) {
+        N2LogExceptionWithStackTrace( exception);
+    }
+
+    return path;
+}
+
 #pragma mark Albums
 
 - (void) loadAlbumsFromPath:(NSString*) path
@@ -1957,6 +2102,7 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
               [NSDate timeIntervalSinceReferenceDate] - existingImageFetchStartTime);
 
         NSMutableDictionary *seriesImagesBySOPFrame = [NSMutableDictionary dictionary];
+        NSArray *roiSRReferenceImages = nil;
         NSString *curPatientUID = nil, *curStudyID = nil, *curSerieID = nil;
         BOOL newObject = NO;
         
@@ -2066,14 +2212,21 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                                 }
                             }
 
-                            NSFetchRequest *referenceRequest = [NSFetchRequest fetchRequestWithEntityName:@"Image"];
-                            referenceRequest.fetchLimit = 1;
-                            if (referencedFrameID)
-                                referenceRequest.predicate = [NSPredicate predicateWithFormat:@"sopInstanceUID == %@ AND frameID == %@", referencedSOPInstanceUID, referencedFrameID];
-                            else
-                                referenceRequest.predicate = [NSPredicate predicateWithFormat:@"sopInstanceUID == %@", referencedSOPInstanceUID];
+                            if (roiSRReferenceImages == nil)
+                            {
+                                NSFetchRequest *referenceRequest = [NSFetchRequest fetchRequestWithEntityName:@"Image"];
+                                referenceRequest.predicate = [NSPredicate predicateWithFormat:@"compressedSopInstanceUID != NIL"];
+                                roiSRReferenceImages = [self.managedObjectContext executeFetchRequest:referenceRequest error:nil];
+                            }
 
-                            DicomImage *referencedImage = [[self.managedObjectContext executeFetchRequest:referenceRequest error:nil] lastObject];
+                            NSArray *candidateImages = roiSRReferenceImages;
+                            if (referencedFrameID)
+                                candidateImages = [candidateImages filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"frameID == %@", referencedFrameID]];
+
+                            NSPredicate *matchingSOPPredicate = [NSComparisonPredicate predicateWithLeftExpression:[NSExpression expressionForKeyPath:@"compressedSopInstanceUID"]
+                                                                                                  rightExpression:[NSExpression expressionForConstantValue:[DicomImage sopInstanceUIDEncodeString:referencedSOPInstanceUID]]
+                                                                                                     customSelector:@selector(isEqualToSopInstanceUID:)];
+                            DicomImage *referencedImage = [[candidateImages filteredArrayUsingPredicate:matchingSOPPredicate] lastObject];
                             DicomStudy *referencedStudy = [referencedImage valueForKeyPath:@"series.study"];
 
                             if (referencedStudy)
@@ -2921,8 +3074,24 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
         [queue setMaxConcurrentOperationCount:1];
         
         BOOL onlyDICOM = [[dict objectForKey: @"onlyDICOM"] boolValue], copyFiles = [[dict objectForKey: @"copyFiles"] boolValue];
+        BOOL mountedVolume = [[dict objectForKey: @"mountedVolume"] boolValue];
+        BOOL preferLargerIndexingBatches = copyFiles && mountedVolume;
+        BOOL preserveFileInputOrder = [[dict objectForKey: @"preserveFileInputOrder"] boolValue];
+        NSDictionary *dicomDictionariesByPath = [dict objectForKey: @"dicomDictionariesByPath"];
         __block BOOL studySelected = NO;
-        NSArray *filesInput = [[dict objectForKey: @"filesInput"] sortedArrayUsingSelector:@selector(compare:)]; // sorting the array should make the data access faster on optical media
+        NSArray *filesInput = [dict objectForKey: @"filesInput"];
+        if( preserveFileInputOrder == NO)
+            filesInput = [filesInput sortedArrayUsingSelector:@selector(compare:)]; // sorting the array should make the data access faster on optical media
+        if( mountedVolume && preserveFileInputOrder == NO)
+            filesInput = [[dict objectForKey: @"filesInput"] sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
+
+        NSString *confirmedDataDirPath = nil;
+        NSMutableSet *confirmedSubFolderPaths = nil;
+        if( preferLargerIndexingBatches)
+        {
+            confirmedDataDirPath = [NSFileManager.defaultManager confirmNoIndexDirectoryAtPath:self.dataDirPath];
+            confirmedSubFolderPaths = [NSMutableSet set];
+        }
         
         for( int i = 0; i < [filesInput count];)
         {
@@ -2933,10 +3102,13 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                 @try
                 {
                     NSMutableArray *copiedFiles = [NSMutableArray array];
+                    NSMutableArray *copiedDicomDictionaries = [NSMutableArray array];
                     NSTimeInterval lastGUIUpdate = 0;
-                    NSTimeInterval twentySeconds = [NSDate timeIntervalSinceReferenceDate] + 5; // actually fiveSeconds
+                    NSTimeInterval batchStart = [NSDate timeIntervalSinceReferenceDate];
+                    NSTimeInterval batchMaxSeconds = preferLargerIndexingBatches ? 60.0 : 5.0;
+                    NSUInteger batchFileLimit = preferLargerIndexingBatches ? 200 : NSUIntegerMax;
                     
-                    for( ; i < [filesInput count] && twentySeconds > [NSDate timeIntervalSinceReferenceDate]; i++)
+                    for( ; i < [filesInput count]; i++)
                     {
                         if ([[NSThread currentThread] isCancelled]) break;
                         
@@ -2960,7 +3132,10 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                             if( [extension length] > 4 || [extension length] < 3)
                                 extension = @"dcm";
                             
-                            dstPath = [self uniquePathForNewDataFileWithExtension:extension];
+                            if( confirmedDataDirPath)
+                                dstPath = [self uniquePathForNewDataFileWithExtension:extension confirmedDataDirPath:confirmedDataDirPath confirmedSubFolderPaths:confirmedSubFolderPaths];
+                            else
+                                dstPath = [self uniquePathForNewDataFileWithExtension:extension];
                             
                             try
                             {
@@ -2969,18 +3144,37 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                                     static NSString *oneCopyAtATime = @"oneCopyAtATime";
                                     @synchronized( oneCopyAtATime)
                                     {
-                                        if( [[dict objectForKey: @"mountedVolume"] boolValue])
+                                        NSError *copyError = nil;
+                                        BOOL copied = NO;
+                                        if( mountedVolume)
+                                        {
+                                            int fastCopyErrno = 0;
+                                            copied = HorosCopyFileDataWithLargeBuffer([srcPath fileSystemRepresentation], [dstPath fileSystemRepresentation], &fastCopyErrno);
+                                            if( copied == NO)
+                                            {
+                                                [[NSFileManager defaultManager] removeItemAtPath: dstPath error: nil];
+                                                copied = (copyfile([srcPath fileSystemRepresentation], [dstPath fileSystemRepresentation], NULL, COPYFILE_DATA) == 0);
+                                            }
+                                            if( copied == NO && fastCopyErrno)
+                                                copyError = [NSError errorWithDomain:NSPOSIXErrorDomain code:fastCopyErrno userInfo:nil];
+                                        }
+
+                                        if( copied == NO)
+                                        {
+                                            copied = [[NSFileManager defaultManager] copyItemAtPath: srcPath toPath: dstPath error: &copyError];
+                                        }
+
+                                        if( copied == NO && mountedVolume)
                                         {
                                             NSTask *t = [NSTask launchedTaskWithLaunchPath: @"/bin/cp" arguments: @[srcPath, dstPath]];
-                                            while( [t isRunning]){};
+                                            [t waitUntilExit];
+                                            copied = ([t terminationStatus] == 0);
                                         }
-                                        else
-                                        {
-                                            if( [[NSFileManager defaultManager] copyItemAtPath: srcPath toPath: dstPath error: nil] == NO)
-                                                NSLog( @"***** copyItemAtPath %@ failed", srcPath);
-                                        }
-                                        
-                                        if( [[NSFileManager defaultManager] fileExistsAtPath: dstPath])
+
+                                        if( copied == NO)
+                                            NSLog( @"***** copyItemAtPath %@ failed: %@", srcPath, copyError);
+
+                                        if( copied || [[NSFileManager defaultManager] fileExistsAtPath: dstPath])
                                         {
                                             if( [extension isEqualToString: @"dcm"] == NO)
                                             {
@@ -2993,6 +3187,14 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                                             }
                                             
                                             [copiedFiles addObject: dstPath];
+
+                                            NSDictionary *dicomDictionary = [dicomDictionariesByPath objectForKey:[srcPath stringByStandardizingPath]];
+                                            if( dicomDictionary)
+                                            {
+                                                NSMutableDictionary *copiedDicomDictionary = [[dicomDictionary mutableCopy] autorelease];
+                                                [copiedDicomDictionary setObject:dstPath forKey:@"filePath"];
+                                                [copiedDicomDictionaries addObject:copiedDicomDictionary];
+                                            }
                                         }
                                     }
                                 }
@@ -3010,7 +3212,7 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                         {
                             if( [[NSFileManager defaultManager] fileExistsAtPath: srcPath])
                             {
-                                if( [[dict objectForKey: @"mountedVolume"] boolValue])
+                                if( mountedVolume)
                                 {
                                     @try
                                     {
@@ -3026,7 +3228,7 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                                 }
                                 else
                                 {
-                                    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"validateFilesBeforeImporting"] && [[dict objectForKey: @"mountedVolume"] boolValue] == NO) // mountedVolume : it's too slow to test the files now from a CD
+                                    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"validateFilesBeforeImporting"] && mountedVolume == NO) // mountedVolume : it's too slow to test the files now from a CD
                                     {
                                         // Pre-load for faster validating
                                         /*NSData *d =*/ [NSData dataWithContentsOfFile: srcPath];
@@ -3038,7 +3240,16 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                         
                         if ([NSThread currentThread].isCancelled)
                             break;
+
+                        if( copiedFiles.count >= batchFileLimit || [NSDate timeIntervalSinceReferenceDate] - batchStart >= batchMaxSeconds)
+                        {
+                            i++;
+                            break;
+                        }
                     }
+
+                    if( copiedFiles.count == 0)
+                        continue;
                     
                     [queue addOperationWithBlock:^{
                         NSThread* thread = [NSThread currentThread];
@@ -3048,7 +3259,7 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                         BOOL succeed = YES;
                         
                         thread.status = NSLocalizedString(@"Validating the files...", nil);
-                        if( [[NSUserDefaults standardUserDefaults] boolForKey: @"validateFilesBeforeImporting"] && [[dict objectForKey: @"mountedVolume"] boolValue] == NO) // mountedVolume : it's too slow to test the files now from a CD
+                        if( [[NSUserDefaults standardUserDefaults] boolForKey: @"validateFilesBeforeImporting"] && mountedVolume == NO) // mountedVolume : it's too slow to test the files now from a CD
                             succeed = [DicomDatabase testFiles: copiedFiles];
                         
                         NSArray *objects = nil;
@@ -3058,8 +3269,11 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                             thread.status = NSLocalizedString(@"Indexing the files...", nil);
                             
                             DicomDatabase *idatabase = self.isMainDatabase? self.independentDatabase : [self.mainDatabase independentDatabase];
-                            
-                            objects = [idatabase addFilesAtPaths:copiedFiles postNotifications:YES dicomOnly:onlyDICOM rereadExistingItems:YES generatedByOsiriX:NO importedFiles:YES returnArray:YES];
+
+                            if( copiedDicomDictionaries.count == copiedFiles.count && copiedDicomDictionaries.count > 0)
+                                objects = [idatabase addFilesDescribedInDictionaries:copiedDicomDictionaries postNotifications:YES rereadExistingItems:YES generatedByOsiriX:NO importedFiles:YES returnArray:YES];
+                            else
+                                objects = [idatabase addFilesAtPaths:copiedFiles postNotifications:YES dicomOnly:onlyDICOM rereadExistingItems:YES generatedByOsiriX:NO importedFiles:YES returnArray:YES];
                             
                             DicomDatabase* mdatabase = self.isMainDatabase? self : self.mainDatabase;
                             if( [[BrowserController currentBrowser] database] == mdatabase && [[dict objectForKey:@"addToAlbum"] boolValue])

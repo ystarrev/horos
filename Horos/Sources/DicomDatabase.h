@@ -123,6 +123,7 @@ extern NSString* const DicomDatabaseLogEntryEntityName;
 -(NSString*)decompressionDirPath;
 -(NSString*)toBeIndexedDirPath;
 -(NSString*)reportsDirPath;
+-(NSString*)roisDirPath;
 -(NSString*)tempDirPath;
 -(NSString*)dumpDirPath;
 -(NSString*)pagesDirPath;

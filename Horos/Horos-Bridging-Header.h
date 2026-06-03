@@ -3,3 +3,4 @@
 #import "DicomStudy.h"
 #import "Sources/StructuredReportSupport.h"
 #import "Sources/MetalViewer/Metal3DSurfaceExtractor.h"
+#import "Sources/MetalViewer/MetalTumourSeedSRBridge.h"

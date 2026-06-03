@@ -44,6 +44,7 @@
 #import "BrowserController.h"
 #import "DicomImage.h"
 #import "DicomStudy.h"
+#import "SRAnnotation.h"
 #import <WebKit/WebKit.h>
 #import <MetalKit/MetalKit.h>
 #import "Horos-Swift.h"
@@ -59,6 +60,11 @@ typedef char* (*HorosModernDCMTKCopyStructuredReportHTMLFn)(const char* path);
 typedef char* (*HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn)(const char* path);
 typedef char* (*HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn)(const char* path);
 typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
+
+static NSString * const PreviewROISeriesDescription = @"OsiriX ROI SR";
+static NSString * const PreviewTumourSeedROIName = @"Horos Tumour Seed";
+static NSString * const PreviewTumourSeedCommentPrefix = @"HorosMetalTumourSeed:";
+static NSString * const PreviewTumourSeedDisplayName = @"Tumour Seeds";
 
 static void* PreviewModernDCMTKBridgeHandle(void)
 {
@@ -348,6 +354,153 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     return [DCMAbstractSyntaxUID isKeyObjectDocument:sopClassUID];
 }
 
+- (BOOL)currentPixIsROIStructuredReport
+{
+    DCMPix *pix = self.curDCM;
+    DicomImage *image = [pix imageObj];
+    NSString *seriesName = [image valueForKeyPath:@"series.name"];
+    NSString *seriesDescription = [image valueForKeyPath:@"series.seriesDescription"];
+
+    return [seriesName hasPrefix:PreviewROISeriesDescription] ||
+           [seriesDescription hasPrefix:PreviewROISeriesDescription];
+}
+
+- (NSString *)htmlEscapedString:(NSString *)string
+{
+    if (string.length == 0)
+        return @"";
+
+    NSMutableString *escaped = [[string mutableCopy] autorelease];
+    [escaped replaceOccurrencesOfString:@"&" withString:@"&amp;" options:0 range:NSMakeRange(0, escaped.length)];
+    [escaped replaceOccurrencesOfString:@"<" withString:@"&lt;" options:0 range:NSMakeRange(0, escaped.length)];
+    [escaped replaceOccurrencesOfString:@">" withString:@"&gt;" options:0 range:NSMakeRange(0, escaped.length)];
+    [escaped replaceOccurrencesOfString:@"\"" withString:@"&quot;" options:0 range:NSMakeRange(0, escaped.length)];
+    [escaped replaceOccurrencesOfString:@"'" withString:@"&#39;" options:0 range:NSMakeRange(0, escaped.length)];
+    return escaped;
+}
+
+- (NSArray *)roiArrayForStructuredReportPix:(DCMPix *)pix
+{
+    if (pix.srcFile.length == 0)
+        return nil;
+
+    NSData *data = [SRAnnotation roiFromDICOM:pix.srcFile];
+    if (data == nil)
+        return nil;
+
+    @try
+    {
+        id object = [NSUnarchiver unarchiveObjectWithData:data];
+        return [object isKindOfClass:[NSArray class]] ? object : nil;
+    }
+    @catch (NSException *exception)
+    {
+        NSLog(@"PreviewView could not unarchive ROI SR at %@: %@", pix.srcFile, exception);
+        return nil;
+    }
+}
+
+- (NSString *)displayNameForPreviewROI:(ROI *)roi
+{
+    if ([roi isKindOfClass:[ROI class]] == NO)
+        return NSLocalizedString(@"ROI", nil);
+
+    NSString *comments = roi.comments;
+    if ([roi.name isEqualToString:PreviewTumourSeedROIName] ||
+        (comments.length > 0 && [comments rangeOfString:PreviewTumourSeedCommentPrefix].location != NSNotFound))
+        return NSLocalizedString(PreviewTumourSeedDisplayName, nil);
+
+    NSString *name = [roi.name stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    return name.length ? name : NSLocalizedString(@"Unnamed ROI", nil);
+}
+
+- (NSString *)previewCountStringForCount:(NSUInteger)count singular:(NSString *)singular plural:(NSString *)plural
+{
+    return [NSString stringWithFormat:@"%lu %@", (unsigned long)count, count == 1 ? singular : plural];
+}
+
+- (NSString *)roiStructuredReportCacheKeyForPix:(DCMPix *)pix
+{
+    NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:pix.srcFile error:nil];
+    NSDate *modificationDate = [attributes objectForKey:NSFileModificationDate];
+    NSNumber *fileSize = [attributes objectForKey:NSFileSize];
+    return [NSString stringWithFormat:@"roi:%@:%@:%@", pix.srcFile ?: @"", modificationDate ?: [NSDate distantPast], fileSize ?: @0];
+}
+
+- (NSString *)roiStructuredReportSummaryHTMLForPix:(DCMPix *)pix
+{
+    NSArray *rois = [self roiArrayForStructuredReportPix:pix];
+    if (rois == nil)
+        return nil;
+
+    NSMutableDictionary *countsByName = [NSMutableDictionary dictionary];
+    NSUInteger totalCount = 0;
+
+    for (id object in rois)
+    {
+        if ([object isKindOfClass:[ROI class]] == NO)
+            continue;
+
+        NSString *displayName = [self displayNameForPreviewROI:object];
+        NSNumber *count = [countsByName objectForKey:displayName];
+        [countsByName setObject:[NSNumber numberWithUnsignedInteger:count.unsignedIntegerValue + 1] forKey:displayName];
+        totalCount++;
+    }
+
+    BOOL onlyTumourSeeds = countsByName.count == 1 && [countsByName objectForKey:NSLocalizedString(PreviewTumourSeedDisplayName, nil)] != nil;
+    NSString *title = onlyTumourSeeds ? NSLocalizedString(PreviewTumourSeedDisplayName, nil) : NSLocalizedString(@"ROI Summary", nil);
+    NSString *summary = onlyTumourSeeds ?
+        [self previewCountStringForCount:totalCount singular:NSLocalizedString(@"seed", nil) plural:NSLocalizedString(@"seeds", nil)] :
+        [self previewCountStringForCount:totalCount singular:NSLocalizedString(@"ROI", nil) plural:NSLocalizedString(@"ROIs", nil)];
+
+    NSMutableArray *sortedNames = [[[countsByName allKeys] mutableCopy] autorelease];
+    [sortedNames sortUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
+    NSString *tumourSeedName = NSLocalizedString(PreviewTumourSeedDisplayName, nil);
+    if ([sortedNames containsObject:tumourSeedName])
+    {
+        [sortedNames removeObject:tumourSeedName];
+        [sortedNames insertObject:tumourSeedName atIndex:0];
+    }
+
+    NSMutableString *html = [NSMutableString string];
+    [html appendString:@"<!doctype html><html><head><meta charset=\"utf-8\"><style>"];
+    [html appendString:@"body{margin:0;padding:22px;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;background:#f5f6f7;color:#20242a;}"];
+    [html appendString:@"h1{font-size:22px;line-height:1.2;margin:0 0 8px;font-weight:600;}"];
+    [html appendString:@".summary{font-size:15px;margin:0 0 20px;color:#4b5563;}"];
+    [html appendString:@"table{border-collapse:collapse;width:100%;font-size:14px;background:#fff;border:1px solid #d7dbe0;}"];
+    [html appendString:@"th,td{padding:9px 11px;border-bottom:1px solid #e4e7eb;text-align:left;}"];
+    [html appendString:@"th{font-weight:600;color:#5b6470;background:#eef1f4;}"];
+    [html appendString:@"tr:last-child td{border-bottom:0;}"];
+    [html appendString:@".count{text-align:right;font-variant-numeric:tabular-nums;}"];
+    [html appendString:@"</style></head><body>"];
+    [html appendFormat:@"<h1>%@</h1>", [self htmlEscapedString:title]];
+    [html appendFormat:@"<p class=\"summary\">%@</p>", [self htmlEscapedString:summary]];
+    [html appendString:@"<table><thead><tr>"];
+    [html appendFormat:@"<th>%@</th><th class=\"count\">%@</th>",
+        [self htmlEscapedString:NSLocalizedString(@"Name", nil)],
+        [self htmlEscapedString:NSLocalizedString(@"Count", nil)]];
+    [html appendString:@"</tr></thead><tbody>"];
+
+    if (sortedNames.count == 0)
+    {
+        [html appendFormat:@"<tr><td>%@</td><td class=\"count\">0</td></tr>",
+            [self htmlEscapedString:NSLocalizedString(@"No ROIs", nil)]];
+    }
+    else
+    {
+        for (NSString *name in sortedNames)
+        {
+            NSNumber *count = [countsByName objectForKey:name];
+            [html appendFormat:@"<tr><td>%@</td><td class=\"count\">%@</td></tr>",
+                [self htmlEscapedString:name],
+                [count stringValue]];
+        }
+    }
+
+    [html appendString:@"</tbody></table></body></html>"];
+    return html;
+}
+
 - (NSString *)keyObjectTypeForPix:(DCMPix *)pix
 {
     if (pix == nil || pix.srcFile.length == 0)
@@ -551,9 +704,24 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         return;
     }
 
-    NSString *htmlPath = [self structuredReportHTMLPathForPix:pix];
-    NSString *htmlString = [self structuredReportHTMLStringForPix:pix];
-    if ([self currentPixIsKeyObjectDocument] && htmlString.length > 0)
+    NSString *htmlPath = nil;
+    NSString *htmlString = nil;
+    NSString *reportCacheKey = nil;
+
+    if ([self currentPixIsROIStructuredReport])
+    {
+        htmlString = [self roiStructuredReportSummaryHTMLForPix:pix];
+        reportCacheKey = [self roiStructuredReportCacheKeyForPix:pix];
+    }
+
+    if (htmlString.length == 0)
+    {
+        htmlPath = [self structuredReportHTMLPathForPix:pix];
+        htmlString = [self structuredReportHTMLStringForPix:pix];
+        reportCacheKey = pix.srcFile;
+    }
+
+    if ([self currentPixIsKeyObjectDocument] && htmlString.length > 0 && [self currentPixIsROIStructuredReport] == NO)
     {
         htmlString = [self htmlStringByStrippingLinks:htmlString];
         NSString *summary = [self keyObjectReferenceHTMLSummaryForPix:pix];
@@ -575,10 +743,10 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 
     if (htmlString.length > 0)
     {
-        if ([_loadedReportPath isEqualToString:pix.srcFile] == NO)
+        if ([_loadedReportPath isEqualToString:reportCacheKey] == NO)
         {
             [_loadedReportPath release];
-            _loadedReportPath = [pix.srcFile copy];
+            _loadedReportPath = [reportCacheKey copy];
             [[_reportWebView mainFrame] loadHTMLString:htmlString baseURL:nil];
         }
     }

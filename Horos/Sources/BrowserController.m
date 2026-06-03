@@ -5949,6 +5949,23 @@ static NSConditionLock *threadLock = nil;
     [self proceedDeleteObjects:objectsToDelete tree:nil];
 }
 
+- (BOOL)path:(NSString *)path isInsideDatabaseManagedDirectory:(NSString *)directory
+{
+    if (path.length == 0 || directory.length == 0)
+        return NO;
+
+    NSString *resolvedPath = [[path stringByResolvingSymlinksAndAliases] stringByStandardizingPath];
+    NSString *resolvedDirectory = [[directory stringByResolvingSymlinksAndAliases] stringByStandardizingPath];
+    NSString *directoryPrefix = [resolvedDirectory hasSuffix:@"/"] ? resolvedDirectory : [resolvedDirectory stringByAppendingString:@"/"];
+
+    return [resolvedPath isEqualToString:resolvedDirectory] || [resolvedPath hasPrefix:directoryPrefix];
+}
+
+- (BOOL)isDatabaseManagedROISidecarPath:(NSString *)path
+{
+    return [self path:path isInsideDatabaseManagedDirectory:self.database.roisDirPath];
+}
+
 - (void) delObjects:(NSMutableArray*) objectsToDelete tree:(NSMutableSet*)treeObjs
 {
     int result;
@@ -6009,11 +6026,22 @@ static NSConditionLock *threadLock = nil;
             // Try to find images that aren't stored in the local database
             
             NSMutableArray	*nonLocalImagesPath = [NSMutableArray array];
+            NSMutableArray *databaseManagedSidecarPathsToDelete = [NSMutableArray array];
             
             WaitRendering *wait = [[WaitRendering alloc] init: NSLocalizedString(@"Deleting...", nil)];
             [wait showWindow:self];
             
-            nonLocalImagesPath = [[objectsToDelete filteredArrayUsingPredicate: [NSPredicate predicateWithFormat:@"inDatabaseFolder == NO"]] valueForKey:@"completePath"];
+            for (DicomImage *image in objectsToDelete)
+            {
+                if ([[image valueForKey:@"inDatabaseFolder"] boolValue])
+                    continue;
+
+                NSString *path = [image valueForKey:@"completePath"];
+                if ([self isDatabaseManagedROISidecarPath:path])
+                    [databaseManagedSidecarPathsToDelete addObject:path];
+                else if (path.length)
+                    [nonLocalImagesPath addObject:path];
+            }
             
             if( [nonLocalImagesPath  count] > 0)
             {
@@ -6036,7 +6064,12 @@ static NSConditionLock *threadLock = nil;
                 else
                 {
                     if( result == NSAlertDefaultReturn || result == NSAlertOtherReturn)
+                    {
+                        for (NSString *path in databaseManagedSidecarPathsToDelete)
+                            [self addFileToDeleteQueue:path];
+
                         [self proceedDeleteObjects:objectsToDelete tree:treeObjs];
+                    }
                     
                     if( result == NSAlertOtherReturn)
                     {

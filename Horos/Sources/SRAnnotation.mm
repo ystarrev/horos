@@ -203,6 +203,18 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 	return data;
 }
 
+static NSData* HorosSRAnnotationArchiveDataByRemovingDICOMPadding(NSData* data)
+{
+	if (data.length < 2 || (data.length % 2) != 0)
+		return data;
+
+	const unsigned char* bytes = (const unsigned char*)data.bytes;
+	if (bytes[data.length - 1] != 0)
+		return data;
+
+	return [data subdataWithRange:NSMakeRange(0, data.length - 1)];
+}
+
 static NSString* HorosSRAnnotationCopyField(NSString* path, NSString* fieldName)
 {
 	if (path == nil || fieldName == nil || ![[NSFileManager defaultManager] fileExistsAtPath:path])
@@ -266,7 +278,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 		return nil;
 	NSData *archiveData = HorosSRAnnotationBridgeEncapsulatedDocument(path);
 	if (archiveData)
-		return archiveData;
+		return HorosSRAnnotationArchiveDataByRemovingDICOMPadding(archiveData);
 
 	HorosModernDCMTKCopyBufferByTagFn copyBufferFn =
 		HorosSRAnnotationSymbol<HorosModernDCMTKCopyBufferByTagFn>("HorosModernDCMTKCopyBufferByTag");
@@ -276,7 +288,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 		unsigned long length = 0;
 		if (copyBufferFn(path.fileSystemRepresentation, 0x0071, 0x0011, &buffer, &length) && buffer != NULL && length > 0)
 		{
-			NSData *data = [NSData dataWithBytes:buffer length:(NSUInteger)length];
+			NSData *data = HorosSRAnnotationArchiveDataByRemovingDICOMPadding([NSData dataWithBytes:buffer length:(NSUInteger)length]);
 			HorosModernDCMTKFreeBufferFn freeBufferFn = HorosSRAnnotationSymbol<HorosModernDCMTKFreeBufferFn>("HorosModernDCMTKFreeBuffer");
 			if (freeBufferFn)
 				freeBufferFn(buffer);

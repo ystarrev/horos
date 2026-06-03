@@ -26,7 +26,7 @@ final class MetalViewerPaneView: NSView {
             addSubview(backgroundView)
 
             titleLabel.translatesAutoresizingMaskIntoConstraints = false
-            titleLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+            titleLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
             titleLabel.textColor = .white
             titleLabel.alignment = .left
             titleLabel.lineBreakMode = .byWordWrapping
@@ -389,6 +389,7 @@ final class MetalViewerPaneView: NSView {
             let windowWidth: Float
             let mouseState: MetalImageView.MouseAnnotationState?
             let showsSliceOrientation: Bool
+            let showsGantryTiltCorrectionLabel: Bool
         }
 
         private enum TextAlign {
@@ -416,6 +417,9 @@ final class MetalViewerPaneView: NSView {
 
             drawAnnotations(state: overlayState)
             drawOverlaySeriesInfo(state: overlayState)
+            if overlayState.showsGantryTiltCorrectionLabel {
+                drawGantryTiltCorrectionLabel()
+            }
         }
 
         private func drawAnnotations(state: State) {
@@ -760,6 +764,15 @@ final class MetalViewerPaneView: NSView {
 
         private func drawMadeInHoros() {
             drawString("Made In Horos", atX: bounds.maxX - 2, y: bounds.maxY - 2, align: .right)
+        }
+
+        private func drawGantryTiltCorrectionLabel() {
+            drawString(
+                NSLocalizedString("Gantry Tilt Corrected", comment: ""),
+                atX: bounds.maxX - 6,
+                y: bounds.maxY - Self.lineHeight * 2 - 6,
+                align: .right
+            )
         }
 
         private func isSeriesNumber(_ text: String, state: State) -> Bool {
@@ -1422,7 +1435,8 @@ final class MetalViewerPaneView: NSView {
             windowLevel: metalView.renderer.windowLevel,
             windowWidth: metalView.renderer.windowWidth,
             mouseState: metalView.mouseAnnotationState,
-            showsSliceOrientation: displayMode == .stack2D
+            showsSliceOrientation: displayMode == .stack2D,
+            showsGantryTiltCorrectionLabel: metalView.renderer.displaysGantryTiltCorrectedImage
         )
     }
 

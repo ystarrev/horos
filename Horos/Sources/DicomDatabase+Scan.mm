@@ -400,7 +400,7 @@ static NSString* _dcmElementKey(DcmElement* element) {
     return YES;
 }
 
--(NSArray*)scanDicomdirAt:(NSString*)path withPaths:(NSArray*)allpaths pathsToScanAnyway:(NSMutableArray*)pathsToScanAnyway {
+-(NSArray*)scanDicomdirAt:(NSString*)path withPaths:(NSArray*)allpaths pathsToScanAnyway:(NSMutableArray*)pathsToScanAnyway dicomDictionariesByPath:(NSMutableDictionary*)dicomDictionariesByPath {
 	NSThread* thread = [NSThread currentThread];
     
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"validateFilesBeforeImporting"])
@@ -488,6 +488,13 @@ static NSString* _dcmElementKey(DcmElement* element) {
     
     NSArray* objectIDs = nil;
     if (items.count) {
+        for (NSDictionary *item in items)
+        {
+            NSString *filePath = [item objectForKey:@"filePath"];
+            if (filePath.length)
+                [dicomDictionariesByPath setObject:[[item mutableCopy] autorelease] forKey:[filePath stringByStandardizingPath]];
+        }
+
         thread.status = [NSString stringWithFormat:NSLocalizedString(@"Importing %@...", nil), N2LocalizedSingularPluralCount(items.count, NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil))];
         objectIDs = [self addFilesDescribedInDictionaries:items postNotifications:NO rereadExistingItems:NO generatedByOsiriX:NO importedFiles:NO returnArray: YES];
     }
@@ -542,6 +549,7 @@ static NSString* _dcmElementKey(DcmElement* element) {
         thread.status = NSLocalizedString(@"Scanning directories...", nil);
         NSMutableArray* allpaths = [[[path stringsByAppendingPaths:[[NSFileManager.defaultManager enumeratorAtPath:path filesOnly:YES] allObjects]] mutableCopy] autorelease];
         NSMutableArray* pathsToScanAnyway = [NSMutableArray array];
+        NSMutableDictionary* dicomDictionariesByPath = [NSMutableDictionary dictionary];
         
         // first read the DICOMDIR file
         if ([NSUserDefaults.standardUserDefaults boolForKey:@"UseDICOMDIRFileCD"])
@@ -554,7 +562,7 @@ static NSString* _dcmElementKey(DcmElement* element) {
                 thread.status = NSLocalizedString(@"Reading DICOMDIR...", nil);
                 
                 @try {
-                    dicomImages = [self scanDicomdirAt:dicomdirPath withPaths:allpaths pathsToScanAnyway:pathsToScanAnyway];
+                    dicomImages = [self scanDicomdirAt:dicomdirPath withPaths:allpaths pathsToScanAnyway:pathsToScanAnyway dicomDictionariesByPath:dicomDictionariesByPath];
                 }
                 @catch (NSException *e) {
                     N2LogExceptionWithStackTrace( e);
@@ -689,6 +697,41 @@ static NSString* _dcmElementKey(DcmElement* element) {
             }
             
             [paths removeDuplicatedStrings];
+
+            if (isVolume && dicomDictionariesByPath.count && paths.count)
+            {
+                NSMutableDictionary *copyPathsByStandardizedPath = [NSMutableDictionary dictionaryWithCapacity:paths.count];
+                NSMutableSet *addedStandardizedPaths = [NSMutableSet setWithCapacity:paths.count];
+                NSMutableArray *orderedPaths = [NSMutableArray arrayWithCapacity:paths.count];
+
+                for (NSString *copyPath in paths)
+                    [copyPathsByStandardizedPath setObject:copyPath forKey:[copyPath stringByStandardizingPath]];
+
+                for (NSString *scannedPath in allpaths)
+                {
+                    NSString *standardizedPath = [scannedPath stringByStandardizingPath];
+                    NSString *copyPath = [copyPathsByStandardizedPath objectForKey:standardizedPath];
+
+                    if (copyPath && [addedStandardizedPaths containsObject:standardizedPath] == NO)
+                    {
+                        [orderedPaths addObject:copyPath];
+                        [addedStandardizedPaths addObject:standardizedPath];
+                    }
+                }
+
+                for (NSString *copyPath in paths)
+                {
+                    NSString *standardizedPath = [copyPath stringByStandardizingPath];
+                    if ([addedStandardizedPaths containsObject:standardizedPath] == NO)
+                    {
+                        [orderedPaths addObject:copyPath];
+                        [addedStandardizedPaths addObject:standardizedPath];
+                    }
+                }
+
+                if (orderedPaths.count == paths.count)
+                    paths = orderedPaths;
+            }
             
             thread.supportsCancel = YES;
             
@@ -703,6 +746,8 @@ static NSString* _dcmElementKey(DcmElement* element) {
                                                                                         [NSNumber numberWithBool:YES], @"copyFiles",
                                                                                         [NSNumber numberWithBool: YES], @"addToAlbum",
                                                                                         [NSNumber numberWithBool: YES], @"selectStudy",
+                                                                                        [NSNumber numberWithBool: YES], @"preserveFileInputOrder",
+                                                                                        dicomDictionariesByPath, @"dicomDictionariesByPath",
                                                                                         NULL]];
             }];
             
@@ -889,6 +934,3 @@ static NSString* _dcmElementKey(DcmElement* element) {
 }
 
 @end
-
-
-

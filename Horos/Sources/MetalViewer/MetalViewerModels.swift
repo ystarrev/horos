@@ -1,4 +1,5 @@
 import AppKit
+import Dispatch
 import Foundation
 import simd
 
@@ -117,11 +118,12 @@ struct MetalViewerTumourSeed: Codable, Equatable {
     }
 }
 
-private struct MetalViewerTumourSeedDocument: Codable {
-    var schema: String
-    var studyIdentifier: String
-    var seriesIdentifier: String
-    var seeds: [MetalViewerTumourSeed]
+private struct MetalViewerTumourSeedStoreError: LocalizedError {
+    let message: String
+
+    var errorDescription: String? {
+        message
+    }
 }
 
 final class MetalViewerTumourSeedStore {
@@ -130,22 +132,15 @@ final class MetalViewerTumourSeedStore {
     static let studyIdentifierUserInfoKey = "studyIdentifier"
     static let seriesIdentifierUserInfoKey = "seriesIdentifier"
 
-    private static let schema = "com.horos.metalviewer.tumour-seeds.v1"
-    private let fileManager = FileManager.default
-    private let lock = NSLock()
-
     private init() {
     }
 
     func seeds(for series: MetalViewerSeries) -> [MetalViewerTumourSeed] {
-        seeds(for: series.tumourSeedScope)
+        seeds(forPixList: series.loadedPixList())
     }
 
     func seeds(forPixList pixList: [DCMPix]) -> [MetalViewerTumourSeed] {
-        guard let scope = Self.scope(forPixList: pixList) else {
-            return []
-        }
-        return seeds(for: scope)
+        Self.seeds(fromBridgeDictionaries: MetalTumourSeedSRBridge.seedDictionaries(forPixList: pixList))
     }
 
     func addSeed(
@@ -168,9 +163,23 @@ final class MetalViewerTumourSeedStore {
             createdAt: Date()
         )
 
-        try updateSeeds(for: scope) { seeds in
-            seeds.append(seed)
+        let pixList = series.loadedPixList()
+        if let message = MetalTumourSeedSRBridge.archiveSeed(
+            identifier: seed.identifier,
+            pixelX: seed.pixelX,
+            pixelY: seed.pixelY,
+            sliceIndex: seed.sliceIndex,
+            dicomX: seed.dicomX,
+            dicomY: seed.dicomY,
+            dicomZ: seed.dicomZ,
+            diameterMM: seed.diameterMM,
+            createdAt: seed.createdAt,
+            pixList: pixList
+        ) {
+            throw MetalViewerTumourSeedStoreError(message: message)
         }
+
+        postChangeNotification(for: scope)
         return seed
     }
 
@@ -197,28 +206,89 @@ final class MetalViewerTumourSeedStore {
         return studyIdentifier == scope.studyIdentifier && seriesIdentifier == scope.seriesIdentifier
     }
 
-    func seeds(for scope: MetalViewerTumourSeedScope) -> [MetalViewerTumourSeed] {
-        lock.lock()
-        defer { lock.unlock() }
-        return loadDocument(for: scope).seeds
-    }
-
-    private func updateSeeds(
-        for scope: MetalViewerTumourSeedScope,
-        mutation: (inout [MetalViewerTumourSeed]) -> Void
-    ) throws {
-        var document: MetalViewerTumourSeedDocument
-        lock.lock()
-        do {
-            document = loadDocument(for: scope)
-            mutation(&document.seeds)
-            try save(document, for: scope)
-            lock.unlock()
-        } catch {
-            lock.unlock()
-            throw error
+    private static func seeds(fromBridgeDictionaries dictionaries: Any) -> [MetalViewerTumourSeed] {
+        guard let items = dictionaries as? [Any] else {
+            return []
         }
 
+        return items.compactMap { item in
+            let dictionary: [String: Any]
+            if let stringDictionary = item as? [String: Any] {
+                dictionary = stringDictionary
+            } else if let hashableDictionary = item as? [AnyHashable: Any] {
+                dictionary = hashableDictionary.reduce(into: [String: Any]()) { result, pair in
+                    if let key = pair.key as? String {
+                        result[key] = pair.value
+                    }
+                }
+            } else {
+                return nil
+            }
+            return seed(fromBridgeDictionary: dictionary)
+        }
+    }
+
+    private static func seed(fromBridgeDictionary dictionary: [String: Any]) -> MetalViewerTumourSeed? {
+        guard let identifier = nonEmpty(dictionary["identifier"] as? String),
+              let studyIdentifier = nonEmpty(dictionary["studyIdentifier"] as? String),
+              let seriesIdentifier = nonEmpty(dictionary["seriesIdentifier"] as? String),
+              let sliceIndex = intValue(dictionary["sliceIndex"]),
+              let pixelX = doubleValue(dictionary["pixelX"]),
+              let pixelY = doubleValue(dictionary["pixelY"]),
+              let dicomX = doubleValue(dictionary["dicomX"]),
+              let dicomY = doubleValue(dictionary["dicomY"]),
+              let dicomZ = doubleValue(dictionary["dicomZ"]) else {
+            return nil
+        }
+
+        let diameterMM = max(doubleValue(dictionary["diameterMM"]) ?? MetalViewerTumourSeed.defaultDiameterMM, 0.1)
+        let createdAtUnix = doubleValue(dictionary["createdAtUnix"]) ?? Date().timeIntervalSince1970
+        return MetalViewerTumourSeed(
+            identifier: identifier,
+            studyIdentifier: studyIdentifier,
+            seriesIdentifier: seriesIdentifier,
+            sliceIndex: sliceIndex,
+            pixelX: pixelX,
+            pixelY: pixelY,
+            dicomX: dicomX,
+            dicomY: dicomY,
+            dicomZ: dicomZ,
+            diameterMM: diameterMM,
+            createdAt: Date(timeIntervalSince1970: createdAtUnix)
+        )
+    }
+
+    private static func doubleValue(_ value: Any?) -> Double? {
+        switch value {
+        case let value as NSNumber:
+            return value.doubleValue
+        case let value as Double:
+            return value
+        case let value as Float:
+            return Double(value)
+        case let value as Int:
+            return Double(value)
+        case let value as String:
+            return Double(value)
+        default:
+            return nil
+        }
+    }
+
+    private static func intValue(_ value: Any?) -> Int? {
+        switch value {
+        case let value as NSNumber:
+            return value.intValue
+        case let value as Int:
+            return value
+        case let value as String:
+            return Int(value)
+        default:
+            return nil
+        }
+    }
+
+    private func postChangeNotification(for scope: MetalViewerTumourSeedScope) {
         NotificationCenter.default.post(
             name: Self.didChangeNotification,
             object: self,
@@ -227,59 +297,6 @@ final class MetalViewerTumourSeedStore {
                 Self.seriesIdentifierUserInfoKey: scope.seriesIdentifier,
             ]
         )
-    }
-
-    private func loadDocument(for scope: MetalViewerTumourSeedScope) -> MetalViewerTumourSeedDocument {
-        let emptyDocument = MetalViewerTumourSeedDocument(
-            schema: Self.schema,
-            studyIdentifier: scope.studyIdentifier,
-            seriesIdentifier: scope.seriesIdentifier,
-            seeds: []
-        )
-
-        guard let fileURL = try? fileURL(for: scope),
-              let data = try? Data(contentsOf: fileURL),
-              var document = try? JSONDecoder().decode(MetalViewerTumourSeedDocument.self, from: data),
-              document.schema == Self.schema else {
-            return emptyDocument
-        }
-
-        document.seeds = document.seeds.filter {
-            $0.studyIdentifier == scope.studyIdentifier && $0.seriesIdentifier == scope.seriesIdentifier
-        }
-        return document
-    }
-
-    private func save(_ document: MetalViewerTumourSeedDocument, for scope: MetalViewerTumourSeedScope) throws {
-        let directory = try storageDirectory()
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
-
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(document)
-        try data.write(to: try fileURL(for: scope), options: .atomic)
-    }
-
-    private func fileURL(for scope: MetalViewerTumourSeedScope) throws -> URL {
-        try storageDirectory().appendingPathComponent("\(fileComponent(scope.studyIdentifier))--\(fileComponent(scope.seriesIdentifier)).json")
-    }
-
-    private func storageDirectory() throws -> URL {
-        let applicationSupport = try fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        return applicationSupport
-            .appendingPathComponent("Horos", isDirectory: true)
-            .appendingPathComponent("MetalTumourSeeds", isDirectory: true)
-    }
-
-    private func fileComponent(_ identifier: String) -> String {
-        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-_")
-        let encoded = identifier.addingPercentEncoding(withAllowedCharacters: allowed) ?? identifier
-        return encoded.isEmpty ? "unknown" : String(encoded.prefix(180))
     }
 
     private static func imageObject(for pix: DCMPix) -> NSManagedObject? {
@@ -670,6 +687,371 @@ struct MetalViewerSliceGeometry {
         let function = unsafeBitCast(implementation, to: OrientationIMP.self)
         function(pix, selector, &vector)
         return vector
+    }
+}
+
+struct MetalViewerVolumeBounds {
+    let minimum: SIMD3<Int>
+    let maximum: SIMD3<Int>
+
+    var dimensions: SIMD3<Int> {
+        SIMD3<Int>(
+            max(maximum.x - minimum.x + 1, 1),
+            max(maximum.y - minimum.y + 1, 1),
+            max(maximum.z - minimum.z + 1, 1)
+        )
+    }
+
+    init(minimum: SIMD3<Int>, maximum: SIMD3<Int>) {
+        self.minimum = minimum
+        self.maximum = maximum
+    }
+
+    init(dimensions: SIMD3<Int>) {
+        self.minimum = SIMD3<Int>(repeating: 0)
+        self.maximum = SIMD3<Int>(
+            max(dimensions.x - 1, 0),
+            max(dimensions.y - 1, 0),
+            max(dimensions.z - 1, 0)
+        )
+    }
+}
+
+struct MetalViewerGantryTiltGeometry {
+    let dimensions: SIMD3<Int>
+    let correctedVoxelToPatientMatrix: simd_float4x4
+    let sourceVoxelToPatientMatrix: simd_float4x4
+    let shiftPerSliceMM: Float
+
+    var correctedSpacing: SIMD3<Float> {
+        Self.voxelSpacing(from: correctedVoxelToPatientMatrix)
+    }
+
+    func requiresCorrection(minimumShiftPerSliceMM: Float = 0.01) -> Bool {
+        shiftPerSliceMM > minimumShiftPerSliceMM
+    }
+
+    static func voxelSpacing(from matrix: simd_float4x4) -> SIMD3<Float> {
+        let x = SIMD3<Float>(matrix.columns.0.x, matrix.columns.0.y, matrix.columns.0.z)
+        let y = SIMD3<Float>(matrix.columns.1.x, matrix.columns.1.y, matrix.columns.1.z)
+        let z = SIMD3<Float>(matrix.columns.2.x, matrix.columns.2.y, matrix.columns.2.z)
+        return SIMD3<Float>(
+            max(simd_length(x), 0.0001),
+            max(simd_length(y), 0.0001),
+            max(simd_length(z), 0.0001)
+        )
+    }
+}
+
+enum MetalViewerGantryTiltGeometryBuilder {
+    static func geometry(
+        for pixList: [DCMPix],
+        sourceDimensions: SIMD3<Int>,
+        sourceBounds: MetalViewerVolumeBounds? = nil,
+        fallbackSliceSpacing: Float? = nil
+    ) -> MetalViewerGantryTiltGeometry {
+        let bounds = sourceBounds ?? MetalViewerVolumeBounds(dimensions: sourceDimensions)
+        let sourceMatrix = sourceVoxelToPatientMatrix(
+            for: pixList,
+            fallbackSliceSpacing: fallbackSliceSpacing
+        )
+        let orthogonalMatrix = orthogonalVoxelToPatientMatrix(
+            for: pixList,
+            fallbackSliceSpacing: fallbackSliceSpacing
+        )
+        let boundedOrthogonalMatrix = voxelMatrix(
+            orthogonalMatrix,
+            shiftedTo: SIMD3<Float>(
+                Float(bounds.minimum.x),
+                Float(bounds.minimum.y),
+                Float(bounds.minimum.z)
+            )
+        )
+
+        guard sourceDimensions.x > 0, sourceDimensions.y > 0, sourceDimensions.z > 0 else {
+            return MetalViewerGantryTiltGeometry(
+                dimensions: sourceDimensions,
+                correctedVoxelToPatientMatrix: boundedOrthogonalMatrix,
+                sourceVoxelToPatientMatrix: sourceMatrix,
+                shiftPerSliceMM: 0
+            )
+        }
+
+        let orthogonalSliceStep = SIMD3<Float>(
+            orthogonalMatrix.columns.2.x,
+            orthogonalMatrix.columns.2.y,
+            orthogonalMatrix.columns.2.z
+        )
+        let sourceSliceStep = SIMD3<Float>(
+            sourceMatrix.columns.2.x,
+            sourceMatrix.columns.2.y,
+            sourceMatrix.columns.2.z
+        )
+        let gantryTiltShift = simd_length(sourceSliceStep - orthogonalSliceStep)
+        guard gantryTiltShift > 0.01 else {
+            return MetalViewerGantryTiltGeometry(
+                dimensions: bounds.dimensions,
+                correctedVoxelToPatientMatrix: boundedOrthogonalMatrix,
+                sourceVoxelToPatientMatrix: sourceMatrix,
+                shiftPerSliceMM: gantryTiltShift
+            )
+        }
+
+        let inverseOrthogonalMatrix = simd_inverse(orthogonalMatrix)
+        let minX = Float(bounds.minimum.x)
+        let maxX = Float(bounds.maximum.x)
+        let minY = Float(bounds.minimum.y)
+        let maxY = Float(bounds.maximum.y)
+        let minZ = Float(bounds.minimum.z)
+        let maxZ = Float(bounds.maximum.z)
+        let sourceCorners = [
+            SIMD3<Float>(minX, minY, minZ),
+            SIMD3<Float>(maxX, minY, minZ),
+            SIMD3<Float>(maxX, maxY, minZ),
+            SIMD3<Float>(minX, maxY, minZ),
+            SIMD3<Float>(minX, minY, maxZ),
+            SIMD3<Float>(maxX, minY, maxZ),
+            SIMD3<Float>(maxX, maxY, maxZ),
+            SIMD3<Float>(minX, maxY, maxZ),
+        ]
+
+        let orthogonalCoordinates = sourceCorners.map { sourceCorner -> SIMD3<Float> in
+            let sourceWorld = sourceMatrix * SIMD4<Float>(sourceCorner, 1)
+            let orthogonalVoxel = inverseOrthogonalMatrix * sourceWorld
+            return SIMD3<Float>(orthogonalVoxel.x, orthogonalVoxel.y, orthogonalVoxel.z)
+        }
+
+        var minimumVoxel = SIMD3<Float>(repeating: Float.greatestFiniteMagnitude)
+        var maximumVoxel = SIMD3<Float>(repeating: -Float.greatestFiniteMagnitude)
+        for coordinate in orthogonalCoordinates {
+            minimumVoxel = SIMD3<Float>(
+                Swift.min(minimumVoxel.x, coordinate.x),
+                Swift.min(minimumVoxel.y, coordinate.y),
+                Swift.min(minimumVoxel.z, coordinate.z)
+            )
+            maximumVoxel = SIMD3<Float>(
+                Swift.max(maximumVoxel.x, coordinate.x),
+                Swift.max(maximumVoxel.y, coordinate.y),
+                Swift.max(maximumVoxel.z, coordinate.z)
+            )
+        }
+
+        let minimumIndex = SIMD3<Float>(floor(minimumVoxel.x), floor(minimumVoxel.y), floor(minimumVoxel.z))
+        let maximumIndex = SIMD3<Float>(ceil(maximumVoxel.x), ceil(maximumVoxel.y), ceil(maximumVoxel.z))
+        let expandedDimensions = SIMD3<Int>(
+            max(Int(maximumIndex.x - minimumIndex.x) + 1, bounds.dimensions.x),
+            max(Int(maximumIndex.y - minimumIndex.y) + 1, bounds.dimensions.y),
+            max(Int(maximumIndex.z - minimumIndex.z) + 1, bounds.dimensions.z)
+        )
+        let expandedMatrix = voxelMatrix(orthogonalMatrix, shiftedTo: minimumIndex)
+
+        return MetalViewerGantryTiltGeometry(
+            dimensions: expandedDimensions,
+            correctedVoxelToPatientMatrix: expandedMatrix,
+            sourceVoxelToPatientMatrix: sourceMatrix,
+            shiftPerSliceMM: gantryTiltShift
+        )
+    }
+
+    static func sourceVoxelToPatientMatrix(
+        for pixList: [DCMPix],
+        fallbackSliceSpacing: Float? = nil
+    ) -> simd_float4x4 {
+        guard let firstPix = pixList.first,
+              let geometry = MetalViewerSliceGeometry(pix: firstPix) else {
+            return matrix_identity_float4x4
+        }
+
+        let row = simd_normalize(SIMD3<Float>(Float(geometry.row.x), Float(geometry.row.y), Float(geometry.row.z)))
+        let column = simd_normalize(SIMD3<Float>(Float(geometry.column.x), Float(geometry.column.y), Float(geometry.column.z)))
+        let fallbackNormal = simd_normalize(simd_cross(row, column))
+
+        let sliceStep: SIMD3<Float>
+        if pixList.count > 1, let lastPix = pixList.last {
+            let delta = SIMD3<Float>(
+                Float(lastPix.originX - firstPix.originX),
+                Float(lastPix.originY - firstPix.originY),
+                Float(lastPix.originZ - firstPix.originZ)
+            ) / Float(max(pixList.count - 1, 1))
+            sliceStep = simd_length(delta) > 0.0001 ? delta : fallbackNormal * sliceSpacing(for: firstPix, fallback: fallbackSliceSpacing)
+        } else {
+            sliceStep = fallbackNormal * sliceSpacing(for: firstPix, fallback: fallbackSliceSpacing)
+        }
+
+        let rowStep = row * Float(max(firstPix.pixelSpacingX, 0.000001))
+        let columnStep = column * Float(max(firstPix.pixelSpacingY, 0.000001))
+        let origin = SIMD3<Float>(Float(firstPix.originX), Float(firstPix.originY), Float(firstPix.originZ))
+
+        return simd_float4x4(
+            SIMD4<Float>(rowStep.x, rowStep.y, rowStep.z, 0),
+            SIMD4<Float>(columnStep.x, columnStep.y, columnStep.z, 0),
+            SIMD4<Float>(sliceStep.x, sliceStep.y, sliceStep.z, 0),
+            SIMD4<Float>(origin.x, origin.y, origin.z, 1)
+        )
+    }
+
+    static func orthogonalVoxelToPatientMatrix(
+        for pixList: [DCMPix],
+        fallbackSliceSpacing: Float? = nil
+    ) -> simd_float4x4 {
+        guard let firstPix = pixList.first,
+              let geometry = MetalViewerSliceGeometry(pix: firstPix) else {
+            return matrix_identity_float4x4
+        }
+
+        let row = simd_normalize(SIMD3<Float>(Float(geometry.row.x), Float(geometry.row.y), Float(geometry.row.z)))
+        let column = simd_normalize(SIMD3<Float>(Float(geometry.column.x), Float(geometry.column.y), Float(geometry.column.z)))
+        let normal = simd_normalize(simd_cross(row, column))
+
+        let sliceStep: SIMD3<Float>
+        if pixList.count > 1, let lastPix = pixList.last {
+            let delta = SIMD3<Float>(
+                Float(lastPix.originX - firstPix.originX),
+                Float(lastPix.originY - firstPix.originY),
+                Float(lastPix.originZ - firstPix.originZ)
+            ) / Float(max(pixList.count - 1, 1))
+            let normalSpacing = simd_dot(delta, normal)
+            sliceStep = abs(normalSpacing) > 0.0001
+                ? normal * normalSpacing
+                : normal * sliceSpacing(for: firstPix, fallback: fallbackSliceSpacing)
+        } else {
+            sliceStep = normal * sliceSpacing(for: firstPix, fallback: fallbackSliceSpacing)
+        }
+
+        let rowStep = row * Float(max(firstPix.pixelSpacingX, 0.000001))
+        let columnStep = column * Float(max(firstPix.pixelSpacingY, 0.000001))
+        let origin = SIMD3<Float>(Float(firstPix.originX), Float(firstPix.originY), Float(firstPix.originZ))
+
+        return simd_float4x4(
+            SIMD4<Float>(rowStep.x, rowStep.y, rowStep.z, 0),
+            SIMD4<Float>(columnStep.x, columnStep.y, columnStep.z, 0),
+            SIMD4<Float>(sliceStep.x, sliceStep.y, sliceStep.z, 0),
+            SIMD4<Float>(origin.x, origin.y, origin.z, 1)
+        )
+    }
+
+    private static func sliceSpacing(for pix: DCMPix, fallback: Float?) -> Float {
+        if let fallback, fallback > 0.000001 {
+            return fallback
+        }
+
+        let candidates = [pix.sliceInterval, pix.spacingBetweenSlices, pix.sliceThickness]
+        let spacing = candidates.first(where: { abs($0) > 0.000001 }) ?? 1.0
+        return Float(abs(spacing))
+    }
+
+    private static func voxelMatrix(_ matrix: simd_float4x4, shiftedTo voxel: SIMD3<Float>) -> simd_float4x4 {
+        let origin = matrix * SIMD4<Float>(voxel, 1)
+        return simd_float4x4(
+            matrix.columns.0,
+            matrix.columns.1,
+            matrix.columns.2,
+            SIMD4<Float>(origin.x, origin.y, origin.z, 1)
+        )
+    }
+}
+
+enum MetalViewerGantryTiltCPUResampler {
+    static func resample(
+        sourceSlices: [UnsafeMutablePointer<Float>?],
+        sourceDimensions: SIMD3<Int>,
+        outputDimensions: SIMD3<Int>,
+        outputVoxelToPatientMatrix: simd_float4x4,
+        sourceVoxelToPatientMatrix: simd_float4x4,
+        backgroundValue: Float
+    ) -> [Float] {
+        let width = max(outputDimensions.x, 1)
+        let height = max(outputDimensions.y, 1)
+        let depth = max(outputDimensions.z, 1)
+        let outputPlaneSize = max(width * height, 1)
+        let sourceWidth = max(sourceDimensions.x, 1)
+        let sourceHeight = max(sourceDimensions.y, 1)
+        let sourceDepth = max(sourceDimensions.z, 1)
+        let outputVoxelToSourceVoxelMatrix = simd_inverse(sourceVoxelToPatientMatrix) * outputVoxelToPatientMatrix
+        let xStep = SIMD3<Float>(
+            outputVoxelToSourceVoxelMatrix.columns.0.x,
+            outputVoxelToSourceVoxelMatrix.columns.0.y,
+            outputVoxelToSourceVoxelMatrix.columns.0.z
+        )
+        let yStep = SIMD3<Float>(
+            outputVoxelToSourceVoxelMatrix.columns.1.x,
+            outputVoxelToSourceVoxelMatrix.columns.1.y,
+            outputVoxelToSourceVoxelMatrix.columns.1.z
+        )
+        let zStep = SIMD3<Float>(
+            outputVoxelToSourceVoxelMatrix.columns.2.x,
+            outputVoxelToSourceVoxelMatrix.columns.2.y,
+            outputVoxelToSourceVoxelMatrix.columns.2.z
+        )
+        let origin = SIMD3<Float>(
+            outputVoxelToSourceVoxelMatrix.columns.3.x,
+            outputVoxelToSourceVoxelMatrix.columns.3.y,
+            outputVoxelToSourceVoxelMatrix.columns.3.z
+        )
+        var output = [Float](repeating: backgroundValue, count: outputPlaneSize * depth)
+
+        func sample(_ x: Float, _ y: Float, _ z: Float) -> Float {
+            guard x >= 0, y >= 0, z >= 0,
+                  x <= Float(sourceWidth - 1),
+                  y <= Float(sourceHeight - 1),
+                  z <= Float(sourceDepth - 1) else {
+                return backgroundValue
+            }
+
+            let x0 = min(max(Int(floor(x)), 0), sourceWidth - 1)
+            let y0 = min(max(Int(floor(y)), 0), sourceHeight - 1)
+            let z0 = min(max(Int(floor(z)), 0), sourceDepth - 1)
+            let x1 = min(x0 + 1, sourceWidth - 1)
+            let y1 = min(y0 + 1, sourceHeight - 1)
+            let z1 = min(z0 + 1, sourceDepth - 1)
+            let tx = x - Float(x0)
+            let ty = y - Float(y0)
+            let tz = z - Float(z0)
+
+            func sampleSlice(_ sx: Int, _ sy: Int, _ sz: Int) -> Float {
+                guard sz >= 0,
+                      sz < sourceSlices.count,
+                      let pixels = sourceSlices[sz] else {
+                    return backgroundValue
+                }
+                return pixels[sy * sourceWidth + sx]
+            }
+
+            let c000 = sampleSlice(x0, y0, z0)
+            let c100 = sampleSlice(x1, y0, z0)
+            let c010 = sampleSlice(x0, y1, z0)
+            let c110 = sampleSlice(x1, y1, z0)
+            let c001 = sampleSlice(x0, y0, z1)
+            let c101 = sampleSlice(x1, y0, z1)
+            let c011 = sampleSlice(x0, y1, z1)
+            let c111 = sampleSlice(x1, y1, z1)
+
+            let c00 = c000 * (1 - tx) + c100 * tx
+            let c10 = c010 * (1 - tx) + c110 * tx
+            let c01 = c001 * (1 - tx) + c101 * tx
+            let c11 = c011 * (1 - tx) + c111 * tx
+            let c0 = c00 * (1 - ty) + c10 * ty
+            let c1 = c01 * (1 - ty) + c11 * ty
+            return c0 * (1 - tz) + c1 * tz
+        }
+
+        output.withUnsafeMutableBufferPointer { outputBuffer in
+            guard let outputBase = outputBuffer.baseAddress else { return }
+            DispatchQueue.concurrentPerform(iterations: depth) { z in
+                let zBase = origin + zStep * Float(z)
+                let outputZOffset = z * outputPlaneSize
+                for y in 0..<height {
+                    var sourceVoxel = zBase + yStep * Float(y)
+                    var outputIndex = outputZOffset + y * width
+                    for _ in 0..<width {
+                        outputBase[outputIndex] = sample(sourceVoxel.x, sourceVoxel.y, sourceVoxel.z)
+                        sourceVoxel += xStep
+                        outputIndex += 1
+                    }
+                }
+            }
+        }
+        return output
     }
 }
 

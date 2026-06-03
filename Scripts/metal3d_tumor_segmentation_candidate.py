@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -45,9 +46,15 @@ def ensure_scientific_python() -> None:
 ensure_scientific_python()
 
 import numpy as np
-import pydicom
 from scipy import ndimage as ndi
-from skimage import filters, measure, transform
+from skimage import filters, measure
+
+from metal3d_dicom_geometry import (
+    affine_from_job,
+    channel_worker_count,
+    classify_series_role,
+    load_dicom_series_registered,
+)
 
 
 def load_job(path: Path) -> dict:
@@ -67,82 +74,28 @@ def load_volume(job: dict) -> np.ndarray:
 
 
 def classify_role(series: dict) -> str:
-    role = str(series.get("suggestedRole") or series.get("role") or "").strip().lower()
-    if role:
-        return role
-
-    text = " ".join(
-        str(series.get(key) or "")
-        for key in ("seriesDescription", "localSeriesDescription", "seriesNumber")
-    ).lower().replace("_", " ").replace("-", " ")
-
-    if "flair" in text or "fluid attenuated" in text:
-        return "flair"
-    if "t2" in text and not any(token in text for token in ("flair", "dwi", "diff", "adc", "localizer", "scout")):
-        return "t2"
-    if any(token in text for token in ("t1", "mprage", "spgr", "bravo", "ir fspgr")):
-        if any(token in text for token in ("post", "gad", "gadavist", "contrast", "ce", "+c", "c+", "t1c", "gd")):
-            return "t1c"
-        return "t1"
-    return "selected"
+    return classify_series_role(series)
 
 
-def dicom_sort_key(dataset) -> tuple:
-    image_position = getattr(dataset, "ImagePositionPatient", None)
-    if image_position is not None and len(image_position) >= 3:
-        try:
-            return (0, float(image_position[2]))
-        except (TypeError, ValueError):
-            pass
-
-    instance_number = getattr(dataset, "InstanceNumber", None)
-    try:
-        return (1, int(instance_number))
-    except (TypeError, ValueError):
-        return (2, str(getattr(dataset, "SOPInstanceUID", "")))
-
-
-def load_dicom_series(paths: list[str], target_shape: tuple[int, int, int]) -> np.ndarray | None:
-    slices = []
-    for path in paths:
-        try:
-            dataset = pydicom.dcmread(path, force=True)
-            if not hasattr(dataset, "PixelData"):
-                continue
-            pixels = dataset.pixel_array.astype(np.float32)
-            if pixels.ndim == 3:
-                pixels = pixels[0]
-            slope = float(getattr(dataset, "RescaleSlope", 1.0) or 1.0)
-            intercept = float(getattr(dataset, "RescaleIntercept", 0.0) or 0.0)
-            slices.append((dicom_sort_key(dataset), pixels * slope + intercept))
-        except Exception:
-            continue
-
-    if len(slices) < 2:
+def load_selected_modality_job(job_item: tuple[str, dict, list[str], tuple[int, int, int], np.ndarray]):
+    role, series, paths, target_shape, target_affine = job_item
+    resampled = load_dicom_series_registered(paths, target_shape, target_affine)
+    if resampled is None:
         return None
 
-    slices.sort(key=lambda item: item[0])
-    volume = np.stack([item[1] for item in slices], axis=0)
-    volume = np.nan_to_num(volume, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32, copy=False)
-    if volume.shape != target_shape:
-        volume = transform.resize(
-            volume,
-            target_shape,
-            order=1,
-            mode="edge",
-            preserve_range=True,
-            anti_aliasing=True,
-        ).astype(np.float32, copy=False)
-    return volume
+    summary = dict(resampled.summary)
+    summary["role"] = role
+    summary["seriesDescription"] = series.get("seriesDescription") or series.get("localSeriesDescription") or ""
+    summary["seriesNumber"] = series.get("seriesNumber") or ""
+    return role, resampled.volume, summary
 
 
-def load_selected_modalities(job: dict) -> dict[str, np.ndarray]:
-    depth, height, width = int(job["dimensions"][2]), int(job["dimensions"][1]), int(job["dimensions"][0])
-    target_shape = (depth, height, width)
-    modalities: dict[str, np.ndarray] = {}
+def selected_series_jobs(job: dict, target_shape: tuple[int, int, int], target_affine: np.ndarray) -> list[tuple[str, dict, list[str], tuple[int, int, int], np.ndarray]]:
+    jobs = []
+    role_counts: dict[str, int] = {}
     selected_series = job.get("selectedDICOMSeries") or []
     if not isinstance(selected_series, list):
-        return modalities
+        return jobs
 
     for series in selected_series:
         if not isinstance(series, dict):
@@ -151,13 +104,40 @@ def load_selected_modalities(job: dict) -> dict[str, np.ndarray]:
         if not isinstance(paths, list) or not paths:
             continue
         role = classify_role(series)
-        if role in modalities:
-            role = f"{role}_{len(modalities)}"
-        volume = load_dicom_series([str(path) for path in paths], target_shape)
-        if volume is not None:
-            modalities[role] = volume
+        role_count = role_counts.get(role, 0)
+        role_counts[role] = role_count + 1
+        if role_count > 0:
+            role = f"{role}_{role_count + 1}"
+        jobs.append((role, series, [str(path) for path in paths], target_shape, target_affine))
 
-    return modalities
+    return jobs
+
+
+def load_selected_modalities(job: dict) -> tuple[dict[str, np.ndarray], list[dict]]:
+    depth, height, width = int(job["dimensions"][2]), int(job["dimensions"][1]), int(job["dimensions"][0])
+    target_shape = (depth, height, width)
+    target_affine = affine_from_job(job)
+    modalities: dict[str, np.ndarray] = {}
+    registration_summaries: list[dict] = []
+    jobs = selected_series_jobs(job, target_shape, target_affine)
+    if not jobs:
+        return modalities, registration_summaries
+
+    workers = channel_worker_count(len(jobs))
+    if workers > 1:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            results = list(executor.map(load_selected_modality_job, jobs))
+    else:
+        results = [load_selected_modality_job(item) for item in jobs]
+
+    for result in results:
+        if result is None:
+            continue
+        role, volume, summary = result
+        modalities[role] = volume
+        registration_summaries.append(summary)
+
+    return modalities, registration_summaries
 
 
 def voxel_volume_ml(job: dict) -> float:
@@ -579,13 +559,15 @@ def main() -> int:
 
     job = load_job(Path(args.job))
     displayed = load_volume(job)
-    modalities = load_selected_modalities(job)
+    modalities, registration_summaries = load_selected_modalities(job)
     if len(modalities) >= 2:
         labels, result = segment_multimodal(displayed, modalities, job)
     else:
         labels, result = segment(displayed, job)
         if modalities:
             result["modalitiesLoadedButNotUsed"] = sorted(modalities.keys())
+    if registration_summaries:
+        result["channelRegistration"] = registration_summaries
 
     output_path = Path(job["outputLabelmap"])
     output_path.write_bytes(labels.reshape(-1).tobytes())

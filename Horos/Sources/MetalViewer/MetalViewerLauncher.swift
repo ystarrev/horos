@@ -126,6 +126,13 @@ final class MetalViewerLauncher: NSObject {
     private static var databaseAddObserver: NSObjectProtocol?
     private static var pendingDatabaseRefresh: DispatchWorkItem?
     private static var pendingRefreshIdentifiers: RefreshIdentifiers?
+    private static var pendingRefreshStartedAt: CFAbsoluteTime?
+
+    private enum DefaultsKey {
+        static let incomingImportCoalescingDelay = "HorosIncomingImportCoalescingDelay"
+        static let databaseRefreshDelay = "HorosMetalViewerDatabaseRefreshDelay"
+        static let databaseRefreshMaxDeferral = "HorosMetalViewerDatabaseRefreshMaxDeferral"
+    }
 
     private struct ViewerRefreshContext {
         let frames: [DCMPix]
@@ -288,15 +295,56 @@ final class MetalViewerLauncher: NSObject {
             pendingRefreshIdentifiers?.formUnion(identifiers!)
         }
 
+        let now = CFAbsoluteTimeGetCurrent()
+        if pendingRefreshStartedAt == nil {
+            pendingRefreshStartedAt = now
+        }
+
         pendingDatabaseRefresh?.cancel()
+
+        let delay = databaseRefreshDelay()
+        let maxDeferral = databaseRefreshMaxDeferral(forDelay: delay)
+        let elapsed = now - (pendingRefreshStartedAt ?? now)
+        let scheduledDelay = max(0, min(delay, maxDeferral - elapsed))
 
         let workItem = DispatchWorkItem {
             let identifiers = pendingRefreshIdentifiers
             pendingRefreshIdentifiers = nil
+            pendingRefreshStartedAt = nil
+            pendingDatabaseRefresh = nil
             Self.refreshOpenViewersFromDatabase(matching: identifiers)
         }
         pendingDatabaseRefresh = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + scheduledDelay, execute: workItem)
+    }
+
+    private class func databaseRefreshDelay() -> TimeInterval {
+        let defaults = UserDefaults.standard
+        if let configuredValue = defaults.object(forKey: DefaultsKey.databaseRefreshDelay) as? NSNumber {
+            return clampedRefreshInterval(configuredValue.doubleValue, minimum: 0.1, maximum: 30)
+        }
+
+        if let configuredValue = defaults.object(forKey: DefaultsKey.incomingImportCoalescingDelay) as? NSNumber {
+            return clampedRefreshInterval(configuredValue.doubleValue + 0.2, minimum: 0.4, maximum: 30)
+        }
+
+        return 2.2
+    }
+
+    private class func databaseRefreshMaxDeferral(forDelay delay: TimeInterval) -> TimeInterval {
+        let defaults = UserDefaults.standard
+        if let configuredValue = defaults.object(forKey: DefaultsKey.databaseRefreshMaxDeferral) as? NSNumber {
+            return clampedRefreshInterval(configuredValue.doubleValue, minimum: delay, maximum: 120)
+        }
+
+        return max(8, delay * 4)
+    }
+
+    private class func clampedRefreshInterval(_ value: TimeInterval, minimum: TimeInterval, maximum: TimeInterval) -> TimeInterval {
+        if value.isNaN {
+            return minimum
+        }
+        return min(max(value, minimum), maximum)
     }
 
     private class func refreshOpenViewersFromDatabase(matching importedIdentifiers: RefreshIdentifiers?) {

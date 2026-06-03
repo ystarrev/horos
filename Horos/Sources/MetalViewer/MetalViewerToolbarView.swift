@@ -467,7 +467,7 @@ final class MetalViewerToolbarView: NSView {
         case .scroll:
             return NSLocalizedString("Scroll: drag vertically to move through slices.", comment: "")
         case .tumourSeed:
-            return NSLocalizedString("Tumour Seed: future tool for placing seed points used by segmentation.", comment: "")
+            return NSLocalizedString("Tumour Seed: click a tumour focus to place a seed point used by segmentation.", comment: "")
         }
     }
 

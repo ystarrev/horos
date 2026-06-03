@@ -56,6 +56,8 @@ struct Metal3DSegmentationInput {
     let spacing: SIMD3<Float>
     let sourceCropMin: SIMD3<Int>
     let sourceSpacing: SIMD3<Float>
+    let referenceVoxelToPatientMatrix: [[Double]]
+    let sourceVoxelToVolumeVoxelMatrix: simd_float4x4?
     let float32VolumeData: Data
 }
 
@@ -270,11 +272,13 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private let sourceVoxelSpacing: SIMD3<Float>
     private let volumeDimensions: SIMD3<Int>
     private let voxelSpacing: SIMD3<Float>
+    private let referenceVoxelToPatientMatrix: simd_float4x4
     private let patientRowDirection: SIMD3<Float>
     private let patientColumnDirection: SIMD3<Float>
     private let patientSliceDirection: SIMD3<Float>
     private let boxMin: SIMD3<Float>
     private let boxMax: SIMD3<Float>
+    private let gantryTiltCorrection: MetalViewerGantryTiltGeometry?
     private var cropBoxMin = SIMD3<Float>(repeating: -0.28)
     private var cropBoxMax = SIMD3<Float>(repeating: 0.28)
     private let superSampling: Float
@@ -320,6 +324,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private(set) var selectedWLPresetName = Metal3DDefaults.defaultWLWW
     private(set) var selectedCLUTName = Metal3DDefaults.noCLUT
     private(set) var selectedOpacityName = Metal3DDefaults.linearOpacity
+    private(set) var isGantryTiltCorrected = false
     private(set) var cropEnabled = false
     private(set) var cropOverlayVisible = false
     private var hoveredCropPlane: Metal3DCropPlane?
@@ -360,7 +365,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         self.fullSourceDimensions = fullSourceDimensions
 
         let sourceSpacing = Self.voxelSpacing(for: pixList)
-        self.sourceVoxelSpacing = sourceSpacing
         if let sliceGeometry = MetalViewerSliceGeometry(pix: firstPix) {
             self.patientRowDirection = simd_normalize(SIMD3<Float>(Float(sliceGeometry.row.x), Float(sliceGeometry.row.y), Float(sliceGeometry.row.z)))
             self.patientColumnDirection = simd_normalize(SIMD3<Float>(Float(sliceGeometry.column.x), Float(sliceGeometry.column.y), Float(sliceGeometry.column.z)))
@@ -372,11 +376,44 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         }
         let cropBounds = Self.volumeCropBounds(for: pixList, dimensions: fullSourceDimensions, spacing: sourceSpacing)
         self.sourceCropBounds = cropBounds
-        let sourceDimensions = cropBounds.dimensions
+        let gantryTiltGeometry = MetalViewerGantryTiltGeometryBuilder.geometry(
+            for: pixList,
+            sourceDimensions: fullSourceDimensions,
+            sourceBounds: MetalViewerVolumeBounds(
+                minimum: SIMD3<Int>(cropBounds.minX, cropBounds.minY, cropBounds.minZ),
+                maximum: SIMD3<Int>(cropBounds.maxX, cropBounds.maxY, cropBounds.maxZ)
+            ),
+            fallbackSliceSpacing: sourceSpacing.z
+        )
+        let gantryTiltCorrection = Self.isCTVolume(pixList) && gantryTiltGeometry.requiresCorrection()
+            ? gantryTiltGeometry
+            : nil
+        self.gantryTiltCorrection = gantryTiltCorrection
+        self.isGantryTiltCorrected = gantryTiltCorrection != nil
+        let sourceDimensions = gantryTiltCorrection?.dimensions ?? cropBounds.dimensions
         self.sourceDimensions = sourceDimensions
-        let textureGeometry = Self.isotropicTextureGeometry(sourceDimensions: sourceDimensions, sourceSpacing: sourceSpacing)
+        let correctedSourceSpacing = gantryTiltCorrection?.correctedSpacing ?? sourceSpacing
+        self.sourceVoxelSpacing = correctedSourceSpacing
+        let textureGeometry = Self.isotropicTextureGeometry(sourceDimensions: sourceDimensions, sourceSpacing: correctedSourceSpacing)
         self.volumeDimensions = textureGeometry.dimensions
         self.voxelSpacing = textureGeometry.spacing
+        let sourceVoxelToPatientMatrix = gantryTiltCorrection?.correctedVoxelToPatientMatrix
+            ?? MetalViewerGantryTiltGeometryBuilder.sourceVoxelToPatientMatrix(for: pixList, fallbackSliceSpacing: correctedSourceSpacing.z)
+        let referenceCropBounds = gantryTiltCorrection == nil
+            ? cropBounds
+            : Metal3DVolumeCropBounds(
+                minX: 0,
+                maxX: max(sourceDimensions.x - 1, 0),
+                minY: 0,
+                maxY: max(sourceDimensions.y - 1, 0),
+                minZ: 0,
+                maxZ: max(sourceDimensions.z - 1, 0)
+            )
+        self.referenceVoxelToPatientMatrix = Self.referenceVoxelToPatientMatrix(
+            sourceVoxelToPatientMatrix: sourceVoxelToPatientMatrix,
+            cropBounds: referenceCropBounds,
+            outputSpacing: textureGeometry.spacing
+        )
         let extent = Self.volumeExtent(dimensions: self.volumeDimensions, spacing: self.voxelSpacing)
         self.boxMin = -extent * 0.5
         self.boxMax = extent * 0.5
@@ -1322,8 +1359,23 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             spacing: voxelSpacing,
             sourceCropMin: SIMD3<Int>(sourceCropBounds.minX, sourceCropBounds.minY, sourceCropBounds.minZ),
             sourceSpacing: sourceVoxelSpacing,
+            referenceVoxelToPatientMatrix: Self.matrixRows(referenceVoxelToPatientMatrix),
+            sourceVoxelToVolumeVoxelMatrix: sourceVoxelToVolumeVoxelMatrix(),
             float32VolumeData: data
         )
+    }
+
+    private func sourceVoxelToVolumeVoxelMatrix() -> simd_float4x4? {
+        guard let gantryTiltCorrection else { return nil }
+
+        let correctedPatientToVoxelMatrix = simd_inverse(gantryTiltCorrection.correctedVoxelToPatientMatrix)
+        let correctedToVolumeScale = simd_float4x4(
+            SIMD4<Float>(sourceVoxelSpacing.x / max(voxelSpacing.x, 0.0001), 0, 0, 0),
+            SIMD4<Float>(0, sourceVoxelSpacing.y / max(voxelSpacing.y, 0.0001), 0, 0),
+            SIMD4<Float>(0, 0, sourceVoxelSpacing.z / max(voxelSpacing.z, 0.0001), 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
+        return correctedToVolumeScale * correctedPatientToVoxelMatrix * gantryTiltCorrection.sourceVoxelToPatientMatrix
     }
 
     @discardableResult
@@ -2006,6 +2058,36 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let sourceX = Float(seed.pixelX)
         let sourceY = Float(seed.pixelY)
         let sourceZ = Float(seed.sliceIndex)
+
+        if let gantryTiltCorrection {
+            guard sourceX >= Float(sourceCropBounds.minX) - 0.5,
+                  sourceX <= Float(sourceCropBounds.maxX) + 0.5,
+                  sourceY >= Float(sourceCropBounds.minY) - 0.5,
+                  sourceY <= Float(sourceCropBounds.maxY) + 0.5,
+                  sourceZ >= Float(sourceCropBounds.minZ) - 0.5,
+                  sourceZ <= Float(sourceCropBounds.maxZ) + 0.5 else {
+                return nil
+            }
+
+            let sourceVoxel = SIMD4<Float>(sourceX, sourceY, sourceZ, 1)
+            let patientPoint = gantryTiltCorrection.sourceVoxelToPatientMatrix * sourceVoxel
+            let correctedVoxel = simd_inverse(gantryTiltCorrection.correctedVoxelToPatientMatrix) * patientPoint
+            guard correctedVoxel.x >= -0.5,
+                  correctedVoxel.x <= Float(sourceDimensions.x) - 0.5,
+                  correctedVoxel.y >= -0.5,
+                  correctedVoxel.y <= Float(sourceDimensions.y) - 0.5,
+                  correctedVoxel.z >= -0.5,
+                  correctedVoxel.z <= Float(sourceDimensions.z) - 0.5 else {
+                return nil
+            }
+
+            let physicalPosition = SIMD3<Float>(
+                correctedVoxel.x * sourceVoxelSpacing.x,
+                correctedVoxel.y * sourceVoxelSpacing.y,
+                correctedVoxel.z * sourceVoxelSpacing.z
+            )
+            return worldPosition(forPhysicalPosition: physicalPosition)
+        }
 
         guard sourceX >= Float(sourceCropBounds.minX) - 0.5,
               sourceX <= Float(sourceCropBounds.maxX) + 0.5,
@@ -3110,6 +3192,47 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return SIMD3<Float>(rowSpacing, columnSpacing, sliceSpacing)
     }
 
+    private static func referenceVoxelToPatientMatrix(
+        sourceVoxelToPatientMatrix: simd_float4x4,
+        cropBounds: Metal3DVolumeCropBounds,
+        outputSpacing: SIMD3<Float>
+    ) -> simd_float4x4 {
+        let cropOrigin = sourceVoxelToPatientMatrix * SIMD4<Float>(
+            Float(cropBounds.minX),
+            Float(cropBounds.minY),
+            Float(cropBounds.minZ),
+            1
+        )
+
+        func normalizedColumn(_ column: SIMD4<Float>, fallback: SIMD3<Float>) -> SIMD3<Float> {
+            let vector = SIMD3<Float>(column.x, column.y, column.z)
+            return simd_length(vector) > 0.0001 ? simd_normalize(vector) : fallback
+        }
+
+        let rowDirection = normalizedColumn(sourceVoxelToPatientMatrix.columns.0, fallback: SIMD3<Float>(1, 0, 0))
+        let columnDirection = normalizedColumn(sourceVoxelToPatientMatrix.columns.1, fallback: SIMD3<Float>(0, 1, 0))
+        let sliceDirection = normalizedColumn(sourceVoxelToPatientMatrix.columns.2, fallback: SIMD3<Float>(0, 0, 1))
+        let rowStep = rowDirection * outputSpacing.x
+        let columnStep = columnDirection * outputSpacing.y
+        let sliceStep = sliceDirection * outputSpacing.z
+
+        return simd_float4x4(
+            SIMD4<Float>(rowStep.x, rowStep.y, rowStep.z, 0),
+            SIMD4<Float>(columnStep.x, columnStep.y, columnStep.z, 0),
+            SIMD4<Float>(sliceStep.x, sliceStep.y, sliceStep.z, 0),
+            SIMD4<Float>(cropOrigin.x, cropOrigin.y, cropOrigin.z, 1)
+        )
+    }
+
+    private static func matrixRows(_ matrix: simd_float4x4) -> [[Double]] {
+        [
+            [Double(matrix.columns.0.x), Double(matrix.columns.1.x), Double(matrix.columns.2.x), Double(matrix.columns.3.x)],
+            [Double(matrix.columns.0.y), Double(matrix.columns.1.y), Double(matrix.columns.2.y), Double(matrix.columns.3.y)],
+            [Double(matrix.columns.0.z), Double(matrix.columns.1.z), Double(matrix.columns.2.z), Double(matrix.columns.3.z)],
+            [Double(matrix.columns.0.w), Double(matrix.columns.1.w), Double(matrix.columns.2.w), Double(matrix.columns.3.w)],
+        ]
+    }
+
     private static func volumeCropBounds(
         for pixList: [DCMPix],
         dimensions: SIMD3<Int>,
@@ -3216,6 +3339,13 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return modality.contains("CT") || rescale == "HU" || (seriesMinimum < -500 && seriesMaximum > 300)
     }
 
+    private static func isCTVolume(_ pixList: [DCMPix]) -> Bool {
+        guard let firstPix = pixList.first else { return false }
+        let modality = firstPix.modalityString?.uppercased() ?? ""
+        let rescale = firstPix.rescaleType?.uppercased() ?? ""
+        return modality.contains("CT") || rescale == "HU"
+    }
+
     private static func volumeExtent(dimensions: SIMD3<Int>, spacing: SIMD3<Float>) -> SIMD3<Float> {
         let rawExtent = SIMD3<Float>(
             max(Float(dimensions.x - 1), 1) * spacing.x,
@@ -3275,6 +3405,10 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func makeRawVolume() -> [Float] {
+        if let gantryTiltCorrection {
+            return makeGantryTiltCorrectedRawVolume(gantryTiltCorrection)
+        }
+
         let sliceElementCount = max(sourceDimensions.x * sourceDimensions.y, 1)
         var converted = [Float](repeating: 0, count: sliceElementCount * max(sourceDimensions.z, 1))
         let fullWidth = max(fullSourceDimensions.x, 1)
@@ -3310,6 +3444,31 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return resampleVolumeAlongZ(converted)
     }
 
+    private func makeGantryTiltCorrectedRawVolume(_ correction: MetalViewerGantryTiltGeometry) -> [Float] {
+        let backgroundValue: Float = -1024
+        for pix in pixList {
+            pix.checkLoad()
+            pix.computePixMinPixMax()
+        }
+        let sourceSlices: [UnsafeMutablePointer<Float>?] = pixList.map { $0.fImage }
+        let converted = MetalViewerGantryTiltCPUResampler.resample(
+            sourceSlices: sourceSlices,
+            sourceDimensions: fullSourceDimensions,
+            outputDimensions: sourceDimensions,
+            outputVoxelToPatientMatrix: correction.correctedVoxelToPatientMatrix,
+            sourceVoxelToPatientMatrix: correction.sourceVoxelToPatientMatrix,
+            backgroundValue: backgroundValue
+        )
+
+        if sourceDimensions.x == volumeDimensions.x,
+           sourceDimensions.y == volumeDimensions.y,
+           sourceDimensions.z == volumeDimensions.z {
+            return converted
+        }
+
+        return resampleVolumeAlongZ(converted)
+    }
+
     private func resampleVolumeAlongZ(_ sourceVolume: [Float]) -> [Float] {
         let start = CFAbsoluteTimeGetCurrent()
         let width = max(sourceDimensions.x, 1)
@@ -3323,35 +3482,38 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return sourceVolume
         }
 
-        for outputZ in 0..<outputDepth {
-            let physicalZ = Float(outputZ) * voxelSpacing.z
-            let sourceZ = min(max(physicalZ / max(sourceVoxelSpacing.z, 0.0001), 0), Float(sourceDepth - 1))
-            let baseZ = min(max(Int(floor(sourceZ)), 0), sourceDepth - 1)
-            let fraction = sourceZ - Float(baseZ)
-            let z0 = min(max(baseZ - 1, 0), sourceDepth - 1)
-            let z1 = baseZ
-            let z2 = min(baseZ + 1, sourceDepth - 1)
-            let z3 = min(baseZ + 2, sourceDepth - 1)
-            let offset0 = z0 * sliceElementCount
-            let offset1 = z1 * sliceElementCount
-            let offset2 = z2 * sliceElementCount
-            let offset3 = z3 * sliceElementCount
-            let outputOffset = outputZ * sliceElementCount
+        output.withUnsafeMutableBufferPointer { outputBuffer in
+            guard let outputBase = outputBuffer.baseAddress else { return }
+            DispatchQueue.concurrentPerform(iterations: outputDepth) { outputZ in
+                let physicalZ = Float(outputZ) * voxelSpacing.z
+                let sourceZ = min(max(physicalZ / max(sourceVoxelSpacing.z, 0.0001), 0), Float(sourceDepth - 1))
+                let baseZ = min(max(Int(floor(sourceZ)), 0), sourceDepth - 1)
+                let fraction = sourceZ - Float(baseZ)
+                let z0 = min(max(baseZ - 1, 0), sourceDepth - 1)
+                let z1 = baseZ
+                let z2 = min(baseZ + 1, sourceDepth - 1)
+                let z3 = min(baseZ + 2, sourceDepth - 1)
+                let offset0 = z0 * sliceElementCount
+                let offset1 = z1 * sliceElementCount
+                let offset2 = z2 * sliceElementCount
+                let offset3 = z3 * sliceElementCount
+                let outputOffset = outputZ * sliceElementCount
 
-            if fraction <= 0.0001 {
-                for index in 0..<sliceElementCount {
-                    output[outputOffset + index] = sourceVolume[offset1 + index]
-                }
-            } else {
-                for index in 0..<sliceElementCount {
-                    let sample0 = sourceVolume[offset0 + index]
-                    let sample1 = sourceVolume[offset1 + index]
-                    let sample2 = sourceVolume[offset2 + index]
-                    let sample3 = sourceVolume[offset3 + index]
-                    let interpolated = Self.catmullRom(sample0, sample1, sample2, sample3, fraction)
-                    let minimum = min(min(sample0, sample1), min(sample2, sample3))
-                    let maximum = max(max(sample0, sample1), max(sample2, sample3))
-                    output[outputOffset + index] = min(max(interpolated, minimum), maximum)
+                if fraction <= 0.0001 {
+                    for index in 0..<sliceElementCount {
+                        outputBase[outputOffset + index] = sourceVolume[offset1 + index]
+                    }
+                } else {
+                    for index in 0..<sliceElementCount {
+                        let sample0 = sourceVolume[offset0 + index]
+                        let sample1 = sourceVolume[offset1 + index]
+                        let sample2 = sourceVolume[offset2 + index]
+                        let sample3 = sourceVolume[offset3 + index]
+                        let interpolated = Self.catmullRom(sample0, sample1, sample2, sample3, fraction)
+                        let minimum = min(min(sample0, sample1), min(sample2, sample3))
+                        let maximum = max(max(sample0, sample1), max(sample2, sample3))
+                        outputBase[outputOffset + index] = min(max(interpolated, minimum), maximum)
+                    }
                 }
             }
         }

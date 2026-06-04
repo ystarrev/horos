@@ -36,6 +36,7 @@ struct MetalUniforms {
 struct MetalMPRVertex {
     float3 position;
     float3 baseVoxel;
+    float4 color;
 };
 
 struct MetalMPRUniforms {
@@ -101,10 +102,12 @@ struct RasterizerData {
 struct MetalMPRRasterizerData {
     float4 position [[position]];
     float3 baseVoxel;
+    float4 color;
 };
 
 struct MetalMPRBorderRasterizerData {
     float4 position [[position]];
+    float4 color;
 };
 
 struct Metal3DVertex {
@@ -242,6 +245,7 @@ vertex MetalMPRRasterizerData metalViewerMPRVertex(
     MetalMPRRasterizerData out;
     out.position = uniforms.viewProjectionMatrix * float4(vertices[vertexID].position, 1.0);
     out.baseVoxel = vertices[vertexID].baseVoxel;
+    out.color = vertices[vertexID].color;
     return out;
 }
 
@@ -252,6 +256,7 @@ vertex MetalMPRBorderRasterizerData metalViewerMPRBorderVertex(
 ) {
     MetalMPRBorderRasterizerData out;
     out.position = uniforms.viewProjectionMatrix * float4(vertices[vertexID].position, 1.0);
+    out.color = vertices[vertexID].color;
     return out;
 }
 
@@ -264,6 +269,7 @@ vertex MetalMPRRasterizerData metalViewerMPRPlaneHighlightVertex(
     out.position = uniforms.viewProjectionMatrix * float4(vertices[vertexID].position, 1.0);
     out.position.z = max(out.position.z - 0.0005 * out.position.w, 0.0);
     out.baseVoxel = vertices[vertexID].baseVoxel;
+    out.color = vertices[vertexID].color;
     return out;
 }
 
@@ -875,19 +881,19 @@ fragment float4 metalViewerMPRFragment(
 fragment float4 metalViewerMPRBorderFragment(
     MetalMPRBorderRasterizerData in [[stage_in]]
 ) {
-    return float4(0.18, 1.0, 0.28, 1.0);
+    return in.color;
 }
 
 fragment float4 metalViewerMPRIntersectionFragment(
     MetalMPRBorderRasterizerData in [[stage_in]]
 ) {
-    return float4(1.0, 0.0, 0.0, 1.0);
+    return in.color;
 }
 
 fragment float4 metalViewerMPRPlaneHighlightFragment(
     MetalMPRRasterizerData in [[stage_in]]
 ) {
-    return float4(1.0, 0.0, 0.0, 1.0);
+    return in.color;
 }
 
 fragment float4 metalPreviewFragment(

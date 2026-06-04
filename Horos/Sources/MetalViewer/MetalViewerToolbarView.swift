@@ -4,6 +4,7 @@ final class MetalViewerToolbarView: NSView {
     enum ViewerMode: Int {
         case stack2D = 0
         case mpr = 1
+        case mpr3D = 2
     }
 
     enum WLWWCommand {
@@ -183,6 +184,7 @@ final class MetalViewerToolbarView: NSView {
         viewerModePopup.removeAllItems()
         addViewerModeMenuItem(title: NSLocalizedString("2D", comment: ""), imageName: "Stack", mode: .stack2D)
         addViewerModeMenuItem(title: NSLocalizedString("MPR", comment: ""), imageName: "MPR", mode: .mpr)
+        addViewerModeMenuItem(title: NSLocalizedString("3D MPR", comment: ""), imageName: "MPR", mode: .mpr3D)
         selectViewerMode(.stack2D)
 
         let container = NSView()

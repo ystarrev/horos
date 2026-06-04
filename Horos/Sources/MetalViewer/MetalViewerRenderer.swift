@@ -23,6 +23,16 @@ private func metalRendererTimingLog(_ message: String, since start: CFAbsoluteTi
     print(String(format: "HOROS_METAL_TIMING %@ %.3f s", message, CFAbsoluteTimeGetCurrent() - start))
 }
 
+private func configureMPRAlphaBlending(_ attachment: MTLRenderPipelineColorAttachmentDescriptor) {
+    attachment.isBlendingEnabled = true
+    attachment.sourceRGBBlendFactor = .sourceAlpha
+    attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
+    attachment.rgbBlendOperation = .add
+    attachment.sourceAlphaBlendFactor = .one
+    attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+    attachment.alphaBlendOperation = .add
+}
+
 private struct MetalUniforms {
     var scale: SIMD2<Float>
     var offset: SIMD2<Float>
@@ -188,6 +198,21 @@ private struct MetalVertex {
 private struct MetalMPRVertex {
     var position: SIMD3<Float>
     var baseVoxel: SIMD3<Float>
+    var color: SIMD4<Float>
+
+    init(
+        position: SIMD3<Float>,
+        baseVoxel: SIMD3<Float>,
+        color: SIMD4<Float> = SIMD4<Float>(1, 0, 0, 1)
+    ) {
+        self.position = position
+        self.baseVoxel = baseVoxel
+        self.color = color
+    }
+
+    func withColor(_ color: SIMD4<Float>) -> MetalMPRVertex {
+        MetalMPRVertex(position: position, baseVoxel: baseVoxel, color: color)
+    }
 }
 
 private enum MetalMPRPlane: Int {
@@ -222,6 +247,41 @@ private struct MetalMPRPreviewHit {
     let baseVoxel: SIMD3<Float>
 }
 
+enum MetalMPRPreviewLineInteraction: Equatable {
+    case move
+    case tilt
+}
+
+struct MetalMPRPreviewLinePointer {
+    let interaction: MetalMPRPreviewLineInteraction
+    let lineAngleRadians: CGFloat
+    let actionAngleRadians: CGFloat?
+}
+
+private struct MetalMPRPreviewLineHit {
+    let displayedPlane: MetalMPRPlane
+    let referencePlane: MetalMPRPlane
+    let interaction: MetalMPRPreviewLineInteraction
+    let componentIndex: Int?
+    let baseVoxel: SIMD3<Float>
+    let paneRect: CGRect
+    let lineFraction: Float
+    let lineAngleRadians: CGFloat
+    let actionAngleRadians: CGFloat?
+}
+
+private struct MetalMPRPreviewLineDragContext {
+    let displayedPlane: MetalMPRPlane
+    let referencePlane: MetalMPRPlane
+    let interaction: MetalMPRPreviewLineInteraction
+    let componentIndex: Int?
+    let baseVoxel: SIMD3<Float>
+    let paneRect: CGRect
+    let lineFraction: Float
+    var continuousLineAngleRadians: CGFloat
+    let actionLineAngleOffsetRadians: CGFloat?
+}
+
 private struct MetalMPRPreviewPane {
     let plane: MetalMPRPlane
     let viewport: MTLViewport
@@ -251,6 +311,16 @@ struct MetalMPRPreviewOverlayLayout {
 enum MetalViewerDisplayMode {
     case stack2D
     case mpr
+    case mpr3D
+
+    var isMPRLike: Bool {
+        switch self {
+        case .mpr, .mpr3D:
+            return true
+        case .stack2D:
+            return false
+        }
+    }
 }
 
 private enum MetalViewerWindowLevelTarget {
@@ -259,6 +329,8 @@ private enum MetalViewerWindowLevelTarget {
 }
 
 final class MetalViewerRenderer: NSObject, MTKViewDelegate {
+    private static let mprPlanes: [MetalMPRPlane] = [.axial, .coronal, .sagittal]
+
     private let deviceRef: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let pipelineState: MTLRenderPipelineState
@@ -346,6 +418,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var hoveredMPRPlane: MetalMPRPlane?
     private var mprPlaneDragState: MetalMPRPlaneDragState?
     private var mprPlaneTiltDragState: MetalMPRPlaneTiltDragState?
+    private var mprPreviewLineDragContext: MetalMPRPreviewLineDragContext?
     private var registrationGeneration: UInt = 0
     private var registrationInProgress = false
     private var registrationProgress: Float = 0
@@ -393,7 +466,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         case .stack2D:
             return stackDisplayUsesCorrectedBaseVolume()
                 || (overlayVolumeTexture != nil && overlayUsesGantryTiltCorrectedVolume)
-        case .mpr:
+        case .mpr, .mpr3D:
             return baseUsesGantryTiltCorrectedVolume
                 || (overlayVolumeTexture != nil && overlayUsesGantryTiltCorrectedVolume)
         }
@@ -406,6 +479,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             sliceText = pixList.count > 1 ? "Slice \(currentSliceIndex + 1)/\(pixList.count)" : "Slice 1/1"
         case .mpr:
             sliceText = "MPR"
+        case .mpr3D:
+            sliceText = "3D MPR"
         }
         let zoomText = Int((zoomScale * 100).rounded())
         let registrationText: String
@@ -501,18 +576,21 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         mprPlaneHighlightPipelineDescriptor.vertexFunction = mprPlaneHighlightVertexFunction
         mprPlaneHighlightPipelineDescriptor.fragmentFunction = mprPlaneHighlightFragmentFunction
         mprPlaneHighlightPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        configureMPRAlphaBlending(mprPlaneHighlightPipelineDescriptor.colorAttachments[0])
         mprPlaneHighlightPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
 
         let mprBorderPipelineDescriptor = MTLRenderPipelineDescriptor()
         mprBorderPipelineDescriptor.vertexFunction = mprBorderVertexFunction
         mprBorderPipelineDescriptor.fragmentFunction = mprBorderFragmentFunction
         mprBorderPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        configureMPRAlphaBlending(mprBorderPipelineDescriptor.colorAttachments[0])
         mprBorderPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
 
         let mprIntersectionPipelineDescriptor = MTLRenderPipelineDescriptor()
         mprIntersectionPipelineDescriptor.vertexFunction = mprBorderVertexFunction
         mprIntersectionPipelineDescriptor.fragmentFunction = mprIntersectionFragmentFunction
         mprIntersectionPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        configureMPRAlphaBlending(mprIntersectionPipelineDescriptor.colorAttachments[0])
         mprIntersectionPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
 
         do {
@@ -675,7 +753,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         guard nextIndex != currentSliceIndex else { return }
         currentSliceIndex = nextIndex
         loadSlice(at: currentSliceIndex)
-        if displayMode == .mpr {
+        if displayMode.isMPRLike {
             resetMPRPlaneToCurrentSlice()
         }
     }
@@ -689,7 +767,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
         currentSliceIndex = nextIndex
         loadSlice(at: currentSliceIndex)
-        if displayMode == .mpr {
+        if displayMode.isMPRLike {
             resetMPRPlaneToCurrentSlice()
         }
     }
@@ -700,7 +778,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         hoveredMPRPlane = nil
         mprPlaneDragState = nil
         mprPlaneTiltDragState = nil
-        if mode == .mpr {
+        mprPreviewLineDragContext = nil
+        if mode.isMPRLike {
             prepareBaseVolumeIfNeeded()
             resetMPRPlaneToCurrentSlice()
         }
@@ -731,17 +810,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         prepareBaseVolumeIfNeeded()
         guard let interaction = mprMainInteraction(at: point, in: bounds) else {
             mprPlaneDragState = nil
+            mprPreviewLineDragContext = nil
             return false
         }
         guard let hit = mprPlaneHit(at: point, in: bounds),
               mprHitIsInsidePlaneInterior(hit) else {
             mprPlaneDragState = nil
+            mprPreviewLineDragContext = nil
             return false
         }
 
         guard let screenDeltaPerVoxel = mprScreenDeltaPerVoxel(for: hit.plane, at: hit.baseVoxel, in: interaction.bounds),
               simd_length_squared(screenDeltaPerVoxel) > 0.0001 else {
             mprPlaneDragState = nil
+            mprPreviewLineDragContext = nil
             return false
         }
 
@@ -752,6 +834,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             screenDeltaPerVoxel: screenDeltaPerVoxel
         )
         mprPlaneTiltDragState = nil
+        mprPreviewLineDragContext = nil
         hoveredMPRPlane = hit.plane
         stateDidChange?(stateDescription)
         return true
@@ -762,12 +845,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         prepareBaseVolumeIfNeeded()
         guard let interaction = mprMainInteraction(at: point, in: bounds) else {
             mprPlaneTiltDragState = nil
+            mprPreviewLineDragContext = nil
             return false
         }
         guard let hit = mprPlaneHit(at: point, in: bounds),
               mprHitIsInsidePlaneInterior(hit) == false,
               let componentIndex = mprTiltComponent(for: hit) else {
             mprPlaneTiltDragState = nil
+            mprPreviewLineDragContext = nil
             return false
         }
 
@@ -784,6 +869,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         ),
               simd_length_squared(screenDeltaPerRadian) > 0.0001 else {
             mprPlaneTiltDragState = nil
+            mprPreviewLineDragContext = nil
             return false
         }
 
@@ -795,6 +881,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             screenDeltaPerRadian: screenDeltaPerRadian
         )
         mprPlaneDragState = nil
+        mprPreviewLineDragContext = nil
         hoveredMPRPlane = hit.plane
         stateDidChange?(stateDescription)
         return true
@@ -830,10 +917,149 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     func endMPRPlaneDrag() {
         mprPlaneDragState = nil
         mprPlaneTiltDragState = nil
+        mprPreviewLineDragContext = nil
+    }
+
+    func mprPreviewLinePointer(at point: CGPoint, in bounds: CGRect) -> MetalMPRPreviewLinePointer? {
+        guard displayMode.isMPRLike else { return nil }
+        prepareBaseVolumeIfNeeded()
+        guard let hit = mprPreviewLineHit(at: point, in: bounds) else {
+            return nil
+        }
+        return MetalMPRPreviewLinePointer(
+            interaction: hit.interaction,
+            lineAngleRadians: hit.lineAngleRadians,
+            actionAngleRadians: hit.actionAngleRadians
+        )
+    }
+
+    func activeMPRPreviewLinePointer() -> MetalMPRPreviewLinePointer? {
+        guard displayMode.isMPRLike,
+              var context = mprPreviewLineDragContext else {
+            return nil
+        }
+        prepareBaseVolumeIfNeeded()
+        guard let pointer = mprPreviewLinePointer(
+            displayedPlane: context.displayedPlane,
+            referencePlane: context.referencePlane,
+            interaction: context.interaction,
+            componentIndex: context.componentIndex,
+            baseVoxel: context.baseVoxel,
+            paneRect: context.paneRect,
+            lineFraction: context.lineFraction
+        ) else {
+            return nil
+        }
+
+        guard let actionLineAngleOffsetRadians = context.actionLineAngleOffsetRadians else {
+            return pointer
+        }
+
+        let lineAngle = mprLineAngle(pointer.lineAngleRadians, closestTo: context.continuousLineAngleRadians)
+        context.continuousLineAngleRadians = lineAngle
+        mprPreviewLineDragContext = context
+        let actionAngle = lineAngle + actionLineAngleOffsetRadians
+        return MetalMPRPreviewLinePointer(
+            interaction: pointer.interaction,
+            lineAngleRadians: lineAngle,
+            actionAngleRadians: pointer.interaction == .tilt ? actionAngle : nil
+        )
+    }
+
+    func beginMPRPreviewPlaneMoveDrag(at point: CGPoint, in bounds: CGRect) -> Bool {
+        guard displayMode.isMPRLike else { return false }
+        prepareBaseVolumeIfNeeded()
+        guard let hit = mprPreviewLineHit(at: point, in: bounds),
+              hit.interaction == .move,
+              let screenDeltaPerVoxel = mprPreviewScreenDeltaPerVoxel(
+                for: hit.referencePlane,
+                at: hit.baseVoxel,
+                displayedIn: hit.displayedPlane,
+                paneRect: hit.paneRect
+              ),
+              simd_length_squared(screenDeltaPerVoxel) > 0.0001 else {
+            mprPlaneDragState = nil
+            mprPreviewLineDragContext = nil
+            return false
+        }
+
+        mprPlaneDragState = MetalMPRPlaneDragState(
+            plane: hit.referencePlane,
+            startPoint: SIMD2<Float>(Float(point.x), Float(point.y)),
+            startPlaneVoxel: mprVoxelValue(for: hit.referencePlane),
+            screenDeltaPerVoxel: screenDeltaPerVoxel
+        )
+        mprPlaneTiltDragState = nil
+        mprPreviewLineDragContext = MetalMPRPreviewLineDragContext(
+            displayedPlane: hit.displayedPlane,
+            referencePlane: hit.referencePlane,
+            interaction: hit.interaction,
+            componentIndex: hit.componentIndex,
+            baseVoxel: hit.baseVoxel,
+            paneRect: hit.paneRect,
+            lineFraction: hit.lineFraction,
+            continuousLineAngleRadians: hit.lineAngleRadians,
+            actionLineAngleOffsetRadians: mprPreviewActionLineAngleOffset(for: hit)
+        )
+        hoveredMPRPlane = hit.referencePlane
+        stateDidChange?(stateDescription)
+        return true
+    }
+
+    func beginMPRPreviewPlaneTiltDrag(at point: CGPoint, in bounds: CGRect) -> Bool {
+        guard displayMode.isMPRLike else { return false }
+        prepareBaseVolumeIfNeeded()
+        guard let hit = mprPreviewLineHit(at: point, in: bounds),
+              hit.interaction == .tilt,
+              let componentIndex = hit.componentIndex else {
+            mprPreviewLineDragContext = nil
+            return false
+        }
+
+        setMPRTiltPivotValue(
+            mprCurrentTiltPivotValue(for: hit.referencePlane, componentIndex: componentIndex),
+            for: hit.referencePlane,
+            componentIndex: componentIndex
+        )
+        guard let screenDeltaPerRadian = mprPreviewScreenDeltaPerRadian(
+            for: hit.referencePlane,
+            componentIndex: componentIndex,
+            at: hit.baseVoxel,
+            displayedIn: hit.displayedPlane,
+            paneRect: hit.paneRect
+        ),
+              simd_length_squared(screenDeltaPerRadian) > 0.0001 else {
+            mprPlaneTiltDragState = nil
+            mprPreviewLineDragContext = nil
+            return false
+        }
+
+        mprPlaneTiltDragState = MetalMPRPlaneTiltDragState(
+            plane: hit.referencePlane,
+            componentIndex: componentIndex,
+            startPoint: SIMD2<Float>(Float(point.x), Float(point.y)),
+            startAngle: mprTiltValue(for: hit.referencePlane, componentIndex: componentIndex),
+            screenDeltaPerRadian: screenDeltaPerRadian
+        )
+        mprPlaneDragState = nil
+        mprPreviewLineDragContext = MetalMPRPreviewLineDragContext(
+            displayedPlane: hit.displayedPlane,
+            referencePlane: hit.referencePlane,
+            interaction: hit.interaction,
+            componentIndex: componentIndex,
+            baseVoxel: hit.baseVoxel,
+            paneRect: hit.paneRect,
+            lineFraction: hit.lineFraction,
+            continuousLineAngleRadians: hit.lineAngleRadians,
+            actionLineAngleOffsetRadians: mprPreviewActionLineAngleOffset(for: hit)
+        )
+        hoveredMPRPlane = hit.referencePlane
+        stateDidChange?(stateDescription)
+        return true
     }
 
     func beginMPRPreviewPlaneDrag(at point: CGPoint, in bounds: CGRect) -> Bool {
-        guard displayMode == .mpr else { return false }
+        guard displayMode.isMPRLike else { return false }
         prepareBaseVolumeIfNeeded()
         guard let hit = mprPreviewHit(at: point, in: bounds) else {
             return false
@@ -842,13 +1068,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         setMPRPlaneIntersection(hit.baseVoxel, in: hit.plane)
         mprPlaneDragState = nil
         mprPlaneTiltDragState = nil
+        mprPreviewLineDragContext = nil
         hoveredMPRPlane = hit.plane
         stateDidChange?(stateDescription)
         return true
     }
 
     func dragMPRPreviewPlane(to point: CGPoint, in bounds: CGRect) {
-        guard displayMode == .mpr else { return }
+        guard displayMode.isMPRLike else { return }
         prepareBaseVolumeIfNeeded()
         guard let hit = mprPreviewHit(at: point, in: bounds) else {
             return
@@ -860,16 +1087,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     func mprSlicePlaneAxis(at point: CGPoint, in bounds: CGRect) -> Int? {
-        guard displayMode == .mpr else { return nil }
+        guard displayMode.isMPRLike else { return nil }
         prepareBaseVolumeIfNeeded()
-        if let mainPlane = mprPlane(at: point, in: bounds) {
+        if displayMode == .mpr, let mainPlane = mprPlane(at: point, in: bounds) {
             return mainPlane.rawValue
         }
         return mprPreviewPane(at: point, in: bounds)?.plane.rawValue
     }
 
     func moveMPRPlane(axis: Int, by delta: Float) {
-        guard displayMode == .mpr else { return }
+        guard displayMode.isMPRLike else { return }
         prepareBaseVolumeIfNeeded()
         switch axis {
         case 0:
@@ -890,37 +1117,101 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     func mprPreviewOverlayLayout(in bounds: CGRect) -> MetalMPRPreviewOverlayLayout? {
-        guard displayMode == .mpr,
-              let metrics = mprLayoutMetrics(totalWidth: bounds.width, totalHeight: bounds.height, unitScale: 1) else {
+        switch displayMode {
+        case .mpr:
+            guard let metrics = mprLayoutMetrics(totalWidth: bounds.width, totalHeight: bounds.height, unitScale: 1) else {
+                return nil
+            }
+
+            let mainRect = CGRect(x: bounds.minX, y: bounds.minY, width: metrics.mainWidth, height: metrics.totalHeight)
+            let dividerRect = CGRect(x: mainRect.maxX, y: bounds.minY, width: metrics.gap, height: metrics.totalHeight)
+            let previewPanes = zip(Self.mprPlanes, metrics.previewPaneRects).map { pair in
+                let (plane, rect) = pair
+                return mprOverlayPane(for: plane, rect: rect.offsetBy(dx: bounds.minX, dy: bounds.minY))
+            }
+            return MetalMPRPreviewOverlayLayout(
+                mainRect: mainRect,
+                dividerRect: dividerRect,
+                previewPanes: previewPanes
+            )
+        case .mpr3D:
+            guard let paneRects = mpr3DPaneRects(totalWidth: bounds.width, totalHeight: bounds.height, unitScale: 1) else {
+                return nil
+            }
+            let previewPanes = zip(Self.mprPlanes, paneRects).map { pair in
+                let (plane, rect) = pair
+                return mprOverlayPane(for: plane, rect: rect.offsetBy(dx: bounds.minX, dy: bounds.minY))
+            }
+            return MetalMPRPreviewOverlayLayout(
+                mainRect: bounds,
+                dividerRect: .zero,
+                previewPanes: previewPanes
+            )
+        case .stack2D:
             return nil
         }
+    }
 
-        let mainRect = CGRect(x: bounds.minX, y: bounds.minY, width: metrics.mainWidth, height: metrics.totalHeight)
-        let dividerRect = CGRect(x: mainRect.maxX, y: bounds.minY, width: metrics.gap, height: metrics.totalHeight)
-        let previewPanes = metrics.previewPaneRects.enumerated().map { index, rect in
-            let labels: (left: String, right: String, top: String, bottom: String)
-            switch index {
-            case 0:
-                labels = (left: "L", right: "R", top: "A", bottom: "P")
-            case 1:
-                labels = (left: "L", right: "R", top: "S", bottom: "I")
-            default:
-                labels = (left: "A", right: "P", top: "S", bottom: "I")
-            }
-            return MetalMPRPreviewOverlayPane(
-                rect: rect.offsetBy(dx: bounds.minX, dy: bounds.minY),
-                left: labels.left,
-                right: labels.right,
-                top: labels.top,
-                bottom: labels.bottom
+    private func mprOverlayPane(for plane: MetalMPRPlane, rect: CGRect) -> MetalMPRPreviewOverlayPane {
+        let labels = mprOverlayLabels(for: plane)
+        return MetalMPRPreviewOverlayPane(
+            rect: rect,
+            left: labels.left,
+            right: labels.right,
+            top: labels.top,
+            bottom: labels.bottom
+        )
+    }
+
+    private func mprOverlayLabels(
+        for plane: MetalMPRPlane
+    ) -> (left: String, right: String, top: String, bottom: String) {
+        switch plane {
+        case .axial:
+            return (left: "L", right: "R", top: "A", bottom: "P")
+        case .coronal:
+            return (left: "L", right: "R", top: "S", bottom: "I")
+        case .sagittal:
+            return (left: "A", right: "P", top: "S", bottom: "I")
+        }
+    }
+
+    private func mprAxisColor(for plane: MetalMPRPlane, alpha: Float? = nil) -> SIMD4<Float> {
+        let defaults = UserDefaults.standard
+        let rawColors = (1...3).map { index -> SIMD4<Float> in
+            let prefix = "MPR_AXIS_\(index)"
+            return SIMD4<Float>(
+                defaults.float(forKey: "\(prefix)_RED"),
+                defaults.float(forKey: "\(prefix)_GREEN"),
+                defaults.float(forKey: "\(prefix)_BLUE"),
+                defaults.float(forKey: "\(prefix)_ALPHA")
             )
         }
+        let allUnset = rawColors.allSatisfy { color in
+            color.x == 0 && color.y == 0 && color.z == 0 && color.w == 0
+        }
+        let colors = allUnset ? mprDefaultAxisColors() : rawColors
+        let color: SIMD4<Float>
+        switch plane {
+        case .axial:
+            color = colors[0]
+        case .coronal:
+            color = colors[1]
+        case .sagittal:
+            color = colors[2]
+        }
+        if let alpha {
+            return SIMD4<Float>(color.x, color.y, color.z, alpha)
+        }
+        return color
+    }
 
-        return MetalMPRPreviewOverlayLayout(
-            mainRect: mainRect,
-            dividerRect: dividerRect,
-            previewPanes: previewPanes
-        )
+    private func mprDefaultAxisColors() -> [SIMD4<Float>] {
+        [
+            SIMD4<Float>(1.0, 0.67, 0.0, 0.8),
+            SIMD4<Float>(0.6, 0.0, 1.0, 0.8),
+            SIMD4<Float>(0.0, 0.5, 1.0, 0.8),
+        ]
     }
 
     func orientationOverlayState(in bounds: CGRect) -> MetalOrientationOverlayState? {
@@ -955,7 +1246,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     func updateMPRHover(at point: CGPoint?, in bounds: CGRect) {
         guard mprPlaneDragState == nil, mprPlaneTiltDragState == nil else { return }
-        guard displayMode == .mpr, let point else {
+        guard displayMode.isMPRLike, let point else {
             if hoveredMPRPlane != nil {
                 hoveredMPRPlane = nil
                 stateDidChange?(stateDescription)
@@ -964,7 +1255,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         prepareBaseVolumeIfNeeded()
-        let nextPlane = mprPlane(at: point, in: bounds) ?? mprPreviewHit(at: point, in: bounds)?.plane
+        let mainPlane = displayMode == .mpr ? mprPlane(at: point, in: bounds) : nil
+        let nextPlane = mainPlane ?? mprPreviewHit(at: point, in: bounds)?.plane
         guard hoveredMPRPlane != nextPlane else { return }
         hoveredMPRPlane = nextPlane
         stateDidChange?(stateDescription)
@@ -1156,7 +1448,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         switch displayMode {
         case .stack2D:
             return stackTumourSeedPlacement(at: point, in: bounds)
-        case .mpr:
+        case .mpr, .mpr3D:
             return mprTumourSeedPlacement(at: point, in: bounds)
         }
     }
@@ -1227,15 +1519,25 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         mprPreviewHit(at: point, in: bounds)?.baseVoxel
     }
 
+    private func mprPreviewViewport(for rect: CGRect) -> MTLViewport {
+        MTLViewport(
+            originX: 0,
+            originY: 0,
+            width: Double(max(rect.width, 1)),
+            height: Double(max(rect.height, 1)),
+            znear: 0,
+            zfar: 1
+        )
+    }
+
     private func mprPreviewPane(at point: CGPoint, in bounds: CGRect) -> (plane: MetalMPRPlane, rect: CGRect)? {
         guard let layout = mprPreviewOverlayLayout(in: bounds) else {
             return nil
         }
 
-        let planes: [MetalMPRPlane] = [.axial, .coronal, .sagittal]
-        for (index, pane) in layout.previewPanes.enumerated() where index < planes.count {
+        for (index, pane) in layout.previewPanes.enumerated() where index < Self.mprPlanes.count {
             if pane.rect.contains(point) {
-                return (planes[index], pane.rect)
+                return (Self.mprPlanes[index], pane.rect)
             }
         }
 
@@ -1249,14 +1551,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         let rect = previewPane.rect
         let plane = previewPane.plane
-        let viewport = MTLViewport(
-            originX: 0,
-            originY: 0,
-            width: Double(max(rect.width, 1)),
-            height: Double(max(rect.height, 1)),
-            znear: 0,
-            zfar: 1
-        )
+        let viewport = mprPreviewViewport(for: rect)
         guard let geometry = planarMPRPreviewGeometry(for: plane, viewport: viewport),
               geometry.halfWidth > 0.0001,
               geometry.halfHeight > 0.0001 else {
@@ -1302,6 +1597,193 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             plane: plane,
             baseVoxel: mprPlaneVoxel(for: plane, first: first, second: second)
         )
+    }
+
+    private func mprPreviewLineHit(at point: CGPoint, in bounds: CGRect) -> MetalMPRPreviewLineHit? {
+        guard let previewPane = mprPreviewPane(at: point, in: bounds) else {
+            return nil
+        }
+
+        let rect = previewPane.rect
+        let displayedPlane = previewPane.plane
+        let viewport = mprPreviewViewport(for: rect)
+        let displayedCorners = mprPlaneCorners(for: displayedPlane)
+        guard displayedCorners.count == 4 else {
+            return nil
+        }
+
+        let pointVector = SIMD2<Float>(Float(point.x), Float(point.y))
+        let hitTolerance: Float = 8
+        var bestHit: MetalMPRPreviewLineHit?
+        var bestDistance = Float.greatestFiniteMagnitude
+
+        for referencePlane in Self.mprPlanes where referencePlane != displayedPlane {
+            guard let segment = mprIntersectionSegment(
+                    firstCorners: displayedCorners,
+                    secondCorners: mprPlaneCorners(for: referencePlane)
+                  ),
+                  let startPosition = planarMPRPreviewPosition(for: segment.0, plane: displayedPlane, viewport: viewport),
+                  let endPosition = planarMPRPreviewPosition(for: segment.1, plane: displayedPlane, viewport: viewport) else {
+                continue
+            }
+
+            let startPoint = mprPreviewScreenPoint(for: startPosition, in: rect)
+            let endPoint = mprPreviewScreenPoint(for: endPosition, in: rect)
+            let distance = mprDistanceFromPoint(pointVector, toSegmentFrom: startPoint, to: endPoint)
+            guard distance.value <= hitTolerance, distance.value < bestDistance else {
+                continue
+            }
+
+            let interaction = mprPreviewLineInteraction(forFraction: distance.fraction)
+            let baseVoxel = segment.0 + (segment.1 - segment.0) * distance.fraction
+            let lineDelta = endPoint - startPoint
+            let componentIndex = interaction == .tilt ? mprPreviewTiltComponent(
+                for: referencePlane,
+                displayedIn: displayedPlane
+            ) : nil
+            let actionAngleRadians = interaction == .tilt && componentIndex != nil
+                ? mprPreviewTiltActionAngle(lineDelta: lineDelta, lineFraction: distance.fraction)
+                : nil
+            bestDistance = distance.value
+            bestHit = MetalMPRPreviewLineHit(
+                displayedPlane: displayedPlane,
+                referencePlane: referencePlane,
+                interaction: interaction,
+                componentIndex: componentIndex,
+                baseVoxel: baseVoxel,
+                paneRect: rect,
+                lineFraction: distance.fraction,
+                lineAngleRadians: CGFloat(atan2(lineDelta.y, lineDelta.x)),
+                actionAngleRadians: actionAngleRadians
+            )
+        }
+
+        return bestHit
+    }
+
+    private func mprPreviewLinePointer(
+        displayedPlane: MetalMPRPlane,
+        referencePlane: MetalMPRPlane,
+        interaction: MetalMPRPreviewLineInteraction,
+        componentIndex: Int?,
+        baseVoxel: SIMD3<Float>,
+        paneRect: CGRect,
+        lineFraction: Float
+    ) -> MetalMPRPreviewLinePointer? {
+        let viewport = mprPreviewViewport(for: paneRect)
+        let displayedCorners = mprPlaneCorners(for: displayedPlane)
+        guard displayedCorners.count == 4,
+              let segment = mprIntersectionSegment(
+                firstCorners: displayedCorners,
+                secondCorners: mprPlaneCorners(for: referencePlane)
+              ),
+              let startPosition = planarMPRPreviewPosition(for: segment.0, plane: displayedPlane, viewport: viewport),
+              let endPosition = planarMPRPreviewPosition(for: segment.1, plane: displayedPlane, viewport: viewport) else {
+            return nil
+        }
+
+        let startPoint = mprPreviewScreenPoint(for: startPosition, in: paneRect)
+        let endPoint = mprPreviewScreenPoint(for: endPosition, in: paneRect)
+        let lineDelta = endPoint - startPoint
+        guard simd_length_squared(lineDelta) > 0.0001 else {
+            return nil
+        }
+
+        let actionAngleRadians = interaction == .tilt && componentIndex != nil
+            ? mprPreviewTiltActionAngle(lineDelta: lineDelta, lineFraction: lineFraction)
+            : nil
+
+        return MetalMPRPreviewLinePointer(
+            interaction: interaction,
+            lineAngleRadians: CGFloat(atan2(lineDelta.y, lineDelta.x)),
+            actionAngleRadians: actionAngleRadians
+        )
+    }
+
+    private func mprPreviewLineInteraction(forFraction fraction: Float) -> MetalMPRPreviewLineInteraction {
+        fraction >= (1.0 / 3.0) && fraction <= (2.0 / 3.0) ? .move : .tilt
+    }
+
+    private func mprPreviewActionLineAngleOffset(for hit: MetalMPRPreviewLineHit) -> CGFloat? {
+        let actionAngle: CGFloat?
+        switch hit.interaction {
+        case .move:
+            actionAngle = hit.lineAngleRadians + CGFloat.pi * 0.5
+        case .tilt:
+            actionAngle = hit.actionAngleRadians
+        }
+        guard let actionAngle else {
+            return nil
+        }
+        return mprNormalizedSignedAngle(actionAngle - hit.lineAngleRadians)
+    }
+
+    private func mprNormalizedSignedAngle(_ angle: CGFloat) -> CGFloat {
+        let fullTurn = CGFloat.pi * 2
+        var normalized = (angle + CGFloat.pi).truncatingRemainder(dividingBy: fullTurn)
+        if normalized < 0 {
+            normalized += fullTurn
+        }
+        return normalized - CGFloat.pi
+    }
+
+    private func mprLineAngle(_ angle: CGFloat, closestTo reference: CGFloat) -> CGFloat {
+        angle + ((reference - angle) / CGFloat.pi).rounded() * CGFloat.pi
+    }
+
+    private func mprPreviewTiltActionAngle(lineDelta: SIMD2<Float>, lineFraction: Float) -> CGFloat? {
+        let lineLength = simd_length(lineDelta)
+        guard lineLength > 0.0001 else {
+            return nil
+        }
+
+        let radiusDirection = (lineFraction < 0.5 ? lineDelta : -lineDelta) / lineLength
+        return CGFloat(atan2(radiusDirection.y, radiusDirection.x))
+    }
+
+    private func mprPreviewTiltComponent(
+        for referencePlane: MetalMPRPlane,
+        displayedIn displayedPlane: MetalMPRPlane
+    ) -> Int? {
+        let displayedAxes = Set(mprPreviewLocalAxisIndices(for: displayedPlane))
+        let referenceAxes = mprPreviewLocalAxisIndices(for: referencePlane)
+        for (index, axis) in referenceAxes.enumerated() where displayedAxes.contains(axis) {
+            return index
+        }
+        return nil
+    }
+
+    private func mprPreviewLocalAxisIndices(for plane: MetalMPRPlane) -> [Int] {
+        switch plane {
+        case .axial:
+            return [0, 1]
+        case .coronal:
+            return [0, 2]
+        case .sagittal:
+            return [1, 2]
+        }
+    }
+
+    private func mprPreviewScreenPoint(for position: SIMD3<Float>, in rect: CGRect) -> SIMD2<Float> {
+        SIMD2<Float>(
+            Float(rect.minX) + (position.x * 0.5 + 0.5) * Float(rect.width),
+            Float(rect.minY) + (position.y * 0.5 + 0.5) * Float(rect.height)
+        )
+    }
+
+    private func mprDistanceFromPoint(
+        _ point: SIMD2<Float>,
+        toSegmentFrom start: SIMD2<Float>,
+        to end: SIMD2<Float>
+    ) -> (value: Float, fraction: Float) {
+        let segment = end - start
+        let lengthSquared = simd_length_squared(segment)
+        guard lengthSquared > 0.0001 else {
+            return (simd_distance(point, start), 0)
+        }
+        let fraction = min(max(simd_dot(point - start, segment) / lengthSquared, 0), 1)
+        let closestPoint = start + segment * fraction
+        return (simd_distance(point, closestPoint), fraction)
     }
 
     private func normalizedStackRotation(_ angle: Float) -> Float {
@@ -3792,9 +4274,15 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     func draw(in view: MTKView) {
-        if displayMode == .mpr {
+        switch displayMode {
+        case .mpr:
             drawMPR(in: view)
             return
+        case .mpr3D:
+            drawMPR3D(in: view)
+            return
+        case .stack2D:
+            break
         }
 
         guard let renderPassDescriptor = view.currentRenderPassDescriptor,
@@ -3887,24 +4375,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             Float((CGFloat(panOffset.y) / max(mainBounds.height, 1)) * 2.0)
         )
         let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset, viewportSize: mainBounds.size)
-        var uniforms = MetalMPRUniforms(
+        var uniforms = makeMPRUniforms(
             viewProjectionMatrix: viewProjectionMatrix,
-            baseWindowLevel: windowLevel,
-            baseWindowWidth: max(windowWidth, 1),
-            overlayWindowLevel: overlayWindowLevel,
-            overlayWindowWidth: max(overlayWindowWidth, 1),
-            overlayBlend: overlayBlend,
-            overlayTranslationWorld: overlayTranslationWorld,
-            movingRotationCenterWorld: movingRotationCenterWorld,
-            fixedVolumeSize: SIMD3<UInt32>(
-                UInt32(max(baseVolumeTexture.width, 1)),
-                UInt32(max(baseVolumeTexture.height, 1)),
-                UInt32(max(baseVolumeTexture.depth, 1))
-            ),
-            movingInverseRotation: rotationMatrix(for: -overlayRotationRadians),
-            fixedVoxelToWorld: fixedVoxelToWorld,
-            movingWorldToVoxel: movingWorldToVoxel,
-            hasOverlay: overlayVolumeTexture == nil ? 0 : 1
+            baseVolumeTexture: baseVolumeTexture
         )
         let renderLayout = mprRenderLayout(for: view)
         if let renderLayout {
@@ -3995,6 +4468,64 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         commandBuffer.commit()
     }
 
+    private func makeMPRUniforms(
+        viewProjectionMatrix: simd_float4x4,
+        baseVolumeTexture: MTLTexture
+    ) -> MetalMPRUniforms {
+        MetalMPRUniforms(
+            viewProjectionMatrix: viewProjectionMatrix,
+            baseWindowLevel: windowLevel,
+            baseWindowWidth: max(windowWidth, 1),
+            overlayWindowLevel: overlayWindowLevel,
+            overlayWindowWidth: max(overlayWindowWidth, 1),
+            overlayBlend: overlayBlend,
+            overlayTranslationWorld: overlayTranslationWorld,
+            movingRotationCenterWorld: movingRotationCenterWorld,
+            fixedVolumeSize: SIMD3<UInt32>(
+                UInt32(max(baseVolumeTexture.width, 1)),
+                UInt32(max(baseVolumeTexture.height, 1)),
+                UInt32(max(baseVolumeTexture.depth, 1))
+            ),
+            movingInverseRotation: rotationMatrix(for: -overlayRotationRadians),
+            fixedVoxelToWorld: fixedVoxelToWorld,
+            movingWorldToVoxel: movingWorldToVoxel,
+            hasOverlay: overlayVolumeTexture == nil ? 0 : 1
+        )
+    }
+
+    private func drawMPR3D(in view: MTKView) {
+        prepareBaseVolumeIfNeeded()
+        guard let renderPassDescriptor = view.currentRenderPassDescriptor,
+              let drawable = view.currentDrawable,
+              let baseVolumeTexture,
+              let panes = mpr3DRenderPanes(for: view) else {
+            return
+        }
+        renderPassDescriptor.depthAttachment.clearDepth = 1.0
+        renderPassDescriptor.depthAttachment.loadAction = .clear
+        renderPassDescriptor.depthAttachment.storeAction = .dontCare
+
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+            return
+        }
+
+        let uniforms = makeMPRUniforms(
+            viewProjectionMatrix: matrix_identity_float4x4,
+            baseVolumeTexture: baseVolumeTexture
+        )
+        drawMPRPreviewPanes(
+            panes,
+            encoder: encoder,
+            uniforms: uniforms,
+            baseVolumeTexture: baseVolumeTexture
+        )
+        encoder.endEncoding()
+
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+    }
+
     private func mprRenderLayout(for view: MTKView) -> MetalMPRRenderLayout? {
         let drawableWidth = Int(view.drawableSize.width.rounded(.down))
         let drawableHeight = Int(view.drawableSize.height.rounded(.down))
@@ -4030,28 +4561,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         )
         let mainScissor = MTLScissorRect(x: 0, y: 0, width: mainWidth, height: renderHeight)
 
-        let planes: [MetalMPRPlane] = [.axial, .coronal, .sagittal]
-        let panes = Array(zip(planes, metrics.previewPaneRects)).compactMap { pair -> MetalMPRPreviewPane? in
-            let (plane, rect) = pair
-            let y = min(max(Int(rect.minY.rounded(.down)), 0), max(renderHeight - 1, 0))
-            let maxY = min(max(Int(rect.maxY.rounded(.down)), y + 1), renderHeight)
-            let height = maxY - y
-            guard height > 0 else {
-                return nil
-            }
-            let viewport = MTLViewport(
-                originX: Double(previewX),
-                originY: Double(y),
-                width: Double(previewWidth),
-                height: Double(height),
-                znear: 0,
-                zfar: 1
-            )
-            let scissor = MTLScissorRect(x: previewX, y: y, width: previewWidth, height: height)
-            return MetalMPRPreviewPane(plane: plane, viewport: viewport, scissor: scissor)
+        let previewPaneRects = metrics.previewPaneRects.map { rect in
+            CGRect(x: CGFloat(previewX), y: rect.minY, width: CGFloat(previewWidth), height: rect.height)
         }
-
-        guard panes.count == planes.count else {
+        guard let panes = mprPreviewPanes(
+            for: previewPaneRects,
+            renderWidth: drawableWidth,
+            renderHeight: renderHeight
+        ) else {
             return nil
         }
         return MetalMPRRenderLayout(
@@ -4059,6 +4576,59 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             mainScissor: mainScissor,
             previewPanes: panes
         )
+    }
+
+    private func mpr3DRenderPanes(for view: MTKView) -> [MetalMPRPreviewPane]? {
+        let drawableWidth = Int(view.drawableSize.width.rounded(.down))
+        let drawableHeight = Int(view.drawableSize.height.rounded(.down))
+        guard drawableWidth > 0, drawableHeight > 0 else {
+            return nil
+        }
+
+        let scale = max(view.window?.backingScaleFactor ?? view.layer?.contentsScale ?? 1, 1)
+        guard let paneRects = mpr3DPaneRects(
+            totalWidth: CGFloat(drawableWidth),
+            totalHeight: CGFloat(drawableHeight),
+            unitScale: scale
+        ) else {
+            return nil
+        }
+
+        return mprPreviewPanes(for: paneRects, renderWidth: drawableWidth, renderHeight: drawableHeight)
+    }
+
+    private func mprPreviewPanes(
+        for paneRects: [CGRect],
+        renderWidth: Int,
+        renderHeight: Int
+    ) -> [MetalMPRPreviewPane]? {
+        let panes = Array(zip(Self.mprPlanes, paneRects)).compactMap { pair -> MetalMPRPreviewPane? in
+            let (plane, rect) = pair
+            let x = min(max(Int(rect.minX.rounded(.down)), 0), max(renderWidth - 1, 0))
+            let maxX = min(max(Int(rect.maxX.rounded(.down)), x + 1), renderWidth)
+            let y = min(max(Int(rect.minY.rounded(.down)), 0), max(renderHeight - 1, 0))
+            let maxY = min(max(Int(rect.maxY.rounded(.down)), y + 1), renderHeight)
+            let width = maxX - x
+            let height = maxY - y
+            guard width > 0, height > 0 else {
+                return nil
+            }
+            let viewport = MTLViewport(
+                originX: Double(x),
+                originY: Double(y),
+                width: Double(width),
+                height: Double(height),
+                znear: 0,
+                zfar: 1
+            )
+            let scissor = MTLScissorRect(x: x, y: y, width: width, height: height)
+            return MetalMPRPreviewPane(plane: plane, viewport: viewport, scissor: scissor)
+        }
+
+        guard panes.count == Self.mprPlanes.count else {
+            return nil
+        }
+        return panes
     }
 
     private func mprLayoutMetrics(
@@ -4115,6 +4685,47 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         )
     }
 
+    private func mpr3DPaneRects(
+        totalWidth: CGFloat,
+        totalHeight: CGFloat,
+        unitScale: CGFloat
+    ) -> [CGRect]? {
+        guard totalWidth > 0, totalHeight > 0 else {
+            return nil
+        }
+
+        let paneGap = max(MetalMPRPreviewLayoutDefaults.paneGap * unitScale, 1)
+        if totalWidth >= totalHeight {
+            let availableWidth = totalWidth - paneGap * 2
+            guard availableWidth > 3 else {
+                return nil
+            }
+            let paneWidth = floor(availableWidth / 3)
+            guard paneWidth > 0 else {
+                return nil
+            }
+            return (0..<3).map { index in
+                let x = CGFloat(index) * (paneWidth + paneGap)
+                let width = index == 2 ? totalWidth - x : paneWidth
+                return CGRect(x: x, y: 0, width: width, height: totalHeight)
+            }
+        }
+
+        let availableHeight = totalHeight - paneGap * 2
+        guard availableHeight > 3 else {
+            return nil
+        }
+        let paneHeight = floor(availableHeight / 3)
+        guard paneHeight > 0 else {
+            return nil
+        }
+        return (0..<3).map { index in
+            let y = CGFloat(index) * (paneHeight + paneGap)
+            let height = index == 2 ? totalHeight - y : paneHeight
+            return CGRect(x: 0, y: y, width: totalWidth, height: height)
+        }
+    }
+
     private func drawMPRPreviewPanes(
         _ panes: [MetalMPRPreviewPane],
         encoder: MTLRenderCommandEncoder,
@@ -4145,6 +4756,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 encoder.setFragmentTexture(overlayVolumeTexture, index: 1)
                 encoder.setFragmentSamplerState(samplerState, index: 0)
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
+            }
+
+            let sliceThicknessVertices = makePlanarMPRPreviewSliceThicknessVertices(for: pane.plane, viewport: pane.viewport)
+            if sliceThicknessVertices.isEmpty == false {
+                encoder.setRenderPipelineState(mprPlaneHighlightPipelineState)
+                encoder.setDepthStencilState(mprDepthStencilState)
+                sliceThicknessVertices.withUnsafeBytes { vertexBytes in
+                    guard let vertexBaseAddress = vertexBytes.baseAddress else {
+                        return
+                    }
+                    encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+                    encoder.setVertexBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
+                    encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: sliceThicknessVertices.count)
+                }
             }
 
             let seedVertices = makePlanarMPRPreviewTumourSeedCrossSectionVertices(for: pane.plane, viewport: pane.viewport)
@@ -4368,9 +4993,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private func makeMPRBorderVertices() -> [MetalMPRVertex] {
         var vertices: [MetalMPRVertex] = []
         vertices.reserveCapacity(24)
-        appendMPRPlaneBorder(to: &vertices, corners: mprPlaneCorners(for: .axial))
-        appendMPRPlaneBorder(to: &vertices, corners: mprPlaneCorners(for: .coronal))
-        appendMPRPlaneBorder(to: &vertices, corners: mprPlaneCorners(for: .sagittal))
+        appendMPRPlaneBorder(to: &vertices, plane: .axial)
+        appendMPRPlaneBorder(to: &vertices, plane: .coronal)
+        appendMPRPlaneBorder(to: &vertices, plane: .sagittal)
 
         return vertices
     }
@@ -4572,8 +5197,42 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return vertices
     }
 
+    private func makePlanarMPRPreviewSliceThicknessVertices(
+        for plane: MetalMPRPlane,
+        viewport: MTLViewport
+    ) -> [MetalMPRVertex] {
+        let currentCorners = mprPlaneCorners(for: plane)
+        guard currentCorners.count == 4 else {
+            return []
+        }
+
+        var vertices: [MetalMPRVertex] = []
+        vertices.reserveCapacity(12)
+        for otherPlane in Self.mprPlanes where otherPlane != plane {
+            guard let band = mprSliceThicknessBandSegments(
+                currentPlaneCorners: currentCorners,
+                slicePlane: otherPlane
+            ),
+                  let startA = planarMPRPreviewPosition(for: band.first.0, plane: plane, viewport: viewport),
+                  let endA = planarMPRPreviewPosition(for: band.first.1, plane: plane, viewport: viewport),
+                  let startB = planarMPRPreviewPosition(for: band.second.0, plane: plane, viewport: viewport),
+                  let endB = planarMPRPreviewPosition(for: band.second.1, plane: plane, viewport: viewport) else {
+                continue
+            }
+
+            let color = mprAxisColor(for: otherPlane, alpha: 0.18)
+            vertices.append(MetalMPRVertex(position: startA, baseVoxel: band.first.0, color: color))
+            vertices.append(MetalMPRVertex(position: endA, baseVoxel: band.first.1, color: color))
+            vertices.append(MetalMPRVertex(position: endB, baseVoxel: band.second.1, color: color))
+            vertices.append(MetalMPRVertex(position: startA, baseVoxel: band.first.0, color: color))
+            vertices.append(MetalMPRVertex(position: endB, baseVoxel: band.second.1, color: color))
+            vertices.append(MetalMPRVertex(position: startB, baseVoxel: band.second.0, color: color))
+        }
+        return vertices
+    }
+
     private func makePlanarMPRPreviewIntersectionVertices(for plane: MetalMPRPlane, viewport: MTLViewport) -> [MetalMPRVertex] {
-        let otherPlanes: [MetalMPRPlane] = [.axial, .coronal, .sagittal].filter { $0 != plane }
+        let otherPlanes = Self.mprPlanes.filter { $0 != plane }
         var vertices: [MetalMPRVertex] = []
         vertices.reserveCapacity(otherPlanes.count * 2)
 
@@ -4587,11 +5246,108 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 continue
             }
 
-            vertices.append(MetalMPRVertex(position: start, baseVoxel: segment.0))
-            vertices.append(MetalMPRVertex(position: end, baseVoxel: segment.1))
+            let color = mprAxisColor(for: otherPlane)
+            vertices.append(MetalMPRVertex(position: start, baseVoxel: segment.0, color: color))
+            vertices.append(MetalMPRVertex(position: end, baseVoxel: segment.1, color: color))
         }
 
         return vertices
+    }
+
+    private func mprSliceThicknessBandSegments(
+        currentPlaneCorners: [SIMD3<Float>],
+        slicePlane: MetalMPRPlane
+    ) -> (
+        first: (SIMD3<Float>, SIMD3<Float>),
+        second: (SIMD3<Float>, SIMD3<Float>)
+    )? {
+        let sliceCorners = mprPlaneCorners(for: slicePlane)
+        guard currentPlaneCorners.count == 4,
+              sliceCorners.count == 4,
+              let centerSegment = mprIntersectionSegment(
+                firstCorners: currentPlaneCorners,
+                secondCorners: sliceCorners
+              ),
+              let normal = mprPlaneNormalWorld(for: sliceCorners) else {
+            return nil
+        }
+
+        let halfThickness = mprSliceThicknessMM(for: slicePlane) * 0.5
+        guard halfThickness > 0.0001 else {
+            return nil
+        }
+
+        let firstCorners = mprOffsetPlaneCorners(sliceCorners, normalWorld: normal, offsetMM: -halfThickness)
+        let secondCorners = mprOffsetPlaneCorners(sliceCorners, normalWorld: normal, offsetMM: halfThickness)
+        guard let firstSegment = mprIntersectionSegment(
+            firstCorners: currentPlaneCorners,
+            secondCorners: firstCorners
+        ),
+              let secondSegment = mprIntersectionSegment(
+                firstCorners: currentPlaneCorners,
+                secondCorners: secondCorners
+              ) else {
+            return nil
+        }
+
+        return (
+            first: mprSegment(firstSegment, orderedLike: centerSegment),
+            second: mprSegment(secondSegment, orderedLike: centerSegment)
+        )
+    }
+
+    private func mprPlaneNormalWorld(for corners: [SIMD3<Float>]) -> SIMD3<Float>? {
+        guard corners.count == 4 else {
+            return nil
+        }
+        let worldCorners = corners.map { mprDisplayWorldPosition(for: $0) }
+        let normal = simd_cross(worldCorners[1] - worldCorners[0], worldCorners[2] - worldCorners[0])
+        guard simd_length_squared(normal) > 0.000001 else {
+            return nil
+        }
+        return simd_normalize(normal)
+    }
+
+    private func mprOffsetPlaneCorners(
+        _ corners: [SIMD3<Float>],
+        normalWorld: SIMD3<Float>,
+        offsetMM: Float
+    ) -> [SIMD3<Float>] {
+        let worldToBaseVoxel = simd_inverse(fixedVoxelToWorld)
+        return corners.map { corner in
+            let world = mprDisplayWorldPosition(for: corner) + normalWorld * offsetMM
+            return mprBaseVoxel(forWorld: world, worldToBaseVoxel: worldToBaseVoxel)
+        }
+    }
+
+    private func mprSegment(
+        _ segment: (SIMD3<Float>, SIMD3<Float>),
+        orderedLike reference: (SIMD3<Float>, SIMD3<Float>)
+    ) -> (SIMD3<Float>, SIMD3<Float>) {
+        let referenceStart = mprDisplayWorldPosition(for: reference.0)
+        let referenceEnd = mprDisplayWorldPosition(for: reference.1)
+        let direction = referenceEnd - referenceStart
+        guard simd_length_squared(direction) > 0.000001 else {
+            return segment
+        }
+
+        let normalizedDirection = simd_normalize(direction)
+        let firstDistance = simd_dot(mprDisplayWorldPosition(for: segment.0) - referenceStart, normalizedDirection)
+        let secondDistance = simd_dot(mprDisplayWorldPosition(for: segment.1) - referenceStart, normalizedDirection)
+        return firstDistance <= secondDistance ? segment : (segment.1, segment.0)
+    }
+
+    private func mprSliceThicknessMM(for plane: MetalMPRPlane) -> Float {
+        let column: SIMD4<Float>
+        switch plane {
+        case .sagittal:
+            column = fixedVoxelToWorld.columns.0
+        case .coronal:
+            column = fixedVoxelToWorld.columns.1
+        case .axial:
+            column = fixedVoxelToWorld.columns.2
+        }
+        return max(simd_length(SIMD3<Float>(column.x, column.y, column.z)), 0.001)
     }
 
     private func appendMPRTumourSeedCrossSections(
@@ -4725,6 +5481,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let filledVertices = makePlanarMPRPreviewVertices(for: plane, viewport: viewport)
         guard filledVertices.count == 6 else { return [] }
 
+        let color = mprAxisColor(for: plane)
         let corners = [
             filledVertices[0],
             filledVertices[1],
@@ -4732,10 +5489,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             filledVertices[5],
         ]
         return [
-            corners[0], corners[1],
-            corners[1], corners[2],
-            corners[2], corners[3],
-            corners[3], corners[0],
+            corners[0].withColor(color), corners[1].withColor(color),
+            corners[1].withColor(color), corners[2].withColor(color),
+            corners[2].withColor(color), corners[3].withColor(color),
+            corners[3].withColor(color), corners[0].withColor(color),
         ]
     }
 
@@ -5210,6 +5967,68 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         )
     }
 
+    private func mprPreviewScreenDeltaPerVoxel(
+        for plane: MetalMPRPlane,
+        at baseVoxel: SIMD3<Float>,
+        displayedIn displayedPlane: MetalMPRPlane,
+        paneRect: CGRect
+    ) -> SIMD2<Float>? {
+        let viewport = mprPreviewViewport(for: paneRect)
+        guard let startPosition = planarMPRPreviewPosition(
+            for: baseVoxel,
+            plane: displayedPlane,
+            viewport: viewport
+        ),
+              let endPosition = planarMPRPreviewPosition(
+                for: baseVoxel + mprNormalVoxelStep(for: plane),
+                plane: displayedPlane,
+                viewport: viewport
+              ) else {
+            return nil
+        }
+
+        let projectedStart = mprPreviewScreenPoint(for: startPosition, in: paneRect)
+        let projectedEnd = mprPreviewScreenPoint(for: endPosition, in: paneRect)
+        return projectedEnd - projectedStart
+    }
+
+    private func mprPreviewScreenDeltaPerRadian(
+        for plane: MetalMPRPlane,
+        componentIndex: Int,
+        at baseVoxel: SIMD3<Float>,
+        displayedIn displayedPlane: MetalMPRPlane,
+        paneRect: CGRect
+    ) -> SIMD2<Float>? {
+        let local = mprPlaneLocalCoordinates(for: plane, baseVoxel: baseVoxel)
+        let angleStep: Float = 0.01
+        let viewport = mprPreviewViewport(for: paneRect)
+        let startVoxel = mprPlaneVoxel(for: plane, first: local.x, second: local.y)
+        let startAngle = mprTiltValue(for: plane, componentIndex: componentIndex)
+        let endVoxel = mprPlaneVoxel(
+            for: plane,
+            first: local.x,
+            second: local.y,
+            overridingComponent: componentIndex,
+            angle: startAngle + angleStep
+        )
+        guard let startPosition = planarMPRPreviewPosition(
+            for: startVoxel,
+            plane: displayedPlane,
+            viewport: viewport
+        ),
+              let endPosition = planarMPRPreviewPosition(
+                for: endVoxel,
+                plane: displayedPlane,
+                viewport: viewport
+              ) else {
+            return nil
+        }
+
+        let projectedStart = mprPreviewScreenPoint(for: startPosition, in: paneRect)
+        let projectedEnd = mprPreviewScreenPoint(for: endPosition, in: paneRect)
+        return (projectedEnd - projectedStart) / angleStep
+    }
+
     private func mprPlaneLocalCoordinates(for plane: MetalMPRPlane, baseVoxel: SIMD3<Float>) -> SIMD2<Float> {
         switch plane {
         case .axial:
@@ -5349,8 +6168,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    private func appendMPRPlaneBorder(to vertices: inout [MetalMPRVertex], corners: [SIMD3<Float>]) {
+    private func appendMPRPlaneBorder(to vertices: inout [MetalMPRVertex], plane: MetalMPRPlane) {
+        let corners = mprPlaneCorners(for: plane)
         guard corners.count == 4 else { return }
+        let color = mprAxisColor(for: plane)
         let borderVertices = [
             corners[0], corners[1],
             corners[1], corners[2],
@@ -5358,7 +6179,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             corners[3], corners[0],
         ]
         vertices.append(contentsOf: borderVertices.map {
-            MetalMPRVertex(position: mprDisplayPosition(for: $0), baseVoxel: $0)
+            MetalMPRVertex(position: mprDisplayPosition(for: $0), baseVoxel: $0, color: color)
         })
     }
 

@@ -11,15 +11,17 @@ private final class MetalMPRPreviewOverlayView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard let owner,
-              owner.renderer.displayMode == .mpr,
+              owner.renderer.displayMode.isMPRLike,
               let layout = owner.renderer.mprPreviewOverlayLayout(in: bounds) else {
             return
         }
 
-        NSColor(calibratedWhite: 0.18, alpha: 0.9).setFill()
-        layout.dividerRect.fill()
-        NSColor(calibratedWhite: 0.55, alpha: 0.8).setFill()
-        CGRect(x: layout.dividerRect.midX - 0.5, y: layout.dividerRect.minY, width: 1, height: layout.dividerRect.height).fill()
+        if layout.dividerRect.width > 0, layout.dividerRect.height > 0 {
+            NSColor(calibratedWhite: 0.18, alpha: 0.9).setFill()
+            layout.dividerRect.fill()
+            NSColor(calibratedWhite: 0.55, alpha: 0.8).setFill()
+            CGRect(x: layout.dividerRect.midX - 0.5, y: layout.dividerRect.minY, width: 1, height: layout.dividerRect.height).fill()
+        }
 
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
@@ -43,8 +45,9 @@ private final class MetalMPRPreviewOverlayView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let owner,
-              owner.renderer.displayMode == .mpr,
+              owner.renderer.displayMode.isMPRLike,
               let layout = owner.renderer.mprPreviewOverlayLayout(in: bounds),
+              layout.dividerRect.width > 0,
               layout.dividerRect.insetBy(dx: -5, dy: 0).contains(point) else {
             return nil
         }
@@ -54,11 +57,13 @@ private final class MetalMPRPreviewOverlayView: NSView {
     override func resetCursorRects() {
         super.resetCursorRects()
         guard let owner,
-              owner.renderer.displayMode == .mpr,
+              owner.renderer.displayMode.isMPRLike,
               let layout = owner.renderer.mprPreviewOverlayLayout(in: bounds) else {
             return
         }
-        addCursorRect(layout.dividerRect.insetBy(dx: -5, dy: 0), cursor: .resizeLeftRight)
+        if layout.dividerRect.width > 0 {
+            addCursorRect(layout.dividerRect.insetBy(dx: -5, dy: 0), cursor: .resizeLeftRight)
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -131,6 +136,278 @@ final class MetalImageView: MTKView {
         case plane
         case planeTilt
         case previewPlane
+    }
+
+    private struct MPRLineCursorKey: Equatable {
+        let interaction: MetalMPRPreviewLineInteraction
+        let lineAngleBucket: Int
+        let actionAngleBucket: Int
+    }
+
+    private var mprLineCursorCache: (key: MPRLineCursorKey, cursor: NSCursor)?
+    private var mprLineCursorContinuousAngle: CGFloat?
+
+    private static let mprLineCursorAngleBucketsPerTurn = 1440
+
+    private func mprLineCursor(for pointer: MetalMPRPreviewLinePointer) -> NSCursor {
+        let lineAngle: CGFloat
+        if pointer.interaction == .tilt,
+           let actionAngleRadians = pointer.actionAngleRadians {
+            lineAngle = actionAngleRadians
+        } else {
+            lineAngle = Self.mprLineCursorLineAngle(
+                pointer.lineAngleRadians,
+                closestTo: mprLineCursorContinuousAngle
+            )
+        }
+        mprLineCursorContinuousAngle = lineAngle
+        let key = Self.mprLineCursorKey(for: pointer, lineAngleRadians: lineAngle)
+        if let cached = mprLineCursorCache, cached.key == key {
+            return cached.cursor
+        }
+
+        let cursorLineAngle = Self.mprLineCursorLineAngle(for: key)
+        let actionAngle = Self.mprLineCursorActionAngle(for: key)
+        let cursor: NSCursor
+        switch key.interaction {
+        case .move:
+            cursor = Self.makeMPRLineMoveCursor(
+                lineAngleRadians: cursorLineAngle,
+                translationAngleRadians: actionAngle
+            )
+        case .tilt:
+            cursor = Self.makeMPRLineTiltCursor(
+                lineAngleRadians: cursorLineAngle,
+                radiusAngleRadians: actionAngle
+            )
+        }
+
+        mprLineCursorCache = (key, cursor)
+        return cursor
+    }
+
+    private static func mprLineCursorKey(
+        for pointer: MetalMPRPreviewLinePointer,
+        lineAngleRadians: CGFloat
+    ) -> MPRLineCursorKey {
+        let lineAngle = normalizedMPRLineCursorFullTurnAngle(lineAngleRadians)
+        let actionAngle: CGFloat
+        switch pointer.interaction {
+        case .move:
+            actionAngle = lineAngle + CGFloat.pi * 0.5
+        case .tilt:
+            actionAngle = pointer.actionAngleRadians ?? lineAngle
+        }
+        return MPRLineCursorKey(
+            interaction: pointer.interaction,
+            lineAngleBucket: mprLineCursorLineAngleBucket(lineAngle),
+            actionAngleBucket: mprLineCursorActionAngleBucket(actionAngle)
+        )
+    }
+
+    private static func mprLineCursorLineAngle(for key: MPRLineCursorKey) -> CGFloat {
+        CGFloat(key.lineAngleBucket) * CGFloat.pi * 2 / CGFloat(mprLineCursorAngleBucketsPerTurn)
+    }
+
+    private static func mprLineCursorActionAngle(for key: MPRLineCursorKey) -> CGFloat {
+        CGFloat(key.actionAngleBucket) * CGFloat.pi * 2 / CGFloat(mprLineCursorAngleBucketsPerTurn)
+    }
+
+    private static func mprLineCursorLineAngleBucket(_ angle: CGFloat) -> Int {
+        mprLineCursorActionAngleBucket(angle)
+    }
+
+    private static func mprLineCursorLineAngle(_ angle: CGFloat, closestTo reference: CGFloat?) -> CGFloat {
+        let baseAngle = normalizedMPRLineCursorHalfTurnAngle(angle)
+        guard let reference else {
+            return baseAngle
+        }
+        return baseAngle + ((reference - baseAngle) / CGFloat.pi).rounded() * CGFloat.pi
+    }
+
+    private static func mprLineCursorActionAngleBucket(_ angle: CGFloat) -> Int {
+        let normalizedAngle = normalizedMPRLineCursorFullTurnAngle(angle)
+        let bucketScale = CGFloat(mprLineCursorAngleBucketsPerTurn) / (CGFloat.pi * 2)
+        return Int((normalizedAngle * bucketScale).rounded()) % mprLineCursorAngleBucketsPerTurn
+    }
+
+    private static func normalizedMPRLineCursorHalfTurnAngle(_ angle: CGFloat) -> CGFloat {
+        var normalized = angle.truncatingRemainder(dividingBy: CGFloat.pi)
+        if normalized < 0 {
+            normalized += CGFloat.pi
+        }
+        return normalized
+    }
+
+    private static func normalizedMPRLineCursorFullTurnAngle(_ angle: CGFloat) -> CGFloat {
+        let fullTurn = CGFloat.pi * 2
+        var normalized = angle.truncatingRemainder(dividingBy: fullTurn)
+        if normalized < 0 {
+            normalized += fullTurn
+        }
+        return normalized
+    }
+
+    private static func makeMPRLineMoveCursor(
+        lineAngleRadians: CGFloat,
+        translationAngleRadians: CGFloat
+    ) -> NSCursor {
+        makeCursor { size in
+            let center = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
+            let lineHalfLength: CGFloat = 8
+            let arrowHalfLength: CGFloat = 9
+            let lineStart = cursorPoint(CGPoint(x: -lineHalfLength, y: 0), center: center, angle: lineAngleRadians)
+            let lineEnd = cursorPoint(CGPoint(x: lineHalfLength, y: 0), center: center, angle: lineAngleRadians)
+            let arrowStart = cursorPoint(CGPoint(x: -arrowHalfLength, y: 0), center: center, angle: translationAngleRadians)
+            let arrowEnd = cursorPoint(CGPoint(x: arrowHalfLength, y: 0), center: center, angle: translationAngleRadians)
+
+            drawCursorStrokes { width, color in
+                strokeCursorLine(from: lineStart, to: lineEnd, width: width, color: color)
+                strokeCursorDoubleArrow(from: arrowStart, to: arrowEnd, width: width, color: color)
+            }
+        }
+    }
+
+    private static func makeMPRLineTiltCursor(
+        lineAngleRadians: CGFloat,
+        radiusAngleRadians: CGFloat
+    ) -> NSCursor {
+        makeCursor { size in
+            let center = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
+            let lineHalfLength: CGFloat = 7
+            let lineStart = cursorPoint(CGPoint(x: -lineHalfLength, y: 0), center: center, angle: lineAngleRadians)
+            let lineEnd = cursorPoint(CGPoint(x: lineHalfLength, y: 0), center: center, angle: lineAngleRadians)
+            let radius: CGFloat = 12
+            let arcCenter = cursorPoint(CGPoint(x: radius, y: 0), center: center, angle: radiusAngleRadians)
+            let startAngle = atan2(center.y - arcCenter.y, center.x - arcCenter.x)
+            let arcSweep = CGFloat.pi * 0.42
+
+            drawCursorStrokes { width, color in
+                strokeCursorLine(from: lineStart, to: lineEnd, width: width, color: color)
+                strokeCursorCircularArrow(
+                    center: arcCenter,
+                    radius: radius,
+                    startAngle: startAngle,
+                    endAngle: startAngle + arcSweep,
+                    width: width,
+                    color: color
+                )
+                strokeCursorCircularArrow(
+                    center: arcCenter,
+                    radius: radius,
+                    startAngle: startAngle,
+                    endAngle: startAngle - arcSweep,
+                    width: width,
+                    color: color
+                )
+            }
+        }
+    }
+
+    private static func makeCursor(draw: (CGSize) -> Void) -> NSCursor {
+        let size = CGSize(width: 32, height: 32)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        draw(size)
+        image.unlockFocus()
+        return NSCursor(image: image, hotSpot: CGPoint(x: size.width * 0.5, y: size.height * 0.5))
+    }
+
+    private static func strokeCursorLine(from start: CGPoint, to end: CGPoint, width: CGFloat, color: NSColor) {
+        let path = NSBezierPath()
+        path.move(to: start)
+        path.line(to: end)
+        path.lineWidth = width
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        color.setStroke()
+        path.stroke()
+    }
+
+    private static func strokeCursorDoubleArrow(from start: CGPoint, to end: CGPoint, width: CGFloat, color: NSColor) {
+        strokeCursorLine(from: start, to: end, width: width, color: color)
+        strokeCursorArrowHead(at: start, from: end, width: width, color: color)
+        strokeCursorArrowHead(at: end, from: start, width: width, color: color)
+    }
+
+    private static func strokeCursorArrowHead(at tip: CGPoint, from tail: CGPoint, width: CGFloat, color: NSColor) {
+        let dx = tip.x - tail.x
+        let dy = tip.y - tail.y
+        let length = max(hypot(dx, dy), 0.0001)
+        let unitX = dx / length
+        let unitY = dy / length
+        let headLength: CGFloat = 5
+        let headWidth: CGFloat = 4
+        let base = CGPoint(x: tip.x - unitX * headLength, y: tip.y - unitY * headLength)
+        let normalX = -unitY
+        let normalY = unitX
+        let left = CGPoint(x: base.x + normalX * headWidth, y: base.y + normalY * headWidth)
+        let right = CGPoint(x: base.x - normalX * headWidth, y: base.y - normalY * headWidth)
+        strokeCursorLine(from: left, to: tip, width: width, color: color)
+        strokeCursorLine(from: right, to: tip, width: width, color: color)
+    }
+
+    private static func strokeCursorCircularArrow(
+        center: CGPoint,
+        radius: CGFloat,
+        startAngle: CGFloat,
+        endAngle: CGFloat,
+        width: CGFloat,
+        color: NSColor
+    ) {
+        let points = cursorCircularArcPoints(
+            center: center,
+            radius: radius,
+            startAngle: startAngle,
+            endAngle: endAngle
+        )
+        guard points.count >= 2 else {
+            return
+        }
+
+        let path = NSBezierPath()
+        path.move(to: points[0])
+        for point in points.dropFirst() {
+            path.line(to: point)
+        }
+        path.lineWidth = width
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        color.setStroke()
+        path.stroke()
+
+        strokeCursorArrowHead(at: points[points.count - 1], from: points[points.count - 2], width: width, color: color)
+    }
+
+    private static func cursorCircularArcPoints(
+        center: CGPoint,
+        radius: CGFloat,
+        startAngle: CGFloat,
+        endAngle: CGFloat
+    ) -> [CGPoint] {
+        let steps = 24
+        return (0...steps).map { index in
+            let fraction = CGFloat(index) / CGFloat(steps)
+            let angle = startAngle + (endAngle - startAngle) * fraction
+            return CGPoint(
+                x: center.x + cos(angle) * radius,
+                y: center.y + sin(angle) * radius
+            )
+        }
+    }
+
+    private static func cursorPoint(_ local: CGPoint, center: CGPoint, angle: CGFloat) -> CGPoint {
+        let cosine = cos(angle)
+        let sine = sin(angle)
+        return CGPoint(
+            x: center.x + local.x * cosine - local.y * sine,
+            y: center.y + local.x * sine + local.y * cosine
+        )
+    }
+
+    private static func drawCursorStrokes(_ draw: (CGFloat, NSColor) -> Void) {
+        draw(4, .black)
+        draw(2, .white)
     }
 
     private func mouseTool(for button: MetalViewerMouseButton, event: NSEvent) -> MetalViewerMouseTool {
@@ -242,7 +519,7 @@ final class MetalImageView: MTKView {
             preciseScrollSliceAccumulator = 0
         }
 
-        if renderer.displayMode == .mpr,
+        if renderer.displayMode.isMPRLike,
            renderer.mprSlicePlaneAxis(at: point, in: bounds) == nil {
             preciseScrollSliceAccumulator = 0
             zoomFromScrollWheel(delta: delta)
@@ -315,19 +592,25 @@ final class MetalImageView: MTKView {
         didDragMouseInteraction = false
         sliceDragAccumulator = 0
         mprScrollAxisOverride = nil
-        if renderer.displayMode == .mpr {
+        if renderer.displayMode.isMPRLike {
             switch activeMouseTool {
             case .pan:
                 mprDragMode = .pan
             case .windowLevel, .rotate:
-                if renderer.beginMPRPreviewPlaneDrag(at: dragAnchor, in: bounds) {
-                    mprDragMode = .previewPlane
-                } else if renderer.beginMPRPlaneDrag(at: dragAnchor, in: bounds) {
+                if renderer.beginMPRPreviewPlaneMoveDrag(at: dragAnchor, in: bounds) {
                     mprDragMode = .plane
-                } else if renderer.beginMPRPlaneTiltDrag(at: dragAnchor, in: bounds) {
+                } else if renderer.beginMPRPreviewPlaneTiltDrag(at: dragAnchor, in: bounds) {
                     mprDragMode = .planeTilt
-                } else {
+                } else if renderer.beginMPRPreviewPlaneDrag(at: dragAnchor, in: bounds) {
+                    mprDragMode = .previewPlane
+                } else if renderer.displayMode == .mpr, renderer.beginMPRPlaneDrag(at: dragAnchor, in: bounds) {
+                    mprDragMode = .plane
+                } else if renderer.displayMode == .mpr, renderer.beginMPRPlaneTiltDrag(at: dragAnchor, in: bounds) {
+                    mprDragMode = .planeTilt
+                } else if renderer.displayMode == .mpr {
                     mprDragMode = .rotate
+                } else {
+                    mprDragMode = .none
                 }
             case .scroll:
                 mprScrollAxisOverride = renderer.mprSlicePlaneAxis(at: dragAnchor, in: bounds)
@@ -360,15 +643,21 @@ final class MetalImageView: MTKView {
             panAnchor = renderer.panOffset
             sliceDragAccumulator = 0
             mprScrollAxisOverride = nil
-            if renderer.displayMode == .mpr {
+            if renderer.displayMode.isMPRLike {
                 switch currentMouseTool {
                 case .pan:
                     mprDragMode = .pan
                 case .windowLevel, .rotate:
-                    if renderer.beginMPRPreviewPlaneDrag(at: currentPoint, in: bounds) {
+                    if renderer.beginMPRPreviewPlaneMoveDrag(at: currentPoint, in: bounds) {
+                        mprDragMode = .plane
+                    } else if renderer.beginMPRPreviewPlaneTiltDrag(at: currentPoint, in: bounds) {
+                        mprDragMode = .planeTilt
+                    } else if renderer.beginMPRPreviewPlaneDrag(at: currentPoint, in: bounds) {
                         mprDragMode = .previewPlane
-                    } else {
+                    } else if renderer.displayMode == .mpr {
                         mprDragMode = .rotate
+                    } else {
+                        mprDragMode = .none
                     }
                 case .scroll:
                     mprScrollAxisOverride = renderer.mprSlicePlaneAxis(at: currentPoint, in: bounds)
@@ -385,7 +674,7 @@ final class MetalImageView: MTKView {
             didDragMouseInteraction = true
         }
 
-        if renderer.displayMode == .mpr {
+        if renderer.displayMode.isMPRLike {
             dragMPRInteraction(
                 tool: activeMouseTool,
                 currentPoint: currentPoint,
@@ -428,6 +717,9 @@ final class MetalImageView: MTKView {
         didChangeWindowLevelDuringDrag = false
         didDragMouseInteraction = false
         updateMouseAnnotationState(from: currentPoint)
+        if renderer.displayMode.isMPRLike {
+            updateMPRLineCursor(at: currentPoint, event: event)
+        }
     }
 
     private func dragStackInteraction(
@@ -477,8 +769,10 @@ final class MetalImageView: MTKView {
             switch mprDragMode {
             case .plane:
                 renderer.dragMPRPlane(to: currentPoint)
+                updateActiveMPRLineCursor()
             case .planeTilt:
                 renderer.dragMPRPlaneTilt(to: currentPoint)
+                updateActiveMPRLineCursor()
             case .previewPlane:
                 renderer.dragMPRPreviewPlane(to: currentPoint, in: bounds)
             case .rotate:
@@ -559,10 +853,13 @@ final class MetalImageView: MTKView {
         interactionEventHandler?()
         let point = convert(event.locationInWindow, from: nil)
         updateMouseAnnotationState(from: point)
+        updateMPRLineCursor(at: point, event: event)
     }
 
     override func mouseExited(with event: NSEvent) {
         renderer.updateMPRHover(at: nil, in: bounds)
+        resetMPRLineCursor()
+        NSCursor.arrow.set()
         if mouseAnnotationState != nil {
             mouseAnnotationState = nil
             annotationStateDidChange?()
@@ -602,7 +899,7 @@ final class MetalImageView: MTKView {
     }
 
     private func stepThroughCurrentMode(by stepCount: Int, event: NSEvent, at point: CGPoint? = nil) {
-        if renderer.displayMode == .mpr {
+        if renderer.displayMode.isMPRLike {
             renderer.moveMPRPlane(axis: mprScrollAxis(for: event, at: point), by: -Float(stepCount))
         } else {
             renderer.stepSlice(by: stepCount)
@@ -634,6 +931,42 @@ final class MetalImageView: MTKView {
         needsDisplay = true
         mprPreviewOverlayView.needsDisplay = true
         mprPreviewOverlayView.window?.invalidateCursorRects(for: mprPreviewOverlayView)
+    }
+
+    private func updateMPRLineCursor(at point: CGPoint, event: NSEvent) {
+        guard renderer.displayMode.isMPRLike else {
+            resetMPRLineCursor()
+            NSCursor.arrow.set()
+            return
+        }
+        switch mouseTool(for: .left, event: event) {
+        case .windowLevel, .rotate:
+            break
+        case .pan, .scroll, .zoom, .tumourSeed:
+            resetMPRLineCursor()
+            NSCursor.arrow.set()
+            return
+        }
+
+        guard let pointer = renderer.mprPreviewLinePointer(at: point, in: bounds) else {
+            resetMPRLineCursor()
+            NSCursor.arrow.set()
+            return
+        }
+
+        mprLineCursor(for: pointer).set()
+    }
+
+    private func resetMPRLineCursor() {
+        mprLineCursorCache = nil
+        mprLineCursorContinuousAngle = nil
+    }
+
+    private func updateActiveMPRLineCursor() {
+        guard let pointer = renderer.activeMPRPreviewLinePointer() else {
+            return
+        }
+        mprLineCursor(for: pointer).set()
     }
 
     private func updateMouseAnnotationState(from point: CGPoint) {

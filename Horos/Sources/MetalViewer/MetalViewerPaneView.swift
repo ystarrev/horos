@@ -1338,7 +1338,7 @@ final class MetalViewerPaneView: NSView {
         displayMode = mode
         metalView?.setDisplayMode(mode)
         referenceLineOverlay.showsScales = mode == .stack2D
-        if mode == .mpr {
+        if mode.isMPRLike {
             referenceLineOverlay.referenceLine = nil
         }
         updateAnnotationOverlay()

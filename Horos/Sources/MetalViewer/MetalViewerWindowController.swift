@@ -324,7 +324,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
 
         let pane = MetalViewerPaneView(series: series)
         pane.setMouseToolAssignments(mouseToolAssignments)
-        pane.setDisplayMode(viewerMode == .mpr ? .mpr : .stack2D)
+        pane.setDisplayMode(displayMode(for: viewerMode))
         pane.activateHandler = { [weak self, weak pane] in
             guard let self, let pane else { return }
             self.setActivePane(pane)
@@ -560,13 +560,13 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             return
         }
 
-        let modeTitle = viewerMode == .mpr ? NSLocalizedString("MPR", comment: "") : NSLocalizedString("2D", comment: "")
+        let modeTitle = title(for: viewerMode)
         toolbarView.updateStatus("\(activePaneView.series.title)  •  \(modeTitle)  •  \(activePaneView.currentStateDescription)")
     }
 
     private func applyViewerMode(_ mode: MetalViewerToolbarView.ViewerMode) {
         viewerMode = mode
-        let displayMode: MetalViewerDisplayMode = mode == .mpr ? .mpr : .stack2D
+        let displayMode = displayMode(for: mode)
         guard let activePaneView else {
             toolbarView.selectViewerMode(mode)
             updateToolbarStatus()
@@ -576,6 +576,28 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         toolbarView.selectViewerMode(mode)
         updateToolbarStatus()
         updateReferenceLines()
+    }
+
+    private func displayMode(for viewerMode: MetalViewerToolbarView.ViewerMode) -> MetalViewerDisplayMode {
+        switch viewerMode {
+        case .stack2D:
+            return .stack2D
+        case .mpr:
+            return .mpr
+        case .mpr3D:
+            return .mpr3D
+        }
+    }
+
+    private func title(for viewerMode: MetalViewerToolbarView.ViewerMode) -> String {
+        switch viewerMode {
+        case .stack2D:
+            return NSLocalizedString("2D", comment: "")
+        case .mpr:
+            return NSLocalizedString("MPR", comment: "")
+        case .mpr3D:
+            return NSLocalizedString("3D MPR", comment: "")
+        }
     }
 
     private func applyMouseToolAssignments(_ assignments: MetalViewerMouseToolAssignments) {

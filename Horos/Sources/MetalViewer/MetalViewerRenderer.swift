@@ -1756,14 +1756,29 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         )
     }
 
+    private func mprPreviewInteractionRect(for rect: CGRect, in bounds: CGRect) -> CGRect {
+        guard displayMode == .mpr3D,
+              bounds.height > bounds.width else {
+            return rect
+        }
+
+        return CGRect(
+            x: rect.minX,
+            y: bounds.minY + bounds.maxY - rect.maxY,
+            width: rect.width,
+            height: rect.height
+        )
+    }
+
     private func mprPreviewPane(at point: CGPoint, in bounds: CGRect) -> (plane: MetalMPRPlane, rect: CGRect)? {
         guard let layout = mprPreviewOverlayLayout(in: bounds) else {
             return nil
         }
 
         for (index, pane) in layout.previewPanes.enumerated() where index < Self.mprPlanes.count {
-            if pane.rect.contains(point) {
-                return (Self.mprPlanes[index], pane.rect)
+            let rect = mprPreviewInteractionRect(for: pane.rect, in: bounds)
+            if rect.contains(point) {
+                return (Self.mprPlanes[index], rect)
             }
         }
 
@@ -1777,7 +1792,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         for (index, pane) in layout.previewPanes.enumerated() where index < Self.mprPlanes.count {
             if Self.mprPlanes[index] == plane {
-                return pane.rect
+                return mprPreviewInteractionRect(for: pane.rect, in: bounds)
             }
         }
 

@@ -945,11 +945,111 @@ final class MetalViewerPaneView: NSView {
         }()
     }
 
+    private final class MeasurementOverlayView: NSView {
+        var measurements: [MetalViewerMeasurementOverlay] = [] {
+            didSet { needsDisplay = true }
+        }
+
+        override var isFlipped: Bool { false }
+        override var isOpaque: Bool { false }
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            nil
+        }
+
+        override func draw(_ dirtyRect: NSRect) {
+            super.draw(dirtyRect)
+            for measurement in measurements {
+                drawMeasurement(measurement)
+            }
+        }
+
+        private func drawMeasurement(_ measurement: MetalViewerMeasurementOverlay) {
+            let color = measurement.isActive ? NSColor.systemYellow : Self.measurementColor
+            let scaleFactor = max(window?.backingScaleFactor ?? 1.0, 1.0)
+            drawLine(from: measurement.startPoint, to: measurement.endPoint, color: color, scaleFactor: scaleFactor)
+            drawHandle(at: measurement.startPoint, color: color, scaleFactor: scaleFactor)
+            drawHandle(at: measurement.endPoint, color: color, scaleFactor: scaleFactor)
+            drawLabel(measurement.label, center: measurement.labelCenter, color: color)
+        }
+
+        private func drawLine(from startPoint: CGPoint, to endPoint: CGPoint, color: NSColor, scaleFactor: CGFloat) {
+            let shadowPath = NSBezierPath()
+            shadowPath.move(to: startPoint)
+            shadowPath.line(to: endPoint)
+            shadowPath.lineWidth = max(3.0, 3.0 / scaleFactor)
+            shadowPath.lineCapStyle = .round
+            NSColor.black.withAlphaComponent(0.85).setStroke()
+            shadowPath.stroke()
+
+            let path = NSBezierPath()
+            path.move(to: startPoint)
+            path.line(to: endPoint)
+            path.lineWidth = max(1.6, 1.6 / scaleFactor)
+            path.lineCapStyle = .round
+            color.setStroke()
+            path.stroke()
+        }
+
+        private func drawHandle(at point: CGPoint, color: NSColor, scaleFactor: CGFloat) {
+            let radius = max(3.2, 3.2 / scaleFactor)
+            let rect = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
+
+            let shadow = NSBezierPath(ovalIn: rect.insetBy(dx: -1.5, dy: -1.5))
+            NSColor.black.withAlphaComponent(0.85).setFill()
+            shadow.fill()
+
+            let handle = NSBezierPath(ovalIn: rect)
+            color.setFill()
+            handle.fill()
+            NSColor.white.withAlphaComponent(0.85).setStroke()
+            handle.lineWidth = max(1.0, 1.0 / scaleFactor)
+            handle.stroke()
+        }
+
+        private func drawLabel(_ label: String, center: CGPoint, color: NSColor) {
+            guard label.isEmpty == false else {
+                return
+            }
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: Self.labelFont,
+                .foregroundColor: color,
+            ]
+            let string = label as NSString
+            let textSize = string.size(withAttributes: attributes)
+            let paddedSize = CGSize(width: textSize.width + 8, height: textSize.height + 4)
+            var origin = CGPoint(
+                x: center.x - paddedSize.width * 0.5,
+                y: center.y - paddedSize.height * 0.5
+            )
+            origin.x = min(max(origin.x, bounds.minX + 4), bounds.maxX - paddedSize.width - 4)
+            origin.y = min(max(origin.y, bounds.minY + 4), bounds.maxY - paddedSize.height - 4)
+
+            let backgroundRect = CGRect(origin: origin, size: paddedSize)
+            let backgroundPath = NSBezierPath(roundedRect: backgroundRect, xRadius: 4, yRadius: 4)
+            NSColor.black.withAlphaComponent(0.72).setFill()
+            backgroundPath.fill()
+            color.withAlphaComponent(0.75).setStroke()
+            backgroundPath.lineWidth = 1
+            backgroundPath.stroke()
+
+            string.draw(
+                at: CGPoint(x: origin.x + 4, y: origin.y + 2),
+                withAttributes: attributes
+            )
+        }
+
+        private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        private static let measurementColor = NSColor(calibratedRed: 0.18, green: 1.0, blue: 0.28, alpha: 1.0)
+    }
+
     private let contentView = NSView()
     private let closeButton = NSButton()
     private let overlayBlendSlider = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
     private let annotationOverlay = AnnotationOverlayView()
     private let referenceLineOverlay = ReferenceLineOverlayView()
+    private let measurementOverlay = MeasurementOverlayView()
     private let orientationOverlay = MetalOrientationOverlayView()
     private let registrationStatusView = RegistrationStatusView()
     private var metalView: MetalImageView?
@@ -994,6 +1094,7 @@ final class MetalViewerPaneView: NSView {
 
         annotationOverlay.translatesAutoresizingMaskIntoConstraints = false
         referenceLineOverlay.translatesAutoresizingMaskIntoConstraints = false
+        measurementOverlay.translatesAutoresizingMaskIntoConstraints = false
         orientationOverlay.translatesAutoresizingMaskIntoConstraints = false
 
         closeButton.translatesAutoresizingMaskIntoConstraints = false
@@ -1084,6 +1185,8 @@ final class MetalViewerPaneView: NSView {
         reportWebView?.removeFromSuperview()
         reportWebView = nil
         referenceLineOverlay.removeFromSuperview()
+        measurementOverlay.removeFromSuperview()
+        measurementOverlay.measurements = []
         orientationOverlay.removeFromSuperview()
         annotationOverlay.removeFromSuperview()
         registrationStatusView.removeFromSuperview()
@@ -1144,21 +1247,33 @@ final class MetalViewerPaneView: NSView {
         metalView.annotationStateDidChange = { [weak self] in
             self?.updateAnnotationOverlay()
         }
+        metalView.measurementsDidChange = { [weak self] measurements in
+            self?.measurementOverlay.measurements = measurements
+        }
         metalView.tumourSeedPlacementHandler = { [weak self] placement in
             guard let self else { return }
             do {
                 _ = try MetalViewerTumourSeedStore.shared.addSeed(placement: placement, for: self.series)
-                self.reloadTumourSeeds()
             } catch {
                 NSSound.beep()
                 NSLog("MetalViewerPaneView failed to autosave tumour seed: %@", error.localizedDescription)
+            }
+        }
+        metalView.tumourSeedDeletionHandler = { [weak self] identifier in
+            guard let self else { return }
+            do {
+                try MetalViewerTumourSeedStore.shared.deleteSeed(identifier: identifier, for: self.series)
+            } catch {
+                NSSound.beep()
+                NSLog("MetalViewerPaneView failed to delete tumour seed: %@", error.localizedDescription)
             }
         }
 
         contentView.addSubview(metalView)
         contentView.addSubview(annotationOverlay, positioned: .above, relativeTo: metalView)
         contentView.addSubview(referenceLineOverlay, positioned: .above, relativeTo: annotationOverlay)
-        contentView.addSubview(orientationOverlay, positioned: .above, relativeTo: referenceLineOverlay)
+        contentView.addSubview(measurementOverlay, positioned: .above, relativeTo: referenceLineOverlay)
+        contentView.addSubview(orientationOverlay, positioned: .above, relativeTo: measurementOverlay)
         contentView.addSubview(registrationStatusView, positioned: .above, relativeTo: orientationOverlay)
         contentView.addSubview(overlayBlendSlider, positioned: .above, relativeTo: registrationStatusView)
 
@@ -1177,6 +1292,11 @@ final class MetalViewerPaneView: NSView {
             referenceLineOverlay.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             referenceLineOverlay.topAnchor.constraint(equalTo: contentView.topAnchor),
             referenceLineOverlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+            measurementOverlay.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            measurementOverlay.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            measurementOverlay.topAnchor.constraint(equalTo: contentView.topAnchor),
+            measurementOverlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
             orientationOverlay.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             orientationOverlay.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),

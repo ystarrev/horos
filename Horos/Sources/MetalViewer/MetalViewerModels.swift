@@ -14,7 +14,8 @@ enum MetalViewerMouseTool: Int, CaseIterable, Hashable {
     case zoom = 2
     case rotate = 3
     case scroll = 4
-    case tumourSeed = 5
+    case measure = 5
+    case tumourSeed = 6
 }
 
 struct MetalViewerMouseToolAssignments: Equatable {
@@ -92,6 +93,47 @@ struct MetalViewerTumourSeedPlacement {
     let sliceIndex: Int
     let pixelPoint: CGPoint
     let dicomPoint: SIMD3<Double>
+}
+
+enum MetalViewerMeasurementDisplaySpace: Equatable {
+    case stack2D(sliceIndex: Int, pixelPoint: CGPoint)
+    case mprPreview(planeRawValue: Int, baseVoxel: SIMD3<Float>)
+}
+
+struct MetalViewerMeasurementPoint: Equatable {
+    let displaySpace: MetalViewerMeasurementDisplaySpace
+    let dicomPoint: SIMD3<Double>
+}
+
+struct MetalViewerMeasurement: Equatable {
+    let identifier: String
+    var start: MetalViewerMeasurementPoint
+    var end: MetalViewerMeasurementPoint
+    var isActive: Bool
+    var labelOffset: CGPoint = .zero
+
+    var lengthMM: Double {
+        simd_distance(start.dicomPoint, end.dicomPoint)
+    }
+
+    var lengthLabel: String {
+        let millimeters = lengthMM
+        if millimeters < 0.1 {
+            return String(format: "%.2f \u{00B5}m", millimeters * 1000.0)
+        }
+        if millimeters < 10 {
+            return String(format: "%.2f mm", millimeters)
+        }
+        return String(format: "%.2f cm", millimeters / 10.0)
+    }
+}
+
+struct MetalViewerMeasurementOverlay: Equatable {
+    let startPoint: CGPoint
+    let endPoint: CGPoint
+    let label: String
+    let labelCenter: CGPoint
+    let isActive: Bool
 }
 
 struct MetalViewerTumourSeed: Codable, Equatable {
@@ -181,6 +223,14 @@ final class MetalViewerTumourSeedStore {
 
         postChangeNotification(for: scope)
         return seed
+    }
+
+    func deleteSeed(identifier: String, for series: MetalViewerSeries) throws {
+        let scope = series.tumourSeedScope
+        if let message = MetalTumourSeedSRBridge.deleteSeed(identifier: identifier, pixList: series.loadedPixList()) {
+            throw MetalViewerTumourSeedStoreError(message: message)
+        }
+        postChangeNotification(for: scope)
     }
 
     static func scope(forPixList pixList: [DCMPix]) -> MetalViewerTumourSeedScope? {

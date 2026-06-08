@@ -191,12 +191,12 @@ final class MetalViewerToolbarView: NSView {
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(viewerModePopup)
         NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(equalToConstant: 102),
+            container.widthAnchor.constraint(equalToConstant: 128),
             container.heightAnchor.constraint(equalToConstant: 42),
 
             viewerModePopup.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             viewerModePopup.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            viewerModePopup.widthAnchor.constraint(equalToConstant: 96),
+            viewerModePopup.widthAnchor.constraint(equalToConstant: 122),
         ])
         return container
     }
@@ -267,7 +267,7 @@ final class MetalViewerToolbarView: NSView {
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(vertical)
         NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(equalToConstant: 230),
+            container.widthAnchor.constraint(equalToConstant: 260),
             container.heightAnchor.constraint(equalToConstant: 42),
 
             vertical.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 2),
@@ -434,6 +434,8 @@ final class MetalViewerToolbarView: NSView {
             return toolbarImage(named: "Rotate")
         case .scroll:
             return toolbarImage(named: "Stack")
+        case .measure:
+            return toolbarImage(named: "Length")
         case .tumourSeed:
             return tumourSeedTargetImage()
         }
@@ -451,6 +453,8 @@ final class MetalViewerToolbarView: NSView {
             return NSLocalizedString("Rotate", comment: "")
         case .scroll:
             return NSLocalizedString("Scroll Through Slices", comment: "")
+        case .measure:
+            return NSLocalizedString("Measure", comment: "")
         case .tumourSeed:
             return NSLocalizedString("Tumour Seed", comment: "")
         }
@@ -468,6 +472,8 @@ final class MetalViewerToolbarView: NSView {
             return NSLocalizedString("Rotate: drag around the image center to rotate the 2D image. In MPR, drag to rotate the view.", comment: "")
         case .scroll:
             return NSLocalizedString("Scroll: drag vertically to move through slices.", comment: "")
+        case .measure:
+            return NSLocalizedString("Measure: drag to place a length measurement. Hold Shift to constrain horizontally, vertically, or diagonally.", comment: "")
         case .tumourSeed:
             return NSLocalizedString("Tumour Seed: click a tumour focus to place a seed point used by segmentation.", comment: "")
         }

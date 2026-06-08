@@ -19,6 +19,10 @@ NS_ASSUME_NONNULL_BEGIN
                                          pixList:(NSArray *)pixList
     NS_SWIFT_NAME(archiveSeed(identifier:pixelX:pixelY:sliceIndex:dicomX:dicomY:dicomZ:diameterMM:createdAt:pixList:));
 
++ (nullable NSString *)deleteSeedWithIdentifier:(NSString *)identifier
+                                        pixList:(NSArray *)pixList
+    NS_SWIFT_NAME(deleteSeed(identifier:pixList:));
+
 @end
 
 NS_ASSUME_NONNULL_END

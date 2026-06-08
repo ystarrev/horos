@@ -286,6 +286,7 @@ private struct MetalMPRPreviewPane {
     let plane: MetalMPRPlane
     let viewport: MTLViewport
     let scissor: MTLScissorRect
+    let unitScale: CGFloat
 }
 
 private struct MetalMPRRenderLayout {
@@ -1200,17 +1201,24 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         case .sagittal:
             color = colors[2]
         }
-        if let alpha {
-            return SIMD4<Float>(color.x, color.y, color.z, alpha)
-        }
-        return color
+        return mprBrightReferenceColor(color, alpha: alpha)
+    }
+
+    private func mprBrightReferenceColor(_ color: SIMD4<Float>, alpha: Float? = nil) -> SIMD4<Float> {
+        let brightnessBoost: Float = 1.45
+        return SIMD4<Float>(
+            min(color.x * brightnessBoost, 1),
+            min(color.y * brightnessBoost, 1),
+            min(color.z * brightnessBoost, 1),
+            alpha ?? 1
+        )
     }
 
     private func mprDefaultAxisColors() -> [SIMD4<Float>] {
         [
-            SIMD4<Float>(1.0, 0.67, 0.0, 0.8),
-            SIMD4<Float>(0.6, 0.0, 1.0, 0.8),
-            SIMD4<Float>(0.0, 0.5, 1.0, 0.8),
+            SIMD4<Float>(1.0, 0.92, 0.0, 1.0),
+            SIMD4<Float>(0.9, 0.0, 1.0, 1.0),
+            SIMD4<Float>(0.0, 0.82, 1.0, 1.0),
         ]
     }
 
@@ -1444,12 +1452,86 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         )
     }
 
+    private func rotatedStackPoint(_ point: CGPoint, in imageRect: CGRect) -> CGPoint {
+        let rotation = CGFloat(stackRotationRadians)
+        guard abs(rotation) > 0.000001 else {
+            return point
+        }
+
+        let center = CGPoint(x: imageRect.midX, y: imageRect.midY)
+        let translated = CGPoint(x: point.x - center.x, y: point.y - center.y)
+        let cosine = cos(rotation)
+        let sine = sin(rotation)
+        return CGPoint(
+            x: center.x + translated.x * cosine - translated.y * sine,
+            y: center.y + translated.x * sine + translated.y * cosine
+        )
+    }
+
     func tumourSeedPlacement(at point: CGPoint, in bounds: CGRect) -> MetalViewerTumourSeedPlacement? {
         switch displayMode {
         case .stack2D:
             return stackTumourSeedPlacement(at: point, in: bounds)
         case .mpr, .mpr3D:
             return mprTumourSeedPlacement(at: point, in: bounds)
+        }
+    }
+
+    func tumourSeedIdentifier(at point: CGPoint, in bounds: CGRect) -> String? {
+        switch displayMode {
+        case .stack2D:
+            return stackTumourSeedIdentifier(at: point, in: bounds)
+        case .mpr:
+            return mprPreviewTumourSeedIdentifier(at: point, in: bounds)
+                ?? mprMainTumourSeedIdentifier(at: point, in: bounds)
+        case .mpr3D:
+            return mprPreviewTumourSeedIdentifier(at: point, in: bounds)
+        }
+    }
+
+    func measurementPoint(at point: CGPoint, in bounds: CGRect) -> MetalViewerMeasurementPoint? {
+        switch displayMode {
+        case .stack2D:
+            return stackMeasurementPoint(at: point, in: bounds)
+        case .mpr, .mpr3D:
+            return mprMeasurementPoint(at: point, in: bounds)
+        }
+    }
+
+    func screenPoint(for measurementPoint: MetalViewerMeasurementPoint, in bounds: CGRect) -> CGPoint? {
+        switch measurementPoint.displaySpace {
+        case let .stack2D(sliceIndex, pixelPoint):
+            guard displayMode == .stack2D,
+                  sliceIndex == currentSliceIndex,
+                  let pix = currentPix,
+                  pix.pwidth > 0,
+                  pix.pheight > 0 else {
+                return nil
+            }
+
+            let rect = imageRect(in: bounds)
+            let unrotatedPoint = CGPoint(
+                x: rect.minX + (pixelPoint.x / CGFloat(pix.pwidth)) * rect.width,
+                y: rect.maxY - (pixelPoint.y / CGFloat(pix.pheight)) * rect.height
+            )
+            return rotatedStackPoint(unrotatedPoint, in: rect)
+        case let .mprPreview(planeRawValue, baseVoxel):
+            guard displayMode.isMPRLike,
+                  let plane = MetalMPRPlane(rawValue: planeRawValue),
+                  let rect = mprPreviewRect(for: plane, in: bounds) else {
+                return nil
+            }
+
+            let viewport = mprPreviewViewport(for: rect)
+            guard let position = planarMPRPreviewPosition(for: baseVoxel, plane: plane, viewport: viewport) else {
+                return nil
+            }
+            let screenPoint = mprPreviewScreenPoint(for: position, in: rect)
+            guard screenPoint.x.isFinite,
+                  screenPoint.y.isFinite else {
+                return nil
+            }
+            return CGPoint(x: CGFloat(screenPoint.x), y: CGFloat(screenPoint.y))
         }
     }
 
@@ -1472,6 +1554,75 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         )
     }
 
+    private func stackTumourSeedIdentifier(at point: CGPoint, in bounds: CGRect) -> String? {
+        guard tumourSeeds.isEmpty == false,
+              let pix = currentPix,
+              let sliceGeometry = MetalViewerSliceGeometry(pix: pix) else {
+            return nil
+        }
+
+        let rect = imageRect(in: bounds)
+        guard rect.width > 0, rect.height > 0 else {
+            return nil
+        }
+
+        var bestIdentifier: String?
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for seed in tumourSeeds {
+            let radiusMM = max(seed.diameterMM * 0.5, 0.05)
+            let distanceFromSlice = simd_dot(seed.dicomPoint - sliceGeometry.origin, sliceGeometry.normal)
+            guard abs(distanceFromSlice) <= radiusMM else {
+                continue
+            }
+
+            let crossSectionRadiusMM = sqrt(max(radiusMM * radiusMM - distanceFromSlice * distanceFromSlice, 0))
+            let slicePoint = sliceGeometry.slicePoint(from: seed.dicomPoint)
+            guard slicePoint.x.isFinite,
+                  slicePoint.y.isFinite,
+                  slicePoint.x >= -1,
+                  slicePoint.y >= -1,
+                  slicePoint.x <= CGFloat(sliceGeometry.width + 1),
+                  slicePoint.y <= CGFloat(sliceGeometry.height + 1) else {
+                continue
+            }
+
+            let unrotatedCenter = CGPoint(
+                x: rect.minX + (slicePoint.x / CGFloat(sliceGeometry.width)) * rect.width,
+                y: rect.maxY - (slicePoint.y / CGFloat(sliceGeometry.height)) * rect.height
+            )
+            let center = rotatedStackPoint(unrotatedCenter, in: rect)
+            let radiusX = CGFloat(crossSectionRadiusMM / sliceGeometry.spacingX) * rect.width / max(CGFloat(sliceGeometry.width), 1)
+            let radiusY = CGFloat(crossSectionRadiusMM / sliceGeometry.spacingY) * rect.height / max(CGFloat(sliceGeometry.height), 1)
+            let hitRadius = max(radiusX, radiusY, 8)
+            let distance = hypot(point.x - center.x, point.y - center.y)
+            guard distance <= hitRadius,
+                  distance < bestDistance else {
+                continue
+            }
+            bestDistance = distance
+            bestIdentifier = seed.identifier
+        }
+        return bestIdentifier
+    }
+
+    private func stackMeasurementPoint(at point: CGPoint, in bounds: CGRect) -> MetalViewerMeasurementPoint? {
+        guard let pix = currentPix,
+              let normalizedImagePoint = normalizedImagePoint(for: point, in: bounds),
+              pix.pwidth > 0,
+              pix.pheight > 0 else {
+            return nil
+        }
+
+        let pixelX = max(0, min(CGFloat(pix.pwidth - 1), normalizedImagePoint.x * CGFloat(pix.pwidth)))
+        let pixelY = max(0, min(CGFloat(pix.pheight - 1), normalizedImagePoint.y * CGFloat(pix.pheight)))
+        var dicomCoords = [Double](repeating: 0, count: 3)
+        pix.convertDoubleX(Double(pixelX), pixY: Double(pixelY), toDICOMCoords: &dicomCoords, pixelCenter: true)
+        return MetalViewerMeasurementPoint(
+            displaySpace: .stack2D(sliceIndex: currentSliceIndex, pixelPoint: CGPoint(x: pixelX, y: pixelY)),
+            dicomPoint: SIMD3<Double>(dicomCoords[0], dicomCoords[1], dicomCoords[2])
+        )
+    }
+
     private func mprTumourSeedPlacement(at point: CGPoint, in bounds: CGRect) -> MetalViewerTumourSeedPlacement? {
         prepareBaseVolumeIfNeeded()
         guard let firstPix = pixList.first,
@@ -1482,7 +1633,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         let baseVoxel: SIMD3<Float>
-        if let hit = mprPlaneHit(at: point, in: bounds) {
+        if displayMode == .mpr3D {
+            guard let previewBaseVoxel = mprPreviewBaseVoxel(at: point, in: bounds) else {
+                return nil
+            }
+            baseVoxel = previewBaseVoxel
+        } else if let hit = mprPlaneHit(at: point, in: bounds) {
             baseVoxel = hit.baseVoxel
         } else if let previewBaseVoxel = mprPreviewBaseVoxel(at: point, in: bounds) {
             baseVoxel = previewBaseVoxel
@@ -1511,6 +1667,76 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return MetalViewerTumourSeedPlacement(
             sliceIndex: sliceIndex,
             pixelPoint: CGPoint(x: pixelX, y: pixelY),
+            dicomPoint: SIMD3<Double>(Double(worldPoint.x), Double(worldPoint.y), Double(worldPoint.z))
+        )
+    }
+
+    private func mprPreviewTumourSeedIdentifier(at point: CGPoint, in bounds: CGRect) -> String? {
+        guard tumourSeeds.isEmpty == false,
+              let previewPane = mprPreviewPane(at: point, in: bounds) else {
+            return nil
+        }
+
+        prepareBaseVolumeIfNeeded()
+        return mprTumourSeedIdentifier(
+            at: point,
+            inPreviewPlane: previewPane.plane,
+            paneRect: previewPane.rect
+        )
+    }
+
+    private func mprMainTumourSeedIdentifier(at point: CGPoint, in bounds: CGRect) -> String? {
+        guard tumourSeeds.isEmpty == false,
+              let interaction = mprMainInteraction(at: point, in: bounds) else {
+            return nil
+        }
+
+        prepareBaseVolumeIfNeeded()
+        let offset = SIMD2<Float>(
+            Float((CGFloat(panOffset.x) / max(interaction.bounds.width, 1)) * 2.0),
+            Float((CGFloat(panOffset.y) / max(interaction.bounds.height, 1)) * 2.0)
+        )
+        let viewProjectionMatrix = mprViewProjectionMatrix(offset: offset, viewportSize: interaction.bounds.size)
+        let worldToBaseVoxel = simd_inverse(fixedVoxelToWorld)
+        let hitPoint = SIMD2<Float>(Float(interaction.point.x), Float(interaction.point.y))
+        var bestIdentifier: String?
+        var bestDistance = Float.greatestFiniteMagnitude
+
+        for seed in tumourSeeds {
+            let centerWorld = SIMD3<Float>(Float(seed.dicomX), Float(seed.dicomY), Float(seed.dicomZ))
+            let centerVoxel = mprBaseVoxel(forWorld: centerWorld, worldToBaseVoxel: worldToBaseVoxel)
+            guard let projectedCenter = mprProjectedPoint(
+                for: centerVoxel,
+                viewProjectionMatrix: viewProjectionMatrix,
+                bounds: interaction.bounds
+            ) else {
+                continue
+            }
+
+            let distance = simd_distance(
+                SIMD2<Float>(projectedCenter.x, projectedCenter.y),
+                hitPoint
+            )
+            guard distance <= 10,
+                  distance < bestDistance else {
+                continue
+            }
+            bestDistance = distance
+            bestIdentifier = seed.identifier
+        }
+        return bestIdentifier
+    }
+
+    private func mprMeasurementPoint(at point: CGPoint, in bounds: CGRect) -> MetalViewerMeasurementPoint? {
+        prepareBaseVolumeIfNeeded()
+
+        guard let previewHit = mprPreviewHit(at: point, in: bounds) else {
+            return nil
+        }
+
+        let worldPoint = mprDisplayWorldPosition(for: previewHit.baseVoxel)
+        return MetalViewerMeasurementPoint(
+            displaySpace: .mprPreview(planeRawValue: previewHit.plane.rawValue, baseVoxel: previewHit.baseVoxel),
             dicomPoint: SIMD3<Double>(Double(worldPoint.x), Double(worldPoint.y), Double(worldPoint.z))
         )
     }
@@ -1544,6 +1770,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return nil
     }
 
+    private func mprPreviewRect(for plane: MetalMPRPlane, in bounds: CGRect) -> CGRect? {
+        guard let layout = mprPreviewOverlayLayout(in: bounds) else {
+            return nil
+        }
+
+        for (index, pane) in layout.previewPanes.enumerated() where index < Self.mprPlanes.count {
+            if Self.mprPlanes[index] == plane {
+                return pane.rect
+            }
+        }
+
+        return nil
+    }
+
     private func mprPreviewHit(at point: CGPoint, in bounds: CGRect) -> MetalMPRPreviewHit? {
         guard let previewPane = mprPreviewPane(at: point, in: bounds) else {
             return nil
@@ -1560,8 +1800,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         let localX = Float((point.x - rect.minX) / max(rect.width, 1))
         let localY = Float((point.y - rect.minY) / max(rect.height, 1))
-        let positionX = localX * 2 - 1
-        let positionY = localY * 2 - 1
+        let positionX = localX * 2 - 1 - geometry.panOffset.x
+        let positionY = localY * 2 - 1 - geometry.panOffset.y
         guard positionX >= -geometry.halfWidth,
               positionX <= geometry.halfWidth,
               positionY >= -geometry.halfHeight,
@@ -4567,7 +4807,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         guard let panes = mprPreviewPanes(
             for: previewPaneRects,
             renderWidth: drawableWidth,
-            renderHeight: renderHeight
+            renderHeight: renderHeight,
+            unitScale: scale
         ) else {
             return nil
         }
@@ -4594,13 +4835,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             return nil
         }
 
-        return mprPreviewPanes(for: paneRects, renderWidth: drawableWidth, renderHeight: drawableHeight)
+        return mprPreviewPanes(for: paneRects, renderWidth: drawableWidth, renderHeight: drawableHeight, unitScale: scale)
     }
 
     private func mprPreviewPanes(
         for paneRects: [CGRect],
         renderWidth: Int,
-        renderHeight: Int
+        renderHeight: Int,
+        unitScale: CGFloat
     ) -> [MetalMPRPreviewPane]? {
         let panes = Array(zip(Self.mprPlanes, paneRects)).compactMap { pair -> MetalMPRPreviewPane? in
             let (plane, rect) = pair
@@ -4622,7 +4864,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 zfar: 1
             )
             let scissor = MTLScissorRect(x: x, y: y, width: width, height: height)
-            return MetalMPRPreviewPane(plane: plane, viewport: viewport, scissor: scissor)
+            return MetalMPRPreviewPane(plane: plane, viewport: viewport, scissor: scissor, unitScale: unitScale)
         }
 
         guard panes.count == Self.mprPlanes.count else {
@@ -4736,7 +4978,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         previewUniforms.viewProjectionMatrix = matrix_identity_float4x4
 
         for pane in panes {
-            let vertices = makePlanarMPRPreviewVertices(for: pane.plane, viewport: pane.viewport)
+            let vertices = makePlanarMPRPreviewVertices(for: pane.plane, viewport: pane.viewport, unitScale: pane.unitScale)
             guard vertices.isEmpty == false else {
                 continue
             }
@@ -4758,7 +5000,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
             }
 
-            let sliceThicknessVertices = makePlanarMPRPreviewSliceThicknessVertices(for: pane.plane, viewport: pane.viewport)
+            let sliceThicknessVertices = makePlanarMPRPreviewSliceThicknessVertices(for: pane.plane, viewport: pane.viewport, unitScale: pane.unitScale)
             if sliceThicknessVertices.isEmpty == false {
                 encoder.setRenderPipelineState(mprPlaneHighlightPipelineState)
                 encoder.setDepthStencilState(mprDepthStencilState)
@@ -4772,7 +5014,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 }
             }
 
-            let seedVertices = makePlanarMPRPreviewTumourSeedCrossSectionVertices(for: pane.plane, viewport: pane.viewport)
+            let seedVertices = makePlanarMPRPreviewTumourSeedCrossSectionVertices(for: pane.plane, viewport: pane.viewport, unitScale: pane.unitScale)
             if seedVertices.isEmpty == false {
                 encoder.setRenderPipelineState(mprPlaneHighlightPipelineState)
                 encoder.setDepthStencilState(mprDepthStencilState)
@@ -4788,7 +5030,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 }
             }
 
-            let intersectionVertices = makePlanarMPRPreviewIntersectionVertices(for: pane.plane, viewport: pane.viewport)
+            let intersectionVertices = makePlanarMPRPreviewIntersectionVertices(for: pane.plane, viewport: pane.viewport, unitScale: pane.unitScale)
             if intersectionVertices.isEmpty == false {
                 encoder.setRenderPipelineState(mprIntersectionPipelineState)
                 encoder.setDepthStencilState(mprDepthStencilState)
@@ -4802,7 +5044,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 }
             }
 
-            let borderVertices = makePlanarMPRPreviewBorderVertices(for: pane.plane, viewport: pane.viewport)
+            let borderVertices = makePlanarMPRPreviewBorderVertices(for: pane.plane, viewport: pane.viewport, unitScale: pane.unitScale)
             guard borderVertices.isEmpty == false else {
                 continue
             }
@@ -5035,8 +5277,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         })
     }
 
-    private func makePlanarMPRPreviewVertices(for plane: MetalMPRPlane, viewport: MTLViewport) -> [MetalMPRVertex] {
-        guard let geometry = planarMPRPreviewGeometry(for: plane, viewport: viewport) else {
+    private func makePlanarMPRPreviewVertices(
+        for plane: MetalMPRPlane,
+        viewport: MTLViewport,
+        unitScale: CGFloat = 1
+    ) -> [MetalMPRVertex] {
+        guard let geometry = planarMPRPreviewGeometry(for: plane, viewport: viewport, unitScale: unitScale) else {
             return []
         }
 
@@ -5046,17 +5292,17 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         switch plane {
         case .axial:
             positions = [
-                SIMD3<Float>(u0, geometry.halfHeight, 0),
-                SIMD3<Float>(u1, geometry.halfHeight, 0),
-                SIMD3<Float>(u1, -geometry.halfHeight, 0),
-                SIMD3<Float>(u0, -geometry.halfHeight, 0),
+                SIMD3<Float>(u0 + geometry.panOffset.x, geometry.halfHeight + geometry.panOffset.y, 0),
+                SIMD3<Float>(u1 + geometry.panOffset.x, geometry.halfHeight + geometry.panOffset.y, 0),
+                SIMD3<Float>(u1 + geometry.panOffset.x, -geometry.halfHeight + geometry.panOffset.y, 0),
+                SIMD3<Float>(u0 + geometry.panOffset.x, -geometry.halfHeight + geometry.panOffset.y, 0),
             ]
         case .coronal, .sagittal:
             positions = [
-                SIMD3<Float>(u0, -geometry.halfHeight, 0),
-                SIMD3<Float>(u1, -geometry.halfHeight, 0),
-                SIMD3<Float>(u1, geometry.halfHeight, 0),
-                SIMD3<Float>(u0, geometry.halfHeight, 0),
+                SIMD3<Float>(u0 + geometry.panOffset.x, -geometry.halfHeight + geometry.panOffset.y, 0),
+                SIMD3<Float>(u1 + geometry.panOffset.x, -geometry.halfHeight + geometry.panOffset.y, 0),
+                SIMD3<Float>(u1 + geometry.panOffset.x, geometry.halfHeight + geometry.panOffset.y, 0),
+                SIMD3<Float>(u0 + geometry.panOffset.x, geometry.halfHeight + geometry.panOffset.y, 0),
             ]
         }
 
@@ -5072,8 +5318,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func planarMPRPreviewGeometry(
         for plane: MetalMPRPlane,
-        viewport: MTLViewport
-    ) -> (corners: [SIMD3<Float>], halfWidth: Float, halfHeight: Float)? {
+        viewport: MTLViewport,
+        unitScale: CGFloat = 1
+    ) -> (corners: [SIMD3<Float>], halfWidth: Float, halfHeight: Float, panOffset: SIMD2<Float>)? {
         let corners = mprPlaneCorners(for: plane)
         guard corners.count == 4,
               viewport.width > 1,
@@ -5087,6 +5334,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let planeAspect = horizontalLength / max(verticalLength, 0.0001)
         let viewportAspect = Float(viewport.width / max(viewport.height, 1))
         let padding: Float = 0.92
+        let contentScale = displayMode == .mpr3D ? zoomScale : 1
         var halfWidth = padding
         var halfHeight = padding
         if planeAspect > viewportAspect {
@@ -5094,16 +5342,36 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         } else {
             halfWidth = padding * planeAspect / max(viewportAspect, 0.0001)
         }
+        halfWidth *= contentScale
+        halfHeight *= contentScale
 
-        return (corners: corners, halfWidth: halfWidth, halfHeight: halfHeight)
+        return (
+            corners: corners,
+            halfWidth: halfWidth,
+            halfHeight: halfHeight,
+            panOffset: planarMPRPreviewPanOffset(for: viewport, unitScale: unitScale)
+        )
+    }
+
+    private func planarMPRPreviewPanOffset(for viewport: MTLViewport, unitScale: CGFloat = 1) -> SIMD2<Float> {
+        guard displayMode == .mpr3D else {
+            return SIMD2<Float>(repeating: 0)
+        }
+
+        let scale = Float(max(unitScale, 0.0001))
+        return SIMD2<Float>(
+            panOffset.x * scale * 2 / max(Float(viewport.width), 1),
+            panOffset.y * scale * 2 / max(Float(viewport.height), 1)
+        )
     }
 
     private func planarMPRPreviewPosition(
         for baseVoxel: SIMD3<Float>,
         plane: MetalMPRPlane,
-        viewport: MTLViewport
+        viewport: MTLViewport,
+        unitScale: CGFloat = 1
     ) -> SIMD3<Float>? {
-        guard let geometry = planarMPRPreviewGeometry(for: plane, viewport: viewport) else {
+        guard let geometry = planarMPRPreviewGeometry(for: plane, viewport: viewport, unitScale: unitScale) else {
             return nil
         }
 
@@ -5133,7 +5401,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             y = -geometry.halfHeight + vFraction * geometry.halfHeight * 2
         }
 
-        return SIMD3<Float>(x, y, 0)
+        return SIMD3<Float>(x + geometry.panOffset.x, y + geometry.panOffset.y, 0)
     }
 
     private func planarMPRPreviewXPosition(
@@ -5185,21 +5453,23 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func makePlanarMPRPreviewTumourSeedCrossSectionVertices(
         for plane: MetalMPRPlane,
-        viewport: MTLViewport
+        viewport: MTLViewport,
+        unitScale: CGFloat = 1
     ) -> [MetalMPRVertex] {
         guard tumourSeeds.isEmpty == false else { return [] }
 
         var vertices: [MetalMPRVertex] = []
         vertices.reserveCapacity(tumourSeeds.count * 32 * 3)
         appendMPRTumourSeedCrossSections(to: &vertices, for: plane) { _, baseVoxel in
-            planarMPRPreviewPosition(for: baseVoxel, plane: plane, viewport: viewport)
+            planarMPRPreviewPosition(for: baseVoxel, plane: plane, viewport: viewport, unitScale: unitScale)
         }
         return vertices
     }
 
     private func makePlanarMPRPreviewSliceThicknessVertices(
         for plane: MetalMPRPlane,
-        viewport: MTLViewport
+        viewport: MTLViewport,
+        unitScale: CGFloat = 1
     ) -> [MetalMPRVertex] {
         let currentCorners = mprPlaneCorners(for: plane)
         guard currentCorners.count == 4 else {
@@ -5213,10 +5483,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 currentPlaneCorners: currentCorners,
                 slicePlane: otherPlane
             ),
-                  let startA = planarMPRPreviewPosition(for: band.first.0, plane: plane, viewport: viewport),
-                  let endA = planarMPRPreviewPosition(for: band.first.1, plane: plane, viewport: viewport),
-                  let startB = planarMPRPreviewPosition(for: band.second.0, plane: plane, viewport: viewport),
-                  let endB = planarMPRPreviewPosition(for: band.second.1, plane: plane, viewport: viewport) else {
+                  let startA = planarMPRPreviewPosition(for: band.first.0, plane: plane, viewport: viewport, unitScale: unitScale),
+                  let endA = planarMPRPreviewPosition(for: band.first.1, plane: plane, viewport: viewport, unitScale: unitScale),
+                  let startB = planarMPRPreviewPosition(for: band.second.0, plane: plane, viewport: viewport, unitScale: unitScale),
+                  let endB = planarMPRPreviewPosition(for: band.second.1, plane: plane, viewport: viewport, unitScale: unitScale) else {
                 continue
             }
 
@@ -5231,27 +5501,102 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return vertices
     }
 
-    private func makePlanarMPRPreviewIntersectionVertices(for plane: MetalMPRPlane, viewport: MTLViewport) -> [MetalMPRVertex] {
+    private func makePlanarMPRPreviewIntersectionVertices(
+        for plane: MetalMPRPlane,
+        viewport: MTLViewport,
+        unitScale: CGFloat = 1
+    ) -> [MetalMPRVertex] {
         let otherPlanes = Self.mprPlanes.filter { $0 != plane }
         var vertices: [MetalMPRVertex] = []
-        vertices.reserveCapacity(otherPlanes.count * 2)
+        vertices.reserveCapacity(otherPlanes.count * 6)
 
         for otherPlane in otherPlanes {
             guard let segment = mprIntersectionSegment(
                 firstCorners: mprPlaneCorners(for: plane),
                 secondCorners: mprPlaneCorners(for: otherPlane)
             ),
-                  let start = planarMPRPreviewPosition(for: segment.0, plane: plane, viewport: viewport),
-                  let end = planarMPRPreviewPosition(for: segment.1, plane: plane, viewport: viewport) else {
+                  let start = planarMPRPreviewPosition(for: segment.0, plane: plane, viewport: viewport, unitScale: unitScale),
+                  let end = planarMPRPreviewPosition(for: segment.1, plane: plane, viewport: viewport, unitScale: unitScale) else {
                 continue
             }
 
             let color = mprAxisColor(for: otherPlane)
-            vertices.append(MetalMPRVertex(position: start, baseVoxel: segment.0, color: color))
-            vertices.append(MetalMPRVertex(position: end, baseVoxel: segment.1, color: color))
+            appendPlanarMPRPreviewReferenceLine(
+                to: &vertices,
+                start: start,
+                end: end,
+                startBaseVoxel: segment.0,
+                endBaseVoxel: segment.1,
+                color: color,
+                viewport: viewport
+            )
         }
 
         return vertices
+    }
+
+    private func appendPlanarMPRPreviewReferenceLine(
+        to vertices: inout [MetalMPRVertex],
+        start: SIMD3<Float>,
+        end: SIMD3<Float>,
+        startBaseVoxel: SIMD3<Float>,
+        endBaseVoxel: SIMD3<Float>,
+        color: SIMD4<Float>,
+        viewport: MTLViewport
+    ) {
+        let viewportWidth = max(Float(viewport.width), 1)
+        let viewportHeight = max(Float(viewport.height), 1)
+        let screenDelta = SIMD2<Float>(
+            (end.x - start.x) * viewportWidth,
+            (end.y - start.y) * viewportHeight
+        )
+        let lineLength = simd_length(screenDelta)
+        if lineLength > 0.0001 {
+            let sideOffsetPixels: Float = 1
+            let sideColor = SIMD4<Float>(color.x, color.y, color.z, 0.5)
+            let normal = SIMD2<Float>(-screenDelta.y, screenDelta.x) / lineLength
+            let offset = SIMD2<Float>(
+                normal.x * sideOffsetPixels * 2 / viewportWidth,
+                normal.y * sideOffsetPixels * 2 / viewportHeight
+            )
+            appendPlanarMPRPreviewLine(
+                to: &vertices,
+                start: SIMD3<Float>(start.x - offset.x, start.y - offset.y, start.z),
+                end: SIMD3<Float>(end.x - offset.x, end.y - offset.y, end.z),
+                startBaseVoxel: startBaseVoxel,
+                endBaseVoxel: endBaseVoxel,
+                color: sideColor
+            )
+            appendPlanarMPRPreviewLine(
+                to: &vertices,
+                start: SIMD3<Float>(start.x + offset.x, start.y + offset.y, start.z),
+                end: SIMD3<Float>(end.x + offset.x, end.y + offset.y, end.z),
+                startBaseVoxel: startBaseVoxel,
+                endBaseVoxel: endBaseVoxel,
+                color: sideColor
+            )
+        }
+
+        appendPlanarMPRPreviewLine(
+            to: &vertices,
+            start: start,
+            end: end,
+            startBaseVoxel: startBaseVoxel,
+            endBaseVoxel: endBaseVoxel,
+            color: color
+        )
+    }
+
+    private func appendPlanarMPRPreviewLine(
+        to vertices: inout [MetalMPRVertex],
+        start: SIMD3<Float>,
+        end: SIMD3<Float>,
+        startBaseVoxel: SIMD3<Float>,
+        endBaseVoxel: SIMD3<Float>,
+        color: SIMD4<Float>
+    ) {
+        vertices.append(MetalMPRVertex(position: start, baseVoxel: startBaseVoxel, color: color))
+        vertices.append(MetalMPRVertex(position: end, baseVoxel: endBaseVoxel, color: color))
     }
 
     private func mprSliceThicknessBandSegments(
@@ -5414,6 +5759,78 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
+    private func mprTumourSeedIdentifier(
+        at point: CGPoint,
+        inPreviewPlane plane: MetalMPRPlane,
+        paneRect: CGRect
+    ) -> String? {
+        let corners = mprPlaneCorners(for: plane)
+        guard corners.count == 4,
+              mprPlaneEquation(for: corners) != nil else {
+            return nil
+        }
+
+        let worldCorners = corners.map { mprDisplayWorldPosition(for: $0) }
+        let worldNormal = simd_cross(worldCorners[1] - worldCorners[0], worldCorners[2] - worldCorners[0])
+        guard simd_length_squared(worldNormal) > 0.000001 else {
+            return nil
+        }
+
+        let normal = simd_normalize(worldNormal)
+        var uAxis = worldCorners[1] - worldCorners[0]
+        if simd_length_squared(uAxis) <= 0.000001 {
+            uAxis = worldCorners[3] - worldCorners[0]
+        }
+        guard simd_length_squared(uAxis) > 0.000001 else {
+            return nil
+        }
+        uAxis = simd_normalize(uAxis)
+
+        let viewport = mprPreviewViewport(for: paneRect)
+        let worldToBaseVoxel = simd_inverse(fixedVoxelToWorld)
+        let hitPoint = SIMD2<Float>(Float(point.x), Float(point.y))
+        var bestIdentifier: String?
+        var bestDistance = Float.greatestFiniteMagnitude
+
+        for seed in tumourSeeds {
+            let centerWorld = SIMD3<Float>(Float(seed.dicomX), Float(seed.dicomY), Float(seed.dicomZ))
+            let radiusMM = Float(max(seed.diameterMM * 0.5, 0.05))
+            let distanceFromPlane = simd_dot(centerWorld - worldCorners[0], normal)
+            guard abs(distanceFromPlane) <= radiusMM else {
+                continue
+            }
+
+            let crossSectionRadiusMM = sqrt(max(radiusMM * radiusMM - distanceFromPlane * distanceFromPlane, 0))
+            let projectedWorld = centerWorld - normal * distanceFromPlane
+            let projectedVoxel = mprBaseVoxel(forWorld: projectedWorld, worldToBaseVoxel: worldToBaseVoxel)
+            guard mprPoint(projectedVoxel, isInsideQuad: corners),
+                  let centerPosition = planarMPRPreviewPosition(for: projectedVoxel, plane: plane, viewport: viewport) else {
+                continue
+            }
+
+            let centerPoint = mprPreviewScreenPoint(for: centerPosition, in: paneRect)
+            var hitRadius: Float = 8
+            if crossSectionRadiusMM > 0.0001 {
+                let edgeWorld = projectedWorld + uAxis * crossSectionRadiusMM
+                let edgeVoxel = mprBaseVoxel(forWorld: edgeWorld, worldToBaseVoxel: worldToBaseVoxel)
+                if let edgePosition = planarMPRPreviewPosition(for: edgeVoxel, plane: plane, viewport: viewport) {
+                    let edgePoint = mprPreviewScreenPoint(for: edgePosition, in: paneRect)
+                    hitRadius = max(simd_distance(centerPoint, edgePoint), hitRadius)
+                }
+            }
+
+            let distance = simd_distance(centerPoint, hitPoint)
+            guard distance <= hitRadius,
+                  distance < bestDistance else {
+                continue
+            }
+            bestDistance = distance
+            bestIdentifier = seed.identifier
+        }
+
+        return bestIdentifier
+    }
+
     private func appendMPRTumourSeedSphere(
         to vertices: inout [MetalMPRVertex],
         centerWorld: SIMD3<Float>,
@@ -5477,8 +5894,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return SIMD3<Float>(baseVoxel.x, baseVoxel.y, baseVoxel.z)
     }
 
-    private func makePlanarMPRPreviewBorderVertices(for plane: MetalMPRPlane, viewport: MTLViewport) -> [MetalMPRVertex] {
-        let filledVertices = makePlanarMPRPreviewVertices(for: plane, viewport: viewport)
+    private func makePlanarMPRPreviewBorderVertices(
+        for plane: MetalMPRPlane,
+        viewport: MTLViewport,
+        unitScale: CGFloat = 1
+    ) -> [MetalMPRVertex] {
+        let filledVertices = makePlanarMPRPreviewVertices(for: plane, viewport: viewport, unitScale: unitScale)
         guard filledVertices.count == 6 else { return [] }
 
         let color = mprAxisColor(for: plane)

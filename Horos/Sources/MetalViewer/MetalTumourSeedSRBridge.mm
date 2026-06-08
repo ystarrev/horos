@@ -157,7 +157,7 @@ static NSString * const HorosMetalTumourSeedSchema = @"com.horos.metalviewer.tum
         else
         {
             NSArray *importedObjects = [database addFilesAtPaths:@[path]
-                                               postNotifications:YES
+                                               postNotifications:NO
                                                        dicomOnly:YES
                                              rereadExistingItems:YES
                                               generatedByOsiriX:YES];
@@ -168,6 +168,109 @@ static NSString * const HorosMetalTumourSeedSchema = @"com.horos.metalviewer.tum
     @catch (NSException *exception)
     {
         errorMessage = [NSString stringWithFormat:@"Cannot save tumour seed as an ROI SR: %@", exception.reason ?: exception.name];
+    }
+    @finally
+    {
+        [database unlock];
+    }
+
+    if (errorMessage.length)
+        return [self failure:errorMessage];
+
+    return nil;
+}
+
++ (nullable NSString *)deleteSeedWithIdentifier:(NSString *)identifier
+                                        pixList:(NSArray *)pixList
+{
+    NSString *trimmedIdentifier = [self nonEmptyString:identifier];
+    if (trimmedIdentifier.length == 0)
+        return [self failure:@"Cannot delete tumour seed because its identifier is empty."];
+
+    if (pixList.count == 0)
+        return [self failure:@"Cannot delete tumour seed because the viewer has no source images."];
+
+    DicomDatabase *database = nil;
+    for (DCMPix *pix in pixList)
+    {
+        if (![pix isKindOfClass:DCMPix.class])
+            continue;
+
+        DicomImage *image = [self imageForPix:pix];
+        if (image == nil)
+            continue;
+
+        database = [DicomDatabase databaseForContext:image.managedObjectContext];
+        if (database)
+            break;
+    }
+
+    if (database == nil)
+        return [self failure:@"Cannot delete tumour seed because the source database is not available."];
+
+    NSString *errorMessage = nil;
+    BOOL removedSeed = NO;
+    NSMutableArray<NSString *> *updatedPaths = [NSMutableArray array];
+
+    [database lock];
+    @try
+    {
+        for (NSUInteger index = 0; index < pixList.count; index++)
+        {
+            DCMPix *pix = [pixList objectAtIndex:index];
+            if (![pix isKindOfClass:DCMPix.class])
+                continue;
+
+            DicomImage *image = [self imageForPix:pix];
+            DicomStudy *study = [image valueForKeyPath:@"series.study"];
+            if (image == nil || study == nil)
+                continue;
+
+            NSString *path = [study roiPathForImage:image inArray:nil];
+            if (path.length == 0)
+                continue;
+
+            NSMutableArray *rois = [NSMutableArray arrayWithArray:[self roiArrayAtPath:path]];
+            if (rois.count == 0)
+                continue;
+
+            NSIndexSet *matchingIndexes = [rois indexesOfObjectsPassingTest:^BOOL(id candidate, NSUInteger idx, BOOL *stop) {
+                if (![candidate isKindOfClass:ROI.class])
+                    return NO;
+
+                NSDictionary *dictionary = [self seedDictionaryForROI:candidate pix:pix image:image sliceIndex:index];
+                return [dictionary[@"identifier"] isEqualToString:trimmedIdentifier];
+            }];
+            if (matchingIndexes.count == 0)
+                continue;
+
+            [rois removeObjectsAtIndexes:matchingIndexes];
+            [SRAnnotation archiveROIsAsDICOM:rois toPath:path forImage:image];
+            if ([[NSFileManager defaultManager] fileExistsAtPath:path] == NO)
+            {
+                errorMessage = [NSString stringWithFormat:@"Cannot delete tumour seed because the ROI SR file was not written: %@", path];
+                break;
+            }
+
+            removedSeed = YES;
+            [updatedPaths addObject:path];
+        }
+
+        if (removedSeed == NO && errorMessage.length == 0)
+            errorMessage = @"Cannot delete tumour seed because it was not found in the stored ROI list.";
+
+        if (updatedPaths.count && errorMessage.length == 0)
+        {
+            [database addFilesAtPaths:updatedPaths
+                    postNotifications:NO
+                            dicomOnly:YES
+                  rereadExistingItems:YES
+                   generatedByOsiriX:YES];
+        }
+    }
+    @catch (NSException *exception)
+    {
+        errorMessage = [NSString stringWithFormat:@"Cannot delete tumour seed from ROI SR: %@", exception.reason ?: exception.name];
     }
     @finally
     {

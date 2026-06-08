@@ -2196,19 +2196,45 @@ public:
     return dict;
 }
 
+- (BOOL)prepareVolumeMapperRenderContext
+{
+    if( _cocoaRenderWindow == nil || [self window] == nil || NSIsEmptyRect( [self bounds]))
+        return NO;
+
+    vtkRenderWindowInteractor *interactor = [self getInteractor];
+    if( interactor && interactor->GetInitialized() == NO)
+        interactor->Initialize();
+
+    if( _cocoaRenderWindow->GetContextId() == nil)
+        _cocoaRenderWindow->Start();
+
+    if( _cocoaRenderWindow->GetContextId() == nil || _cocoaRenderWindow->GetWindowId() == nil)
+        return NO;
+
+    _cocoaRenderWindow->UpdateContext();
+    _cocoaRenderWindow->MakeCurrent();
+
+    NSOpenGLContext *currentContext = [NSOpenGLContext currentContext];
+    if( currentContext == nil || [currentContext CGLContextObj] == nil)
+        return NO;
+
+    return YES;
+}
+
 - (void) render
 {
     if( volumeMapper)
     {
         aRenderer->SetDraw( 0);
-        
+
+        if( [self prepareVolumeMapperRenderContext] == NO)
+            return;
+
         dontRenderVolumeRenderingOsiriX = 0;
         volumeMapper->SetIntermixIntersectingGeometry( 0);
-        
-        _cocoaRenderWindow->UpdateContext();
-        _cocoaRenderWindow->MakeCurrent();
+
         volumeMapper->Render( aRenderer, volume);
-        
+
         dontRenderVolumeRenderingOsiriX = 1;
     }
 }
@@ -2218,14 +2244,15 @@ public:
     if( blendingVolumeMapper)
     {
         aRenderer->SetDraw( 0);
-        
+
+        if( [self prepareVolumeMapperRenderContext] == NO)
+            return;
+
         dontRenderVolumeRenderingOsiriX = 0;
         blendingVolumeMapper->SetIntermixIntersectingGeometry( 0);
-        
-        _cocoaRenderWindow->UpdateContext();
-        _cocoaRenderWindow->MakeCurrent();
+
         blendingVolumeMapper->Render( aRenderer, blendingVolume);
-        
+
         dontRenderVolumeRenderingOsiriX = 1;
     }
 }

@@ -128,6 +128,31 @@ final class MetalImageView: MTKView {
     private var trackingAreaRef: NSTrackingArea?
     private var preciseScrollSliceAccumulator: CGFloat = 0
     private let mprPreviewOverlayView = MetalMPRPreviewOverlayView(frame: .zero)
+    private var measurements: [MetalViewerMeasurement] = []
+    private var activeMeasurementIdentifier: String?
+    private var selectedMeasurementIdentifier: String?
+    private var activeMeasurementDragMode: MeasurementDragMode?
+    private var activeTumourSeedDeletion = false
+
+    private enum MeasurementHitComponent {
+        case startHandle
+        case endHandle
+        case label
+        case line
+    }
+
+    private struct MeasurementHit {
+        let identifier: String
+        let component: MeasurementHitComponent
+    }
+
+    private enum MeasurementDragMode {
+        case create
+        case startHandle
+        case endHandle
+        case label(startPoint: CGPoint, startOffset: CGPoint)
+        case selectOnly
+    }
 
     private enum MPRDragMode {
         case none
@@ -411,12 +436,24 @@ final class MetalImageView: MTKView {
     }
 
     private func mouseTool(for button: MetalViewerMouseButton, event: NSEvent) -> MetalViewerMouseTool {
+        let assignedTool = mouseToolAssignments.tool(for: button)
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        return flags.contains(.shift) ? .pan : mouseToolAssignments.tool(for: button)
+        if flags.contains(.control),
+           button == .right,
+           mouseToolAssignments.tool(for: .left) == .tumourSeed {
+            return .tumourSeed
+        }
+        if flags.contains(.shift),
+           assignedTool != .measure,
+           activeMouseTool != .measure {
+            return .pan
+        }
+        return assignedTool
     }
 
     private static let preciseScrollPointsPerSlice: CGFloat = 18
     private static let momentumScrollPointsPerSlice: CGFloat = 60
+    private static let measurementLabelFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
 
     let renderer: MetalViewerRenderer
     var titleDidChange: ((String) -> Void)?
@@ -425,6 +462,8 @@ final class MetalImageView: MTKView {
     var annotationStateDidChange: (() -> Void)?
     var windowLevelInteractionHandler: (() -> Void)?
     var tumourSeedPlacementHandler: ((MetalViewerTumourSeedPlacement) -> Void)?
+    var tumourSeedDeletionHandler: ((String) -> Void)?
+    var measurementsDidChange: (([MetalViewerMeasurementOverlay]) -> Void)?
     var mouseToolAssignments = MetalViewerMouseToolAssignments()
     private(set) var mouseAnnotationState: MouseAnnotationState?
 
@@ -467,6 +506,7 @@ final class MetalImageView: MTKView {
             if let overlayView = self?.mprPreviewOverlayView {
                 overlayView.window?.invalidateCursorRects(for: overlayView)
             }
+            self?.publishMeasurementOverlays()
             self?.annotationStateDidChange?()
         }
         renderer.windowLevelStateDidChange = windowLevelStateDidChange
@@ -485,6 +525,7 @@ final class MetalImageView: MTKView {
         super.layout()
         mprPreviewOverlayView.needsDisplay = true
         mprPreviewOverlayView.window?.invalidateCursorRects(for: mprPreviewOverlayView)
+        publishMeasurementOverlays()
     }
 
     override func updateTrackingAreas() {
@@ -588,15 +629,25 @@ final class MetalImageView: MTKView {
         panAnchor = renderer.panOffset
         activeMouseButton = button
         activeMouseTool = mouseTool(for: button, event: event)
+        activeTumourSeedDeletion = activeMouseTool == .tumourSeed
+            && event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.control)
         didChangeWindowLevelDuringDrag = false
         didDragMouseInteraction = false
         sliceDragAccumulator = 0
         mprScrollAxisOverride = nil
+        if activeMouseTool == .measure {
+            beginMeasurementInteraction(at: dragAnchor)
+            mprDragMode = .none
+            updateMouseAnnotationState(from: dragAnchor)
+            return
+        }
         if renderer.displayMode.isMPRLike {
             switch activeMouseTool {
             case .pan:
                 mprDragMode = .pan
-            case .windowLevel, .rotate:
+            case .windowLevel:
+                mprDragMode = .none
+            case .rotate:
                 if renderer.beginMPRPreviewPlaneMoveDrag(at: dragAnchor, in: bounds) {
                     mprDragMode = .plane
                 } else if renderer.beginMPRPreviewPlaneTiltDrag(at: dragAnchor, in: bounds) {
@@ -615,7 +666,7 @@ final class MetalImageView: MTKView {
             case .scroll:
                 mprScrollAxisOverride = renderer.mprSlicePlaneAxis(at: dragAnchor, in: bounds)
                 mprDragMode = .none
-            case .zoom, .tumourSeed:
+            case .zoom, .measure, .tumourSeed:
                 mprDragMode = .none
             }
         } else {
@@ -632,7 +683,8 @@ final class MetalImageView: MTKView {
         let currentPoint = convert(event.locationInWindow, from: nil)
         let currentMouseTool = mouseTool(for: activeMouseButton, event: event)
 
-        if currentMouseTool != activeMouseTool,
+        if activeMouseTool != .measure,
+           currentMouseTool != activeMouseTool,
            mprDragMode != .plane,
            mprDragMode != .planeTilt,
            mprDragMode != .previewPlane {
@@ -647,7 +699,9 @@ final class MetalImageView: MTKView {
                 switch currentMouseTool {
                 case .pan:
                     mprDragMode = .pan
-                case .windowLevel, .rotate:
+                case .windowLevel:
+                    mprDragMode = .none
+                case .rotate:
                     if renderer.beginMPRPreviewPlaneMoveDrag(at: currentPoint, in: bounds) {
                         mprDragMode = .plane
                     } else if renderer.beginMPRPreviewPlaneTiltDrag(at: currentPoint, in: bounds) {
@@ -662,7 +716,7 @@ final class MetalImageView: MTKView {
                 case .scroll:
                     mprScrollAxisOverride = renderer.mprSlicePlaneAxis(at: currentPoint, in: bounds)
                     mprDragMode = .none
-                case .zoom, .tumourSeed:
+                case .zoom, .measure, .tumourSeed:
                     mprDragMode = .none
                 }
             }
@@ -706,16 +760,25 @@ final class MetalImageView: MTKView {
         mprScrollAxisOverride = nil
         sliceDragAccumulator = 0
         let currentPoint = convert(event.locationInWindow, from: nil)
-        if activeMouseTool == .tumourSeed,
-           didDragMouseInteraction == false,
-           let placement = renderer.tumourSeedPlacement(at: currentPoint, in: bounds) {
-            tumourSeedPlacementHandler?(placement)
+        if activeMouseTool == .measure {
+            finishMeasurementInteraction(at: currentPoint, event: event)
         }
-        if didChangeWindowLevelDuringDrag, renderer.displayMode == .stack2D {
+        if activeMouseTool == .tumourSeed,
+           didDragMouseInteraction == false {
+            if activeTumourSeedDeletion {
+                if let identifier = renderer.tumourSeedIdentifier(at: currentPoint, in: bounds) {
+                    tumourSeedDeletionHandler?(identifier)
+                }
+            } else if let placement = renderer.tumourSeedPlacement(at: currentPoint, in: bounds) {
+                tumourSeedPlacementHandler?(placement)
+            }
+        }
+        if didChangeWindowLevelDuringDrag {
             renderer.commitWindowLevel()
         }
         didChangeWindowLevelDuringDrag = false
         didDragMouseInteraction = false
+        activeTumourSeedDeletion = false
         updateMouseAnnotationState(from: currentPoint)
         if renderer.displayMode.isMPRLike {
             updateMPRLineCursor(at: currentPoint, event: event)
@@ -731,12 +794,7 @@ final class MetalImageView: MTKView {
     ) {
         switch tool {
         case .windowLevel:
-            renderer.updateWindowLevel(
-                wl: wlAnchor - deltaY * max(abs(wlAnchor), 128) * 0.003,
-                ww: wwAnchor + deltaX * max(abs(wwAnchor), 256) * 0.003
-            )
-            didChangeWindowLevelDuringDrag = true
-            windowLevelInteractionHandler?()
+            updateWindowLevelFromDrag(deltaX: deltaX, deltaY: deltaY)
         case .pan:
             renderer.setPanOffset(panAnchor + SIMD2<Float>(deltaX, deltaY))
         case .zoom:
@@ -746,6 +804,8 @@ final class MetalImageView: MTKView {
         case .rotate:
             renderer.rotateStack(from: dragAnchor, to: currentPoint, in: bounds)
             dragAnchor = currentPoint
+        case .measure:
+            dragMeasurementInteraction(to: currentPoint, event: event)
         case .tumourSeed:
             break
         }
@@ -765,7 +825,9 @@ final class MetalImageView: MTKView {
             zoomFromDrag(deltaY: deltaY, currentPoint: currentPoint)
         case .scroll:
             scrollOrScaleMPRFromDrag(to: currentPoint, deltaY: deltaY, event: event)
-        case .windowLevel, .rotate:
+        case .windowLevel:
+            updateWindowLevelFromDrag(deltaX: deltaX, deltaY: deltaY)
+        case .rotate:
             switch mprDragMode {
             case .plane:
                 renderer.dragMPRPlane(to: currentPoint)
@@ -783,9 +845,20 @@ final class MetalImageView: MTKView {
             case .none:
                 break
             }
+        case .measure:
+            dragMeasurementInteraction(to: currentPoint, event: event)
         case .tumourSeed:
             break
         }
+    }
+
+    private func updateWindowLevelFromDrag(deltaX: Float, deltaY: Float) {
+        renderer.updateWindowLevel(
+            wl: wlAnchor - deltaY * max(abs(wlAnchor), 128) * 0.003,
+            ww: wwAnchor + deltaX * max(abs(wwAnchor), 256) * 0.003
+        )
+        didChangeWindowLevelDuringDrag = true
+        windowLevelInteractionHandler?()
     }
 
     private func zoomFromDrag(deltaY: Float, currentPoint: CGPoint) {
@@ -828,6 +901,386 @@ final class MetalImageView: MTKView {
         scrollFromDrag(to: currentPoint, event: event)
     }
 
+    private func beginMeasurementInteraction(at point: CGPoint) {
+        activeMeasurementIdentifier = nil
+        activeMeasurementDragMode = nil
+
+        if let hit = measurementHit(at: point) {
+            selectMeasurement(hit.identifier)
+            activeMeasurementIdentifier = hit.identifier
+            switch hit.component {
+            case .startHandle:
+                activeMeasurementDragMode = .startHandle
+            case .endHandle:
+                activeMeasurementDragMode = .endHandle
+            case .label:
+                let startOffset = measurements.first { $0.identifier == hit.identifier }?.labelOffset ?? .zero
+                activeMeasurementDragMode = .label(startPoint: point, startOffset: startOffset)
+            case .line:
+                activeMeasurementDragMode = .selectOnly
+            }
+            return
+        }
+
+        if selectedMeasurementIdentifier != nil {
+            deselectMeasurements()
+            return
+        }
+
+        beginNewMeasurement(at: point)
+    }
+
+    private func beginNewMeasurement(at point: CGPoint) {
+        guard let measurementPoint = renderer.measurementPoint(at: point, in: bounds) else {
+            activeMeasurementIdentifier = nil
+            activeMeasurementDragMode = nil
+            return
+        }
+
+        let measurement = MetalViewerMeasurement(
+            identifier: UUID().uuidString,
+            start: measurementPoint,
+            end: measurementPoint,
+            isActive: true
+        )
+        measurements.append(measurement)
+        activeMeasurementIdentifier = measurement.identifier
+        activeMeasurementDragMode = .create
+        selectedMeasurementIdentifier = nil
+        publishMeasurementOverlays()
+    }
+
+    private func dragMeasurementInteraction(to currentPoint: CGPoint, event: NSEvent) {
+        guard let mode = activeMeasurementDragMode else {
+            return
+        }
+
+        switch mode {
+        case .create:
+            updateCreatedMeasurement(to: currentPoint, event: event)
+        case .startHandle:
+            updateMeasurementEndpoint(.startHandle, to: currentPoint, event: event)
+        case .endHandle:
+            updateMeasurementEndpoint(.endHandle, to: currentPoint, event: event)
+        case let .label(startPoint, startOffset):
+            updateMeasurementLabelOffset(startPoint: startPoint, startOffset: startOffset, currentPoint: currentPoint)
+        case .selectOnly:
+            break
+        }
+    }
+
+    private func updateCreatedMeasurement(to currentPoint: CGPoint, event: NSEvent) {
+        guard let identifier = activeMeasurementIdentifier,
+              let index = measurements.firstIndex(where: { $0.identifier == identifier }) else {
+            return
+        }
+
+        let measurement = measurements[index]
+        let startViewPoint = renderer.screenPoint(for: measurement.start, in: bounds) ?? currentPoint
+        let targetPoint = constrainedMeasurementTarget(from: startViewPoint, to: currentPoint, event: event)
+        guard let endPoint = renderer.measurementPoint(at: targetPoint, in: bounds),
+              measurementPoint(endPoint, isCompatibleWith: measurement.start) else {
+            return
+        }
+
+        measurements[index].end = endPoint
+        publishMeasurementOverlays()
+    }
+
+    private func updateMeasurementEndpoint(_ component: MeasurementHitComponent, to currentPoint: CGPoint, event: NSEvent) {
+        guard let identifier = activeMeasurementIdentifier,
+              let index = measurements.firstIndex(where: { $0.identifier == identifier }) else {
+            return
+        }
+
+        let measurement = measurements[index]
+        let fixedPoint: MetalViewerMeasurementPoint
+        switch component {
+        case .startHandle:
+            fixedPoint = measurement.end
+        case .endHandle:
+            fixedPoint = measurement.start
+        case .label, .line:
+            return
+        }
+
+        guard let fixedViewPoint = renderer.screenPoint(for: fixedPoint, in: bounds) else {
+            return
+        }
+
+        let targetPoint = constrainedMeasurementTarget(from: fixedViewPoint, to: currentPoint, event: event)
+        guard let draggedPoint = renderer.measurementPoint(at: targetPoint, in: bounds),
+              measurementPoint(draggedPoint, isCompatibleWith: fixedPoint) else {
+            return
+        }
+
+        switch component {
+        case .startHandle:
+            measurements[index].start = draggedPoint
+        case .endHandle:
+            measurements[index].end = draggedPoint
+        case .label, .line:
+            break
+        }
+        selectMeasurement(identifier, publish: false)
+        publishMeasurementOverlays()
+    }
+
+    private func updateMeasurementLabelOffset(startPoint: CGPoint, startOffset: CGPoint, currentPoint: CGPoint) {
+        guard let identifier = activeMeasurementIdentifier,
+              let index = measurements.firstIndex(where: { $0.identifier == identifier }) else {
+            return
+        }
+
+        measurements[index].labelOffset = CGPoint(
+            x: startOffset.x + currentPoint.x - startPoint.x,
+            y: startOffset.y + currentPoint.y - startPoint.y
+        )
+        selectMeasurement(identifier, publish: false)
+        publishMeasurementOverlays()
+    }
+
+    private func finishMeasurementInteraction(at currentPoint: CGPoint, event: NSEvent) {
+        guard let mode = activeMeasurementDragMode else {
+            activeMeasurementIdentifier = nil
+            return
+        }
+
+        switch mode {
+        case .create:
+            finalizeCreatedMeasurement(at: currentPoint, event: event)
+        case .startHandle, .endHandle, .label, .selectOnly:
+            activeMeasurementIdentifier = nil
+            activeMeasurementDragMode = nil
+            publishMeasurementOverlays()
+        }
+    }
+
+    private func finalizeCreatedMeasurement(at currentPoint: CGPoint, event: NSEvent) {
+        updateCreatedMeasurement(to: currentPoint, event: event)
+
+        guard let identifier = activeMeasurementIdentifier,
+              let index = measurements.firstIndex(where: { $0.identifier == identifier }) else {
+            activeMeasurementIdentifier = nil
+            activeMeasurementDragMode = nil
+            return
+        }
+
+        let measurement = measurements[index]
+        let startPoint = renderer.screenPoint(for: measurement.start, in: bounds)
+        let endPoint = renderer.screenPoint(for: measurement.end, in: bounds)
+        let screenDistance = startPoint.flatMap { start in
+            endPoint.map { hypot($0.x - start.x, $0.y - start.y) }
+        } ?? 0
+
+        if screenDistance <= 3 || measurement.lengthMM <= 0.0001 {
+            measurements.remove(at: index)
+        } else {
+            measurements[index].isActive = false
+        }
+        activeMeasurementIdentifier = nil
+        activeMeasurementDragMode = nil
+        selectedMeasurementIdentifier = nil
+        publishMeasurementOverlays()
+    }
+
+    private func measurementHit(at point: CGPoint) -> MeasurementHit? {
+        for measurement in measurements.reversed() {
+            guard let startPoint = renderer.screenPoint(for: measurement.start, in: bounds),
+                  let endPoint = renderer.screenPoint(for: measurement.end, in: bounds) else {
+                continue
+            }
+
+            if hypot(point.x - startPoint.x, point.y - startPoint.y) <= 9 {
+                return MeasurementHit(identifier: measurement.identifier, component: .startHandle)
+            }
+            if hypot(point.x - endPoint.x, point.y - endPoint.y) <= 9 {
+                return MeasurementHit(identifier: measurement.identifier, component: .endHandle)
+            }
+            if measurementLabelRect(for: measurement, startPoint: startPoint, endPoint: endPoint)
+                .insetBy(dx: -4, dy: -4)
+                .contains(point) {
+                return MeasurementHit(identifier: measurement.identifier, component: .label)
+            }
+            if distance(from: point, toSegmentFrom: startPoint, to: endPoint) <= 5 {
+                return MeasurementHit(identifier: measurement.identifier, component: .line)
+            }
+        }
+
+        return nil
+    }
+
+    private func selectMeasurement(_ identifier: String, publish: Bool = true) {
+        selectedMeasurementIdentifier = identifier
+        for index in measurements.indices {
+            measurements[index].isActive = measurements[index].identifier == identifier
+        }
+        if publish {
+            publishMeasurementOverlays()
+        }
+    }
+
+    private func deselectMeasurements() {
+        selectedMeasurementIdentifier = nil
+        activeMeasurementIdentifier = nil
+        activeMeasurementDragMode = nil
+        for index in measurements.indices {
+            measurements[index].isActive = false
+        }
+        publishMeasurementOverlays()
+    }
+
+    @discardableResult
+    private func deleteSelectedMeasurement() -> Bool {
+        guard let identifier = selectedMeasurementIdentifier,
+              let index = measurements.firstIndex(where: { $0.identifier == identifier }) else {
+            return false
+        }
+
+        measurements.remove(at: index)
+        selectedMeasurementIdentifier = nil
+        activeMeasurementIdentifier = nil
+        activeMeasurementDragMode = nil
+        publishMeasurementOverlays()
+        return true
+    }
+
+    private func measurementLabelRect(
+        for measurement: MetalViewerMeasurement,
+        startPoint: CGPoint,
+        endPoint: CGPoint
+    ) -> CGRect {
+        let paddedSize = measurementLabelPaddedSize(for: measurement.lengthLabel)
+        let center = measurementLabelCenter(for: measurement, startPoint: startPoint, endPoint: endPoint)
+        return CGRect(
+            x: center.x - paddedSize.width * 0.5,
+            y: center.y - paddedSize.height * 0.5,
+            width: paddedSize.width,
+            height: paddedSize.height
+        )
+    }
+
+    private func measurementLabelCenter(
+        for measurement: MetalViewerMeasurement,
+        startPoint: CGPoint,
+        endPoint: CGPoint
+    ) -> CGPoint {
+        let paddedSize = measurementLabelPaddedSize(for: measurement.lengthLabel)
+        let midpoint = CGPoint(
+            x: (startPoint.x + endPoint.x) * 0.5,
+            y: (startPoint.y + endPoint.y) * 0.5
+        )
+        let deltaX = endPoint.x - startPoint.x
+        let deltaY = endPoint.y - startPoint.y
+        let length = max(hypot(deltaX, deltaY), 0.0001)
+        let defaultCenter = clampedMeasurementLabelCenter(
+            CGPoint(
+                x: midpoint.x - deltaY / length * 12,
+                y: midpoint.y + deltaX / length * 12
+            ),
+            paddedSize: paddedSize
+        )
+        return clampedMeasurementLabelCenter(
+            CGPoint(
+                x: defaultCenter.x + measurement.labelOffset.x,
+                y: defaultCenter.y + measurement.labelOffset.y
+            ),
+            paddedSize: paddedSize
+        )
+    }
+
+    private func measurementLabelPaddedSize(for label: String) -> CGSize {
+        let textSize = (label as NSString).size(withAttributes: [
+            .font: Self.measurementLabelFont,
+        ])
+        return CGSize(width: textSize.width + 8, height: textSize.height + 4)
+    }
+
+    private func clampedMeasurementLabelCenter(_ center: CGPoint, paddedSize: CGSize) -> CGPoint {
+        let halfWidth = paddedSize.width * 0.5
+        let halfHeight = paddedSize.height * 0.5
+        let minX = bounds.minX + halfWidth + 4
+        let maxX = max(minX, bounds.maxX - halfWidth - 4)
+        let minY = bounds.minY + halfHeight + 4
+        let maxY = max(minY, bounds.maxY - halfHeight - 4)
+        return CGPoint(
+            x: min(max(center.x, minX), maxX),
+            y: min(max(center.y, minY), maxY)
+        )
+    }
+
+    private func distance(from point: CGPoint, toSegmentFrom startPoint: CGPoint, to endPoint: CGPoint) -> CGFloat {
+        let deltaX = endPoint.x - startPoint.x
+        let deltaY = endPoint.y - startPoint.y
+        let lengthSquared = deltaX * deltaX + deltaY * deltaY
+        guard lengthSquared > 0.0001 else {
+            return hypot(point.x - startPoint.x, point.y - startPoint.y)
+        }
+
+        let rawFraction = ((point.x - startPoint.x) * deltaX + (point.y - startPoint.y) * deltaY) / lengthSquared
+        let fraction = min(max(rawFraction, 0), 1)
+        let projected = CGPoint(
+            x: startPoint.x + deltaX * fraction,
+            y: startPoint.y + deltaY * fraction
+        )
+        return hypot(point.x - projected.x, point.y - projected.y)
+    }
+
+    private func constrainedMeasurementTarget(from startPoint: CGPoint, to currentPoint: CGPoint, event: NSEvent) -> CGPoint {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags.contains(.shift) else {
+            return currentPoint
+        }
+
+        let deltaX = currentPoint.x - startPoint.x
+        let deltaY = currentPoint.y - startPoint.y
+        let absX = abs(deltaX)
+        let absY = abs(deltaY)
+        guard absX > 0.0001 || absY > 0.0001 else {
+            return currentPoint
+        }
+
+        if absX < 0.0001 || absY / max(absX, 0.0001) > 1.5 {
+            return CGPoint(x: startPoint.x, y: currentPoint.y)
+        }
+        if absY / max(absX, 0.0001) < 0.5 {
+            return CGPoint(x: currentPoint.x, y: startPoint.y)
+        }
+
+        return CGPoint(
+            x: currentPoint.x,
+            y: startPoint.y + (deltaY < 0 ? -absX : absX)
+        )
+    }
+
+    private func measurementPoint(_ point: MetalViewerMeasurementPoint, isCompatibleWith startPoint: MetalViewerMeasurementPoint) -> Bool {
+        switch (startPoint.displaySpace, point.displaySpace) {
+        case let (.stack2D(startSliceIndex, _), .stack2D(endSliceIndex, _)):
+            return startSliceIndex == endSliceIndex
+        case let (.mprPreview(startPlaneRawValue, _), .mprPreview(endPlaneRawValue, _)):
+            return startPlaneRawValue == endPlaneRawValue
+        default:
+            return false
+        }
+    }
+
+    private func publishMeasurementOverlays() {
+        let overlays = measurements.compactMap { measurement -> MetalViewerMeasurementOverlay? in
+            guard let startPoint = renderer.screenPoint(for: measurement.start, in: bounds),
+                  let endPoint = renderer.screenPoint(for: measurement.end, in: bounds) else {
+                return nil
+            }
+            return MetalViewerMeasurementOverlay(
+                startPoint: startPoint,
+                endPoint: endPoint,
+                label: measurement.lengthLabel,
+                labelCenter: measurementLabelCenter(for: measurement, startPoint: startPoint, endPoint: endPoint),
+                isActive: measurement.isActive
+            )
+        }
+        measurementsDidChange?(overlays)
+    }
+
     func beginMPRPreviewDividerDrag(with event: NSEvent) {
         interactionEventHandler?()
         activateHandler?()
@@ -867,6 +1320,10 @@ final class MetalImageView: MTKView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if (event.keyCode == 51 || event.keyCode == 117), deleteSelectedMeasurement() {
+            return
+        }
+
         switch event.keyCode {
         case 123: // left arrow
             renderer.stepSlice(by: 1)
@@ -896,6 +1353,7 @@ final class MetalImageView: MTKView {
         renderer.setDisplayMode(mode)
         mouseAnnotationState = nil
         annotationStateDidChange?()
+        publishMeasurementOverlays()
     }
 
     private func stepThroughCurrentMode(by stepCount: Int, event: NSEvent, at point: CGPoint? = nil) {
@@ -940,9 +1398,9 @@ final class MetalImageView: MTKView {
             return
         }
         switch mouseTool(for: .left, event: event) {
-        case .windowLevel, .rotate:
+        case .rotate:
             break
-        case .pan, .scroll, .zoom, .tumourSeed:
+        case .windowLevel, .pan, .scroll, .zoom, .measure, .tumourSeed:
             resetMPRLineCursor()
             NSCursor.arrow.set()
             return

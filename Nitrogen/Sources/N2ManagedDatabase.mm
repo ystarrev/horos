@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "N2ManagedDatabase.h"
+#import <AppKit/AppKit.h>
 #import "NSMutableDictionary+N2.h"
 #import "N2Debug.h"
 #import "NSFileManager+N2.h"
@@ -44,6 +45,76 @@
 //#import "DicomDatabase.h" // for debug purposes, REMOVE
 
 static int gTotalN2ManagedObjectContext = 0;
+
+static void N2ManagedDatabaseAppendErrorDetails(NSMutableArray *details, NSError *error, NSUInteger depth)
+{
+    if (![error isKindOfClass:[NSError class]] || depth > 4)
+        return;
+
+    NSString *description = error.localizedDescription.length ? error.localizedDescription : error.description;
+    if (description.length)
+        [details addObject:[NSString stringWithFormat:@"%@ %ld: %@", error.domain, (long)error.code, description]];
+
+    if (error.localizedFailureReason.length)
+        [details addObject:[NSString stringWithFormat:@"%@: %@", NSLocalizedString(@"Reason", nil), error.localizedFailureReason]];
+
+    if (error.localizedRecoverySuggestion.length)
+        [details addObject:[NSString stringWithFormat:@"%@: %@", NSLocalizedString(@"Suggestion", nil), error.localizedRecoverySuggestion]];
+
+    NSString *filePath = [error.userInfo objectForKey:NSFilePathErrorKey];
+    if (filePath.length)
+        [details addObject:[NSString stringWithFormat:@"%@: %@", NSLocalizedString(@"File", nil), filePath]];
+
+    id underlyingError = [error.userInfo objectForKey:NSUnderlyingErrorKey];
+    if ([underlyingError isKindOfClass:[NSError class]])
+        N2ManagedDatabaseAppendErrorDetails(details, underlyingError, depth + 1);
+    else if ([underlyingError isKindOfClass:[NSArray class]]) {
+        for (NSError *nestedError in (NSArray *)underlyingError)
+            N2ManagedDatabaseAppendErrorDetails(details, nestedError, depth + 1);
+    }
+}
+
+static NSString *N2ManagedDatabaseStorageErrorDetails(NSError *error)
+{
+    NSMutableArray *details = [NSMutableArray array];
+    N2ManagedDatabaseAppendErrorDetails(details, error, 0);
+    return details.count ? [details componentsJoinedByString:@"\r"] : NSLocalizedString(@"No detailed error was provided by the persistent store.", nil);
+}
+
+static NSString *N2ManagedDatabaseBackupPathForSQLFile(NSString *sqlFilePath)
+{
+    NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
+    formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    formatter.dateFormat = @"yyyyMMdd-HHmmss";
+
+    NSString *basePath = [NSString stringWithFormat:@"%@.failed-open-%@", sqlFilePath, [formatter stringFromDate:[NSDate date]]];
+    for (NSUInteger index = 0; index < 1000; ++index) {
+        NSString *candidate = index ? [NSString stringWithFormat:@"%@-%lu", basePath, (unsigned long)index] : basePath;
+        if (![NSFileManager.defaultManager fileExistsAtPath:candidate])
+            return candidate;
+    }
+
+    return [NSString stringWithFormat:@"%@-%u", basePath, arc4random()];
+}
+
+static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSError **error)
+{
+    NSString *backupPath = N2ManagedDatabaseBackupPathForSQLFile(sqlFilePath);
+    if (![NSFileManager.defaultManager moveItemAtPath:sqlFilePath toPath:backupPath error:error])
+        return nil;
+
+    for (NSString *suffix in @[@"-journal", @"-shm", @"-wal"]) {
+        NSString *sidecarPath = [sqlFilePath stringByAppendingString:suffix];
+        if (![NSFileManager.defaultManager fileExistsAtPath:sidecarPath])
+            continue;
+
+        NSError *sidecarError = nil;
+        if (![NSFileManager.defaultManager moveItemAtPath:sidecarPath toPath:[backupPath stringByAppendingString:suffix] error:&sidecarError])
+            NSLog(@"Warning: could not move database sidecar %@ aside: %@", sidecarPath, sidecarError);
+    }
+
+    return backupPath;
+}
 
 @interface N2ManagedDatabase ()
 
@@ -364,24 +435,57 @@ static int gTotalN2ManagedObjectContext = 0;
                         if (!pStore && i == 1)
                         {
                             NSLog(@"Error: [N2ManagedDatabase contextAtPath:] %@", [err description]);
+                            BOOL shouldResetSQLIndex = NO;
                             if ([NSThread isMainThread]) {
-                                NSInteger result = NSRunCriticalAlertPanel( [NSString stringWithFormat:NSLocalizedString(@"%@ Storage Error", nil), [self className]], @"%@\r\r%@\r\r%@", NSLocalizedString(@"Continue", nil), NSLocalizedString(@"Delete the SQL index", nil), nil, err.localizedDescription, sqlFilePath, NSLocalizedString(@"I could delete the SQL index file to reset it.", nil));
+                                NSString *message = [NSString stringWithFormat:
+                                    NSLocalizedString(@"Horos could not open the database SQL index file.\r\rThis can happen when the database volume is not mounted, macOS has not granted this copy of Horos access to the folder, the file is locked, or the SQL index is damaged.\r\rDatabase SQL index:\r%@\r\rDetails:\r%@\r\rIf this is not the database location you expected, do not reset this index. Continue, then select the correct database location.\r\rContinuing leaves this file untouched. Resetting the SQL index moves the old index aside and asks Horos to rebuild it.", nil),
+                                    sqlFilePath,
+                                    N2ManagedDatabaseStorageErrorDetails(err)];
+                                NSInteger result = NSRunCriticalAlertPanel(
+                                    [NSString stringWithFormat:NSLocalizedString(@"%@ Storage Error", nil), [self className]],
+                                    @"%@",
+                                    NSLocalizedString(@"Continue", nil),
+                                    NSLocalizedString(@"Reveal in Finder", nil),
+                                    self.deleteSQLFileIfOpeningFailed ? NSLocalizedString(@"Reset SQL Index...", nil) : nil,
+                                    message);
                                 
-                                if( result == NSAlertAlternateReturn) {
-                                    NSInteger result = NSRunCriticalAlertPanel( [NSString stringWithFormat:NSLocalizedString(@"%@ Storage Error", nil), [self className]], @"%@\r\r%@", NSLocalizedString(@"Cancel", nil), NSLocalizedString(@"Delete", nil), nil, NSLocalizedString( @"Do you confirm to delete this index file? This operation cannot be undone.", nil), sqlFilePath);
+                                if (result == NSAlertAlternateReturn) {
+                                    [[NSWorkspace sharedWorkspace] selectFile:sqlFilePath inFileViewerRootedAtPath:[sqlFilePath stringByDeletingLastPathComponent]];
+                                } else if (result == NSAlertOtherReturn && self.deleteSQLFileIfOpeningFailed) {
+                                    NSInteger confirmation = NSRunCriticalAlertPanel(
+                                        [NSString stringWithFormat:NSLocalizedString(@"Reset %@ SQL Index?", nil), [self className]],
+                                        @"%@\r\r%@",
+                                        NSLocalizedString(@"Cancel", nil),
+                                        NSLocalizedString(@"Reset SQL Index", nil),
+                                        nil,
+                                        NSLocalizedString(@"Only reset the SQL index if this is the database Horos should rebuild. If Horos is opening an unexpected folder, cancel and choose the correct database instead.\r\rHoros will move the existing SQL index to a backup file beside it, then try to create a new one. DICOM image files are not intentionally deleted, but database-only metadata may be missing until the old index is restored.", nil),
+                                        sqlFilePath);
                                     
-                                    if( result == NSAlertAlternateReturn) {
-                                        [NSFileManager.defaultManager removeItemAtPath:sqlFilePath error: nil];
-                                        i = 0;
-                                    }
+                                    shouldResetSQLIndex = confirmation == NSAlertAlternateReturn;
                                 }
                             }
                             
                             // error = [NSError osirixErrorWithCode:0 underlyingError:error localizedDescriptionFormat:NSLocalizedString(@"Store Configuration Failure: %@", nil), error.localizedDescription? error.localizedDescription : NSLocalizedString(@"Unknown Error", nil)];
                             
-                            // delete the old file... for the Database.sql model ONLY (Dont do this for the WebUser db)
-                            if (self.deleteSQLFileIfOpeningFailed)
-                                [NSFileManager.defaultManager removeItemAtPath:sqlFilePath error:nil];
+                            // Move the old file aside for the Database.sql model ONLY (don't do this for the WebUser db), and only after explicit user confirmation.
+                            if (shouldResetSQLIndex) {
+                                NSError *moveError = nil;
+                                NSString *backupPath = N2ManagedDatabaseMoveSQLIndexAside(sqlFilePath, &moveError);
+                                if (backupPath) {
+                                    NSLog(@"Moved SQL index %@ to %@ before rebuilding.", sqlFilePath, backupPath);
+                                    i = 0;
+                                } else if ([NSThread isMainThread]) {
+                                    NSRunCriticalAlertPanel(
+                                        [NSString stringWithFormat:NSLocalizedString(@"%@ Storage Error", nil), [self className]],
+                                        @"%@\r\r%@\r\r%@",
+                                        NSLocalizedString(@"Continue", nil),
+                                        nil,
+                                        nil,
+                                        NSLocalizedString(@"Horos could not move the SQL index aside, so it has not been reset.", nil),
+                                        sqlFilePath,
+                                        N2ManagedDatabaseStorageErrorDetails(moveError));
+                                }
+                            }
                         }
                     } while (!pStore && i < 2);
                     

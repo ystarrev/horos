@@ -206,6 +206,12 @@
 	<string>4.0.0</string>
 	<key>CFBundleSignature</key>
 	<string>OsiX</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Allows Horos to discover nearby iPhone planning apps and send studies to them.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_horosiphone._tcp</string>
+	</array>
 	<key>CFBundleSupportedPlatforms</key>
 	<array>
 		<string>MacOSX</string>

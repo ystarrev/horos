@@ -5123,8 +5123,8 @@ static NSConditionLock *threadLock = nil;
                 [self.database lock];
                 @try {
                     [animationSlider setEnabled:NO];
+                    [animationSlider setNumberOfTickMarks:0];
                     [animationSlider setMaxValue:0];
-                    [animationSlider setNumberOfTickMarks:1];
                     [animationSlider setIntValue:0];
                     
                     [matrixViewArray release];
@@ -9028,8 +9028,8 @@ static BOOL withReset = NO;
         if( animate == NO)
         {
             [animationSlider setEnabled:NO];
+            [animationSlider setNumberOfTickMarks:0];
             [animationSlider setMaxValue:0];
-            [animationSlider setNumberOfTickMarks:1];
             [animationSlider setIntValue:0];
         }
         else if( [animationSlider isEnabled] == NO)
@@ -9043,8 +9043,8 @@ static BOOL withReset = NO;
     else
     {
         [animationSlider setEnabled:NO];
+        [animationSlider setNumberOfTickMarks:0];
         [animationSlider setMaxValue:0];
-        [animationSlider setNumberOfTickMarks:1];
         [animationSlider setIntValue:0];
     }
     
@@ -9439,8 +9439,8 @@ static BOOL withReset = NO;
     
     
     [animationSlider setEnabled:NO];
+    [animationSlider setNumberOfTickMarks:0];
     [animationSlider setMaxValue:0];
-    [animationSlider setNumberOfTickMarks:1];
     [animationSlider setIntValue:0];
     
     if( [theCell tag] >= 0)
@@ -10361,8 +10361,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 - (void) windowDidChangeScreen:(NSNotification *)aNotification
 {
-        NSLog(@"windowDidChangeScreen");
-        
         @try {
             // Did the user change the window resolution?
             
@@ -14158,6 +14156,25 @@ static NSArray*	openSubSeriesArray = nil;
     return [[DicomDatabase databaseAtPath:path] computeDataFileIndex];
 }
 
+static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
+{
+    NSString *path = [source valueForKey:@"Path"];
+    if (path.length == 0 || [[NSFileManager defaultManager] fileExistsAtPath:path])
+        return NO;
+
+    NSString *tempPath = [NSTemporaryDirectory() stringByResolvingSymlinksAndAliases];
+    NSString *standardizedPath = [path stringByStandardizingPath];
+    NSString *resolvedPath = [standardizedPath stringByResolvingSymlinksAndAliases];
+    NSString *candidatePath = resolvedPath.length ? resolvedPath : standardizedPath;
+
+    if (![candidatePath hasPrefix:tempPath])
+        return NO;
+
+    NSString *databaseFolderName = candidatePath.lastPathComponent;
+    NSString *parentFolderName = candidatePath.stringByDeletingLastPathComponent.lastPathComponent;
+    return [databaseFolderName hasPrefix:@"Horos_"] && [parentFolderName hasPrefix:@"Horos_"];
+}
+
 - (id)initWithWindow: (NSWindow *)window
 {
     //displayEmptyDatabase = YES;
@@ -14172,13 +14189,19 @@ static NSArray*	openSubSeriesArray = nil;
     self = [super initWithWindow: window];
     if( self)
     {
-        // Remove identical local sources
+        // Remove identical local sources, and prune old temporary databases whose backing folders are gone.
         
         NSArray *dbArray = [[NSUserDefaults standardUserDefaults] arrayForKey: @"localDatabasePaths"];
         NSMutableArray *filteredArray = [NSMutableArray arrayWithCapacity: [dbArray count]];
         
         for( NSDictionary *dict in dbArray)
         {
+            if( HorosIsStaleTemporaryLocalDatabaseSource( dict))
+            {
+                NSLog( @"Removing stale temporary database source: %@", [dict valueForKey: @"Path"]);
+                continue;
+            }
+
             BOOL duplicated = NO;
             
             for( NSDictionary *c in filteredArray)

@@ -91,9 +91,6 @@
 -(void)selectRowIndexes:(NSIndexSet*)indexes byExtendingSelection:(BOOL)extend {
 }
 
--(void)mouseDown:(NSEvent*)evt {
-}
-
 -(void)rightMouseDown:(NSEvent*)evt {
 }
 

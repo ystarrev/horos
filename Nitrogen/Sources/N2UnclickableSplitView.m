@@ -41,7 +41,9 @@
 
 //@synthesize otherSplitView = _otherSplitView;
 
-- (void)mouseDown:(NSEvent *)theEvent {
+- (NSView *)hitTest:(NSPoint)point {
+	NSView *hitView = [super hitTest:point];
+	return hitView == self ? nil : hitView;
 }
 
 - (void)mouseMoved:(NSEvent *)theEvent {

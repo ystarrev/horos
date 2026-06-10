@@ -94,6 +94,8 @@
         return 10;
     if ([dni isKindOfClass:[RemoteDatabaseNodeIdentifier class]])
         return 20;
+    if ([dni isKindOfClass:[PhoneVolumeRenderNodeIdentifier class]])
+        return 25;
     if ([dni isKindOfClass:[DicomNodeIdentifier class]])
         return 30;
     return 100;
@@ -295,6 +297,41 @@
 //+(NSString*)locationWithAddress:(NSString*)address port:(NSInteger)port {
 //	return [NSString stringWithFormat:@"%@:%d", address, (int) port];
 //}
+
+@end
+
+@implementation PhoneVolumeRenderNodeIdentifier
+
++(id)phoneVolumeRenderNodeIdentifierWithLocation:(NSString*)location port:(NSUInteger)port description:(NSString*)description dictionary:(NSDictionary*)dictionary {
+    return [[[[self class] alloc] initWithLocation:location port:port aetitle:@"" description:description dictionary:dictionary] autorelease];
+}
+
+-(void)willDisplayCell:(PrettyCell*)cell {
+    [super willDisplayCell:cell];
+    
+    if( [_dictionary valueForKey: @"icon"] && [NSImage imageNamed:[_dictionary valueForKey:@"icon"]])
+    {
+        cell.image = [NSImage imageNamed:[_dictionary valueForKey:@"icon"]];
+        return;
+    }
+    
+    cell.image = [NSImage imageNamed:@"Network.tif"];
+}
+
+-(BOOL)isEqualToDataNodeIdentifier:(PhoneVolumeRenderNodeIdentifier*)dni {
+    if (![dni isKindOfClass:[PhoneVolumeRenderNodeIdentifier class]])
+        return NO;
+    
+    return [self.location isEqualToString:dni.location] && self.port == dni.port;
+}
+
+-(NSString*)toolTip {
+    NSString *tip = [super toolTip];
+    if (tip.length)
+        return [tip stringByAppendingFormat:@" - %@", NSLocalizedString(@"Drag studies here to send them to the iPhone planning app.", nil)];
+    
+    return NSLocalizedString(@"Drag studies here to send them to the iPhone planning app.", nil);
+}
 
 @end
 

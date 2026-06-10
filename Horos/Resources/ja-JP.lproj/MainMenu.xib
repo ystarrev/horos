@@ -2827,7 +2827,7 @@ update to OsiriX 64-bit:</string>
                     <slider verticalHuggingPriority="750" id="14475">
                         <rect key="frame" x="117" y="207" width="296" height="16"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                        <sliderCell key="cell" controlSize="mini" continuous="YES" alignment="left" minValue="1" maxValue="90" doubleValue="1" tickMarkPosition="below" numberOfTickMarks="30" sliderType="linear" id="14498">
+                        <sliderCell key="cell" controlSize="mini" continuous="YES" alignment="left" minValue="1" maxValue="90" doubleValue="1" sliderType="linear" id="14498">
                             <font key="font" size="12" name="Helvetica"/>
                         </sliderCell>
                         <connections>
@@ -2856,7 +2856,7 @@ update to OsiriX 64-bit:</string>
                     <slider verticalHuggingPriority="750" tag="1" id="14478">
                         <rect key="frame" x="117" y="195" width="296" height="16"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                        <sliderCell key="cell" controlSize="mini" continuous="YES" alignment="left" tag="1" minValue="1" maxValue="90" doubleValue="1" tickMarkPosition="above" numberOfTickMarks="30" sliderType="linear" id="14495">
+                        <sliderCell key="cell" controlSize="mini" continuous="YES" alignment="left" tag="1" minValue="1" maxValue="90" doubleValue="1" sliderType="linear" id="14495">
                             <font key="font" size="12" name="Helvetica"/>
                         </sliderCell>
                         <connections>
@@ -4874,7 +4874,7 @@ Gw
                                     <slider verticalHuggingPriority="750" horizontalCompressionResistancePriority="1" id="1293">
                                         <rect key="frame" x="0.0" y="2" width="294" height="16"/>
                                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES"/>
-                                        <sliderCell key="cell" controlSize="mini" scrollable="YES" lineBreakMode="clipping" continuous="YES" alignment="left" maxValue="100" doubleValue="49.494949494949495" tickMarkPosition="above" numberOfTickMarks="100" allowsTickMarkValuesOnly="YES" sliderType="linear" id="13340">
+                                        <sliderCell key="cell" controlSize="mini" scrollable="YES" lineBreakMode="clipping" continuous="YES" enabled="NO" alignment="left" maxValue="1" tickMarkPosition="above" numberOfTickMarks="0" allowsTickMarkValuesOnly="YES" sliderType="linear" id="13340">
                                             <font key="font" size="12" name="Helvetica"/>
                                         </sliderCell>
                                         <connections>

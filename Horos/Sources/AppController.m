@@ -1532,8 +1532,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 {
 #ifdef NDEBUG
 #else
-	NSLog( @"Testing localization for menus");
-	
 	if( [self viewerMenu] == nil)
         NSLog( @"******* WARNING MENU MOVED / RENAMED ! viewerMenu");
     
@@ -5667,8 +5665,6 @@ static NSMutableDictionary* _receivingDict = nil;
 
 - (BOOL) setupCrashReporter
 {
-    NSLog(@"Unicode test: مرحبا - 你好 - שלום");
-    
 #if defined(USEFEEDBACKREPORTER)
     [[FRFeedbackReporter sharedReporter] setDelegate:(id<FRFeedbackReporterDelegate>) self];
 

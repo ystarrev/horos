@@ -115,3 +115,9 @@ typedef NSInteger DataNodeIdentifierType;*/
 +(NSString*)location:(NSString*)location port:(NSUInteger)port toAddress:(NSString**)address port:(NSInteger*)port aet:(NSString**)aet;
 
 @end
+
+@interface PhoneVolumeRenderNodeIdentifier : RemoteDataNodeIdentifier
+
++(id)phoneVolumeRenderNodeIdentifierWithLocation:(NSString*)location port:(NSUInteger)port description:(NSString*)description dictionary:(NSDictionary*)dictionary;
+
+@end

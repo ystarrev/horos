@@ -2261,9 +2261,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 - (void) dealloc
 {
-    NSLog(@"DCMView released");
-    
-    
     @try
     {
         [[NSUserDefaults standardUserDefaults] removeObserver:self forKeyPath:@"ANNOTATIONS"];

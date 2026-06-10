@@ -377,6 +377,7 @@
 		59C447E41451705900D71580 /* Eject_lightgray.pdf in Resources */ = {isa = PBXBuildFile; fileRef = 59C447E11451705900D71580 /* Eject_lightgray.pdf */; };
 		59C447E81451710F00D71580 /* NSScreen+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = 59C447E61451710F00D71580 /* NSScreen+N2.h */; };
 		59C447EA1451710F00D71580 /* NSArray+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59C447E71451710F00D71580 /* NSArray+N2.mm */; };
+		59C0DE0219E4A11C00A42447 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 59C0DE0119E4A11C00A42447 /* Assets.xcassets */; };
 		59C512C01189C0E40074ECBC /* SFHorosAuthorizationView.h in Headers */ = {isa = PBXBuildFile; fileRef = 59C512BE1189C0E40074ECBC /* SFHorosAuthorizationView.h */; };
 		59C512C11189C0E40074ECBC /* SFHorosAuthorizationView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59C512BF1189C0E40074ECBC /* SFHorosAuthorizationView.mm */; };
 		59DB26FB1450787E00E78E03 /* N2Debug.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAA011293378009EB238 /* N2Debug.mm */; };
@@ -2389,6 +2390,7 @@
 		59F5F3F811F476030047A90D /* N2ImageButtonCell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = N2ImageButtonCell.mm; path = Nitrogen/Sources/N2ImageButtonCell.mm; sourceTree = SOURCE_ROOT; };
 		59F5F4EA11F485CC0047A90D /* BrowserController+Activity.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "BrowserController+Activity.h"; path = "Horos/Sources/BrowserController+Activity.h"; sourceTree = SOURCE_ROOT; };
 		59F5F4EB11F485CC0047A90D /* BrowserController+Activity.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "BrowserController+Activity.mm"; path = "Horos/Sources/BrowserController+Activity.mm"; sourceTree = SOURCE_ROOT; };
+		59C0DE0119E4A11C00A42447 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		59FB652912312D8900EBA136 /* weasis */ = {isa = PBXFileReference; lastKnownFileType = folder; name = weasis; path = Binaries/weasis; sourceTree = SOURCE_ROOT; };
 		5F026FFB242055690083A650 /* Decompress.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Decompress.entitlements; sourceTree = "<group>"; };
 		5F92185F23F45592000B8754 /* dcmpsprt */ = {isa = PBXFileReference; lastKnownFileType = text; name = dcmpsprt; path = DCMTK/dcmpsprt; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -4275,6 +4277,7 @@
 			children = (
 				9964586F2115079F00A6EDD1 /* Splash */,
 				99BA4CC620A4ACF300B5CD02 /* EmbeddedPlugins */,
+				59C0DE0119E4A11C00A42447 /* Assets.xcassets */,
 				71EB83D216DD0F1800D48646 /* dicom3tools-libsrc-standard-strval-base.tpl */,
 				71EB83D316DD0F1800D48646 /* osirix-complementary.tpl */,
 				AB78245B0D3BACC700460DCE /* WebServicesHTML */,
@@ -6954,6 +6957,7 @@
 				71AD674D1FC4248100A1E2F8 /* HotGreen.plist in Resources */,
 				CE289B1D0D00AF91004F0A93 /* Mail.scpt in Resources */,
 				998B52E41AE0893D00D317CF /* Horos.icns in Resources */,
+				59C0DE0219E4A11C00A42447 /* Assets.xcassets in Resources */,
 				ABBB64AD063587B200D9531F /* 2DBlending.tif in Resources */,
 				ABBB64AE063587B200D9531F /* 3D.tif in Resources */,
 				ABBB64B2063587B200D9531F /* Axial.tif in Resources */,

@@ -345,6 +345,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var tumorLabelFilter: Set<UInt8>?
     private(set) var currentSkinClipDepthMM: Float = 6.0
     private var skinMaskExtractionAttempted = false
+    private var skinSurfaceExtractionAttempted = false
 
     init(device: MTLDevice, pixList: [DCMPix], volumeData: Data) {
         self.deviceRef = device
@@ -1086,7 +1087,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func drawSkinSurfaceOverlay(with encoder: MTLRenderCommandEncoder, camera: CameraState) {
-        ensureSkinMaskTexture()
+        ensureSkinMaskTexture(includeSurface: true)
         guard let skinSurfaceVertexBuffer, skinSurfaceVertexCount > 0 else { return }
 
         var overlayUniforms = Metal3DOverlayUniforms(
@@ -1313,7 +1314,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     func setShowSkinSurface(_ showSkinSurface: Bool) {
         self.showSkinSurface = showSkinSurface
         if showSkinSurface {
-            ensureSkinMaskTexture()
+            ensureSkinMaskTexture(includeSurface: true)
         }
     }
 
@@ -1331,9 +1332,10 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         trajectoryHandleHovered = false
         suppressProjectedTrajectoryOutline = false
         skinMaskExtractionAttempted = false
+        skinSurfaceExtractionAttempted = false
 
         if showSkin == false || showSkinSurface {
-            ensureSkinMaskTexture()
+            ensureSkinMaskTexture(includeSurface: showSkinSurface)
         }
     }
 
@@ -1502,7 +1504,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return NSLocalizedString("No enhancing tumour label is available for trajectory planning.", comment: "")
         }
 
-        ensureSkinMaskTexture()
+        ensureSkinMaskTexture(includeSurface: true)
         guard skinSurfaceWorldPoints.isEmpty == false else {
             return NSLocalizedString("The outer skin surface is not available yet.", comment: "")
         }
@@ -2199,20 +2201,33 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let surfaceTriangleCount: Int
     }
 
-    private func ensureSkinMaskTexture() {
-        guard skinMaskTexture == nil, skinMaskExtractionAttempted == false else { return }
-        skinMaskExtractionAttempted = true
+    private func ensureSkinMaskTexture(includeSurface: Bool = false) {
+        let needsMask = skinMaskTexture == nil && skinMaskExtractionAttempted == false
+        let needsSurface = includeSurface && skinSurfaceExtractionAttempted == false
+        let buildSurface = needsSurface
+        guard needsMask || needsSurface else { return }
+
+        if needsMask {
+            skinMaskExtractionAttempted = true
+        }
+        if buildSurface {
+            skinSurfaceExtractionAttempted = true
+        }
 
         let start = CFAbsoluteTimeGetCurrent()
-        guard let result = makeSkinShellMask() else {
+        guard let result = makeSkinShellMask(includeSurface: buildSurface) else {
             NSLog("HOROS_METAL_TIMING Metal3DVolumeRenderer skinExtraction unavailable %.3f s", CFAbsoluteTimeGetCurrent() - start)
             return
         }
 
-        skinMaskTexture = makeSkinMaskTexture(mask: result.mask)
-        skinSurfaceVertexBuffer = result.surfaceVertexBuffer
-        skinSurfaceVertexCount = result.surfaceVertexCount
-        skinSurfaceWorldPoints = result.surfaceWorldPoints
+        if skinMaskTexture == nil {
+            skinMaskTexture = makeSkinMaskTexture(mask: result.mask)
+        }
+        if buildSurface {
+            skinSurfaceVertexBuffer = result.surfaceVertexBuffer
+            skinSurfaceVertexCount = result.surfaceVertexCount
+            skinSurfaceWorldPoints = result.surfaceWorldPoints
+        }
         NSLog(
             "HOROS_METAL_TIMING Metal3DVolumeRenderer skinExtraction method=%@ threshold=%.3f shell=%.1fmm foreground=%ld filled=%ld surfaceVoxels=%ld surfacePoints=%ld surfaceTriangles=%ld surfaceVertices=%ld outside=%ld shell=%ld masked=%ld volume=%ldx%ldx%ld %.3f s",
             result.method as NSString,
@@ -2234,7 +2249,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         )
     }
 
-    private func makeSkinShellMask() -> SkinShellExtractionResult? {
+    private func makeSkinShellMask(includeSurface: Bool) -> SkinShellExtractionResult? {
         let voxelCount = rawVolume.count
         guard voxelCount > 0 else { return nil }
 
@@ -2258,8 +2273,42 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return nil
         }
 
+        let isCT = Self.isCTVolume(pixList)
         let shellThicknessMM = skinShellThicknessMM()
-        let envelope = Self.axialClosedEnvelopeMask(foreground: foreground, dimensions: volumeDimensions)
+        let envelopeForeground = Self.skinEnvelopeForegroundMask(
+            foreground: foreground,
+            values: rawVolume,
+            rejectHighDensity: isCT
+        )
+        guard envelopeForeground.count > 0 else {
+            NSLog(
+                "Metal3DVolumeRenderer skinExtraction found no envelope foreground threshold %.3f",
+                Double(thresholdResult.threshold)
+            )
+            return nil
+        }
+
+        let envelopeRadiusMM = Self.skinExternalAirProbeRadiusMM(isCT: isCT)
+        var envelope = Self.externalAirReconstructedEnvelopeMask(
+            foreground: envelopeForeground.mask,
+            dimensions: volumeDimensions,
+            spacing: voxelSpacing,
+            radiusMM: envelopeRadiusMM
+        )
+        var envelopeMethod = String(format: "externalAirProbe%.1fmm", Double(envelopeRadiusMM))
+        if envelope.count == 0 {
+            let fallbackEnvelope = Self.axialClosedEnvelopeMask(
+                foreground: envelopeForeground.mask,
+                dimensions: volumeDimensions
+            )
+            envelope = (
+                mask: fallbackEnvelope.mask,
+                count: fallbackEnvelope.count,
+                exteriorAir: Self.invertedMask(fallbackEnvelope.mask)
+            )
+            envelopeMethod = "axialClosedEnvelopeFallback"
+        }
+        envelopeMethod += "+openBoundaryAir"
         let envelopeFraction = Float(envelope.count) / Float(max(voxelCount, 1))
         guard envelopeFraction > 0.01, envelopeFraction < 0.995 else {
             NSLog(
@@ -2270,50 +2319,85 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return nil
         }
 
-        // Contour a closed binary envelope, not raw scalar values. This suppresses
-        // interior air/tissue threshold boundaries and makes the surface an outer shell.
-        let surfaceSourceVolume = envelope.mask.map { value -> Float in
-            value == 0 ? 0.0 : 1.0
-        }
-        let volumeData = surfaceSourceVolume.withUnsafeBufferPointer { buffer in
-            Data(buffer: buffer)
-        }
-        guard let extractedSurface = Metal3DSurfaceExtractor.extractSkinSurface(
-            fromVolume: volumeData,
-            width: volumeDimensions.x,
-            height: volumeDimensions.y,
-            depth: volumeDimensions.z,
-            spacingX: voxelSpacing.x,
-            spacingY: voxelSpacing.y,
-            spacingZ: voxelSpacing.z,
-            threshold: 0.5
-        ) else {
-            NSLog(
-                "Metal3DVolumeRenderer skinExtraction VTK FlyingEdges produced no outer surface threshold %.3f",
-                Double(thresholdResult.threshold)
+        let exteriorForegroundSurface = Self.exteriorForegroundSurfaceMask(
+            foreground: envelopeForeground.mask,
+            exteriorAirMask: envelope.exteriorAir,
+            dimensions: volumeDimensions
+        )
+        let uncappedExteriorSurface = Self.surfaceMaskByOpeningZCropCaps(
+            exteriorForegroundSurface,
+            dimensions: volumeDimensions
+        )
+        let exteriorSurface = Self.largestConnectedSurfaceComponentMask(
+            uncappedExteriorSurface,
+            dimensions: volumeDimensions
+        )
+        var extractionMethod = "\(thresholdResult.method)+\(envelopeForeground.method)+\(envelopeMethod)+maskOnly"
+        var surfaceVoxelCount = exteriorSurface.reduce(0) { $0 + ($1 == 0 ? 0 : 1) }
+        var surfacePointCount = 0
+        var surfaceTriangleCount = 0
+        var surfaceVertexBuffer: MTLBuffer?
+        var surfaceVertexCount = 0
+        var surfaceWorldPoints = [SIMD3<Float>]()
+
+        if includeSurface {
+            // Contour the actual image intensities, then let the rotating visibility pass remove
+            // internal cut-surface clutter without flattening reachable facial detail.
+            let surfaceThreshold: Float = 1.0
+            let surfaceSourceVolume = rawVolume.map { value -> Float in
+                guard value.isFinite else { return 0.0 }
+                return value - thresholdResult.threshold + surfaceThreshold
+            }
+            let volumeData = surfaceSourceVolume.withUnsafeBufferPointer { buffer in
+                Data(buffer: buffer)
+            }
+            guard let extractedSurface = Metal3DSurfaceExtractor.extractSkinSurface(
+                fromVolume: volumeData,
+                width: volumeDimensions.x,
+                height: volumeDimensions.y,
+                depth: volumeDimensions.z,
+                spacingX: voxelSpacing.x,
+                spacingY: voxelSpacing.y,
+                spacingZ: voxelSpacing.z,
+                threshold: surfaceThreshold,
+                openMinimumZCap: true
+            ) else {
+                NSLog(
+                    "Metal3DVolumeRenderer skinExtraction produced no outer surface threshold %.3f",
+                    Double(thresholdResult.threshold)
+                )
+                return nil
+            }
+
+            guard extractedSurface.surfaceVoxelMask.count == voxelCount else {
+                NSLog(
+                    "Metal3DVolumeRenderer skinExtraction surface mask size mismatch %ld != %ld",
+                    extractedSurface.surfaceVoxelMask.count,
+                    voxelCount
+                )
+                return nil
+            }
+
+            let filteredSurfaceVertexData = Self.rotatingIlluminatedSurfaceVertexFloatData(
+                extractedSurface.vertexFloatData,
+                spacing: voxelSpacing
             )
-            return nil
+            let overlaySurfaceVertexBuffer = makeSkinSurfaceVertexBuffer(vertexFloatData: filteredSurfaceVertexData.data)
+            surfaceVertexBuffer = overlaySurfaceVertexBuffer?.buffer
+            surfaceVertexCount = overlaySurfaceVertexBuffer?.count ?? 0
+            surfaceWorldPoints = worldPositions(fromSurfaceVertexFloatData: filteredSurfaceVertexData.data)
+            surfaceVoxelCount = extractedSurface.surfaceVoxelCount
+            surfacePointCount = filteredSurfaceVertexData.vertexCount
+            surfaceTriangleCount = filteredSurfaceVertexData.triangleCount
+            extractionMethod = "\(thresholdResult.method)+rawScalar+\(envelopeForeground.method)+\(envelopeMethod)+\(extractedSurface.extractionMethod)+openZCropCaps+rotatingVisibilityOnly"
         }
 
-        let surfaceData = extractedSurface.surfaceVoxelMask
-        guard surfaceData.count == voxelCount else {
-            NSLog(
-                "Metal3DVolumeRenderer skinExtraction VTK surface mask size mismatch %ld != %ld",
-                surfaceData.count,
-                voxelCount
-            )
-            return nil
-        }
-
-        let surface = [UInt8](surfaceData)
-        let surfaceVertexBuffer = makeSkinSurfaceVertexBuffer(vertexFloatData: extractedSurface.vertexFloatData)
-        let surfaceWorldPoints = worldPositions(fromSurfaceVertexFloatData: extractedSurface.vertexFloatData)
         var mask = Self.invertedMask(envelope.mask)
         let outsideCount = max(voxelCount - envelope.count, 0)
 
         Self.markObjectWithinPhysicalDistance(
             object: envelope.mask,
-            surface: surface,
+            surface: exteriorSurface,
             mask: &mask,
             dimensions: volumeDimensions,
             spacing: voxelSpacing,
@@ -2329,20 +2413,552 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return SkinShellExtractionResult(
             mask: mask,
             threshold: thresholdResult.threshold,
-            method: "\(thresholdResult.method)+axialClosedEnvelope+vtkFlyingEdgesOuter",
+            method: extractionMethod,
             shellThicknessMM: shellThicknessMM,
             foregroundVoxelCount: foregroundVoxelCount,
             filledObjectVoxelCount: envelope.count,
-            surfaceVoxelCount: extractedSurface.surfaceVoxelCount,
+            surfaceVoxelCount: surfaceVoxelCount,
             outsideVoxelCount: outsideCount,
             shellVoxelCount: shellVoxelCount,
             maskedVoxelCount: maskedVoxelCount,
             surfaceWorldPoints: surfaceWorldPoints,
-            surfaceVertexBuffer: surfaceVertexBuffer?.buffer,
-            surfaceVertexCount: surfaceVertexBuffer?.count ?? 0,
-            surfacePointCount: extractedSurface.pointCount,
-            surfaceTriangleCount: extractedSurface.triangleCount
+            surfaceVertexBuffer: surfaceVertexBuffer,
+            surfaceVertexCount: surfaceVertexCount,
+            surfacePointCount: surfacePointCount,
+            surfaceTriangleCount: surfaceTriangleCount
         )
+    }
+
+    private static func exteriorForegroundSurfaceMask(
+        foreground: [UInt8],
+        exteriorAirMask: [UInt8],
+        dimensions: SIMD3<Int>
+    ) -> [UInt8] {
+        let width = max(dimensions.x, 1)
+        let height = max(dimensions.y, 1)
+        let depth = max(dimensions.z, 1)
+        let sliceElementCount = width * height
+        let voxelCount = max(sliceElementCount * depth, 1)
+        guard foreground.count == voxelCount, exteriorAirMask.count == voxelCount else {
+            return [UInt8](repeating: 0, count: foreground.count)
+        }
+
+        func hasExteriorAirNear(x: Int, y: Int, z: Int) -> Bool {
+            let minimumX = max(x - 1, 0)
+            let maximumX = min(x + 1, width - 1)
+            let minimumY = max(y - 1, 0)
+            let maximumY = min(y + 1, height - 1)
+            let minimumZ = max(z - 1, 0)
+            let maximumZ = min(z + 1, depth - 1)
+
+            for neighborZ in minimumZ...maximumZ {
+                let sliceOffset = neighborZ * sliceElementCount
+                for neighborY in minimumY...maximumY {
+                    let rowOffset = sliceOffset + neighborY * width
+                    for neighborX in minimumX...maximumX where exteriorAirMask[rowOffset + neighborX] != 0 {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        var surface = [UInt8](repeating: 0, count: voxelCount)
+        for z in 0..<depth {
+            let sliceOffset = z * sliceElementCount
+            for y in 0..<height {
+                let rowOffset = sliceOffset + y * width
+                for x in 0..<width {
+                    let index = rowOffset + x
+                    guard foreground[index] != 0, hasExteriorAirNear(x: x, y: y, z: z) else { continue }
+                    surface[index] = 255
+                }
+            }
+        }
+        return surface
+    }
+
+    private static func surfaceMaskByOpeningZCropCaps(
+        _ surfaceMask: [UInt8],
+        dimensions: SIMD3<Int>
+    ) -> [UInt8] {
+        let width = max(dimensions.x, 1)
+        let height = max(dimensions.y, 1)
+        let depth = max(dimensions.z, 1)
+        let sliceElementCount = width * height
+        let voxelCount = max(sliceElementCount * depth, 1)
+        guard surfaceMask.count == voxelCount else { return surfaceMask }
+
+        var minimumSurfaceZ: Int?
+        var maximumSurfaceZ: Int?
+        for z in 0..<depth {
+            let sliceOffset = z * sliceElementCount
+            var sliceHasSurface = false
+            for index in sliceOffset..<(sliceOffset + sliceElementCount) where surfaceMask[index] != 0 {
+                sliceHasSurface = true
+                break
+            }
+            if sliceHasSurface {
+                minimumSurfaceZ = z
+                break
+            }
+        }
+
+        for z in stride(from: depth - 1, through: 0, by: -1) {
+            let sliceOffset = z * sliceElementCount
+            var sliceHasSurface = false
+            for index in sliceOffset..<(sliceOffset + sliceElementCount) where surfaceMask[index] != 0 {
+                sliceHasSurface = true
+                break
+            }
+            if sliceHasSurface {
+                maximumSurfaceZ = z
+                break
+            }
+        }
+
+        guard minimumSurfaceZ != nil || maximumSurfaceZ != nil else { return surfaceMask }
+
+        var opened = surfaceMask
+        func clearSlice(_ z: Int) {
+            let sliceOffset = z * sliceElementCount
+            for index in sliceOffset..<(sliceOffset + sliceElementCount) {
+                opened[index] = 0
+            }
+        }
+
+        if let capZ = minimumSurfaceZ {
+            let maximumCapZ = min(capZ + 1, depth - 1)
+            for z in capZ...maximumCapZ {
+                clearSlice(z)
+            }
+        }
+        if let capZ = maximumSurfaceZ {
+            let minimumCapZ = max(capZ - 1, 0)
+            for z in minimumCapZ...capZ {
+                clearSlice(z)
+            }
+        }
+        return opened
+    }
+
+    private static func largestConnectedSurfaceComponentMask(
+        _ surfaceMask: [UInt8],
+        dimensions: SIMD3<Int>
+    ) -> [UInt8] {
+        let width = max(dimensions.x, 1)
+        let height = max(dimensions.y, 1)
+        let depth = max(dimensions.z, 1)
+        let sliceElementCount = width * height
+        let voxelCount = max(sliceElementCount * depth, 1)
+        guard surfaceMask.count == voxelCount, voxelCount <= Int(Int32.max) else {
+            return surfaceMask
+        }
+
+        var visited = [UInt8](repeating: 0, count: voxelCount)
+        var largestComponent = [Int32]()
+        var queue = [Int32]()
+        var component = [Int32]()
+
+        func appendNeighbor(_ index: Int) {
+            guard surfaceMask[index] != 0, visited[index] == 0 else { return }
+            visited[index] = 1
+            queue.append(Int32(index))
+            component.append(Int32(index))
+        }
+
+        for startIndex in 0..<voxelCount where surfaceMask[startIndex] != 0 && visited[startIndex] == 0 {
+            queue.removeAll(keepingCapacity: true)
+            component.removeAll(keepingCapacity: true)
+            appendNeighbor(startIndex)
+
+            var head = 0
+            while head < queue.count {
+                let index = Int(queue[head])
+                head += 1
+
+                let z = index / sliceElementCount
+                let inSliceIndex = index - z * sliceElementCount
+                let y = inSliceIndex / width
+                let x = inSliceIndex - y * width
+
+                for dz in -1...1 {
+                    let neighborZ = z + dz
+                    guard neighborZ >= 0, neighborZ < depth else { continue }
+                    for dy in -1...1 {
+                        let neighborY = y + dy
+                        guard neighborY >= 0, neighborY < height else { continue }
+                        for dx in -1...1 where dx != 0 || dy != 0 || dz != 0 {
+                            let neighborX = x + dx
+                            guard neighborX >= 0, neighborX < width else { continue }
+                            appendNeighbor(neighborZ * sliceElementCount + neighborY * width + neighborX)
+                        }
+                    }
+                }
+            }
+
+            if component.count > largestComponent.count {
+                largestComponent = component
+            }
+        }
+
+        guard largestComponent.isEmpty == false else { return surfaceMask }
+
+        var filtered = [UInt8](repeating: 0, count: voxelCount)
+        for index in largestComponent {
+            filtered[Int(index)] = 255
+        }
+        return filtered
+    }
+
+    private static func filteredSurfaceVertexFloatData(
+        _ vertexFloatData: Data,
+        surfaceMask: [UInt8],
+        exteriorAirMask: [UInt8],
+        dimensions: SIMD3<Int>,
+        spacing: SIMD3<Float>
+    ) -> (data: Data, vertexCount: Int, triangleCount: Int) {
+        let floatsPerVertex = 6
+        let floatsPerTriangle = floatsPerVertex * 3
+        let floatByteCount = MemoryLayout<Float>.stride
+        guard vertexFloatData.count >= floatsPerTriangle * floatByteCount,
+              vertexFloatData.count % (floatsPerTriangle * floatByteCount) == 0 else {
+            return (
+                vertexFloatData,
+                vertexFloatData.count / (floatsPerVertex * floatByteCount),
+                vertexFloatData.count / (floatsPerTriangle * floatByteCount)
+            )
+        }
+
+        let width = max(dimensions.x, 1)
+        let height = max(dimensions.y, 1)
+        let depth = max(dimensions.z, 1)
+        let sliceElementCount = width * height
+        let voxelCount = max(sliceElementCount * depth, 1)
+        guard surfaceMask.count == voxelCount, exteriorAirMask.count == voxelCount else {
+            return (
+                vertexFloatData,
+                vertexFloatData.count / (floatsPerVertex * floatByteCount),
+                vertexFloatData.count / (floatsPerTriangle * floatByteCount)
+            )
+        }
+
+        let floats = vertexFloatData.withUnsafeBytes { bytes -> [Float] in
+            Array(bytes.bindMemory(to: Float.self))
+        }
+        let triangleCount = floats.count / floatsPerTriangle
+        var filteredFloats = [Float]()
+        filteredFloats.reserveCapacity(floats.count)
+
+        func hasSurfaceVoxelNear(_ voxelPosition: SIMD3<Float>) -> Bool {
+            let centerX = min(max(Int(round(Double(voxelPosition.x))), 0), width - 1)
+            let centerY = min(max(Int(round(Double(voxelPosition.y))), 0), height - 1)
+            let centerZ = min(max(Int(round(Double(voxelPosition.z))), 0), depth - 1)
+            let minimumX = max(centerX - 1, 0)
+            let maximumX = min(centerX + 1, width - 1)
+            let minimumY = max(centerY - 1, 0)
+            let maximumY = min(centerY + 1, height - 1)
+            let minimumZ = max(centerZ - 1, 0)
+            let maximumZ = min(centerZ + 1, depth - 1)
+
+            for z in minimumZ...maximumZ {
+                let sliceOffset = z * sliceElementCount
+                for y in minimumY...maximumY {
+                    let rowOffset = sliceOffset + y * width
+                    for x in minimumX...maximumX where surfaceMask[rowOffset + x] != 0 {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        func hasExteriorAirNear(_ voxelPosition: SIMD3<Float>) -> Bool {
+            let centerX = min(max(Int(round(Double(voxelPosition.x))), 0), width - 1)
+            let centerY = min(max(Int(round(Double(voxelPosition.y))), 0), height - 1)
+            let centerZ = min(max(Int(round(Double(voxelPosition.z))), 0), depth - 1)
+            let minimumX = max(centerX - 1, 0)
+            let maximumX = min(centerX + 1, width - 1)
+            let minimumY = max(centerY - 1, 0)
+            let maximumY = min(centerY + 1, height - 1)
+            let minimumZ = max(centerZ - 1, 0)
+            let maximumZ = min(centerZ + 1, depth - 1)
+
+            for z in minimumZ...maximumZ {
+                let sliceOffset = z * sliceElementCount
+                for y in minimumY...maximumY {
+                    let rowOffset = sliceOffset + y * width
+                    for x in minimumX...maximumX where exteriorAirMask[rowOffset + x] != 0 {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        for triangleIndex in 0..<triangleCount {
+            let base = triangleIndex * floatsPerTriangle
+            var centroid = SIMD3<Float>(repeating: 0)
+            for vertexIndex in 0..<3 {
+                let vertexBase = base + vertexIndex * floatsPerVertex
+                centroid += SIMD3<Float>(
+                    floats[vertexBase],
+                    floats[vertexBase + 1],
+                    floats[vertexBase + 2]
+                )
+            }
+            centroid /= 3
+
+            let voxelPosition = SIMD3<Float>(
+                centroid.x / max(spacing.x, 0.001),
+                centroid.y / max(spacing.y, 0.001),
+                centroid.z / max(spacing.z, 0.001)
+            )
+            guard hasSurfaceVoxelNear(voxelPosition) else { continue }
+            guard hasExteriorAirNear(voxelPosition) else { continue }
+
+            filteredFloats.append(contentsOf: floats[base..<(base + floatsPerTriangle)])
+        }
+
+        guard filteredFloats.isEmpty == false else {
+            return (Data(), 0, 0)
+        }
+
+        let filteredData = filteredFloats.withUnsafeBufferPointer { buffer in
+            Data(buffer: buffer)
+        }
+        return (filteredData, filteredFloats.count / floatsPerVertex, filteredFloats.count / floatsPerTriangle)
+    }
+
+    private static func rotatingIlluminatedSurfaceVertexFloatData(
+        _ vertexFloatData: Data,
+        spacing: SIMD3<Float>
+    ) -> (data: Data, vertexCount: Int, triangleCount: Int) {
+        let floatsPerVertex = 6
+        let floatsPerTriangle = floatsPerVertex * 3
+        let floatByteCount = MemoryLayout<Float>.stride
+        guard vertexFloatData.count >= floatsPerTriangle * floatByteCount,
+              vertexFloatData.count % (floatsPerTriangle * floatByteCount) == 0 else {
+            return (
+                vertexFloatData,
+                vertexFloatData.count / (floatsPerVertex * floatByteCount),
+                vertexFloatData.count / (floatsPerTriangle * floatByteCount)
+            )
+        }
+
+        struct Triangle {
+            let sourceBase: Int
+            let p0: SIMD3<Float>
+            let p1: SIMD3<Float>
+            let p2: SIMD3<Float>
+            let centroid: SIMD3<Float>
+        }
+
+        let floats = vertexFloatData.withUnsafeBytes { bytes -> [Float] in
+            Array(bytes.bindMemory(to: Float.self))
+        }
+        let triangleCount = floats.count / floatsPerTriangle
+        guard triangleCount > 0 else { return (Data(), 0, 0) }
+
+        var triangles = [Triangle]()
+        triangles.reserveCapacity(triangleCount)
+        var minimum = SIMD3<Float>(repeating: Float.greatestFiniteMagnitude)
+        var maximum = SIMD3<Float>(repeating: -Float.greatestFiniteMagnitude)
+
+        func includePoint(_ point: SIMD3<Float>) {
+            minimum.x = min(minimum.x, point.x)
+            minimum.y = min(minimum.y, point.y)
+            minimum.z = min(minimum.z, point.z)
+            maximum.x = max(maximum.x, point.x)
+            maximum.y = max(maximum.y, point.y)
+            maximum.z = max(maximum.z, point.z)
+        }
+
+        for triangleIndex in 0..<triangleCount {
+            let base = triangleIndex * floatsPerTriangle
+            let p0 = SIMD3<Float>(floats[base], floats[base + 1], floats[base + 2])
+            let p1 = SIMD3<Float>(floats[base + 6], floats[base + 7], floats[base + 8])
+            let p2 = SIMD3<Float>(floats[base + 12], floats[base + 13], floats[base + 14])
+            let areaVector = simd_cross(p1 - p0, p2 - p0)
+            guard simd_length_squared(areaVector) > 0.000001 else { continue }
+
+            includePoint(p0)
+            includePoint(p1)
+            includePoint(p2)
+            triangles.append(
+                Triangle(
+                    sourceBase: base,
+                    p0: p0,
+                    p1: p1,
+                    p2: p2,
+                    centroid: (p0 + p1 + p2) / 3
+                )
+            )
+        }
+
+        guard triangles.isEmpty == false,
+              minimum.x.isFinite,
+              minimum.y.isFinite,
+              minimum.z.isFinite,
+              maximum.x > minimum.x,
+              maximum.y > minimum.y,
+              maximum.z > minimum.z else {
+            return (
+                vertexFloatData,
+                vertexFloatData.count / (floatsPerVertex * floatByteCount),
+                vertexFloatData.count / (floatsPerTriangle * floatByteCount)
+            )
+        }
+
+        let xyCenter = SIMD2<Float>(
+            (minimum.x + maximum.x) * 0.5,
+            (minimum.y + maximum.y) * 0.5
+        )
+        var xyRadius: Float = 0
+        for triangle in triangles {
+            for point in [triangle.p0, triangle.p1, triangle.p2] {
+                let delta = SIMD2<Float>(point.x - xyCenter.x, point.y - xyCenter.y)
+                xyRadius = max(xyRadius, simd_length(delta))
+            }
+        }
+        xyRadius = max(xyRadius + 4.0, 1.0)
+
+        let zMargin: Float = 4.0
+        let minimumZ = minimum.z - zMargin
+        let maximumZ = maximum.z + zMargin
+        let zRange = max(maximumZ - minimumZ, 1.0)
+        let visibilityPixelSize = max(min(min(spacing.x, spacing.y), spacing.z) * 1.5, 0.75)
+        let gridWidth = min(max(Int(ceil(Double((xyRadius * 2.0) / visibilityPixelSize))), 192), 512)
+        let gridHeight = min(max(Int(ceil(Double(zRange / visibilityPixelSize))), 192), 512)
+        let gridVoxelCount = gridWidth * gridHeight
+        let viewCount = 72
+        let depthTolerance = max(max(max(spacing.x, spacing.y), spacing.z) * 4.0, 6.0)
+        let rasterSlack: Float = 0.001
+        var visible = [UInt8](repeating: 0, count: triangles.count)
+        var depthBuffer = [Float](repeating: -Float.greatestFiniteMagnitude, count: gridVoxelCount)
+
+        func edge(_ a: SIMD2<Float>, _ b: SIMD2<Float>, _ p: SIMD2<Float>) -> Float {
+            (p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)
+        }
+
+        for viewIndex in 0..<viewCount {
+            for index in depthBuffer.indices {
+                depthBuffer[index] = -Float.greatestFiniteMagnitude
+            }
+
+            let angle = (Float(viewIndex) / Float(viewCount)) * Float.pi * 2.0
+            let viewForward = SIMD3<Float>(cos(angle), sin(angle), 0)
+            let viewRight = SIMD3<Float>(-sin(angle), cos(angle), 0)
+
+            func project(_ point: SIMD3<Float>) -> (pixel: SIMD2<Float>, depth: Float) {
+                let centeredXY = SIMD3<Float>(point.x - xyCenter.x, point.y - xyCenter.y, point.z)
+                let u = simd_dot(centeredXY, viewRight)
+                let v = point.z - minimumZ
+                let pixel = SIMD2<Float>(
+                    ((u + xyRadius) / max(xyRadius * 2.0, 0.0001)) * Float(gridWidth - 1),
+                    (v / zRange) * Float(gridHeight - 1)
+                )
+                return (pixel, simd_dot(centeredXY, viewForward))
+            }
+
+            func rasterize(_ triangle: Triangle) {
+                let projected0 = project(triangle.p0)
+                let projected1 = project(triangle.p1)
+                let projected2 = project(triangle.p2)
+                let p0 = projected0.pixel
+                let p1 = projected1.pixel
+                let p2 = projected2.pixel
+                let area = edge(p0, p1, p2)
+                guard abs(area) > 0.0001 else { return }
+
+                let minimumX = max(Int(floor(Double(min(min(p0.x, p1.x), p2.x)))), 0)
+                let maximumX = min(Int(ceil(Double(max(max(p0.x, p1.x), p2.x)))), gridWidth - 1)
+                let minimumY = max(Int(floor(Double(min(min(p0.y, p1.y), p2.y)))), 0)
+                let maximumY = min(Int(ceil(Double(max(max(p0.y, p1.y), p2.y)))), gridHeight - 1)
+                guard maximumX >= minimumX, maximumY >= minimumY else { return }
+
+                let inverseArea = 1.0 / area
+                for y in minimumY...maximumY {
+                    for x in minimumX...maximumX {
+                        let sample = SIMD2<Float>(Float(x) + 0.5, Float(y) + 0.5)
+                        let w0 = edge(p1, p2, sample) * inverseArea
+                        let w1 = edge(p2, p0, sample) * inverseArea
+                        let w2 = edge(p0, p1, sample) * inverseArea
+                        guard w0 >= -rasterSlack,
+                              w1 >= -rasterSlack,
+                              w2 >= -rasterSlack else {
+                            continue
+                        }
+
+                        let depth = w0 * projected0.depth + w1 * projected1.depth + w2 * projected2.depth
+                        let bufferIndex = y * gridWidth + x
+                        if depth > depthBuffer[bufferIndex] {
+                            depthBuffer[bufferIndex] = depth
+                        }
+                    }
+                }
+            }
+
+            for triangle in triangles {
+                rasterize(triangle)
+            }
+
+            func isSampleVisible(_ point: SIMD3<Float>) -> Bool {
+                let projected = project(point)
+                let pixelX = min(max(Int(round(Double(projected.pixel.x))), 0), gridWidth - 1)
+                let pixelY = min(max(Int(round(Double(projected.pixel.y))), 0), gridHeight - 1)
+                var frontDepth = -Float.greatestFiniteMagnitude
+                var foundDepth = false
+                for dy in -1...1 {
+                    let y = pixelY + dy
+                    guard y >= 0, y < gridHeight else { continue }
+                    for dx in -1...1 {
+                        let x = pixelX + dx
+                        guard x >= 0, x < gridWidth else { continue }
+                        let candidateDepth = depthBuffer[y * gridWidth + x]
+                        guard candidateDepth > -Float.greatestFiniteMagnitude * 0.5 else { continue }
+                        foundDepth = true
+                        frontDepth = max(frontDepth, candidateDepth)
+                    }
+                }
+                guard foundDepth else { return false }
+                return projected.depth >= frontDepth - depthTolerance
+            }
+
+            for triangleIndex in triangles.indices where visible[triangleIndex] == 0 {
+                let triangle = triangles[triangleIndex]
+                if isSampleVisible(triangle.centroid) ||
+                    isSampleVisible(triangle.p0) ||
+                    isSampleVisible(triangle.p1) ||
+                    isSampleVisible(triangle.p2) {
+                    visible[triangleIndex] = 1
+                }
+            }
+        }
+
+        var visibleTriangleCount = 0
+        for value in visible where value != 0 {
+            visibleTriangleCount += 1
+        }
+        guard visibleTriangleCount >= max(128, triangles.count / 20) else {
+            return (
+                vertexFloatData,
+                vertexFloatData.count / (floatsPerVertex * floatByteCount),
+                vertexFloatData.count / (floatsPerTriangle * floatByteCount)
+            )
+        }
+
+        var filteredFloats = [Float]()
+        filteredFloats.reserveCapacity(visibleTriangleCount * floatsPerTriangle)
+        for triangleIndex in triangles.indices where visible[triangleIndex] != 0 {
+            let base = triangles[triangleIndex].sourceBase
+            filteredFloats.append(contentsOf: floats[base..<(base + floatsPerTriangle)])
+        }
+
+        let filteredData = filteredFloats.withUnsafeBufferPointer { buffer in
+            Data(buffer: buffer)
+        }
+        return (filteredData, filteredFloats.count / floatsPerVertex, filteredFloats.count / floatsPerTriangle)
     }
 
     private func makeSkinSurfaceVertexBuffer(vertexFloatData: Data) -> (buffer: MTLBuffer, count: Int)? {
@@ -2521,7 +3137,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func skinForegroundThreshold() -> (threshold: Float, method: String) {
-        if isLikelyCTVolume() {
+        if Self.isCTVolume(pixList) {
             return (-500, "ctHU")
         }
 
@@ -2532,24 +3148,11 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         min(max(currentSkinClipDepthMM, 0), 20)
     }
 
-    private func isLikelyCTVolume() -> Bool {
-        Self.isLikelyCTVolume(pixList: pixList)
-    }
-
     private static func initialSkinClipDepthMM(for pixList: [DCMPix]) -> Float {
         if let savedDepth = UserDefaults.standard.object(forKey: skinClipDepthPreferenceKey) as? NSNumber {
             return min(max(savedDepth.floatValue, 0), 20)
         }
-        return isLikelyCTVolume(pixList: pixList) ? 6.0 : 10.0
-    }
-
-    private static func isLikelyCTVolume(pixList: [DCMPix]) -> Bool {
-        guard let firstPix = pixList.first else { return false }
-        let modality = firstPix.modalityString?.uppercased() ?? ""
-        let rescale = firstPix.rescaleType?.uppercased() ?? ""
-        let seriesMinimum = Float(firstPix.minValueOfSeries)
-        let seriesMaximum = Float(firstPix.maxValueOfSeries)
-        return modality.contains("CT") || rescale == "HU" || (seriesMinimum < -500 && seriesMaximum > 300)
+        return isCTVolume(pixList) ? 6.0 : 10.0
     }
 
     private static func otsuThreshold(values: [Float]) -> Float {
@@ -2621,6 +3224,304 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let threshold = minimum + (Float(thresholdBin) + 0.5) * span / Float(binCount)
         let noiseFloor = minimum + span * 0.03
         return max(threshold, noiseFloor)
+    }
+
+    private static func skinEnvelopeForegroundMask(
+        foreground: [UInt8],
+        values: [Float],
+        rejectHighDensity: Bool
+    ) -> (mask: [UInt8], count: Int, method: String) {
+        var foregroundCount = 0
+        for value in foreground where value != 0 {
+            foregroundCount += 1
+        }
+
+        guard rejectHighDensity, values.count == foreground.count else {
+            return (foreground, foregroundCount, "foreground")
+        }
+
+        let maximumSkinBoundaryHU: Float = 700
+        var filtered = [UInt8](repeating: 0, count: foreground.count)
+        var filteredCount = 0
+        for index in foreground.indices where foreground[index] != 0 {
+            let value = values[index]
+            guard value.isFinite, value <= maximumSkinBoundaryHU else { continue }
+            filtered[index] = 1
+            filteredCount += 1
+        }
+
+        let minimumUsefulCount = max(1024, foregroundCount / 20)
+        if filteredCount >= minimumUsefulCount {
+            return (filtered, filteredCount, "ctSoftTissueForeground")
+        }
+
+        return (foreground, foregroundCount, "foreground")
+    }
+
+    private enum BinaryMorphologyOperation {
+        case dilation
+        case erosion
+    }
+
+    private static func skinExternalAirProbeRadiusMM(isCT: Bool) -> Float {
+        isCT ? 1.0 : 0.5
+    }
+
+    // Keep air reachable by a finite probe from outside, then contour everything else.
+    private static func externalAirReconstructedEnvelopeMask(
+        foreground: [UInt8],
+        dimensions: SIMD3<Int>,
+        spacing: SIMD3<Float>,
+        radiusMM: Float
+    ) -> (mask: [UInt8], count: Int, exteriorAir: [UInt8]) {
+        let width = max(dimensions.x, 1)
+        let height = max(dimensions.y, 1)
+        let depth = max(dimensions.z, 1)
+        let voxelCount = max(width * height * depth, 1)
+        guard foreground.count == voxelCount else {
+            return (
+                [UInt8](repeating: 0, count: foreground.count),
+                0,
+                [UInt8](repeating: 0, count: foreground.count)
+            )
+        }
+
+        let radiusX = min(max(Int(ceil(Double(radiusMM / max(spacing.x, 0.001)))), 1), max(width - 1, 1))
+        let radiusY = min(max(Int(ceil(Double(radiusMM / max(spacing.y, 0.001)))), 1), max(height - 1, 1))
+        let radiusZ = min(max(Int(ceil(Double(radiusMM / max(spacing.z, 0.001)))), 1), max(depth - 1, 1))
+
+        var air = [UInt8](repeating: 0, count: voxelCount)
+        for index in foreground.indices where foreground[index] == 0 {
+            air[index] = 1
+        }
+
+        let passableAirCore = binaryErodedMask(
+            air,
+            dimensions: SIMD3<Int>(width, height, depth),
+            radiusX: radiusX,
+            radiusY: radiusY,
+            radiusZ: radiusZ
+        )
+        let reachableAirCore = floodFillExteriorAirCore(
+            passableAirCore,
+            dimensions: SIMD3<Int>(width, height, depth)
+        )
+        let reconstructedAir = binaryDilatedMask(
+            reachableAirCore,
+            dimensions: SIMD3<Int>(width, height, depth),
+            radiusX: radiusX,
+            radiusY: radiusY,
+            radiusZ: radiusZ
+        )
+        var exteriorAir = reconstructedAir
+        for index in 0..<voxelCount where air[index] == 0 {
+            exteriorAir[index] = 0
+        }
+
+        var envelope = [UInt8](repeating: 0, count: voxelCount)
+        var envelopeCount = 0
+        for index in 0..<voxelCount where reconstructedAir[index] == 0 || air[index] == 0 {
+            envelope[index] = 1
+            envelopeCount += 1
+        }
+
+        return (envelope, envelopeCount, exteriorAir)
+    }
+
+    private static func binaryErodedMask(
+        _ mask: [UInt8],
+        dimensions: SIMD3<Int>,
+        radiusX: Int,
+        radiusY: Int,
+        radiusZ: Int
+    ) -> [UInt8] {
+        // Exterior-of-volume space is air, not a wall. That keeps crop planes from becoming skin caps.
+        var result = binaryMorphology1D(
+            mask,
+            dimensions: dimensions,
+            axis: 0,
+            radius: radiusX,
+            operation: .erosion,
+            erosionTreatsOutOfBoundsAsSet: true
+        )
+        result = binaryMorphology1D(
+            result,
+            dimensions: dimensions,
+            axis: 1,
+            radius: radiusY,
+            operation: .erosion,
+            erosionTreatsOutOfBoundsAsSet: true
+        )
+        result = binaryMorphology1D(
+            result,
+            dimensions: dimensions,
+            axis: 2,
+            radius: radiusZ,
+            operation: .erosion,
+            erosionTreatsOutOfBoundsAsSet: true
+        )
+        return result
+    }
+
+    private static func binaryDilatedMask(
+        _ mask: [UInt8],
+        dimensions: SIMD3<Int>,
+        radiusX: Int,
+        radiusY: Int,
+        radiusZ: Int
+    ) -> [UInt8] {
+        var result = binaryMorphology1D(mask, dimensions: dimensions, axis: 0, radius: radiusX, operation: .dilation)
+        result = binaryMorphology1D(result, dimensions: dimensions, axis: 1, radius: radiusY, operation: .dilation)
+        result = binaryMorphology1D(result, dimensions: dimensions, axis: 2, radius: radiusZ, operation: .dilation)
+        return result
+    }
+
+    private static func binaryMorphology1D(
+        _ input: [UInt8],
+        dimensions: SIMD3<Int>,
+        axis: Int,
+        radius: Int,
+        operation: BinaryMorphologyOperation,
+        erosionTreatsOutOfBoundsAsSet: Bool = false
+    ) -> [UInt8] {
+        let width = max(dimensions.x, 1)
+        let height = max(dimensions.y, 1)
+        let depth = max(dimensions.z, 1)
+        let sliceElementCount = width * height
+        let voxelCount = max(sliceElementCount * depth, 1)
+        guard input.count == voxelCount, radius > 0 else { return input }
+
+        var output = [UInt8](repeating: 0, count: voxelCount)
+
+        func applyLine(base: Int, stride: Int, length: Int) {
+            guard length > 0 else { return }
+
+            var nonzeroCount = 0
+            let initialEnd = min(radius, length - 1)
+            for offset in 0...initialEnd where input[base + offset * stride] != 0 {
+                nonzeroCount += 1
+            }
+
+            for offset in 0..<length {
+                let index = base + offset * stride
+                switch operation {
+                case .dilation:
+                    output[index] = nonzeroCount > 0 ? 1 : 0
+                case .erosion:
+                    let requiredCount: Int
+                    if erosionTreatsOutOfBoundsAsSet {
+                        let windowStart = max(offset - radius, 0)
+                        let windowEnd = min(offset + radius, length - 1)
+                        requiredCount = windowEnd - windowStart + 1
+                    } else {
+                        requiredCount = radius * 2 + 1
+                    }
+                    let hasCompleteWindow = erosionTreatsOutOfBoundsAsSet || (offset >= radius && offset + radius < length)
+                    output[index] = (hasCompleteWindow && nonzeroCount == requiredCount) ? 1 : 0
+                }
+
+                let removedOffset = offset - radius
+                if removedOffset >= 0, input[base + removedOffset * stride] != 0 {
+                    nonzeroCount -= 1
+                }
+
+                let addedOffset = offset + radius + 1
+                if addedOffset < length, input[base + addedOffset * stride] != 0 {
+                    nonzeroCount += 1
+                }
+            }
+        }
+
+        switch axis {
+        case 0:
+            for z in 0..<depth {
+                let sliceOffset = z * sliceElementCount
+                for y in 0..<height {
+                    applyLine(base: sliceOffset + y * width, stride: 1, length: width)
+                }
+            }
+        case 1:
+            for z in 0..<depth {
+                let sliceOffset = z * sliceElementCount
+                for x in 0..<width {
+                    applyLine(base: sliceOffset + x, stride: width, length: height)
+                }
+            }
+        default:
+            for y in 0..<height {
+                let rowOffset = y * width
+                for x in 0..<width {
+                    applyLine(base: rowOffset + x, stride: sliceElementCount, length: depth)
+                }
+            }
+        }
+
+        return output
+    }
+
+    private static func floodFillExteriorAirCore(
+        _ passableAirCore: [UInt8],
+        dimensions: SIMD3<Int>
+    ) -> [UInt8] {
+        let width = max(dimensions.x, 1)
+        let height = max(dimensions.y, 1)
+        let depth = max(dimensions.z, 1)
+        let sliceElementCount = width * height
+        let voxelCount = max(sliceElementCount * depth, 1)
+        guard passableAirCore.count == voxelCount, voxelCount <= Int(Int32.max) else {
+            return [UInt8](repeating: 0, count: passableAirCore.count)
+        }
+
+        var exteriorCore = [UInt8](repeating: 0, count: voxelCount)
+        var queue = [Int32]()
+        queue.reserveCapacity(min(voxelCount, 1_000_000))
+
+        func enqueueExterior(_ index: Int) {
+            guard passableAirCore[index] != 0, exteriorCore[index] == 0 else { return }
+            exteriorCore[index] = 1
+            queue.append(Int32(index))
+        }
+
+        let minSeedX = 0
+        let maxSeedX = width - 1
+        let minSeedY = 0
+        let maxSeedY = height - 1
+        for z in 0..<depth {
+            let sliceOffset = z * sliceElementCount
+            for x in 0..<width {
+                enqueueExterior(sliceOffset + minSeedY * width + x)
+                enqueueExterior(sliceOffset + maxSeedY * width + x)
+            }
+        }
+
+        for z in 0..<depth {
+            let sliceOffset = z * sliceElementCount
+            for y in 0..<height {
+                let rowOffset = sliceOffset + y * width
+                enqueueExterior(rowOffset + minSeedX)
+                enqueueExterior(rowOffset + maxSeedX)
+            }
+        }
+
+        var head = 0
+        while head < queue.count {
+            let index = Int(queue[head])
+            head += 1
+
+            let z = index / sliceElementCount
+            let inSliceIndex = index - z * sliceElementCount
+            let y = inSliceIndex / width
+            let x = inSliceIndex - y * width
+
+            if x > 0 { enqueueExterior(index - 1) }
+            if x + 1 < width { enqueueExterior(index + 1) }
+            if y > 0 { enqueueExterior(index - width) }
+            if y + 1 < height { enqueueExterior(index + width) }
+            if z > 0 { enqueueExterior(index - sliceElementCount) }
+            if z + 1 < depth { enqueueExterior(index + sliceElementCount) }
+        }
+
+        return exteriorCore
     }
 
     private static func axialClosedEnvelopeMask(
@@ -2847,7 +3748,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 }
             }
         }
-        applyVTKCompositeOpacityCorrection(to: &values)
+        applyCompositeOpacityCorrection(to: &values)
         let data = values.withUnsafeBufferPointer { buffer in
             Data(buffer: buffer)
         }
@@ -3024,7 +3925,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         UInt16(clamping: Int((min(max(value, 0), 1) * 65535.0).rounded()))
     }
 
-    private func applyVTKCompositeOpacityCorrection(to values: inout [Float]) {
+    private func applyCompositeOpacityCorrection(to values: inout [Float]) {
         let factor = opacityCorrectionFactor()
         guard abs(factor - 1.0) > 0.0001 else { return }
 

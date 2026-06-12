@@ -4,6 +4,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface Metal3DSurfaceExtractionResult : NSObject
 
+@property (nonatomic, readonly) NSString *extractionMethod;
 @property (nonatomic, readonly) NSData *surfaceVoxelMask;
 @property (nonatomic, readonly) NSData *vertexFloatData;
 @property (nonatomic, readonly) NSInteger triangleVertexCount;
@@ -25,6 +26,16 @@ NS_ASSUME_NONNULL_BEGIN
                                                                  spacingY:(float)spacingY
                                                                  spacingZ:(float)spacingZ
                                                                 threshold:(float)threshold;
+
++ (nullable Metal3DSurfaceExtractionResult *)extractSkinSurfaceFromVolume:(NSData *)volumeData
+                                                                    width:(NSInteger)width
+                                                                   height:(NSInteger)height
+                                                                    depth:(NSInteger)depth
+                                                                 spacingX:(float)spacingX
+                                                                 spacingY:(float)spacingY
+                                                                 spacingZ:(float)spacingZ
+                                                                threshold:(float)threshold
+                                                          openMinimumZCap:(BOOL)openMinimumZCap;
 
 @end
 

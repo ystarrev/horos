@@ -159,6 +159,453 @@ struct Metal3DRasterizerData {
     float2 uv;
 };
 
+struct Metal3DSurfaceExtractionUniforms {
+    uint width;
+    uint height;
+    uint depth;
+    uint voxelCount;
+    uint cellWidth;
+    uint cellHeight;
+    uint cellDepth;
+    uint cellCount;
+    float spacingX;
+    float spacingY;
+    float spacingZ;
+    float threshold;
+};
+
+static inline bool metal3DSurfaceVoxelInside(device const float *volume,
+                                             constant Metal3DSurfaceExtractionUniforms &uniforms,
+                                             int x,
+                                             int y,
+                                             int z)
+{
+    if (x < 0 || y < 0 || z < 0 ||
+        x >= int(uniforms.width) ||
+        y >= int(uniforms.height) ||
+        z >= int(uniforms.depth)) {
+        return false;
+    }
+
+    const uint index = uint(z) * uniforms.width * uniforms.height + uint(y) * uniforms.width + uint(x);
+    return index < uniforms.voxelCount && volume[index] >= uniforms.threshold;
+}
+
+static inline void metal3DStoreSurfaceVertex(device float *vertices,
+                                             uint vertexIndex,
+                                             float3 position,
+                                             float3 normal)
+{
+    const uint base = vertexIndex * 6;
+    vertices[base + 0] = position.x;
+    vertices[base + 1] = position.y;
+    vertices[base + 2] = position.z;
+    vertices[base + 3] = normal.x;
+    vertices[base + 4] = normal.y;
+    vertices[base + 5] = normal.z;
+}
+
+kernel void metal3DCountSurfaceFaces(device const float *volume [[buffer(0)]],
+                                     device uint *faceCounts [[buffer(1)]],
+                                     device uchar *surfaceMask [[buffer(2)]],
+                                     constant Metal3DSurfaceExtractionUniforms &uniforms [[buffer(3)]],
+                                     uint index [[thread_position_in_grid]])
+{
+    if (index >= uniforms.voxelCount) {
+        return;
+    }
+
+    const uint slice = uniforms.width * uniforms.height;
+    const uint z = index / slice;
+    const uint remainder = index - z * slice;
+    const uint y = remainder / uniforms.width;
+    const uint x = remainder - y * uniforms.width;
+
+    uint faceCount = 0;
+    if (metal3DSurfaceVoxelInside(volume, uniforms, int(x), int(y), int(z))) {
+        faceCount += metal3DSurfaceVoxelInside(volume, uniforms, int(x) - 1, int(y), int(z)) ? 0 : 1;
+        faceCount += metal3DSurfaceVoxelInside(volume, uniforms, int(x) + 1, int(y), int(z)) ? 0 : 1;
+        faceCount += metal3DSurfaceVoxelInside(volume, uniforms, int(x), int(y) - 1, int(z)) ? 0 : 1;
+        faceCount += metal3DSurfaceVoxelInside(volume, uniforms, int(x), int(y) + 1, int(z)) ? 0 : 1;
+        faceCount += metal3DSurfaceVoxelInside(volume, uniforms, int(x), int(y), int(z) - 1) ? 0 : 1;
+        faceCount += metal3DSurfaceVoxelInside(volume, uniforms, int(x), int(y), int(z) + 1) ? 0 : 1;
+    }
+
+    faceCounts[index] = faceCount;
+    surfaceMask[index] = faceCount == 0 ? 0 : 255;
+}
+
+struct Metal3DSurfaceNetVertex {
+    float3 position;
+    float3 normal;
+    float value;
+};
+
+constant uchar kMetal3DMarchingCubesEdgeCorners[24] = {
+    0, 1, 1, 2, 3, 2, 0, 3,
+    4, 5, 5, 6, 7, 6, 4, 7,
+    0, 4, 1, 5, 3, 7, 2, 6
+};
+
+// Each case stores 16 four-bit edge ids; 0xf is the triangle-list sentinel.
+constant uint kMetal3DMarchingCubesTriangles[512] = {
+    0xffffffffu, 0xffffffffu, 0xfffff830u, 0xffffffffu,
+    0xfffff190u, 0xffffffffu, 0xff819831u, 0xffffffffu,
+    0xfffff2b1u, 0xffffffffu, 0xff2b1830u, 0xffffffffu,
+    0xff2902b9u, 0xffffffffu, 0x8bb82832u, 0xfffffff9u,
+    0xfffffa23u, 0xffffffffu, 0xffa08a20u, 0xffffffffu,
+    0xff3a2901u, 0xffffffffu, 0xa99a1a21u, 0xfffffff8u,
+    0xffb3ab13u, 0xffffffffu, 0xb88b0b10u, 0xfffffffau,
+    0x9aa93903u, 0xfffffffbu, 0xff8ab8b9u, 0xffffffffu,
+    0xfffff784u, 0xffffffffu, 0xff347304u, 0xffffffffu,
+    0xff478190u, 0xffffffffu, 0x17714194u, 0xfffffff3u,
+    0xff4782b1u, 0xffffffffu, 0xb1043473u, 0xfffffff2u,
+    0x780292b9u, 0xfffffff4u, 0x32972b92u, 0xffff9477u,
+    0xffa23478u, 0xffffffffu, 0x4224a47au, 0xfffffff0u,
+    0xa2478019u, 0xfffffff3u, 0x294a97a4u, 0xffff219au,
+    0x47ab3b13u, 0xfffffff8u, 0x414a1ab1u, 0xffffa470u,
+    0xb90a9784u, 0xffff03aau, 0xb9a947a4u, 0xfffffffau,
+    0xfffff549u, 0xffffffffu, 0xff830549u, 0xffffffffu,
+    0xff501540u, 0xffffffffu, 0x53358548u, 0xfffffff1u,
+    0xff5492b1u, 0xffffffffu, 0x542b1083u, 0xfffffff9u,
+    0x244252b5u, 0xfffffff0u, 0x43253b52u, 0xffff4835u,
+    0xff3a2549u, 0xffffffffu, 0x548a0a20u, 0xfffffff9u,
+    0xa2150540u, 0xfffffff3u, 0xa2582152u, 0xffff8548u,
+    0x4913b3abu, 0xfffffff5u, 0x18810954u, 0xffffab8bu,
+    0xb50a5405u, 0xffff03aau, 0xab8b5485u, 0xfffffff8u,
+    0xff795789u, 0xffffffffu, 0x35539309u, 0xfffffff7u,
+    0x71170780u, 0xfffffff5u, 0xff573531u, 0xffffffffu,
+    0x2b579789u, 0xfffffff1u, 0x0550912bu, 0xffff7353u,
+    0x78258028u, 0xffff52b5u, 0x73532b52u, 0xfffffff5u,
+    0x23897957u, 0xfffffffau, 0x09729579u, 0xffff7a22u,
+    0x811803a2u, 0xffff5717u, 0x5717a21au, 0xfffffff1u,
+    0x3b578589u, 0xffff3ab1u, 0x07095705u, 0xfb0a0b1au,
+    0x0b03ab0au, 0xf7050785u, 0xffa57b5au, 0xffffffffu,
+    0xfffff65bu, 0xffffffffu, 0xffb65830u, 0xffffffffu,
+    0xffb65019u, 0xffffffffu, 0x65981831u, 0xfffffffbu,
+    0xff612651u, 0xffffffffu, 0x83261651u, 0xfffffff0u,
+    0x60069659u, 0xfffffff2u, 0x65825985u, 0xffff2832u,
+    0xff65b3a2u, 0xffffffffu, 0x5b20a08au, 0xfffffff6u,
+    0x653a2190u, 0xfffffffbu, 0x29921b65u, 0xffff8a9au,
+    0x355363a6u, 0xfffffff1u, 0x10a508a0u, 0xffffa655u,
+    0x50360a63u, 0xffff5906u, 0x8a9a6596u, 0xfffffff9u,
+    0xff784b65u, 0xffffffffu, 0xb6734304u, 0xfffffff5u,
+    0x78b65901u, 0xfffffff4u, 0x3197165bu, 0xffff9477u,
+    0x84516126u, 0xfffffff7u, 0x43265251u, 0xffff4730u,
+    0x50059478u, 0xffff2606u, 0x93947397u, 0xf6929652u,
+    0x5b847a23u, 0xfffffff6u, 0x04724b65u, 0xffff7a22u,
+    0xa2784190u, 0xffffb653u, 0xa9a29219u, 0xfb65a474u,
+    0x13a53478u, 0xffffa655u, 0xa1a651a5u, 0xf4a0a470u,
+    0x60650590u, 0xf47863a3u, 0x949a6596u, 0xffffa977u,
+    0xff4b649bu, 0xffffffffu, 0x309b4b64u, 0xfffffff8u,
+    0x0660b01bu, 0xfffffff4u, 0x48168318u, 0xffff1b66u,
+    0x42241491u, 0xfffffff6u, 0x92291083u, 0xffff6424u,
+    0xff264240u, 0xffffffffu, 0x64248328u, 0xfffffff2u,
+    0x3a64b49bu, 0xfffffff2u, 0xb48a2820u, 0xffffb649u,
+    0x40160a23u, 0xffff1b66u, 0x141b6416u, 0xfa181a28u,
+    0x39369649u, 0xffff63a1u, 0x1a108a18u, 0xf4161496u,
+    0x40603a63u, 0xfffffff6u, 0xff68a486u, 0xffffffffu,
+    0xb88b7b67u, 0xfffffff9u, 0xb0b70730u, 0xffff7b69u,
+    0x81b7167bu, 0xffff8017u, 0x3171b67bu, 0xfffffff7u,
+    0x91681261u, 0xffff6788u, 0x96912692u, 0xf3979307u,
+    0x26067807u, 0xfffffff0u, 0xff726327u, 0xffffffffu,
+    0x9b68b3a2u, 0xffff6788u, 0x707a2072u, 0xfb797b69u,
+    0x71781801u, 0xf3a27b6bu, 0x1b17a21au, 0xffff7166u,
+    0x69678968u, 0xf36163a1u, 0xff67a910u, 0xffffffffu,
+    0x03067807u, 0xffff60aau, 0xfffffa67u, 0xffffffffu,
+    0xfffff6a7u, 0xffffffffu, 0xff76a083u, 0xffffffffu,
+    0xff76a190u, 0xffffffffu, 0x6a318198u, 0xfffffff7u,
+    0xffa7612bu, 0xffffffffu, 0x760832b1u, 0xfffffffau,
+    0x76b92902u, 0xfffffffau, 0x3bb32a76u, 0xffff98b8u,
+    0xff276237u, 0xffffffffu, 0x06607087u, 0xfffffff2u,
+    0x90372762u, 0xfffffff1u, 0x81861621u, 0xffff7689u,
+    0x7117b76bu, 0xfffffff3u, 0x717b176bu, 0xffff0818u,
+    0x907b0370u, 0xffffb76bu, 0x98b876b7u, 0xfffffffbu,
+    0xff86a846u, 0xffffffffu, 0x600636a3u, 0xfffffff4u,
+    0x194686a8u, 0xfffffff0u, 0x19639469u, 0xffff36a3u,
+    0x12a86846u, 0xfffffffbu, 0xa00a32b1u, 0xffff4606u,
+    0x906a4a84u, 0xffffb922u, 0x3932b93bu, 0xf63436a4u,
+    0x24428238u, 0xfffffff6u, 0xff624420u, 0xffffffffu,
+    0x62342901u, 0xffff3844u, 0x62421941u, 0xfffffff4u,
+    0x68618138u, 0xffffb164u, 0x4606b10bu, 0xfffffff0u,
+    0x36384634u, 0xf93b390bu, 0xffb4694bu, 0xffffffffu,
+    0xff6a7954u, 0xffffffffu, 0x6a954830u, 0xfffffff7u,
+    0xa7405015u, 0xfffffff6u, 0x4334876au, 0xffff1535u,
+    0xa712b549u, 0xfffffff6u, 0x302b1a76u, 0xffff9548u,
+    0xb44b56a7u, 0xffff0242u, 0x53543483u, 0xf76a52b2u,
+    0x95627237u, 0xfffffff4u, 0x20860549u, 0xffff8766u,
+    0x01763623u, 0xffff4055u, 0x82876286u, 0xf5818541u,
+    0x6116b549u, 0xffff3717u, 0x717616b1u, 0xf5497080u,
+    0xb0b540b4u, 0xf7b3b763u, 0xb5b876b7u, 0xffff8b44u,
+    0x9aa96956u, 0xfffffff8u, 0x606306a3u, 0xffff9505u,
+    0x505a0a80u, 0xffff6a51u, 0x15356a36u, 0xfffffff3u,
+    0x895a92b1u, 0xffff56aau, 0x606a0a30u, 0xf2b16959u,
+    0x5856a85au, 0xf25052b0u, 0x32356a36u, 0xffff53bbu,
+    0x25285895u, 0xffff8236u, 0x20609569u, 0xfffffff6u,
+    0x85801581u, 0xf2868236u, 0xff162561u, 0xffffffffu,
+    0x636b1361u, 0xf9686958u, 0x0906b10bu, 0xffff6055u,
+    0xff6b5380u, 0xffffffffu, 0xfffff56bu, 0xffffffffu,
+    0xff5a75bau, 0xffffffffu, 0x0875a5bau, 0xfffffff3u,
+    0x01ba5a75u, 0xfffffff9u, 0x19a7b75bu, 0xffff3188u,
+    0x1771a12au, 0xfffffff5u, 0x51271830u, 0xffff2a77u,
+    0x29279759u, 0xffffa720u, 0x252a7527u, 0xf8292839u,
+    0x533525b2u, 0xfffffff7u, 0x58528208u, 0xffff25b7u,
+    0x75b35019u, 0xffffb233u, 0x28219829u, 0xf52725b7u,
+    0xff753351u, 0xffffffffu, 0x51710870u, 0xfffffff7u,
+    0x75359039u, 0xfffffff3u, 0xff975879u, 0xffffffffu,
+    0x8bb85845u, 0xfffffffau, 0xa5a05045u, 0xffff30abu,
+    0xa84b8190u, 0xffff45bbu, 0x4a45ba4bu, 0xf1434193u,
+    0x82852512u, 0xffff584au, 0xa4a304a0u, 0xf1a5a125u,
+    0x52590250u, 0xf85a584au, 0xffa32459u, 0xffffffffu,
+    0x535235b2u, 0xffff8434u, 0x04245b25u, 0xfffffff2u,
+    0x535b3b23u, 0xf1905848u, 0x21245b25u, 0xffff4299u,
+    0x13538458u, 0xfffffff5u, 0xff051450u, 0xffffffffu,
+    0x59538458u, 0xffff3500u, 0xfffff459u, 0xffffffffu,
+    0xa99a4a74u, 0xfffffffbu, 0x79974830u, 0xffffba9au,
+    0x01a41ba1u, 0xffff4a74u, 0x41483143u, 0xfa4b4a7bu,
+    0xa9a49a74u, 0xffff1292u, 0xa9a79749u, 0xf830a121u,
+    0x0242a74au, 0xfffffff4u, 0x4842a74au, 0xffff2433u,
+    0x727929b2u, 0xffff4973u, 0x7b749b79u, 0xf0727082u,
+    0xb7b237b3u, 0xf0b4b014u, 0xff748b21u, 0xffffffffu,
+    0x37174914u, 0xfffffff1u, 0x10174914u, 0xffff7188u,
+    0xff437034u, 0xffffffffu, 0xfffff874u, 0xffffffffu,
+    0xffa8bb89u, 0xffffffffu, 0xba9a3093u, 0xfffffff9u,
+    0xa8b801b0u, 0xfffffffbu, 0xff3ba1b3u, 0xffffffffu,
+    0x89a912a1u, 0xfffffffau, 0x919a3093u, 0xffffa922u,
+    0xff0a82a0u, 0xffffffffu, 0xfffff2a3u, 0xffffffffu,
+    0x9b8b2382u, 0xfffffff8u, 0xff920b29u, 0xffffffffu,
+    0x808b2382u, 0xffffb811u, 0xfffffb21u, 0xffffffffu,
+    0xff189381u, 0xffffffffu, 0xfffff910u, 0xffffffffu,
+    0xfffff380u, 0xffffffffu, 0xffffffffu, 0xffffffffu,
+};
+
+static inline uint metal3DCubeVertexX(uint index)
+{
+    return (index == 1 || index == 2 || index == 5 || index == 6) ? 1 : 0;
+}
+
+static inline uint metal3DCubeVertexY(uint index)
+{
+    return (index == 2 || index == 3 || index == 6 || index == 7) ? 1 : 0;
+}
+
+static inline uint metal3DCubeVertexZ(uint index)
+{
+    return index >= 4 ? 1 : 0;
+}
+
+static inline float metal3DSurfaceGridValue(device const float *volume,
+                                            constant Metal3DSurfaceExtractionUniforms &uniforms,
+                                            int x,
+                                            int y,
+                                            int z)
+{
+    if (x < 0 || y < 0 || z < 0 ||
+        x >= int(uniforms.width) ||
+        y >= int(uniforms.height) ||
+        z >= int(uniforms.depth)) {
+        return 0.0f;
+    }
+
+    const uint index = uint(z) * uniforms.width * uniforms.height + uint(y) * uniforms.width + uint(x);
+    return index < uniforms.voxelCount ? volume[index] : 0.0f;
+}
+
+static inline float3 metal3DSurfaceGridNormal(device const float *volume,
+                                              constant Metal3DSurfaceExtractionUniforms &uniforms,
+                                              int x,
+                                              int y,
+                                              int z)
+{
+    const float invSpacingX = 1.0f / max(uniforms.spacingX, 0.0001f);
+    const float invSpacingY = 1.0f / max(uniforms.spacingY, 0.0001f);
+    const float invSpacingZ = 1.0f / max(uniforms.spacingZ, 0.0001f);
+    const float gx = (metal3DSurfaceGridValue(volume, uniforms, x + 1, y, z) -
+                      metal3DSurfaceGridValue(volume, uniforms, x - 1, y, z)) * invSpacingX;
+    const float gy = (metal3DSurfaceGridValue(volume, uniforms, x, y + 1, z) -
+                      metal3DSurfaceGridValue(volume, uniforms, x, y - 1, z)) * invSpacingY;
+    const float gz = (metal3DSurfaceGridValue(volume, uniforms, x, y, z + 1) -
+                      metal3DSurfaceGridValue(volume, uniforms, x, y, z - 1)) * invSpacingZ;
+    const float3 outward = -float3(gx, gy, gz);
+    return length_squared(outward) > 0.000001f ? normalize(outward) : float3(0.0f, 0.0f, 1.0f);
+}
+
+static inline Metal3DSurfaceNetVertex metal3DSurfaceCubeVertex(device const float *volume,
+                                                               constant Metal3DSurfaceExtractionUniforms &uniforms,
+                                                               uint cellX,
+                                                               uint cellY,
+                                                               uint cellZ,
+                                                               uint cubeVertexIndex)
+{
+    const uint gx = cellX + metal3DCubeVertexX(cubeVertexIndex);
+    const uint gy = cellY + metal3DCubeVertexY(cubeVertexIndex);
+    const uint gz = cellZ + metal3DCubeVertexZ(cubeVertexIndex);
+    Metal3DSurfaceNetVertex surfaceVertex;
+    surfaceVertex.position = float3(
+        (float(gx) - 1.0f) * uniforms.spacingX,
+        (float(gy) - 1.0f) * uniforms.spacingY,
+        (float(gz) - 1.0f) * uniforms.spacingZ
+    );
+    surfaceVertex.normal = metal3DSurfaceGridNormal(volume, uniforms, int(gx), int(gy), int(gz));
+    surfaceVertex.value = metal3DSurfaceGridValue(volume, uniforms, int(gx), int(gy), int(gz));
+    return surfaceVertex;
+}
+
+static inline Metal3DSurfaceNetVertex metal3DInterpolateSurfaceVertex(Metal3DSurfaceNetVertex a,
+                                                                      Metal3DSurfaceNetVertex b,
+                                                                      float threshold)
+{
+    const float denominator = b.value - a.value;
+    const float t = abs(denominator) > 0.000001f ? clamp((threshold - a.value) / denominator, 0.0f, 1.0f) : 0.5f;
+    Metal3DSurfaceNetVertex surfaceVertex;
+    surfaceVertex.position = mix(a.position, b.position, t);
+    const float3 normal = mix(a.normal, b.normal, t);
+    surfaceVertex.normal = length_squared(normal) > 0.000001f ? normalize(normal) : float3(0.0f, 0.0f, 1.0f);
+    surfaceVertex.value = threshold;
+    return surfaceVertex;
+}
+
+static inline void metal3DStoreSurfaceNetVertex(device float *vertices,
+                                                uint vertexIndex,
+                                                Metal3DSurfaceNetVertex surfaceVertex)
+{
+    metal3DStoreSurfaceVertex(vertices, vertexIndex, surfaceVertex.position, surfaceVertex.normal);
+}
+
+static inline uint metal3DEmitSurfaceNetTriangle(device float *vertices,
+                                                 uint vertexIndex,
+                                                 Metal3DSurfaceNetVertex a,
+                                                 Metal3DSurfaceNetVertex b,
+                                                 Metal3DSurfaceNetVertex c)
+{
+    metal3DStoreSurfaceNetVertex(vertices, vertexIndex + 0, a);
+    metal3DStoreSurfaceNetVertex(vertices, vertexIndex + 1, b);
+    metal3DStoreSurfaceNetVertex(vertices, vertexIndex + 2, c);
+    return vertexIndex + 3;
+}
+
+static inline uint metal3DMarchingCubesTriangleEdge(uint caseIndex, uint edgeSlot)
+{
+    const uint packedWord = kMetal3DMarchingCubesTriangles[caseIndex * 2u + (edgeSlot >> 3u)];
+    return (packedWord >> ((edgeSlot & 7u) * 4u)) & 0xfu;
+}
+
+static inline uint metal3DMarchingCubesCaseIndex(thread const Metal3DSurfaceNetVertex *cubeVertices,
+                                                 float threshold)
+{
+    uint caseIndex = 0;
+    for (uint index = 0; index < 8; index++) {
+        caseIndex |= cubeVertices[index].value >= threshold ? (1u << index) : 0u;
+    }
+    return caseIndex;
+}
+
+static inline uint metal3DMarchingCubesTriangleCount(uint caseIndex)
+{
+    uint triangleCount = 0;
+    for (uint edgeSlot = 0; edgeSlot < 15; edgeSlot += 3) {
+        const uint edgeA = metal3DMarchingCubesTriangleEdge(caseIndex, edgeSlot);
+        if (edgeA == 0xfu) {
+            break;
+        }
+
+        const uint edgeB = metal3DMarchingCubesTriangleEdge(caseIndex, edgeSlot + 1);
+        const uint edgeC = metal3DMarchingCubesTriangleEdge(caseIndex, edgeSlot + 2);
+        if (edgeB == 0xfu || edgeC == 0xfu) {
+            break;
+        }
+        triangleCount++;
+    }
+    return triangleCount;
+}
+
+static inline Metal3DSurfaceNetVertex metal3DMarchingCubesEdgeVertex(thread const Metal3DSurfaceNetVertex *cubeVertices,
+                                                                     uint edgeIndex,
+                                                                     float threshold)
+{
+    const uint cornerIndexA = uint(kMetal3DMarchingCubesEdgeCorners[edgeIndex * 2u + 0u]);
+    const uint cornerIndexB = uint(kMetal3DMarchingCubesEdgeCorners[edgeIndex * 2u + 1u]);
+    return metal3DInterpolateSurfaceVertex(cubeVertices[cornerIndexA], cubeVertices[cornerIndexB], threshold);
+}
+
+static inline uint metal3DEmitMarchingCubesSurface(device float *outputVertices,
+                                                   uint vertexIndex,
+                                                   thread const Metal3DSurfaceNetVertex *cubeVertices,
+                                                   uint caseIndex,
+                                                   float threshold)
+{
+    for (uint edgeSlot = 0; edgeSlot < 15; edgeSlot += 3) {
+        const uint edgeA = metal3DMarchingCubesTriangleEdge(caseIndex, edgeSlot);
+        if (edgeA == 0xfu) {
+            break;
+        }
+
+        const uint edgeB = metal3DMarchingCubesTriangleEdge(caseIndex, edgeSlot + 1);
+        const uint edgeC = metal3DMarchingCubesTriangleEdge(caseIndex, edgeSlot + 2);
+        if (edgeB == 0xfu || edgeC == 0xfu) {
+            break;
+        }
+
+        const Metal3DSurfaceNetVertex a = metal3DMarchingCubesEdgeVertex(cubeVertices, edgeA, threshold);
+        const Metal3DSurfaceNetVertex b = metal3DMarchingCubesEdgeVertex(cubeVertices, edgeB, threshold);
+        const Metal3DSurfaceNetVertex c = metal3DMarchingCubesEdgeVertex(cubeVertices, edgeC, threshold);
+        vertexIndex = metal3DEmitSurfaceNetTriangle(outputVertices, vertexIndex, a, b, c);
+    }
+
+    return vertexIndex;
+}
+
+kernel void metal3DCountSurfaceMarchingCubes(device const float *volume [[buffer(0)]],
+                                             device uint *triangleCounts [[buffer(1)]],
+                                             constant Metal3DSurfaceExtractionUniforms &uniforms [[buffer(2)]],
+                                             uint cellIndex [[thread_position_in_grid]])
+{
+    if (cellIndex >= uniforms.cellCount) {
+        return;
+    }
+
+    const uint cellSlice = uniforms.cellWidth * uniforms.cellHeight;
+    const uint cellZ = cellIndex / cellSlice;
+    const uint remainder = cellIndex - cellZ * cellSlice;
+    const uint cellY = remainder / uniforms.cellWidth;
+    const uint cellX = remainder - cellY * uniforms.cellWidth;
+
+    Metal3DSurfaceNetVertex cubeVertices[8];
+    for (uint index = 0; index < 8; index++) {
+        cubeVertices[index] = metal3DSurfaceCubeVertex(volume, uniforms, cellX, cellY, cellZ, index);
+    }
+
+    const uint caseIndex = metal3DMarchingCubesCaseIndex(cubeVertices, uniforms.threshold);
+    triangleCounts[cellIndex] = metal3DMarchingCubesTriangleCount(caseIndex);
+}
+
+kernel void metal3DEmitSurfaceMarchingCubes(device const float *volume [[buffer(0)]],
+                                            device const uint *triangleCounts [[buffer(1)]],
+                                            device const uint *triangleOffsets [[buffer(2)]],
+                                            device float *vertices [[buffer(3)]],
+                                            constant Metal3DSurfaceExtractionUniforms &uniforms [[buffer(4)]],
+                                            uint cellIndex [[thread_position_in_grid]])
+{
+    if (cellIndex >= uniforms.cellCount || triangleCounts[cellIndex] == 0) {
+        return;
+    }
+
+    const uint cellSlice = uniforms.cellWidth * uniforms.cellHeight;
+    const uint cellZ = cellIndex / cellSlice;
+    const uint remainder = cellIndex - cellZ * cellSlice;
+    const uint cellY = remainder / uniforms.cellWidth;
+    const uint cellX = remainder - cellY * uniforms.cellWidth;
+
+    Metal3DSurfaceNetVertex cubeVertices[8];
+    for (uint index = 0; index < 8; index++) {
+        cubeVertices[index] = metal3DSurfaceCubeVertex(volume, uniforms, cellX, cellY, cellZ, index);
+    }
+
+    uint vertexIndex = triangleOffsets[cellIndex] * 3;
+    const uint caseIndex = metal3DMarchingCubesCaseIndex(cubeVertices, uniforms.threshold);
+    metal3DEmitMarchingCubesSurface(vertices, vertexIndex, cubeVertices, caseIndex, uniforms.threshold);
+}
+
 struct Metal3DOverlayVertex {
     float3 position;
     float3 normal;

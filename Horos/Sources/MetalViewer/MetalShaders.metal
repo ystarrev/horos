@@ -606,6 +606,178 @@ kernel void metal3DEmitSurfaceMarchingCubes(device const float *volume [[buffer(
     metal3DEmitMarchingCubesSurface(vertices, vertexIndex, cubeVertices, caseIndex, uniforms.threshold);
 }
 
+struct Metal3DVisibilityUniforms {
+    uint triangleCount;
+    uint triangleBase;
+    uint viewCount;
+    uint gridWidth;
+    uint gridHeight;
+    uint gridVoxelCount;
+    float xyCenterX;
+    float xyCenterY;
+    float xyRadius;
+    float minimumZ;
+    float zRange;
+    float depthTolerance;
+};
+
+static inline float3 metal3DVisibilityVertex(device const float *vertices,
+                                             uint triangleIndex,
+                                             uint vertexSlot)
+{
+    const uint base = triangleIndex * 18u + vertexSlot * 6u;
+    return float3(vertices[base + 0u], vertices[base + 1u], vertices[base + 2u]);
+}
+
+static inline uint metal3DVisibilityDepthValue(float depth,
+                                               constant Metal3DVisibilityUniforms &uniforms)
+{
+    const float depthEncodingScale = 4294901760.0f;
+    const float depthSpan = max(uniforms.xyRadius * 2.0f, 0.0001f);
+    const float normalizedDepth = clamp((depth + uniforms.xyRadius) / depthSpan, 0.0f, 1.0f);
+    return max(1u, uint(normalizedDepth * depthEncodingScale));
+}
+
+static inline uint metal3DVisibilityDepthTolerance(constant Metal3DVisibilityUniforms &uniforms)
+{
+    const float depthEncodingScale = 4294901760.0f;
+    const float depthSpan = max(uniforms.xyRadius * 2.0f, 0.0001f);
+    const float normalizedTolerance = clamp(uniforms.depthTolerance / depthSpan, 0.0f, 1.0f);
+    return uint(normalizedTolerance * depthEncodingScale);
+}
+
+struct Metal3DVisibilityProjection {
+    int2 pixel;
+    uint encodedDepth;
+};
+
+static inline Metal3DVisibilityProjection metal3DVisibilityProject(float3 point,
+                                                                   float2 viewForward,
+                                                                   float2 viewRight,
+                                                                   constant Metal3DVisibilityUniforms &uniforms)
+{
+    const float2 centeredXY = float2(point.x - uniforms.xyCenterX, point.y - uniforms.xyCenterY);
+    const float u = dot(centeredXY, viewRight);
+    const float v = point.z - uniforms.minimumZ;
+    const float pixelX = ((u + uniforms.xyRadius) / max(uniforms.xyRadius * 2.0f, 0.0001f)) * float(uniforms.gridWidth - 1u);
+    const float pixelY = (v / max(uniforms.zRange, 0.0001f)) * float(uniforms.gridHeight - 1u);
+    Metal3DVisibilityProjection projection;
+    projection.pixel = int2(
+        clamp(int(floor(pixelX + 0.5f)), 0, int(uniforms.gridWidth) - 1),
+        clamp(int(floor(pixelY + 0.5f)), 0, int(uniforms.gridHeight) - 1)
+    );
+    projection.encodedDepth = metal3DVisibilityDepthValue(dot(centeredXY, viewForward), uniforms);
+    return projection;
+}
+
+static inline void metal3DSplatVisibilitySample(device atomic_uint *depthBuffer,
+                                                float3 point,
+                                                uint viewIndex,
+                                                float2 viewForward,
+                                                float2 viewRight,
+                                                constant Metal3DVisibilityUniforms &uniforms)
+{
+    const Metal3DVisibilityProjection projection = metal3DVisibilityProject(point, viewForward, viewRight, uniforms);
+    const uint viewOffset = viewIndex * uniforms.gridVoxelCount;
+    const uint depthIndex = viewOffset + uint(projection.pixel.y) * uniforms.gridWidth + uint(projection.pixel.x);
+    atomic_fetch_max_explicit(&depthBuffer[depthIndex], projection.encodedDepth, memory_order_relaxed);
+}
+
+static inline bool metal3DVisibilitySampleVisible(device atomic_uint *depthBuffer,
+                                                  float3 point,
+                                                  uint viewIndex,
+                                                  float2 viewForward,
+                                                  float2 viewRight,
+                                                  constant Metal3DVisibilityUniforms &uniforms)
+{
+    const Metal3DVisibilityProjection projection = metal3DVisibilityProject(point, viewForward, viewRight, uniforms);
+    uint frontDepth = 0u;
+    bool foundDepth = false;
+    const uint viewOffset = viewIndex * uniforms.gridVoxelCount;
+    for (int dy = -1; dy <= 1; ++dy) {
+        const int y = projection.pixel.y + dy;
+        if (y < 0 || y >= int(uniforms.gridHeight)) {
+            continue;
+        }
+        const uint rowOffset = uint(y) * uniforms.gridWidth;
+        for (int dx = -1; dx <= 1; ++dx) {
+            const int x = projection.pixel.x + dx;
+            if (x < 0 || x >= int(uniforms.gridWidth)) {
+                continue;
+            }
+            const uint depthIndex = viewOffset + rowOffset + uint(x);
+            const uint candidateDepth = atomic_load_explicit(&depthBuffer[depthIndex], memory_order_relaxed);
+            if (candidateDepth == 0u) {
+                continue;
+            }
+            foundDepth = true;
+            frontDepth = max(frontDepth, candidateDepth);
+        }
+    }
+
+    const uint tolerance = metal3DVisibilityDepthTolerance(uniforms);
+    return foundDepth && (projection.encodedDepth >= frontDepth || frontDepth - projection.encodedDepth <= tolerance);
+}
+
+kernel void metal3DSplatSurfaceVisibilityDepth(device const float *vertices [[buffer(0)]],
+                                               device atomic_uint *depthBuffer [[buffer(1)]],
+                                               constant Metal3DVisibilityUniforms &uniforms [[buffer(2)]],
+                                               uint2 gridIndex [[thread_position_in_grid]])
+{
+    const uint triangleIndex = gridIndex.x;
+    const uint viewIndex = gridIndex.y;
+    if (viewIndex >= uniforms.viewCount) {
+        return;
+    }
+    const uint sourceTriangleIndex = uniforms.triangleBase + triangleIndex;
+    if (sourceTriangleIndex >= uniforms.triangleCount) {
+        return;
+    }
+
+    const float angle = (float(viewIndex) / float(uniforms.viewCount)) * 6.28318530718f;
+    const float2 viewForward = float2(cos(angle), sin(angle));
+    const float2 viewRight = float2(-sin(angle), cos(angle));
+    const float3 p0 = metal3DVisibilityVertex(vertices, sourceTriangleIndex, 0u);
+    const float3 p1 = metal3DVisibilityVertex(vertices, sourceTriangleIndex, 1u);
+    const float3 p2 = metal3DVisibilityVertex(vertices, sourceTriangleIndex, 2u);
+    const float3 centroid = (p0 + p1 + p2) * (1.0f / 3.0f);
+    metal3DSplatVisibilitySample(depthBuffer, centroid, viewIndex, viewForward, viewRight, uniforms);
+    metal3DSplatVisibilitySample(depthBuffer, p0, viewIndex, viewForward, viewRight, uniforms);
+    metal3DSplatVisibilitySample(depthBuffer, p1, viewIndex, viewForward, viewRight, uniforms);
+    metal3DSplatVisibilitySample(depthBuffer, p2, viewIndex, viewForward, viewRight, uniforms);
+}
+
+kernel void metal3DMarkSurfaceVisibility(device const float *vertices [[buffer(0)]],
+                                         device atomic_uint *depthBuffer [[buffer(1)]],
+                                         device atomic_uint *visibleFlags [[buffer(2)]],
+                                         constant Metal3DVisibilityUniforms &uniforms [[buffer(3)]],
+                                         uint2 gridIndex [[thread_position_in_grid]])
+{
+    const uint triangleIndex = gridIndex.x;
+    const uint viewIndex = gridIndex.y;
+    if (viewIndex >= uniforms.viewCount) {
+        return;
+    }
+    const uint sourceTriangleIndex = uniforms.triangleBase + triangleIndex;
+    if (sourceTriangleIndex >= uniforms.triangleCount) {
+        return;
+    }
+
+    const float angle = (float(viewIndex) / float(uniforms.viewCount)) * 6.28318530718f;
+    const float2 viewForward = float2(cos(angle), sin(angle));
+    const float2 viewRight = float2(-sin(angle), cos(angle));
+    const float3 p0 = metal3DVisibilityVertex(vertices, sourceTriangleIndex, 0u);
+    const float3 p1 = metal3DVisibilityVertex(vertices, sourceTriangleIndex, 1u);
+    const float3 p2 = metal3DVisibilityVertex(vertices, sourceTriangleIndex, 2u);
+    const float3 centroid = (p0 + p1 + p2) * (1.0f / 3.0f);
+    if (metal3DVisibilitySampleVisible(depthBuffer, centroid, viewIndex, viewForward, viewRight, uniforms) ||
+        metal3DVisibilitySampleVisible(depthBuffer, p0, viewIndex, viewForward, viewRight, uniforms) ||
+        metal3DVisibilitySampleVisible(depthBuffer, p1, viewIndex, viewForward, viewRight, uniforms) ||
+        metal3DVisibilitySampleVisible(depthBuffer, p2, viewIndex, viewForward, viewRight, uniforms)) {
+        atomic_store_explicit(&visibleFlags[sourceTriangleIndex], 1u, memory_order_relaxed);
+    }
+}
+
 struct Metal3DOverlayVertex {
     float3 position;
     float3 normal;

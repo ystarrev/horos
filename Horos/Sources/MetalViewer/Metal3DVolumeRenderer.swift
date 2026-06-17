@@ -306,6 +306,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var skinMaskTexture: MTLTexture?
     private var skinSurfaceVertexBuffer: MTLBuffer?
     private var skinSurfaceVertexCount = 0
+    private var skinSurfaceVertexFloatData: Data?
     private var skinSurfaceWorldPoints = [SIMD3<Float>]()
     private var tumourSeedSphereVertexBuffer: MTLBuffer?
     private var tumourSeedSphereVertexCount = 0
@@ -1327,6 +1328,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         skinMaskTexture = nil
         skinSurfaceVertexBuffer = nil
         skinSurfaceVertexCount = 0
+        skinSurfaceVertexFloatData = nil
         skinSurfaceWorldPoints = []
         surgicalTrajectory = nil
         trajectoryHandleHovered = false
@@ -1504,7 +1506,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return NSLocalizedString("No enhancing tumour label is available for trajectory planning.", comment: "")
         }
 
-        ensureSkinMaskTexture(includeSurface: true)
+        ensureSkinMaskTexture(includeSurface: true, includeSurfacePoints: true)
         guard skinSurfaceWorldPoints.isEmpty == false else {
             return NSLocalizedString("The outer skin surface is not available yet.", comment: "")
         }
@@ -2194,18 +2196,37 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let outsideVoxelCount: Int
         let shellVoxelCount: Int
         let maskedVoxelCount: Int
-        let surfaceWorldPoints: [SIMD3<Float>]
+        let surfaceVertexFloatData: Data?
         let surfaceVertexBuffer: MTLBuffer?
         let surfaceVertexCount: Int
         let surfacePointCount: Int
         let surfaceTriangleCount: Int
     }
 
-    private func ensureSkinMaskTexture(includeSurface: Bool = false) {
+    private func ensureSkinMaskTexture(includeSurface: Bool = false, includeSurfacePoints: Bool = false) {
+        let hasSurface = skinSurfaceVertexBuffer != nil &&
+            skinSurfaceVertexCount > 0 &&
+            skinSurfaceVertexFloatData != nil
         let needsMask = skinMaskTexture == nil && skinMaskExtractionAttempted == false
-        let needsSurface = includeSurface && skinSurfaceExtractionAttempted == false
-        let buildSurface = needsSurface
-        guard needsMask || needsSurface else { return }
+        let needsSurface = includeSurface && hasSurface == false && skinSurfaceExtractionAttempted == false
+        let needsSurfacePoints = includeSurfacePoints && skinSurfaceWorldPoints.isEmpty
+        let buildSurface = needsSurface ||
+            (needsSurfacePoints && skinSurfaceVertexFloatData == nil && skinSurfaceExtractionAttempted == false)
+        guard needsMask || buildSurface || (needsSurfacePoints && skinSurfaceVertexFloatData != nil) else { return }
+
+        if buildSurface == false,
+           needsMask == false,
+           needsSurfacePoints,
+           let vertexFloatData = skinSurfaceVertexFloatData {
+            let start = CFAbsoluteTimeGetCurrent()
+            skinSurfaceWorldPoints = worldPositions(fromSurfaceVertexFloatData: vertexFloatData)
+            NSLog(
+                "HOROS_METAL_TIMING Metal3DVolumeRenderer skinSurfaceWorldPoints points=%ld %.3f s",
+                skinSurfaceWorldPoints.count,
+                CFAbsoluteTimeGetCurrent() - start
+            )
+            return
+        }
 
         if needsMask {
             skinMaskExtractionAttempted = true
@@ -2226,7 +2247,12 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         if buildSurface {
             skinSurfaceVertexBuffer = result.surfaceVertexBuffer
             skinSurfaceVertexCount = result.surfaceVertexCount
-            skinSurfaceWorldPoints = result.surfaceWorldPoints
+            skinSurfaceVertexFloatData = result.surfaceVertexFloatData
+        }
+        if needsSurfacePoints,
+           skinSurfaceWorldPoints.isEmpty,
+           let vertexFloatData = skinSurfaceVertexFloatData {
+            skinSurfaceWorldPoints = worldPositions(fromSurfaceVertexFloatData: vertexFloatData)
         }
         NSLog(
             "HOROS_METAL_TIMING Metal3DVolumeRenderer skinExtraction method=%@ threshold=%.3f shell=%.1fmm foreground=%ld filled=%ld surfaceVoxels=%ld surfacePoints=%ld surfaceTriangles=%ld surfaceVertices=%ld outside=%ld shell=%ld masked=%ld volume=%ldx%ldx%ld %.3f s",
@@ -2338,30 +2364,32 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         var surfaceTriangleCount = 0
         var surfaceVertexBuffer: MTLBuffer?
         var surfaceVertexCount = 0
-        var surfaceWorldPoints = [SIMD3<Float>]()
+        var surfaceVertexFloatData: Data?
 
         if includeSurface {
             // Contour the actual image intensities, then let the rotating visibility pass remove
             // internal cut-surface clutter without flattening reachable facial detail.
-            let surfaceThreshold: Float = 1.0
-            let surfaceSourceVolume = rawVolume.map { value -> Float in
-                guard value.isFinite else { return 0.0 }
-                return value - thresholdResult.threshold + surfaceThreshold
+            let rawVolumeByteCount = rawVolume.count * MemoryLayout<Float>.stride
+            let extractedSurfaceResult = rawVolume.withUnsafeBufferPointer { buffer -> Metal3DSurfaceExtractionResult? in
+                guard let baseAddress = buffer.baseAddress else { return nil }
+                let volumeData = Data(
+                    bytesNoCopy: UnsafeMutableRawPointer(mutating: UnsafeRawPointer(baseAddress)),
+                    count: rawVolumeByteCount,
+                    deallocator: .none
+                )
+                return Metal3DSurfaceExtractor.extractSkinSurface(
+                    fromVolume: volumeData,
+                    width: volumeDimensions.x,
+                    height: volumeDimensions.y,
+                    depth: volumeDimensions.z,
+                    spacingX: voxelSpacing.x,
+                    spacingY: voxelSpacing.y,
+                    spacingZ: voxelSpacing.z,
+                    threshold: thresholdResult.threshold,
+                    openMinimumZCap: true
+                )
             }
-            let volumeData = surfaceSourceVolume.withUnsafeBufferPointer { buffer in
-                Data(buffer: buffer)
-            }
-            guard let extractedSurface = Metal3DSurfaceExtractor.extractSkinSurface(
-                fromVolume: volumeData,
-                width: volumeDimensions.x,
-                height: volumeDimensions.y,
-                depth: volumeDimensions.z,
-                spacingX: voxelSpacing.x,
-                spacingY: voxelSpacing.y,
-                spacingZ: voxelSpacing.z,
-                threshold: surfaceThreshold,
-                openMinimumZCap: true
-            ) else {
+            guard let extractedSurface = extractedSurfaceResult else {
                 NSLog(
                     "Metal3DVolumeRenderer skinExtraction produced no outer surface threshold %.3f",
                     Double(thresholdResult.threshold)
@@ -2378,18 +2406,28 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 return nil
             }
 
-            let filteredSurfaceVertexData = Self.rotatingIlluminatedSurfaceVertexFloatData(
-                extractedSurface.vertexFloatData,
-                spacing: voxelSpacing
-            )
-            let overlaySurfaceVertexBuffer = makeSkinSurfaceVertexBuffer(vertexFloatData: filteredSurfaceVertexData.data)
+            var filteredSurfaceVertexCount = 0
+            var filteredSurfaceTriangleCount = 0
+            guard let filteredSurfaceData = Metal3DSurfaceExtractor.filterSurfaceVertexFloatData(
+                byRotatingVisibility: extractedSurface.vertexFloatData,
+                spacingX: voxelSpacing.x,
+                spacingY: voxelSpacing.y,
+                spacingZ: voxelSpacing.z,
+                vertexCount: &filteredSurfaceVertexCount,
+                triangleCount: &filteredSurfaceTriangleCount
+            ) else {
+                NSLog("Metal3DVolumeRenderer skinExtraction Metal visibility filter unavailable")
+                return nil
+            }
+
+            let overlaySurfaceVertexBuffer = makeSkinSurfaceVertexBuffer(vertexFloatData: filteredSurfaceData)
             surfaceVertexBuffer = overlaySurfaceVertexBuffer?.buffer
             surfaceVertexCount = overlaySurfaceVertexBuffer?.count ?? 0
-            surfaceWorldPoints = worldPositions(fromSurfaceVertexFloatData: filteredSurfaceVertexData.data)
+            surfaceVertexFloatData = filteredSurfaceData
             surfaceVoxelCount = extractedSurface.surfaceVoxelCount
-            surfacePointCount = filteredSurfaceVertexData.vertexCount
-            surfaceTriangleCount = filteredSurfaceVertexData.triangleCount
-            extractionMethod = "\(thresholdResult.method)+rawScalar+\(envelopeForeground.method)+\(envelopeMethod)+\(extractedSurface.extractionMethod)+openZCropCaps+rotatingVisibilityOnly"
+            surfacePointCount = filteredSurfaceVertexCount
+            surfaceTriangleCount = filteredSurfaceTriangleCount
+            extractionMethod = "\(thresholdResult.method)+rawScalar+\(envelopeForeground.method)+\(envelopeMethod)+\(extractedSurface.extractionMethod)+openZCropCaps+rotatingVisibilityMetal"
         }
 
         var mask = Self.invertedMask(envelope.mask)
@@ -2421,7 +2459,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             outsideVoxelCount: outsideCount,
             shellVoxelCount: shellVoxelCount,
             maskedVoxelCount: maskedVoxelCount,
-            surfaceWorldPoints: surfaceWorldPoints,
+            surfaceVertexFloatData: surfaceVertexFloatData,
             surfaceVertexBuffer: surfaceVertexBuffer,
             surfaceVertexCount: surfaceVertexCount,
             surfacePointCount: surfacePointCount,
@@ -2730,237 +2768,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return (filteredData, filteredFloats.count / floatsPerVertex, filteredFloats.count / floatsPerTriangle)
     }
 
-    private static func rotatingIlluminatedSurfaceVertexFloatData(
-        _ vertexFloatData: Data,
-        spacing: SIMD3<Float>
-    ) -> (data: Data, vertexCount: Int, triangleCount: Int) {
-        let floatsPerVertex = 6
-        let floatsPerTriangle = floatsPerVertex * 3
-        let floatByteCount = MemoryLayout<Float>.stride
-        guard vertexFloatData.count >= floatsPerTriangle * floatByteCount,
-              vertexFloatData.count % (floatsPerTriangle * floatByteCount) == 0 else {
-            return (
-                vertexFloatData,
-                vertexFloatData.count / (floatsPerVertex * floatByteCount),
-                vertexFloatData.count / (floatsPerTriangle * floatByteCount)
-            )
-        }
-
-        struct Triangle {
-            let sourceBase: Int
-            let p0: SIMD3<Float>
-            let p1: SIMD3<Float>
-            let p2: SIMD3<Float>
-            let centroid: SIMD3<Float>
-        }
-
-        let floats = vertexFloatData.withUnsafeBytes { bytes -> [Float] in
-            Array(bytes.bindMemory(to: Float.self))
-        }
-        let triangleCount = floats.count / floatsPerTriangle
-        guard triangleCount > 0 else { return (Data(), 0, 0) }
-
-        var triangles = [Triangle]()
-        triangles.reserveCapacity(triangleCount)
-        var minimum = SIMD3<Float>(repeating: Float.greatestFiniteMagnitude)
-        var maximum = SIMD3<Float>(repeating: -Float.greatestFiniteMagnitude)
-
-        func includePoint(_ point: SIMD3<Float>) {
-            minimum.x = min(minimum.x, point.x)
-            minimum.y = min(minimum.y, point.y)
-            minimum.z = min(minimum.z, point.z)
-            maximum.x = max(maximum.x, point.x)
-            maximum.y = max(maximum.y, point.y)
-            maximum.z = max(maximum.z, point.z)
-        }
-
-        for triangleIndex in 0..<triangleCount {
-            let base = triangleIndex * floatsPerTriangle
-            let p0 = SIMD3<Float>(floats[base], floats[base + 1], floats[base + 2])
-            let p1 = SIMD3<Float>(floats[base + 6], floats[base + 7], floats[base + 8])
-            let p2 = SIMD3<Float>(floats[base + 12], floats[base + 13], floats[base + 14])
-            let areaVector = simd_cross(p1 - p0, p2 - p0)
-            guard simd_length_squared(areaVector) > 0.000001 else { continue }
-
-            includePoint(p0)
-            includePoint(p1)
-            includePoint(p2)
-            triangles.append(
-                Triangle(
-                    sourceBase: base,
-                    p0: p0,
-                    p1: p1,
-                    p2: p2,
-                    centroid: (p0 + p1 + p2) / 3
-                )
-            )
-        }
-
-        guard triangles.isEmpty == false,
-              minimum.x.isFinite,
-              minimum.y.isFinite,
-              minimum.z.isFinite,
-              maximum.x > minimum.x,
-              maximum.y > minimum.y,
-              maximum.z > minimum.z else {
-            return (
-                vertexFloatData,
-                vertexFloatData.count / (floatsPerVertex * floatByteCount),
-                vertexFloatData.count / (floatsPerTriangle * floatByteCount)
-            )
-        }
-
-        let xyCenter = SIMD2<Float>(
-            (minimum.x + maximum.x) * 0.5,
-            (minimum.y + maximum.y) * 0.5
-        )
-        var xyRadius: Float = 0
-        for triangle in triangles {
-            for point in [triangle.p0, triangle.p1, triangle.p2] {
-                let delta = SIMD2<Float>(point.x - xyCenter.x, point.y - xyCenter.y)
-                xyRadius = max(xyRadius, simd_length(delta))
-            }
-        }
-        xyRadius = max(xyRadius + 4.0, 1.0)
-
-        let zMargin: Float = 4.0
-        let minimumZ = minimum.z - zMargin
-        let maximumZ = maximum.z + zMargin
-        let zRange = max(maximumZ - minimumZ, 1.0)
-        let visibilityPixelSize = max(min(min(spacing.x, spacing.y), spacing.z) * 1.5, 0.75)
-        let gridWidth = min(max(Int(ceil(Double((xyRadius * 2.0) / visibilityPixelSize))), 192), 512)
-        let gridHeight = min(max(Int(ceil(Double(zRange / visibilityPixelSize))), 192), 512)
-        let gridVoxelCount = gridWidth * gridHeight
-        let viewCount = 72
-        let depthTolerance = max(max(max(spacing.x, spacing.y), spacing.z) * 4.0, 6.0)
-        let rasterSlack: Float = 0.001
-        var visible = [UInt8](repeating: 0, count: triangles.count)
-        var depthBuffer = [Float](repeating: -Float.greatestFiniteMagnitude, count: gridVoxelCount)
-
-        func edge(_ a: SIMD2<Float>, _ b: SIMD2<Float>, _ p: SIMD2<Float>) -> Float {
-            (p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)
-        }
-
-        for viewIndex in 0..<viewCount {
-            for index in depthBuffer.indices {
-                depthBuffer[index] = -Float.greatestFiniteMagnitude
-            }
-
-            let angle = (Float(viewIndex) / Float(viewCount)) * Float.pi * 2.0
-            let viewForward = SIMD3<Float>(cos(angle), sin(angle), 0)
-            let viewRight = SIMD3<Float>(-sin(angle), cos(angle), 0)
-
-            func project(_ point: SIMD3<Float>) -> (pixel: SIMD2<Float>, depth: Float) {
-                let centeredXY = SIMD3<Float>(point.x - xyCenter.x, point.y - xyCenter.y, point.z)
-                let u = simd_dot(centeredXY, viewRight)
-                let v = point.z - minimumZ
-                let pixel = SIMD2<Float>(
-                    ((u + xyRadius) / max(xyRadius * 2.0, 0.0001)) * Float(gridWidth - 1),
-                    (v / zRange) * Float(gridHeight - 1)
-                )
-                return (pixel, simd_dot(centeredXY, viewForward))
-            }
-
-            func rasterize(_ triangle: Triangle) {
-                let projected0 = project(triangle.p0)
-                let projected1 = project(triangle.p1)
-                let projected2 = project(triangle.p2)
-                let p0 = projected0.pixel
-                let p1 = projected1.pixel
-                let p2 = projected2.pixel
-                let area = edge(p0, p1, p2)
-                guard abs(area) > 0.0001 else { return }
-
-                let minimumX = max(Int(floor(Double(min(min(p0.x, p1.x), p2.x)))), 0)
-                let maximumX = min(Int(ceil(Double(max(max(p0.x, p1.x), p2.x)))), gridWidth - 1)
-                let minimumY = max(Int(floor(Double(min(min(p0.y, p1.y), p2.y)))), 0)
-                let maximumY = min(Int(ceil(Double(max(max(p0.y, p1.y), p2.y)))), gridHeight - 1)
-                guard maximumX >= minimumX, maximumY >= minimumY else { return }
-
-                let inverseArea = 1.0 / area
-                for y in minimumY...maximumY {
-                    for x in minimumX...maximumX {
-                        let sample = SIMD2<Float>(Float(x) + 0.5, Float(y) + 0.5)
-                        let w0 = edge(p1, p2, sample) * inverseArea
-                        let w1 = edge(p2, p0, sample) * inverseArea
-                        let w2 = edge(p0, p1, sample) * inverseArea
-                        guard w0 >= -rasterSlack,
-                              w1 >= -rasterSlack,
-                              w2 >= -rasterSlack else {
-                            continue
-                        }
-
-                        let depth = w0 * projected0.depth + w1 * projected1.depth + w2 * projected2.depth
-                        let bufferIndex = y * gridWidth + x
-                        if depth > depthBuffer[bufferIndex] {
-                            depthBuffer[bufferIndex] = depth
-                        }
-                    }
-                }
-            }
-
-            for triangle in triangles {
-                rasterize(triangle)
-            }
-
-            func isSampleVisible(_ point: SIMD3<Float>) -> Bool {
-                let projected = project(point)
-                let pixelX = min(max(Int(round(Double(projected.pixel.x))), 0), gridWidth - 1)
-                let pixelY = min(max(Int(round(Double(projected.pixel.y))), 0), gridHeight - 1)
-                var frontDepth = -Float.greatestFiniteMagnitude
-                var foundDepth = false
-                for dy in -1...1 {
-                    let y = pixelY + dy
-                    guard y >= 0, y < gridHeight else { continue }
-                    for dx in -1...1 {
-                        let x = pixelX + dx
-                        guard x >= 0, x < gridWidth else { continue }
-                        let candidateDepth = depthBuffer[y * gridWidth + x]
-                        guard candidateDepth > -Float.greatestFiniteMagnitude * 0.5 else { continue }
-                        foundDepth = true
-                        frontDepth = max(frontDepth, candidateDepth)
-                    }
-                }
-                guard foundDepth else { return false }
-                return projected.depth >= frontDepth - depthTolerance
-            }
-
-            for triangleIndex in triangles.indices where visible[triangleIndex] == 0 {
-                let triangle = triangles[triangleIndex]
-                if isSampleVisible(triangle.centroid) ||
-                    isSampleVisible(triangle.p0) ||
-                    isSampleVisible(triangle.p1) ||
-                    isSampleVisible(triangle.p2) {
-                    visible[triangleIndex] = 1
-                }
-            }
-        }
-
-        var visibleTriangleCount = 0
-        for value in visible where value != 0 {
-            visibleTriangleCount += 1
-        }
-        guard visibleTriangleCount >= max(128, triangles.count / 20) else {
-            return (
-                vertexFloatData,
-                vertexFloatData.count / (floatsPerVertex * floatByteCount),
-                vertexFloatData.count / (floatsPerTriangle * floatByteCount)
-            )
-        }
-
-        var filteredFloats = [Float]()
-        filteredFloats.reserveCapacity(visibleTriangleCount * floatsPerTriangle)
-        for triangleIndex in triangles.indices where visible[triangleIndex] != 0 {
-            let base = triangles[triangleIndex].sourceBase
-            filteredFloats.append(contentsOf: floats[base..<(base + floatsPerTriangle)])
-        }
-
-        let filteredData = filteredFloats.withUnsafeBufferPointer { buffer in
-            Data(buffer: buffer)
-        }
-        return (filteredData, filteredFloats.count / floatsPerVertex, filteredFloats.count / floatsPerTriangle)
-    }
-
     private func makeSkinSurfaceVertexBuffer(vertexFloatData: Data) -> (buffer: MTLBuffer, count: Int)? {
         makeOverlaySurfaceVertexBuffer(
             vertexFloatData: vertexFloatData,
@@ -2993,25 +2800,25 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return []
         }
 
-        let floats = vertexFloatData.withUnsafeBytes { bytes -> [Float] in
-            Array(bytes.bindMemory(to: Float.self))
-        }
-        let vertexCount = floats.count / 6
-        var positions = [SIMD3<Float>]()
-        positions.reserveCapacity(vertexCount)
-        for vertexIndex in 0..<vertexCount {
-            let base = vertexIndex * 6
-            positions.append(
-                worldPosition(
-                    forPhysicalPosition: SIMD3<Float>(
-                        floats[base],
-                        floats[base + 1],
-                        floats[base + 2]
+        return vertexFloatData.withUnsafeBytes { bytes -> [SIMD3<Float>] in
+            let floats = bytes.bindMemory(to: Float.self)
+            let vertexCount = floats.count / 6
+            var positions = [SIMD3<Float>]()
+            positions.reserveCapacity(vertexCount)
+            for vertexIndex in 0..<vertexCount {
+                let base = vertexIndex * 6
+                positions.append(
+                    worldPosition(
+                        forPhysicalPosition: SIMD3<Float>(
+                            floats[base],
+                            floats[base + 1],
+                            floats[base + 2]
+                        )
                     )
                 )
-            )
+            }
+            return positions
         }
-        return positions
     }
 
     private func centroidWorldPosition(fromSurfaceVertexFloatData vertexFloatData: Data) -> SIMD3<Float>? {
@@ -3038,33 +2845,31 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return nil
         }
 
-        let floats = vertexFloatData.withUnsafeBytes { bytes -> [Float] in
-            Array(bytes.bindMemory(to: Float.self))
-        }
-        let vertexCount = floats.count / 6
+        let vertexCount = vertexFloatData.count / (floatStride * 6)
         guard vertexCount > 0 else { return nil }
 
-        var vertices = [Metal3DOverlayVertex]()
-        vertices.reserveCapacity(vertexCount)
-        for vertexIndex in 0..<vertexCount {
-            let base = vertexIndex * 6
-            let physicalPosition = SIMD3<Float>(floats[base], floats[base + 1], floats[base + 2])
-            let rawNormal = SIMD3<Float>(floats[base + 3], floats[base + 4], floats[base + 5])
-            let normal = simd_length_squared(rawNormal) > 0.000001 ? simd_normalize(rawNormal) : SIMD3<Float>(0, 0, 1)
-            vertices.append(
-                Metal3DOverlayVertex(
+        let length = MemoryLayout<Metal3DOverlayVertex>.stride * vertexCount
+        guard let buffer = deviceRef.makeBuffer(length: length, options: .storageModeShared) else {
+            return nil
+        }
+
+        vertexFloatData.withUnsafeBytes { bytes in
+            let floats = bytes.bindMemory(to: Float.self)
+            let vertices = buffer.contents().bindMemory(to: Metal3DOverlayVertex.self, capacity: vertexCount)
+            for vertexIndex in 0..<vertexCount {
+                let base = vertexIndex * 6
+                let physicalPosition = SIMD3<Float>(floats[base], floats[base + 1], floats[base + 2])
+                let rawNormal = SIMD3<Float>(floats[base + 3], floats[base + 4], floats[base + 5])
+                let normal = simd_length_squared(rawNormal) > 0.000001 ? simd_normalize(rawNormal) : SIMD3<Float>(0, 0, 1)
+                vertices[vertexIndex] = Metal3DOverlayVertex(
                     position: worldPosition(forPhysicalPosition: physicalPosition),
                     normal: normal,
                     color: color
                 )
-            )
+            }
         }
 
-        let length = MemoryLayout<Metal3DOverlayVertex>.stride * vertices.count
-        guard let buffer = deviceRef.makeBuffer(bytes: vertices, length: length, options: .storageModeShared) else {
-            return nil
-        }
-        return (buffer, vertices.count)
+        return (buffer, vertexCount)
     }
 
     private func makeSkinMaskTexture(mask: [UInt8]) -> MTLTexture? {

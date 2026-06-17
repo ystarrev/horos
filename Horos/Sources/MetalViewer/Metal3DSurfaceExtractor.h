@@ -37,6 +37,14 @@ NS_ASSUME_NONNULL_BEGIN
                                                                 threshold:(float)threshold
                                                           openMinimumZCap:(BOOL)openMinimumZCap;
 
++ (nullable NSData *)filterSurfaceVertexFloatDataByRotatingVisibility:(NSData *)vertexFloatData
+                                                              spacingX:(float)spacingX
+                                                              spacingY:(float)spacingY
+                                                              spacingZ:(float)spacingZ
+                                                           vertexCount:(NSInteger * _Nullable)vertexCount
+                                                         triangleCount:(NSInteger * _Nullable)triangleCount
+    NS_SWIFT_NAME(filterSurfaceVertexFloatData(byRotatingVisibility:spacingX:spacingY:spacingZ:vertexCount:triangleCount:));
+
 @end
 
 NS_ASSUME_NONNULL_END

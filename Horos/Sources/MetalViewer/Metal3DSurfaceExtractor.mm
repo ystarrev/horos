@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <dispatch/dispatch.h>
 #include <limits>
 #include <stdint.h>
 
@@ -105,6 +106,121 @@ static NSData *Metal3DVertexFloatDataByRemovingZCropCaps(NSData *vertexFloatData
     return filteredData;
 }
 
+static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
+                                                       id<MTLCommandQueue> *commandQueueOut,
+                                                       id<MTLComputePipelineState> *surfaceMaskCountPipelineOut,
+                                                       id<MTLComputePipelineState> *marchingCubesCountPipelineOut,
+                                                       id<MTLComputePipelineState> *marchingCubesEmitPipelineOut,
+                                                       id<MTLComputePipelineState> *visibilityDepthPipelineOut,
+                                                       id<MTLComputePipelineState> *visibilityMarkPipelineOut)
+{
+    static id<MTLDevice> cachedDevice = nil;
+    static id<MTLCommandQueue> cachedCommandQueue = nil;
+    static id<MTLComputePipelineState> cachedSurfaceMaskCountPipeline = nil;
+    static id<MTLComputePipelineState> cachedMarchingCubesCountPipeline = nil;
+    static id<MTLComputePipelineState> cachedMarchingCubesEmitPipeline = nil;
+    static id<MTLComputePipelineState> cachedVisibilityDepthPipeline = nil;
+    static id<MTLComputePipelineState> cachedVisibilityMarkPipeline = nil;
+    static NSString *initializationFailure = nil;
+    static dispatch_once_t onceToken;
+
+    dispatch_once(&onceToken, ^{
+        cachedDevice = MTLCreateSystemDefaultDevice();
+        cachedCommandQueue = [cachedDevice newCommandQueue];
+        id<MTLLibrary> library = [cachedDevice newDefaultLibrary];
+        if (cachedDevice == nil || cachedCommandQueue == nil || library == nil) {
+            initializationFailure = @"Metal device, command queue, or default library unavailable";
+            return;
+        }
+
+        id<MTLFunction> surfaceMaskCountFunction = [library newFunctionWithName:@"metal3DCountSurfaceFaces"];
+        id<MTLFunction> marchingCubesCountFunction = [library newFunctionWithName:@"metal3DCountSurfaceMarchingCubes"];
+        id<MTLFunction> marchingCubesEmitFunction = [library newFunctionWithName:@"metal3DEmitSurfaceMarchingCubes"];
+        if (surfaceMaskCountFunction == nil || marchingCubesCountFunction == nil || marchingCubesEmitFunction == nil) {
+            initializationFailure = @"Metal surface extraction functions unavailable";
+            return;
+        }
+
+        NSError *error = nil;
+        cachedSurfaceMaskCountPipeline = [cachedDevice newComputePipelineStateWithFunction:surfaceMaskCountFunction error:&error];
+        if (cachedSurfaceMaskCountPipeline == nil) {
+            initializationFailure = [[NSString alloc] initWithFormat:@"Metal surface-mask pipeline unavailable: %@", error];
+            return;
+        }
+
+        error = nil;
+        cachedMarchingCubesCountPipeline = [cachedDevice newComputePipelineStateWithFunction:marchingCubesCountFunction error:&error];
+        if (cachedMarchingCubesCountPipeline == nil) {
+            initializationFailure = [[NSString alloc] initWithFormat:@"Metal marching-cubes count pipeline unavailable: %@", error];
+            return;
+        }
+
+        error = nil;
+        cachedMarchingCubesEmitPipeline = [cachedDevice newComputePipelineStateWithFunction:marchingCubesEmitFunction error:&error];
+        if (cachedMarchingCubesEmitPipeline == nil) {
+            initializationFailure = [[NSString alloc] initWithFormat:@"Metal marching-cubes emit pipeline unavailable: %@", error];
+            return;
+        }
+
+        id<MTLFunction> visibilityDepthFunction = [library newFunctionWithName:@"metal3DSplatSurfaceVisibilityDepth"];
+        id<MTLFunction> visibilityMarkFunction = [library newFunctionWithName:@"metal3DMarkSurfaceVisibility"];
+        if (visibilityDepthFunction != nil && visibilityMarkFunction != nil) {
+            error = nil;
+            cachedVisibilityDepthPipeline = [cachedDevice newComputePipelineStateWithFunction:visibilityDepthFunction error:&error];
+            if (cachedVisibilityDepthPipeline == nil) {
+                NSLog(@"Metal3DSurfaceExtractor Metal visibility-depth pipeline unavailable: %@", error);
+            }
+
+            error = nil;
+            cachedVisibilityMarkPipeline = [cachedDevice newComputePipelineStateWithFunction:visibilityMarkFunction error:&error];
+            if (cachedVisibilityMarkPipeline == nil) {
+                NSLog(@"Metal3DSurfaceExtractor Metal visibility-mark pipeline unavailable: %@", error);
+            }
+        } else {
+            NSLog(@"Metal3DSurfaceExtractor Metal visibility filter functions unavailable");
+        }
+    });
+
+    if (cachedDevice == nil ||
+        cachedCommandQueue == nil ||
+        cachedSurfaceMaskCountPipeline == nil ||
+        cachedMarchingCubesCountPipeline == nil ||
+        cachedMarchingCubesEmitPipeline == nil) {
+        if (initializationFailure != nil) {
+            NSLog(@"Metal3DSurfaceExtractor %@", initializationFailure);
+        }
+        return NO;
+    }
+
+    if ((visibilityDepthPipelineOut != nullptr && cachedVisibilityDepthPipeline == nil) ||
+        (visibilityMarkPipelineOut != nullptr && cachedVisibilityMarkPipeline == nil)) {
+        return NO;
+    }
+
+    if (deviceOut != nullptr) {
+        *deviceOut = cachedDevice;
+    }
+    if (commandQueueOut != nullptr) {
+        *commandQueueOut = cachedCommandQueue;
+    }
+    if (surfaceMaskCountPipelineOut != nullptr) {
+        *surfaceMaskCountPipelineOut = cachedSurfaceMaskCountPipeline;
+    }
+    if (marchingCubesCountPipelineOut != nullptr) {
+        *marchingCubesCountPipelineOut = cachedMarchingCubesCountPipeline;
+    }
+    if (marchingCubesEmitPipelineOut != nullptr) {
+        *marchingCubesEmitPipelineOut = cachedMarchingCubesEmitPipeline;
+    }
+    if (visibilityDepthPipelineOut != nullptr) {
+        *visibilityDepthPipelineOut = cachedVisibilityDepthPipeline;
+    }
+    if (visibilityMarkPipelineOut != nullptr) {
+        *visibilityMarkPipelineOut = cachedVisibilityMarkPipeline;
+    }
+    return YES;
+}
+
 @interface Metal3DSurfaceExtractor ()
 
 + (nullable Metal3DSurfaceExtractionResult *)extractSkinSurfaceWithMetalFromVolume:(NSData *)volumeData
@@ -160,6 +276,234 @@ static NSData *Metal3DVertexFloatDataByRemovingZCropCaps(NSData *vertexFloatData
                                               spacingZ:spacingZ
                                              threshold:threshold
                                        openMinimumZCap:openMinimumZCap];
+}
+
++ (nullable NSData *)filterSurfaceVertexFloatDataByRotatingVisibility:(NSData *)vertexFloatData
+                                                              spacingX:(float)spacingX
+                                                              spacingY:(float)spacingY
+                                                              spacingZ:(float)spacingZ
+                                                           vertexCount:(NSInteger * _Nullable)vertexCount
+                                                         triangleCount:(NSInteger * _Nullable)triangleCount
+{
+    const NSUInteger floatsPerVertex = 6;
+    const NSUInteger floatsPerTriangle = floatsPerVertex * 3;
+    const NSUInteger bytesPerTriangle = floatsPerTriangle * sizeof(float);
+    if (vertexCount != nullptr) {
+        *vertexCount = (NSInteger)(vertexFloatData.length / (floatsPerVertex * sizeof(float)));
+    }
+    if (triangleCount != nullptr) {
+        *triangleCount = (NSInteger)(vertexFloatData.length / bytesPerTriangle);
+    }
+    if (vertexFloatData.length < bytesPerTriangle ||
+        vertexFloatData.length % bytesPerTriangle != 0) {
+        return vertexFloatData;
+    }
+
+    const NSUInteger sourceTriangleCount = vertexFloatData.length / bytesPerTriangle;
+    if (sourceTriangleCount == 0 || sourceTriangleCount > UINT32_MAX) {
+        return vertexFloatData;
+    }
+
+    const float *floats = (const float *)vertexFloatData.bytes;
+    float minimumX = std::numeric_limits<float>::max();
+    float minimumY = std::numeric_limits<float>::max();
+    float minimumZ = std::numeric_limits<float>::max();
+    float maximumX = -std::numeric_limits<float>::max();
+    float maximumY = -std::numeric_limits<float>::max();
+    float maximumZ = -std::numeric_limits<float>::max();
+    const NSUInteger sourceVertexCount = sourceTriangleCount * 3;
+    for (NSUInteger vertexIndex = 0; vertexIndex < sourceVertexCount; vertexIndex++) {
+        const NSUInteger base = vertexIndex * floatsPerVertex;
+        const float x = floats[base + 0];
+        const float y = floats[base + 1];
+        const float z = floats[base + 2];
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+            continue;
+        }
+        minimumX = std::min(minimumX, x);
+        minimumY = std::min(minimumY, y);
+        minimumZ = std::min(minimumZ, z);
+        maximumX = std::max(maximumX, x);
+        maximumY = std::max(maximumY, y);
+        maximumZ = std::max(maximumZ, z);
+    }
+
+    if (!std::isfinite(minimumX) || !std::isfinite(minimumY) || !std::isfinite(minimumZ) ||
+        maximumX <= minimumX || maximumY <= minimumY || maximumZ <= minimumZ) {
+        return vertexFloatData;
+    }
+
+    const float xyCenterX = (minimumX + maximumX) * 0.5f;
+    const float xyCenterY = (minimumY + maximumY) * 0.5f;
+    float xyRadius = 1.0f;
+    for (NSUInteger vertexIndex = 0; vertexIndex < sourceVertexCount; vertexIndex++) {
+        const NSUInteger base = vertexIndex * floatsPerVertex;
+        xyRadius = std::max(xyRadius, hypotf(floats[base + 0] - xyCenterX, floats[base + 1] - xyCenterY));
+    }
+    xyRadius = std::max(xyRadius + 4.0f, 1.0f);
+
+    minimumZ -= 4.0f;
+    maximumZ += 4.0f;
+    const float zRange = std::max(maximumZ - minimumZ, 1.0f);
+    const float minSpacing = std::min(std::min(fabsf(spacingX), fabsf(spacingY)), fabsf(spacingZ));
+    const float maxSpacing = std::max(std::max(fabsf(spacingX), fabsf(spacingY)), fabsf(spacingZ));
+    const float visibilityPixelSize = std::max(minSpacing * 1.5f, 0.75f);
+    const uint32_t gridWidth = (uint32_t)std::min(std::max((int)ceilf((xyRadius * 2.0f) / visibilityPixelSize), 192), 384);
+    const uint32_t gridHeight = (uint32_t)std::min(std::max((int)ceilf(zRange / visibilityPixelSize), 192), 384);
+    const uint32_t viewCount = sourceTriangleCount >= 1000000 ? 48 : 72;
+    const uint32_t gridVoxelCount = gridWidth * gridHeight;
+    const uint64_t totalDepthCount64 = (uint64_t)gridVoxelCount * (uint64_t)viewCount;
+    if (totalDepthCount64 == 0 || totalDepthCount64 > UINT32_MAX) {
+        return vertexFloatData;
+    }
+
+    struct VisibilityUniforms {
+        uint32_t triangleCount;
+        uint32_t triangleBase;
+        uint32_t viewCount;
+        uint32_t gridWidth;
+        uint32_t gridHeight;
+        uint32_t gridVoxelCount;
+        float xyCenterX;
+        float xyCenterY;
+        float xyRadius;
+        float minimumZ;
+        float zRange;
+        float depthTolerance;
+    };
+    VisibilityUniforms uniforms = {
+        (uint32_t)sourceTriangleCount,
+        0,
+        viewCount,
+        gridWidth,
+        gridHeight,
+        gridVoxelCount,
+        xyCenterX,
+        xyCenterY,
+        xyRadius,
+        minimumZ,
+        zRange,
+        std::max(maxSpacing * 4.0f, 6.0f)
+    };
+
+    id<MTLDevice> device = nil;
+    id<MTLCommandQueue> commandQueue = nil;
+    id<MTLComputePipelineState> visibilityDepthPipeline = nil;
+    id<MTLComputePipelineState> visibilityMarkPipeline = nil;
+    if (!Metal3DSurfaceExtractorGetComputeResources(&device,
+                                                    &commandQueue,
+                                                    nullptr,
+                                                    nullptr,
+                                                    nullptr,
+                                                    &visibilityDepthPipeline,
+                                                    &visibilityMarkPipeline)) {
+        return nil;
+    }
+
+    id<MTLBuffer> vertexBuffer = [device newBufferWithBytes:vertexFloatData.bytes
+                                                     length:vertexFloatData.length
+                                                    options:MTLResourceStorageModeShared];
+    id<MTLBuffer> depthBuffer = [device newBufferWithLength:(NSUInteger)totalDepthCount64 * sizeof(uint32_t)
+                                                    options:MTLResourceStorageModeShared];
+    id<MTLBuffer> visibleBuffer = [device newBufferWithLength:sourceTriangleCount * sizeof(uint32_t)
+                                                      options:MTLResourceStorageModeShared];
+    if (vertexBuffer == nil || depthBuffer == nil || visibleBuffer == nil) {
+        return nil;
+    }
+    std::memset(depthBuffer.contents, 0, (NSUInteger)totalDepthCount64 * sizeof(uint32_t));
+    std::memset(visibleBuffer.contents, 0, sourceTriangleCount * sizeof(uint32_t));
+
+    const CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
+    id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+    if (commandBuffer == nil) {
+        return nil;
+    }
+
+    const NSUInteger trianglesPerDispatch = 262144;
+    const NSUInteger depthThreadWidth = std::max<NSUInteger>(visibilityDepthPipeline.threadExecutionWidth, 1);
+    const MTLSize depthThreadgroup = MTLSizeMake(std::min<NSUInteger>(depthThreadWidth, 256), 1, 1);
+    for (NSUInteger triangleBase = 0; triangleBase < sourceTriangleCount; triangleBase += trianglesPerDispatch) {
+        const NSUInteger chunkTriangleCount = std::min<NSUInteger>(trianglesPerDispatch, sourceTriangleCount - triangleBase);
+        VisibilityUniforms chunkUniforms = uniforms;
+        chunkUniforms.triangleBase = (uint32_t)triangleBase;
+        id<MTLComputeCommandEncoder> depthEncoder = [commandBuffer computeCommandEncoder];
+        if (depthEncoder == nil) {
+            return nil;
+        }
+        [depthEncoder setComputePipelineState:visibilityDepthPipeline];
+        [depthEncoder setBuffer:vertexBuffer offset:0 atIndex:0];
+        [depthEncoder setBuffer:depthBuffer offset:0 atIndex:1];
+        [depthEncoder setBytes:&chunkUniforms length:sizeof(chunkUniforms) atIndex:2];
+        const MTLSize depthThreads = MTLSizeMake(chunkTriangleCount, viewCount, 1);
+        [depthEncoder dispatchThreads:depthThreads threadsPerThreadgroup:depthThreadgroup];
+        [depthEncoder endEncoding];
+    }
+
+    const NSUInteger markThreadWidth = std::max<NSUInteger>(visibilityMarkPipeline.threadExecutionWidth, 1);
+    const MTLSize markThreadgroup = MTLSizeMake(std::min<NSUInteger>(markThreadWidth, 256), 1, 1);
+    for (NSUInteger triangleBase = 0; triangleBase < sourceTriangleCount; triangleBase += trianglesPerDispatch) {
+        const NSUInteger chunkTriangleCount = std::min<NSUInteger>(trianglesPerDispatch, sourceTriangleCount - triangleBase);
+        VisibilityUniforms chunkUniforms = uniforms;
+        chunkUniforms.triangleBase = (uint32_t)triangleBase;
+        id<MTLComputeCommandEncoder> markEncoder = [commandBuffer computeCommandEncoder];
+        if (markEncoder == nil) {
+            return nil;
+        }
+        [markEncoder setComputePipelineState:visibilityMarkPipeline];
+        [markEncoder setBuffer:vertexBuffer offset:0 atIndex:0];
+        [markEncoder setBuffer:depthBuffer offset:0 atIndex:1];
+        [markEncoder setBuffer:visibleBuffer offset:0 atIndex:2];
+        [markEncoder setBytes:&chunkUniforms length:sizeof(chunkUniforms) atIndex:3];
+        const MTLSize markThreads = MTLSizeMake(chunkTriangleCount, viewCount, 1);
+        [markEncoder dispatchThreads:markThreads threadsPerThreadgroup:markThreadgroup];
+        [markEncoder endEncoding];
+    }
+
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+    if (commandBuffer.status == MTLCommandBufferStatusError) {
+        NSLog(@"Metal3DSurfaceExtractor visibility filter failed: %@", commandBuffer.error);
+        return nil;
+    }
+
+    const uint32_t *visibleFlags = (const uint32_t *)visibleBuffer.contents;
+    NSUInteger visibleTriangleCount = 0;
+    for (NSUInteger triangleIndex = 0; triangleIndex < sourceTriangleCount; triangleIndex++) {
+        visibleTriangleCount += visibleFlags[triangleIndex] != 0 ? 1 : 0;
+    }
+    NSLog(@"HOROS_METAL_TIMING Metal3DVolumeRenderer rotatingVisibilityMetal views=%u triangles=%lu visible=%lu grid=%ux%u %.3f s",
+          viewCount,
+          (unsigned long)sourceTriangleCount,
+          (unsigned long)visibleTriangleCount,
+          gridWidth,
+          gridHeight,
+          CFAbsoluteTimeGetCurrent() - start);
+
+    if (visibleTriangleCount < std::max<NSUInteger>(128, sourceTriangleCount / 20)) {
+        return vertexFloatData;
+    }
+
+    NSMutableData *filteredData = [NSMutableData dataWithLength:visibleTriangleCount * bytesPerTriangle];
+    uint8_t *destination = (uint8_t *)filteredData.mutableBytes;
+    const uint8_t *source = (const uint8_t *)vertexFloatData.bytes;
+    NSUInteger outputTriangleIndex = 0;
+    for (NSUInteger triangleIndex = 0; triangleIndex < sourceTriangleCount; triangleIndex++) {
+        if (visibleFlags[triangleIndex] == 0) {
+            continue;
+        }
+        std::memcpy(destination + outputTriangleIndex * bytesPerTriangle,
+                    source + triangleIndex * bytesPerTriangle,
+                    bytesPerTriangle);
+        outputTriangleIndex++;
+    }
+
+    if (vertexCount != nullptr) {
+        *vertexCount = (NSInteger)(visibleTriangleCount * 3);
+    }
+    if (triangleCount != nullptr) {
+        *triangleCount = (NSInteger)visibleTriangleCount;
+    }
+    return filteredData;
 }
 
 + (nullable Metal3DSurfaceExtractionResult *)extractSkinSurfaceWithMetalFromVolume:(NSData *)volumeData
@@ -219,36 +563,18 @@ static NSData *Metal3DVertexFloatDataByRemovingZCropCaps(NSData *vertexFloatData
         threshold
     };
 
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    id<MTLCommandQueue> commandQueue = [device newCommandQueue];
-    id<MTLLibrary> library = [device newDefaultLibrary];
-    if (device == nil || commandQueue == nil || library == nil) {
-        return nil;
-    }
-
-    NSError *error = nil;
-    id<MTLFunction> surfaceMaskCountFunction = [library newFunctionWithName:@"metal3DCountSurfaceFaces"];
-    id<MTLFunction> marchingCubesCountFunction = [library newFunctionWithName:@"metal3DCountSurfaceMarchingCubes"];
-    id<MTLFunction> marchingCubesEmitFunction = [library newFunctionWithName:@"metal3DEmitSurfaceMarchingCubes"];
-    if (surfaceMaskCountFunction == nil || marchingCubesCountFunction == nil || marchingCubesEmitFunction == nil) {
-        return nil;
-    }
-
-    id<MTLComputePipelineState> surfaceMaskCountPipeline = [device newComputePipelineStateWithFunction:surfaceMaskCountFunction error:&error];
-    if (surfaceMaskCountPipeline == nil) {
-        NSLog(@"Metal3DSurfaceExtractor Metal surface-mask pipeline unavailable: %@", error);
-        return nil;
-    }
-    error = nil;
-    id<MTLComputePipelineState> marchingCubesCountPipeline = [device newComputePipelineStateWithFunction:marchingCubesCountFunction error:&error];
-    if (marchingCubesCountPipeline == nil) {
-        NSLog(@"Metal3DSurfaceExtractor Metal marching-cubes count pipeline unavailable: %@", error);
-        return nil;
-    }
-    error = nil;
-    id<MTLComputePipelineState> marchingCubesEmitPipeline = [device newComputePipelineStateWithFunction:marchingCubesEmitFunction error:&error];
-    if (marchingCubesEmitPipeline == nil) {
-        NSLog(@"Metal3DSurfaceExtractor Metal marching-cubes emit pipeline unavailable: %@", error);
+    id<MTLDevice> device = nil;
+    id<MTLCommandQueue> commandQueue = nil;
+    id<MTLComputePipelineState> surfaceMaskCountPipeline = nil;
+    id<MTLComputePipelineState> marchingCubesCountPipeline = nil;
+    id<MTLComputePipelineState> marchingCubesEmitPipeline = nil;
+    if (!Metal3DSurfaceExtractorGetComputeResources(&device,
+                                                    &commandQueue,
+                                                    &surfaceMaskCountPipeline,
+                                                    &marchingCubesCountPipeline,
+                                                    &marchingCubesEmitPipeline,
+                                                    nullptr,
+                                                    nullptr)) {
         return nil;
     }
 

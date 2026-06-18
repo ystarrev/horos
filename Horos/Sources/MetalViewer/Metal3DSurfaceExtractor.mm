@@ -350,7 +350,7 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
     const float visibilityPixelSize = std::max(minSpacing * 1.5f, 0.75f);
     const uint32_t gridWidth = (uint32_t)std::min(std::max((int)ceilf((xyRadius * 2.0f) / visibilityPixelSize), 192), 384);
     const uint32_t gridHeight = (uint32_t)std::min(std::max((int)ceilf(zRange / visibilityPixelSize), 192), 384);
-    const uint32_t viewCount = sourceTriangleCount >= 1000000 ? 48 : 72;
+    const uint32_t viewCount = 72;
     const uint32_t gridVoxelCount = gridWidth * gridHeight;
     const uint64_t totalDepthCount64 = (uint64_t)gridVoxelCount * (uint64_t)viewCount;
     if (totalDepthCount64 == 0 || totalDepthCount64 > UINT32_MAX) {

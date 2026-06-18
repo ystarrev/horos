@@ -802,12 +802,21 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         NSDictionary* resolvedTXTDictionary = nil;
         @try
         {
+            NSDictionary *rawTXTDictionary = HorosSourceTXTDictionaryFromRecordData(service.TXTRecordData);
             if ([source0 isKindOfClass:[PhoneVolumeRenderNodeIdentifier class]])
                 resolvedTXTDictionary = HorosSourceTXTDictionaryFromRecordData(service.TXTRecordData);
             else if ([source0 isKindOfClass:[RemoteDatabaseNodeIdentifier class]])
                 resolvedTXTDictionary = [BonjourPublisher dictionaryFromXTRecordData:service.TXTRecordData];
             else
+            {
                 resolvedTXTDictionary = [DCMNetServiceDelegate DICOMNodeInfoFromTXTRecordData:service.TXTRecordData];
+                if (![resolvedTXTDictionary objectForKey:@"UID"] && [rawTXTDictionary objectForKey:@"UID"])
+                {
+                    NSMutableDictionary *mergedTXTDictionary = [NSMutableDictionary dictionaryWithDictionary:resolvedTXTDictionary ? resolvedTXTDictionary : [NSDictionary dictionary]];
+                    [mergedTXTDictionary setObject:[rawTXTDictionary objectForKey:@"UID"] forKey:@"UID"];
+                    resolvedTXTDictionary = mergedTXTDictionary;
+                }
+            }
 
             if (![source0 isKindOfClass:[PhoneVolumeRenderNodeIdentifier class]] && [[resolvedTXTDictionary objectForKey:@"UID"] isEqualToString:[AppController UID]])
             {

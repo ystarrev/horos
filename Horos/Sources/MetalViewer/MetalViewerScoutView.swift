@@ -20,8 +20,8 @@ private enum MetalViewerScoutLayout {
     static let fallbackThumbnailWidth: CGFloat = 128
     static let thumbnailAspectRatio: CGFloat = 1.0
     static let thumbnailInset: CGFloat = 4
-    static let studySeparatorSpacing: CGFloat = 4
-    static let studySeparatorThickness: CGFloat = 2
+    static let studySeparatorSpacing: CGFloat = 0
+    static let studySeparatorThickness: CGFloat = 10
 }
 
 extension NSPasteboard.PasteboardType {

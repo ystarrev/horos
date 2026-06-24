@@ -19487,14 +19487,16 @@ restart:
     
     // Set up toolbar properties: Allow customization, give a default display mode.
     [toolbar setAllowsUserCustomization: YES];
-    [toolbar setAutosavesConfiguration: NO];
     //    [toolbar setDisplayMode: NSToolbarDisplayModeIconOnly];
     
     // We are the delegate
     [toolbar setDelegate: self];
+    [toolbar setAutosavesConfiguration: YES];
     
     // Attach the toolbar to the document window 
     [self.window setToolbar: toolbar];
+    if( [self.window respondsToSelector: @selector(setTitleVisibility:)] )
+        [self.window setTitleVisibility: NSWindowTitleHidden];
     [self.window setShowsToolbarButton:NO];
     [[self.window toolbar] setVisible: YES];
     [self performSelector:@selector(removeForbiddenDatabaseToolbarItems) withObject:nil afterDelay:0.0];
@@ -20891,13 +20893,25 @@ restart:
         NSManagedObject *aFile = [databaseOutline itemAtRow:[databaseOutline selectedRow]];
         
         if( aFile)
-        {
-            if([[aFile valueForKey:@"type"] isEqualToString:@"Study"])
-                [self setSearchString: [aFile valueForKey:@"name"]];
-            else
-                [self setSearchString: [aFile valueForKeyPath:@"study.name"]];
-        }
+            [self setSearchString: [self patientNameForDisplayOnlyThisPatientItem: aFile]];
     }
+}
+
+- (NSString*) patientNameForDisplayOnlyThisPatientItem: (id)item
+{
+    if( item == nil)
+        return nil;
+
+    NSString *patientName = nil;
+    if( [[item valueForKey: @"type"] isEqualToString: @"Study"])
+        patientName = [item valueForKey: @"name"];
+    else
+        patientName = [item valueForKeyPath: @"study.name"];
+
+    if( patientName.length == 0 && [item isKindOfClass: [DicomStudy class]])
+        patientName = [item valueForKey: @"name"];
+
+    return patientName;
 }
 
 - (void)setFilterPredicate: (NSPredicate *)predicate description: (NSString*)desc
@@ -21110,6 +21124,26 @@ restart:
 
 // Comparisons
 // Finding Comparisons
+- (NSArray *)studiesForDisplayOnlyThisPatientMatchingStudy:(id)study
+{
+    if( study == nil || self.database == nil)
+        return nil;
+
+    NSString *patientName = [self patientNameForDisplayOnlyThisPatientItem: study];
+    if( patientName.length == 0)
+        return nil;
+
+    NSPredicate *predicate = [self patientsnamePredicate: patientName];
+    if( predicate == nil)
+        return nil;
+
+    NSArray *studies = [self.database objectsForEntity:self.database.studyEntity predicate:predicate];
+    if( studies.count == 0)
+        return nil;
+
+    return [studies sortedArrayUsingDescriptors: [NSArray arrayWithObject: [NSSortDescriptor sortDescriptorWithKey: @"date" ascending: NO]]];
+}
+
 - (NSArray *)relatedStudiesForStudy: (id)study
 {
     NSManagedObjectModel	*model = self.database.managedObjectModel;

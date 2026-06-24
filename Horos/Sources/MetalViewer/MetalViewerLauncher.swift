@@ -510,16 +510,7 @@ final class MetalViewerLauncher: NSObject {
         refreshObjectGraphAfterImport(currentImageObject)
 
         let browser = BrowserController.currentBrowser()
-        let currentPatientUID = currentStudy.patientUID ?? ""
-
-        let relatedStudies: [DicomStudy]
-        if let comparativeStudies = browser?.comparativeStudies as? [Any], currentPatientUID.isEmpty == false {
-            relatedStudies = comparativeStudies.compactMap { $0 as? DicomStudy }.filter {
-                ($0.patientUID ?? "").caseInsensitiveCompare(currentPatientUID) == .orderedSame
-            }
-        } else {
-            relatedStudies = (currentStudy.perform(NSSelectorFromString("studiesForThisPatient"))?.takeUnretainedValue() as? [DicomStudy]) ?? [currentStudy]
-        }
+        let relatedStudies = databaseRelatedStudies(for: currentStudy, browser: browser)
 
         var uniqueStudies = relatedStudies
         if uniqueStudies.contains(where: { ($0.studyInstanceUID ?? "") == (currentStudy.studyInstanceUID ?? "") }) == false {
@@ -610,6 +601,31 @@ final class MetalViewerLauncher: NSObject {
         }
 
         return MetalViewerStudy(title: studyTitle, series: flattenedSeries, initialSeriesIdentifier: currentSeriesID)
+    }
+
+    private class func databaseRelatedStudies(for currentStudy: DicomStudy, browser: BrowserController?) -> [DicomStudy] {
+        if let browser,
+           let displayOnlyThisPatientStudies = browser.perform(NSSelectorFromString("studiesForDisplayOnlyThisPatientMatchingStudy:"), with: currentStudy)?.takeUnretainedValue() as? [DicomStudy],
+           displayOnlyThisPatientStudies.isEmpty == false {
+            return displayOnlyThisPatientStudies
+        }
+
+        let currentPatientUID = currentStudy.patientUID ?? ""
+        guard currentPatientUID.isEmpty == false else { return [currentStudy] }
+
+        if let browser,
+           let comparativePatientUID = browser.comparativePatientUID,
+           comparativePatientUID.compare(currentPatientUID, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) == .orderedSame,
+           let comparativeStudies = browser.comparativeStudies as? [Any] {
+            return comparativeStudies.compactMap { $0 as? DicomStudy }
+        }
+
+        if let browser,
+           let studies = browser.perform(NSSelectorFromString("relatedStudiesForStudy:"), with: currentStudy)?.takeUnretainedValue() as? [DicomStudy] {
+            return studies
+        }
+
+        return [currentStudy]
     }
 
     private class func refreshObjectGraphAfterImport(_ currentImageObject: NSManagedObject) {

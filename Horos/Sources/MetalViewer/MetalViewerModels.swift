@@ -1,6 +1,7 @@
 import AppKit
 import Dispatch
 import Foundation
+import Metal
 import simd
 
 enum MetalViewerMouseButton: Int, Hashable {
@@ -373,6 +374,256 @@ struct MetalViewerWindowLevel: Equatable {
 struct MetalViewerWindowLevelState {
     var defaultWindow: MetalViewerWindowLevel?
     var customWindow: MetalViewerWindowLevel?
+}
+
+final class MetalSeriesTextureCache {
+    final class Entry {
+        let key: String
+        let texture: MTLTexture
+        let dimensions: SIMD3<Int>
+        let byteCount: Int
+
+        init(key: String, texture: MTLTexture, dimensions: SIMD3<Int>) {
+            self.key = key
+            self.texture = texture
+            self.dimensions = dimensions
+            self.byteCount = max(dimensions.x, 1) * max(dimensions.y, 1) * max(dimensions.z, 1) * MemoryLayout<Float>.stride
+        }
+    }
+
+    static let shared = MetalSeriesTextureCache()
+
+    private let lock = NSLock()
+    private let buildQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "org.horos.metalviewer.series-texture-cache"
+        queue.qualityOfService = .userInitiated
+        queue.maxConcurrentOperationCount = 1
+        return queue
+    }()
+    private let maximumEntryCount = 3
+    private let maximumCachedBytes = 1_500_000_000
+    private var entries: [String: Entry] = [:]
+    private var accessOrder: [String] = []
+    private var inFlightCompletions: [String: [(Entry?) -> Void]] = [:]
+    private var cachedByteCount = 0
+
+    private init() {}
+
+    func key(for pixList: [DCMPix], device: MTLDevice) -> String? {
+        guard pixList.isEmpty == false,
+              let dimensionPix = pixList.first(where: { Int($0.pwidth) > 0 && Int($0.pheight) > 0 }) else {
+            return nil
+        }
+
+        let width = Int(dimensionPix.pwidth)
+        let height = Int(dimensionPix.pheight)
+        guard width > 0, height > 0 else { return nil }
+
+        let deviceKey: String
+        if #available(macOS 10.13, *) {
+            deviceKey = "\(device.registryID)"
+        } else {
+            deviceKey = device.name
+        }
+        var components: [String] = [
+            "device=\(deviceKey)",
+            "size=\(width)x\(height)x\(pixList.count)"
+        ]
+        components.reserveCapacity(pixList.count + 2)
+
+        for (index, pix) in pixList.enumerated() {
+            let sourcePath = nonEmptyString(pix.value(forKey: "srcFile") as? String)
+                ?? nonEmptyString(pix.srcFile)
+                ?? "object:\(ObjectIdentifier(pix))"
+            let frameNumber = (pix.value(forKey: "frameNo") as? NSNumber)?.intValue ?? 0
+            components.append("\(index):\(sourcePath):f\(frameNumber)")
+        }
+
+        return components.joined(separator: "|")
+    }
+
+    func cachedEntry(for pixList: [DCMPix], device: MTLDevice) -> Entry? {
+        guard let key = key(for: pixList, device: device) else { return nil }
+
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let entry = entries[key] else { return nil }
+        markAccessedLocked(key)
+        return entry
+    }
+
+    func requestEntry(for pixList: [DCMPix], device: MTLDevice, completion: @escaping (Entry?) -> Void) {
+        guard let key = key(for: pixList, device: device) else {
+            DispatchQueue.main.async {
+                completion(nil)
+            }
+            return
+        }
+
+        lock.lock()
+        if let entry = entries[key] {
+            markAccessedLocked(key)
+            lock.unlock()
+            DispatchQueue.main.async {
+                completion(entry)
+            }
+            return
+        }
+
+        if inFlightCompletions[key] != nil {
+            inFlightCompletions[key]?.append(completion)
+            lock.unlock()
+            return
+        }
+
+        inFlightCompletions[key] = [completion]
+        lock.unlock()
+
+        let buildPixList = pixList
+        buildQueue.addOperation { [weak self] in
+            guard let self else { return }
+            let entry = autoreleasepool {
+                self.buildEntry(key: key, pixList: buildPixList, device: device)
+            }
+            self.finishRequest(key: key, entry: entry)
+        }
+    }
+
+    private func buildEntry(key: String, pixList: [DCMPix], device: MTLDevice) -> Entry? {
+        guard pixList.isEmpty == false, let firstPix = pixList.first else { return nil }
+
+        let start = CFAbsoluteTimeGetCurrent()
+        firstPix.checkLoad()
+        let width = max(Int(firstPix.pwidth), 1)
+        let height = max(Int(firstPix.pheight), 1)
+        let depth = max(pixList.count, 1)
+        let dimensions = SIMD3<Int>(width, height, depth)
+
+        let descriptor = MTLTextureDescriptor()
+        descriptor.textureType = .type3D
+        descriptor.pixelFormat = .r32Float
+        descriptor.width = width
+        descriptor.height = height
+        descriptor.depth = depth
+        descriptor.mipmapLevelCount = 1
+        descriptor.usage = [.shaderRead]
+        descriptor.storageMode = .shared
+
+        guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
+
+        let pixelCount = width * height
+        let bytesPerRow = width * MemoryLayout<Float>.stride
+        let bytesPerImage = max(pixelCount, 1) * MemoryLayout<Float>.stride
+
+        for (sliceIndex, pix) in pixList.enumerated() {
+            pix.checkLoad()
+
+            guard max(Int(pix.pwidth), 1) == width,
+                  max(Int(pix.pheight), 1) == height else {
+                return nil
+            }
+
+            if pix.isRGB, let rgbSource = rgbSourcePointer(for: pix) {
+                var pixels = [Float](repeating: 0, count: pixelCount)
+                let bytes = UnsafeRawPointer(rgbSource).assumingMemoryBound(to: UInt8.self)
+                for index in 0..<pixelCount {
+                    let r = Float(bytes[index * 4 + 1])
+                    let g = Float(bytes[index * 4 + 2])
+                    let b = Float(bytes[index * 4 + 3])
+                    pixels[index] = 0.299 * r + 0.587 * g + 0.114 * b
+                }
+                pixels.withUnsafeBytes { buffer in
+                    guard let baseAddress = buffer.baseAddress else { return }
+                    texture.replace(
+                        region: MTLRegionMake3D(0, 0, sliceIndex, width, height, 1),
+                        mipmapLevel: 0,
+                        slice: 0,
+                        withBytes: baseAddress,
+                        bytesPerRow: bytesPerRow,
+                        bytesPerImage: bytesPerImage
+                    )
+                }
+            } else if let fImage = pix.fImage {
+                texture.replace(
+                    region: MTLRegionMake3D(0, 0, sliceIndex, width, height, 1),
+                    mipmapLevel: 0,
+                    slice: 0,
+                    withBytes: fImage,
+                    bytesPerRow: bytesPerRow,
+                    bytesPerImage: bytesPerImage
+                )
+            } else {
+                return nil
+            }
+        }
+
+        print(String(
+            format: "HOROS_METAL_TIMING MetalSeriesTextureCache build %dx%dx%d %.3f s",
+            width,
+            height,
+            depth,
+            CFAbsoluteTimeGetCurrent() - start
+        ))
+        return Entry(key: key, texture: texture, dimensions: dimensions)
+    }
+
+    private func finishRequest(key: String, entry: Entry?) {
+        lock.lock()
+        if let entry {
+            entries[key] = entry
+            cachedByteCount += entry.byteCount
+            markAccessedLocked(key)
+            trimLocked(keeping: key)
+        }
+        let completions = inFlightCompletions.removeValue(forKey: key) ?? []
+        lock.unlock()
+
+        DispatchQueue.main.async {
+            for completion in completions {
+                completion(entry)
+            }
+        }
+    }
+
+    private func markAccessedLocked(_ key: String) {
+        accessOrder.removeAll { $0 == key }
+        accessOrder.append(key)
+    }
+
+    private func trimLocked(keeping newestKey: String) {
+        while accessOrder.count > maximumEntryCount || (cachedByteCount > maximumCachedBytes && accessOrder.count > 1) {
+            guard let key = accessOrder.first else { return }
+            if key == newestKey, accessOrder.count == 1 {
+                return
+            }
+            accessOrder.removeFirst()
+            if let removed = entries.removeValue(forKey: key) {
+                cachedByteCount -= removed.byteCount
+            }
+        }
+    }
+
+    private func nonEmptyString(_ string: String?) -> String? {
+        guard let trimmed = string?.trimmingCharacters(in: .whitespacesAndNewlines),
+              trimmed.isEmpty == false else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private func rgbSourcePointer(for pix: DCMPix) -> UnsafeMutableRawPointer? {
+        if let baseAddr = pix.baseAddr {
+            return UnsafeMutableRawPointer(baseAddr)
+        }
+
+        if let fImage = pix.fImage {
+            return UnsafeMutableRawPointer(fImage)
+        }
+
+        return nil
+    }
 }
 
 final class MetalViewerSeries {

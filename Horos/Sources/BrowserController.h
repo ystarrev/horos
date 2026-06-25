@@ -137,7 +137,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     BonjourBrowser					*bonjourBrowser;
     
     IBOutlet NSSlider				*animationSlider;
-    IBOutlet NSButton				*animationCheck;
     IBOutlet NSSplitView*           _bottomSplit;
     
     IBOutlet PreviewView			*imageView;
@@ -503,7 +502,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (void)selectStudyWithObjectID:(NSManagedObjectID*)oid;
 - (BOOL) selectThisStudy: (id)study;
 
-- (void) previewPerformAnimation:(id) sender;
 - (void) matrixDisplayIcons:(id) sender;
 - (void) selectDatabaseOutline;
 

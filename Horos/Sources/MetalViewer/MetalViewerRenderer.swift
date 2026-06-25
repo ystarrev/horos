@@ -353,6 +353,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var overlayPixList: [DCMPix] = []
     private var baseTexture: MTLTexture?
     private var baseVolumeTexture: MTLTexture?
+    private var stackVolumeTextureEntry: MetalSeriesTextureCache.Entry?
+    private var requestedStackVolumeKey: String?
     private var overlayVolumeTexture: MTLTexture?
     private var baseVolumeDimensions = SIMD3<Int>(repeating: 1)
     private var overlayVolumeDimensions = SIMD3<Int>(repeating: 1)
@@ -648,6 +650,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     func resetAndLoadInitialSlice() {
         currentSliceIndex = 0
         loadSlice(at: currentSliceIndex)
+        requestStackVolumeTexture()
         resetMPRPlaneToCurrentSlice()
     }
 
@@ -656,6 +659,34 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         guard mode != imageInterpolationMode else { return }
         imageInterpolationMode = mode
         stateDidChange?(stateDescription)
+    }
+
+    private func requestStackVolumeTexture() {
+        guard pixList.count > 1,
+              let key = MetalSeriesTextureCache.shared.key(for: pixList, device: deviceRef) else {
+            requestedStackVolumeKey = nil
+            stackVolumeTextureEntry = nil
+            return
+        }
+
+        guard requestedStackVolumeKey != key || stackVolumeTextureEntry == nil else { return }
+        requestedStackVolumeKey = key
+
+        if let entry = MetalSeriesTextureCache.shared.cachedEntry(for: pixList, device: deviceRef) {
+            stackVolumeTextureEntry = entry
+            stateDidChange?(stateDescription)
+            return
+        }
+
+        MetalSeriesTextureCache.shared.requestEntry(for: pixList, device: deviceRef) { [weak self] entry in
+            guard let self,
+                  self.requestedStackVolumeKey == key else {
+                return
+            }
+
+            self.stackVolumeTextureEntry = entry
+            self.stateDidChange?(self.stateDescription)
+        }
     }
 
     func setOverlayPixList(
@@ -2057,16 +2088,21 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let pix = pixList[index]
 
         pix.checkLoad()
-        pix.computePixMinPixMax()
 
         let width = max(Int(pix.pwidth), 1)
         let height = max(Int(pix.pheight), 1)
         imageAspectRatio = Float(width) * Float(max(pix.pixelSpacingX, 1)) / max(Float(height) * Float(max(pix.pixelSpacingY, 1)), 1)
 
-        guard let texture = makeTexture(for: pix) else {
-            return
+        if stackDisplayUsesSharedVolumeTexture() {
+            if baseTexture == nil {
+                baseTexture = makeTexture(for: pix)
+            }
+        } else {
+            guard let texture = makeTexture(for: pix) else {
+                return
+            }
+            baseTexture = texture
         }
-        baseTexture = texture
 
         if let customWindow = customSeriesWindowLevel {
             applyBaseWindowLevel(customWindow)
@@ -2081,7 +2117,6 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         if let overlayPix = currentOverlayPix {
             overlayPix.checkLoad()
-            overlayPix.computePixMinPixMax()
 
             if let customWindow = overlayCustomSeriesWindowLevel {
                 applyOverlayWindowLevel(customWindow)
@@ -4486,6 +4521,47 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         overlayVolumeTexture != nil && baseVolumeTexture != nil && baseUsesGantryTiltCorrectedVolume
     }
 
+    private func stackDisplayUsesSharedVolumeTexture() -> Bool {
+        guard overlayVolumeTexture == nil,
+              let stackVolumeTextureEntry,
+              let currentPix,
+              currentSliceIndex >= 0,
+              currentSliceIndex < stackVolumeTextureEntry.dimensions.z else {
+            return false
+        }
+
+        return stackVolumeTextureEntry.dimensions.x == max(Int(currentPix.pwidth), 1)
+            && stackVolumeTextureEntry.dimensions.y == max(Int(currentPix.pheight), 1)
+    }
+
+    private func stackDisplayVolumeTexture() -> MTLTexture? {
+        if stackDisplayUsesCorrectedBaseVolume() {
+            return baseVolumeTexture
+        }
+
+        if stackDisplayUsesSharedVolumeTexture() {
+            return stackVolumeTextureEntry?.texture
+        }
+
+        return nil
+    }
+
+    private func stackDisplayVolumeDimensions(baseTexture: MTLTexture?, volumeTexture: MTLTexture?) -> SIMD3<UInt32> {
+        if let volumeTexture {
+            return SIMD3<UInt32>(
+                UInt32(max(volumeTexture.width, 1)),
+                UInt32(max(volumeTexture.height, 1)),
+                UInt32(max(volumeTexture.depth, 1))
+            )
+        }
+
+        return SIMD3<UInt32>(
+            UInt32(max(baseTexture?.width ?? 1, 1)),
+            UInt32(max(baseTexture?.height ?? 1, 1)),
+            1
+        )
+    }
+
     private func stackDisplayAspectRatio() -> Float {
         guard stackDisplayUsesCorrectedBaseVolume() else {
             return imageAspectRatio
@@ -4540,9 +4616,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             break
         }
 
+        let displayVolumeTexture = stackDisplayVolumeTexture()
         guard let renderPassDescriptor = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable,
-              let baseTexture else {
+              baseTexture != nil || displayVolumeTexture != nil else {
             return
         }
 
@@ -4572,17 +4649,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             overlayBlend: overlayBlend,
             overlayTranslationWorld: overlayTranslationWorld,
             movingRotationCenterWorld: movingRotationCenterWorld,
-            fixedVolumeSize: SIMD3<UInt32>(
-                UInt32(max(baseVolumeTexture?.width ?? baseTexture.width, 1)),
-                UInt32(max(baseVolumeTexture?.height ?? baseTexture.height, 1)),
-                UInt32(max(baseVolumeTexture?.depth ?? 1, 1))
-            ),
+            fixedVolumeSize: stackDisplayVolumeDimensions(baseTexture: baseTexture, volumeTexture: displayVolumeTexture),
             currentSliceIndex: stackDisplaySliceIndex(),
             movingInverseRotation: rotationMatrix(for: -overlayRotationRadians),
             fixedVoxelToWorld: fixedVoxelToWorld,
             movingWorldToVoxel: movingWorldToVoxel,
             hasOverlay: overlayVolumeTexture == nil ? 0 : 1,
-            useBaseVolumeTexture: stackDisplayUsesCorrectedBaseVolume() ? 1 : 0,
+            useBaseVolumeTexture: displayVolumeTexture == nil ? 0 : 1,
             imageInterpolationMode: UInt32(imageInterpolationMode.rawValue)
         )
 
@@ -4597,7 +4670,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<MetalUniforms>.stride, index: 0)
         encoder.setFragmentTexture(baseTexture, index: 0)
         encoder.setFragmentTexture(overlayVolumeTexture, index: 1)
-        encoder.setFragmentTexture(baseVolumeTexture, index: 2)
+        encoder.setFragmentTexture(displayVolumeTexture, index: 2)
         encoder.setFragmentSamplerState(samplerState, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()

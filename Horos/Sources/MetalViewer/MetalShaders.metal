@@ -60,6 +60,8 @@ struct MetalPreviewUniforms {
     float2 offset;
     float windowLevel;
     float windowWidth;
+    float currentSliceIndex;
+    uint useVolumeTexture;
 };
 
 struct RegistrationUniforms {
@@ -1519,9 +1521,20 @@ fragment float4 metalPreviewFragment(
     RasterizerData in [[stage_in]],
     constant MetalPreviewUniforms &uniforms [[buffer(0)]],
     texture2d<float> imageTexture [[texture(0)]],
+    texture3d<float> volumeTexture [[texture(1)]],
     sampler imageSampler [[sampler(0)]]
 ) {
-    float pixelValue = imageTexture.sample(imageSampler, in.texCoord).r;
+    float pixelValue = 0.0;
+    if (uniforms.useVolumeTexture == 0) {
+        pixelValue = imageTexture.sample(imageSampler, in.texCoord).r;
+    } else {
+        const float3 textureSize = max(
+            float3(volumeTexture.get_width(), volumeTexture.get_height(), volumeTexture.get_depth()),
+            float3(1.0)
+        );
+        const float z = clamp(uniforms.currentSliceIndex + 0.5, 0.5, textureSize.z - 0.5) / textureSize.z;
+        pixelValue = volumeTexture.sample(imageSampler, float3(in.texCoord, z)).r;
+    }
     float minValue = uniforms.windowLevel - uniforms.windowWidth * 0.5;
     float normalized = clamp((pixelValue - minValue) / max(uniforms.windowWidth, 1e-5), 0.0, 1.0);
     return float4(normalized, normalized, normalized, 1.0);

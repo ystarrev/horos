@@ -53,6 +53,7 @@
 - (void) setIndexWithReset:(short)index :(BOOL)sizeToFit;
 - (void) setWLWW:(float)wl :(float)ww;
 - (void) setDisplayedImageIndex:(NSInteger)index totalCount:(NSInteger)totalCount;
+- (void) refreshMetalPixListIfNeeded;
 - (void) getWLWW:(float*)wl :(float*)ww;
 - (void) setTheMatrix:(NSMatrix *)value;
 - (void) scaleToFit;

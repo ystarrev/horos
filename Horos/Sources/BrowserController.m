@@ -6123,7 +6123,6 @@ static NSConditionLock *threadLock = nil;
     NSInteger				result;
     NSManagedObjectContext	*context = self.database.managedObjectContext;
     BOOL					matrixThumbnails = YES;
-    int						animState = [animationCheck state];
     
     //	if( DICOMDIRCDMODE)
     //	{
@@ -6183,8 +6182,6 @@ static NSConditionLock *threadLock = nil;
             return;
         }
     }
-    
-    [animationCheck setState: NSControlStateValueOff];
     
     NSArray *albumArray = self.albumArray;
     
@@ -6267,9 +6264,6 @@ static NSConditionLock *threadLock = nil;
         [context unlock];
         
         NSRunAlertPanel( NSLocalizedString(@"Distant Database", nil),  NSLocalizedString(@"You cannot modify a Distant Database.", nil), nil, nil, nil);
-        
-        [animationCheck setState: animState];
-        
         return;
     }
     
@@ -6295,8 +6289,6 @@ static NSConditionLock *threadLock = nil;
     
     [context unlock];
     [context release];
-    
-    [animationCheck setState: animState];
 }
 
 - (void)buildColumnsMenu
@@ -9047,7 +9039,7 @@ static BOOL withReset = NO;
         [animationSlider setMaxValue:0];
         [animationSlider setIntValue:0];
     }
-    
+
     withReset = YES;
     [self previewSliderAction: animationSlider];
     withReset = NO;
@@ -9335,31 +9327,6 @@ static BOOL withReset = NO;
 //
 //    [n release];
 //}
-
-- (void)previewPerformAnimation: (id)sender
-{
-    //[NSThread detachNewThreadSelector: @selector( createThread) toTarget: self withObject: nil];
-    
-    //[self outlineViewRefresh];
-    
-    if( [[AppController sharedAppController] isSessionInactive] || waitForRunningProcess)
-        return;
-    
-    // Wait loading all images !!!
-    if( _database == nil) return;
-    //	if( bonjourDownloading) return;
-    if( animationCheck.state == NSControlStateValueOff) return;
-    
-    if( self.window.isKeyWindow == NO) return;
-    if( animationSlider.isEnabled == NO) return;
-    
-    int	pos = animationSlider.intValue;
-    pos++;
-    if( pos > animationSlider.maxValue) pos = 0;
-    
-    [animationSlider setIntValue: pos];
-    [self previewSliderAction: nil];
-}
 
 - (void)scrollWheel: (NSEvent *)theEvent
 {
@@ -9857,6 +9824,7 @@ static BOOL withReset = NO;
                     [self initAnimationSlider];
                 
                 loadPreviewIndex = i;
+                [imageView refreshMetalPixListIfNeeded];
             }
         }
     }
@@ -10636,7 +10604,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
         [[[_bottomSplit subviews] objectAtIndex:0] setFrame:NSMakeRect(0, 0, dividerPosition, splitFrame.size.height)];
         [[[_bottomSplit subviews] objectAtIndex:1] setFrame:NSMakeRect(dividerPosition+_bottomSplit.dividerThickness, 0, splitFrame.size.width-dividerPosition-_bottomSplit.dividerThickness, splitFrame.size.height)];
         
-        [animationSlider setFrameSize:NSMakeSize(splitFrame.size.width-dividerPosition-_bottomSplit.dividerThickness-animationCheck.frame.size.width-10, animationSlider.frame.size.height)]; // for some weird reason, we need this..
+        [animationSlider setFrameSize:NSMakeSize(splitFrame.size.width-dividerPosition-_bottomSplit.dividerThickness, animationSlider.frame.size.height)]; // for some weird reason, we need this..
     }
 #ifdef WITH_BANNER
     else
@@ -14296,8 +14264,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         previewPix = [[NSMutableArray alloc] init];
         previewPixThumbnails = [[NSMutableArray alloc] init];
         
-        [NSTimer scheduledTimerWithTimeInterval: 0.15 target:self selector:@selector(previewPerformAnimation:) userInfo:self repeats:YES];
-        
         if( [[NSUserDefaults standardUserDefaults] integerForKey:@"LISTENERCHECKINTERVAL"] < 1)
             [[NSUserDefaults standardUserDefaults] setInteger:1 forKey:@"LISTENERCHECKINTERVAL"];
         
@@ -14748,8 +14714,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             
             self.modalityFilter = nil;
             
-            [animationCheck setState: [[NSUserDefaults standardUserDefaults] boolForKey: @"AutoPlayAnimation"]];
-            
             activeSends = [[NSMutableDictionary dictionary] retain];
             sendLog = [[NSMutableArray array] retain];
             activeReceives = [[NSMutableDictionary dictionary] retain];
@@ -15143,8 +15107,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     
     [self.window setDelegate:nil];
     
-    [[NSUserDefaults standardUserDefaults] setBool: [animationCheck state] forKey: @"AutoPlayAnimation"];
-    
     [[NSUserDefaults standardUserDefaults] synchronize];
     
     [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/OsiriXTemporaryDatabase" error:NULL];
@@ -15238,9 +15200,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             c == NSEnterCharacter ||
             c == NSCarriageReturnCharacter)
         [self viewerDICOM: [[self window] firstResponder]];
-    
-    else if(c == ' ')
-        [animationCheck setState: ![animationCheck state]];
     
     else
     {

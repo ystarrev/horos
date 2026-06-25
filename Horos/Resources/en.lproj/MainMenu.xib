@@ -1984,7 +1984,6 @@ CA
                 <outlet property="_sourcesTableView" destination="11693" id="14234"/>
                 <outlet property="addStudiesToUserWindow" destination="13928" id="13980"/>
                 <outlet property="albumTable" destination="1465" id="1572"/>
-                <outlet property="animationCheck" destination="1294" id="1305"/>
                 <outlet property="animationSlider" destination="1293" id="1304"/>
                 <outlet property="bannerSplit" destination="14624" id="14625"/>
                 <outlet property="bonjourPasswordWindow" destination="11804" id="11815"/>
@@ -4941,14 +4940,6 @@ Gw
                                             <action selector="previewSliderAction:" target="898" id="11571"/>
                                         </connections>
                                     </slider>
-                                    <button horizontalCompressionResistancePriority="1000" id="1294">
-                                        <rect key="frame" x="568" y="2" width="40" height="20"/>
-                                        <autoresizingMask key="autoresizingMask" flexibleMinX="YES"/>
-                                        <buttonCell key="cell" type="check" title="Play" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="mini" scrollable="YES" lineBreakMode="clipping" state="on" inset="2" id="13341">
-                                            <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
-                                            <font key="font" metaFont="miniSystem"/>
-                                        </buttonCell>
-                                    </button>
                                 </subviews>
                             </customView>
                         </subviews>
@@ -4968,10 +4959,6 @@ Gw
             </connections>
             <point key="canvasLocation" x="882.5" y="1809.5"/>
         </window>
-        <buttonCell type="check" title="Play" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="mini" scrollable="YES" lineBreakMode="clipping" state="on" inset="2" id="Os9-rL-Uag">
-            <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
-            <font key="font" metaFont="miniSystem"/>
-        </buttonCell>
     </objects>
     <resources>
         <image name="Endoscopy" width="32" height="32"/>

@@ -217,9 +217,21 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     }
 
     NSArray *safePixels = pixels ? pixels : @[];
-    [_metalView updatePixList:safePixels firstImage:firstImage resetWindowLevel:reset];
     _displayedImageIndex = MAX(0, firstImage);
     _displayedImageCount = files.count > 0 ? (NSInteger)files.count : (NSInteger)safePixels.count;
+
+    if (_displayedImageCount == 0 || safePixels.count == _displayedImageCount)
+    {
+        [_metalView updatePixList:safePixels firstImage:firstImage resetWindowLevel:reset];
+    }
+    else
+    {
+        DCMPix *pix = nil;
+        if (firstImage >= 0 && firstImage < [safePixels count])
+            pix = [safePixels objectAtIndex:firstImage];
+        [_metalView updateCurrentPix:pix index:firstImage resetWindowLevel:reset];
+    }
+
     [self refreshPreviewMode];
     [_annotationOverlay setNeedsDisplay:YES];
 }
@@ -230,7 +242,11 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     if (_dcmPixList && index >= 0 && index < [_dcmPixList count])
         pix = [_dcmPixList objectAtIndex:index];
 
-    [_metalView updateCurrentPix:pix index:index resetWindowLevel:NO];
+    BOOL canRefreshFullPixList = _dcmPixList && (_dcmFilesList.count == 0 || [_dcmPixList count] == _dcmFilesList.count);
+    if (pix && canRefreshFullPixList && [_dcmPixList count] != _metalView.currentPixListCount)
+        [_metalView updatePixList:_dcmPixList firstImage:index resetWindowLevel:NO];
+    else
+        [_metalView updateCurrentPix:pix index:index resetWindowLevel:NO];
     [self refreshPreviewMode];
     [_annotationOverlay setNeedsDisplay:YES];
 }
@@ -241,7 +257,11 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     if (_dcmPixList && index >= 0 && index < [_dcmPixList count])
         pix = [_dcmPixList objectAtIndex:index];
 
-    [_metalView updateCurrentPix:pix index:index resetWindowLevel:NO];
+    BOOL canRefreshFullPixList = _dcmPixList && (_dcmFilesList.count == 0 || [_dcmPixList count] == _dcmFilesList.count);
+    if (pix && canRefreshFullPixList && [_dcmPixList count] != _metalView.currentPixListCount)
+        [_metalView updatePixList:_dcmPixList firstImage:index resetWindowLevel:NO];
+    else
+        [_metalView updateCurrentPix:pix index:index resetWindowLevel:NO];
     if (sizeToFit)
         [_metalView resetViewTransform];
     [self refreshPreviewMode];
@@ -264,7 +284,25 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 {
     _displayedImageIndex = MAX(0, index);
     _displayedImageCount = MAX(totalCount, 0);
+    [_metalView setDisplayedImageIndex:_displayedImageIndex];
     [_annotationOverlay setNeedsDisplay:YES];
+}
+
+- (void)refreshMetalPixListIfNeeded
+{
+    if (_dcmPixList == nil || [_dcmPixList count] == 0)
+        return;
+
+    if ((_dcmFilesList.count == 0 || [_dcmPixList count] == _dcmFilesList.count)
+        && [_dcmPixList count] != _metalView.currentPixListCount)
+    {
+        NSInteger index = _metalView.currentIndex;
+        if (index < 0) index = 0;
+        if (index >= [_dcmPixList count]) index = [_dcmPixList count] - 1;
+        [_metalView updatePixList:_dcmPixList firstImage:index resetWindowLevel:NO];
+        [self refreshPreviewMode];
+        [_annotationOverlay setNeedsDisplay:YES];
+    }
 }
 
 - (DCMPix *)curDCM

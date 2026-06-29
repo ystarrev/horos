@@ -7,6 +7,7 @@ import simd
 private let registrationHistogramBins = 64
 private let useGPUPyramidGeneration = true
 private let maximumMPRPlaneTiltRadians = Float.pi / 4
+private let maximumInlineMetalVertexBytes = 4 * 1024
 
 private enum MetalMPRPreviewLayoutDefaults {
     static let widthFractionDefaultsKey = "HorosMetalViewerMPRPreviewWidthFraction"
@@ -360,6 +361,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var overlayVolumeDimensions = SIMD3<Int>(repeating: 1)
     private var baseVolumeLevels: [VolumeLevel] = []
     private var overlayVolumeLevels: [VolumeLevel] = []
+    private var baseVolumePyramidBuildGeneration: UInt = 0
+    private var baseVolumePyramidBuildInProgress = false
+    private var baseVolumePyramidBuildCompleted = false
     private var imageAspectRatio: Float = 1
     private var fixedVoxelToWorld = matrix_identity_float4x4
     private var movingWorldToVoxel = matrix_identity_float4x4
@@ -430,6 +434,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var registrationMetricTotalTime: CFTimeInterval = 0
     private var registrationMetricGPUTime: CFTimeInterval = 0
     private var registrationMetricCPUTime: CFTimeInterval = 0
+    private var registrationNeedsRestartAfterBasePyramidBuild = false
 
     var stateDidChange: ((String) -> Void)?
     var registrationDidChange: ((Bool, String, Float) -> Void)?
@@ -2086,18 +2091,19 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private func loadSlice(at index: Int) {
         guard pixList.indices.contains(index) else { return }
         let pix = pixList[index]
+        let usingSharedVolumeTexture = stackDisplayCanUseSharedVolumeTexture(for: pix, at: index)
 
-        pix.checkLoad()
+        if usingSharedVolumeTexture == false {
+            pix.checkLoad()
+        }
 
-        let width = max(Int(pix.pwidth), 1)
-        let height = max(Int(pix.pheight), 1)
-        imageAspectRatio = Float(width) * Float(max(pix.pixelSpacingX, 1)) / max(Float(height) * Float(max(pix.pixelSpacingY, 1)), 1)
+        let width = max(Int(pix.widthWithoutLoading()), 1)
+        let height = max(Int(pix.heightWithoutLoading()), 1)
+        if usingSharedVolumeTexture == false || pix.isLoaded() {
+            imageAspectRatio = Float(width) * Float(max(pix.pixelSpacingX, 1)) / max(Float(height) * Float(max(pix.pixelSpacingY, 1)), 1)
+        }
 
-        if stackDisplayUsesSharedVolumeTexture() {
-            if baseTexture == nil {
-                baseTexture = makeTexture(for: pix)
-            }
-        } else {
+        if usingSharedVolumeTexture == false {
             guard let texture = makeTexture(for: pix) else {
                 return
             }
@@ -2109,6 +2115,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         } else if let defaultWindow = defaultSeriesWindowLevel {
             applyBaseWindowLevel(defaultWindow)
         } else {
+            if pix.isLoaded() == false {
+                pix.checkLoad()
+            }
             let defaultWindow = windowLevelDefaults(for: pix)
             defaultSeriesWindowLevel = defaultWindow
             applyBaseWindowLevel(defaultWindow)
@@ -2279,6 +2288,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         baseVolumeDimensions = baseBuildResult.dimensions
         baseVolumeTexture = baseBuildResult.texture
         baseUsesGantryTiltCorrectedVolume = baseBuildResult.isGantryTiltCorrected
+        baseVolumePyramidBuildGeneration += 1
+        baseVolumePyramidBuildInProgress = false
+        baseVolumePyramidBuildCompleted = false
+        registrationNeedsRestartAfterBasePyramidBuild = false
         metalRendererTimingLog("MetalViewerRenderer volume geometry/texture", since: geometryStart)
         let registrationWindowStart = CFAbsoluteTimeGetCurrent()
         let baseSourceDimensions = volumeDimensions(for: pixList)
@@ -2310,9 +2323,63 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         baseIsThinSlab = isThinSlab(dimensions: baseVolumeDimensions, voxelToWorld: fixedVoxelToWorld)
         baseSlabGeometry = baseIsThinSlab ? slabGeometry(dimensions: baseVolumeDimensions, voxelToWorld: fixedVoxelToWorld) : nil
         let levelsStart = CFAbsoluteTimeGetCurrent()
-        baseVolumeLevels = makeVolumeLevels(from: baseVolumeTexture, dimensions: baseVolumeDimensions, baseVoxelToWorld: fixedVoxelToWorld)
-        metalRendererTimingLog("MetalViewerRenderer makeVolumeLevels", since: levelsStart)
+        baseVolumeLevels = [VolumeLevel(texture: baseBuildResult.texture, voxelToWorld: fixedVoxelToWorld)]
+        metalRendererTimingLog("MetalViewerRenderer makeVolumeLevels initial", since: levelsStart)
         metalRendererTimingLog("MetalViewerRenderer prepareBaseVolumeIfNeeded total", since: prepareStart)
+    }
+
+    private func requestBaseVolumePyramidBuildIfNeeded() {
+        guard useGPUPyramidGeneration,
+              baseVolumePyramidBuildCompleted == false,
+              baseVolumePyramidBuildInProgress == false,
+              let baseVolumeTexture else {
+            return
+        }
+
+        baseVolumePyramidBuildInProgress = true
+        let generation = baseVolumePyramidBuildGeneration
+        let dimensions = baseVolumeDimensions
+        let voxelToWorld = fixedVoxelToWorld
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let levelsStart = CFAbsoluteTimeGetCurrent()
+            let levels = self.makeVolumeLevelsGPU(
+                from: baseVolumeTexture,
+                dimensions: dimensions,
+                baseVoxelToWorld: voxelToWorld
+            )
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      generation == self.baseVolumePyramidBuildGeneration else {
+                    return
+                }
+
+                self.baseVolumePyramidBuildInProgress = false
+                self.baseVolumePyramidBuildCompleted = true
+                if let levels, levels.isEmpty == false {
+                    self.baseVolumeLevels = levels
+                    metalRendererTimingLog("MetalViewerRenderer makeVolumeLevels async", since: levelsStart)
+                    self.restartRegistrationAfterBasePyramidBuildIfNeeded()
+                    self.stateDidChange?(self.stateDescription)
+                }
+            }
+        }
+    }
+
+    private func restartRegistrationAfterBasePyramidBuildIfNeeded() {
+        guard overlayVolumeLevels.isEmpty == false else { return }
+
+        if registrationInProgress {
+            registrationNeedsRestartAfterBasePyramidBuild = true
+            return
+        }
+
+        runRegistration(startingAt: RigidTransformState(
+            translationWorld: overlayTranslationWorld,
+            rotationRadians: overlayRotationRadians
+        ))
     }
 
     private func makeTexture(for pix: DCMPix) -> MTLTexture? {
@@ -2450,13 +2517,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func makeVolumeTexture(from pixList: [DCMPix]) -> VolumeTextureBuildResult? {
+        let sourceDimensions = volumeDimensions(for: pixList)
         let geometry = MetalViewerGantryTiltGeometryBuilder.geometry(
             for: pixList,
-            sourceDimensions: volumeDimensions(for: pixList)
+            sourceDimensions: sourceDimensions
         )
         if geometry.requiresCorrection() {
             let resampleStart = CFAbsoluteTimeGetCurrent()
-            let sourceDimensions = volumeDimensions(for: pixList)
             let backgroundValue: Float = pixList.first?.modalityString?.uppercased().contains("CT") == true ? -1024 : 0
             if let sourceTexture = makeTexture3D(from: pixList, dimensions: sourceDimensions),
                let texture = makeWritableTexture3D(dimensions: geometry.dimensions),
@@ -2512,6 +2579,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             )
         }
 
+        if let cachedResult = cachedVolumeTextureBuildResult(
+            for: pixList,
+            dimensions: geometry.dimensions,
+            voxelToWorld: geometry.correctedVoxelToPatientMatrix
+        ) {
+            return cachedResult
+        }
+
         guard let texture = makeTexture3D(from: pixList, dimensions: geometry.dimensions) else {
             return nil
         }
@@ -2522,6 +2597,57 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             resampledData: nil,
             isGantryTiltCorrected: false
         )
+    }
+
+    private func cachedVolumeTextureBuildResult(
+        for pixList: [DCMPix],
+        dimensions: SIMD3<Int>,
+        voxelToWorld: simd_float4x4
+    ) -> VolumeTextureBuildResult? {
+        let cacheStart = CFAbsoluteTimeGetCurrent()
+        if isBasePixList(pixList),
+           let entry = stackVolumeTextureEntry,
+           cacheEntry(entry, matches: dimensions) {
+            metalRendererTimingLog("MetalViewerRenderer reuse cached volume texture", since: cacheStart)
+            return VolumeTextureBuildResult(
+                texture: entry.texture,
+                dimensions: entry.dimensions,
+                voxelToWorld: voxelToWorld,
+                resampledData: nil,
+                isGantryTiltCorrected: false
+            )
+        }
+
+        guard let entry = MetalSeriesTextureCache.shared.cachedEntry(for: pixList, device: deviceRef),
+              cacheEntry(entry, matches: dimensions) else {
+            return nil
+        }
+
+        if isBasePixList(pixList) {
+            stackVolumeTextureEntry = entry
+        }
+
+        metalRendererTimingLog("MetalViewerRenderer reuse cached volume texture", since: cacheStart)
+        return VolumeTextureBuildResult(
+            texture: entry.texture,
+            dimensions: entry.dimensions,
+            voxelToWorld: voxelToWorld,
+            resampledData: nil,
+            isGantryTiltCorrected: false
+        )
+    }
+
+    private func cacheEntry(_ entry: MetalSeriesTextureCache.Entry, matches dimensions: SIMD3<Int>) -> Bool {
+        entry.dimensions.x == dimensions.x
+            && entry.dimensions.y == dimensions.y
+            && entry.dimensions.z == dimensions.z
+    }
+
+    private func isBasePixList(_ candidate: [DCMPix]) -> Bool {
+        guard candidate.count == pixList.count else { return false }
+        return zip(candidate, pixList).allSatisfy { candidatePix, basePix in
+            candidatePix === basePix
+        }
     }
 
     private func makeTexture3D(from pixList: [DCMPix], dimensions: SIMD3<Int>) -> MTLTexture? {
@@ -3263,6 +3389,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return missingOverlap * 2.5
     }
 
+    private func currentRegistrationLevelPairs() -> [(VolumeLevel, VolumeLevel)] {
+        guard baseVolumeLevels.isEmpty == false,
+              overlayVolumeLevels.isEmpty == false else {
+            return []
+        }
+
+        let pairCount = min(baseVolumeLevels.count, overlayVolumeLevels.count)
+        let baseLevels = Array(baseVolumeLevels.suffix(pairCount))
+        let overlayLevels = Array(overlayVolumeLevels.suffix(pairCount))
+        return Array(zip(baseLevels, overlayLevels))
+    }
+
     private func centerOfMassInitialGuess() -> RigidTransformState {
         guard baseVolumeLevels.isEmpty == false,
               overlayVolumeLevels.isEmpty == false else {
@@ -3286,11 +3424,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func runRegistration(startingAt initialState: RigidTransformState? = nil) {
-        guard baseVolumeLevels.isEmpty == false, overlayVolumeLevels.isEmpty == false else { return }
+        let levelPairs = currentRegistrationLevelPairs()
+        guard levelPairs.isEmpty == false else { return }
 
         let registrationStart = CFAbsoluteTimeGetCurrent()
         registrationGeneration += 1
         let generation = registrationGeneration
+        registrationNeedsRestartAfterBasePyramidBuild = false
         registrationMetricCallCount = 0
         registrationMetricTotalTime = 0
         registrationMetricGPUTime = 0
@@ -3307,8 +3447,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            self.logRegistrationSamplingProbe(for: initialGuess)
-            let result = self.optimizeOverlayTransform(startingAt: initialGuess, generation: generation)
+            self.logRegistrationSamplingProbe(for: initialGuess, levelPairs: levelPairs)
+            let result = self.optimizeOverlayTransform(
+                startingAt: initialGuess,
+                generation: generation,
+                levelPairs: levelPairs
+            )
             let metricCount = self.registrationMetricCallCount
             let metricTotal = self.registrationMetricTotalTime
             let metricGPU = self.registrationMetricGPUTime
@@ -3337,8 +3481,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    private func logRegistrationSamplingProbe(for state: RigidTransformState) {
-        let levelPairs = Array(zip(baseVolumeLevels, overlayVolumeLevels))
+    private func logRegistrationSamplingProbe(
+        for state: RigidTransformState,
+        levelPairs: [(VolumeLevel, VolumeLevel)]
+    ) {
         guard levelPairs.isEmpty == false else { return }
 
         for (levelIndex, levelPair) in levelPairs.enumerated() {
@@ -3407,7 +3553,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    private func optimizeOverlayTransform(startingAt initialGuess: RigidTransformState, generation: UInt) -> (state: RigidTransformState, metric: Float) {
+    private func optimizeOverlayTransform(
+        startingAt initialGuess: RigidTransformState,
+        generation: UInt,
+        levelPairs: [(VolumeLevel, VolumeLevel)]
+    ) -> (state: RigidTransformState, metric: Float) {
         let optimizeStart = CFAbsoluteTimeGetCurrent()
         struct RigidStep {
             let translationMM: Float
@@ -3451,7 +3601,6 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             ]
         }
 
-        let levelPairs = Array(zip(baseVolumeLevels, overlayVolumeLevels))
         guard levelPairs.isEmpty == false else { return (initialGuess, .greatestFiniteMagnitude) }
         let seeded = coarseSeedSearch(
             startingAt: initialGuess,
@@ -4150,6 +4299,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             self.registrationStatusMessage = statusMessage
             self.stateDidChange?(self.stateDescription)
             self.registrationDidChange?(inProgress, displayMessage, self.registrationProgress)
+            if inProgress == false, self.registrationNeedsRestartAfterBasePyramidBuild {
+                self.registrationNeedsRestartAfterBasePyramidBuild = false
+                self.runRegistration(startingAt: state)
+            }
         }
     }
 
@@ -4522,16 +4675,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func stackDisplayUsesSharedVolumeTexture() -> Bool {
+        return stackDisplayCanUseSharedVolumeTexture(for: currentPix, at: currentSliceIndex)
+    }
+
+    private func stackDisplayCanUseSharedVolumeTexture(for pix: DCMPix?, at index: Int) -> Bool {
         guard overlayVolumeTexture == nil,
               let stackVolumeTextureEntry,
-              let currentPix,
-              currentSliceIndex >= 0,
-              currentSliceIndex < stackVolumeTextureEntry.dimensions.z else {
+              let pix,
+              index >= 0,
+              index < stackVolumeTextureEntry.dimensions.z else {
             return false
         }
 
-        return stackVolumeTextureEntry.dimensions.x == max(Int(currentPix.pwidth), 1)
-            && stackVolumeTextureEntry.dimensions.y == max(Int(currentPix.pheight), 1)
+        return stackVolumeTextureEntry.dimensions.x == max(Int(pix.widthWithoutLoading()), 1)
+            && stackVolumeTextureEntry.dimensions.y == max(Int(pix.heightWithoutLoading()), 1)
     }
 
     private func stackDisplayVolumeTexture() -> MTLTexture? {
@@ -4677,6 +4834,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         commandBuffer.present(drawable)
         commandBuffer.commit()
+        requestBaseVolumePyramidBuildIfNeeded()
     }
 
     private func drawMPR(in view: MTKView) {
@@ -4715,11 +4873,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         encoder.setRenderPipelineState(mprPipelineState)
         encoder.setDepthStencilState(mprDepthStencilState)
-        vertices.withUnsafeBytes { vertexBytes in
-            guard let vertexBaseAddress = vertexBytes.baseAddress else {
-                return
-            }
-            encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+        if setMPRVertexData(vertices, on: encoder) {
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 0)
             encoder.setFragmentTexture(baseVolumeTexture, index: 0)
@@ -4748,11 +4902,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         if highlightVertices.isEmpty == false {
             encoder.setRenderPipelineState(mprPlaneHighlightPipelineState)
             encoder.setDepthStencilState(mprDepthStencilState)
-            highlightVertices.withUnsafeBytes { vertexBytes in
-                guard let vertexBaseAddress = vertexBytes.baseAddress else {
-                    return
-                }
-                encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+            if setMPRVertexData(highlightVertices, on: encoder) {
                 encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: highlightVertices.count)
             }
@@ -4761,11 +4911,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let borderVertices = makeMPRBorderVertices()
         encoder.setRenderPipelineState(mprBorderPipelineState)
         encoder.setDepthStencilState(mprDepthStencilState)
-        borderVertices.withUnsafeBytes { vertexBytes in
-            guard let vertexBaseAddress = vertexBytes.baseAddress else {
-                return
-            }
-            encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+        if setMPRVertexData(borderVertices, on: encoder) {
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
             encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: borderVertices.count)
         }
@@ -4773,11 +4919,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let intersectionVertices = makeMPRIntersectionVertices()
         encoder.setRenderPipelineState(mprIntersectionPipelineState)
         encoder.setDepthStencilState(mprDepthStencilState)
-        intersectionVertices.withUnsafeBytes { vertexBytes in
-            guard let vertexBaseAddress = vertexBytes.baseAddress else {
-                return
-            }
-            encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+        if setMPRVertexData(intersectionVertices, on: encoder) {
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
             encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: intersectionVertices.count)
         }
@@ -4794,6 +4936,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         commandBuffer.present(drawable)
         commandBuffer.commit()
+        requestBaseVolumePyramidBuildIfNeeded()
     }
 
     private func makeMPRUniforms(
@@ -4819,6 +4962,34 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             movingWorldToVoxel: movingWorldToVoxel,
             hasOverlay: overlayVolumeTexture == nil ? 0 : 1
         )
+    }
+
+    private func setMPRVertexData(
+        _ vertices: [MetalMPRVertex],
+        on encoder: MTLRenderCommandEncoder
+    ) -> Bool {
+        let byteCount = vertices.count * MemoryLayout<MetalMPRVertex>.stride
+        guard byteCount > 0 else { return false }
+
+        if byteCount <= maximumInlineMetalVertexBytes {
+            return vertices.withUnsafeBytes { vertexBytes in
+                guard let vertexBaseAddress = vertexBytes.baseAddress else {
+                    return false
+                }
+                encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+                return true
+            }
+        }
+
+        guard let vertexBuffer = deviceRef.makeBuffer(
+            bytes: vertices,
+            length: byteCount,
+            options: .storageModeShared
+        ) else {
+            return false
+        }
+        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
+        return true
     }
 
     private func drawMPR3D(in view: MTKView) {
@@ -4852,6 +5023,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         commandBuffer.present(drawable)
         commandBuffer.commit()
+        requestBaseVolumePyramidBuildIfNeeded()
     }
 
     private func mprRenderLayout(for view: MTKView) -> MetalMPRRenderLayout? {
@@ -5075,11 +5247,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             encoder.setScissorRect(pane.scissor)
             encoder.setRenderPipelineState(mprPipelineState)
             encoder.setDepthStencilState(mprDepthStencilState)
-            vertices.withUnsafeBytes { vertexBytes in
-                guard let vertexBaseAddress = vertexBytes.baseAddress else {
-                    return
-                }
-                encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+            if setMPRVertexData(vertices, on: encoder) {
                 encoder.setVertexBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
                 encoder.setFragmentBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 0)
                 encoder.setFragmentTexture(baseVolumeTexture, index: 0)
@@ -5092,11 +5260,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             if sliceThicknessVertices.isEmpty == false {
                 encoder.setRenderPipelineState(mprPlaneHighlightPipelineState)
                 encoder.setDepthStencilState(mprDepthStencilState)
-                sliceThicknessVertices.withUnsafeBytes { vertexBytes in
-                    guard let vertexBaseAddress = vertexBytes.baseAddress else {
-                        return
-                    }
-                    encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+                if setMPRVertexData(sliceThicknessVertices, on: encoder) {
                     encoder.setVertexBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
                     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: sliceThicknessVertices.count)
                 }
@@ -5122,11 +5286,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             if intersectionVertices.isEmpty == false {
                 encoder.setRenderPipelineState(mprIntersectionPipelineState)
                 encoder.setDepthStencilState(mprDepthStencilState)
-                intersectionVertices.withUnsafeBytes { vertexBytes in
-                    guard let vertexBaseAddress = vertexBytes.baseAddress else {
-                        return
-                    }
-                    encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+                if setMPRVertexData(intersectionVertices, on: encoder) {
                     encoder.setVertexBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
                     encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: intersectionVertices.count)
                 }
@@ -5138,11 +5298,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             }
             encoder.setRenderPipelineState(mprBorderPipelineState)
             encoder.setDepthStencilState(mprDepthStencilState)
-            borderVertices.withUnsafeBytes { vertexBytes in
-                guard let vertexBaseAddress = vertexBytes.baseAddress else {
-                    return
-                }
-                encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
+            if setMPRVertexData(borderVertices, on: encoder) {
                 encoder.setVertexBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
                 encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: borderVertices.count)
             }

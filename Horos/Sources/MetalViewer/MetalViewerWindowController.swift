@@ -54,7 +54,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
 
     private var paneViews: [MetalViewerPaneView] = []
     private weak var activePaneView: MetalViewerPaneView?
-    private let seriesPreloader = MetalViewerSeriesPreloader()
     private var isRestoringSplitPosition = true
     private var selectedWLWWTitle = NSLocalizedString("Default WL & WW", comment: "")
     private var viewerMode: MetalViewerToolbarView.ViewerMode = .stack2D
@@ -184,7 +183,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         ])
 
         let firstPaneStart = CFAbsoluteTimeGetCurrent()
-        addPane(for: firstSeries, makeActive: true, preload: false)
+        addPane(for: firstSeries, makeActive: true)
         metalWindowTimingLog("MetalViewerWindowController first pane init", since: firstPaneStart)
         scoutView.setSelectedSeries(identifier: firstSeries.identifier)
 
@@ -195,7 +194,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
                 let syncedScale = self.synchronizedScaleValue(excluding: targetPane) ?? targetPane.currentScale
                 targetPane.display(series: series)
                 self.applySyncedScaleIfNeeded(to: targetPane, preferredScale: syncedScale)
-                self.preloadActiveSeries(series)
                 self.selectedWLWWTitle = series.windowLevelPresetTitle
                 self.toolbarView.reloadWLWWMenu(selectedTitle: self.selectedWLWWTitle, modality: series.modality)
                 if self.activePaneView == nil {
@@ -219,9 +217,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             self.assignSeries(withIdentifier: series.identifier, to: targetPane, overlay: true)
         }
 
-        DispatchQueue.main.async { [weak self] in
-            self?.preloadActiveSeries(firstSeries)
-        }
         metalWindowTimingLog("MetalViewerWindowController init total", since: initStart)
     }
 
@@ -315,7 +310,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         return min(max(CGFloat(savedWidth), Layout.minimumScoutWidth), maxWidth)
     }
 
-    private func addPane(for series: MetalViewerSeries, makeActive: Bool, preload: Bool = true) {
+    private func addPane(for series: MetalViewerSeries, makeActive: Bool) {
         let addPaneStart = CFAbsoluteTimeGetCurrent()
         guard paneViews.count < Layout.maximumPaneCount else {
             NSSound.beep()
@@ -358,9 +353,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
 
         if makeActive {
             setActivePane(pane)
-            if preload {
-                preloadActiveSeries(series)
-            }
         }
 
         updateReferenceLines()
@@ -477,7 +469,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             let syncedScale = synchronizedScaleValue(excluding: pane) ?? pane.currentScale
             pane.display(series: series)
             applySyncedScaleIfNeeded(to: pane, preferredScale: syncedScale)
-            preloadActiveSeries(series)
             selectedWLWWTitle = series.windowLevelPresetTitle
             toolbarView.reloadWLWWMenu(selectedTitle: selectedWLWWTitle, modality: series.modality)
         }
@@ -524,9 +515,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             if pane.refreshAfterDatabaseUpdate(series: updatedSeries, overlaySeries: updatedOverlaySeries) {
                 applySyncedScaleIfNeeded(to: pane, preferredScale: syncedScale)
                 refreshedPaneCount += 1
-                if pane === activePaneView {
-                    preloadActiveSeries(updatedSeries)
-                }
             }
         }
 
@@ -536,7 +524,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             let syncedScale = synchronizedScaleValue(excluding: targetPane) ?? targetPane.currentScale
             targetPane.display(series: selectedSeries)
             applySyncedScaleIfNeeded(to: targetPane, preferredScale: syncedScale)
-            preloadActiveSeries(selectedSeries)
             selectedWLWWTitle = selectedSeries.windowLevelPresetTitle
             toolbarView.reloadWLWWMenu(selectedTitle: selectedWLWWTitle, modality: selectedSeries.modality)
             setActivePane(targetPane)
@@ -891,16 +878,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
     }
 
-    private func preloadActiveSeries(_ series: MetalViewerSeries) {
-        guard series.isStructuredReport == false else {
-            seriesPreloader.cancel()
-            return
-        }
-
-        let pixList = series.loadedPixList()
-        seriesPreloader.preloadAfterFirstSlice(series: series, pixList: pixList)
-    }
-
     private func updateReferenceLines() {
         guard let activePaneView,
               let activeGeometry = activePaneView.currentSliceGeometry() else {
@@ -921,62 +898,5 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
 
         activePaneView.setReferenceLine(nil)
-    }
-}
-
-private final class MetalViewerSeriesPreloader {
-    private let queue = OperationQueue()
-    private let stateLock = NSLock()
-    private var generation = 0
-
-    init() {
-        let workerCount = max(1, ProcessInfo.processInfo.activeProcessorCount - 1)
-        queue.name = "org.horos.metalviewer.series-preloader"
-        queue.qualityOfService = .userInitiated
-        queue.maxConcurrentOperationCount = workerCount
-    }
-
-    func cancel() {
-        stateLock.lock()
-        generation += 1
-        stateLock.unlock()
-        queue.cancelAllOperations()
-    }
-
-    func preloadAfterFirstSlice(series: MetalViewerSeries, pixList: [DCMPix]) {
-        cancel()
-
-        guard pixList.count > 1 else { return }
-
-        stateLock.lock()
-        let activeGeneration = generation
-        stateLock.unlock()
-
-        let preloadStart = CFAbsoluteTimeGetCurrent()
-        let workerCount = queue.maxConcurrentOperationCount
-        print("HOROS_METAL_TIMING MetalViewerSeriesPreloader start series=\(series.title) slices=\(pixList.count - 1) workers=\(workerCount)")
-
-        let completion = BlockOperation { [weak self] in
-            guard let self, self.isCurrent(activeGeneration) else { return }
-            metalWindowTimingLog("MetalViewerSeriesPreloader finished series=\(series.title)", since: preloadStart)
-        }
-
-        for pix in pixList.dropFirst() {
-            let operation = BlockOperation { [weak self] in
-                guard let self, self.isCurrent(activeGeneration) else { return }
-                pix.checkLoad()
-            }
-            completion.addDependency(operation)
-            queue.addOperation(operation)
-        }
-
-        queue.addOperation(completion)
-    }
-
-    private func isCurrent(_ candidate: Int) -> Bool {
-        stateLock.lock()
-        let current = generation
-        stateLock.unlock()
-        return current == candidate
     }
 }

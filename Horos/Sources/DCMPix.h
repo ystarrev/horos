@@ -247,6 +247,13 @@ extern "C"
 /** Pointer to image data */
 @property(setter=setfImage:) float* fImage;
 
+/** Returns the loaded image width, or the database width if the pixels have not been loaded yet. */
+- (long) widthWithoutLoading;
+/** Returns the loaded image height, or the database height if the pixels have not been loaded yet. */
+- (long) heightWithoutLoading;
+/** Sets known dimensions without forcing image pixel data to load. */
+- (void) setWidthWithoutLoading:(long) newWidth heightWithoutLoading:(long) newHeight;
+
 /** WW & WL */
 @property(readonly) float ww, wl, fullww, fullwl;
 @property(nonatomic) float slope, offset, savedWW, savedWL, *subtractedfImage;

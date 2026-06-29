@@ -2248,11 +2248,11 @@ Gw
             </subviews>
         </customView>
         <customView id="11581" userLabel="SearchView">
-            <rect key="frame" x="0.0" y="0.0" width="196" height="46"/>
+            <rect key="frame" x="0.0" y="0.0" width="196" height="26"/>
             <autoresizingMask key="autoresizingMask"/>
             <subviews>
                 <searchField wantsLayer="YES" verticalHuggingPriority="750" allowsCharacterPickerTouchBarItem="YES" id="11582">
-                    <rect key="frame" x="5" y="20" width="185" height="22"/>
+                    <rect key="frame" x="5" y="2" width="185" height="22"/>
                     <autoresizingMask key="autoresizingMask" widthSizable="YES" flexibleMinY="YES" flexibleMaxY="YES"/>
                     <searchFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" selectable="YES" editable="YES" borderStyle="bezel" placeholderString="Search" bezelStyle="round" id="13362">
                         <font key="font" metaFont="system"/>
@@ -2268,19 +2268,7 @@ Gw
                         <outlet property="searchMenuTemplate" destination="11583" id="11586"/>
                     </connections>
                 </searchField>
-                <button horizontalCompressionResistancePriority="1000" id="13824">
-                    <rect key="frame" x="6" y="4" width="60" height="18"/>
-                    <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES" flexibleMaxY="YES"/>
-                    <buttonCell key="cell" type="check" title="Soundex" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="mini" scrollable="YES" lineBreakMode="clipping" state="on" inset="2" id="13825">
-                        <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
-                        <font key="font" metaFont="miniSystem"/>
-                    </buttonCell>
-                    <connections>
-                        <action selector="switchSoundex:" target="898" id="13827"/>
-                        <binding destination="12279" name="value" keyPath="values.useSoundexForName" id="13826"/>
-                    </connections>
-                </button>
-                <button verticalHuggingPriority="750" horizontalCompressionResistancePriority="900" id="14821">
+                <button hidden="YES" verticalHuggingPriority="750" horizontalCompressionResistancePriority="900" id="14821">
                     <rect key="frame" x="79" y="2" width="111" height="17"/>
                     <autoresizingMask key="autoresizingMask" flexibleMinX="YES" flexibleMinY="YES" flexibleMaxY="YES"/>
                     <buttonCell key="cell" type="recessed" title="45 results in entire DB" bezelStyle="recessed" alignment="center" controlSize="mini" scrollable="YES" lineBreakMode="clipping" state="on" borderStyle="border" inset="2" id="14822">

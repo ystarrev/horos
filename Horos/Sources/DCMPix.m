@@ -3351,6 +3351,26 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     return fImage;
 }
 
+- (long) widthWithoutLoading
+{
+    if( width > 0) return width;
+    return savedWidthInDB;
+}
+
+- (long) heightWithoutLoading
+{
+    if( height > 0) return height;
+    return savedHeightInDB;
+}
+
+- (void) setWidthWithoutLoading:(long) newWidth heightWithoutLoading:(long) newHeight
+{
+    width = newWidth;
+    height = newHeight;
+    savedWidthInDB = newWidth;
+    savedHeightInDB = newHeight;
+}
+
 - (double) pixelRatio { [self CheckLoad]; return pixelRatio; }
 
 - (double) pixelSpacingY { [self CheckLoad]; return pixelSpacingY; }
@@ -3717,37 +3737,42 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         //-------------------------received parameters
         self.srcFile = s;
         
-        [iO.managedObjectContext lock];
-        @try
+        if( iO)
         {
-            imageObjectID = [[iO objectID] retain];
-            
-            NSManagedObject *studyObject = (NSManagedObject *)[iO valueForKeyPath:@"series.study"];
-            URIRepresentationAbsoluteString = [[[[studyObject objectID] URIRepresentation] absoluteString] retain];
-            fileTypeHasPrefixDICOM = [[iO valueForKey:@"fileType"] hasPrefix:@"DICOM"];
-            numberOfFrames = [[iO valueForKey: @"numberOfFrames"] intValue];
-            self->modalityString = [[NSString stringWithString:[iO valueForKeyPath:@"series.modality"]] retain];
-            
-            if( [iO valueForKeyPath: @"series.study.dateOfBirth"])
-                self.yearOld = [iO valueForKeyPath: @"series.study.yearOld"];
-            
-            if( [iO valueForKeyPath: @"series.study.dateOfBirth"] && [iO valueForKeyPath: @"series.study.date"])
-                self.yearOldAcquisition = [iO valueForKeyPath: @"series.study.yearOldAcquisition"];
-            
+            [iO.managedObjectContext lock];
+            @try
+            {
+                imageObjectID = [[iO objectID] retain];
+
+                NSManagedObject *studyObject = (NSManagedObject *)[iO valueForKeyPath:@"series.study"];
+                URIRepresentationAbsoluteString = [[[[studyObject objectID] URIRepresentation] absoluteString] retain];
+                fileTypeHasPrefixDICOM = [[iO valueForKey:@"fileType"] hasPrefix:@"DICOM"];
+                numberOfFrames = [[iO valueForKey: @"numberOfFrames"] intValue];
+                NSString *modality = [iO valueForKeyPath:@"series.modality"];
+                if( modality)
+                    self->modalityString = [[NSString stringWithString:modality] retain];
+
+                if( [iO valueForKeyPath: @"series.study.dateOfBirth"])
+                    self.yearOld = [iO valueForKeyPath: @"series.study.yearOld"];
+
+                if( [iO valueForKeyPath: @"series.study.dateOfBirth"] && [iO valueForKeyPath: @"series.study.date"])
+                    self.yearOldAcquisition = [iO valueForKeyPath: @"series.study.yearOldAcquisition"];
+
 #ifdef OSIRIX_VIEWER
-            [self loadCustomImageAnnotationsDBFields: (DicomImage*) iO];
+                [self loadCustomImageAnnotationsDBFields: (DicomImage*) iO];
 #endif
-            
-            savedHeightInDB = [[iO valueForKey:@"height"] intValue];
-            savedWidthInDB = [[iO valueForKey:@"width"] intValue];
-        }
-        @catch ( NSException *e)
-        {
-            N2LogExceptionWithStackTrace( e);
-        }
-        @finally
-        {
-            [iO.managedObjectContext unlock];
+
+                savedHeightInDB = [[iO valueForKey:@"height"] intValue];
+                savedWidthInDB = [[iO valueForKey:@"width"] intValue];
+            }
+            @catch ( NSException *e)
+            {
+                N2LogExceptionWithStackTrace( e);
+            }
+            @finally
+            {
+                [iO.managedObjectContext unlock];
+            }
         }
         
         imID = pos;
@@ -3864,7 +3889,8 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     copy->maxValueOfSeries = self->maxValueOfSeries;
     copy->minValueOfSeries = self->minValueOfSeries;
     copy->isOriginDefined = self->isOriginDefined;
-    copy->modalityString = [[NSString stringWithString:self->modalityString] retain];
+    if( self->modalityString)
+        copy->modalityString = [[NSString stringWithString:self->modalityString] retain];
     
     return copy;
 }

@@ -377,6 +377,11 @@ struct MetalViewerWindowLevelState {
 }
 
 final class MetalSeriesTextureCache {
+    private struct SliceDimensions {
+        let width: Int
+        let height: Int
+    }
+
     final class Entry {
         let key: String
         let texture: MTLTexture
@@ -412,12 +417,12 @@ final class MetalSeriesTextureCache {
 
     func key(for pixList: [DCMPix], device: MTLDevice) -> String? {
         guard pixList.isEmpty == false,
-              let dimensionPix = pixList.first(where: { Int($0.pwidth) > 0 && Int($0.pheight) > 0 }) else {
+              let dimensions = pixList.compactMap({ dimensionsWithoutLoading(for: $0) }).first else {
             return nil
         }
 
-        let width = Int(dimensionPix.pwidth)
-        let height = Int(dimensionPix.pheight)
+        let width = dimensions.width
+        let height = dimensions.height
         guard width > 0, height > 0 else { return nil }
 
         let deviceKey: String
@@ -495,9 +500,10 @@ final class MetalSeriesTextureCache {
         guard pixList.isEmpty == false, let firstPix = pixList.first else { return nil }
 
         let start = CFAbsoluteTimeGetCurrent()
-        firstPix.checkLoad()
-        let width = max(Int(firstPix.pwidth), 1)
-        let height = max(Int(firstPix.pheight), 1)
+        guard let firstDimensions = dimensionsWithoutLoading(for: firstPix) else { return nil }
+
+        let width = max(firstDimensions.width, 1)
+        let height = max(firstDimensions.height, 1)
         let depth = max(pixList.count, 1)
         let dimensions = SIMD3<Int>(width, height, depth)
 
@@ -518,43 +524,19 @@ final class MetalSeriesTextureCache {
         let bytesPerImage = max(pixelCount, 1) * MemoryLayout<Float>.stride
 
         for (sliceIndex, pix) in pixList.enumerated() {
-            pix.checkLoad()
-
-            guard max(Int(pix.pwidth), 1) == width,
-                  max(Int(pix.pheight), 1) == height else {
-                return nil
-            }
-
-            if pix.isRGB, let rgbSource = rgbSourcePointer(for: pix) {
-                var pixels = [Float](repeating: 0, count: pixelCount)
-                let bytes = UnsafeRawPointer(rgbSource).assumingMemoryBound(to: UInt8.self)
-                for index in 0..<pixelCount {
-                    let r = Float(bytes[index * 4 + 1])
-                    let g = Float(bytes[index * 4 + 2])
-                    let b = Float(bytes[index * 4 + 3])
-                    pixels[index] = 0.299 * r + 0.587 * g + 0.114 * b
-                }
-                pixels.withUnsafeBytes { buffer in
-                    guard let baseAddress = buffer.baseAddress else { return }
-                    texture.replace(
-                        region: MTLRegionMake3D(0, 0, sliceIndex, width, height, 1),
-                        mipmapLevel: 0,
-                        slice: 0,
-                        withBytes: baseAddress,
-                        bytesPerRow: bytesPerRow,
-                        bytesPerImage: bytesPerImage
-                    )
-                }
-            } else if let fImage = pix.fImage {
-                texture.replace(
-                    region: MTLRegionMake3D(0, 0, sliceIndex, width, height, 1),
-                    mipmapLevel: 0,
-                    slice: 0,
-                    withBytes: fImage,
+            guard let sliceDimensions = dimensionsWithoutLoading(for: pix),
+                  max(sliceDimensions.width, 1) == width,
+                  max(sliceDimensions.height, 1) == height,
+                  uploadSlice(
+                    pix,
+                    sliceIndex: sliceIndex,
+                    sliceCount: depth,
+                    width: width,
+                    height: height,
+                    texture: texture,
                     bytesPerRow: bytesPerRow,
                     bytesPerImage: bytesPerImage
-                )
-            } else {
+                  ) else {
                 return nil
             }
         }
@@ -567,6 +549,155 @@ final class MetalSeriesTextureCache {
             CFAbsoluteTimeGetCurrent() - start
         ))
         return Entry(key: key, texture: texture, dimensions: dimensions)
+    }
+
+    private func dimensionsWithoutLoading(for pix: DCMPix) -> SliceDimensions? {
+        let width = Int(pix.widthWithoutLoading())
+        let height = Int(pix.heightWithoutLoading())
+        guard width > 0, height > 0 else { return nil }
+        return SliceDimensions(width: width, height: height)
+    }
+
+    private func uploadSlice(
+        _ pix: DCMPix,
+        sliceIndex: Int,
+        sliceCount: Int,
+        width: Int,
+        height: Int,
+        texture: MTLTexture,
+        bytesPerRow: Int,
+        bytesPerImage: Int
+    ) -> Bool {
+        if pix.isLoaded() {
+            return uploadLoadedSlice(
+                pix,
+                sliceIndex: sliceIndex,
+                width: width,
+                height: height,
+                texture: texture,
+                bytesPerRow: bytesPerRow,
+                bytesPerImage: bytesPerImage
+            )
+        }
+
+        if uploadTemporaryDecodedSlice(
+            pix,
+            sliceIndex: sliceIndex,
+            sliceCount: sliceCount,
+            width: width,
+            height: height,
+            texture: texture,
+            bytesPerRow: bytesPerRow,
+            bytesPerImage: bytesPerImage
+        ) {
+            return true
+        }
+
+        pix.checkLoad()
+        defer { pix.revert(false) }
+        return uploadLoadedSlice(
+            pix,
+            sliceIndex: sliceIndex,
+            width: width,
+            height: height,
+            texture: texture,
+            bytesPerRow: bytesPerRow,
+            bytesPerImage: bytesPerImage
+        )
+    }
+
+    private func uploadTemporaryDecodedSlice(
+        _ sourcePix: DCMPix,
+        sliceIndex: Int,
+        sliceCount: Int,
+        width: Int,
+        height: Int,
+        texture: MTLTexture,
+        bytesPerRow: Int,
+        bytesPerImage: Int
+    ) -> Bool {
+        guard let sourcePath = nonEmptyString(sourcePix.srcFile) else { return false }
+
+        let pixelCount = max(width * height, 1)
+        let scratchPixels = UnsafeMutablePointer<Float>.allocate(capacity: pixelCount)
+        defer { scratchPixels.deallocate() }
+
+        let frameNumber = (sourcePix.value(forKey: "frameNo") as? NSNumber)?.intValue ?? 0
+        guard let decodedPix = DCMPix(
+            path: sourcePath,
+            sliceIndex,
+            sliceCount,
+            scratchPixels,
+            frameNumber,
+            0,
+            isBonjour: false,
+            imageObj: nil
+        ) else {
+            return false
+        }
+
+        decodedPix.setWidthWithoutLoading(width, heightWithoutLoading: height)
+        decodedPix.checkLoad()
+
+        return uploadLoadedSlice(
+            decodedPix,
+            sliceIndex: sliceIndex,
+            width: width,
+            height: height,
+            texture: texture,
+            bytesPerRow: bytesPerRow,
+            bytesPerImage: bytesPerImage
+        )
+    }
+
+    private func uploadLoadedSlice(
+        _ pix: DCMPix,
+        sliceIndex: Int,
+        width: Int,
+        height: Int,
+        texture: MTLTexture,
+        bytesPerRow: Int,
+        bytesPerImage: Int
+    ) -> Bool {
+        guard max(Int(pix.widthWithoutLoading()), 1) == width,
+              max(Int(pix.heightWithoutLoading()), 1) == height else {
+            return false
+        }
+
+        let pixelCount = width * height
+        if pix.isRGB, let rgbSource = rgbSourcePointer(for: pix) {
+            var pixels = [Float](repeating: 0, count: pixelCount)
+            let bytes = UnsafeRawPointer(rgbSource).assumingMemoryBound(to: UInt8.self)
+            for index in 0..<pixelCount {
+                let r = Float(bytes[index * 4 + 1])
+                let g = Float(bytes[index * 4 + 2])
+                let b = Float(bytes[index * 4 + 3])
+                pixels[index] = 0.299 * r + 0.587 * g + 0.114 * b
+            }
+            pixels.withUnsafeBytes { buffer in
+                guard let baseAddress = buffer.baseAddress else { return }
+                texture.replace(
+                    region: MTLRegionMake3D(0, 0, sliceIndex, width, height, 1),
+                    mipmapLevel: 0,
+                    slice: 0,
+                    withBytes: baseAddress,
+                    bytesPerRow: bytesPerRow,
+                    bytesPerImage: bytesPerImage
+                )
+            }
+            return true
+        }
+
+        guard let fImage = pix.fImage else { return false }
+        texture.replace(
+            region: MTLRegionMake3D(0, 0, sliceIndex, width, height, 1),
+            mipmapLevel: 0,
+            slice: 0,
+            withBytes: fImage,
+            bytesPerRow: bytesPerRow,
+            bytesPerImage: bytesPerImage
+        )
+        return true
     }
 
     private func finishRequest(key: String, entry: Entry?) {
@@ -641,7 +772,6 @@ final class MetalViewerSeries {
     private let imageObjects: [NSManagedObject]
     private let isBonjour: Bool
     private var cachedPixList: [DCMPix]?
-    private var cachedVolumeBacking: NSData?
     private var cachedStructuredReportHTML: String?
     var windowLevelState = MetalViewerWindowLevelState()
     var windowLevelPresetTitle = NSLocalizedString("Default WL & WW", comment: "")
@@ -672,7 +802,6 @@ final class MetalViewerSeries {
         self.imageCount = imageObjects.isEmpty ? (initialPixList?.count ?? 0) : imageObjects.count
         self.modality = Self.modality(for: imageObjects, initialPixList: initialPixList)
         self.cachedPixList = initialPixList
-        self.cachedVolumeBacking = nil
         self.cachedStructuredReportHTML = nil
     }
 
@@ -740,77 +869,46 @@ final class MetalViewerSeries {
 
         let multiFrame = loadList.count == 1 && (((loadList[0].value(forKey: "numberOfFrames") as? NSNumber)?.intValue ?? 0) > 1 || ((loadList[0].value(forKey: "numberOfSeries") as? NSNumber)?.intValue ?? 0) > 1)
 
-        var memBlock: UInt = 0
-        if multiFrame {
-            let object = loadList[0]
-            let height = UInt((object.value(forKey: "height") as? NSNumber)?.intValue ?? 0)
-            let width = UInt((object.value(forKey: "width") as? NSNumber)?.intValue ?? 0)
-            let frames = UInt((object.value(forKey: "numberOfFrames") as? NSNumber)?.intValue ?? 0)
-            memBlock = width * height * frames
-        } else {
-            for image in loadList {
-                var width = UInt((image.value(forKey: "width") as? NSNumber)?.intValue ?? 0)
-                var height = UInt((image.value(forKey: "height") as? NSNumber)?.intValue ?? 0)
-                if width * height < 256 * 256 {
-                    width = 256
-                    height = 256
-                }
-                memBlock += width * height
-            }
-        }
-
-        if memBlock < 256 * 256 {
-            memBlock = 256 * 256
-        }
-
-        let pointer = UnsafeMutablePointer<Float>.allocate(capacity: Int(memBlock))
-        let volumeBacking = NSData(bytesNoCopy: pointer, length: Int(memBlock) * MemoryLayout<Float>.size, freeWhenDone: true)
-
         var pixList: [DCMPix] = []
-        var memOffset: UInt = 0
 
         if multiFrame {
             let object = loadList[0]
             let numberOfFrames = (object.value(forKey: "numberOfFrames") as? NSNumber)?.intValue ?? 0
-            let width = UInt((object.value(forKey: "width") as? NSNumber)?.intValue ?? 0)
-            let height = UInt((object.value(forKey: "height") as? NSNumber)?.intValue ?? 0)
+            let width = (object.value(forKey: "width") as? NSNumber)?.intValue ?? 0
+            let height = (object.value(forKey: "height") as? NSNumber)?.intValue ?? 0
             let seriesID = (object.value(forKeyPath: "series.id") as? NSNumber)?.intValue ?? 0
             let path = Self.resolvedPath(for: object) ?? ""
 
             for i in 0..<numberOfFrames {
-                if let pix = DCMPix(path: path, i, numberOfFrames, pointer.advanced(by: Int(memOffset)), i, seriesID, isBonjour: isBonjour, imageObj: object) {
+                if let pix = DCMPix(path: path, i, numberOfFrames, nil, i, seriesID, isBonjour: isBonjour, imageObj: object) {
+                    pix.setWidthWithoutLoading(width, heightWithoutLoading: height)
                     pixList.append(pix)
-                    memOffset += width * height
                 }
             }
         } else {
             for (index, object) in loadList.enumerated() {
-                let width = UInt((object.value(forKey: "width") as? NSNumber)?.intValue ?? 0)
-                let height = UInt((object.value(forKey: "height") as? NSNumber)?.intValue ?? 0)
+                let width = (object.value(forKey: "width") as? NSNumber)?.intValue ?? 0
+                let height = (object.value(forKey: "height") as? NSNumber)?.intValue ?? 0
                 let frameID = (object.value(forKey: "frameID") as? NSNumber)?.intValue ?? 0
                 let seriesID = (object.value(forKeyPath: "series.id") as? NSNumber)?.intValue ?? 0
                 let path = Self.resolvedPath(for: object) ?? ""
 
-                if let pix = DCMPix(path: path, index, loadList.count, pointer.advanced(by: Int(memOffset)), frameID, seriesID, isBonjour: isBonjour, imageObj: object) {
+                if let pix = DCMPix(path: path, index, loadList.count, nil, frameID, seriesID, isBonjour: isBonjour, imageObj: object) {
+                    pix.setWidthWithoutLoading(width, heightWithoutLoading: height)
                     pixList.append(pix)
-                    memOffset += width * height
                 }
             }
         }
 
         cachedPixList = pixList
-        cachedVolumeBacking = volumeBacking
         return pixList
     }
 
     func retainLoadedPixelCache(from previousSeries: MetalViewerSeries) {
         guard imageCount == previousSeries.imageCount else { return }
 
-        // The renderer keeps DCMPix references when a same-count refresh swaps series objects.
-        // Carry the backing store forward so those external fImage pointers remain valid.
         if cachedPixList == nil {
             cachedPixList = previousSeries.cachedPixList
-            cachedVolumeBacking = previousSeries.cachedVolumeBacking
         }
 
         if cachedStructuredReportHTML == nil {
@@ -830,7 +928,14 @@ final class MetalViewerSeries {
         let path = Self.resolvedPath(for: firstObject) ?? ""
         let frameID = (firstObject.value(forKey: "frameID") as? NSNumber)?.intValue ?? 0
         let seriesID = (firstObject.value(forKeyPath: "series.id") as? NSNumber)?.intValue ?? 0
-        return DCMPix(path: path, 0, 1, nil, frameID, seriesID, isBonjour: isBonjour, imageObj: firstObject)
+        guard let pix = DCMPix(path: path, 0, 1, nil, frameID, seriesID, isBonjour: isBonjour, imageObj: firstObject) else {
+            return nil
+        }
+        pix.setWidthWithoutLoading(
+            (firstObject.value(forKey: "width") as? NSNumber)?.intValue ?? 0,
+            heightWithoutLoading: (firstObject.value(forKey: "height") as? NSNumber)?.intValue ?? 0
+        )
+        return pix
     }
 
     private static func resolvedPath(for imageObject: NSManagedObject) -> String? {

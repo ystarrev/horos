@@ -161,13 +161,18 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
     }
 
     private func loadPix(_ pix: DCMPix, resetWindowLevel: Bool) {
-        pix.checkLoad()
+        let usingVolumeTexture = canUseVolumeTexture(for: pix, at: volumeSliceIndex)
+        if usingVolumeTexture == false || resetWindowLevel {
+            pix.checkLoad()
+        }
 
         currentPix = pix
-        let width = max(Int(pix.pwidth), 1)
-        let height = max(Int(pix.pheight), 1)
-        imageAspectRatio = Float(width) * Float(max(pix.pixelSpacingX, 1)) / max(Float(height) * Float(max(pix.pixelSpacingY, 1)), 1)
-        if canUseVolumeTexture(for: pix, at: volumeSliceIndex) == false || imageTexture == nil {
+        let width = max(Int(pix.widthWithoutLoading()), 1)
+        let height = max(Int(pix.heightWithoutLoading()), 1)
+        if usingVolumeTexture == false || pix.isLoaded() {
+            imageAspectRatio = Float(width) * Float(max(pix.pixelSpacingX, 1)) / max(Float(height) * Float(max(pix.pixelSpacingY, 1)), 1)
+        }
+        if usingVolumeTexture == false {
             imageTexture = makeTexture(for: pix)
         }
 
@@ -215,8 +220,8 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
             return false
         }
 
-        return volumeEntry.dimensions.x == max(Int(pix.pwidth), 1)
-            && volumeEntry.dimensions.y == max(Int(pix.pheight), 1)
+        return volumeEntry.dimensions.x == max(Int(pix.widthWithoutLoading()), 1)
+            && volumeEntry.dimensions.y == max(Int(pix.heightWithoutLoading()), 1)
     }
 
     private var volumeSliceIndex: Int {
@@ -228,8 +233,8 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
     }
 
     private func makeTexture(for pix: DCMPix) -> MTLTexture? {
-        let width = max(Int(pix.pwidth), 1)
-        let height = max(Int(pix.pheight), 1)
+        let width = max(Int(pix.widthWithoutLoading()), 1)
+        let height = max(Int(pix.heightWithoutLoading()), 1)
         let requiredSize = SIMD2<Int>(width, height)
 
         let texture: MTLTexture
@@ -537,25 +542,29 @@ final class MetalPreviewImageView: MTKView {
         }
 
         let imageRect = displayedImageRect
-        guard imageRect.contains(point), pix.pwidth > 0, pix.pheight > 0 else {
+        let width = Int(pix.widthWithoutLoading())
+        let height = Int(pix.heightWithoutLoading())
+        guard imageRect.contains(point), width > 0, height > 0 else {
             mouseOnImage = false
             return
         }
 
         let normalizedX = (point.x - imageRect.minX) / imageRect.width
         let normalizedY = (imageRect.maxY - point.y) / imageRect.height
-        let pixelX = max(0, min(CGFloat(pix.pwidth - 1), normalizedX * CGFloat(pix.pwidth)))
-        let pixelY = max(0, min(CGFloat(pix.pheight - 1), normalizedY * CGFloat(pix.pheight)))
-        let sampleX = min(max(Int(pixelX), 0), Int(pix.pwidth - 1))
-        let sampleY = min(max(Int(pixelY), 0), Int(pix.pheight - 1))
+        let pixelX = max(0, min(CGFloat(width - 1), normalizedX * CGFloat(width)))
+        let pixelY = max(0, min(CGFloat(height - 1), normalizedY * CGFloat(height)))
+        let sampleX = min(max(Int(pixelX), 0), width - 1)
+        let sampleY = min(max(Int(pixelY), 0), height - 1)
 
         var dicomCoords = [Float](repeating: 0, count: 3)
-        pix.convertX(Float(pixelX), pixY: Float(pixelY), toDICOMCoords: &dicomCoords, pixelCenter: true)
+        if pix.isLoaded() {
+            pix.convertX(Float(pixelX), pixY: Float(pixelY), toDICOMCoords: &dicomCoords, pixelCenter: true)
+        }
 
         mouseOnImage = true
         mousePixelX = sampleX
         mousePixelY = sampleY
-        mousePixelValue = pix.fImage?[sampleY * Int(pix.pwidth) + sampleX] ?? 0
+        mousePixelValue = pix.isLoaded() ? (pix.fImage?[sampleY * width + sampleX] ?? 0) : 0
         mouseDicomX = dicomCoords[0]
         mouseDicomY = dicomCoords[1]
         mouseDicomZ = dicomCoords[2]
@@ -567,7 +576,12 @@ final class MetalPreviewImageView: MTKView {
         let viewAspect = max(bounds.width / max(bounds.height, 1), 0.0001)
         var imageWidth = bounds.width
         var imageHeight = bounds.height
-        let aspect = CGFloat(max(previewRenderer.currentPix?.pixelSpacingX ?? 1, 1)) * CGFloat(previewRenderer.currentPix?.pwidth ?? 1) / max(CGFloat(max(previewRenderer.currentPix?.pixelSpacingY ?? 1, 1)) * CGFloat(previewRenderer.currentPix?.pheight ?? 1), 1)
+        let pix = previewRenderer.currentPix
+        let width = CGFloat(max(Int(pix?.widthWithoutLoading() ?? 1), 1))
+        let height = CGFloat(max(Int(pix?.heightWithoutLoading() ?? 1), 1))
+        let spacingX = pix?.isLoaded() == true ? CGFloat(max(pix?.pixelSpacingX ?? 1, 1)) : 1
+        let spacingY = pix?.isLoaded() == true ? CGFloat(max(pix?.pixelSpacingY ?? 1, 1)) : 1
+        let aspect = spacingX * width / max(spacingY * height, 1)
 
         if aspect > viewAspect {
             imageHeight = imageWidth / aspect

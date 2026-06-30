@@ -356,7 +356,11 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 
 - (void)scrollWheel:(NSEvent *)event
 {
-    [super scrollWheel:event];
+    BrowserController *browser = [BrowserController currentBrowser];
+    if (browser && [browser window] == [self window])
+        [browser scrollWheel:event];
+    else
+        [super scrollWheel:event];
 }
 
 - (void)swipeWithEvent:(NSEvent *)event

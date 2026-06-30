@@ -123,6 +123,10 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
         }
 
         if pixList.indices.contains(index) {
+            if pixList[index] !== pix {
+                volumeEntry = nil
+                requestedVolumeKey = nil
+            }
             pixList[index] = pix
         }
 

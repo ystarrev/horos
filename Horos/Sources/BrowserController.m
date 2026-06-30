@@ -9192,7 +9192,12 @@ static BOOL withReset = NO;
                 {
                     images = [self imagesArray: aFile];
                     if( sender)
+                    {
                         [oMatrix selectCellWithTag: [animationSlider intValue]];
+                        cell = [oMatrix selectedCell];
+                        if( cell == nil || [cell tag] >= [matrixViewArray count])
+                            return;
+                    }
                 }
                 
                 if( [images count])
@@ -9207,101 +9212,93 @@ static BOOL withReset = NO;
                         if( [animationSlider intValue] >= [images count]) return;
                         
                         DicomImage *imageObj = [images objectAtIndex: [animationSlider intValue]];
-                        
-                        if( [[[imageView curDCM] srcFile] isEqualToString: [[images objectAtIndex: [animationSlider intValue]] valueForKey:@"completePath"]] == NO || [[imageObj valueForKey: @"frameID"] intValue] != [[imageView curDCM] frameNo])
+
+                        DCMPix *dcmPix = nil;
+
+                        dcmPix = [[self getDCMPixFromViewerIfAvailable: [imageObj valueForKey:@"completePath"] frameNumber: [[imageObj valueForKey: @"frameID"] intValue]] retain];
+
+                        if( dcmPix == nil)
+                            dcmPix = [[DCMPix alloc] initWithPath: [imageObj valueForKey:@"completePath"] :[animationSlider intValue] :[images count] :nil :[[imageObj valueForKey: @"frameID"] intValue] :[[imageObj valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj: imageObj];
+
+                        if( dcmPix)
                         {
-                            DCMPix *dcmPix = nil;
-                            
-                            dcmPix = [[self getDCMPixFromViewerIfAvailable: [imageObj valueForKey:@"completePath"] frameNumber: [[imageObj valueForKey: @"frameID"] intValue]] retain];
-                            
-                            if( dcmPix == nil)
-                                dcmPix = [[DCMPix alloc] initWithPath: [imageObj valueForKey:@"completePath"] :[animationSlider intValue] :[images count] :nil :[[imageObj valueForKey: @"frameID"] intValue] :[[imageObj valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj: imageObj];
-                            
-                            if( dcmPix)
+                            float   wl, ww;
+
+                            [imageView getWLWW:&wl :&ww];
+
+                            @synchronized( previewPixThumbnails)
                             {
-                                float   wl, ww;
-                                
-                                [imageView getWLWW:&wl :&ww];
-                                
-                                @synchronized( previewPixThumbnails)
+                                DCMPix *previousDcmPix = [[previewPix objectAtIndex: [cell tag]] retain];	// To allow the cached system in DCMPix to avoid reloading
+
+                                [previewPix replaceObjectAtIndex:[cell tag] withObject:(id) dcmPix];
+
+                                [dcmPix release];
+
+                                @try
                                 {
-                                    DCMPix *previousDcmPix = [[previewPix objectAtIndex: [cell tag]] retain];	// To allow the cached system in DCMPix to avoid reloading
-                                    
-                                    [previewPix replaceObjectAtIndex:[cell tag] withObject:(id) dcmPix];
-                                    
-                                    [dcmPix release];
-                                    
-                                    if( withReset) [imageView setIndexWithReset:[cell tag] :YES];
-                                    else [imageView setIndex:[cell tag]];
-                                    [imageView setDisplayedImageIndex:[animationSlider intValue] totalCount:[images count]];
-                                    
-                                    @try
+                                    for( DCMPix *p in previewPix)
                                     {
-                                        for( DCMPix *p in previewPix)
+                                        if( p != dcmPix)
                                         {
-                                            if( p != dcmPix)
-                                            {
-                                                [p kill8bitsImage];
-                                                [p revert: NO];
-                                            }
+                                            [p kill8bitsImage];
+                                            [p revert: NO];
                                         }
                                     }
-                                    @catch (NSException *e) {}
-                                    
-                                    [previousDcmPix release];
                                 }
+                                @catch (NSException *e) {}
+
+                                [previousDcmPix release];
                             }
                         }
+
+                        if( withReset) [imageView setIndexWithReset:[cell tag] :YES];
+                        else [imageView setIndex:[cell tag]];
+                        [imageView setDisplayedImageIndex:[animationSlider intValue] totalCount:[images count]];
                     }
                     else if( noOfImages > 1)	// It's a multi-frame single image
                     {
                         animate = YES;
-                        
-                        if( [[[imageView curDCM] srcFile] isEqualToString: [[images objectAtIndex:0] valueForKey:@"completePath"]] == NO
-                           || [[imageView curDCM] frameNo] != [animationSlider intValue]
-                           || [[imageView curDCM] serieNo] != [[[images objectAtIndex: 0] valueForKeyPath:@"series.id"] intValue])
+
+                        DCMPix *dcmPix = nil;
+
+                        dcmPix = [[self getDCMPixFromViewerIfAvailable: [[images objectAtIndex: 0] valueForKey:@"completePath"] frameNumber: [animationSlider intValue]] retain];
+
+                        if( dcmPix == nil)
+                            dcmPix = [[DCMPix alloc] initWithPath: [[images objectAtIndex: 0] valueForKey:@"completePath"] :[animationSlider intValue] :noOfImages :nil :[animationSlider intValue] :[[[images objectAtIndex: 0] valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj:[images objectAtIndex: 0]];
+
+                        if( dcmPix)
                         {
-                            DCMPix *dcmPix = nil;
-                            
-                            dcmPix = [[self getDCMPixFromViewerIfAvailable: [[images objectAtIndex: 0] valueForKey:@"completePath"] frameNumber: [animationSlider intValue]] retain];
-                            
-                            if( dcmPix == nil)
-                                dcmPix = [[DCMPix alloc] initWithPath: [[images objectAtIndex: 0] valueForKey:@"completePath"] :[animationSlider intValue] :noOfImages :nil :[animationSlider intValue] :[[[images objectAtIndex: 0] valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj:[images objectAtIndex: 0]];
-                            
-                            if( dcmPix)
+                            float   wl, ww;
+
+                            [imageView getWLWW:&wl :&ww];
+
+                            @synchronized( previewPixThumbnails)
                             {
-                                float   wl, ww;
-                                
-                                [imageView getWLWW:&wl :&ww];
-                                
-                                @synchronized( previewPixThumbnails)
+                                DCMPix *previousDcmPix = [[previewPix objectAtIndex: [cell tag]] retain];	// To allow the cached system in DCMPix to avoid reloading
+
+                                [previewPix replaceObjectAtIndex:[cell tag] withObject:(id) dcmPix];
+                                [dcmPix release];
+
+                                @try
                                 {
-                                    DCMPix *previousDcmPix = [[previewPix objectAtIndex: [cell tag]] retain];	// To allow the cached system in DCMPix to avoid reloading
-                                    
-                                    [previewPix replaceObjectAtIndex:[cell tag] withObject:(id) dcmPix];
-                                    [dcmPix release];
-                                    
-                                    if( withReset) [imageView setIndexWithReset:[cell tag] :YES];
-                                    else [imageView setIndex:[cell tag]];
-                                    [imageView setDisplayedImageIndex:[animationSlider intValue] totalCount:noOfImages];
-                                    
-                                    @try
+                                    for( DCMPix *p in previewPix)
                                     {
-                                        for( DCMPix *p in previewPix)
+                                        if( p != dcmPix)
                                         {
-                                            if( p != dcmPix)
-                                            {
-                                                [p kill8bitsImage];
-                                                [p revert: NO];
-                                            }
+                                            [p kill8bitsImage];
+                                            [p revert: NO];
                                         }
                                     }
-                                    @catch (NSException *e) {}
-                                    
-                                    [previousDcmPix release];
                                 }
+                                @catch (NSException *e) {}
+
+                                [previousDcmPix release];
                             }
                         }
+
+                        if( withReset) [imageView setIndexWithReset:[cell tag] :YES];
+                        else [imageView setIndex:[cell tag]];
+                        [imageView setDisplayedImageIndex:[animationSlider intValue] totalCount:noOfImages];
                     }
                 }
             }
@@ -9330,33 +9327,84 @@ static BOOL withReset = NO;
 
 - (void)scrollWheel: (NSEvent *)theEvent
 {
+    static float preciseScrollAccumulator = 0;
     float reverseScrollWheel;
+    float deltaY = [theEvent deltaY];
+    float scrollScale = 2.5f;
+    BOOL preciseScrolling = NO;
+
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_7
+    preciseScrolling = [theEvent hasPreciseScrollingDeltas];
+    if( preciseScrolling)
+    {
+        deltaY = [theEvent scrollingDeltaY];
+        scrollScale = 8.0f;
+    }
+    else
+        deltaY = [theEvent scrollingDeltaY];
+#endif
     
     if ([[NSUserDefaults standardUserDefaults] boolForKey: @"Scroll Wheel Reversed"])
         reverseScrollWheel = -1.0;
     else
         reverseScrollWheel = 1.0;
     
-    float change = reverseScrollWheel * [theEvent deltaY];
+    float change = reverseScrollWheel * deltaY / scrollScale;
     
-    if( [theEvent deltaY] == 0)
+    if( deltaY == 0)
         return;
     
+    int maxValue = [animationSlider maxValue];
+    if( maxValue < 1)
+        return;
+
     int	pos = [animationSlider intValue];
+    int step = 0;
     
-    if( change > 0)
+    if( preciseScrolling)
     {
-        change = 1;
-        pos += change;
+        if( (preciseScrollAccumulator > 0 && change < 0) || (preciseScrollAccumulator < 0 && change > 0))
+            preciseScrollAccumulator = 0;
+
+        preciseScrollAccumulator += change;
+
+        if( fabs( preciseScrollAccumulator) < 1.0f)
+            return;
+
+        if( preciseScrollAccumulator > 0)
+            step = floor( preciseScrollAccumulator);
+        else
+            step = ceil( preciseScrollAccumulator);
+
+        preciseScrollAccumulator -= step;
     }
     else
     {
-        change = -1;
-        pos += change;
+        preciseScrollAccumulator = 0;
+
+        if( change > 0)
+        {
+            change = ceil( change);
+            if( change < 1)
+                change = 1;
+        }
+        else
+        {
+            change = floor( change);
+            if( change > -1)
+                change = -1;
+        }
+
+        step = change;
     }
-    
-    if( pos > [animationSlider maxValue]) pos = 0;
-    if( pos < 0) pos = [animationSlider maxValue];
+
+    if( step == 0)
+        return;
+
+    pos += step;
+
+    if( pos > maxValue) pos = maxValue;
+    if( pos < 0) pos = 0;
     
     [animationSlider setIntValue: pos];
     [self previewSliderAction: animationSlider];
@@ -14537,6 +14585,42 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     }
 }
 
+- (void)addDatabaseBuildLabel
+{
+    NSView *contentView = [self.window contentView];
+    if( contentView == nil)
+        return;
+
+    NSDate *buildDate = nil;
+    NSString *executablePath = [[NSBundle mainBundle] executablePath];
+    if( executablePath.length)
+        buildDate = [[[NSFileManager defaultManager] attributesOfItemAtPath: executablePath error: nil] fileModificationDate];
+    if( buildDate == nil)
+        buildDate = [NSDate date];
+
+    NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
+    [formatter setLocale: [[[NSLocale alloc] initWithLocaleIdentifier: @"en_US_POSIX"] autorelease]];
+    [formatter setDateFormat: @"MMM-dd-yyyy HH:mm"];
+
+    NSTextField *buildLabel = [[[NSTextField alloc] initWithFrame: NSMakeRect( 0, 0, 170, 12)] autorelease];
+    [buildLabel setStringValue: [NSString stringWithFormat: @"BuildNo: %@", [formatter stringFromDate: buildDate]]];
+    [buildLabel setFont: [NSFont systemFontOfSize: 8]];
+    [buildLabel setTextColor: [NSColor disabledControlTextColor]];
+    [buildLabel setAlignment: NSRightTextAlignment];
+    [buildLabel setEditable: NO];
+    [buildLabel setSelectable: NO];
+    [buildLabel setBordered: NO];
+    [buildLabel setBezeled: NO];
+    [buildLabel setDrawsBackground: NO];
+
+    NSRect labelFrame = [buildLabel frame];
+    labelFrame.origin.x = contentView.bounds.size.width - labelFrame.size.width - 4;
+    labelFrame.origin.y = 2;
+    [buildLabel setFrame: labelFrame];
+    [buildLabel setAutoresizingMask: NSViewMinXMargin | NSViewMaxYMargin];
+    [contentView addSubview: buildLabel positioned: NSWindowAbove relativeTo: nil];
+}
+
 -(void) awakeFromNib
 {
     @try
@@ -14563,6 +14647,8 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         else
             [self.window setFrame: r display: YES];
         
+        [self addDatabaseBuildLabel];
+
         gHorizontalHistory = [[NSUserDefaults standardUserDefaults] boolForKey: @"horizontalHistory"];
         
         if( gHorizontalHistory)

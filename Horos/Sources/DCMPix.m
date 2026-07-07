@@ -134,12 +134,13 @@ static void* HorosDCMPixModernDCMTKBridgeHandle(void)
         if (resolvedPath)
         {
             handle = dlopen(resolvedPath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-            if (handle == NULL)
+            if (handle == NULL && [[NSUserDefaults standardUserDefaults] boolForKey:@"HorosMetalViewerTimingLogEnabled"])
                 NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK bridge failed to load at %@: %s", resolvedPath, dlerror());
         }
         else
         {
-            NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK bridge not found in bundle search paths.");
+            if ([[NSUserDefaults standardUserDefaults] boolForKey:@"HorosMetalViewerTimingLogEnabled"])
+                NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK bridge not found in bundle search paths.");
         }
     });
 
@@ -166,7 +167,8 @@ static void* HorosDCMPixModernDCMTKSymbol(const char* name)
             if ([missingSymbols containsObject:symbolName] == NO)
             {
                 [missingSymbols addObject:symbolName];
-                NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK bridge missing symbol %@: %s", symbolName, dlerror());
+                if ([[NSUserDefaults standardUserDefaults] boolForKey:@"HorosMetalViewerTimingLogEnabled"])
+                    NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK bridge missing symbol %@: %s", symbolName, dlerror());
             }
         }
     }
@@ -3371,6 +3373,212 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     savedHeightInDB = newHeight;
 }
 
+- (NSDictionary*) decodedStoredPixelData16ForMetalTexture
+{
+    if( self.srcFile.length == 0)
+        return nil;
+
+    NSDictionary *result = nil;
+
+    @try
+    {
+        DCMObject *dcmObject = [DCMObject objectWithContentsOfFile: self.srcFile decodingPixelData: NO];
+        if( dcmObject == nil)
+            return nil;
+
+        // Enhanced multi-frame objects can carry frame-specific rescale in functional groups.
+        // Keep those on the existing float decode path until the direct path handles that metadata.
+        if( [dcmObject attributeWithName: @"SharedFunctionalGroupsSequence"] ||
+            [dcmObject attributeWithName: @"Per-frameFunctionalGroupsSequence"])
+            return nil;
+
+        long localHeight = [[dcmObject attributeValueWithName: @"Rows"] longValue];
+        long localWidth = [[dcmObject attributeValueWithName: @"Columns"] longValue];
+        if( localWidth <= 0 || localHeight <= 0)
+            return nil;
+
+        int samplesPerPixel = [[dcmObject attributeValueWithName: @"SamplesperPixel"] intValue];
+        if( samplesPerPixel == 0)
+            samplesPerPixel = [[dcmObject attributeValueWithName: @"SamplesPerPixel"] intValue];
+        if( samplesPerPixel > 1)
+            return nil;
+
+        NSString *modality = [dcmObject attributeValueWithName: @"Modality"];
+        if( [modality isEqualToString: @"PT"] || [modality isEqualToString: @"NM"])
+            return nil;
+
+        NSString *colorspace = [dcmObject attributeValueWithName: @"PhotometricInterpretation"];
+        if( colorspace == nil)
+            colorspace = @"";
+        if( [colorspace rangeOfString: @"RGB" options: NSCaseInsensitiveSearch].location != NSNotFound ||
+            [colorspace rangeOfString: @"YBR" options: NSCaseInsensitiveSearch].location != NSNotFound ||
+            [colorspace rangeOfString: @"PALETTE" options: NSCaseInsensitiveSearch].location != NSNotFound)
+            return nil;
+
+        short localBitsAllocated = [[dcmObject attributeValueWithName: @"BitsAllocated"] shortValue];
+        short localBitsStored = [[dcmObject attributeValueWithName: @"BitsStored"] shortValue];
+        if( localBitsStored <= 0 || localBitsStored > localBitsAllocated)
+            localBitsStored = localBitsAllocated;
+        if( localBitsAllocated != 8 && localBitsAllocated != 16)
+            return nil;
+
+        BOOL localIsSigned = [[dcmObject attributeValueWithName: @"PixelRepresentation"] intValue] != 0;
+        float localSlope = 1.0;
+        float localOffset = 0.0;
+        if( [dcmObject attributeValueWithName: @"RescaleIntercept"])
+            localOffset = [[dcmObject attributeValueWithName: @"RescaleIntercept"] floatValue];
+        if( [dcmObject attributeValueWithName: @"RescaleSlope"])
+        {
+            localSlope = [[dcmObject attributeValueWithName: @"RescaleSlope"] floatValue];
+            if( localSlope == 0)
+                localSlope = 1.0;
+        }
+
+        float localWindowLevel = 0.0;
+        float localWindowWidth = 0.0;
+        if( [dcmObject attributeValueWithName: @"WindowCenter"])
+            localWindowLevel = [[dcmObject attributeValueWithName: @"WindowCenter"] floatValue];
+        if( [dcmObject attributeValueWithName: @"WindowWidth"])
+        {
+            localWindowWidth = [[dcmObject attributeValueWithName: @"WindowWidth"] floatValue];
+            if( localWindowWidth < 0)
+                localWindowWidth = -localWindowWidth;
+        }
+
+        float localPixelSpacingX = 1.0;
+        float localPixelSpacingY = 1.0;
+        NSArray *pixelSpacing = [dcmObject attributeArrayWithName: @"PixelSpacing"];
+        if( pixelSpacing.count >= 2)
+        {
+            localPixelSpacingY = [[pixelSpacing objectAtIndex: 0] floatValue];
+            localPixelSpacingX = [[pixelSpacing objectAtIndex: 1] floatValue];
+        }
+        else if( pixelSpacing.count == 1)
+        {
+            localPixelSpacingY = [[pixelSpacing objectAtIndex: 0] floatValue];
+            localPixelSpacingX = localPixelSpacingY;
+        }
+        else
+        {
+            NSArray *imagerPixelSpacing = [dcmObject attributeArrayWithName: @"ImagerPixelSpacing"];
+            if( imagerPixelSpacing.count >= 2)
+            {
+                localPixelSpacingY = [[imagerPixelSpacing objectAtIndex: 0] floatValue];
+                localPixelSpacingX = [[imagerPixelSpacing objectAtIndex: 1] floatValue];
+            }
+            else if( imagerPixelSpacing.count == 1)
+            {
+                localPixelSpacingY = [[imagerPixelSpacing objectAtIndex: 0] floatValue];
+                localPixelSpacingX = localPixelSpacingY;
+            }
+        }
+        if( localPixelSpacingX <= 0)
+            localPixelSpacingX = 1.0;
+        if( localPixelSpacingY <= 0)
+            localPixelSpacingY = 1.0;
+
+        BOOL localInverse = NO;
+        if( [colorspace rangeOfString: @"MONOCHROME1" options: NSCaseInsensitiveSearch].location != NSNotFound)
+        {
+            if( [modality isEqualToString: @"PT"] == NO &&
+                ([[NSUserDefaults standardUserDefaults] boolForKey: @"OpacityTableNM"] == NO || [modality isEqualToString: @"NM"] == NO))
+                localInverse = YES;
+        }
+
+        DCMPixelDataAttribute *pixelAttr = (DCMPixelDataAttribute*) [dcmObject attributeWithName: @"PixelData"];
+        if( pixelAttr == nil)
+            return nil;
+
+        int frameIndex = frameNo < 0 ? 0 : (int) frameNo;
+        NSData *pixData = [pixelAttr decodeFrameAtIndex: frameIndex];
+        if( pixData.length == 0)
+            return nil;
+
+        NSUInteger pixelCount = (NSUInteger) localWidth * (NSUInteger) localHeight;
+        if( pixelCount == 0)
+            return nil;
+
+        NSMutableData *storedData = [NSMutableData dataWithLength: pixelCount * sizeof( uint16_t)];
+        uint16_t *unsignedDestination = (uint16_t*) storedData.mutableBytes;
+        int16_t *signedDestination = (int16_t*) storedData.mutableBytes;
+
+        if( localBitsAllocated == 16)
+        {
+            if( pixData.length < pixelCount * sizeof( uint16_t))
+                return nil;
+
+            const uint16_t *source = (const uint16_t*) pixData.bytes;
+            if( localIsSigned)
+            {
+                if( localBitsStored > 0 && localBitsStored < localBitsAllocated)
+                {
+                    const int shift = localBitsAllocated - localBitsStored;
+                    const int divisor = 1 << shift;
+                    for( NSUInteger index = 0; index < pixelCount; index++)
+                        signedDestination[ index] = ((int16_t)(source[ index] << shift)) / divisor;
+                }
+                else
+                {
+                    memcpy( signedDestination, source, pixelCount * sizeof( int16_t));
+                }
+            }
+            else
+            {
+                memcpy( unsignedDestination, source, pixelCount * sizeof( uint16_t));
+            }
+        }
+        else
+        {
+            if( pixData.length < pixelCount)
+                return nil;
+
+            const uint8_t *source = (const uint8_t*) pixData.bytes;
+            if( localIsSigned)
+            {
+                if( localBitsStored > 0 && localBitsStored < localBitsAllocated)
+                {
+                    const int shift = localBitsAllocated - localBitsStored;
+                    const int divisor = 1 << shift;
+                    for( NSUInteger index = 0; index < pixelCount; index++)
+                        signedDestination[ index] = ((int8_t)(source[ index] << shift)) / divisor;
+                }
+                else
+                {
+                    for( NSUInteger index = 0; index < pixelCount; index++)
+                        signedDestination[ index] = (int8_t) source[ index];
+                }
+            }
+            else
+            {
+                for( NSUInteger index = 0; index < pixelCount; index++)
+                    unsignedDestination[ index] = source[ index];
+            }
+        }
+
+        result = [NSDictionary dictionaryWithObjectsAndKeys:
+                  storedData, @"data",
+                  [NSNumber numberWithLong: localWidth], @"width",
+                  [NSNumber numberWithLong: localHeight], @"height",
+                  [NSNumber numberWithFloat: localSlope], @"slope",
+                  [NSNumber numberWithFloat: localOffset], @"offset",
+                  [NSNumber numberWithBool: localIsSigned], @"isSigned",
+                  [NSNumber numberWithBool: localInverse], @"inverse",
+                  [NSNumber numberWithShort: localBitsAllocated], @"bitsAllocated",
+                  [NSNumber numberWithShort: localBitsStored], @"bitsStored",
+                  [NSNumber numberWithFloat: localPixelSpacingX], @"pixelSpacingX",
+                  [NSNumber numberWithFloat: localPixelSpacingY], @"pixelSpacingY",
+                  [NSNumber numberWithFloat: localWindowLevel], @"windowLevel",
+                  [NSNumber numberWithFloat: localWindowWidth], @"windowWidth",
+                  nil];
+    }
+    @catch( NSException *exception)
+    {
+        result = nil;
+    }
+
+    return result;
+}
+
 - (double) pixelRatio { [self CheckLoad]; return pixelRatio; }
 
 - (double) pixelSpacingY { [self CheckLoad]; return pixelSpacingY; }
@@ -5925,7 +6133,8 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     if (copyDecodedFrame([self.srcFile fileSystemRepresentation], requestedFrame, &decodedFrame) == 0)
     {
         NSString *failureReason = decodedFrame.failureReason != NULL ? [NSString stringWithUTF8String:decodedFrame.failureReason] : @"unknown";
-        NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK decode unsupported/fail frame=%lu path=%@ reason=\"%@\" in %.3f s", requestedFrame, [self.srcFile lastPathComponent], failureReason, CFAbsoluteTimeGetCurrent() - startTime);
+        if ([[NSUserDefaults standardUserDefaults] boolForKey:@"HorosMetalViewerTimingLogEnabled"])
+            NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK decode unsupported/fail frame=%lu path=%@ reason=\"%@\" in %.3f s", requestedFrame, [self.srcFile lastPathComponent], failureReason, CFAbsoluteTimeGetCurrent() - startTime);
         freeDecodedFrame(&decodedFrame);
         return NO;
     }
@@ -7086,7 +7295,8 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     [purgeCacheLock unlockWithCondition: [purgeCacheLock condition]-1];
     [pool release];
     
-    NSLog(@"HOROS_METAL_TIMING DCMPix legacy DCMFramework decode %@ path=%@ in %.3f s", returnValue ? @"success" : @"fail", [self.srcFile lastPathComponent], CFAbsoluteTimeGetCurrent() - startTime);
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"HorosMetalViewerTimingLogEnabled"])
+        NSLog(@"HOROS_METAL_TIMING DCMPix legacy DCMFramework decode %@ path=%@ in %.3f s", returnValue ? @"success" : @"fail", [self.srcFile lastPathComponent], CFAbsoluteTimeGetCurrent() - startTime);
     return returnValue;
 }
 

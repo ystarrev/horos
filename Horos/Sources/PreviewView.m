@@ -194,7 +194,9 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     _annotationOverlay = [[PreviewAnnotationOverlayView alloc] initWithFrame:self.bounds];
     [(PreviewAnnotationOverlayView *)_annotationOverlay setOwner:self];
     [_annotationOverlay setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
-    [self addSubview:_annotationOverlay];
+    [_annotationOverlay setWantsLayer:YES];
+    [_annotationOverlay setLayerContentsRedrawPolicy:NSViewLayerContentsRedrawDuringViewResize];
+    [self addSubview:_annotationOverlay positioned:NSWindowAbove relativeTo:_metalView];
 
     _reportWebView = [[WebView alloc] initWithFrame:self.bounds];
     [_reportWebView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
@@ -232,6 +234,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         [_metalView updateCurrentPix:pix index:firstImage resetWindowLevel:reset];
     }
 
+    [self ensureAnnotationsForCurrentPix];
     [self refreshPreviewMode];
     [_annotationOverlay setNeedsDisplay:YES];
 }
@@ -247,6 +250,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         [_metalView updatePixList:_dcmPixList firstImage:index resetWindowLevel:NO];
     else
         [_metalView updateCurrentPix:pix index:index resetWindowLevel:NO];
+    [self ensureAnnotationsForCurrentPix];
     [self refreshPreviewMode];
     [_annotationOverlay setNeedsDisplay:YES];
 }
@@ -264,6 +268,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         [_metalView updateCurrentPix:pix index:index resetWindowLevel:NO];
     if (sizeToFit)
         [_metalView resetViewTransform];
+    [self ensureAnnotationsForCurrentPix];
     [self refreshPreviewMode];
     [_annotationOverlay setNeedsDisplay:YES];
 }
@@ -300,6 +305,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         if (index < 0) index = 0;
         if (index >= [_dcmPixList count]) index = [_dcmPixList count] - 1;
         [_metalView updatePixList:_dcmPixList firstImage:index resetWindowLevel:NO];
+        [self ensureAnnotationsForCurrentPix];
         [self refreshPreviewMode];
         [_annotationOverlay setNeedsDisplay:YES];
     }
@@ -802,6 +808,18 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     }
 }
 
+- (void)ensureAnnotationsForCurrentPix
+{
+#ifdef OSIRIX_VIEWER
+    DCMPix *pix = self.curDCM;
+    if (pix == nil)
+        return;
+
+    if (pix.annotationsDictionary.count == 0)
+        [pix loadCustomImageAnnotationsPapyLink:-1 DCMLink:nil];
+#endif
+}
+
 - (void)drawAnnotationsInBounds:(NSRect)bounds
 {
     DCMPix *pix = self.curDCM;
@@ -814,6 +832,12 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     BOOL fullText = (annotationLevel >= annotFull);
 
     NSDictionary *annotationsDictionary = pix.annotationsDictionary ?: @{};
+    if (annotationsDictionary.count == 0)
+    {
+        [self ensureAnnotationsForCurrentPix];
+        annotationsDictionary = pix.annotationsDictionary ?: @{};
+    }
+
     if (annotationsDictionary.count == 0)
         return;
 

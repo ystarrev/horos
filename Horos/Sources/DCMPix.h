@@ -253,6 +253,8 @@ extern "C"
 - (long) heightWithoutLoading;
 /** Sets known dimensions without forcing image pixel data to load. */
 - (void) setWidthWithoutLoading:(long) newWidth heightWithoutLoading:(long) newHeight;
+/** Returns decoded stored grayscale samples for Metal upload without applying rescale/windowing. */
+- (NSDictionary*) decodedStoredPixelData16ForMetalTexture;
 
 /** WW & WL */
 @property(readonly) float ww, wl, fullww, fullwl;

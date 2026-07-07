@@ -1,7 +1,7 @@
 import AppKit
 
 private func metalWindowTimingLog(_ message: String, since start: CFAbsoluteTime) {
-    print(String(format: "HOROS_METAL_TIMING %@ %.3f s", message, CFAbsoluteTimeGetCurrent() - start))
+    MetalViewerDiagnostics.timingLog(message, since: start)
 }
 
 private final class MetalViewerSplitView: NSSplitView {
@@ -96,7 +96,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         window.center()
 
         let rootView = NSView(frame: contentRect)
-        rootView.translatesAutoresizingMaskIntoConstraints = false
         rootView.wantsLayer = true
         rootView.layer?.backgroundColor = NSColor.black.cgColor
 
@@ -119,7 +118,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         paneStackView.translatesAutoresizingMaskIntoConstraints = false
         paneStackView.orientation = .vertical
         paneStackView.distribution = .fillEqually
-        paneStackView.alignment = .leading
+        paneStackView.alignment = .width
         paneStackView.spacing = 8
         paneContainer.addSubview(paneStackView)
 
@@ -413,7 +412,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             rowStack.translatesAutoresizingMaskIntoConstraints = false
             rowStack.orientation = .horizontal
             rowStack.distribution = .fillEqually
-            rowStack.alignment = .centerY
+            rowStack.alignment = .height
             rowStack.spacing = 8
 
             for pane in paneViews[startIndex..<endIndex] {

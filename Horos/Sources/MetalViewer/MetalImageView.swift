@@ -490,14 +490,9 @@ final class MetalImageView: MTKView {
         self.preferredFramesPerSecond = 60
 
         mprPreviewOverlayView.owner = self
-        mprPreviewOverlayView.translatesAutoresizingMaskIntoConstraints = false
+        mprPreviewOverlayView.frame = bounds
+        mprPreviewOverlayView.autoresizingMask = [.width, .height]
         addSubview(mprPreviewOverlayView)
-        NSLayoutConstraint.activate([
-            mprPreviewOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            mprPreviewOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            mprPreviewOverlayView.topAnchor.constraint(equalTo: topAnchor),
-            mprPreviewOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
 
         renderer.stateDidChange = { [weak self] state in
             self?.titleDidChange?(state)

@@ -1476,14 +1476,16 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         tumorSurfaces = surfaces
         showTumorSegmentation = true
         tumorLabelFilter = nil
-        NSLog(
-            "HOROS_METAL_TIMING Metal3DVolumeRenderer tumourSegmentation labels=%@ surfaces=%ld volume=%ldx%ldx%ld",
-            labels.map { String($0) }.joined(separator: ",") as NSString,
-            surfaces.count,
-            volumeDimensions.x,
-            volumeDimensions.y,
-            volumeDimensions.z
-        )
+        if MetalViewerDiagnostics.isTimingLogEnabled {
+            NSLog(
+                "HOROS_METAL_TIMING Metal3DVolumeRenderer tumourSegmentation labels=%@ surfaces=%ld volume=%ldx%ldx%ld",
+                labels.map { String($0) }.joined(separator: ",") as NSString,
+                surfaces.count,
+                volumeDimensions.x,
+                volumeDimensions.y,
+                volumeDimensions.z
+            )
+        }
         return Metal3DTumorSegmentationStatistics(
             surfaceCount: surfaces.count,
             voxelVolumeML: voxelVolumeML(),
@@ -1522,16 +1524,18 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         surgicalTrajectory = trajectory
         trajectoryHandleHovered = false
         suppressProjectedTrajectoryOutline = false
-        NSLog(
-            "HOROS_METAL_TIMING Metal3DVolumeRenderer surgicalTrajectory center=(%.4f,%.4f,%.4f) skin=(%.4f,%.4f,%.4f) length=%.4f",
-            Double(tumorCentroidWorldPosition.x),
-            Double(tumorCentroidWorldPosition.y),
-            Double(tumorCentroidWorldPosition.z),
-            Double(skinPoint.x),
-            Double(skinPoint.y),
-            Double(skinPoint.z),
-            Double(simd_length(skinPoint - tumorCentroidWorldPosition))
-        )
+        if MetalViewerDiagnostics.isTimingLogEnabled {
+            NSLog(
+                "HOROS_METAL_TIMING Metal3DVolumeRenderer surgicalTrajectory center=(%.4f,%.4f,%.4f) skin=(%.4f,%.4f,%.4f) length=%.4f",
+                Double(tumorCentroidWorldPosition.x),
+                Double(tumorCentroidWorldPosition.y),
+                Double(tumorCentroidWorldPosition.z),
+                Double(skinPoint.x),
+                Double(skinPoint.y),
+                Double(skinPoint.z),
+                Double(simd_length(skinPoint - tumorCentroidWorldPosition))
+            )
+        }
         return nil
     }
 
@@ -2220,11 +2224,13 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
            let vertexFloatData = skinSurfaceVertexFloatData {
             let start = CFAbsoluteTimeGetCurrent()
             skinSurfaceWorldPoints = worldPositions(fromSurfaceVertexFloatData: vertexFloatData)
-            NSLog(
-                "HOROS_METAL_TIMING Metal3DVolumeRenderer skinSurfaceWorldPoints points=%ld %.3f s",
-                skinSurfaceWorldPoints.count,
-                CFAbsoluteTimeGetCurrent() - start
-            )
+            if MetalViewerDiagnostics.isTimingLogEnabled {
+                NSLog(
+                    "HOROS_METAL_TIMING Metal3DVolumeRenderer skinSurfaceWorldPoints points=%ld %.3f s",
+                    skinSurfaceWorldPoints.count,
+                    CFAbsoluteTimeGetCurrent() - start
+                )
+            }
             return
         }
 
@@ -2237,7 +2243,12 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
         let start = CFAbsoluteTimeGetCurrent()
         guard let result = makeSkinShellMask(includeSurface: buildSurface) else {
-            NSLog("HOROS_METAL_TIMING Metal3DVolumeRenderer skinExtraction unavailable %.3f s", CFAbsoluteTimeGetCurrent() - start)
+            if MetalViewerDiagnostics.isTimingLogEnabled {
+                NSLog(
+                    "HOROS_METAL_TIMING Metal3DVolumeRenderer skinExtraction unavailable %.3f s",
+                    CFAbsoluteTimeGetCurrent() - start
+                )
+            }
             return
         }
 
@@ -2254,25 +2265,27 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
            let vertexFloatData = skinSurfaceVertexFloatData {
             skinSurfaceWorldPoints = worldPositions(fromSurfaceVertexFloatData: vertexFloatData)
         }
-        NSLog(
-            "HOROS_METAL_TIMING Metal3DVolumeRenderer skinExtraction method=%@ threshold=%.3f shell=%.1fmm foreground=%ld filled=%ld surfaceVoxels=%ld surfacePoints=%ld surfaceTriangles=%ld surfaceVertices=%ld outside=%ld shell=%ld masked=%ld volume=%ldx%ldx%ld %.3f s",
-            result.method as NSString,
-            Double(result.threshold),
-            Double(result.shellThicknessMM),
-            result.foregroundVoxelCount,
-            result.filledObjectVoxelCount,
-            result.surfaceVoxelCount,
-            result.surfacePointCount,
-            result.surfaceTriangleCount,
-            result.surfaceVertexCount,
-            result.outsideVoxelCount,
-            result.shellVoxelCount,
-            result.maskedVoxelCount,
-            volumeDimensions.x,
-            volumeDimensions.y,
-            volumeDimensions.z,
-            CFAbsoluteTimeGetCurrent() - start
-        )
+        if MetalViewerDiagnostics.isTimingLogEnabled {
+            NSLog(
+                "HOROS_METAL_TIMING Metal3DVolumeRenderer skinExtraction method=%@ threshold=%.3f shell=%.1fmm foreground=%ld filled=%ld surfaceVoxels=%ld surfacePoints=%ld surfaceTriangles=%ld surfaceVertices=%ld outside=%ld shell=%ld masked=%ld volume=%ldx%ldx%ld %.3f s",
+                result.method as NSString,
+                Double(result.threshold),
+                Double(result.shellThicknessMM),
+                result.foregroundVoxelCount,
+                result.filledObjectVoxelCount,
+                result.surfaceVoxelCount,
+                result.surfacePointCount,
+                result.surfaceTriangleCount,
+                result.surfaceVertexCount,
+                result.outsideVoxelCount,
+                result.shellVoxelCount,
+                result.maskedVoxelCount,
+                volumeDimensions.x,
+                volumeDimensions.y,
+                volumeDimensions.z,
+                CFAbsoluteTimeGetCurrent() - start
+            )
+        }
     }
 
     private func makeSkinShellMask(includeSurface: Bool) -> SkinShellExtractionResult? {
@@ -4017,22 +4030,24 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return fullBounds
         }
 
-        NSLog(
-            "HOROS_METAL_TIMING Metal3DVolumeRenderer airCrop source=%ldx%ldx%ld crop=(%ld:%ld,%ld:%ld,%ld:%ld) output=%ldx%ldx%ld %.3f s",
-            dimensions.x,
-            dimensions.y,
-            dimensions.z,
-            cropBounds.minX,
-            cropBounds.maxX,
-            cropBounds.minY,
-            cropBounds.maxY,
-            cropBounds.minZ,
-            cropBounds.maxZ,
-            cropDimensions.x,
-            cropDimensions.y,
-            cropDimensions.z,
-            CFAbsoluteTimeGetCurrent() - start
-        )
+        if MetalViewerDiagnostics.isTimingLogEnabled {
+            NSLog(
+                "HOROS_METAL_TIMING Metal3DVolumeRenderer airCrop source=%ldx%ldx%ld crop=(%ld:%ld,%ld:%ld,%ld:%ld) output=%ldx%ldx%ld %.3f s",
+                dimensions.x,
+                dimensions.y,
+                dimensions.z,
+                cropBounds.minX,
+                cropBounds.maxX,
+                cropBounds.minY,
+                cropBounds.maxY,
+                cropBounds.minZ,
+                cropBounds.maxZ,
+                cropDimensions.x,
+                cropDimensions.y,
+                cropDimensions.z,
+                CFAbsoluteTimeGetCurrent() - start
+            )
+        }
 
         return cropBounds
     }
@@ -4224,22 +4239,24 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             }
         }
 
-        NSLog(
-            "HOROS_METAL_TIMING Metal3DVolumeRenderer isotropicZResampleCubic source=%ldx%ldx%ld spacing=%.3fx%.3fx%.3f output=%ldx%ldx%ld spacing=%.3fx%.3fx%.3f %.3f s",
-            sourceDimensions.x,
-            sourceDimensions.y,
-            sourceDimensions.z,
-            Double(sourceVoxelSpacing.x),
-            Double(sourceVoxelSpacing.y),
-            Double(sourceVoxelSpacing.z),
-            volumeDimensions.x,
-            volumeDimensions.y,
-            volumeDimensions.z,
-            Double(voxelSpacing.x),
-            Double(voxelSpacing.y),
-            Double(voxelSpacing.z),
-            CFAbsoluteTimeGetCurrent() - start
-        )
+        if MetalViewerDiagnostics.isTimingLogEnabled {
+            NSLog(
+                "HOROS_METAL_TIMING Metal3DVolumeRenderer isotropicZResampleCubic source=%ldx%ldx%ld spacing=%.3fx%.3fx%.3f output=%ldx%ldx%ld spacing=%.3fx%.3fx%.3f %.3f s",
+                sourceDimensions.x,
+                sourceDimensions.y,
+                sourceDimensions.z,
+                Double(sourceVoxelSpacing.x),
+                Double(sourceVoxelSpacing.y),
+                Double(sourceVoxelSpacing.z),
+                volumeDimensions.x,
+                volumeDimensions.y,
+                volumeDimensions.z,
+                Double(voxelSpacing.x),
+                Double(voxelSpacing.y),
+                Double(voxelSpacing.z),
+                CFAbsoluteTimeGetCurrent() - start
+            )
+        }
 
         return output
     }

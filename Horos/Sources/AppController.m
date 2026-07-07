@@ -2851,6 +2851,17 @@ static BOOL initialized = NO;
                 NSLog(@"Number of screens: %d", (int) [[NSScreen screens] count]);
 				NSLog(@"Main screen backingScaleFactor: %f", (float) [[NSScreen mainScreen] backingScaleFactor]);
                 NSLog(@"Horos version: %@ - %@ - %@", [[[NSBundle mainBundle] infoDictionary] objectForKey:(NSString *)kCFBundleVersionKey], [[[NSBundle mainBundle] infoDictionary] objectForKey: @"CFBundleShortVersionString"], bits);
+                NSDate *buildDate = nil;
+                NSString *executablePath = [[NSBundle mainBundle] executablePath];
+                if( executablePath.length)
+                    buildDate = [[[NSFileManager defaultManager] attributesOfItemAtPath: executablePath error: nil] fileModificationDate];
+                if( buildDate == nil)
+                    buildDate = [NSDate date];
+                NSDateFormatter *buildFormatter = [[NSDateFormatter alloc] init];
+                NSLocale *buildLocale = [[NSLocale alloc] initWithLocaleIdentifier: @"en_US_POSIX"];
+                [buildFormatter setLocale: buildLocale];
+                [buildFormatter setDateFormat: @"MMM-dd-yyyy HH:mm"];
+                NSLog(@"BuildNo: %@", [buildFormatter stringFromDate: buildDate]);
                 NSLog(@"OpenJPEG %d.%d.%d", OPJ_VERSION_MAJOR, OPJ_VERSION_MINOR, OPJ_VERSION_BUILD);                
                 NSArray *components = [[[NSBundle mainBundle] pathForResource: @"Localizable" ofType: @"strings"] pathComponents];
                 if( components.count > 3)
@@ -3557,11 +3568,7 @@ static BOOL initialized = NO;
         [NSThread detachNewThreadSelector: @selector( addPreferencesFromURL:) toTarget: [OSIGeneralPreferencePanePref class] withObject: [NSURL URLWithString: [[NSUserDefaults standardUserDefaults] stringForKey: @"SyncPreferencesURL"]]];
 
 
-#ifdef NDEBUG
     [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"NSConstraintBasedLayoutVisualizeMutuallyExclusiveConstraints"];
-#else
-    [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"NSConstraintBasedLayoutVisualizeMutuallyExclusiveConstraints"];
-#endif
 
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"isQueryControllerVisible"])
     {

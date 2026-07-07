@@ -9,8 +9,9 @@
 /// Team ID of a development team to use for signing certificates and provisioning profiles
 DEVELOPMENT_TEAM = TPT6TVH8UY
 
-/// Architecture for which the product will be built. Only a single architecture is supported currently (arm64 or x86_64)
+/// Architecture for which the product will be built. Horos is Apple Silicon only.
 ARCHS = arm64
+EXCLUDED_ARCHS[sdk=macosx*] = x86_64 i386 ppc ppc64
 
 /// Target will load on this and later versions of macOS
 MACOSX_DEPLOYMENT_TARGET = 15.0

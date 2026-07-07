@@ -4,6 +4,58 @@ import Foundation
 import Metal
 import simd
 
+enum MetalViewerDiagnostics {
+    private static let timingLogDefaultsKey = "HorosMetalViewerTimingLogEnabled"
+    private static let registrationTimingLogDefaultsKey = "HorosMetalViewerRegistrationTimingLogEnabled"
+
+    static var isTimingLogEnabled: Bool {
+        bool(forKey: timingLogDefaultsKey, defaultValue: false)
+    }
+
+    static var isRegistrationTimingLogEnabled: Bool {
+        isTimingLogEnabled || bool(forKey: registrationTimingLogDefaultsKey, defaultValue: false)
+    }
+
+    static func timingLog(_ message: String) {
+        guard isTimingLogEnabled else { return }
+        emit("HOROS_METAL_TIMING \(message)")
+    }
+
+    static func timingLog(_ message: String, since start: CFAbsoluteTime) {
+        guard isTimingLogEnabled else { return }
+        emit(String(format: "HOROS_METAL_TIMING %@ %.3f s", message, CFAbsoluteTimeGetCurrent() - start))
+    }
+
+    static func timingLog(format: String, _ arguments: CVarArg...) {
+        guard isTimingLogEnabled else { return }
+        emit(String(format: "HOROS_METAL_TIMING " + format, arguments: arguments))
+    }
+
+    static func registrationTimingLog(_ message: String) {
+        guard isRegistrationTimingLogEnabled else { return }
+        emit("HOROS_METAL_REGISTRATION_TIMING \(message)")
+    }
+
+    static func registrationTimingLog(_ message: String, since start: CFAbsoluteTime) {
+        guard isRegistrationTimingLogEnabled else { return }
+        emit(String(format: "HOROS_METAL_REGISTRATION_TIMING %@ %.3f s", message, CFAbsoluteTimeGetCurrent() - start))
+    }
+
+    static func registrationTimingLog(format: String, _ arguments: CVarArg...) {
+        guard isRegistrationTimingLogEnabled else { return }
+        emit(String(format: "HOROS_METAL_REGISTRATION_TIMING " + format, arguments: arguments))
+    }
+
+    private static func emit(_ message: String) {
+        NSLog("%@", message)
+    }
+
+    private static func bool(forKey key: String, defaultValue: Bool) -> Bool {
+        guard UserDefaults.standard.object(forKey: key) != nil else { return defaultValue }
+        return UserDefaults.standard.bool(forKey: key)
+    }
+}
+
 enum MetalViewerMouseButton: Int, Hashable {
     case left = 0
     case right = 1
@@ -376,6 +428,136 @@ struct MetalViewerWindowLevelState {
     var customWindow: MetalViewerWindowLevel?
 }
 
+enum MetalSeriesTextureStorageMode: Equatable {
+    case rescaledFloat
+    case storedInt16
+
+    var keyComponent: String {
+        switch self {
+        case .rescaledFloat:
+            return "float"
+        case .storedInt16:
+            return "stored-int16"
+        }
+    }
+}
+
+enum MetalSeriesTextureKind: UInt32 {
+    case rescaledFloat = 1
+    case storedInt16Signed = 2
+    case storedInt16Unsigned = 3
+}
+
+struct MetalStoredInt16PixelData {
+    let data: Data
+    let width: Int
+    let height: Int
+    let bitsStored: Int
+    let rescaleSlope: Float
+    let rescaleIntercept: Float
+    let isSigned: Bool
+    let pixelSpacing: SIMD2<Float>
+    let defaultWindow: MetalViewerWindowLevel?
+
+    var textureKind: MetalSeriesTextureKind {
+        isSigned ? .storedInt16Signed : .storedInt16Unsigned
+    }
+
+    var pixelFormat: MTLPixelFormat {
+        isSigned ? .r16Sint : .r16Uint
+    }
+
+    var byteCount: Int {
+        max(width * height, 1) * MemoryLayout<UInt16>.stride
+    }
+
+    var bytesPerRow: Int {
+        width * MemoryLayout<UInt16>.stride
+    }
+
+    var inferredWindow: MetalViewerWindowLevel {
+        if let defaultWindow {
+            return defaultWindow
+        }
+
+        let bits = min(max(bitsStored, 1), 30)
+        let storedMinimum: Float
+        let storedMaximum: Float
+        if isSigned {
+            let magnitude = Float(1 << max(bits - 1, 0))
+            storedMinimum = -magnitude
+            storedMaximum = magnitude - 1
+        } else {
+            storedMinimum = 0
+            storedMaximum = Float((1 << bits) - 1)
+        }
+
+        let value0 = storedMinimum * rescaleSlope + rescaleIntercept
+        let value1 = storedMaximum * rescaleSlope + rescaleIntercept
+        let low = min(value0, value1)
+        let high = max(value0, value1)
+        let width = max(high - low, 1)
+        return MetalViewerWindowLevel(level: low + width * 0.5, width: width)
+    }
+
+    init?(pix: DCMPix) {
+        guard let info = pix.decodedStoredPixelData16ForMetalTexture() as? [AnyHashable: Any] else {
+            return nil
+        }
+
+        let dataObject = info["data"]
+        let data: Data
+        if let swiftData = dataObject as? Data {
+            data = swiftData
+        } else if let nsData = dataObject as? NSData {
+            data = nsData as Data
+        } else {
+            return nil
+        }
+
+        guard let width = (info["width"] as? NSNumber)?.intValue,
+              let height = (info["height"] as? NSNumber)?.intValue,
+              width > 0,
+              height > 0,
+              data.count >= max(width * height, 1) * MemoryLayout<UInt16>.stride,
+              let slope = (info["slope"] as? NSNumber)?.floatValue,
+              let intercept = (info["offset"] as? NSNumber)?.floatValue,
+              let isSigned = (info["isSigned"] as? NSNumber)?.boolValue else {
+            return nil
+        }
+
+        let inverse = (info["inverse"] as? NSNumber)?.boolValue ?? false
+        let windowWidth = abs((info["windowWidth"] as? NSNumber)?.floatValue ?? 0)
+        let windowLevel = (info["windowLevel"] as? NSNumber)?.floatValue ?? 0
+
+        self.data = data
+        self.width = width
+        self.height = height
+        self.bitsStored = max((info["bitsStored"] as? NSNumber)?.intValue ?? 16, 1)
+        self.rescaleSlope = inverse ? -slope : slope
+        self.rescaleIntercept = inverse ? -intercept : intercept
+        self.isSigned = isSigned
+        self.pixelSpacing = SIMD2<Float>(
+            max((info["pixelSpacingX"] as? NSNumber)?.floatValue ?? 1, 1),
+            max((info["pixelSpacingY"] as? NSNumber)?.floatValue ?? 1, 1)
+        )
+        self.defaultWindow = windowWidth > 0
+            ? MetalViewerWindowLevel(level: inverse ? -windowLevel : windowLevel, width: windowWidth)
+            : nil
+    }
+
+    func matchesVolumeEncoding(of firstSlice: MetalStoredInt16PixelData) -> Bool {
+        isSigned == firstSlice.isSigned
+            && Self.rescaleValuesMatch(rescaleSlope, firstSlice.rescaleSlope)
+            && Self.rescaleValuesMatch(rescaleIntercept, firstSlice.rescaleIntercept)
+    }
+
+    private static func rescaleValuesMatch(_ lhs: Float, _ rhs: Float) -> Bool {
+        let tolerance = max(max(abs(lhs), abs(rhs)), 1) * 0.0001
+        return abs(lhs - rhs) <= tolerance
+    }
+}
+
 final class MetalSeriesTextureCache {
     private struct SliceDimensions {
         let width: Int
@@ -387,12 +569,29 @@ final class MetalSeriesTextureCache {
         let texture: MTLTexture
         let dimensions: SIMD3<Int>
         let byteCount: Int
+        let storageMode: MetalSeriesTextureStorageMode
+        let textureKind: MetalSeriesTextureKind
+        let rescaleSlope: Float
+        let rescaleIntercept: Float
 
-        init(key: String, texture: MTLTexture, dimensions: SIMD3<Int>) {
+        init(
+            key: String,
+            texture: MTLTexture,
+            dimensions: SIMD3<Int>,
+            storageMode: MetalSeriesTextureStorageMode,
+            textureKind: MetalSeriesTextureKind,
+            bytesPerVoxel: Int,
+            rescaleSlope: Float = 1,
+            rescaleIntercept: Float = 0
+        ) {
             self.key = key
             self.texture = texture
             self.dimensions = dimensions
-            self.byteCount = max(dimensions.x, 1) * max(dimensions.y, 1) * max(dimensions.z, 1) * MemoryLayout<Float>.stride
+            self.storageMode = storageMode
+            self.textureKind = textureKind
+            self.rescaleSlope = rescaleSlope
+            self.rescaleIntercept = rescaleIntercept
+            self.byteCount = max(dimensions.x, 1) * max(dimensions.y, 1) * max(dimensions.z, 1) * max(bytesPerVoxel, 1)
         }
     }
 
@@ -408,14 +607,21 @@ final class MetalSeriesTextureCache {
     }()
     private let maximumEntryCount = 3
     private let maximumCachedBytes = 1_500_000_000
+    private let maximumUnavailableStoredInt16Count = 128
     private var entries: [String: Entry] = [:]
     private var accessOrder: [String] = []
     private var inFlightCompletions: [String: [(Entry?) -> Void]] = [:]
+    private var unavailableStoredInt16Keys: Set<String> = []
+    private var unavailableStoredInt16Order: [String] = []
     private var cachedByteCount = 0
 
     private init() {}
 
-    func key(for pixList: [DCMPix], device: MTLDevice) -> String? {
+    func key(
+        for pixList: [DCMPix],
+        device: MTLDevice,
+        storageMode: MetalSeriesTextureStorageMode = .rescaledFloat
+    ) -> String? {
         guard pixList.isEmpty == false,
               let dimensions = pixList.compactMap({ dimensionsWithoutLoading(for: $0) }).first else {
             return nil
@@ -433,6 +639,7 @@ final class MetalSeriesTextureCache {
         }
         var components: [String] = [
             "device=\(deviceKey)",
+            "storage=\(storageMode.keyComponent)",
             "size=\(width)x\(height)x\(pixList.count)"
         ]
         components.reserveCapacity(pixList.count + 2)
@@ -448,8 +655,12 @@ final class MetalSeriesTextureCache {
         return components.joined(separator: "|")
     }
 
-    func cachedEntry(for pixList: [DCMPix], device: MTLDevice) -> Entry? {
-        guard let key = key(for: pixList, device: device) else { return nil }
+    func cachedEntry(
+        for pixList: [DCMPix],
+        device: MTLDevice,
+        storageMode: MetalSeriesTextureStorageMode = .rescaledFloat
+    ) -> Entry? {
+        guard let key = key(for: pixList, device: device, storageMode: storageMode) else { return nil }
 
         lock.lock()
         defer { lock.unlock() }
@@ -459,8 +670,28 @@ final class MetalSeriesTextureCache {
         return entry
     }
 
-    func requestEntry(for pixList: [DCMPix], device: MTLDevice, completion: @escaping (Entry?) -> Void) {
-        guard let key = key(for: pixList, device: device) else {
+    func isEntryKnownUnavailable(
+        for pixList: [DCMPix],
+        device: MTLDevice,
+        storageMode: MetalSeriesTextureStorageMode
+    ) -> Bool {
+        guard storageMode == .storedInt16,
+              let key = key(for: pixList, device: device, storageMode: storageMode) else {
+            return false
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+        return unavailableStoredInt16Keys.contains(key)
+    }
+
+    func requestEntry(
+        for pixList: [DCMPix],
+        device: MTLDevice,
+        storageMode: MetalSeriesTextureStorageMode = .rescaledFloat,
+        completion: @escaping (Entry?) -> Void
+    ) {
+        guard let key = key(for: pixList, device: device, storageMode: storageMode) else {
             DispatchQueue.main.async {
                 completion(nil)
             }
@@ -468,6 +699,14 @@ final class MetalSeriesTextureCache {
         }
 
         lock.lock()
+        if storageMode == .storedInt16, unavailableStoredInt16Keys.contains(key) {
+            lock.unlock()
+            DispatchQueue.main.async {
+                completion(nil)
+            }
+            return
+        }
+
         if let entry = entries[key] {
             markAccessedLocked(key)
             lock.unlock()
@@ -490,13 +729,22 @@ final class MetalSeriesTextureCache {
         buildQueue.addOperation { [weak self] in
             guard let self else { return }
             let entry = autoreleasepool {
-                self.buildEntry(key: key, pixList: buildPixList, device: device)
+                self.buildEntry(key: key, pixList: buildPixList, device: device, storageMode: storageMode)
             }
-            self.finishRequest(key: key, entry: entry)
+            self.finishRequest(key: key, storageMode: storageMode, entry: entry)
         }
     }
 
-    private func buildEntry(key: String, pixList: [DCMPix], device: MTLDevice) -> Entry? {
+    private func buildEntry(
+        key: String,
+        pixList: [DCMPix],
+        device: MTLDevice,
+        storageMode: MetalSeriesTextureStorageMode
+    ) -> Entry? {
+        if storageMode == .storedInt16 {
+            return buildStoredInt16Entry(key: key, pixList: pixList, device: device)
+        }
+
         guard pixList.isEmpty == false, let firstPix = pixList.first else { return nil }
 
         let start = CFAbsoluteTimeGetCurrent()
@@ -541,14 +789,103 @@ final class MetalSeriesTextureCache {
             }
         }
 
-        print(String(
-            format: "HOROS_METAL_TIMING MetalSeriesTextureCache build %dx%dx%d %.3f s",
+        MetalViewerDiagnostics.timingLog(
+            format: "MetalSeriesTextureCache build %dx%dx%d %.3f s",
             width,
             height,
             depth,
             CFAbsoluteTimeGetCurrent() - start
-        ))
-        return Entry(key: key, texture: texture, dimensions: dimensions)
+        )
+        return Entry(
+            key: key,
+            texture: texture,
+            dimensions: dimensions,
+            storageMode: .rescaledFloat,
+            textureKind: .rescaledFloat,
+            bytesPerVoxel: MemoryLayout<Float>.stride
+        )
+    }
+
+    private func buildStoredInt16Entry(key: String, pixList: [DCMPix], device: MTLDevice) -> Entry? {
+        guard pixList.isEmpty == false,
+              let firstPix = pixList.first,
+              let firstDimensions = dimensionsWithoutLoading(for: firstPix),
+              let firstSlice = MetalStoredInt16PixelData(pix: firstPix) else {
+            return nil
+        }
+
+        let start = CFAbsoluteTimeGetCurrent()
+        let width = max(firstDimensions.width, 1)
+        let height = max(firstDimensions.height, 1)
+        let depth = max(pixList.count, 1)
+        guard firstSlice.width == width, firstSlice.height == height else { return nil }
+
+        let dimensions = SIMD3<Int>(width, height, depth)
+        let descriptor = MTLTextureDescriptor()
+        descriptor.textureType = .type3D
+        descriptor.pixelFormat = firstSlice.pixelFormat
+        descriptor.width = width
+        descriptor.height = height
+        descriptor.depth = depth
+        descriptor.mipmapLevelCount = 1
+        descriptor.usage = [.shaderRead]
+        descriptor.storageMode = .shared
+
+        guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
+
+        let bytesPerRow = firstSlice.bytesPerRow
+        let bytesPerImage = firstSlice.byteCount
+
+        guard uploadStoredInt16Slice(
+            firstSlice,
+            sliceIndex: 0,
+            width: width,
+            height: height,
+            texture: texture,
+            bytesPerRow: bytesPerRow,
+            bytesPerImage: bytesPerImage
+        ) else {
+            return nil
+        }
+
+        for sliceIndex in 1..<pixList.count {
+            guard let sliceDimensions = dimensionsWithoutLoading(for: pixList[sliceIndex]),
+                  max(sliceDimensions.width, 1) == width,
+                  max(sliceDimensions.height, 1) == height,
+                  let slice = MetalStoredInt16PixelData(pix: pixList[sliceIndex]),
+                  slice.width == width,
+                  slice.height == height,
+                  slice.matchesVolumeEncoding(of: firstSlice),
+                  uploadStoredInt16Slice(
+                    slice,
+                    sliceIndex: sliceIndex,
+                    width: width,
+                    height: height,
+                    texture: texture,
+                    bytesPerRow: bytesPerRow,
+                    bytesPerImage: bytesPerImage
+                  ) else {
+                return nil
+            }
+        }
+
+        MetalViewerDiagnostics.timingLog(
+            format: "MetalSeriesTextureCache buildStoredInt16 %dx%dx%d %.3f s",
+            width,
+            height,
+            depth,
+            CFAbsoluteTimeGetCurrent() - start
+        )
+        return Entry(
+            key: key,
+            texture: texture,
+            dimensions: dimensions,
+            storageMode: .storedInt16,
+            textureKind: firstSlice.textureKind,
+            bytesPerVoxel: MemoryLayout<UInt16>.stride,
+            rescaleSlope: firstSlice.rescaleSlope,
+            rescaleIntercept: firstSlice.rescaleIntercept
+        )
     }
 
     private func dimensionsWithoutLoading(for pix: DCMPix) -> SliceDimensions? {
@@ -556,6 +893,31 @@ final class MetalSeriesTextureCache {
         let height = Int(pix.heightWithoutLoading())
         guard width > 0, height > 0 else { return nil }
         return SliceDimensions(width: width, height: height)
+    }
+
+    private func uploadStoredInt16Slice(
+        _ slice: MetalStoredInt16PixelData,
+        sliceIndex: Int,
+        width: Int,
+        height: Int,
+        texture: MTLTexture,
+        bytesPerRow: Int,
+        bytesPerImage: Int
+    ) -> Bool {
+        guard slice.data.count >= bytesPerImage else { return false }
+
+        slice.data.withUnsafeBytes { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            texture.replace(
+                region: MTLRegionMake3D(0, 0, sliceIndex, width, height, 1),
+                mipmapLevel: 0,
+                slice: 0,
+                withBytes: baseAddress,
+                bytesPerRow: bytesPerRow,
+                bytesPerImage: bytesPerImage
+            )
+        }
+        return true
     }
 
     private func uploadSlice(
@@ -700,13 +1062,18 @@ final class MetalSeriesTextureCache {
         return true
     }
 
-    private func finishRequest(key: String, entry: Entry?) {
+    private func finishRequest(key: String, storageMode: MetalSeriesTextureStorageMode, entry: Entry?) {
         lock.lock()
         if let entry {
             entries[key] = entry
             cachedByteCount += entry.byteCount
+            if storageMode == .storedInt16 {
+                clearStoredInt16UnavailableLocked(key)
+            }
             markAccessedLocked(key)
             trimLocked(keeping: key)
+        } else if storageMode == .storedInt16 {
+            markStoredInt16UnavailableLocked(key)
         }
         let completions = inFlightCompletions.removeValue(forKey: key) ?? []
         lock.unlock()
@@ -721,6 +1088,22 @@ final class MetalSeriesTextureCache {
     private func markAccessedLocked(_ key: String) {
         accessOrder.removeAll { $0 == key }
         accessOrder.append(key)
+    }
+
+    private func markStoredInt16UnavailableLocked(_ key: String) {
+        if unavailableStoredInt16Keys.insert(key).inserted {
+            unavailableStoredInt16Order.append(key)
+        }
+
+        while unavailableStoredInt16Order.count > maximumUnavailableStoredInt16Count {
+            let staleKey = unavailableStoredInt16Order.removeFirst()
+            unavailableStoredInt16Keys.remove(staleKey)
+        }
+    }
+
+    private func clearStoredInt16UnavailableLocked(_ key: String) {
+        guard unavailableStoredInt16Keys.remove(key) != nil else { return }
+        unavailableStoredInt16Order.removeAll { $0 == key }
     }
 
     private func trimLocked(keeping newestKey: String) {

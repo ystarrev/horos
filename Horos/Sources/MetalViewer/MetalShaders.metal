@@ -62,6 +62,10 @@ struct MetalPreviewUniforms {
     float windowWidth;
     float currentSliceIndex;
     uint useVolumeTexture;
+    uint volumeTextureKind;
+    float rescaleSlope;
+    float rescaleIntercept;
+    float padding;
 };
 
 struct RegistrationUniforms {
@@ -1517,23 +1521,166 @@ fragment float4 metalViewerMPRPlaneHighlightFragment(
     return in.color;
 }
 
+static inline float metalPreviewApplyStoredRescale(float storedValue, constant MetalPreviewUniforms &uniforms)
+{
+    return storedValue * uniforms.rescaleSlope + uniforms.rescaleIntercept;
+}
+
+static inline float metalPreviewReadStoredSigned(
+    texture3d<int, access::read> storedTexture,
+    uint x,
+    uint y,
+    uint z,
+    constant MetalPreviewUniforms &uniforms
+) {
+    return metalPreviewApplyStoredRescale(float(storedTexture.read(uint3(x, y, z)).r), uniforms);
+}
+
+static inline float metalPreviewReadStoredUnsigned(
+    texture3d<uint, access::read> storedTexture,
+    uint x,
+    uint y,
+    uint z,
+    constant MetalPreviewUniforms &uniforms
+) {
+    return metalPreviewApplyStoredRescale(float(storedTexture.read(uint3(x, y, z)).r), uniforms);
+}
+
+static inline float metalPreviewSampleStoredSigned(
+    texture3d<int, access::read> storedTexture,
+    float2 texCoord,
+    float sliceIndex,
+    constant MetalPreviewUniforms &uniforms
+) {
+    const uint width = max(storedTexture.get_width(), 1u);
+    const uint height = max(storedTexture.get_height(), 1u);
+    const uint depth = max(storedTexture.get_depth(), 1u);
+    const float2 maxPosition = float2(float(width - 1u), float(height - 1u));
+    const float2 position = clamp(texCoord * float2(float(width), float(height)) - 0.5, float2(0.0), maxPosition);
+    const uint2 base = uint2(floor(position));
+    const uint2 next = min(base + uint2(1u), uint2(width - 1u, height - 1u));
+    const float2 fraction = position - float2(base);
+    const uint z = uint(clamp(sliceIndex, 0.0, float(depth - 1u)));
+
+    const float v00 = metalPreviewReadStoredSigned(storedTexture, base.x, base.y, z, uniforms);
+    const float v10 = metalPreviewReadStoredSigned(storedTexture, next.x, base.y, z, uniforms);
+    const float v01 = metalPreviewReadStoredSigned(storedTexture, base.x, next.y, z, uniforms);
+    const float v11 = metalPreviewReadStoredSigned(storedTexture, next.x, next.y, z, uniforms);
+    return mix(mix(v00, v10, fraction.x), mix(v01, v11, fraction.x), fraction.y);
+}
+
+static inline float metalPreviewSampleStoredUnsigned(
+    texture3d<uint, access::read> storedTexture,
+    float2 texCoord,
+    float sliceIndex,
+    constant MetalPreviewUniforms &uniforms
+) {
+    const uint width = max(storedTexture.get_width(), 1u);
+    const uint height = max(storedTexture.get_height(), 1u);
+    const uint depth = max(storedTexture.get_depth(), 1u);
+    const float2 maxPosition = float2(float(width - 1u), float(height - 1u));
+    const float2 position = clamp(texCoord * float2(float(width), float(height)) - 0.5, float2(0.0), maxPosition);
+    const uint2 base = uint2(floor(position));
+    const uint2 next = min(base + uint2(1u), uint2(width - 1u, height - 1u));
+    const float2 fraction = position - float2(base);
+    const uint z = uint(clamp(sliceIndex, 0.0, float(depth - 1u)));
+
+    const float v00 = metalPreviewReadStoredUnsigned(storedTexture, base.x, base.y, z, uniforms);
+    const float v10 = metalPreviewReadStoredUnsigned(storedTexture, next.x, base.y, z, uniforms);
+    const float v01 = metalPreviewReadStoredUnsigned(storedTexture, base.x, next.y, z, uniforms);
+    const float v11 = metalPreviewReadStoredUnsigned(storedTexture, next.x, next.y, z, uniforms);
+    return mix(mix(v00, v10, fraction.x), mix(v01, v11, fraction.x), fraction.y);
+}
+
+static inline float metalPreviewReadStoredSigned2D(
+    texture2d<int, access::read> storedTexture,
+    uint x,
+    uint y,
+    constant MetalPreviewUniforms &uniforms
+) {
+    return metalPreviewApplyStoredRescale(float(storedTexture.read(uint2(x, y)).r), uniforms);
+}
+
+static inline float metalPreviewReadStoredUnsigned2D(
+    texture2d<uint, access::read> storedTexture,
+    uint x,
+    uint y,
+    constant MetalPreviewUniforms &uniforms
+) {
+    return metalPreviewApplyStoredRescale(float(storedTexture.read(uint2(x, y)).r), uniforms);
+}
+
+static inline float metalPreviewSampleStoredSigned2D(
+    texture2d<int, access::read> storedTexture,
+    float2 texCoord,
+    constant MetalPreviewUniforms &uniforms
+) {
+    const uint width = max(storedTexture.get_width(), 1u);
+    const uint height = max(storedTexture.get_height(), 1u);
+    const float2 maxPosition = float2(float(width - 1u), float(height - 1u));
+    const float2 position = clamp(texCoord * float2(float(width), float(height)) - 0.5, float2(0.0), maxPosition);
+    const uint2 base = uint2(floor(position));
+    const uint2 next = min(base + uint2(1u), uint2(width - 1u, height - 1u));
+    const float2 fraction = position - float2(base);
+
+    const float v00 = metalPreviewReadStoredSigned2D(storedTexture, base.x, base.y, uniforms);
+    const float v10 = metalPreviewReadStoredSigned2D(storedTexture, next.x, base.y, uniforms);
+    const float v01 = metalPreviewReadStoredSigned2D(storedTexture, base.x, next.y, uniforms);
+    const float v11 = metalPreviewReadStoredSigned2D(storedTexture, next.x, next.y, uniforms);
+    return mix(mix(v00, v10, fraction.x), mix(v01, v11, fraction.x), fraction.y);
+}
+
+static inline float metalPreviewSampleStoredUnsigned2D(
+    texture2d<uint, access::read> storedTexture,
+    float2 texCoord,
+    constant MetalPreviewUniforms &uniforms
+) {
+    const uint width = max(storedTexture.get_width(), 1u);
+    const uint height = max(storedTexture.get_height(), 1u);
+    const float2 maxPosition = float2(float(width - 1u), float(height - 1u));
+    const float2 position = clamp(texCoord * float2(float(width), float(height)) - 0.5, float2(0.0), maxPosition);
+    const uint2 base = uint2(floor(position));
+    const uint2 next = min(base + uint2(1u), uint2(width - 1u, height - 1u));
+    const float2 fraction = position - float2(base);
+
+    const float v00 = metalPreviewReadStoredUnsigned2D(storedTexture, base.x, base.y, uniforms);
+    const float v10 = metalPreviewReadStoredUnsigned2D(storedTexture, next.x, base.y, uniforms);
+    const float v01 = metalPreviewReadStoredUnsigned2D(storedTexture, base.x, next.y, uniforms);
+    const float v11 = metalPreviewReadStoredUnsigned2D(storedTexture, next.x, next.y, uniforms);
+    return mix(mix(v00, v10, fraction.x), mix(v01, v11, fraction.x), fraction.y);
+}
+
 fragment float4 metalPreviewFragment(
     RasterizerData in [[stage_in]],
     constant MetalPreviewUniforms &uniforms [[buffer(0)]],
     texture2d<float> imageTexture [[texture(0)]],
     texture3d<float> volumeTexture [[texture(1)]],
+    texture3d<int, access::read> signedVolumeTexture [[texture(2)]],
+    texture3d<uint, access::read> unsignedVolumeTexture [[texture(3)]],
+    texture2d<int, access::read> signedImageTexture [[texture(4)]],
+    texture2d<uint, access::read> unsignedImageTexture [[texture(5)]],
     sampler imageSampler [[sampler(0)]]
 ) {
     float pixelValue = 0.0;
     if (uniforms.useVolumeTexture == 0) {
-        pixelValue = imageTexture.sample(imageSampler, in.texCoord).r;
-    } else {
+        if (uniforms.volumeTextureKind == 1u) {
+            pixelValue = imageTexture.sample(imageSampler, in.texCoord).r;
+        } else if (uniforms.volumeTextureKind == 2u) {
+            pixelValue = metalPreviewSampleStoredSigned2D(signedImageTexture, in.texCoord, uniforms);
+        } else if (uniforms.volumeTextureKind == 3u) {
+            pixelValue = metalPreviewSampleStoredUnsigned2D(unsignedImageTexture, in.texCoord, uniforms);
+        }
+    } else if (uniforms.volumeTextureKind == 1u) {
         const float3 textureSize = max(
             float3(volumeTexture.get_width(), volumeTexture.get_height(), volumeTexture.get_depth()),
             float3(1.0)
         );
         const float z = clamp(uniforms.currentSliceIndex + 0.5, 0.5, textureSize.z - 0.5) / textureSize.z;
         pixelValue = volumeTexture.sample(imageSampler, float3(in.texCoord, z)).r;
+    } else if (uniforms.volumeTextureKind == 2u) {
+        pixelValue = metalPreviewSampleStoredSigned(signedVolumeTexture, in.texCoord, uniforms.currentSliceIndex, uniforms);
+    } else if (uniforms.volumeTextureKind == 3u) {
+        pixelValue = metalPreviewSampleStoredUnsigned(unsignedVolumeTexture, in.texCoord, uniforms.currentSliceIndex, uniforms);
     }
     float minValue = uniforms.windowLevel - uniforms.windowWidth * 0.5;
     float normalized = clamp((pixelValue - minValue) / max(uniforms.windowWidth, 1e-5), 0.0, 1.0);

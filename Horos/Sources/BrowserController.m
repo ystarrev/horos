@@ -3315,7 +3315,11 @@ static NSConditionLock *threadLock = nil;
                 for( id obj in outlineViewArray)
                 {
                     @try {
-                        NSPredicate* predicate = [NSPredicate predicateWithFormat: @"(patientID == %@) AND (studyInstanceUID != %@)", [obj valueForKey:@"patientID"], [obj valueForKey:@"studyInstanceUID"]];
+                        NSPredicate *samePatientPredicate = [self samePatientStudiesPredicateForStudy: obj];
+                        if( samePatientPredicate == nil)
+                            continue;
+
+                        NSPredicate* predicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: samePatientPredicate, [NSPredicate predicateWithFormat: @"studyInstanceUID != %@", [obj valueForKey:@"studyInstanceUID"]], nil]];
                         
                         NSMutableArray *oulineViewArrayStudyInstanceUIDs = [[[copyOutlineViewArray valueForKey: @"studyInstanceUID"] mutableCopy] autorelease];
                         
@@ -3342,11 +3346,19 @@ static NSConditionLock *threadLock = nil;
             {
                 NSMutableArray	*patientPredicateArray = [NSMutableArray array];
                 for (id obj in outlineViewArray)
-                    [patientPredicateArray addObject: [NSPredicate predicateWithFormat:@"(patientUID BEGINSWITH[cd] %@)", [obj valueForKey:@"patientUID"]]];
-                predicate = [NSCompoundPredicate orPredicateWithSubpredicates: patientPredicateArray];
-                [originalOutlineViewArray release];
-                originalOutlineViewArray = [outlineViewArray retain];
-                outlineViewArray = [[_database objectsForEntity:_database.studyEntity predicate:predicate] sortedArrayUsingDescriptors:sortDescriptors];
+                {
+                    NSPredicate *samePatientPredicate = [self samePatientStudiesPredicateForStudy: obj];
+                    if( samePatientPredicate)
+                        [patientPredicateArray addObject: samePatientPredicate];
+                }
+
+                if( patientPredicateArray.count)
+                {
+                    predicate = [NSCompoundPredicate orPredicateWithSubpredicates: patientPredicateArray];
+                    [originalOutlineViewArray release];
+                    originalOutlineViewArray = [outlineViewArray retain];
+                    outlineViewArray = [[_database objectsForEntity:_database.studyEntity predicate:predicate] sortedArrayUsingDescriptors:sortDescriptors];
+                }
             }
         }
         @catch( NSException *ne)
@@ -4635,7 +4647,8 @@ static NSConditionLock *threadLock = nil;
         else
             studySelected = studySelectedID; //DCMTKStudyQueryNode
         
-        if( studySelected.patientUID.length == 0)
+        NSPredicate *samePatientPredicate = [self samePatientStudiesPredicateForStudy: studySelected];
+        if( samePatientPredicate == nil)
             return nil;
         
         [NSThread currentThread].name = @"Search For Comparative Studies";
@@ -4651,7 +4664,7 @@ static NSConditionLock *threadLock = nil;
                 [idatabase lock];
                 @try
                 {
-                    localStudies = [idatabase objectsForEntity: idatabase.studyEntity predicate: [NSPredicate predicateWithFormat: @"(patientUID BEGINSWITH[cd] %@)", studySelected.patientUID]];
+                    localStudies = [idatabase objectsForEntity: idatabase.studyEntity predicate: samePatientPredicate];
                 }
                 @catch (NSException* e)
                 {
@@ -6847,9 +6860,7 @@ static NSConditionLock *threadLock = nil;
                 {
                     if( [[previousItem valueForKey: @"type"] isEqualToString:@"Study"])
                     {
-                        NSString *uid = [item valueForKey: @"patientUID"];
-                        
-                        if( previousItem != item && [uid length] > 1 && [uid compare: [previousItem valueForKey: @"patientUID"] options: NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch | NSWidthInsensitiveSearch] == NSOrderedSame)
+                        if( previousItem != item && [self study: item matchesSamePatientAsStudy: previousItem])
                         {
                             [cell setDrawsBackground: YES];
                             [cell setBackgroundColor: [NSColor disabledControlTextColor]];	//secondarySelectedControlColor]];
@@ -8620,7 +8631,13 @@ static NSConditionLock *threadLock = nil;
     NSManagedObject		*study = [curImage valueForKeyPath:@"series.study"];
     NSManagedObject		*currentSeries = [curImage valueForKey:@"series"];
     
-    NSPredicate *predicate = [NSPredicate predicateWithFormat: @"(patientUID BEGINSWITH[cd] %@)", [study valueForKey:@"patientUID"]];
+    NSPredicate *predicate = [self samePatientStudiesPredicateForStudy: study];
+    if( predicate == nil)
+    {
+        [viewersList release];
+        return;
+    }
+
     NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
     [dbRequest setEntity: [[model entitiesByName] objectForKey:@"Study"]];
     [dbRequest setPredicate: predicate];
@@ -13653,6 +13670,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
 - (void)openMetalViewerForImages:(NSArray*)loadList
 {
     CFAbsoluteTime launchStart = CFAbsoluteTimeGetCurrent();
+    BOOL metalTimingLogEnabled = [[NSUserDefaults standardUserDefaults] boolForKey: @"HorosMetalViewerTimingLogEnabled"];
     if ([loadList count] == 0)
         return;
     
@@ -13710,7 +13728,8 @@ constrainSplitPosition:(CGFloat)proposedPosition
         [correspondingObjects release];
         return;
     }
-    NSLog(@"HOROS_METAL_TIMING BrowserController built %lu DCMPix objects in %.3f s", (unsigned long)[viewerPix count], CFAbsoluteTimeGetCurrent() - pixBuildStart);
+    if( metalTimingLogEnabled)
+        NSLog(@"HOROS_METAL_TIMING BrowserController built %lu DCMPix objects in %.3f s", (unsigned long)[viewerPix count], CFAbsoluteTimeGetCurrent() - pixBuildStart);
     
     NSManagedObject *firstObject = [correspondingObjects objectAtIndex:0];
     NSString *patientName = [firstObject valueForKeyPath:@"series.study.name"] ?: NSLocalizedString(@"Patient", nil);
@@ -13741,7 +13760,8 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
         CFAbsoluteTime swiftLaunchStart = CFAbsoluteTimeGetCurrent();
         [launcherClass launchWithContext:context];
-        NSLog(@"HOROS_METAL_TIMING BrowserController Swift launch call returned in %.3f s", CFAbsoluteTimeGetCurrent() - swiftLaunchStart);
+        if( metalTimingLogEnabled)
+            NSLog(@"HOROS_METAL_TIMING BrowserController Swift launch call returned in %.3f s", CFAbsoluteTimeGetCurrent() - swiftLaunchStart);
     }
     else
     {
@@ -13750,7 +13770,8 @@ constrainSplitPosition:(CGFloat)proposedPosition
     
     [viewerPix release];
     [correspondingObjects release];
-    NSLog(@"HOROS_METAL_TIMING BrowserController openMetalViewerForImages total %.3f s", CFAbsoluteTimeGetCurrent() - launchStart);
+    if( metalTimingLogEnabled)
+        NSLog(@"HOROS_METAL_TIMING BrowserController openMetalViewerForImages total %.3f s", CFAbsoluteTimeGetCurrent() - launchStart);
 }
 
 - (void)openMetalViewerForDatabaseObject:(NSManagedObject*)item
@@ -14602,9 +14623,9 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     [formatter setLocale: [[[NSLocale alloc] initWithLocaleIdentifier: @"en_US_POSIX"] autorelease]];
     [formatter setDateFormat: @"MMM-dd-yyyy HH:mm"];
 
-    NSTextField *buildLabel = [[[NSTextField alloc] initWithFrame: NSMakeRect( 0, 0, 170, 12)] autorelease];
+    NSTextField *buildLabel = [[[NSTextField alloc] initWithFrame: NSMakeRect( 0, 0, 230, 16)] autorelease];
     [buildLabel setStringValue: [NSString stringWithFormat: @"BuildNo: %@", [formatter stringFromDate: buildDate]]];
-    [buildLabel setFont: [NSFont systemFontOfSize: 8]];
+    [buildLabel setFont: [NSFont systemFontOfSize: 12]];
     [buildLabel setTextColor: [NSColor disabledControlTextColor]];
     [buildLabel setAlignment: NSRightTextAlignment];
     [buildLabel setEditable: NO];
@@ -20948,13 +20969,25 @@ restart:
         return nil;
 
     NSString *patientName = nil;
-    if( [[item valueForKey: @"type"] isEqualToString: @"Study"])
-        patientName = [item valueForKey: @"name"];
-    else
-        patientName = [item valueForKeyPath: @"study.name"];
+    @try {
+        if( [[item valueForKey: @"type"] isEqualToString: @"Study"])
+            patientName = [item valueForKey: @"name"];
+        else
+            patientName = [item valueForKeyPath: @"study.name"];
+    }
+    @catch (NSException *exception) {
+        patientName = nil;
+    }
 
-    if( patientName.length == 0 && [item isKindOfClass: [DicomStudy class]])
-        patientName = [item valueForKey: @"name"];
+    if( patientName.length == 0)
+    {
+        @try {
+            patientName = [item valueForKey: @"name"];
+        }
+        @catch (NSException *exception) {
+            patientName = nil;
+        }
+    }
 
     return patientName;
 }
@@ -21087,6 +21120,102 @@ restart:
     return [NSCompoundPredicate andPredicateWithSubpredicates: predicates];
 }
 
+- (NSString*) samePatientMatchingStringValueForKey:(NSString*) key item:(id)item
+{
+    id value = nil;
+
+    @try {
+        value = [item valueForKey: key];
+    }
+    @catch (NSException *exception) {
+        value = nil;
+    }
+
+    if( value == nil || value == [NSNull null])
+        return nil;
+
+    if( [value isKindOfClass: [NSString class]] == NO)
+        value = [value description];
+
+    return [value stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+}
+
+- (NSDate*) samePatientMatchingDateValueForKey:(NSString*) key item:(id)item
+{
+    id value = nil;
+
+    @try {
+        value = [item valueForKey: key];
+    }
+    @catch (NSException *exception) {
+        value = nil;
+    }
+
+    if( [value isKindOfClass: [NSDate class]])
+        return value;
+
+    return nil;
+}
+
+- (NSPredicate *)samePatientStudiesPredicateForStudy:(id)study
+{
+    if( study == nil)
+        return nil;
+
+    NSMutableArray *samePatientPredicates = [NSMutableArray array];
+
+    NSString *patientUID = [self samePatientMatchingStringValueForKey: @"patientUID" item: study];
+    if( patientUID.length > 1)
+        [samePatientPredicates addObject: [NSPredicate predicateWithFormat: @"(patientUID BEGINSWITH[cd] %@)", patientUID]];
+
+    NSString *patientName = [self patientNameForDisplayOnlyThisPatientItem: study];
+    NSPredicate *patientNamePredicate = nil;
+    if( patientName.length)
+        patientNamePredicate = [self patientsnamePredicate: patientName];
+
+    NSMutableArray *identityPredicates = [NSMutableArray array];
+
+    NSString *patientID = [self samePatientMatchingStringValueForKey: @"patientID" item: study];
+    if( patientID.length)
+        [identityPredicates addObject: [NSPredicate predicateWithFormat: @"patientID == %@", patientID]];
+
+    NSDate *dateOfBirth = [self samePatientMatchingDateValueForKey: @"dateOfBirth" item: study];
+    if( dateOfBirth)
+    {
+        NSCalendarDate *birthCalendarDate = [NSCalendarDate dateWithTimeIntervalSinceReferenceDate: [dateOfBirth timeIntervalSinceReferenceDate]];
+        NSDate *birthDateStart = [NSCalendarDate dateWithYear: [birthCalendarDate yearOfCommonEra] month: [birthCalendarDate monthOfYear] day: [birthCalendarDate dayOfMonth] hour: 0 minute: 0 second: 0 timeZone: nil];
+        NSDate *birthDateEnd = [(NSCalendarDate*) birthDateStart dateByAddingYears: 0 months: 0 days: 1 hours: 0 minutes: 0 seconds: 0];
+        [identityPredicates addObject: [NSPredicate predicateWithFormat: @"(dateOfBirth >= %@) AND (dateOfBirth < %@)", birthDateStart, birthDateEnd]];
+    }
+
+    if( patientNamePredicate && identityPredicates.count)
+    {
+        NSPredicate *identityPredicate = [NSCompoundPredicate orPredicateWithSubpredicates: identityPredicates];
+        [samePatientPredicates addObject: [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: patientNamePredicate, identityPredicate, nil]]];
+    }
+    else if( patientNamePredicate && samePatientPredicates.count == 0)
+        [samePatientPredicates addObject: patientNamePredicate];
+    else if( identityPredicates.count && samePatientPredicates.count == 0)
+        [samePatientPredicates addObject: [NSCompoundPredicate orPredicateWithSubpredicates: identityPredicates]];
+
+    if( samePatientPredicates.count == 0)
+        return nil;
+
+    if( samePatientPredicates.count == 1)
+        return [samePatientPredicates objectAtIndex: 0];
+
+    return [NSCompoundPredicate orPredicateWithSubpredicates: samePatientPredicates];
+}
+
+- (BOOL)study:(id)study matchesSamePatientAsStudy:(id)referenceStudy
+{
+    NSPredicate *predicate = [self samePatientStudiesPredicateForStudy: referenceStudy];
+    if( predicate == nil)
+        return NO;
+
+    return [predicate evaluateWithObject: study];
+}
+
 - (NSPredicate *)createFilterPredicate
 {
     NSPredicate *predicate = nil;
@@ -21174,11 +21303,7 @@ restart:
     if( study == nil || self.database == nil)
         return nil;
 
-    NSString *patientName = [self patientNameForDisplayOnlyThisPatientItem: study];
-    if( patientName.length == 0)
-        return nil;
-
-    NSPredicate *predicate = [self patientsnamePredicate: patientName];
+    NSPredicate *predicate = [self samePatientStudiesPredicateForStudy: study];
     if( predicate == nil)
         return nil;
 
@@ -21191,12 +21316,18 @@ restart:
 
 - (NSArray *)relatedStudiesForStudy: (id)study
 {
+    if( study == nil || self.database == nil)
+        return nil;
+
+    NSPredicate *predicate = [self samePatientStudiesPredicateForStudy: study];
+    if( predicate == nil)
+        return nil;
+
     NSManagedObjectModel	*model = self.database.managedObjectModel;
     NSManagedObjectContext	*context = self.database.managedObjectContext;
     
     // FIND ALL STUDIES of this patient
     
-    NSPredicate *predicate = [NSPredicate predicateWithFormat:  @"(patientUID BEGINSWITH[cd] %@)", [study valueForKey:@"patientUID"]];
     NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
     dbRequest.entity = [model.entitiesByName objectForKey:@"Study"];
     dbRequest.predicate = predicate;
@@ -21208,15 +21339,26 @@ restart:
     
     @try 
     {
-        if ([studiesArray count] > 0 && [studiesArray indexOfObject:study] != NSNotFound)
+        if ([studiesArray count] > 0)
         {
             NSSortDescriptor * sort = [[NSSortDescriptor alloc] initWithKey:@"date" ascending:NO];
             NSArray * sortDescriptors = [NSArray arrayWithObject: sort];
             [sort release];
             NSMutableArray* s = [[[studiesArray sortedArrayUsingDescriptors: sortDescriptors] mutableCopy] autorelease];
+
             // remove original study from array
             [s removeObject:study];
             
+            NSString *studyInstanceUID = [self samePatientMatchingStringValueForKey: @"studyInstanceUID" item: study];
+            if( studyInstanceUID.length)
+            {
+                for( id relatedStudy in [NSArray arrayWithArray: s])
+                {
+                    if( [studyInstanceUID isEqualToString: [self samePatientMatchingStringValueForKey: @"studyInstanceUID" item: relatedStudy]])
+                        [s removeObject: relatedStudy];
+                }
+            }
+
             studiesArray = [NSArray arrayWithArray: s];
         }
     }

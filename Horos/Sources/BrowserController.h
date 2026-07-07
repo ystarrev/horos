@@ -542,6 +542,8 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (IBAction) buildAllThumbnails:(id) sender;
 
 // Finding Comparisons
+- (NSPredicate *)samePatientStudiesPredicateForStudy:(id)study;
+- (BOOL)study:(id)study matchesSamePatientAsStudy:(id)referenceStudy;
 - (NSArray *)studiesForDisplayOnlyThisPatientMatchingStudy:(id)study;
 - (NSArray *)relatedStudiesForStudy:(id)study;
 

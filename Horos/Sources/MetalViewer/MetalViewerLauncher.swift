@@ -2,9 +2,9 @@ import AppKit
 
 private func metalTimingLog(_ message: String, since start: CFAbsoluteTime? = nil) {
     if let start {
-        print(String(format: "HOROS_METAL_TIMING %@ %.3f s", message, CFAbsoluteTimeGetCurrent() - start))
+        MetalViewerDiagnostics.timingLog(message, since: start)
     } else {
-        print("HOROS_METAL_TIMING \(message)")
+        MetalViewerDiagnostics.timingLog(message)
     }
 }
 

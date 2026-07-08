@@ -516,6 +516,7 @@ subOpCallback(void * /*subOpCallbackData*/ ,
     [_performingPhysician release];
 	[_institutionName release];
 	[_comments release];
+	[_contrastBolusAgent release];
     [_interpretationStatusID release];
 	[_date release];
 	[_birthdate release];
@@ -580,6 +581,9 @@ subOpCallback(void * /*subOpCallbackData*/ ,
 }
 - (NSString *)comments{
 	return _comments;
+}
+- (NSString *)contrastBolusAgent{
+	return _contrastBolusAgent;
 }
 - (NSString*) interpretationStatusID{
     return _interpretationStatusID;

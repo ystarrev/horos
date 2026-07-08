@@ -17403,8 +17403,6 @@ restart:
 
 -(IBAction)sendMail:(id)sender
 {
-    if( [AppController hasMacOSXSnowLeopard])
-    {
 #define kScriptName (@"Mail")
 #define kScriptType (@"scpt")
 #define kHandlerName (@"mail_images")
@@ -17517,8 +17515,6 @@ restart:
         
         [script release];
         [arguments release];
-    }
-    else if( [NSThread isMainThread]) NSRunCriticalAlertPanel( NSLocalizedString( @"Unsupported", nil), NSLocalizedString( @"This function requires MacOS 10.6 or higher.", nil), NSLocalizedString( @"OK", nil) , nil, nil);
 }
 
 
@@ -18000,12 +17996,6 @@ restart:
                 
                 if( [[NSFileManager defaultManager] fileExistsAtPath: [tempPath stringByAppendingPathComponent:@"DICOMDIR"]] == NO)
                 {
-                    //					if( [AppController hasMacOSXSnowLeopard] == NO)
-                    //					{
-                    //						NSRunCriticalAlertPanel( NSLocalizedString( @"DICOMDIR", nil), NSLocalizedString( @"DICOMDIR creation requires MacOS 10.6 or higher. DICOMDIR file will NOT be generated.", nil), NSLocalizedString( @"OK", nil), nil, nil);
-                    //					}
-                    //					else
-                    //					{
                     //						NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
                     //
                     //						NSTask *theTask;
@@ -18025,7 +18015,6 @@ restart:
                     //						[theTask release];
                     //
                     //						[pool release];
-                    //					}
                     
                     [NSThread currentThread].status = NSLocalizedString( @"Writing DICOMDIR...", nil);
                     [DicomDir createDicomDirAtDir: tempPath];
@@ -18121,13 +18110,6 @@ restart:
     NSTask *t;
     NSArray *args;
     
-    if( [AppController hasMacOSXSnowLeopard] == NO && [NSThread isMainThread] && [password length] > 0)
-    {
-        password = nil;
-        NSRunCriticalAlertPanel(NSLocalizedString(@"ZIP Encryption", nil), NSLocalizedString(@"ZIP encryption requires MacOS 10.6 or higher. The ZIP file will be generated, but NOT encrypted with a password.", nil), NSLocalizedString(@"OK",nil),nil, nil);
-        return;
-    }
-    
     if( destFile)
         [[NSFileManager defaultManager] removeItemAtPath: destFile error: nil];
     
@@ -18204,13 +18186,6 @@ restart:
 {
     NSTask *t;
     NSArray *args;
-    
-    if( [AppController hasMacOSXSnowLeopard] == NO && [NSThread isMainThread] && [password length] > 0)
-    {
-        password = nil;
-        NSRunCriticalAlertPanel(NSLocalizedString(@"ZIP Encryption", nil), NSLocalizedString(@"ZIP encryption requires MacOS 10.6 or higher. The ZIP file will be generated, but NOT encrypted with a password.", nil), NSLocalizedString(@"OK",nil),nil, nil);
-        return;
-    }
     
     if( destFile)
         [[NSFileManager defaultManager] removeItemAtPath: destFile error: nil];

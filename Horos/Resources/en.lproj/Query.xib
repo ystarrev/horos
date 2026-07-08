@@ -52,13 +52,17 @@
             <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES" resizable="YES"/>
             <rect key="contentRect" x="0.0" y="0.0" width="914" height="672"/>
             <rect key="screenRect" x="0.0" y="0.0" width="2560" height="1417"/>
-            <value key="minSize" type="size" width="914" height="672"/>
+            <value key="minSize" type="size" width="914" height="420"/>
             <view key="contentView" id="145">
                 <rect key="frame" x="0.0" y="0.0" width="914" height="672"/>
                 <autoresizingMask key="autoresizingMask"/>
                 <subviews>
                     <customView hidden="YES" translatesAutoresizingMaskIntoConstraints="NO" id="1170" customClass="SFHorosAuthorizationView">
                         <rect key="frame" x="749" y="611" width="165" height="60"/>
+                        <constraints>
+                            <constraint firstAttribute="height" constant="60" id="bsA-QR-h60"/>
+                            <constraint firstAttribute="width" constant="165" id="bsA-QR-w165"/>
+                        </constraints>
                     </customView>
                     <tabView controlSize="mini" translatesAutoresizingMaskIntoConstraints="NO" id="657">
                         <rect key="frame" x="0.0" y="612" width="914" height="62"/>
@@ -958,7 +962,7 @@
                                         <constraints>
                                             <constraint firstAttribute="width" constant="402" id="jbi-tD-A0m"/>
                                         </constraints>
-                                        <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="right" title="127.0.0:00" id="755">
+                                        <textFieldCell key="cell" sendsActionOnEndEditing="YES" alignment="right" id="755">
                                             <font key="font" metaFont="systemBold" size="10"/>
                                             <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
                                             <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
@@ -1147,20 +1151,6 @@
                                                             <sortDescriptor key="sortDescriptorPrototype" selector="compare:" sortKey="comment"/>
                                                             <tableColumnResizingMask key="resizingMask" resizeWithTable="YES" userResizable="YES"/>
                                                         </tableColumn>
-                                                        <tableColumn identifier="stateText" editable="NO" width="100" minWidth="100" maxWidth="100" id="899" userLabel="Table Column - Local Status">
-                                                            <tableHeaderCell key="headerCell" lineBreakMode="truncatingTail" borderStyle="border" alignment="left" title="Local Status">
-                                                                <font key="font" metaFont="smallSystem"/>
-                                                                <color key="textColor" name="headerTextColor" catalog="System" colorSpace="catalog"/>
-                                                                <color key="backgroundColor" name="headerColor" catalog="System" colorSpace="catalog"/>
-                                                            </tableHeaderCell>
-                                                            <textFieldCell key="dataCell" lineBreakMode="truncatingTail" selectable="YES" editable="YES" alignment="left" title="Text Cell" id="900">
-                                                                <font key="font" metaFont="system"/>
-                                                                <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
-                                                                <color key="backgroundColor" name="controlBackgroundColor" catalog="System" colorSpace="catalog"/>
-                                                            </textFieldCell>
-                                                            <sortDescriptor key="sortDescriptorPrototype" selector="compare:" sortKey="stateText"/>
-                                                            <tableColumnResizingMask key="resizingMask" resizeWithTable="YES" userResizable="YES"/>
-                                                        </tableColumn>
                                                         <tableColumn identifier="serverComment" editable="NO" width="100" minWidth="100" maxWidth="300" id="1195" userLabel="Table Column - Distant Comments">
                                                             <tableHeaderCell key="headerCell" lineBreakMode="truncatingTail" borderStyle="border" alignment="left" title="Server Comments">
                                                                 <font key="font" metaFont="smallSystem"/>
@@ -1173,20 +1163,6 @@
                                                                 <color key="backgroundColor" name="controlBackgroundColor" catalog="System" colorSpace="catalog"/>
                                                             </textFieldCell>
                                                             <sortDescriptor key="sortDescriptorPrototype" selector="compare:" sortKey="serverComment"/>
-                                                            <tableColumnResizingMask key="resizingMask" resizeWithTable="YES" userResizable="YES"/>
-                                                        </tableColumn>
-                                                        <tableColumn identifier="serverStateText" editable="NO" width="100" minWidth="100" maxWidth="100" id="1196" userLabel="Table Column - Distant Status">
-                                                            <tableHeaderCell key="headerCell" lineBreakMode="truncatingTail" borderStyle="border" alignment="left" title="Server Status">
-                                                                <font key="font" metaFont="smallSystem"/>
-                                                                <color key="textColor" name="headerTextColor" catalog="System" colorSpace="catalog"/>
-                                                                <color key="backgroundColor" name="headerColor" catalog="System" colorSpace="catalog"/>
-                                                            </tableHeaderCell>
-                                                            <textFieldCell key="dataCell" lineBreakMode="truncatingTail" selectable="YES" editable="YES" alignment="left" title="Text Cell" id="1197">
-                                                                <font key="font" metaFont="system"/>
-                                                                <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
-                                                                <color key="backgroundColor" name="controlBackgroundColor" catalog="System" colorSpace="catalog"/>
-                                                            </textFieldCell>
-                                                            <sortDescriptor key="sortDescriptorPrototype" selector="compare:" sortKey="serverStateText"/>
                                                             <tableColumnResizingMask key="resizingMask" resizeWithTable="YES" userResizable="YES"/>
                                                         </tableColumn>
                                                         <tableColumn identifier="institutionName" width="65" minWidth="65" maxWidth="300" id="1067">
@@ -1437,9 +1413,7 @@
                     <constraint firstItem="657" firstAttribute="top" secondItem="145" secondAttribute="top" id="E1d-6H-xSW"/>
                     <constraint firstItem="788" firstAttribute="top" secondItem="145" secondAttribute="top" constant="20" symbolic="YES" id="EYq-ZA-grf"/>
                     <constraint firstItem="1153" firstAttribute="top" secondItem="657" secondAttribute="bottom" constant="2" id="HoG-ON-nDf"/>
-                    <constraint firstItem="1170" firstAttribute="leading" secondItem="145" secondAttribute="leading" constant="749" id="LQV-QJ-qQs"/>
                     <constraint firstAttribute="bottom" secondItem="1153" secondAttribute="bottom" constant="1" id="Y1t-kw-LGG"/>
-                    <constraint firstAttribute="bottom" secondItem="1170" secondAttribute="bottom" constant="611" id="gfF-Ki-2Cs"/>
                     <constraint firstItem="657" firstAttribute="leading" secondItem="145" secondAttribute="leading" constant="7" id="lT9-LS-ZSp"/>
                     <constraint firstItem="1170" firstAttribute="top" secondItem="145" secondAttribute="top" constant="1" id="lrh-18-cvm"/>
                     <constraint firstItem="1153" firstAttribute="top" secondItem="788" secondAttribute="bottom" constant="7" id="m4U-wS-fzD"/>

@@ -113,7 +113,6 @@ static 	NSMutableDictionary *associatedScreen = nil;
         
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(viewerWillClose:) name: OsirixCloseViewerNotification object: nil];
 		
-		if( [AppController hasMacOSXSnowLeopard])
 			[[self window] setCollectionBehavior: 1 << 6]; //NSWindowCollectionBehaviorIgnoresCycle
 		
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(windowDidBecomeMain:) name:NSWindowDidBecomeMainNotification object:0];

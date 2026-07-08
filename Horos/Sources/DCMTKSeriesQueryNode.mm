@@ -117,13 +117,16 @@
             
             if (dataset ->findAndGetString(DCM_SeriesDescription, string).good() && string != nil) 
                 _theDescription = [[DicomFile stringWithBytes: (char*) string encodings: encoding replaceBadCharacters: NO] retain];
-                
-            if (dataset ->findAndGetString(DCM_SeriesNumber, string).good() && string != nil) 
+
+            if (dataset ->findAndGetString(DCM_SeriesNumber, string).good() && string != nil)
                 _name = [[DicomFile stringWithBytes: (char*) string encodings: encoding] retain];
-                
-            if (dataset ->findAndGetString(DCM_ImageComments, string).good() && string != nil) 
+
+            if (dataset ->findAndGetString(DCM_ImageComments, string).good() && string != nil)
                 _comments = [[DicomFile stringWithBytes: (char*) string encodings: encoding replaceBadCharacters: NO] retain];
-                
+
+            if (dataset ->findAndGetString(DCM_ContrastBolusAgent, string).good() && string != nil)
+                _contrastBolusAgent = [[DicomFile stringWithBytes: (char*) string encodings: encoding replaceBadCharacters: NO] retain];
+
             if (dataset ->findAndGetString(DCM_SeriesDate, string).good() && string != nil)
             {
                 NSString *dateString = [[NSString alloc] initWithCString:string encoding:NSISOLatin1StringEncoding];

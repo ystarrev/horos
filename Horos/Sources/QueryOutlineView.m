@@ -37,8 +37,32 @@
 
 #import "QueryOutlineView.h"
 
+@interface NSObject (QueryOutlineViewHighlightEditing)
+- (void)queryOutlineView:(NSOutlineView *)outlineView toggleHighlightAtRow:(NSInteger)row;
+@end
+
 
 @implementation QueryOutlineView
+
+- (void)mouseDown:(NSEvent *)event
+{
+    NSPoint point = [self convertPoint: [event locationInWindow] fromView: nil];
+    NSInteger row = [self rowAtPoint: point];
+
+    if( row >= 0 && NSPointInRect( point, [self frameOfOutlineCellAtRow: row]) == NO)
+    {
+        id controller = [[self window] windowController];
+
+        if( [controller respondsToSelector: @selector(queryOutlineView:toggleHighlightAtRow:)])
+        {
+            [[self window] makeFirstResponder: self];
+            [controller queryOutlineView: self toggleHighlightAtRow: row];
+            return;
+        }
+    }
+
+    [super mouseDown: event];
+}
 
 - (NSMenu*)menuForEvent:(NSEvent*)event
 {

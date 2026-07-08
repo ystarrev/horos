@@ -213,6 +213,7 @@
 	dataset-> insertEmptyElement(DCM_ReferringPhysiciansName, OFTrue);
     dataset-> insertEmptyElement(DCM_PerformingPhysiciansName, OFTrue);
 	dataset-> insertEmptyElement(DCM_InstitutionName, OFTrue);
+	dataset-> insertEmptyElement(DCM_ContrastBolusAgent, OFTrue);
 	dataset-> putAndInsertString(DCM_StudyInstanceUID, [_uid UTF8String], OFTrue);
 	dataset-> putAndInsertString(DCM_QueryRetrieveLevel, "SERIES", OFTrue);
 	

@@ -867,7 +867,7 @@ public:
     
     if( [[NSUserDefaults standardUserDefaults] integerForKey: @"VRAMAmount"] != vramMB)
     {
-        if( vramMB >= 2000 && [AppController hasMacOSXLion])
+        if( vramMB >= 2000)
         {
             [[NSUserDefaults standardUserDefaults] setInteger: 1 forKey: @"VRDefaultViewSize"];     // full screen
             [[NSUserDefaults standardUserDefaults] setInteger: 1 forKey: @"MAPPERMODEVR"];          // gpu
@@ -988,12 +988,6 @@ public:
 
 - (void) setEngine: (long) newEngine showWait:(BOOL) showWait
 {
-    if( newEngine != 0 && [AppController hasMacOSXLion] == NO)
-    {
-        NSRunCriticalAlertPanel( NSLocalizedString(@"GPU Rendering", nil),  NSLocalizedString( @"GPU Rendering requires MacOS 10.7 or higher.", nil), NSLocalizedString( @"OK", nil), nil, nil);
-        newEngine = 0;
-    }
-    
     if( newEngine == 1)
     {
         unsigned long vramMB = [VTKView VRAMSizeForDisplayID: [[[[[self window] screen] deviceDescription] objectForKey: @"NSScreenNumber"] intValue]];

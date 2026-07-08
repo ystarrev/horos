@@ -87,6 +87,16 @@ static BOOL HorosIsTemporaryLocalDatabaseSourcePath(NSString *path)
 static NSString* const HorosPhoneVolumeRenderBonjourType = @"_horosiphone._tcp.";
 static NSString* const HorosPhoneVolumeRenderDisplayName = @"iPhonePlanner";
 
+static NSString* HorosNormalizedMountedSourcePath(NSString *path)
+{
+    if (path.length == 0)
+        return nil;
+
+    NSString *standardizedPath = [path stringByStandardizingPath];
+    NSString *resolvedPath = [standardizedPath stringByResolvingSymlinksAndAliases];
+    return resolvedPath.length ? resolvedPath : standardizedPath;
+}
+
 static NSDictionary* HorosSourceTXTDictionaryFromRecordData(NSData *recordData)
 {
     if (!recordData.length)
@@ -112,6 +122,8 @@ static NSDictionary* HorosSourceTXTDictionaryFromRecordData(NSData *recordData)
  #include <IOKit/usb/IOUSBLib.h>
  */
 
+@class MountedDatabaseNodeIdentifier;
+
 @interface BrowserSourcesHelper : NSObject<NSNetServiceBrowserDelegate, NSNetServiceDelegate>/*<NSTableViewDelegate,NSTableViewDataSource>*/
 {
     BrowserController* _browser;
@@ -125,6 +137,8 @@ static NSDictionary* HorosSourceTXTDictionaryFromRecordData(NSData *recordData)
 
 -(id)initWithBrowser:(BrowserController*)browser;
 -(void)_analyzeVolumeAtPath:(NSString*)path;
+-(MountedDatabaseNodeIdentifier*)_deduplicateMountedSourcesForPath:(NSString*)path;
+-(void)_addMountedSourceForPath:(NSString*)path description:(NSString*)description type:(NSInteger)type;
 
 @end
 
@@ -168,6 +182,26 @@ enum {
 
 @end
 
+static NSArray* HorosMountedSourcesForPath(NSArray *sources, NSString *path)
+{
+    NSString *normalizedPath = HorosNormalizedMountedSourcePath(path);
+    if (normalizedPath.length == 0)
+        return [NSArray array];
+
+    NSMutableArray *matches = [NSMutableArray array];
+    for (MountedDatabaseNodeIdentifier* source in sources)
+    {
+        if ([source isKindOfClass:[MountedDatabaseNodeIdentifier class]] == NO)
+            continue;
+
+        NSString *normalizedSourcePath = HorosNormalizedMountedSourcePath(source.devicePath);
+        if ([normalizedSourcePath isEqualToString:normalizedPath])
+            [matches addObject: source];
+    }
+
+    return matches;
+}
+
 @interface UnavaliableDataNodeException : NSException
 @end
 
@@ -175,14 +209,8 @@ enum {
 
 -(void)removePathFromSources:(NSString*) path
 {
-    MountedDatabaseNodeIdentifier* mbs = nil;
-    for (MountedDatabaseNodeIdentifier* ibs in self.sources.arrangedObjects)
-        if ([ibs isKindOfClass:[MountedDatabaseNodeIdentifier class]] && [ibs.devicePath isEqualToString:path])
-        {
-            mbs = ibs;
-            break;
-        }
-    if (mbs)
+    NSArray *mountedSources = HorosMountedSourcesForPath(self.sources.arrangedObjects, path);
+    for (MountedDatabaseNodeIdentifier* mbs in mountedSources)
     {
         if ([[self sourceIdentifierForDatabase:self.database] isEqualToDataNodeIdentifier:mbs])
             [self performSelector: @selector(setDatabase:) withObject: DicomDatabase.defaultDatabase afterDelay: 0.01]; //This will guarantee that this will not happen in middle of a drag & drop, for example
@@ -1023,15 +1051,64 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     }
 }
 
+-(MountedDatabaseNodeIdentifier*)_deduplicateMountedSourcesForPath:(NSString*)path
+{
+    NSArray *matches = HorosMountedSourcesForPath([[_browser.sources.arrangedObjects copy] autorelease], path);
+    if ([matches count] == 0)
+        return nil;
+
+    MountedDatabaseNodeIdentifier *sourceToKeep = nil;
+    DataNodeIdentifier *activeSource = [_browser sourceIdentifierForDatabase:_browser.database];
+
+    for (MountedDatabaseNodeIdentifier* source in matches)
+        if ([activeSource isEqualToDataNodeIdentifier:source])
+            sourceToKeep = source;
+
+    if (sourceToKeep == nil)
+        sourceToKeep = [matches objectAtIndex: 0];
+
+    for (MountedDatabaseNodeIdentifier *duplicateSource in matches)
+    {
+        if (duplicateSource == sourceToKeep)
+            continue;
+
+        [duplicateSource retain];
+        [_browser.sources removeObject: duplicateSource];
+        [duplicateSource willUnmount];
+        [duplicateSource performSelector: @selector( autorelease) withObject: nil afterDelay: 60];
+    }
+
+    return sourceToKeep;
+}
+
+-(void)_addMountedSourceForPath:(NSString*)path description:(NSString*)description type:(NSInteger)type
+{
+    MountedDatabaseNodeIdentifier *existingSource = [self _deduplicateMountedSourcesForPath:path];
+    if (existingSource)
+    {
+        existingSource.description = description;
+        existingSource.mountType = type;
+        return;
+    }
+
+    @try {
+        [_browser.sources addObject:[MountedDatabaseNodeIdentifier mountedDatabaseNodeIdentifierWithPath:path description:description dictionary:nil type:type]];
+    } @catch (NSException* e) {
+        N2LogExceptionWithStackTrace(e);
+    }
+}
+
 -(void)_analyzeVolumeAtPath:(NSString*)path
 {
+    if ([self _deduplicateMountedSourcesForPath:path])
+        return;
+
     for (DataNodeIdentifier* ibs in _browser.sources.arrangedObjects)
         if ([ibs isKindOfClass:[LocalDatabaseNodeIdentifier class]] && [ibs.location hasPrefix:path])
         {
             return; // device is somehow already listed as a source
         }
 
-    NSLog( @"--- start diskutil");
     NSTask* task = [[NSTask alloc] init];
     [task setLaunchPath:@"/usr/sbin/diskutil"];
     [task setArguments:[NSArray arrayWithObjects: @"info", @"-plist", path, NULL]];
@@ -1039,7 +1116,6 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     [task setStandardOutput:[task standardError]];
     [task launch];
     while( [task isRunning]) [NSThread sleepForTimeInterval: 0.01];
-    NSLog( @"--- end diskutil");
 
     NSData* output = [[[[[task standardError] fileHandleForReading] readDataToEndOfFile] retain] autorelease];
     [task release];
@@ -1047,36 +1123,16 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     NSDictionary* result = [NSPropertyListSerialization propertyListFromData:output mutabilityOption:NSPropertyListImmutable format:0 errorDescription:NULL];
 
     if ([[result objectForKey:@"OpticalMediaType"] length]) // is CD/DVD or other optical media
-        @try {
-            [_browser.sources addObject:[MountedDatabaseNodeIdentifier mountedDatabaseNodeIdentifierWithPath:path description:path.lastPathComponent dictionary:nil type:MountTypeGeneric]];
-        } @catch (NSException* e) {
-            N2LogExceptionWithStackTrace(e);
-        }
+        [self _addMountedSourceForPath:path description:path.lastPathComponent type:MountTypeGeneric];
 
     else if ([[result objectForKey:@"MediaType"] isEqualToString:@"iPod"])
-        @try {
-            [_browser.sources addObject:[MountedDatabaseNodeIdentifier mountedDatabaseNodeIdentifierWithPath:path description:path.lastPathComponent dictionary:nil type:MountTypeIPod]];
-        } @catch (NSException* e) {
-            N2LogExceptionWithStackTrace(e);
-        }
+        [self _addMountedSourceForPath:path description:path.lastPathComponent type:MountTypeIPod];
     else // Is there a DICOMDIR at root?
     {
         if( [[NSFileManager defaultManager] fileExistsAtPath: [path stringByAppendingPathComponent: @"DICOMDIR"]])
-        {
-            @try {
-                [_browser.sources addObject:[MountedDatabaseNodeIdentifier mountedDatabaseNodeIdentifierWithPath:path description:path.lastPathComponent dictionary:nil type:MountTypeGeneric]];
-            } @catch (NSException* e) {
-                N2LogExceptionWithStackTrace(e);
-            }
-        }
+            [self _addMountedSourceForPath:path description:path.lastPathComponent type:MountTypeGeneric];
         else if( [[NSFileManager defaultManager] fileExistsAtPath: [path stringByAppendingPathComponent: OsirixDataDirName]])
-        {
-            @try {
-                [_browser.sources addObject:[MountedDatabaseNodeIdentifier mountedDatabaseNodeIdentifierWithPath:path description:path.lastPathComponent dictionary:nil type:MountTypeGeneric]];
-            } @catch (NSException* e) {
-                N2LogExceptionWithStackTrace(e);
-            }
-        }
+            [self _addMountedSourceForPath:path description:path.lastPathComponent type:MountTypeGeneric];
     }
 
     /*	OSStatus err;
@@ -1145,15 +1201,10 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
     if ([notification.name isEqualToString:NSWorkspaceDidUnmountNotification] || [notification.name isEqualToString:NSWorkspaceDidRenameVolumeNotification])
     {
-        MountedDatabaseNodeIdentifier* mbs = nil;
-        for (MountedDatabaseNodeIdentifier* ibs in _browser.sources.arrangedObjects)
-            if ([ibs isKindOfClass:[MountedDatabaseNodeIdentifier class]] && [ibs.devicePath isEqualToString:path])
-            {
-                mbs = ibs;
-                oldPathWasMounted = YES;
-                break;
-            }
-        if (mbs)
+        NSArray *mountedSources = HorosMountedSourcesForPath(_browser.sources.arrangedObjects, path);
+        oldPathWasMounted = [mountedSources count] > 0;
+
+        for (MountedDatabaseNodeIdentifier* mbs in mountedSources)
         {
             if ([[_browser sourceIdentifierForDatabase:_browser.database] isEqualToDataNodeIdentifier:mbs])
                 [_browser performSelector: @selector(setDatabase:) withObject: DicomDatabase.defaultDatabase afterDelay: 0.01]; //This will guarantee that this will not happen in middle of a drag & drop, for example
@@ -1174,26 +1225,25 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 -(void)_observeVolumeWillUnmountNotification:(NSNotification*)notification
 {
     NSString* path = [notification.userInfo objectForKey:@"NSDevicePath"];
+    if (path == nil)
+        path = [[notification.userInfo objectForKey:NSWorkspaceVolumeURLKey] path];
 
     [DCMPix purgeCachedDictionaries];
 
-    MountedDatabaseNodeIdentifier* mbs = nil;
-    for (MountedDatabaseNodeIdentifier* ibs in _browser.sources.arrangedObjects)
-        if ([ibs isKindOfClass:[MountedDatabaseNodeIdentifier class]] && [ibs.devicePath isEqualToString:path])
-        {
-            mbs = ibs;
-            break;
-        }
+    NSArray *mountedSources = HorosMountedSourcesForPath(_browser.sources.arrangedObjects, path);
 
-    [mbs willUnmount];
-
-    if (mbs && [[_browser sourceIdentifierForDatabase:_browser.database] isEqualToDataNodeIdentifier:mbs])
+    for (MountedDatabaseNodeIdentifier* mbs in mountedSources)
     {
-        DicomDatabase* db = [DicomDatabase activeLocalDatabase];
-        if (db == _browser.database)
-            db = [DicomDatabase defaultDatabase];
+        [mbs willUnmount];
 
-        [_browser performSelector: @selector(setDatabase:) withObject: db afterDelay: 0.01]; //This will guarantee that this will not happen in middle of a drag & drop, for example
+        if ([[_browser sourceIdentifierForDatabase:_browser.database] isEqualToDataNodeIdentifier:mbs])
+        {
+            DicomDatabase* db = [DicomDatabase activeLocalDatabase];
+            if (db == _browser.database)
+                db = [DicomDatabase defaultDatabase];
+
+            [_browser performSelector: @selector(setDatabase:) withObject: db afterDelay: 0.01]; //This will guarantee that this will not happen in middle of a drag & drop, for example
+        }
     }
 }
 

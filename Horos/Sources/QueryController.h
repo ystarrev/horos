@@ -116,7 +116,6 @@ enum
 	QueryArrayController					*queryManager;
 	
 	BOOL									autoQuery, queryButtonPressed, performingCFind, avoidQueryControllerDeallocReentry;
-    BOOL                                    queryWindowHorizontalBorderLiveResize;
 	
 	NSInteger								autoRefreshQueryResults;
 	NSRecursiveLock							*autoQueryLock;
@@ -142,6 +141,10 @@ enum
     
     NSMutableSet                            *performingQueryThreads;
     NSMutableArray                          *pendingRetrieveAndViewItems;
+    NSView                                  *modalityFilterPanel;
+    NSView                                  *seriesSelectionPanel;
+    NSInteger                               seriesHighlightFilterMask;
+    NSMutableSet                            *selectedSeriesUIDs;
 }
 
 @property (readonly) NSRecursiveLock *autoQueryLock;

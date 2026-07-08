@@ -38,7 +38,6 @@
 #import "ToolbarPanel.h"
 #import "ToolBarNSWindow.h"
 #import "ViewerController.h"
-#import "AppController.h"
 #import "NSWindow+N2.h"
 #import "N2Debug.h"
 #import "Notifications.h"
@@ -127,7 +126,6 @@ static int fixedHeight = 60;
         
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(viewerWillClose:) name: OsirixCloseViewerNotification object: nil];
 		
-		if( [AppController hasMacOSXSnowLeopard])
 			[[self window] setCollectionBehavior: 1 << 6]; //NSWindowCollectionBehaviorIgnoresCycle
 		
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(windowDidBecomeMain:) name:NSWindowDidBecomeMainNotification object:0];

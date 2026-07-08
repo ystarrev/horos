@@ -254,14 +254,6 @@
                                 </dictionary>
                             </binding>
                             <binding destination="38" name="value" keyPath="values.EncryptCD" id="94"/>
-                            <binding destination="38" name="enabled2" keyPath="values.hasMacOSXSnowLeopard" previousBinding="139" id="145">
-                                <dictionary key="options">
-                                    <integer key="NSMultipleValuesPlaceholder" value="-1"/>
-                                    <integer key="NSNoSelectionPlaceholder" value="-1"/>
-                                    <integer key="NSNotApplicablePlaceholder" value="-1"/>
-                                    <integer key="NSNullPlaceholder" value="-1"/>
-                                </dictionary>
-                            </binding>
                         </connections>
                     </button>
                     <button horizontalCompressionResistancePriority="1000" misplaced="YES" translatesAutoresizingMaskIntoConstraints="NO" id="48">

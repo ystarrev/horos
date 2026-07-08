@@ -41,7 +41,6 @@
 #import "DicomDatabase.h"
 #import "PSGenerator.h"
 #import "WebPortal.h"
-#import "AppController.h"
 #import "NSError+OsiriX.h"
 #import "DDData.h"
 #import "NSData+N2.h"
@@ -285,11 +284,6 @@ static NSMutableDictionary *studiesForUserCache = nil;
 }
 
 -(BOOL)validateDownloadZIP:(NSNumber**)value error:(NSError**)error {
-	if ([*value boolValue] && !AppController.hasMacOSXSnowLeopard) {
-		if (error) *error = [NSError osirixErrorWithCode:-31 localizedDescription:NSLocalizedString(@"ZIP download requires MacOS 10.6 or higher.", NULL)];
-		return NO;
-	}
-	
 	return YES;
 }
 
@@ -887,6 +881,4 @@ static NSMutableDictionary *studiesForUserCache = nil;
 }
 
 @end
-
-
 

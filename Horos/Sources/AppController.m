@@ -674,77 +674,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
         method_setImplementation(maxSizeMethod, ignoreSizeSetter);
 }
 
-+ (NSOperatingSystemVersion)operatingSystemVersion {
-    NSProcessInfo *info = [NSProcessInfo processInfo];
-    if ([info respondsToSelector:@selector(operatingSystemVersion)])
-        return [info operatingSystemVersion];
-    
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    SInt32 major = 0, minor = 0, patch = 0;
-    Gestalt(gestaltSystemVersionMajor, &major);
-    Gestalt(gestaltSystemVersionMinor, &minor);
-    Gestalt(gestaltSystemVersionBugFix, &patch);
-#pragma clang diagnostic pop
-    
-    NSOperatingSystemVersion version = {major, minor, patch};
-    return version;
-}
-
-+(BOOL) hasMacOSX1083
-{
-    NSOperatingSystemVersion v = [self.class operatingSystemVersion];
-    return (v.majorVersion == 10 && v.minorVersion == 8 && v.patchVersion == 3);
-}
-
-+ (BOOL)hasMacOSXSierra
-{
-    NSOperatingSystemVersion v = [self.class operatingSystemVersion];
-    return (v.majorVersion > 10 || v.minorVersion >= 12);
-}
-
-+(BOOL) hasMacOSXElCapitan
-{
-    NSOperatingSystemVersion v = [self.class operatingSystemVersion];
-    return (v.majorVersion > 10 || v.minorVersion >= 11);
-}
-
-+(BOOL) hasMacOSXYosemite
-{
-    NSOperatingSystemVersion v = [self.class operatingSystemVersion];
-    return (v.majorVersion > 10 || v.minorVersion >= 10);
-}
-
-+(BOOL) hasMacOSXMaverick
-{
-    NSOperatingSystemVersion v = [self.class operatingSystemVersion];
-    return (v.majorVersion > 10 || v.minorVersion >= 9);
-}
-
-+(BOOL) hasMacOSXMountainLion
-{
-    NSOperatingSystemVersion v = [self.class operatingSystemVersion];
-    return (v.majorVersion > 10 || v.minorVersion >= 8);
-}
-
-+(BOOL) hasMacOSXLion
-{
-    NSOperatingSystemVersion v = [self.class operatingSystemVersion];
-    return (v.majorVersion > 10 || v.minorVersion >= 7);
-}
-
-+(BOOL) hasMacOSXSnowLeopard
-{
-    NSOperatingSystemVersion v = [self.class operatingSystemVersion];
-    return (v.majorVersion > 10 || v.minorVersion >= 6);
-}
-
-+(BOOL) hasMacOSXLeopard
-{
-    NSOperatingSystemVersion v = [self.class operatingSystemVersion];
-    return (v.majorVersion > 10 || v.minorVersion >= 5);
-}
-
 + (void) createNoIndexDirectoryIfNecessary:(NSString*) path { // __deprecated
 	[[NSFileManager defaultManager] confirmNoIndexDirectoryAtPath:path];
 }
@@ -1373,12 +1302,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
             restartListener = YES;
         if ([[previousDefaults valueForKey: @"STORESCPTLS"] intValue] != [defaults integerForKey: @"STORESCPTLS"])
             restartListener = YES;
-        
-        if( [defaults integerForKey: @"httpWebServer"] == 1 && [defaults integerForKey: @"httpWebServer"] != [[previousDefaults valueForKey: @"httpWebServer"] intValue])
-        {
-            if( [AppController hasMacOSXSnowLeopard] == NO)
-                NSRunCriticalAlertPanel( NSLocalizedString( @"Unsupported", nil), NSLocalizedString( @"It is highly recommend to upgrade to MacOS 10.6 or higher to use the Horos Web Server.", nil), NSLocalizedString( @"OK", nil) , nil, nil);
-        }
         
         previousDefaults = dictionaryRepresentation;
         
@@ -2829,12 +2752,6 @@ static BOOL initialized = NO;
 				//		exit(0);
 				//	}
 				
-                if ([AppController hasMacOSXElCapitan] == NO)
-				{
-					NSRunCriticalAlertPanel(NSLocalizedString(@"macOS", nil), NSLocalizedString(@"This application requires macOS 10.11 or higher. Please upgrade your operating system.", nil), NSLocalizedString(@"Quit", nil), nil, nil);
-					exit(0);
-				}
-
                 int processors;
                 int mib[2] = {CTL_HW, HW_NCPU};
                 size_t dataLen = sizeof(int); // 'num' is an 'int'
@@ -2871,25 +2788,6 @@ static BOOL initialized = NO;
 				NSLog( @"**** DEBUG MODE ****");
 				#endif
 				
-			//	if( [[NSCalendarDate dateWithYear:2006 month:6 day:2 hour:12 minute:0 second:0 timeZone:[NSTimeZone timeZoneWithAbbreviation:@"EST"]] timeIntervalSinceNow] < 0)
-			//	{
-			//		NSRunCriticalAlertPanel(@"Update needed!", @"This version of Horos is outdated. Please download the latest version from Horos web site!", @"OK", nil, nil);
-			//		[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_VIEWER]];
-			//		exit(0);
-			//	}
-					
-				//	switch( NSRunInformationalAlertPanel(@"Horos", @"Thank you for using Horos!\rWe need your help! Send us comments, bugs and ideas!\r\rI need supporting emails to prove utility of Horos!\r\rThanks!", @"Continue", @"Send an email", @"Web Site"))
-				//	{
-				//		case 0:
-				//			[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"mailto:horos@horosproject.org?subject=Horos"]];
-				//		break;
-				//		
-				//		case -1:
-				//			[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_VIEWER]];
-				//		break;
-				//	}
-				
-				// ** REGISTER DEFAULTS DICTIONARY
                 
 				[[NSUserDefaults standardUserDefaults] registerDefaults: [DefaultsOsiriX getDefaults]];
                 
@@ -3558,12 +3456,6 @@ static BOOL initialized = NO;
 #endif // WITH_CODE_SIGNING
 #endif // NDEBUG
     
-    if( [AppController hasMacOSXElCapitan] == NO)
-    {
-        NSRunCriticalAlertPanel( NSLocalizedString( @"macOS Version", nil), NSLocalizedString( @"Horos requires macOS 10.11 or higher. Please update your OS: Apple Menu - Software Update...", nil), NSLocalizedString( @"Quit", nil) , nil, nil);
-        exit( 0);
-    }
-    
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SyncPreferencesFromURL"])
         [NSThread detachNewThreadSelector: @selector( addPreferencesFromURL:) toTarget: [OSIGeneralPreferencePanePref class] withObject: [NSURL URLWithString: [[NSUserDefaults standardUserDefaults] stringForKey: @"SyncPreferencesURL"]]];
 
@@ -3662,25 +3554,6 @@ static BOOL initialized = NO;
 
 -(void)verifyHardwareInterpolation
 {
-    if( [AppController hasMacOSX1083]) // Intel 10.8.3 graphic bug
-    {
-        BOOL onlyIntelGraphicBoard = YES;
-        for( NSString *gpuName in [AppController getGPUNames])
-        {
-            if( [gpuName hasPrefix: kIntelGPUPrefix] == NO)
-                onlyIntelGraphicBoard = NO;
-        }
-        
-        if( onlyIntelGraphicBoard)
-        {
-            NSLog( @"**** 10.8.3 graphic board bug: only intel board discovered : No 32-bit pipeline available");
-            NSLog( @"%@", [AppController getGPUNames]);
-            
-            [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"FULL32BITPIPELINE"];
-            return;
-        }
-    }
-    
 	NSUInteger size = 32, size2 = size*size;
 	
 	NSWindow* win = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,size,size) styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO];
@@ -4030,8 +3903,6 @@ static BOOL initialized = NO;
 	
 	[[NSUserDefaults standardUserDefaults] setBool:YES forKey: @"SAMESTUDY"];
 		
-	[[NSUserDefaults standardUserDefaults] setBool: [AppController hasMacOSXSnowLeopard] forKey: @"hasMacOSXSnowLeopard"];
-	
     [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"UseKDUForJPEG2000"];
     [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"UseOpenJpegForJPEG2000"];
     [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"useDCMTKForJP2K"];

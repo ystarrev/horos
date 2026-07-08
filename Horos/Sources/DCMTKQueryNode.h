@@ -52,6 +52,7 @@
     NSString *_performingPhysician;
 	NSString *_institutionName;
 	NSString *_comments;
+	NSString *_contrastBolusAgent;
     NSString *_interpretationStatusID;
 	NSString *_accessionNumber;
 	DCMCalendarDate *_date;
@@ -98,6 +99,7 @@
 - (NSString *)referringPhysician;
 - (NSString *)performingPhysician;
 - (NSString *)institutionName;
+- (NSString *)contrastBolusAgent;
 - (DCMCalendarDate *)date;
 - (DCMCalendarDate *)time;
 - (NSString *)modality;

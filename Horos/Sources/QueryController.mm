@@ -86,7 +86,30 @@ static NSString *ReferringPhysician = @"ReferringPhysiciansName";
 static NSString *InstitutionName = @"InstitutionName";
 static NSString *InterpretationStatusID = @"InterpretationStatusID";
 static NSString * const HorosQueryWindowFrameDefaultsKey = @"NSWindow Frame QR";
-static const NSSize HorosQueryWindowMinimumContentSize = {914, 672};
+static NSString * const HorosQRModalityFilterMaskDefaultsKey = @"QRModalityFilterMask";
+static NSString * const HorosAutoQRModalityFilterMaskDefaultsKey = @"AutoQRModalityFilterMask";
+static NSString * const HorosQRSeriesFilterDefaultsKey = @"QRSeriesFilterMask";
+static NSString * const HorosQRSeriesIgnoreMPRDefaultsKey = @"QRSeriesIgnoreMPR";
+static const NSInteger HorosQRModalityButtonTagBase = 6000;
+static const NSSize HorosQueryWindowMinimumContentSize = {914, 420};
+
+enum
+{
+    HorosQRSeriesHighlightT1 = 1 << 0,
+    HorosQRSeriesHighlightT2 = 1 << 1,
+    HorosQRSeriesHighlightFLAIR = 1 << 2,
+    HorosQRSeriesHighlightGad = 1 << 3,
+    HorosQRSeriesIgnoreMPR = 1 << 4
+};
+
+static NSArray *HorosQRModalityTitles(void)
+{
+    static NSArray *titles = nil;
+    if( titles == nil)
+        titles = [[NSArray alloc] initWithObjects: @"CR", @"SC", @"CT", @"MR", @"MG", @"AU", @"XA", @"OT", @"RF", @"RG", @"NM", @"DR", @"DX", @"XC", @"ES", @"VL", @"PT", @"US", @"SR", nil];
+
+    return titles;
+}
 
 static BOOL HorosScanSavedWindowFrameDescriptor(NSString *descriptor, NSRect *frame)
 {
@@ -168,8 +191,45 @@ extern "C"
 - (void)removePendingRetrieveAndViewItem:(id)item;
 - (void)openPendingRetrieveAndViewItemsIfPossible;
 - (void)configureQueryWindowMinimumContentSize;
+- (void)configureModalityFilterButtons;
+- (void)configureSeriesSelectionPanel;
+- (NSArray *)selectedModalityStrings;
+- (void)setSelectedModalityStrings:(NSArray *)modalityStrings;
+- (NSString *)modalityFilterMaskDefaultsKey;
+- (NSInteger)currentModalityFilterMask;
+- (void)saveModalityFilterSettings;
+- (void)restoreModalityFilterSettings;
 - (void)restoreQueryWindowFramePreference;
 - (void)saveQueryWindowFramePreference;
+- (IBAction)expandAllQueryStudies:(id)sender;
+- (IBAction)seriesHighlightFilterChanged:(id)sender;
+- (IBAction)seriesIgnoreMPRChanged:(id)sender;
+- (IBAction)retrieveSelectedSeries:(id)sender;
+- (void)queryOutlineView:(NSOutlineView *)outlineView toggleHighlightAtRow:(NSInteger)row;
+- (NSArray *)visibleQueryChildrenForItem:(DCMTKQueryNode *)item;
+- (BOOL)shouldDisplayQueryItem:(id)item;
+- (NSString *)seriesSelectionIdentifierForItem:(id)item;
+- (void)ensureSelectedSeriesUIDs;
+- (void)rebuildHighlightedSeriesFromFilters;
+- (void)saveSeriesSelectionPanelSettings;
+- (void)restoreSeriesSelectionPanelSettings;
+- (void)applySeriesFiltersAfterQueryRefreshWithAutoExpand:(BOOL)autoExpandSmallResults;
+- (void)refreshList:(NSArray*)l autoExpandSmallResults:(BOOL)autoExpandSmallResults;
+- (NSArray *)seriesSelectedByHighlight;
+- (NSArray *)seriesChildrenForStudyItem:(id)item;
+- (void)setSeriesItems:(NSArray *)seriesItems highlighted:(BOOL)highlighted;
+- (void)toggleHighlightForSeriesItem:(id)item;
+- (void)toggleHighlightForStudyItem:(id)item;
+- (NSInteger)currentSeriesHighlightFilterMask;
+- (BOOL)ignoreMPRSeries;
+- (void)refreshSeriesSelectionDisplay;
+- (NSString *)normalizedSeriesDescriptionForItem:(id)item;
+- (BOOL)seriesText:(NSString *)text containsToken:(NSString *)token;
+- (BOOL)seriesText:(NSString *)text containsAnyToken:(NSArray *)tokens;
+- (BOOL)seriesText:(NSString *)text containsEmbeddedSequence:(NSString *)sequence;
+- (BOOL)seriesText:(NSString *)text containsAnyPhrase:(NSArray *)phrases;
+- (BOOL)seriesFilterMatchesItem:(id)item;
+- (BOOL)seriesHighlightMatchesItem:(id)item;
 @end
 
 @implementation QueryController
@@ -313,7 +373,7 @@ extern "C"
 //			[dictionary setObject:moveDataHandler  forKey:@"receivedDataHandler"];
 			
 			for( DCMTKQueryNode	*object in array)
-			{
+		{
 				[object setShowErrorMessage: showErrors];
 				 
 				[dictionary setObject: [object valueForKey:@"calledAET"] forKey:@"calledAET"];
@@ -1096,13 +1156,7 @@ extern "C"
 	[presets setValue: [NSNumber numberWithInt: [dateFilterMatrix selectedTag]] forKey: @"dateFilterMatrix"];
 	[presets setValue: [NSNumber numberWithInt: [birthdateFilterMatrix selectedTag]] forKey: @"birthdateFilterMatrix"];
 	
-	NSMutableArray *cellsString = [NSMutableArray array];
-	for( NSCell *cell in [modalityFilterMatrix cells])
-	{
-		if( [cell state] == NSControlStateValueOn)
-			[cellsString addObject: [cell title]];
-	}
-	[presets setValue: cellsString forKey: @"modalityStrings"];
+	[presets setValue: [self selectedModalityStrings] forKey: @"modalityStrings"];
 	
 	[presets setValue: [NSNumber numberWithInt: [PatientModeMatrix indexOfTabViewItem: [PatientModeMatrix selectedTabViewItem]]] forKey: @"PatientModeMatrix"];
 	
@@ -1184,7 +1238,7 @@ extern "C"
 	[searchFieldComments setStringValue: @""];
 	[dateFilterMatrix selectCellWithTag: 0];
 	[birthdateFilterMatrix selectCellWithTag: 0];
-	[modalityFilterMatrix deselectAllCells];
+    [self setSelectedModalityStrings: [NSArray array]];
 	[PatientModeMatrix selectTabViewItemAtIndex: 0];
 	
 	[searchFieldName selectText: self];
@@ -1289,17 +1343,11 @@ extern "C"
     
 	[dateFilterMatrix selectCellWithTag: [[presets valueForKey: @"dateFilterMatrix"] intValue]];
 	[birthdateFilterMatrix selectCellWithTag: [[presets valueForKey: @"birthdateFilterMatrix"] intValue]];
-	
-	[modalityFilterMatrix deselectAllCells];
-	
-    if( [presets valueForKey: @"modalityStrings"])
-    {
-        for( NSCell *cell in [modalityFilterMatrix cells])
-        {
-            if( [[presets valueForKey: @"modalityStrings"] containsObject: cell.title])
-                [cell setState: NSControlStateValueOn];
-        }
-    }
+
+    if( [[NSUserDefaults standardUserDefaults] objectForKey: [self modalityFilterMaskDefaultsKey]])
+        [self restoreModalityFilterSettings];
+    else if( [presets valueForKey: @"modalityStrings"])
+        [self setSelectedModalityStrings: [presets valueForKey: @"modalityStrings"]];
 	else if( [presets valueForKey: @"modalityFilterMatrixString"]) // Backward compatibility
 	{
         NSString *m[7][3] = {{@"SC", @"CR", @"DX"},{@"CT", @"US", @"MG"},{@"MR", @"NM", @"PT"},{@"XA", @"RF", @"SR"},{@"DR", @"OT", @"RG"},{@"ES", @"VL", @"XC"},{@"AU", @"", @""}};
@@ -1648,6 +1696,78 @@ extern "C"
     [self autoQueryTimerFunction: QueryTimer]; 
 }
 
+- (NSArray *)visibleQueryChildrenForItem:(DCMTKQueryNode *)item
+{
+    NSArray *children = [item children];
+
+    if( children.count == 0)
+        return children;
+
+    NSMutableArray *visibleChildren = nil;
+
+    for( id child in children)
+    {
+        if( [self shouldDisplayQueryItem: child])
+        {
+            if( visibleChildren)
+                [visibleChildren addObject: child];
+        }
+        else
+        {
+            if( visibleChildren == nil)
+            {
+                visibleChildren = [NSMutableArray arrayWithCapacity: [children count]];
+
+                for( id previousChild in children)
+                {
+                    if( previousChild == child)
+                        break;
+
+                    [visibleChildren addObject: previousChild];
+                }
+            }
+        }
+    }
+
+    return visibleChildren ? visibleChildren : children;
+}
+
+- (BOOL)shouldDisplayQueryItem:(id)item
+{
+    if( [item isMemberOfClass: [DCMTKSeriesQueryNode class]] == NO)
+        return YES;
+
+    if( [self ignoreMPRSeries] == NO)
+        return YES;
+
+    NSString *description = [item valueForKey: @"theDescription"];
+    if( [description length] == 0)
+        return YES;
+
+    NSCharacterSet *alphanumericSet = [NSCharacterSet alphanumericCharacterSet];
+    NSRange searchRange = NSMakeRange( 0, [description length]);
+
+    while( searchRange.location < [description length])
+    {
+        NSRange match = [description rangeOfString: @"mpr" options: NSCaseInsensitiveSearch range: searchRange];
+
+        if( match.location == NSNotFound)
+            break;
+
+        BOOL startsToken = match.location == 0 || [alphanumericSet characterIsMember: [description characterAtIndex: match.location - 1]] == NO;
+        NSUInteger afterMatch = NSMaxRange( match);
+        BOOL endsToken = afterMatch >= [description length] || [alphanumericSet characterIsMember: [description characterAtIndex: afterMatch]] == NO;
+
+        if( startsToken && endsToken)
+            return NO;
+
+        searchRange.location = afterMatch;
+        searchRange.length = [description length] - searchRange.location;
+    }
+
+    return YES;
+}
+
 - (id)outlineView:(NSOutlineView *)outlineView child:(NSInteger)index ofItem:(DCMTKQueryNode *) item
 {
 	@try
@@ -1664,14 +1784,17 @@ extern "C"
             else
             {
                 NSArray *children = [item children];
-                
+
                 if( children.count > 0 && [[children lastObject] isKindOfClass: [DCMTKStudyQueryNode class]] == NO && [[children lastObject] isKindOfClass: [DCMTKSeriesQueryNode class]] == NO)
                 {
                     [item purgeChildren];
                     children = [item children];
                 }
-                
-                return [children objectAtIndex: index];
+
+                NSArray *visibleChildren = [self visibleQueryChildrenForItem: item];
+
+                if( [visibleChildren count] > index)
+                    return [visibleChildren objectAtIndex: index];
             }
         }
 	}
@@ -1760,8 +1883,8 @@ extern "C"
 					}
                 }
             }
-            return  (item == nil) ? [resultArray count] : [[item children] count];
-        }
+	            return  (item == nil) ? [resultArray count] : [[self visibleQueryChildrenForItem: item] count];
+	        }
 	}
 	@catch (NSException * e)
 	{
@@ -2122,6 +2245,17 @@ extern "C"
 {
 	@try
 	{
+        BOOL seriesHighlight = [self seriesHighlightMatchesItem: item];
+
+        if( [cell respondsToSelector: @selector(setDrawsBackground:)])
+            [cell setDrawsBackground: NO];
+
+        if( [cell respondsToSelector: @selector(setBackgroundColor:)])
+            [cell setBackgroundColor: [NSColor clearColor]];
+
+        if( [cell respondsToSelector: @selector(setTextColor:)])
+            [cell setTextColor: [NSColor controlTextColor]];
+
 		if( [[tableColumn identifier] isEqualToString: @"name"])	// Is this study already available in our local database?
 		{
             if( [[NSUserDefaults standardUserDefaults] boolForKey: @"displaySamePatientWithColorBackground"] && [[self window] firstResponder] == outlineView && [outlineView selectedRow] >= 0)
@@ -2187,6 +2321,18 @@ extern "C"
 			if( [item valueForKey:@"numberImages"]) [cell setIntegerValue: [[item valueForKey:@"numberImages"] intValue]];
 			else [cell setStringValue:@"n/a"];
 		}
+
+        if( seriesHighlight)
+        {
+            if( [cell respondsToSelector: @selector(setDrawsBackground:)])
+            {
+                [cell setDrawsBackground: YES];
+                [cell setBackgroundColor: [NSColor colorWithCalibratedRed: 1.0 green: 0.92 blue: 0.28 alpha: 1.0]];
+            }
+
+            if( [cell respondsToSelector: @selector(setTextColor:)])
+                [cell setTextColor: [NSColor blackColor]];
+        }
 	}
 	@catch (NSException * e)
 	{
@@ -2200,49 +2346,7 @@ extern "C"
     {
         @try
         {
-            if( [[tableColumn identifier] isEqualToString: @"stateText"])
-            {
-                if( [item isMemberOfClass:[DCMTKStudyQueryNode class]] == YES)
-                {
-                    NSArray *studyArray = [self localStudy: item context: nil];
-                    
-                    if( [studyArray count] > 0)
-                    {
-                        if( [[[studyArray objectAtIndex: 0] valueForKey:@"stateText"] intValue] == 0)
-                            return nil;
-                        else
-                            return [[studyArray objectAtIndex: 0] valueForKey: @"stateText"];
-                    }
-                }
-                else if( [item isMemberOfClass:[DCMTKSeriesQueryNode class]])
-                {
-                    NSArray *seriesArray = [self localSeries: item context: nil];
-                    if( [seriesArray count])
-                    {
-                        if( [[[seriesArray objectAtIndex: 0] valueForKey:@"stateText"] intValue] == 0)
-                            return nil;
-                        else
-                            return [[seriesArray objectAtIndex: 0] valueForKey: @"stateText"];
-                    }
-                }
-                else NSLog( @"***** unknown class in QueryController outlineView: %@", [item class]);
-            }
-            else if( [[tableColumn identifier] isEqualToString: @"serverStateText"])
-            {
-                if( [item isMemberOfClass:[DCMTKStudyQueryNode class]] == YES)
-                {
-                    if( [[item stateText] intValue] == 0)
-                        return nil;
-                    else
-                        return [item stateText];
-                }
-                
-                else if( [item isMemberOfClass:[DCMTKSeriesQueryNode class]])
-                    return nil;
-                
-                else NSLog( @"***** unknown class in QueryController outlineView: %@", [item class]);
-            }
-            else if( [[tableColumn identifier] isEqualToString: @"comment"])
+            if( [[tableColumn identifier] isEqualToString: @"comment"])
             {
                 if( [item isMemberOfClass:[DCMTKStudyQueryNode class]] == YES)
                 {
@@ -2290,35 +2394,6 @@ extern "C"
 	
 	return nil;
 }
-
-//- (void)outlineView:(NSOutlineView *) o setObjectValue:(id)object forTableColumn:(NSTableColumn *)tableColumn byItem:(id)item
-//{
-//	NSArray *array;
-//	
-//	@try
-//	{
-////		if( [[tableColumn identifier] isEqualToString: @"comment"] || [[tableColumn identifier] isEqualToString: @"stateText"])
-////		{
-////			if( [item isMemberOfClass:[DCMTKStudyQueryNode class]] == YES)
-////				array = [self localStudy: item context: nil];
-////			else
-////				array = [self localSeries: item context: nil];
-////			
-////			if( [array count] > 0)
-////			{
-////				[[BrowserController currentBrowser] setDatabaseValue: object item: [array objectAtIndex: 0] forKey: [tableColumn identifier]];
-////			}
-////			else NSRunCriticalAlertPanel( NSLocalizedString(@"Study not available", nil), NSLocalizedString(@"The study is not available in the local Database, you cannot modify or set the comments/status fields.", nil), NSLocalizedString(@"OK", nil), nil, nil) ;
-////		}
-//	}
-//	@catch (NSException * e)
-//	{
-//		N2LogExceptionWithStackTrace(e);
-//	}
-//	
-//	DatabaseIsEdited = NO;
-//	[outlineView reloadData];
-//}
 
 - (NSArray*) sortArray
 {
@@ -2383,25 +2458,18 @@ extern "C"
         [outlineView setNeedsDisplay: YES];
 }
 
-- (IBAction) selectModality: (id) sender;
+- (IBAction) selectModality: (id) sender
 {
-	NSEvent *event = [[NSApplication sharedApplication] currentEvent];
-	
-	if( [event modifierFlags] & NSCommandKeyMask)
-	{
-		for( NSCell *c in [modalityFilterMatrix cells])
-		{
-			if( [sender selectedCell] != c)
-				[c setState: NSControlStateValueOff];
-		}
-	}
+    [self saveModalityFilterSettings];
 }
 
 - (NSArray*) queryPatientID:(NSString*) ID
 {
     NSDictionary *savedSettings = [self savePresetInDictionaryWithDICOMNodes: NO];
+    NSArray *modalityStrings = [self selectedModalityStrings];
 	
     [self emptyPreset: self];
+    [self setSelectedModalityStrings: modalityStrings];
     
 	[PatientModeMatrix selectTabViewItemAtIndex: 1];	// PatientID search
 	[searchFieldID setStringValue: ID];
@@ -2521,7 +2589,7 @@ extern "C"
                     }
                 }
                 
-                [self refreshList: temporaryCFindResultArray];
+                [self refreshList: temporaryCFindResultArray autoExpandSmallResults: NO];
             }
             
             lastTemporaryCFindResultUpdate = [[NSDate date] timeIntervalSinceReferenceDate];
@@ -3098,17 +3166,28 @@ extern "C"
 
 - (void) refreshList: (NSArray*) l
 {
+    [self refreshList: l autoExpandSmallResults: YES];
+}
+
+- (void) refreshList: (NSArray*) l autoExpandSmallResults:(BOOL)autoExpandSmallResults
+{
 	[l retain];
 	
     if( [NSThread isMainThread] == NO)
         N2LogStackTrace( @"******* this function should be called in MAIN thread");
     
 	[resultArray removeAllObjects];
-    if ( [ l count ] > 0) {
-        [resultArray addObjectsFromArray: l];
-        [resultArray sortUsingDescriptors: [self sortArray]];
-    }
+	if( [l count] > 0)
+	{
+	    [resultArray addObjectsFromArray: l];
+	    [resultArray sortUsingDescriptors: [self sortArray]];
+	}
+
+	seriesHighlightFilterMask = [self currentSeriesHighlightFilterMask];
+	[self ensureSelectedSeriesUIDs];
+	[selectedSeriesUIDs removeAllObjects];
 	[outlineView reloadData];
+	[self applySeriesFiltersAfterQueryRefreshWithAutoExpand: autoExpandSmallResults];
     
     [numberOfStudies setStringValue:N2LocalizedSingularPluralCount(resultArray.count, NSLocalizedString( @"study found", nil), NSLocalizedString( @"studies found", nil))];
     
@@ -3209,11 +3288,11 @@ extern "C"
             {
                 if( [chars characterAtIndex:0] != 13 && [chars characterAtIndex:0] != 3) return;
             }
-        }
-        
-        [self autoQueryTimer: self];
-        
-        [self queryWithDisplayingErrors: YES];
+	        }
+
+	        [self autoQueryTimer: self];
+
+	        [self queryWithDisplayingErrors: YES];
         
         queryButtonPressed = YES;
         
@@ -4556,20 +4635,7 @@ extern "C"
     else
         [PatientModeMatrix selectTabViewItemAtIndex: [[NSUserDefaults standardUserDefaults] integerForKey: @"QRPatientModeMatrixIndex"]];
     
-	NSTableColumn *tableColumn = [outlineView tableColumnWithIdentifier: @"stateText"];
-	NSPopUpButtonCell *buttonCell = [[[NSPopUpButtonCell alloc] initTextCell: @"" pullsDown:NO] autorelease];
-//	[buttonCell setEditable: YES];
-	[buttonCell setBordered: NO];
-	[buttonCell addItemsWithTitles: [BrowserController statesArray]];
-	[tableColumn setDataCell:buttonCell];
-	
-    tableColumn = [outlineView tableColumnWithIdentifier: @"serverStateText"];
-    buttonCell = [[[NSPopUpButtonCell alloc] initTextCell: @"" pullsDown:NO] autorelease];
-	[buttonCell setBordered: NO];
-	[buttonCell addItemsWithTitles: [BrowserController statesArray]];
-	[tableColumn setDataCell:buttonCell];
-    
-	{
+		{
 		NSMenu *cellMenu = [[[NSMenu alloc] initWithTitle:@"Search Menu"] autorelease];
 		NSMenuItem *item1, *item2, *item3;
 		id searchCell = [searchFieldAN cell];
@@ -5091,9 +5157,6 @@ extern "C"
             [self configureQueryWindowMinimumContentSize];
             [self restoreQueryWindowFramePreference];
 
-			[dateFilterMatrix selectCellWithTag: [[NSUserDefaults standardUserDefaults] integerForKey: @"QRLastDateFilterValue"]];
-			[self setDateQuery: dateFilterMatrix];
-			
 			currentQueryController = self;
 			[[self window] setTitle: NSLocalizedString( @"DICOM Query/Retrieve", nil)];
 
@@ -5156,9 +5219,9 @@ extern "C"
                     autoQueryRemainingSecs[ i] = -[[[autoQRInstances objectAtIndex: i] valueForKey: @"autoRefreshQueryResults"] intValue]; // seconds
             }
             [self didChangeValueForKey: @"instancesMenuList"];
-		}
-        
-        DICOMFieldsArray = [[self prepareDICOMFieldsArrays] retain];
+			}
+
+		        DICOMFieldsArray = [[self prepareDICOMFieldsArrays] retain];
         
         NSMenu *DICOMFieldsMenu = [dicomFieldsMenu menu];
         [DICOMFieldsMenu setAutoenablesItems:NO];
@@ -5175,11 +5238,24 @@ extern "C"
             
             if( [[DICOMFieldsArray objectAtIndex:i] element] == 0x0080 && [[DICOMFieldsArray objectAtIndex:i] group] == 0x0008)
                 [dicomFieldsMenu selectItemWithTitle: [[DICOMFieldsArray objectAtIndex:i] title]];
-        }
-        [dicomFieldsMenu setMenu: DICOMFieldsMenu];
+	        }
+	        [dicomFieldsMenu setMenu: DICOMFieldsMenu];
 
-        [[self window] setDelegate:self];
-	}
+	        if( autoQuery == NO)
+	        {
+	            NSDictionary *savedSettings = [[NSUserDefaults standardUserDefaults] dictionaryForKey: @"savedDICOMQuerySettings"];
+
+	            if( savedSettings)
+	                [self applyPresetDictionary: savedSettings];
+	            else
+	            {
+	                [dateFilterMatrix selectCellWithTag: [[NSUserDefaults standardUserDefaults] integerForKey: @"QRLastDateFilterValue"]];
+	                [self setDateQuery: dateFilterMatrix];
+	            }
+	        }
+
+	        [[self window] setDelegate:self];
+		}
 
     return self;
 }
@@ -5209,11 +5285,12 @@ extern "C"
 	[fromDate setDateValue: [NSCalendarDate dateWithYear:[[NSCalendarDate date] yearOfCommonEra] month:[[NSCalendarDate date] monthOfYear] day:[[NSCalendarDate date] dayOfMonth] hour:0 minute:0 second:0 timeZone: nil]];
 	[queryManager release];
 	[queryFilters release];
-	[sourcesArray release];
-	[resultArray release];
-	[pendingRetrieveAndViewItems release];
-	[QueryTimer invalidate];
-	[QueryTimer release];
+		[sourcesArray release];
+			[resultArray release];
+			[pendingRetrieveAndViewItems release];
+			[selectedSeriesUIDs release];
+			[QueryTimer invalidate];
+		[QueryTimer release];
     [performingQueryThreads release];
 	
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
@@ -5236,11 +5313,835 @@ extern "C"
 	[super dealloc];
 }
 
+- (void)configureModalityFilterButtons
+{
+    if( modalityFilterPanel)
+        return;
+
+    NSView *container = [modalityFilterMatrix superview];
+    if( container == nil)
+        return;
+
+    [modalityFilterMatrix setHidden: YES];
+    modalityFilterPanel = container;
+
+    NSArray *titles = HorosQRModalityTitles();
+    CGFloat leftLeading = 5;
+    CGFloat rightLeading = 59;
+    CGFloat top = 5;
+    CGFloat rowHeight = 14;
+    CGFloat rowSpacing = 1;
+    CGFloat buttonWidth = 50;
+
+    for( NSUInteger i = 0; i < [titles count]; i++)
+    {
+        NSString *title = [titles objectAtIndex: i];
+        NSButton *button = [[[NSButton alloc] initWithFrame: NSZeroRect] autorelease];
+
+        [button setTitle: title];
+        [button setButtonType: NSSwitchButton];
+        [button setBordered: NO];
+        [button setControlSize: NSSmallControlSize];
+        [[button cell] setFont: [NSFont systemFontOfSize: [NSFont smallSystemFontSize]]];
+        [button setTag: HorosQRModalityButtonTagBase + i];
+        [button setTarget: self];
+        [button setAction: @selector(selectModality:)];
+        [button setTranslatesAutoresizingMaskIntoConstraints: NO];
+
+        [container addSubview: button];
+
+        NSUInteger row = i / 2;
+        CGFloat leading = (i % 2 == 0) ? leftLeading : rightLeading;
+
+        [container addConstraint: [NSLayoutConstraint constraintWithItem: button
+                                                               attribute: NSLayoutAttributeLeading
+                                                               relatedBy: NSLayoutRelationEqual
+                                                                  toItem: container
+                                                               attribute: NSLayoutAttributeLeading
+                                                              multiplier: 1
+                                                                constant: leading]];
+        [container addConstraint: [NSLayoutConstraint constraintWithItem: button
+                                                               attribute: NSLayoutAttributeTop
+                                                               relatedBy: NSLayoutRelationEqual
+                                                                  toItem: container
+                                                               attribute: NSLayoutAttributeTop
+                                                              multiplier: 1
+                                                                constant: top + row * (rowHeight + rowSpacing)]];
+        [button addConstraint: [NSLayoutConstraint constraintWithItem: button
+                                                            attribute: NSLayoutAttributeWidth
+                                                            relatedBy: NSLayoutRelationEqual
+                                                               toItem: nil
+                                                            attribute: NSLayoutAttributeNotAnAttribute
+                                                           multiplier: 1
+                                                             constant: buttonWidth]];
+        [button addConstraint: [NSLayoutConstraint constraintWithItem: button
+                                                            attribute: NSLayoutAttributeHeight
+                                                            relatedBy: NSLayoutRelationEqual
+                                                               toItem: nil
+                                                            attribute: NSLayoutAttributeNotAnAttribute
+                                                           multiplier: 1
+                                                             constant: rowHeight]];
+    }
+
+    [self restoreModalityFilterSettings];
+}
+
+- (void)configureSeriesSelectionPanel
+{
+    if( seriesSelectionPanel)
+        return;
+
+    NSScrollView *resultsScrollView = [outlineView enclosingScrollView];
+    NSView *container = [resultsScrollView superview];
+
+    if( resultsScrollView == nil || container == nil)
+        return;
+
+    [selectedResultSource setStringValue: @""];
+    [selectedResultSource setHidden: YES];
+
+    NSBox *panelBox = [[[NSBox alloc] initWithFrame:NSZeroRect] autorelease];
+    [panelBox setTitle: NSLocalizedString( @"Series", nil)];
+    [panelBox setBorderType: NSBezelBorder];
+    [panelBox setTranslatesAutoresizingMaskIntoConstraints: NO];
+    [container addSubview: panelBox];
+
+    NSMutableArray *constraintsToRemove = [NSMutableArray array];
+    for( NSLayoutConstraint *constraint in [container constraints])
+    {
+        BOOL firstIsResultsTrailing = [constraint firstItem] == resultsScrollView && [constraint firstAttribute] == NSLayoutAttributeTrailing;
+        BOOL secondIsResultsTrailing = [constraint secondItem] == resultsScrollView && [constraint secondAttribute] == NSLayoutAttributeTrailing;
+
+        if( firstIsResultsTrailing || secondIsResultsTrailing)
+            [constraintsToRemove addObject: constraint];
+    }
+
+    if( [constraintsToRemove count])
+        [container removeConstraints: constraintsToRemove];
+
+    NSDictionary *panelViews = NSDictionaryOfVariableBindings(resultsScrollView, panelBox);
+    [container addConstraints: [NSLayoutConstraint constraintsWithVisualFormat: @"[resultsScrollView]-8-[panelBox(==180)]-20-|"
+                                                                       options: 0
+                                                                       metrics: nil
+                                                                         views: panelViews]];
+    [container addConstraint: [NSLayoutConstraint constraintWithItem: panelBox
+                                                          attribute: NSLayoutAttributeTop
+                                                          relatedBy: NSLayoutRelationEqual
+                                                             toItem: resultsScrollView
+                                                          attribute: NSLayoutAttributeTop
+                                                         multiplier: 1
+                                                           constant: 0]];
+    [container addConstraint: [NSLayoutConstraint constraintWithItem: panelBox
+                                                          attribute: NSLayoutAttributeBottom
+                                                          relatedBy: NSLayoutRelationEqual
+                                                             toItem: resultsScrollView
+                                                          attribute: NSLayoutAttributeBottom
+                                                         multiplier: 1
+                                                           constant: 0]];
+
+    NSView *contentView = [panelBox contentView];
+    seriesSelectionPanel = contentView;
+    NSInteger savedSeriesFilterMask = [[NSUserDefaults standardUserDefaults] integerForKey: HorosQRSeriesFilterDefaultsKey];
+    id savedIgnoreMPRValue = [[NSUserDefaults standardUserDefaults] objectForKey: HorosQRSeriesIgnoreMPRDefaultsKey];
+    BOOL savedIgnoreMPR = savedIgnoreMPRValue ? [savedIgnoreMPRValue boolValue] : YES;
+
+    NSButton *expandButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
+    [expandButton setTitle: NSLocalizedString( @"Expand", nil)];
+    [expandButton setButtonType: NSMomentaryPushInButton];
+    [expandButton setBezelStyle: NSRoundRectBezelStyle];
+    [expandButton setTarget: self];
+    [expandButton setAction: @selector(expandAllQueryStudies:)];
+
+    NSButton *t1Button = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
+    [t1Button setTitle: @"T1"];
+    [t1Button setButtonType: NSSwitchButton];
+    [t1Button setTag: HorosQRSeriesHighlightT1];
+    [t1Button setState: (savedSeriesFilterMask & HorosQRSeriesHighlightT1) ? NSOnState : NSOffState];
+    [t1Button setTarget: self];
+    [t1Button setAction: @selector(seriesHighlightFilterChanged:)];
+
+    NSButton *t2Button = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
+    [t2Button setTitle: @"T2"];
+    [t2Button setButtonType: NSSwitchButton];
+    [t2Button setTag: HorosQRSeriesHighlightT2];
+    [t2Button setState: (savedSeriesFilterMask & HorosQRSeriesHighlightT2) ? NSOnState : NSOffState];
+    [t2Button setTarget: self];
+    [t2Button setAction: @selector(seriesHighlightFilterChanged:)];
+
+    NSButton *flairButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
+    [flairButton setTitle: @"FLAIR"];
+    [flairButton setButtonType: NSSwitchButton];
+    [flairButton setTag: HorosQRSeriesHighlightFLAIR];
+    [flairButton setState: (savedSeriesFilterMask & HorosQRSeriesHighlightFLAIR) ? NSOnState : NSOffState];
+    [flairButton setTarget: self];
+    [flairButton setAction: @selector(seriesHighlightFilterChanged:)];
+
+    NSButton *gadButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
+    [gadButton setTitle: @"Gad"];
+    [gadButton setButtonType: NSSwitchButton];
+    [gadButton setTag: HorosQRSeriesHighlightGad];
+    [gadButton setState: (savedSeriesFilterMask & HorosQRSeriesHighlightGad) ? NSOnState : NSOffState];
+    [gadButton setTarget: self];
+    [gadButton setAction: @selector(seriesHighlightFilterChanged:)];
+
+    NSButton *ignoreMPRButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
+    [ignoreMPRButton setTitle: NSLocalizedString( @"Ignore MPR", nil)];
+    [ignoreMPRButton setButtonType: NSSwitchButton];
+    [ignoreMPRButton setTag: HorosQRSeriesIgnoreMPR];
+    [ignoreMPRButton setState: savedIgnoreMPR ? NSOnState : NSOffState];
+    [ignoreMPRButton setTarget: self];
+    [ignoreMPRButton setAction: @selector(seriesIgnoreMPRChanged:)];
+
+    NSButton *retrieveSelectedButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
+    [retrieveSelectedButton setTitle: NSLocalizedString( @"Retrieve Selected", nil)];
+    [retrieveSelectedButton setButtonType: NSMomentaryPushInButton];
+    [retrieveSelectedButton setBezelStyle: NSRoundRectBezelStyle];
+    [retrieveSelectedButton setFont: [NSFont boldSystemFontOfSize: 12]];
+    id retrieveSelectedCell = [retrieveSelectedButton cell];
+    [retrieveSelectedCell setAlignment: NSCenterTextAlignment];
+    [retrieveSelectedCell setWraps: YES];
+    [retrieveSelectedCell setLineBreakMode: NSLineBreakByWordWrapping];
+    if( [retrieveSelectedCell respondsToSelector: @selector(setUsesSingleLineMode:)])
+        [retrieveSelectedCell setUsesSingleLineMode: NO];
+    [retrieveSelectedButton setTarget: self];
+    [retrieveSelectedButton setAction: @selector(retrieveSelectedSeries:)];
+
+    NSArray *controls = [NSArray arrayWithObjects: expandButton, t1Button, t2Button, flairButton, gadButton, ignoreMPRButton, retrieveSelectedButton, nil];
+    for( NSView *control in controls)
+    {
+        [control setTranslatesAutoresizingMaskIntoConstraints: NO];
+        [contentView addSubview: control];
+    }
+
+    NSDictionary *views = NSDictionaryOfVariableBindings(expandButton, t1Button, t2Button, flairButton, gadButton, ignoreMPRButton, retrieveSelectedButton);
+    [contentView addConstraints: [NSLayoutConstraint constraintsWithVisualFormat: @"V:|-8-[expandButton(24)]-12-[t1Button(18)]-6-[t2Button(18)]-6-[flairButton(18)]-6-[gadButton(18)]-(>=8)-[ignoreMPRButton(18)]-8-[retrieveSelectedButton(46)]-8-|"
+                                                                         options: 0
+                                                                         metrics: nil
+                                                                           views: views]];
+
+    for( NSView *control in controls)
+    {
+        NSDictionary *controlView = [NSDictionary dictionaryWithObject: control forKey: @"control"];
+        [contentView addConstraints: [NSLayoutConstraint constraintsWithVisualFormat: @"H:|-8-[control]-8-|"
+                                                                             options: 0
+                                                                             metrics: nil
+                                                                               views: controlView]];
+    }
+
+    seriesHighlightFilterMask = [self currentSeriesHighlightFilterMask];
+}
+
+- (NSArray *)selectedModalityStrings
+{
+    NSMutableArray *modalityStrings = [NSMutableArray array];
+    NSArray *titles = HorosQRModalityTitles();
+
+    if( modalityFilterPanel)
+    {
+        for( id view in [modalityFilterPanel subviews])
+        {
+            if( [view isKindOfClass: [NSButton class]] == NO || [view state] != NSOnState)
+                continue;
+
+            NSInteger index = [view tag] - HorosQRModalityButtonTagBase;
+
+            if( index >= 0 && index < [titles count])
+                [modalityStrings addObject: [titles objectAtIndex: index]];
+        }
+    }
+    else
+    {
+        for( NSCell *cell in [modalityFilterMatrix cells])
+        {
+            if( [cell state] == NSOnState && [[cell title] length] > 0)
+                [modalityStrings addObject: [cell title]];
+        }
+    }
+
+    return modalityStrings;
+}
+
+- (void)setSelectedModalityStrings:(NSArray *)modalityStrings
+{
+    NSSet *selectedModalityStrings = [NSSet setWithArray: modalityStrings ? modalityStrings : [NSArray array]];
+    NSArray *titles = HorosQRModalityTitles();
+
+    for( NSCell *cell in [modalityFilterMatrix cells])
+        [cell setState: [selectedModalityStrings containsObject: [cell title]] ? NSOnState : NSOffState];
+
+    for( id view in [modalityFilterPanel subviews])
+    {
+        if( [view isKindOfClass: [NSButton class]] == NO)
+            continue;
+
+        NSInteger index = [view tag] - HorosQRModalityButtonTagBase;
+
+        if( index >= 0 && index < [titles count])
+            [view setState: [selectedModalityStrings containsObject: [titles objectAtIndex: index]] ? NSOnState : NSOffState];
+    }
+
+    [modalityFilterMatrix setNeedsDisplay: YES];
+}
+
+- (NSString *)modalityFilterMaskDefaultsKey
+{
+    return autoQuery ? HorosAutoQRModalityFilterMaskDefaultsKey : HorosQRModalityFilterMaskDefaultsKey;
+}
+
+- (NSInteger)currentModalityFilterMask
+{
+    NSInteger mask = 0;
+    NSArray *titles = HorosQRModalityTitles();
+
+    for( id view in [modalityFilterPanel subviews])
+    {
+        if( [view isKindOfClass: [NSButton class]] == NO || [view state] != NSOnState)
+            continue;
+
+        NSInteger index = [view tag] - HorosQRModalityButtonTagBase;
+
+        if( index >= 0 && index < [titles count])
+            mask |= (1L << index);
+    }
+
+    return mask;
+}
+
+- (void)saveModalityFilterSettings
+{
+    if( autoQuery && currentAutoQR < 0)
+        return;
+
+    if( modalityFilterPanel == nil)
+        return;
+
+    [[NSUserDefaults standardUserDefaults] setInteger: [self currentModalityFilterMask] forKey: [self modalityFilterMaskDefaultsKey]];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (void)restoreModalityFilterSettings
+{
+    id savedMask = [[NSUserDefaults standardUserDefaults] objectForKey: [self modalityFilterMaskDefaultsKey]];
+
+    if( savedMask)
+    {
+        NSInteger modalityMask = [savedMask integerValue];
+        NSMutableArray *modalityStrings = [NSMutableArray array];
+        NSArray *titles = HorosQRModalityTitles();
+
+        for( NSUInteger i = 0; i < [titles count]; i++)
+        {
+            if( modalityMask & (1L << i))
+                [modalityStrings addObject: [titles objectAtIndex: i]];
+        }
+
+        [self setSelectedModalityStrings: modalityStrings];
+        return;
+    }
+
+    NSArray *modalityStrings = autoQuery ? nil : [[[NSUserDefaults standardUserDefaults] dictionaryForKey: @"savedDICOMQuerySettings"] objectForKey: @"modalityStrings"];
+
+    [self setSelectedModalityStrings: modalityStrings ? modalityStrings : [NSArray array]];
+}
+
+- (IBAction)expandAllQueryStudies:(id)sender
+{
+    BOOL expandedItem = YES;
+
+    while( expandedItem)
+    {
+        expandedItem = NO;
+
+        for( NSInteger row = 0; row < [outlineView numberOfRows]; row++)
+        {
+            id item = [outlineView itemAtRow: row];
+
+            if( ([item isMemberOfClass: [DCMTKStudyQueryNode class]] || [item isMemberOfClass: [DCMTKRootQueryNode class]]) && [outlineView isItemExpanded: item] == NO)
+            {
+                [outlineView expandItem: item];
+                expandedItem = YES;
+            }
+        }
+    }
+
+    seriesHighlightFilterMask = [self currentSeriesHighlightFilterMask];
+    if( seriesHighlightFilterMask)
+        [self rebuildHighlightedSeriesFromFilters];
+
+    [self refreshSeriesSelectionDisplay];
+}
+
+- (IBAction)retrieveSelectedSeries:(id)sender
+{
+    NSArray *selectedSeries = [self seriesSelectedByHighlight];
+
+    if( [selectedSeries count] == 0)
+    {
+        NSRunInformationalAlertPanel( NSLocalizedString( @"Retrieve Selected", nil), NSLocalizedString( @"Highlight at least one series first.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+        return;
+    }
+
+    [self retrieve: sender onlyIfNotAvailable: YES forViewing: NO items: selectedSeries showGUI: YES];
+}
+
+- (IBAction)seriesHighlightFilterChanged:(id)sender
+{
+    seriesHighlightFilterMask = [self currentSeriesHighlightFilterMask];
+    [self saveSeriesSelectionPanelSettings];
+    [self rebuildHighlightedSeriesFromFilters];
+    [self refreshSeriesSelectionDisplay];
+}
+
+- (IBAction)seriesIgnoreMPRChanged:(id)sender
+{
+    [self saveSeriesSelectionPanelSettings];
+    [self refreshSeriesSelectionDisplay];
+}
+
+- (NSArray *)seriesSelectedByHighlight
+{
+    NSMutableArray *selectedSeries = [NSMutableArray array];
+    NSMutableSet *selectedIdentifiers = [NSMutableSet set];
+
+    for( NSInteger row = 0; row < [outlineView numberOfRows]; row++)
+    {
+        id item = [outlineView itemAtRow: row];
+
+        if( [item isMemberOfClass: [DCMTKSeriesQueryNode class]] && [self shouldDisplayQueryItem: item] && [self seriesHighlightMatchesItem: item])
+        {
+            NSString *identifier = [self seriesSelectionIdentifierForItem: item];
+
+            if( [selectedIdentifiers containsObject: identifier] == NO)
+            {
+                [selectedIdentifiers addObject: identifier];
+                [selectedSeries addObject: item];
+            }
+        }
+    }
+
+    return selectedSeries;
+}
+
+- (NSString *)seriesSelectionIdentifierForItem:(id)item
+{
+    NSString *uid = nil;
+
+    @try
+    {
+        uid = [item valueForKey: @"uid"];
+    }
+    @catch (NSException *e)
+    {
+        uid = nil;
+    }
+
+    if( [uid isKindOfClass: [NSString class]] == NO || [uid length] == 0)
+        uid = [NSString stringWithFormat: @"%p", item];
+
+    NSMutableArray *parts = [NSMutableArray arrayWithObject: uid];
+    NSArray *keys = [NSArray arrayWithObjects: @"calledAET", @"hostname", @"port", nil];
+
+    for( NSString *key in keys)
+    {
+        id value = nil;
+
+        @try
+        {
+            value = [item valueForKey: key];
+        }
+        @catch (NSException *e)
+        {
+            value = nil;
+        }
+
+        if( value)
+            [parts addObject: [value description]];
+    }
+
+    return [parts componentsJoinedByString: @"|"];
+}
+
+- (void)ensureSelectedSeriesUIDs
+{
+    if( selectedSeriesUIDs == nil)
+        selectedSeriesUIDs = [[NSMutableSet alloc] init];
+}
+
+- (void)rebuildHighlightedSeriesFromFilters
+{
+    [self ensureSelectedSeriesUIDs];
+    [selectedSeriesUIDs removeAllObjects];
+
+    if( seriesHighlightFilterMask == 0)
+        return;
+
+    for( NSInteger row = 0; row < [outlineView numberOfRows]; row++)
+    {
+        id item = [outlineView itemAtRow: row];
+
+        if( [item isMemberOfClass: [DCMTKSeriesQueryNode class]] && [self shouldDisplayQueryItem: item] && [self seriesFilterMatchesItem: item])
+            [selectedSeriesUIDs addObject: [self seriesSelectionIdentifierForItem: item]];
+    }
+}
+
+- (void)saveSeriesSelectionPanelSettings
+{
+    [[NSUserDefaults standardUserDefaults] setInteger: [self currentSeriesHighlightFilterMask] forKey: HorosQRSeriesFilterDefaultsKey];
+    [[NSUserDefaults standardUserDefaults] setBool: [self ignoreMPRSeries] forKey: HorosQRSeriesIgnoreMPRDefaultsKey];
+}
+
+- (void)restoreSeriesSelectionPanelSettings
+{
+    if( seriesSelectionPanel == nil)
+        return;
+
+    NSInteger savedSeriesFilterMask = [[NSUserDefaults standardUserDefaults] integerForKey: HorosQRSeriesFilterDefaultsKey];
+    id savedIgnoreMPRValue = [[NSUserDefaults standardUserDefaults] objectForKey: HorosQRSeriesIgnoreMPRDefaultsKey];
+    BOOL savedIgnoreMPR = savedIgnoreMPRValue ? [savedIgnoreMPRValue boolValue] : YES;
+
+    for( id view in [seriesSelectionPanel subviews])
+    {
+        if( [view isKindOfClass: [NSButton class]] == NO)
+            continue;
+
+        NSInteger tag = [view tag];
+
+        if( tag == HorosQRSeriesHighlightT1 || tag == HorosQRSeriesHighlightT2 || tag == HorosQRSeriesHighlightFLAIR || tag == HorosQRSeriesHighlightGad)
+            [view setState: (savedSeriesFilterMask & tag) ? NSOnState : NSOffState];
+        else if( tag == HorosQRSeriesIgnoreMPR)
+            [view setState: savedIgnoreMPR ? NSOnState : NSOffState];
+    }
+
+    seriesHighlightFilterMask = [self currentSeriesHighlightFilterMask];
+}
+
+- (void)applySeriesFiltersAfterQueryRefreshWithAutoExpand:(BOOL)autoExpandSmallResults
+{
+    [self restoreSeriesSelectionPanelSettings];
+
+    if( autoExpandSmallResults && [resultArray count] > 0 && [resultArray count] < 10)
+        [self expandAllQueryStudies: self];
+
+    [self rebuildHighlightedSeriesFromFilters];
+    [self refreshSeriesSelectionDisplay];
+}
+
+- (NSArray *)seriesChildrenForStudyItem:(id)item
+{
+    if( [item isMemberOfClass: [DCMTKStudyQueryNode class]] == NO)
+        return [NSArray array];
+
+    [self outlineView: outlineView numberOfChildrenOfItem: item];
+    NSArray *children = [self visibleQueryChildrenForItem: item];
+    NSMutableArray *series = [NSMutableArray array];
+
+    for( id child in children)
+    {
+        if( [child isMemberOfClass: [DCMTKSeriesQueryNode class]] && [self shouldDisplayQueryItem: child])
+            [series addObject: child];
+    }
+
+    return series;
+}
+
+- (void)setSeriesItems:(NSArray *)seriesItems highlighted:(BOOL)highlighted
+{
+    [self ensureSelectedSeriesUIDs];
+
+    for( id series in seriesItems)
+    {
+        NSString *identifier = [self seriesSelectionIdentifierForItem: series];
+
+        if( highlighted)
+            [selectedSeriesUIDs addObject: identifier];
+        else
+            [selectedSeriesUIDs removeObject: identifier];
+    }
+}
+
+- (void)toggleHighlightForSeriesItem:(id)item
+{
+    [self ensureSelectedSeriesUIDs];
+
+    NSString *identifier = [self seriesSelectionIdentifierForItem: item];
+
+    if( [selectedSeriesUIDs containsObject: identifier])
+        [selectedSeriesUIDs removeObject: identifier];
+    else
+        [selectedSeriesUIDs addObject: identifier];
+}
+
+- (void)toggleHighlightForStudyItem:(id)item
+{
+    NSArray *series = [self seriesChildrenForStudyItem: item];
+
+    if( [series count] == 0)
+        return;
+
+    [self ensureSelectedSeriesUIDs];
+
+    BOOL highlightStudy = NO;
+    for( id seriesItem in series)
+    {
+        if( [selectedSeriesUIDs containsObject: [self seriesSelectionIdentifierForItem: seriesItem]] == NO)
+        {
+            highlightStudy = YES;
+            break;
+        }
+    }
+
+    [self setSeriesItems: series highlighted: highlightStudy];
+    [outlineView expandItem: item];
+}
+
+- (void)queryOutlineView:(NSOutlineView *)sender toggleHighlightAtRow:(NSInteger)row
+{
+    if( sender != outlineView || row < 0)
+        return;
+
+    id item = [outlineView itemAtRow: row];
+
+    if( item == nil)
+        return;
+
+    if( [item isMemberOfClass: [DCMTKSeriesQueryNode class]])
+        [self toggleHighlightForSeriesItem: item];
+    else if( [item isMemberOfClass: [DCMTKStudyQueryNode class]])
+        [self toggleHighlightForStudyItem: item];
+    else
+        return;
+
+    [selectedResultSource setStringValue: [NSString stringWithFormat:@"%@  /  %@:%d", [item valueForKey:@"calledAET"], [item valueForKey:@"hostname"], [[item valueForKey:@"port"] intValue]]];
+    [outlineView deselectAll: nil];
+    [self refreshSeriesSelectionDisplay];
+}
+
+- (NSInteger)currentSeriesHighlightFilterMask
+{
+    NSInteger mask = 0;
+
+    for( id view in [seriesSelectionPanel subviews])
+    {
+        if( [view isKindOfClass: [NSButton class]] && [view state] == NSOnState)
+        {
+            NSInteger tag = [view tag];
+
+            if( tag == HorosQRSeriesHighlightT1 || tag == HorosQRSeriesHighlightT2 || tag == HorosQRSeriesHighlightFLAIR || tag == HorosQRSeriesHighlightGad)
+                mask |= tag;
+        }
+    }
+
+    return mask;
+}
+
+- (BOOL)ignoreMPRSeries
+{
+    if( seriesSelectionPanel == nil)
+        return YES;
+
+    for( id view in [seriesSelectionPanel subviews])
+    {
+        if( [view isKindOfClass: [NSButton class]] && [view tag] == HorosQRSeriesIgnoreMPR)
+            return [view state] == NSOnState;
+    }
+
+    return YES;
+}
+
+- (void)refreshSeriesSelectionDisplay
+{
+    NSMutableArray *expandedItems = [NSMutableArray array];
+    NSMutableArray *selectedItems = [NSMutableArray array];
+
+    for( NSInteger row = 0; row < [outlineView numberOfRows]; row++)
+    {
+        id item = [outlineView itemAtRow: row];
+
+        if( [outlineView isItemExpanded: item])
+            [expandedItems addObject: item];
+
+        if( [outlineView isRowSelected: row])
+            [selectedItems addObject: item];
+    }
+
+    [outlineView reloadData];
+
+    for( id item in expandedItems)
+        [outlineView expandItem: item];
+
+    NSMutableIndexSet *selection = [NSMutableIndexSet indexSet];
+    for( id selectedItem in selectedItems)
+    {
+        NSInteger row = [outlineView rowForItem: selectedItem];
+        if( row >= 0)
+            [selection addIndex: row];
+    }
+
+    if( [selection count])
+        [outlineView selectRowIndexes: selection byExtendingSelection: NO];
+
+    [outlineView setNeedsDisplay: YES];
+    [outlineView displayIfNeeded];
+}
+
+- (NSString *)normalizedSeriesDescriptionForItem:(id)item
+{
+    id value = nil;
+
+    @try
+    {
+        value = [item valueForKey: @"theDescription"];
+    }
+    @catch (NSException *e)
+    {
+        value = nil;
+    }
+
+    if( [value isKindOfClass: [NSString class]] == NO || [value length] == 0)
+        return @"";
+
+    NSString *foldedText = [[value lowercaseString] stringByFoldingWithOptions: NSDiacriticInsensitiveSearch locale: nil];
+    NSMutableString *normalizedText = [NSMutableString stringWithCapacity: [foldedText length] + 2];
+    NSCharacterSet *alphanumericSet = [NSCharacterSet alphanumericCharacterSet];
+
+    [normalizedText appendString: @" "];
+
+    for( NSUInteger i = 0; i < [foldedText length]; i++)
+    {
+        unichar c = [foldedText characterAtIndex: i];
+        NSString *characterString = [alphanumericSet characterIsMember: c] ? [NSString stringWithCharacters: &c length: 1] : @" ";
+        [normalizedText appendString: characterString];
+    }
+
+    [normalizedText appendString: @" "];
+
+    return normalizedText;
+}
+
+- (BOOL)seriesText:(NSString *)text containsToken:(NSString *)token
+{
+    NSString *needle = [NSString stringWithFormat: @" %@ ", token];
+    return [text rangeOfString: needle].location != NSNotFound;
+}
+
+- (BOOL)seriesText:(NSString *)text containsAnyToken:(NSArray *)tokens
+{
+    for( NSString *token in tokens)
+    {
+        if( [self seriesText: text containsToken: token])
+            return YES;
+    }
+
+    return NO;
+}
+
+- (BOOL)seriesText:(NSString *)text containsEmbeddedSequence:(NSString *)sequence
+{
+    if( [sequence length] == 0)
+        return NO;
+
+    NSArray *words = [text componentsSeparatedByCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSCharacterSet *decimalDigitSet = [NSCharacterSet decimalDigitCharacterSet];
+
+    for( NSString *word in words)
+    {
+        NSRange searchRange = NSMakeRange( 0, [word length]);
+
+        while( searchRange.location < [word length])
+        {
+            NSRange match = [word rangeOfString: sequence options: NSCaseInsensitiveSearch range: searchRange];
+
+            if( match.location == NSNotFound)
+                break;
+
+            NSUInteger afterMatch = NSMaxRange( match);
+            BOOL followedByDigit = afterMatch < [word length] && [decimalDigitSet characterIsMember: [word characterAtIndex: afterMatch]];
+
+            if( followedByDigit == NO)
+                return YES;
+
+            searchRange.location = afterMatch;
+            searchRange.length = [word length] - searchRange.location;
+        }
+    }
+
+    return NO;
+}
+
+- (BOOL)seriesText:(NSString *)text containsAnyPhrase:(NSArray *)phrases
+{
+    for( NSString *phrase in phrases)
+    {
+        if( [text rangeOfString: phrase].location != NSNotFound)
+            return YES;
+    }
+
+    return NO;
+}
+
+- (BOOL)seriesFilterMatchesItem:(id)item
+{
+    NSInteger currentMask = [self currentSeriesHighlightFilterMask];
+
+    if( currentMask == 0 || [item isMemberOfClass: [DCMTKSeriesQueryNode class]] == NO)
+        return NO;
+
+    NSString *text = [self normalizedSeriesDescriptionForItem: item];
+
+    if( currentMask & HorosQRSeriesHighlightT1)
+    {
+        NSArray *tokens = [NSArray arrayWithObjects: @"t1", @"t1w", @"t1c", @"mprage", @"spgr", @"fspgr", @"bravo", nil];
+        if( [self seriesText: text containsAnyToken: tokens] || [self seriesText: text containsEmbeddedSequence: @"t1"])
+            return YES;
+    }
+
+    if( currentMask & HorosQRSeriesHighlightT2)
+    {
+        NSArray *excludedTokens = [NSArray arrayWithObjects: @"flair", @"dwi", @"diff", @"adc", @"localizer", @"localiser", @"scout", nil];
+        if( [self seriesText: text containsAnyToken: excludedTokens] == NO)
+        {
+            NSArray *tokens = [NSArray arrayWithObjects: @"t2", @"t2w", nil];
+            if( [self seriesText: text containsAnyToken: tokens])
+                return YES;
+        }
+    }
+
+    if( currentMask & HorosQRSeriesHighlightFLAIR)
+    {
+        NSArray *tokens = [NSArray arrayWithObjects: @"flair", nil];
+        NSArray *phrases = [NSArray arrayWithObjects: @" fluid attenuated ", nil];
+        if( [self seriesText: text containsAnyToken: tokens] || [self seriesText: text containsAnyPhrase: phrases])
+            return YES;
+    }
+
+    if( currentMask & HorosQRSeriesHighlightGad)
+    {
+        if( [[(DCMTKQueryNode *)item contrastBolusAgent] length] > 0)
+            return YES;
+
+        NSArray *tokens = [NSArray arrayWithObjects: @"gad", @"gadol", @"gadavist", @"dotarem", @"prohance", @"multihance", @"magnevist", @"omniscan", @"post", @"postcontrast", @"postgad", @"enh", @"gd", @"pg", @"t1c", nil];
+        NSArray *phrases = [NSArray arrayWithObjects: @" with contrast ", @" w contrast ", nil];
+        if( [self seriesText: text containsAnyToken: tokens] || [self seriesText: text containsAnyPhrase: phrases])
+            return YES;
+    }
+
+    return NO;
+}
+
+- (BOOL)seriesHighlightMatchesItem:(id)item
+{
+    if( [item isMemberOfClass: [DCMTKSeriesQueryNode class]] == NO)
+        return NO;
+
+    [self ensureSelectedSeriesUIDs];
+    return [selectedSeriesUIDs containsObject: [self seriesSelectionIdentifierForItem: item]];
+}
+
 - (void) windowDidBecomeKey:(NSNotification *)notification
 {
 	if( performingCFind)
 		return;
-		
+
 	[outlineView reloadData];
 }
 
@@ -5292,38 +6193,15 @@ extern "C"
     [self saveQueryWindowFramePreference];
 }
 
-- (void)windowWillStartLiveResize:(NSNotification *)notification
-{
-    if( autoQuery == NO && notification.object == self.window)
-    {
-        NSPoint mouseLocation = self.window.mouseLocationOutsideOfEventStream;
-        NSSize frameSize = self.window.frame.size;
-        CGFloat edgeInset = 32;
-        BOOL nearVerticalEdge = mouseLocation.x <= edgeInset || mouseLocation.x >= frameSize.width - edgeInset;
-        BOOL nearHorizontalEdge = mouseLocation.y <= edgeInset || mouseLocation.y >= frameSize.height - edgeInset;
-
-        queryWindowHorizontalBorderLiveResize = nearVerticalEdge && !nearHorizontalEdge;
-    }
-}
-
-- (NSSize)windowWillResize:(NSWindow *)sender toSize:(NSSize)frameSize
-{
-    if( autoQuery == NO && sender == self.window && queryWindowHorizontalBorderLiveResize)
-        frameSize.height = NSHeight( sender.frame);
-
-    return frameSize;
-}
-
 - (void)windowDidEndLiveResize:(NSNotification *)notification
 {
-    queryWindowHorizontalBorderLiveResize = NO;
     [self saveQueryWindowFramePreference];
 }
 
 - (void)windowDidLoad
 {
     [super windowDidLoad];
-    
+
 	id searchCell = [searchFieldName cell];
 
 	[[searchCell cancelButtonCell] setTarget:self];
@@ -5333,12 +6211,12 @@ extern "C"
 
 	[[searchCell cancelButtonCell] setTarget:self];
 	[[searchCell cancelButtonCell] setAction:@selector(clearQuery:)];
-	
+
 	searchCell = [searchFieldRefPhysician cell];
-	
+
 	[[searchCell cancelButtonCell] setTarget:self];
 	[[searchCell cancelButtonCell] setAction:@selector(clearQuery:)];
-	
+
 	searchCell = [searchFieldStudyDescription cell];
 
 	[[searchCell cancelButtonCell] setTarget:self];
@@ -5348,12 +6226,16 @@ extern "C"
 
 	[[searchCell cancelButtonCell] setTarget:self];
 	[[searchCell cancelButtonCell] setAction:@selector(clearQuery:)];
-	
+
 	searchCell = [searchFieldID cell];
 
 	[[searchCell cancelButtonCell] setTarget:self];
 	[[searchCell cancelButtonCell] setAction:@selector(clearQuery:)];
-	
+
+    [modalityFilterMatrix setTarget: self];
+    [modalityFilterMatrix setAction: @selector(selectModality:)];
+    [self configureModalityFilterButtons];
+
     // OutlineView View
     
     [outlineView setDelegate: self];
@@ -5404,6 +6286,8 @@ extern "C"
 	[buttonCell setImage: [NSImage imageNamed:@"InArrow.tif"]];
 	[buttonCell setBezelStyle: NSRoundRectBezelStyle]; // was NSRegularSquareBezelStyle
 	[tableColumn setDataCell: buttonCell];
+
+    [self configureSeriesSelectionPanel];
 }
 
 - (void) saveSettings
@@ -5447,9 +6331,11 @@ extern "C"
     else
     {
 		NSDictionary *settings = [self savePresetInDictionaryWithDICOMNodes: YES];
-        
+
         [[NSUserDefaults standardUserDefaults] setObject: settings forKey: @"savedDICOMQuerySettings"];
     }
+
+    [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 - (void)windowWillClose:(NSNotification *)notification

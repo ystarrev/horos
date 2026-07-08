@@ -129,6 +129,8 @@ extern AppController* OsiriX;
     volatile BOOL					quitting;
 	BOOL							verboseUpdateCheck;
 	NSNetService					*BonjourDICOMService;
+    NSTask                          *BonjourDICOMRegisterTask;
+    NSDictionary                    *BonjourDICOMTXTRecord;
 	
 	NSTimer							*updateTimer;
 	XMLRPCInterface					*XMLRPCServer;

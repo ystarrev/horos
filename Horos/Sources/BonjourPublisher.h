@@ -48,6 +48,8 @@
     N2ConnectionListener* _listener;
 	
     NSNetService* _bonjour;
+    NSTask* _bonjourRegisterTask;
+    NSDictionary* _bonjourTXTRecord;
     
 	NSLock* dicomSendLock;
 }

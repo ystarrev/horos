@@ -228,6 +228,7 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
 -(void)_processDNSSDResolveLine:(NSString*)line key:(NSString*)key;
 -(void)_resolveDNSSDServiceName:(NSString*)name type:(NSString*)type;
 -(void)_removeDNSSDServiceName:(NSString*)name type:(NSString*)type;
+-(BOOL)_dnssdResolvedServiceIsThisHorosType:(NSString*)type name:(NSString*)name host:(NSString*)host port:(NSInteger)port txt:(NSDictionary*)txt;
 -(void)_addDNSSDResolvedServiceForKey:(NSString*)key;
 -(void)_notifyIfNativeBonjourSearchRecoveredForType:(NSString*)type;
 -(void)_analyzeVolumeAtPath:(NSString*)path;
@@ -1032,6 +1033,66 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         [self _addDNSSDResolvedServiceForKey:key];
 }
 
+-(BOOL)_dnssdHost:(NSString*)host matchesCurrentHost:(NSHost*)currentHost
+{
+    if (![host length] || currentHost == nil)
+        return NO;
+
+    if ([[self class] host:[NSHost hostWithAddressOrName:host] isEqualToHost:currentHost])
+        return YES;
+
+    NSString *cleanHost = [HorosDNSSDHostWithoutTrailingDot(host) lowercaseString];
+    for (NSString *localName in [currentHost names])
+        if ([[HorosDNSSDHostWithoutTrailingDot(localName) lowercaseString] isEqualToString:cleanHost])
+            return YES;
+
+    for (NSString *localAddress in [currentHost addresses])
+        if ([[HorosDNSSDHostWithoutTrailingDot(localAddress) lowercaseString] isEqualToString:cleanHost])
+            return YES;
+
+    return NO;
+}
+
+-(BOOL)_dnssdResolvedServiceIsThisHorosType:(NSString*)type name:(NSString*)name host:(NSString*)host port:(NSInteger)port txt:(NSDictionary*)txt
+{
+    NSString *uid = [txt objectForKey:@"UID"];
+    if ([uid length] && [uid isEqualToString:[AppController UID]])
+    {
+        NSLog(@"DNS-SD Bonjour source ignored as this Horos instance UID=%@", uid);
+        return YES;
+    }
+
+    NSHost *currentHost = [DefaultsOsiriX currentHost];
+    if (![self _dnssdHost:host matchesCurrentHost:currentHost])
+        return NO;
+
+    if ([type isEqualToString:HorosDicomBonjourType])
+    {
+        NSString *localAETitle = [[NSUserDefaults standardUserDefaults] stringForKey:@"AETITLE"];
+        NSString *serviceAETitle = [txt objectForKey:@"AETitle"] ? [txt objectForKey:@"AETitle"] : name;
+        NSInteger localPort = [[[NSUserDefaults standardUserDefaults] stringForKey:@"AEPORT"] integerValue];
+
+        if (localPort == port && [serviceAETitle length] && [localAETitle length] && [serviceAETitle caseInsensitiveCompare:localAETitle] == NSOrderedSame)
+        {
+            NSLog(@"DNS-SD DICOM Bonjour source ignored as this Horos instance: %@ %@:%ld", serviceAETitle, host, (long)port);
+            return YES;
+        }
+    }
+    else if ([type isEqualToString:HorosOsiriXDatabaseBonjourType])
+    {
+        NSString *localName = [NSUserDefaults bonjourSharingName];
+        NSInteger localPort = [[[AppController sharedAppController] bonjourPublisher] OsiriXDBCurrentPort];
+
+        if (localPort == port && [name length] && [localName length] && [name caseInsensitiveCompare:localName] == NSOrderedSame)
+        {
+            NSLog(@"DNS-SD Horos Bonjour source ignored as this Horos instance: %@ %@:%ld", name, host, (long)port);
+            return YES;
+        }
+    }
+
+    return NO;
+}
+
 -(void)_addDNSSDResolvedServiceForKey:(NSString*)key
 {
     NSMutableDictionary *info = [_dnssdResolveInfos objectForKey:key];
@@ -1044,9 +1105,8 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     if (![type length] || ![name length] || ![host length] || port <= 0)
         return;
 
-    if ([[txt objectForKey:@"UID"] isEqualToString:[AppController UID]])
+    if ([self _dnssdResolvedServiceIsThisHorosType:type name:name host:host port:port txt:txt])
     {
-        NSLog(@"DNS-SD Bonjour source ignored as this Horos instance UID=%@", [txt objectForKey:@"UID"]);
         [self _stopDNSSDResolveTaskForKey:key];
         return;
     }

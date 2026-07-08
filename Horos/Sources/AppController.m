@@ -889,6 +889,76 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 	return USETOOLBARPANEL;
 }
 
+- (NSArray*)dnsSDTXTArgumentsForDictionary:(NSDictionary*)txtrec
+{
+    NSMutableArray *arguments = [NSMutableArray array];
+    NSArray *keys = [[txtrec allKeys] sortedArrayUsingSelector:@selector(compare:)];
+
+    for( id key in keys)
+    {
+        id value = [txtrec objectForKey: key];
+        NSString *keyString = [key description];
+        NSString *valueString = nil;
+
+        if( [value isKindOfClass: [NSString class]])
+            valueString = value;
+        else if( [value isKindOfClass: [NSData class]])
+            valueString = [[NSString alloc] initWithData: value encoding: NSUTF8StringEncoding];
+        else if( value)
+            valueString = [value description];
+
+        if( [keyString length] && [valueString length])
+            [arguments addObject: [NSString stringWithFormat: @"%@=%@", keyString, valueString]];
+    }
+
+    return arguments;
+}
+
+- (void)stopDICOMBonjourDNSRegistration
+{
+    if( BonjourDICOMRegisterTask)
+    {
+        if( [BonjourDICOMRegisterTask isRunning])
+            [BonjourDICOMRegisterTask terminate];
+
+        BonjourDICOMRegisterTask = nil;
+    }
+}
+
+- (void)startDICOMBonjourDNSRegistrationForService:(NSNetService*)service
+{
+    [self stopDICOMBonjourDNSRegistration];
+
+    if( service == nil)
+        return;
+
+    NSInteger port = [service port];
+    if( port <= 0)
+        port = [[[NSUserDefaults standardUserDefaults] stringForKey: @"AEPORT"] intValue];
+    if( port <= 0)
+        return;
+
+    NSMutableArray *arguments = [NSMutableArray arrayWithObjects: @"-R", [service name], [service type], @"local", [NSString stringWithFormat: @"%ld", (long) port], nil];
+    [arguments addObjectsFromArray: [self dnsSDTXTArgumentsForDictionary: BonjourDICOMTXTRecord]];
+
+    BonjourDICOMRegisterTask = [[NSTask alloc] init];
+    [BonjourDICOMRegisterTask setLaunchPath: @"/usr/bin/dns-sd"];
+    [BonjourDICOMRegisterTask setArguments: arguments];
+    [BonjourDICOMRegisterTask setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
+    [BonjourDICOMRegisterTask setStandardError: [NSFileHandle fileHandleWithNullDevice]];
+
+    @try
+    {
+        [BonjourDICOMRegisterTask launch];
+        NSLog( @"DNS-SD DICOM Bonjour fallback publishing for %@ %@:%ld", [service name], [service type], (long) port);
+    }
+    @catch( NSException *exception)
+    {
+        NSLog( @"Warning: DNS-SD DICOM Bonjour fallback publish failed: %@", exception);
+        [self stopDICOMBonjourDNSRegistration];
+    }
+}
+
 + (AppController*) sharedAppController
 {
 	return appController;
@@ -2060,6 +2130,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 	}
 	
 	[BonjourDICOMService setTXTRecordData: [NSNetService dataFromTXTRecordDictionary: dict]];
+    BonjourDICOMTXTRecord = [dict copy];
 		
 	[BonjourDICOMService setDelegate: self];
 	[BonjourDICOMService publish];
@@ -2070,13 +2141,19 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 - (void)netServiceDidPublish:(NSNetService *)sender
 {
     if( sender == BonjourDICOMService)
+    {
+        [self stopDICOMBonjourDNSRegistration];
         NSLog( @"Horos DICOM Bonjour service published: %@ %@:%ld", [sender name], [sender type], (long)[sender port]);
+    }
 }
 
 - (void)netService:(NSNetService *)sender didNotPublish:(NSDictionary *)errorDict
 {
     if( sender == BonjourDICOMService)
+    {
         NSLog( @"Warning: Horos DICOM Bonjour service did not publish: %@ %@:%ld error=%@", [sender name], [sender type], (long)[sender port], errorDict);
+        [self startDICOMBonjourDNSRegistrationForService: sender];
+    }
 }
 
 
@@ -2162,6 +2239,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
             NSRunAlertPanel( NSLocalizedString( @"Database", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, e.reason);
 	}
 	
+    [self stopDICOMBonjourDNSRegistration];
 	[BonjourDICOMService stop];
 	BonjourDICOMService = nil;
 	
@@ -2597,6 +2675,7 @@ static BOOL firstCall = YES;
 
 	[ROI saveDefaultSettings];
 	
+    [self stopDICOMBonjourDNSRegistration];
 	[BonjourDICOMService stop];
 	BonjourDICOMService = nil;
 
@@ -4280,6 +4359,8 @@ static BOOL initialized = NO;
 -(void) dealloc
 {
     [[NSNotificationCenter defaultCenter] removeObserver: self];
+    [self stopDICOMBonjourDNSRegistration];
+    BonjourDICOMTXTRecord = nil;
 	
 	dcmtkQRSCP = nil;
 	dcmtkQRSCPTLS = nil;

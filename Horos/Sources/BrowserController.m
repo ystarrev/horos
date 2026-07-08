@@ -435,7 +435,7 @@ static volatile BOOL waitForRunningProcess = NO;
     if( mode == -1) //Small
     {
         [albumTable setRowHeight: 13];
-        [_sourcesTableView setRowHeight: 13];
+        [_sourcesTableView setRowHeight: 34];
         [databaseOutline setRowHeight: 13];
         if( gHorizontalHistory)
             [comparativeTable setRowHeight: 13];
@@ -448,7 +448,7 @@ static volatile BOOL waitForRunningProcess = NO;
     if( mode == 0) // Regular
     {
         [albumTable setRowHeight: 17];
-        [_sourcesTableView setRowHeight: 17];
+        [_sourcesTableView setRowHeight: 34];
         [databaseOutline setRowHeight: 17];
         if( gHorizontalHistory)
             [comparativeTable setRowHeight: 16];
@@ -461,7 +461,7 @@ static volatile BOOL waitForRunningProcess = NO;
     if( mode == 1) // Large
     {
         [albumTable setRowHeight: 25];
-        [_sourcesTableView setRowHeight: 25];
+        [_sourcesTableView setRowHeight: 50];
         [databaseOutline setRowHeight: 22];
         if( gHorizontalHistory)
             [comparativeTable setRowHeight: 21];

@@ -40,10 +40,10 @@
 #import "DicomFile.h"
 #import "DicomDatabase.h"
 #import "DataNodeIdentifier.h"
-#import "DCMNetServiceDelegate.h"
 #import "MutableArrayCategory.h"
 #import "ThreadsManager.h"
 #import "RemoteDicomDatabase.h"
+#import "SendController.h"
 #import "NSThread+N2.h"
 #import "N2Debug.h"
 #import "N2Stuff.h"
@@ -78,6 +78,45 @@ static BOOL HorosPhoneSendAll(int socketFD, const void *bytes, size_t length)
     }
 
     return YES;
+}
+
+static NSDictionary *HorosDICOMSendNodeDictionaryFromSource(DicomNodeIdentifier *destination)
+{
+    if (!destination)
+        return nil;
+
+    NSString *address = destination.location;
+    NSNumber *port = [NSNumber numberWithUnsignedInteger:destination.port];
+    NSString *aetitle = [destination.dictionary objectForKey:@"AETitle"];
+    if (!aetitle.length)
+        aetitle = destination.aetitle;
+    if (!aetitle.length)
+        aetitle = destination.description;
+    NSString *description = destination.description;
+    if (!description.length)
+        description = aetitle;
+    id transferSyntax = [destination.dictionary objectForKey:@"TransferSyntax"];
+    if (!transferSyntax)
+        transferSyntax = [NSNumber numberWithInt:SendExplicitLittleEndian];
+
+    if (!address.length || !port.integerValue || !aetitle.length)
+        return nil;
+
+    NSMutableDictionary *node = [NSMutableDictionary dictionaryWithObjectsAndKeys:
+                                 address, @"Address",
+                                 port, @"Port",
+                                 aetitle, @"AETitle",
+                                 description, @"Description",
+                                 transferSyntax, @"TransferSyntax",
+                                 [NSNumber numberWithBool:YES], @"HorosRetryTransientStoreSCU",
+                                 [NSNumber numberWithBool:YES], @"HorosSuppressDuplicateStoreSCUAlerts",
+                                 nil];
+
+    id concurrentThreads = [destination.dictionary objectForKey:@"SendControllerConcurrentThreads"];
+    if (concurrentThreads)
+        [node setObject:concurrentThreads forKey:@"SendControllerConcurrentThreads"];
+
+    return node;
 }
 
 static int HorosPhoneConnect(NSString *host, NSUInteger port)
@@ -532,11 +571,28 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
             [[ThreadsManager defaultManager] addThreadAndStart:thread];
             return YES;
         } else if ([destination isKindOfClass:[DicomNodeIdentifier class]]) { // local Horos to remote DICOM
-            NSArray* r = [DCMNetServiceDelegate DICOMServersListSendOnly:YES QROnly:NO];
-            for (int i = 0; i < r.count; ++i)
-                if ([destination isEqualToDictionary:[r objectAtIndex:i]])
-                    [[NSUserDefaults standardUserDefaults] setInteger:i forKey:@"lastSendServer"];
-            [self selectServer:dicomImages];
+            if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DICOMSENDALLOWED"] == NO)
+            {
+                NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Send", nil),
+                                        NSLocalizedString(@"DICOM Sending is not activated. Contact your PACS manager for more information about DICOM Send.", nil),
+                                        NSLocalizedString(@"OK", nil),
+                                        nil,
+                                        nil);
+                return NO;
+            }
+
+            NSDictionary *node = HorosDICOMSendNodeDictionaryFromSource((DicomNodeIdentifier*)destination);
+            if (!node)
+            {
+                NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Send", nil),
+                                        NSLocalizedString(@"The selected DICOM destination is missing its address, port, or AE title.", nil),
+                                        NSLocalizedString(@"OK", nil),
+                                        nil,
+                                        nil);
+                return NO;
+            }
+
+            [SendController sendFiles:dicomImages toNode:node usingSyntax:[[node objectForKey:@"TransferSyntax"] intValue]];
             return YES;
             // [_database storeScuImages:dicomImages toDestinationAETitle:(NSString*)aet address:(NSString*)address port:(NSInteger)port transferSyntax:(int)exsTransferSyntax];
 		}

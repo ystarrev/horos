@@ -292,16 +292,37 @@ static NSString* HorosStringValueFromDiskutilInfo(NSDictionary *info, NSString *
     return nil;
 }
 
-static NSString* HorosMountedSourceIdentityFromDiskutilInfo(NSDictionary *info)
+static NSArray* HorosMountedSourceIdentitiesFromDiskutilInfo(NSDictionary *info)
 {
+    NSMutableArray *identities = [NSMutableArray array];
     for (NSString *key in [NSArray arrayWithObjects:@"VolumeUUID", @"APFSVolumeUUID", @"DiskUUID", @"MediaUUID", @"DeviceIdentifier", @"DeviceNode", nil])
     {
         NSString *value = HorosStringValueFromDiskutilInfo(info, key);
         if (value.length)
-            return [NSString stringWithFormat:@"%@:%@", key, value];
+            [identities addObject:[NSString stringWithFormat:@"%@:%@", key, value]];
     }
 
-    return nil;
+    return identities;
+}
+
+static NSString* HorosMountedSourceIdentityFromDiskutilInfo(NSDictionary *info)
+{
+    NSArray *identities = HorosMountedSourceIdentitiesFromDiskutilInfo(info);
+    return identities.count ? [identities componentsJoinedByString:@"\n"] : nil;
+}
+
+static BOOL HorosMountedSourceIdentityMatches(NSString *sourceIdentity, NSString *identity)
+{
+    if (!sourceIdentity.length || !identity.length)
+        return NO;
+
+    NSArray *sourceIdentities = [sourceIdentity componentsSeparatedByString:@"\n"];
+    NSArray *identities = [identity componentsSeparatedByString:@"\n"];
+    for (NSString *sourceToken in sourceIdentities)
+        if (sourceToken.length && [identities containsObject:sourceToken])
+            return YES;
+
+    return NO;
 }
 
 static NSArray* HorosMountedSourcesForPathOrIdentity(NSArray *sources, NSString *path, NSString *identity)
@@ -317,7 +338,7 @@ static NSArray* HorosMountedSourcesForPathOrIdentity(NSArray *sources, NSString 
             continue;
 
         NSString *normalizedSourcePath = HorosNormalizedMountedSourcePath(source.devicePath);
-        if ((identity.length && [source.mountIdentity isEqualToString:identity]) ||
+        if ((identity.length && HorosMountedSourceIdentityMatches(source.mountIdentity, identity)) ||
             (normalizedPath.length && [normalizedSourcePath isEqualToString:normalizedPath]))
             [matches addObject: source];
     }
@@ -637,22 +658,14 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         NSString *appFolder = [[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent];
         if( [[NSFileManager defaultManager] fileExistsAtPath: [appFolder stringByAppendingPathComponent: @"DICOMDIR"]])
         {
-            @try {
-                [_browser.sources addObject:[MountedDatabaseNodeIdentifier mountedDatabaseNodeIdentifierWithPath:appFolder description:appFolder.lastPathComponent dictionary:nil type:MountTypeGeneric]];
-            } @catch (NSException* e) {
-                N2LogExceptionWithStackTrace(e);
-            }
+            [self _addMountedSourceForPath:appFolder description:appFolder.lastPathComponent type:MountTypeGeneric];
         }
         else if ( [[NSFileManager defaultManager] fileExistsAtPath: [appFolder stringByAppendingPathComponent: @"DICOMDIRPATH"]]) // Created by OsiriX Lite App Launcher (see main.mm)
         {
             NSString *dicomdir = [NSString stringWithContentsOfFile: [appFolder stringByAppendingPathComponent: @"DICOMDIRPATH"] encoding: NSUTF8StringEncoding error:nil];
 
             if( [[NSFileManager defaultManager] fileExistsAtPath: dicomdir])
-                @try {
-                    [_browser.sources addObject:[MountedDatabaseNodeIdentifier mountedDatabaseNodeIdentifierWithPath: dicomdir.stringByDeletingLastPathComponent description:dicomdir.stringByDeletingLastPathComponent.lastPathComponent dictionary:nil type:MountTypeGeneric]];
-                } @catch (NSException* e) {
-                    N2LogExceptionWithStackTrace(e);
-                }
+                [self _addMountedSourceForPath:dicomdir.stringByDeletingLastPathComponent description:dicomdir.stringByDeletingLastPathComponent.lastPathComponent type:MountTypeGeneric];
         }
         else
         {
@@ -1387,16 +1400,9 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
         if (context == DicomBrowserSourcesContext)
         {
-            NSArray* a = [[NSUserDefaults standardUserDefaults] objectForKey:@"SERVERS"];
             NSMutableDictionary* aa = [NSMutableDictionary dictionary];
-            for (NSDictionary* ai in a)
-            {
-                if( [[ai objectForKey: @"Activated"] boolValue] && [[ai objectForKey: @"Send"] boolValue])
-                {
-                    NSString *uniqueKey =[NSString stringWithFormat:@"%@%d%@", [ai objectForKey:@"Address"],[[ai objectForKey:@"Port"] unsignedIntValue],[ai objectForKey:@"AETitle"]];
-                    [aa setObject:ai forKey:uniqueKey];
-                }
-            }
+            // Configured DICOM servers are QR/Send presets, not Sources-pane destinations.
+            // Bonjour-discovered DICOM peers are handled by SearchDicomNodesContext below.
             // remove old items
             for (DataNodeIdentifier* dni in [[_browser.sources.content copy] autorelease])
             {
@@ -2041,6 +2047,12 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     DataNodeIdentifier* bs = [_browser sourceIdentifierAtRow:row];
     cell.title = bs.description;
     [bs willDisplayCell:cell];
+    if (cell.image)
+    {
+        NSImage *sourceImage = [[cell.image copy] autorelease];
+        sourceImage.size = [sourceImage sizeByScalingProportionallyToSize:NSMakeSize(32, 32)];
+        cell.image = sourceImage;
+    }
 }
 
 

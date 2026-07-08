@@ -54,6 +54,25 @@
 
 static volatile int sendControllerObjects = 0;
 
+static BOOL HorosStoreSCUExceptionIsTransientStartupFailure(NSException *ne)
+{
+    NSString *reason = [ne reason];
+    if ([reason rangeOfString:@"TCP Initialization Error" options:NSCaseInsensitiveSearch].location != NSNotFound &&
+        [reason rangeOfString:@"Operation now in progress" options:NSCaseInsensitiveSearch].location != NSNotFound)
+        return YES;
+
+    return NO;
+}
+
+static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys()
+{
+    static NSMutableSet *keys = nil;
+    if (!keys)
+        keys = [[NSMutableSet alloc] init];
+
+    return keys;
+}
+
 @interface DCMTKStoreSCUOperation: NSOperation
 {
     NSArray *files;
@@ -83,9 +102,30 @@ static volatile int sendControllerObjects = 0;
 
 - (void) showErrorMessage:(NSException*) ne
 {
+    NSString *errorKey = [server objectForKey:@"HorosSuppressDuplicateStoreSCUAlerts"] ? [NSString stringWithFormat:@"%@:%@:%@", [server objectForKey:@"Address"], [server objectForKey:@"Port"], [ne reason]] : nil;
+    if (errorKey)
+    {
+        @synchronized (HorosStoreSCURecentlyShownErrorKeys())
+        {
+            if ([HorosStoreSCURecentlyShownErrorKeys() containsObject:errorKey])
+                return;
+
+            [HorosStoreSCURecentlyShownErrorKeys() addObject:errorKey];
+        }
+        [self performSelector:@selector(clearShownErrorKey:) withObject:errorKey afterDelay:5.0];
+    }
+
 	NSString *message = [NSString stringWithFormat:@"%@\r\r%@\r%@", NSLocalizedString( @"DICOM StoreSCU operation failed.", nil), [ne name], [ne reason]];
     
 	NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Send Error",nil), @"%@", NSLocalizedString( @"OK",nil), nil, nil, message);
+}
+
+- (void) clearShownErrorKey:(NSString*) errorKey
+{
+    @synchronized (HorosStoreSCURecentlyShownErrorKeys())
+    {
+        [HorosStoreSCURecentlyShownErrorKeys() removeObject:errorKey];
+    }
 }
 
 - (void) main
@@ -97,28 +137,49 @@ static volatile int sendControllerObjects = 0;
         
         self.thread = [NSThread currentThread];
         self.thread.progress = 0;
-        
-        DCMTKStoreSCU *storeSCU = [[DCMTKStoreSCU alloc] initWithCallingAET: [NSUserDefaults defaultAETitle]
-                                                   calledAET: [server objectForKey:@"AETitle"]
-                                                    hostname: [server objectForKey:@"Address"]
-                                                        port: [[server objectForKey:@"Port"] intValue]
-                                                 filesToSend: files
-                                              transferSyntax: [[NSUserDefaults standardUserDefaults] integerForKey:@"syntaxListOffis"]
-                                                 compression: 1.0
-                                             extraParameters: server];
-        
-        @try
+
+        NSUInteger attempts = [[server objectForKey:@"HorosRetryTransientStoreSCU"] boolValue] ? 3 : 1;
+        for (NSUInteger attempt = 0; attempt < attempts; ++attempt)
         {
-            [storeSCU run:self];
+            if( self.isCancelled)
+                return;
+
+            if (attempt > 0)
+            {
+                self.thread.status = NSLocalizedString(@"Retrying DICOM send...", nil);
+                [NSThread sleepForTimeInterval: attempt];
+            }
+
+            BOOL shouldRetry = NO;
+            DCMTKStoreSCU *storeSCU = [[DCMTKStoreSCU alloc] initWithCallingAET: [NSUserDefaults defaultAETitle]
+                                                       calledAET: [server objectForKey:@"AETitle"]
+                                                        hostname: [server objectForKey:@"Address"]
+                                                            port: [[server objectForKey:@"Port"] intValue]
+                                                     filesToSend: files
+                                                  transferSyntax: [[NSUserDefaults standardUserDefaults] integerForKey:@"syntaxListOffis"]
+                                                     compression: 1.0
+                                                 extraParameters: server];
+
+            @try
+            {
+                [storeSCU run:self];
+            }
+
+            @catch( NSException *ne)
+            {
+                shouldRetry = attempt + 1 < attempts && HorosStoreSCUExceptionIsTransientStartupFailure(ne);
+                if (shouldRetry)
+                    NSLog(@"Transient DICOM StoreSCU startup failure, retrying attempt %lu/%lu: %@", (unsigned long)(attempt + 2), (unsigned long)attempts, [ne reason]);
+                else
+                    [self performSelectorOnMainThread:@selector(showErrorMessage:) withObject:ne waitUntilDone: NO];
+            }
+
+            [storeSCU release];
+            storeSCU = nil;
+
+            if (!shouldRetry)
+                return;
         }
-        
-        @catch( NSException *ne)
-        {
-            [self performSelectorOnMainThread:@selector(showErrorMessage:) withObject:ne waitUntilDone: NO];
-        }
-        
-        [storeSCU release];
-        storeSCU = nil;
     }
 }
 
@@ -564,6 +625,8 @@ static volatile int sendControllerObjects = 0;
     queue.name = [NSString stringWithFormat: @"%@ %@", NSLocalizedString( @"Sending...", nil), patientName];
     
     unsigned int maxThreads = [[NSUserDefaults standardUserDefaults] integerForKey: @"SendControllerConcurrentThreads"];
+    if( [[self server] objectForKey: @"SendControllerConcurrentThreads"])
+        maxThreads = [[[self server] objectForKey: @"SendControllerConcurrentThreads"] intValue];
     
     if( maxThreads > [[NSUserDefaults standardUserDefaults] integerForKey: @"MaximumSendControllerConcurrentThreads"])
         maxThreads = [[NSUserDefaults standardUserDefaults] integerForKey: @"MaximumSendControllerConcurrentThreads"];

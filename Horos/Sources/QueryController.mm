@@ -1741,31 +1741,12 @@ extern "C"
         return YES;
 
     NSString *description = [item valueForKey: @"theDescription"];
-    if( [description length] == 0)
-        return YES;
+    if( [description isKindOfClass: [NSString class]] && [description rangeOfString: @"rfmt" options: NSCaseInsensitiveSearch].location != NSNotFound)
+        return NO;
 
-    NSCharacterSet *alphanumericSet = [NSCharacterSet alphanumericCharacterSet];
-    NSRange searchRange = NSMakeRange( 0, [description length]);
-
-    while( searchRange.location < [description length])
-    {
-        NSRange match = [description rangeOfString: @"mpr" options: NSCaseInsensitiveSearch range: searchRange];
-
-        if( match.location == NSNotFound)
-            break;
-
-        BOOL startsToken = match.location == 0 || [alphanumericSet characterIsMember: [description characterAtIndex: match.location - 1]] == NO;
-        NSUInteger afterMatch = NSMaxRange( match);
-        BOOL endsToken = afterMatch >= [description length] || [alphanumericSet characterIsMember: [description characterAtIndex: afterMatch]] == NO;
-
-        if( startsToken && endsToken)
-            return NO;
-
-        searchRange.location = afterMatch;
-        searchRange.length = [description length] - searchRange.location;
-    }
-
-    return YES;
+    NSString *text = [self normalizedSeriesDescriptionForItem: item];
+    NSArray *ignoredTokens = [NSArray arrayWithObjects: @"mpr", nil];
+    return [self seriesText: text containsAnyToken: ignoredTokens] == NO;
 }
 
 - (id)outlineView:(NSOutlineView *)outlineView child:(NSInteger)index ofItem:(DCMTKQueryNode *) item
@@ -5485,7 +5466,7 @@ extern "C"
     [gadButton setAction: @selector(seriesHighlightFilterChanged:)];
 
     NSButton *ignoreMPRButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
-    [ignoreMPRButton setTitle: NSLocalizedString( @"Ignore MPR", nil)];
+    [ignoreMPRButton setTitle: NSLocalizedString( @"Ignore MPR/RFMT", nil)];
     [ignoreMPRButton setButtonType: NSSwitchButton];
     [ignoreMPRButton setTag: HorosQRSeriesIgnoreMPR];
     [ignoreMPRButton setState: savedIgnoreMPR ? NSOnState : NSOffState];

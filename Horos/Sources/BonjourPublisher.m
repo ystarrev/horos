@@ -164,7 +164,7 @@ extern const char *GetPrivateIP(void);
     if (!_bonjour) {
         // lazily instantiate the NSNetService object that will advertise on our behalf.  Passing in "" for the domain causes the service
         // to be registered in the default registration domain, which will currently always be "local"
-        _bonjour = [[NSNetService alloc] initWithDomain:@"" type:@"_osirixdb._tcp." name:[NSUserDefaults bonjourSharingName] port:[_listener port]];
+        _bonjour = [[NSNetService alloc] initWithDomain:@"" type:@"_osirixdb._tcp" name:[NSUserDefaults bonjourSharingName] port:[_listener port]];
         _bonjour.delegate = self;
     }
     

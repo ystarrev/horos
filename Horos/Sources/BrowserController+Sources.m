@@ -84,8 +84,11 @@ static BOOL HorosIsTemporaryLocalDatabaseSourcePath(NSString *path)
     return [databaseFolderName hasPrefix:@"Horos_"] && [parentFolderName hasPrefix:@"Horos_"];
 }
 
-static NSString* const HorosPhoneVolumeRenderBonjourType = @"_horosiphone._tcp.";
+static NSString* const HorosOsiriXDatabaseBonjourType = @"_osirixdb._tcp";
+static NSString* const HorosDicomBonjourType = @"_dicom._tcp";
+static NSString* const HorosPhoneVolumeRenderBonjourType = @"_horosiphone._tcp";
 static NSString* const HorosPhoneVolumeRenderDisplayName = @"iPhonePlanner";
+static NSString* const HorosNativeBonjourRecoveryNotificationShownKey = @"HorosNativeBonjourRecoveryNotificationShown";
 
 static NSString* HorosNormalizedMountedSourcePath(NSString *path)
 {
@@ -115,6 +118,78 @@ static NSDictionary* HorosSourceTXTDictionaryFromRecordData(NSData *recordData)
     return decoded;
 }
 
+static NSString* HorosDNSSDServiceKey(NSString *type, NSString *name)
+{
+    return [NSString stringWithFormat:@"%@|%@", type ? type : @"", name ? name : @""];
+}
+
+static NSString* HorosDNSSDTrimmedString(NSString *string)
+{
+    return [string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+}
+
+static NSString* HorosDNSSDHostWithoutTrailingDot(NSString *host)
+{
+    NSMutableString *cleanHost = [NSMutableString stringWithString:HorosDNSSDTrimmedString(host)];
+    while ([cleanHost hasSuffix:@"."])
+        [cleanHost deleteCharactersInRange:NSMakeRange([cleanHost length] - 1, 1)];
+    return cleanHost;
+}
+
+static NSString* HorosDNSSDUnescapedString(NSString *string)
+{
+    NSMutableString *decoded = [NSMutableString string];
+    for (NSUInteger i = 0; i < [string length];)
+    {
+        unichar c = [string characterAtIndex:i];
+        if (c == '\\' && i + 1 < [string length])
+        {
+            if (i + 3 < [string length])
+            {
+                NSString *digits = [string substringWithRange:NSMakeRange(i + 1, 3)];
+                NSCharacterSet *nonDigits = [[NSCharacterSet decimalDigitCharacterSet] invertedSet];
+                if ([digits rangeOfCharacterFromSet:nonDigits].location == NSNotFound)
+                {
+                    unichar escaped = (unichar)[digits intValue];
+                    [decoded appendFormat:@"%C", escaped];
+                    i += 4;
+                    continue;
+                }
+            }
+
+            [decoded appendFormat:@"%C", [string characterAtIndex:i + 1]];
+            i += 2;
+            continue;
+        }
+
+        [decoded appendFormat:@"%C", c];
+        i++;
+    }
+
+    return decoded;
+}
+
+static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
+{
+    NSMutableDictionary *dictionary = [NSMutableDictionary dictionary];
+    NSCharacterSet *whitespace = [NSCharacterSet whitespaceCharacterSet];
+    for (NSString *token in [HorosDNSSDTrimmedString(line) componentsSeparatedByCharactersInSet:whitespace])
+    {
+        if (![token length])
+            continue;
+
+        NSRange separator = [token rangeOfString:@"="];
+        if (separator.location == NSNotFound || separator.location == 0)
+            continue;
+
+        NSString *key = [token substringToIndex:separator.location];
+        NSString *value = [token substringFromIndex:NSMaxRange(separator)];
+        [dictionary setObject:HorosDNSSDUnescapedString(value) forKey:key];
+    }
+
+    return dictionary;
+}
+
 /*
  #include <IOKit/IOKitLib.h>
  #include <IOKit/IOMessage.h>
@@ -131,14 +206,36 @@ static NSDictionary* HorosSourceTXTDictionaryFromRecordData(NSData *recordData)
     NSNetServiceBrowser* _nsbDicom;
     NSNetServiceBrowser* _nsbPhoneVolumeRender;
     NSMutableArray* _bonjourSources, *_bonjourServices;
+    NSMutableDictionary *_dnssdBrowseTasks, *_dnssdBrowseBuffers;
+    NSMutableDictionary *_dnssdResolveTasks, *_dnssdResolveBuffers, *_dnssdResolveInfos;
 
     BOOL dontListenToSourcesChanges;
 }
 
 -(id)initWithBrowser:(BrowserController*)browser;
+-(void)_scheduleBonjourBrowserStart;
+-(void)_startBonjourBrowsers;
+-(void)_startOsirixBonjourBrowser;
+-(void)_startDicomBonjourBrowser;
+-(void)_startPhoneVolumeRenderBonjourBrowser;
+-(void)_stopBonjourBrowsers;
+-(void)_startDNSSDBrowseFallbackForType:(NSString*)type;
+-(void)_stopDNSSDBrowseFallbackForType:(NSString*)type;
+-(void)_stopDNSSDFallbacks;
+-(void)_stopDNSSDResolveTaskForKey:(NSString*)key;
+-(void)_appendDNSSDOutputData:(NSData*)data key:(NSString*)key resolving:(BOOL)resolving;
+-(void)_processDNSSDBrowseLine:(NSString*)line type:(NSString*)type;
+-(void)_processDNSSDResolveLine:(NSString*)line key:(NSString*)key;
+-(void)_resolveDNSSDServiceName:(NSString*)name type:(NSString*)type;
+-(void)_removeDNSSDServiceName:(NSString*)name type:(NSString*)type;
+-(void)_addDNSSDResolvedServiceForKey:(NSString*)key;
+-(void)_notifyIfNativeBonjourSearchRecoveredForType:(NSString*)type;
 -(void)_analyzeVolumeAtPath:(NSString*)path;
+-(NSString*)_bonjourServiceTypeForBrowser:(NSNetServiceBrowser*)browser;
 -(MountedDatabaseNodeIdentifier*)_deduplicateMountedSourcesForPath:(NSString*)path;
+-(MountedDatabaseNodeIdentifier*)_deduplicateMountedSourcesForPath:(NSString*)path identity:(NSString*)identity;
 -(void)_addMountedSourceForPath:(NSString*)path description:(NSString*)description type:(NSInteger)type;
+-(void)_addMountedSourceForPath:(NSString*)path description:(NSString*)description type:(NSInteger)type identity:(NSString*)identity;
 
 @end
 
@@ -162,6 +259,7 @@ static NSDictionary* HorosSourceTXTDictionaryFromRecordData(NSData *recordData)
 @interface MountedDatabaseNodeIdentifier : LocalDatabaseNodeIdentifier
 {
     NSString* _devicePath;
+    NSString* _mountIdentity;
     DicomDatabase* _database;
     NSInteger _mountType;
     NSThread* _scanThread;
@@ -174,6 +272,7 @@ enum {
 };
 
 @property(retain) NSString* devicePath;
+@property(retain) NSString* mountIdentity;
 @property NSInteger mountType;
 
 +(id)mountedDatabaseNodeIdentifierWithPath:(NSString*)devicePath description:(NSString*)description dictionary:(NSDictionary*)dictionary type:(NSInteger)type;
@@ -182,10 +281,32 @@ enum {
 
 @end
 
-static NSArray* HorosMountedSourcesForPath(NSArray *sources, NSString *path)
+static NSString* HorosStringValueFromDiskutilInfo(NSDictionary *info, NSString *key)
+{
+    id value = [info objectForKey:key];
+    if ([value isKindOfClass:[NSString class]])
+        return [value length] ? value : nil;
+    if ([value respondsToSelector:@selector(stringValue)])
+        return [[value stringValue] length] ? [value stringValue] : nil;
+    return nil;
+}
+
+static NSString* HorosMountedSourceIdentityFromDiskutilInfo(NSDictionary *info)
+{
+    for (NSString *key in [NSArray arrayWithObjects:@"VolumeUUID", @"APFSVolumeUUID", @"DiskUUID", @"MediaUUID", @"DeviceIdentifier", @"DeviceNode", nil])
+    {
+        NSString *value = HorosStringValueFromDiskutilInfo(info, key);
+        if (value.length)
+            return [NSString stringWithFormat:@"%@:%@", key, value];
+    }
+
+    return nil;
+}
+
+static NSArray* HorosMountedSourcesForPathOrIdentity(NSArray *sources, NSString *path, NSString *identity)
 {
     NSString *normalizedPath = HorosNormalizedMountedSourcePath(path);
-    if (normalizedPath.length == 0)
+    if (normalizedPath.length == 0 && identity.length == 0)
         return [NSArray array];
 
     NSMutableArray *matches = [NSMutableArray array];
@@ -195,11 +316,17 @@ static NSArray* HorosMountedSourcesForPath(NSArray *sources, NSString *path)
             continue;
 
         NSString *normalizedSourcePath = HorosNormalizedMountedSourcePath(source.devicePath);
-        if ([normalizedSourcePath isEqualToString:normalizedPath])
+        if ((identity.length && [source.mountIdentity isEqualToString:identity]) ||
+            (normalizedPath.length && [normalizedSourcePath isEqualToString:normalizedPath]))
             [matches addObject: source];
     }
 
     return matches;
+}
+
+static NSArray* HorosMountedSourcesForPath(NSArray *sources, NSString *path)
+{
+    return HorosMountedSourcesForPathOrIdentity(sources, path, nil);
 }
 
 @interface UnavaliableDataNodeException : NSException
@@ -488,17 +615,17 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         [[NSUserDefaultsController sharedUserDefaultsController] addObserver:self forValuesKey:@"SERVERS" options:NSKeyValueObservingOptionInitial context:DicomBrowserSourcesContext];
         _bonjourSources = [[NSMutableArray alloc] init];
         _bonjourServices = [[NSMutableArray alloc] init];
+        _dnssdBrowseTasks = [[NSMutableDictionary alloc] init];
+        _dnssdBrowseBuffers = [[NSMutableDictionary alloc] init];
+        _dnssdResolveTasks = [[NSMutableDictionary alloc] init];
+        _dnssdResolveBuffers = [[NSMutableDictionary alloc] init];
+        _dnssdResolveInfos = [[NSMutableDictionary alloc] init];
         [[NSUserDefaultsController sharedUserDefaultsController] addObserver:self forValuesKey:@"searchDICOMBonjour" options:NSKeyValueObservingOptionInitial context:SearchDicomNodesContext];
         [[NSUserDefaultsController sharedUserDefaultsController] addObserver:self forValuesKey:@"DoNotSearchForBonjourServices" options:NSKeyValueObservingOptionInitial context:SearchBonjourNodesContext];
-        _nsbOsirix = [[NSNetServiceBrowser alloc] init];
-        [_nsbOsirix setDelegate:self];
-        [_nsbOsirix searchForServicesOfType:@"_osirixdb._tcp." inDomain:@""];
-        _nsbDicom = [[NSNetServiceBrowser alloc] init];
-        [_nsbDicom setDelegate:self];
-        [_nsbDicom searchForServicesOfType:@"_dicom._tcp." inDomain:@""];
-        _nsbPhoneVolumeRender = [[NSNetServiceBrowser alloc] init];
-        [_nsbPhoneVolumeRender setDelegate:self];
-        [_nsbPhoneVolumeRender searchForServicesOfType:HorosPhoneVolumeRenderBonjourType inDomain:@""];
+        NSLog(@"Horos NSBonjourServices: %@", [[NSBundle mainBundle] objectForInfoDictionaryKey:@"NSBonjourServices"]);
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_applicationDidBecomeActive:) name:NSApplicationDidBecomeActiveNotification object:NSApp];
+        [self _scheduleBonjourBrowserStart];
+
         // mounted devices
         [[[NSWorkspace sharedWorkspace] notificationCenter] addObserver:self selector:@selector(_observeVolumeNotification:) name:NSWorkspaceDidMountNotification object:nil];
         [[[NSWorkspace sharedWorkspace] notificationCenter] addObserver:self selector:@selector(_observeVolumeNotification:) name:NSWorkspaceDidUnmountNotification object:nil];
@@ -547,6 +674,11 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     [[[NSWorkspace sharedWorkspace] notificationCenter] removeObserver:self name:NSWorkspaceDidUnmountNotification object:nil];
     [[[NSWorkspace sharedWorkspace] notificationCenter] removeObserver:self name:NSWorkspaceWillUnmountNotification object:nil];
     [[[NSWorkspace sharedWorkspace] notificationCenter] removeObserver:self name:NSWorkspaceDidRenameVolumeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:NSApplicationDidBecomeActiveNotification object:NSApp];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startBonjourBrowsers) object:nil];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startOsirixBonjourBrowser) object:nil];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startDicomBonjourBrowser) object:nil];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startPhoneVolumeRenderBonjourBrowser) object:nil];
 
     [[NSUserDefaultsController sharedUserDefaultsController] removeObserver:self forValuesKey:@"DoNotSearchForBonjourServices"];
     [[NSUserDefaultsController sharedUserDefaultsController] removeObserver:self forValuesKey:@"searchDICOMBonjour"];
@@ -554,15 +686,515 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     [[NSUserDefaultsController sharedUserDefaultsController] removeObserver:self forValuesKey:@"OSIRIXSERVERS"];
     [[NSUserDefaultsController sharedUserDefaultsController] removeObserver:self forValuesKey:@"localDatabasePaths"];
 
-    [_nsbDicom release]; _nsbDicom = nil;
-    [_nsbOsirix release]; _nsbOsirix = nil;
-    [_nsbPhoneVolumeRender release]; _nsbPhoneVolumeRender = nil;
+    [self _stopBonjourBrowsers];
+    [self _stopDNSSDFallbacks];
     [_bonjourSources release];
     [_bonjourServices release];
+    [_dnssdBrowseTasks release];
+    [_dnssdBrowseBuffers release];
+    [_dnssdResolveTasks release];
+    [_dnssdResolveBuffers release];
+    [_dnssdResolveInfos release];
 
     //	[[[NSUserDefaults standardUserDefaults] objectForKey:@"localDatabasePaths"] removeObserver:self forValuesKey:@"values"];
     _browser = nil;
     [super dealloc];
+}
+
+-(void)_applicationDidBecomeActive:(NSNotification*)notification
+{
+    [self _scheduleBonjourBrowserStart];
+}
+
+-(void)_scheduleBonjourBrowserStart
+{
+    if (![NSThread isMainThread])
+    {
+        [self performSelectorOnMainThread:@selector(_scheduleBonjourBrowserStart) withObject:nil waitUntilDone:NO];
+        return;
+    }
+
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startBonjourBrowsers) object:nil];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startOsirixBonjourBrowser) object:nil];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startDicomBonjourBrowser) object:nil];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startPhoneVolumeRenderBonjourBrowser) object:nil];
+    [self performSelector:@selector(_startBonjourBrowsers) withObject:nil afterDelay:1.0];
+}
+
+-(void)_stopBonjourBrowsers
+{
+    [_nsbOsirix setDelegate:nil];
+    [_nsbOsirix stop];
+    [_nsbOsirix release];
+    _nsbOsirix = nil;
+
+    [_nsbDicom setDelegate:nil];
+    [_nsbDicom stop];
+    [_nsbDicom release];
+    _nsbDicom = nil;
+
+    [_nsbPhoneVolumeRender setDelegate:nil];
+    [_nsbPhoneVolumeRender stop];
+    [_nsbPhoneVolumeRender release];
+    _nsbPhoneVolumeRender = nil;
+}
+
+-(void)_stopDNSSDFallbacks
+{
+    for (NSTask *task in [_dnssdBrowseTasks allValues])
+    {
+        NSFileHandle *handle = [[task standardOutput] fileHandleForReading];
+        [handle setReadabilityHandler:nil];
+        if ([task isRunning])
+            [task terminate];
+    }
+
+    for (NSString *key in [_dnssdResolveTasks allKeys])
+        [self _stopDNSSDResolveTaskForKey:key];
+
+    [_dnssdBrowseTasks removeAllObjects];
+    [_dnssdBrowseBuffers removeAllObjects];
+    [_dnssdResolveTasks removeAllObjects];
+    [_dnssdResolveBuffers removeAllObjects];
+    [_dnssdResolveInfos removeAllObjects];
+}
+
+-(void)_startDNSSDBrowseFallbackForType:(NSString*)type
+{
+    if (!type.length || [_dnssdBrowseTasks objectForKey:type])
+        return;
+
+    if (![type isEqualToString:HorosOsiriXDatabaseBonjourType] && ![type isEqualToString:HorosDicomBonjourType])
+        return;
+
+    if ([type isEqualToString:HorosOsiriXDatabaseBonjourType] && [[NSUserDefaults standardUserDefaults] boolForKey:@"DoNotSearchForBonjourServices"])
+        return;
+
+    if ([type isEqualToString:HorosDicomBonjourType] && ![[NSUserDefaults standardUserDefaults] boolForKey:@"searchDICOMBonjour"])
+        return;
+
+    NSString *dnsSDPath = @"/usr/bin/dns-sd";
+    if (![[NSFileManager defaultManager] isExecutableFileAtPath:dnsSDPath])
+    {
+        NSLog(@"Warning: DNS-SD Bonjour fallback unavailable: %@", dnsSDPath);
+        return;
+    }
+
+    NSTask *task = [[NSTask alloc] init];
+    NSPipe *pipe = [NSPipe pipe];
+    [task setLaunchPath:dnsSDPath];
+    [task setArguments:[NSArray arrayWithObjects:@"-B", type, @"local", nil]];
+    [task setStandardOutput:pipe];
+    [task setStandardError:pipe];
+
+    [_dnssdBrowseTasks setObject:task forKey:type];
+    [_dnssdBrowseBuffers setObject:[NSMutableString string] forKey:type];
+
+    BrowserSourcesHelper *helper = self;
+    NSString *taskKey = [[type copy] autorelease];
+    [[pipe fileHandleForReading] setReadabilityHandler:^(NSFileHandle *handle) {
+        NSData *data = [handle availableData];
+        if (![data length])
+        {
+            [handle setReadabilityHandler:nil];
+            return;
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [helper _appendDNSSDOutputData:data key:taskKey resolving:NO];
+        });
+    }];
+
+    @try
+    {
+        [task launch];
+        NSLog(@"DNS-SD Bonjour fallback browsing for %@", type);
+    }
+    @catch (NSException *exception)
+    {
+        NSLog(@"Warning: DNS-SD Bonjour fallback failed for %@: %@", type, exception);
+        [[pipe fileHandleForReading] setReadabilityHandler:nil];
+        [_dnssdBrowseTasks removeObjectForKey:type];
+        [_dnssdBrowseBuffers removeObjectForKey:type];
+    }
+
+    [task release];
+}
+
+-(void)_stopDNSSDBrowseFallbackForType:(NSString*)type
+{
+    NSTask *task = [_dnssdBrowseTasks objectForKey:type];
+    if (task)
+    {
+        NSFileHandle *handle = [[task standardOutput] fileHandleForReading];
+        [handle setReadabilityHandler:nil];
+        if ([task isRunning])
+            [task terminate];
+        [_dnssdBrowseTasks removeObjectForKey:type];
+        [_dnssdBrowseBuffers removeObjectForKey:type];
+    }
+
+    NSString *prefix = [NSString stringWithFormat:@"%@|", type];
+    for (NSString *key in [[[_dnssdResolveTasks allKeys] copy] autorelease])
+    {
+        if ([key hasPrefix:prefix])
+            [self _stopDNSSDResolveTaskForKey:key];
+    }
+}
+
+-(void)_stopDNSSDResolveTaskForKey:(NSString*)key
+{
+    NSTask *task = [_dnssdResolveTasks objectForKey:key];
+    if (!task)
+        return;
+
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_stopDNSSDResolveTaskForKey:) object:key];
+    NSFileHandle *handle = [[task standardOutput] fileHandleForReading];
+    [handle setReadabilityHandler:nil];
+    if ([task isRunning])
+        [task terminate];
+
+    [_dnssdResolveTasks removeObjectForKey:key];
+    [_dnssdResolveBuffers removeObjectForKey:key];
+    [_dnssdResolveInfos removeObjectForKey:key];
+}
+
+-(void)_appendDNSSDOutputData:(NSData*)data key:(NSString*)key resolving:(BOOL)resolving
+{
+    if (![NSThread isMainThread])
+    {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _appendDNSSDOutputData:data key:key resolving:resolving];
+        });
+        return;
+    }
+
+    NSString *chunk = [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
+    if (!chunk)
+        chunk = [[[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding] autorelease];
+    if (![chunk length])
+        return;
+
+    NSMutableDictionary *buffers = resolving ? _dnssdResolveBuffers : _dnssdBrowseBuffers;
+    NSMutableString *buffer = [buffers objectForKey:key];
+    if (!buffer)
+    {
+        buffer = [NSMutableString string];
+        [buffers setObject:buffer forKey:key];
+    }
+
+    [buffer appendString:chunk];
+    NSArray *lines = [buffer componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+    if ([lines count] == 0)
+        return;
+
+    [buffer setString:[lines lastObject]];
+    for (NSUInteger i = 0; i + 1 < [lines count]; i++)
+    {
+        NSString *line = [lines objectAtIndex:i];
+        if (resolving)
+            [self _processDNSSDResolveLine:line key:key];
+        else
+            [self _processDNSSDBrowseLine:line type:key];
+    }
+}
+
+-(void)_processDNSSDBrowseLine:(NSString*)line type:(NSString*)type
+{
+    NSString *trimmed = HorosDNSSDTrimmedString(line);
+    if (![trimmed length])
+        return;
+
+    if ([trimmed rangeOfString:@"failed" options:NSCaseInsensitiveSearch].location != NSNotFound)
+        NSLog(@"Warning: DNS-SD Bonjour fallback for %@ reported: %@", type, trimmed);
+
+    NSMutableArray *parts = [NSMutableArray array];
+    for (NSString *part in [trimmed componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]])
+        if ([part length])
+            [parts addObject:part];
+
+    if ([parts count] < 7)
+        return;
+
+    NSString *action = [parts objectAtIndex:1];
+    NSString *reportedType = [parts objectAtIndex:5];
+    if (![reportedType hasPrefix:type])
+        return;
+
+    NSRange typeRange = [line rangeOfString:reportedType];
+    NSString *name = nil;
+    if (typeRange.location != NSNotFound)
+        name = HorosDNSSDUnescapedString(HorosDNSSDTrimmedString([line substringFromIndex:NSMaxRange(typeRange)]));
+    if (![name length])
+        return;
+
+    if ([action isEqualToString:@"Add"])
+        [self _resolveDNSSDServiceName:name type:type];
+    else if ([action isEqualToString:@"Rmv"])
+        [self _removeDNSSDServiceName:name type:type];
+}
+
+-(void)_resolveDNSSDServiceName:(NSString*)name type:(NSString*)type
+{
+    if ([type isEqualToString:HorosOsiriXDatabaseBonjourType] && [[NSUserDefaults standardUserDefaults] boolForKey:@"DoNotSearchForBonjourServices"])
+        return;
+
+    if ([type isEqualToString:HorosDicomBonjourType] && ![[NSUserDefaults standardUserDefaults] boolForKey:@"searchDICOMBonjour"])
+        return;
+
+    NSString *key = HorosDNSSDServiceKey(type, name);
+    if ([_dnssdResolveTasks objectForKey:key])
+        return;
+
+    NSMutableDictionary *info = [NSMutableDictionary dictionaryWithObjectsAndKeys:type, @"Type", name, @"Name", nil];
+    [_dnssdResolveInfos setObject:info forKey:key];
+
+    NSTask *task = [[NSTask alloc] init];
+    NSPipe *pipe = [NSPipe pipe];
+    [task setLaunchPath:@"/usr/bin/dns-sd"];
+    [task setArguments:[NSArray arrayWithObjects:@"-L", name, type, @"local", nil]];
+    [task setStandardOutput:pipe];
+    [task setStandardError:pipe];
+
+    [_dnssdResolveTasks setObject:task forKey:key];
+    [_dnssdResolveBuffers setObject:[NSMutableString string] forKey:key];
+
+    BrowserSourcesHelper *helper = self;
+    NSString *taskKey = [[key copy] autorelease];
+    [[pipe fileHandleForReading] setReadabilityHandler:^(NSFileHandle *handle) {
+        NSData *data = [handle availableData];
+        if (![data length])
+        {
+            [handle setReadabilityHandler:nil];
+            return;
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [helper _appendDNSSDOutputData:data key:taskKey resolving:YES];
+        });
+    }];
+
+    @try
+    {
+        [task launch];
+        [self performSelector:@selector(_stopDNSSDResolveTaskForKey:) withObject:key afterDelay:10.0];
+    }
+    @catch (NSException *exception)
+    {
+        NSLog(@"Warning: DNS-SD Bonjour fallback resolve failed for %@: %@", key, exception);
+        [[pipe fileHandleForReading] setReadabilityHandler:nil];
+        [_dnssdResolveTasks removeObjectForKey:key];
+        [_dnssdResolveBuffers removeObjectForKey:key];
+        [_dnssdResolveInfos removeObjectForKey:key];
+    }
+
+    [task release];
+}
+
+-(void)_processDNSSDResolveLine:(NSString*)line key:(NSString*)key
+{
+    NSMutableDictionary *info = [_dnssdResolveInfos objectForKey:key];
+    if (!info)
+        return;
+
+    NSRange reachedRange = [line rangeOfString:@" can be reached at "];
+    if (reachedRange.location != NSNotFound)
+    {
+        NSString *hostAndPort = [line substringFromIndex:NSMaxRange(reachedRange)];
+        NSRange interfaceRange = [hostAndPort rangeOfString:@" (interface"];
+        if (interfaceRange.location != NSNotFound)
+            hostAndPort = [hostAndPort substringToIndex:interfaceRange.location];
+
+        hostAndPort = HorosDNSSDTrimmedString(hostAndPort);
+        NSRange portRange = [hostAndPort rangeOfString:@":" options:NSBackwardsSearch];
+        if (portRange.location != NSNotFound && portRange.location + 1 < [hostAndPort length])
+        {
+            NSString *host = HorosDNSSDHostWithoutTrailingDot([hostAndPort substringToIndex:portRange.location]);
+            NSInteger port = [[hostAndPort substringFromIndex:NSMaxRange(portRange)] integerValue];
+            if ([host length] && port > 0)
+            {
+                [info setObject:host forKey:@"Host"];
+                [info setObject:[NSNumber numberWithInteger:port] forKey:@"Port"];
+            }
+        }
+    }
+    else if ([line rangeOfString:@"="].location != NSNotFound)
+    {
+        NSDictionary *txt = HorosDNSSDTXTDictionaryFromLine(line);
+        if ([txt count])
+            [info setObject:txt forKey:@"TXT"];
+    }
+
+    NSString *type = [info objectForKey:@"Type"];
+    BOOL hasAddress = [[info objectForKey:@"Host"] length] && [[info objectForKey:@"Port"] integerValue] > 0;
+    BOOL hasTXT = [[info objectForKey:@"TXT"] count] > 0;
+    if (hasAddress && (hasTXT || ![type isEqualToString:HorosOsiriXDatabaseBonjourType]))
+        [self _addDNSSDResolvedServiceForKey:key];
+}
+
+-(void)_addDNSSDResolvedServiceForKey:(NSString*)key
+{
+    NSMutableDictionary *info = [_dnssdResolveInfos objectForKey:key];
+    NSString *type = [info objectForKey:@"Type"];
+    NSString *name = [info objectForKey:@"Name"];
+    NSString *host = [info objectForKey:@"Host"];
+    NSInteger port = [[info objectForKey:@"Port"] integerValue];
+    NSDictionary *txt = [info objectForKey:@"TXT"] ? [info objectForKey:@"TXT"] : [NSDictionary dictionary];
+
+    if (![type length] || ![name length] || ![host length] || port <= 0)
+        return;
+
+    if ([[txt objectForKey:@"UID"] isEqualToString:[AppController UID]])
+    {
+        [self _stopDNSSDResolveTaskForKey:key];
+        return;
+    }
+
+    NSMutableDictionary *sourceDictionary = [NSMutableDictionary dictionaryWithDictionary:txt];
+    [sourceDictionary setObject:key forKey:@"DNSSDServiceKey"];
+
+    DataNodeIdentifier *source = nil;
+    if ([type isEqualToString:HorosOsiriXDatabaseBonjourType])
+        source = [RemoteDatabaseNodeIdentifier remoteDatabaseNodeIdentifierWithLocation:host port:port description:name dictionary:sourceDictionary];
+    else if ([type isEqualToString:HorosDicomBonjourType])
+    {
+        NSString *aet = [txt objectForKey:@"AETitle"] ? [txt objectForKey:@"AETitle"] : name;
+        source = [DicomNodeIdentifier dicomNodeIdentifierWithLocation:host port:port aetitle:aet description:name dictionary:sourceDictionary];
+    }
+
+    if (!source)
+        return;
+
+    @synchronized (_bonjourSources)
+    {
+        for (DataNodeIdentifier *bonjourSource in _bonjourSources)
+        {
+            if ([[bonjourSource.dictionary objectForKey:@"DNSSDServiceKey"] isEqualToString:key])
+            {
+                [self _stopDNSSDResolveTaskForKey:key];
+                return;
+            }
+        }
+
+        NSUInteger existingIndex = [_browser.sources.content indexOfObject:source];
+        if (existingIndex != NSNotFound)
+        {
+            source = [_browser.sources.content objectAtIndex:existingIndex];
+            NSMutableDictionary *mergedDictionary = [NSMutableDictionary dictionaryWithDictionary:source.dictionary ? source.dictionary : [NSDictionary dictionary]];
+            [mergedDictionary addEntriesFromDictionary:sourceDictionary];
+            source.dictionary = mergedDictionary;
+        }
+        else
+            source.dictionary = sourceDictionary;
+
+        [_bonjourSources addObject:source];
+        [_bonjourServices addObject:[NSNull null]];
+
+        if (([source isKindOfClass:[RemoteDatabaseNodeIdentifier class]] && ![[NSUserDefaults standardUserDefaults] boolForKey:@"DoNotSearchForBonjourServices"]) ||
+            ([source isKindOfClass:[DicomNodeIdentifier class]] && [[NSUserDefaults standardUserDefaults] boolForKey:@"searchDICOMBonjour"]))
+        {
+            source.detected = YES;
+            if (![_browser.sources.content containsObject:source])
+            {
+                [_browser.sources addObject:source];
+                NSLog(@"DNS-SD Bonjour source added: %@ %@:%ld", source.description, source.location, (long)source.port);
+            }
+        }
+    }
+
+    [self _stopDNSSDResolveTaskForKey:key];
+}
+
+-(void)_removeDNSSDServiceName:(NSString*)name type:(NSString*)type
+{
+    NSString *key = HorosDNSSDServiceKey(type, name);
+    @synchronized (_bonjourSources)
+    {
+        for (NSUInteger i = 0; i < [_bonjourSources count]; i++)
+        {
+            DataNodeIdentifier *source = [_bonjourSources objectAtIndex:i];
+            if (![[source.dictionary objectForKey:@"DNSSDServiceKey"] isEqualToString:key])
+                continue;
+
+            source.detected = NO;
+            if (!source.entered && [_browser.sources.content containsObject:source])
+            {
+                [source retain];
+                [_browser.sources removeObject:source];
+                [source performSelector:@selector(autorelease) withObject:nil afterDelay:60];
+            }
+
+            [_bonjourSources removeObjectAtIndex:i];
+            [_bonjourServices removeObjectAtIndex:i];
+            break;
+        }
+    }
+}
+
+-(void)_notifyIfNativeBonjourSearchRecoveredForType:(NSString*)type
+{
+    if (![type isEqualToString:HorosOsiriXDatabaseBonjourType] && ![type isEqualToString:HorosDicomBonjourType])
+        return;
+
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if ([defaults boolForKey:HorosNativeBonjourRecoveryNotificationShownKey])
+        return;
+
+    [defaults setBool:YES forKey:HorosNativeBonjourRecoveryNotificationShownKey];
+    [defaults synchronize];
+
+    NSString *message = [NSString stringWithFormat:@"Native NSNetServiceBrowser started for %@. Revisit the DNS-SD Bonjour fallback and simplify this code.", type];
+    NSLog(@"%@", message);
+    [[AppController sharedAppController] notificationTitle:@"Horos Bonjour workaround may be removable" description:message name:@"bonjour"];
+}
+
+-(void)_startBonjourBrowsers
+{
+    if (![NSThread isMainThread])
+    {
+        [self performSelectorOnMainThread:@selector(_startBonjourBrowsers) withObject:nil waitUntilDone:NO];
+        return;
+    }
+
+    [self _startPhoneVolumeRenderBonjourBrowser];
+    [self performSelector:@selector(_startOsirixBonjourBrowser) withObject:nil afterDelay:1.5];
+    [self performSelector:@selector(_startDicomBonjourBrowser) withObject:nil afterDelay:3.0];
+}
+
+-(void)_startOsirixBonjourBrowser
+{
+    if ([_dnssdBrowseTasks objectForKey:HorosOsiriXDatabaseBonjourType])
+        return;
+
+    if (!_nsbOsirix)
+    {
+        _nsbOsirix = [[NSNetServiceBrowser alloc] init];
+        [_nsbOsirix setDelegate:self];
+        [_nsbOsirix searchForServicesOfType:HorosOsiriXDatabaseBonjourType inDomain:@""];
+    }
+}
+
+-(void)_startDicomBonjourBrowser
+{
+    if ([_dnssdBrowseTasks objectForKey:HorosDicomBonjourType])
+        return;
+
+    if (!_nsbDicom)
+    {
+        _nsbDicom = [[NSNetServiceBrowser alloc] init];
+        [_nsbDicom setDelegate:self];
+        [_nsbDicom searchForServicesOfType:HorosDicomBonjourType inDomain:@""];
+    }
+}
+
+-(void)_startPhoneVolumeRenderBonjourBrowser
+{
+    if (!_nsbPhoneVolumeRender)
+    {
+        _nsbPhoneVolumeRender = [[NSNetServiceBrowser alloc] init];
+        [_nsbPhoneVolumeRender setDelegate:self];
+        [_nsbPhoneVolumeRender searchForServicesOfType:HorosPhoneVolumeRenderBonjourType inDomain:@""];
+    }
 }
 
 -(void)_observeValueForKeyPathOfObjectChangeContext:(NSArray*)args {
@@ -751,6 +1383,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
             @synchronized (_bonjourSources) {
                 if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DoNotSearchForBonjourServices"]) // add remote databases detected with bonjour
                 { // remove remote databases detected with bonjour
+                    [self _stopDNSSDBrowseFallbackForType:HorosOsiriXDatabaseBonjourType];
                     for (DataNodeIdentifier* dni in _bonjourSources)
                         if ([dni isKindOfClass:[RemoteDatabaseNodeIdentifier class]] && dni.detected) {
                             dni.detected = NO;
@@ -763,6 +1396,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
                         }
                 } else
                 { // add remote databases detected with bonjour
+                    [self _scheduleBonjourBrowserStart];
                     for (DataNodeIdentifier* dni in _bonjourSources)
                         if ([dni isKindOfClass:[RemoteDatabaseNodeIdentifier class]] && !dni.detected && dni.location) {
                             dni.detected = YES;
@@ -776,6 +1410,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
             @synchronized (_bonjourSources) {
                 if (![[NSUserDefaults standardUserDefaults] boolForKey:@"searchDICOMBonjour"])
                 { // remove dicom nodes detected with bonjour
+                    [self _stopDNSSDBrowseFallbackForType:HorosDicomBonjourType];
                     for (DataNodeIdentifier* dni in _bonjourSources)
                         if ([dni isKindOfClass:[DicomNodeIdentifier class]] && dni.detected) {
                             dni.detected = NO;
@@ -788,6 +1423,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
                         }
                 } else
                 { // add dicom nodes detected with bonjour
+                    [self _scheduleBonjourBrowserStart];
                     for (DataNodeIdentifier* dni in _bonjourSources)
                         if ([dni isKindOfClass:[DicomNodeIdentifier class]] && !dni.detected && dni.location) {
                             dni.detected = YES;
@@ -807,6 +1443,63 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         [_browser performSelector: @selector(setDatabase:) withObject: DicomDatabase.defaultDatabase afterDelay: 0.01]; //This will guarantee that this will not happen in middle of a drag & drop, for example
     else
         [_browser selectSourceForDatabase: _browser.database];
+}
+
+-(NSString*)_bonjourServiceTypeForBrowser:(NSNetServiceBrowser*)browser
+{
+    if (browser == _nsbOsirix)
+        return HorosOsiriXDatabaseBonjourType;
+    if (browser == _nsbDicom)
+        return HorosDicomBonjourType;
+    if (browser == _nsbPhoneVolumeRender)
+        return HorosPhoneVolumeRenderBonjourType;
+
+    return @"unknown Bonjour service";
+}
+
+-(void)netServiceBrowserWillSearch:(NSNetServiceBrowser*)nsb
+{
+    NSString *type = [self _bonjourServiceTypeForBrowser:nsb];
+    NSLog(@"Horos Bonjour browser searching for %@", type);
+    [self _notifyIfNativeBonjourSearchRecoveredForType:type];
+}
+
+-(void)netServiceBrowser:(NSNetServiceBrowser*)nsb didNotSearch:(NSDictionary*)errorDict
+{
+    NSLog(@"Warning: Horos Bonjour browser did not search for %@: %@", [self _bonjourServiceTypeForBrowser:nsb], errorDict);
+    NSInteger errorCode = [[errorDict objectForKey:NSNetServicesErrorCode] integerValue];
+
+    if (nsb == _nsbOsirix)
+    {
+        [_nsbOsirix setDelegate:nil];
+        [_nsbOsirix stop];
+        [_nsbOsirix release];
+        _nsbOsirix = nil;
+        if (errorCode != NSNetServicesMissingRequiredConfigurationError)
+            [self performSelector:@selector(_startOsirixBonjourBrowser) withObject:nil afterDelay:10.0];
+        else
+            [self _startDNSSDBrowseFallbackForType:HorosOsiriXDatabaseBonjourType];
+    }
+    else if (nsb == _nsbDicom)
+    {
+        [_nsbDicom setDelegate:nil];
+        [_nsbDicom stop];
+        [_nsbDicom release];
+        _nsbDicom = nil;
+        if (errorCode != NSNetServicesMissingRequiredConfigurationError)
+            [self performSelector:@selector(_startDicomBonjourBrowser) withObject:nil afterDelay:10.0];
+        else
+            [self _startDNSSDBrowseFallbackForType:HorosDicomBonjourType];
+    }
+    else if (nsb == _nsbPhoneVolumeRender)
+    {
+        [_nsbPhoneVolumeRender setDelegate:nil];
+        [_nsbPhoneVolumeRender stop];
+        [_nsbPhoneVolumeRender release];
+        _nsbPhoneVolumeRender = nil;
+        if (errorCode != NSNetServicesMissingRequiredConfigurationError)
+            [self performSelector:@selector(_startPhoneVolumeRenderBonjourBrowser) withObject:nil afterDelay:10.0];
+    }
 }
 
 -(void)netServiceDidResolveAddress:(NSNetService*)service
@@ -850,7 +1543,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
             {
                 @synchronized (_bonjourSources)
                 {
-                    NSLog( @"Remove Service: %@", service);
+                    NSLog( @"Remove Service: %@ ignored as this Horos instance UID=%@", service, [resolvedTXTDictionary objectForKey:@"UID"]);
                     if( [_bonjourServices indexOfObject: service] != NSNotFound)
                     {
                         [_bonjourSources removeObjectAtIndex: [_bonjourServices indexOfObject: service]];
@@ -943,7 +1636,10 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
                     source.detected = YES;
                     if (![_browser.sources.content containsObject:source])
+                    {
                         [_browser.sources addObject:source];
+                        NSLog(@"Bonjour source added: %@ %@:%ld", source.description, source.location, (long)source.port);
+                    }
                 }
             }
         }
@@ -961,6 +1657,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
 -(void)netService:(NSNetService*)service didNotResolve:(NSDictionary*)errorDict
 {
+    NSLog(@"Warning: Bonjour service did not resolve: %@ error=%@", service, errorDict);
     [service stop];
 
     NSNetService* bsk = nil;
@@ -1053,7 +1750,12 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
 -(MountedDatabaseNodeIdentifier*)_deduplicateMountedSourcesForPath:(NSString*)path
 {
-    NSArray *matches = HorosMountedSourcesForPath([[_browser.sources.arrangedObjects copy] autorelease], path);
+    return [self _deduplicateMountedSourcesForPath:path identity:nil];
+}
+
+-(MountedDatabaseNodeIdentifier*)_deduplicateMountedSourcesForPath:(NSString*)path identity:(NSString*)identity
+{
+    NSArray *matches = HorosMountedSourcesForPathOrIdentity([[_browser.sources.arrangedObjects copy] autorelease], path, identity);
     if ([matches count] == 0)
         return nil;
 
@@ -1083,16 +1785,24 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
 -(void)_addMountedSourceForPath:(NSString*)path description:(NSString*)description type:(NSInteger)type
 {
-    MountedDatabaseNodeIdentifier *existingSource = [self _deduplicateMountedSourcesForPath:path];
+    [self _addMountedSourceForPath:path description:description type:type identity:nil];
+}
+
+-(void)_addMountedSourceForPath:(NSString*)path description:(NSString*)description type:(NSInteger)type identity:(NSString*)identity
+{
+    MountedDatabaseNodeIdentifier *existingSource = [self _deduplicateMountedSourcesForPath:path identity:identity];
     if (existingSource)
     {
         existingSource.description = description;
         existingSource.mountType = type;
+        existingSource.mountIdentity = identity;
         return;
     }
 
     @try {
-        [_browser.sources addObject:[MountedDatabaseNodeIdentifier mountedDatabaseNodeIdentifierWithPath:path description:description dictionary:nil type:type]];
+        MountedDatabaseNodeIdentifier *source = [MountedDatabaseNodeIdentifier mountedDatabaseNodeIdentifierWithPath:path description:description dictionary:nil type:type];
+        source.mountIdentity = identity;
+        [_browser.sources addObject:source];
     } @catch (NSException* e) {
         N2LogExceptionWithStackTrace(e);
     }
@@ -1120,19 +1830,24 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     NSData* output = [[[[[task standardError] fileHandleForReading] readDataToEndOfFile] retain] autorelease];
     [task release];
 
-    NSDictionary* result = [NSPropertyListSerialization propertyListFromData:output mutabilityOption:NSPropertyListImmutable format:0 errorDescription:NULL];
+    id plist = [NSPropertyListSerialization propertyListFromData:output mutabilityOption:NSPropertyListImmutable format:0 errorDescription:NULL];
+    NSDictionary *result = [plist isKindOfClass:[NSDictionary class]] ? plist : nil;
+    NSString *mountIdentity = HorosMountedSourceIdentityFromDiskutilInfo(result);
+
+    if ([self _deduplicateMountedSourcesForPath:path identity:mountIdentity])
+        return;
 
     if ([[result objectForKey:@"OpticalMediaType"] length]) // is CD/DVD or other optical media
-        [self _addMountedSourceForPath:path description:path.lastPathComponent type:MountTypeGeneric];
+        [self _addMountedSourceForPath:path description:path.lastPathComponent type:MountTypeGeneric identity:mountIdentity];
 
     else if ([[result objectForKey:@"MediaType"] isEqualToString:@"iPod"])
-        [self _addMountedSourceForPath:path description:path.lastPathComponent type:MountTypeIPod];
+        [self _addMountedSourceForPath:path description:path.lastPathComponent type:MountTypeIPod identity:mountIdentity];
     else // Is there a DICOMDIR at root?
     {
         if( [[NSFileManager defaultManager] fileExistsAtPath: [path stringByAppendingPathComponent: @"DICOMDIR"]])
-            [self _addMountedSourceForPath:path description:path.lastPathComponent type:MountTypeGeneric];
+            [self _addMountedSourceForPath:path description:path.lastPathComponent type:MountTypeGeneric identity:mountIdentity];
         else if( [[NSFileManager defaultManager] fileExistsAtPath: [path stringByAppendingPathComponent: OsirixDataDirName]])
-            [self _addMountedSourceForPath:path description:path.lastPathComponent type:MountTypeGeneric];
+            [self _addMountedSourceForPath:path description:path.lastPathComponent type:MountTypeGeneric identity:mountIdentity];
     }
 
     /*	OSStatus err;
@@ -1361,6 +2076,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 @implementation MountedDatabaseNodeIdentifier
 
 @synthesize devicePath = _devicePath;
+@synthesize mountIdentity = _mountIdentity;
 @synthesize mountType = _mountType;
 
 -(id)init
@@ -1525,6 +2241,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
     //    [[NSFileManager defaultManager] removeItemAtPath:self.location error:NULL]; We cannot do it, because there was maybe threads attached to this sql file. The entire folder will be deleted when quitting or restarting OsiriX
     self.devicePath = nil;
+    self.mountIdentity = nil;
     [super dealloc];
 }
 

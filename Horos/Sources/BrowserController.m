@@ -982,6 +982,11 @@ static NSConditionLock *threadLock = nil;
 
 - (void) addFilesAndFolderToDatabase:(NSArray*) filenames
 {
+    [self addFilesAndFolderToDatabase: filenames options: nil];
+}
+
+- (void) addFilesAndFolderToDatabase:(NSArray*) filenames options:(NSDictionary*) options
+{
     NSFileManager       *defaultManager = [NSFileManager defaultManager];
     NSMutableArray		*filesArray;
     BOOL				isDirectory = NO;
@@ -1113,7 +1118,11 @@ static NSConditionLock *threadLock = nil;
         [pool release];
     }
     
-    [self copyFilesIntoDatabaseIfNeeded: filesArray options: [NSDictionary dictionaryWithObjectsAndKeys: [[NSUserDefaults standardUserDefaults] objectForKey: @"onlyDICOM"], @"onlyDICOM", [NSNumber numberWithBool: YES], @"async", [NSNumber numberWithBool: YES], @"addToAlbum",  [NSNumber numberWithBool: YES], @"selectStudy", nil]];
+    NSMutableDictionary *copyOptions = [NSMutableDictionary dictionaryWithObjectsAndKeys: [[NSUserDefaults standardUserDefaults] objectForKey: @"onlyDICOM"], @"onlyDICOM", [NSNumber numberWithBool: YES], @"async", [NSNumber numberWithBool: YES], @"addToAlbum",  [NSNumber numberWithBool: YES], @"selectStudy", nil];
+    if( options)
+        [copyOptions addEntriesFromDictionary: options];
+
+    [self copyFilesIntoDatabaseIfNeeded: filesArray options: copyOptions];
 }
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
@@ -1623,6 +1632,11 @@ static NSConditionLock *threadLock = nil;
 
 - (void) subSelectFilesAndFoldersToAdd: (NSArray*) filenames
 {
+    [self subSelectFilesAndFoldersToAdd: filenames options: nil];
+}
+
+- (void) subSelectFilesAndFoldersToAdd: (NSArray*) filenames options: (NSDictionary*) options
+{
     if( [filenames count] == 1 && [[[filenames objectAtIndex: 0] pathExtension] isEqualToString: @"sql"])  // It's a database file!
     {
         [self setDatabase:[DicomDatabase databaseAtPath:filenames.firstObject]];
@@ -1641,7 +1655,7 @@ static NSConditionLock *threadLock = nil;
         
         [filenamesWithoutPlugins removeObjectsInArray: pluginsArray];
         
-        [self addFilesAndFolderToDatabase: filenamesWithoutPlugins];
+        [self addFilesAndFolderToDatabase: filenamesWithoutPlugins options: options];
         
         if( [pluginsArray count] > 0)
         {
@@ -2361,25 +2375,6 @@ static NSConditionLock *threadLock = nil;
                 break;
                 
             case ask:
-                switch (NSRunInformationalAlertPanel(
-                                                     NSLocalizedString(@"Horos Database", nil),
-                                                     NSLocalizedString(@"Should I copy these files in Horos Database folder, or only copy links to these files?", nil),
-                                                     NSLocalizedString(@"Copy Files", nil),
-                                                     NSLocalizedString(@"Cancel", nil),
-                                                     NSLocalizedString(@"Copy Links", nil)))
-            {
-                case NSAlertDefaultReturn:
-                    break;
-                    
-                case NSAlertOtherReturn:
-                    copyFiles = NO;
-                    break;
-                    
-                case NSAlertAlternateReturn:
-                    [filesInput removeAllObjects];		// zero the array before it is returned.
-                    return;
-                    break;
-            }
                 break;
         }
     }
@@ -14626,7 +14621,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     NSTextField *buildLabel = [[[NSTextField alloc] initWithFrame: NSMakeRect( 0, 0, 230, 16)] autorelease];
     [buildLabel setStringValue: [NSString stringWithFormat: @"BuildNo: %@", [formatter stringFromDate: buildDate]]];
     [buildLabel setFont: [NSFont systemFontOfSize: 12]];
-    [buildLabel setTextColor: [NSColor disabledControlTextColor]];
+    [buildLabel setTextColor: [NSColor redColor]];
     [buildLabel setAlignment: NSRightTextAlignment];
     [buildLabel setEditable: NO];
     [buildLabel setSelectable: NO];

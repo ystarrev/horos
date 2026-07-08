@@ -7385,7 +7385,11 @@
 		};
 		59F69A4E1056328D008585F5 /* API */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			name = API;
+			inputPaths = (
+				"$(SRCROOT)/Horos/Scripts/Horos/API.sh",
+			);
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/HorosAPI.framework",
 				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/OsiriXAPI.framework",
@@ -7845,6 +7849,9 @@
 				"#echo \"code signed\"",
 				"#fi",
 				"mkdir -p \"$DERIVED_FILE_DIR\"",
+				"if [ \"$CONFIGURATION\" = \"Debug\" ] && [ -d \"$TARGET_BUILD_DIR/$WRAPPER_NAME\" ]; then",
+				"  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f \"$TARGET_BUILD_DIR/$WRAPPER_NAME\" || true",
+				"fi",
 				"touch \"$DERIVED_FILE_DIR/CodeSigning.stamp\"",
 				"",
 			);
@@ -9488,10 +9495,6 @@
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"-sectcreate",
-					__TEXT,
-					__info_plist,
-					Horos/Info.plist,
 					"-ldcmqrdb",
 					"-ldcmnet",
 					"-ldcmtls",
@@ -9555,7 +9558,8 @@
 			baseConfigurationReference = F3C3F0702893A429004B2F61 /* Horos.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TA74QT8SLC;
 				DYLIB_COMPATIBILITY_VERSION = 1.0.0;
@@ -9788,7 +9792,7 @@
 			baseConfigurationReference = F3C3F0702893A429004B2F61 /* Horos.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TA74QT8SLC;
@@ -9967,7 +9971,7 @@
 			baseConfigurationReference = F3C3F0702893A429004B2F61 /* Horos.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TA74QT8SLC;
@@ -10159,10 +10163,6 @@
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"-sectcreate",
-					__TEXT,
-					__info_plist,
-					Horos/Info.plist,
 					"-ldcmqrdb",
 					"-ldcmnet",
 					"-ldcmtls",
@@ -10320,7 +10320,7 @@
 			baseConfigurationReference = F3C3F0702893A429004B2F61 /* Horos.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TA74QT8SLC;

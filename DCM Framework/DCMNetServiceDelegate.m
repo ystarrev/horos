@@ -67,13 +67,11 @@ static DCMNetServiceDelegate *_netServiceDelegate = nil;
 {
 	if (self = [super init])
 	{
-		_dicomNetBrowser = [[NSNetServiceBrowser alloc] init];
-		[_dicomNetBrowser setDelegate:self];
-        
         [[NSUserDefaultsController sharedUserDefaultsController] addObserver: self
                                                                   forKeyPath: @"values.searchDICOMBonjour"
                                                                      options: NSKeyValueObservingOptionNew
                                                                      context: NULL];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_applicationDidBecomeActive:) name:NSApplicationDidBecomeActiveNotification object:NSApp];
         
 		[self update];
 	}
@@ -84,9 +82,33 @@ static DCMNetServiceDelegate *_netServiceDelegate = nil;
 {
 	if( [[NSUserDefaults standardUserDefaults] boolForKey:@"searchDICOMBonjour"])
 	{
-		NSLog(@"searchDICOMBonjour - searchForServicesOfType : _dicom._tcp");
-		[_dicomNetBrowser searchForServicesOfType:@"_dicom._tcp." inDomain:@""];
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startDICOMBonjourSearch) object:nil];
+        [self performSelector:@selector(_startDICOMBonjourSearch) withObject:nil afterDelay:6.0];
 	}
+    else
+    {
+        [_dicomNetBrowser setDelegate:nil];
+        [_dicomNetBrowser stop];
+        [_dicomNetBrowser release];
+        _dicomNetBrowser = nil;
+    }
+}
+
+- (void)_applicationDidBecomeActive:(NSNotification*)notification
+{
+    [self update];
+}
+
+- (void)_startDICOMBonjourSearch
+{
+    if (_dicomNetBrowser)
+        return;
+
+    _dicomNetBrowser = [[NSNetServiceBrowser alloc] init];
+    [_dicomNetBrowser setDelegate:self];
+
+    NSLog(@"searchDICOMBonjour - searchForServicesOfType : _dicom._tcp");
+    [_dicomNetBrowser searchForServicesOfType:@"_dicom._tcp" inDomain:@""];
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
@@ -98,8 +120,12 @@ static DCMNetServiceDelegate *_netServiceDelegate = nil;
 - (void)dealloc
 {
 	NSLog(@"DCMNetServiceDelegate dealloc");
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startDICOMBonjourSearch) object:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:NSApplicationDidBecomeActiveNotification object:NSApp];
     [[NSUserDefaultsController sharedUserDefaultsController] removeObserver: self forKeyPath: @"values.searchDICOMBonjour"];
 	[_dicomServices release];
+    [_dicomNetBrowser setDelegate:nil];
+    [_dicomNetBrowser stop];
 	[_dicomNetBrowser release];
 	[super dealloc];
 }
@@ -146,7 +172,17 @@ static DCMNetServiceDelegate *_netServiceDelegate = nil;
 //Bonjour Delegate methods
 - (void)netServiceBrowser:(NSNetServiceBrowser *)aNetServiceBrowser didNotSearch:(NSDictionary *)errorDict
 {
-	NSLog(@"netServiceBrowser didNotSearch");	
+	NSLog(@"netServiceBrowser didNotSearch: %@", errorDict);
+    NSInteger errorCode = [[errorDict objectForKey:NSNetServicesErrorCode] integerValue];
+    [_dicomNetBrowser setDelegate:nil];
+    [_dicomNetBrowser stop];
+    [_dicomNetBrowser release];
+    _dicomNetBrowser = nil;
+    if (errorCode != NSNetServicesMissingRequiredConfigurationError)
+    {
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startDICOMBonjourSearch) object:nil];
+        [self performSelector:@selector(_startDICOMBonjourSearch) withObject:nil afterDelay:10.0];
+    }
 }
 
 - (void)netServiceBrowser:(NSNetServiceBrowser *)aNetServiceBrowser didRemoveService:(NSNetService *)aNetService moreComing:(BOOL)moreComing

@@ -1973,7 +1973,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 {
 	NSLog( @"startDICOMBonjour");
 
-	BonjourDICOMService = [[NSNetService alloc] initWithDomain:@"" type:@"_dicom._tcp." name: [[NSUserDefaults standardUserDefaults] stringForKey: @"AETITLE"] port:[[[NSUserDefaults standardUserDefaults] stringForKey: @"AEPORT"] intValue]];
+	BonjourDICOMService = [[NSNetService alloc] initWithDomain:@"" type:@"_dicom._tcp" name: [[NSUserDefaults standardUserDefaults] stringForKey: @"AETITLE"] port:[[[NSUserDefaults standardUserDefaults] stringForKey: @"AEPORT"] intValue]];
 	
 	NSString* description = [NSUserDefaults bonjourSharingName];
 	NSMutableDictionary *dict = [NSMutableDictionary dictionary];
@@ -2457,7 +2457,11 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
             [passedFilenames addObject:path];
     }
 
-	[[BrowserController currentBrowser] subSelectFilesAndFoldersToAdd: passedFilenames];
+    NSDictionary *importOptions = [NSDictionary dictionaryWithObjectsAndKeys:
+                                   [NSNumber numberWithBool: YES], @"COPYDATABASE",
+                                   [NSNumber numberWithInteger: always], @"COPYDATABASEMODE",
+                                   nil];
+	[[BrowserController currentBrowser] subSelectFilesAndFoldersToAdd: passedFilenames options: importOptions];
 }
 
 static BOOL firstCall = YES;

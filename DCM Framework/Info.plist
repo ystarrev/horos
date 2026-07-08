@@ -8,6 +8,14 @@
 	<string>${EXECUTABLE_NAME}</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Allows Horos to discover nearby Horos databases and DICOM services.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_osirixdb._tcp</string>
+		<string>_dicom._tcp</string>
+		<string>_horosiphone._tcp</string>
+	</array>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundlePackageType</key>

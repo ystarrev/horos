@@ -195,6 +195,11 @@ extern const char *GetPrivateIP(void);
     _bonjour = nil;
 }
 
+- (void)netServiceDidPublish:(NSNetService *)sender
+{
+    NSLog(@"Horos Bonjour net service published: %@ %@:%ld", [sender name], [sender type], (long)[sender port]);
+}
+
 - (void) netServiceDidStop:(NSNetService *)sender
 {
     NSLog(@"Horos Bonjour net service did stop");

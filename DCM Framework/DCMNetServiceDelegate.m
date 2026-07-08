@@ -157,7 +157,7 @@ static DCMNetServiceDelegate *_netServiceDelegate = nil;
 
 - (void)netServiceBrowser:(NSNetServiceBrowser *)aNetServiceBrowser didFindService:(NSNetService *)aNetService moreComing:(BOOL)moreComing
 {
-	if( aNetService == publisher || [[aNetService name] isEqualToString: [publisher name]])
+	if( aNetService == publisher)
 	{
 	
 	}
@@ -284,6 +284,13 @@ static DCMNetServiceDelegate *_netServiceDelegate = nil;
 							nil];
 	if (description)
 		[s setObject:description forKey:@"Description"];
+
+    if( [dict valueForKey: @"UID"])
+    {
+        NSString *uid = [[[NSString alloc] initWithData: [dict valueForKey: @"UID"] encoding:NSUTF8StringEncoding] autorelease];
+        if( [uid length])
+            [s setObject: uid forKey: @"UID"];
+    }
 	
 	if( [dict valueForKey: @"icon"])
 	{
@@ -610,6 +617,27 @@ static DCMNetServiceDelegate *_netServiceDelegate = nil;
 
 - (void)netServiceDidResolveAddress:(NSNetService *)aNetService
 {
+    if( publisher && aNetService != publisher)
+    {
+        NSDictionary *serviceInfo = [DCMNetServiceDelegate DICOMNodeInfoFromTXTRecordData: [aNetService TXTRecordData]];
+        NSDictionary *publisherInfo = [DCMNetServiceDelegate DICOMNodeInfoFromTXTRecordData: [publisher TXTRecordData]];
+        NSString *serviceUID = [serviceInfo objectForKey: @"UID"];
+        NSString *publisherUID = [publisherInfo objectForKey: @"UID"];
+
+        if( [serviceUID length] && [serviceUID isEqualToString: publisherUID])
+        {
+            NSLog( @"DICOM Bonjour node ignored as this Horos instance UID=%@", serviceUID);
+            if( [_dicomServices containsObject: aNetService])
+            {
+                [_dicomServices removeObject: aNetService];
+                [[NSNotificationCenter defaultCenter] postNotificationName:@"DCMNetServicesDidChange" object:nil];
+            }
+
+            [aNetService stop];
+            return;
+        }
+    }
+
 	NSLog( @"DICOM Bonjour node detected: %@", aNetService);
 	[[NSNotificationCenter defaultCenter] postNotificationName:@"DCMNetServicesDidChange" object:nil];
     

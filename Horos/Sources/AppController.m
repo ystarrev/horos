@@ -847,7 +847,36 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 
 +(NSString*)UID
 {
-    return [NSString stringWithFormat:@"%@|%@", [N2Shell serialNumber], NSUserName()];
+    static NSString *cachedUID = nil;
+
+    @synchronized(self)
+    {
+        if( [cachedUID length])
+            return cachedUID;
+
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        NSString *instanceUID = [defaults stringForKey: @"HorosBonjourInstanceUID"];
+        if( [instanceUID length] == 0)
+        {
+            instanceUID = [[NSUUID UUID] UUIDString];
+            [defaults setObject: instanceUID forKey: @"HorosBonjourInstanceUID"];
+            [defaults synchronize];
+        }
+
+        NSString *serialNumber = [N2Shell serialNumber];
+        NSString *hostName = [[NSProcessInfo processInfo] hostName];
+        NSString *userName = NSUserName();
+        NSMutableArray *parts = [NSMutableArray arrayWithObject: instanceUID];
+        if( [serialNumber length])
+            [parts addObject: serialNumber];
+        if( [hostName length])
+            [parts addObject: hostName];
+        if( [userName length])
+            [parts addObject: userName];
+
+        cachedUID = [[parts componentsJoinedByString: @"|"] copy];
+        return cachedUID;
+    }
 }
 
 + (void) setUSETOOLBARPANEL: (BOOL) b
@@ -2036,6 +2065,18 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 	[BonjourDICOMService publish];
 	
 	[[DCMNetServiceDelegate sharedNetServiceDelegate] setPublisher: BonjourDICOMService];
+}
+
+- (void)netServiceDidPublish:(NSNetService *)sender
+{
+    if( sender == BonjourDICOMService)
+        NSLog( @"Horos DICOM Bonjour service published: %@ %@:%ld", [sender name], [sender type], (long)[sender port]);
+}
+
+- (void)netService:(NSNetService *)sender didNotPublish:(NSDictionary *)errorDict
+{
+    if( sender == BonjourDICOMService)
+        NSLog( @"Warning: Horos DICOM Bonjour service did not publish: %@ %@:%ld error=%@", [sender name], [sender type], (long)[sender port], errorDict);
 }
 
 

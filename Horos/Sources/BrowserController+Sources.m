@@ -1046,6 +1046,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
     if ([[txt objectForKey:@"UID"] isEqualToString:[AppController UID]])
     {
+        NSLog(@"DNS-SD Bonjour source ignored as this Horos instance UID=%@", [txt objectForKey:@"UID"]);
         [self _stopDNSSDResolveTaskForKey:key];
         return;
     }

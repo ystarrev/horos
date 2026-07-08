@@ -117,7 +117,10 @@ extern const char *GetPrivateIP(void);
             return;
         } else
             if ([keyPath isEqualToString:OsirixBonjourSharingNameDefaultsKey]) {
-                //	[self ];
+                [_bonjour stop];
+                [_bonjour release];
+                _bonjour = nil;
+                [self updateBonjour];
                 return;
             } else
                 if ([keyPath isEqualToString:OsirixBonjourSharingIsPasswordProtectedDefaultsKey]) {
@@ -161,6 +164,26 @@ extern const char *GetPrivateIP(void);
 }
 
 - (void)updateBonjour {
+    if (!_listener)
+    {
+        if (_bonjour)
+        {
+            [_bonjour stop];
+            [_bonjour release];
+            _bonjour = nil;
+        }
+
+        NSLog(@"Horos database Bonjour sharing is disabled");
+        return;
+    }
+
+    if (_bonjour && [_bonjour port] != [_listener port])
+    {
+        [_bonjour stop];
+        [_bonjour release];
+        _bonjour = nil;
+    }
+
     if (!_bonjour) {
         // lazily instantiate the NSNetService object that will advertise on our behalf.  Passing in "" for the domain causes the service
         // to be registered in the default registration domain, which will currently always be "local"
@@ -179,9 +202,7 @@ extern const char *GetPrivateIP(void);
     if( [_bonjour setTXTRecordData:[NSNetService dataFromTXTRecordDictionary:txtrec]] == NO)
         NSLog(@"Warning: Horos Bonjour net service setTXTRecordData FAILED");
     
-    if (_listener)
-        [_bonjour publish];
-    else [_bonjour stop];
+    [_bonjour publish];
 }
 
 - (NSNetService*)netService { // __deprecated

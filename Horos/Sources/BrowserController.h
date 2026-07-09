@@ -50,7 +50,7 @@
 @class MyOutlineView,DCMView,DCMPix;
 @class StructuredReportController,BrowserMatrix;
 @class PluginManagerController,WaitRendering, Wait, ActivityWindowController;
-@class WebPortalUser, DCMTKStudyQueryNode;
+@class DCMTKStudyQueryNode;
 
 enum RootTypes{PatientRootType, StudyRootType, RandomRootType};
 enum simpleSearchType {PatientNameSearch, PatientIDSearch};
@@ -215,11 +215,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     
     int								reportToolbarItemType;
     
-    IBOutlet NSWindow				*addStudiesToUserWindow;
-    IBOutlet NSWindow				*notificationEmailWindow;
-    IBOutlet NSArrayController		*notificationEmailArrayController;
-    NSString						*temporaryNotificationEmail, *customTextNotificationEmail;
-    
     NSImage							*notFoundImage;
     
     BOOL							ROIsAndKeyImagesButtonAvailable;
@@ -300,7 +295,7 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 @property(readonly) BonjourBrowser *bonjourBrowser;
 @property(readonly) const char *cfixedDocumentsDirectory __deprecated, *cfixedIncomingDirectory __deprecated, *cfixedTempNoIndexDirectory __deprecated, *cfixedIncomingNoIndexDirectory __deprecated;
 
-@property(retain) NSString *searchString, *CDpassword, *pathToEncryptedFile, *passwordForExportEncryption, *temporaryNotificationEmail, *customTextNotificationEmail, *comparativePatientUID, *smartAlbumDistantName, *distantStudyMessage, *distantSearchString, *selectedAlbumName;
+@property(retain) NSString *searchString, *CDpassword, *pathToEncryptedFile, *passwordForExportEncryption, *comparativePatientUID, *smartAlbumDistantName, *distantStudyMessage, *distantSearchString, *selectedAlbumName;
 @property(retain) NSPredicate *fetchPredicate, *testPredicate;
 @property(retain) NSArray *comparativeStudies;
 @property(readonly) NSPredicate *filterPredicate;
@@ -541,6 +536,8 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (IBAction) buildAllThumbnails:(id) sender;
 
 // Finding Comparisons
+- (id)studyForDisplayOnlyThisPatientItem:(id)item;
+- (NSString *)patientNameForDisplayOnlyThisPatientItem:(id)item;
 - (NSPredicate *)samePatientStudiesPredicateForStudy:(id)study;
 - (BOOL)study:(id)study matchesSamePatientAsStudy:(id)referenceStudy;
 - (NSArray *)studiesForDisplayOnlyThisPatientMatchingStudy:(id)study;
@@ -569,8 +566,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (IBAction)selectNoAlbums:(id)sender;
 - (void) selectAlbumWithName: (NSString*) name;
 - (NSArray *)databaseSelection;
-
-+ (void) asyncWADOXMLDownloadURL:(NSURL*) url;
 
 - (void) refreshMatrix:(id) sender;
 - (void)updateReportToolbarIcon:(NSNotification *)note;
@@ -629,13 +624,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 + (NSArray<NSString *> *)DatabaseObjectXIDsPasteboardTypes;
 
 #pragma mark Deprecated
-
-@property(readonly) NSManagedObjectContext *userManagedObjectContext __deprecated;
-@property(readonly) NSManagedObjectModel *userManagedObjectModel __deprecated;
-
--(long)saveUserDatabase __deprecated;
--(WebPortalUser*)userWithName:(NSString*)name __deprecated;
-
 
 
 @end

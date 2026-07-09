@@ -47,7 +47,6 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSDateComponents *)components:(NSCalendarUnit)flags fromDate:(NSDate *)date;
 + (NSString *):(NSDate *)date descriptionWithCalendarFormat:(NSString *)format;
 
-+ (NSArray<NSString *> *)WeasisCustomizationPaths;
 
 @end
 

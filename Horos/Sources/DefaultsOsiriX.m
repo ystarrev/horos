@@ -905,7 +905,6 @@ static NSHost *currentHost = nil;
     [defaultValues setObject:@"1" forKey:@"FULL32BITPIPELINE"];
     [defaultValues setObject:@"4" forKey:@"MAXNUMBEROF32BITVIEWERS"];
     [defaultValues setObject:@"1" forKey:@"CFINDCommentsAndStatusSupport"];
-    [defaultValues setObject:@"1" forKey:@"restorePasswordWebServer"];
     [defaultValues setObject:@"comment" forKey:@"commentFieldForAutoFill"];
     [defaultValues setObject:[NSString stringWithFormat:@"%d", syncroRatio] forKey:@"DefaultModeForNonVolumicSeries"];
 	[defaultValues setObject:@"2" forKey:@"drawerState"]; // NSDrawerOpenState
@@ -923,9 +922,6 @@ static NSHost *currentHost = nil;
         superSampling = [[defaultValues objectForKey:@"superSampling"] floatValue];
         [[NSUserDefaults standardUserDefaults] setFloat:superSampling forKey:@"superSampling"];
     }
-    
-	
-    [defaultValues setObject:@"200" forKey: @"FetchLimitForWebPortal"];
     
 	// ** DELETEFILELISTENER
 	[defaultValues setObject:@"1" forKey:@"DELETEFILELISTENER"];
@@ -976,10 +972,6 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject: @"20" forKey: @"stackThickness"];
 	[defaultValues setObject: @"20" forKey: @"stackThicknessOrthoMPR"];
 	[defaultValues setObject:@"0" forKey:@"AUTOROUTINGACTIVATED"];
-	[defaultValues setObject:@"0" forKey:@"httpXMLRPCServer"];
-	[defaultValues setObject:@"8080" forKey:@"httpXMLRPCServerPort"];
-	[defaultValues setObject:@"0" forKey:OsirixWebPortalEnabledDefaultsKey];
-	[defaultValues setObject:@"3333" forKey:OsirixWebPortalPortNumberDefaultsKey];
 	[defaultValues setObject:@"1" forKey:@"StrechWindows"];
 	[defaultValues setObject:@"0" forKey:@"ROUTINGACTIVATED"];
 	[defaultValues setObject: @"0" forKey: @"AUTOHIDEMATRIX"];
@@ -1012,7 +1004,6 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject: @"1" forKey: @"SAMESTUDY"];
 	[defaultValues setObject: @"0" forKey: @"recomputePatientUID"];
 	[defaultValues setObject: @"1" forKey: @"ReserveScreenForDB"];
-	[defaultValues setObject: @"1" forKey: @"notificationsEmailsInterval"];
     [defaultValues setObject: @"1" forKey: @"automaticallyRetrievePartialStudies"];
 	NSDateFormatter	*dateFormat = [[[NSDateFormatter alloc] init] autorelease];
 	[dateFormat setDateStyle: NSDateFormatterShortStyle];
@@ -1095,7 +1086,6 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"0" forKey:@"onlyDisplayImagesOfSamePatient"];
 	[defaultValues setObject:@"1" forKey:@"activateCGETSCP"];
     [defaultValues setObject:@"1" forKey:@"activateCFINDSCP"];
-	[defaultValues setObject:@"0" forKey:@"notificationsEmails"];
 	[defaultValues setObject:@"0" forKey:@"validateFilesBeforeImporting"];
 	[defaultValues setObject:@"10" forKey:@"defaultFrameRate"];
     [defaultValues setObject:@"10" forKey:@"defaultMovieRate"];
@@ -1107,17 +1097,9 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"1" forKey:@"useDCMTKForJP2K"];
 	[defaultValues setObject:@"1" forKey:@"MouseClickZoomCentered"];
 	[defaultValues setObject:@"1" forKey:@"exportOrientationIn3DExport"];
-	[defaultValues setObject:@"600" forKey:@"WADOTimeout"];
-	[defaultValues setObject:@"10" forKey:@"WADOMaximumConcurrentDownloads"];
 	[defaultValues setObject:@"1" forKey:@"autoSelectSourceCDDVD"];
 	[defaultValues setObject:@"1" forKey:@"ScanDiskIfDICOMDIRZero"];
-	[defaultValues setObject:@"1" forKey:@"WebServerTagUploadedStudiesWithUsername"];
     [defaultValues setObject:@"20" forKey:@"MaxNumberOfRetrieveForAutoQR"];
-    [defaultValues setObject:@"1800" forKey:@"WebServerTimeOut"]; // = 30*60 = 30 min 120*60 = 2 hours
-    [defaultValues setObject:@"400" forKey:@"MaxNumberOfFramesForWebPortalMovies"];
-    [defaultValues setObject:@"880" forKey:@"WebServerMaxWidthForMovie"];
-    [defaultValues setObject:@"880" forKey:@"WebServerMaxWidthForStillImage"];
-    [defaultValues setObject:@"512" forKey:@"WebServerMinWidthForMovie"];
     [defaultValues setObject:@"1" forKey:@"DICOMQueryAllowFutureQuery"];
     [defaultValues setObject:@"1" forKey:@"SeriesListVisible"];
     [defaultValues setObject:@"1" forKey:@"RescaleDuring3DResampling"];
@@ -1139,17 +1121,13 @@ static NSHost *currentHost = nil;
     [defaultValues setObject:@"2" forKey:@"MaxConcurrentPODRetrieves"];
 	[defaultValues setObject:@"1" forKey:@"QRRemoveDuplicateEntries"];
     [defaultValues setObject:@"1" forKey:@"tileWindowsOrderByStudyDate"];
-    [defaultValues setObject:@"1" forKey:@"AllowPluginAuthenticationForWebPortal"];
 	[defaultValues setObject:@"1" forKey:@"UsePatientBirthDateForUID"];
     [defaultValues setObject:@"1" forKey:@"UsePatientIDForUID"];
 	[defaultValues setObject:@"1" forKey:@"UsePatientNameForUID"];
     [defaultValues setObject:@"1" forKey:@"putSrcAETitleInSourceApplicationEntityTitle"];
     [defaultValues setObject:@"0" forKey:@"putDstAETitleInPrivateInformationCreatorUID"];
-    [defaultValues setObject:@"1" forKey:@"wadoRequestRequireValidToken"];
     [defaultValues setObject:@"1024" forKey: @"DicomImageScreenCaptureWidth"];
     [defaultValues setObject:@"1024" forKey: @"DicomImageScreenCaptureHeight"];
-    [defaultValues setObject:@"30" forKey: @"WebPortalMaximumNumberOfRecentStudies"];
-    [defaultValues setObject:@"10" forKey: @"WebPortalMaximumNumberOfDaysForRecentStudies"];
     [defaultValues setObject:@"2" forKey:@"yearOldDatabaseDisplay"];
     [defaultValues setObject:@"1" forKey:@"SendControllerConcurrentThreads"];
     [defaultValues setObject:@"4" forKey:@"MaximumSendControllerConcurrentThreads"];
@@ -1157,7 +1135,6 @@ static NSHost *currentHost = nil;
     [defaultValues setObject:@"1" forKey:@"COMMENTSAUTOFILLStudyLevel"];
     [defaultValues setObject:@"1" forKey:@"ROIDrawPlainEdge"];
     [defaultValues setObject:@"1" forKey:@"PACSOnDemandForSearchField"];
-    [defaultValues setObject:@"1" forKey:@"CloseAllWindowsBeforeXMLRPCOpen"];
     [defaultValues setObject:@"1" forKey:@"ROIColorRotation"];
     
     [defaultValues setObject:@"1" forKey:@"scrollThroughSeries"];
@@ -1725,8 +1702,6 @@ static NSHost *currentHost = nil;
     [defaultValues setObject: @YES forKey: @"defaultShading"];
     [defaultValues setObject: @YES forKey: @"dontDeleteStudiesIfInAlbum"];
 		
-	[defaultValues setObject:[NSNumber numberWithBool:YES] forKey:OsirixWadoServiceEnabledDefaultsKey];
-	[defaultValues setObject:[NSNumber numberWithBool:YES] forKey:OsirixWebPortalUsesWeasisDefaultsKey];
 		return defaultValues;
 	}
 @end

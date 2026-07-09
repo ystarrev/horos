@@ -4221,19 +4221,6 @@ extern "C"
 				[d setObject: object forKey: @"query"];
 				[d setObject: [dictionary objectForKey: @"retrieveMode"] forKey: @"retrieveMode"];
 				
-				if( [object isMemberOfClass: [DCMTKSeriesQueryNode class]])
-				{
-					__block id parentItem = nil;
-					dispatch_sync(dispatch_get_main_queue(), ^{
-						parentItem = [[outlineView parentForItem: object] retain];
-					});
-					if( parentItem)
-					{
-						[d setObject: parentItem forKey:@"study"];	// for WADO retrieve at Series level
-						[parentItem release];
-					}
-				}
-				
 				if( [dictionary objectForKey: @"moveDestination"])
 					[d setObject: [dictionary objectForKey: @"moveDestination"] forKey: @"moveDestination"];
 				

@@ -33,8 +33,5 @@ cp -R OSIPETPreferencePane.prefPane/Contents/Resources/$1.lproj /Users/antoinero
 rm -R -f /Users/antoinerosset/Desktop/Localized3.8/Preference\ Panes/OSIViewerPreferencePane/$1.lproj
 cp -R OSIViewerPreferencePane.prefPane/Contents/Resources/$1.lproj /Users/antoinerosset/Desktop/Localized3.8/Preference\ Panes/OSIViewerPreferencePane
 
-rm -R -f /Users/antoinerosset/Desktop/Localized3.8/Preference\ Panes/OSIWebSharingPreferencePane/$1.lproj
-cp -R OSIWebSharingPreferencePane.prefPane/Contents/Resources/$1.lproj /Users/antoinerosset/Desktop/Localized3.8/Preference\ Panes/OSIWebSharingPreferencePane
-
 rm -R -f /Users/antoinerosset/Desktop/Localized3.8/Preference\ Panes/AYDicomPrintPreferencePane/$1.lproj
 cp -R AYDicomPrint.prefPane/Contents/Resources/$1.lproj /Users/antoinerosset/Desktop/Localized3.8/Preference\ Panes/AYDicomPrintPreferencePane

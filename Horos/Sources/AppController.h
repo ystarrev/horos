@@ -50,7 +50,6 @@
 */
 
 #import <AppKit/AppKit.h>
-#import "XMLRPCMethods.h"
 #import "UserNotifications/UserNotifications.h"
 
 #include "options.h"
@@ -63,7 +62,6 @@
 @class BrowserController;
 @class SplashScreen;
 @class DCMNetServiceDelegate;
-@class WebPortal;
 
 enum
 {
@@ -133,8 +131,7 @@ extern AppController* OsiriX;
     NSDictionary                    *BonjourDICOMTXTRecord;
 	
 	NSTimer							*updateTimer;
-	XMLRPCInterface					*XMLRPCServer;
-	
+
 	BOOL							checkAllWindowsAreVisibleIsOff, isSessionInactive;
 	
 	int								lastColumns, lastRows, lastCount;
@@ -145,7 +142,6 @@ extern AppController* OsiriX;
 @property BOOL checkAllWindowsAreVisibleIsOff, isSessionInactive;
 @property (readonly) NSMenu *filtersMenu, *recentStudiesMenu, *windowsTilingMenuRows, *windowsTilingMenuColumns;
 @property(readonly) NSNetService* dicomBonjourPublisher;
-@property (readonly) XMLRPCInterface *XMLRPCServer;
 @property(readonly) BonjourPublisher* bonjourPublisher;
 
 + (BOOL) isFDACleared;
@@ -278,9 +274,7 @@ extern AppController* OsiriX;
 + (NSInvocation*)fill12BitBufferInvocation;
 
 #pragma mark -
--(WebPortal*)defaultWebPortal;
 
--(NSString*)weasisBasePath;
 
 -(void)setReceivingIcon;
 -(void)unsetReceivingIcon;

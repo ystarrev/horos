@@ -389,7 +389,6 @@ static const NSMutableArray* pluginPanes = [[NSMutableArray alloc] init];
 	[self addPaneWithResourceNamed:@"OSIListenerPreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"Listener", @"Panel in preferences window") image:[NSImage imageNamed:@"Network"] toGroupWithName:name];
 	[self addPaneWithResourceNamed:@"OSILocationsPreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"Locations", @"Panel in preferences window") image:[NSImage imageNamed:@"AccountPreferences"] toGroupWithName:name];
 	[self addPaneWithResourceNamed:@"OSIAutoroutingPreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"Routing", @"Panel in preferences window") image:[NSImage imageNamed:@"route"] toGroupWithName:name];
-	[self addPaneWithResourceNamed:@"OSIWebSharingPreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"Web Server", @"Panel in preferences window") image:[NSImage imageNamed:@"Safari"] toGroupWithName:name];
     [self addPaneWithResourceNamed:@"OSIPACSOnDemandPreferencePane" inBundle:bundle withTitle:NSLocalizedString(@"On-Demand", @"Panel in preferences window") image:[NSImage imageNamed:@"Cloud"] toGroupWithName:name];
 	
 	for (NSArray* pluginPane in pluginPanes)

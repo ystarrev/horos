@@ -508,8 +508,8 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
                 if (self.mainDatabase)
                     N2LogStackTrace(@"****************************: creating independent context from already independent database");
                 
-                // Our main DicomDatabase context will listen to changes from the independentContext
-                // Warning: our independentContext will NOT receive changes from the main DicomDatabase context: add it by yourself if needed (see WebPortalConnection.mm)
+                // Our main DicomDatabase context will listen to changes from the independentContext.
+                // Warning: the independentContext will not receive main DicomDatabase changes unless a caller explicitly merges them.
                 [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(mergeChangesFromContextDidSaveNotification:) name:NSManagedObjectContextDidSaveNotification object:moc];
             }
             

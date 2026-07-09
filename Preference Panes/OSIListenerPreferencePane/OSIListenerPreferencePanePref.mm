@@ -41,8 +41,6 @@
 #import "NSUserDefaultsController+OsiriX.h"
 //#import "DDKeychain.h"
 #import <SecurityInterface/SFChooseIdentityPanel.h>
-#import "WebPortal.h"
-#import "WebPortalDatabase.h"
 #import "NSAppleScript+N2.h"
 
 #include <netdb.h>

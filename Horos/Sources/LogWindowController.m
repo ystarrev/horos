@@ -52,7 +52,6 @@
 		case 1: a = [receive arrangedObjects]; filename = @"ReceiveLog.csv"; break;
 		case 2: a = [send arrangedObjects]; filename = @"SendLog.csv"; break;
 		case 3: a = [move arrangedObjects]; filename = @"MoveLog.csv"; break;
-		case 4: a = [web arrangedObjects]; filename = @"WebLog.csv"; break;
 	}
 	
 	NSMutableString *csv = [NSMutableString string];

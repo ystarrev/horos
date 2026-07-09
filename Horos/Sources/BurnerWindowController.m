@@ -1042,46 +1042,6 @@
             thread.name = NSLocalizedString( @"Burning...", nil);
             thread.status = NSLocalizedString( @"Writing DICOMDIR...", nil);
             [self addDICOMDIRUsingDCMTK_forFilesAtPaths:newFiles dicomImages:dbObjects];
-            
-            if( [[NSUserDefaults standardUserDefaults] boolForKey: @"BurnWeasis"] && cancelled == NO)
-            {
-                thread.name = NSLocalizedString( @"Burning...", nil);
-                thread.status = NSLocalizedString( @"Adding Weasis...", nil);
-                
-                NSString* weasisPath = [[AppController sharedAppController] weasisBasePath];
-                for (NSString* subpath in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:weasisPath error:NULL])
-                    [[NSFileManager defaultManager] copyItemAtPath:[weasisPath stringByAppendingPathComponent:subpath] toPath:[burnFolder stringByAppendingPathComponent:subpath] error:NULL];
-                
-                NSString *burnWeasisPath = [burnFolder stringByAppendingPathComponent:@"weasis"];
-                NSArray *skips = @[ @".DS_Store" ];
-                for (NSString *weasisPath in [[Horos WeasisCustomizationPaths] reverseObjectEnumerator]) { // reversed to mimic the WebPortal priorities
-                    NSDirectoryEnumerator *de = [[NSFileManager defaultManager] enumeratorAtPath:weasisPath];
-                    for (NSString *subpath in de)
-                        if (![skips containsObject:subpath.lastPathComponent]) {
-                            NSString *dest = [burnWeasisPath stringByAppendingPathComponent:subpath];
-                            if ([de.fileAttributes[NSFileType] isEqual:NSFileTypeDirectory]) {
-                                [[NSFileManager defaultManager] createDirectoryAtPath:dest withIntermediateDirectories:YES attributes:nil error:NULL];
-                            } else {
-                                if ([[NSFileManager defaultManager] fileExistsAtPath:dest])
-                                    [[NSFileManager defaultManager] removeItemAtPath:dest error:NULL];
-                                [[NSFileManager defaultManager] copyItemAtPath:[weasisPath stringByAppendingPathComponent:subpath] toPath:dest error:NULL];
-                            }
-                        }
-                }
-                
-                // Change Label in Autorun.inf
-                NSStringEncoding encoding;
-                NSString *autorunInf = [NSString stringWithContentsOfFile: [burnFolder stringByAppendingPathComponent: @"Autorun.inf"] usedEncoding: &encoding error: nil];
-                
-                if( autorunInf.length)
-                {
-                    autorunInf = [autorunInf stringByReplacingOccurrencesOfString: @"Label=Weasis" withString: [NSString stringWithFormat: @"Label=%@", cdName]];
-                    
-                    [[NSFileManager defaultManager] removeItemAtPath: [burnFolder stringByAppendingPathComponent: @"Autorun.inf"] error: nil];
-                    [autorunInf writeToFile: [burnFolder stringByAppendingPathComponent: @"Autorun.inf"] atomically: YES encoding: encoding  error: nil];
-                }
-            }
-            
             /*
              
             FAUZE - 24-Mar-2018 - Light viewer does not exist.
@@ -1224,11 +1184,6 @@
 	{
 		fattrs = [manager attributesOfItemAtPath:file error:NULL];
 		size += [fattrs fileSize]/1024;
-	}
-	
-	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"BurnWeasis"])
-	{
-		size += 17 * 1024; // About 17MB
 	}
 	
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"BurnOsirixApplication"])

@@ -38,8 +38,7 @@
 enum
 {
 	CMOVERetrieveMode = 0,
-	CGETRetrieveMode = 1,
-	WADORetrieveMode = 2
+	CGETRetrieveMode = 1
 };
 
 #import <Cocoa/Cocoa.h>

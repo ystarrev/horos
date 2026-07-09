@@ -72,7 +72,7 @@ enum burnerDestination
 	IBOutlet NSWindow *passwordWindow;
 	
 	BOOL buttonsDisabled;
-	BOOL burnSuppFolder, burnOsiriX, burnHtml, burnWeasis;
+	BOOL burnSuppFolder, burnOsiriX, burnHtml;
     
 	int burnAnimationIndex;
     int irisAnimationIndex;

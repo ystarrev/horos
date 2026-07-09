@@ -2075,7 +2075,6 @@ final class HorosSettingsWindowController: NSWindowController {
         .init(identifier: "listener", title: "Listener", imageName: "Network"),
         .init(identifier: "locations", title: "Locations", imageName: "AccountPreferences"),
         .init(identifier: "routing", title: "Routing", imageName: "route"),
-        .init(identifier: "webserver", title: "Web Server", imageName: "Safari"),
         .init(identifier: "ondemand", title: "On-Demand", imageName: "Cloud"),
     ]
 

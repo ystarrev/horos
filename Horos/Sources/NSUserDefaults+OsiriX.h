@@ -77,43 +77,6 @@ extern NSString* const OsirixBonjourSharingIsPasswordProtectedDefaultsKey;
 extern NSString* const OsirixBonjourSharingPasswordDefaultsKey;
 +(NSString*)bonjourSharingPassword;
 
-#pragma mark Web Portal
-
-extern NSString* const OsirixWebPortalEnabledDefaultsKey;
-+(BOOL)webPortalEnabled;
-
-extern NSString* const OsirixWebPortalAddressDefaultsKey;
-+(NSString*)webPortalAddress;
-+(NSString*)defaultWebPortalAddress;
-
-extern NSString* const OsirixWebPortalPortNumberDefaultsKey;
-+(NSInteger)webPortalPortNumber;
-+(NSInteger)defaultWebPortalPortNumber;
-
-extern NSString* const OsirixWebPortalUsesSSLDefaultsKey;
-+(BOOL)webPortalUsesSSL;
-
-extern NSString* const OsirixWebPortalUsesWeasisDefaultsKey;
-+(BOOL)webPortalUsesWeasis;
-
-extern NSString* const OsirixWadoServiceEnabledDefaultsKey;
-+(BOOL)wadoServiceEnabled;
-
-	extern NSString* const OsirixWebPortalPrefersCustomWebPagesKey;
-+(BOOL)webPortalPrefersCustomWebPages;
-
-extern NSString* const OsirixWebPortalNotificationsEnabledDefaultsKey;
-+(BOOL)webPortalNotificationsEnabled;
-
-extern NSString* const OsirixWebPortalNotificationsIntervalDefaultsKey;
-+(NSInteger)webPortalNotificationsInterval;
-
-extern NSString* const OsirixWebPortalRequiresAuthenticationDefaultsKey;
-+(BOOL)webPortalRequiresAuthentication;
-
-extern NSString* const OsirixWebPortalUsersCanRestorePasswordDefaultsKey;
-+(BOOL)webPortalUsersCanRestorePassword;
-
 // MARK: DICOM Communications
 
 + (NSString*)defaultAETitle;

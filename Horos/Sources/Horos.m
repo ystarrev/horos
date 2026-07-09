@@ -106,8 +106,5 @@
 #pragma clang diagnostic pop
 }
 
-+ (NSArray<NSString *> *)WeasisCustomizationPaths {
-    return @[ [@"~/Library/Application Support/Horos/Weasis" stringByExpandingTildeInPath], @"/Library/Application Support/Horos/Weasis" ];
-}
 
 @end

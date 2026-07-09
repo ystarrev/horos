@@ -3541,22 +3541,22 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                 else if ([[fattrs objectForKey:NSFileSize] longLongValue] > 0)
                 {
                     //=======================
-                    //JF wado rest multi-part WADO-RS WADORS
+                    // Multipart DICOM response import
                     //=======================
                     
                     //if file not available for reading, do nothing
                     NSFileHandle *file = [NSFileHandle fileHandleForReadingAtPath:srcPath];
                     if (file)
                     {
-#define WADORSSIZE 0x500
+#define MULTIPART_DICOM_HEADER_SIZE 0x500
                         BOOL dicomFileCreated=NO;
                         NSMutableData *data = [NSMutableData data];
-                        [data appendData:[file readDataOfLength:WADORSSIZE]];
+                        [data appendData:[file readDataOfLength:MULTIPART_DICOM_HEADER_SIZE]];
                         
-                        if( data.length >= WADORSSIZE)
+                        if( data.length >= MULTIPART_DICOM_HEADER_SIZE)
                         {
                             NSData *applicationDicom = [@"application/dicom;" dataUsingEncoding:NSASCIIStringEncoding];
-                            NSRange applicationDicomRange  = [data rangeOfData:applicationDicom options:0 range:NSMakeRange(0, WADORSSIZE)];
+                            NSRange applicationDicomRange  = [data rangeOfData:applicationDicom options:0 range:NSMakeRange(0, MULTIPART_DICOM_HEADER_SIZE)];
                             if (applicationDicomRange.location != NSNotFound)
                             {
                                 //read the rest of file
@@ -3640,7 +3640,7 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                         
                     }
                     //===========================
-                    //JF end wado rest multi-part
+                    // End multipart DICOM response import
                     //===========================
                     
                     

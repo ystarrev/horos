@@ -42,7 +42,7 @@
 /** \brief  Window Controller for network logs */
 @interface LogWindowController : NSWindowController
 {
-	IBOutlet NSArrayController *receive, *move, *send, *web;
+	IBOutlet NSArrayController *receive, *move, *send;
 }
 
 - (IBAction) export:(id) sender;

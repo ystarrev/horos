@@ -21,15 +21,6 @@
 		<command name="DeleteSelected" code="deledele" description="Delete selected series">
 			<cocoa name="DeleteSelected" class="OsiriXScripts"/>
 		</command>
-		<command name="invoke XMLRPC method" code="ixrcixrc" description="Invoke XMLRPC method">
-			<cocoa name="PerformXMLRPCCommand" class="OsiriXScripts"/>
-			<direct-parameter description="The Method to invoke" type="text"/>
-			<parameter name="with parameters" code="impt" description="the XMLRPC method parameters" optional="yes">
-				<cocoa key="XMLRPCParams"/>
-				<type type="record" list="yes"/>
-			</parameter>
-			<result type="record"/>
-		</command>
 	</suite>
 	<!--
     TEXT SUITE

@@ -45,12 +45,6 @@
 
 }
 
-+ (NSString *)passwordForHTTPServer;
-+ (BOOL)setPasswordForHTTPServer:(NSString *)password;
-
-+ (void)createNewIdentity;
-+ (NSArray *)SSLIdentityAndCertificates;
-
 + (NSString *)applicationTemporaryDirectory;
 + (NSString *)stringForSecExternalFormat:(SecExternalFormat)extFormat;
 + (NSString *)stringForSecExternalItemType:(SecExternalItemType)itemType;

@@ -86,7 +86,6 @@ extern NSString* const OsirixChangeFocalPointNotification;
 extern NSString* const OsirixWindow3dCloseNotification;
 extern NSString* const OsirixDisplay3dPointNotification;
 extern NSString* const AppPluginDownloadInstallDidFinishNotification;
-extern NSString* const OsirixXMLRPCMessageNotification;
 extern NSString* const OsirixDragMatrixImageMovedNotification;
 extern NSString* const OsirixNotification;
 extern NSString* const OsiriXFileReceivedNotification;

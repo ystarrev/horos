@@ -87,7 +87,6 @@ NSString* const OsirixChangeFocalPointNotification = @"changeFocalPoint";
 NSString* const OsirixWindow3dCloseNotification = @"Window3DClose";
 NSString* const OsirixDisplay3dPointNotification = @"Display3DPoint";
 NSString* const AppPluginDownloadInstallDidFinishNotification = @"PluginManagerControllerDownloadAndInstallDidFinish";
-NSString* const OsirixXMLRPCMessageNotification = @"OsiriXXMLRPCMessage";
 NSString* const OsirixDragMatrixImageMovedNotification = @"DragMatrixImageMoved";
 NSString* const OsirixNotification = @"VRCameraDidChange";
 NSString* const OsiriXFileReceivedNotification = @"OsiriXFileReceivedNotification";

@@ -348,7 +348,6 @@ static DCMNetServiceDelegate *_netServiceDelegate = nil;
                         
                     [mdict removeObjectForKey: @"CGET"];
                     [mdict removeObjectForKey: @"CMOVE"];
-                    [mdict removeObjectForKey: @"WADO"];
                     
                     [serversArray replaceObjectAtIndex: i withObject: mdict];
                     

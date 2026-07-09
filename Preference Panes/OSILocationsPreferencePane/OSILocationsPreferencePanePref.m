@@ -55,14 +55,9 @@
 	@"RLE"
 *************************************************/
 
-@interface NSURLRequest (DummyInterface)
-+ (BOOL)allowsAnyHTTPSCertificateForHost:(NSString*)host;
-+ (void)setAllowsAnyHTTPSCertificate:(BOOL)allow forHost:(NSString*)host;
-@end
-
 @implementation OSILocationsPreferencePanePref
 
-@synthesize WADOPort, WADOhttps, WADOTransferSyntax, WADOUrl, WADOUsername, WADOPassword, testingNodes;
+@synthesize testingNodes;
 
 @synthesize TLSEnabled, TLSAuthenticated, TLSUseDHParameterFileURL;
 @synthesize TLSDHParameterFileURL;
@@ -77,7 +72,6 @@
 		NSNib *nib = [[[NSNib alloc] initWithNibNamed: @"OSILocationsPreferencePanePref" bundle: nil] autorelease];
 		[nib instantiateWithOwner:self topLevelObjects:&_tlos];
 		
-        [WADOSettings retain];
         [TLSSettings retain];
         
 		[self setMainView: [mainWindow contentView]];
@@ -371,16 +365,12 @@
 {
 	NSLog(@"dealloc OSILocationsPreferencePanePref");
 	
-	[WADOUrl release];
-	[WADOUsername release];
-	[WADOPassword release];
 	[stringEncoding release];
 	
 	[TLSDHParameterFileURL release];
 	[TLSSupportedCipherSuite release];
     [TLSAuthenticationCertificate release];
     
-    [WADOSettings release];
     [TLSSettings release];
     
     [_tlos release]; _tlos = nil;
@@ -399,10 +389,6 @@
     [aServer setObject:@"Description" forKey:@"Description"];
 	[aServer setObject:[NSNumber numberWithInt:0] forKey:@"TransferSyntax"];
 	[aServer setObject: [NSNumber numberWithInt: 0] forKey: @"retrieveMode"]; // CMove
-	[aServer setObject: [NSNumber numberWithInt: 8080] forKey: @"WADOPort"];
-	[aServer setObject: [NSNumber numberWithInt: -1] forKey: @"WADOTransferSyntax"]; // useOrig=true
-	[aServer setObject: [NSNumber numberWithInt: 0] forKey: @"WADOhttps"];
-	[aServer setObject: @"wado" forKey: @"WADOUrl"];
 	
 	[aServer setObject:[NSNumber numberWithBool:NO] forKey:@"TLSEnabled"];
 	[aServer setObject:[NSNumber numberWithBool:NO] forKey:@"TLSAuthenticated"];
@@ -437,82 +423,6 @@
 	[NSApp stopModal];
 }
 
-- (IBAction) testWADOUrl: (id) sender
-{
-	NSString *protocol = WADOhttps ? @"https" : @"http";
-	
-	NSMutableDictionary *aServer = [[dicomNodes arrangedObjects] objectAtIndex: [[dicomNodes tableView] selectedRow]];
-	
-    NSString* lpbit = @"";
-    if ([WADOUsername length] && [WADOPassword length])
-        lpbit = [NSString stringWithFormat:@"%@:%@@", WADOUsername, WADOPassword];
-
-	NSString *baseURL = [NSString stringWithFormat: @"%@://%@%@:%d/%@?requestType=WADO", protocol, lpbit, [aServer valueForKey: @"Address"], WADOPort, WADOUrl];
-	
-	NSURL *url = [NSURL URLWithString: [baseURL stringByAppendingFormat:@"&studyUID=%@&seriesUID=%@&objectUID=%@&contentType=application/dicom%@", @"1", @"1", @"1", @"&useOrig=true"]];
-	
-	NSLog( @"URL to test: %@", baseURL);
-	
-	@try
-	{
-		[NSURLRequest setAllowsAnyHTTPSCertificate:YES forHost:[url host]];
-	}
-	@catch (NSException * e)
-	{
-		NSLog( @"******* NSURLRequest setAllowsAnyHTTPSCertificate");
-	}
-	
-	NSError *error = nil;
-	[NSData dataWithContentsOfURL: url options: 0 error: &error];
-	
-	if( error)
-		NSRunCriticalAlertPanel( NSLocalizedString( @"URL download Error", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, [error localizedDescription]);
-	else
-		NSRunInformationalAlertPanel( NSLocalizedString( @"URL download Succeeded", nil), NSLocalizedString( @"It works !", nil), NSLocalizedString( @"OK", nil), nil, nil);
-}
-
-- (IBAction) editWADO: (id) sender
-{
-	NSMutableDictionary *aServer = [[dicomNodes arrangedObjects] objectAtIndex: [[dicomNodes tableView] selectedRow]];
-	
-	self.WADOPort = [[aServer valueForKey: @"WADOPort"] intValue];
-	self.WADOUrl = [aServer valueForKey: @"WADOUrl"];
-	self.WADOPassword = [aServer valueForKey: @"WADOPassword"];
-	self.WADOUsername = [aServer valueForKey: @"WADOUsername"];
-	self.WADOTransferSyntax = [[aServer valueForKey: @"WADOTransferSyntax"] intValue];
-	self.WADOhttps = [[aServer valueForKey: @"WADOhttps"] intValue];
-	
-	[NSApp beginSheet: WADOSettings
-		modalForWindow: [[self mainView] window]
-		modalDelegate: nil
-		didEndSelector: nil
-		contextInfo: nil];
-	
-	int result = [NSApp runModalForWindow: WADOSettings];
-	[WADOSettings makeFirstResponder: nil];
-	
-	[NSApp endSheet: WADOSettings];
-	[WADOSettings orderOut: self];
-	
-	if( result == NSRunStoppedResponse)
-	{
-		[aServer setObject: [NSNumber numberWithInt: 2] forKey: @"retrieveMode"]; // WADORetrieveMode
-		[aServer setObject: [NSNumber numberWithInt: WADOPort] forKey: @"WADOPort"];
-		[aServer setObject: [NSNumber numberWithInt: WADOTransferSyntax] forKey: @"WADOTransferSyntax"];
-		[aServer setObject: [NSNumber numberWithInt: WADOhttps] forKey: @"WADOhttps"];
-        if( WADOUrl)
-            [aServer setObject: WADOUrl forKey: @"WADOUrl"];
-        if( WADOUsername)
-            [aServer setObject: WADOUsername forKey: @"WADOUsername"];
-        if( WADOPassword)
-            [aServer setObject: WADOPassword forKey: @"WADOPassword"];
-		
-		// disable TLS
-		[aServer setObject:[NSNumber numberWithBool:NO] forKey:@"TLSEnabled"];
-		
-		[[NSUserDefaults standardUserDefaults] setObject: [dicomNodes arrangedObjects] forKey: @"SERVERS"];
-	}
-}
 
 - (void) resetTest
 {
@@ -983,33 +893,6 @@
 {
 	for( NSMutableDictionary *suite in self.TLSSupportedCipherSuite)
 		[suite setObject: [NSNumber numberWithBool: NO] forKey: @"Supported"];
-}
-
-@end
-
-
-@implementation NotWADOValueTransformer
-
-+ (Class)transformedValueClass
-{
-    return [NSNumber class];
-}
-
-+ (BOOL)allowsReverseTransformation
-{
-    return NO;
-}
-
-- (id)transformedValue:(id)value
-{
-	if (value != nil)
-	{
-		float retrieveMode = [value intValue]; // this should be the tag of the retrieve mode
-		if (retrieveMode==2)
-			return [NSNumber numberWithInt:0];
-		return [NSNumber numberWithInt:1];
-	}
-	return [NSNumber numberWithInt:1];
 }
 
 @end

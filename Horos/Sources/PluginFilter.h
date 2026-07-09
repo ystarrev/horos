@@ -105,7 +105,6 @@
 - (long) prepareFilter:(ViewerController*) vC;
 @end
 
-@class WebPortalConnection, WebPortalUser;
 
 @interface PluginFilter (Optional)
 
@@ -122,8 +121,5 @@
 -(NSArray*)toolbarAllowedIdentifiersForBrowserController:(id)controller;
 -(NSToolbarItem*)toolbarItemForItemIdentifier:(NSString*) identifier forBrowserController:(id)controller;
 
-- (BOOL)isPasswordProtected:(NSString *)path forConnection:(WebPortalConnection *)wpc;
-- (NSData *)httpResponseForPath:(NSString *)path forConnection:(WebPortalConnection *)wpc;
-- (WebPortalUser *)authenticateConnection:(WebPortalConnection *)wpc parameters:(NSDictionary *)params;
 
 @end;

@@ -63,9 +63,6 @@
 #import "NSFileManager+N2.h"
 #import "ThreadsManager.h"
 #import "NSThread+N2.h"
-#import "WebPortalUser.h"
-#import "WebPortal.h"
-#import "WebPortalDatabase.h"
 #import "DICOMExport.h"
 #endif
 
@@ -2300,62 +2297,5 @@ static NSRecursiveLock *dbModifyLock = nil;
     return comparatives;
 }
 
-#ifdef OSIRIX_VIEWER
--(NSArray*)authorizedUsers
-{
-    NSManagedObjectContext* webContext = [WebPortal.defaultWebPortal.database independentContext];
-    
-    @try
-    {
-        NSFetchRequest *dbRequest = [NSFetchRequest fetchRequestWithEntityName: @"User"];
-        dbRequest.predicate = [NSPredicate predicateWithValue:YES];
-        dbRequest.sortDescriptors = [NSArray arrayWithObject: [NSSortDescriptor sortDescriptorWithKey: @"name" ascending: YES]];
-        
-        // Find all users
-        NSArray* users = [webContext executeFetchRequest: dbRequest error:NULL];
-        
-        // Find all comparatives for this patient
-        NSArray* allStudies = [self studiesForThisPatient];
-        
-        NSMutableArray* authorizedUsers = [NSMutableArray array];
-        for( WebPortalUser* user in users)
-        {
-            if( user.studyPredicate.length > 0)
-            {
-                NSArray *studies = nil;
-                
-                // First check the studyPredicate of the user
-                
-                if( user.canAccessPatientsOtherStudies)
-                    studies = [allStudies filteredArrayUsingPredicate: [DicomDatabase predicateForSmartAlbumFilter: user.studyPredicate]];
-                else
-                    studies = [[NSArray arrayWithObject: self] filteredArrayUsingPredicate: [DicomDatabase predicateForSmartAlbumFilter: user.studyPredicate]];
-                
-                if( studies.count)
-                    [authorizedUsers addObject: user];
-                
-                // And now check his list of specific studies
-                else 
-                {
-                    if( user.canAccessPatientsOtherStudies && [[user.studies.allObjects valueForKey:@"patientUID"] containsObject: self.patientUID])
-                        [authorizedUsers addObject: user];
-                    
-                    else if( [[user.studies.allObjects valueForKey:@"studyInstanceUID"] containsObject: self.studyInstanceUID])
-                        [authorizedUsers addObject: user];
-                }
-            }
-            else
-                [authorizedUsers addObject: user];
-        }
-        
-        return authorizedUsers;
-    }
-    @catch (NSException* e) {
-        N2LogExceptionWithStackTrace(e);
-    }
-    
-    return nil;
-}
-#endif
 
 @end

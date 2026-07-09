@@ -8,12 +8,6 @@ unzip -uo OsiriXReport.template.zip
 unzip -uo dciodvfy.zip
 unzip -uo Ming.zip
 
-unzip -uo weasis-portable*.zip -d weasis
-chmod -R 755 weasis
-find "$SRCROOT/Binaries/weasis" -name __MACOSX | xargs rm -Rf
-# remove empty macOS app that prevents notarization
-rm -Rf "$SRCROOT/Binaries/weasis/viewer-mac.app"
-
 cd "$SRCROOT/Binaries/EmbeddedPlugins"
 #unzip -uo HorosCloud.horosplugin.zip
 

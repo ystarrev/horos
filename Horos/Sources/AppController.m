@@ -82,7 +82,6 @@
 #import "OSIWindowController.h"
 #import "Notifications.h"
 #import "WaitRendering.h"
-#import "WebPortal.h"
 #import "DicomImage.h"
 #import "ThreadsManager.h"
 #import "NSThread+N2.h"
@@ -102,7 +101,6 @@
 #import "DICOMTLS.h"
 #import "DicomStudy.h"
 #import "SRAnnotation.h"
-#import "WebPortalDatabase.h"
 #import "NSString+SymlinksAndAliases.h"
 #include <OpenGL/OpenGL.h>
 
@@ -566,7 +564,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 
 @implementation AppController
 
-@synthesize checkAllWindowsAreVisibleIsOff, filtersMenu, windowsTilingMenuRows, recentStudiesMenu, windowsTilingMenuColumns, isSessionInactive, dicomBonjourPublisher = BonjourDICOMService, XMLRPCServer;
+@synthesize checkAllWindowsAreVisibleIsOff, filtersMenu, windowsTilingMenuRows, recentStudiesMenu, windowsTilingMenuColumns, isSessionInactive, dicomBonjourPublisher = BonjourDICOMService;
 @synthesize bonjourPublisher = _bonjourPublisher;
 
 + (void)load
@@ -1251,16 +1249,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
             restartListener = YES;
         if ([[previousDefaults valueForKey: @"preferredSyntaxForIncoming"] intValue] != [defaults integerForKey: @"preferredSyntaxForIncoming"])
             restartListener = YES;
-        if ([[previousDefaults valueForKey: @"httpXMLRPCServer"] intValue] != [defaults integerForKey: @"httpXMLRPCServer"])
-            restartListener = YES;
-        if ([[previousDefaults valueForKey: @"httpXMLRPCServerPort"] intValue] != [defaults integerForKey: @"httpXMLRPCServerPort"])
-            restartListener = YES;
-        if ([[previousDefaults valueForKey: @"httpWebServer"] intValue] != [defaults integerForKey: @"httpWebServer"])
-            restartListener = YES;
-        if ([[previousDefaults valueForKey: @"httpWebServerPort"] intValue] != [defaults integerForKey: @"httpWebServerPort"])
-            restartListener = YES;
-        if ([[previousDefaults valueForKey: @"encryptedWebServer"] intValue] != [defaults integerForKey: @"encryptedWebServer"])
-            restartListener = YES;
         if ([[previousDefaults valueForKey: @"LISTENERCHECKINTERVAL"] intValue] != [defaults integerForKey: @"LISTENERCHECKINTERVAL"])
             restartListener = YES;
         if ([[previousDefaults valueForKey: @"SingleProcessMultiThreadedListener"] intValue] != [defaults integerForKey: @"SingleProcessMultiThreadedListener"])
@@ -1320,9 +1308,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
             [[BrowserController currentBrowser] setDBDate];
             [[BrowserController currentBrowser] outlineViewRefresh];
         }
-        
-    //	if( [(NSString*) [defaults valueForKey:OsirixWebPortalAddressDefaultsKey] length] == 0)
-    //		[defaults setValue: [[AppController sharedAppController] privateIP] forKey:OsirixWebPortalAddressDefaultsKey];
         
         if (restartListener)
         {
@@ -1998,20 +1983,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 		[dict setValue: @"YES" forKey: @"CGET"]; // TXTRECORD doesnt support NSNumber
 	else
 		[dict setValue: @"NO" forKey: @"CGET"];  // TXTRECORD doesnt support NSNumber
-	
-	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"httpWebServer"] && [[NSUserDefaults standardUserDefaults] boolForKey: @"wadoServer"])
-	{
-		int port = [NSUserDefaults webPortalPortNumber];
-		[dict setValue: @"YES" forKey: @"WADO"]; // TXTRECORD doesnt support NSNumber
-		[dict setValue: [NSString stringWithFormat:@"%d", port] forKey: @"WADOPort"];
-		[dict setValue: @"/wado" forKey: @"WADOURL"];
-		
-		if( [[NSUserDefaults standardUserDefaults] boolForKey: @"encryptedWebServer"])
-			[dict setValue: @"https" forKey: @"WADOProtocol"];
-		else
-			[dict setValue: @"http" forKey: @"WADOProtocol"];
-	}
-	
 	switch( [[NSUserDefaults standardUserDefaults] integerForKey: @"preferredSyntaxForIncoming"])
 	{
 		case 0:
@@ -2265,18 +2236,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 		
 	if( [[url scheme] isEqualToString: @"osirix"] || [[url scheme] isEqualToString: @"horos"] )
 	{
-		if( [[NSUserDefaults standardUserDefaults] boolForKey: @"httpXMLRPCServer"] == NO)
-		{
-			int result = NSRunInformationalAlertPanel(NSLocalizedString(@"URL scheme", nil), NSLocalizedString(@"Horos URL scheme [horos:// , osirix://] is currently not activated!\r\rShould I activate it now? Restart is necessary.", nil), NSLocalizedString(@"No",nil), NSLocalizedString(@"Activate & Restart",nil), nil);
-			
-			if( result == NSAlertAlternateReturn)
-			{
-				[[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"httpXMLRPCServer"];
-				[[NSUserDefaults standardUserDefaults] synchronize];
-				[[NSApplication sharedApplication] terminate: self];
-			}
-		}
-		
 		NSString *content = [url resourceSpecifier];
 		
 		BOOL betweenQuotation = NO;
@@ -2346,12 +2305,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 							NSLog( @"**** exception in getUrl: %@", param);
 						}
 					}
-				}
-				
-				if( [urlParameters objectForKey: @"methodName"]) // XML-RPC message
-				{
-                    NSMutableDictionary* paramDict = [NSMutableDictionary dictionaryWithDictionary:urlParameters];
-                    [XMLRPCServer methodCall:[urlParameters objectForKey:@"methodName"] parameters:paramDict error:NULL];
 				}
 				
 				if( [urlParameters objectForKey: @"image"])
@@ -2451,10 +2404,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 					}
 				}
 			}
-		}
-        else if( [url.pathExtension isEqualToString: @"xml"])
-        {
-            [BrowserController asyncWADOXMLDownloadURL: url];
 		}
 	}
 }
@@ -2570,10 +2519,6 @@ static BOOL firstCall = YES;
 	
     [DICOMTLS eraseKeys];
     
-//	[webServer release];
-//	webServer = nil;
-	
-	XMLRPCServer = nil;
 	
 	[self closeAllViewers: self];
 	
@@ -2582,7 +2527,6 @@ static BOOL firstCall = YES;
 	
 	[[BrowserController currentBrowser] browserPrepareForClose];
     
-	[WebPortal finalizeWebPortalClass];
 
 	[ROI saveDefaultSettings];
 	
@@ -3831,12 +3775,7 @@ static BOOL initialized = NO;
 	
 	[DicomDatabase initializeDicomDatabaseClass];
 	[BrowserController initializeBrowserControllerClass];
-	[WebPortal initializeWebPortalClass];
     _bonjourPublisher = [[BonjourPublisher alloc] init];
-	
-	if( [[NSUserDefaults standardUserDefaults] boolForKey:@"httpXMLRPCServer"]) {
-		if(XMLRPCServer == nil) XMLRPCServer = [[XMLRPCInterface alloc] init];
-	}
 	
 	NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
     [nc addObserver: self
@@ -5463,36 +5402,6 @@ static BOOL initialized = NO;
 }
 
 #pragma mark -
-
-- (NSManagedObjectContext*) defaultWebPortalManagedObjectContext
-{
-    @try
-    {
-        return [[[WebPortal defaultWebPortal] database] managedObjectContext];
-    }
-    @catch (NSException *e) {
-        NSLog( @"***** defaultWebPortalManagedObjectContext : %@", e);
-    }
-    
-    static NSManagedObjectContext *fakeContext = nil;
-    if( fakeContext == nil)
-    {
-        fakeContext  = [[NSManagedObjectContext alloc] init];
-        NSManagedObjectModel *model = [[NSManagedObjectModel alloc] initWithContentsOfURL: [NSURL fileURLWithPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/WebPortalDB.momd"]]];
-        NSPersistentStoreCoordinator *psc = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel: model];
-        [fakeContext setPersistentStoreCoordinator: psc];
-    }
-    return fakeContext;
-}
-
--(WebPortal*)defaultWebPortal {
-	return [WebPortal defaultWebPortal];
-}
-
-
--(NSString*)weasisBasePath {
-	return [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"weasis"];
-}
 
 
 static NSMutableDictionary* _receivingDict = nil;

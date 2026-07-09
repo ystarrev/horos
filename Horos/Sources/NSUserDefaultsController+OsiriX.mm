@@ -47,9 +47,6 @@
 
 NSString* const OsirixBonjourSharingActiveFlagDefaultsKey = OsirixBonjourSharingIsActiveDefaultsKey;
 NSString* const OsirixBonjourSharingPasswordFlagDefaultsKey = OsirixBonjourSharingIsPasswordProtectedDefaultsKey;
-NSString* const OsirixWebServerUsesWeasisDefaultsKey = OsirixWebPortalUsesWeasisDefaultsKey;
-NSString* const OsirixWadoServerActiveDefaultsKey = OsirixWadoServiceEnabledDefaultsKey;
-NSString* const OsirixWebServerPrefersCustomWebPagesKey = OsirixWebPortalPrefersCustomWebPagesKey;
 
 +(BOOL)IsBonjourSharingActive {
 	return NSUserDefaults.bonjourSharingIsActive;
@@ -69,18 +66,6 @@ NSString* const OsirixWebServerPrefersCustomWebPagesKey = OsirixWebPortalPrefers
 
 +(NSString*)DefaultBonjourSharingName {
 	return NSUserDefaults.defaultBonjourSharingName;
-}
-
-+(BOOL)WebServerUsesWeasis {
-	return NSUserDefaults.webPortalUsesWeasis;
-}
-
-+(BOOL)WadoServerActive {
-	return NSUserDefaults.wadoServiceEnabled;
-}
-
-+(BOOL)WebServerPrefersCustomWebPages {
-	return NSUserDefaults.webPortalPrefersCustomWebPages;
 }
 
 @end

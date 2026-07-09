@@ -111,9 +111,7 @@
 #import "PluginManagerController.h"
 #import "N2OpenGLViewWithSplitsWindow.h"
 #import "XMLController.h"
-#import "WebPortalConnection.h"
 #import "Notifications.h"
-#import "CSMailMailClient.h"
 #import "NSImage+OsiriX.h"
 #import "NSString+N2.h"
 #import "NSView+N2.h"
@@ -129,7 +127,6 @@
 #import "NSThread+N2.h"
 #import "ThreadModalForWindowController.h"
 #import "NSUserDefaults+OsiriX.h"
-#import "WADODownload.h"
 #import "NSManagedObject+N2.h"
 #import "DICOMExport.h"
 #import "PrettyCell.h"
@@ -141,7 +138,6 @@
 #import "QuicktimeExport.h"
 #import "DICOMToNSString.h"
 #import "XMLControllerDCMTKCategory.h"
-#import "WADOXML.h"
 #import "DicomDir.h"
 #import "CPRVolumeData.h"
 #import "O2HMigrationAssistant.h"
@@ -155,9 +151,6 @@
 #import "AnonymizationViewController.h"
 #import "NSFileManager+N2.h"
 
-#import "WebPortal.h"
-#import "WebPortal+Email+Log.h"
-#import "WebPortalDatabase.h"
 
 #define DISTANTSTUDYFONT @"Helvetica-BoldOblique"
 
@@ -411,8 +404,6 @@ static NSString*	OpenKeyImagesAndROIsToolbarItemIdentifier	= @"ROIsAndKeys.tif";
 static NSString*	OpenKeyImagesToolbarItemIdentifier	= @"Keys.tif";
 static NSString*	OpenROIsToolbarItemIdentifier	= @"ROIs.tif";
 static NSString*	ViewersToolbarItemIdentifier	= @"windows.tif";
-static NSString*	WebServerSingleNotification	= @"Safari.tif";
-static NSString*	AddStudiesToUserItemIdentifier	= @"NSUserAccounts";
 static NSString*    ResetSplitViewsItemIdentifier = @"Reset.pdf";
 static NSString*    HorosMigrationAssistantIdentifier = @"O2HMigrationAssistant.png";
 
@@ -617,7 +608,7 @@ static volatile BOOL waitForRunningProcess = NO;
 @synthesize sources = _sourcesArrayController;
 
 @synthesize CDpassword, passwordForExportEncryption, databaseIndexDictionary;
-@synthesize TimeFormat, TimeWithSecondsFormat, temporaryNotificationEmail, customTextNotificationEmail;
+@synthesize TimeFormat, TimeWithSecondsFormat;
 @synthesize DateTimeWithSecondsFormat, matrixViewArray, oMatrix, testPredicate;
 @synthesize databaseOutline, albumTable, comparativePatientUID, distantStudyMessage;
 @synthesize bonjourSourcesBox, timeIntervalType, smartAlbumDistantName, selectedAlbumName;
@@ -933,59 +924,6 @@ static NSConditionLock *threadLock = nil;
 #pragma mark-
 
 
-+ (void) asyncWADOXMLDownloadURL:(NSURL*) url
-{
-    WADOXML *w = [[[WADOXML alloc] init] autorelease];
-    
-    [w parseURL: url];
-    
-    NSThread* t = [[[NSThread alloc] initWithTarget:[[[WADODownload alloc] init] autorelease] selector:@selector(WADODownload:) object: w.getWADOUrls] autorelease];
-    t.name = NSLocalizedString( @"WADO Retrieve...", nil);
-    t.supportsCancel = YES;
-    t.status = [url lastPathComponent];
-    [[ThreadsManager defaultManager] addThreadAndStart: t];
-}
-
-- (void) asyncWADODownload:(NSString*) filename
-{
-    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-    
-    NSMutableArray *urlToDownloads = [NSMutableArray array];
-    
-    @try
-    {
-        NSArray *urlsR = [[NSString stringWithContentsOfFile:filename usedEncoding:NULL error:NULL] componentsSeparatedByString: @"\r"];
-        NSArray *urlsN = [[NSString stringWithContentsOfFile:filename usedEncoding:NULL error:NULL] componentsSeparatedByString: @"\n"];
-        
-        if( urlsR.count >= urlsN.count)
-        {
-            for( NSString *url in urlsR)
-            {
-                if( url.length)
-                    [urlToDownloads addObject: [NSURL URLWithString: url]];
-            }
-        }
-        else
-        {
-            for( NSString *url in urlsN)
-            {
-                if( url.length)
-                    [urlToDownloads addObject: [NSURL URLWithString: url]];
-            }
-        }
-    }
-    @catch ( NSException *e)
-    {
-        N2LogExceptionWithStackTrace(e);
-    }
-    WADODownload *downloader = [[[WADODownload alloc] init] autorelease];
-    [downloader WADODownload: urlToDownloads];
-    
-    [[NSFileManager defaultManager] removeItemAtPath: filename error: nil];
-    
-    [pool release];
-}
-
 - (void) addFilesAndFolderToDatabase:(NSArray*) filenames
 {
     [self addFilesAndFolderToDatabase: filenames options: nil];
@@ -1038,15 +976,7 @@ static NSConditionLock *threadLock = nil;
                                         
                                         if( [[itemPath lastPathComponent] characterAtIndex: 0] != '.')
                                         {
-                                            if( [[itemPath pathExtension] isEqualToString: @"dcmURLs"])
-                                            {
-                                                NSThread* t = [[[NSThread alloc] initWithTarget:self selector:@selector(asyncWADODownload:) object: filename] autorelease];
-                                                t.name = NSLocalizedString( @"WADO Retrieve...", nil);
-                                                t.supportsCancel = YES;
-                                                t.status = [itemPath lastPathComponent];
-                                                [[ThreadsManager defaultManager] addThreadAndStart: t];
-                                            }
-                                            else if( [[itemPath pathExtension] isEqualToString: @"zip"] || [[itemPath pathExtension] isEqualToString: @"osirixzip"])
+                                            if( [[itemPath pathExtension] isEqualToString: @"zip"] || [[itemPath pathExtension] isEqualToString: @"osirixzip"])
                                             {
                                                 NSString *unzipPath = [@"/tmp" stringByAppendingPathComponent: @"unzip_folder"];
                                                 
@@ -1081,19 +1011,7 @@ static NSConditionLock *threadLock = nil;
                     }
                     else    // A file
                     {
-                        if( [[filename pathExtension] isEqualToString: @"xml"]) // Is it a WADO xml file? (like used for Weasis)
-                        {
-                            [BrowserController asyncWADOXMLDownloadURL: [NSURL fileURLWithPath: filename]];
-                        }
-                        else if( [[filename pathExtension] isEqualToString: @"dcmURLs"])
-                        {
-                            NSThread* t = [[[NSThread alloc] initWithTarget:self selector:@selector(asyncWADODownload:) object: filename] autorelease];
-                            t.name = NSLocalizedString( @"WADO Retrieve...", nil);
-                            t.supportsCancel = YES;
-                            t.status = [filename lastPathComponent];
-                            [[ThreadsManager defaultManager] addThreadAndStart: t];
-                        }
-                        else if( [[filename pathExtension] isEqualToString: @"zip"] || [[filename pathExtension] isEqualToString: @"osirixzip"])
+                        if( [[filename pathExtension] isEqualToString: @"zip"] || [[filename pathExtension] isEqualToString: @"osirixzip"])
                         {
                             NSString *unzipPath = [@"/tmp" stringByAppendingPathComponent: @"unzip_folder"];
                             
@@ -2667,31 +2585,6 @@ static NSConditionLock *threadLock = nil;
 {
     [_database initiateCleanUnlessAlreadyCleaning];
 }
-
-#pragma mark-
-#pragma mark Web Portal Database // deprecated, use WebPortal.defaultWebPortal
-
--(long)saveUserDatabase // __deprecated
-{
-    [[[WebPortal defaultWebPortal] database] save:NULL];
-    return 0;
-}
-
--(NSManagedObjectModel*)userManagedObjectModel // __deprecated
-{
-    return [[[WebPortal defaultWebPortal] database] managedObjectModel];
-}
-
--(NSManagedObjectContext*)userManagedObjectContext // __deprecated
-{
-    return [[[WebPortal defaultWebPortal] database] managedObjectContext];
-}
-
--(WebPortalUser*)userWithName:(NSString*)name // __deprecated
-{
-    return [[[WebPortal defaultWebPortal] database] userWithName:name];
-}
-
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
@@ -14519,12 +14412,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     
     if (isWritable) {
         [menu addItem: [NSMenuItem separatorItem]];
-        [menu addItemWithTitle: NSLocalizedString(@"Add selected study(s) to user(s)", nil)  action:@selector(addStudiesToUser:) keyEquivalent:@""];
-        [menu addItemWithTitle: NSLocalizedString(@"Send an email notification to user(s)", nil)  action:@selector(sendEmailNotification:) keyEquivalent:@""];
-    }
-    
-    if (isWritable) {
-        [menu addItem: [NSMenuItem separatorItem]];
         [menu addItemWithTitle: NSLocalizedString(@"Compress DICOM files", nil)  action:@selector(compressSelectedFiles:) keyEquivalent:@""];
         [menu addItemWithTitle: NSLocalizedString(@"Decompress DICOM files", nil)  action:@selector(decompressSelectedFiles:) keyEquivalent:@""];
     }
@@ -15161,9 +15048,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     [[DicomStudy dbModifyLock] lock];
     [[DicomStudy dbModifyLock] unlock];
     
-    [self saveUserDatabase];
     [_database save:NULL];
-    [self saveUserDatabase];
     
     [self waitForRunningProcesses];
     
@@ -15405,8 +15290,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
            [menuItem action] == @selector(exportTIFF:) ||
            [menuItem action] == @selector(exportDICOMFile:) ||
            [menuItem action] == @selector(sendMail:) ||
-           [menuItem action] == @selector(addStudiesToUser:) ||
-           [menuItem action] == @selector(sendEmailNotification:) ||
            [menuItem action] == @selector(compressSelectedFiles:) ||
            [menuItem action] == @selector(decompressSelectedFiles:) ||
            [menuItem action] == @selector(generateReport:) ||
@@ -17204,200 +17087,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 }
 
 
-- (IBAction) addStudiesToUser: (id) sender
-{
-    [notificationEmailArrayController setSelectionIndexes: [NSIndexSet indexSet]];
-    
-    [NSApp beginSheet: addStudiesToUserWindow
-       modalForWindow: self.window
-        modalDelegate: nil
-       didEndSelector: nil
-          contextInfo: nil];
-    
-    int result = [NSApp runModalForWindow: addStudiesToUserWindow];
-    [addStudiesToUserWindow makeFirstResponder: nil];
-    
-    if( result == NSRunStoppedResponse)
-    {
-        if( [[notificationEmailArrayController selectedObjects] count] == 0)
-        {
-            NSRunCriticalAlertPanel( NSLocalizedString( @"Error", nil), NSLocalizedString( @"No user(s) selected, no studies will be added.", nil), NSLocalizedString( @"OK", nil) , nil, nil);
-        }
-        else
-        {
-            // Add them to select users
-            
-            @try
-            {
-                for( NSManagedObject *user in [notificationEmailArrayController selectedObjects])
-                {
-                    NSArray *studiesArrayStudyInstanceUID = [[[user valueForKey: @"studies"] allObjects] valueForKey: @"studyInstanceUID"];
-                    NSArray *studiesArrayPatientUID = [[[user valueForKey: @"studies"] allObjects] valueForKey: @"patientUID"];
-                    
-                    for( NSManagedObject *study in [self databaseSelection])
-                    {
-                        if( [[study valueForKey: @"type"] isEqualToString:@"Series"])
-                            study = [study valueForKey:@"study"];
-                        
-                        if( [studiesArrayStudyInstanceUID indexOfObject: [study valueForKey: @"studyInstanceUID"]] == NSNotFound || [studiesArrayPatientUID
-                                                                                                                                     indexOfObjectPassingTest:^(id obj, NSUInteger idx, BOOL *stop) { if( [obj compare: [study valueForKey: @"patientUID"] options: NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch | NSWidthInsensitiveSearch] == NSOrderedSame) return YES; else return NO;}] == NSNotFound)
-                        {
-                            NSManagedObject *studyLink = [NSEntityDescription insertNewObjectForEntityForName: @"Study" inManagedObjectContext: user.managedObjectContext];
-                            
-                            [studyLink setValue: [[[study valueForKey: @"studyInstanceUID"] copy] autorelease] forKey: @"studyInstanceUID"];
-                            [studyLink setValue: [[[study valueForKey: @"patientUID"] copy] autorelease] forKey: @"patientUID"];
-                            
-                            [studyLink setValue: user forKey: @"user"];
-                            
-                            @try
-                            {
-                                [[[WebPortal defaultWebPortal] database] save:nil];
-                            }
-                            @catch (NSException * e)
-                            {
-                                N2LogExceptionWithStackTrace(e);
-                            }
-                            
-                            studiesArrayStudyInstanceUID = [[[user valueForKey: @"studies"] allObjects] valueForKey: @"studyInstanceUID"];
-                            studiesArrayPatientUID = [[[user valueForKey: @"studies"] allObjects] valueForKey: @"patientUID"];
-                            
-                            [[WebPortal defaultWebPortal] updateLogEntryForStudy: study withMessage: @"Add Study to User" forUser: [user valueForKey: @"name"] ip: nil];
-                        }
-                    }
-                }
-            }
-            @catch (NSException * e)
-            {
-                N2LogExceptionWithStackTrace(e);
-            }
-        }
-    }
-    
-    [NSApp endSheet: addStudiesToUserWindow];
-    [addStudiesToUserWindow orderOut: self];
-}
-
--(IBAction)sendEmailNotification:(id)sender
-{
-    self.temporaryNotificationEmail = @"";
-    self.customTextNotificationEmail = @"";
-    
-    [notificationEmailArrayController setSelectionIndexes: [NSIndexSet indexSet]];
-    
-    [NSApp beginSheet: notificationEmailWindow
-       modalForWindow: self.window
-        modalDelegate: nil
-       didEndSelector: nil
-          contextInfo: nil];
-    
-    int result;
-restart:
-    {
-        result = [NSApp runModalForWindow: notificationEmailWindow];
-    }
-    
-    [notificationEmailWindow makeFirstResponder: nil];
-    
-    if( result == NSRunStoppedResponse)
-    {
-        if( [[notificationEmailArrayController selectedObjects] count] == 0 && [temporaryNotificationEmail length] <= 3)
-        {
-            NSRunCriticalAlertPanel( NSLocalizedString( @"Error", nil), NSLocalizedString( @"Select one or more users.", nil), NSLocalizedString( @"OK", nil) , nil, nil);
-            goto restart;
-        }
-        else
-        {
-            @try
-            {
-                NSArray *destinationUsers = [notificationEmailArrayController selectedObjects];
-                
-                if( [temporaryNotificationEmail length] > 3)
-                {
-                    // First, create a temporary user
-                    
-                    if( [temporaryNotificationEmail rangeOfString: @"@"].location == NSNotFound)
-                    {
-                        NSRunCriticalAlertPanel( NSLocalizedString( @"Error", nil), NSLocalizedString( @"Is the user email correct? the @ character is not found.", nil), NSLocalizedString( @"OK", nil) , nil, nil);
-                        goto restart;
-                    }
-                    else
-                    {
-                        NSString *name = [temporaryNotificationEmail substringToIndex: [temporaryNotificationEmail rangeOfString: @"@"].location];
-                        
-                        if( [name length] < 2)
-                        {
-                            NSRunCriticalAlertPanel( NSLocalizedString( @"Error", nil), NSLocalizedString( @"Name needs to be at least 2 characters.", nil), NSLocalizedString( @"OK", nil) , nil, nil);
-                            goto restart;
-                        }
-                        else
-                        {
-                            NSManagedObject *user = [[WebPortal defaultWebPortal] newUserWithEmail:temporaryNotificationEmail];
-                            destinationUsers = [destinationUsers arrayByAddingObject: user];
-                        }
-                    }
-                }
-                
-                @try
-                {
-                    // Add them to selected users AND send a notification email
-                    if( [destinationUsers count] > 0)
-                    {
-                        for( NSManagedObject *user in destinationUsers)
-                        {
-                            NSArray *studiesArrayStudyInstanceUID = [[[user valueForKey: @"studies"] allObjects] valueForKey: @"studyInstanceUID"];
-                            NSArray *studiesArrayPatientUID = [[[user valueForKey: @"studies"] allObjects] valueForKey: @"patientUID"];
-                            
-                            for( NSManagedObject *study in [self databaseSelection])
-                            {
-                                if( [[study valueForKey: @"type"] isEqualToString:@"Series"])
-                                    study = [study valueForKey:@"study"];
-                                
-                                if( [studiesArrayStudyInstanceUID indexOfObject: [study valueForKey: @"studyInstanceUID"]] == NSNotFound ||
-                                   [studiesArrayPatientUID indexOfObjectPassingTest:^(id obj, NSUInteger idx, BOOL *stop) { if( [obj compare: [study valueForKey: @"patientUID"] options: NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch | NSWidthInsensitiveSearch] == NSOrderedSame) return YES; else return NO;}] == NSNotFound)
-                                {
-                                    NSManagedObject *studyLink = [NSEntityDescription insertNewObjectForEntityForName: @"Study" inManagedObjectContext: user.managedObjectContext];
-                                    
-                                    [studyLink setValue: [[[study valueForKey: @"studyInstanceUID"] copy] autorelease] forKey: @"studyInstanceUID"];
-                                    [studyLink setValue: [[[study valueForKey: @"patientUID"] copy] autorelease] forKey: @"patientUID"];
-                                    [studyLink setValue: [NSDate dateWithTimeIntervalSinceReferenceDate: [[NSUserDefaults standardUserDefaults] doubleForKey: @"lastNotificationsDate"]] forKey: @"dateAdded"];
-                                    
-                                    [studyLink setValue: user forKey: @"user"];
-                                    
-                                    @try
-                                    {
-                                        [[[WebPortal defaultWebPortal] database] save:nil];
-                                    }
-                                    @catch (NSException * e)
-                                    {
-                                        N2LogExceptionWithStackTrace(e);
-                                    }
-                                    
-                                    studiesArrayStudyInstanceUID = [[[user valueForKey: @"studies"] allObjects] valueForKey: @"studyInstanceUID"];
-                                    studiesArrayPatientUID = [[[user valueForKey: @"studies"] allObjects] valueForKey: @"patientUID"];
-                                    
-                                    [[WebPortal defaultWebPortal] updateLogEntryForStudy: study withMessage: @"Add Study to User" forUser: [user valueForKey: @"name"] ip: nil];
-                                }
-                            }
-                        }
-                        
-                        [[WebPortal defaultWebPortal] sendNotificationsEmailsTo: destinationUsers aboutStudies: [self databaseSelection] predicate: nil customText: self.customTextNotificationEmail];
-                    }
-                }
-                @catch( NSException *e)
-                {
-                    N2LogExceptionWithStackTrace(e);
-                }
-            }
-            @catch( NSException *e)
-            {
-                N2LogExceptionWithStackTrace(e);
-            }
-        }
-    }
-    
-    [NSApp endSheet: notificationEmailWindow];
-    [notificationEmailWindow orderOut: self];
-}
 
 -(IBAction)sendMail:(id)sender
 {
@@ -19327,22 +19016,6 @@ restart:
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(exportQuicktime:)];
     }
-    else if ([itemIdent isEqualToString: WebServerSingleNotification])
-    {
-        [toolbarItem setLabel: NSLocalizedString(@"Notification", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"Notification", nil)];
-        [toolbarItem setImage: [NSImage imageNamed: WebServerSingleNotification]];
-        [toolbarItem setTarget: self];
-        [toolbarItem setAction: @selector(sendEmailNotification:)];
-    }
-    else if ([itemIdent isEqualToString: AddStudiesToUserItemIdentifier])
-    {
-        [toolbarItem setLabel: NSLocalizedString(@"Add Studies", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"Add Studies", nil)];
-        [toolbarItem setImage: [NSImage imageNamed: AddStudiesToUserItemIdentifier]];
-        [toolbarItem setTarget: self];
-        [toolbarItem setAction: @selector(addStudiesToUser:)];
-    }
     else if ([itemIdent isEqualToString: Metal3DToolbarItemIdentifier])
     {
         [toolbarItem setLabel: NSLocalizedString(@"3D Metal", nil)];
@@ -19781,8 +19454,6 @@ restart:
                              //			 CDRomToolbarItemIdentifier,
                              Metal3DToolbarItemIdentifier,
                              MetalToolbarItemIdentifier,
-                             WebServerSingleNotification,
-                             AddStudiesToUserItemIdentifier,
                              QTSaveToolbarItemIdentifier,
                              QueryToolbarItemIdentifier,
                              ExportToolbarItemIdentifier,
@@ -20228,13 +19899,10 @@ restart:
     if ([self.database isReadOnly])
     {
         if ([toolbarItem.itemIdentifier isEqualToString:ImportToolbarItemIdentifier] || 
-            [toolbarItem.itemIdentifier isEqualToString:WebServerSingleNotification] || 
-            [toolbarItem.itemIdentifier isEqualToString:AddStudiesToUserItemIdentifier] || 
             [toolbarItem.itemIdentifier isEqualToString:AnonymizerToolbarItemIdentifier] || 
             [toolbarItem.itemIdentifier isEqualToString:TrashToolbarItemIdentifier] || 
             [toolbarItem.itemIdentifier isEqualToString:ReportToolbarItemIdentifier] || // TODO: if report already exists, allow user to view it
             [toolbarItem.itemIdentifier isEqualToString:BurnerToolbarItemIdentifier] || 
-            [toolbarItem.itemIdentifier isEqualToString:AddStudiesToUserItemIdentifier] || 
             [toolbarItem.itemIdentifier isEqualToString:QueryToolbarItemIdentifier]
             )
             return NO;
@@ -20242,13 +19910,10 @@ restart:
     
     if( containsDistantStudy)
     {
-        if ([toolbarItem.itemIdentifier isEqualToString:WebServerSingleNotification] || 
-            [toolbarItem.itemIdentifier isEqualToString:AddStudiesToUserItemIdentifier] || 
-            [toolbarItem.itemIdentifier isEqualToString:AnonymizerToolbarItemIdentifier] || 
+        if ([toolbarItem.itemIdentifier isEqualToString:AnonymizerToolbarItemIdentifier] ||
             [toolbarItem.itemIdentifier isEqualToString:TrashToolbarItemIdentifier] || 
             [toolbarItem.itemIdentifier isEqualToString:ReportToolbarItemIdentifier] ||
-            [toolbarItem.itemIdentifier isEqualToString:BurnerToolbarItemIdentifier] || 
-            [toolbarItem.itemIdentifier isEqualToString:AddStudiesToUserItemIdentifier]
+            [toolbarItem.itemIdentifier isEqualToString:BurnerToolbarItemIdentifier]
             )
             return NO;
     }
@@ -20274,8 +19939,6 @@ restart:
            [toolbarItem action] == @selector(exportTIFF:) || 
            [toolbarItem action] == @selector(exportDICOMFile:) ||
            [toolbarItem action] == @selector(exportROIAndKeyImagesAsDICOMSeries:) ||
-           [toolbarItem action] == @selector(addStudiesToUser:) || 
-           [toolbarItem action] == @selector(sendEmailNotification:) || 
            [toolbarItem action] == @selector(compressSelectedFiles:) || 
            [toolbarItem action] == @selector(decompressSelectedFiles:) || 
            [toolbarItem action] == @selector(generateReport:) || 
@@ -20324,24 +19987,6 @@ restart:
     {
         if( [ViewerController numberOf2DViewer] >= 1) return YES;
         else return NO;
-    }
-    
-    if( [[toolbarItem itemIdentifier] isEqualToString: WebServerSingleNotification])
-    {
-        if( containsDistantStudy)
-            return NO;
-        
-        if( [[NSUserDefaults standardUserDefaults] boolForKey: @"httpWebServer"]  == NO || [[NSUserDefaults standardUserDefaults] boolForKey: @"passwordWebServer"] == NO)
-            return NO;
-    }
-    
-    if( [[toolbarItem itemIdentifier] isEqualToString: AddStudiesToUserItemIdentifier])
-    {
-        if( containsDistantStudy)
-            return NO;
-        
-        if( [[NSUserDefaults standardUserDefaults] boolForKey: @"httpWebServer"]  == NO || [[NSUserDefaults standardUserDefaults] boolForKey: @"passwordWebServer"] == NO)
-            return NO;
     }
     
     return YES;
@@ -20647,11 +20292,61 @@ restart:
 {
     if( [databaseOutline selectedRow] != -1)
     {
-        NSManagedObject *aFile = [databaseOutline itemAtRow:[databaseOutline selectedRow]];
-        
+        id aFile = [databaseOutline itemAtRow:[databaseOutline selectedRow]];
+
         if( aFile)
-            [self setSearchString: [self patientNameForDisplayOnlyThisPatientItem: aFile]];
+        {
+            id study = [self studyForDisplayOnlyThisPatientItem: aFile];
+            NSPredicate *predicate = [self samePatientStudiesPredicateForStudy: study];
+
+            if( predicate == nil)
+                return;
+
+            NSString *patientName = [self patientNameForDisplayOnlyThisPatientItem: study];
+            NSString *description = patientName.length ? [NSString stringWithFormat: NSLocalizedString(@" / Patient: %@", nil), patientName] : NSLocalizedString(@" / Patient", nil);
+
+            [_searchString release];
+            _searchString = nil;
+            [searchField setStringValue: @""];
+
+            self.distantSearchString = nil;
+            self.distantSearchType = searchType;
+
+            @synchronized( self)
+            {
+                [distantSearchThread cancel];
+                [distantSearchThread release];
+                distantSearchThread = nil;
+            }
+
+            [self setFilterPredicate: predicate description: description];
+            [self outlineViewRefresh];
+            [databaseOutline scrollRowToVisible: [databaseOutline selectedRow]];
+        }
     }
+}
+
+- (id)studyForDisplayOnlyThisPatientItem: (id)item
+{
+    if( item == nil)
+        return nil;
+
+    @try {
+        if( [[item valueForKey: @"type"] isEqualToString: @"Study"])
+            return item;
+    }
+    @catch (NSException *exception) {
+    }
+
+    @try {
+        id study = [item valueForKey: @"study"];
+        if( study)
+            return study;
+    }
+    @catch (NSException *exception) {
+    }
+
+    return item;
 }
 
 - (NSString*) patientNameForDisplayOnlyThisPatientItem: (id)item
@@ -20850,6 +20545,10 @@ restart:
 
 - (NSPredicate *)samePatientStudiesPredicateForStudy:(id)study
 {
+    if( study == nil)
+        return nil;
+
+    study = [self studyForDisplayOnlyThisPatientItem: study];
     if( study == nil)
         return nil;
 

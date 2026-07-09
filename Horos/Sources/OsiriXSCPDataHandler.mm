@@ -37,7 +37,6 @@
 
 #define FETCHNUMBER 100
 
-#import "AsyncSocket.h"
 #import "OsiriXSCPDataHandler.h"
 #import "DicomFile.h"
 #import "DicomFileDCMTKCategory.h"

@@ -39,7 +39,6 @@
 #import "BrowserController.h"
 #import "DicomDatabase.h"
 #import "AppController.h"
-#import "XMLRPCMethods.h"
 
 @implementation OsiriXScripts
 
@@ -103,21 +102,6 @@
 	if( [command isEqualToString:@"OpenViewerForSelected"]) [[BrowserController currentBrowser] viewerDICOM: self];
 	if( [command isEqualToString:@"DeleteSelected"]) [[BrowserController currentBrowser] delItem: self];
 	
-    /*
-     * Code added by Kanteron Systems
-     */
-	if ([command isEqualToString:@"invoke XMLRPC method"]) {
-		NSLog(@"invoke XMLRPC method");
-		// We extact the arguments if any 
-		NSDictionary *paramDict = nil;
-		if  ([[self arguments] objectForKey:@"XMLRPCParams"])
-			paramDict = [NSDictionary dictionaryWithDictionary:[[[self arguments] objectForKey:@"XMLRPCParams"] objectAtIndex:0]];
-		
-		// The XMLRPC method is the direct parameter in AppleScript 
-		NSString *xmlrpcMethodName = [self directParameter];
-        
-		ASReply = [[[AppController sharedAppController] XMLRPCServer] methodCall:xmlrpcMethodName parameters:paramDict error:NULL];
-	}	
     return ASReply;
 }
 

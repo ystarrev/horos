@@ -51,7 +51,6 @@
 #import "DCMTKQueryRetrieveSCP.h"
 #import "DicomSeries.h"
 #import "MutableArrayCategory.h"
-#import "WADODownload.h"
 #import "N2Debug.h"
 #import "DicomDatabase.h"
 #import "NSThread+N2.h"
@@ -126,7 +125,6 @@ static OFString    opt_ciphersuites(SSL3_TXT_RSA_DES_192_CBC3_SHA);
 
 static int inc = 0;
 static int debugLevel = 0;
-//static int wadoUnique = 0;	//wadoUniqueThreadID = 0;
 
 static NSString * const HorosAllowConcurrentMoveForSameNodeKey = @"HorosAllowConcurrentMoveForSameNode";
 
@@ -858,390 +856,6 @@ subOpCallback(void * /*subOpCallbackData*/ ,
 	return [self move: dict retrieveMode: CMOVERetrieveMode];
 }
 
-- (NSString*) syntaxStringFor:( int) ts imageQuality: (int*) q
-{
-	*q = 100;
-	switch ( ts)
-	{
-		case SendExplicitLittleEndian:
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_LittleEndianExplicitTransferSyntax];
-		break;
-		case SendJPEG2000Lossless:
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_JPEG2000LosslessOnlyTransferSyntax];
-		break;
-		case SendJPEG2000Lossy10: 
-			*q = 90;
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_JPEG2000TransferSyntax];
-		break;
-		case SendJPEG2000Lossy20:
-			*q = 70;
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_JPEG2000TransferSyntax];
-		break;
-		case SendJPEG2000Lossy50:
-			*q = 50;
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_JPEG2000TransferSyntax];
-		break;
-        case SendJPEGLSLossless:
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_JPEGLSLosslessTransferSyntax];
-            break;
-		case SendJPEGLSLossy10:
-			*q = 90;
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_JPEGLSLossyTransferSyntax];
-            break;
-		case SendJPEGLSLossy20:
-			*q = 70;
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_JPEGLSLossyTransferSyntax];
-            break;
-		case SendJPEGLSLossy50:
-			*q = 50;
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_JPEGLSLossyTransferSyntax];
-            break;
-		case SendJPEGLossless: 
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_JPEGProcess14SV1TransferSyntax];
-		break;
-		case SendJPEGLossy9:
-			*q = 90;
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_JPEGProcess2_4TransferSyntax];
-		break;
-		case SendJPEGLossy8:
-			*q = 70;
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_JPEGProcess2_4TransferSyntax];
-		break;
-		case SendJPEGLossy7:
-			*q = 50;
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_JPEGProcess2_4TransferSyntax];
-		break;
-		case SendImplicitLittleEndian:
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_LittleEndianImplicitTransferSyntax];
-		break;
-		case SendRLE:
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_RLELosslessTransferSyntax];
-		break;
-		case SendExplicitBigEndian:
-			return [NSString stringWithFormat: @"&transferSyntax=%s", UID_BigEndianExplicitTransferSyntax];
-		break;
-	}
-	
-//    return [NSString stringWithFormat: @"&transferSyntax=preserved"];
-    
-	return [NSString stringWithFormat: @"&useOrig=true"];
-}
-
-//- (void) WADODownload: (NSDictionary*) dict
-//{
-//	[dict retain];
-//	
-//	@synchronized( self)
-//	{
-//		wadoUniqueThreadID++;
-//	}
-//	
-//	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-//	
-//	@try 
-//	{
-//		NSArray *urlToDownload = [dict valueForKey: @"URLs"];
-//		
-//		for( NSURL *url in urlToDownload)
-//		{
-//			NSError *error = nil;
-//			NSData *dicom = [[NSData alloc] initWithContentsOfURL: url options: 0 error: &error];
-//			
-//			if( error)
-//			{
-//				NSLog( @"****** error WADO download: %@ - url: %@", error, url);
-//				
-//				if( firstWadoErrorDisplayed == NO)
-//				{
-//					firstWadoErrorDisplayed = YES;
-//                  if( showErrorMessage)
-//                      [DCMTKQueryNode performSelectorOnMainThread :@selector(errorMessage:) withObject: [NSArray arrayWithObjects: NSLocalizedString(@"WADO Retrieve Failed", nil), [NSString stringWithFormat: @"%@ - %@", [error localizedDescription], url], NSLocalizedString(@"Continue", nil), nil] waitUntilDone:NO];
-//				}
-//			}
-//			
-//			NSString *path = [[BrowserController currentBrowser] INCOMINGPATH];
-//			
-//			@synchronized( self)
-//			{
-//				wadoUnique++;
-//			}
-//			[dicom writeToFile: [path stringByAppendingFormat: @"WADO-%d-%d.dcm", wadoUnique, wadoUniqueThreadID] atomically: YES];
-//			[dicom release];
-//			
-//			if( [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"])
-//				break;
-//			
-//			if( [[dict valueForKey: @"mainThread"] isCancelled])
-//				break;
-//		}
-//	}
-//	@catch (NSException * e) 
-//	{
-//      if (_dontCatchExceptions)
-//          @throw e;
-//      if (![NSThread.currentThread isCancelled])
-//          N2LogExceptionWithStackTrace(e);
-//	}
-//
-//	[pool release];
-//	
-//	[dict release];
-//	
-//	@synchronized( self)
-//	{
-//		WADOThreads--;
-//	}
-//}
-
-//- (void) realtimeCFindResults: (NSNotification*) notification
-//{
-//    if( [notification object] == self)
-//    {
-//        NSLog( @"%d", [[self children] count]);
-//    }
-//}
-
-- (void) WADOCFindThread: (id) sender
-{
-    NSAutoreleasePool *pool = [NSAutoreleasePool new];
-#ifndef NDEBUG
-    NSLog( @"--- WADO CFIND Start");
-#endif
-    [NSThread currentThread].name = @"WADO C-FIND Thread";
-    
-    DcmDataset dataset;
-    
-    dataset.insertEmptyElement(DCM_StudyInstanceUID, OFTrue);
-    dataset.insertEmptyElement(DCM_SeriesInstanceUID, OFTrue);
-    dataset.insertEmptyElement(DCM_SOPInstanceUID, OFTrue);
-    dataset.putAndInsertString(DCM_StudyInstanceUID, [_uid UTF8String], OFTrue);
-    dataset.putAndInsertString(DCM_QueryRetrieveLevel, "IMAGE", OFTrue);
-    
-    [self queryWithValues: nil dataset: &dataset];
-#ifndef NDEBUG
-    NSLog( @"--- WADO CFIND Done");
-#endif
-    [pool release];
-}
-
-- (NSUInteger) childrenCount
-{
-    if( _children == nil)
-        return 0;
-    
-    @synchronized( _children)
-    {
-        return _children.count;
-    }
-}
-
-- (void) WADORetrieve: (DCMTKStudyQueryNode*) study // requestService: WFIND?
-{
-#ifndef NDEBUG
-	if( [self isKindOfClass:[DCMTKSeriesQueryNode class]])
-		NSLog( @"------ WADO download : starting... %@ %@", study.theDescription, study.patientID);
-	else
-		NSLog( @"------ WADO download : starting... %@ %@", self.theDescription, self.patientID);
-#endif
-    
-	NSString *protocol = [[_extraParameters valueForKey: @"WADOhttps"] intValue] ? @"https" : @"http";
-	
-	NSString *wadoSubUrl = [_extraParameters valueForKey: @"WADOUrl"];
-	
-	if( [wadoSubUrl hasPrefix: @"/"])
-		wadoSubUrl = [wadoSubUrl substringFromIndex: 1];
-	
-    NSString* lpbit = @"";
-    if ([[_extraParameters valueForKey:@"WADOUsername"] length] && [[_extraParameters valueForKey:@"WADOPassword"] length])
-        lpbit = [NSString stringWithFormat:@"%@:%@@", [_extraParameters valueForKey:@"WADOUsername"], [_extraParameters valueForKey:@"WADOPassword"]];
-    
-	NSString *baseURL = [NSString stringWithFormat: @"%@://%@%@:%d/%@?requestType=WADO", protocol, lpbit, _hostname, [[_extraParameters valueForKey: @"WADOPort"] intValue], wadoSubUrl];
-	
-    if( baseURL == nil)
-        N2LogStackTrace( @"No baseURL !");
-    
-	@try
-	{
-		if( [protocol isEqualToString: @"https"])
-			[NSURLRequest setAllowsAnyHTTPSCertificate:YES forHost:[[NSURL URLWithString: baseURL] host]];
-	}
-	@catch (NSException *e)
-	{
-        if (_dontCatchExceptions)
-            @throw e;
-		if (![NSThread.currentThread isCancelled])
-            N2LogExceptionWithStackTrace(e);
-	}
-	
-	int quality = 100;
-	NSString *ts = [self syntaxStringFor: [[_extraParameters valueForKey: @"WADOTransferSyntax"] intValue] imageQuality: &quality];
-	
-	// Local Study?
-	NSMutableArray *localObjectUIDs = [NSMutableArray array];
-	@try
-	{
-		NSError *error = nil;
-		NSFetchRequest *request = [[[NSFetchRequest alloc] init] autorelease];
-		NSManagedObjectContext *context = [NSThread isMainThread] ? [[DicomDatabase activeLocalDatabase] managedObjectContext] : [[DicomDatabase activeLocalDatabase] independentContext];
-		
-		NSPredicate *predicate = [NSPredicate predicateWithValue: NO];
-		if( [self isKindOfClass: [DCMTKSeriesQueryNode class]])
-			predicate = [NSPredicate predicateWithFormat: @"studyInstanceUID == %@", [study uid]];
-		if( [self isKindOfClass: [DCMTKStudyQueryNode class]])
-			predicate = [NSPredicate predicateWithFormat: @"studyInstanceUID == %@", [self uid]];
-			
-		[request setEntity: [[context.persistentStoreCoordinator.managedObjectModel entitiesByName] objectForKey: @"Study"]];
-		[request setPredicate: predicate];
-		
-		DicomStudy *localStudy = [[context executeFetchRequest: request error: &error] lastObject];
-		
-		for( DicomSeries *s in [localStudy valueForKey: @"series"])
-			[localObjectUIDs addObjectsFromArray: [[[s images] valueForKey: @"sopInstanceUID"] allObjects]];
-	}
-	@catch (NSException * e) {
-        if (_dontCatchExceptions)
-            @throw e;
-		if (![NSThread.currentThread isCancelled])
-            N2LogExceptionWithStackTrace(e);
-    }
-	
-	if( [self isKindOfClass:[DCMTKStudyQueryNode class]])
-	{
-		// We are at STUDY level, and we want to go direclty to IMAGE level
-		
-//		DcmDataset dataset;
-//		
-//		dataset.insertEmptyElement(DCM_StudyInstanceUID, OFTrue);
-//		dataset.insertEmptyElement(DCM_SeriesInstanceUID, OFTrue);
-//		dataset.insertEmptyElement(DCM_SOPInstanceUID, OFTrue);
-//		dataset.putAndInsertString(DCM_StudyInstanceUID, [_uid UTF8String], OFTrue);
-//		dataset.putAndInsertString(DCM_QueryRetrieveLevel, "IMAGE", OFTrue);
-		
-		NSThread *WADOCFind = [[[NSThread alloc] initWithTarget: self selector: @selector( WADOCFindThread:) object: nil] autorelease];
-		
-        [WADOCFind start];
-        [NSThread sleepForTimeInterval: 0.1];
-        
-        WADODownload *downloader = [[WADODownload alloc] init];
-        
-        downloader.showErrorMessage = showErrorMessage;
-        downloader.WADOBaseTotal = 0;
-        downloader.WADOGrandTotal = self.numberImages.integerValue; // For the GUI progress bar
-        
-        while( (WADOCFind.isExecuting || self.childrenCount) && [[NSThread currentThread] isCancelled] == NO)
-        {
-            if( self.childrenCount > 50 || WADOCFind.isExecuting == NO)
-            {
-                NSArray *childrenArray = nil;
-                @synchronized( _children)
-                {
-                    childrenArray = [[_children copy] autorelease];
-                    [_children removeAllObjects];
-                }
-                
-                NSMutableArray *urlToDownload = [NSMutableArray array];
-                @try
-                {
-                    childrenArray = [childrenArray sortedArrayUsingDescriptors: [NSArray arrayWithObjects: [NSSortDescriptor sortDescriptorWithKey: @"seriesInstanceUID" ascending: YES], nil]];
-                    
-                    for( DCMTKImageQueryNode *image in childrenArray)
-                    {
-                        if( [image uid])
-                        {
-                            if( [localObjectUIDs containsObject: [image uid]] == NO)
-                            {
-                                NSURL *url = [NSURL URLWithString: [baseURL stringByAppendingFormat:@"&studyUID=%@&seriesUID=%@&objectUID=%@&contentType=application/dicom%@", [self uid], [image seriesInstanceUID], [image uid], ts]];
-                                
-                                if( url)
-                                    [urlToDownload addObject: url];
-                                else
-                                    NSLog( @"****** no url : %@", [baseURL stringByAppendingFormat:@"&studyUID=%@&seriesUID=%@&objectUID=%@&contentType=application/dicom%@", [self uid], [image seriesInstanceUID], [image uid], ts]);
-                            }
-                            else
-                                downloader.WADOBaseTotal++;
-                        }
-                        else NSLog( @"****** no image uid !");
-                    }
-                }
-                @catch (NSException* e)
-                {
-                    if (_dontCatchExceptions)
-                        @throw e;
-                    if (![NSThread.currentThread isCancelled])
-                        N2LogExceptionWithStackTrace(e);
-                }
-                
-                [downloader WADODownload: urlToDownload];
-                downloader.WADOBaseTotal += urlToDownload.count; // For the GUI progress bar
-                
-                self.countOfSuboperations += urlToDownload.count;
-                self.countOfSuccessfulSuboperations += downloader.countOfSuccesses;
-            }
-            
-            [NSThread sleepForTimeInterval: 0.1];
-        }
-        
-        [downloader release];
-        
-		[self purgeChildren];
-	}
-	
-	if( [self isKindOfClass:[DCMTKSeriesQueryNode class]])
-	{
-        NSArray *childrenArray = nil;
-        @synchronized( self)
-        {
-            childrenArray = [self children];
-            
-            // search the images
-            if( childrenArray == nil)
-                [self queryWithValues: nil];
-            
-            childrenArray = [self children];
-        }
-        
-        NSMutableArray *urlToDownload = [NSMutableArray array];
-        
-        @try
-        {
-            for( DCMTKQueryNode *image in childrenArray)
-            {
-                if( [image uid])
-                {
-                    if( [localObjectUIDs containsObject: [image uid]] == NO)
-                    {
-                        NSURL *url = [NSURL URLWithString: [baseURL stringByAppendingFormat:@"&studyUID=%@&seriesUID=%@&objectUID=%@&contentType=application/dicom%@", [study uid], [self uid], [image uid], ts]];
-                        if( url)
-                            [urlToDownload addObject: url];
-                        else
-                            NSLog( @"****** no url : %@", [baseURL stringByAppendingFormat:@"&studyUID=%@&seriesUID=%@&objectUID=%@&contentType=application/dicom%@", [study uid], [self uid], [image uid], ts]);
-                    }
-                }
-                else NSLog( @"****** no image uid !");
-            }
-        }
-        @catch (NSException* e) {
-            if (_dontCatchExceptions)
-                @throw e;
-            if (![NSThread.currentThread isCancelled])
-                N2LogExceptionWithStackTrace(e);
-        }
-        
-		[self purgeChildren];
-        
-        WADODownload *downloader = [[WADODownload alloc] init];
-        
-        downloader.showErrorMessage = showErrorMessage;
-        
-        [downloader WADODownload: urlToDownload];
-        
-        self.countOfSuboperations = urlToDownload.count;
-        self.countOfSuccessfulSuboperations = downloader.countOfSuccesses;
-        
-        [downloader release];
-    }
-}
-
 - (void) CFINDThread: (NSString*) studyInstanceUID
 {
     NSAutoreleasePool *pool = [NSAutoreleasePool new];
@@ -1295,12 +909,6 @@ subOpCallback(void * /*subOpCallbackData*/ ,
     
     @try
     {
-        if( [[dict valueForKey: @"retrieveMode"] intValue] == WADORetrieveMode && retrieveMode == WADORetrieveMode)
-        {
-            [self WADORetrieve: [dict valueForKey: @"study"]];
-        }
-        else // DICOM retrieve
-        {
             NSMutableSet *localObjectUIDs = [NSMutableSet set];
             BOOL localSeriesAlreadyExists = NO;
             
@@ -1314,8 +922,17 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                 
                 if( [self isKindOfClass: [DCMTKSeriesQueryNode class]])
                 {
+                    DCMTKSeriesQueryNode *seriesNode = (DCMTKSeriesQueryNode *) self;
                     id study = [dict valueForKey: @"study"];
-                    studyInstanceUID = [study uid];
+
+                    if( [study respondsToSelector: @selector( uid)])
+                        studyInstanceUID = [study uid];
+
+                    if( studyInstanceUID.length == 0)
+                        studyInstanceUID = [seriesNode studyInstanceUID];
+
+                    if( studyInstanceUID.length == 0 && [[seriesNode study] respondsToSelector: @selector( uid)])
+                        studyInstanceUID = [[seriesNode study] uid];
                 }
                 
                 if( [self isKindOfClass: [DCMTKStudyQueryNode class]])
@@ -1381,18 +998,18 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                     if( localSeriesAlreadyExists == NO)
                         [localObjectUIDs removeAllObjects];
 
-                    shouldTryImageLevelRetrieve = YES;
+                    shouldTryImageLevelRetrieve = (studyInstanceUID.length > 0);
                 }
                 else
-                    shouldTryImageLevelRetrieve = YES;
+                    shouldTryImageLevelRetrieve = (studyInstanceUID.length > 0);
                 
                 if( shouldTryImageLevelRetrieve && [[NSThread currentThread] isCancelled] == NO) // We have already local images, or are explicitly parallelizing a study-level retrieve
                 {
-                    NSThread *WADOCFind = [[[NSThread alloc] initWithTarget: self selector: @selector( CFINDThread:) object: studyInstanceUID] autorelease];
+                    NSThread *imageLevelCFind = [[[NSThread alloc] initWithTarget: self selector: @selector( CFINDThread:) object: studyInstanceUID] autorelease];
                     
-                    [WADOCFind start];
+                    [imageLevelCFind start];
                     
-                    while( WADOCFind.isFinished == NO && [[NSThread currentThread] isCancelled] == NO)
+                    while( imageLevelCFind.isFinished == NO && [[NSThread currentThread] isCancelled] == NO)
                         [NSThread sleepForTimeInterval: 0.05];
 
                     if( [[NSThread currentThread] isCancelled] == NO)
@@ -1721,8 +1338,6 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                 if (dataset != NULL)
                     delete dataset;
             }
-        }
-            
     }
     @catch (...) {
         @throw;

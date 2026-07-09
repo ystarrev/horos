@@ -2048,6 +2048,7 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
 
         NSMutableArray* studiesArray = [existingStudies mutableCopy];
         NSMutableArray* modifiedStudiesArray = [NSMutableArray array];
+        NSMutableSet* modifiedStudyObjectIDs = [NSMutableSet set];
         
         NSDate *defaultDate = [NSCalendarDate dateWithYear:1901 month:1 day:1 hour:0 minute:0 second:0 timeZone:nil];
         
@@ -2461,7 +2462,11 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                             curStudyID = [curDict objectForKey: @"studyID"];
                             curPatientUID = [curDict objectForKey: @"patientUID"];
                             
-                            [modifiedStudiesArray addObject: study];
+                            if( study.objectID && [modifiedStudyObjectIDs containsObject: study.objectID] == NO)
+                            {
+                                [modifiedStudyObjectIDs addObject: study.objectID];
+                                [modifiedStudiesArray addObject: study];
+                            }
                         }
                         
                         int NoOfSeries = [[curDict objectForKey: @"numberOfSeries"] intValue];

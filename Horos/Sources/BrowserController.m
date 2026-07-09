@@ -20477,6 +20477,10 @@ static volatile int numberOfThreadsForJPEG = 0;
             
             while( [component hasSuffix: @"*"])
                 component = [component substringToIndex: component.length-1];
+
+            component = [component stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            if( component.length == 0)
+                continue;
             
             if( firstComponent == NO)
             {
@@ -20503,6 +20507,93 @@ static volatile int numberOfThreadsForJPEG = 0;
         N2LogException( exception);
     }
     
+    return [NSCompoundPredicate andPredicateWithSubpredicates: predicates];
+}
+
+- (NSPredicate*) patientNameSearchPredicate: (NSString*) s
+{
+    s = [s stringByReplacingOccurrencesOfString: @"^" withString: @" "];
+    s = [s stringByReplacingOccurrencesOfString: @", " withString: @" "];
+    s = [s stringByReplacingOccurrencesOfString: @"," withString: @" "];
+
+    BOOL soundex = [[NSUserDefaults standardUserDefaults] boolForKey: @"useSoundexForName"];
+    NSMutableArray *predicates = [NSMutableArray array];
+    NSMutableArray *namePrefixComponents = [NSMutableArray array];
+
+    @try {
+        BOOL firstComponent = YES;
+        NSArray *nameComponents = [s componentsSeparatedByString: @" "];
+
+        for( NSString *rawComponent in nameComponents)
+        {
+            NSString *component = [rawComponent stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            NSPredicate *p = nil;
+            BOOL leadingWildcard = NO;
+
+            while( [component hasPrefix: @"*"])
+            {
+                leadingWildcard = YES;
+                component = [component substringFromIndex: 1];
+                firstComponent = NO;
+            }
+
+            while( [component hasSuffix: @"*"])
+                component = [component substringToIndex: component.length-1];
+
+            component = [component stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            if( component.length == 0)
+                continue;
+
+            if( firstComponent && leadingWildcard == NO)
+            {
+                if( soundex && [component length] >= 2)
+                    p = [NSPredicate predicateWithFormat: @"(soundex BEGINSWITH[cd] %@) OR (name BEGINSWITH[cd] %@)", [DicomStudy soundex: component], component];
+                else
+                    p = [NSPredicate predicateWithFormat: @"name BEGINSWITH[cd] %@", component];
+
+                [namePrefixComponents addObject: component];
+            }
+            else if( leadingWildcard || namePrefixComponents.count == 0)
+            {
+                if( soundex && [component length] >= 2)
+                    p = [NSPredicate predicateWithFormat: @"(soundex CONTAINS[cd] %@) OR (name CONTAINS[cd] %@)", [DicomStudy soundex: component], component];
+                else
+                    p = [NSPredicate predicateWithFormat: @"name CONTAINS[cd] %@", component];
+            }
+            else
+            {
+                [namePrefixComponents addObject: component];
+
+                NSString *spacePrefix = [namePrefixComponents componentsJoinedByString: @" "];
+                NSString *caretPrefix = [namePrefixComponents componentsJoinedByString: @"^"];
+                NSString *commaPrefix = nil;
+                NSString *tightCommaPrefix = nil;
+
+                if( namePrefixComponents.count > 1)
+                {
+                    NSArray *givenNameComponents = [namePrefixComponents subarrayWithRange: NSMakeRange( 1, namePrefixComponents.count-1)];
+                    commaPrefix = [NSString stringWithFormat: @"%@, %@", [namePrefixComponents objectAtIndex: 0], [givenNameComponents componentsJoinedByString: @" "]];
+                    tightCommaPrefix = [NSString stringWithFormat: @"%@,%@", [namePrefixComponents objectAtIndex: 0], [givenNameComponents componentsJoinedByString: @" "]];
+                }
+                else
+                {
+                    commaPrefix = spacePrefix;
+                    tightCommaPrefix = spacePrefix;
+                }
+
+                p = [NSPredicate predicateWithFormat: @"(name BEGINSWITH[cd] %@) OR (name BEGINSWITH[cd] %@) OR (name BEGINSWITH[cd] %@) OR (name BEGINSWITH[cd] %@)", spacePrefix, caretPrefix, commaPrefix, tightCommaPrefix];
+            }
+
+            if( p)
+                [predicates addObject: p];
+
+            firstComponent = NO;
+        }
+    }
+    @catch (NSException *exception) {
+        N2LogException( exception);
+    }
+
     return [NSCompoundPredicate andPredicateWithSubpredicates: predicates];
 }
 
@@ -20621,11 +20712,11 @@ static volatile int numberOfThreadsForJPEG = 0;
                 if( [s length] >= 3)
                     predicate = [NSPredicate predicateWithFormat: @"(name CONTAINS[cd] %@) OR (patientID CONTAINS[cd] %@) OR (id CONTAINS[cd] %@) OR (comment CONTAINS[cd] %@) OR (comment2 CONTAINS[cd] %@) OR (comment3 CONTAINS[cd] %@) OR (comment4 CONTAINS[cd] %@) OR (studyName CONTAINS[cd] %@) OR (modality CONTAINS[cd] %@) OR (accessionNumber CONTAINS[cd] %@) OR (performingPhysician CONTAINS[cd] %@) OR (referringPhysician CONTAINS[cd] %@) OR (institutionName CONTAINS[cd] %@)", s, s, s, s, s, s, s, s, s, s, s, s, s];
                 else if( [s length] >= 1)
-                    predicate = [self patientsnamePredicate: _searchString];
+                    predicate = [self patientNameSearchPredicate: _searchString];
                 break;
                 
             case 0:			// Patient Name
-                predicate = [self patientsnamePredicate: _searchString];
+                predicate = [self patientNameSearchPredicate: _searchString];
                 break;
                 
             case 1:			// Patient ID

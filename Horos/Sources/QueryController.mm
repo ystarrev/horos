@@ -90,6 +90,7 @@ static NSString * const HorosQRModalityFilterMaskDefaultsKey = @"QRModalityFilte
 static NSString * const HorosAutoQRModalityFilterMaskDefaultsKey = @"AutoQRModalityFilterMask";
 static NSString * const HorosQRSeriesFilterDefaultsKey = @"QRSeriesFilterMask";
 static NSString * const HorosQRSeriesIgnoreMPRDefaultsKey = @"QRSeriesIgnoreMPR";
+static NSString * const HorosQRAllowConcurrentMoveForSameNodeThreadKey = @"HorosAllowConcurrentMoveForSameNode";
 static const NSInteger HorosQRModalityButtonTagBase = 6000;
 static const NSSize HorosQueryWindowMinimumContentSize = {914, 420};
 
@@ -170,6 +171,52 @@ static BOOL HorosQuerySeriesLooksLikeLocalizer(id item)
            HorosQueryStringContains(name, @"scout") ||
            HorosQueryStringContains(name, @"localizer") ||
            HorosQueryStringContains(name, @"localiser");
+}
+
+static NSInteger HorosQRSeriesRetrieveConcurrencyLimit(NSUInteger itemCount)
+{
+    if( itemCount <= 1)
+        return 1;
+
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if( [defaults boolForKey: @"MultipleAssociationsRetrieve"] == NO)
+        return 1;
+
+    NSInteger limit = [defaults integerForKey: @"NoOfMultipleAssociationsRetrieve"];
+    if( limit < 2)
+        limit = 4;
+
+    limit = MIN( limit, 4);
+    limit = MIN( limit, (NSInteger) itemCount);
+    limit = MAX( limit, 1);
+
+    return limit;
+}
+
+static NSString *HorosQRRetrieveStatusForObject(id object, NSUInteger itemCount)
+{
+    NSString *status = nil;
+
+    if( [object isMemberOfClass:[DCMTKStudyQueryNode class]])
+    {
+        if( itemCount == 1)
+            status = [NSString stringWithFormat: NSLocalizedString( @"%lu study", nil), (unsigned long) itemCount];
+        else
+            status = [NSString stringWithFormat: NSLocalizedString( @"%lu studies", nil), (unsigned long) itemCount];
+
+        if( [object name])
+            status = [status stringByAppendingFormat:@" - %@", [object name]];
+    }
+
+    if( [object isMemberOfClass:[DCMTKSeriesQueryNode class]])
+    {
+        status = [NSString stringWithFormat: NSLocalizedString( @"%lu series", nil), (unsigned long) itemCount];
+
+        if( [object theDescription])
+            status = [status stringByAppendingFormat:@" - %@", [object theDescription]];
+    }
+
+    return [status stringByReplacingOccurrencesOfString: @"^" withString: @" "];
 }
 
 static QueryController *currentQueryController = nil;
@@ -4233,76 +4280,193 @@ extern "C"
 		[dictionary release];
 		[subPool release];
 		
-		int i = 0;
-		for( NSDictionary *d in moveArray)
-		{
-			DCMTKQueryNode *object = [d objectForKey: @"query"];
-			
-			NSString *status = nil;
-			
-			if( [object isMemberOfClass:[DCMTKStudyQueryNode class]])
-			{
-				if( [array count] == 1) status = [NSString stringWithFormat: NSLocalizedString( @"%lu study", nil), (unsigned long) [array count]];
-				else status = [NSString stringWithFormat: NSLocalizedString( @"%lu studies", nil), (unsigned long) [array count]];
-                
-                if( [object name])
-                    status = [status stringByAppendingFormat:@" - %@", [object name]];
-			}
-			
-			if( [object isMemberOfClass:[DCMTKSeriesQueryNode class]])
-			{
-				status = [NSString stringWithFormat: NSLocalizedString( @"%lu series", nil), (unsigned long) [array count]];
-                
-                if( [object theDescription])
-                    status = [status stringByAppendingFormat:@" - %@", [object theDescription]];
-			}
-			
-			[NSThread currentThread].status = [status stringByReplacingOccurrencesOfString: @"^" withString: @" "];
-			
-			CFAbsoluteTime itemRetrieveStartTime = CFAbsoluteTimeGetCurrent();
-			NSLog( @"Retrieve ITEM START: %@ %@", NSStringFromClass( [object class]), [object uid]);
+        BOOL canRetrieveSeriesConcurrently = allowNonCMOVE && moveArray.count > 1;
+        for( NSDictionary *d in moveArray)
+        {
+            id object = [d objectForKey: @"query"];
+            if( [object isMemberOfClass: [DCMTKSeriesQueryNode class]] == NO || [[d objectForKey: @"retrieveMode"] intValue] != CMOVERetrieveMode)
+            {
+                canRetrieveSeriesConcurrently = NO;
+                break;
+            }
+        }
 
-			@try
-			{
-				FILE * pFile = fopen ("/tmp/kill_all_storescu", "r");
-				if( pFile)
-					fclose (pFile);
-				else
-				{
-					if( allowNonCMOVE)
-						[object move: d retrieveMode: [[d objectForKey: @"retrieveMode"] intValue]];
-					else
-						[object move: d retrieveMode: CMOVERetrieveMode];
-				}
+        NSInteger concurrentRetrieveCount = canRetrieveSeriesConcurrently ? HorosQRSeriesRetrieveConcurrencyLimit( moveArray.count) : 1;
 
-				NSLog( @"Retrieve ITEM END: %@ %@ after %.3f s", NSStringFromClass( [object class]), [object uid], CFAbsoluteTimeGetCurrent() - itemRetrieveStartTime);
-			}
-			@catch (NSException * e)
-			{
-				NSLog( @"dictionary: %@", d);
-				NSLog( @"object: %@, %@", object, [object uid]);
-				N2LogExceptionWithStackTrace( e);
-				NSLog( @"Retrieve ITEM FAILED: %@ %@ after %.3f s", NSStringFromClass( [object class]), [object uid], CFAbsoluteTimeGetCurrent() - itemRetrieveStartTime);
-			}
-			
-			dispatch_async(dispatch_get_main_queue(), ^{
-				[outlineView reloadItem: object];
-			});
-			
-			@synchronized( previousAutoRetrieve)
-			{
-				[previousAutoRetrieve removeObjectForKey: [QueryController stringIDForStudy: object]];
-			}
-			
-			[NSThread currentThread].progress = (float) ++i / (float) [moveArray count];
-			if( [NSThread currentThread].isCancelled)
-			{
-				[[NSFileManager defaultManager] createFileAtPath: @"/tmp/kill_all_storescu" contents: [NSData data] attributes: nil];
-				[NSThread sleepForTimeInterval: 3];
-				unlink( "/tmp/kill_all_storescu");
-				break;
-			}
-		}
+        if( concurrentRetrieveCount > 1)
+        {
+            NSLog( @"Retrieve SERIES concurrency: %ld association(s) for %lu series", (long) concurrentRetrieveCount, (unsigned long) moveArray.count);
+
+            NSMutableArray *moveQueue = [[NSMutableArray alloc] initWithArray: moveArray];
+            NSMutableArray *threads = [NSMutableArray array];
+            NSLock *queueLock = [[NSLock alloc] init];
+            NSLock *progressLock = [[NSLock alloc] init];
+            NSThread *retrieveThread = [NSThread currentThread];
+            __block NSUInteger completedRetrieveCount = 0;
+
+            for( NSInteger workerIndex = 0; workerIndex < concurrentRetrieveCount; workerIndex++)
+            {
+                NSThread *workerThread = [NSThread performBlockInBackground: ^
+                {
+                    NSAutoreleasePool *workerPool = [[NSAutoreleasePool alloc] init];
+                    [[NSThread currentThread].threadDictionary setObject: @YES forKey: HorosQRAllowConcurrentMoveForSameNodeThreadKey];
+
+                    @try
+                    {
+                        while( [retrieveThread isCancelled] == NO)
+                        {
+                            NSDictionary *d = nil;
+
+                            [queueLock lock];
+                            if( moveQueue.count > 0)
+                            {
+                                d = [[moveQueue objectAtIndex: 0] retain];
+                                [moveQueue removeObjectAtIndex: 0];
+                            }
+                            [queueLock unlock];
+
+                            if( d == nil)
+                                break;
+
+                            DCMTKQueryNode *object = [[d objectForKey: @"query"] retain];
+                            [retrieveThread setStatus: HorosQRRetrieveStatusForObject( object, moveArray.count)];
+
+                            CFAbsoluteTime itemRetrieveStartTime = CFAbsoluteTimeGetCurrent();
+                            NSLog( @"Retrieve ITEM START: %@ %@", NSStringFromClass( [object class]), [object uid]);
+
+                            @try
+                            {
+                                FILE * pFile = fopen ("/tmp/kill_all_storescu", "r");
+                                if( pFile)
+                                    fclose (pFile);
+                                else
+                                    [object move: d retrieveMode: [[d objectForKey: @"retrieveMode"] intValue]];
+
+                                NSLog( @"Retrieve ITEM END: %@ %@ after %.3f s", NSStringFromClass( [object class]), [object uid], CFAbsoluteTimeGetCurrent() - itemRetrieveStartTime);
+                            }
+                            @catch (NSException * e)
+                            {
+                                NSLog( @"dictionary: %@", d);
+                                NSLog( @"object: %@, %@", object, [object uid]);
+                                N2LogExceptionWithStackTrace( e);
+                                NSLog( @"Retrieve ITEM FAILED: %@ %@ after %.3f s", NSStringFromClass( [object class]), [object uid], CFAbsoluteTimeGetCurrent() - itemRetrieveStartTime);
+                            }
+
+                            dispatch_async(dispatch_get_main_queue(), ^{
+                                [outlineView reloadItem: object];
+                            });
+
+                            @synchronized( previousAutoRetrieve)
+                            {
+                                [previousAutoRetrieve removeObjectForKey: [QueryController stringIDForStudy: object]];
+                            }
+
+                            [progressLock lock];
+                            completedRetrieveCount++;
+                            retrieveThread.progress = (float) completedRetrieveCount / (float) [moveArray count];
+                            [progressLock unlock];
+
+                            [object release];
+                            [d release];
+                        }
+                    }
+                    @finally
+                    {
+                        [[NSThread currentThread].threadDictionary removeObjectForKey: HorosQRAllowConcurrentMoveForSameNodeThreadKey];
+                        [workerPool release];
+                    }
+                }];
+
+                [threads addObject: workerThread];
+            }
+
+            BOOL killFileCreated = NO;
+            BOOL executing = NO;
+            do
+            {
+                executing = NO;
+
+                for( NSThread *t in threads)
+                    if( t.isFinished == NO)
+                        executing = YES;
+
+                if( retrieveThread.isCancelled && killFileCreated == NO)
+                {
+                    for( NSThread *t in threads)
+                        [t cancel];
+
+                    [[NSFileManager defaultManager] createFileAtPath: @"/tmp/kill_all_storescu" contents: [NSData data] attributes: nil];
+                    killFileCreated = YES;
+                }
+
+                if( executing)
+                    [NSThread sleepForTimeInterval: 0.05];
+            }
+            while( executing);
+
+            if( killFileCreated)
+            {
+                [NSThread sleepForTimeInterval: 3];
+                unlink( "/tmp/kill_all_storescu");
+            }
+
+            [queueLock release];
+            [progressLock release];
+            [moveQueue release];
+        }
+        else
+        {
+            int i = 0;
+            for( NSDictionary *d in moveArray)
+            {
+                DCMTKQueryNode *object = [d objectForKey: @"query"];
+                [NSThread currentThread].status = HorosQRRetrieveStatusForObject( object, moveArray.count);
+
+                CFAbsoluteTime itemRetrieveStartTime = CFAbsoluteTimeGetCurrent();
+                NSLog( @"Retrieve ITEM START: %@ %@", NSStringFromClass( [object class]), [object uid]);
+
+                @try
+                {
+                    FILE * pFile = fopen ("/tmp/kill_all_storescu", "r");
+                    if( pFile)
+                        fclose (pFile);
+                    else
+                    {
+                        if( allowNonCMOVE)
+                            [object move: d retrieveMode: [[d objectForKey: @"retrieveMode"] intValue]];
+                        else
+                            [object move: d retrieveMode: CMOVERetrieveMode];
+                    }
+
+                    NSLog( @"Retrieve ITEM END: %@ %@ after %.3f s", NSStringFromClass( [object class]), [object uid], CFAbsoluteTimeGetCurrent() - itemRetrieveStartTime);
+                }
+                @catch (NSException * e)
+                {
+                    NSLog( @"dictionary: %@", d);
+                    NSLog( @"object: %@, %@", object, [object uid]);
+                    N2LogExceptionWithStackTrace( e);
+                    NSLog( @"Retrieve ITEM FAILED: %@ %@ after %.3f s", NSStringFromClass( [object class]), [object uid], CFAbsoluteTimeGetCurrent() - itemRetrieveStartTime);
+                }
+
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [outlineView reloadItem: object];
+                });
+
+                @synchronized( previousAutoRetrieve)
+                {
+                    [previousAutoRetrieve removeObjectForKey: [QueryController stringIDForStudy: object]];
+                }
+
+                [NSThread currentThread].progress = (float) ++i / (float) [moveArray count];
+                if( [NSThread currentThread].isCancelled)
+                {
+                    [[NSFileManager defaultManager] createFileAtPath: @"/tmp/kill_all_storescu" contents: [NSData data] attributes: nil];
+                    [NSThread sleepForTimeInterval: 3];
+                    unlink( "/tmp/kill_all_storescu");
+                    break;
+                }
+            }
+        }
 		
 		@synchronized( previousAutoRetrieve)
 		{
@@ -5385,12 +5549,6 @@ extern "C"
     [PatientModeMatrix setControlSize: NSRegularControlSize];
     [PatientModeMatrix setFont: [NSFont boldSystemFontOfSize: 16]];
     [PatientModeMatrix setAllowsTruncatedLabels: YES];
-
-    for( NSLayoutConstraint *constraint in [PatientModeMatrix constraints])
-    {
-        if( constraint.firstItem == PatientModeMatrix && constraint.firstAttribute == NSLayoutAttributeHeight && constraint.constant < 70)
-            constraint.constant = 70;
-    }
 
     [PatientModeMatrix setNeedsDisplay: YES];
 }

@@ -913,10 +913,10 @@ subOpCallback(void * /*subOpCallbackData*/ ,
             BOOL localSeriesAlreadyExists = NO;
             
             BOOL retrievedDone = NO;
-            BOOL tryImageLevelRetrieve = [[NSUserDefaults standardUserDefaults] boolForKey: @"TryIMAGELevelDICOMRetrieveIfLocalImages"];
-            BOOL multipleAssociationsRetrieve = [[NSUserDefaults standardUserDefaults] boolForKey: @"MultipleAssociationsRetrieve"];
+            // Keep retrieval at STUDY/SERIES level. IMAGE-level C-MOVE creates many small requests and is not used by our workflow.
+            BOOL useImageLevelRetrieve = NO;
             
-            if( !_noSmartMode && (tryImageLevelRetrieve || multipleAssociationsRetrieve))
+            if( !_noSmartMode && useImageLevelRetrieve)
             {
                 NSString *studyInstanceUID = nil;
                 

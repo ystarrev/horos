@@ -56,8 +56,6 @@
 #import "NSThread+N2.h"
 #import "N2MutableUInteger.h"
 
-#include <libkern/OSAtomic.h>
-
 #undef verify
 #include <dcmtk/dcmdata/dccodec.h>
 

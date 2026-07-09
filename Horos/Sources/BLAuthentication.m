@@ -431,7 +431,7 @@ OSStatus AuthorizationExecuteWithPrivilegesStdErrAndPid (
 -(BOOL)executeCommand:(NSString *)pathToCommand withArgs:(NSArray *)arguments
 {
     #ifdef MACAPPSTORE
-    NSTask *task = [NSTask launchedTaskWithLaunchPath: pathToCommand arguments: arguments];
+    NSTask *task = HorosLaunchTaskAtPath(pathToCommand, arguments);
     [task waitUntilExit];
     return YES;
     #else
@@ -544,7 +544,6 @@ OSStatus AuthorizationExecuteWithPrivilegesStdErrAndPid (
                                         name:BLDeauthenticatedNotification
                                         object:[BLAuthentication sharedInstance]];
 */
-
 
 
 

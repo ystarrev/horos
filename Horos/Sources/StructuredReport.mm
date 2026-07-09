@@ -14,7 +14,6 @@
 
 #import "StructuredReport.h"
 #import "browserController.h"
-#import <AddressBook/AddressBook.h>
 #import "DicomImage.h"
 #import "DICOMToNSString.h"
 #import "ModernDCMTKBridge.h"
@@ -276,8 +275,10 @@ static BOOL HorosStructuredReportReadDocumentFromPath(DSRDocument* document, NSS
 
 		}
 		else {
-			ABPerson *me = [[ABAddressBook sharedAddressBook] me];
-			[self setPhysician:[NSString stringWithFormat: @"%@^%@", [me valueForProperty:kABLastNameProperty] ,[me valueForProperty:kABFirstNameProperty]]];
+			NSPersonNameComponentsFormatter *formatter = [[[NSPersonNameComponentsFormatter alloc] init] autorelease];
+			NSPersonNameComponents *name = [formatter personNameComponentsFromString:NSFullUserName()];
+			if (name.familyName.length || name.givenName.length)
+				[self setPhysician:[NSString stringWithFormat:@"%@^%@", name.familyName ?: @"", name.givenName ?: @""]];
 			[self setInstitution:[_study valueForKey:@"institutionName"]];
 			[self setRequest:[NSString stringWithFormat:@"%@ %@", [_study valueForKey:@"modality"], [_study valueForKey:@"studyName"]]];
 			//Not sure what to suggest for history and technique

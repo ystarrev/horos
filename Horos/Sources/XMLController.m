@@ -553,11 +553,9 @@ extern int delayedTileWindows;
 //        
 //        NSPipe *thePipe = [NSPipe pipe];
 //        
-//        [theTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dcm2xml"]];
 //        [theTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
 //        [theTask setArguments: [NSMutableArray arrayWithObject: srcFile]];
 //        [theTask setStandardOutput: thePipe];
-//        [theTask launch];
 //        
 //        NSData *resData = [[thePipe fileHandleForReading] readDataToEndOfFile];
 //        
@@ -1317,10 +1315,10 @@ extern int delayedTileWindows;
 
 	NSPipe *thePipe = [NSPipe pipe];
 	
-	[theTask setLaunchPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dciodvfy"]];
+	[theTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dciodvfy"]]];
 	[theTask setArguments: [NSMutableArray arrayWithObject: srcFile]];
 	[theTask setStandardError: thePipe];
-	[theTask launch];
+	HorosLaunchTaskOrRaise(theTask);
 	
 	NSData *resData = [[thePipe fileHandleForReading] readDataToEndOfFile];
 	

@@ -51,6 +51,7 @@
 #import "RemoteDicomDatabase.h"
 #import "SRAnnotation.h"
 #import <DiscRecording/DRDevice.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "DCMView.h"
 #import "MyOutlineView.h"
 #import "PreviewView.h"
@@ -6799,7 +6800,8 @@ static NSConditionLock *threadLock = nil;
                 }
                 else if( [[item valueForKey: @"reportURL"] hasPrefix: @"http://"] || [[item valueForKey: @"reportURL"] hasPrefix: @"https://"])
                 {
-                    NSImage	*reportIcon = [[NSWorkspace sharedWorkspace] iconForFileType: @"download"];
+                    UTType *downloadType = [UTType typeWithFilenameExtension:@"download"] ?: UTTypeData;
+                    NSImage	*reportIcon = [[NSWorkspace sharedWorkspace] iconForContentType:downloadType];
                     
                     if( reportIcon == nil) reportIcon = [NSImage imageNamed:@"Report.icns"];
                     
@@ -6925,7 +6927,7 @@ static NSConditionLock *threadLock = nil;
     [pboard declareTypes:@[NSFilesPromisePboardType, NSPasteboardTypeString] owner:self];
     [pboard setPropertyList:@[@"dcm"] forType:NSFilesPromisePboardType];
     
-    id plist = [NSPropertyListSerialization dataFromPropertyList:[pbItems valueForKey:@"XID"] format:NSPropertyListBinaryFormat_v1_0 errorDescription:NULL];
+    id plist = [NSPropertyListSerialization dataWithPropertyList:[pbItems valueForKey:@"XID"] format:NSPropertyListBinaryFormat_v1_0 options:0 error:NULL];
     for (NSString *pasteboardType in BrowserController.DatabaseObjectXIDsPasteboardTypes)
         [pboard setPropertyList:plist forType:pasteboardType];
     
@@ -6986,7 +6988,16 @@ static NSConditionLock *threadLock = nil;
         {
             NSString *filePath = [im valueForKey: @"completePath"];
             
-            if( [[NSWorkspace sharedWorkspace] openFile:filePath withApplication:@"VLC" andDeactivate: YES] == NO)
+            NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
+            NSURL *vlcURL = [workspace URLForApplicationWithBundleIdentifier:@"org.videolan.vlc"];
+            if( vlcURL)
+            {
+                [workspace openURLs:@[[NSURL fileURLWithPath:filePath]]
+              withApplicationAtURL:vlcURL
+                     configuration:[NSWorkspaceOpenConfiguration configuration]
+                 completionHandler:nil];
+            }
+            else
             {
                 NSRunAlertPanel( NSLocalizedString( @"MPEG-2 File", nil), NSLocalizedString( @"MPEG-2 DICOM files require the VLC application. Available for free here: http://www.videolan.org/vlc/", nil), nil, nil, nil);
             }
@@ -7030,11 +7041,11 @@ static NSConditionLock *threadLock = nil;
                 {
                     NSTask *aTask = [[[NSTask alloc] init] autorelease];
                     [aTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
-                    [aTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent: @"/dsr2html"]];
+                    [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dsr2html"]]];
                     [aTask setArguments: [NSArray arrayWithObjects: @"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items", [im completePathResolved], htmlpath, nil]];
                     [aTask setStandardOutput:[NSPipe pipe]];
                     [aTask setStandardError:[NSPipe pipe]];
-                    [aTask launch];
+                    HorosLaunchTaskOrRaise(aTask);
                     while( [aTask isRunning])
                         [NSThread sleepForTimeInterval: 0.1];
                     
@@ -7047,9 +7058,9 @@ static NSConditionLock *threadLock = nil;
                     if( [[NSFileManager defaultManager] fileExistsAtPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]])
                     {
                         NSTask *aTask = [[[NSTask alloc] init] autorelease];
-                        [aTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]];
+                        [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]]];
                         [aTask setArguments: [NSArray arrayWithObjects: htmlpath, @"pdfFromURL", nil]];
-                        [aTask launch];
+                        HorosLaunchTaskOrRaise(aTask);
                         NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
                         while( [aTask isRunning] && [NSDate timeIntervalSinceReferenceDate] - start < 10)
                             [NSThread sleepForTimeInterval: 0.1];
@@ -7063,7 +7074,7 @@ static NSConditionLock *threadLock = nil;
             }
             else path = [im valueForKey: @"completePath"];
             
-            if( path && [[NSWorkspace sharedWorkspace] openFile:path withApplication: nil andDeactivate: YES] == NO)
+            if( path && [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:path]] == NO)
                 r = NO;
             else
                 r = YES;
@@ -7546,7 +7557,7 @@ static NSConditionLock *threadLock = nil;
         
         if( [currentStudy valueForKey:@"windowsState"] && [[NSUserDefaults standardUserDefaults] boolForKey:@"automaticWorkspaceLoad"])
         {
-            NSArray *viewers = [NSPropertyListSerialization propertyListFromData: [currentStudy valueForKey:@"windowsState"] mutabilityOption: NSPropertyListImmutable format: nil errorDescription: nil];
+            NSArray *viewers = [NSPropertyListSerialization propertyListWithData:[currentStudy valueForKey:@"windowsState"] options:NSPropertyListImmutable format:nil error:nil];
             
             // Check if this windowsState contains at least this study...
             
@@ -9732,7 +9743,7 @@ static BOOL withReset = NO;
     DCMObject *dcmObject = [DCMObject objectWithContentsOfFile:[curObj valueForKey: @"completePath"] decodingPixelData:NO];
     NSData *encapsulatedPDF = [dcmObject attributeValueWithName:@"EncapsulatedDocument"];
     NSFileManager *fileManager = [NSFileManager defaultManager];
-    if( [fileManager createFileAtPath:pathToPDF contents:encapsulatedPDF attributes:nil]) [[NSWorkspace sharedWorkspace] openFile:pathToPDF withApplication: nil andDeactivate: YES];
+    if( [fileManager createFileAtPath:pathToPDF contents:encapsulatedPDF attributes:nil]) [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:pathToPDF]];
     else NSLog( @"couldn't open pdf");
     [NSThread sleepForTimeInterval: 1];
     [pool release];
@@ -10137,7 +10148,7 @@ static BOOL withReset = NO;
                 {
                     if ([DCMAbstractSyntaxUID isStructuredReport:image.series.seriesSOPClassUID] || [DCMAbstractSyntaxUID isPDF:image.series.seriesSOPClassUID])
                     {
-                        NSImage *icon = [[NSWorkspace sharedWorkspace] iconForFileType: @"txt"];
+                        NSImage *icon = [[NSWorkspace sharedWorkspace] iconForContentType:UTTypePlainText];
                         
                         NSImage *thumbnail = [[[NSImage alloc] initWithSize: NSMakeSize( THUMBNAILSIZE, THUMBNAILSIZE)] autorelease];
                         
@@ -11532,7 +11543,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
         DicomAlbum* album = [albumArray objectAtIndex:row];
         
         NSPasteboard* pb = [info draggingPasteboard];
-        NSArray* xids = [NSPropertyListSerialization propertyListFromData:[pb propertyListForType:[pb availableTypeFromArray:BrowserController.DatabaseObjectXIDsPasteboardTypes]] mutabilityOption:NSPropertyListImmutable format:NULL errorDescription:NULL];
+        NSArray* xids = [NSPropertyListSerialization propertyListWithData:[pb propertyListForType:[pb availableTypeFromArray:BrowserController.DatabaseObjectXIDsPasteboardTypes]] options:NSPropertyListImmutable format:NULL error:NULL];
         NSMutableArray* items = [NSMutableArray array];
         for (NSString* xid in xids)
             [items addObject:[_database objectWithID:[NSManagedObject UidForXid:xid]]];
@@ -14815,7 +14826,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"autoRetrieving"];
         
 #ifdef WITH_BANNER
-        [NSThread detachNewThreadSelector: @selector(checkForBanner:) toTarget: self withObject: nil];
+        [self checkForBanner:nil];
         
         CGFloat position = bannerSplit.frame.size.height - (banner.image.size.height+3);
         [bannerSplit setPosition: position ofDividerAtIndex: 0];
@@ -14927,26 +14938,22 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 #endif
 }
 
-// This gets executed in a separate thread
 - (void) checkForBanner: (id) sender
 {
 #ifdef WITH_BANNER
-    NSAutoreleasePool *pool = [NSAutoreleasePool new];
-    NSError *error = nil;
-    NSURLResponse *urlResponse = nil;
-    
     NSURLRequest *request = [[[NSURLRequest alloc] initWithURL: [NSURL URLWithString:URL_HOROS_BANNER] cachePolicy:NSURLRequestReloadIgnoringLocalAndRemoteCacheData timeoutInterval: 30] autorelease];
-    NSData *imageData = [NSURLConnection sendSynchronousRequest: request returningResponse: &urlResponse error: &error];
-    
-    if( imageData && error == nil && [urlResponse.MIMEType isEqualToString: @"image/png"])
-    {
-        NSImage *bannerImage = [[[NSImage alloc] initWithData: imageData] autorelease];
-        
-        if( bannerImage)
-            [self performSelectorOnMainThread: @selector(installBanner:) withObject: bannerImage waitUntilDone: NO modes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
-    }
-    
-    [pool release];
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *imageData, NSURLResponse *response, NSError *error) {
+        @autoreleasepool
+        {
+            if( imageData && error == nil && [response.MIMEType isEqualToString:@"image/png"])
+            {
+                NSImage *bannerImage = [[[NSImage alloc] initWithData:imageData] autorelease];
+                if( bannerImage)
+                    [self performSelectorOnMainThread:@selector(installBanner:) withObject:bannerImage waitUntilDone:NO modes:@[NSRunLoopCommonModes]];
+            }
+        }
+    }];
+    [task resume];
 #endif
 }
 
@@ -15910,18 +15917,18 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     
     @try
     {
-        [t setLaunchPath: @"/usr/bin/unzip"];
+        [t setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/unzip"]];
         
         if( [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/"] == NO)
             [[NSFileManager defaultManager] createDirectoryAtPath: @"/tmp/" withIntermediateDirectories:YES attributes:nil error:NULL];
         
-        [t setCurrentDirectoryPath: @"/tmp/"];
+        [t setCurrentDirectoryURL:[NSURL fileURLWithPath:@"/tmp/" isDirectory:YES]];
         if( pass)
             args = [NSArray arrayWithObjects: @"-qq", @"-o", @"-d", destination, @"-P", pass, file, nil];
         else
             args = [NSArray arrayWithObjects: @"-qq", @"-o", @"-d", destination, file, nil];
         [t setArguments: args];
-        [t launch];
+        HorosLaunchTaskOrRaise(t);
         while( [t isRunning])
             [NSThread sleepForTimeInterval: 0.1];
         
@@ -16177,7 +16184,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     
     if( [filesToExport count])
     {
-        [[NSWorkspace sharedWorkspace] selectFile:filesToExport.firstObject inFileViewerRootedAtPath:[filesToExport.firstObject stringByDeletingLastPathComponent]];
+        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[[NSURL fileURLWithPath:filesToExport.firstObject]]];
     }
 }
 
@@ -16737,11 +16744,11 @@ static volatile int numberOfThreadsForJPEG = 0;
                 {
                     NSTask *aTask = [[[NSTask alloc] init] autorelease];
                     [aTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
-                    [aTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent: @"/dsr2html"]];
+                    [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dsr2html"]]];
                     [aTask setArguments: [NSArray arrayWithObjects: @"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items", [curImage valueForKey: @"completePath"], htmlpath, nil]];
                     [aTask setStandardOutput:[NSPipe pipe]];
                     [aTask setStandardError:[NSPipe pipe]];
-                    [aTask launch];
+                    HorosLaunchTaskOrRaise(aTask);
                     while( [aTask isRunning])
                         [NSThread sleepForTimeInterval: 0.1];
                     
@@ -16754,9 +16761,9 @@ static volatile int numberOfThreadsForJPEG = 0;
                     if( [[NSFileManager defaultManager] fileExistsAtPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]])
                     {
                         NSTask *aTask = [[[NSTask alloc] init] autorelease];
-                        [aTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]];
+                        [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]]];
                         [aTask setArguments: [NSArray arrayWithObjects: htmlpath, @"pdfFromURL", nil]];
-                        [aTask launch];
+                        HorosLaunchTaskOrRaise(aTask);
                         NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
                         while( [aTask isRunning] && [NSDate timeIntervalSinceReferenceDate] - start < 10)
                             [NSThread sleepForTimeInterval: 0.1];
@@ -17572,26 +17579,6 @@ static volatile int numberOfThreadsForJPEG = 0;
                 
                 if( [[NSFileManager defaultManager] fileExistsAtPath: [tempPath stringByAppendingPathComponent:@"DICOMDIR"]] == NO)
                 {
-                    //						NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-                    //
-                    //						NSTask *theTask;
-                    //						NSMutableArray *theArguments = [NSMutableArray arrayWithObjects:@"+r", @"-Pfl", @"-W", @"-Nxc",@"+I",@"+id", tempPath,  nil];
-                    //
-                    //						theTask = [[NSTask alloc] init];
-                    //						[theTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];	// DO NOT REMOVE !
-                    //						[theTask setLaunchPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dcmmkdir"]];
-                    //						[theTask setCurrentDirectoryPath:tempPath];
-                    //						[theTask setArguments:theArguments];
-                    //
-                    //						[theTask launch];
-                    //						while( [theTask isRunning])
-                    //                            [NSThread sleepForTimeInterval: 0.1];
-                    //
-                    //                        //[theTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
-                    //						[theTask release];
-                    //
-                    //						[pool release];
-                    
                     [NSThread currentThread].status = NSLocalizedString( @"Writing DICOMDIR...", nil);
                     [DicomDir createDicomDirAtDir: tempPath];
                 }
@@ -17719,7 +17706,7 @@ static volatile int numberOfThreadsForJPEG = 0;
                 NSArray *subArray = [NSArray arrayWithObjects: objs count: no];
                 
                 t = [[[NSTask alloc] init] autorelease];
-                [t setLaunchPath: @"/usr/bin/zip"];
+                [t setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/zip"]];
                 
                 if( [password length] > 0)
                     args = [NSArray arrayWithObjects: @"-q", @"-j", @"-e", @"-P", password, destFile, nil];
@@ -17729,7 +17716,7 @@ static volatile int numberOfThreadsForJPEG = 0;
                 args = [args arrayByAddingObjectsFromArray: subArray];
                 
                 [t setArguments: args];
-                [t launch];
+                HorosLaunchTaskOrRaise(t);
                 //				[t waitUntilExit];
                 while( [t isRunning]) [NSThread sleepForTimeInterval: 0.01];
                 
@@ -17779,13 +17766,13 @@ static volatile int numberOfThreadsForJPEG = 0;
         @try
         {
             t = [[[NSTask alloc] init] autorelease];
-            [t setLaunchPath: @"/usr/bin/zip"];
+            [t setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/zip"]];
             
             BOOL isDirectory;
             
             if( [[NSFileManager defaultManager] fileExistsAtPath: srcFolder isDirectory: &isDirectory])
             {
-                [t setCurrentDirectoryPath: [srcFolder stringByDeletingLastPathComponent]];
+                [t setCurrentDirectoryURL:[NSURL fileURLWithPath:[srcFolder stringByDeletingLastPathComponent] isDirectory:YES]];
                 
                 if( [password length] > 0)
                     args = [NSArray arrayWithObjects: @"-q", @"-r", @"-e", @"-P", password, destFile, [srcFolder lastPathComponent], nil];
@@ -17793,7 +17780,7 @@ static volatile int numberOfThreadsForJPEG = 0;
                     args = [NSArray arrayWithObjects: @"-q", @"-r", destFile, [srcFolder lastPathComponent], nil];
                 
                 [t setArguments: args];
-                [t launch];
+                HorosLaunchTaskOrRaise(t);
                 while( [t isRunning])
                     [NSThread sleepForTimeInterval: 0.1];
                 
@@ -18707,7 +18694,7 @@ static volatile int numberOfThreadsForJPEG = 0;
                 {
                     if( [[NSFileManager defaultManager] fileExistsAtPath: localReportFile])
                     {
-                        [[NSWorkspace sharedWorkspace] openFile: localReportFile withApplication: nil andDeactivate:YES];
+                        [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:localReportFile]];
                         [NSThread sleepForTimeInterval: 1];
                     }
                     else
@@ -18786,7 +18773,7 @@ static volatile int numberOfThreadsForJPEG = 0;
         if (studySelected.reportURL)
         {
             if ([studySelected.reportURL hasPrefix: @"http://"] || [studySelected.reportURL hasPrefix: @"https://"])
-                icon = [[NSWorkspace sharedWorkspace] iconForFileType:@"download"];
+                icon = [[NSWorkspace sharedWorkspace] iconForContentType:([UTType typeWithFilenameExtension:@"download"] ?: UTTypeData)];
             else if ([[NSFileManager defaultManager] fileExistsAtPath:studySelected.reportURL])
                 icon = [[NSWorkspace sharedWorkspace] iconForFile:studySelected.reportURL];
             if (icon)

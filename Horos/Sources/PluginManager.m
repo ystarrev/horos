@@ -794,9 +794,9 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
                         [args addObject:dstPath];
                         [args addObject:@"-d"];
                         [args addObject:[dstPath stringByDeletingLastPathComponent]];
-                        [aTask setLaunchPath:@"/usr/bin/unzip"];
+                        [aTask setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/unzip"]];
                         [aTask setArguments:args];
-                        [aTask launch];
+                        HorosLaunchTaskOrRaise(aTask);
                         while( [aTask isRunning])
                             [NSThread sleepForTimeInterval: 0.1];
                         
@@ -1413,11 +1413,11 @@ BOOL gPluginsAlertAlreadyDisplayed = NO;
 		{
 			if([[name stringByDeletingPathExtension] isEqualToString: [pluginName stringByDeletingPathExtension]] && (directory == nil || [directory isEqualTo: path]))
 			{
-				NSInteger tag = 0;
-				[[NSWorkspace sharedWorkspace] performFileOperation:NSWorkspaceRecycleOperation source:path destination:trashDir files:[NSArray arrayWithObject:name] tag:&tag];
-				if(tag!=0)
+				NSError *trashError = nil;
+				BOOL movedToTrash = [[NSFileManager defaultManager] trashItemAtURL:[NSURL fileURLWithPath:[path stringByAppendingPathComponent:name]] resultingItemURL:nil error:&trashError];
+				if(!movedToTrash)
 				{
-					NSLog( @"performFileOperation:NSWorkspaceRecycleOperation failed, will us mv");
+					NSLog( @"Moving plugin to Trash failed (%@); falling back to mv", trashError.localizedDescription);
 					
 					NSMutableArray *args = [NSMutableArray array];
 					[args addObject:@"-f"];

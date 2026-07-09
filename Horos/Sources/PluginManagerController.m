@@ -1108,9 +1108,9 @@ NSInteger sortPluginArrayByName(id plugin1, id plugin2, void *context)
         [args addObject:path];
         [args addObject:@"-d"];
         [args addObject:[path stringByDeletingLastPathComponent]];
-        [aTask setLaunchPath:@"/usr/bin/unzip"];
+        [aTask setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/unzip"]];
         [aTask setArguments:args];
-        [aTask launch];
+        HorosLaunchTaskOrRaise(aTask);
         while( [aTask isRunning])
             [NSThread sleepForTimeInterval: 0.1];
         

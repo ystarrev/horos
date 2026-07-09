@@ -176,7 +176,7 @@ void PFMoveToApplicationsFolderIfNecessary(void) {
 				// Use the shell to determine if the app is already running on systems 10.5 or lower
 				if (floor(NSAppKitVersionNumber) <= NSAppKitVersionNumber10_5) {
 					NSString *script = [NSString stringWithFormat:@"ps ax -o comm | grep '%@/' | grep -v grep >/dev/null", destinationPath];
-					NSTask *task = [NSTask launchedTaskWithLaunchPath:@"/bin/sh" arguments:[NSArray arrayWithObjects:@"-c", script, nil]];
+					NSTask *task = [NSTask launchedTaskWithExecutableURL:[NSURL fileURLWithPath:@"/bin/sh"] arguments:@[@"-c", script] error:NULL terminationHandler:nil];
 					[task waitUntilExit];
 
 					// If the task terminated with status 0, it means that the final grep produced 1 or more lines of output.
@@ -197,7 +197,7 @@ void PFMoveToApplicationsFolderIfNecessary(void) {
 				if (destinationIsRunning) {
 					// Give the running app focus and terminate myself
 					NSLog(@"INFO -- Switching to an already running version");
-					[[NSTask launchedTaskWithLaunchPath:@"/usr/bin/open" arguments:[NSArray arrayWithObject:destinationPath]] waitUntilExit];
+					[[NSTask launchedTaskWithExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/open"] arguments:@[destinationPath] error:NULL terminationHandler:nil] waitUntilExit];
 					exit(0);
 				}
 				else {
@@ -329,15 +329,12 @@ static BOOL IsLaunchedFromDMG(void) {
 }
 
 static BOOL Trash(NSString *path) {
-	if ([[NSWorkspace sharedWorkspace] performFileOperation:NSWorkspaceRecycleOperation
-													 source:[path stringByDeletingLastPathComponent]
-												destination:@""
-													  files:[NSArray arrayWithObject:[path lastPathComponent]]
-														tag:NULL]) {
+	NSError *error = nil;
+	if ([[NSFileManager defaultManager] trashItemAtURL:[NSURL fileURLWithPath:path] resultingItemURL:nil error:&error]) {
 		return YES;
 	}
 	else {
-		NSLog(@"ERROR -- Could not trash '%@'", path);
+		NSLog(@"ERROR -- Could not trash '%@': %@", path, error.localizedDescription);
 		return NO;
 	}
 }
@@ -471,13 +468,13 @@ static void Relaunch(NSString *destinationPath)
 
 	NSString *script = [NSString stringWithFormat:@"(while [ `ps -p %d | wc -l` -gt 1 ]; do sleep 0.1; done; %@ open '%@') &", pid, preOpenCmd, destinationPath];
 
-	[NSTask launchedTaskWithLaunchPath:@"/bin/sh" arguments:[NSArray arrayWithObjects:@"-c", script, nil]];
+	[NSTask launchedTaskWithExecutableURL:[NSURL fileURLWithPath:@"/bin/sh"] arguments:@[@"-c", script] error:NULL terminationHandler:nil];
 
 	// Launched from within a DMG? -- unmount (if no files are open after 5 seconds,
 	// otherwise leave it mounted).
 	if (IsLaunchedFromDMG()) {
 		script = [NSString stringWithFormat:@"(sleep 5 && hdiutil detach '%@') &", [[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent]];
-		[NSTask launchedTaskWithLaunchPath:@"/bin/sh" arguments:[NSArray arrayWithObjects:@"-c", script, nil]];
+		[NSTask launchedTaskWithExecutableURL:[NSURL fileURLWithPath:@"/bin/sh"] arguments:@[@"-c", script] error:NULL terminationHandler:nil];
 	}
     
 	exit(0);

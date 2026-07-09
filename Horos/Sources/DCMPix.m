@@ -6371,11 +6371,11 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             {
                 NSTask *aTask = [[[NSTask alloc] init] autorelease];
                 [aTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
-                [aTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent: @"/dsr2html"]];
+                [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dsr2html"]]];
                 [aTask setArguments: [NSArray arrayWithObjects: @"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items",self.srcFile, htmlpath, nil]];
                 [aTask setStandardOutput:[NSPipe pipe]];
                 [aTask setStandardError:[NSPipe pipe]];
-                [aTask launch];
+                HorosLaunchTaskOrRaise(aTask);
                 while( [aTask isRunning])
                     [NSThread sleepForTimeInterval: 0.1];
                 

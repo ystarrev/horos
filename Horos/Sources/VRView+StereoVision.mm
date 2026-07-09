@@ -1738,7 +1738,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
             [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
             [[NSFileManager defaultManager] moveItemAtPath: newpath  toPath: path error:NULL];
             
-            [[NSWorkspace sharedWorkspace] openFile:path withApplication: nil andDeactivate: YES];
+            [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:path]];
             [NSThread sleepForTimeInterval: 1];
         }
         

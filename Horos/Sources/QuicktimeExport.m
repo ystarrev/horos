@@ -326,7 +326,7 @@
                 [pixelBufferAdaptor release];
                 
                 if( openIt && aborted == NO)
-                    [[NSWorkspace sharedWorkspace] openFile:fileName];
+                    [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:fileName]];
             }
             
             [writer release];

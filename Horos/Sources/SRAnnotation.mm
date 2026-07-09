@@ -430,7 +430,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 		
 		image = [im retain];
 		
-		_dataEncapsulated = [[NSPropertyListSerialization dataFromPropertyList:dict format:NSPropertyListXMLFormat_v1_0 errorDescription: nil] retain];
+		_dataEncapsulated = [[NSPropertyListSerialization dataWithPropertyList:dict format:NSPropertyListXMLFormat_v1_0 options:0 error:nil] retain];
 	}
 	
 	return self;
@@ -631,7 +631,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 	
 	@try
 	{
-        dict = [NSPropertyListSerialization propertyListFromData: _dataEncapsulated  mutabilityOption: NSPropertyListImmutable format: nil errorDescription: nil];
+        dict = [NSPropertyListSerialization propertyListWithData:_dataEncapsulated options:NSPropertyListImmutable format:nil error:nil];
 	}
 	@catch( NSException *e)
 	{

@@ -409,9 +409,9 @@ static NSString* _dcmElementKey(DcmElement* element) {
         if( [[NSFileManager defaultManager] fileExistsAtPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]])
         {
             NSTask *aTask = [[[NSTask alloc] init] autorelease];
-            [aTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]];
+            [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]]];
             [aTask setArguments: [NSArray arrayWithObjects: path, @"testDICOMDIR", nil]];
-            [aTask launch];
+            HorosLaunchTaskOrRaise(aTask);
             while( [aTask isRunning])
                 [NSThread sleepForTimeInterval: 0.1];
             

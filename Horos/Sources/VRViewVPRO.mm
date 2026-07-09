@@ -1275,7 +1275,7 @@ public:
 			[[NSFileManager defaultManager] removeFileAtPath:path handler:nil];
 			[[NSFileManager defaultManager] movePath: newpath  toPath: path handler: nil];
 			
-			[[NSWorkspace sharedWorkspace] openFile:path];
+			[[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:path]];
 		}
 		
 		[self restoreViewSizeAfterMatrix3DExport];

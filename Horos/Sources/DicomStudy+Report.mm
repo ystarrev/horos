@@ -87,11 +87,11 @@
             //   <applicationPath>/Contents/MacOS/soffice --headless --convert-to pdf <odt_path>
             //
             NSTask* task = [[[NSTask alloc] init] autorelease];
-            [task setLaunchPath: [applicationPath stringByAppendingPathComponent:@"Contents/MacOS/soffice"]];
-            [task setCurrentDirectoryPath: [odtPath stringByDeletingLastPathComponent]];
+            [task setExecutableURL:[NSURL fileURLWithPath:[applicationPath stringByAppendingPathComponent:@"Contents/MacOS/soffice"]]];
+            [task setCurrentDirectoryURL:[NSURL fileURLWithPath:[odtPath stringByDeletingLastPathComponent] isDirectory:YES]];
             [task setArguments: [NSArray arrayWithObjects: @"--headless", @"--convert-to", @"pdf", odtPath, nil]];
             [task setStandardOutput:[NSPipe pipe]];
-            [task launch];
+            HorosLaunchTaskOrRaise(task);
             while( [task isRunning])
                 [NSThread sleepForTimeInterval: 0.1];
             
@@ -143,12 +143,12 @@
             [NSFileManager.defaultManager createFileAtPath: outPdfPath contents:[NSData data] attributes:nil];
             
             NSTask* task = [[[NSTask alloc] init] autorelease];
-            [task setLaunchPath: @"/usr/sbin/cupsfilter"];
+            [task setExecutableURL:[NSURL fileURLWithPath:@"/usr/sbin/cupsfilter"]];
             [task setArguments: [NSArray arrayWithObjects: reportPath, nil]];
             [task setStandardOutput:[NSFileHandle fileHandleForWritingAtPath: outPdfPath]];
             [task setStandardError:[NSPipe pipe]];
             
-            [task launch];
+            HorosLaunchTaskOrRaise(task);
             while( [task isRunning])
                 [NSThread sleepForTimeInterval: 0.1];
         }

@@ -656,11 +656,11 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 
         NSTask *task = [[[NSTask alloc] init] autorelease];
         [task setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"dicom.dic"] forKey:@"DCMDICTPATH"]];
-        [task setLaunchPath:dsr2htmlPath];
+        [task setExecutableURL:[NSURL fileURLWithPath:dsr2htmlPath]];
         [task setArguments:[NSArray arrayWithObjects:@"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items", pix.srcFile, htmlPath, nil]];
         [task setStandardOutput:[NSPipe pipe]];
         [task setStandardError:[NSPipe pipe]];
-        [task launch];
+        HorosLaunchTaskOrRaise(task);
         while ([task isRunning])
             [NSThread sleepForTimeInterval:0.05];
         [task interrupt];

@@ -40,7 +40,6 @@
 #import "CPRProjectionOperation.h"
 #import "CPRGeneratorRequest.h"
 #import "CPRVolumeData.h"
-#include <libkern/OSAtomic.h>
 
 
 static const NSUInteger FILL_HEIGHT = 40;
@@ -222,7 +221,7 @@ static NSOperationQueue *_obliqueSliceOperationFillQueue = nil;
                 }                
             }
             
-            _oustandingFillOperationCount = (int32_t)[fillOperations count];
+            __atomic_store_n(&_oustandingFillOperationCount, (int32_t)[fillOperations count], __ATOMIC_RELEASE);
             
 			fillQueue = [[self class] _fillQueue];
 			for (horizontalFillOperation in fillOperations) {
@@ -271,7 +270,7 @@ static NSOperationQueue *_obliqueSliceOperationFillQueue = nil;
             if ([operation isFinished]) {
                 [operation removeObserver:self forKeyPath:@"isFinished"];
                 [self autorelease]; // to balance the retain when we observe operations
-                oustandingFillOperationCount = OSAtomicDecrement32Barrier(&_oustandingFillOperationCount);
+                oustandingFillOperationCount = __atomic_sub_fetch(&_oustandingFillOperationCount, 1, __ATOMIC_ACQ_REL);
                 if (oustandingFillOperationCount == 0) { // done with the fill operations, now do the projection
                     volumeTransform = [self _generatedVolumeTransform];
                     generatedVolume = [[CPRVolumeData alloc] initWithFloatBytesNoCopy:_floatBytes pixelsWide:self.request.pixelsWide pixelsHigh:self.request.pixelsHigh pixelsDeep:[self _pixelsDeep]
@@ -370,7 +369,6 @@ static NSOperationQueue *_obliqueSliceOperationFillQueue = nil;
 }
 
 @end
-
 
 
 

@@ -174,7 +174,7 @@
         NSMutableArray* objects = [NSMutableArray array];
         for( i = 0; i < [cells count]; i++)
             [objects addObject:[[[BrowserController currentBrowser] matrixViewArray] objectAtIndex:[[cells objectAtIndex: i] tag]]];
-        [pbi setPropertyList:[NSPropertyListSerialization dataFromPropertyList:[objects valueForKey:@"XID"] format:NSPropertyListBinaryFormat_v1_0 errorDescription:NULL] forType:O2PasteboardTypeDatabaseObjectXIDs];
+        [pbi setPropertyList:[NSPropertyListSerialization dataWithPropertyList:[objects valueForKey:@"XID"] format:NSPropertyListBinaryFormat_v1_0 options:0 error:NULL] forType:O2PasteboardTypeDatabaseObjectXIDs];
         
         NSDraggingItem* di = [[[NSDraggingItem alloc] initWithPasteboardWriter:pbi] autorelease];
         NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];

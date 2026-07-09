@@ -729,8 +729,10 @@ NSString *mediumTag[] = {@"Blue Film", @"Clear Film", @"Paper"};
 
         NSString* printScriptPath = [NSString stringWithFormat: @"%@/print.sh", printJobDir];
         [theTask setArguments: [NSArray arrayWithObjects: printScriptPath, nil]];
-        [theTask setLaunchPath:@"/bin/bash"];
-        [theTask launch];
+        [theTask setExecutableURL:[NSURL fileURLWithPath:@"/bin/bash"]];
+        NSError *launchError = nil;
+        if (![theTask launchAndReturnError:&launchError])
+            [NSException raise:NSInternalInconsistencyException format:@"Failed to launch print task: %@", launchError.localizedDescription];
         while( [theTask isRunning]) [NSThread sleepForTimeInterval: 0.01];
 
         int status = [theTask terminationStatus];

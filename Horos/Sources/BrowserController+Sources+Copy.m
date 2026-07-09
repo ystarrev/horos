@@ -248,7 +248,7 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
                     {
                         if( srcDatabase.isReadOnly)
                         {
-                            NSTask *t = [NSTask launchedTaskWithLaunchPath: @"/bin/cp" arguments: @[srcPath, dstPath]];
+                            NSTask *t = HorosLaunchTaskAtPath(@"/bin/cp", @[srcPath, dstPath]);
                             while( [t isRunning]){};
                         }
                         else if( [[NSFileManager defaultManager] copyItemAtPath: srcPath toPath: dstPath error: nil] == NO)

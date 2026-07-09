@@ -274,7 +274,7 @@ static int validFilePathDepth = 0;
         [aTask setStandardOutput:newPipe];
         
         [aTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
-        [aTask setLaunchPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dcmdump"]];
+        [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dcmdump"]]];
         [theArguments addObject:srcFile];
         
         [theArguments addObject:@"+L"];
@@ -283,7 +283,7 @@ static int validFilePathDepth = 0;
         
         [aTask setArguments:theArguments];
         
-        [aTask launch];
+        HorosLaunchTaskOrRaise(aTask);
         
         NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
         

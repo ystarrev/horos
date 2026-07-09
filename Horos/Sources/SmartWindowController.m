@@ -140,7 +140,7 @@
     {
         [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/OsiriXTables.pdf" error:nil];
         [[NSFileManager defaultManager] copyItemAtPath: [[NSBundle mainBundle] pathForResource:@"OsiriXTables" ofType:@"pdf"] toPath: @"/tmp/OsiriXTables.pdf" error: nil];
-		[[NSWorkspace sharedWorkspace] openFile: @"/tmp/OsiriXTables.pdf" withApplication: nil andDeactivate: YES];
+		[[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:@"/tmp/OsiriXTables.pdf"]];
         
         [NSThread sleepForTimeInterval:1];
     }

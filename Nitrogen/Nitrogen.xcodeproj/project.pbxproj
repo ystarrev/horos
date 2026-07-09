@@ -192,8 +192,6 @@
 		B4F336ED1611A97900E46F7F /* NSWindow+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F336341611A97800E46F7F /* NSWindow+N2.mm */; };
 		B4F336EE1611A97900E46F7F /* NSXMLNode+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F336351611A97800E46F7F /* NSXMLNode+N2.h */; };
 		B4F336EF1611A97900E46F7F /* NSXMLNode+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F336361611A97800E46F7F /* NSXMLNode+N2.mm */; };
-		B4F336F01611A97900E46F7F /* SMTPClient.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F336371611A97800E46F7F /* SMTPClient.h */; };
-		B4F336F11611A97900E46F7F /* SMTPClient.m in Sources */ = {isa = PBXBuildFile; fileRef = B4F336381611A97800E46F7F /* SMTPClient.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -395,8 +393,6 @@
 		B4F336341611A97800E46F7F /* NSWindow+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = "NSWindow+N2.mm"; sourceTree = "<group>"; };
 		B4F336351611A97800E46F7F /* NSXMLNode+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSXMLNode+N2.h"; sourceTree = "<group>"; };
 		B4F336361611A97800E46F7F /* NSXMLNode+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = "NSXMLNode+N2.mm"; sourceTree = "<group>"; };
-		B4F336371611A97800E46F7F /* SMTPClient.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SMTPClient.h; sourceTree = "<group>"; };
-		B4F336381611A97800E46F7F /* SMTPClient.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SMTPClient.m; sourceTree = "<group>"; };
 		D2F7E79907B2D74100F64583 /* CoreData.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreData.framework; path = /System/Library/Frameworks/CoreData.framework; sourceTree = "<absolute>"; };
 /* End PBXFileReference section */
 

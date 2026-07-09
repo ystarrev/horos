@@ -97,7 +97,7 @@
             
             NSPasteboardItem* pbi = [[[NSPasteboardItem alloc] init] autorelease];
             
-            [pbi setPropertyList:[NSPropertyListSerialization dataFromPropertyList:[@[[[[self selectedCell] representedObject] object]] valueForKey:@"XID"] format:NSPropertyListBinaryFormat_v1_0 errorDescription:NULL] forType:O2PasteboardTypeDatabaseObjectXIDs];
+            [pbi setPropertyList:[NSPropertyListSerialization dataWithPropertyList:[@[[[[self selectedCell] representedObject] object]] valueForKey:@"XID"] format:NSPropertyListBinaryFormat_v1_0 options:0 error:NULL] forType:O2PasteboardTypeDatabaseObjectXIDs];
 
             NSDraggingItem* di = [[[NSDraggingItem alloc] initWithPasteboardWriter:pbi] autorelease];
             NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];

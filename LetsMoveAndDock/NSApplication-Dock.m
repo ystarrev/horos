@@ -100,7 +100,7 @@
 	
 	// Add the application to the Dock
 	NSArray* args = [NSArray arrayWithObjects:@"write", @"com.apple.Dock",@"persistent-apps",@"-array-add",[NSString stringWithFormat:@"<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>%@</string><key>_CFURLStringType</key><integer>0</integer></dict></dict></dict>", path], nil];
-	NSTask* t = [NSTask launchedTaskWithLaunchPath:@"/usr/bin/defaults" arguments:args];
+	NSTask* t = [NSTask launchedTaskWithExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/defaults"] arguments:args error:NULL terminationHandler:nil];
 	[t waitUntilExit];
 	if ( ![t isRunning] && [t terminationStatus] > 0 ) {
 		NSLog(@"%d - %d", [t terminationStatus], (int) [t terminationReason]);
@@ -108,7 +108,7 @@
 	}
 	
 	// Now restart the Dock
-	t = [NSTask launchedTaskWithLaunchPath:@"/usr/bin/killall" arguments:[NSArray arrayWithObjects:@"-HUP", @"Dock", nil]];
+	t = [NSTask launchedTaskWithExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/killall"] arguments:@[@"-HUP", @"Dock"] error:NULL terminationHandler:nil];
 	[t waitUntilExit];
 	if ( ![t isRunning] && [t terminationStatus] > 0 ) {
 		NSLog(@"%d - %d", [t terminationStatus], (int) [t terminationReason]);

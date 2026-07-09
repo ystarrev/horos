@@ -73,7 +73,7 @@
 	
 	NSTask* makeImageTask = [[[NSTask alloc] init] autorelease];
 
-	[makeImageTask setLaunchPath: @"/bin/sh"];
+	[makeImageTask setExecutableURL:[NSURL fileURLWithPath:@"/bin/sh"]];
 	
 	imagePath = [imagePath stringByReplacingOccurrencesOfString: @"\"" withString: @"\\\""];
 	directoryPath = [directoryPath stringByReplacingOccurrencesOfString: @"\"" withString: @"\\\""];
@@ -85,7 +85,7 @@
 	NSArray *args = [NSArray arrayWithObjects: @"-c", cmdString, nil];
 
 	[makeImageTask setArguments:args];
-	[makeImageTask launch];
+	HorosLaunchTaskOrRaise(makeImageTask);
     while( [makeImageTask isRunning])
         [NSThread sleepForTimeInterval: 0.1];
     
@@ -547,7 +547,7 @@
     
     NSString *newName = cdName;
     
-    NSTask *t = [NSTask launchedTaskWithLaunchPath: @"/usr/sbin/diskutil" arguments: [NSArray arrayWithObjects: @"rename", writeVolumePath, newName, nil]];
+    NSTask *t = HorosLaunchTaskAtPath(@"/usr/sbin/diskutil", @[@"rename", writeVolumePath, newName]);
     
     while( [t isRunning])
         [NSThread sleepForTimeInterval: 0.1];
@@ -562,7 +562,7 @@
         if( newName.length > 10)
             newName = [newName substringToIndex: 10];
         
-        NSTask *t = [NSTask launchedTaskWithLaunchPath: @"/usr/sbin/diskutil" arguments: [NSArray arrayWithObjects: @"rename", writeVolumePath, [newName uppercaseString], nil]];
+        NSTask *t = HorosLaunchTaskAtPath(@"/usr/sbin/diskutil", @[@"rename", writeVolumePath, [newName uppercaseString]]);
         
         while( [t isRunning])
             [NSThread sleepForTimeInterval: 0.1];
@@ -575,7 +575,7 @@
         {
             newName = @"DICOM";
             
-            NSTask *t = [NSTask launchedTaskWithLaunchPath: @"/usr/sbin/diskutil" arguments: [NSArray arrayWithObjects: @"rename", writeVolumePath, newName, nil]];
+            NSTask *t = HorosLaunchTaskAtPath(@"/usr/sbin/diskutil", @[@"rename", writeVolumePath, newName]);
             
             while( [t isRunning])
                 [NSThread sleepForTimeInterval: 0.1];
@@ -875,10 +875,10 @@
 		fromDu = [fromPipe fileHandleForWriting];
 		NSTask *duTool = [[[NSTask alloc] init] autorelease];
 
-		[duTool setLaunchPath:@"/usr/bin/du"];
+		[duTool setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/du"]];
 		[duTool setStandardOutput:fromDu];
 		[duTool setArguments:args];
-		[duTool launch];
+		HorosLaunchTaskOrRaise(duTool);
 		
         while( [duTool isRunning])
             [NSThread sleepForTimeInterval: 0.1];
@@ -1052,10 +1052,10 @@
                 thread.status = NSLocalizedString( @"Adding Horos Lite...", nil);
                 // unzip the file
                 NSTask *unzipTask = [[NSTask alloc] init];
-                [unzipTask setLaunchPath: @"/usr/bin/unzip"];
-                [unzipTask setCurrentDirectoryPath: burnFolder];
+                [unzipTask setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/unzip"]];
+                [unzipTask setCurrentDirectoryURL:[NSURL fileURLWithPath:burnFolder isDirectory:YES]];
                 [unzipTask setArguments: [NSArray arrayWithObjects: @"-o", [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent: @"Horos Launcher.zip"], nil]]; // -o to override existing report w/ same name
-                [unzipTask launch];
+                HorosLaunchTaskOrRaise(unzipTask);
                 
                 while( [unzipTask isRunning])
                     [NSThread sleepForTimeInterval: 0.1];

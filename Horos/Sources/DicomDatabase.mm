@@ -2793,7 +2793,7 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                                             @try {
                                                 SRAnnotation *r = [[[SRAnnotation alloc] initWithContentsOfFile: newFile] autorelease];
                                                 
-                                                NSArray *viewers = [NSPropertyListSerialization propertyListFromData: r.dataEncapsulated mutabilityOption: NSPropertyListImmutable format: nil errorDescription: nil];
+                                                NSArray *viewers = [NSPropertyListSerialization propertyListWithData:r.dataEncapsulated options:NSPropertyListImmutable format:nil error:nil];
                                                 
                                                 if( viewers.count > 0)
                                                 {
@@ -3167,7 +3167,7 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
 
                                         if( copied == NO && mountedVolume)
                                         {
-                                            NSTask *t = [NSTask launchedTaskWithLaunchPath: @"/bin/cp" arguments: @[srcPath, dstPath]];
+                                            NSTask *t = HorosLaunchTaskAtPath(@"/bin/cp", @[srcPath, dstPath]);
                                             [t waitUntilExit];
                                             copied = ([t terminationStatus] == 0);
                                         }
@@ -4720,11 +4720,11 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
         [NSFileManager.defaultManager createFileAtPath:repairedDBFile contents:[NSData data] attributes:nil];
         
         NSTask* theTask = [[NSTask alloc] init];
-        [theTask setLaunchPath: @"/usr/bin/sqlite3"];
+        [theTask setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/sqlite3"]];
         [theTask setStandardOutput:[NSFileHandle fileHandleForWritingAtPath:repairedDBFile]];
         [theTask setArguments:[NSArray arrayWithObjects: self.sqlFilePath, @".dump", nil]];
         
-        [theTask launch];
+        HorosLaunchTaskOrRaise(theTask);
         
         while( [theTask isRunning])
             [NSThread sleepForTimeInterval: 0.1];
@@ -4739,11 +4739,11 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
             [NSFileManager.defaultManager removeItemAtPath:repairedDBFinalFile error:nil];
             
             theTask = [[NSTask alloc] init];
-            [theTask setLaunchPath:@"/usr/bin/sqlite3"];
+            [theTask setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/sqlite3"]];
             [theTask setStandardInput:[NSFileHandle fileHandleForReadingAtPath:repairedDBFile]];
             [theTask setArguments:[NSArray arrayWithObjects: repairedDBFinalFile, nil]];		
             
-            [theTask launch];
+            HorosLaunchTaskOrRaise(theTask);
             while( [theTask isRunning])
                 [NSThread sleepForTimeInterval: 0.1];
             

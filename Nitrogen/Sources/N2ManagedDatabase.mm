@@ -451,7 +451,7 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
                                     message);
                                 
                                 if (result == NSAlertAlternateReturn) {
-                                    [[NSWorkspace sharedWorkspace] selectFile:sqlFilePath inFileViewerRootedAtPath:[sqlFilePath stringByDeletingLastPathComponent]];
+                                    [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[[NSURL fileURLWithPath:sqlFilePath]]];
                                 } else if (result == NSAlertOtherReturn && self.deleteSQLFileIfOpeningFailed) {
                                     NSInteger confirmation = NSRunCriticalAlertPanel(
                                         [NSString stringWithFormat:NSLocalizedString(@"Reset %@ SQL Index?", nil), [self className]],

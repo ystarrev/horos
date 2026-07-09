@@ -796,7 +796,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
     NSTask *task = [[NSTask alloc] init];
     NSPipe *pipe = [NSPipe pipe];
-    [task setLaunchPath:dnsSDPath];
+    [task setExecutableURL:[NSURL fileURLWithPath:dnsSDPath]];
     [task setArguments:[NSArray arrayWithObjects:@"-B", type, @"local", nil]];
     [task setStandardOutput:pipe];
     [task setStandardError:pipe];
@@ -821,7 +821,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
     @try
     {
-        [task launch];
+        HorosLaunchTaskOrRaise(task);
         NSLog(@"DNS-SD Bonjour fallback browsing for %@", type);
     }
     @catch (NSException *exception)
@@ -965,7 +965,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
     NSTask *task = [[NSTask alloc] init];
     NSPipe *pipe = [NSPipe pipe];
-    [task setLaunchPath:@"/usr/bin/dns-sd"];
+    [task setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/dns-sd"]];
     [task setArguments:[NSArray arrayWithObjects:@"-L", name, type, @"local", nil]];
     [task setStandardOutput:pipe];
     [task setStandardError:pipe];
@@ -990,7 +990,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
     @try
     {
-        [task launch];
+        HorosLaunchTaskOrRaise(task);
         [self performSelector:@selector(_stopDNSSDResolveTaskForKey:) withObject:key afterDelay:10.0];
     }
     @catch (NSException *exception)
@@ -1887,17 +1887,17 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         }
 
     NSTask* task = [[NSTask alloc] init];
-    [task setLaunchPath:@"/usr/sbin/diskutil"];
+    [task setExecutableURL:[NSURL fileURLWithPath:@"/usr/sbin/diskutil"]];
     [task setArguments:[NSArray arrayWithObjects: @"info", @"-plist", path, NULL]];
     [task setStandardError:[NSPipe pipe]];
     [task setStandardOutput:[task standardError]];
-    [task launch];
+    HorosLaunchTaskOrRaise(task);
     while( [task isRunning]) [NSThread sleepForTimeInterval: 0.01];
 
     NSData* output = [[[[[task standardError] fileHandleForReading] readDataToEndOfFile] retain] autorelease];
     [task release];
 
-    id plist = [NSPropertyListSerialization propertyListFromData:output mutabilityOption:NSPropertyListImmutable format:0 errorDescription:NULL];
+    id plist = [NSPropertyListSerialization propertyListWithData:output options:NSPropertyListImmutable format:NULL error:NULL];
     NSDictionary *result = [plist isKindOfClass:[NSDictionary class]] ? plist : nil;
     NSString *mountIdentity = HorosMountedSourceIdentityFromDiskutilInfo(result);
 
@@ -2046,10 +2046,10 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 -(BOOL)tableView:(NSTableView*)tableView acceptDrop:(id<NSDraggingInfo>)info row:(NSInteger)row dropOperation:(NSTableViewDropOperation)operation
 {
     NSPasteboard* pb = [info draggingPasteboard];
-    NSArray* xids = [NSPropertyListSerialization propertyListFromData:[pb propertyListForType:[pb availableTypeFromArray:BrowserController.DatabaseObjectXIDsPasteboardTypes]]
-                                                     mutabilityOption:NSPropertyListImmutable
-                                                               format:NULL
-                                                     errorDescription:NULL];
+    NSArray* xids = [NSPropertyListSerialization propertyListWithData:[pb propertyListForType:[pb availableTypeFromArray:BrowserController.DatabaseObjectXIDsPasteboardTypes]]
+                                                               options:NSPropertyListImmutable
+                                                                format:NULL
+                                                                 error:NULL];
     NSMutableArray* items = [NSMutableArray array];
     for (NSString* xid in xids)
         [items addObject:[_browser.database objectWithID:[NSManagedObject UidForXid:xid]]];

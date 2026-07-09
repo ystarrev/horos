@@ -266,11 +266,13 @@ int main(int argc, const char *argv[])
 	
 					@try
 					{
-						[t setLaunchPath: @"/usr/bin/unzip"];
-						[t setCurrentDirectoryPath: @"/tmp/"];
+						[t setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/unzip"]];
+						[t setCurrentDirectoryURL:[NSURL fileURLWithPath:@"/tmp/" isDirectory:YES]];
 						NSArray *args = [NSArray arrayWithObjects: @"-o", @"-d", tempCurFileDest, curFile, nil];
 						[t setArguments: args];
-						[t launch];
+						NSError *launchError = nil;
+						if (![t launchAndReturnError:&launchError])
+							[NSException raise:NSInternalInconsistencyException format:@"Failed to launch unzip: %@", launchError.localizedDescription];
                         
                         while( [t isRunning])
                             [NSThread sleepForTimeInterval: 0.1];
@@ -623,11 +625,13 @@ int main(int argc, const char *argv[])
 	
 					@try
 					{
-						[t setLaunchPath: @"/usr/bin/unzip"];
-						[t setCurrentDirectoryPath: @"/tmp/"];
+						[t setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/unzip"]];
+						[t setCurrentDirectoryURL:[NSURL fileURLWithPath:@"/tmp/" isDirectory:YES]];
 						NSArray *args = [NSArray arrayWithObjects: @"-o", @"-d", tempCurFileDest, curFile, nil];
 						[t setArguments: args];
-						[t launch];
+						NSError *launchError = nil;
+						if (![t launchAndReturnError:&launchError])
+							[NSException raise:NSInternalInconsistencyException format:@"Failed to launch unzip: %@", launchError.localizedDescription];
 						while( [t isRunning])
                             [NSThread sleepForTimeInterval: 0.1];
                         

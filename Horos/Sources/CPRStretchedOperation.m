@@ -44,7 +44,6 @@
 #import "CPRVolumeData.h"
 #import "CPRHorizontalFillOperation.h"
 #import "CPRProjectionOperation.h"
-#include <libkern/OSAtomic.h>
 
 static const NSUInteger FILL_HEIGHT = 40;
 static NSOperationQueue *_stretchedOperationFillQueue = nil;
@@ -268,7 +267,7 @@ static NSOperationQueue *_stretchedOperationFillQueue = nil;
                 }                
             }
             
-            _outstandingFillOperationCount = (int32_t)[fillOperations count];
+            __atomic_store_n(&_outstandingFillOperationCount, (int32_t)[fillOperations count], __ATOMIC_RELEASE);
             
 			fillQueue = [[self class] _fillQueue];
 			for (horizontalFillOperation in fillOperations) {
@@ -322,7 +321,7 @@ static NSOperationQueue *_stretchedOperationFillQueue = nil;
             if ([operation isFinished]) {
                 [operation removeObserver:self forKeyPath:@"isFinished"];
                 [self autorelease]; // to balance the retain when we observe operations
-                oustandingFillOperationCount = OSAtomicDecrement32Barrier(&_outstandingFillOperationCount);
+                oustandingFillOperationCount = __atomic_sub_fetch(&_outstandingFillOperationCount, 1, __ATOMIC_ACQ_REL);
                 if (oustandingFillOperationCount == 0) { // done with the fill operations, now do the projection
                     volumeTransform = N3AffineTransformMakeScale(1.0/_sampleSpacing, 1.0/_sampleSpacing, 1.0/[self _slabSampleDistance]);
                     generatedVolume = [[CPRVolumeData alloc] initWithFloatBytesNoCopy:_floatBytes pixelsWide:self.request.pixelsWide pixelsHigh:self.request.pixelsHigh pixelsDeep:[self _pixelsDeep]
@@ -391,7 +390,6 @@ static NSOperationQueue *_stretchedOperationFillQueue = nil;
 
 
 @end
-
 
 
 

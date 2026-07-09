@@ -47,6 +47,7 @@
 #import "MutableArrayCategory.h"
 #import "N2Debug.h"
 #import "N2Stuff.h"
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #ifdef OSIRIX_VIEWER
 #import "DicomFileDCMTKCategory.h"
@@ -383,7 +384,7 @@
                         }
                         else if( [DCMAbstractSyntaxUID isStructuredReport: seriesSOPClassUID] || [DCMAbstractSyntaxUID isPDF: seriesSOPClassUID])
                         {
-                            NSImage *icon = [[NSWorkspace sharedWorkspace] iconForFileType: @"txt"];
+                            NSImage *icon = [[NSWorkspace sharedWorkspace] iconForContentType:UTTypePlainText];
                             
                             thumbnail = [[[NSImage alloc] initWithSize: NSMakeSize( THUMBNAILSIZE, THUMBNAILSIZE)] autorelease];
                             

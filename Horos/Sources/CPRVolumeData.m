@@ -38,7 +38,6 @@
 #import "CPRVolumeData.h"
 #import "DCMPix.h"
 #import "CPRUnsignedInt16ImageRep.h"
-#include <libkern/OSAtomic.h>
 
 @interface CPRVolumeData ()
 
@@ -65,7 +64,8 @@
             _floatBytes = floatBytes;
         }
         _outOfBoundsValue = outOfBoundsValue;
-        _isValid = YES;
+        __atomic_store_n(&_readerCount, 0, __ATOMIC_RELAXED);
+        __atomic_store_n(&_isValid, YES, __ATOMIC_RELEASE);
         _pixelsWide = pixelsWide;
         _pixelsHigh = pixelsHigh;
         _pixelsDeep = pixelsDeep;
@@ -148,7 +148,7 @@
 
 - (BOOL)isDataValid
 {
-    return _isValid;
+    return __atomic_load_n(&_isValid, __ATOMIC_ACQUIRE);
 }
 
 - (void)invalidateData; // this is to be called right before freeing the data by objects who own the floatBytes that were given to the receiver
@@ -159,9 +159,8 @@
     
     assert(_freeWhenDone == NO); // you can't invalidate the data if it is owned by the CPRVolumeData 
         
-    _isValid = NO;
-    OSMemoryBarrier(); // make sure that the _isValid was set
-    while (_readerCount > 0) { // spin until we no know that any readers that were reading before the _isValid was set would have exited
+    __atomic_store_n(&_isValid, NO, __ATOMIC_RELEASE);
+    while (__atomic_load_n(&_readerCount, __ATOMIC_ACQUIRE) > 0) { // spin until readers that entered before invalidation have exited
         nanosleep(&rqtp, &rmtp);
     }
     
@@ -179,7 +178,7 @@
 // will copy fill length*sizeof(float) bytes
 - (BOOL)getFloatRun:(float *)buffer atPixelCoordinateX:(NSUInteger)x y:(NSUInteger)y z:(NSUInteger)z length:(NSUInteger)length
 {
-    if (_isValid == NO) {
+    if (__atomic_load_n(&_isValid, __ATOMIC_ACQUIRE) == NO) {
         memset(buffer, 0, sizeof(float) * length);
         return NO;
     }
@@ -189,13 +188,13 @@
     assert(z < _pixelsDeep);
     assert(x + length < _pixelsWide);
     
-    OSAtomicIncrement32Barrier(&_readerCount);
-    if (_isValid) {
+    __atomic_add_fetch(&_readerCount, 1, __ATOMIC_ACQ_REL);
+    if (__atomic_load_n(&_isValid, __ATOMIC_ACQUIRE)) {
         memcpy(buffer, &(_floatBytes[x + y*_pixelsWide + z*_pixelsWide*_pixelsHigh]), length * sizeof(float));
-        OSAtomicDecrement32Barrier(&_readerCount);
+        __atomic_sub_fetch(&_readerCount, 1, __ATOMIC_ACQ_REL);
         return YES;
     } else {
-        OSAtomicDecrement32Barrier(&_readerCount);
+        __atomic_sub_fetch(&_readerCount, 1, __ATOMIC_ACQ_REL);
         memset(buffer, 0, sizeof(float) * length);
         return NO;
     }
@@ -208,12 +207,12 @@
     vImage_Buffer floatBuffer;
     vImage_Buffer unsignedInt16Buffer;
     
-    if (_isValid == NO) {
+    if (__atomic_load_n(&_isValid, __ATOMIC_ACQUIRE) == NO) {
         return nil;
     }    
     
-    OSAtomicIncrement32Barrier(&_readerCount);
-    if (_isValid) {
+    __atomic_add_fetch(&_readerCount, 1, __ATOMIC_ACQ_REL);
+    if (__atomic_load_n(&_isValid, __ATOMIC_ACQUIRE)) {
         imageRep = [[CPRUnsignedInt16ImageRep alloc] initWithData:NULL pixelsWide:_pixelsWide pixelsHigh:_pixelsHigh];
         imageRep.pixelSpacingX = [self pixelSpacingX];
         imageRep.pixelSpacingY = [self pixelSpacingY];
@@ -236,10 +235,10 @@
         imageRep.slope = 1;
         imageRep.offset = -1024;
         
-        OSAtomicDecrement32Barrier(&_readerCount);
+        __atomic_sub_fetch(&_readerCount, 1, __ATOMIC_ACQ_REL);
         return [imageRep autorelease];
     } else {
-        OSAtomicDecrement32Barrier(&_readerCount);
+        __atomic_sub_fetch(&_readerCount, 1, __ATOMIC_ACQ_REL);
         return nil;
     }    
 }
@@ -254,7 +253,7 @@
     childVolume = [[CPRVolumeData alloc] initWithFloatBytesNoCopy:_floatBytes + (_pixelsWide*_pixelsHigh*z) pixelsWide:_pixelsWide pixelsHigh:_pixelsHigh pixelsDeep:1
                                                   volumeTransform:childVolumeTransform outOfBoundsValue:_outOfBoundsValue freeWhenDone:NO];
     
-    OSAtomicIncrement32Barrier(&_readerCount);
+    __atomic_add_fetch(&_readerCount, 1, __ATOMIC_ACQ_REL);
     if ([self isDataValid] == NO) {
         [childVolume invalidateData];
     }
@@ -267,7 +266,7 @@
             [_childSubvolumes setObject:childVolume forKey:[NSNumber numberWithInteger:z]];
         }
     }
-    OSAtomicDecrement32Barrier(&_readerCount);
+    __atomic_sub_fetch(&_readerCount, 1, __ATOMIC_ACQ_REL);
     
     return [childVolume autorelease];
 }
@@ -276,7 +275,7 @@
 {
     CPRVolumeDataInlineBuffer inlineBuffer;
     
-    if (_isValid == NO) {
+    if (__atomic_load_n(&_isValid, __ATOMIC_ACQUIRE) == NO) {
         return NO;
     }    
     
@@ -295,7 +294,7 @@
 {
     CPRVolumeDataInlineBuffer inlineBuffer;
 
-    if (_isValid == NO) {
+    if (__atomic_load_n(&_isValid, __ATOMIC_ACQUIRE) == NO) {
         return NO;
     }    
     
@@ -314,7 +313,7 @@
 {
     CPRVolumeDataInlineBuffer inlineBuffer;
     
-    if (_isValid == NO) {
+    if (__atomic_load_n(&_isValid, __ATOMIC_ACQUIRE) == NO) {
         return NO;
     }
     
@@ -333,7 +332,7 @@
 {
     CPRVolumeDataInlineBuffer inlineBuffer;
 
-    if (_isValid == NO) {
+    if (__atomic_load_n(&_isValid, __ATOMIC_ACQUIRE) == NO) {
         return NO;
     }
 
@@ -479,12 +478,12 @@
 {
     memset(inlineBuffer, 0, sizeof(CPRVolumeDataInlineBuffer));
     
-    if (_isValid == NO) {
+    if (__atomic_load_n(&_isValid, __ATOMIC_ACQUIRE) == NO) {
         return NO;
     }
     
-    OSAtomicIncrement32Barrier(&_readerCount);
-    if (_isValid) {
+    __atomic_add_fetch(&_readerCount, 1, __ATOMIC_ACQ_REL);
+    if (__atomic_load_n(&_isValid, __ATOMIC_ACQUIRE)) {
         inlineBuffer->floatBytes = _floatBytes;
         inlineBuffer->outOfBoundsValue = _outOfBoundsValue;
         inlineBuffer->pixelsWide = _pixelsWide;
@@ -494,7 +493,7 @@
         inlineBuffer->volumeTransform = _volumeTransform;
         return YES;
     } else {
-        OSAtomicDecrement32Barrier(&_readerCount);
+        __atomic_sub_fetch(&_readerCount, 1, __ATOMIC_ACQ_REL);
         return NO;
     }
 }
@@ -502,7 +501,7 @@
 - (void)releaseInlineBuffer:(CPRVolumeDataInlineBuffer *)inlineBuffer
 {
     if (inlineBuffer->floatBytes != NULL) {
-        OSAtomicDecrement32Barrier(&_readerCount);
+        __atomic_sub_fetch(&_readerCount, 1, __ATOMIC_ACQ_REL);
     }
     memset(inlineBuffer, 0, sizeof(CPRVolumeDataInlineBuffer));
 }
@@ -640,7 +639,6 @@
 
 
 @end
-
 
 
 

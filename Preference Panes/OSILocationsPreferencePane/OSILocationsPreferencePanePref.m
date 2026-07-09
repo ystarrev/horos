@@ -162,17 +162,17 @@
 {
 	NSTask* theTask = [[[NSTask alloc]init]autorelease];
 	
-	[theTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingString:@"/echoscu"]];
+	[theTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingString:@"/echoscu"]]];
 
 	[theTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingString:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
-	[theTask setLaunchPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingString:@"/echoscu"]];
+	[theTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingString:@"/echoscu"]]];
 
 	NSArray *args = [NSArray arrayWithObjects: address, [NSString stringWithFormat:@"%d", port], @"-aet", [[NSUserDefaults standardUserDefaults] stringForKey: @"AETITLE"], @"-aec", aet, @"-to", [[NSUserDefaults standardUserDefaults] stringForKey:@"DICOMTimeout"], @"-ta", [[NSUserDefaults standardUserDefaults] stringForKey:@"DICOMTimeout"], @"-td", [[NSUserDefaults standardUserDefaults] stringForKey:@"DICOMTimeout"], @"-d", nil];
 	
 	NSLog( @"%@", [args description]);
 	
 	[theTask setArguments:args];
-	[theTask launch];
+	HorosLaunchTaskOrRaise(theTask);
 	[theTask waitUntilExit];
 	
 	return [theTask terminationStatus];
@@ -188,10 +188,10 @@
         
         NSTask* theTask = [[[NSTask alloc] init] autorelease];
         
-        [theTask setLaunchPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/echoscu"]];
+        [theTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/echoscu"]]];
         
         [theTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
-        [theTask setLaunchPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/echoscu"]];
+        [theTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/echoscu"]]];
             
         NSMutableArray *args = [NSMutableArray array];
         [args addObject:address];
@@ -276,7 +276,7 @@
         }
             
         [theTask setArguments:args];
-        [theTask launch];
+        HorosLaunchTaskOrRaise(theTask);
         [theTask waitUntilExit];
 
         [DDKeychain unlockTmpFiles];
@@ -546,11 +546,6 @@
 		
 		if( url)
 		{
-			/*NSString* err = nil;
-			NSData* data = [NSData dataWithContentsOfURL:url];
-			NSArray* arr = [NSPropertyListSerialization propertyListFromData:data mutabilityOption:NSPropertyListImmutable format:0 errorDescription:&err];
-			NSLog(@"Error: %@ - %@", err, arr);*/
-			
 			NSArray	*r = [NSArray arrayWithContentsOfURL: url];
 			
 			if( r)

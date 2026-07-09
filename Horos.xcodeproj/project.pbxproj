@@ -401,8 +401,6 @@
 		710EF1F41FD00E29000B555B /* Horos.m in Sources */ = {isa = PBXBuildFile; fileRef = 710EF1F21FD00E29000B555B /* Horos.m */; };
 		710EF1F61FD025BC000B555B /* Horos.m in Sources */ = {isa = PBXBuildFile; fileRef = 710EF1F21FD00E29000B555B /* Horos.m */; };
 		71125D4B215376FC00EB0AA5 /* PathForImage.h in Headers */ = {isa = PBXBuildFile; fileRef = 71125D4A215376FC00EB0AA5 /* PathForImage.h */; };
-		711849771590A377006AB447 /* SMTPClient.h in Headers */ = {isa = PBXBuildFile; fileRef = 711849751590A377006AB447 /* SMTPClient.h */; };
-		711849781590A377006AB447 /* SMTPClient.m in Sources */ = {isa = PBXBuildFile; fileRef = 711849761590A377006AB447 /* SMTPClient.m */; };
 		7128FD771487D54A00AB54A1 /* N2UnclickableSplitView.h in Headers */ = {isa = PBXBuildFile; fileRef = 7128FD751487D54A00AB54A1 /* N2UnclickableSplitView.h */; };
 		7128FD791487D54A00AB54A1 /* N2UnclickableSplitView.m in Sources */ = {isa = PBXBuildFile; fileRef = 7128FD761487D54A00AB54A1 /* N2UnclickableSplitView.m */; };
 		71353C511469260B00359CAB /* NSDate+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = 71353C4F1469260B00359CAB /* NSDate+N2.h */; };
@@ -619,7 +617,6 @@
 		9953FE521BF540D000BD0DA6 /* vtkHorosFixedPointVolumeRayCastMIPHelper.cxx in Sources */ = {isa = PBXBuildFile; fileRef = 9953FE4E1BF540D000BD0DA6 /* vtkHorosFixedPointVolumeRayCastMIPHelper.cxx */; };
 		9953FE531BF540D000BD0DA6 /* vtkHorosFixedPointVolumeRayCastMIPHelper.h in Headers */ = {isa = PBXBuildFile; fileRef = 9953FE4F1BF540D000BD0DA6 /* vtkHorosFixedPointVolumeRayCastMIPHelper.h */; };
 		99645870211507A000A6EDD1 /* Splash in Resources */ = {isa = PBXBuildFile; fileRef = 9964586F2115079F00A6EDD1 /* Splash */; };
-		9966A1A11AE09D3F00F2D81A /* AddressBook.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9966A1A01AE09D3F00F2D81A /* AddressBook.framework */; };
 		9966A1A31AE09D4800F2D81A /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9966A1A21AE09D4800F2D81A /* AVFoundation.framework */; };
 		9966A1A51AE09D5100F2D81A /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9966A1A41AE09D5100F2D81A /* CoreMedia.framework */; };
 		9966A1A71AE09D5D00F2D81A /* DiskArbitration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9966A1A61AE09D5D00F2D81A /* DiskArbitration.framework */; };
@@ -1450,6 +1447,7 @@
 		F35B0D8F28954862008ABE3E /* FeedbackReporter.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F35B0D8E28954830008ABE3E /* FeedbackReporter.framework */; };
 		F35B0D9028954862008ABE3E /* FeedbackReporter.framework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = F35B0D8E28954830008ABE3E /* FeedbackReporter.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		F3E3E6CD289527220037A247 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F3E3E6CA289527220037A247 /* UserNotifications.framework */; };
+		F4A200000001000000000001 /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A200000002000000000001 /* UniformTypeIdentifiers.framework */; };
 		F4A100000001000000000001 /* Horos/Sources/MetalViewer/MetalViewerLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000001 /* Horos/Sources/MetalViewer/MetalViewerLauncher.swift */; };
 		F4A100000001000000000002 /* Horos/Sources/MetalViewer/MetalViewerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000002 /* Horos/Sources/MetalViewer/MetalViewerWindowController.swift */; };
 		F4A100000001000000000003 /* Horos/Sources/MetalViewer/MetalImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000003 /* Horos/Sources/MetalViewer/MetalImageView.swift */; };
@@ -2213,8 +2211,6 @@
 		710EF1F11FD00E28000B555B /* Horos.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Horos.h; path = Horos/Sources/Horos.h; sourceTree = SOURCE_ROOT; };
 		710EF1F21FD00E29000B555B /* Horos.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = Horos.m; path = Horos/Sources/Horos.m; sourceTree = SOURCE_ROOT; };
 		71125D4A215376FC00EB0AA5 /* PathForImage.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = PathForImage.h; path = Horos/Sources/PathForImage.h; sourceTree = SOURCE_ROOT; };
-		711849751590A377006AB447 /* SMTPClient.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SMTPClient.h; path = Nitrogen/Sources/SMTPClient.h; sourceTree = SOURCE_ROOT; };
-		711849761590A377006AB447 /* SMTPClient.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = SMTPClient.m; path = Nitrogen/Sources/SMTPClient.m; sourceTree = SOURCE_ROOT; };
 		7128FD751487D54A00AB54A1 /* N2UnclickableSplitView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = N2UnclickableSplitView.h; path = Nitrogen/Sources/N2UnclickableSplitView.h; sourceTree = SOURCE_ROOT; };
 		7128FD761487D54A00AB54A1 /* N2UnclickableSplitView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = N2UnclickableSplitView.m; path = Nitrogen/Sources/N2UnclickableSplitView.m; sourceTree = SOURCE_ROOT; };
 		71353C4F1469260B00359CAB /* NSDate+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "NSDate+N2.h"; path = "Nitrogen/Sources/NSDate+N2.h"; sourceTree = SOURCE_ROOT; };
@@ -2445,7 +2441,6 @@
 		9953FE4E1BF540D000BD0DA6 /* vtkHorosFixedPointVolumeRayCastMIPHelper.cxx */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = vtkHorosFixedPointVolumeRayCastMIPHelper.cxx; sourceTree = "<group>"; };
 		9953FE4F1BF540D000BD0DA6 /* vtkHorosFixedPointVolumeRayCastMIPHelper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = vtkHorosFixedPointVolumeRayCastMIPHelper.h; sourceTree = "<group>"; };
 		9964586F2115079F00A6EDD1 /* Splash */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Splash; path = Binaries/Splash; sourceTree = SOURCE_ROOT; };
-		9966A1A01AE09D3F00F2D81A /* AddressBook.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AddressBook.framework; path = System/Library/Frameworks/AddressBook.framework; sourceTree = SDKROOT; };
 		9966A1A21AE09D4800F2D81A /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		9966A1A41AE09D5100F2D81A /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
 		9966A1A61AE09D5D00F2D81A /* DiskArbitration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DiskArbitration.framework; path = System/Library/Frameworks/DiskArbitration.framework; sourceTree = SDKROOT; };
@@ -3274,6 +3269,7 @@
 		F3C3F0702893A429004B2F61 /* Horos.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Horos.xcconfig; path = Horos/Horos.xcconfig; sourceTree = "<group>"; };
 		F3D78C9D2892994600148FE5 /* Config.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 		F3E3E6CA289527220037A247 /* UserNotifications.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotifications.framework; path = System/Library/Frameworks/UserNotifications.framework; sourceTree = SDKROOT; };
+		F4A200000002000000000001 /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
 		F3EFB87A2895825C0012A622 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		F4A100000002000000000001 /* Horos/Sources/MetalViewer/MetalViewerLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerLauncher.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000002 /* Horos/Sources/MetalViewer/MetalViewerWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerWindowController.swift; sourceTree = SOURCE_ROOT; };
@@ -3530,7 +3526,6 @@
 				9966A1A71AE09D5D00F2D81A /* DiskArbitration.framework in Frameworks */,
 				9966A1A51AE09D5100F2D81A /* CoreMedia.framework in Frameworks */,
 				9966A1A31AE09D4800F2D81A /* AVFoundation.framework in Frameworks */,
-				9966A1A11AE09D3F00F2D81A /* AddressBook.framework in Frameworks */,
 				992335882009A75A000E10BA /* Horos.framework in Frameworks */,
 				AB28B48805B7998800A9906C /* AppKit.framework in Frameworks */,
 				AB28B48B05B7998A00A9906C /* OpenGL.framework in Frameworks */,
@@ -3543,6 +3538,7 @@
 				F35B0D8F28954862008ABE3E /* FeedbackReporter.framework in Frameworks */,
 				AB28B93705B79D5E00A9906C /* Accelerate.framework in Frameworks */,
 				F3E3E6CD289527220037A247 /* UserNotifications.framework in Frameworks */,
+				F4A200000001000000000001 /* UniformTypeIdentifiers.framework in Frameworks */,
 				CEF0E6DC06AEF5CB001FF9E5 /* Carbon.framework in Frameworks */,
 				7E3E38660715FFDC0049E72E /* PreferencePanes.framework in Frameworks */,
 				7E54303D07A05E7100500ABB /* DiscRecording.framework in Frameworks */,
@@ -3585,7 +3581,6 @@
 				9966A1A61AE09D5D00F2D81A /* DiskArbitration.framework */,
 				9966A1A41AE09D5100F2D81A /* CoreMedia.framework */,
 				9966A1A21AE09D4800F2D81A /* AVFoundation.framework */,
-				9966A1A01AE09D3F00F2D81A /* AddressBook.framework */,
 				AB5E1A300595697700C48BEB /* Accelerate.framework */,
 				AB38FC99057A9B050041FEBB /* AGL.framework */,
 				29B97324FDCFA39411CA2CEA /* AppKit.framework */,
@@ -3694,6 +3689,7 @@
 			children = (
 				F35B0D8E28954830008ABE3E /* FeedbackReporter.framework */,
 				F3E3E6CA289527220037A247 /* UserNotifications.framework */,
+				F4A200000002000000000001 /* UniformTypeIdentifiers.framework */,
 				1058C7A0FEA54F0111CA2CBB /* Linked Frameworks */,
 			);
 			name = Frameworks;
@@ -3794,8 +3790,6 @@
 		592CFEEF1212F84F00176E39 /* Connections */ = {
 			isa = PBXGroup;
 			children = (
-				711849751590A377006AB447 /* SMTPClient.h */,
-				711849761590A377006AB447 /* SMTPClient.m */,
 				592CFEF41212F84F00176E39 /* Web Services */,
 				592CFEF01212F84F00176E39 /* N2Connection.h */,
 				592CFEF11212F84F00176E39 /* N2Connection.mm */,
@@ -6298,7 +6292,6 @@
 				CE3B7E5A1580F518003CB266 /* Quaternion.h in Headers */,
 				CE3B7E5E1580F534003CB266 /* FlyAssistant+Histo.h in Headers */,
 				840C2D5E1588CE4600C4FE09 /* CustomIntervalPanel.h in Headers */,
-				711849771590A377006AB447 /* SMTPClient.h in Headers */,
 				CEC0BFA015A597DB0012D879 /* ComparativeCell.h in Headers */,
 				CEA4F07915AEA5FE009584C7 /* OSIPACSOnDemandPreferencePane.h in Headers */,
 				71AA5A2E1611F1EB006A6A5F /* JSON.h in Headers */,
@@ -8030,7 +8023,6 @@
 				CE3B7E5F1580F534003CB266 /* FlyAssistant+Histo.mm in Sources */,
 				CE3B7E641580F762003CB266 /* Quaternion.mm in Sources */,
 				840C2D601588CE4600C4FE09 /* CustomIntervalPanel.m in Sources */,
-				711849781590A377006AB447 /* SMTPClient.m in Sources */,
 				CEC0BFA215A597DB0012D879 /* ComparativeCell.mm in Sources */,
 				CEA4F07715AEA5FE009584C7 /* OSIPACSOnDemandPreferencePane.m in Sources */,
 				71AA5A301611F1EB006A6A5F /* NSObject+SBJSON.m in Sources */,

@@ -1556,7 +1556,7 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 		[bitmapData writeToFile:[panel filename] atomically:YES];
 		
 		NSWorkspace *ws = [NSWorkspace sharedWorkspace];
-		if ([[NSUserDefaults standardUserDefaults] boolForKey: @"OPENVIEWER"]) [ws openFile:[panel filename]];
+		if ([[NSUserDefaults standardUserDefaults] boolForKey: @"OPENVIEWER"]) [ws openURL:[NSURL fileURLWithPath:[panel filename]]];
 	}
 }
 
@@ -1594,7 +1594,7 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 		[[im TIFFRepresentation] writeToFile:[panel filename] atomically:NO];
 		
 		NSWorkspace *ws = [NSWorkspace sharedWorkspace];
-		if ([[NSUserDefaults standardUserDefaults] boolForKey: @"OPENVIEWER"]) [ws openFile:[panel filename]];
+		if ([[NSUserDefaults standardUserDefaults] boolForKey: @"OPENVIEWER"]) [ws openURL:[NSURL fileURLWithPath:[panel filename]]];
 	}
 }
 

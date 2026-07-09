@@ -851,14 +851,14 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
     [arguments addObjectsFromArray: [self dnsSDTXTArgumentsForDictionary: BonjourDICOMTXTRecord]];
 
     BonjourDICOMRegisterTask = [[NSTask alloc] init];
-    [BonjourDICOMRegisterTask setLaunchPath: @"/usr/bin/dns-sd"];
+    [BonjourDICOMRegisterTask setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/dns-sd"]];
     [BonjourDICOMRegisterTask setArguments: arguments];
     [BonjourDICOMRegisterTask setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
     [BonjourDICOMRegisterTask setStandardError: [NSFileHandle fileHandleWithNullDevice]];
 
     @try
     {
-        [BonjourDICOMRegisterTask launch];
+        HorosLaunchTaskOrRaise(BonjourDICOMRegisterTask);
         NSLog( @"DNS-SD DICOM Bonjour fallback publishing for %@ %@:%ld", [service name], [service type], (long) port);
     }
     @catch( NSException *exception)
@@ -1777,7 +1777,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
             @try {
                 SRAnnotation *r = [[SRAnnotation alloc] initWithContentsOfFile: [i completePathResolved]];
                 
-                NSArray *viewers = [NSPropertyListSerialization propertyListFromData: r.dataEncapsulated mutabilityOption: NSPropertyListImmutable format: nil errorDescription: nil];
+                NSArray *viewers = [NSPropertyListSerialization propertyListWithData:r.dataEncapsulated options:NSPropertyListImmutable format:nil error:nil];
                 
                 if( viewers.count)
                 {
@@ -1819,7 +1819,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
     DicomStudy *study = [menuItem.representedObject objectForKey: @"study"];
     NSArray *state = [menuItem.representedObject objectForKey: @"windowsState"];
     
-    NSData *windowsState = [NSPropertyListSerialization dataFromPropertyList: state  format: NSPropertyListXMLFormat_v1_0 errorDescription: nil];
+    NSData *windowsState = [NSPropertyListSerialization dataWithPropertyList:state format:NSPropertyListXMLFormat_v1_0 options:0 error:nil];
     
     if( study && windowsState)
     {
@@ -2071,10 +2071,10 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 				
 				NSMutableArray *theArguments = [NSMutableArray array];
 				NSTask *aTask = [[NSTask alloc] init];		
-				[aTask setLaunchPath:@"/usr/bin/killall"];		
+				[aTask setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/killall"]];
 				[theArguments addObject:@"storescp"];
 				[aTask setArguments:theArguments];		
-				[aTask launch];
+				HorosLaunchTaskOrRaise(aTask);
                 while( [aTask isRunning]) [NSThread sleepForTimeInterval: 0.01];
 //				[aTask waitUntilExit];
 				[aTask interrupt];

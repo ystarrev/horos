@@ -2044,11 +2044,11 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     {
         NSTask *aTask = [[[NSTask alloc] init] autorelease];
         [aTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
-        [aTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent: @"/dsr2html"]];
+        [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dsr2html"]]];
         [aTask setArguments: [NSArray arrayWithObjects: @"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items", filePath, htmlpath, nil]];
         [aTask setStandardOutput:[NSPipe pipe]];
         [aTask setStandardError:[NSPipe pipe]];
-        [aTask launch];
+        HorosLaunchTaskOrRaise(aTask);
         while( [aTask isRunning])
             [NSThread sleepForTimeInterval: 0.1];
         
@@ -2061,9 +2061,9 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
         if( [[NSFileManager defaultManager] fileExistsAtPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]])
         {
             NSTask *aTask = [[[NSTask alloc] init] autorelease];
-            [aTask setLaunchPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]];
+            [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]]];
             [aTask setArguments: [NSArray arrayWithObjects: htmlpath, @"pdfFromURL", nil]];
-            [aTask launch];
+            HorosLaunchTaskOrRaise(aTask);
             NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
             while( [aTask isRunning] && [NSDate timeIntervalSinceReferenceDate] - start < 10)
                 [NSThread sleepForTimeInterval: 0.1];

@@ -194,14 +194,14 @@ extern const char *GetPrivateIP(void);
     [arguments addObjectsFromArray: [self dnsSDTXTArgumentsForDictionary: _bonjourTXTRecord]];
 
     _bonjourRegisterTask = [[NSTask alloc] init];
-    [_bonjourRegisterTask setLaunchPath: @"/usr/bin/dns-sd"];
+    [_bonjourRegisterTask setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/dns-sd"]];
     [_bonjourRegisterTask setArguments: arguments];
     [_bonjourRegisterTask setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
     [_bonjourRegisterTask setStandardError: [NSFileHandle fileHandleWithNullDevice]];
 
     @try
     {
-        [_bonjourRegisterTask launch];
+        HorosLaunchTaskOrRaise(_bonjourRegisterTask);
         NSLog( @"DNS-SD Horos Bonjour fallback publishing for %@ %@:%ld", [service name], [service type], (long) port);
     }
     @catch( NSException *exception)
@@ -803,14 +803,6 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
     int size = [self _stackReadInt];
     
     [self _requireDataSize:size];
-    //    NSData* da = [self readData:size];
-    
-    //    NSDictionary* d = [NSPropertyListSerialization propertyListFromData:da mutabilityOption: NSPropertyListImmutable format: nil errorDescription: nil];
-    //
-    //    if (d)
-    //    {
-    //        NSString *message = [d objectForKey:@"message"];
-    //    }
     
     _mode = DONE;
 }
@@ -819,10 +811,10 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
     NSString* object = [self _stackReadString];
     
     NSDictionary* d = (NSDictionary*)[NSPropertyListSerialization
-                                      propertyListFromData:[NSData dataWithBytesNoCopy:(void*)object.UTF8String length:strlen(object.UTF8String) freeWhenDone:NO]
-                                      mutabilityOption:NSPropertyListImmutable
+                                      propertyListWithData:[NSData dataWithBytesNoCopy:(void*)object.UTF8String length:strlen(object.UTF8String) freeWhenDone:NO]
+                                      options:NSPropertyListImmutable
                                       format:NULL
-                                      errorDescription:NULL];
+                                      error:NULL];
     
     if (!d) [NSException raise:NSGenericException format:@"can't parse parameters"];
     
@@ -860,10 +852,10 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
     NSString* object = [self _stackReadString];
     
     NSDictionary* d = (NSDictionary*)[NSPropertyListSerialization
-                                      propertyListFromData:[NSData dataWithBytesNoCopy:(void*)object.UTF8String length:strlen(object.UTF8String) freeWhenDone:NO]
-                                      mutabilityOption:NSPropertyListImmutable
+                                      propertyListWithData:[NSData dataWithBytesNoCopy:(void*)object.UTF8String length:strlen(object.UTF8String) freeWhenDone:NO]
+                                      options:NSPropertyListImmutable
                                       format:NULL
-                                      errorDescription:NULL];
+                                      error:NULL];
     
     if (!d) [NSException raise:NSGenericException format:@"can't parse parameters"];
     

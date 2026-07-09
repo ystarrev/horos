@@ -59,12 +59,14 @@
 //	NSLog(@"%d [N2Shell execute:] %@ %@", r, path, [arguments componentsJoinedByString:@" "]);
 	
 	NSTask* task = [[[NSTask alloc] init] autorelease];
-	[task setLaunchPath:path];
+	[task setExecutableURL:[NSURL fileURLWithPath:path]];
 	[task setArguments:arguments];
 	[task setStandardOutput:[NSPipe pipe]];
 	[task setStandardError:[NSPipe pipe]];
 	
-	[task launch];
+	NSError *launchError = nil;
+	if (![task launchAndReturnError:&launchError])
+		[NSException raise:NSInternalInconsistencyException format:@"Failed to launch %@: %@", path, launchError.localizedDescription];
 	while( [task isRunning])
         [NSThread sleepForTimeInterval: 0.1];
     

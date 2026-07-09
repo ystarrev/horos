@@ -648,8 +648,8 @@ static BOOL HorosModernDCMTKDecompressFile(NSString *sourcePath, NSString *desti
                 NSArray *parameters = [[NSArray arrayWithObjects: @"unused", @"testFiles", nil] arrayByAddingObjectsFromArray: subArray];
                 
                 [theTask setArguments: parameters];
-                [theTask setLaunchPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]];
-                [theTask launch];
+                [theTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]]];
+                HorosLaunchTaskOrRaise(theTask);
                 
                 free( objs);
             }

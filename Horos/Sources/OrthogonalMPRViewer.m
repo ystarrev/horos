@@ -2148,7 +2148,7 @@ static SyncSeriesScope globalSyncSeriesScope;
     };
     
     // Fire this event change on the MainThread
-    if (dispatch_get_current_queue() == dispatch_get_main_queue()) { // avoid deadlocks when using dispatch_sync, same as => if(![NSThread isMainThread])
+    if ([NSThread isMainThread]) {
         syncSeriesBlockOnMainThread();
     } else {
         dispatch_async(dispatch_get_main_queue(), syncSeriesBlockOnMainThread);

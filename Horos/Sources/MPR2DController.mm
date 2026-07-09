@@ -1346,7 +1346,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 		
 		NSWorkspace *ws = [NSWorkspace sharedWorkspace];
 		if ([[NSUserDefaults standardUserDefaults] boolForKey: @"OPENVIEWER"])
-			[ws openFile:[panel filename]];
+			[ws openURL:[NSURL fileURLWithPath:[panel filename]]];
 	}
 }
 
@@ -1365,7 +1365,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 		
 		NSWorkspace *ws = [NSWorkspace sharedWorkspace];
 		if ([[NSUserDefaults standardUserDefaults] boolForKey: @"OPENVIEWER"])
-			[ws openFile:[panel filename]];
+			[ws openURL:[NSURL fileURLWithPath:[panel filename]]];
 	}
 }
 

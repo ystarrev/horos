@@ -2236,7 +2236,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
             
             if ([[NSUserDefaults standardUserDefaults] boolForKey: @"OPENVIEWER"])
             {
-                //[ws openFile:[[[panel filename] stringByDeletingPathExtension] stringByAppendingPathExtension:[NSString stringWithFormat:@"%d.jpg", 1]]];
                 [[NSWorkspace sharedWorkspace] openURL:panel.URL];
             }
         }

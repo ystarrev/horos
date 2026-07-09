@@ -1247,7 +1247,7 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
         //	[[NSFileManager defaultManager] removeItemAtPath: tmp error:NULL];
         //	[state writeToFile: tmp atomically: YES];
         
-        NSData *windowsState = [NSPropertyListSerialization dataFromPropertyList: state  format: NSPropertyListXMLFormat_v1_0 errorDescription: nil];
+        NSData *windowsState = [NSPropertyListSerialization dataWithPropertyList:state format:NSPropertyListXMLFormat_v1_0 options:0 error:nil];
         
         NSMutableArray	*studiesArray = [NSMutableArray array];
         
@@ -5743,10 +5743,10 @@ static ViewerController *draggedController = nil;
     }
     else if ([paste availableTypeFromArray:BrowserController.DatabaseObjectXIDsPasteboardTypes])
     {
-        NSArray* xids = [NSPropertyListSerialization propertyListFromData:[paste propertyListForType:[paste availableTypeFromArray:BrowserController.DatabaseObjectXIDsPasteboardTypes]]
-                                                         mutabilityOption:NSPropertyListImmutable
-                                                                   format:NULL
-                                                         errorDescription:NULL];
+        NSArray* xids = [NSPropertyListSerialization propertyListWithData:[paste propertyListForType:[paste availableTypeFromArray:BrowserController.DatabaseObjectXIDsPasteboardTypes]]
+                                                                   options:NSPropertyListImmutable
+                                                                    format:NULL
+                                                                     error:NULL];
         NSMutableArray* items = [NSMutableArray array];
         for (NSString* xid in xids)
             [items addObject:[BrowserController.currentBrowser.database objectWithID:[NSManagedObject UidForXid:xid]]];
@@ -8677,7 +8677,7 @@ static int avoidReentryRefreshDatabase = 0;
                     
                     if( [study valueForKey:@"windowsState"] && [[NSUserDefaults standardUserDefaults] boolForKey:@"automaticWorkspaceLoad"])
                     {
-                        NSArray *viewers = [NSPropertyListSerialization propertyListFromData: [study valueForKey:@"windowsState"] mutabilityOption: NSPropertyListImmutable format: nil errorDescription: nil];
+                        NSArray *viewers = [NSPropertyListSerialization propertyListWithData:[study valueForKey:@"windowsState"] options:NSPropertyListImmutable format:nil error:nil];
                         
                         for( NSDictionary *dict in viewers)
                         {
@@ -18680,7 +18680,7 @@ static float oldsetww, oldsetwl;
     
     if ([[NSUserDefaults standardUserDefaults] boolForKey: @"OPENVIEWER"])
     {
-        [[NSWorkspace sharedWorkspace] openFile: path withApplication: nil andDeactivate: YES];
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:path]];
         [NSThread sleepForTimeInterval: 1];
     }
 }
@@ -19695,7 +19695,7 @@ static float oldsetww, oldsetwl;
         if( [[NSFileManager defaultManager] fileExistsAtPath: [pathToPAGES stringByAppendingPathExtension:@"pages"]] == NO)
             NSRunAlertPanel(NSLocalizedString(@"Export", nil), NSLocalizedString(@"Failed to export this file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         
-        [[NSWorkspace sharedWorkspace] openFile: [pathToPAGES stringByAppendingPathExtension:@"pages"] withApplication: nil andDeactivate: YES];
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:[pathToPAGES stringByAppendingPathExtension:@"pages"]]];
         [NSThread sleepForTimeInterval: 1];
     }
 }
@@ -19935,7 +19935,7 @@ static float oldsetww, oldsetwl;
                         NSRunAlertPanel(NSLocalizedString(@"Export", nil), NSLocalizedString(@"Failed to export this file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
                     
                     else if ([[NSUserDefaults standardUserDefaults] boolForKey: @"OPENVIEWER"])
-                        [[NSWorkspace sharedWorkspace] openFile:filePath];
+                        [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:filePath]];
                 }
             }
         }
@@ -20006,7 +20006,6 @@ static float oldsetww, oldsetwl;
         //					
         //					if ([[NSUserDefaults standardUserDefaults] boolForKey: @"OPENVIEWER"])
         //					{
-        //						[ws openFile:[panel filename]];
         //					}
         //				}									
         //			}

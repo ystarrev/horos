@@ -1,5 +1,21 @@
 #ifdef __OBJC__
     #import <Cocoa/Cocoa.h>
+
+    NS_INLINE void HorosLaunchTaskOrRaise(NSTask *task)
+    {
+        NSError *error = nil;
+        if (![task launchAndReturnError:&error])
+            [NSException raise:NSInternalInconsistencyException format:@"Failed to launch %@: %@", task.executableURL.path, error.localizedDescription];
+    }
+
+    NS_INLINE NSTask *HorosLaunchTaskAtPath(NSString *path, NSArray<NSString *> *arguments)
+    {
+        NSError *error = nil;
+        NSTask *task = [NSTask launchedTaskWithExecutableURL:[NSURL fileURLWithPath:path] arguments:arguments error:&error terminationHandler:nil];
+        if (!task)
+            [NSException raise:NSInternalInconsistencyException format:@"Failed to launch %@: %@", path, error.localizedDescription];
+        return task;
+    }
 #endif
 
 #define HOROS_VIEWER

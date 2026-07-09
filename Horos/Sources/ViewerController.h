@@ -323,10 +323,6 @@ enum
 	
 	int						qt_to, qt_from, qt_interval, qt_dimension, current_qt_interval, qt_allViewers;
 	
-	IBOutlet NSView			*reportTemplatesView;
-	IBOutlet NSImageView	*reportTemplatesImageView;
-	IBOutlet NSPopUpButton	*reportTemplatesListPopUpButton;
-	
 	NSConditionLock			*processorsLock;
 	
 	IBOutlet NSWindow		*printWindow;

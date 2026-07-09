@@ -143,6 +143,7 @@ enum
     NSMutableArray                          *pendingRetrieveAndViewItems;
     NSView                                  *modalityFilterPanel;
     NSView                                  *seriesSelectionPanel;
+    NSButton                                *retrieveSelectedSeriesButton;
     NSInteger                               seriesHighlightFilterMask;
     NSMutableSet                            *selectedSeriesUIDs;
 }

@@ -41,7 +41,6 @@
 #import "DicomFile.h"
 #import "DCMView.h"
 #import "DCMPix.h"
-#import "altivecFunctions.h"
 #import "DICOMToNSString.h"
 #import "DicomDatabase+DCMTK.h"
 #include <dlfcn.h>
@@ -783,14 +782,6 @@ static float deg2rad = M_PI / 180.0f;
                     }
                 }
                 
-				#if __BIG_ENDIAN__
-				if( bps == 16)
-				{
-					//Convert to little endian
-					InverseShorts( (vector unsigned short*) data, height * width);
-				}
-				#endif
-				
 				int elemLength = height * width * spp * bps / 8;
 				
 				if( elemLength%2 != 0)
@@ -1238,14 +1229,6 @@ static float deg2rad = M_PI / 180.0f;
 //						}
 //					}
 //				}
-//				
-//				#if __BIG_ENDIAN__
-//				if( bps == 16)
-//				{
-//					//Convert to little endian
-//					InverseShorts( (vector unsigned short*) data, height * width);
-//				}
-//				#endif
 //				
 //				int elemLength = height * width * spp * bps / 8;
 //				

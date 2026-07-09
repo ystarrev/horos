@@ -39,7 +39,6 @@
 
 
 #import <Foundation/Foundation.h>
-#import <Carbon/Carbon.h>
 
 /** \brief Import into Photos*/
 @interface Photos : NSObject

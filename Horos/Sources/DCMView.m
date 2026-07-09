@@ -4846,13 +4846,11 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     float deltaX = [theEvent deltaX];
     float deltaY = [theEvent deltaY];
     
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_7
     if (![theEvent hasPreciseScrollingDeltas])
     {
         deltaX = [theEvent scrollingDeltaX];
         deltaY = [theEvent scrollingDeltaY];
     }
-#endif
     
     if( [NSEvent pressedMouseButtons])
         return;
@@ -9820,11 +9818,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             }
             
             glColor4f( 1, 1, 1, 1);
-#if __BIG_ENDIAN__
-            glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, actualLensSize, actualLensSize, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, lensTexture);
-#else
             glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, actualLensSize, actualLensSize, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8, lensTexture);
-#endif
             
             glEnable(GL_BLEND);
             glBlendEquation(GL_FUNC_ADD);
@@ -10557,19 +10551,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     
                     glReadBuffer(GL_FRONT);
                     
-#if __BIG_ENDIAN__
-                    glReadPixels( smartCroppedRect.origin.x, drawingFrameRect.size.height-smartCroppedRect.origin.y-smartCroppedRect.size.height, smartCroppedRect.size.width, smartCroppedRect.size.height, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, buf);		//GL_ABGR_EXT
-                    
-                    int ii = *width * *height;
-                    unsigned char	*t_argb = buf;
-                    unsigned char	*t_rgb = buf;
-                    while( ii-->0)
-                    {
-                        *((int*) t_rgb) = *((int*) t_argb);
-                        t_argb+=4;
-                        t_rgb+=3;
-                    }
-#else
                     glReadPixels(  smartCroppedRect.origin.x, drawingFrameRect.size.height-smartCroppedRect.origin.y-smartCroppedRect.size.height, smartCroppedRect.size.width, smartCroppedRect.size.height, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, buf);		//GL_ABGR_EXT
                     
                     int ii = *width * *height;
@@ -10580,7 +10561,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                         t_argb+=4;
                         t_rgb+=3;
                     }
-#endif
                     
                     screenCaptureRect = NSMakeRect(0, 0, 0, 0);
                     
@@ -11884,19 +11864,11 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     cgreenTable[ i] = gT[ i] * greenFactor;
                     cblueTable[ i] = bT[ i] * blueFactor;
                 }
-                //#if __BIG_ENDIAN__
                 vImageTableLookUp_ARGB8888( &dest, &dest, (Pixel_8*) currentAlphaTable, (Pixel_8*) &credTable, (Pixel_8*) &cgreenTable, (Pixel_8*) &cblueTable, 0);
-                //#else
-                //vImageTableLookUp_ARGB8888( &dest, &dest, (Pixel_8*) &cblueTable, (Pixel_8*) &cgreenTable, (Pixel_8*) &credTable, (Pixel_8*) currentAlphaTable, 0);
-                //#endif
             }
             else
             {
-                //#if __BIG_ENDIAN__
                 vImageTableLookUp_ARGB8888( &dest, &dest, (Pixel_8*) currentAlphaTable, (Pixel_8*) rT, (Pixel_8*) gT, (Pixel_8*) bT, 0);
-                //#else
-                //vImageTableLookUp_ARGB8888( &dest, &dest, (Pixel_8*) bT, (Pixel_8*) gT, (Pixel_8*) rT, (Pixel_8*) currentAlphaTable, 0);
-                //#endif
             }
         }
         else if( redFactor != 1.0 || greenFactor != 1.0 || blueFactor != 1.0)
@@ -11923,11 +11895,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 cgreenTable[ i] = gT[ i] * greenFactor;
                 cblueTable[ i] = bT[ i] * blueFactor;
             }
-            //#if __BIG_ENDIAN__
             vImageTableLookUp_ARGB8888( &dest, &dest, (Pixel_8*) currentAlphaTable, (Pixel_8*) &credTable, (Pixel_8*) &cgreenTable, (Pixel_8*) &cblueTable, 0);
-            //#else
-            //vImageTableLookUp_ARGB8888( &dest, &dest, (Pixel_8*) &cblueTable, (Pixel_8*) &cgreenTable, (Pixel_8*) &credTable, (Pixel_8*) currentAlphaTable, 0);
-            //#endif
             
         }
     }
@@ -12222,11 +12190,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 {
                     if( intFULL32BITPIPELINE )
                     {					
-#if __BIG_ENDIAN__
-                        if( isRGB == YES || [self.curDCM thickSlabVRActivated] == YES) glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, currWidth, currHeight, 0, GL_BGRA_EXT, GL_UNSIGNED_INT_8_8_8_8_REV, pBuffer);
-#else
                         if( isRGB == YES || [self.curDCM thickSlabVRActivated] == YES) glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, currWidth, currHeight, 0, GL_BGRA_EXT, GL_UNSIGNED_INT_8_8_8_8, pBuffer);
-#endif
                         else if( (localColorTransfer == YES) || (blending == YES)) glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, currWidth, currHeight, 0, GL_BGRA_EXT, GL_UNSIGNED_INT_8_8_8_8, pBuffer);
                         else
                         {
@@ -12251,13 +12215,8 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     }
                     else
                     {
-#if __BIG_ENDIAN__
-                        if( isRGB == YES || [self.curDCM thickSlabVRActivated] == YES) glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, currWidth, currHeight, 0, GL_BGRA_EXT, GL_UNSIGNED_INT_8_8_8_8_REV, pBuffer);
-                        else if( (localColorTransfer == YES) || (blending == YES)) glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, currWidth, currHeight, 0, GL_BGRA_EXT, GL_UNSIGNED_INT_8_8_8_8_REV, pBuffer);
-#else
                         if( isRGB == YES || [self.curDCM thickSlabVRActivated] == YES) glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, currWidth, currHeight, 0, GL_BGRA_EXT, GL_UNSIGNED_INT_8_8_8_8, pBuffer);
                         else if( (localColorTransfer == YES) || (blending == YES)) glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, currWidth, currHeight, 0, GL_BGRA_EXT, GL_UNSIGNED_INT_8_8_8_8, pBuffer);
-#endif
                         else glTexImage2D (TEXTRECTMODE, 0, GL_INTENSITY8, currWidth, currHeight, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, pBuffer);
                     }
                 }

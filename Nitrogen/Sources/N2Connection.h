@@ -46,10 +46,7 @@ enum N2ConnectionStatus {
 	N2ConnectionStatusOk
 };
 
-@interface N2Connection : NSObject
-#if (MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_5)
-<NSStreamDelegate>
-#endif
+@interface N2Connection : NSObject <NSStreamDelegate>
 {
 	id _address;
 	NSInteger _port;
@@ -112,5 +109,4 @@ enum N2ConnectionStatus {
 //+(BOOL)host:(NSString*)host1 isEqualToHost:(NSString*)host2;
 
 @end
-
 

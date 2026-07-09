@@ -42,7 +42,6 @@
 @interface NSFileManager (N2)
 
 -(void) moveItemAtPathToTrash: (NSString*) path;
--(NSString*)findSystemFolderOfType:(int)folderType forDomain:(int)domain __deprecated;
 -(NSString*)userApplicationSupportFolderForApp;
 -(NSString*)tmpFilePathInDir:(NSString*)dirPath;
 -(NSString*)tmpDirPath;
@@ -50,7 +49,6 @@
 -(NSString*)confirmDirectoryAtPath:(NSString*)dirPath;
 -(NSString*)confirmNoIndexDirectoryAtPath:(NSString*)path;
 -(NSUInteger)sizeAtPath:(NSString*)path __deprecated;
--(NSUInteger)sizeAtFSRef:(FSRef*)theFileRef __deprecated;
 -(BOOL)copyItemAtPath:(NSString*)srcPath toPath:(NSString*)dstPath byReplacingExisting:(BOOL)replace error:(NSError**)err;
 
 -(BOOL)applyFileModeOfParentToItemAtPath:(NSString*)path;

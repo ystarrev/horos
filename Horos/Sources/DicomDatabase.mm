@@ -49,7 +49,6 @@
 #import "DicomSeries.h"
 #import "DicomFile.h"
 #import "DicomFileDCMTKCategory.h"
-#import "Reports.h"
 #import "ThreadsManager.h"
 #import "AppController.h"
 #import "NSDictionary+N2.h"
@@ -81,6 +80,19 @@
 #include <unistd.h>
 
 NSString* const CurrentDatabaseVersion = @"2.5";
+
+static NSString *ReportFilenameForStudy(id study)
+{
+    NSString *accessionNumber = [study valueForKey:@"accessionNumber"];
+    NSString *identifier = [accessionNumber length] > 0 ? accessionNumber : [study valueForKey:@"studyInstanceUID"];
+
+    return [DicomFile NSreplaceBadCharacter:[[study valueForKey:@"patientUID"] stringByAppendingFormat:@"-%@", identifier]];
+}
+
+static NSString *OldReportFilenameForStudy(id study)
+{
+    return [DicomFile NSreplaceBadCharacter:[[study valueForKey:@"patientUID"] stringByAppendingFormat:@"-%@", [study valueForKey:@"id"]]];
+}
 
 static BOOL HorosCopyFileDataWithLargeBuffer(const char *sourcePath, const char *destinationPath, int *failureErrno)
 {
@@ -630,22 +642,6 @@ static NSString* const HorosActiveLocalDatabasePathDefaultsKey = @"HorosActiveLo
             
             if ([NSFileManager.defaultManager fileExistsAtPath:self.toBeIndexedDirPath])
                 [NSFileManager.defaultManager moveItemAtPath:self.toBeIndexedDirPath toPath:[self.incomingDirPath stringByAppendingPathComponent:self.toBeIndexedDirPath.lastPathComponent] error:NULL];
-            
-            // report templates
-#ifndef MACAPPSTORE
-            
-            for (NSString* rfn in [NSArray arrayWithObjects: @"ReportTemplate.rtf", @"ReportTemplate.odt", nil]) {
-                NSString* rfp = [self.baseDirPath stringByAppendingPathComponent:rfn];
-                if (rfp && ![NSFileManager.defaultManager fileExistsAtPath:rfp]) {
-                    [NSFileManager.defaultManager copyItemAtPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:rfn] toPath:rfp error:NULL];
-                    [NSFileManager.defaultManager applyFileModeOfParentToItemAtPath:rfp];
-                }
-            }
-            
-            [Reports checkForPagesTemplate];
-            [Reports checkForWordTemplates];
-            
-#endif
             
             [self checkForHtmlTemplates];
             
@@ -4683,7 +4679,7 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
 
 -(void)checkForExistingReportForStudy:(DicomStudy*)study {
     @try { // is there a report?
-        NSArray* filenames = [NSArray arrayWithObjects: [Reports getUniqueFilename:study], [Reports getOldUniqueFilename:study], NULL];
+        NSArray* filenames = [NSArray arrayWithObjects: ReportFilenameForStudy(study), OldReportFilenameForStudy(study), NULL];
         NSArray* extensions = [NSArray arrayWithObjects: @"pages", @"odt", @"doc", @"docx", @"rtf", NULL];
         for (NSString* filename in filenames)
             for (NSString* extension in extensions) {

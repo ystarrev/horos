@@ -41,6 +41,16 @@
 #import "NSString+SymlinksAndAliases.h"
 #import <sys/stat.h>
 
+static NSUInteger N2FileSizeAtURL(NSURL *url)
+{
+    NSNumber *size = nil;
+    if ([url getResourceValue:&size forKey:NSURLTotalFileSizeKey error:NULL] && size)
+        return [size unsignedIntegerValue];
+    if ([url getResourceValue:&size forKey:NSURLFileSizeKey error:NULL] && size)
+        return [size unsignedIntegerValue];
+    return 0;
+}
+
 @implementation NSFileManager (N2)
 
 - (void)moveItemAtPathToTrash: (NSString*) path
@@ -54,20 +64,6 @@
         trashPath = [originalTrashPath stringByAppendingFormat: @" %d", i++];
         
     [[NSFileManager defaultManager] moveItemAtPath:path toPath:trashPath error:&error];
-}
-
--(NSString*)findSystemFolderOfType:(int)folderType forDomain:(int)domain {
-    FSRef folder;
-    NSString* result = NULL;
-	
-    OSErr err = FSFindFolder(domain, folderType, kCreateFolder, &folder);
-    if (err == noErr) {
-        CFURLRef url = CFURLCreateFromFSRef(kCFAllocatorDefault, &folder);
-        result = [(NSURL*)url path];
-		CFRelease(url);
-    } else [NSException raise:NSGenericException format:@"FSFindFolder error %d", err];
-	
-    return result;
 }
 
 -(NSString*)userApplicationSupportFolderForApp {
@@ -187,65 +183,32 @@
 	return [self confirmDirectoryAtPath:pathWithExt];
 }
 
--(NSUInteger)sizeAtPath:(NSString*)path {
-	FSRef fsRef;
-	CFURLGetFSRef((CFURLRef)[NSURL fileURLWithPath:path], &fsRef);
-	return [self sizeAtFSRef:&fsRef];
-}
+	-(NSUInteger)sizeAtPath:(NSString*)path {
+	    if (path == nil)
+	        return 0;
 
--(NSUInteger)sizeAtFSRef:(FSRef*)theFileRef {
-	FSIterator thisDirEnum = NULL;
-	NSUInteger totalSize = 0;
-	
-	NSMutableArray* fsRefs = [NSMutableArray arrayWithCapacity:1];
-	[fsRefs addObject:[NSData dataWithBytes:theFileRef length:sizeof(FSRef)]];
+	    NSURL *url = [NSURL fileURLWithPath:path];
+	    NSArray *keys = [NSArray arrayWithObjects:NSURLIsDirectoryKey, NSURLFileSizeKey, NSURLTotalFileSizeKey, nil];
+	    NSNumber *isDirectory = nil;
+	    if ([url getResourceValue:&isDirectory forKey:NSURLIsDirectoryKey error:NULL] && [isDirectory boolValue] == NO)
+	        return N2FileSizeAtURL(url);
 
-	@try {
-		while (fsRefs.count) {
-			NSData* d = [[fsRefs objectAtIndex:0] retain];
-			[fsRefs removeObjectAtIndex:0];
-			FSRef currFsRef;
-			[d getBytes:&currFsRef length:sizeof(FSRef)];
-			[d release];
-			
-			FSCatalogInfo fetchedInfos;
-			//HFSUniStr255 outName;
-			OSErr fsErr = FSGetCatalogInfo(&currFsRef, kFSCatInfoDataSizes|kFSCatInfoRsrcSizes|kFSCatInfoNodeFlags, &fetchedInfos, NULL, NULL, NULL);
-			//NSLog(@"ok for %@", [NSString stringWithCharacters:outName.unicode length:outName.length]);
-			
-			if (fsErr == noErr)
-				if (fetchedInfos.nodeFlags&kFSNodeIsDirectoryMask) {
-					if (FSOpenIterator(&currFsRef, kFSIterateFlat, &thisDirEnum) == noErr) {
-						const ItemCount kMaxEntriesPerFetch = 256;
-						ItemCount actualFetched;
-						FSRef fetchedRefs[kMaxEntriesPerFetch];
-						FSCatalogInfo fetchedInfos[kMaxEntriesPerFetch];
-						
-						OSErr fsErr = FSGetCatalogInfoBulk(thisDirEnum, kMaxEntriesPerFetch, &actualFetched, NULL, kFSCatInfoDataSizes|kFSCatInfoRsrcSizes|kFSCatInfoNodeFlags, fetchedInfos, fetchedRefs, NULL, NULL);
-						while ((fsErr == noErr) || (fsErr == errFSNoMoreItems)) {
-							for (ItemCount thisIndex = 0; thisIndex < actualFetched; ++thisIndex)
-								[fsRefs addObject:[NSData dataWithBytes:&fetchedRefs[thisIndex] length:sizeof(FSRef)]];
-							if (fsErr == errFSNoMoreItems)
-								break;
-							fsErr = FSGetCatalogInfoBulk(thisDirEnum, kMaxEntriesPerFetch, &actualFetched, NULL, kFSCatInfoDataSizes|kFSCatInfoRsrcSizes|kFSCatInfoNodeFlags, fetchedInfos, fetchedRefs, NULL, NULL);
-						}
-						
-						FSCloseIterator(thisDirEnum);
-					}
-				} else {
-					totalSize += fetchedInfos.dataLogicalSize;
-					totalSize += fetchedInfos.rsrcLogicalSize;
-				}
-			else
-				NSLog(@"[NSFileManager sizeAtFSRef:] error: %d", fsErr);
-		}
-		
-	} @catch (NSException* e) {
-		NSLog(@"[NSFileManager sizeAtFSRef:] error: %@", e.description);
+	    NSUInteger totalSize = 0;
+	    NSDirectoryEnumerator *enumerator = [self enumeratorAtURL:url includingPropertiesForKeys:keys options:0 errorHandler:^BOOL(NSURL *itemURL, NSError *error) {
+	        NSLog(@"[NSFileManager sizeAtPath:] error for %@: %@", itemURL.path, error.localizedDescription);
+	        return YES;
+	    }];
+
+	    for (NSURL *itemURL in enumerator)
+	    {
+	        NSNumber *itemIsDirectory = nil;
+	        if ([itemURL getResourceValue:&itemIsDirectory forKey:NSURLIsDirectoryKey error:NULL] && [itemIsDirectory boolValue])
+	            continue;
+	        totalSize += N2FileSizeAtURL(itemURL);
+	    }
+
+	    return totalSize;
 	}
-
-	return totalSize;
-}
 
 -(BOOL)copyItemAtPath:(NSString*)srcPath toPath:(NSString*)dstPath byReplacingExisting:(BOOL)replace error:(NSError**)err {
 	BOOL success = YES;
@@ -293,31 +256,7 @@
 }
 
 -(NSString*)destinationOfAliasAtPath:(NSString*)inPath {
-    if (inPath == nil)
-        return nil;
-    
-	CFStringRef resolvedPath = nil;
-    
-	CFURLRef url = CFURLCreateWithFileSystemPath(nil /*allocator*/, (CFStringRef)inPath, kCFURLPOSIXPathStyle, NO /*isDirectory*/);
-	if (url != nil) {
-		FSRef fsRef;
-		if (CFURLGetFSRef(url, &fsRef))
-		{
-			Boolean targetIsFolder, wasAliased;
-			if (FSResolveAliasFile (&fsRef, true /*resolveAliasChains*/, &targetIsFolder, &wasAliased) == noErr && wasAliased)
-			{
-				CFURLRef resolvedurl = CFURLCreateFromFSRef(nil /*allocator*/, &fsRef);
-				if (resolvedurl != nil)
-				{
-					resolvedPath = CFURLCopyFileSystemPath(resolvedurl, kCFURLPOSIXPathStyle);
-					CFRelease(resolvedurl);
-				}
-			}
-		}
-		CFRelease(url);
-	}
-    
-	return [(NSString*)resolvedPath autorelease];	
+    return [inPath stringByConditionallyResolvingAlias];
 }
 
 -(NSString*)destinationOfAliasOrSymlinkAtPath:(NSString*)path {

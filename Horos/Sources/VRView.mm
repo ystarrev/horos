@@ -6666,9 +6666,6 @@ public:
 //        compositeFunction = vtkVolumeRayCastCompositeFunction::New();
         
         LOD = 2.0;
-#if __ppc__
-        LOD += 0.5;
-#endif
         
         volume = vtkVolume::New();
         volume->SetProperty( volumeProperty);
@@ -7339,9 +7336,6 @@ public:
                 
                 glReadBuffer(GL_FRONT);
                 
-#if __BIG_ENDIAN__
-                glReadPixels(0, 0, *width, *height, GL_RGB, GL_UNSIGNED_BYTE, buf);
-#else
                 glReadPixels(0, 0, *width, *height, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, buf);
                 i = *width * *height;
                 unsigned char	*t_argb = buf;
@@ -7352,7 +7346,6 @@ public:
                     t_argb+=4;
                     t_rgb+=3;
                 }
-#endif
                 
                 long rowBytes = *width**spp**bpp/8;
                 

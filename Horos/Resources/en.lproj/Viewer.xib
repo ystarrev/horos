@@ -131,9 +131,6 @@
                 <outlet property="quicktimeTo" destination="1387" id="1401"/>
                 <outlet property="quicktimeToText" destination="1383" id="1514"/>
                 <outlet property="quicktimeWindow" destination="523" id="840"/>
-                <outlet property="reportTemplatesImageView" destination="1755" id="1757"/>
-                <outlet property="reportTemplatesListPopUpButton" destination="1752" id="1758"/>
-                <outlet property="reportTemplatesView" destination="1750" id="1756"/>
                 <outlet property="roiApplyMatrix" destination="2022" id="2048"/>
                 <outlet property="roiApplyWindow" destination="2019" id="2034"/>
                 <outlet property="roiPropaCopy" destination="1115" id="1118"/>
@@ -4988,40 +4985,6 @@ Gw
                 <constraint firstItem="1740" firstAttribute="centerY" secondItem="1739" secondAttribute="centerY" id="TL5-i8-OC3"/>
             </constraints>
         </customView>
-        <customView id="1750" userLabel="PagesReportTemplates">
-            <rect key="frame" x="0.0" y="0.0" width="40" height="32"/>
-            <autoresizingMask key="autoresizingMask"/>
-            <subviews>
-                <imageView translatesAutoresizingMaskIntoConstraints="NO" id="1755">
-                    <rect key="frame" x="0.0" y="0.0" width="32" height="32"/>
-                    <constraints>
-                        <constraint firstAttribute="width" constant="32" id="OIe-5u-UFa"/>
-                        <constraint firstAttribute="height" constant="32" id="z3Y-mn-oFL"/>
-                    </constraints>
-                    <imageCell key="cell" refusesFirstResponder="YES" alignment="left" animates="YES" imageScaling="axesIndependently" image="ReportPages" id="2341"/>
-                </imageView>
-                <popUpButton translatesAutoresizingMaskIntoConstraints="NO" id="1752">
-                    <rect key="frame" x="-10" y="0.0" width="52" height="32"/>
-                    <popUpButtonCell key="cell" type="square" bezelStyle="shadowlessSquare" imagePosition="only" alignment="left" borderStyle="bezel" inset="2" pullsDown="YES" preferredEdge="maxY" selectedItem="1754" id="2340">
-                        <behavior key="behavior" lightByBackground="YES" lightByGray="YES"/>
-                        <font key="font" metaFont="menu"/>
-                        <menu key="menu" title="OtherViews" id="1753">
-                            <items>
-                                <menuItem hidden="YES" id="1754"/>
-                            </items>
-                        </menu>
-                    </popUpButtonCell>
-                </popUpButton>
-            </subviews>
-            <constraints>
-                <constraint firstItem="1752" firstAttribute="leading" secondItem="1750" secondAttribute="leading" constant="-10" id="6pC-Sa-RQm"/>
-                <constraint firstItem="1752" firstAttribute="top" secondItem="1755" secondAttribute="top" id="70r-cY-s4E"/>
-                <constraint firstItem="1755" firstAttribute="leading" secondItem="1750" secondAttribute="leading" id="7jW-gs-QMW"/>
-                <constraint firstItem="1752" firstAttribute="centerX" secondItem="1755" secondAttribute="centerX" id="9jf-Vd-fSR"/>
-                <constraint firstItem="1755" firstAttribute="top" secondItem="1750" secondAttribute="top" id="Qgr-JT-DVr"/>
-                <constraint firstItem="1755" firstAttribute="bottom" secondItem="1752" secondAttribute="bottom" id="TLR-hU-ue7"/>
-            </constraints>
-        </customView>
         <customView id="1769" userLabel="Orientation">
             <rect key="frame" x="0.0" y="0.0" width="113" height="53"/>
             <autoresizingMask key="autoresizingMask"/>
@@ -6025,7 +5988,6 @@ DQ
         <image name="Prev" width="31" height="34"/>
         <image name="Propagate" width="32" height="32"/>
         <image name="PropagateOn" width="32" height="32"/>
-        <image name="ReportPages" width="256" height="256"/>
         <image name="Rotate" width="176" height="177"/>
         <image name="SUV" width="128" height="128"/>
         <image name="SagSmall" width="60" height="60"/>

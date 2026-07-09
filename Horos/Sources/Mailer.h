@@ -40,10 +40,6 @@
 
 #import <Foundation/Foundation.h>
 
-// Import Carbon.h, and add an ivar to your class's .h:
-// You could roll this into the Mail class as presented above
-
-#import <Carbon/Carbon.h>
 /** \brief Sends email */
 @interface Mailer : NSObject {
 

@@ -68,75 +68,6 @@ static int Use_kdu_IfAvailable = 0;
 // KDU support
 #include "kdu_OsiriXSupport.h"
 
-#if __ppc__
-
-union vectorShort {
-    vector short shortVec;
-    short scalar[8];
-};
-
-union vectorChar {
-    vector unsigned char byteVec;
-    unsigned scalar[16];
-};
-
-
-union vectorLong {
-    vector int longVec;
-    short scalar[4];
-};
-
-union  vectorFloat {
-    vector float floatVec;
-    float scalar[4];
-};
-
-
-void SwapShorts( vector unsigned short *unaligned_input, long size)
-{
-    long						i = size / 8;
-    vector unsigned char		identity = vec_lvsl(0, (int*) NULL );
-    vector unsigned char		byteSwapShorts = vec_xor( identity, vec_splat_u8(sizeof( short) - 1) );
-    
-    while(i-- > 0)
-    {
-        *unaligned_input++ = vec_perm( *unaligned_input, *unaligned_input, byteSwapShorts);
-    }
-}
-
-void SwapLongs( vector unsigned int *unaligned_input, long size)
-{
-    long i = size / 4;
-    vector unsigned char identity = vec_lvsl(0, (int*) NULL );
-    vector unsigned char byteSwapLongs = vec_xor( identity, vec_splat_u8(sizeof( int )- 1 ) );
-    while(i-- > 0)
-    {
-        *unaligned_input++ = vec_perm( *unaligned_input, *unaligned_input, byteSwapLongs);
-    }
-}
-
-#endif
-
-////altivec
-//#define dcmHasAltiVecMask    ( 1 << gestaltPowerPCHasVectorInstructions )  // used in  looking for a g4
-//
-//short DCMHasAltiVec()
-//{
-//	Boolean hasAltiVec = 0;
-//	OSErr      err;
-//	SInt32      ppcFeatures;
-//
-//	err = Gestalt ( gestaltPowerPCProcessorFeatures, &ppcFeatures );
-//	if ( err == noErr)
-//	{
-//		if ( ( ppcFeatures & dcmHasAltiVecMask) != 0 )
-//		{
-//			hasAltiVec = 1;
-//		}
-//	}
-//	return hasAltiVec;
-//}
-
 unsigned short readUint16(const unsigned char *data)
 {
     return (((unsigned short)(*data) << 8) | ((unsigned short)(*(data+1))));
@@ -1182,12 +1113,6 @@ void info_callback(const char *msg, void *a) {
     if (NSHostByteOrder() == NS_BigEndian){
         for ( NSMutableData *data in _values ) {
             if (_pixelDepth <= 16) {
-                //				#if __ppc__
-                //				if ( DCMHasAltiVec()) {
-                //					 SwapShorts( (vector unsigned short *)[data mutableBytes], [data length]/2);
-                //				}
-                //				else
-                //				#endif
                 {
                     unsigned short *shortsToSwap = (unsigned short *) [data mutableBytes];
                     //signed short *signedShort = [data mutableBytes];
@@ -1198,12 +1123,6 @@ void info_callback(const char *msg, void *a) {
                 }
             }
             else {
-                //				#if __ppc__
-                //				if ( DCMHasAltiVec()) {
-                //					 SwapLongs( (vector unsigned int *) [data mutableBytes], [data length]/4);
-                //				}
-                //				else
-                //				#endif
                 {
                     unsigned long *longsToSwap = (unsigned long *) [data mutableBytes];
                     //signed short *signedShort = [data mutableBytes];
@@ -1225,11 +1144,6 @@ void info_callback(const char *msg, void *a) {
     if (NSHostByteOrder() == NS_BigEndian){
         for ( NSMutableData *data in _values ) {
             if (_pixelDepth <= 16) {
-                //				#if __ppc__
-                //				if ( DCMHasAltiVec())
-                //					 SwapShorts( (vector unsigned short *) [data mutableBytes], [data length]/2);
-                //				else
-                //				#endif
                 {
                     unsigned short *shortsToSwap = (unsigned short *) [data mutableBytes];
                     unsigned int length = (unsigned int)[data length]/2;
@@ -1240,12 +1154,6 @@ void info_callback(const char *msg, void *a) {
                 }
             }
             else {
-                //				#if __ppc__
-                //				if ( DCMHasAltiVec()) {
-                //					 SwapLongs( (vector unsigned int *) [data mutableBytes], [data length]/4);
-                //				}
-                //				else
-                //				#endif
                 {
                     unsigned long *longsToSwap = (unsigned long *) [data mutableBytes];
                     //signed short *signedShort = [data mutableBytes];
@@ -2024,178 +1932,6 @@ void info_callback(const char *msg, void *a) {
 //
 //}
 //
-//#if __ppc__
-//- (void)decodeRescaleAltivec:(NSMutableData *)data{
-//	union vectorShort rescaleInterceptV ;
-//    union  vectorFloat rescaleSlopeV;
-//   // NSMutableData *tempData;
-//    short rescaleIntercept;
-//    float rescaleSlope;
-//    vector unsigned short eight = (vector unsigned short)(8);
-//    vector short *vPointer = (vector short *)[data mutableBytes];
-//	signed short *pointer =  (signed short *)[data mutableBytes];
-//    int length = [data length];
-//    int i = 0;
-//    int j = 0;
-//
-//	if ([_dcmObject attributeForTag:[DCMAttributeTag tagWithName:@"RescaleIntercept" ]] != nil)
-//            rescaleIntercept = ([[[_dcmObject attributeForTag:[DCMAttributeTag tagWithName:@"RescaleIntercept" ]] value] intValue]);
-//	else
-//            rescaleIntercept = 0.0;
-//
-//    //rescale Slope
-//	if ([_dcmObject attributeForTag:[DCMAttributeTag tagWithName:@"RescaleSlope" ]] != nil)
-//            rescaleSlope = [[[_dcmObject attributeForTag:[DCMAttributeTag tagWithName:@"RescaleSlope" ]] value] floatValue];
-//
-//	else
-//            rescaleSlope = 1.0;
-//
-//	if ((rescaleIntercept != 0) || (rescaleSlope != 1)) {
-//
-//		//Swap non G4 acceptable values. Then do rest with Altivec
-//	   int halfLength = length/2;
-//	   int vectorLength = length/16;
-//	   int nonVectorLength = (int)fmod(length,8);
-//		*pointer =+ (length - nonVectorLength);
-//
-//		//align
-//		for (i= 0;  i < vectorLength; i++)
-//			*vPointer++ = vec_rl(*vPointer, eight);
-//			//vPointer[i] = vec_rl(vPointer[i], eight);
-//
-//		for (j = 0; j < 8; j++)
-//			rescaleInterceptV.scalar[j] = rescaleIntercept;
-//
-//		for (j = 0; j < 4; j++)
-//			 rescaleSlopeV.scalar[j] = rescaleSlope;
-//
-//
-//		//slope is one can vecadd
-//		if ((rescaleIntercept != 0) && (rescaleSlope == 1)) {
-//
-//			short *pixelData = (short *)[data mutableBytes];
-//			vPointer = (vector short *)[data mutableBytes];
-//
-//			for (i = length - nonVectorLength ; i< length; i++)
-//				pixelData[i] =  pixelData[i] + rescaleIntercept;
-//
-//			for (i= 0; i<vectorLength; i++)
-//				*vPointer++ = vec_add(*vPointer, rescaleInterceptV.shortVec);
-//		}
-//		//can't vec multiple and add
-//		else if ((rescaleIntercept != 0) && (rescaleSlope != 1)) {
-//			short *pixelData = (short *)[data bytes];
-//			//no vector for shorts and floats
-//			for (i= 0; i<halfLength; i++)
-//				*pixelData++ =  *pixelData * rescaleSlope + rescaleIntercept;
-//		}
-//	}
-//}
-//- (void)encodeRescaleAltivec:(NSMutableData *)data withPixelDepth:(int)pixelDepth;{
-//	short rescaleIntercept = 0;
-//    float rescaleSlope = 1.0;
-//	int length = [data length];
-//	int halfLength = length/2;
-//	if ([_dcmObject attributeForTag:[DCMAttributeTag tagWithName:@"RescaleIntercept" ]] != nil)
-//		rescaleIntercept = ([[[_dcmObject attributeForTag:[DCMAttributeTag tagWithName:@"RescaleIntercept" ]] value] intValue]);
-//	else {
-//		switch (_pixelDepth) {
-//			case 8:
-//				rescaleIntercept = -127;
-//				break;
-//			case 9:
-//				rescaleIntercept = -255;
-//				break;
-//			case 10:
-//				rescaleIntercept = -511;
-//				break;
-//			case 11:
-//				rescaleIntercept = -1023;
-//				break;
-//			case 12:
-//				rescaleIntercept = -2047;
-//				break;
-//			case 13:
-//				rescaleIntercept = -4095;
-//				break;
-//			case 14:
-//				rescaleIntercept = -8191;
-//				break;
-//			case 15:
-//				rescaleIntercept = -16383;
-//				break;
-//			case 16:
-//				rescaleIntercept = -32767;
-//				break;
-//		}
-//		DCMAttributeTag *tag = [DCMAttributeTag tagWithName:@"RescaleIntercept" ];
-//		DCMAttribute *attr = [DCMAttribute attributeWithAttributeTag:tag  vr:[tag vr]  values:[NSMutableArray arrayWithObject:[NSString stringWithFormat:@"%f", rescaleIntercept]]];
-//		[_dcmObject setAttribute:attr];
-//	}
-//
-//    //rescale Slope
-//	if ([_dcmObject attributeForTag:[DCMAttributeTag tagWithName:@"RescaleSlope" ]] != nil)
-//		rescaleSlope = [[[_dcmObject attributeForTag:[DCMAttributeTag tagWithName:@"RescaleSlope" ]] value] floatValue];
-//
-//	else  {
-//		rescaleSlope = 1.0;
-//		DCMAttributeTag *tag = [DCMAttributeTag tagWithName:@"RescaleSlope" ];
-//		DCMAttribute *attr = [DCMAttribute attributeWithAttributeTag:tag  vr:[tag vr]  values:[NSMutableArray arrayWithObject:[NSString stringWithFormat:@"%f", rescaleSlope]]];
-//		[_dcmObject setAttribute:attr];
-//	}
-//
-//	union vectorShort rescaleInterceptV ;
-//    union  vectorFloat rescaleSlopeV;
-//   // NSMutableData *tempData;
-//
-//    vector unsigned short eight = (vector unsigned short)(8);
-//    vector short *vPointer = (vector short *)[data mutableBytes];
-//	signed short *pointer =  (signed short *)[data mutableBytes];
-//
-//    int i = 0;
-//    int j = 0;
-//
-//	  //rescale Intercept
-//
-//            //Swap non G4 acceptable values. Then do rest with Altivec
-//
-//
-//       int vectorLength = length/16;
-//       int nonVectorLength = (int)fmod(length,8);
-//
-//        *pointer =+ (length - nonVectorLength);
-//
-//        for (i= nonVectorLength;  i < vectorLength; i++)
-//            *vPointer++ = vec_rl(*vPointer, eight);
-//
-//        for (j = 0; j < 8; j++)
-//			rescaleInterceptV.scalar[j] = -rescaleIntercept;
-//
-//		for (j = 0; j < 4; j++)
-//			 rescaleSlopeV.scalar[j] = rescaleSlope;
-//
-//        if ((rescaleIntercept != 0) && (rescaleSlope == 1)) {
-//
-//            short *pixelData = (short *)[data mutableBytes];
-//            vPointer = (vector short *)[data mutableBytes];
-//            for (i = 0; i< nonVectorLength; i++)
-//				*pixelData++ =  *pixelData - rescaleIntercept;
-//
-//            for (i= nonVectorLength; i<vectorLength; i++)
-//                *vPointer++ = vec_add(*vPointer, rescaleInterceptV.shortVec);
-//        }
-//        else if ((rescaleIntercept != 0) && (rescaleSlope != 1)) {
-//            short *pixelData = (short *)[data bytes];
-//			//n0 vector for shorts and floats
-//            for (i= 0; i<halfLength; i++)
-//                *pixelData++ =  *pixelData / rescaleSlope - rescaleIntercept;
-//        }
-//
-//
-//}
-//
-//#endif
-
 //- (void)decodeRescaleScalar:(NSMutableData *)data{
 //    short rescaleIntercept;
 //    float rescaleSlope;

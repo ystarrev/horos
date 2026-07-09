@@ -86,7 +86,6 @@ NSLock					*PapyrusLock = 0L;
 NSThread				*mainThread = 0L;
 BOOL					NEEDTOREBUILD = NO;
 NSMutableDictionary		*DATABASECOLUMNS = 0L;
-//short					Altivec = 0;
 short					UseOpenJpeg = 1, Use_kdu_IfAvailable = 0;
 
 static void dcmtkSetJPEGColorSpace( int) {}

@@ -150,12 +150,8 @@
     NSAssert( cSpace != NULL, @"CGColorSpaceCreateWithName failure");
 
     CGContextRef bitmap = CGBitmapContextCreate(mData, mWidth, mHeight, 8, mByteWidth,
-                                    cSpace,  
-	#if __BIG_ENDIAN__
-		((CGBitmapInfo)kCGImageAlphaNoneSkipFirst | (CGBitmapInfo)kCGBitmapByteOrder32Big) /* XRGB Big Endian */);
-	#else
-		((CGBitmapInfo)kCGImageAlphaNoneSkipFirst | (CGBitmapInfo)kCGBitmapByteOrder32Little) /* XRGB Little Endian */);
-	#endif                                    
+                                    cSpace,
+                                    ((CGBitmapInfo)kCGImageAlphaNoneSkipFirst | (CGBitmapInfo)kCGBitmapByteOrder32Little) /* XRGB Little Endian */);
     NSAssert( bitmap != NULL, @"CGBitmapContextCreate failure");
 
     // Get rid of color space
@@ -289,7 +285,7 @@
         format: GL_BGRA
         type: GL_UNSIGNED_INT_8_8_8_8_REV
     
-    because this is the native format of the GPU for both PPC and Intel and will 
+    because this is the native format of the GPU and will
     give you the best performance. Any deviation from this format will not give 
     you optimal performance!
     

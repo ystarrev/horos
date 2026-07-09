@@ -202,20 +202,28 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
             return;
         }
 
+        DicomDatabase *srcIndependentDatabase = nil;
+        NSArray* dicomImages = nil;
+        DicomDatabase* dstDatabase = nil;
         @try
         {
             NSThread* thread = [NSThread currentThread];
 
             DicomDatabase *srcDatabase = [io objectAtIndex:2];
-            NSArray* dicomImages = [srcDatabase.independentDatabase objectsWithIDs: [io objectAtIndex: 0]];
+            srcIndependentDatabase = [[srcDatabase independentDatabase] retain];
+            dicomImages = [[srcIndependentDatabase objectsWithIDs: [io objectAtIndex: 0]] retain];
 
             NSMutableArray* imagePaths = [NSMutableArray array];
             for (DicomImage* image in dicomImages)
                 if (![imagePaths containsObject:image.completePath])
                     [imagePaths addObject:image.completePath];
+            [dicomImages release];
+            dicomImages = nil;
+            [srcIndependentDatabase release];
+            srcIndependentDatabase = nil;
 
             thread.status = NSLocalizedString(@"Opening database...", nil);
-            DicomDatabase* dstDatabase = [[io objectAtIndex:3] independentDatabase];
+            dstDatabase = [[[io objectAtIndex:3] independentDatabase] retain];
 
             thread.status = [NSString stringWithFormat:NSLocalizedString(@"Copying %@ %@...", nil), N2LocalizedDecimal( imagePaths.count), (imagePaths.count == 1 ? NSLocalizedString(@"file", nil) : NSLocalizedString(@"files", nil)) ];
             NSMutableArray* dstPaths = [NSMutableArray array];
@@ -277,10 +285,15 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
 
             thread.status = [NSString stringWithFormat:NSLocalizedString(@"Indexing %@ %@...", nil), N2LocalizedDecimal( dstPaths.count), (dstPaths.count == 1 ? NSLocalizedString(@"file", nil) : NSLocalizedString(@"files", nil))];
             thread.progress = -1;
-            [dstDatabase addFilesAtPaths:dstPaths];
+            [dstDatabase addFilesAtPaths: dstPaths postNotifications: YES dicomOnly: [[NSUserDefaults standardUserDefaults] boolForKey: @"onlyDICOM"] rereadExistingItems:NO  generatedByOsiriX: NO importedFiles: YES returnArray: NO];
         }
         @catch (NSException *exception) {
             N2LogException( exception);
+        }
+        @finally {
+            [dicomImages release];
+            [srcIndependentDatabase release];
+            [dstDatabase release];
         }
 	}
 }
@@ -445,50 +458,65 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
 {
 	NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
 	NSThread* thread = [NSThread currentThread];
+    DicomDatabase *srcIndependentDatabase = nil;
+    DicomDatabase* idatabase = nil;
 
-    DataNodeIdentifier* destination = [io objectAtIndex:1];
-	RemoteDicomDatabase* srcDatabase = [io objectAtIndex:2];
-    NSMutableArray* dicomImages = [[[srcDatabase.independentDatabase objectsWithIDs: [io objectAtIndex: 0]] mutableCopy] autorelease];
-
-	NSMutableArray* imagePaths = [[[dicomImages valueForKey:@"completePath"] mutableCopy] autorelease];
-	[imagePaths removeDuplicatedStringsInSyncWithThisArray:dicomImages];
-
-	thread.status = NSLocalizedString(@"Opening database...", nil);
-
-	DicomDatabase* idatabase = [[DicomDatabase databaseAtPath:destination.location name:destination.description] independentDatabase];
-
-	thread.status = [NSString stringWithFormat:NSLocalizedString(@"Fetching %@ %@...", nil), N2LocalizedDecimal( dicomImages.count), (dicomImages.count == 1 ? NSLocalizedString(@"file", nil) : NSLocalizedString(@"files", nil)) ];
-	NSMutableArray* dstPaths = [NSMutableArray array];
-	for (NSInteger i = 0; i < dicomImages.count; ++i)
+    @try
     {
-        @try
-        {
-            DicomImage* dicomImage = [dicomImages objectAtIndex:i];
-            NSString* srcPath = [srcDatabase cacheDataForImage:dicomImage maxFiles:0];
+        DataNodeIdentifier* destination = [io objectAtIndex:1];
+        RemoteDicomDatabase* srcDatabase = [io objectAtIndex:2];
+        srcIndependentDatabase = [[srcDatabase independentDatabase] retain];
+        NSMutableArray* dicomImages = [[[srcIndependentDatabase objectsWithIDs: [io objectAtIndex: 0]] mutableCopy] autorelease];
 
-            if (srcPath)
+        NSMutableArray* imagePaths = [[[dicomImages valueForKey:@"completePath"] mutableCopy] autorelease];
+        [imagePaths removeDuplicatedStringsInSyncWithThisArray:dicomImages];
+
+        thread.status = NSLocalizedString(@"Opening database...", nil);
+
+        idatabase = [[[DicomDatabase databaseAtPath:destination.location name:destination.description] independentDatabase] retain];
+
+        thread.status = [NSString stringWithFormat:NSLocalizedString(@"Fetching %@ %@...", nil), N2LocalizedDecimal( dicomImages.count), (dicomImages.count == 1 ? NSLocalizedString(@"file", nil) : NSLocalizedString(@"files", nil)) ];
+        NSMutableArray* dstPaths = [NSMutableArray array];
+        for (NSInteger i = 0; i < dicomImages.count; ++i)
+        {
+            @try
             {
-                NSString* ext = [DicomFile isDICOMFile:srcPath]? @"dcm" : srcPath.pathExtension;
-                NSString* dstPath = [idatabase uniquePathForNewDataFileWithExtension:ext];
+                DicomImage* dicomImage = [dicomImages objectAtIndex:i];
+                NSString* srcPath = [srcDatabase cacheDataForImage:dicomImage maxFiles:0];
 
-                if( dstPath.length)
-                    if ([[NSFileManager defaultManager] moveItemAtPath:srcPath toPath:dstPath error:NULL])
-                        [dstPaths addObject:dstPath];
+                if (srcPath)
+                {
+                    NSString* ext = [DicomFile isDICOMFile:srcPath]? @"dcm" : srcPath.pathExtension;
+                    NSString* dstPath = [idatabase uniquePathForNewDataFileWithExtension:ext];
+
+                    if( dstPath.length)
+                        if ([[NSFileManager defaultManager] moveItemAtPath:srcPath toPath:dstPath error:NULL])
+                            [dstPaths addObject:dstPath];
+                }
             }
-        }
-        @catch (NSException *exception)
-        {
-            N2LogExceptionWithStackTrace( exception);
-        }
-		thread.progress = 1.0*i/dicomImages.count;
+            @catch (NSException *exception)
+            {
+                N2LogExceptionWithStackTrace( exception);
+            }
+            thread.progress = 1.0*i/dicomImages.count;
 
-        if (thread.isCancelled)
-            break;
-	}
+            if (thread.isCancelled)
+                break;
+        }
 
-	thread.status = NSLocalizedString(@"Indexing files...", nil);
-	thread.progress = -1;
-	[idatabase addFilesAtPaths:dstPaths];
+        thread.status = NSLocalizedString(@"Indexing files...", nil);
+        thread.progress = -1;
+        [idatabase addFilesAtPaths: dstPaths postNotifications: YES dicomOnly: [[NSUserDefaults standardUserDefaults] boolForKey: @"onlyDICOM"] rereadExistingItems:NO generatedByOsiriX: NO importedFiles: YES returnArray: NO];
+    }
+    @catch (NSException *exception)
+    {
+        N2LogExceptionWithStackTrace(exception);
+    }
+    @finally
+    {
+        [idatabase release];
+        [srcIndependentDatabase release];
+    }
 
 	[pool release];
 }

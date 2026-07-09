@@ -47,8 +47,6 @@ The Horos Project was based originally upon the OsiriX Project which at the time
 
 #import "OnOffSwitchControlCell.h"
 
-#include <Carbon/Carbon.h>
-
 // NOTE(dk): New defines for changing appearance
 #define USE_COLORED_GRADIENTS true
 #define SHOW_ONOFF_LABELS true
@@ -79,11 +77,6 @@ The Horos Project was based originally upon the OsiriX Project which at the time
 #define DISABLED_OVERLAY_ALPHA TWO_THIRDS
 
 #define DOWNWARD_ANGLE_IN_DEGREES_FOR_VIEW(view) ([view isFlipped] ? 90.0f : 270.0f)
-
-struct PRHOOBCStuffYouWouldNeedToIncludeCarbonHeadersFor {
-	EventTime clickTimeout;
-	HISize clickMaxDistance;
-};
 
 @interface  OnOffSwitchControlCell() 
 
@@ -127,13 +120,8 @@ NSRect DKCenterRect(NSRect smallRect, NSRect bigRect)
 
 - (void) furtherInit {
 	[self setFocusRingType:[[self class] defaultFocusRingType]];
-	stuff = NSZoneMalloc([self zone], sizeof(struct PRHOOBCStuffYouWouldNeedToIncludeCarbonHeadersFor));
-	OSStatus err = HIMouseTrackingGetParameters(kMouseParamsSticky, &(stuff->clickTimeout), &(stuff->clickMaxDistance));
-	if (err != noErr) {
-		//Values returned by the above function call as of 10.6.3.
-		stuff->clickTimeout = ONE_THIRD * kEventDurationSecond;
-		stuff->clickMaxDistance = (HISize){ 6.0f, 6.0f };
-	}
+	clickTimeout = [NSEvent doubleClickInterval];
+	clickMaxDistance = NSMakeSize(6.0f, 6.0f);
 	// NOTE(dk): start additions 
 	self.showsOnOffLabels = YES;
 	self.onOffSwitchControlColors = OnOffSwitchControlBlueGreyColors;
@@ -456,9 +444,9 @@ NSRect DKCenterRect(NSRect smallRect, NSRect bigRect)
 	if (control) {
 		CGFloat xFraction = trackingThumbCenterX / trackingCellFrame.size.width;
 
-		BOOL isClickNotDragByTime = (trackingTime - initialTrackingTime) < stuff->clickTimeout;
-		BOOL isClickNotDragBySpaceX = (stopPoint.x - initialTrackingPoint.x) < stuff->clickMaxDistance.width;
-		BOOL isClickNotDragBySpaceY = (stopPoint.y - initialTrackingPoint.y) < stuff->clickMaxDistance.height;
+		BOOL isClickNotDragByTime = (trackingTime - initialTrackingTime) < clickTimeout;
+		BOOL isClickNotDragBySpaceX = (stopPoint.x - initialTrackingPoint.x) < clickMaxDistance.width;
+		BOOL isClickNotDragBySpaceY = (stopPoint.y - initialTrackingPoint.y) < clickMaxDistance.height;
 		BOOL isClickNotDrag = isClickNotDragByTime && isClickNotDragBySpaceX && isClickNotDragBySpaceY;
 
 		if (!isClickNotDrag) {

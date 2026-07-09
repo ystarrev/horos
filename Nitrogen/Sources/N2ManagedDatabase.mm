@@ -158,6 +158,7 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
 {
     if( n.object != _database)
         N2LogStackTrace( @"******* N2ManagedDatabaseDealloced");
+    [NSNotificationCenter.defaultCenter removeObserver:self name:@"N2ManagedDatabaseDealloced" object:n.object];
     _database = nil;
 }
 

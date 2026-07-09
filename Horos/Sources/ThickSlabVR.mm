@@ -36,8 +36,6 @@
  ============================================================================*/
 #import "ThickSlabVR.h"
 
-extern short Altivec;
-
 @implementation ThickSlabVR
 
 -(void) dealloc

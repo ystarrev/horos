@@ -2021,9 +2021,6 @@ CA
                 <outlet property="rdVoxelForm" destination="11390" id="11437"/>
                 <outlet property="rebuildType" destination="14380" id="14397"/>
                 <outlet property="rebuildWindow" destination="14365" id="14398"/>
-                <outlet property="reportTemplatesImageView" destination="12691" id="12696"/>
-                <outlet property="reportTemplatesListPopUpButton" destination="12681" id="12695"/>
-                <outlet property="reportTemplatesView" destination="12680" id="12694"/>
                 <outlet property="rightIcon" destination="14505" id="14535"/>
                 <outlet property="searchField" destination="11582" id="11594"/>
                 <outlet property="searchInEntireDBResult" destination="14821" id="14823"/>
@@ -3009,30 +3006,6 @@ update to OsiriX 64-bit:</string>
                         <font key="font" metaFont="system"/>
                     </buttonCell>
                 </button>
-            </subviews>
-        </customView>
-        <customView id="12680" userLabel="PagesReportTemplates">
-            <rect key="frame" x="0.0" y="0.0" width="40" height="32"/>
-            <autoresizingMask key="autoresizingMask"/>
-            <subviews>
-                <imageView id="12691">
-                    <rect key="frame" x="0.0" y="0.0" width="32" height="32"/>
-                    <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                    <imageCell key="cell" refusesFirstResponder="YES" alignment="left" animates="YES" imageScaling="axesIndependently" image="ReportPages" id="13426"/>
-                </imageView>
-                <popUpButton id="12681">
-                    <rect key="frame" x="-10" y="0.0" width="53" height="32"/>
-                    <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                    <popUpButtonCell key="cell" type="square" bezelStyle="shadowlessSquare" imagePosition="only" alignment="left" borderStyle="bezel" inset="2" pullsDown="YES" preferredEdge="maxY" selectedItem="12683" id="13425">
-                        <behavior key="behavior" lightByBackground="YES" lightByGray="YES"/>
-                        <font key="font" metaFont="menu"/>
-                        <menu key="menu" title="OtherViews" id="12682">
-                            <items>
-                                <menuItem hidden="YES" id="12683"/>
-                            </items>
-                        </menu>
-                    </popUpButtonCell>
-                </popUpButton>
             </subviews>
         </customView>
         <objectController id="12768">
@@ -4947,7 +4920,6 @@ Gw
         <image name="MPR" width="32" height="32"/>
         <image name="NSLockLockedTemplate" width="10" height="14"/>
         <image name="NSRemoveTemplate" width="11" height="11"/>
-        <image name="ReportPages" width="256" height="256"/>
         <image name="StartupDisk" width="64" height="64"/>
         <image name="Surface" width="32" height="32"/>
         <image name="VolumeRendering" width="32" height="32"/>

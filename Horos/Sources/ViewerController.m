@@ -39,7 +39,6 @@
 
 #import "NSImage+N2.h"
 #import "DefaultsOsiriX.h"
-#import "NSAppleScript+HandlerCalls.h"
 #import "AYDicomPrintWindowController.h"
 #import "MyOutlineView.h"
 #import "PluginFilter.h"
@@ -97,7 +96,6 @@
 #import "KeyObjectPopupController.h"
 #import "JPEGExif.h"
 #import "NSFont_OpenGL.h"
-#import "Reports.h"
 #import "SRAnnotation.h"
 #import "CalciumScoringWindowController.h"
 #import "EndoscopySegmentationController.h"
@@ -19468,27 +19466,7 @@ static float oldsetww, oldsetwl;
 
 -(void) sendMail:(id) sender
 {
-    [imageFormat selectCellWithTag: 3];
-    
-    [self exportImage: sender];
-    
-    //	Mailer		*email;
-    //	NSImage		*im = [imageView nsimage: [[NSUserDefaults standardUserDefaults] boolForKey: @"ORIGINALSIZE"]];
-    //
-    //	NSArray *representations;
-    //	NSData *bitmapData;
-    //
-    //	representations = [im representations];
-    //
-    //	bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
-    //
-    //	[bitmapData writeToFile:[[[BrowserController currentBrowser] documentsDirectory] stringByAppendingFormat:@"/TEMP.noindex/Horos.jpg"] atomically:YES];
-    //
-    //	email = [[Mailer alloc] init];
-    //
-    //	[email sendMail:@"--" to:@"--" subject:@"" isMIME:YES name:@"--" sendNow:NO image: [[[BrowserController currentBrowser] documentsDirectory] stringByAppendingFormat:@"/TEMP.noindex/Horos.jpg"]];
-    //
-    //	[email release];
+    NSLog(@"Email export is disabled: Mail integration has been removed.");
 }
 
 - (void) exportJPEG:(id) sender
@@ -19934,74 +19912,7 @@ static float oldsetww, oldsetwl;
             
             if( [[imageFormat selectedCell] tag] == 3)	// Mail
             {
-#define kScriptName (@"Mail")
-#define kScriptType (@"scpt")
-#define kHandlerName (@"mail_images")
-#define noScriptErr 0
-                
-                /* Locate the script within the bundle */
-                NSString *scriptPath = [[NSBundle mainBundle] pathForResource: kScriptName ofType: kScriptType];
-                NSURL *scriptURL = [NSURL fileURLWithPath: scriptPath];
-                
-                NSDictionary *errorInfo = nil;
-                
-                /* Here I am using "initWithContentsOfURL:" to load a pre-compiled script, rather than using "initWithSource:" to load a text file with AppleScript source.  The main reason for this is that the latter technique seems to give rise to inexplicable -1708 (errAEEventNotHandled) errors on Jaguar. */
-                NSAppleScript *script = [[NSAppleScript alloc] initWithContentsOfURL: scriptURL error: &errorInfo];
-                
-                /* See if there were any errors loading the script */
-                if (!script || errorInfo)
-                    NSLog(@"%@", errorInfo);
-                
-                /* We have to construct an AppleEvent descriptor to contain the arguments for our handler call.  Remember that this list is 1, rather than 0, based. */
-                NSAppleEventDescriptor *arguments = [[NSAppleEventDescriptor alloc] initListDescriptor];
-                [arguments insertDescriptor: [NSAppleEventDescriptor descriptorWithString: @"subject"] atIndex: 1];
-                [arguments insertDescriptor: [NSAppleEventDescriptor descriptorWithString: @"defaultaddress@mac.com"] atIndex: 2];
-                
-                
-                NSAppleEventDescriptor *listFiles = [NSAppleEventDescriptor listDescriptor];
-                NSAppleEventDescriptor *listCaptions = [NSAppleEventDescriptor listDescriptor];
-                NSAppleEventDescriptor *listComments = [NSAppleEventDescriptor listDescriptor];
-                
-                int f = 0;
-                NSString *root = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"EXPORT"];
-                NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath: root error: nil];
-                for( int x = 0; x < [files count] ; x++)
-                {
-                    if( [[[files objectAtIndex: x] pathExtension] isEqualToString: @"jpg"])
-                    {
-                        [listFiles insertDescriptor: [NSAppleEventDescriptor descriptorWithString: [root stringByAppendingPathComponent: [files objectAtIndex: x]]] atIndex:1+f];
-                        [listCaptions insertDescriptor: [NSAppleEventDescriptor descriptorWithString: @""] atIndex:1+f];
-                        [listComments insertDescriptor: [NSAppleEventDescriptor descriptorWithString: @""] atIndex:1+f];
-                        f++;
-                    }
-                }
-                
-                [arguments insertDescriptor: [NSAppleEventDescriptor descriptorWithInt32: f] atIndex: 3];
-                [arguments insertDescriptor: listFiles atIndex: 4];
-                [arguments insertDescriptor: listCaptions atIndex: 5];
-                [arguments insertDescriptor: listComments atIndex: 6];
-                
-                [arguments insertDescriptor: [NSAppleEventDescriptor descriptorWithString: @"Cancel"] atIndex: 7];
-                
-                errorInfo = nil;
-                
-                /* Call the handler using the method in our special category */
-                NSAppleEventDescriptor *result = [script callHandler: kHandlerName withArguments: arguments errorInfo: &errorInfo];
-                
-                int scriptResult = [result int32Value];
-                
-                /* Check for errors in running the handler */
-                if (errorInfo)
-                {
-                    NSLog(@"%@", errorInfo);
-                }
-                /* Check the handler's return value */
-                else if (scriptResult != noScriptErr) {
-                    NSRunAlertPanel(NSLocalizedString(@"Script Failure", @"Title on script failure window."), @"%@ %d",NSLocalizedString(@"OK", @""), nil, nil, NSLocalizedString(@"The script failed:", @"Message on script failure window."), scriptResult);
-                }
-                
-                [script release];
-                [arguments release];
+                NSLog(@"Email export is disabled: Mail integration has been removed.");
             }
             
             if( [[imageFormat selectedCell] tag] == 0 || [[imageFormat selectedCell] tag] == 1)
@@ -20790,7 +20701,6 @@ static float oldsetww, oldsetwl;
     [nc	addObserver:self selector:@selector(exportTextFieldDidChange:) name:NSControlTextDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(updateReportToolbarIcon:) name:OsirixReportModeChangedNotification object:nil];
     [nc addObserver:self selector:@selector(updateReportToolbarIcon:) name:OsirixDeletedReportNotification object:nil];
-    [nc addObserver:self selector:@selector(reportToolbarItemWillPopUp:) name:NSPopUpButtonWillPopUpNotification object:nil];
     
     
     NSMutableArray *draggedTypes = [NSMutableArray arrayWithObject:NSFilenamesPboardType];
@@ -22423,26 +22333,7 @@ static float oldsetww, oldsetwl;
 
 - (NSImage*)reportIcon;
 {
-    NSString *iconName = @"Report.icns";
-    switch([[[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSMODE"] intValue])
-    {
-        case 0: // M$ Word
-        {
-            iconName = @"ReportWord.icns";
-        }
-            break;
-        case 1: // TextEdit (RTF)
-        {
-            iconName = @"ReportRTF.icns";
-        }
-            break;
-        case 2: // Pages.app
-        {
-            iconName = @"ReportPages.icns";
-        }
-            break;
-    }
-    return [NSImage imageNamed:iconName];
+    return [NSImage imageNamed:@"Report.icns"];
 }
 
 - (void) updateReportToolbarIcon:(NSNotification *)note
@@ -22464,48 +22355,7 @@ static float oldsetww, oldsetwl;
 
 - (void)setToolbarReportIconForItem:(NSToolbarItem *)item;
 {
-    NSMutableArray* templatesArray = nil;
-    switch ([[[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSMODE"] intValue]) {
-        case 2:
-            templatesArray = [Reports pagesTemplatesList];
-            break;
-        case 0:
-            templatesArray = [Reports wordTemplatesList];
-            break;
-    }
-    
-    DicomStudy* studySelected = [[fileList[0] objectAtIndex:0] valueForKeyPath:@"series.study"];
-    
-    if (!studySelected.reportURL && templatesArray.count > 1)
-    {
-        [reportTemplatesImageView setImage:[self reportIcon]];
-        HorosSetToolbarItemSizedView(item, reportTemplatesView);
-    }
-    else
-    {
-        [item setImage:[self reportIcon]];
-    }
-}
-
-
-- (void)reportToolbarItemWillPopUp:(NSNotification *)notif;
-{
-    if([[notif object] isEqualTo:reportTemplatesListPopUpButton])
-    {
-        [reportTemplatesListPopUpButton removeAllItems];
-        [reportTemplatesListPopUpButton addItemWithTitle:@""];
-        
-        switch ([[[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSMODE"] intValue]) {
-            case 2:
-                [reportTemplatesListPopUpButton addItemsWithTitles:[Reports pagesTemplatesList]];
-                break;
-            case 0:
-                [reportTemplatesListPopUpButton addItemsWithTitles:[Reports wordTemplatesList]];
-                break;
-        }
-        
-        [reportTemplatesListPopUpButton setAction:@selector(generateReport:)];
-    }
+    [item setImage:[self reportIcon]];
 }
 
 

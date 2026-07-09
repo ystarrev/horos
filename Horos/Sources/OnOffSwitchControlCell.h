@@ -63,7 +63,8 @@ NSRect DKCenterRect(NSRect smallRect, NSRect bigRect);
 	NSTimeInterval initialTrackingTime, trackingTime;
 	NSRect trackingCellFrame; //Set by drawWithFrame: when tracking is true.
 	CGFloat trackingThumbCenterX; //Set by drawWithFrame: when tracking is true.
-	struct PRHOOBCStuffYouWouldNeedToIncludeCarbonHeadersFor *stuff;
+	NSTimeInterval clickTimeout;
+	NSSize clickMaxDistance;
 	BOOL showsOnOffLabels;
 	OnOffSwitchControlColors onOffSwitchControlColors;
 	NSColor *customOnColor;

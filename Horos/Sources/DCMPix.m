@@ -174,7 +174,6 @@ static void* HorosDCMPixModernDCMTKSymbol(const char* name)
     }
     return symbol;
 }
-#import "altivecFunctions.h"
 #import "DICOMToNSString.h"
 
 //#include "../Binaries/openjpeg/openjpeg.h"
@@ -212,6 +211,21 @@ static float deg2rad = M_PI / 180.0;
 
 static const int maxNumberOfOverlays = 16;
 
+static void HorosApplyUInt8MinMax(const float *a, const float *b, float *result, long pixelCount, BOOL maximum)
+{
+    const unsigned char *aBytes = (const unsigned char *)a;
+    const unsigned char *bBytes = (const unsigned char *)b;
+    unsigned char *resultBytes = (unsigned char *)result;
+    long byteCount = pixelCount * (long)sizeof(float);
+
+    for( long i = 0; i < byteCount; i++)
+    {
+        unsigned char av = aBytes[i];
+        unsigned char bv = bBytes[i];
+        resultBytes[i] = maximum ? (av > bv ? av : bv) : (av < bv ? av : bv);
+    }
+}
+
 struct NSPointInt
 {
     long x;
@@ -222,7 +236,6 @@ typedef struct NSPointInt NSPointInt;
 NSString* filenameWithDate( NSString *inputfile);
 
 extern NSRecursiveLock *PapyrusLock;
-//extern short Altivec;
 
 void PapyrusLockFunction( int lock)
 {
@@ -9620,11 +9633,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     
     if( subPixOffset.x == 0 && subPixOffset.y == 0)
     {
-#if __ppc__ || __ppc64__
-        if( Altivec) vmultiply( (vector float *)input, (vector float *)subfImage, (vector float *)result, i);
-        else
-#endif
-            vmultiplyNoAltivec(input, subfImage, result, i);
+        vDSP_vmul(input, 1, subfImage, 1, result, 1, (vDSP_Length)i);
     }
     else
     {
@@ -9683,22 +9692,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     
     if( subPixOffset.x == 0 && subPixOffset.y == 0)
     {
-#if __ppc__ || __ppc64__
-        if( Altivec)
-        {
-            if (abs)
-                vsubtractAbs( (vector float *)input, (vector float *)subfImage, (vector float *)result, i);
-            else
-                vsubtract( (vector float *)input, (vector float *)subfImage, (vector float *)result, i);
-        }
-        else
-#endif
-        {
-            if (abs)
-                vsubtractNoAltivecAbs(input, subfImage, result, i);
-            else
-                vsubtractNoAltivec(input, subfImage, result, i);
-        }
+        vDSP_vsub(subfImage, 1, input, 1, result, 1, (vDSP_Length)i);
+        if (abs)
+            vDSP_vabs(result, 1, result, 1, (vDSP_Length)i);
     }
     else
     {
@@ -10090,13 +10086,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 fNext = [[pixArray objectAtIndex: next] fImage];
                 if( fNext)
                 {
-#if __arm64__
-                    if( stackMode == 2) vmax8ARM( (vUInt8*) fNext, (vUInt8*) fImage, (vUInt8*) fResult, height * width);
-                    else vmin8ARM( (vUInt8*) fNext, (vUInt8*) fImage, (vUInt8*) fResult, height * width);
-#else
-                    if( stackMode == 2) vmax8Intel( (vUInt8*) fNext, (vUInt8*) fImage, (vUInt8*) fResult, height * width);
-                    else vmin8Intel( (vUInt8*) fNext, (vUInt8*) fImage, (vUInt8*) fResult, height * width);
-#endif
+                    HorosApplyUInt8MinMax(fNext, fImage, fResult, height * width, stackMode == 2);
                 }
                 
                 for( long i = 2; i < stack; i++)
@@ -10116,13 +10106,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                             fNext = [[pixArray objectAtIndex: res] fImage];
                             if( fNext)
                             {
-#if __arm64__
-                                if( stackMode == 2) vmax8ARM( (vUInt8*) fNext, (vUInt8*) fImage, (vUInt8*) fResult, height * width);
-                                else vmin8ARM( (vUInt8*) fNext, (vUInt8*) fImage, (vUInt8*) fResult, height * width);
-#else
-                                if( stackMode == 2) vmax8Intel( (vUInt8*) fResult, (vUInt8*) fNext, (vUInt8*) fResult, height * width);
-                                else vmin8Intel( (vUInt8*) fResult, (vUInt8*) fNext, (vUInt8*) fResult, height * width);
-#endif
+                                HorosApplyUInt8MinMax(fResult, fNext, fResult, height * width, stackMode == 2);
                             }
                         }
                     }

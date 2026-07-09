@@ -98,8 +98,9 @@ enum
     HorosQRSeriesHighlightT1 = 1 << 0,
     HorosQRSeriesHighlightT2 = 1 << 1,
     HorosQRSeriesHighlightFLAIR = 1 << 2,
-    HorosQRSeriesHighlightGad = 1 << 3,
-    HorosQRSeriesIgnoreMPR = 1 << 4
+    HorosQRSeriesHighlightT1Gad = 1 << 3,
+    HorosQRSeriesHighlightFLAIRGad = 1 << 4,
+    HorosQRSeriesIgnoreMPR = 1 << 5
 };
 
 static NSArray *HorosQRModalityTitles(void)
@@ -185,6 +186,68 @@ extern "C"
 	extern const char *GetPrivateIP();
 };
 
+@interface HorosQueryPatientModeTabView : NSTabView
+@end
+
+@implementation HorosQueryPatientModeTabView
+
+- (void)drawRect:(NSRect)dirtyRect
+{
+    [super drawRect: dirtyRect];
+
+    NSTabViewItem *selectedItem = self.selectedTabViewItem;
+    if( selectedItem == nil)
+        return;
+
+    NSInteger selectedIndex = [self indexOfTabViewItem: selectedItem];
+    if( selectedIndex == NSNotFound)
+        return;
+
+    NSFont *font = self.font ? self.font : [NSFont systemFontOfSize: [NSFont systemFontSize]];
+    NSDictionary *attributes = [NSDictionary dictionaryWithObject: font forKey: NSFontAttributeName];
+    NSMutableArray *labelWidths = [NSMutableArray arrayWithCapacity: self.numberOfTabViewItems];
+    CGFloat totalWidth = 0;
+
+    for( NSTabViewItem *item in self.tabViewItems)
+    {
+        CGFloat labelWidth = ceil( [item.label sizeWithAttributes: attributes].width) + 28;
+        [labelWidths addObject: [NSNumber numberWithDouble: labelWidth]];
+        totalWidth += labelWidth;
+    }
+
+    CGFloat spacing = 4;
+    totalWidth += spacing * MAX( 0, (NSInteger) labelWidths.count - 1);
+    CGFloat x = MAX( 8, floor( (NSWidth( self.bounds) - totalWidth) / 2.0));
+
+    for( NSInteger i = 0; i < selectedIndex; i++)
+        x += [[labelWidths objectAtIndex: i] doubleValue] + spacing;
+
+    CGFloat selectedWidth = [[labelWidths objectAtIndex: selectedIndex] doubleValue];
+    NSRect underlineRect = NSMakeRect( x + 8, 3, MAX( 20, selectedWidth - 16), 4);
+    [[NSColor selectedControlColor] setFill];
+    [[NSBezierPath bezierPathWithRoundedRect: underlineRect xRadius: 2 yRadius: 2] fill];
+}
+
+- (void)selectTabViewItem:(NSTabViewItem *)tabViewItem
+{
+    [super selectTabViewItem: tabViewItem];
+    [self setNeedsDisplay: YES];
+}
+
+- (void)selectTabViewItemAtIndex:(NSInteger)index
+{
+    [super selectTabViewItemAtIndex: index];
+    [self setNeedsDisplay: YES];
+}
+
+- (void)selectTabViewItemWithIdentifier:(id)identifier
+{
+    [super selectTabViewItemWithIdentifier: identifier];
+    [self setNeedsDisplay: YES];
+}
+
+@end
+
 @interface QueryController ()
 - (BOOL)openAvailableLocalImagesForQueryItem:(id)item;
 - (void)addPendingRetrieveAndViewItem:(id)item;
@@ -201,6 +264,8 @@ extern "C"
 - (void)restoreModalityFilterSettings;
 - (void)restoreQueryWindowFramePreference;
 - (void)saveQueryWindowFramePreference;
+- (void)configurePatientModeSelector;
+- (void)selectDefaultPatientNameQueryMode;
 - (IBAction)expandAllQueryStudies:(id)sender;
 - (IBAction)seriesHighlightFilterChanged:(id)sender;
 - (IBAction)seriesIgnoreMPRChanged:(id)sender;
@@ -223,11 +288,16 @@ extern "C"
 - (NSInteger)currentSeriesHighlightFilterMask;
 - (BOOL)ignoreMPRSeries;
 - (void)refreshSeriesSelectionDisplay;
+- (void)updateRetrieveSelectedSeriesButtonTitle;
 - (NSString *)normalizedSeriesDescriptionForItem:(id)item;
 - (BOOL)seriesText:(NSString *)text containsToken:(NSString *)token;
 - (BOOL)seriesText:(NSString *)text containsAnyToken:(NSArray *)tokens;
 - (BOOL)seriesText:(NSString *)text containsEmbeddedSequence:(NSString *)sequence;
 - (BOOL)seriesText:(NSString *)text containsAnyPhrase:(NSArray *)phrases;
+- (BOOL)seriesTextLooksLikeT1:(NSString *)text;
+- (BOOL)seriesTextLooksLikeT2:(NSString *)text;
+- (BOOL)seriesTextLooksLikeFLAIR:(NSString *)text;
+- (BOOL)seriesItemLooksContrastEnhanced:(id)item normalizedText:(NSString *)text;
 - (BOOL)seriesFilterMatchesItem:(id)item;
 - (BOOL)seriesHighlightMatchesItem:(id)item;
 @end
@@ -2220,6 +2290,29 @@ extern "C"
 	{
 		[item purgeChildren];
 	}
+}
+
+- (void)outlineViewItemDidExpand:(NSNotification *)notification
+{
+    seriesHighlightFilterMask = [self currentSeriesHighlightFilterMask];
+    if( seriesHighlightFilterMask == 0)
+    {
+        [self updateRetrieveSelectedSeriesButtonTitle];
+        return;
+    }
+
+    [self ensureSelectedSeriesUIDs];
+
+    for( NSInteger row = 0; row < [outlineView numberOfRows]; row++)
+    {
+        id item = [outlineView itemAtRow: row];
+
+        if( [item isMemberOfClass: [DCMTKSeriesQueryNode class]] && [self shouldDisplayQueryItem: item] && [self seriesFilterMatchesItem: item])
+            [selectedSeriesUIDs addObject: [self seriesSelectionIdentifierForItem: item]];
+    }
+
+    [self updateRetrieveSelectedSeriesButtonTitle];
+    [outlineView setNeedsDisplay: YES];
 }
 
 - (void)outlineView:(NSOutlineView *)oV willDisplayCell:(id)cell forTableColumn:(NSTableColumn *)tableColumn item:(id)item
@@ -4601,6 +4694,7 @@ extern "C"
     [authView setDelegate: self];
     [authView setString: "BUNDLE_IDENTIFIER.autoQRWindow"];
     [authView updateStatus: self];
+    [self configurePatientModeSelector];
     
 	[numberOfStudies setStringValue: @""];
 	
@@ -4614,7 +4708,7 @@ extern "C"
     if( autoQuery)
         [PatientModeMatrix selectTabViewItemAtIndex: [[NSUserDefaults standardUserDefaults] integerForKey: @"AutoQRPatientModeMatrixIndex"]];
     else
-        [PatientModeMatrix selectTabViewItemAtIndex: [[NSUserDefaults standardUserDefaults] integerForKey: @"QRPatientModeMatrixIndex"]];
+        [self selectDefaultPatientNameQueryMode];
     
 		{
 		NSMenu *cellMenu = [[[NSMenu alloc] initWithTitle:@"Search Menu"] autorelease];
@@ -5233,6 +5327,7 @@ extern "C"
 	                [dateFilterMatrix selectCellWithTag: [[NSUserDefaults standardUserDefaults] integerForKey: @"QRLastDateFilterValue"]];
 	                [self setDateQuery: dateFilterMatrix];
 	            }
+                [self selectDefaultPatientNameQueryMode];
 	        }
 
 	        [[self window] setDelegate:self];
@@ -5270,6 +5365,7 @@ extern "C"
 			[resultArray release];
 			[pendingRetrieveAndViewItems release];
 			[selectedSeriesUIDs release];
+            retrieveSelectedSeriesButton = nil;
 			[QueryTimer invalidate];
 		[QueryTimer release];
     [performingQueryThreads release];
@@ -5291,7 +5387,35 @@ extern "C"
     else
         currentAutoQueryController = nil;
     
-	[super dealloc];
+    [super dealloc];
+}
+
+- (void)configurePatientModeSelector
+{
+    if( PatientModeMatrix == nil)
+        return;
+
+    [PatientModeMatrix setControlSize: NSRegularControlSize];
+    [PatientModeMatrix setFont: [NSFont boldSystemFontOfSize: 16]];
+    [PatientModeMatrix setAllowsTruncatedLabels: YES];
+
+    for( NSLayoutConstraint *constraint in [PatientModeMatrix constraints])
+    {
+        if( constraint.firstItem == PatientModeMatrix && constraint.firstAttribute == NSLayoutAttributeHeight && constraint.constant < 70)
+            constraint.constant = 70;
+    }
+
+    [PatientModeMatrix setNeedsDisplay: YES];
+}
+
+- (void)selectDefaultPatientNameQueryMode
+{
+    if( PatientModeMatrix == nil)
+        return;
+
+    [PatientModeMatrix selectTabViewItemAtIndex: 0];
+    currentQueryKey = PatientName;
+    [searchFieldName selectText: self];
 }
 
 - (void)configureModalityFilterButtons
@@ -5441,6 +5565,14 @@ extern "C"
     [t1Button setTarget: self];
     [t1Button setAction: @selector(seriesHighlightFilterChanged:)];
 
+    NSButton *t1GadButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
+    [t1GadButton setTitle: @"T1 Gad"];
+    [t1GadButton setButtonType: NSSwitchButton];
+    [t1GadButton setTag: HorosQRSeriesHighlightT1Gad];
+    [t1GadButton setState: (savedSeriesFilterMask & HorosQRSeriesHighlightT1Gad) ? NSOnState : NSOffState];
+    [t1GadButton setTarget: self];
+    [t1GadButton setAction: @selector(seriesHighlightFilterChanged:)];
+
     NSButton *t2Button = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
     [t2Button setTitle: @"T2"];
     [t2Button setButtonType: NSSwitchButton];
@@ -5457,13 +5589,13 @@ extern "C"
     [flairButton setTarget: self];
     [flairButton setAction: @selector(seriesHighlightFilterChanged:)];
 
-    NSButton *gadButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
-    [gadButton setTitle: @"Gad"];
-    [gadButton setButtonType: NSSwitchButton];
-    [gadButton setTag: HorosQRSeriesHighlightGad];
-    [gadButton setState: (savedSeriesFilterMask & HorosQRSeriesHighlightGad) ? NSOnState : NSOffState];
-    [gadButton setTarget: self];
-    [gadButton setAction: @selector(seriesHighlightFilterChanged:)];
+    NSButton *flairGadButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
+    [flairGadButton setTitle: @"FLAIR+Gad"];
+    [flairGadButton setButtonType: NSSwitchButton];
+    [flairGadButton setTag: HorosQRSeriesHighlightFLAIRGad];
+    [flairGadButton setState: (savedSeriesFilterMask & HorosQRSeriesHighlightFLAIRGad) ? NSOnState : NSOffState];
+    [flairGadButton setTarget: self];
+    [flairGadButton setAction: @selector(seriesHighlightFilterChanged:)];
 
     NSButton *ignoreMPRButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
     [ignoreMPRButton setTitle: NSLocalizedString( @"Ignore MPR/RFMT", nil)];
@@ -5474,7 +5606,6 @@ extern "C"
     [ignoreMPRButton setAction: @selector(seriesIgnoreMPRChanged:)];
 
     NSButton *retrieveSelectedButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
-    [retrieveSelectedButton setTitle: NSLocalizedString( @"Retrieve Selected", nil)];
     [retrieveSelectedButton setButtonType: NSMomentaryPushInButton];
     [retrieveSelectedButton setBezelStyle: NSRoundRectBezelStyle];
     [retrieveSelectedButton setFont: [NSFont boldSystemFontOfSize: 12]];
@@ -5486,16 +5617,18 @@ extern "C"
         [retrieveSelectedCell setUsesSingleLineMode: NO];
     [retrieveSelectedButton setTarget: self];
     [retrieveSelectedButton setAction: @selector(retrieveSelectedSeries:)];
+    retrieveSelectedSeriesButton = retrieveSelectedButton;
+    [self updateRetrieveSelectedSeriesButtonTitle];
 
-    NSArray *controls = [NSArray arrayWithObjects: expandButton, t1Button, t2Button, flairButton, gadButton, ignoreMPRButton, retrieveSelectedButton, nil];
+    NSArray *controls = [NSArray arrayWithObjects: expandButton, t1Button, t1GadButton, t2Button, flairButton, flairGadButton, ignoreMPRButton, retrieveSelectedButton, nil];
     for( NSView *control in controls)
     {
         [control setTranslatesAutoresizingMaskIntoConstraints: NO];
         [contentView addSubview: control];
     }
 
-    NSDictionary *views = NSDictionaryOfVariableBindings(expandButton, t1Button, t2Button, flairButton, gadButton, ignoreMPRButton, retrieveSelectedButton);
-    [contentView addConstraints: [NSLayoutConstraint constraintsWithVisualFormat: @"V:|-8-[expandButton(24)]-12-[t1Button(18)]-6-[t2Button(18)]-6-[flairButton(18)]-6-[gadButton(18)]-(>=8)-[ignoreMPRButton(18)]-8-[retrieveSelectedButton(46)]-8-|"
+    NSDictionary *views = NSDictionaryOfVariableBindings(expandButton, t1Button, t1GadButton, t2Button, flairButton, flairGadButton, ignoreMPRButton, retrieveSelectedButton);
+    [contentView addConstraints: [NSLayoutConstraint constraintsWithVisualFormat: @"V:|-8-[expandButton(24)]-12-[t1Button(18)]-6-[t1GadButton(18)]-6-[t2Button(18)]-6-[flairButton(18)]-6-[flairGadButton(18)]-(>=8)-[ignoreMPRButton(18)]-8-[retrieveSelectedButton(46)]-8-|"
                                                                          options: 0
                                                                          metrics: nil
                                                                            views: views]];
@@ -5787,7 +5920,7 @@ extern "C"
 
         NSInteger tag = [view tag];
 
-        if( tag == HorosQRSeriesHighlightT1 || tag == HorosQRSeriesHighlightT2 || tag == HorosQRSeriesHighlightFLAIR || tag == HorosQRSeriesHighlightGad)
+        if( tag == HorosQRSeriesHighlightT1 || tag == HorosQRSeriesHighlightT1Gad || tag == HorosQRSeriesHighlightT2 || tag == HorosQRSeriesHighlightFLAIR || tag == HorosQRSeriesHighlightFLAIRGad)
             [view setState: (savedSeriesFilterMask & tag) ? NSOnState : NSOffState];
         else if( tag == HorosQRSeriesIgnoreMPR)
             [view setState: savedIgnoreMPR ? NSOnState : NSOffState];
@@ -5907,7 +6040,7 @@ extern "C"
         {
             NSInteger tag = [view tag];
 
-            if( tag == HorosQRSeriesHighlightT1 || tag == HorosQRSeriesHighlightT2 || tag == HorosQRSeriesHighlightFLAIR || tag == HorosQRSeriesHighlightGad)
+            if( tag == HorosQRSeriesHighlightT1 || tag == HorosQRSeriesHighlightT1Gad || tag == HorosQRSeriesHighlightT2 || tag == HorosQRSeriesHighlightFLAIR || tag == HorosQRSeriesHighlightFLAIRGad)
                 mask |= tag;
         }
     }
@@ -5927,6 +6060,17 @@ extern "C"
     }
 
     return YES;
+}
+
+- (void)updateRetrieveSelectedSeriesButtonTitle
+{
+    if( retrieveSelectedSeriesButton == nil)
+        return;
+
+    NSUInteger selectedSeriesCount = [[self seriesSelectedByHighlight] count];
+    NSString *title = [NSString stringWithFormat: NSLocalizedString( @"Retrieve %@ Series", nil), N2LocalizedDecimal( selectedSeriesCount)];
+    [retrieveSelectedSeriesButton setTitle: title];
+    [retrieveSelectedSeriesButton setNeedsDisplay: YES];
 }
 
 - (void)refreshSeriesSelectionDisplay
@@ -5961,27 +6105,37 @@ extern "C"
     if( [selection count])
         [outlineView selectRowIndexes: selection byExtendingSelection: NO];
 
+    [self updateRetrieveSelectedSeriesButtonTitle];
     [outlineView setNeedsDisplay: YES];
     [outlineView displayIfNeeded];
 }
 
 - (NSString *)normalizedSeriesDescriptionForItem:(id)item
 {
-    id value = nil;
+    id descriptionValue = nil;
+    id nameValue = nil;
 
     @try
     {
-        value = [item valueForKey: @"theDescription"];
+        descriptionValue = [item valueForKey: @"theDescription"];
+        nameValue = [item valueForKey: @"name"];
     }
     @catch (NSException *e)
     {
-        value = nil;
+        descriptionValue = nil;
+        nameValue = nil;
     }
 
-    if( [value isKindOfClass: [NSString class]] == NO || [value length] == 0)
+    NSMutableArray *textParts = [NSMutableArray array];
+    if( [descriptionValue isKindOfClass: [NSString class]] && [descriptionValue length] > 0)
+        [textParts addObject: descriptionValue];
+    if( [nameValue isKindOfClass: [NSString class]] && [nameValue length] > 0 && [textParts containsObject: nameValue] == NO)
+        [textParts addObject: nameValue];
+
+    if( [textParts count] == 0)
         return @"";
 
-    NSString *foldedText = [[value lowercaseString] stringByFoldingWithOptions: NSDiacriticInsensitiveSearch locale: nil];
+    NSString *foldedText = [[[textParts componentsJoinedByString: @" "] lowercaseString] stringByFoldingWithOptions: NSDiacriticInsensitiveSearch locale: nil];
     NSMutableString *normalizedText = [NSMutableString stringWithCapacity: [foldedText length] + 2];
     NSCharacterSet *alphanumericSet = [NSCharacterSet alphanumericCharacterSet];
 
@@ -6060,6 +6214,39 @@ extern "C"
     return NO;
 }
 
+- (BOOL)seriesTextLooksLikeT1:(NSString *)text
+{
+    NSArray *tokens = [NSArray arrayWithObjects: @"t1", @"t1w", @"t1c", @"mprage", @"spgr", @"fspgr", @"bravo", nil];
+    return [self seriesText: text containsAnyToken: tokens] || [self seriesText: text containsEmbeddedSequence: @"t1"];
+}
+
+- (BOOL)seriesTextLooksLikeT2:(NSString *)text
+{
+    NSArray *excludedTokens = [NSArray arrayWithObjects: @"flair", @"dwi", @"diff", @"adc", @"localizer", @"localiser", @"scout", nil];
+    if( [self seriesText: text containsAnyToken: excludedTokens])
+        return NO;
+
+    NSArray *tokens = [NSArray arrayWithObjects: @"t2", @"t2w", nil];
+    return [self seriesText: text containsAnyToken: tokens];
+}
+
+- (BOOL)seriesTextLooksLikeFLAIR:(NSString *)text
+{
+    NSArray *tokens = [NSArray arrayWithObjects: @"flair", nil];
+    NSArray *phrases = [NSArray arrayWithObjects: @" fluid attenuated ", nil];
+    return [self seriesText: text containsAnyToken: tokens] || [self seriesText: text containsAnyPhrase: phrases];
+}
+
+- (BOOL)seriesItemLooksContrastEnhanced:(id)item normalizedText:(NSString *)text
+{
+    if( [[(DCMTKQueryNode *)item contrastBolusAgent] length] > 0)
+        return YES;
+
+    NSArray *tokens = [NSArray arrayWithObjects: @"gad", @"gadol", @"gadavist", @"dotarem", @"prohance", @"multihance", @"magnevist", @"omniscan", @"post", @"postcontrast", @"postgad", @"enh", @"gd", @"pg", @"t1c", nil];
+    NSArray *phrases = [NSArray arrayWithObjects: @" with contrast ", @" w contrast ", @" post contrast ", nil];
+    return [self seriesText: text containsAnyToken: tokens] || [self seriesText: text containsAnyPhrase: phrases];
+}
+
 - (BOOL)seriesFilterMatchesItem:(id)item
 {
     NSInteger currentMask = [self currentSeriesHighlightFilterMask];
@@ -6068,41 +6255,38 @@ extern "C"
         return NO;
 
     NSString *text = [self normalizedSeriesDescriptionForItem: item];
+    BOOL looksT1 = [self seriesTextLooksLikeT1: text];
+    BOOL looksT2 = [self seriesTextLooksLikeT2: text];
+    BOOL looksFLAIR = [self seriesTextLooksLikeFLAIR: text];
+    BOOL looksContrastEnhanced = [self seriesItemLooksContrastEnhanced: item normalizedText: text];
 
     if( currentMask & HorosQRSeriesHighlightT1)
     {
-        NSArray *tokens = [NSArray arrayWithObjects: @"t1", @"t1w", @"t1c", @"mprage", @"spgr", @"fspgr", @"bravo", nil];
-        if( [self seriesText: text containsAnyToken: tokens] || [self seriesText: text containsEmbeddedSequence: @"t1"])
+        if( looksT1 && looksContrastEnhanced == NO)
+            return YES;
+    }
+
+    if( currentMask & HorosQRSeriesHighlightT1Gad)
+    {
+        if( looksT1 && looksContrastEnhanced)
             return YES;
     }
 
     if( currentMask & HorosQRSeriesHighlightT2)
     {
-        NSArray *excludedTokens = [NSArray arrayWithObjects: @"flair", @"dwi", @"diff", @"adc", @"localizer", @"localiser", @"scout", nil];
-        if( [self seriesText: text containsAnyToken: excludedTokens] == NO)
-        {
-            NSArray *tokens = [NSArray arrayWithObjects: @"t2", @"t2w", nil];
-            if( [self seriesText: text containsAnyToken: tokens])
-                return YES;
-        }
+        if( looksT2)
+            return YES;
     }
 
     if( currentMask & HorosQRSeriesHighlightFLAIR)
     {
-        NSArray *tokens = [NSArray arrayWithObjects: @"flair", nil];
-        NSArray *phrases = [NSArray arrayWithObjects: @" fluid attenuated ", nil];
-        if( [self seriesText: text containsAnyToken: tokens] || [self seriesText: text containsAnyPhrase: phrases])
+        if( looksFLAIR && looksContrastEnhanced == NO)
             return YES;
     }
 
-    if( currentMask & HorosQRSeriesHighlightGad)
+    if( currentMask & HorosQRSeriesHighlightFLAIRGad)
     {
-        if( [[(DCMTKQueryNode *)item contrastBolusAgent] length] > 0)
-            return YES;
-
-        NSArray *tokens = [NSArray arrayWithObjects: @"gad", @"gadol", @"gadavist", @"dotarem", @"prohance", @"multihance", @"magnevist", @"omniscan", @"post", @"postcontrast", @"postgad", @"enh", @"gd", @"pg", @"t1c", nil];
-        NSArray *phrases = [NSArray arrayWithObjects: @" with contrast ", @" w contrast ", nil];
-        if( [self seriesText: text containsAnyToken: tokens] || [self seriesText: text containsAnyPhrase: phrases])
+        if( looksFLAIR && looksContrastEnhanced)
             return YES;
     }
 
@@ -6332,7 +6516,6 @@ extern "C"
     else
     {
         [[NSUserDefaults standardUserDefaults] setInteger: [dateFilterMatrix selectedTag] forKey: @"QRLastDateFilterValue"];
-        [[NSUserDefaults standardUserDefaults] setInteger: [PatientModeMatrix indexOfTabViewItem: [PatientModeMatrix selectedTabViewItem]] forKey: @"QRPatientModeMatrixIndex"];
     }
     
 	[[NSUserDefaults standardUserDefaults] setObject: sourcesArray forKey: queryArrayPrefs];

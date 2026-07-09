@@ -40,7 +40,6 @@
 #import "N2Shell.h"
 #import "NSString+N2.h"
 #import "N2Debug.h"
-#import "NSAppleScript+N2.h"
 #import "NSFileManager+N2.h"
 #import "DCMObject.h"
 #import "DCMEncapsulatedPDF.h"
@@ -48,7 +47,6 @@
 #import "DCMCalendarDate.h"
 #import "DCMTransferSyntax.h"
 #import "DCM.h"
-#import "Reports.h"
 
 @implementation DicomStudy (Report)
 
@@ -120,33 +118,20 @@
     }
 }
 
-+(id)_runAppleScriptAtPath:(NSString*)path withArguments:(NSArray*)args
-{
-    NSError* err = nil;
-    NSDictionary* errs = nil;
-    
-    if (!path) [NSException raise:NSGenericException format:@"NULL script path"];
-    
-    NSString* source = [NSString stringWithContentsOfFile:path usedEncoding:NULL error:&err];
-    if (err) [NSException raise:NSGenericException format:@"%@", err.localizedDescription];
-    if (!source) [NSException raise:NSGenericException format:@"Couldn't read script source"];
-    
-    NSAppleScript* script = [[[NSAppleScript alloc] initWithSource:source] autorelease];
-    if (!script) [NSException raise:NSGenericException format:@"Invalid script source"];
-    
-    id r = [script runWithArguments:args error:&errs];
-    if (errs) [NSException raise:NSGenericException format:@"%@", errs];
-    
-    return r;
-}
-
 +(void)transformReportAtPath:(NSString*)reportPath toPdfAtPath:(NSString*)outPdfPath
 {
-    if ([reportPath.pathExtension.lowercaseString isEqualToString:@"odt"])
+    NSString *extension = reportPath.pathExtension.lowercaseString;
+
+    if ([extension isEqualToString:@"pdf"])
+    {
+        if ([reportPath isEqualToString:outPdfPath] == NO)
+            [[NSFileManager defaultManager] copyItemAtPath:reportPath toPath:outPdfPath byReplacingExisting:YES error:NULL];
+    }
+    else if ([extension isEqualToString:@"odt"])
     {
         [[self class] _transformOdtAtPath:reportPath toPdfAtPath:outPdfPath];
     }
-    else  if ([reportPath.pathExtension.lowercaseString isEqualToString:@"rtf"] || [reportPath.pathExtension.lowercaseString isEqualToString:@"rtfd"])
+    else if ([extension isEqualToString:@"rtf"] || [extension isEqualToString:@"rtfd"])
     {
         int result = 0;
         
@@ -170,22 +155,8 @@
         else
             NSLog( @"************* no converter tool available");
     }
-    else if ([reportPath.pathExtension.lowercaseString isEqualToString:@"pages"])
-    {
-        NSString *path = nil;
-        if( [Reports Pages5orHigher])
-            path = [[NSBundle mainBundle] pathForResource:@"pages2pdf" ofType:@"applescript"];
-        else
-            path = [[NSBundle mainBundle] pathForResource:@"pages092pdf" ofType:@"applescript"];
-        
-        [[self class] _runAppleScriptAtPath:path withArguments:[NSArray arrayWithObjects: reportPath, outPdfPath, nil]];
-    }
-    else if ([reportPath.pathExtension.lowercaseString isEqualToString:@"doc"] || [reportPath.pathExtension.lowercaseString isEqualToString:@"docx"]) {
-        NSString* path = [[NSBundle mainBundle] pathForResource:@"word2pdf" ofType:@"applescript"];
-        [[self class] _runAppleScriptAtPath:path withArguments:[NSArray arrayWithObjects: reportPath, outPdfPath, nil]];
-    }
     else
-        [NSException raise:NSGenericException format:@"Can't transform report to PDF: %@", reportPath];
+        [NSException raise:NSGenericException format:@"Report conversion to PDF is unavailable for %@", reportPath];
 }
 
 -(void)saveReportAsPdfAtPath:(NSString*)path

@@ -178,7 +178,6 @@
 		183C865B08563F3A000E6A68 /* SRFlyThruAdapter.m in Sources */ = {isa = PBXBuildFile; fileRef = 183C864708563F3A000E6A68 /* SRFlyThruAdapter.m */; };
 		183C865C08563F3A000E6A68 /* VRFlyThruAdapter.h in Headers */ = {isa = PBXBuildFile; fileRef = 183C864808563F3A000E6A68 /* VRFlyThruAdapter.h */; };
 		183C865D08563F3A000E6A68 /* VRFlyThruAdapter.m in Sources */ = {isa = PBXBuildFile; fileRef = 183C864908563F3A000E6A68 /* VRFlyThruAdapter.m */; };
-		32E422150C97301600E193CA /* altivecFunctions.h in Headers */ = {isa = PBXBuildFile; fileRef = 32E422140C97301600E193CA /* altivecFunctions.h */; };
 		4307C62C1A2091900083877C /* url.h in Headers */ = {isa = PBXBuildFile; fileRef = 4307C62B1A2091900083877C /* url.h */; };
 		433F9A801A1B18A500E52C6C /* VTKView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 433F9A7E1A1B18A500E52C6C /* VTKView.mm */; };
 		433F9A811A1B18A500E52C6C /* VTKView.h in Headers */ = {isa = PBXBuildFile; fileRef = 433F9A7F1A1B18A500E52C6C /* VTKView.h */; };
@@ -669,7 +668,6 @@
 		994FABF41CEBF25800980A15 /* OnOffSwitchControlCell.m in Sources */ = {isa = PBXBuildFile; fileRef = 994FABF01CEBF25800980A15 /* OnOffSwitchControlCell.m */; };
 		994FABF71CEBFB8C00980A15 /* MiddleAlignedTextFieldCell.h in Headers */ = {isa = PBXBuildFile; fileRef = 994FABF51CEBFB8C00980A15 /* MiddleAlignedTextFieldCell.h */; };
 		994FABF81CEBFB8C00980A15 /* MiddleAlignedTextFieldCell.m in Sources */ = {isa = PBXBuildFile; fileRef = 994FABF61CEBFB8C00980A15 /* MiddleAlignedTextFieldCell.m */; };
-		99529DF81E0DA8E70045981E /* Horos Report.pages09.pages in Resources */ = {isa = PBXBuildFile; fileRef = 99529DF71E0DA8E70045981E /* Horos Report.pages09.pages */; };
 		9952F26E2020C1010020CCD4 /* ICloudDriveDetector.xib in Resources */ = {isa = PBXBuildFile; fileRef = 9952F26C2020C1010020CCD4 /* ICloudDriveDetector.xib */; };
 		9952F2712020C21D0020CCD4 /* ICloudDriveDetector.h in Headers */ = {isa = PBXBuildFile; fileRef = 9952F26F2020C21D0020CCD4 /* ICloudDriveDetector.h */; };
 		9952F2722020C21D0020CCD4 /* ICloudDriveDetector.m in Sources */ = {isa = PBXBuildFile; fileRef = 9952F2702020C21D0020CCD4 /* ICloudDriveDetector.m */; };
@@ -787,8 +785,6 @@
 		A987B3E20D5A069200BF89C0 /* Navigator.xib in Resources */ = {isa = PBXBuildFile; fileRef = A987B3DF0D5A069200BF89C0 /* Navigator.xib */; };
 		A9897D9B0D4A142200BAC447 /* displayRGB.tif in Resources */ = {isa = PBXBuildFile; fileRef = A9897D970D4A142200BAC447 /* displayRGB.tif */; };
 		A9897D9C0D4A142200BAC447 /* displayTotoku.tif in Resources */ = {isa = PBXBuildFile; fileRef = A9897D980D4A142200BAC447 /* displayTotoku.tif */; };
-		A98FFBE60CA92B58000291C8 /* altivecFunctions.c in Sources */ = {isa = PBXBuildFile; fileRef = A98FFBE30CA92B58000291C8 /* altivecFunctions.c */; };
-		A98FFBEA0CA92B58000291C8 /* altivecFunctions.c in Sources */ = {isa = PBXBuildFile; fileRef = A98FFBE30CA92B58000291C8 /* altivecFunctions.c */; };
 		A997B15710E0C412004C5BB1 /* SecurityInterface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A997B15610E0C412004C5BB1 /* SecurityInterface.framework */; };
 		A99B7ECB0885A61F004328C0 /* BonjourPublisher.m in Sources */ = {isa = PBXBuildFile; fileRef = A99B7E5108858D31004328C0 /* BonjourPublisher.m */; };
 		A99B7ECD0885A621004328C0 /* BonjourBrowser.m in Sources */ = {isa = PBXBuildFile; fileRef = A99B7E5508858D4F004328C0 /* BonjourBrowser.m */; };
@@ -796,9 +792,7 @@
 		A9A80E3811F73E22009F54B9 /* Activity_Stop.tif in Resources */ = {isa = PBXBuildFile; fileRef = A9A80E3611F73E22009F54B9 /* Activity_Stop.tif */; };
 		A9A80E3911F73E22009F54B9 /* Activity_StopPressed.tif in Resources */ = {isa = PBXBuildFile; fileRef = A9A80E3711F73E22009F54B9 /* Activity_StopPressed.tif */; };
 		A9A9F4C10A74C9A9005A1CA7 /* QTExportStyle.css in Resources */ = {isa = PBXBuildFile; fileRef = A9A9F4C00A74C9A9005A1CA7 /* QTExportStyle.css */; };
-		A9ADBBD10ADE80E60022DFC7 /* ReportPages.icns in Resources */ = {isa = PBXBuildFile; fileRef = A9ADBBCE0ADE80E60022DFC7 /* ReportPages.icns */; };
 		A9ADBBD20ADE80E60022DFC7 /* ReportRTF.icns in Resources */ = {isa = PBXBuildFile; fileRef = A9ADBBCF0ADE80E60022DFC7 /* ReportRTF.icns */; };
-		A9ADBBD30ADE80E60022DFC7 /* ReportWord.icns in Resources */ = {isa = PBXBuildFile; fileRef = A9ADBBD00ADE80E60022DFC7 /* ReportWord.icns */; };
 		A9B23D0315CFDF62000E47C3 /* Move.pdf in Resources */ = {isa = PBXBuildFile; fileRef = A9B23D0215CFDF62000E47C3 /* Move.pdf */; };
 		A9B23D0715CFDF76000E47C3 /* Stack.pdf in Resources */ = {isa = PBXBuildFile; fileRef = A9B23D0615CFDF76000E47C3 /* Stack.pdf */; };
 		A9B23D0A15CFDF81000E47C3 /* Zoom.pdf in Resources */ = {isa = PBXBuildFile; fileRef = A9B23D0915CFDF81000E47C3 /* Zoom.pdf */; };
@@ -1068,7 +1062,6 @@
 		AB9723980C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.1.mom in Resources */ = {isa = PBXBuildFile; fileRef = AB97238C0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.1.mom */; };
 		AB9723990C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.2.mom in Resources */ = {isa = PBXBuildFile; fileRef = AB97238D0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.2.mom */; };
 		AB97239A0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.3.mom in Resources */ = {isa = PBXBuildFile; fileRef = AB97238E0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.3.mom */; };
-		AB9DCD7B09A9C47800AA19E7 /* ReportTemplate.rtf in Resources */ = {isa = PBXBuildFile; fileRef = AB9DCD7A09A9C47800AA19E7 /* ReportTemplate.rtf */; };
 		AB9E05470B30107A00661F7E /* key.png in Resources */ = {isa = PBXBuildFile; fileRef = AB9E05460B30107A00661F7E /* key.png */; };
 		ABB218B905CF1E9300D8B619 /* WaitRendering.h in Headers */ = {isa = PBXBuildFile; fileRef = ABB218B705CF1E9300D8B619 /* WaitRendering.h */; };
 		ABB218BA05CF1E9300D8B619 /* WaitRendering.m in Sources */ = {isa = PBXBuildFile; fileRef = ABB218B805CF1E9300D8B619 /* WaitRendering.m */; };
@@ -1137,9 +1130,6 @@
 		ABE3336B063D624400C8E087 /* QueryFilter.h in Headers */ = {isa = PBXBuildFile; fileRef = ABE33369063D624400C8E087 /* QueryFilter.h */; };
 		ABE3336C063D624400C8E087 /* QueryFilter.m in Sources */ = {isa = PBXBuildFile; fileRef = ABE3336A063D624400C8E087 /* QueryFilter.m */; };
 		ABE59B850F494CA1004EBF28 /* DefaultsOsiriX.m in Sources */ = {isa = PBXBuildFile; fileRef = AB6FF5960A47D08000C501F0 /* DefaultsOsiriX.m */; };
-		ABEF7E7809A21070006CEC3E /* Reports.h in Headers */ = {isa = PBXBuildFile; fileRef = ABEF7E7609A21070006CEC3E /* Reports.h */; };
-		ABEF7E7909A21070006CEC3E /* Reports.m in Sources */ = {isa = PBXBuildFile; fileRef = ABEF7E7709A21070006CEC3E /* Reports.m */; };
-		ABEF846A09A23EF5006CEC3E /* ReportTemplate.doc in Resources */ = {isa = PBXBuildFile; fileRef = ABEF846909A23EF5006CEC3E /* ReportTemplate.doc */; };
 		ABF09BBA0642FD220044FE6C /* Stereo.icns in Resources */ = {isa = PBXBuildFile; fileRef = ABF09BB80642FD220044FE6C /* Stereo.icns */; };
 		ABF68A44061DD18600FEED6D /* StringTexture.m in Sources */ = {isa = PBXBuildFile; fileRef = ABF68A40061DD18600FEED6D /* StringTexture.m */; };
 		ABF68A45061DD18600FEED6D /* StringTexture.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF68A41061DD18600FEED6D /* StringTexture.h */; };
@@ -1263,7 +1253,6 @@
 		CE28086B0B6B76730093E9D3 /* CalciumScoringWindowController.h in Headers */ = {isa = PBXBuildFile; fileRef = CE2808630B6B76730093E9D3 /* CalciumScoringWindowController.h */; };
 		CE28086C0B6B76730093E9D3 /* CalciumScoringWindowController.m in Sources */ = {isa = PBXBuildFile; fileRef = CE2808640B6B76730093E9D3 /* CalciumScoringWindowController.m */; };
 		CE286C120964196C001A4573 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = CE286C100964196C001A4573 /* Localizable.strings */; };
-		CE289B1D0D00AF91004F0A93 /* Mail.scpt in Resources */ = {isa = PBXBuildFile; fileRef = CE289B020D00ADBA004F0A93 /* Mail.scpt */; };
 		CE2AC2681830BEFB00C2B67B /* ThickSlab.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE2AC2661830BEFB00C2B67B /* ThickSlab.xib */; };
 		CE2BFE57153B177C00037546 /* iPad.png in Resources */ = {isa = PBXBuildFile; fileRef = CE2BFE56153B177C00037546 /* iPad.png */; };
 		CE2C82EC0C708B380093C162 /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BF5F14C20B14E12700B309B9 /* CoreVideo.framework */; };
@@ -1364,7 +1353,6 @@
 		CE88576008AF938800B72DA7 /* ROIVolumeController.mm in Sources */ = {isa = PBXBuildFile; fileRef = CE88575C08AF938800B72DA7 /* ROIVolumeController.mm */; };
 		CE88576108AF938800B72DA7 /* ROIVolumeView.mm in Sources */ = {isa = PBXBuildFile; fileRef = CE88575D08AF938800B72DA7 /* ROIVolumeView.mm */; };
 		CE897DD50C21D951005C669E /* texture.tif in Resources */ = {isa = PBXBuildFile; fileRef = CE897DD30C21D951005C669E /* texture.tif */; };
-		CE8A5017181BA499009A453B /* Horos Report.pages in Resources */ = {isa = PBXBuildFile; fileRef = CE8A5016181BA499009A453B /* Horos Report.pages */; };
 		CE8CDAF212B3C88D00268E4F /* DatabaseIcon.tif in Resources */ = {isa = PBXBuildFile; fileRef = CE8CDAF112B3C88D00268E4F /* DatabaseIcon.tif */; };
 		CE8D05CE0FD851F400165DDE /* DCMAbstractSyntaxUID.h in Headers */ = {isa = PBXBuildFile; fileRef = CE79D9860FD84C350043DD73 /* DCMAbstractSyntaxUID.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		CE9054F512F5B64300263AB6 /* CPRClusterView.h in Headers */ = {isa = PBXBuildFile; fileRef = CE9054CF12F5B64200263AB6 /* CPRClusterView.h */; };
@@ -1513,8 +1501,6 @@
 		CEE73FD308F44749002A395F /* stringNumericCompare.m in Sources */ = {isa = PBXBuildFile; fileRef = CEE73FD108F44749002A395F /* stringNumericCompare.m */; };
 		CEE73FD408F44749002A395F /* stringNumericCompare.h in Headers */ = {isa = PBXBuildFile; fileRef = CEE73FD208F44749002A395F /* stringNumericCompare.h */; };
 		CEE75F701470698F00A83306 /* DefaultBanner.png in Resources */ = {isa = PBXBuildFile; fileRef = CEE75F6F1470698F00A83306 /* DefaultBanner.png */; };
-		CEE8CED00D00AA71009FA5F9 /* NSAppleScript+HandlerCalls.m in Sources */ = {isa = PBXBuildFile; fileRef = CEE8CECE0D00AA71009FA5F9 /* NSAppleScript+HandlerCalls.m */; };
-		CEE8CED10D00AA71009FA5F9 /* NSAppleScript+HandlerCalls.h in Headers */ = {isa = PBXBuildFile; fileRef = CEE8CECF0D00AA71009FA5F9 /* NSAppleScript+HandlerCalls.h */; };
 		CEEB5CCC0CCDD161008803E2 /* Centerline.tif in Resources */ = {isa = PBXBuildFile; fileRef = CEEB5CCA0CCDD161008803E2 /* Centerline.tif */; };
 		CEEDA35706A061EB00DEAB22 /* ThickSlabVR.h in Headers */ = {isa = PBXBuildFile; fileRef = CEEDA35306A061EB00DEAB22 /* ThickSlabVR.h */; };
 		CEEDA35806A061EB00DEAB22 /* ThickSlabVR.mm in Sources */ = {isa = PBXBuildFile; fileRef = CEEDA35406A061EB00DEAB22 /* ThickSlabVR.mm */; };
@@ -1523,7 +1509,6 @@
 		CEF0E60406AEF326001FF9E5 /* Mailer.m in Sources */ = {isa = PBXBuildFile; fileRef = CEF0E60006AEF326001FF9E5 /* Mailer.m */; };
 		CEF0E6DC06AEF5CB001FF9E5 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CEF0E6DA06AEF5CB001FF9E5 /* Carbon.framework */; };
 		CEF30FD10945DEA300824A2B /* windows.tif in Resources */ = {isa = PBXBuildFile; fileRef = CEF30FD00945DEA300824A2B /* windows.tif */; };
-		CEFB8A9910C19902000DCCB0 /* ReportTemplate.odt in Resources */ = {isa = PBXBuildFile; fileRef = CEFB8A9810C19902000DCCB0 /* ReportTemplate.odt */; };
 		DB5961380CAB447B00809190 /* OSIVoxel.h in Headers */ = {isa = PBXBuildFile; fileRef = DB5961360CAB447B00809190 /* OSIVoxel.h */; };
 		DB5961390CAB447B00809190 /* OSIVoxel.m in Sources */ = {isa = PBXBuildFile; fileRef = DB5961370CAB447B00809190 /* OSIVoxel.m */; };
 		EC9BD81C11EDF349007421B2 /* FlyAssistant.h in Headers */ = {isa = PBXBuildFile; fileRef = EC9BD81A11EDF349007421B2 /* FlyAssistant.h */; };
@@ -2149,7 +2134,6 @@
 		29B97316FDCFA39411CA2CEA /* main.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = main.m; path = Horos/Sources/main.m; sourceTree = SOURCE_ROOT; };
 		29B97324FDCFA39411CA2CEA /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = /System/Library/Frameworks/AppKit.framework; sourceTree = "<absolute>"; };
 		29B97325FDCFA39411CA2CEA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = /System/Library/Frameworks/Foundation.framework; sourceTree = "<absolute>"; };
-		32E422140C97301600E193CA /* altivecFunctions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = altivecFunctions.h; path = Horos/Sources/altivecFunctions.h; sourceTree = SOURCE_ROOT; };
 		4307C62B1A2091900083877C /* url.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = url.h; path = Horos/Sources/url.h; sourceTree = SOURCE_ROOT; };
 		433F9A7E1A1B18A500E52C6C /* VTKView.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = VTKView.mm; path = Horos/Sources/VTKView.mm; sourceTree = SOURCE_ROOT; };
 		433F9A7F1A1B18A500E52C6C /* VTKView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = VTKView.h; path = Horos/Sources/VTKView.h; sourceTree = SOURCE_ROOT; };
@@ -2265,8 +2249,6 @@
 		5969033A12DDE30800379E41 /* WebPortalConnection+Data.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "WebPortalConnection+Data.mm"; path = "Horos/Sources/WebPortalConnection+Data.mm"; sourceTree = SOURCE_ROOT; };
 		5969034312DDE5EA00379E41 /* WebPortalResponse.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = WebPortalResponse.h; path = Horos/Sources/WebPortalResponse.h; sourceTree = SOURCE_ROOT; };
 		5969034412DDE5EA00379E41 /* WebPortalResponse.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = WebPortalResponse.mm; path = Horos/Sources/WebPortalResponse.mm; sourceTree = SOURCE_ROOT; };
-		596D30AE1439B98A004EE9EC /* pages2pdf.applescript */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.applescript; name = pages2pdf.applescript; path = ReportsToPDF/pages2pdf.applescript; sourceTree = "<group>"; };
-		596D30AF1439B98A004EE9EC /* word2pdf.applescript */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.applescript; name = word2pdf.applescript; path = ReportsToPDF/word2pdf.applescript; sourceTree = "<group>"; };
 		596D30B41439BA17004EE9EC /* DicomStudy+Report.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "DicomStudy+Report.h"; path = "Horos/Sources/DicomStudy+Report.h"; sourceTree = SOURCE_ROOT; };
 		596D30B51439BA17004EE9EC /* DicomStudy+Report.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "DicomStudy+Report.mm"; path = "Horos/Sources/DicomStudy+Report.mm"; sourceTree = SOURCE_ROOT; };
 		596D30B81439BABD004EE9EC /* NSAppleScript+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "NSAppleScript+N2.h"; path = "Nitrogen/Sources/NSAppleScript+N2.h"; sourceTree = SOURCE_ROOT; };
@@ -2649,7 +2631,6 @@
 		994FABF01CEBF25800980A15 /* OnOffSwitchControlCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OnOffSwitchControlCell.m; sourceTree = "<group>"; };
 		994FABF51CEBFB8C00980A15 /* MiddleAlignedTextFieldCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MiddleAlignedTextFieldCell.h; sourceTree = "<group>"; };
 		994FABF61CEBFB8C00980A15 /* MiddleAlignedTextFieldCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = MiddleAlignedTextFieldCell.m; sourceTree = "<group>"; };
-		99529DF71E0DA8E70045981E /* Horos Report.pages09.pages */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Horos Report.pages09.pages"; path = "../../Binaries/Horos Report.pages09.pages"; sourceTree = "<group>"; };
 		9952F26D2020C1010020CCD4 /* en */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = en; path = en.lproj/ICloudDriveDetector.xib; sourceTree = "<group>"; };
 		9952F26F2020C21D0020CCD4 /* ICloudDriveDetector.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICloudDriveDetector.h; sourceTree = "<group>"; };
 		9952F2702020C21D0020CCD4 /* ICloudDriveDetector.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICloudDriveDetector.m; sourceTree = "<group>"; };
@@ -2776,8 +2757,6 @@
 		A987B3E00D5A069200BF89C0 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/Navigator.xib; sourceTree = "<group>"; };
 		A9897D970D4A142200BAC447 /* displayRGB.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = displayRGB.tif; sourceTree = "<group>"; };
 		A9897D980D4A142200BAC447 /* displayTotoku.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = displayTotoku.tif; sourceTree = "<group>"; };
-		A98FFBE30CA92B58000291C8 /* altivecFunctions.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = altivecFunctions.c; path = Horos/Sources/altivecFunctions.c; sourceTree = SOURCE_ROOT; };
-		A98FFBE40CA92B58000291C8 /* altivecFunctions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = altivecFunctions.h; sourceTree = "<group>"; };
 		A997B15610E0C412004C5BB1 /* SecurityInterface.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SecurityInterface.framework; path = System/Library/Frameworks/SecurityInterface.framework; sourceTree = SDKROOT; };
 		A99B7E5008858D31004328C0 /* BonjourPublisher.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = BonjourPublisher.h; sourceTree = "<group>"; };
 		A99B7E5108858D31004328C0 /* BonjourPublisher.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = BonjourPublisher.m; sourceTree = "<group>"; };
@@ -2786,9 +2765,7 @@
 		A9A80E3611F73E22009F54B9 /* Activity_Stop.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Activity_Stop.tif; sourceTree = "<group>"; };
 		A9A80E3711F73E22009F54B9 /* Activity_StopPressed.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Activity_StopPressed.tif; sourceTree = "<group>"; };
 		A9A9F4C00A74C9A9005A1CA7 /* QTExportStyle.css */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.css; path = QTExportStyle.css; sourceTree = "<group>"; };
-		A9ADBBCE0ADE80E60022DFC7 /* ReportPages.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = ReportPages.icns; sourceTree = "<group>"; };
 		A9ADBBCF0ADE80E60022DFC7 /* ReportRTF.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = ReportRTF.icns; sourceTree = "<group>"; };
-		A9ADBBD00ADE80E60022DFC7 /* ReportWord.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = ReportWord.icns; sourceTree = "<group>"; };
 		A9B23D0215CFDF62000E47C3 /* Move.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Move.pdf; sourceTree = "<group>"; };
 		A9B23D0615CFDF76000E47C3 /* Stack.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Stack.pdf; sourceTree = "<group>"; };
 		A9B23D0915CFDF81000E47C3 /* Zoom.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Zoom.pdf; sourceTree = "<group>"; };
@@ -3049,7 +3026,6 @@
 		AB97238C0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.1.mom */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = OsiriXDB_Previous_DataModel2.1.mom; sourceTree = "<group>"; };
 		AB97238D0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.2.mom */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = OsiriXDB_Previous_DataModel2.2.mom; sourceTree = "<group>"; };
 		AB97238E0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.3.mom */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = OsiriXDB_Previous_DataModel2.3.mom; sourceTree = "<group>"; };
-		AB9DCD7A09A9C47800AA19E7 /* ReportTemplate.rtf */ = {isa = PBXFileReference; lastKnownFileType = text.rtf; path = ReportTemplate.rtf; sourceTree = "<group>"; };
 		AB9E05460B30107A00661F7E /* key.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = key.png; sourceTree = "<group>"; };
 		ABA71D3F06726B1800335A62 /* Horos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Horos.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABAA284B058A4F7F00F0601D /* NSFullScreenWindow.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NSFullScreenWindow.h; sourceTree = "<group>"; };
@@ -3123,9 +3099,6 @@
 		ABE1E8AE0649F4150028E2E0 /* iPod.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = iPod.icns; sourceTree = "<group>"; };
 		ABE33369063D624400C8E087 /* QueryFilter.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = QueryFilter.h; sourceTree = "<group>"; };
 		ABE3336A063D624400C8E087 /* QueryFilter.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = QueryFilter.m; sourceTree = "<group>"; };
-		ABEF7E7609A21070006CEC3E /* Reports.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = Reports.h; sourceTree = "<group>"; };
-		ABEF7E7709A21070006CEC3E /* Reports.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = Reports.m; sourceTree = "<group>"; };
-		ABEF846909A23EF5006CEC3E /* ReportTemplate.doc */ = {isa = PBXFileReference; lastKnownFileType = file; path = ReportTemplate.doc; sourceTree = "<group>"; };
 		ABF09BB80642FD220044FE6C /* Stereo.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Stereo.icns; sourceTree = "<group>"; };
 		ABF68A40061DD18600FEED6D /* StringTexture.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = StringTexture.m; sourceTree = "<group>"; };
 		ABF68A41061DD18600FEED6D /* StringTexture.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = StringTexture.h; sourceTree = "<group>"; };
@@ -3229,7 +3202,6 @@
 		CE06475110F12DA500551AD9 /* PlayTemplate.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = PlayTemplate.png; sourceTree = "<group>"; };
 		CE087B0A0DE9BD6E000E5593 /* GLString.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GLString.m; sourceTree = "<group>"; };
 		CE087B0B0DE9BD6E000E5593 /* GLString.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = GLString.h; sourceTree = "<group>"; };
-		CE0C478F1831366600D4C50E /* pages092pdf.applescript */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.applescript; name = pages092pdf.applescript; path = ReportsToPDF/pages092pdf.applescript; sourceTree = "<group>"; };
 		CE0CB16F084A623C00C6385F /* DCMPix.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = DCMPix.m; path = Horos/Sources/DCMPix.m; sourceTree = SOURCE_ROOT; };
 		CE0CB170084A623C00C6385F /* DCMPix.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DCMPix.h; sourceTree = "<group>"; };
 		CE0DB325182D604900C90B43 /* ThumbnailsListNSWindow.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ThumbnailsListNSWindow.m; sourceTree = "<group>"; };
@@ -3253,7 +3225,6 @@
 		CE2808630B6B76730093E9D3 /* CalciumScoringWindowController.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = CalciumScoringWindowController.h; sourceTree = "<group>"; };
 		CE2808640B6B76730093E9D3 /* CalciumScoringWindowController.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = CalciumScoringWindowController.m; sourceTree = "<group>"; };
 		CE286C110964196C001A4573 /* English */ = {isa = PBXFileReference; fileEncoding = 10; lastKnownFileType = text.plist.strings; name = English; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
-		CE289B020D00ADBA004F0A93 /* Mail.scpt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file; path = Mail.scpt; sourceTree = "<group>"; };
 		CE2AC2671830BEFB00C2B67B /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/ThickSlab.xib; sourceTree = "<group>"; };
 		CE2BFE56153B177C00037546 /* iPad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = iPad.png; sourceTree = "<group>"; };
 		CE3368571595888D00167676 /* WebPortalDB 7.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "WebPortalDB 7.xcdatamodel"; sourceTree = "<group>"; };
@@ -3356,9 +3327,7 @@
 		CE88575C08AF938800B72DA7 /* ROIVolumeController.mm */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.objcpp; path = ROIVolumeController.mm; sourceTree = "<group>"; };
 		CE88575D08AF938800B72DA7 /* ROIVolumeView.mm */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.objcpp; path = ROIVolumeView.mm; sourceTree = "<group>"; };
 		CE897DD30C21D951005C669E /* texture.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; name = texture.tif; path = Icons/texture.tif; sourceTree = "<group>"; };
-		CE8A5016181BA499009A453B /* Horos Report.pages */ = {isa = PBXFileReference; lastKnownFileType = file; name = "Horos Report.pages"; path = "../../Binaries/Horos Report.pages"; sourceTree = "<group>"; };
 		CE8CDAF112B3C88D00268E4F /* DatabaseIcon.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = DatabaseIcon.tif; sourceTree = "<group>"; };
-		CE902EA1181C004C00CC4B88 /* pages2pages09.applescript */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.applescript; name = pages2pages09.applescript; path = ReportsToPDF/pages2pages09.applescript; sourceTree = "<group>"; };
 		CE9054CF12F5B64200263AB6 /* CPRClusterView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CPRClusterView.h; sourceTree = "<group>"; };
 		CE9054D012F5B64200263AB6 /* CPRClusterView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CPRClusterView.m; sourceTree = "<group>"; };
 		CE9054D112F5B64200263AB6 /* CPRController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CPRController.h; sourceTree = "<group>"; };
@@ -3492,8 +3461,6 @@
 		CEE73FD108F44749002A395F /* stringNumericCompare.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = stringNumericCompare.m; sourceTree = "<group>"; };
 		CEE73FD208F44749002A395F /* stringNumericCompare.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = stringNumericCompare.h; sourceTree = "<group>"; };
 		CEE75F6F1470698F00A83306 /* DefaultBanner.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = DefaultBanner.png; sourceTree = "<group>"; };
-		CEE8CECE0D00AA71009FA5F9 /* NSAppleScript+HandlerCalls.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSAppleScript+HandlerCalls.m"; sourceTree = "<group>"; };
-		CEE8CECF0D00AA71009FA5F9 /* NSAppleScript+HandlerCalls.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSAppleScript+HandlerCalls.h"; sourceTree = "<group>"; };
 		CEEB5CCA0CCDD161008803E2 /* Centerline.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Centerline.tif; sourceTree = "<group>"; };
 		CEEDA35306A061EB00DEAB22 /* ThickSlabVR.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ThickSlabVR.h; sourceTree = "<group>"; };
 		CEEDA35406A061EB00DEAB22 /* ThickSlabVR.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ThickSlabVR.mm; sourceTree = "<group>"; };
@@ -3502,7 +3469,6 @@
 		CEF0E60006AEF326001FF9E5 /* Mailer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = Mailer.m; sourceTree = "<group>"; };
 		CEF0E6DA06AEF5CB001FF9E5 /* Carbon.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Carbon.framework; path = /System/Library/Frameworks/Carbon.framework; sourceTree = "<absolute>"; };
 		CEF30FD00945DEA300824A2B /* windows.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = windows.tif; sourceTree = "<group>"; };
-		CEFB8A9810C19902000DCCB0 /* ReportTemplate.odt */ = {isa = PBXFileReference; lastKnownFileType = file; path = ReportTemplate.odt; sourceTree = "<group>"; };
 		DB5961360CAB447B00809190 /* OSIVoxel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSIVoxel.h; sourceTree = "<group>"; };
 		DB5961370CAB447B00809190 /* OSIVoxel.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSIVoxel.m; sourceTree = "<group>"; };
 		EC9BD81A11EDF349007421B2 /* FlyAssistant.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = FlyAssistant.h; sourceTree = "<group>"; };
@@ -3919,7 +3885,6 @@
 				710EF1F21FD00E29000B555B /* Horos.m */,
 				4307C62B1A2091900083877C /* url.h */,
 				29B97316FDCFA39411CA2CEA /* main.m */,
-				32E422140C97301600E193CA /* altivecFunctions.h */,
 				434B46151A19F2A3008CF8CF /* options.h */,
 				71125D4A215376FC00EB0AA5 /* PathForImage.h */,
 			);
@@ -4287,20 +4252,10 @@
 				CECDBE690C95467B006B11A5 /* AnnotationsDefault.plist */,
 				CE897DD30C21D951005C669E /* texture.tif */,
 				844003990E8CF99500A00EBD /* dciodvfy */,
-				596D30AE1439B98A004EE9EC /* pages2pdf.applescript */,
-				CE0C478F1831366600D4C50E /* pages092pdf.applescript */,
-				CE902EA1181C004C00CC4B88 /* pages2pages09.applescript */,
-				596D30AF1439B98A004EE9EC /* word2pdf.applescript */,
-				AB9DCD7A09A9C47800AA19E7 /* ReportTemplate.rtf */,
-				CEFB8A9810C19902000DCCB0 /* ReportTemplate.odt */,
-				ABEF846909A23EF5006CEC3E /* ReportTemplate.doc */,
-				CE8A5016181BA499009A453B /* Horos Report.pages */,
-				99529DF71E0DA8E70045981E /* Horos Report.pages09.pages */,
 				A95B98AA0A6E65C900E476D4 /* QTExportPatientsTemplate.html */,
 				A95B98AB0A6E65C900E476D4 /* QTExportStudiesTemplate.html */,
 				A926BFC80A76577600F1B366 /* QTExportSeriesTemplate.html */,
 				A9A9F4C00A74C9A9005A1CA7 /* QTExportStyle.css */,
-				CE289B020D00ADBA004F0A93 /* Mail.scpt */,
 				848A6BE514C5BB9500C936C3 /* Tiling */,
 				AB9723880C684B4E00DC727C /* DB_Previous_Models */,
 				ABBB639A0635874D00D9531F /* DCMTK */,
@@ -5339,8 +5294,6 @@
 				592BA51B12966ABD00179C27 /* NSError+OsiriX.h */,
 				592BA51C12966ABD00179C27 /* NSError+OsiriX.mm */,
 				CEBA709C10C70039003A6186 /* GetPrimaryMACAddress.m */,
-				A98FFBE30CA92B58000291C8 /* altivecFunctions.c */,
-				A98FFBE40CA92B58000291C8 /* altivecFunctions.h */,
 				A94469DF0BA7FFE7008643E5 /* BLAuthentication.h */,
 				A94469E00BA7FFE7008643E5 /* BLAuthentication.m */,
 				7E0339E307415C330025DDB4 /* Burning */,
@@ -5386,8 +5339,6 @@
 				AB785FB7061A3C0700EC48D3 /* MyNSTextView.m */,
 				AB0813D6057C698900A72813 /* MyOutlineView.h */,
 				AB0813D7057C698900A72813 /* MyOutlineView.m */,
-				CEE8CECF0D00AA71009FA5F9 /* NSAppleScript+HandlerCalls.h */,
-				CEE8CECE0D00AA71009FA5F9 /* NSAppleScript+HandlerCalls.m */,
 				AB3C6A8E057ADCA60001052D /* NSFont_OpenGL.h */,
 				AB3C6A8F057ADCA60001052D /* NSFont_OpenGL.m */,
 				ABAA284B058A4F7F00F0601D /* NSFullScreenWindow.h */,
@@ -5413,8 +5364,6 @@
 				A95B98A30A6E65B100E476D4 /* QTExportHTMLSummary.m */,
 				AB0128620635991400A74AA1 /* QuicktimeExport.h */,
 				AB0128630635991400A74AA1 /* QuicktimeExport.m */,
-				ABEF7E7609A21070006CEC3E /* Reports.h */,
-				ABEF7E7709A21070006CEC3E /* Reports.m */,
 				7ECB4B3C072EF9DF00C2CFC4 /* Routing */,
 				BF348573095126B700B05AD2 /* Sending */,
 				AB4A6C9C056E81FA009E6C6E /* SplashScreen.h */,
@@ -5667,9 +5616,7 @@
 				A9B23D0F15CFE3EB000E47C3 /* Rectangle.pdf */,
 				7E9C6D2C066D2BE800D33966 /* redLight.tif */,
 				AB46648C09A331DF005A2766 /* Report.icns */,
-				A9ADBBCE0ADE80E60022DFC7 /* ReportPages.icns */,
 				A9ADBBCF0ADE80E60022DFC7 /* ReportRTF.icns */,
-				A9ADBBD00ADE80E60022DFC7 /* ReportWord.icns */,
 				A9B23D3015CFEB36000E47C3 /* Repulsor.pdf */,
 				CE1F6C4907D715EB00165CBE /* Reset.pdf */,
 				CE4E00BE0830B72F008DAFAE /* Revert.tif */,
@@ -6400,7 +6347,6 @@
 				A9E80EB009877429005121AA /* ROIVolume.h in Headers */,
 				A91CE491098F5437008665E3 /* ROIVolumeManagerController.h in Headers */,
 				A94D784C09A0D58E0039F5A2 /* EndoscopyVRView.h in Headers */,
-				ABEF7E7809A21070006CEC3E /* Reports.h in Headers */,
 				A9D780B009A4D2A6004302DC /* ITKBrushROIFilter.h in Headers */,
 				998309111BB62D4100CAB197 /* JRSwizzle.h in Headers */,
 				9953FE531BF540D000BD0DA6 /* vtkHorosFixedPointVolumeRayCastMIPHelper.h in Headers */,
@@ -6456,7 +6402,6 @@
 				ABB230BD0C2F95DD00B38596 /* JPEGExif.h in Headers */,
 				AB64A2DB0C4E0F61000E0981 /* HornRegistration.h in Headers */,
 				CE882AC60C889B6500D4F982 /* XMLRPCMethods.h in Headers */,
-				32E422150C97301600E193CA /* altivecFunctions.h in Headers */,
 				CED2CF980C9B288C0047F123 /* Horos/Sources/CIADICOMField.h in Headers */,
 				DB5961380CAB447B00809190 /* OSIVoxel.h in Headers */,
 				BF6F18DC0CAD6ACF006DE602 /* FlyThruStepsArrayController.h in Headers */,
@@ -6465,7 +6410,6 @@
 				CE4700FF0CC51A6600ECF78A /* WindowLayoutManager.h in Headers */,
 				A97D4C610CE3459D003FE2E6 /* PieChartImage.h in Headers */,
 				CE6CD06D0CFB0462001DF429 /* OsiriXToolbar.h in Headers */,
-				CEE8CED10D00AA71009FA5F9 /* NSAppleScript+HandlerCalls.h in Headers */,
 				A910FB310D5767610095A956 /* NavigatorWindowController.h in Headers */,
 				A910FB370D57728A0095A956 /* NavigatorView.h in Headers */,
 				CE40ED530D86D54D007C6D49 /* ThreeDPositionController.h in Headers */,
@@ -6800,7 +6744,6 @@
 				CECA66E306CD8C1500D8750E /* Copy Frameworks */,
 				710EF2861FD148E7000B555B /* Copy Executables */,
 				71BC461D1F27308D00FD6CCF /* Copy Horos Framework */,
-				ABF307FB1443330100BBC96A /* Copy Scripts */,
 				99BA4CCC20A4B51D00B5CD02 /* Copy HorosCloud */,
 				99BA4CC920A4AFFA00B5CD02 /* Copy Embedded Plugins */,
 				59F69A4E1056328D008585F5 /* API */,
@@ -6955,7 +6898,6 @@
 				5FCC11EE2423CEB00039EE8F /* Decompress in Resources */,
 				71AD67621FC4248100A1E2F8 /* VR Muscles-Bones.plist in Resources */,
 				71AD674D1FC4248100A1E2F8 /* HotGreen.plist in Resources */,
-				CE289B1D0D00AF91004F0A93 /* Mail.scpt in Resources */,
 				998B52E41AE0893D00D317CF /* Horos.icns in Resources */,
 				59C0DE0219E4A11C00A42447 /* Assets.xcassets in Resources */,
 				ABBB64AD063587B200D9531F /* 2DBlending.tif in Resources */,
@@ -7068,9 +7010,7 @@
 				CE5487410989346800CF4C60 /* BrushPalette.tif in Resources */,
 				CE54877A0989363200CF4C60 /* Brush.tif in Resources */,
 				CEDCDD5B099C8AA20026AA4B /* ROIManager.pdf in Resources */,
-				ABEF846A09A23EF5006CEC3E /* ReportTemplate.doc in Resources */,
 				AB46648D09A331DF005A2766 /* Report.icns in Resources */,
-				AB9DCD7B09A9C47800AA19E7 /* ReportTemplate.rtf in Resources */,
 				A9E7042709B89E1C00971B6E /* BonesRemovalCursor.tif in Resources */,
 				A9C63A9C09BD7C5D00E312AE /* cerveau_icon.jpg in Resources */,
 				CE5D33B509E1C26400CC6884 /* add-large.tif in Resources */,
@@ -7088,10 +7028,8 @@
 				B7CDAD020AB30E7700068D70 /* page.tif in Resources */,
 				B7CDAD030AB30E7700068D70 /* pdf.tif in Resources */,
 				B78DA71C0ACEDA9A005C2C04 /* Shutter.tif in Resources */,
-				A9ADBBD10ADE80E60022DFC7 /* ReportPages.icns in Resources */,
 				A9ADBBD20ADE80E60022DFC7 /* ReportRTF.icns in Resources */,
 				71AD675B1FC4248100A1E2F8 /* Rainbow2.plist in Resources */,
-				A9ADBBD30ADE80E60022DFC7 /* ReportWord.icns in Resources */,
 				ABD559FE0AEE146900108895 /* SagSmall.tif in Resources */,
 				ABD559FF0AEE146900108895 /* CorSmall.tif in Resources */,
 				ABD55A000AEE146900108895 /* AxialSmall.tif in Resources */,
@@ -7208,7 +7146,6 @@
 				CE1C4EF30FDA6F5300185561 /* tagDictionary.plist in Resources */,
 				CED1FD1B1035E9BB0076AB33 /* SetPixelValue.pdf in Resources */,
 				CED1FD1C1035E9BB0076AB33 /* GrowingRegion.png in Resources */,
-				CEFB8A9910C19902000DCCB0 /* ReportTemplate.odt in Resources */,
 				CE4B5CFC10E5F9DE00C11948 /* Safari.tif in Resources */,
 				CE06475210F12DA500551AD9 /* PlayTemplate.png in Resources */,
 				A917F37D10F4F20C00344C5D /* CertSmallRoot.tif in Resources */,
@@ -7225,7 +7162,6 @@
 				5997897E11B7B423002DB107 /* AnonymizationTemplateNamePanel.xib in Resources */,
 				5997897F11B7B423002DB107 /* AnonymizationView.xib in Resources */,
 				5926822411CF60BD00CFA81F /* ThreadModalForWindow.xib in Resources */,
-				CE8A5017181BA499009A453B /* Horos Report.pages in Resources */,
 				84CD250D11EC5564004669D6 /* OsiriXDB_Previous_DataModel2.4.mom in Resources */,
 				A9A80E3811F73E22009F54B9 /* Activity_Stop.tif in Resources */,
 				A9A80E3911F73E22009F54B9 /* Activity_StopPressed.tif in Resources */,
@@ -7266,7 +7202,6 @@
 				71512E99152349E500B87012 /* DiscMountedAskTheUserDialog.xib in Resources */,
 				CE2BFE57153B177C00037546 /* iPad.png in Resources */,
 				71CE3C19157F489C00AC0112 /* List.pdf in Resources */,
-				99529DF81E0DA8E70045981E /* Horos Report.pages09.pages in Resources */,
 				CEA4F07515AEA5FE009584C7 /* Cloud.png in Resources */,
 				CEA4F07D15AEA606009584C7 /* OSIPACSOnDemand.xib in Resources */,
 				A91BF49715BD8A8900B7BA23 /* Anonymizer.pdf in Resources */,
@@ -7718,30 +7653,6 @@
 			shellPath = /bin/sh;
 			shellScript = (
 				"./Horos/Scripts/Horos/API-Headers.pl",
-				"",
-			);
-		};
-		ABF307FB1443330100BBC96A /* Copy Scripts */ = {
-			isa = PBXShellScriptBuildPhase;
-			name = "Copy Scripts";
-			outputPaths = (
-				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/pages2pages09.applescript",
-				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/pages092pdf.applescript",
-				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/pages2pdf.applescript",
-				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/word2pdf.applescript",
-			);
-			shellPath = /bin/sh;
-			shellScript = (
-				"#XCode 10 seems to have a bug or new behavior that makes applescript to be built into scpt. This may be a temporary workaround. Otherwise, code has to be changed to run scpt",
-				"#https://forum.latenightsw.com/t/xcode-10-and-applescript-files/1536",
-				"cp -f \"$PROJECT_DIR/Horos/Resources/ReportsToPDF/pages2pages09.applescript\" \"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Resources/\"",
-				"cp -f \"$PROJECT_DIR/Horos/Resources/ReportsToPDF/pages092pdf.applescript\" \"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Resources/\"",
-				"cp -f \"$PROJECT_DIR/Horos/Resources/ReportsToPDF/pages2pdf.applescript\" \"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Resources/\"",
-				"cp -f \"$PROJECT_DIR/Horos/Resources/ReportsToPDF/word2pdf.applescript\" \"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Resources/\"",
-				"",
-				"#cp -f \"$PROJECT_DIR/Binaries/odt2pdf/build/odt2pdf\" \"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/MacOS/\"",
-				"exit 0",
-				"",
 				"",
 			);
 		};
@@ -8223,7 +8134,6 @@
 				A9E80EB10987742A005121AA /* ROIVolume.mm in Sources */,
 				A91CE495098F5441008665E3 /* ROIVolumeManagerController.mm in Sources */,
 				A94D784D09A0D58E0039F5A2 /* EndoscopyVRView.mm in Sources */,
-				ABEF7E7909A21070006CEC3E /* Reports.m in Sources */,
 				A9D780B109A4D2A6004302DC /* ITKBrushROIFilter.mm in Sources */,
 				BF7A836009B8B8E70051F091 /* DICOMToNSString.m in Sources */,
 				BF7A838109B8D1C20051F091 /* DCMTKStoreSCU.mm in Sources */,
@@ -8275,14 +8185,12 @@
 				CE51BAF511E2289C006D180E /* OsiriXDB_DataModel.xcdatamodeld in Sources */,
 				CE882AC70C889B6500D4F982 /* XMLRPCMethods.mm in Sources */,
 				CED2CF970C9B288C0047F123 /* Horos/Sources/CIADICOMField.m in Sources */,
-				A98FFBE60CA92B58000291C8 /* altivecFunctions.c in Sources */,
 				DB5961390CAB447B00809190 /* OSIVoxel.m in Sources */,
 				BF6F18DD0CAD6AD0006DE602 /* FlyThruStepsArrayController.m in Sources */,
 				BF84E5420CB16A2900431BC2 /* FlyThruTableView.m in Sources */,
 				CE4701000CC51A6600ECF78A /* WindowLayoutManager.m in Sources */,
 				A97D4C620CE3459D003FE2E6 /* PieChartImage.m in Sources */,
 				CE6CD06E0CFB0462001DF429 /* OsiriXToolbar.m in Sources */,
-				CEE8CED00D00AA71009FA5F9 /* NSAppleScript+HandlerCalls.m in Sources */,
 				A910FB320D5767610095A956 /* NavigatorWindowController.m in Sources */,
 				A910FB380D57728A0095A956 /* NavigatorView.m in Sources */,
 				CE40ED540D86D54D007C6D49 /* ThreeDPositionController.m in Sources */,
@@ -8565,7 +8473,6 @@
 				710EF1F61FD025BC000B555B /* Horos.m in Sources */,
 				AB7250620ADE705C00A212A0 /* Decompress.mm in Sources */,
 				434B47A51A1A1951008CF8CF /* kdu_OsiriX_NO_Support.cpp in Sources */,
-				A98FFBEA0CA92B58000291C8 /* altivecFunctions.c in Sources */,
 				ABE59B850F494CA1004EBF28 /* DefaultsOsiriX.m in Sources */,
 				CE142E7F1119DA53000F4A8C /* DCMPix.m in Sources */,
 				CE142ED71119DE4F000F4A8C /* DicomFile.mm in Sources */,

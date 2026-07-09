@@ -44,7 +44,6 @@
 #import "ViewerController.h"
 #import "BrowserController.h"
 #import "Notifications.h"
-#import <Carbon/Carbon.h>
 #import "DCMPix.h"
 #import "DicomStudy.h"
 #import "DicomSeries.h"
@@ -152,7 +151,7 @@ static BOOL protectedReentryWindowDidResize = NO;
 	protectedReentryWindowDidResize = YES;
 	if( magneticWindowActivated)
 	{
-		if( dontEnterMagneticFunctions == NO && GetCurrentButtonState() != 0)
+		if( dontEnterMagneticFunctions == NO && [NSEvent pressedMouseButtons] != 0)
 		{
 			if( [[NSUserDefaults standardUserDefaults] boolForKey:@"MagneticWindows"])
 			{
@@ -354,7 +353,7 @@ static BOOL protectedReentryWindowDidResize = NO;
 		{
 			savedWindowsFrameO = [[self window] frame];
 			
-			if( GetCurrentButtonState()) windowIsMovedByTheUserO = YES;
+			if( [NSEvent pressedMouseButtons]) windowIsMovedByTheUserO = YES;
 		}
 	}
 }
@@ -365,7 +364,7 @@ static BOOL protectedReentryWindowDidResize = NO;
 	{
 		if(/*!Button() && */windowIsMovedByTheUserO == YES && dontEnterMagneticFunctions == NO && [[NSUserDefaults standardUserDefaults] boolForKey:@"MagneticWindows"] && NSIsEmptyRect( savedWindowsFrameO) == NO)
 		{
-			if( GetCurrentButtonState() == 0) windowIsMovedByTheUserO = NO;
+			if( [NSEvent pressedMouseButtons] == 0) windowIsMovedByTheUserO = NO;
 			
 			NSEnumerator	*e;
 			NSWindow		*theWindow, *window;

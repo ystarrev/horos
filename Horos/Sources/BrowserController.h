@@ -213,9 +213,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     
     NSMutableString					*pressedKeys;
     
-    IBOutlet NSView					*reportTemplatesView;
-    IBOutlet NSImageView			*reportTemplatesImageView;
-    IBOutlet NSPopUpButton			*reportTemplatesListPopUpButton;
     int								reportToolbarItemType;
     
     IBOutlet NSWindow				*addStudiesToUserWindow;

@@ -43,7 +43,6 @@
 #import "MPR2DController.h"
 #import "MPR2DView.h"
 #import "DCMPix.h"
-#import "altivecFunctions.h"
 #import "DCMPix.h"
 #include <Accelerate/Accelerate.h>
 #import "DCMView.h"
@@ -86,51 +85,6 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 
    return(q);
 }
-
-//#if __ppc__ || __ppc64__
-//void vmax(vector float *a, vector float *b, vector float *r, long size)
-//{
-//		long i = size / 4;
-//	
-//		while(i-- > 0)
-//		{
-//			*r++ = vec_max( *a++, *b++);
-//		}
-//}
-//
-//
-//void vmin(vector float *a, vector float *b, vector float *r, long size)
-//{
-//	long i = size / 4;
-//	
-//	while(i-- > 0)
-//	{
-//		*r++ = vec_min( *a++, *b++);
-//	}
-//}
-//#endif
-//
-//void vmaxNoAltivec(float *a, float *b, float *r, long size)
-//{
-//	long i = size;
-//	
-//	while(i-- > 0)
-//	{
-//		if( *a > *b) { *r++ = *a++; b++; }
-//		else { *r++ = *b++; a++; }
-//	}
-//}
-//
-//void vminNoAltivec( float *a,  float *b,  float *r, long size)
-//{
-//	long i = size;
-//	
-//	while(i-- > 0)
-//	{
-//		if( *a < *b) { *r++ = *a++; b++; }
-//		else { *r++ = *b++; a++; }
-//	}
-//}
 
 @implementation MPR2DView
 
@@ -1613,21 +1567,8 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 				
 				case 2:		// Maximum IP
 				case 3:		// Minimum IP
-					#if __ppc__ || __ppc64__
-					if( Altivec)
-					{
-						if( thickSlabMode == 2) vmax((vector float*) imResult, (vector float*)im, (vector float*)imResult, height * width);
-						else vmin((vector float*)imResult, (vector float*)im, (vector float*)imResult, height * width);
-					}
-					else
-					{
-						if( thickSlabMode == 2) vmaxNoAltivec(imResult,im,imResult, height * width);
-						else vminNoAltivec(imResult,im,imResult, height * width);
-					}
-					#else
-					if( thickSlabMode == 2) vmaxIntel((vFloat*) imResult, (vFloat*)im, (vFloat*)imResult, height * width);
-					else vminIntel((vFloat*)imResult, (vFloat*)im, (vFloat*)imResult, height * width);
-					#endif
+					if( thickSlabMode == 2) vDSP_vmax(imResult, 1, im, 1, imResult, 1, height * width);
+					else vDSP_vmin(imResult, 1, im, 1, imResult, 1, height * width);
 				break;
 			}
 			im = imResult;
@@ -1801,18 +1742,8 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 					
 					case 2:		// Maximum IP
 					case 3:		// Minimum IP
-						#if __ppc__ || __ppc64__
-						if( Altivec)
-						{
-							if( thickSlabMode == 2) vmax((vector float*) imResultBlending, (vector float*)im, (vector float*)imResultBlending, height * width);
-							else vmin((vector float*)imResultBlending, (vector float*)im, (vector float*)imResultBlending, height * width);
-						}
-						else
-						#endif
-						{
-							if( thickSlabMode == 2) vmaxNoAltivec(imResultBlending,im,imResultBlending, height * width);
-							else vminNoAltivec(imResultBlending,im,imResultBlending, height * width);
-						}
+						if( thickSlabMode == 2) vDSP_vmax(imResultBlending, 1, im, 1, imResultBlending, 1, height * width);
+						else vDSP_vmin(imResultBlending, 1, im, 1, imResultBlending, 1, height * width);
 					break;
 				}
 				im = imResultBlending;

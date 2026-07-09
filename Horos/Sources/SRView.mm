@@ -2566,20 +2566,16 @@ typedef struct _xyzArray
 			
 			glReadBuffer(GL_FRONT);
 			
-			#if __BIG_ENDIAN__
-				glReadPixels(0, 0, *width, *height, GL_RGB, GL_UNSIGNED_BYTE, buf);
-			#else
-				glReadPixels(0, 0, *width, *height, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, buf);
-				i = *width * *height;
-				unsigned char	*t_argb = buf;
-				unsigned char	*t_rgb = buf;
-				while( i-->0)
-				{
-					*((int*) t_rgb) = *((int*) t_argb);
-					t_argb+=4;
-					t_rgb+=3;
-				}
-			#endif
+			glReadPixels(0, 0, *width, *height, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, buf);
+			i = *width * *height;
+			unsigned char	*t_argb = buf;
+			unsigned char	*t_rgb = buf;
+			while( i-->0)
+			{
+				*((int*) t_rgb) = *((int*) t_argb);
+				t_argb+=4;
+				t_rgb+=3;
+			}
 			
 			long rowBytes = *width**spp**bpp/8;
 			

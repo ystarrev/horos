@@ -962,12 +962,7 @@ static NSHost *currentHost = nil;
 		[defaultValues setObject:@"32" forKey:@"MAX3DTEXTURESHADING"];
 	}
 			
-	// ** BESTRENDERING
-	#if __ppc__
-	[defaultValues setObject:@"1.6" forKey:@"BESTRENDERING"];
-	#else
 	[defaultValues setObject:@"1.2" forKey:@"BESTRENDERING"];
-	#endif
 
     [defaultValues setObject:@"120" forKey:@"DatabaseRefreshInterval"];
     
@@ -1123,7 +1118,6 @@ static NSHost *currentHost = nil;
     [defaultValues setObject:@"880" forKey:@"WebServerMaxWidthForMovie"];
     [defaultValues setObject:@"880" forKey:@"WebServerMaxWidthForStillImage"];
     [defaultValues setObject:@"512" forKey:@"WebServerMinWidthForMovie"];
-    [defaultValues setObject:@"1" forKey:@"WebServerUseMailAppForEmails"];
     [defaultValues setObject:@"1" forKey:@"DICOMQueryAllowFutureQuery"];
     [defaultValues setObject:@"1" forKey:@"SeriesListVisible"];
     [defaultValues setObject:@"1" forKey:@"RescaleDuring3DResampling"];

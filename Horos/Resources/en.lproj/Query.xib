@@ -64,7 +64,7 @@
                             <constraint firstAttribute="width" constant="165" id="bsA-QR-w165"/>
                         </constraints>
                     </customView>
-                    <tabView controlSize="mini" translatesAutoresizingMaskIntoConstraints="NO" id="657">
+                    <tabView controlSize="mini" translatesAutoresizingMaskIntoConstraints="NO" id="657" customClass="HorosQueryPatientModeTabView">
                         <rect key="frame" x="0.0" y="612" width="914" height="62"/>
                         <constraints>
                             <constraint firstAttribute="height" constant="50" id="C9l-iM-KTe"/>

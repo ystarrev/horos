@@ -68,7 +68,6 @@
 #import "QueryController.h"
 #import "N2Shell.h"
 #import "NSSplitViewSave.h"
-#import "altivecFunctions.h"
 #import "NSUserDefaultsController+OsiriX.h"
 #import <N2Debug.h>
 #import "NSFileManager+N2.h"
@@ -76,7 +75,6 @@
 #import "NSPanel+N2.h"
 #import "BonjourPublisher.h"
 #ifndef MACAPPSTORE
-#import "Reports.h"
 //#import <ILCrashReporter/ILCrashReporter.h>
 #import "VRView.h"
 #endif
@@ -104,7 +102,6 @@
 #import "DICOMTLS.h"
 #import "DicomStudy.h"
 #import "SRAnnotation.h"
-#import "Reports.h"
 #import "WebPortalDatabase.h"
 #import "NSString+SymlinksAndAliases.h"
 #include <OpenGL/OpenGL.h>
@@ -136,7 +133,6 @@ static NSInvocation *fill12BitBufferInvocation = nil;
 BOOL					NEEDTOREBUILD = NO;
 BOOL					COMPLETEREBUILD = NO;
 BOOL					USETOOLBARPANEL = NO;
-//short					Altivec = 1;
 short                   Use_kdu_IfAvailable = 0;
 AppController			*appController = nil;
 DCMTKQueryRetrieveSCP   *dcmtkQRSCP = nil, *dcmtkQRSCPTLS = nil;
@@ -464,41 +460,6 @@ int dictSort(id num1, id num2, void *context)
     return [[num1 objectForKey:@"AETitle"] caseInsensitiveCompare: [num2 objectForKey:@"AETitle"]];
 }
 
-//#define kHasAltiVecMask    ( 1 << gestaltPowerPCHasVectorInstructions )  // used in  looking for a g4 
-//
-//short HasAltiVec ( )
-//{
-//	Boolean			hasAltiVec = 0;
-//	OSErr			err;       
-//	SInt32			ppcFeatures;
-//	
-//	err = Gestalt ( gestaltPowerPCProcessorFeatures, &ppcFeatures );       
-//	if ( err == noErr)       
-//	{             
-//		if ( ( ppcFeatures & kHasAltiVecMask) != 0 )
-//		{
-//			hasAltiVec = 1;
-//			NSLog(@"AltiVEC is available");
-//		}
-//	}       
-//	return hasAltiVec;                   
-//}
-
-//———————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-
-//SInt32 osVersion()
-//{
-//	OSErr						err;       
-//	SInt32						osVersion;
-//	
-//	err = Gestalt ( gestaltSystemVersion, &osVersion );       
-//	if ( err == noErr)       
-//	{
-//		return osVersion;
-//	}
-//	return 0;                   
-//}
-
 //———————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
 NSRect screenFrame(void)
@@ -563,56 +524,6 @@ NSRect screenFrame(void)
 	}
 	return screenRect;
 }
-
-/*#import <Foundation/Foundation.h>
-
-// This function takes as parameter the data of the aliases  
-// stored in the com.apple.LaunchServices.plist file.  
-// It returns the resolved path as string.  
-static NSString *getResolvedAliasPath(NSData* inData)  
-{  
-    NSString *outPath = nil;  
-    if(inData != nil)  
-    {  
-        const void *theDataPtr = [inData bytes];  
-        NSUInteger theDataLength = [inData length];  
-        if(theDataPtr != nil && theDataLength > 0)  
-        {  
-            // Create an AliasHandle from the NSData  
-            AliasHandle theAliasHandle;  
-            theAliasHandle = (AliasHandle)NewHandle(theDataLength);  
-            bcopy(theDataPtr, *theAliasHandle, theDataLength);  
-			
-            FSRef theRef;  
-            Boolean wChang;  
-            OSStatus err = noErr;  
-            err = FSResolveAlias(NULL, theAliasHandle, &theRef, &wChang);  
-            if(err == noErr)  
-            {  
-                // The path was resolved.  
-                char path[1024];  
-                err = FSRefMakePath(&theRef, (UInt8*)path, sizeof(path));  
-                if(err == noErr)  
-                    outPath = [NSString stringWithUTF8String:path];  
-            }  
-            else  
-            {  
-                // If we can't resolve the alias (file not found),  
-                // we can still return the path.  
-                CFStringRef tmpPath = NULL;  
-                err = FSCopyAliasInfo(theAliasHandle, NULL, NULL,  
-                                      &tmpPath, NULL, NULL);  
-				
-                if(err == noErr && tmpPath != NULL)  
-                    outPath = [(NSString*)tmpPath autorelease];  
-            }  
-			
-            DisposeHandle((Handle)theAliasHandle);  
-        }  
-    }  
-	
-    return outPath;  
-}*/
 
 void exceptionHandler(NSException *exception)
 {
@@ -2869,13 +2780,6 @@ static BOOL initialized = NO;
 				
 				srandom(time(NULL));
 				
-//				Altivec = HasAltiVec();
-				//	if( Altivec == 0)
-				//	{
-				//		NSRunCriticalAlertPanel(@"Hardware Info", @"This application is optimized for Altivec - Velocity Engine unit, available only on G4/G5 processors.", @"OK", nil, nil);
-				//		exit(0);
-				//	}
-				
                 int processors;
                 int mib[2] = {CTL_HW, HW_NCPU};
                 size_t dataLen = sizeof(int); // 'num' is an 'int'
@@ -3212,8 +3116,6 @@ static BOOL initialized = NO;
 				
 				Use_kdu_IfAvailable = [[NSUserDefaults standardUserDefaults] boolForKey:@"UseKDUForJPEG2000"];
 				
-                [Reports checkForWordTemplates];
-				[Reports checkForPagesTemplate];
 				[DCMPixelDataAttribute setUse_kdu_IfAvailable: Use_kdu_IfAvailable];
 				
 				// CHECK FOR THE HTML TEMPLATES DIRECTORY

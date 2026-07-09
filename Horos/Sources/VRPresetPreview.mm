@@ -378,9 +378,6 @@
 //	compositeFunction = vtkVolumeRayCastMIPFunction::New();
 	
 	LOD = 1.0;
-	#if __ppc__
-	LOD += 0.5;
-	#endif
 	
 	volume = vtkVolume::New();
     volume->SetProperty( volumeProperty);

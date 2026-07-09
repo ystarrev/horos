@@ -98,7 +98,6 @@
 #import "LogWindowController.h"
 #import "stringAdditions.h"
 #import "SendController.h"
-#import "Reports.h"
 #import "LogManager.h"
 #import "DCMTKStoreSCU.h"
 #import "BonjourPublisher.h"
@@ -114,7 +113,6 @@
 #import "XMLController.h"
 #import "WebPortalConnection.h"
 #import "Notifications.h"
-#import "NSAppleScript+HandlerCalls.h"
 #import "CSMailMailClient.h"
 #import "NSImage+OsiriX.h"
 #import "NSString+N2.h"
@@ -214,6 +212,14 @@ static NSString *smartAlbumDistantArraySync = @"smartAlbumDistantArraySync";
 
 extern int delayedTileWindows;
 extern BOOL NEEDTOREBUILD;//, COMPLETEREBUILD;
+
+static NSString *ReportFilenameForStudy(id study)
+{
+    NSString *accessionNumber = [study valueForKey:@"accessionNumber"];
+    NSString *identifier = [accessionNumber length] > 0 ? accessionNumber : [study valueForKey:@"studyInstanceUID"];
+
+    return [DicomFile NSreplaceBadCharacter:[[study valueForKey:@"patientUID"] stringByAppendingFormat:@"-%@", identifier]];
+}
 
 #pragma deprecated(asciiString)
 NSString* asciiString(NSString* str)
@@ -9345,7 +9351,6 @@ static BOOL withReset = NO;
     float scrollScale = 2.5f;
     BOOL preciseScrolling = NO;
 
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_7
     preciseScrolling = [theEvent hasPreciseScrollingDeltas];
     if( preciseScrolling)
     {
@@ -9354,7 +9359,6 @@ static BOOL withReset = NO;
     }
     else
         deltaY = [theEvent scrollingDeltaY];
-#endif
     
     if ([[NSUserDefaults standardUserDefaults] boolForKey: @"Scroll Wheel Reversed"])
         reverseScrollWheel = -1.0;
@@ -14146,14 +14150,14 @@ static NSArray*	openSubSeriesArray = nil;
 + (unsigned int)_currentModifierFlags
 {
     unsigned int flags = 0;
-    UInt32 currentKeyModifiers = GetCurrentKeyModifiers();
-    if (currentKeyModifiers & cmdKey)
+    NSUInteger currentKeyModifiers = [NSEvent modifierFlags];
+    if (currentKeyModifiers & NSCommandKeyMask)
         flags |= NSCommandKeyMask;
-    if (currentKeyModifiers & shiftKey)
+    if (currentKeyModifiers & NSShiftKeyMask)
         flags |= NSShiftKeyMask;
-    if (currentKeyModifiers & optionKey)
+    if (currentKeyModifiers & NSAlternateKeyMask)
         flags |= NSAlternateKeyMask;
-    if (currentKeyModifiers & controlKey)
+    if (currentKeyModifiers & NSControlKeyMask)
         flags |= NSControlKeyMask;
     
     return flags;
@@ -14697,7 +14701,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateReportToolbarIcon:) name:NSOutlineViewSelectionDidChangeNotification object:databaseOutline];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateReportToolbarIcon:) name:NSOutlineViewSelectionIsChangingNotification object:databaseOutline];
-        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reportToolbarItemWillPopUp:) name:NSPopUpButtonWillPopUpNotification object:reportTemplatesListPopUpButton];
         
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(observeScrollerStyleDidChangeNotification:) name:@"NSPreferredScrollerStyleDidChangeNotification" object:nil];
         [self observeScrollerStyleDidChangeNotification:nil];
@@ -17398,118 +17401,7 @@ restart:
 
 -(IBAction)sendMail:(id)sender
 {
-#define kScriptName (@"Mail")
-#define kScriptType (@"scpt")
-#define kHandlerName (@"mail_images")
-#define noScriptErr 0
-        
-        /* Locate the script within the bundle */
-        NSString *scriptPath = [[NSBundle mainBundle] pathForResource: kScriptName ofType: kScriptType];
-        NSURL *scriptURL = [NSURL fileURLWithPath: scriptPath];
-        
-        NSDictionary *errorInfo = nil;
-        
-        /* Here I am using "initWithContentsOfURL:" to load a pre-compiled script, rather than using "initWithSource:" to load a text file with AppleScript source.  The main reason for this is that the latter technique seems to give rise to inexplicable -1708 (errAEEventNotHandled) errors on Jaguar. */
-        NSAppleScript *script = [[NSAppleScript alloc] initWithContentsOfURL: scriptURL error: &errorInfo];
-        
-        /* See if there were any errors loading the script */
-        if (!script || errorInfo)
-            NSLog(@"%@", errorInfo);
-        
-        /* We have to construct an AppleEvent descriptor to contain the arguments for our handler call.  Remember that this list is 1, rather than 0, based. */
-        NSAppleEventDescriptor *arguments = [[NSAppleEventDescriptor alloc] initListDescriptor];
-        [arguments insertDescriptor: [NSAppleEventDescriptor descriptorWithString: @"subject"] atIndex: 1];
-        [arguments insertDescriptor: [NSAppleEventDescriptor descriptorWithString: @"defaultaddress@mac.com"] atIndex: 2];
-        
-        NSAppleEventDescriptor *listFiles = [NSAppleEventDescriptor listDescriptor];
-        NSAppleEventDescriptor *listCaptions = [NSAppleEventDescriptor listDescriptor];
-        NSAppleEventDescriptor *listComments = [NSAppleEventDescriptor listDescriptor];
-        
-        [[NSUserDefaults standardUserDefaults] setValue: @"" forKey:@"defaultZIPPasswordForEmail"];
-        
-    redoZIPpassword:
-        
-        [NSApp beginSheet: ZIPpasswordWindow
-           modalForWindow: self.window
-            modalDelegate: nil
-           didEndSelector: nil
-              contextInfo: nil];
-        
-        int result = [NSApp runModalForWindow: ZIPpasswordWindow];
-        [ZIPpasswordWindow makeFirstResponder: nil];
-        
-        [NSApp endSheet: ZIPpasswordWindow];
-        [ZIPpasswordWindow orderOut: self];
-        
-        if( result == NSRunStoppedResponse)
-        {
-            if( [(NSString*) [[NSUserDefaults standardUserDefaults] valueForKey: @"defaultZIPPasswordForEmail"] length] < 8)
-            {
-                NSBeep();
-                goto redoZIPpassword;
-            }
-            
-            NSMutableArray *dicomFiles2Export = [NSMutableArray array];
-            NSMutableArray *filesToExport = [self filesForDatabaseOutlineSelection: dicomFiles2Export onlyImages: NO];
-            
-            [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/zipFilesForMail" error: nil];
-            [[NSFileManager defaultManager] createDirectoryAtPath: @"/tmp/zipFilesForMail" withIntermediateDirectories:YES attributes:nil error:NULL];
-            
-            BOOL encrypt = [[NSUserDefaults standardUserDefaults] boolForKey: @"encryptForExport"];
-            
-            [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"encryptForExport"];
-            
-            self.passwordForExportEncryption = [[NSUserDefaults standardUserDefaults] valueForKey: @"defaultZIPPasswordForEmail"];
-            
-            NSArray *r = [self exportDICOMFileInt: @"/tmp/zipFilesForMail/" files: filesToExport objects: dicomFiles2Export];
-            
-            [[NSUserDefaults standardUserDefaults] setBool: encrypt forKey: @"encryptForExport"];
-            
-            if( [r count] > 0)
-            {
-                int f = 0;
-                NSString *root = @"/tmp/zipFilesForMail";
-                NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath: root error: nil];
-                for( int x = 0; x < [files count] ; x++)
-                {
-                    if( [[[files objectAtIndex: x] pathExtension] isEqualToString: @"zip"])
-                    {
-                        [listFiles insertDescriptor: [NSAppleEventDescriptor descriptorWithString: [root stringByAppendingPathComponent: [files objectAtIndex: x]]] atIndex:1+f];
-                        [listCaptions insertDescriptor: [NSAppleEventDescriptor descriptorWithString: @""] atIndex:1+f];
-                        [listComments insertDescriptor: [NSAppleEventDescriptor descriptorWithString: @""] atIndex:1+f];
-                        f++;
-                    }
-                }
-                
-                [arguments insertDescriptor: [NSAppleEventDescriptor descriptorWithInt32: f] atIndex: 3];
-                [arguments insertDescriptor: listFiles atIndex: 4];
-                [arguments insertDescriptor: listCaptions atIndex: 5];
-                [arguments insertDescriptor: listComments atIndex: 6];
-                
-                [arguments insertDescriptor: [NSAppleEventDescriptor descriptorWithString: @"Cancel"] atIndex: 7];
-                
-                errorInfo = nil;
-                
-                /* Call the handler using the method in our special category */
-                NSAppleEventDescriptor *result = [script callHandler: kHandlerName withArguments: arguments errorInfo: &errorInfo];
-                
-                int scriptResult = [result int32Value];
-                
-                /* Check for errors in running the handler */
-                if (errorInfo)
-                {
-                    NSLog(@"%@", errorInfo);
-                }
-                /* Check the handler's return value */
-                else if (scriptResult != noScriptErr)
-                {
-                    NSRunAlertPanel(NSLocalizedString(@"Script Failure", @"Title on script failure window."), @"%@ %d", NSLocalizedString(@"OK", @""), nil, nil, NSLocalizedString(@"The script failed:", @"Message on script failure window."), scriptResult);
-                }
-            }
-        }
-        
-        [script release];
-        [arguments release];
+    NSLog(@"Email export is disabled: Mail integration has been removed.");
 }
 
 
@@ -17564,9 +17456,9 @@ restart:
                 NSString *reportURL = nil;
                 
                 if( [[path pathExtension] length])
-                    reportURL = [NSString stringWithFormat: @"%@/%@.%@", [self.database reportsDirPath], [Reports getUniqueFilename: s], [path pathExtension]];
+                    reportURL = [NSString stringWithFormat: @"%@/%@.%@", [self.database reportsDirPath], ReportFilenameForStudy(s), [path pathExtension]];
                 else
-                    reportURL = [NSString stringWithFormat: @"%@/%@", [self.database reportsDirPath], [Reports getUniqueFilename: s]];
+                    reportURL = [NSString stringWithFormat: @"%@/%@", [self.database reportsDirPath], ReportFilenameForStudy(s)];
                 
                 [[NSFileManager defaultManager] removeItemAtPath: reportURL error:NULL];
                 [[NSFileManager defaultManager] copyPath: path toPath: reportURL handler: nil];
@@ -19066,20 +18958,12 @@ restart:
 {
     NSIndexSet *index = [databaseOutline selectedRowIndexes];
     NSManagedObject *item = [databaseOutline itemAtRow:[index firstIndex]];
-    int reportsMode = [[[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSMODE"] intValue];
     
     if ([item isKindOfClass:[DicomSeries class]])
         item = [item valueForKey:@"study"];
     
     if( item)
     {
-
-        if( reportsMode == 0 && [[NSWorkspace sharedWorkspace] fullPathForApplication:@"Microsoft Word"] == nil) // Would absolutePathForAppBundleWithIdentifier be better here? (DDP)
-        {
-            NSRunAlertPanel( NSLocalizedString(@"Report Error", nil), NSLocalizedString(@"Microsoft Word is required to open/generate '.doc' reports. You can change it to TextEdit in the Preferences.", nil), nil, nil, nil);
-            return;
-        }
-        
         DicomStudy *studySelected = nil;
         
         if ([[item valueForKey: @"type"] isEqualToString:@"Study"])
@@ -19093,153 +18977,67 @@ restart:
         }
         else
         {
-            // *********************************************
-            //	PLUGINS
-            // *********************************************
-            
-            if( reportsMode == 3)
+            @try
             {
-                NSBundle *plugin = [[PluginManager reportPlugins] objectForKey: [[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSPLUGIN"]];
-                
-                if( plugin)
+                NSString *localReportFile = [studySelected valueForKey: @"reportURL"];
+
+                if( ![_database isLocal] && localReportFile)
                 {
-                    //					[checkBonjourUpToDateThreadLock lock];
-                    
-                    
-                    
-                    @try 
+                    DicomImage *reportSR = [studySelected reportImage];
+
+                    if( reportSR)
                     {
-                        NSLog(@"generate report with plugin");
-                        PluginFilter* filter = [[plugin principalClass] filter];
-                        
-                        [PluginManager startProtectForCrashWithFilter: filter];
-                        [filter createReportForStudy: studySelected];
-                        [PluginManager endProtectForCrash];
-                        
-                        NSLog(@"end generate report with plugin");
-                        //[filter report: studySelected action: @"openReport"];
-                    }
-                    @catch (NSException * e) 
-                    {
-                        N2LogExceptionWithStackTrace(e);
-                    }
-                    
-                    //					[checkBonjourUpToDateThreadLock unlock];
-                }
-                else
-                {
-                    NSRunAlertPanel( NSLocalizedString(@"Report Error", nil), NSLocalizedString(@"Report Plugin not available.", nil), nil, nil, nil);
-                    return;
-                }
-            }
-            else
-                // *********************************************
-                // REPORTS GENERATED AND HANDLED BY OSIRIX
-                // *********************************************
-            {
-                //				[checkBonjourUpToDateThreadLock lock];
-                
-                @try
-                {
-                    NSString *localReportFile = [studySelected valueForKey: @"reportURL"];
-                    
-                    if( ![_database isLocal] && localReportFile)
-                    {
-                        DicomImage *reportSR = [studySelected reportImage];
-                        
-                        if( reportSR)
+                        if( [[reportSR valueForKey:@"inDatabaseFolder"] boolValue])
                         {
-                            // Not modified on the 'bonjour client side'?
-                            if( [[reportSR valueForKey:@"inDatabaseFolder"] boolValue])
-                            {
-                                // The report was maybe changed on the server -> delete the report file
-                                if( localReportFile)
-                                    [[NSFileManager defaultManager] removeItemAtPath: localReportFile error: nil];
-                                
-                                // The report was maybe changed on the server -> delete the DICOM SR file
-                                if( [reportSR valueForKey: @"completePath"])
-                                    [[NSFileManager defaultManager] removeItemAtPath: [reportSR valueForKey: @"completePath"] error: nil];
-                            }
-                            
-                            NSString *reportPath = [DicomDatabase extractReportSR: [reportSR completePathResolved] contentDate: [reportSR valueForKey: @"date"]];
-                            
-                            if( reportPath)
-                            {
-                                if( [reportPath length] > 8 && ([reportPath hasPrefix: @"http://"] || [reportPath hasPrefix: @"https://"]))
-                                {
-                                    NSLog( @"**** generateReport: We should not be here....");
-                                }
-                                else // It's a file!
-                                {
-                                    if( localReportFile)
-                                    {
-                                        [[NSFileManager defaultManager] removeItemAtPath: localReportFile error: nil];
-                                        [[NSFileManager defaultManager] moveItemAtPath: reportPath toPath: localReportFile error: nil];
-                                    }
-                                }
-                            }
+                            if( localReportFile)
+                                [[NSFileManager defaultManager] removeItemAtPath: localReportFile error: nil];
+
+                            if( [reportSR valueForKey: @"completePath"])
+                                [[NSFileManager defaultManager] removeItemAtPath: [reportSR valueForKey: @"completePath"] error: nil];
                         }
-                    }
                     
-                    // Is there a Report URL ? If yes, open it; If no, create a new one
-                    if( localReportFile)
-                    {
-                        if( [[NSFileManager defaultManager] fileExistsAtPath: localReportFile])
-                        {
-                            if (reportsMode != 3)
-                            {
-                                [[NSWorkspace sharedWorkspace] openFile: localReportFile withApplication: nil andDeactivate:YES];
-                                [NSThread sleepForTimeInterval: 1];
-                            }
-                        }
-                        else
-                        {
-                            NSLog( @"***** reportURL contains a path, but file doesnt exist.");
-                            
-                            if( NSRunInformationalAlertPanel( NSLocalizedString(@"Report", nil),
-                                                             NSLocalizedString(@"Report file is not found... Should I create a new one?", nil),
-                                                             NSLocalizedString(@"OK",nil),
-                                                             NSLocalizedString(@"Cancel",nil),
-                                                             nil) == NSAlertDefaultReturn)
-                                localReportFile = nil;
-                        }
-                    }
+                        NSString *reportPath = [DicomDatabase extractReportSR: [reportSR completePathResolved] contentDate: [reportSR valueForKey: @"date"]];
                     
-                    if( localReportFile == nil)
-                    {
-                        NSLog( @"New report for: %@", [studySelected valueForKey: @"name"]);
-                        
-                        if (reportsMode != 3)
+                        if( reportPath)
                         {
-                            Reports	*report = [[Reports alloc] init];
-                            if ([[sender class] isEqualTo:[reportTemplatesListPopUpButton class]])
-                                [report setTemplateName:[[sender selectedItem] title]];
-                            
-                            if (![_database isLocal])
-                                [report createNewReport: studySelected destination: [NSString stringWithFormat: @"%@/TEMP.noindex/", [self documentsDirectory]] type:reportsMode];
+                            if( [reportPath length] > 8 && ([reportPath hasPrefix: @"http://"] || [reportPath hasPrefix: @"https://"]))
+                                NSLog( @"**** generateReport: We should not be here....");
                             else
-                                [report createNewReport: studySelected destination: [NSString stringWithFormat: @"%@/", [self.database reportsDirPath]] type:reportsMode];
-                            
-                            localReportFile = [studySelected valueForKey: @"reportURL"];
-                            
-                            [report release];
+                            {
+                                if( localReportFile)
+                                {
+                                    [[NSFileManager defaultManager] removeItemAtPath: localReportFile error: nil];
+                                    [[NSFileManager defaultManager] moveItemAtPath: reportPath toPath: localReportFile error: nil];
+                                }
+                            }
                         }
                     }
+                }
                     
+                if( localReportFile)
+                {
                     if( [[NSFileManager defaultManager] fileExistsAtPath: localReportFile])
                     {
-                        NSDictionary *fattrs = [[NSFileManager defaultManager] fileAttributesAtPath:localReportFile traverseLink:YES];
-                        NSMutableDictionary *d = [NSMutableDictionary dictionaryWithObjectsAndKeys: studySelected, @"study", [fattrs objectForKey:NSFileModificationDate], @"date", nil];
-                        
-                        [reportFilesToCheck setObject: d forKey: [localReportFile lastPathComponent]];
+                        [[NSWorkspace sharedWorkspace] openFile: localReportFile withApplication: nil andDeactivate:YES];
+                        [NSThread sleepForTimeInterval: 1];
+                    }
+                    else
+                    {
+                        NSLog( @"***** reportURL contains a path, but file doesnt exist.");
                     }
                 }
-                @catch (NSException * e)
+
+                if( [[NSFileManager defaultManager] fileExistsAtPath: localReportFile])
                 {
-                    N2LogExceptionWithStackTrace(e);
+                    NSDictionary *fattrs = [[NSFileManager defaultManager] fileAttributesAtPath:localReportFile traverseLink:YES];
+                    NSMutableDictionary *d = [NSMutableDictionary dictionaryWithObjectsAndKeys: studySelected, @"study", [fattrs objectForKey:NSFileModificationDate], @"date", nil];
+
+                    [reportFilesToCheck setObject: d forKey: [localReportFile lastPathComponent]];
                 }
-                
-                //				[checkBonjourUpToDateThreadLock unlock];
+            }
+            @catch (NSException * e)
+            {
+                N2LogExceptionWithStackTrace(e);
             }
         }
     }
@@ -19250,36 +19048,8 @@ restart:
 
 - (NSImage*) reportIcon
 {
-    NSString *iconName = @"Report.icns";
-    switch( [[[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSMODE"] intValue])
-    {
-        case 0: 
-            // M$ Word
-            iconName = @"ReportWord.icns";
-            reportToolbarItemType = 0;
-            break;
-        case 1: 
-            // TextEdit (RTF)
-            
-            iconName = @"ReportRTF.icns";
-            reportToolbarItemType = 1;
-            break;
-        case 2:
-            // Pages.app
-            
-            iconName = @"ReportPages.icns";
-            reportToolbarItemType = 2;
-            break;
-        case 5:
-            //	OpenOffice.app / LibreOffice.app
-            //	iconName = @"ReportOO.icns";
-            reportToolbarItemType = 3;
-            break;
-        default:
-            reportToolbarItemType = 3;
-            break;
-    }
-    return [NSImage imageNamed:iconName];
+    reportToolbarItemType = 3;
+    return [NSImage imageNamed:@"Report.icns"];
 }
 
 - (void)updateReportToolbarIcon: (NSNotification *)note
@@ -19314,16 +19084,6 @@ restart:
 {
     @try
     {
-        NSMutableArray* templatesArray = nil;
-        switch ([[[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSMODE"] intValue]) {
-            case 2:
-                templatesArray = [Reports pagesTemplatesList];
-                break;
-            case 0:
-                templatesArray = [Reports wordTemplatesList];
-                break;
-        }
-        
         NSIndexSet* index = [databaseOutline selectedRowIndexes];
         NSManagedObject	*selectedItem = [databaseOutline itemAtRow:[index firstIndex]];
         DicomStudy* studySelected;
@@ -19332,41 +19092,22 @@ restart:
         else
             studySelected = [selectedItem valueForKey:@"study"];
         
-        if (!studySelected.reportURL && templatesArray.count > 1)
+        NSImage* icon = nil;
+
+        if (studySelected.reportURL)
         {
-            switch ([[[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSMODE"] intValue]) {
-                case 2:
-                    [reportTemplatesImageView setImage:[NSImage imageNamed:@"ReportPages"]];
-                    break;
-                case 0:
-                    [reportTemplatesImageView setImage:[NSImage imageNamed:@"ReportWord"]];
-                    break;
-            }
-            
-            HorosBrowserSetToolbarItemSizedView(item, reportTemplatesView);
-            
-            
-            reportToolbarItemType = -1;
+            if ([studySelected.reportURL hasPrefix: @"http://"] || [studySelected.reportURL hasPrefix: @"https://"])
+                icon = [[NSWorkspace sharedWorkspace] iconForFileType:@"download"];
+            else if ([[NSFileManager defaultManager] fileExistsAtPath:studySelected.reportURL])
+                icon = [[NSWorkspace sharedWorkspace] iconForFile:studySelected.reportURL];
+            if (icon)
+                reportToolbarItemType = [NSDate timeIntervalSinceReferenceDate];
         }
-        else
-        {
-            NSImage* icon = nil;
             
-            if (studySelected.reportURL)
-            {
-                if ([studySelected.reportURL hasPrefix: @"http://"] || [studySelected.reportURL hasPrefix: @"https://"])
-                    icon = [[NSWorkspace sharedWorkspace] iconForFileType:@"download"]; // Safari document
-                else if ([[NSFileManager defaultManager] fileExistsAtPath:studySelected.reportURL])
-                    icon = [[NSWorkspace sharedWorkspace] iconForFile:studySelected.reportURL];
-                if (icon)
-                    reportToolbarItemType = [NSDate timeIntervalSinceReferenceDate]; // To force the update
-            }
+        if (!icon)
+            icon = [self reportIcon];
             
-            if (!icon)
-                icon = [self reportIcon];	// Keep this line! Because item can be nil! see updateReportToolbarIcon function
-            
-            [item setImage:icon];
-        }
+        [item setImage:icon];
     }
     @catch (NSException * e)
     {
@@ -19374,26 +19115,6 @@ restart:
     }
 }
 
-
-- (void)reportToolbarItemWillPopUp: (NSNotification *)notif
-{
-    if ([[notif object] isEqualTo:reportTemplatesListPopUpButton])
-    {
-        [reportTemplatesListPopUpButton removeAllItems];
-        [reportTemplatesListPopUpButton addItemWithTitle:@""];
-        
-        switch ([[[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSMODE"] intValue]) {
-            case 2:
-                [reportTemplatesListPopUpButton addItemsWithTitles:[Reports pagesTemplatesList]];
-                break;
-            case 0:
-                [reportTemplatesListPopUpButton addItemsWithTitles:[Reports wordTemplatesList]];
-                break;
-        }
-        
-        [reportTemplatesListPopUpButton setAction:@selector(generateReport:)];
-    }
-}
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 

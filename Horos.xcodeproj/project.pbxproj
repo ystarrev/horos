@@ -2067,70 +2067,6 @@
 		183C864708563F3A000E6A68 /* SRFlyThruAdapter.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = SRFlyThruAdapter.m; path = Horos/Sources/SRFlyThruAdapter.m; sourceTree = SOURCE_ROOT; };
 		183C864808563F3A000E6A68 /* VRFlyThruAdapter.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = VRFlyThruAdapter.h; path = Horos/Sources/VRFlyThruAdapter.h; sourceTree = SOURCE_ROOT; };
 		183C864908563F3A000E6A68 /* VRFlyThruAdapter.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = VRFlyThruAdapter.m; path = Horos/Sources/VRFlyThruAdapter.m; sourceTree = SOURCE_ROOT; };
-		200BBAF320AA3BCA002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/O2HMigrationAssistant.xib"; sourceTree = "<group>"; };
-		200BBAF420AA3BCA002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIPACSOnDemand.xib"; sourceTree = "<group>"; };
-		200BBAF520AA3BCB002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIWebSharingPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAF620AA3BCB002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIViewerPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAF720AA3BCB002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIPETPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAF820AA3BCC002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSILocationsPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAF920AA3BCC002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIListenerPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAFA20AA3BCC002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIHotKeysPref.xib"; sourceTree = "<group>"; };
-		200BBAFB20AA3BCC002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIHangingPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAFC20AA3BCD002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIGeneralPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAFD20AA3BCD002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIDatabasePreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBAFF20AA3BCD002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSICDPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBB0020AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/DiscMountedAskTheUserDialog.xib"; sourceTree = "<group>"; };
-		200BBB0120AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSIAutoroutingPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBB0220AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OSI3DPreferencePanePref.xib"; sourceTree = "<group>"; };
-		200BBB0320AA3BCE002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AYDicomPrintPref.xib"; sourceTree = "<group>"; };
-		200BBB0520AA3BCF002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/3DPosition.xib"; sourceTree = "<group>"; };
-		200BBB0620AA3BCF002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AnonymizationCustomTagPanel.xib"; sourceTree = "<group>"; };
-		200BBB0720AA3BCF002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AnonymizationPanel.xib"; sourceTree = "<group>"; };
-		200BBB0820AA3BCF002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AnonymizationSavePanel.xib"; sourceTree = "<group>"; };
-		200BBB0920AA3BCF002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AnonymizationTemplateNamePanel.xib"; sourceTree = "<group>"; };
-		200BBB0A20AA3BD0002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AnonymizationView.xib"; sourceTree = "<group>"; };
-		200BBB0B20AA3BD0002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/AYDicomPrint.xib"; sourceTree = "<group>"; };
-		200BBB0C20AA3BD0002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/BurnViewer.xib"; sourceTree = "<group>"; };
-		200BBB0D20AA3BD0002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/CalciumScoring.xib"; sourceTree = "<group>"; };
-		200BBB0E20AA3BD0002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/CPR.xib"; sourceTree = "<group>"; };
-		200BBB0F20AA3BD0002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/CustomIntervalPanel.xib"; sourceTree = "<group>"; };
-		200BBB1020AA3BD1002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Endoscopy.xib"; sourceTree = "<group>"; };
-		200BBB1120AA3BD1002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/FlyThru.xib"; sourceTree = "<group>"; };
-		200BBB1220AA3BD1002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Histogram.xib"; sourceTree = "<group>"; };
-		200BBB1320AA3BD1002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ICloudDriveDetector.xib"; sourceTree = "<group>"; };
-		200BBB1420AA3BD1002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ITKSegmentation.xib"; sourceTree = "<group>"; };
-		200BBB1520AA3BD2002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/LogWindow.xib"; sourceTree = "<group>"; };
-		200BBB1620AA3BD2002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Loupe.xib"; sourceTree = "<group>"; };
-		200BBB1720AA3BD2002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/MainMenu.xib"; sourceTree = "<group>"; };
-		200BBB1820AA3BD2002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/MPR.xib"; sourceTree = "<group>"; };
-		200BBB1920AA3BD3002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Navigator.xib"; sourceTree = "<group>"; };
-		200BBB1A20AA3BD3002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/OrthogonalMPR.xib"; sourceTree = "<group>"; };
-		200BBB1B20AA3BD3002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/PaletteBrush.xib"; sourceTree = "<group>"; };
-		200BBB1C20AA3BD3002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/PETCT.xib"; sourceTree = "<group>"; };
-		200BBB1D20AA3BD3002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Plot.xib"; sourceTree = "<group>"; };
-		200BBB1E20AA3BD3002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/PluginManager.xib"; sourceTree = "<group>"; };
-		200BBB1F20AA3BD4002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/PreferencesWindow.xib"; sourceTree = "<group>"; };
-		200BBB2020AA3BD4002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Query.xib"; sourceTree = "<group>"; };
-		200BBB2120AA3BD4002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/QuicktimeExport.xib"; sourceTree = "<group>"; };
-		200BBB2220AA3BD4002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ROI.xib"; sourceTree = "<group>"; };
-		200BBB2320AA3BD4002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ROIDefaults.xib"; sourceTree = "<group>"; };
-		200BBB2420AA3BD5002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ROIManager.xib"; sourceTree = "<group>"; };
-		200BBB2520AA3BD5002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ROIVolume.xib"; sourceTree = "<group>"; };
-		200BBB2620AA3BD5002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ROIVolumeManager.xib"; sourceTree = "<group>"; };
-		200BBB2720AA3BD5002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Send.xib"; sourceTree = "<group>"; };
-		200BBB2820AA3BD5002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/SmartAlbum.xib"; sourceTree = "<group>"; };
-		200BBB2920AA3BD6002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Splash.xib"; sourceTree = "<group>"; };
-		200BBB2A20AA3BD6002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/SR.xib"; sourceTree = "<group>"; };
-		200BBB2B20AA3BD6002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ThickSlab.xib"; sourceTree = "<group>"; };
-		200BBB2C20AA3BD6002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ThreadModalForWindow.xib"; sourceTree = "<group>"; };
-		200BBB2D20AA3BD6002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ThumbnailsList.xib"; sourceTree = "<group>"; };
-		200BBB2E20AA3BD7002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/ToolbarPanel.xib"; sourceTree = "<group>"; };
-		200BBB2F20AA3BD7002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Viewer.xib"; sourceTree = "<group>"; };
-		200BBB3020AA3BD7002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/VR.xib"; sourceTree = "<group>"; };
-		200BBB3120AA3BD7002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/Wait.xib"; sourceTree = "<group>"; };
-		200BBB3220AA3BD7002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/WaitRendering.xib"; sourceTree = "<group>"; };
-		200BBB3320AA3BD8002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = "ja-JP"; path = "ja-JP.lproj/XMLViewer.xib"; sourceTree = "<group>"; };
-		200BBB3420AA3BD8002914C4 /* ja-JP */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "ja-JP"; path = "ja-JP.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		29B97316FDCFA39411CA2CEA /* main.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = main.m; path = Horos/Sources/main.m; sourceTree = SOURCE_ROOT; };
 		29B97324FDCFA39411CA2CEA /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = /System/Library/Frameworks/AppKit.framework; sourceTree = "<absolute>"; };
 		29B97325FDCFA39411CA2CEA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = /System/Library/Frameworks/Foundation.framework; sourceTree = "<absolute>"; };
@@ -2204,7 +2140,7 @@
 		5912DCD6118EF447007F7D40 /* N2FlippedView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = N2FlippedView.h; path = Nitrogen/Sources/N2FlippedView.h; sourceTree = SOURCE_ROOT; };
 		5912DCD7118EF447007F7D40 /* N2FlippedView.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = N2FlippedView.mm; path = Nitrogen/Sources/N2FlippedView.mm; sourceTree = SOURCE_ROOT; };
 		59263540132E476B0055E3AB /* WebPortalDB 4.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "WebPortalDB 4.xcdatamodel"; sourceTree = "<group>"; };
-		5926822211CF60BD00CFA81F /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/ThreadModalForWindow.xib; sourceTree = "<group>"; };
+		5926822211CF60BD00CFA81F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ThreadModalForWindow.xib; sourceTree = "<group>"; };
 		5926823E11CF62DA00CFA81F /* ThreadCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ThreadCell.h; path = Horos/Sources/ThreadCell.h; sourceTree = SOURCE_ROOT; };
 		5926823F11CF62DA00CFA81F /* ThreadCell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ThreadCell.mm; path = Horos/Sources/ThreadCell.mm; sourceTree = SOURCE_ROOT; };
 		5926824011CF62DA00CFA81F /* ThreadModalForWindowController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ThreadModalForWindowController.h; path = Horos/Sources/ThreadModalForWindowController.h; sourceTree = SOURCE_ROOT; };
@@ -2280,11 +2216,11 @@
 		5997895C11B7B3E9002DB107 /* AnonymizationViewController.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = AnonymizationViewController.mm; path = Horos/Sources/AnonymizationViewController.mm; sourceTree = SOURCE_ROOT; };
 		5997896D11B7B402002DB107 /* PlusButton.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = PlusButton.png; sourceTree = "<group>"; };
 		5997896F11B7B40B002DB107 /* MinusButton.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = MinusButton.png; sourceTree = "<group>"; };
-		5997897211B7B423002DB107 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/AnonymizationCustomTagPanel.xib; sourceTree = "<group>"; };
-		5997897411B7B423002DB107 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/AnonymizationPanel.xib; sourceTree = "<group>"; };
-		5997897611B7B423002DB107 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/AnonymizationSavePanel.xib; sourceTree = "<group>"; };
-		5997897811B7B423002DB107 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/AnonymizationTemplateNamePanel.xib; sourceTree = "<group>"; };
-		5997897A11B7B423002DB107 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/AnonymizationView.xib; sourceTree = "<group>"; };
+		5997897211B7B423002DB107 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/AnonymizationCustomTagPanel.xib; sourceTree = "<group>"; };
+		5997897411B7B423002DB107 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/AnonymizationPanel.xib; sourceTree = "<group>"; };
+		5997897611B7B423002DB107 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/AnonymizationSavePanel.xib; sourceTree = "<group>"; };
+		5997897811B7B423002DB107 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/AnonymizationTemplateNamePanel.xib; sourceTree = "<group>"; };
+		5997897A11B7B423002DB107 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/AnonymizationView.xib; sourceTree = "<group>"; };
 		5997898011B7B461002DB107 /* N2HexadecimalNumberFormatter.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = N2HexadecimalNumberFormatter.h; path = Nitrogen/Sources/N2HexadecimalNumberFormatter.h; sourceTree = SOURCE_ROOT; };
 		5997898111B7B461002DB107 /* N2HexadecimalNumberFormatter.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = N2HexadecimalNumberFormatter.mm; path = Nitrogen/Sources/N2HexadecimalNumberFormatter.mm; sourceTree = SOURCE_ROOT; };
 		5997898311B7B40C002DB107 /* MetalToolbar.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = MetalToolbar.png; sourceTree = "<group>"; };
@@ -2304,7 +2240,7 @@
 		59B696631337C957009356ED /* N2DirectoryEnumerator.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = N2DirectoryEnumerator.mm; path = Nitrogen/Sources/N2DirectoryEnumerator.mm; sourceTree = SOURCE_ROOT; };
 		59BDEF3F117DA2DF007F1F2C /* NSUserDefaultsController+OsiriX.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "NSUserDefaultsController+OsiriX.h"; path = "Horos/Sources/NSUserDefaultsController+OsiriX.h"; sourceTree = SOURCE_ROOT; };
 		59BDEF40117DA2DF007F1F2C /* NSUserDefaultsController+OsiriX.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "NSUserDefaultsController+OsiriX.mm"; path = "Horos/Sources/NSUserDefaultsController+OsiriX.mm"; sourceTree = SOURCE_ROOT; };
-		59BDF105117EE61E007F1F2C /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/PreferencesWindow.xib; sourceTree = "<group>"; };
+		59BDF105117EE61E007F1F2C /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/PreferencesWindow.xib; sourceTree = "<group>"; };
 		59BDF110117EE6A1007F1F2C /* PreferencesWindowController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = PreferencesWindowController.h; path = Horos/Sources/PreferencesWindowController.h; sourceTree = SOURCE_ROOT; };
 		59BDF111117EE6A1007F1F2C /* PreferencesWindowController.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = PreferencesWindowController.mm; path = Horos/Sources/PreferencesWindowController.mm; sourceTree = SOURCE_ROOT; };
 		59BDF11C117EE72C007F1F2C /* PreferencesWindowController+DCMTK.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "PreferencesWindowController+DCMTK.h"; path = "Horos/Sources/PreferencesWindowController+DCMTK.h"; sourceTree = SOURCE_ROOT; };
@@ -2426,7 +2362,7 @@
 		71BC461B1F272CA400FD6CCF /* Scripts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Scripts; sourceTree = "<group>"; };
 		71C99EA41D1A7E9F00208F3B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Horos/Info.plist; sourceTree = "<group>"; };
 		71CE3C18157F489C00AC0112 /* List.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = List.pdf; sourceTree = "<group>"; };
-		71E6C0811FB5943B00FF75B6 /* en */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = en; path = en.lproj/O2HMigrationAssistant.xib; sourceTree = "<group>"; };
+		71E6C0811FB5943B00FF75B6 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/O2HMigrationAssistant.xib; sourceTree = "<group>"; };
 		71E6C0881FB5995100FF75B6 /* BlackBody.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = BlackBody.plist; sourceTree = "<group>"; };
 		71E6C0891FB5995100FF75B6 /* VR Muscles-Bones.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "VR Muscles-Bones.plist"; sourceTree = "<group>"; };
 		71E6C08A1FB5995100FF75B6 /* PPU Viridis.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "PPU Viridis.plist"; sourceTree = "<group>"; };
@@ -2573,7 +2509,7 @@
 		843F847A12439E00004FBBF6 /* AYDicomPrintPref.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = AYDicomPrintPref.h; path = "Preference Panes/AYDicomPrintPreferencePane/AYDicomPrintPref.h"; sourceTree = SOURCE_ROOT; };
 		844003990E8CF99500A00EBD /* dciodvfy */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = dciodvfy; path = ../../Binaries/dciodvfy; sourceTree = "<group>"; };
 		844719AF0FD8EF50003BFDF8 /* DCM.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = DCM.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		848327AA15ED08F3003BAEEB /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/CustomIntervalPanel.xib; sourceTree = "<group>"; };
+		848327AA15ED08F3003BAEEB /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/CustomIntervalPanel.xib; sourceTree = "<group>"; };
 		8483ABA50E1BE33900C21B31 /* crossCursor.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; name = crossCursor.tif; path = Cursors/crossCursor.tif; sourceTree = "<group>"; };
 		848CE28E145AC9AE00BEB249 /* curvedPath.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = curvedPath.icns; sourceTree = "<group>"; };
 		849B44BA1552B2D800194728 /* OsiriXNotificationCenter.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OsiriXNotificationCenter.m; sourceTree = "<group>"; };
@@ -2631,7 +2567,7 @@
 		994FABF01CEBF25800980A15 /* OnOffSwitchControlCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OnOffSwitchControlCell.m; sourceTree = "<group>"; };
 		994FABF51CEBFB8C00980A15 /* MiddleAlignedTextFieldCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MiddleAlignedTextFieldCell.h; sourceTree = "<group>"; };
 		994FABF61CEBFB8C00980A15 /* MiddleAlignedTextFieldCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = MiddleAlignedTextFieldCell.m; sourceTree = "<group>"; };
-		9952F26D2020C1010020CCD4 /* en */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = en; path = en.lproj/ICloudDriveDetector.xib; sourceTree = "<group>"; };
+		9952F26D2020C1010020CCD4 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ICloudDriveDetector.xib; sourceTree = "<group>"; };
 		9952F26F2020C21D0020CCD4 /* ICloudDriveDetector.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICloudDriveDetector.h; sourceTree = "<group>"; };
 		9952F2702020C21D0020CCD4 /* ICloudDriveDetector.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICloudDriveDetector.m; sourceTree = "<group>"; };
 		9953FE4E1BF540D000BD0DA6 /* vtkHorosFixedPointVolumeRayCastMIPHelper.cxx */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = vtkHorosFixedPointVolumeRayCastMIPHelper.cxx; sourceTree = "<group>"; };
@@ -2695,7 +2631,7 @@
 		A9333D240F56E6800097DAB7 /* MPRDCMView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = MPRDCMView.m; sourceTree = "<group>"; };
 		A9333D2F0F56E70B0097DAB7 /* MPRController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MPRController.h; sourceTree = "<group>"; };
 		A9333D300F56E70B0097DAB7 /* MPRController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; lineEnding = 0; path = MPRController.m; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objc; };
-		A9333D390F56E9670097DAB7 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/MPR.xib; sourceTree = "<group>"; };
+		A9333D390F56E9670097DAB7 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MPR.xib; sourceTree = "<group>"; };
 		A934924115CFC45D0029326E /* WLWW.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = WLWW.pdf; sourceTree = "<group>"; };
 		A93F03CB0F6FBCB900C45CCD /* MPRAxisHide.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = MPRAxisHide.png; sourceTree = "<group>"; };
 		A93F03CC0F6FBCB900C45CCD /* MPRAxisShow.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = MPRAxisShow.png; sourceTree = "<group>"; };
@@ -2754,7 +2690,7 @@
 		A98795D316DB9FD100926023 /* Unit Tests-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Unit Tests-Prefix.pch"; sourceTree = "<group>"; };
 		A98795DB16DBA51500926023 /* UnitTestingBase.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = UnitTestingBase.h; sourceTree = "<group>"; };
 		A98795DC16DBA51500926023 /* UnitTestingBase.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = UnitTestingBase.m; sourceTree = "<group>"; };
-		A987B3E00D5A069200BF89C0 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/Navigator.xib; sourceTree = "<group>"; };
+		A987B3E00D5A069200BF89C0 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Navigator.xib; sourceTree = "<group>"; };
 		A9897D970D4A142200BAC447 /* displayRGB.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = displayRGB.tif; sourceTree = "<group>"; };
 		A9897D980D4A142200BAC447 /* displayTotoku.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = displayTotoku.tif; sourceTree = "<group>"; };
 		A997B15610E0C412004C5BB1 /* SecurityInterface.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SecurityInterface.framework; path = System/Library/Frameworks/SecurityInterface.framework; sourceTree = SDKROOT; };
@@ -2800,7 +2736,7 @@
 		A9B411C10890496400913770 /* small_sharedSmartAlbum.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = small_sharedSmartAlbum.tif; sourceTree = "<group>"; };
 		A9B411EE0890498600913770 /* small_sharedAlbum.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = small_sharedAlbum.tif; sourceTree = "<group>"; };
 		A9B412D4089180A200913770 /* bonjour.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = bonjour.tif; sourceTree = "<group>"; };
-		A9C4D9460F72987900B5B9A1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/Loupe.xib; sourceTree = "<group>"; };
+		A9C4D9460F72987900B5B9A1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Loupe.xib; sourceTree = "<group>"; };
 		A9C5496310FF2C9F0026EA70 /* DICOMTLS.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DICOMTLS.h; sourceTree = "<group>"; };
 		A9C5496410FF2C9F0026EA70 /* DICOMTLS.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DICOMTLS.m; sourceTree = "<group>"; };
 		A9C63A9B09BD7C5D00E312AE /* cerveau_icon.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = cerveau_icon.jpg; sourceTree = "<group>"; };
@@ -3225,7 +3161,7 @@
 		CE2808630B6B76730093E9D3 /* CalciumScoringWindowController.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = CalciumScoringWindowController.h; sourceTree = "<group>"; };
 		CE2808640B6B76730093E9D3 /* CalciumScoringWindowController.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = CalciumScoringWindowController.m; sourceTree = "<group>"; };
 		CE286C110964196C001A4573 /* English */ = {isa = PBXFileReference; fileEncoding = 10; lastKnownFileType = text.plist.strings; name = English; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
-		CE2AC2671830BEFB00C2B67B /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/ThickSlab.xib; sourceTree = "<group>"; };
+		CE2AC2671830BEFB00C2B67B /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ThickSlab.xib; sourceTree = "<group>"; };
 		CE2BFE56153B177C00037546 /* iPad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = iPad.png; sourceTree = "<group>"; };
 		CE3368571595888D00167676 /* WebPortalDB 7.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = "WebPortalDB 7.xcdatamodel"; sourceTree = "<group>"; };
 		CE373AA8173FEBBB009F60AC /* WADOXML.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WADOXML.h; sourceTree = "<group>"; };
@@ -3238,40 +3174,40 @@
 		CE3B7E631580F761003CB266 /* Quaternion.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = Quaternion.mm; sourceTree = "<group>"; };
 		CE3DDDAD0D8AC94C00AE9588 /* QueryOutlineView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = QueryOutlineView.h; sourceTree = "<group>"; };
 		CE3DDDAE0D8AC94C00AE9588 /* QueryOutlineView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = QueryOutlineView.m; sourceTree = "<group>"; };
-		CE3F98E50C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/SmartAlbum.xib; sourceTree = "<group>"; };
-		CE3F98E70C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/ROIVolumeManager.xib; sourceTree = "<group>"; };
-		CE3F98E90C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/PETCT.xib; sourceTree = "<group>"; };
-		CE3F98EB0C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/LogWindow.xib; sourceTree = "<group>"; };
-		CE3F98ED0C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/FlyThru.xib; sourceTree = "<group>"; };
-		CE3F98F10C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/ToolbarPanel.xib; sourceTree = "<group>"; };
-		CE3F98FD0C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/Splash.xib; sourceTree = "<group>"; };
-		CE3F98FF0C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/ROI.xib; sourceTree = "<group>"; };
-		CE3F99010C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/CalciumScoring.xib; sourceTree = "<group>"; };
-		CE3F99030C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/ROIManager.xib; sourceTree = "<group>"; };
-		CE3F99050C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/Send.xib; sourceTree = "<group>"; };
-		CE3F99070C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/OrthogonalMPR.xib; sourceTree = "<group>"; };
-		CE3F990B0C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/Endoscopy.xib; sourceTree = "<group>"; };
-		CE3F99110C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/ITKSegmentation.xib; sourceTree = "<group>"; };
-		CE3F99130C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/Query.xib; sourceTree = "<group>"; };
-		CE3F99150C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/Histogram.xib; sourceTree = "<group>"; };
-		CE3F99170C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/PluginManager.xib; sourceTree = "<group>"; };
-		CE3F991B0C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/WaitRendering.xib; sourceTree = "<group>"; };
-		CE3F991D0C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/Plot.xib; sourceTree = "<group>"; };
-		CE3F991F0C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/ROIVolume.xib; sourceTree = "<group>"; };
-		CE3F99270C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/PaletteBrush.xib; sourceTree = "<group>"; };
-		CE3F992D0C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/BurnViewer.xib; sourceTree = "<group>"; };
-		CE3F992F0C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/ROIDefaults.xib; sourceTree = "<group>"; };
-		CE3F99310C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/VR.xib; sourceTree = "<group>"; };
-		CE3F99330C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/QuicktimeExport.xib; sourceTree = "<group>"; };
-		CE3F99350C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/SR.xib; sourceTree = "<group>"; };
-		CE3F99370C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/Viewer.xib; sourceTree = "<group>"; };
-		CE3F99390C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/MainMenu.xib; sourceTree = "<group>"; };
-		CE3F993B0C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/Wait.xib; sourceTree = "<group>"; };
-		CE3F993F0C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/XMLViewer.xib; sourceTree = "<group>"; };
-		CE3F99410C84724B00CB38F1 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/AYDicomPrint.xib; sourceTree = "<group>"; };
+		CE3F98E50C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/SmartAlbum.xib; sourceTree = "<group>"; };
+		CE3F98E70C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ROIVolumeManager.xib; sourceTree = "<group>"; };
+		CE3F98E90C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/PETCT.xib; sourceTree = "<group>"; };
+		CE3F98EB0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/LogWindow.xib; sourceTree = "<group>"; };
+		CE3F98ED0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/FlyThru.xib; sourceTree = "<group>"; };
+		CE3F98F10C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ToolbarPanel.xib; sourceTree = "<group>"; };
+		CE3F98FD0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Splash.xib; sourceTree = "<group>"; };
+		CE3F98FF0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ROI.xib; sourceTree = "<group>"; };
+		CE3F99010C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/CalciumScoring.xib; sourceTree = "<group>"; };
+		CE3F99030C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ROIManager.xib; sourceTree = "<group>"; };
+		CE3F99050C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Send.xib; sourceTree = "<group>"; };
+		CE3F99070C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OrthogonalMPR.xib; sourceTree = "<group>"; };
+		CE3F990B0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Endoscopy.xib; sourceTree = "<group>"; };
+		CE3F99110C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ITKSegmentation.xib; sourceTree = "<group>"; };
+		CE3F99130C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Query.xib; sourceTree = "<group>"; };
+		CE3F99150C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Histogram.xib; sourceTree = "<group>"; };
+		CE3F99170C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/PluginManager.xib; sourceTree = "<group>"; };
+		CE3F991B0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/WaitRendering.xib; sourceTree = "<group>"; };
+		CE3F991D0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Plot.xib; sourceTree = "<group>"; };
+		CE3F991F0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ROIVolume.xib; sourceTree = "<group>"; };
+		CE3F99270C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/PaletteBrush.xib; sourceTree = "<group>"; };
+		CE3F992D0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/BurnViewer.xib; sourceTree = "<group>"; };
+		CE3F992F0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ROIDefaults.xib; sourceTree = "<group>"; };
+		CE3F99310C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/VR.xib; sourceTree = "<group>"; };
+		CE3F99330C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/QuicktimeExport.xib; sourceTree = "<group>"; };
+		CE3F99350C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/SR.xib; sourceTree = "<group>"; };
+		CE3F99370C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Viewer.xib; sourceTree = "<group>"; };
+		CE3F99390C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
+		CE3F993B0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Wait.xib; sourceTree = "<group>"; };
+		CE3F993F0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/XMLViewer.xib; sourceTree = "<group>"; };
+		CE3F99410C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/AYDicomPrint.xib; sourceTree = "<group>"; };
 		CE40ED510D86D54D007C6D49 /* ThreeDPositionController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ThreeDPositionController.h; sourceTree = "<group>"; };
 		CE40ED520D86D54D007C6D49 /* ThreeDPositionController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ThreeDPositionController.m; sourceTree = "<group>"; };
-		CE40ED580D86D634007C6D49 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/3DPosition.xib; sourceTree = "<group>"; };
+		CE40ED580D86D634007C6D49 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/3DPosition.xib; sourceTree = "<group>"; };
 		CE4700FB0CC51A6600ECF78A /* WindowLayoutManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WindowLayoutManager.h; sourceTree = "<group>"; };
 		CE4700FC0CC51A6600ECF78A /* WindowLayoutManager.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = WindowLayoutManager.m; sourceTree = "<group>"; };
 		CE49E2C50760B93500444203 /* Empty.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Empty.tif; sourceTree = "<group>"; };
@@ -3358,7 +3294,7 @@
 		CE9054EC12F5B64300263AB6 /* CPRStraightenedView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CPRStraightenedView.m; sourceTree = "<group>"; };
 		CE9054ED12F5B64300263AB6 /* CPRVolumeData.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CPRVolumeData.h; sourceTree = "<group>"; };
 		CE9054EE12F5B64300263AB6 /* CPRVolumeData.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CPRVolumeData.m; sourceTree = "<group>"; };
-		CE90551712F5B68100263AB6 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/CPR.xib; sourceTree = "<group>"; };
+		CE90551712F5B68100263AB6 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/CPR.xib; sourceTree = "<group>"; };
 		CE90D8C3095F5B48004FC7E2 /* FlipData.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = FlipData.tif; sourceTree = "<group>"; };
 		CE91370518B51E9C00BDF7F8 /* ExportROIAndKeyImages.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = ExportROIAndKeyImages.tif; sourceTree = "<group>"; };
 		CE94FC001053FFD3006D92E4 /* CurveFitter.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CurveFitter.h; sourceTree = "<group>"; };
@@ -3464,7 +3400,7 @@
 		CEEB5CCA0CCDD161008803E2 /* Centerline.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Centerline.tif; sourceTree = "<group>"; };
 		CEEDA35306A061EB00DEAB22 /* ThickSlabVR.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ThickSlabVR.h; sourceTree = "<group>"; };
 		CEEDA35406A061EB00DEAB22 /* ThickSlabVR.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ThickSlabVR.mm; sourceTree = "<group>"; };
-		CEF09316182D23B20020C70A /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = en.lproj/ThumbnailsList.xib; sourceTree = "<group>"; };
+		CEF09316182D23B20020C70A /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ThumbnailsList.xib; sourceTree = "<group>"; };
 		CEF0E5FF06AEF326001FF9E5 /* Mailer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Mailer.h; sourceTree = "<group>"; };
 		CEF0E60006AEF326001FF9E5 /* Mailer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = Mailer.m; sourceTree = "<group>"; };
 		CEF0E6DA06AEF5CB001FF9E5 /* Carbon.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Carbon.framework; path = /System/Library/Frameworks/Carbon.framework; sourceTree = "<absolute>"; };
@@ -6841,7 +6777,6 @@
 				sv,
 				zh_TW,
 				en,
-				"ja-JP",
 				fr,
 				es,
 				Base,
@@ -8674,8 +8609,7 @@
 		5926822111CF60BD00CFA81F /* ThreadModalForWindow.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				5926822211CF60BD00CFA81F /* English */,
-				200BBB2C20AA3BD6002914C4 /* ja-JP */,
+				5926822211CF60BD00CFA81F /* Base */,
 			);
 			name = ThreadModalForWindow.xib;
 			sourceTree = "<group>";
@@ -8683,8 +8617,7 @@
 		5997897111B7B422002DB107 /* AnonymizationCustomTagPanel.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				5997897211B7B423002DB107 /* English */,
-				200BBB0620AA3BCF002914C4 /* ja-JP */,
+				5997897211B7B423002DB107 /* Base */,
 			);
 			name = AnonymizationCustomTagPanel.xib;
 			sourceTree = "<group>";
@@ -8692,8 +8625,7 @@
 		5997897311B7B423002DB107 /* AnonymizationPanel.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				5997897411B7B423002DB107 /* English */,
-				200BBB0720AA3BCF002914C4 /* ja-JP */,
+				5997897411B7B423002DB107 /* Base */,
 			);
 			name = AnonymizationPanel.xib;
 			sourceTree = "<group>";
@@ -8701,8 +8633,7 @@
 		5997897511B7B423002DB107 /* AnonymizationSavePanel.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				5997897611B7B423002DB107 /* English */,
-				200BBB0820AA3BCF002914C4 /* ja-JP */,
+				5997897611B7B423002DB107 /* Base */,
 			);
 			name = AnonymizationSavePanel.xib;
 			sourceTree = "<group>";
@@ -8710,8 +8641,7 @@
 		5997897711B7B423002DB107 /* AnonymizationTemplateNamePanel.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				5997897811B7B423002DB107 /* English */,
-				200BBB0920AA3BCF002914C4 /* ja-JP */,
+				5997897811B7B423002DB107 /* Base */,
 			);
 			name = AnonymizationTemplateNamePanel.xib;
 			sourceTree = "<group>";
@@ -8719,8 +8649,7 @@
 		5997897911B7B423002DB107 /* AnonymizationView.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				5997897A11B7B423002DB107 /* English */,
-				200BBB0A20AA3BD0002914C4 /* ja-JP */,
+				5997897A11B7B423002DB107 /* Base */,
 			);
 			name = AnonymizationView.xib;
 			sourceTree = "<group>";
@@ -8728,8 +8657,7 @@
 		59BDF104117EE61E007F1F2C /* PreferencesWindow.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				59BDF105117EE61E007F1F2C /* English */,
-				200BBB1F20AA3BD4002914C4 /* ja-JP */,
+				59BDF105117EE61E007F1F2C /* Base */,
 			);
 			name = PreferencesWindow.xib;
 			sourceTree = "<group>";
@@ -8737,7 +8665,6 @@
 		71512E97152349E500B87012 /* DiscMountedAskTheUserDialog.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBB0020AA3BCE002914C4 /* ja-JP */,
 				8CC299DF2F3158B600669578 /* Base */,
 			);
 			name = DiscMountedAskTheUserDialog.xib;
@@ -8746,8 +8673,7 @@
 		71E6C0821FB5943B00FF75B6 /* O2HMigrationAssistant.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				71E6C0811FB5943B00FF75B6 /* en */,
-				200BBAF320AA3BCA002914C4 /* ja-JP */,
+				71E6C0811FB5943B00FF75B6 /* Base */,
 			);
 			name = O2HMigrationAssistant.xib;
 			path = Horos/Resources;
@@ -8756,8 +8682,7 @@
 		848327A915ED08F3003BAEEB /* CustomIntervalPanel.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				848327AA15ED08F3003BAEEB /* English */,
-				200BBB0F20AA3BD0002914C4 /* ja-JP */,
+				848327AA15ED08F3003BAEEB /* Base */,
 			);
 			name = CustomIntervalPanel.xib;
 			sourceTree = "<group>";
@@ -8765,8 +8690,7 @@
 		9952F26C2020C1010020CCD4 /* ICloudDriveDetector.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				9952F26D2020C1010020CCD4 /* en */,
-				200BBB1320AA3BD1002914C4 /* ja-JP */,
+				9952F26D2020C1010020CCD4 /* Base */,
 			);
 			name = ICloudDriveDetector.xib;
 			sourceTree = "<group>";
@@ -8774,8 +8698,7 @@
 		A9333D380F56E9670097DAB7 /* MPR.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				A9333D390F56E9670097DAB7 /* English */,
-				200BBB1820AA3BD2002914C4 /* ja-JP */,
+				A9333D390F56E9670097DAB7 /* Base */,
 			);
 			name = MPR.xib;
 			sourceTree = "<group>";
@@ -8783,8 +8706,7 @@
 		A987B3DF0D5A069200BF89C0 /* Navigator.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				A987B3E00D5A069200BF89C0 /* English */,
-				200BBB1920AA3BD3002914C4 /* ja-JP */,
+				A987B3E00D5A069200BF89C0 /* Base */,
 			);
 			name = Navigator.xib;
 			sourceTree = "<group>";
@@ -8792,8 +8714,7 @@
 		A9C4D9450F72987900B5B9A1 /* Loupe.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				A9C4D9460F72987900B5B9A1 /* English */,
-				200BBB1620AA3BD2002914C4 /* ja-JP */,
+				A9C4D9460F72987900B5B9A1 /* Base */,
 			);
 			name = Loupe.xib;
 			sourceTree = "<group>";
@@ -8802,7 +8723,6 @@
 			isa = PBXVariantGroup;
 			children = (
 				CE286C110964196C001A4573 /* English */,
-				200BBB3420AA3BD8002914C4 /* ja-JP */,
 			);
 			name = Localizable.strings;
 			sourceTree = "<group>";
@@ -8810,8 +8730,7 @@
 		CE2AC2661830BEFB00C2B67B /* ThickSlab.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE2AC2671830BEFB00C2B67B /* English */,
-				200BBB2B20AA3BD6002914C4 /* ja-JP */,
+				CE2AC2671830BEFB00C2B67B /* Base */,
 			);
 			name = ThickSlab.xib;
 			sourceTree = "<group>";
@@ -8819,8 +8738,7 @@
 		CE3F98E40C84724B00CB38F1 /* SmartAlbum.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F98E50C84724B00CB38F1 /* English */,
-				200BBB2820AA3BD5002914C4 /* ja-JP */,
+				CE3F98E50C84724B00CB38F1 /* Base */,
 			);
 			name = SmartAlbum.xib;
 			sourceTree = "<group>";
@@ -8828,8 +8746,7 @@
 		CE3F98E60C84724B00CB38F1 /* ROIVolumeManager.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F98E70C84724B00CB38F1 /* English */,
-				200BBB2620AA3BD5002914C4 /* ja-JP */,
+				CE3F98E70C84724B00CB38F1 /* Base */,
 			);
 			name = ROIVolumeManager.xib;
 			sourceTree = "<group>";
@@ -8837,8 +8754,7 @@
 		CE3F98E80C84724B00CB38F1 /* PETCT.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F98E90C84724B00CB38F1 /* English */,
-				200BBB1C20AA3BD3002914C4 /* ja-JP */,
+				CE3F98E90C84724B00CB38F1 /* Base */,
 			);
 			name = PETCT.xib;
 			sourceTree = "<group>";
@@ -8846,8 +8762,7 @@
 		CE3F98EA0C84724B00CB38F1 /* LogWindow.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F98EB0C84724B00CB38F1 /* English */,
-				200BBB1520AA3BD2002914C4 /* ja-JP */,
+				CE3F98EB0C84724B00CB38F1 /* Base */,
 			);
 			name = LogWindow.xib;
 			sourceTree = "<group>";
@@ -8855,8 +8770,7 @@
 		CE3F98EC0C84724B00CB38F1 /* FlyThru.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F98ED0C84724B00CB38F1 /* English */,
-				200BBB1120AA3BD1002914C4 /* ja-JP */,
+				CE3F98ED0C84724B00CB38F1 /* Base */,
 			);
 			name = FlyThru.xib;
 			sourceTree = "<group>";
@@ -8864,8 +8778,7 @@
 		CE3F98F00C84724B00CB38F1 /* ToolbarPanel.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F98F10C84724B00CB38F1 /* English */,
-				200BBB2E20AA3BD7002914C4 /* ja-JP */,
+				CE3F98F10C84724B00CB38F1 /* Base */,
 			);
 			name = ToolbarPanel.xib;
 			sourceTree = "<group>";
@@ -8873,8 +8786,7 @@
 		CE3F98FC0C84724B00CB38F1 /* Splash.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F98FD0C84724B00CB38F1 /* English */,
-				200BBB2920AA3BD6002914C4 /* ja-JP */,
+				CE3F98FD0C84724B00CB38F1 /* Base */,
 			);
 			name = Splash.xib;
 			sourceTree = "<group>";
@@ -8882,8 +8794,7 @@
 		CE3F98FE0C84724B00CB38F1 /* ROI.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F98FF0C84724B00CB38F1 /* English */,
-				200BBB2220AA3BD4002914C4 /* ja-JP */,
+				CE3F98FF0C84724B00CB38F1 /* Base */,
 			);
 			name = ROI.xib;
 			sourceTree = "<group>";
@@ -8891,8 +8802,7 @@
 		CE3F99000C84724B00CB38F1 /* CalciumScoring.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99010C84724B00CB38F1 /* English */,
-				200BBB0D20AA3BD0002914C4 /* ja-JP */,
+				CE3F99010C84724B00CB38F1 /* Base */,
 			);
 			name = CalciumScoring.xib;
 			sourceTree = "<group>";
@@ -8900,8 +8810,7 @@
 		CE3F99020C84724B00CB38F1 /* ROIManager.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99030C84724B00CB38F1 /* English */,
-				200BBB2420AA3BD5002914C4 /* ja-JP */,
+				CE3F99030C84724B00CB38F1 /* Base */,
 			);
 			name = ROIManager.xib;
 			sourceTree = "<group>";
@@ -8909,8 +8818,7 @@
 		CE3F99040C84724B00CB38F1 /* Send.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99050C84724B00CB38F1 /* English */,
-				200BBB2720AA3BD5002914C4 /* ja-JP */,
+				CE3F99050C84724B00CB38F1 /* Base */,
 			);
 			name = Send.xib;
 			sourceTree = "<group>";
@@ -8918,8 +8826,7 @@
 		CE3F99060C84724B00CB38F1 /* OrthogonalMPR.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99070C84724B00CB38F1 /* English */,
-				200BBB1A20AA3BD3002914C4 /* ja-JP */,
+				CE3F99070C84724B00CB38F1 /* Base */,
 			);
 			name = OrthogonalMPR.xib;
 			sourceTree = "<group>";
@@ -8927,8 +8834,7 @@
 		CE3F990A0C84724B00CB38F1 /* Endoscopy.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F990B0C84724B00CB38F1 /* English */,
-				200BBB1020AA3BD1002914C4 /* ja-JP */,
+				CE3F990B0C84724B00CB38F1 /* Base */,
 			);
 			name = Endoscopy.xib;
 			sourceTree = "<group>";
@@ -8936,8 +8842,7 @@
 		CE3F99100C84724B00CB38F1 /* ITKSegmentation.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99110C84724B00CB38F1 /* English */,
-				200BBB1420AA3BD1002914C4 /* ja-JP */,
+				CE3F99110C84724B00CB38F1 /* Base */,
 			);
 			name = ITKSegmentation.xib;
 			sourceTree = "<group>";
@@ -8945,8 +8850,7 @@
 		CE3F99120C84724B00CB38F1 /* Query.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99130C84724B00CB38F1 /* English */,
-				200BBB2020AA3BD4002914C4 /* ja-JP */,
+				CE3F99130C84724B00CB38F1 /* Base */,
 			);
 			name = Query.xib;
 			sourceTree = "<group>";
@@ -8954,8 +8858,7 @@
 		CE3F99140C84724B00CB38F1 /* Histogram.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99150C84724B00CB38F1 /* English */,
-				200BBB1220AA3BD1002914C4 /* ja-JP */,
+				CE3F99150C84724B00CB38F1 /* Base */,
 			);
 			name = Histogram.xib;
 			sourceTree = "<group>";
@@ -8963,8 +8866,7 @@
 		CE3F99160C84724B00CB38F1 /* PluginManager.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99170C84724B00CB38F1 /* English */,
-				200BBB1E20AA3BD3002914C4 /* ja-JP */,
+				CE3F99170C84724B00CB38F1 /* Base */,
 			);
 			name = PluginManager.xib;
 			sourceTree = "<group>";
@@ -8972,8 +8874,7 @@
 		CE3F991A0C84724B00CB38F1 /* WaitRendering.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F991B0C84724B00CB38F1 /* English */,
-				200BBB3220AA3BD7002914C4 /* ja-JP */,
+				CE3F991B0C84724B00CB38F1 /* Base */,
 			);
 			name = WaitRendering.xib;
 			sourceTree = "<group>";
@@ -8981,8 +8882,7 @@
 		CE3F991C0C84724B00CB38F1 /* Plot.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F991D0C84724B00CB38F1 /* English */,
-				200BBB1D20AA3BD3002914C4 /* ja-JP */,
+				CE3F991D0C84724B00CB38F1 /* Base */,
 			);
 			name = Plot.xib;
 			sourceTree = "<group>";
@@ -8990,8 +8890,7 @@
 		CE3F991E0C84724B00CB38F1 /* ROIVolume.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F991F0C84724B00CB38F1 /* English */,
-				200BBB2520AA3BD5002914C4 /* ja-JP */,
+				CE3F991F0C84724B00CB38F1 /* Base */,
 			);
 			name = ROIVolume.xib;
 			sourceTree = "<group>";
@@ -8999,8 +8898,7 @@
 		CE3F99260C84724B00CB38F1 /* PaletteBrush.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99270C84724B00CB38F1 /* English */,
-				200BBB1B20AA3BD3002914C4 /* ja-JP */,
+				CE3F99270C84724B00CB38F1 /* Base */,
 			);
 			name = PaletteBrush.xib;
 			sourceTree = "<group>";
@@ -9008,8 +8906,7 @@
 		CE3F992C0C84724B00CB38F1 /* BurnViewer.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F992D0C84724B00CB38F1 /* English */,
-				200BBB0C20AA3BD0002914C4 /* ja-JP */,
+				CE3F992D0C84724B00CB38F1 /* Base */,
 			);
 			name = BurnViewer.xib;
 			sourceTree = "<group>";
@@ -9017,8 +8914,7 @@
 		CE3F992E0C84724B00CB38F1 /* ROIDefaults.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F992F0C84724B00CB38F1 /* English */,
-				200BBB2320AA3BD4002914C4 /* ja-JP */,
+				CE3F992F0C84724B00CB38F1 /* Base */,
 			);
 			name = ROIDefaults.xib;
 			sourceTree = "<group>";
@@ -9026,8 +8922,7 @@
 		CE3F99300C84724B00CB38F1 /* VR.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99310C84724B00CB38F1 /* English */,
-				200BBB3020AA3BD7002914C4 /* ja-JP */,
+				CE3F99310C84724B00CB38F1 /* Base */,
 			);
 			name = VR.xib;
 			sourceTree = "<group>";
@@ -9035,8 +8930,7 @@
 		CE3F99320C84724B00CB38F1 /* QuicktimeExport.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99330C84724B00CB38F1 /* English */,
-				200BBB2120AA3BD4002914C4 /* ja-JP */,
+				CE3F99330C84724B00CB38F1 /* Base */,
 			);
 			name = QuicktimeExport.xib;
 			sourceTree = "<group>";
@@ -9044,8 +8938,7 @@
 		CE3F99340C84724B00CB38F1 /* SR.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99350C84724B00CB38F1 /* English */,
-				200BBB2A20AA3BD6002914C4 /* ja-JP */,
+				CE3F99350C84724B00CB38F1 /* Base */,
 			);
 			name = SR.xib;
 			sourceTree = "<group>";
@@ -9053,8 +8946,7 @@
 		CE3F99360C84724B00CB38F1 /* Viewer.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99370C84724B00CB38F1 /* English */,
-				200BBB2F20AA3BD7002914C4 /* ja-JP */,
+				CE3F99370C84724B00CB38F1 /* Base */,
 			);
 			name = Viewer.xib;
 			sourceTree = "<group>";
@@ -9062,8 +8954,7 @@
 		CE3F99380C84724B00CB38F1 /* MainMenu.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99390C84724B00CB38F1 /* English */,
-				200BBB1720AA3BD2002914C4 /* ja-JP */,
+				CE3F99390C84724B00CB38F1 /* Base */,
 			);
 			name = MainMenu.xib;
 			sourceTree = "<group>";
@@ -9071,8 +8962,7 @@
 		CE3F993A0C84724B00CB38F1 /* Wait.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F993B0C84724B00CB38F1 /* English */,
-				200BBB3120AA3BD7002914C4 /* ja-JP */,
+				CE3F993B0C84724B00CB38F1 /* Base */,
 			);
 			name = Wait.xib;
 			sourceTree = "<group>";
@@ -9080,8 +8970,7 @@
 		CE3F993E0C84724B00CB38F1 /* XMLViewer.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F993F0C84724B00CB38F1 /* English */,
-				200BBB3320AA3BD8002914C4 /* ja-JP */,
+				CE3F993F0C84724B00CB38F1 /* Base */,
 			);
 			name = XMLViewer.xib;
 			sourceTree = "<group>";
@@ -9089,8 +8978,7 @@
 		CE3F99400C84724B00CB38F1 /* AYDicomPrint.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE3F99410C84724B00CB38F1 /* English */,
-				200BBB0B20AA3BD0002914C4 /* ja-JP */,
+				CE3F99410C84724B00CB38F1 /* Base */,
 			);
 			name = AYDicomPrint.xib;
 			sourceTree = "<group>";
@@ -9098,8 +8986,7 @@
 		CE40ED570D86D634007C6D49 /* 3DPosition.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE40ED580D86D634007C6D49 /* English */,
-				200BBB0520AA3BCF002914C4 /* ja-JP */,
+				CE40ED580D86D634007C6D49 /* Base */,
 			);
 			name = 3DPosition.xib;
 			sourceTree = "<group>";
@@ -9107,8 +8994,7 @@
 		CE90551612F5B68100263AB6 /* CPR.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CE90551712F5B68100263AB6 /* English */,
-				200BBB0E20AA3BD0002914C4 /* ja-JP */,
+				CE90551712F5B68100263AB6 /* Base */,
 			);
 			name = CPR.xib;
 			sourceTree = "<group>";
@@ -9116,7 +9002,6 @@
 		CEA4F07B15AEA606009584C7 /* OSIPACSOnDemand.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAF420AA3BCA002914C4 /* ja-JP */,
 				8CC299D32F3158B400669578 /* Base */,
 			);
 			name = OSIPACSOnDemand.xib;
@@ -9125,7 +9010,6 @@
 		CEB9898A133500D30083F3FD /* OSIWebSharingPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAF520AA3BCB002914C4 /* ja-JP */,
 				8CC299D42F3158B400669578 /* Base */,
 			);
 			name = OSIWebSharingPreferencePanePref.xib;
@@ -9134,7 +9018,6 @@
 		CEB989FE133507AC0083F3FD /* OSIViewerPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAF620AA3BCB002914C4 /* ja-JP */,
 				8CC299D52F3158B500669578 /* Base */,
 			);
 			name = OSIViewerPreferencePanePref.xib;
@@ -9143,7 +9026,6 @@
 		CEB98A08133507BA0083F3FD /* OSIPETPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAF720AA3BCB002914C4 /* ja-JP */,
 				8CC299D62F3158B500669578 /* Base */,
 			);
 			name = OSIPETPreferencePanePref.xib;
@@ -9152,7 +9034,6 @@
 		CEB98A12133507C80083F3FD /* OSILocationsPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAF820AA3BCC002914C4 /* ja-JP */,
 				8CC299D72F3158B500669578 /* Base */,
 			);
 			name = OSILocationsPreferencePanePref.xib;
@@ -9161,7 +9042,6 @@
 		CEB98BAB133507F50083F3FD /* OSIListenerPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAF920AA3BCC002914C4 /* ja-JP */,
 				8CC299D82F3158B500669578 /* Base */,
 			);
 			name = OSIListenerPreferencePanePref.xib;
@@ -9170,7 +9050,6 @@
 		CEB98BB7133508040083F3FD /* OSIHotKeysPref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAFA20AA3BCC002914C4 /* ja-JP */,
 				8CC299D92F3158B500669578 /* Base */,
 			);
 			name = OSIHotKeysPref.xib;
@@ -9179,7 +9058,6 @@
 		CEB98BDB133508180083F3FD /* OSIHangingPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAFB20AA3BCC002914C4 /* ja-JP */,
 				8CC299DA2F3158B500669578 /* Base */,
 			);
 			name = OSIHangingPreferencePanePref.xib;
@@ -9188,7 +9066,6 @@
 		CEB98C01133508280083F3FD /* OSIGeneralPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAFC20AA3BCD002914C4 /* ja-JP */,
 				8CC299DB2F3158B500669578 /* Base */,
 			);
 			name = OSIGeneralPreferencePanePref.xib;
@@ -9197,7 +9074,6 @@
 		CEB98C0B133508350083F3FD /* OSIDatabasePreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAFD20AA3BCD002914C4 /* ja-JP */,
 				8CC299DC2F3158B600669578 /* Base */,
 			);
 			name = OSIDatabasePreferencePanePref.xib;
@@ -9206,7 +9082,6 @@
 		CEB98C5B1335085D0083F3FD /* OSICDPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBAFF20AA3BCD002914C4 /* ja-JP */,
 				8CC299DE2F3158B600669578 /* Base */,
 			);
 			name = OSICDPreferencePanePref.xib;
@@ -9215,7 +9090,6 @@
 		CEB98C651335086B0083F3FD /* OSIAutoroutingPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBB0120AA3BCE002914C4 /* ja-JP */,
 				8CC299E02F3158B600669578 /* Base */,
 			);
 			name = OSIAutoroutingPreferencePanePref.xib;
@@ -9224,7 +9098,6 @@
 		CEB98C751335087D0083F3FD /* OSI3DPreferencePanePref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBB0220AA3BCE002914C4 /* ja-JP */,
 				8CC299E12F3158B600669578 /* Base */,
 			);
 			name = OSI3DPreferencePanePref.xib;
@@ -9233,7 +9106,6 @@
 		CEB98C811335088C0083F3FD /* AYDicomPrintPref.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				200BBB0320AA3BCE002914C4 /* ja-JP */,
 				8CC299E22F3158B600669578 /* Base */,
 			);
 			name = AYDicomPrintPref.xib;
@@ -9242,8 +9114,7 @@
 		CEF09315182D23B20020C70A /* ThumbnailsList.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
-				CEF09316182D23B20020C70A /* English */,
-				200BBB2D20AA3BD6002914C4 /* ja-JP */,
+				CEF09316182D23B20020C70A /* Base */,
 			);
 			name = ThumbnailsList.xib;
 			sourceTree = "<group>";

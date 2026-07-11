@@ -40,10 +40,6 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <ApplicationServices/ApplicationServices.h>
 
-#if defined(USEFEEDBACKREPORTER)
-#import <FeedbackReporter/FRFeedbackReporter.h>
-#endif
-
 #import "ToolbarPanel.h"
 #import "ThumbnailsListPanel.h"
 #import "AppController.h"
@@ -538,12 +534,6 @@ void exceptionHandler(NSException *exception)
 
 
 
-
-@interface AppController ()
-
-- (BOOL) setupCrashReporter;
-
-@end
 
 @interface AppController (Dummy)
 
@@ -2449,12 +2439,19 @@ static BOOL firstCall = YES;
 
 - (BOOL) applicationShouldHandleReopen:(NSApplication *)theApplication hasVisibleWindows:(BOOL)flag
 {
-	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"]) // Server mode
-		return YES;
-	
-	if( flag == NO)
-		[[[BrowserController currentBrowser] window] makeKeyAndOrderFront: self];
-	
+	(void)flag;
+	[theApplication activate];
+
+	NSWindow *window = theApplication.keyWindow ?: theApplication.mainWindow;
+	if( window == nil)
+		window = [[ViewerController frontMostDisplayed2DViewer] window];
+	if( window == nil)
+		window = [[BrowserController currentBrowser] window];
+
+	if( window.isMiniaturized)
+		[window deminiaturize:self];
+	[window makeKeyAndOrderFront:self];
+
 	return YES;
 }
 
@@ -3404,13 +3401,6 @@ static BOOL initialized = NO;
         [[QueryController currentQueryController] showWindow: self];
     }
     
-#if defined(USEFEEDBACKREPORTER)
-    //dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.f * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [FRFeedbackReporter sharedReporter];
-        });
-    //});
-#endif
 }
 
 - (void) checkForOsirixMimeType
@@ -3615,10 +3605,6 @@ static BOOL initialized = NO;
 
 - (void) applicationWillFinishLaunching: (NSNotification *) aNotification
 {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self setupCrashReporter];
-    });
-    
     ////////////////////////////
     
     [AppController cleanOsiriXSubProcesses];
@@ -5423,98 +5409,5 @@ static NSMutableDictionary* _receivingDict = nil;
     sound = nil;
 }
 
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-#pragma mark -
-#pragma FeedbackReporter
-
-
-- (void) crash
-{
-    NSLog(@"crash");
-    char *c = 0;
-    *c = 0;
-}
-
-
-- (BOOL) setupCrashReporter
-{
-#if defined(USEFEEDBACKREPORTER)
-    [[FRFeedbackReporter sharedReporter] setDelegate:(id<FRFeedbackReporterDelegate>) self];
-
-    if ([[FRFeedbackReporter sharedReporter] reportIfCrash] == YES)
-    {
-        NSLog(@"Crash found.");
-        return YES;
-    }
-#endif
-    
-    return NO;
-}
-
-- (NSString *) feedbackDisplayName
-{
-    return @"Horos";
-}
-
-- (NSDictionary *) customParametersForFeedbackReport
-{
-    NSMutableDictionary *dict = [NSMutableDictionary dictionary];
-    
-    return dict;
-}
-
-- (NSMutableDictionary*) anonymizePreferencesForFeedbackReport:(NSMutableDictionary *)preferences
-{
-    return preferences;
-}
-
-- (NSString*) smtpServerForFeedbackReport
-{
-    return @"smtp.gmail.com";
-}
-
-- (unsigned int) smtpPortForFeedbackRerport
-{
-    return 465;
-}
-
-- (NSString*) smtpUsername
-{
-    return @"horoscrashreport@gmail.com";
-}
-
-- (NSString*) smtpPassword
-{
-    return @"wmN-7eh-47N-AxJ";
-}
-
-- (NSString*) mailSenderTitle
-{
-    return @"Horos";
-}
-
-- (NSString*) mailSubject
-{
-    return @"Horos Crash Report";
-}
-
-- (NSString*) mailTextBody
-{
-    return @"See attached XML file";
-}
-
-/*
- - (NSString *)targetUrlForFeedbackReport
-{
-    NSString *targetUrlFormat = @"http://horosproject.org/crashreport.php?project=%@&version=%@";
-    NSString *project = [[[NSBundle mainBundle] infoDictionary] valueForKey: @"CFBundleExecutable"];
-    NSString *version = [[[NSBundle mainBundle] infoDictionary] valueForKey: @"CFBundleVersion"];
-    
-    return [NSString stringWithFormat:targetUrlFormat, project, version];
-}
-*/
 
 @end

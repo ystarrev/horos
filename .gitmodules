@@ -30,7 +30,3 @@
 	path = DCMTK
 	url = https://github.com/DCMTK/dcmtk.git
 	ignore = dirty
-[submodule "FeedbackReporter"]
-	path = FeedbackReporter
-	url = https://github.com/tcurdt/feedbackreporter.git
-	ignore = dirty

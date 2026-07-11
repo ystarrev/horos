@@ -14,4 +14,4 @@ ARCHS = arm64
 EXCLUDED_ARCHS[sdk=macosx*] = x86_64 i386 ppc ppc64
 
 /// Target will load on this and later versions of macOS
-MACOSX_DEPLOYMENT_TARGET = 15.0
+MACOSX_DEPLOYMENT_TARGET = 27.0

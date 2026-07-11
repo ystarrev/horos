@@ -3,7 +3,6 @@
 cd "$SRCROOT/Binaries"
 unzip -uo PAGES.zip
 unzip -uo OsiriXReport.template.zip
-# unzip -uo FeedbackReporter.framework.zip
 unzip -uo dciodvfy.zip
 unzip -uo Ming.zip
 

@@ -74,6 +74,10 @@
 
 @end
 
+@interface DicomDatabase (ScanPrivate)
+- (BOOL)scanAtPathOnContextQueue:(NSString *)path isVolume:(BOOL)isVolume;
+@end
+
 @implementation NSMutableDictionary (DicomDatabaseScan)
 
 -(id)objectForKeyRemove:(id)key {
@@ -539,6 +543,15 @@ static NSString* _dcmElementKey(DcmElement* element) {
 }
 
 -(BOOL)scanAtPath:(NSString*)path isVolume:(BOOL)isVolume
+{
+    __block BOOL result = NO;
+    N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+        result = [self scanAtPathOnContextQueue:path isVolume:isVolume];
+    });
+    return result;
+}
+
+-(BOOL)scanAtPathOnContextQueue:(NSString*)path isVolume:(BOOL)isVolume
 {
 	NSThread* thread = [NSThread currentThread];
 	[thread enterOperation];

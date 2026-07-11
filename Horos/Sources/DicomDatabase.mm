@@ -175,6 +175,10 @@ done:
 
 @interface DicomDatabase ()
 
+- (NSArray *)addFilesAtPathsOnContextQueue:(NSArray *)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray;
+- (NSArray *)addFilesDescribedInDictionariesOnContextQueue:(NSArray *)dicomFilesArray postNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray;
+- (NSInteger)importFilesFromIncomingDirOnContextQueue:(NSNumber *)showGUI listenerCompressionSettings:(int)listenerCompressionSettings;
+
 @property(readwrite,retain) NSString* baseDirPath;
 @property(readwrite,retain) NSString* dataBaseDirPath;
 @property(readonly,retain) N2MutableUInteger* dataFileIndex;
@@ -187,7 +191,6 @@ done:
 +(NSString*)sqlFilePathForBasePath:(NSString*)basePath;
 -(void)modifyDefaultAlbums;
 +(void)recomputePatientUIDsInContext:(NSManagedObjectContext*)context;
--(BOOL)upgradeSqlFileFromModelVersion:(NSString*)databaseModelVersion;
 
 @end
 
@@ -776,7 +779,6 @@ static NSString* const HorosActiveLocalDatabasePathDefaultsKey = @"HorosActiveLo
     {
         NSMutableDictionary* userInfo = [NSMutableDictionary dictionary];
         
-        [self lock];
         @try
         {
             DicomDatabase *idatabase = self.isMainDatabase? self : self.mainDatabase; //We are on the mainthread : we can'safely' use the maindatabase
@@ -801,7 +803,6 @@ static NSString* const HorosActiveLocalDatabasePathDefaultsKey = @"HorosActiveLo
             N2LogException( exception);
         }
         @finally {
-            [self unlock];
         }
         
         [NSNotificationCenter.defaultCenter postNotificationName:notification.name object:self userInfo:userInfo];
@@ -816,31 +817,24 @@ static NSString* const HorosActiveLocalDatabasePathDefaultsKey = @"HorosActiveLo
     return _name? _name : [NSString stringWithFormat:NSLocalizedString(@"Local Database (%@)", nil), self.baseDirPath];
 }
 
-- (NSManagedObjectContext *)contextAtPath:(NSString *)sqlFilePath {
-    // custom migration
-    
+- (NSManagedObjectContext *)contextAtPath:(NSString *)sqlFilePath concurrencyType:(NSManagedObjectContextConcurrencyType)concurrencyType {
     NSManagedObjectContext* context = nil;
     
     BOOL rebuildPatientUIDs = NO;
     BOOL independentContext = YES;
-    
-    if (!self.managedObjectContext || ![sqlFilePath isEqualToString:self.managedObjectContext.persistentStoreCoordinator.persistentStores.firstObject.URL.path])
+
+    NSManagedObjectContext *existingContext = self.managedObjectContext;
+    __block NSString *existingStorePath = nil;
+    N2PerformManagedObjectContextBlockAndWait(existingContext, ^{
+        existingStorePath = [existingContext.persistentStoreCoordinator.persistentStores.firstObject.URL.path copy];
+    });
+    if (!existingContext || ![sqlFilePath isEqualToString:existingStorePath])
         independentContext = NO;
-    
-    if( independentContext == NO) // avoid doing this for independent contexts: we know it's already ok, and this leads to very bad crashes
-    {
-        NSString* modelVersion = [NSString stringWithContentsOfFile:self.modelVersionFilePath encoding:NSUTF8StringEncoding error:nil];
-        if (!modelVersion) modelVersion = [NSUserDefaults.standardUserDefaults stringForKey:@"DATABASEVERSION"];
-        
-        if (modelVersion.length && ![modelVersion isEqualToString:CurrentDatabaseVersion]) {
-            rebuildPatientUIDs = [self upgradeSqlFileFromModelVersion:modelVersion];
-            [CurrentDatabaseVersion writeToFile:self.modelVersionFilePath atomically:YES encoding:NSUTF8StringEncoding error:NULL];
-        }
-    }
+    [existingStorePath release];
     
     // super + spec
     
-    context = [super contextAtPath:sqlFilePath];
+    context = [super contextAtPath:sqlFilePath concurrencyType:concurrencyType];
     [context setMergePolicy:NSMergeByPropertyStoreTrumpMergePolicy];
     [context setUndoManager: nil];
     
@@ -868,35 +862,29 @@ static NSString* const HorosActiveLocalDatabasePathDefaultsKey = @"HorosActiveLo
     }
     
     if (rebuildPatientUIDs)
-        [DicomDatabase recomputePatientUIDsInContext:context]; // if upgradeSqlFileFromModelVersion returns NO, the database was rebuilt so no need to recompute IDs
+        [DicomDatabase recomputePatientUIDsInContext:context];
     
     return context;
 }
 
 -(BOOL)save:(NSError**)err {
-    
-    BOOL b = NO;
-    
-    [self.managedObjectContext lock];
+    BOOL saved = NO;
     @try {
-        NSError* error = nil;
-        if (!err) err = &error;
-        
-        b = [super save:err];
-        
-        if (*err)
-            NSLog(@"DicomDatabase save error: %@", *err);
-        else {
-            [NSUserDefaults.standardUserDefaults setObject:CurrentDatabaseVersion forKey:@"DATABASEVERSION"];
-            [CurrentDatabaseVersion writeToFile:self.modelVersionFilePath atomically:YES encoding:NSUTF8StringEncoding error:nil];
-        }
+        NSError *saveError = nil;
+        saved = [super save:&saveError];
+        saveError = [saveError retain];
+
+        if (saveError)
+            NSLog(@"DicomDatabase save error: %@", saveError.localizedDescription);
+
+        if (err)
+            *err = [saveError autorelease];
+        else
+            [saveError release];
     } @catch (NSException* e) {
         N2LogExceptionWithStackTrace(e);
-    } @finally {
-        [self.managedObjectContext unlock];
     }
-    
-    return b;
+    return saved;
 }
 
 NSString* const DicomDatabaseImageEntityName = @"Image";
@@ -987,10 +975,6 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
 
 - (NSString *)presetsDirPath {
     return [[self.dataBaseDirPath stringByAppendingPathComponent:@"3DPRESETS"] stringByResolvingSymlinksAndAliases];
-}
-
--(NSString*)modelVersionFilePath {
-    return [self.baseDirPath stringByAppendingPathComponent:@"DB_VERSION"];
 }
 
 -(NSString*)loadingFilePath {
@@ -1225,9 +1209,9 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
     NSArray* albums = [NSArray arrayWithContentsOfFile: path];
     if (albums)
     {
-        [self.managedObjectContext lock];
-        @try
-        {
+        N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+            @try
+            {
             NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
             [dbRequest setEntity: [[self.managedObjectModel entitiesByName] objectForKey:@"Album"]];
             [dbRequest setPredicate: [NSPredicate predicateWithValue:YES]];
@@ -1287,24 +1271,20 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
             }
             
             [self.managedObjectContext save:NULL];
-        }
-        @catch (NSException * e)
-        {
-            N2LogExceptionWithStackTrace(e);
-        }
-        @finally
-        {
-            [self.managedObjectContext unlock];
-        }
+            }
+            @catch (NSException * e)
+            {
+                N2LogExceptionWithStackTrace(e);
+            }
+        });
     }
 }
 
 - (void) saveAlbumsToPath:(NSString*) path
 {
-    [self.managedObjectContext lock];
-    
-    @try
-    {
+    N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+        @try
+        {
         [self.managedObjectContext save: nil];
         
         NSMutableArray *albums = [NSMutableArray array];
@@ -1353,13 +1333,12 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
             }
         }
         else NSLog( @"--- no albums to save");
-    }
-    @catch (NSException * e)
-    {
-        N2LogExceptionWithStackTrace(e);
-    }
-    
-    [self.managedObjectContext unlock];
+        }
+        @catch (NSException * e)
+        {
+            N2LogExceptionWithStackTrace(e);
+        }
+    });
 }
 
 -(NSArray*)albums {
@@ -1733,6 +1712,21 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
 
 -(NSArray*)addFilesAtPaths:(NSArray*)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles: (BOOL) importedFiles returnArray: (BOOL) returnArray
 {
+    __block NSArray *result = nil;
+    N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+        result = [[self addFilesAtPathsOnContextQueue:paths
+                                    postNotifications:postNotifications
+                                            dicomOnly:dicomOnly
+                                  rereadExistingItems:rereadExistingItems
+                                   generatedByOsiriX:generatedByOsiriX
+                                        importedFiles:importedFiles
+                                          returnArray:returnArray] retain];
+    });
+    return [result autorelease];
+}
+
+-(NSArray*)addFilesAtPathsOnContextQueue:(NSArray*)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray
+{
     NSThread* thread = [NSThread currentThread];
     
     //#define RANDOMFILES
@@ -1741,10 +1735,6 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
     for( int i = 0; i < 50000; i++)
         [randomArray addObject:@"yahoo/google/osirix/microsoft"];
     paths = randomArray;
-#endif
-    
-#ifndef NDEBUG
-    [self checkForCorrectContextThread];
 #endif
     
     NSMutableArray* retArray = nil; // This array can be HUGE when rebuild a DB with millions of images
@@ -1999,9 +1989,20 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
 
 -(NSArray*)addFilesDescribedInDictionaries:(NSArray*)dicomFilesArray postNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles: (BOOL) importedFiles returnArray: (BOOL) returnArray
 {
-#ifndef NDEBUG
-    [self checkForCorrectContextThread];
-#endif
+    __block NSArray *result = nil;
+    N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+        result = [[self addFilesDescribedInDictionariesOnContextQueue:dicomFilesArray
+                                                    postNotifications:postNotifications
+                                                  rereadExistingItems:rereadExistingItems
+                                                   generatedByOsiriX:generatedByOsiriX
+                                                        importedFiles:importedFiles
+                                                          returnArray:returnArray] retain];
+    });
+    return [result autorelease];
+}
+
+-(NSArray*)addFilesDescribedInDictionariesOnContextQueue:(NSArray*)dicomFilesArray postNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray
+{
     
     NSThread* thread = [NSThread currentThread];
     thread.status = [NSString stringWithFormat:NSLocalizedString(@"Adding %@", nil), N2LocalizedSingularPluralCount(dicomFilesArray.count, NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil))];
@@ -3279,27 +3280,28 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                             DicomDatabase* mdatabase = self.isMainDatabase? self : self.mainDatabase;
                             if( [[BrowserController currentBrowser] database] == mdatabase && [[dict objectForKey:@"addToAlbum"] boolValue])
                             {
-                                NSManagedObjectID *iAlbum = [[BrowserController currentBrowser] currentAlbumID: idatabase];
-                                if( iAlbum)
-                                {
-                                    DicomAlbum *album = [idatabase objectWithID: iAlbum];
-                                    NSMutableSet *studies = [album mutableSetValueForKey: @"studies"];
-                                    
-                                    BOOL change = NO;
-                                    for( DicomImage* mobject in [idatabase objectsWithIDs: objects])
+                                N2PerformManagedObjectContextBlockAndWait(idatabase.managedObjectContext, ^{
+                                    NSManagedObjectID *iAlbum = [[BrowserController currentBrowser] currentAlbumID:idatabase];
+                                    if( iAlbum)
                                     {
-                                        DicomStudy* s = [mobject valueForKeyPath:@"series.study"];
-                                        
-                                        if( s && [studies containsObject: s] == NO)
+                                        DicomAlbum *album = [idatabase objectWithID:iAlbum];
+                                        NSMutableSet *studies = [album mutableSetValueForKey:@"studies"];
+
+                                        BOOL change = NO;
+                                        for( DicomImage* mobject in [idatabase objectsWithIDs:objects])
                                         {
-                                            change = YES;
-                                            [studies addObject:s];
+                                            DicomStudy* study = [mobject valueForKeyPath:@"series.study"];
+                                            if( study && [studies containsObject:study] == NO)
+                                            {
+                                                change = YES;
+                                                [studies addObject:study];
+                                            }
                                         }
+
+                                        if( change)
+                                            [idatabase save];
                                     }
-                                    
-                                    if( change)
-                                        [idatabase save];
-                                }
+                                });
                             }
                             
                         }
@@ -3398,6 +3400,15 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
 
 -(NSInteger)importFilesFromIncomingDir: (NSNumber*) showGUI
            listenerCompressionSettings: (int) listenerCompressionSettings
+{
+    __block NSInteger result = 0;
+    N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+        result = [self importFilesFromIncomingDirOnContextQueue:showGUI listenerCompressionSettings:listenerCompressionSettings];
+    });
+    return result;
+}
+
+-(NSInteger)importFilesFromIncomingDirOnContextQueue:(NSNumber*)showGUI listenerCompressionSettings:(int)listenerCompressionSettings
 {
     NSMutableArray* compressedPathArray = [NSMutableArray array];
     NSThread* thread = [NSThread currentThread];
@@ -4046,411 +4057,14 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
     return YES;
 }
 
--(BOOL)upgradeSqlFileFromModelVersion:(NSString*)databaseModelVersion
-{
-    NSLog( @"------ upgradeSqlFileFromModelVersion: %@", databaseModelVersion);
-    
-    NSThread* thread = [NSThread currentThread];
-    NSString* oldThreadName = thread.name;
-    
-    NSManagedObjectModel* oldModel = nil;
-    NSPersistentStoreCoordinator* oldPersistentStoreCoordinator = nil;
-    NSManagedObjectContext* oldContext = nil;
-    NSManagedObjectModel* newModel = nil;
-    NSPersistentStoreCoordinator* newPersistentStoreCoordinator = nil;
-    NSManagedObjectContext* newContext = nil;
-    
-    [thread enterOperation];
-    @try {
-        thread.name = NSLocalizedString(@"Upgrading database...", nil);
-        
-        //   [NSThread sleepForTimeInterval:2];
-        
-        NSString* oldModelFilename = [NSString stringWithFormat:@"OsiriXDB_Previous_DataModel%@.mom", databaseModelVersion];
-        if ([databaseModelVersion isEqualToString:CurrentDatabaseVersion]) oldModelFilename = [NSString stringWithFormat:@"OsiriXDB_DataModel.mom"]; // same version
-        
-        if (![NSFileManager.defaultManager fileExistsAtPath:[NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:oldModelFilename]])
-        {
-            int r = NSAlertDefaultReturn;
-            
-            if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"])
-            {
-                r = NSAlertDefaultReturn;
-            }
-            else
-                r = NSRunAlertPanel(NSLocalizedString(@"Horos Database", nil), NSLocalizedString(@"Horos cannot understand the model of current saved database... The database index will be deleted and reconstructed (no images are lost).", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Quit", nil), nil);
-            
-            if (r == NSAlertAlternateReturn)
-            {
-                [NSFileManager.defaultManager removeItemAtPath:self.loadingFilePath error:nil]; // to avoid the crash message during next startup
-                [NSApp terminate:self];
-            }
-            
-            [[NSFileManager defaultManager] removeItemAtPath:self.sqlFilePath error:nil];
-            
-            [self rebuild:YES];
-            
-            return NO;
-        }
-        
-        NSManagedObjectModel* oldModel = [[NSManagedObjectModel alloc] initWithContentsOfURL: [NSURL fileURLWithPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:oldModelFilename]]];
-        NSPersistentStoreCoordinator* oldPersistentStoreCoordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:oldModel];
-        NSManagedObjectContext* oldContext = [[NSManagedObjectContext alloc] init];
-        
-        NSManagedObjectModel* newModel = self.managedObjectModel;
-        NSPersistentStoreCoordinator* newPersistentStoreCoordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:newModel];
-        NSManagedObjectContext* newContext = [[NSManagedObjectContext alloc] init];
-        
-        NSError* err = NULL;
-        NSMutableArray* upgradeProblems = [NSMutableArray array];
-        
-        [oldContext setPersistentStoreCoordinator:oldPersistentStoreCoordinator];
-        [oldContext setUndoManager: nil];
-        [newContext setPersistentStoreCoordinator:newPersistentStoreCoordinator];
-        [newContext setUndoManager: nil];
-        
-        [NSFileManager.defaultManager removeItemAtPath:[self.baseDirPath stringByAppendingPathComponent:@"Database3.sql"] error:nil];
-        [NSFileManager.defaultManager removeItemAtPath:[self.baseDirPath stringByAppendingPathComponent:@"Database3.sql-journal"] error:nil];
-        
-        if (![oldPersistentStoreCoordinator addPersistentStoreWithType:NSSQLiteStoreType configuration:nil URL:[NSURL fileURLWithPath:self.sqlFilePath] options:nil error:&err])
-            N2LogError(err.description);
-        
-        if (![newPersistentStoreCoordinator addPersistentStoreWithType:NSSQLiteStoreType configuration:nil URL:[NSURL fileURLWithPath:[self.baseDirPath stringByAppendingPathComponent:@"Database3.sql"]] options:nil error:&err])
-            N2LogError(err.description);
-        
-        NSManagedObject *newStudyTable, *newSeriesTable, *newImageTable, *newAlbumTable;
-        NSArray *albumProperties, *studyProperties, *seriesProperties, *imageProperties;
-        
-        NSFetchRequest* req = [[[NSFetchRequest alloc] init] autorelease];
-        req.entity = [NSEntityDescription entityForName:@"Album" inManagedObjectContext:oldContext];
-        req.predicate = [NSPredicate predicateWithValue:YES];
-        NSArray* albums = [oldContext executeFetchRequest:req error:NULL];
-        
-        albumProperties = [[[NSEntityDescription entityForName:@"Album" inManagedObjectContext:oldContext] attributesByName] allKeys];
-        for (NSManagedObject* oldAlbum in albums)
-        {
-            newAlbumTable = [NSEntityDescription insertNewObjectForEntityForName:@"Album" inManagedObjectContext: newContext];
-            
-            for ( NSString *name in albumProperties)
-            {
-                [newAlbumTable setValue: [oldAlbum valueForKey: name] forKey: name];
-            }
-        }
-        
-        [newContext save:nil];
-        
-        // STUDIES
-        NSFetchRequest* dbRequest = [[[NSFetchRequest alloc] init] autorelease];
-        [dbRequest setEntity: [[oldModel entitiesByName] objectForKey:@"Study"]];
-        [dbRequest setPredicate: [NSPredicate predicateWithValue:YES]];
-        
-        NSMutableArray* studies = [NSMutableArray arrayWithArray: [oldContext executeFetchRequest:dbRequest error:nil]];
-        NSInteger studiesCount = studies.count;
-        thread.status = [NSString stringWithFormat:NSLocalizedString(@"Upgrading %ld %@...", nil), (long)studiesCount, (studiesCount != 1 ? NSLocalizedString(@"studies", nil) : NSLocalizedString(@"study", nil))];
-        thread.progress = 0;
-        //   [NSThread sleepForTimeInterval:2];
-        
-        //[[splash progress] setMaxValue:[studies count]];
-        
-        int chunk = 0;
-        
-        studies = [NSMutableArray arrayWithArray: [studies sortedArrayUsingDescriptors: [NSArray arrayWithObject: [[[NSSortDescriptor alloc] initWithKey:@"patientUID" ascending:YES] autorelease]]]];
-        if ([studies count] > 100)
-        {
-            int max = [studies count] - chunk*100;
-            if (max > 100) max = 100;
-            studies = [NSMutableArray arrayWithArray: [studies subarrayWithRange: NSMakeRange( chunk*100, max)]];
-            chunk++;
-        }
-        [studies retain];
-        
-        studyProperties = [[[[oldModel entitiesByName] objectForKey:@"Study"] attributesByName] allKeys];
-        seriesProperties = [[[[oldModel entitiesByName] objectForKey:@"Series"] attributesByName] allKeys];
-        imageProperties = [[[[oldModel entitiesByName] objectForKey:@"Image"] attributesByName] allKeys];
-        
-        int counter = 0;
-        
-        NSArray *newAlbums = nil;
-        NSArray *newAlbumsNames = nil;
-        
-        while( [studies count] > 0)
-        {
-            thread.progress = 1.0*counter/studiesCount;
-            
-            NSAutoreleasePool	*poolLoop = [[NSAutoreleasePool alloc] init];
-            NSString *studyName = nil;
-            
-            @try
-            {
-                NSManagedObject *oldStudy = [studies lastObject];
-                [studies removeLastObject];
-                
-                newStudyTable = [NSEntityDescription insertNewObjectForEntityForName:@"Study" inManagedObjectContext: newContext];
-                
-                for ( NSString *name in studyProperties)
-                {
-                    if ([name isEqualToString: @"isKeyImage"] ||
-                        [name isEqualToString: @"comment"] ||
-                        [name isEqualToString: @"comment2"] ||
-                        [name isEqualToString: @"comment3"] ||
-                        [name isEqualToString: @"comment4"] ||
-                        [name isEqualToString: @"reportURL"] ||
-                        [name isEqualToString: @"stateText"])
-                    {
-                        [newStudyTable willChangeValueForKey: name];
-                        @try {
-                            [newStudyTable setPrimitiveValue: [oldStudy primitiveValueForKey: name] forKey: name];
-                        }
-                        @catch (NSException *exception) {
-                            N2LogException( exception);
-                        }
-                        [newStudyTable didChangeValueForKey: name];
-                    }
-                    else [newStudyTable setValue: [oldStudy primitiveValueForKey: name] forKey: name];
-                    
-                    if ([name isEqualToString: @"name"])
-                        studyName = [oldStudy primitiveValueForKey: name];
-                }
-                
-                // SERIES
-                NSArray *series = [[oldStudy valueForKey:@"series"] allObjects];
-                for( NSManagedObject *oldSeries in series)
-                {
-                    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-                    
-                    @try
-                    {
-                        newSeriesTable = [NSEntityDescription insertNewObjectForEntityForName:@"Series" inManagedObjectContext: newContext];
-                        
-                        for( NSString *name in seriesProperties)
-                        {
-                            if ([name isEqualToString: @"xOffset"] ||
-                                [name isEqualToString: @"yOffset"] ||
-                                [name isEqualToString: @"scale"] ||
-                                [name isEqualToString: @"rotationAngle"] ||
-                                [name isEqualToString: @"displayStyle"] ||
-                                [name isEqualToString: @"windowLevel"] ||
-                                [name isEqualToString: @"windowWidth"] ||
-                                [name isEqualToString: @"yFlipped"] ||
-                                [name isEqualToString: @"xFlipped"])
-                            {
-                                
-                            }
-                            else if ( [name isEqualToString: @"isKeyImage"] ||
-                                     [name isEqualToString: @"comment"] ||
-                                     [name isEqualToString: @"comment2"] ||
-                                     [name isEqualToString: @"comment3"] ||
-                                     [name isEqualToString: @"comment4"] ||
-                                     [name isEqualToString: @"reportURL"] ||
-                                     [name isEqualToString: @"stateText"])
-                            {
-                                [newSeriesTable willChangeValueForKey: name];
-                                @try {
-                                    [newSeriesTable setPrimitiveValue: [oldSeries primitiveValueForKey: name] forKey: name];
-                                }
-                                @catch (NSException *exception) {
-                                    N2LogException( exception);
-                                }
-                                [newSeriesTable didChangeValueForKey: name];
-                            }
-                            else [newSeriesTable setValue: [oldSeries primitiveValueForKey: name] forKey: name];
-                        }
-                        [newSeriesTable setValue: newStudyTable forKey: @"study"];
-                        
-                        // IMAGES
-                        NSArray *images = [[oldSeries valueForKey:@"images"] allObjects];
-                        for ( NSManagedObject *oldImage in images)
-                        {
-                            @try
-                            {
-                                newImageTable = [NSEntityDescription insertNewObjectForEntityForName:@"Image" inManagedObjectContext: newContext];
-                                
-                                for( NSString *name in imageProperties)
-                                {
-                                    if ([name isEqualToString: @"xOffset"] ||
-                                        [name isEqualToString: @"yOffset"] ||
-                                        [name isEqualToString: @"scale"] ||
-                                        [name isEqualToString: @"rotationAngle"] ||
-                                        [name isEqualToString: @"windowLevel"] ||
-                                        [name isEqualToString: @"windowWidth"] ||
-                                        [name isEqualToString: @"yFlipped"] ||
-                                        [name isEqualToString: @"xFlipped"])
-                                    {
-                                        
-                                    }
-                                    else if ([name isEqualToString: @"isKeyImage"] ||
-                                             [name isEqualToString: @"comment"] ||
-                                             [name isEqualToString: @"comment2"] ||
-                                             [name isEqualToString: @"comment3"] ||
-                                             [name isEqualToString: @"comment4"] ||
-                                             [name isEqualToString: @"reportURL"] ||
-                                             [name isEqualToString: @"stateText"])
-                                    {
-                                        [newImageTable willChangeValueForKey: name];
-                                        @try {
-                                            [newImageTable setPrimitiveValue: [oldImage primitiveValueForKey: name] forKey: name];
-                                        }
-                                        @catch (NSException *exception) {
-                                            N2LogException( exception);
-                                        }
-                                        [newImageTable didChangeValueForKey: name];
-                                    }
-                                    else [newImageTable setValue: [oldImage primitiveValueForKey: name] forKey: name];
-                                }
-                                [newImageTable setValue: newSeriesTable forKey: @"series"];
-                            }
-                            
-                            @catch (NSException *e)
-                            {
-                                NSLog(@"IMAGE LEVEL: Problems during updating: %@", e);
-                                [e printStackTrace];
-                            }
-                        }
-                    }
-                    
-                    @catch (NSException *e)
-                    {
-                        NSLog(@"SERIES LEVEL: Problems during updating: %@", e);
-                        [e printStackTrace];
-                    }
-                    [pool release];
-                }
-                
-                NSArray		*storedInAlbums = [[oldStudy valueForKey: @"albums"] allObjects];
-                
-                if ([storedInAlbums count])
-                {
-                    if (newAlbums == nil)
-                    {
-                        // Find all current albums
-                        NSFetchRequest *r = [[[NSFetchRequest alloc] init] autorelease];
-                        [r setEntity: [[newModel entitiesByName] objectForKey:@"Album"]];
-                        [r setPredicate: [NSPredicate predicateWithValue:YES]];
-                        
-                        newAlbums = [newContext executeFetchRequest:r error:NULL];
-                        newAlbumsNames = [newAlbums valueForKey:@"name"];
-                        
-                        [newAlbums retain];
-                        [newAlbumsNames retain];
-                    }
-                    
-                    @try
-                    {
-                        for( NSManagedObject *sa in storedInAlbums)
-                        {
-                            NSString *name = [sa valueForKey:@"name"];
-                            NSMutableSet *studiesStoredInAlbum = [[newAlbums objectAtIndex: [newAlbumsNames indexOfObject: name]] mutableSetValueForKey:@"studies"];
-                            
-                            [studiesStoredInAlbum addObject: newStudyTable];
-                        }
-                    }
-                    
-                    @catch (NSException *e)
-                    {
-                        NSLog(@"ALBUM : %@", e);
-                        [e printStackTrace];
-                    }
-                }
-            }
-            
-            @catch (NSException * e)
-            {
-                NSLog(@"STUDY LEVEL: Problems during updating: %@", e);
-                NSLog(@"Patient Name: %@", studyName);
-                [upgradeProblems addObject:studyName];
-                
-                [e printStackTrace];
-            }
-            
-            //		[splash incrementBy:1];
-            counter++;
-            
-            NSLog(@"%d", counter);
-            
-            if (counter % 100 == 0)
-            {
-                [newContext save:nil];
-                
-                [newContext reset];
-                [oldContext reset];
-                
-                [newAlbums release];			newAlbums = nil;
-                [newAlbumsNames release];		newAlbumsNames = nil;
-                
-                [studies release];
-                
-                studies = [NSMutableArray arrayWithArray: [oldContext executeFetchRequest:dbRequest error:nil]];
-                
-                //	[[splash progress] setMaxValue:[studies count]];
-                
-                studies = [NSMutableArray arrayWithArray: [studies sortedArrayUsingDescriptors: [NSArray arrayWithObject: [[[NSSortDescriptor alloc] initWithKey:@"patientUID" ascending:YES] autorelease]]]];
-                if ([studies count] > 100)
-                {
-                    int max = [studies count] - chunk*100;
-                    if (max>100) max = 100;
-                    studies = [NSMutableArray arrayWithArray: [studies subarrayWithRange: NSMakeRange( chunk*100, max)]];
-                    chunk++;
-                }
-                
-                [studies retain];
-            }
-            
-            [poolLoop release];
-        }
-        
-        thread.progress = -1;
-        
-        [newContext save:NULL];
-        
-        [[NSFileManager defaultManager] removeItemAtPath: [self.baseDirPath stringByAppendingPathComponent:@"Database-Old-PreviousVersion.sql"] error:nil];
-        [[NSFileManager defaultManager] moveItemAtPath:self.sqlFilePath toPath:[self.baseDirPath stringByAppendingPathComponent:@"Database-Old-PreviousVersion.sql"] error:NULL];
-        [[NSFileManager defaultManager] moveItemAtPath:[self.baseDirPath stringByAppendingPathComponent:@"Database3.sql"] toPath:self.sqlFilePath error:NULL];
-        
-        [studies release];					studies = nil;
-        [newAlbums release];			newAlbums = nil;
-        [newAlbumsNames release];		newAlbumsNames = nil;
-        
-        if (upgradeProblems.count)
-            NSRunAlertPanel(NSLocalizedString(@"Database Upgrade", nil), NSLocalizedString(@"The upgrade encountered %lu errors. These corrupted studies have been removed: %@", nil), nil, nil, nil, (unsigned long)upgradeProblems.count, [upgradeProblems componentsJoinedByString:@", "]);
-        
-        return YES;
-    } @catch (NSException* e) {
-        N2LogExceptionWithStackTrace(e);
-        
-        NSRunAlertPanel( NSLocalizedString(@"Database Update", nil), NSLocalizedString(@"Database updating failed... The database SQL index file is probably corrupted... The database will be reconstructed.", nil), nil, nil, nil);
-        
-        [self rebuild:YES];
-        
-        return NO;
-    } @finally {
-        [oldContext reset];
-        [oldContext release];
-        [oldPersistentStoreCoordinator release];
-        [oldModel release];
-        
-        [newContext reset];
-        [newContext release];
-        [newPersistentStoreCoordinator release];
-        [newModel release];
-        
-        [thread exitOperation];
-        thread.name = oldThreadName;
-    }
-    
-    return NO;
-}
-
-
-
 +(void)recomputePatientUIDsInContext:(NSManagedObjectContext*)context {
-    
-    // Find all studies
-    NSFetchRequest* dbRequest = [[[NSFetchRequest alloc] init] autorelease];
-    [dbRequest setEntity:[NSEntityDescription entityForName:@"Study" inManagedObjectContext:context]];
-    [dbRequest setPredicate:[NSPredicate predicateWithValue:YES]];
-    
-    [context lock];
-    @try {
+    N2PerformManagedObjectContextBlockAndWait(context, ^{
+        @try {
+        // Find all studies
+        NSFetchRequest* dbRequest = [[[NSFetchRequest alloc] init] autorelease];
+        [dbRequest setEntity:[NSEntityDescription entityForName:@"Study" inManagedObjectContext:context]];
+        [dbRequest setPredicate:[NSPredicate predicateWithValue:YES]];
+
         NSArray* studiesArray = [context executeFetchRequest:dbRequest error:nil];
         
         if( studiesArray.count)
@@ -4504,11 +4118,10 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
             
             NSLog( @"-------------- Recompute Patient UIDs -- END");
         }
-    } @catch (NSException* e) {
-        N2LogExceptionWithStackTrace(e);
-    } @finally {
-        [context unlock];
-    }
+        } @catch (NSException* e) {
+            N2LogExceptionWithStackTrace(e);
+        }
+    });
 }
 
 -(void)rebuild {
@@ -4532,9 +4145,10 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
         
         thread.status = NSLocalizedString(@"Locking database...", nil);
         NSManagedObjectContext* oldContext = [self.managedObjectContext retain];
-        [oldContext lock];
+        [oldContext performBlockAndWait:^{
+            [oldContext reset];
+        }];
         self.managedObjectContext = nil;
-        [oldContext unlock];
         [oldContext release];
         
         if ([NSFileManager.defaultManager fileExistsAtPath:self.sqlFilePath]) {
@@ -4542,13 +4156,11 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
             [NSFileManager.defaultManager moveItemAtPath:self.sqlFilePath toPath:[self.sqlFilePath stringByAppendingString:@" - old"] error:NULL];
         }
         
-        [NSFileManager.defaultManager removeItemAtPath:self.modelVersionFilePath error:NULL];
-        
         self.managedObjectContext = [self contextAtPath:self.sqlFilePath];
     } else [self save:NULL];
     
-    [self lock];
-    @try {
+    N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+        @try {
         thread.status = NSLocalizedString(@"Scanning database directory...", nil);
         
         NSMutableArray *filesArray = [[NSMutableArray alloc] initWithCapacity: 10000];
@@ -4652,34 +4264,32 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
         
         thread.status = NSLocalizedString(@"Checking reports consistency...", nil);
         [self checkReportsConsistencyWithDICOMSR];
-    } @catch (NSException* e) {
-        N2LogExceptionWithStackTrace(e);
-    } @finally {
-        [_importFilesFromIncomingDirLock unlock];
-        [self unlock];
-    }
+        } @catch (NSException* e) {
+            N2LogExceptionWithStackTrace(e);
+        } @finally {
+            [_importFilesFromIncomingDirLock unlock];
+        }
+    });
 }
 
 -(void)checkReportsConsistencyWithDICOMSR {
     // Find all studies with reportURL
-    [self.managedObjectContext lock];
-    
-    @try {
-        NSPredicate *predicate = [NSPredicate predicateWithFormat:  @"reportURL != NIL"];
-        NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
-        dbRequest.entity = [self.managedObjectModel.entitiesByName objectForKey:@"Study"];
-        dbRequest.predicate = predicate;
-        
-        NSError	*error = nil;
-        NSArray *studiesArray = [self.managedObjectContext executeFetchRequest:dbRequest error:&error];
-        
-        for (DicomStudy *s in studiesArray)
-            [s archiveReportAsDICOMSR];
-    } @catch (NSException* e) {
-        N2LogExceptionWithStackTrace(e);
-    } @finally {
-        [self.managedObjectContext unlock];
-    }
+    N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+        @try {
+            NSPredicate *predicate = [NSPredicate predicateWithFormat:  @"reportURL != NIL"];
+            NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
+            dbRequest.entity = [self.managedObjectModel.entitiesByName objectForKey:@"Study"];
+            dbRequest.predicate = predicate;
+
+            NSError	*error = nil;
+            NSArray *studiesArray = [self.managedObjectContext executeFetchRequest:dbRequest error:&error];
+
+            for (DicomStudy *s in studiesArray)
+                [s archiveReportAsDICOMSR];
+        } @catch (NSException* e) {
+            N2LogExceptionWithStackTrace(e);
+        }
+    });
 }
 
 -(void)checkForExistingReportForStudy:(DicomStudy*)study {
@@ -4773,7 +4383,6 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
     self.managedObjectContext = nil;
     
     [self dumpSqlFile];
-    //	[self upgradeSqlFileFromModelVersion:CurrentDatabaseVersion]; // removing this line reflects antoine's commit 9758
     
     self.managedObjectContext = [self contextAtPath:self.sqlFilePath];
     

@@ -857,10 +857,10 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	specular = 0.6;
 	specularpower = 10;
 	
-	[[shadingForm cellAtIndex: 0] setFloatValue: ambient];
-	[[shadingForm cellAtIndex: 1] setFloatValue: diffuse];
-	[[shadingForm cellAtIndex: 2] setFloatValue: specular];
-	[[shadingForm cellAtIndex: 3] setFloatValue: specularpower];
+	[[shadingForm cellAtRow:0 column:0] setFloatValue: ambient];
+	[[shadingForm cellAtRow:1 column:0] setFloatValue: diffuse];
+	[[shadingForm cellAtRow:2 column:0] setFloatValue: specular];
+	[[shadingForm cellAtRow:3 column:0] setFloatValue: specularpower];
 	
 	[self endShadingEditing: sender];
 }
@@ -871,10 +871,10 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
     {
 		float ambient, diffuse, specular, specularpower;
 
-		ambient = [[shadingForm cellAtIndex: 0] floatValue];
-		diffuse = [[shadingForm cellAtIndex: 1] floatValue];
-		specular = [[shadingForm cellAtIndex: 2] floatValue];
-		specularpower = [[shadingForm cellAtIndex: 3] floatValue];
+		ambient = [[shadingForm cellAtRow:0 column:0] floatValue];
+		diffuse = [[shadingForm cellAtRow:1 column:0] floatValue];
+		specular = [[shadingForm cellAtRow:2 column:0] floatValue];
+		specularpower = [[shadingForm cellAtRow:3 column:0] floatValue];
 		
 		[view setShadingValues: ambient :diffuse :specular :specularpower];
 		[shadingValues setStringValue: [NSString stringWithFormat:@"Ambient: %2.2f\nDiffuse: %2.2f\nSpecular :%2.2f, %2.2f", ambient, diffuse, specular, specularpower]];
@@ -900,15 +900,10 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 {
 	[view getShadingValues: &savedambient :&saveddiffuse :&savedspecular :&savedspecularpower];
 	
-//	[[shadingForm cellAtIndex: 0] setStringValue: [NSString stringWithFormat:@"%2.2f", savedambient]];
-//	[[shadingForm cellAtIndex: 1] setStringValue: [NSString stringWithFormat:@"%2.2f", saveddiffuse]];
-//	[[shadingForm cellAtIndex: 2] setStringValue: [NSString stringWithFormat:@"%2.2f", savedspecular]];
-//	[[shadingForm cellAtIndex: 3] setStringValue: [NSString stringWithFormat:@"%2.2f", savedspecularpower]];
-
-	[[shadingForm cellAtIndex: 0] setFloatValue: savedambient]; //[NSString stringWithFormat:@"%2.2f", savedambient]];
-	[[shadingForm cellAtIndex: 1] setFloatValue: saveddiffuse]; //[NSString stringWithFormat:@"%2.2f", saveddiffuse]];
-	[[shadingForm cellAtIndex: 2] setFloatValue: savedspecular]; //[NSString stringWithFormat:@"%2.2f", savedspecular]];
-	[[shadingForm cellAtIndex: 3] setFloatValue: savedspecularpower];	//[NSString stringWithFormat:@"%2.2f", savedspecularpower]];
+	[[shadingForm cellAtRow:0 column:0] setFloatValue: savedambient];
+	[[shadingForm cellAtRow:1 column:0] setFloatValue: saveddiffuse];
+	[[shadingForm cellAtRow:2 column:0] setFloatValue: savedspecular];
+	[[shadingForm cellAtRow:3 column:0] setFloatValue: savedspecularpower];
 	
     [NSApp beginSheet: shadingEditWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
 }

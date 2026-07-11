@@ -326,12 +326,12 @@
 
 -(NSData*)thumbnail
 {
-    NSData* thumbnailData = nil;
+    __block NSData* thumbnailData = nil;
     
-    [self.managedObjectContext lock];
-    @try
-    {
-        thumbnailData = [[self primitiveValueForKey:@"thumbnail"] retain]; // autoreleased when returning
+    N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+        @try
+        {
+            thumbnailData = [[self primitiveValueForKey:@"thumbnail"] retain]; // autoreleased when returning
         
         if( !thumbnailData)
         {
@@ -441,15 +441,12 @@
             
             [pool release];
         }
-    }
-    @catch (NSException * e)
-    {
-        thumbnailData = [[[NSImage imageNamed: @"FileNotFound.tif"] TIFFRepresentation] retain];
-    }
-    @finally
-    {
-        [self.managedObjectContext unlock];
-    }
+        }
+        @catch (NSException * e)
+        {
+            thumbnailData = [[[NSImage imageNamed: @"FileNotFound.tif"] TIFFRepresentation] retain];
+        }
+    });
         
 	return [thumbnailData autorelease];
 }
@@ -467,19 +464,17 @@
 - (NSString *) localstring
 {
 	
-	BOOL local = YES;
+	__block BOOL local = YES;
 	
-	[self.managedObjectContext lock];
-	@try {
-		NSManagedObject	*obj = [self.images anyObject];
-		local = [[obj valueForKey:@"inDatabaseFolder"] boolValue];
-	}
-	@catch (NSException* e) {
-		N2LogExceptionWithStackTrace(e);
-	}
-    @finally {
-        [self.managedObjectContext unlock];
-    }
+	N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+		@try {
+			NSManagedObject	*obj = [self.images anyObject];
+			local = [[obj valueForKey:@"inDatabaseFolder"] boolValue];
+		}
+		@catch (NSException* e) {
+			N2LogExceptionWithStackTrace(e);
+		}
+	});
 	
 	if (local)
         return @"L";
@@ -488,26 +483,24 @@
 
 - (NSNumber *) rawNoFiles
 {
-	NSNumber* no = nil;
+	__block NSNumber* no = nil;
 	
-	[self.managedObjectContext lock];
-	@try 
-	{
-		int v = [[[self.images anyObject] valueForKey:@"numberOfFrames"] intValue];
-		
-		if( v > 1)
-			no = [NSNumber numberWithInt: [self.images count] - v + 1];
-		else
-			no = [NSNumber numberWithInt: [self.images count]];
-	}
-	@catch (NSException* e) {
-		N2LogExceptionWithStackTrace(e);
-	}
-    @finally {
-        [self.managedObjectContext unlock];
-    }
+	N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+		@try
+		{
+			int v = [[[self.images anyObject] valueForKey:@"numberOfFrames"] intValue];
+
+			if( v > 1)
+				no = [[NSNumber numberWithInt: [self.images count] - v + 1] retain];
+			else
+				no = [[NSNumber numberWithInt: [self.images count]] retain];
+		}
+		@catch (NSException* e) {
+			N2LogExceptionWithStackTrace(e);
+		}
+	});
 	
-	return no;
+	return [no autorelease];
 }
 
 - (NSSet*) images
@@ -539,11 +532,11 @@
         
         if( n == 0)
         {
-            NSNumber* no = nil;
+            __block NSNumber* no = nil;
             
-            [self.managedObjectContext lock];
-            @try {
-                NSString *sopClassUID = self.seriesSOPClassUID;
+            N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+                @try {
+                    NSString *sopClassUID = self.seriesSOPClassUID;
             
                 if( [DCMAbstractSyntaxUID isStructuredReport: sopClassUID] == NO && [DCMAbstractSyntaxUID isPresentationState: sopClassUID] == NO && [DCMAbstractSyntaxUID isSupportedPrivateClasses: sopClassUID] == NO)
                 {
@@ -562,17 +555,17 @@
                     
                     if( v > 1)
                         no = [NSNumber numberWithInt: count]; // For the return
+                    [no retain];
                 }
-                else no = [NSNumber numberWithInt: 0];
-            }
-            @catch (NSException* e) {
-                N2LogExceptionWithStackTrace(e);
-            }
-            @finally {
-                [self.managedObjectContext unlock];
-            }
+                else
+                    no = [[NSNumber numberWithInt: 0] retain];
+                }
+                @catch (NSException* e) {
+                    N2LogExceptionWithStackTrace(e);
+                }
+            });
             
-            return no;
+            return [no autorelease];
         }
         else
         {
@@ -643,53 +636,47 @@
 
 - (NSSet *)paths
 {
-    [self.managedObjectContext lock];
-	@try {
-		return [self valueForKeyPath:@"images.completePath"];
-	}
-	@catch (NSException* e) {
-		N2LogExceptionWithStackTrace(e);
-	}
-    @finally {
-        [self.managedObjectContext unlock];
-    }
-	
-	return nil;
+    __block NSSet *result = nil;
+    N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+		@try {
+			result = [[self valueForKeyPath:@"images.completePath"] retain];
+		}
+		@catch (NSException* e) {
+			N2LogExceptionWithStackTrace(e);
+		}
+    });
+	return [result autorelease];
 }
 
 - (NSSet *)pathsForForkedProcess
 {
-	[self.managedObjectContext lock];
-	@try {
-		return [self valueForKeyPath:@"images.completePathWithNoDownloadAndLocalOnly"];
-	}
-	@catch (NSException* e) {
-		N2LogExceptionWithStackTrace(e);
-	}
-    @finally {
-        [self.managedObjectContext unlock];
-    }
-	
-	return nil;
+	__block NSSet *result = nil;
+	N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+		@try {
+			result = [[self valueForKeyPath:@"images.completePathWithNoDownloadAndLocalOnly"] retain];
+		}
+		@catch (NSException* e) {
+			N2LogExceptionWithStackTrace(e);
+		}
+    });
+	return [result autorelease];
 }
 
 
 - (NSSet *)keyImages
 {
-	[self.managedObjectContext lock];
-	@try {
-		NSArray *imageArray = [self.images allObjects];
-		NSPredicate *predicate = [NSPredicate predicateWithFormat:@"isKeyImage == YES"]; 
-		return [NSSet setWithArray:[imageArray filteredArrayUsingPredicate:predicate]];
-	}
-	@catch (NSException* e) {
-		N2LogExceptionWithStackTrace(e);
-	}
-    @finally {
-        [self.managedObjectContext unlock];
-    }
-	
-	return nil;
+	__block NSSet *result = nil;
+	N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+		@try {
+			NSArray *imageArray = [self.images allObjects];
+			NSPredicate *predicate = [NSPredicate predicateWithFormat:@"isKeyImage == YES"];
+			result = [[NSSet setWithArray:[imageArray filteredArrayUsingPredicate:predicate]] retain];
+		}
+		@catch (NSException* e) {
+			N2LogExceptionWithStackTrace(e);
+		}
+    });
+	return [result autorelease];
 }
 
 - (NSArray*) sortDescriptorsForImages

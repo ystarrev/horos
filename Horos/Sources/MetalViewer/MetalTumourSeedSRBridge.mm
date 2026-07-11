@@ -121,10 +121,10 @@ static NSString * const HorosMetalTumourSeedSchema = @"com.horos.metalviewer.tum
     if (seedROI == nil)
         return [self failure:@"Cannot save tumour seed because the ROI object could not be created."];
 
-    NSString *errorMessage = nil;
-    [database lock];
-    @try
-    {
+    __block NSString *errorMessage = nil;
+    N2PerformManagedObjectContextBlockAndWait(database.managedObjectContext, ^{
+        @try
+        {
         NSString *path = [study roiPathForImage:image inArray:nil];
         NSMutableArray *rois = [NSMutableArray arrayWithArray:[self roiArrayAtPath:path]];
 
@@ -164,15 +164,12 @@ static NSString * const HorosMetalTumourSeedSchema = @"com.horos.metalviewer.tum
             if (importedObjects.count == 0)
                 errorMessage = [NSString stringWithFormat:@"Cannot save tumour seed because the ROI SR file was not imported into the database: %@", path];
         }
-    }
-    @catch (NSException *exception)
-    {
-        errorMessage = [NSString stringWithFormat:@"Cannot save tumour seed as an ROI SR: %@", exception.reason ?: exception.name];
-    }
-    @finally
-    {
-        [database unlock];
-    }
+        }
+        @catch (NSException *exception)
+        {
+            errorMessage = [NSString stringWithFormat:@"Cannot save tumour seed as an ROI SR: %@", exception.reason ?: exception.name];
+        }
+    });
 
     if (errorMessage.length)
         return [self failure:errorMessage];
@@ -208,13 +205,13 @@ static NSString * const HorosMetalTumourSeedSchema = @"com.horos.metalviewer.tum
     if (database == nil)
         return [self failure:@"Cannot delete tumour seed because the source database is not available."];
 
-    NSString *errorMessage = nil;
-    BOOL removedSeed = NO;
+    __block NSString *errorMessage = nil;
+    __block BOOL removedSeed = NO;
     NSMutableArray<NSString *> *updatedPaths = [NSMutableArray array];
 
-    [database lock];
-    @try
-    {
+    N2PerformManagedObjectContextBlockAndWait(database.managedObjectContext, ^{
+        @try
+        {
         for (NSUInteger index = 0; index < pixList.count; index++)
         {
             DCMPix *pix = [pixList objectAtIndex:index];
@@ -267,15 +264,12 @@ static NSString * const HorosMetalTumourSeedSchema = @"com.horos.metalviewer.tum
                   rereadExistingItems:YES
                    generatedByOsiriX:YES];
         }
-    }
-    @catch (NSException *exception)
-    {
-        errorMessage = [NSString stringWithFormat:@"Cannot delete tumour seed from ROI SR: %@", exception.reason ?: exception.name];
-    }
-    @finally
-    {
-        [database unlock];
-    }
+        }
+        @catch (NSException *exception)
+        {
+            errorMessage = [NSString stringWithFormat:@"Cannot delete tumour seed from ROI SR: %@", exception.reason ?: exception.name];
+        }
+    });
 
     if (errorMessage.length)
         return [self failure:errorMessage];

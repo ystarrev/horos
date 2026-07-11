@@ -8261,8 +8261,6 @@ static int avoidReentryRefreshDatabase = 0;
                 // Release previous data
                 [self finalizeSeriesViewing];
                 
-                [[[BrowserController currentBrowser] database] lock];
-                
                 @try
                 {
                     [orientationMatrix selectCellWithTag: 0];
@@ -8708,8 +8706,6 @@ static int avoidReentryRefreshDatabase = 0;
                     NSLog( @"***** changeImageData exception : %@", e);
                     [[self window] close];
                 }
-                
-                [[[BrowserController currentBrowser] database] unlock];
                 
                 [imageView computeColor];
                 
@@ -13001,8 +12997,6 @@ static float oldsetww, oldsetwl;
     DicomStudy *study = [[fileList[0] objectAtIndex:0] valueForKeyPath: @"series.study"];
     NSArray *roisArray = [[[study roiSRSeries] valueForKey: @"images"] allObjects];
     
-    [[[[BrowserController currentBrowser] database] managedObjectContext] lock];
-    
     @try
     {
         if( [[fileList[ mIndex] lastObject] isKindOfClass:[NSManagedObject class]])
@@ -13072,7 +13066,6 @@ static float oldsetww, oldsetwl;
     {
         NSLog( @"*** load ROI exception: %@", e);
     }
-    [[[[BrowserController currentBrowser] database] managedObjectContext] unlock];
 }
 
 + (BOOL) areROIsArraysIdentical: (NSArray*) copy with: (NSArray*) roisArray
@@ -13114,19 +13107,17 @@ static float oldsetww, oldsetwl;
 
 - (void) saveROI:(long) mIndex
 {
-    DicomStudy *study = [[fileList[ mIndex] objectAtIndex:0] valueForKeyPath: @"series.study"];
-    NSArray *roisArray = [[[study roiSRSeries] valueForKey: @"images"] allObjects];
-    
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SAVEROIS"] == NO)
         return;
     
     if( [[fileList[ mIndex] lastObject] isKindOfClass:[NSManagedObject class]])
     {
         DicomDatabase* database = [DicomDatabase databaseForContext:[[fileList[mIndex] lastObject] managedObjectContext]];
-        [database lock];
-        
-        @try
-        {
+        N2PerformManagedObjectContextBlockAndWait(database.managedObjectContext, ^{
+            @try
+            {
+            DicomStudy *study = [[fileList[ mIndex] objectAtIndex:0] valueForKeyPath: @"series.study"];
+            NSArray *roisArray = [[[study roiSRSeries] valueForKey: @"images"] allObjects];
             NSMutableArray *allDICOMSR = [NSMutableArray array];
             
             for( int i = 0; i < [fileList[ mIndex] count]; i++)
@@ -13205,14 +13196,12 @@ static float oldsetww, oldsetwl;
             
             if (allDICOMSR.count)
                 [database addFilesAtPaths:allDICOMSR postNotifications:YES dicomOnly:YES rereadExistingItems:YES generatedByOsiriX:YES];
-        }
-        @catch ( NSException *e)
-        {
-            N2LogExceptionWithStackTrace(e);
-        }
-        @finally {
-            [database unlock];
-        }
+            }
+            @catch ( NSException *e)
+            {
+                N2LogExceptionWithStackTrace(e);
+            }
+        });
     }
 }
 
@@ -16042,10 +16031,10 @@ static float oldsetww, oldsetwl;
         }
         
         if( [sender tag] == 0)
-            [[suvForm cellAtIndex: 3] setObjectValue: injectionDateTime];
+            [[suvForm cellAtRow:3 column:0] setObjectValue: injectionDateTime];
         
         if( [sender tag] == 1)
-            [[suvForm cellAtIndex: 4] setObjectValue: injectionDateTime];
+            [[suvForm cellAtRow:4 column:0] setObjectValue: injectionDateTime];
     }
 }
 
@@ -16193,15 +16182,15 @@ static float oldsetww, oldsetwl;
                 [p setDisplaySUVValue: NO];
         }
         
-        if( [[suvForm cellAtIndex: 0] floatValue] > 0)
+        if( [[suvForm cellAtRow:0 column:0] floatValue] > 0)
         {
             for( y = 0; y < maxMovieIndex; y++)
             {
                 for( x = 0; x < [pixList[y] count]; x++)
                 {
-                    [[pixList[y] objectAtIndex: x] setPatientsWeight: [[suvForm cellAtIndex: 0] floatValue]];
-                    [[pixList[y] objectAtIndex: x] setRadionuclideTotalDose: [[suvForm cellAtIndex: 1] floatValue] * 1000000.];
-                    [[pixList[y] objectAtIndex: x] setRadiopharmaceuticalStartTime: [[suvForm cellAtIndex: 3] objectValue]];
+                    [[pixList[y] objectAtIndex: x] setPatientsWeight: [[suvForm cellAtRow:0 column:0] floatValue]];
+                    [[pixList[y] objectAtIndex: x] setRadionuclideTotalDose: [[suvForm cellAtRow:1 column:0] floatValue] * 1000000.];
+                    [[pixList[y] objectAtIndex: x] setRadiopharmaceuticalStartTime: [[suvForm cellAtRow:3 column:0] objectValue]];
                     [[pixList[y] objectAtIndex: x] computeTotalDoseCorrected];
                 }
             }
@@ -16248,15 +16237,15 @@ static float oldsetww, oldsetwl;
 - (IBAction) updateSUVValues:(id) sender
 {
     int			x, y;
-    NSDate		*newDate = [[suvForm cellAtIndex: 3] objectValue];
-    float		newInjectedDose = [[suvForm cellAtIndex: 1] floatValue] * 1000000.;
+    NSDate		*newDate = [[suvForm cellAtRow:3 column:0] objectValue];
+    float		newInjectedDose = [[suvForm cellAtRow:1 column:0] floatValue] * 1000000.;
     
     if( -[newDate timeIntervalSinceDate: [[imageView curDCM] acquisitionTime]] <= 0)
     {
         NSRunAlertPanel(NSLocalizedString(@"SUV Error", nil), NSLocalizedString(@"Injection time CANNOT be after acquisition time !", nil), nil, nil, nil);
         
         if( [[imageView curDCM] radiopharmaceuticalStartTime])
-            [[suvForm cellAtIndex: 3] setObjectValue: [[imageView curDCM] radiopharmaceuticalStartTime]];
+            [[suvForm cellAtRow:3 column:0] setObjectValue: [[imageView curDCM] radiopharmaceuticalStartTime]];
     }
     else
     {
@@ -16265,17 +16254,17 @@ static float oldsetww, oldsetwl;
             for( x = 0; x < [pixList[y] count]; x++)
             {
                 [[pixList[y] objectAtIndex: x] setRadionuclideTotalDose: newInjectedDose];
-                [[pixList[y] objectAtIndex: x] setRadiopharmaceuticalStartTime: [[suvForm cellAtIndex: 3] objectValue]];
+                [[pixList[y] objectAtIndex: x] setRadiopharmaceuticalStartTime: [[suvForm cellAtRow:3 column:0] objectValue]];
                 [[pixList[y] objectAtIndex: x] computeTotalDoseCorrected];
             }
         }
         
-        [[suvForm cellAtIndex: 1] setStringValue: [NSString stringWithFormat:@"%2.3f", [[imageView curDCM] radionuclideTotalDose] / 1000000. ]];
+        [[suvForm cellAtRow:1 column:0] setStringValue: [NSString stringWithFormat:@"%2.3f", [[imageView curDCM] radionuclideTotalDose] / 1000000. ]];
         
-        [[suvForm cellAtIndex: 2] setStringValue: [NSString stringWithFormat:@"%2.3f", [[imageView curDCM] radionuclideTotalDoseCorrected] / 1000000. ]];
+        [[suvForm cellAtRow:2 column:0] setStringValue: [NSString stringWithFormat:@"%2.3f", [[imageView curDCM] radionuclideTotalDoseCorrected] / 1000000. ]];
         
         if( [[imageView curDCM] radiopharmaceuticalStartTime])
-            [[suvForm cellAtIndex: 3] setObjectValue: [[imageView curDCM] radiopharmaceuticalStartTime]];
+            [[suvForm cellAtRow:3 column:0] setObjectValue: [[imageView curDCM] radiopharmaceuticalStartTime]];
     }
 }
 
@@ -16289,17 +16278,17 @@ static float oldsetww, oldsetwl;
     }
     else
     {
-        [[suvForm cellAtIndex: 0] setStringValue: [NSString stringWithFormat:@"%2.3f", [[imageView curDCM] patientsWeight]]];
-        [[suvForm cellAtIndex: 1] setStringValue: [NSString stringWithFormat:@"%2.3f", [[imageView curDCM] radionuclideTotalDose] / 1000000.]];
-        [[suvForm cellAtIndex: 2] setStringValue: [NSString stringWithFormat:@"%2.3f", [[imageView curDCM] radionuclideTotalDoseCorrected] / 1000000. ]];
+        [[suvForm cellAtRow:0 column:0] setStringValue: [NSString stringWithFormat:@"%2.3f", [[imageView curDCM] patientsWeight]]];
+        [[suvForm cellAtRow:1 column:0] setStringValue: [NSString stringWithFormat:@"%2.3f", [[imageView curDCM] radionuclideTotalDose] / 1000000.]];
+        [[suvForm cellAtRow:2 column:0] setStringValue: [NSString stringWithFormat:@"%2.3f", [[imageView curDCM] radionuclideTotalDoseCorrected] / 1000000. ]];
         
         if( [[imageView curDCM] radiopharmaceuticalStartTime])
-            [[suvForm cellAtIndex: 3] setObjectValue: [[imageView curDCM] radiopharmaceuticalStartTime]];
+            [[suvForm cellAtRow:3 column:0] setObjectValue: [[imageView curDCM] radiopharmaceuticalStartTime]];
         
         if( [[imageView curDCM] acquisitionTime])
-            [[suvForm cellAtIndex: 4] setObjectValue: [[imageView curDCM] acquisitionTime]];
+            [[suvForm cellAtRow:4 column:0] setObjectValue: [[imageView curDCM] acquisitionTime]];
         
-        [[suvForm cellAtIndex: 5] setStringValue: [NSString stringWithFormat:@"%2.2f", [[imageView curDCM] halflife] / 60.]];
+        [[suvForm cellAtRow:5 column:0] setStringValue: [NSString stringWithFormat:@"%2.2f", [[imageView curDCM] halflife] / 60.]];
         
         [editedRadiopharmaceuticalStartTime release];
         editedRadiopharmaceuticalStartTime = nil;

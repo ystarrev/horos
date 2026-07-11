@@ -49,6 +49,7 @@
 
 
 @interface DicomDatabase (RoutingPrivate)
+- (void)routingOnContextQueue;
 
 -(NSMutableArray*)routingSendQueues;
 -(NSRecursiveLock*)routingLock;
@@ -219,6 +220,12 @@
 }
 
 -(void)routing {
+    N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+        [self routingOnContextQueue];
+    });
+}
+
+-(void)routingOnContextQueue {
 	[_routingLock lock];
 	@try {
 		NSThread* thread = [NSThread currentThread];

@@ -239,11 +239,11 @@ enum
 	IBOutlet NSButton		*imageAllViewers;
 	
 	IBOutlet NSWindow		*displaySUVWindow;
-	IBOutlet NSForm			*suvForm;
+	IBOutlet NSMatrix		*suvForm;
 	IBOutlet NSMatrix		*suvConversion;
 	
-	NSCalendarDate			*editedRadiopharmaceuticalStartTime, *editedAcquisitionTime;
-	NSCalendarDate			*injectionDateTime;
+	NSDate					*editedRadiopharmaceuticalStartTime, *editedAcquisitionTime;
+	NSDate					*injectionDateTime;
 	
 	IBOutlet NSWindow       *addOpacityWindow;
 	IBOutlet NSTextField    *OpacityName;
@@ -373,7 +373,7 @@ enum
     IBOutlet NSView         *viewerView;
     
 }
-@property(retain) NSCalendarDate *injectionDateTime;
+@property(retain) NSDate *injectionDateTime;
 @property(readonly) short currentOrientationTool;
 @property(readonly) NSTimer	*timer;
 @property(readonly) NSButton *keyImageCheck;

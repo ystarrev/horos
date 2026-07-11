@@ -37,6 +37,16 @@
 
 #import <Cocoa/Cocoa.h>
 
+NS_INLINE void N2PerformManagedObjectContextBlockAndWait(
+    NSManagedObjectContext *context,
+    void (^block)(void)
+) {
+    if (context)
+        [context performBlockAndWait:block];
+    else
+        block();
+}
+
 
 @interface N2ManagedDatabase : NSObject {
 	@protected
@@ -46,14 +56,7 @@
     id _mainDatabase;
     volatile BOOL _isDeallocating;
     
-#ifndef NDEBUG
-    NSThread *associatedThread;
-#endif
 }
-
-#ifndef NDEBUG
-@property(readonly) NSThread* associatedThread;
-#endif
 
 @property(readonly,retain) NSString* sqlFilePath;
 @property(readonly) NSManagedObjectModel* managedObjectModel;
@@ -62,15 +65,6 @@
 @property(readonly,retain) id mainDatabase; // for independentDatabases
 -(BOOL)isMainDatabase;
 
-// locking actually locks the context
--(void)lock;
--(BOOL)lockBeforeDate:(NSDate*) date;
--(BOOL)tryLock;
--(void)unlock;
-#ifndef NDEBUG
--(void) checkForCorrectContextThread;
--(void) checkForCorrectContextThread: (NSManagedObjectContext*) c;
-#endif
 // write locking uses writeLock member
 //-(void)writeLock;
 //-(BOOL)tryWriteLock;
@@ -80,7 +74,6 @@
 -(BOOL) deleteSQLFileIfOpeningFailed;
 -(NSManagedObjectModel*)managedObjectModel;
 //-(NSMutableDictionary*)persistentStoreCoordinatorsDictionary;
--(BOOL)migratePersistentStoresAutomatically; // default implementation returns YES
 
 -(id)initWithPath:(NSString*)sqlFilePath;
 -(id)initWithPath:(NSString*)sqlFilePath context:(NSManagedObjectContext*)context;
@@ -115,13 +108,11 @@
 
 - (Class)NSManagedObjectContextClass;
 - (NSManagedObjectContext *)contextAtPath:(NSString *)sqlFilePath;
-
-- (BOOL)saveDatabaseModel;
+- (NSManagedObjectContext *)contextAtPath:(NSString *)sqlFilePath concurrencyType:(NSManagedObjectContextConcurrencyType)concurrencyType;
 
 @end
 
 @interface N2ManagedObjectContext : NSManagedObjectContext {
-    N2ManagedObjectContext *_confinementParentContext;
 	N2ManagedDatabase* _database;
 }
 

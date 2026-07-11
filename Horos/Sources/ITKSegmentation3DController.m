@@ -325,8 +325,8 @@ enum algorithmTypes { intervalSegmentationType, thresholdSegmentationType, neigh
 										: nil
 										: slice
 										: startingPoint
-										: algo //[[params cellAtIndex: 1] floatValue]
-										: parametersArray //[[params cellAtIndex: 2] floatValue]
+										: algo //[[params cellAtRow:1 column:0] floatValue]
+										: parametersArray //[[params cellAtRow:2 column:0] floatValue]
 										: [[pixelsSet cellWithTag:0] state]==NSControlStateValueOn
 										: [[pixelsValue cellWithTag:0] floatValue]
 										: [[pixelsSet cellWithTag:1] state]==NSControlStateValueOn
@@ -437,8 +437,8 @@ enum algorithmTypes { intervalSegmentationType, thresholdSegmentationType, neigh
 										: v
 										: slice
 										: startingPoint
-										: algo //[[params cellAtIndex: 1] floatValue]
-										: parametersArray //[[params cellAtIndex: 2] floatValue]
+										: algo //[[params cellAtRow:1 column:0] floatValue]
+										: parametersArray //[[params cellAtRow:2 column:0] floatValue]
 										: [[pixelsSet cellWithTag:0] state]==NSControlStateValueOn
 										: [[pixelsValue cellWithTag:0] floatValue]
 										: [[pixelsSet cellWithTag:1] state]==NSControlStateValueOn

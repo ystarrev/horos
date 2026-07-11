@@ -50,7 +50,6 @@
 #import "N2ConnectionListener.h"
 #import "N2Connection.h"
 #import "NSFileManager+N2.h"
-#import "N2Locker.h"
 
 // imports required for socket initialization
 #import <sys/socket.h>
@@ -596,76 +595,24 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
 
 - (void)DATAB {
     DicomDatabase* idatabase = [self _stackIndependentDatabase];
-    
-    NSMutableData* representationToSend = nil;
-    
-    N2Locker* lock = [self _stackedObject];
-    if (!lock) {
-        [self _stackObject:[N2Locker lock:[[idatabase managedObjectContext] persistentStoreCoordinator]]]; // this object unlocks the persistentStoreCoordinator when released
-        [idatabase save];
-    }
-    
-    BOOL done = NO;
-    
+
+    __block NSMutableData* representationToSend = nil;
     @try
     {
-        // we send the database SQL file
+        [idatabase save];
         NSString* databasePath = [idatabase sqlFilePath];
-        
-#if __LP64__
-        representationToSend = [NSMutableData dataWithContentsOfFile: databasePath];
-        done = YES;
-#else
-        NSNumber* fileSize = [self _stackedObject];
-        if (!fileSize) {
-            NSDictionary *fattrs = [[NSFileManager defaultManager] fileAttributesAtPath: databasePath traverseLink: YES];
-            long long ll = [[fattrs objectForKey:NSFileSize] longLongValue];
-            [self _stackObject:(fileSize = [NSNumber numberWithLongLong:ll])];
-        }
-        
-        // read 200 MB per cycle
-#define DATA_READ_SIZE 200L
-        
-        if (fileSize.longLongValue/1024/1024 > DATA_READ_SIZE)
-        {
-            NSFileHandle* dbFileHandle = [self _stackedObject];
-            if (!dbFileHandle) {
-                dbFileHandle = [NSFileHandle fileHandleForReadingAtPath: databasePath];
-                [self _stackObject:dbFileHandle];
-            }
-            
-            if (self.writeBufferSize > 0) // to optimize memory usage, don't queue additional data until the send buffer is empty
-                return;
-            
-            NSData* chunk = [dbFileHandle readDataOfLength: DATA_READ_SIZE * 1024L*1024L];
-            if ([chunk length]) {
-                [self writeData: chunk];
-                return;
-            } else
-                done = YES;
-            
-            [self _unstack];
-        }
-        else
-        {
-            representationToSend = [NSMutableData dataWithContentsOfFile: databasePath];
-            done = YES;
-        }
-        
-        [self _unstack];
-#endif
+        NSPersistentStoreCoordinator *coordinator = idatabase.managedObjectContext.persistentStoreCoordinator;
+        [coordinator performBlockAndWait:^{
+            representationToSend = [[NSMutableData dataWithContentsOfFile:databasePath] retain];
+        }];
     }
     @catch (NSException *e) {
         N2LogExceptionWithStackTrace(e);
     }
-    @finally {
-        if (done) {
-            [self _unstack]; // -> release N2Locker, unlocks the persistentStoreCoordinator (this line may not be called, so the persistentStoreCoordinator will be unlocked when this connection object is released -- when the stack is released)
-        }
-    }
-    
+
     if (representationToSend)
         [self writeData:representationToSend];
+    [representationToSend release];
     
     NSLog(@"Bonjour connection received from %@", _address);
     
@@ -675,24 +622,20 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
 - (void)DBSIZ {
     DicomDatabase* idatabase = [self _stackIndependentDatabase];
     
-    int fileSize;
-    
-    [[[idatabase managedObjectContext] persistentStoreCoordinator] lock];
+    __block int fileSize = 0;
+
     @try
     {
         [idatabase save];
-        
         NSString *databasePath = [idatabase sqlFilePath];
-        
-        NSDictionary *fattrs = [[NSFileManager defaultManager] attributesOfItemAtPath:databasePath error:NULL];
-        
-        fileSize = [[fattrs objectForKey:NSFileSize] longLongValue];
+        NSPersistentStoreCoordinator *coordinator = idatabase.managedObjectContext.persistentStoreCoordinator;
+        [coordinator performBlockAndWait:^{
+            NSDictionary *fattrs = [[NSFileManager defaultManager] attributesOfItemAtPath:databasePath error:NULL];
+            fileSize = [[fattrs objectForKey:NSFileSize] intValue];
+        }];
     }
     @catch (NSException* e) {
         N2LogExceptionWithStackTrace(e);
-    }
-    @finally {
-        [[[idatabase managedObjectContext] persistentStoreCoordinator] unlock];
     }
     
     int size = NSSwapHostIntToBig(fileSize);
@@ -724,9 +667,7 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
 }
 
 - (void)DBVER {
-    NSString	*versString = [[NSUserDefaults standardUserDefaults] stringForKey: @"DATABASEVERSION"];
-    
-    [self writeData:[NSMutableData dataWithData: [versString dataUsingEncoding: NSASCIIStringEncoding]]];
+    [self writeData:[NSMutableData dataWithData:[CurrentDatabaseVersion dataUsingEncoding:NSASCIIStringEncoding]]];
     
     _mode = DONE;
 }
@@ -784,15 +725,16 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
     
     NSArray *objects = [idatabase addFilesAtPaths: savedFiles postNotifications: YES dicomOnly: NO rereadExistingItems: YES generatedByOsiriX:(_mode == SENDG)];
     
-    objects = [idatabase objectsWithIDs: objects];
-    
     NSMutableData* representationToSend = [NSMutableData data];
-    unsigned int temp = NSSwapHostIntToBig([objects count]);
-    [representationToSend appendBytes:&temp length:4];
-    for (DicomImage* image in objects) {
-        unsigned int temp = NSSwapHostIntToBig(image.pathNumber.intValue);
-        [representationToSend appendBytes:&temp length:4];
-    }
+    N2PerformManagedObjectContextBlockAndWait(idatabase.managedObjectContext, ^{
+        NSArray *images = [idatabase objectsWithIDs:objects];
+        unsigned int count = NSSwapHostIntToBig([images count]);
+        [representationToSend appendBytes:&count length:4];
+        for (DicomImage* image in images) {
+            unsigned int pathNumber = NSSwapHostIntToBig(image.pathNumber.intValue);
+            [representationToSend appendBytes:&pathNumber length:4];
+        }
+    });
     
     [self writeData:representationToSend];
     
@@ -823,8 +765,9 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
     
     DicomDatabase* idatabase = [self _stackIndependentDatabase];
     
-    @try
-    {
+    N2PerformManagedObjectContextBlockAndWait(idatabase.managedObjectContext, ^{
+        @try
+        {
         DicomAlbum* album = [idatabase objectWithID:albumUID]; // [context objectWithID: [[context persistentStoreCoordinator] managedObjectIDForURIRepresentation: [NSURL URLWithString: albumUID]]];
         NSMutableSet* albumStudies = [album mutableSetValueForKey:@"studies"];
         
@@ -838,12 +781,12 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
         [idatabase save:nil];
         
         [[BrowserController currentBrowser] performSelectorOnMainThread:@selector(refreshDatabase:) withObject:self waitUntilDone:NO];
-    }
-    
-    @catch (NSException * e)
-    {
-        N2LogExceptionWithStackTrace(e);
-    }
+        }
+        @catch (NSException * e)
+        {
+            N2LogExceptionWithStackTrace(e);
+        }
+    });
     
     _mode = DONE;
 }
@@ -864,8 +807,9 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
     
     DicomDatabase* idatabase = [self _stackIndependentDatabase];
     
-    @try
-    {
+    N2PerformManagedObjectContextBlockAndWait(idatabase.managedObjectContext, ^{
+        @try
+        {
         DicomAlbum* album = [idatabase objectWithID:albumUID]; // [context objectWithID: [[context persistentStoreCoordinator] managedObjectIDForURIRepresentation: [NSURL URLWithString: albumUID]]];
         NSMutableSet* albumStudies = [album mutableSetValueForKey: @"studies"];
         
@@ -879,14 +823,12 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
         [idatabase save:nil];
         
         [[BrowserController currentBrowser] performSelectorOnMainThread:@selector(refreshDatabase:) withObject:self waitUntilDone:NO];
-    }
-    
-    @catch (NSException * e)
-    {
-        N2LogExceptionWithStackTrace(e);
-    }
-    @finally {
-    }
+        }
+        @catch (NSException * e)
+        {
+            N2LogExceptionWithStackTrace(e);
+        }
+    });
     
     _mode = DONE;
     
@@ -894,13 +836,14 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
 
 - (void)SETVA {
     NSString* objectId = [self _stackReadString];
-    NSString* value = [self _stackReadString];
+    __block NSString* value = [self _stackReadString];
     NSString* key = [self _stackReadString];
     
     DicomDatabase* idatabase = [self _stackIndependentDatabase];
     
-    @try
-    {
+    N2PerformManagedObjectContextBlockAndWait(idatabase.managedObjectContext, ^{
+        @try
+        {
         NSManagedObject* item = [idatabase objectWithID:objectId]; // [context objectWithID: [[context persistentStoreCoordinator] managedObjectIDForURIRepresentation: [NSURL URLWithString: object]]];
         
         //NSLog(@"URL:%@", object);
@@ -926,14 +869,12 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
         }
         
         [idatabase save:NULL];
-    }
-    
-    @catch (NSException *e)
-    {
+        }
+        @catch (NSException *e)
+        {
         N2LogExceptionWithStackTrace(e);
-    }
-    @finally {
-    }
+        }
+    });
     
     [[BrowserController currentBrowser] performSelectorOnMainThread:@selector(refreshDatabase:) withObject:self waitUntilDone:NO];
     

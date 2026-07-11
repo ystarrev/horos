@@ -40,23 +40,9 @@
 
 @implementation N2OpenGLViewWithSplitsWindow
 
-@synthesize needsEnableUpdate;
-
 -(void)disableUpdatesUntilFlush
 {
-    if(!needsEnableUpdate)
-        NSDisableScreenUpdates();
-    needsEnableUpdate = YES;
-}
-
--(void)flushWindow
-{
-    [super flushWindow];
-    if(needsEnableUpdate)
-    {
-        needsEnableUpdate = NO;
-        NSEnableScreenUpdates();
-    }
+    // AppKit performs deferred window flushing automatically on modern macOS.
 }
 
 @end

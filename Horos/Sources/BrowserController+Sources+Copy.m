@@ -211,14 +211,13 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
 
             DicomDatabase *srcDatabase = [io objectAtIndex:2];
             srcIndependentDatabase = [[srcDatabase independentDatabase] retain];
-            dicomImages = [[srcIndependentDatabase objectsWithIDs: [io objectAtIndex: 0]] retain];
-
             NSMutableArray* imagePaths = [NSMutableArray array];
-            for (DicomImage* image in dicomImages)
-                if (![imagePaths containsObject:image.completePath])
-                    [imagePaths addObject:image.completePath];
-            [dicomImages release];
-            dicomImages = nil;
+            N2PerformManagedObjectContextBlockAndWait(srcIndependentDatabase.managedObjectContext, ^{
+                NSArray *images = [srcIndependentDatabase objectsWithIDs:[io objectAtIndex:0]];
+                for (DicomImage* image in images)
+                    if (![imagePaths containsObject:image.completePath])
+                        [imagePaths addObject:image.completePath];
+            });
             [srcIndependentDatabase release];
             srcIndependentDatabase = nil;
 
@@ -305,15 +304,13 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
 
 	DataNodeIdentifier* destination = [io objectAtIndex:1];
 	DicomDatabase *srcDatabase = [io objectAtIndex:2];
-    NSArray* dicomImages = [srcDatabase.independentDatabase objectsWithIDs: [io objectAtIndex: 0]];
-
 	NSMutableArray* imagePaths = [NSMutableArray array];
-	NSMutableArray* imagePathsObjs = [NSMutableArray array];
-	for (DicomImage* image in dicomImages)
-		if (![imagePaths containsObject:image.completePath]) {
-			[imagePaths addObject:image.completePath];
-            [imagePathsObjs addObject:image];
-        }
+    DicomDatabase *independentDatabase = srcDatabase.independentDatabase;
+    N2PerformManagedObjectContextBlockAndWait(independentDatabase.managedObjectContext, ^{
+        for (DicomImage* image in [independentDatabase objectsWithIDs:[io objectAtIndex:0]])
+            if (![imagePaths containsObject:image.completePath])
+                [imagePaths addObject:image.completePath];
+    });
 
 	thread.status = NSLocalizedString(@"Opening database...", nil);
 
@@ -349,17 +346,18 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
 
         DataNodeIdentifier* destination = [io objectAtIndex:1];
         DicomDatabase *srcDatabase = [io objectAtIndex:2];
-        NSArray* dicomImages = [srcDatabase.independentDatabase objectsWithIDs: [io objectAtIndex: 0]];
-
         NSMutableArray* imagePaths = [NSMutableArray array];
         NSFileManager *fm = [NSFileManager defaultManager];
-        for (DicomImage* image in dicomImages)
-        {
-            NSString *path = image.completePath;
-            BOOL isDirectory = NO;
-            if (path.length && ![imagePaths containsObject:path] && [fm fileExistsAtPath:path isDirectory:&isDirectory] && !isDirectory)
-                [imagePaths addObject:path];
-        }
+        DicomDatabase *independentDatabase = srcDatabase.independentDatabase;
+        N2PerformManagedObjectContextBlockAndWait(independentDatabase.managedObjectContext, ^{
+            for (DicomImage* image in [independentDatabase objectsWithIDs:[io objectAtIndex:0]])
+            {
+                NSString *path = image.completePath;
+                BOOL isDirectory = NO;
+                if (path.length && ![imagePaths containsObject:path] && [fm fileExistsAtPath:path isDirectory:&isDirectory] && !isDirectory)
+                    [imagePaths addObject:path];
+            }
+        });
 
         if (!imagePaths.count)
         {
@@ -466,43 +464,44 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
         DataNodeIdentifier* destination = [io objectAtIndex:1];
         RemoteDicomDatabase* srcDatabase = [io objectAtIndex:2];
         srcIndependentDatabase = [[srcDatabase independentDatabase] retain];
-        NSMutableArray* dicomImages = [[[srcIndependentDatabase objectsWithIDs: [io objectAtIndex: 0]] mutableCopy] autorelease];
-
-        NSMutableArray* imagePaths = [[[dicomImages valueForKey:@"completePath"] mutableCopy] autorelease];
-        [imagePaths removeDuplicatedStringsInSyncWithThisArray:dicomImages];
 
         thread.status = NSLocalizedString(@"Opening database...", nil);
 
         idatabase = [[[DicomDatabase databaseAtPath:destination.location name:destination.description] independentDatabase] retain];
-
-        thread.status = [NSString stringWithFormat:NSLocalizedString(@"Fetching %@ %@...", nil), N2LocalizedDecimal( dicomImages.count), (dicomImages.count == 1 ? NSLocalizedString(@"file", nil) : NSLocalizedString(@"files", nil)) ];
         NSMutableArray* dstPaths = [NSMutableArray array];
-        for (NSInteger i = 0; i < dicomImages.count; ++i)
-        {
-            @try
-            {
-                DicomImage* dicomImage = [dicomImages objectAtIndex:i];
-                NSString* srcPath = [srcDatabase cacheDataForImage:dicomImage maxFiles:0];
+        N2PerformManagedObjectContextBlockAndWait(srcIndependentDatabase.managedObjectContext, ^{
+            NSMutableArray* dicomImages = [[[srcIndependentDatabase objectsWithIDs:[io objectAtIndex:0]] mutableCopy] autorelease];
+            NSMutableArray* imagePaths = [[[dicomImages valueForKey:@"completePath"] mutableCopy] autorelease];
+            [imagePaths removeDuplicatedStringsInSyncWithThisArray:dicomImages];
 
-                if (srcPath)
+            thread.status = [NSString stringWithFormat:NSLocalizedString(@"Fetching %@ %@...", nil), N2LocalizedDecimal(dicomImages.count), (dicomImages.count == 1 ? NSLocalizedString(@"file", nil) : NSLocalizedString(@"files", nil))];
+            for (NSInteger i = 0; i < dicomImages.count; ++i)
+            {
+                @try
                 {
-                    NSString* ext = [DicomFile isDICOMFile:srcPath]? @"dcm" : srcPath.pathExtension;
-                    NSString* dstPath = [idatabase uniquePathForNewDataFileWithExtension:ext];
+                    DicomImage* dicomImage = [dicomImages objectAtIndex:i];
+                    NSString* srcPath = [srcDatabase cacheDataForImage:dicomImage maxFiles:0];
 
-                    if( dstPath.length)
-                        if ([[NSFileManager defaultManager] moveItemAtPath:srcPath toPath:dstPath error:NULL])
-                            [dstPaths addObject:dstPath];
+                    if (srcPath)
+                    {
+                        NSString* ext = [DicomFile isDICOMFile:srcPath]? @"dcm" : srcPath.pathExtension;
+                        NSString* dstPath = [idatabase uniquePathForNewDataFileWithExtension:ext];
+
+                        if( dstPath.length)
+                            if ([[NSFileManager defaultManager] moveItemAtPath:srcPath toPath:dstPath error:NULL])
+                                [dstPaths addObject:dstPath];
+                    }
                 }
-            }
-            @catch (NSException *exception)
-            {
-                N2LogExceptionWithStackTrace( exception);
-            }
-            thread.progress = 1.0*i/dicomImages.count;
+                @catch (NSException *exception)
+                {
+                    N2LogExceptionWithStackTrace( exception);
+                }
+                thread.progress = 1.0*i/dicomImages.count;
 
-            if (thread.isCancelled)
-                break;
-        }
+                if (thread.isCancelled)
+                    break;
+            }
+        });
 
         thread.status = NSLocalizedString(@"Indexing files...", nil);
         thread.progress = -1;
@@ -526,12 +525,9 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
 	NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
 	NSThread* thread = [NSThread currentThread];
 
-	DataNodeIdentifier* destination = [io objectAtIndex:1];
+    DataNodeIdentifier* destination = [io objectAtIndex:1];
     RemoteDicomDatabase* srcDatabase = [io objectAtIndex:2];
-    NSMutableArray* dicomImages = [[[srcDatabase.independentDatabase objectsWithIDs: [io objectAtIndex: 0]] mutableCopy] autorelease];
-
-	NSMutableArray* imagePaths = [[[dicomImages valueForKey:@"completePath"] mutableCopy] autorelease];
-	[imagePaths removeDuplicatedStringsInSyncWithThisArray:dicomImages];
+    DicomDatabase *srcIndependentDatabase = srcDatabase.independentDatabase;
 
 	NSString* dstAddress = nil;
 	NSString* dstAET = nil;
@@ -567,8 +563,11 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
 		dstSyntax = [[destination.dictionary objectForKey:@"TransferSyntax"] integerValue];
 	}
 
-	thread.status = [NSString stringWithFormat:NSLocalizedString(@"Sending SCU request...", nil), dicomImages.count];
-	[srcDatabase storeScuImages:dicomImages toDestinationAETitle:dstAET address:dstAddress port:dstPort transferSyntax:dstSyntax];
+	N2PerformManagedObjectContextBlockAndWait(srcIndependentDatabase.managedObjectContext, ^{
+        NSMutableArray* dicomImages = [[[srcIndependentDatabase objectsWithIDs:[io objectAtIndex:0]] mutableCopy] autorelease];
+        thread.status = [NSString stringWithFormat:NSLocalizedString(@"Sending SCU request...", nil), dicomImages.count];
+        [srcDatabase storeScuImages:dicomImages toDestinationAETitle:dstAET address:dstAddress port:dstPort transferSyntax:dstSyntax];
+    });
 
 	[pool release];
 }

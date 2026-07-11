@@ -159,10 +159,8 @@ extern AppController* OsiriX;
 #endif
 + (AppController*) sharedAppController; /**< Return the shared AppController instance */
 + (void) resizeWindowWithAnimation:(NSWindow*) window newSize: (NSRect) newWindowFrame;
-+ (void) pause __deprecated;
 + (ThumbnailsListPanel*)thumbnailsListPanelForScreen:(NSScreen*)screen;
 + (NSString*)printStackTrace:(NSException*)e __deprecated; // use -[NSException printStackTrace] from NSException+N2
-+ (BOOL) isKDUEngineAvailable;
 
 #pragma mark-
 #pragma mark HTML Templates

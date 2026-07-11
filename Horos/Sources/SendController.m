@@ -64,7 +64,7 @@ static BOOL HorosStoreSCUExceptionIsTransientStartupFailure(NSException *ne)
     return NO;
 }
 
-static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys()
+static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys(void)
 {
     static NSMutableSet *keys = nil;
     if (!keys)

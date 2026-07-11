@@ -75,13 +75,15 @@ static LogManager *currentLogManager = nil;
         [_currentLogs removeAllObjects];
 	}
     
-	@try {
-		NSArray* array = [db objectsForEntity:db.logEntryEntity predicate:[NSPredicate predicateWithFormat: @"message like[cd] %@", @"In Progress"]];
-		for (NSManagedObject* o in array)
-			[o setValue: @"Incomplete" forKey:@"message"];
-	} @catch (NSException* e) {
-        N2LogException(e);
-	}
+    N2PerformManagedObjectContextBlockAndWait(db.managedObjectContext, ^{
+        @try {
+			NSArray* array = [db objectsForEntity:db.logEntryEntity predicate:[NSPredicate predicateWithFormat: @"message like[cd] %@", @"In Progress"]];
+			for (NSManagedObject* o in array)
+				[o setValue: @"Incomplete" forKey:@"message"];
+		} @catch (NSException* e) {
+            N2LogException(e);
+		}
+    });
 }
 
 - (void) dealloc
@@ -92,21 +94,14 @@ static LogManager *currentLogManager = nil;
 
 - (BOOL) updateLogDatabase: (NSDictionary*) dict objectID: (NSManagedObjectID*) objectID
 {
-    BOOL complete = NO;
-    
-    @try {
-        NSManagedObject *logEntry = nil;
-        
-        if( objectID)
-        {
-            if( [NSThread isMainThread])
-                logEntry = [[[BrowserController currentBrowser] database] objectWithID: objectID];
-            else
-                logEntry = [[[[BrowserController currentBrowser] database] independentContext] objectWithID: objectID];
-        }
-        
-        if( logEntry)
-        {
+    __block BOOL complete = NO;
+    NSManagedObjectContext *context = [NSThread isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext];
+
+    N2PerformManagedObjectContextBlockAndWait(context, ^{
+        @try {
+            NSManagedObject *logEntry = objectID ? [context objectWithID:objectID] : nil;
+            if( logEntry)
+            {
             [logEntry setValue:[dict valueForKey: @"logMessage"] forKey:@"message"];
             [logEntry setValue:[NSNumber numberWithInt: [[dict valueForKey: @"logNumberTotal"] intValue]] forKey:@"numberImages"];
             [logEntry setValue:[NSNumber numberWithInt: [[dict valueForKey: @"logNumberReceived"] intValue]] forKey:@"numberSent"];
@@ -125,18 +120,19 @@ static LogManager *currentLogManager = nil;
             if( logEndTime != 0)
                 [logEntry setValue: logEndTime forKey:@"endTime"];
             
-            @try
-            {
-                [logEntry.managedObjectContext save: nil];
+                @try
+                {
+                    [context save: nil];
+                }
+                @catch ( NSException *e)
+                {
+                    N2LogException( e);
+                }
             }
-            @catch ( NSException *e)
-            {
-                N2LogException( e);
-            }
-        }
-    } @catch (NSException* e) {
-        N2LogException(e);
-	}
+        } @catch (NSException* e) {
+            N2LogException(e);
+		}
+    });
     
     return complete;
 }
@@ -166,24 +162,30 @@ static LogManager *currentLogManager = nil;
                         if( [_currentLogs objectForKey:uid] == nil)
                         {
                             NSManagedObjectContext *context = [NSThread isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext];
-                            
-                            NSManagedObject *logEntry = [NSEntityDescription insertNewObjectForEntityForName:@"LogEntry" inManagedObjectContext: context];
-                            
-                            [logEntry setValue:[dict valueForKey: @"logStartTime"]  forKey:@"startTime"];
-                            [logEntry setValue:[dict valueForKey: @"logType"] forKey:@"type"];
-                            [logEntry setValue:[dict valueForKey: @"logCallingAET"] forKey:@"originName"];
-                            [logEntry setValue:[dict valueForKey: @"logCalledAET"] forKey:@"destinationName"];
-                            [logEntry setValue:[dict valueForKey: @"logPatientName"] forKey:@"patientName"];
-                            [logEntry setValue:[dict valueForKey: @"logStudyDescription"] forKey:@"studyName"];
-                            
-                            @try {
-                                [logEntry.managedObjectContext save: nil];
+
+                            __block NSManagedObjectID *objectID = nil;
+                            N2PerformManagedObjectContextBlockAndWait(context, ^{
+                                NSManagedObject *logEntry = [NSEntityDescription insertNewObjectForEntityForName:@"LogEntry" inManagedObjectContext: context];
+                                [logEntry setValue:[dict valueForKey: @"logStartTime"]  forKey:@"startTime"];
+                                [logEntry setValue:[dict valueForKey: @"logType"] forKey:@"type"];
+                                [logEntry setValue:[dict valueForKey: @"logCallingAET"] forKey:@"originName"];
+                                [logEntry setValue:[dict valueForKey: @"logCalledAET"] forKey:@"destinationName"];
+                                [logEntry setValue:[dict valueForKey: @"logPatientName"] forKey:@"patientName"];
+                                [logEntry setValue:[dict valueForKey: @"logStudyDescription"] forKey:@"studyName"];
+
+                                @try {
+                                    [context save: nil];
+                                    objectID = [logEntry.objectID retain];
+                                }
+                                @catch ( NSException *e) {
+                                    N2LogException( e);
+                                }
+                            });
+
+                            if (objectID) {
+                                [_currentLogs setObject: [NSDictionary dictionaryWithObjectsAndKeys: objectID, @"objectID", dict, @"dict", [NSNumber numberWithDouble: [NSDate timeIntervalSinceReferenceDate]], @"lastSave", nil] forKey:uid];
+                                [objectID release];
                             }
-                            @catch ( NSException *e) {
-                                N2LogException( e);
-                            }
-                            
-                            [_currentLogs setObject: [NSDictionary dictionaryWithObjectsAndKeys: logEntry.objectID, @"objectID", dict, @"dict", [NSNumber numberWithDouble: [NSDate timeIntervalSinceReferenceDate]], @"lastSave", nil] forKey:uid];
                         }
                         
                         if( [_currentLogs objectForKey:uid])

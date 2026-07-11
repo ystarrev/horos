@@ -61,7 +61,6 @@
 #import "DicomFileDCMTKCategory.h"
 #import "DCMUIDs.h"
 #import "DicomDatabase+DCMTK.h"
-#import "Horos.h"
 
 @implementation BurnerWindowController
 
@@ -410,23 +409,24 @@
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
     
     DicomDatabase *idatabase = [[[[BrowserController currentBrowser] database] independentDatabase] retain];
-    
-    NSMutableArray *dbObjects = [[[idatabase objectsWithIDs: dbObjectsID] mutableCopy] autorelease];
-    NSMutableArray *originalDbObjects = [[[idatabase objectsWithIDs: originalDbObjectsID] mutableCopy] autorelease];
-    
+
     @try
     {
         isSettingUpBurn = YES;
-        
-        if( anonymizationTags)
-        {
-            NSDictionary* anonOut = [Anonymization anonymizeFiles:files dicomImages: dbObjects toPath:@"/tmp/burnAnonymized" withTags: anonymizationTags];
-            
-            [anonymizedFiles release];
-            anonymizedFiles = [[anonOut allValues] mutableCopy];
-        }
-        
-        [self prepareCDContent: dbObjects :originalDbObjects];
+
+        N2PerformManagedObjectContextBlockAndWait(idatabase.managedObjectContext, ^{
+            NSMutableArray *dbObjects = [[[idatabase objectsWithIDs:dbObjectsID] mutableCopy] autorelease];
+            NSMutableArray *originalDbObjects = [[[idatabase objectsWithIDs:originalDbObjectsID] mutableCopy] autorelease];
+
+            if( anonymizationTags)
+            {
+                NSDictionary* anonOut = [Anonymization anonymizeFiles:files dicomImages:dbObjects toPath:@"/tmp/burnAnonymized" withTags:anonymizationTags];
+                [anonymizedFiles release];
+                anonymizedFiles = [[anonOut allValues] mutableCopy];
+            }
+
+            [self prepareCDContent:dbObjects :originalDbObjects];
+        });
         
         isSettingUpBurn = NO;
         
@@ -477,6 +477,7 @@
     }
     @finally
     {
+        [idatabase release];
         [pool release];
     }
 }

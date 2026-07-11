@@ -63,11 +63,6 @@
 #import "OPJSupport.h"
 //#import "jasper.h"
 
-static int Use_kdu_IfAvailable = 0;
-
-// KDU support
-#include "kdu_OsiriXSupport.h"
-
 unsigned short readUint16(const unsigned char *data)
 {
     return (((unsigned short)(*data) << 8) | ((unsigned short)(*(data+1))));
@@ -687,11 +682,6 @@ void info_callback(const char *msg, void *a) {
 @synthesize isShort = _isShort;
 @synthesize compression = _compression;
 @synthesize isDecoded = _isDecoded;
-
-+ (void) setUse_kdu_IfAvailable:(int) b
-{
-    Use_kdu_IfAvailable = b;
-}
 
 - (void)dealloc
 {
@@ -1523,108 +1513,53 @@ void info_callback(const char *msg, void *a) {
 - (NSMutableData *)encodeJPEG2000:(NSMutableData *)data quality:(int)quality
 {
     int rate = 0;
-    
-#ifdef WITH_KDU_JP2K
-    if( Use_kdu_IfAvailable && kdu_available())
+
+    switch (quality)
     {
-        int precision = [[_dcmObject attributeValueWithName:@"BitsStored"] intValue];
-        
-        switch( quality)
-        {
-            case DCMLosslessQuality:
-                rate = 0;
-                break;
-                
-            case DCMHighQuality:
-                rate = 5;
-                break;
-                
-            case DCMMediumQuality:
-                if( _columns <= 600 || _rows <= 600) rate = 6;
-                else rate = 8;
-                break;
-                
-            case DCMLowQuality:
-                rate = 16;
-                break;
-                
-            default:
-                NSLog( @"****** warning unknown compression rate -> lossless : %d", quality);
-                rate = 0;
-                break;
-        }
-        
-        long compressedLength = 0;
-        
-        int processors = 0;
-        
-        if( _rows*_columns > 256*1024) // 512 * 512
-            processors = [[NSProcessInfo processInfo] processorCount]/2;
-        
-        if( processors > 8)
-            processors = 8;
-        
-        void *outBuffer = kdu_compressJPEG2K( (void*) [data bytes], _samplesPerPixel, _rows, _columns, precision, false, rate, &compressedLength, processors);
-        
-        NSMutableData *jpeg2000Data = [NSMutableData dataWithBytesNoCopy: outBuffer length: compressedLength freeWhenDone: YES];
-        
-        char zero = 0;
-        if ([jpeg2000Data length] % 2)
-            [jpeg2000Data appendBytes:&zero length:1];
-        
-        return jpeg2000Data;
+        case DCMLosslessQuality:
+            rate = 0;
+            break;
+
+        case DCMHighQuality:
+            rate = 4;
+            break;
+
+        case DCMMediumQuality:
+            if( _columns <= 600 || _rows <= 600)
+                rate = 6;
+            else
+                rate = 8;
+            break;
+
+        case DCMLowQuality:
+            rate = 16;
+            break;
+
+        default:
+            NSLog( @"****** warning unknown compression rate -> lossless : %d", quality);
+            rate = 0;
+            break;
     }
-    else
-#endif // WITH_KDU_JP2K
-        
-    {
-        switch (quality)
-        {
-            case DCMLosslessQuality:
-                rate = 0;
-                break;
-                
-            case DCMHighQuality:
-                rate = 4;
-                break;
-                
-            case DCMMediumQuality:
-                if( _columns <= 600 || _rows <= 600)
-                    rate = 6;
-                else
-                    rate = 8;
-                break;
-                
-            case DCMLowQuality:
-                rate = 16;
-                break;
-                
-            default:
-                NSLog( @"****** warning unknown compression rate -> lossless : %d", quality);
-                rate = 0;
-                break;
-        }
-        
-        int precision = [[_dcmObject attributeValueWithName:@"BitsStored"] intValue];
-        int bitsAllocated = [[_dcmObject attributeValueWithName:@"BitsAllocated"] intValue];
-        long compressedLength = 0;
-        
-        OPJSupport opj;
-        unsigned char *outBuffer = opj.compressJPEG2K( (void*) [data bytes],
-                                                      _samplesPerPixel,
-                                                      _rows, _columns,
-                                                      precision,
-                                                      bitsAllocated,
-                                                      false,
-                                                      rate,
-                                                      &compressedLength);
-        
-        NSMutableData *jpeg2000Data = ((outBuffer == NULL) ? nil : [NSMutableData dataWithBytesNoCopy: outBuffer
-                                                                                               length: compressedLength
-                                                                                         freeWhenDone: YES]);
-        
-        return jpeg2000Data;
-    }
+
+    int precision = [[_dcmObject attributeValueWithName:@"BitsStored"] intValue];
+    int bitsAllocated = [[_dcmObject attributeValueWithName:@"BitsAllocated"] intValue];
+    long compressedLength = 0;
+
+    OPJSupport opj;
+    unsigned char *outBuffer = opj.compressJPEG2K( (void*) [data bytes],
+                                                  _samplesPerPixel,
+                                                  _rows, _columns,
+                                                  precision,
+                                                  bitsAllocated,
+                                                  false,
+                                                  rate,
+                                                  &compressedLength);
+
+    NSMutableData *jpeg2000Data = ((outBuffer == NULL) ? nil : [NSMutableData dataWithBytesNoCopy: outBuffer
+                                                                                           length: compressedLength
+                                                                                     freeWhenDone: YES]);
+
+    return jpeg2000Data;
     
 #ifdef WITH_JASPER
     {

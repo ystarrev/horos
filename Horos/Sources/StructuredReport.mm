@@ -17,6 +17,7 @@
 #import "DicomImage.h"
 #import "DICOMToNSString.h"
 #import "ModernDCMTKBridge.h"
+#import "N2ManagedDatabase.h"
 
 #include <dlfcn.h>
 #undef verify
@@ -803,7 +804,7 @@ static BOOL HorosStructuredReportReadDocumentFromPath(DSRDocument* document, NSS
 
 - (NSArray *)referencedObjects{
 	NSMutableArray *references = [NSMutableArray array];
-	NSArray *imagesArray = nil;
+	__block NSArray *imagesArray = nil;
 	NS_DURING
 	NSString *reportPath = [self srPath];
 	if (!_reportHasChanged && [[NSFileManager defaultManager] fileExistsAtPath:reportPath])
@@ -841,7 +842,7 @@ static BOOL HorosStructuredReportReadDocumentFromPath(DSRDocument* document, NSS
 	NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
 	[dbRequest setEntity: [[model entitiesByName] objectForKey:@"Image"]];
 	NSPredicate *predicate = [NSPredicate predicateWithValue:NO];
-	NSError *error = nil;
+	__block NSError *error = nil;
 	
 	NSEnumerator *enumerator = [references objectEnumerator];
 	id reference;
@@ -851,8 +852,10 @@ static BOOL HorosStructuredReportReadDocumentFromPath(DSRDocument* document, NSS
 		predicate = [NSCompoundPredicate orPredicateWithSubpredicates:[NSArray arrayWithObjects:predicate, p, nil]]; 
 	}
 	[dbRequest setPredicate: [NSPredicate predicateWithFormat:@"compressedSopInstanceUID != NIL"]];
-	imagesArray = [context executeFetchRequest:dbRequest error:&error];
-	imagesArray = [[imagesArray filteredArrayUsingPredicate: predicate] retain];
+	N2PerformManagedObjectContextBlockAndWait(context, ^{
+		imagesArray = [context executeFetchRequest:dbRequest error:&error];
+		imagesArray = [[imagesArray filteredArrayUsingPredicate: predicate] retain];
+	});
 	
 	NS_HANDLER
 	NS_ENDHANDLER

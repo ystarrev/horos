@@ -76,9 +76,17 @@
 
 #include <GDCM/gdcmScanner.h>
 
-#include "Horos.h"
-
 extern NSString * convertDICOM( NSString *inputfile);
+
+static NSDateFormatter *DicomFileDateFormatter(void)
+{
+    NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
+    formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    formatter.calendar = [[[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian] autorelease];
+    formatter.timeZone = [NSTimeZone defaultTimeZone];
+    formatter.dateFormat = @"yyyyMMdd";
+    return formatter;
+}
 
 typedef int (*HorosModernDCMTKIsDICOMFileFn)(const char*);
 typedef char* (*HorosModernDCMTKCopyFieldFn)(const char*, const char*);
@@ -1007,7 +1015,7 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     patientID = [[NSString alloc] initWithString:name];
     study = [[NSString alloc] initWithString:[filePath lastPathComponent]];
     Modality = [[NSString alloc] initWithString:@"RD"];
-    date = [[NSCalendarDate date] retain];
+    date = [[NSDate date] retain];
     serie = [[NSString alloc] initWithString:[filePath lastPathComponent]];
     fileType = [@"IMAGE" retain];
     
@@ -1826,7 +1834,7 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
                 serie = [[NSString alloc] initWithString:[[filePath lastPathComponent] stringByDeletingPathExtension]];
                 Modality = [[NSString alloc] initWithString:@"ANZ"];
                 
-                date = [[Horos dateWithString:[NSString stringWithCString: Analyze->hist.exp_date encoding: NSISOLatin1StringEncoding] calendarFormat:@"%Y%m%d"] retain];
+                date = [[DicomFileDateFormatter() dateFromString:[NSString stringWithCString:Analyze->hist.exp_date encoding:NSISOLatin1StringEncoding]] retain];
                 if(date == nil) date = [[[[NSFileManager defaultManager] attributesOfItemAtPath: filePath error: nil] fileCreationDate] retain];
                 if( date == nil) date = [[NSDate date] retain];
                 
@@ -2283,7 +2291,7 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     }
     
     if( gUsePatientBirthDateForUID)
-        patientBirthDate = [Horos:[NSDate dateWithTimeIntervalSinceReferenceDate:[[src valueForKey:@"patientBirthDate"] timeIntervalSinceReferenceDate]] descriptionWithCalendarFormat:@"%Y%m%d"];
+        patientBirthDate = [DicomFileDateFormatter() stringFromDate:[NSDate dateWithTimeIntervalSinceReferenceDate:[[src valueForKey:@"patientBirthDate"] timeIntervalSinceReferenceDate]]];
 
     if( gUsePatientIDForUID)
         patientID = [src valueForKey:@"patientID"];

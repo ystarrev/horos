@@ -3960,9 +3960,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         
         if( iO)
         {
-            [iO.managedObjectContext lock];
-            @try
-            {
+            N2PerformManagedObjectContextBlockAndWait(iO.managedObjectContext, ^{
+                @try
+                {
                 imageObjectID = [[iO objectID] retain];
 
                 NSManagedObject *studyObject = (NSManagedObject *)[iO valueForKeyPath:@"series.study"];
@@ -3985,15 +3985,12 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
                 savedHeightInDB = [[iO valueForKey:@"height"] intValue];
                 savedWidthInDB = [[iO valueForKey:@"width"] intValue];
-            }
-            @catch ( NSException *e)
-            {
-                N2LogExceptionWithStackTrace( e);
-            }
-            @finally
-            {
-                [iO.managedObjectContext unlock];
-            }
+                }
+                @catch ( NSException *e)
+                {
+                    N2LogExceptionWithStackTrace( e);
+                }
+            });
         }
         
         imID = pos;
@@ -4146,7 +4143,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             if( iContext == nil)
                 iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
             
-            [[iContext existingObjectWithID: imageObjectID error: nil]setValue: [NSNumber numberWithInt: width] forKey: @"width"];
+            N2PerformManagedObjectContextBlockAndWait(iContext, ^{
+                [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:width] forKey:@"width"];
+            });
             
             if( width > savedWidthInDB && fExternalOwnedImage)
                 width = savedWidthInDB;
@@ -4160,12 +4159,14 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             if( iContext == nil)
                 iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
             
-            [[iContext existingObjectWithID: imageObjectID error: nil] setValue: [NSNumber numberWithInt: height] forKey: @"height"];
+            N2PerformManagedObjectContextBlockAndWait(iContext, ^{
+                [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:height] forKey:@"height"];
+            });
             
             if( height > savedHeightInDB && fExternalOwnedImage)
                 height = savedHeightInDB;
         }
-        [iContext save: nil];
+        N2PerformManagedObjectContextBlockAndWait(iContext, ^{ [iContext save:nil]; });
 #endif
         
         maxImage = NSSwapLittleShortToHost(header.npic);
@@ -4380,7 +4381,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             if( iContext == nil)
                 iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
             
-            [[iContext existingObjectWithID: imageObjectID error: nil] setValue: [NSNumber numberWithInt: height] forKey: @"height"];
+            N2PerformManagedObjectContextBlockAndWait(iContext, ^{
+                [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:height] forKey:@"height"];
+            });
             
             if( height > savedHeightInDB && fExternalOwnedImage)
                 height = savedHeightInDB;
@@ -4394,12 +4397,14 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             if( iContext == nil)
                 iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
             
-            [[iContext existingObjectWithID: imageObjectID error: nil] setValue: [NSNumber numberWithInt: width] forKey: @"width"];
+            N2PerformManagedObjectContextBlockAndWait(iContext, ^{
+                [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:width] forKey:@"width"];
+            });
             
             if( width > savedWidthInDB && fExternalOwnedImage)
                 width = savedWidthInDB;
         }
-        [iContext save: nil];
+        N2PerformManagedObjectContextBlockAndWait(iContext, ^{ [iContext save:nil]; });
 #endif
         
         totSize = (height+1) * (width+1);
@@ -4979,7 +4984,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                         if( iContext == nil)
                             iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
                         
-                        [[iContext existingObjectWithID: imageObjectID error: nil] setValue: [NSNumber numberWithInt: width] forKey: @"width"];
+                        N2PerformManagedObjectContextBlockAndWait(iContext, ^{
+                            [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:width] forKey:@"width"];
+                        });
                         
                         if( width > savedWidthInDB && fExternalOwnedImage)
                             width = savedWidthInDB;
@@ -4998,7 +5005,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                         if( iContext == nil)
                             iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
                         
-                        [[iContext existingObjectWithID: imageObjectID error: nil] setValue: [NSNumber numberWithInt: height] forKey: @"height"];
+                        N2PerformManagedObjectContextBlockAndWait(iContext, ^{
+                            [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:height] forKey:@"height"];
+                        });
                         
                         if( height > savedHeightInDB && fExternalOwnedImage)
                             height = savedHeightInDB;
@@ -5046,7 +5055,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         }
     } // end for loop parsing info of first frame
     
-    [iContext save: nil];
+    N2PerformManagedObjectContextBlockAndWait(iContext, ^{ [iContext save:nil]; });
     
     if( TIF_CZ_LSMINFO)
     {
@@ -5285,8 +5294,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     DCMObject *dcmObject = [dict objectForKey: @"dcmObject"];
     DicomDatabase *database = BrowserController.currentBrowser.database.independentDatabase;
     
-    @try
-    {
+    N2PerformManagedObjectContextBlockAndWait(database.managedObjectContext, ^{
+        @try
+        {
         // Get all referenced images up front.
         // This is better than running a Fetch Request for EVERY ROI since
         // executeFetchRequest is expensive.
@@ -5633,10 +5643,11 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         
         if( newDICOMSR.count)
             [database addFilesAtPaths: newDICOMSR postNotifications:YES dicomOnly:YES rereadExistingItems:YES generatedByOsiriX:YES];
-    }
-    @catch (NSException *exception) {
-        N2LogException( exception);
-    }
+        }
+        @catch (NSException *exception) {
+            N2LogException( exception);
+        }
+    });
     
     [pool release];
 #endif
@@ -5923,7 +5934,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         if( iContext == nil)
             iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
         
-        [[iContext existingObjectWithID: imageObjectID error: nil] setValue: [NSNumber numberWithInt: height] forKey: @"height"];
+        N2PerformManagedObjectContextBlockAndWait(iContext, ^{
+            [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:height] forKey:@"height"];
+        });
         
         if( height > savedHeightInDB && fExternalOwnedImage)
             height = savedHeightInDB;
@@ -5937,12 +5950,14 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         if( iContext == nil)
             iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
         
-        [[iContext existingObjectWithID: imageObjectID error: nil] setValue: [NSNumber numberWithInt: width] forKey: @"width"];
+        N2PerformManagedObjectContextBlockAndWait(iContext, ^{
+            [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:width] forKey:@"width"];
+        });
         
         if( width > savedWidthInDB && fExternalOwnedImage)
             width = savedWidthInDB;
     }
-    [iContext save: nil];
+    N2PerformManagedObjectContextBlockAndWait(iContext, ^{ [iContext save:nil]; });
 #endif
     
     if( shutterRect.size.width == 0) shutterRect.size.width = width;
@@ -6802,16 +6817,11 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             
             if( preferredDate && preferredTime && radioTime)
             {
-                if( [preferredTime length] >= 6)
-                {
-                    radiopharmaceuticalStartTime = [[NSCalendarDate alloc] initWithString:[preferredDate stringByAppendingString:radioTime] calendarFormat:@"%Y%m%d%H%M%S"];
-                    acquisitionTime = [[NSCalendarDate alloc] initWithString:[preferredDate stringByAppendingString:preferredTime] calendarFormat:@"%Y%m%d%H%M%S"];
-                }
-                else
-                {
-                    radiopharmaceuticalStartTime = [[NSCalendarDate alloc] initWithString:[preferredDate stringByAppendingString:radioTime] calendarFormat:@"%Y%m%d%H%M"];
-                    acquisitionTime = [[NSCalendarDate alloc] initWithString:[preferredDate stringByAppendingString:preferredTime] calendarFormat:@"%Y%m%d%H%M"];
-                }
+                NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
+                formatter.locale = [[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"] autorelease];
+                formatter.dateFormat = [preferredTime length] >= 6 ? @"yyyyMMddHHmmss" : @"yyyyMMddHHmm";
+                radiopharmaceuticalStartTime = [[formatter dateFromString:[preferredDate stringByAppendingString:radioTime]] retain];
+                acquisitionTime = [[formatter dateFromString:[preferredDate stringByAppendingString:preferredTime]] retain];
             }
             
             [self computeTotalDoseCorrected];
@@ -7451,7 +7461,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 if (iContext == nil)
                     iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
 
-                [[iContext existingObjectWithID: imageObjectID error: nil] setValue: [NSNumber numberWithInt: height] forKey: @"height"];
+                N2PerformManagedObjectContextBlockAndWait(iContext, ^{
+                    [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:height] forKey:@"height"];
+                });
             }
 
             if (height > savedHeightInDB && fExternalOwnedImage)
@@ -7465,13 +7477,15 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 if (iContext == nil)
                     iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
 
-                [[iContext existingObjectWithID: imageObjectID error: nil] setValue: [NSNumber numberWithInt: width] forKey: @"width"];
+                N2PerformManagedObjectContextBlockAndWait(iContext, ^{
+                    [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:width] forKey:@"width"];
+                });
             }
 
             if (width > savedWidthInDB && fExternalOwnedImage)
                 width = savedWidthInDB;
 
-            [iContext save: nil];
+            N2PerformManagedObjectContextBlockAndWait(iContext, ^{ [iContext save:nil]; });
 #endif
 
             size_t bytesPerRow = width * 4;
@@ -7552,7 +7566,13 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             }
             else
             {
-                self.srcFile = [[BrowserController currentBrowser] getLocalDCMPath: [[[[BrowserController currentBrowser] database] independentContext] existingObjectWithID: imageObjectID error: nil] :0];
+                NSManagedObjectContext *context = [[[BrowserController currentBrowser] database] independentContext];
+                __block NSString *localPath = nil;
+                N2PerformManagedObjectContextBlockAndWait(context, ^{
+                    NSManagedObject *image = [context existingObjectWithID:imageObjectID error:nil];
+                    localPath = [[[BrowserController currentBrowser] getLocalDCMPath:image :0] copy];
+                });
+                self.srcFile = [localPath autorelease];
             }
             
             if(self.srcFile == nil)
@@ -11072,13 +11092,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     // image sides (LowerLeft, LowerMiddle, LowerRight, MiddleLeft, MiddleRight, TopLeft, TopMiddle, TopRight) & sameAsDefault
     NSArray *keys = [annotationsForModality allKeys];
     
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    [imageObj.managedObjectContext lock];
-#pragma clang diagnostic pop
-    
-    for( NSString *key in keys)
-    {
+    N2PerformManagedObjectContextBlockAndWait(imageObj.managedObjectContext, ^{
+        for( NSString *key in keys)
+        {
         if(![key isEqualToString:@"sameAsDefault"])
         {
             NSArray *annotations = [annotationsForModality objectForKey: key];
@@ -11145,12 +11161,8 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 NSLog(@"CustomImageAnnotations Exception: %@", e);
             }
         }
-    }
-    
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    [imageObj.managedObjectContext unlock];
-#pragma clang diagnostic pop
+        }
+    });
 
 #endif
 }

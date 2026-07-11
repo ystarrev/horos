@@ -199,13 +199,14 @@ static NSString *HorosQRRetrieveStatusForObject(id object, NSUInteger itemCount)
 
     if( [object isMemberOfClass:[DCMTKStudyQueryNode class]])
     {
+        DCMTKStudyQueryNode *studyNode = (DCMTKStudyQueryNode *)object;
         if( itemCount == 1)
             status = [NSString stringWithFormat: NSLocalizedString( @"%lu study", nil), (unsigned long) itemCount];
         else
             status = [NSString stringWithFormat: NSLocalizedString( @"%lu studies", nil), (unsigned long) itemCount];
 
-        if( [object name])
-            status = [status stringByAppendingFormat:@" - %@", [object name]];
+        if( studyNode.name)
+            status = [status stringByAppendingFormat:@" - %@", studyNode.name];
     }
 
     if( [object isMemberOfClass:[DCMTKSeriesQueryNode class]])
@@ -296,6 +297,8 @@ extern "C"
 @end
 
 @interface QueryController ()
+
+- (void)addStudyIfNotAvailableOnContextQueue:(id)item toArray:(NSMutableArray *)selectedItems context:(NSManagedObjectContext *)context;
 - (BOOL)openAvailableLocalImagesForQueryItem:(id)item;
 - (void)addPendingRetrieveAndViewItem:(id)item;
 - (void)removePendingRetrieveAndViewItem:(id)item;
@@ -1999,55 +2002,58 @@ extern "C"
 
 - (NSArray*) localSeries:(id) item context: (NSManagedObjectContext*) context
 {
-	NSArray *seriesArray = nil;
-	NSManagedObject *study = [[self localStudy: [outlineView parentForItem: item] context: context] lastObject];
-	
-	if( study == nil) return seriesArray;
-	
+	if (context == nil)
+	{
+		if ([NSThread isMainThread])
+			context = [[[BrowserController currentBrowser] database] managedObjectContext];
+		else
+			context = [[[BrowserController currentBrowser] database] independentContext];
+	}
+
+	NSManagedObject *study = [[self localStudy:[outlineView parentForItem:item] context:context] lastObject];
+	if (study == nil)
+		return nil;
+
+	__block NSArray *seriesArray = nil;
 	if( [item isMemberOfClass:[DCMTKSeriesQueryNode class]] == YES)
 	{
-        if( context == nil)
-        {
-            if( [NSThread isMainThread])
-                context = [[[BrowserController currentBrowser] database] managedObjectContext];
-            else
-                context = [[[BrowserController currentBrowser] database] independentContext];
-        }
-        
-		@try
-		{
-			seriesArray = [[[study valueForKey:@"series"] allObjects] filteredArrayUsingPredicate: [NSPredicate predicateWithFormat: @"(seriesDICOMUID == %@)", [item valueForKey:@"uid"]]];
-			if( [seriesArray count] == 0 && HorosQuerySeriesLooksLikeLocalizer(item))
+		N2PerformManagedObjectContextBlockAndWait(context, ^{
+			@try
 			{
-				NSString *studyUID = [study valueForKey: @"studyInstanceUID"];
-				NSString *localizerSeriesUID = nil;
-				if( [studyUID length] > 0)
-					localizerSeriesUID = [@"LOCALIZER" stringByAppendingString: studyUID];
+				NSArray *matches = [[[study valueForKey:@"series"] allObjects] filteredArrayUsingPredicate: [NSPredicate predicateWithFormat: @"(seriesDICOMUID == %@)", [item valueForKey:@"uid"]]];
+				if( [matches count] == 0 && HorosQuerySeriesLooksLikeLocalizer(item))
+				{
+					NSString *studyUID = [study valueForKey: @"studyInstanceUID"];
+					NSString *localizerSeriesUID = nil;
+					if( [studyUID length] > 0)
+						localizerSeriesUID = [@"LOCALIZER" stringByAppendingString: studyUID];
 
-				seriesArray = [[[study valueForKey:@"series"] allObjects] filteredArrayUsingPredicate: [NSPredicate predicateWithBlock:^BOOL(id evaluatedObject, NSDictionary *bindings) {
-					NSString *seriesDICOMUID = [evaluatedObject valueForKey: @"seriesDICOMUID"];
-					NSString *name = [evaluatedObject valueForKey: @"name"];
-					NSString *seriesDescription = [evaluatedObject valueForKey: @"seriesDescription"];
+					matches = [[[study valueForKey:@"series"] allObjects] filteredArrayUsingPredicate: [NSPredicate predicateWithBlock:^BOOL(id evaluatedObject, NSDictionary *bindings) {
+						NSString *seriesDICOMUID = [evaluatedObject valueForKey: @"seriesDICOMUID"];
+						NSString *name = [evaluatedObject valueForKey: @"name"];
+						NSString *seriesDescription = [evaluatedObject valueForKey: @"seriesDescription"];
 
-					if( localizerSeriesUID && [seriesDICOMUID isEqualToString: localizerSeriesUID])
-						return YES;
+						if( localizerSeriesUID && [seriesDICOMUID isEqualToString: localizerSeriesUID])
+							return YES;
 
-					return HorosQueryStringContains(name, @"localizer") ||
-						   HorosQueryStringContains(name, @"localiser") ||
-						   HorosQueryStringContains(seriesDescription, @"localizer") ||
-						   HorosQueryStringContains(seriesDescription, @"localiser");
-				}]];
+						return HorosQueryStringContains(name, @"localizer") ||
+							   HorosQueryStringContains(name, @"localiser") ||
+							   HorosQueryStringContains(seriesDescription, @"localizer") ||
+							   HorosQueryStringContains(seriesDescription, @"localiser");
+					}]];
+				}
+				seriesArray = [matches copy];
 			}
-		}
-		@catch (NSException * e)
-		{
-            N2LogExceptionWithStackTrace(e);
-		}
+			@catch (NSException * e)
+			{
+				N2LogExceptionWithStackTrace(e);
+			}
+		});
 	}
 	else
 		NSLog( @"Warning! Not a series class ! %@", [item class]);
 	
-	return seriesArray;
+	return [seriesArray autorelease];
 }
 
 - (void) applyNewStudyArray: (NSDictionary *) d
@@ -2075,44 +2081,41 @@ extern "C"
         
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 	
-	NSArray *local_studyArrayID = nil;
-	NSArray *local_studyArrayInstanceUID = nil;
+	__block NSArray *local_studyArrayID = nil;
+	__block NSArray *local_studyArrayInstanceUID = nil;
 	
     @synchronized( kComputeStudyArrayInstanceUIDLock)
     {
         @try
         {
             NSManagedObjectContext *independentContext = nil;
-            
+
             if( [NSThread isMainThread])
                 independentContext = [[[BrowserController currentBrowser] database] managedObjectContext];
             else
                 independentContext = [[[BrowserController currentBrowser] database] independentContext];
-            
+
             if( independentContext)
             {
-                [independentContext lock];
-                
-                @try
-                {
-                    NSError *error = nil;
-                    NSFetchRequest *request = [[[NSFetchRequest alloc] init] autorelease];
-                    
-                    request.entity = [NSEntityDescription entityForName: @"Study" inManagedObjectContext: independentContext];
-                    request.predicate = [NSPredicate predicateWithValue: YES];
-                    
-                    NSArray *result = [independentContext executeFetchRequest:request error: &error];
-                    
-                    local_studyArrayID = [result valueForKey: @"objectID"];
-                    local_studyArrayInstanceUID = [result valueForKey:@"studyInstanceUID"];
-                }
-                @catch (NSException* e)
-                {
-                    N2LogExceptionWithStackTrace(e);
-                }
-                @finally {
-                    [independentContext unlock];
-                }
+                N2PerformManagedObjectContextBlockAndWait(independentContext, ^{
+                    @try
+                    {
+                        NSError *error = nil;
+                        NSFetchRequest *request = [[[NSFetchRequest alloc] init] autorelease];
+
+                        request.entity = [NSEntityDescription entityForName: @"Study" inManagedObjectContext: independentContext];
+                        request.predicate = [NSPredicate predicateWithValue: YES];
+
+                        NSArray *result = [independentContext executeFetchRequest:request error: &error];
+
+                        local_studyArrayID = [[result valueForKey: @"objectID"] copy];
+                        local_studyArrayInstanceUID = [[result valueForKey:@"studyInstanceUID"] copy];
+                    }
+                    @catch (NSException* e)
+                    {
+                        N2LogExceptionWithStackTrace(e);
+                    }
+                });
             }
         }
         @catch (NSException * e)
@@ -2146,6 +2149,8 @@ extern "C"
         NSLog( @"******** computeStudyArrayInstanceUID FAILED...");
         
 	afterDelayRefresh = NO;
+	[local_studyArrayID release];
+	[local_studyArrayInstanceUID release];
 	
 	[pool release];
 }
@@ -2161,7 +2166,7 @@ extern "C"
 	{
 		@try
 		{
-			NSArray *result = [NSArray array];
+			__block NSArray *result = nil;
 			
             @synchronized (studyArrayInstanceUID)
             {
@@ -2180,14 +2185,16 @@ extern "C"
                             context = [[[BrowserController currentBrowser] database] independentContext];
                     }
                     
-                    DicomStudy *s = (DicomStudy*) [context existingObjectWithID:[studyArrayID objectAtIndex: index] error:NULL];
-                    
-                    if( s)
-                        result = [NSArray arrayWithObject: s];
+                    NSManagedObjectID *objectID = [studyArrayID objectAtIndex:index];
+                    N2PerformManagedObjectContextBlockAndWait(context, ^{
+                        DicomStudy *study = (DicomStudy*)[context existingObjectWithID:objectID error:NULL];
+                        if (study)
+                            result = [[NSArray alloc] initWithObjects:study, nil];
+                    });
                 }
             }
 			
-			return result;
+			return result ? [result autorelease] : [NSArray array];
 		}
 		@catch (NSException * e)
 		{
@@ -2205,13 +2212,15 @@ extern "C"
 {
 	if( object == nil)
 		return 0;
-	
-	[[object managedObjectContext] refreshObject:object mergeChanges:YES];
-	
-	float rawFiles = [[object valueForKey:@"rawNoFiles"] floatValue];
-	float noFiles = [[object valueForKey:@"noFiles"] floatValue];
-	
-	return MAX(rawFiles, noFiles);
+
+	__block float result = 0;
+	N2PerformManagedObjectContextBlockAndWait(object.managedObjectContext, ^{
+		[[object managedObjectContext] refreshObject:object mergeChanges:YES];
+		float rawFiles = [[object valueForKey:@"rawNoFiles"] floatValue];
+		float noFiles = [[object valueForKey:@"noFiles"] floatValue];
+		result = MAX(rawFiles, noFiles);
+	});
+	return result;
 }
 
 - (BOOL)queryObjectWasCompletelyRetrieved:(DCMTKQueryNode *)item expectedFileCount:(float)expectedFileCount
@@ -3483,6 +3492,13 @@ extern "C"
 
 - (void) addStudyIfNotAvailable: (id) item toArray:(NSMutableArray*) selectedItems context: (NSManagedObjectContext*) context
 {
+    N2PerformManagedObjectContextBlockAndWait(context, ^{
+        [self addStudyIfNotAvailableOnContextQueue:item toArray:selectedItems context:context];
+    });
+}
+
+- (void)addStudyIfNotAvailableOnContextQueue:(id)item toArray:(NSMutableArray *)selectedItems context:(NSManagedObjectContext *)context
+{
 	NSArray *studyArray = [self localStudy: item context: context];
 	
 	int localFiles = 0;
@@ -4561,17 +4577,15 @@ extern "C"
     DicomDatabase *db = [DicomDatabase activeLocalDatabase];
     [[BrowserController currentBrowser] setDatabase:db];
 
-	NSError *error = nil;
+	__block NSError *error = nil;
 	NSFetchRequest *request = [[[NSFetchRequest alloc] init] autorelease];
 	NSManagedObjectContext *context = [[DicomDatabase activeLocalDatabase] managedObjectContext];
 	
-	NSArray *studyArray, *seriesArray;
-	BOOL success = NO;
+	__block BOOL success = NO;
 	
-	[context lock];
-	
-	@try
-	{
+	N2PerformManagedObjectContextBlockAndWait(context, ^{
+		@try
+		{
 		if( [item isMemberOfClass:[DCMTKStudyQueryNode class]] == YES)
 		{
 			NSPredicate	*predicate = [NSPredicate predicateWithFormat: @"(studyInstanceUID == %@)", [item valueForKey:@"uid"]];
@@ -4579,7 +4593,7 @@ extern "C"
 			[request setEntity: [NSEntityDescription entityForName: @"Study" inManagedObjectContext: context]];
 			[request setPredicate: predicate];
 			
-			studyArray = [context executeFetchRequest:request error:&error];
+			NSArray *studyArray = [context executeFetchRequest:request error:&error];
 			if( [studyArray count] > 0)
 			{
 				NSManagedObject	*study = [studyArray objectAtIndex: 0];
@@ -4604,7 +4618,7 @@ extern "C"
 			[request setEntity: [NSEntityDescription entityForName: @"Series" inManagedObjectContext: context]];
 			[request setPredicate: predicate];
 			
-			seriesArray = [context executeFetchRequest:request error:&error];
+			NSArray *seriesArray = [context executeFetchRequest:request error:&error];
 			if( [seriesArray count] > 0)
 			{
 				NSManagedObject	*series = [seriesArray objectAtIndex: 0];
@@ -4617,13 +4631,12 @@ extern "C"
 				}
 			}
 		}
-	}
-	@catch (NSException * e)
-	{
-		NSLog( @"**** checkAndView exception: %@", [e description]);
-	}
-	
-	[context unlock];
+		}
+		@catch (NSException * e)
+		{
+			NSLog( @"**** checkAndView exception: %@", [e description]);
+		}
+	});
 
 	if( success)
 		[self removePendingRetrieveAndViewItem: item];

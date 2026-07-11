@@ -64,6 +64,8 @@
 #import "NSHost+N2.h"
 #import "DefaultsOsiriX.h"
 #import "NSString+N2.h"
+#import "NSString+SymlinksAndAliases.h"
+#import "NSUserDefaults+OsiriX.h"
 #import "WaitRendering.h"
 
 static BOOL HorosIsTemporaryLocalDatabaseSourcePath(NSString *path)

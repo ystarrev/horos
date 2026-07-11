@@ -44,6 +44,7 @@
 #import "BrowserController.h"
 #import "DicomImage.h"
 #import "DicomStudy.h"
+#import "N2ManagedDatabase.h"
 #import "SRAnnotation.h"
 #import <WebKit/WebKit.h>
 #import <MetalKit/MetalKit.h>
@@ -580,35 +581,33 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     if (context == nil)
         return @[];
 
-    @try
-    {
-        NSFetchRequest *request = [[[NSFetchRequest alloc] init] autorelease];
-        [request setEntity:[NSEntityDescription entityForName:@"Image" inManagedObjectContext:context]];
-        [request setPredicate:[NSPredicate predicateWithFormat:@"compressedSopInstanceUID != NIL"]];
-
-        NSError *error = nil;
-        NSArray *matches = [context executeFetchRequest:request error:&error];
-        if (matches.count == 0)
-            return @[];
-
-        NSMutableArray *orderedImages = [NSMutableArray array];
-        for (NSString *uid in uids)
+    __block NSArray *result = nil;
+    N2PerformManagedObjectContextBlockAndWait(context, ^{
+        @try
         {
-            NSPredicate *match = [NSComparisonPredicate predicateWithLeftExpression:[NSExpression expressionForKeyPath:@"compressedSopInstanceUID"]
-                                                                    rightExpression:[NSExpression expressionForConstantValue:[DicomImage sopInstanceUIDEncodeString:uid]]
-                                                                     customSelector:@selector(isEqualToSopInstanceUID:)];
-            NSArray *found = [matches filteredArrayUsingPredicate:match];
-            if (found.count)
-                [orderedImages addObject:[found objectAtIndex:0]];
-        }
+            NSFetchRequest *request = [[[NSFetchRequest alloc] init] autorelease];
+            [request setEntity:[NSEntityDescription entityForName:@"Image" inManagedObjectContext:context]];
+            [request setPredicate:[NSPredicate predicateWithFormat:@"compressedSopInstanceUID != NIL"]];
 
-        return orderedImages;
-    }
-    @catch (NSException *e)
-    {
-        NSLog(@"KO preview lookup exception: %@", e);
-        return @[];
-    }
+            NSArray *matches = [context executeFetchRequest:request error:nil];
+            NSMutableArray *orderedImages = [NSMutableArray array];
+            for (NSString *uid in uids)
+            {
+                NSPredicate *match = [NSComparisonPredicate predicateWithLeftExpression:[NSExpression expressionForKeyPath:@"compressedSopInstanceUID"]
+                                                                        rightExpression:[NSExpression expressionForConstantValue:[DicomImage sopInstanceUIDEncodeString:uid]]
+                                                                         customSelector:@selector(isEqualToSopInstanceUID:)];
+                NSArray *found = [matches filteredArrayUsingPredicate:match];
+                if (found.count)
+                    [orderedImages addObject:[found objectAtIndex:0]];
+            }
+            result = [orderedImages copy];
+        }
+        @catch (NSException *e)
+        {
+            NSLog(@"KO preview lookup exception: %@", e);
+        }
+    });
+    return result ? [result autorelease] : @[];
 }
 
 - (NSArray *)referencedUIDsForPix:(DCMPix *)pix

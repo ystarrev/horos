@@ -908,7 +908,7 @@ subOpCallback(void * /*subOpCallbackData*/ ,
     @try
     {
             NSMutableSet *localObjectUIDs = [NSMutableSet set];
-            BOOL localSeriesAlreadyExists = NO;
+            __block BOOL localSeriesAlreadyExists = NO;
             
             BOOL retrievedDone = NO;
             // Keep retrieval at STUDY/SERIES level. IMAGE-level C-MOVE creates many small requests and is not used by our workflow.
@@ -944,15 +944,15 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                     {
                         @try
                         {
-                            NSError *error = nil;
+                            __block NSError *error = nil;
                             NSFetchRequest *request = [NSFetchRequest fetchRequestWithEntityName: @"Study"];
                             
                             [request setPredicate: [NSPredicate predicateWithFormat: @"studyInstanceUID == %@", studyInstanceUID]];
                             
                             NSManagedObjectContext *context = [NSThread isMainThread] ? [[DicomDatabase activeLocalDatabase] managedObjectContext] : [[DicomDatabase activeLocalDatabase] independentContext];
-                            
+                            N2PerformManagedObjectContextBlockAndWait(context, ^{
                             DicomStudy *localStudy = [[context executeFetchRequest: request error: &error] lastObject];
-                            
+
                             for( DicomSeries *s in [localStudy valueForKey: @"series"])
                             {
                                 if( [self isKindOfClass: [DCMTKSeriesQueryNode class]])
@@ -973,6 +973,7 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                                         [localObjectUIDs addObject: localSOPInstanceUID];
                                 }
                             }
+                            });
                         }
                         @catch (NSException* e)
                         {

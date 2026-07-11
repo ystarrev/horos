@@ -63,6 +63,12 @@ char currentDestinationMoveAET[ 60] = "";
 extern NSManagedObjectContext *staticContext;
 extern BOOL forkedProcess;
 
+@interface OsiriXSCPDataHandler (ContextQueuePrivate)
+- (OFCondition)prepareFindForDataSetOnContextQueue:(DcmDataset *)dataset;
+- (OFCondition)prepareMoveForDataSetOnContextQueue:(DcmDataset *)dataset;
+- (OFCondition)nextFindObjectOnContextQueue:(DcmDataset *)dataset isComplete:(BOOL *)isComplete;
+- (OFCondition)nextMoveObjectOnContextQueue:(char *)imageFileName;
+@end
 
 @implementation OsiriXSCPDataHandler
 
@@ -1494,6 +1500,15 @@ extern BOOL forkedProcess;
 
 - (OFCondition)prepareFindForDataSet: (DcmDataset *) dataset
 {
+    __block OFCondition condition = EC_IllegalParameter;
+    N2PerformManagedObjectContextBlockAndWait(context, ^{
+        condition = [self prepareFindForDataSetOnContextQueue:dataset];
+    });
+    return condition;
+}
+
+- (OFCondition)prepareFindForDataSetOnContextQueue:(DcmDataset *)dataset
+{
     NSPredicate *compressedSOPInstancePredicate = nil, *seriesLevelPredicate = nil;
 	NSPredicate *predicate = [self predicateForDataset: dataset compressedSOPInstancePredicate: &compressedSOPInstancePredicate seriesLevelPredicate: &seriesLevelPredicate];
     
@@ -1719,6 +1734,15 @@ extern BOOL forkedProcess;
 
 - (OFCondition)prepareMoveForDataSet:( DcmDataset *)dataset
 {
+    __block OFCondition condition = EC_IllegalParameter;
+    N2PerformManagedObjectContextBlockAndWait(context, ^{
+        condition = [self prepareMoveForDataSetOnContextQueue:dataset];
+    });
+    return condition;
+}
+
+- (OFCondition)prepareMoveForDataSetOnContextQueue:(DcmDataset *)dataset
+{
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
     
 	OFCondition cond = EC_IllegalParameter;
@@ -1891,6 +1915,15 @@ extern BOOL forkedProcess;
 
 - (OFCondition) nextFindObject:(DcmDataset *)dataset isComplete:(BOOL *)isComplete
 {
+    __block OFCondition condition = EC_IllegalParameter;
+    N2PerformManagedObjectContextBlockAndWait(context, ^{
+        condition = [self nextFindObjectOnContextQueue:dataset isComplete:isComplete];
+    });
+    return condition;
+}
+
+- (OFCondition)nextFindObjectOnContextQueue:(DcmDataset *)dataset isComplete:(BOOL *)isComplete
+{
 	id item;
 	
 	@try
@@ -1932,6 +1965,15 @@ extern BOOL forkedProcess;
 }
 
 - (OFCondition)nextMoveObject:(char *)imageFileName
+{
+    __block OFCondition condition = EC_IllegalParameter;
+    N2PerformManagedObjectContextBlockAndWait(context, ^{
+        condition = [self nextMoveObjectOnContextQueue:imageFileName];
+    });
+    return condition;
+}
+
+- (OFCondition)nextMoveObjectOnContextQueue:(char *)imageFileName
 {
 	OFCondition ret = EC_Normal;
 	

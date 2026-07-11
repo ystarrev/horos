@@ -501,7 +501,7 @@ struct MetalStoredInt16PixelData {
     }
 
     init?(pix: DCMPix) {
-        guard let info = pix.decodedStoredPixelData16ForMetalTexture() as? [AnyHashable: Any] else {
+        guard let info = pix.decodedStoredPixelData16ForMetalTexture() else {
             return nil
         }
 

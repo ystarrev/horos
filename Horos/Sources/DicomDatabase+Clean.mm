@@ -140,9 +140,9 @@
 	[_cleanLock lock];
 	@try {
 		NSUserDefaults	*defaults = [NSUserDefaults standardUserDefaults];
-		
+
+		N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
 		// Log cleaning
-		if ([self tryLock])
 			@try {
 				NSDate *producedDate = [[NSDate date] dateByAddingTimeInterval: -[defaults integerForKey:@"LOGCLEANINGDAYS"]*60*60*24];
 				NSPredicate *predicate = [NSPredicate predicateWithFormat: @"startTime <= CAST(%lf, \"NSDate\")", [producedDate timeIntervalSinceReferenceDate]];
@@ -150,13 +150,10 @@
 					[self.managedObjectContext deleteObject:log];
 			} @catch (NSException* e) {
 				N2LogExceptionWithStackTrace(e);
-			} @finally {
-				[self unlock];
 			}
 		
 		if ([defaults boolForKey:@"AUTOCLEANINGDATE"] && ([defaults boolForKey:@"AUTOCLEANINGDATEPRODUCED"] || [defaults boolForKey:@"AUTOCLEANINGDATEOPENED"]))
         {
-			if ([self tryLock])
 				@try {
 					NSArray				*studiesArray;
 					NSDate				*now = [NSDate date];
@@ -325,12 +322,11 @@
 					
 				} @catch (NSException* e) {
 					N2LogExceptionWithStackTrace(e);
-				} @finally {
-					[self unlock];
 				}
 		}
 		
         [self save];
+		});
         
 		[self cleanForFreeSpace];
 	} @catch (NSException* e) {

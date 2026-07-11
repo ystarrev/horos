@@ -182,7 +182,7 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     IBOutlet NSWindow				*urlWindow, *CDpasswordWindow, *ZIPpasswordWindow;
     IBOutlet NSTextField			*urlString;
     
-    IBOutlet NSForm					*rdPatientForm, *rdPixelForm, *rdVoxelForm, *rdOffsetForm;
+    IBOutlet NSMatrix				*rdPatientForm, *rdPixelForm, *rdVoxelForm, *rdOffsetForm;
     IBOutlet NSMatrix				*rdPixelTypeMatrix;
     IBOutlet NSView					*rdAccessory;
     

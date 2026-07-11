@@ -190,9 +190,6 @@
 		434B461E1A19F631008CF8CF /* OPJSupport.h in Headers */ = {isa = PBXBuildFile; fileRef = 434B461C1A19F631008CF8CF /* OPJSupport.h */; };
 		434B461F1A19F640008CF8CF /* OPJSupport.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434B461B1A19F631008CF8CF /* OPJSupport.cpp */; };
 		434B46201A19F642008CF8CF /* OPJSupport.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434B461B1A19F631008CF8CF /* OPJSupport.cpp */; };
-		434B47A21A1A18D3008CF8CF /* kdu_OsiriX_NO_Support.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434B47A11A1A18D3008CF8CF /* kdu_OsiriX_NO_Support.cpp */; };
-		434B47A41A1A194F008CF8CF /* kdu_OsiriX_NO_Support.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434B47A11A1A18D3008CF8CF /* kdu_OsiriX_NO_Support.cpp */; };
-		434B47A51A1A1951008CF8CF /* kdu_OsiriX_NO_Support.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434B47A11A1A18D3008CF8CF /* kdu_OsiriX_NO_Support.cpp */; };
 		4F00A9E4139A778000ABD529 /* CPRStretchedView.m in Sources */ = {isa = PBXBuildFile; fileRef = 4F00A9E3139A778000ABD529 /* CPRStretchedView.m */; };
 		4F00A9E8139A779200ABD529 /* CPRStretchedView.h in Headers */ = {isa = PBXBuildFile; fileRef = 4F00A9E7139A779200ABD529 /* CPRStretchedView.h */; };
 		4F1FCE1B143092DC008683F9 /* OSIPlanarBrushROI.h in Headers */ = {isa = PBXBuildFile; fileRef = 4F1FCE19143092DC008683F9 /* OSIPlanarBrushROI.h */; };
@@ -397,18 +394,12 @@
 		5FCC11F22423D0220039EE8F /* dicom.dic in Resources */ = {isa = PBXBuildFile; fileRef = ABBB639E0635874D00D9531F /* dicom.dic */; };
 		5FCC11F32423D0220039EE8F /* dsr2html in Resources */ = {isa = PBXBuildFile; fileRef = 84B5EA4211A2BC0900193FDB /* dsr2html */; };
 		5FCC11F42423D0220039EE8F /* echoscu in Resources */ = {isa = PBXBuildFile; fileRef = CE9C73490B34946B0062FCCC /* echoscu */; };
-		710EF1F31FD00E29000B555B /* Horos.h in Headers */ = {isa = PBXBuildFile; fileRef = 710EF1F11FD00E28000B555B /* Horos.h */; };
-		710EF1F41FD00E29000B555B /* Horos.m in Sources */ = {isa = PBXBuildFile; fileRef = 710EF1F21FD00E29000B555B /* Horos.m */; };
-		710EF1F61FD025BC000B555B /* Horos.m in Sources */ = {isa = PBXBuildFile; fileRef = 710EF1F21FD00E29000B555B /* Horos.m */; };
-		71125D4B215376FC00EB0AA5 /* PathForImage.h in Headers */ = {isa = PBXBuildFile; fileRef = 71125D4A215376FC00EB0AA5 /* PathForImage.h */; };
 		7128FD771487D54A00AB54A1 /* N2UnclickableSplitView.h in Headers */ = {isa = PBXBuildFile; fileRef = 7128FD751487D54A00AB54A1 /* N2UnclickableSplitView.h */; };
 		7128FD791487D54A00AB54A1 /* N2UnclickableSplitView.m in Sources */ = {isa = PBXBuildFile; fileRef = 7128FD761487D54A00AB54A1 /* N2UnclickableSplitView.m */; };
 		71353C511469260B00359CAB /* NSDate+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = 71353C4F1469260B00359CAB /* NSDate+N2.h */; };
 		71353C531469260B00359CAB /* NSDate+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = 71353C501469260B00359CAB /* NSDate+N2.mm */; };
 		713A00391467E2DC00194120 /* DicomDir.h in Headers */ = {isa = PBXBuildFile; fileRef = 713A00371467E2DC00194120 /* DicomDir.h */; };
 		713A003A1467E2DC00194120 /* DicomDir.mm in Sources */ = {isa = PBXBuildFile; fileRef = 713A00381467E2DC00194120 /* DicomDir.mm */; };
-		713A26F617003DF900878CAB /* N2Locker.h in Headers */ = {isa = PBXBuildFile; fileRef = 713A26F417003DF900878CAB /* N2Locker.h */; };
-		713A26F717003DF900878CAB /* N2Locker.m in Sources */ = {isa = PBXBuildFile; fileRef = 713A26F517003DF900878CAB /* N2Locker.m */; };
 		7147C1881644160800A9D095 /* O2ViewerThumbnailsMatrix.h in Headers */ = {isa = PBXBuildFile; fileRef = 7147C1861644160800A9D095 /* O2ViewerThumbnailsMatrix.h */; };
 		7147C18A1644160800A9D095 /* O2ViewerThumbnailsMatrix.mm in Sources */ = {isa = PBXBuildFile; fileRef = 7147C1871644160800A9D095 /* O2ViewerThumbnailsMatrix.mm */; };
 		714943D214D3008B008BCC08 /* NSHost+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = 714943D014D3008B008BCC08 /* NSHost+N2.h */; };
@@ -481,7 +472,6 @@
 		71AD676D1FC4256E00A1E2F8 /* Tiling3x2.pdf in Resources */ = {isa = PBXBuildFile; fileRef = 71E6C0A81FB59A9000FF75B6 /* Tiling3x2.pdf */; };
 		71AD676E1FC4256E00A1E2F8 /* Tiling3x3.pdf in Resources */ = {isa = PBXBuildFile; fileRef = 71E6C0A91FB59A9000FF75B6 /* Tiling3x3.pdf */; };
 		71CE3C19157F489C00AC0112 /* List.pdf in Resources */ = {isa = PBXBuildFile; fileRef = 71CE3C18157F489C00AC0112 /* List.pdf */; };
-		71E6C0801FB5943B00FF75B6 /* O2HMigrationAssistant.xib in Resources */ = {isa = PBXBuildFile; fileRef = 71E6C0821FB5943B00FF75B6 /* O2HMigrationAssistant.xib */; };
 		71EB83C016DCB7FF00D48646 /* O2DicomPredicateEditor.h in Headers */ = {isa = PBXBuildFile; fileRef = 71EB83B216DCB7FF00D48646 /* O2DicomPredicateEditor.h */; };
 		71EB83C116DCB7FF00D48646 /* O2DicomPredicateEditor.m in Sources */ = {isa = PBXBuildFile; fileRef = 71EB83B316DCB7FF00D48646 /* O2DicomPredicateEditor.m */; };
 		71EB83C216DCB7FF00D48646 /* O2DicomPredicateEditorCodeStrings.h in Headers */ = {isa = PBXBuildFile; fileRef = 71EB83B416DCB7FF00D48646 /* O2DicomPredicateEditorCodeStrings.h */; };
@@ -575,8 +565,6 @@
 		849B44BD1552B2D800194728 /* OsiriXNotificationCenter.m in Sources */ = {isa = PBXBuildFile; fileRef = 849B44BA1552B2D800194728 /* OsiriXNotificationCenter.m */; };
 		84A220E80F25E41800C6C3EB /* ROIs.tif in Resources */ = {isa = PBXBuildFile; fileRef = 84A220E60F25E41800C6C3EB /* ROIs.tif */; };
 		84A220E90F25E41800C6C3EB /* Keys.tif in Resources */ = {isa = PBXBuildFile; fileRef = 84A220E70F25E41800C6C3EB /* Keys.tif */; };
-		84A9D49612F7F90700DA1F99 /* kdu_OsiriXSupport.h in Headers */ = {isa = PBXBuildFile; fileRef = 84A9D49312F7F90700DA1F99 /* kdu_OsiriXSupport.h */; };
-		84A9D49C12F7F90700DA1F99 /* kdu_OsiriXSupport.h in Headers */ = {isa = PBXBuildFile; fileRef = 84A9D49312F7F90700DA1F99 /* kdu_OsiriXSupport.h */; };
 		84ADF472115B622D00FE18B2 /* SRController+StereoVision.h in Headers */ = {isa = PBXBuildFile; fileRef = 84ADF460115B622D00FE18B2 /* SRController+StereoVision.h */; };
 		84ADF473115B622D00FE18B2 /* SRController+StereoVision.mm in Sources */ = {isa = PBXBuildFile; fileRef = 84ADF461115B622D00FE18B2 /* SRController+StereoVision.mm */; };
 		84ADF474115B622D00FE18B2 /* SRFlyThruAdapter+StereoVision.h in Headers */ = {isa = PBXBuildFile; fileRef = 84ADF462115B622D00FE18B2 /* SRFlyThruAdapter+StereoVision.h */; };
@@ -597,11 +585,9 @@
 		84ADF483115B622D00FE18B2 /* Window3DController+StereoVision.m in Sources */ = {isa = PBXBuildFile; fileRef = 84ADF471115B622D00FE18B2 /* Window3DController+StereoVision.m */; };
 		84C4510B10033B8100138F70 /* OSIWindow.m in Sources */ = {isa = PBXBuildFile; fileRef = 84C450F51003384000138F70 /* OSIWindow.m */; };
 		84C4510C10033B8200138F70 /* OSIWindow.h in Headers */ = {isa = PBXBuildFile; fileRef = 84C450F41003384000138F70 /* OSIWindow.h */; };
-		84CD250D11EC5564004669D6 /* OsiriXDB_Previous_DataModel2.4.mom in Resources */ = {isa = PBXBuildFile; fileRef = 84CD250C11EC5564004669D6 /* OsiriXDB_Previous_DataModel2.4.mom */; };
 		84CD254C11ECB49A004669D6 /* OsiriXDB_DataModel.xcdatamodel in Sources */ = {isa = PBXBuildFile; fileRef = CE51BAF711E2289C006D180E /* OsiriXDB_DataModel.xcdatamodel */; };
 		84D7BBE3154A941A007B5A86 /* NSNotificationCenter+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = 84D7BBE1154A941A007B5A86 /* NSNotificationCenter+N2.h */; };
 		84D7BBE5154A941A007B5A86 /* NSNotificationCenter+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = 84D7BBE2154A941A007B5A86 /* NSNotificationCenter+N2.mm */; };
-		991B8B5C1BB8B279006AF439 /* O2HMigrationAssistant.png in Resources */ = {isa = PBXBuildFile; fileRef = 991B8B5B1BB8B279006AF439 /* O2HMigrationAssistant.png */; };
 		992335882009A75A000E10BA /* Horos.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB0F3A2C1046BD2B004129DD /* Horos.framework */; };
 		992335892009A75A000E10BA /* Horos.framework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = AB0F3A2C1046BD2B004129DD /* Horos.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		9939F7A91BCB0BF8009FEB69 /* FVTiff.m in Sources */ = {isa = PBXBuildFile; fileRef = CEE73FC808F44724002A395F /* FVTiff.m */; };
@@ -629,9 +615,6 @@
 		998309121BB62D4100CAB197 /* JRSwizzle.m in Sources */ = {isa = PBXBuildFile; fileRef = 998309101BB62D4100CAB197 /* JRSwizzle.m */; };
 		998B52E21AE0890300D317CF /* Horos.sdef in Resources */ = {isa = PBXBuildFile; fileRef = 998B52E11AE0890300D317CF /* Horos.sdef */; };
 		998B52E41AE0893D00D317CF /* Horos.icns in Resources */ = {isa = PBXBuildFile; fileRef = 998B52E31AE0893D00D317CF /* Horos.icns */; };
-		999B0B631BB70F0800AF018A /* O2HMigrationAssistant.h in Headers */ = {isa = PBXBuildFile; fileRef = 999B0B601BB70F0800AF018A /* O2HMigrationAssistant.h */; };
-		999B0B641BB70F0800AF018A /* O2HMigrationAssistant.m in Sources */ = {isa = PBXBuildFile; fileRef = 999B0B611BB70F0800AF018A /* O2HMigrationAssistant.m */; };
-		999B0B671BB711ED00AF018A /* CurvedArrowGrayLeft.png in Resources */ = {isa = PBXBuildFile; fileRef = 999B0B661BB711ED00AF018A /* CurvedArrowGrayLeft.png */; };
 		999B0B681BB7309200AF018A /* Osirix.icns in Resources */ = {isa = PBXBuildFile; fileRef = 9966A1AF1AE09FFE00F2D81A /* Osirix.icns */; };
 		99BA4CD820A4BE0B00B5CD02 /* HorosCloud.horosplugin.zip in Copy HorosCloud */ = {isa = PBXBuildFile; fileRef = 99BA4CD620A4BDDA00B5CD02 /* HorosCloud.horosplugin.zip */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		99C32EEF1CFF78E7001E71F3 /* PluginFilter.h in Headers */ = {isa = PBXBuildFile; fileRef = AB2C24E10677861300A08910 /* PluginFilter.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -828,8 +811,6 @@
 		AB10FAB211293378009EB238 /* N2MinMax.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAA411293378009EB238 /* N2MinMax.mm */; };
 		AB10FAB311293378009EB238 /* N2Alignment.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAA511293378009EB238 /* N2Alignment.h */; };
 		AB10FAB411293378009EB238 /* N2Alignment.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAA611293378009EB238 /* N2Alignment.mm */; };
-		AB10FAB511293378009EB238 /* N2Resizer.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAA711293378009EB238 /* N2Resizer.h */; };
-		AB10FAB611293378009EB238 /* N2Resizer.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAA811293378009EB238 /* N2Resizer.mm */; };
 		AB10FAB711293378009EB238 /* N2Shell.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAA911293378009EB238 /* N2Shell.h */; };
 		AB10FAB811293378009EB238 /* N2Shell.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAAA11293378009EB238 /* N2Shell.mm */; };
 		AB10FAB911293378009EB238 /* N2UserDefaults.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAAB11293378009EB238 /* N2UserDefaults.h */; };
@@ -838,36 +819,12 @@
 		AB10FB201129338A009EB238 /* N2ButtonCell.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FACB1129338A009EB238 /* N2ButtonCell.mm */; };
 		AB10FB211129338A009EB238 /* N2Button.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FACC1129338A009EB238 /* N2Button.h */; };
 		AB10FB221129338A009EB238 /* N2Button.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FACD1129338A009EB238 /* N2Button.mm */; };
-		AB10FB231129338A009EB238 /* N2DisclosureBox.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FACE1129338A009EB238 /* N2DisclosureBox.h */; };
-		AB10FB241129338A009EB238 /* N2DisclosureBox.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FACF1129338A009EB238 /* N2DisclosureBox.mm */; };
-		AB10FB251129338A009EB238 /* N2DisclosureButtonCell.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAD01129338A009EB238 /* N2DisclosureButtonCell.h */; };
-		AB10FB261129338A009EB238 /* N2DisclosureButtonCell.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAD11129338A009EB238 /* N2DisclosureButtonCell.mm */; };
 		AB10FB271129338A009EB238 /* N2ColorWell.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAD21129338A009EB238 /* N2ColorWell.h */; };
 		AB10FB281129338A009EB238 /* N2ColorWell.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAD31129338A009EB238 /* N2ColorWell.mm */; };
 		AB10FB291129338A009EB238 /* N2PopUpButton.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAD41129338A009EB238 /* N2PopUpButton.h */; };
 		AB10FB2A1129338A009EB238 /* N2PopUpButton.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAD51129338A009EB238 /* N2PopUpButton.mm */; };
 		AB10FB2B1129338A009EB238 /* N2Exceptions.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAD71129338A009EB238 /* N2Exceptions.h */; };
 		AB10FB2C1129338A009EB238 /* N2Exceptions.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAD81129338A009EB238 /* N2Exceptions.mm */; };
-		AB10FB351129338A009EB238 /* N2View.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAE31129338A009EB238 /* N2View.h */; };
-		AB10FB361129338A009EB238 /* N2View.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAE41129338A009EB238 /* N2View.mm */; };
-		AB10FB371129338A009EB238 /* N2Panel.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAE51129338A009EB238 /* N2Panel.h */; };
-		AB10FB381129338A009EB238 /* N2Panel.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAE61129338A009EB238 /* N2Panel.mm */; };
-		AB10FB391129338A009EB238 /* N2Window.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAE71129338A009EB238 /* N2Window.h */; };
-		AB10FB3A1129338A009EB238 /* N2Window.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAE81129338A009EB238 /* N2Window.mm */; };
-		AB10FB3B1129338A009EB238 /* N2Layout.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAE91129338A009EB238 /* N2Layout.h */; };
-		AB10FB3C1129338A009EB238 /* N2Layout.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAEA1129338A009EB238 /* N2Layout.mm */; };
-		AB10FB3D1129338A009EB238 /* N2ColumnLayout.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAEB1129338A009EB238 /* N2ColumnLayout.h */; };
-		AB10FB3E1129338A009EB238 /* N2ColumnLayout.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAEC1129338A009EB238 /* N2ColumnLayout.mm */; };
-		AB10FB3F1129338A009EB238 /* N2CellDescriptor.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAED1129338A009EB238 /* N2CellDescriptor.h */; };
-		AB10FB401129338A009EB238 /* N2CellDescriptor.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAEE1129338A009EB238 /* N2CellDescriptor.mm */; };
-		AB10FB411129338A009EB238 /* N2Step.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAF01129338A009EB238 /* N2Step.h */; };
-		AB10FB421129338A009EB238 /* N2Step.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAF11129338A009EB238 /* N2Step.mm */; };
-		AB10FB431129338A009EB238 /* N2Steps.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAF21129338A009EB238 /* N2Steps.h */; };
-		AB10FB441129338A009EB238 /* N2Steps.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAF31129338A009EB238 /* N2Steps.mm */; };
-		AB10FB451129338A009EB238 /* N2StepView.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAF41129338A009EB238 /* N2StepView.h */; };
-		AB10FB461129338A009EB238 /* N2StepView.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAF51129338A009EB238 /* N2StepView.mm */; };
-		AB10FB471129338A009EB238 /* N2StepsView.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAF61129338A009EB238 /* N2StepsView.h */; };
-		AB10FB481129338A009EB238 /* N2StepsView.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAF71129338A009EB238 /* N2StepsView.mm */; };
 		AB10FB491129338A009EB238 /* N2Pair.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAF91129338A009EB238 /* N2Pair.h */; };
 		AB10FB4A1129338A009EB238 /* N2Pair.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAFA1129338A009EB238 /* N2Pair.mm */; };
 		AB10FB4B1129338A009EB238 /* N2SingletonObject.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAFB1129338A009EB238 /* N2SingletonObject.h */; };
@@ -997,12 +954,6 @@
 		AB94E72606343D91003E4C48 /* MutableArrayCategory.h in Headers */ = {isa = PBXBuildFile; fileRef = AB94E72406343D91003E4C48 /* MutableArrayCategory.h */; };
 		AB95C0390A2B08ED00380C65 /* FileNotFound.tif in Resources */ = {isa = PBXBuildFile; fileRef = AB95C0380A2B08ED00380C65 /* FileNotFound.tif */; };
 		AB9693C00E823E3A00F09EEA /* ROIsAndKeys.tif in Resources */ = {isa = PBXBuildFile; fileRef = AB9693BF0E823E3A00F09EEA /* ROIsAndKeys.tif */; };
-		AB9723950C684B4E00DC727C /* OsiriXDB_Previous_DataModel1.1.mom in Resources */ = {isa = PBXBuildFile; fileRef = AB9723890C684B4E00DC727C /* OsiriXDB_Previous_DataModel1.1.mom */; };
-		AB9723960C684B4E00DC727C /* OsiriXDB_Previous_DataModel1.5.mom in Resources */ = {isa = PBXBuildFile; fileRef = AB97238A0C684B4E00DC727C /* OsiriXDB_Previous_DataModel1.5.mom */; };
-		AB9723970C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.0.mom in Resources */ = {isa = PBXBuildFile; fileRef = AB97238B0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.0.mom */; };
-		AB9723980C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.1.mom in Resources */ = {isa = PBXBuildFile; fileRef = AB97238C0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.1.mom */; };
-		AB9723990C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.2.mom in Resources */ = {isa = PBXBuildFile; fileRef = AB97238D0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.2.mom */; };
-		AB97239A0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.3.mom in Resources */ = {isa = PBXBuildFile; fileRef = AB97238E0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.3.mom */; };
 		AB9E05470B30107A00661F7E /* key.png in Resources */ = {isa = PBXBuildFile; fileRef = AB9E05460B30107A00661F7E /* key.png */; };
 		ABB218B905CF1E9300D8B619 /* WaitRendering.h in Headers */ = {isa = PBXBuildFile; fileRef = ABB218B705CF1E9300D8B619 /* WaitRendering.h */; };
 		ABB218BA05CF1E9300D8B619 /* WaitRendering.m in Sources */ = {isa = PBXBuildFile; fileRef = ABB218B805CF1E9300D8B619 /* WaitRendering.m */; };
@@ -1469,6 +1420,8 @@
 		F4A100000001000000000013 /* Horos/Sources/MetalViewer/Metal3DHistogramPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000013 /* Horos/Sources/MetalViewer/Metal3DHistogramPanelController.swift */; };
 		F4A100000001000000000014 /* Horos/Sources/MetalViewer/MetalPreviewImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000014 /* Horos/Sources/MetalViewer/MetalPreviewImageView.swift */; };
 		F4A100000001000000000015 /* Horos/Sources/HorosSettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000015 /* Horos/Sources/HorosSettingsWindowController.swift */; };
+		F4CDA0010000000000000001 /* HorosDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4CDA0020000000000000001 /* HorosDataModels.swift */; };
+		F4CDA0010000000000000002 /* HorosDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4CDA0020000000000000002 /* HorosDataStore.swift */; };
 		F4A100000001000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm */; };
 		F4A100000001000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm */; };
 		F4A100100001000000000001 /* libHorosModernDCMTKBridge.dylib in Resources */ = {isa = PBXBuildFile; fileRef = F4A100100001000000000002 /* libHorosModernDCMTKBridge.dylib */; };
@@ -2010,7 +1963,6 @@
 		434B46151A19F2A3008CF8CF /* options.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = options.h; path = Horos/Sources/options.h; sourceTree = SOURCE_ROOT; };
 		434B461B1A19F631008CF8CF /* OPJSupport.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OPJSupport.cpp; path = Horos/Sources/OPJSupport.cpp; sourceTree = SOURCE_ROOT; };
 		434B461C1A19F631008CF8CF /* OPJSupport.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OPJSupport.h; path = Horos/Sources/OPJSupport.h; sourceTree = SOURCE_ROOT; };
-		434B47A11A1A18D3008CF8CF /* kdu_OsiriX_NO_Support.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kdu_OsiriX_NO_Support.cpp; path = Horos/Sources/kdu_OsiriX_NO_Support.cpp; sourceTree = SOURCE_ROOT; };
 		4F00A9E3139A778000ABD529 /* CPRStretchedView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = CPRStretchedView.m; path = Horos/Sources/CPRStretchedView.m; sourceTree = SOURCE_ROOT; };
 		4F00A9E7139A779200ABD529 /* CPRStretchedView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = CPRStretchedView.h; path = Horos/Sources/CPRStretchedView.h; sourceTree = SOURCE_ROOT; };
 		4F1FCE19143092DC008683F9 /* OSIPlanarBrushROI.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OSIPlanarBrushROI.h; path = Horos/Sources/OSIPlanarBrushROI.h; sourceTree = SOURCE_ROOT; };
@@ -2208,17 +2160,12 @@
 		5F026FFB242055690083A650 /* Decompress.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Decompress.entitlements; sourceTree = "<group>"; };
 		5F92185F23F45592000B8754 /* dcmpsprt */ = {isa = PBXFileReference; lastKnownFileType = text; name = dcmpsprt; path = DCMTK/dcmpsprt; sourceTree = BUILT_PRODUCTS_DIR; };
 		5F92186123F455A8000B8754 /* dcmprscu */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = dcmprscu; path = DCMTK/dcmprscu; sourceTree = BUILT_PRODUCTS_DIR; };
-		710EF1F11FD00E28000B555B /* Horos.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Horos.h; path = Horos/Sources/Horos.h; sourceTree = SOURCE_ROOT; };
-		710EF1F21FD00E29000B555B /* Horos.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = Horos.m; path = Horos/Sources/Horos.m; sourceTree = SOURCE_ROOT; };
-		71125D4A215376FC00EB0AA5 /* PathForImage.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = PathForImage.h; path = Horos/Sources/PathForImage.h; sourceTree = SOURCE_ROOT; };
 		7128FD751487D54A00AB54A1 /* N2UnclickableSplitView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = N2UnclickableSplitView.h; path = Nitrogen/Sources/N2UnclickableSplitView.h; sourceTree = SOURCE_ROOT; };
 		7128FD761487D54A00AB54A1 /* N2UnclickableSplitView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = N2UnclickableSplitView.m; path = Nitrogen/Sources/N2UnclickableSplitView.m; sourceTree = SOURCE_ROOT; };
 		71353C4F1469260B00359CAB /* NSDate+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "NSDate+N2.h"; path = "Nitrogen/Sources/NSDate+N2.h"; sourceTree = SOURCE_ROOT; };
 		71353C501469260B00359CAB /* NSDate+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "NSDate+N2.mm"; path = "Nitrogen/Sources/NSDate+N2.mm"; sourceTree = SOURCE_ROOT; };
 		713A00371467E2DC00194120 /* DicomDir.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DicomDir.h; path = Horos/Sources/DicomDir.h; sourceTree = SOURCE_ROOT; };
 		713A00381467E2DC00194120 /* DicomDir.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = DicomDir.mm; path = Horos/Sources/DicomDir.mm; sourceTree = SOURCE_ROOT; };
-		713A26F417003DF900878CAB /* N2Locker.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = N2Locker.h; path = Nitrogen/Sources/N2Locker.h; sourceTree = SOURCE_ROOT; };
-		713A26F517003DF900878CAB /* N2Locker.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = N2Locker.m; path = Nitrogen/Sources/N2Locker.m; sourceTree = SOURCE_ROOT; };
 		7147C1861644160800A9D095 /* O2ViewerThumbnailsMatrix.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = O2ViewerThumbnailsMatrix.h; path = Horos/Sources/O2ViewerThumbnailsMatrix.h; sourceTree = SOURCE_ROOT; };
 		7147C1871644160800A9D095 /* O2ViewerThumbnailsMatrix.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = O2ViewerThumbnailsMatrix.mm; path = Horos/Sources/O2ViewerThumbnailsMatrix.mm; sourceTree = SOURCE_ROOT; };
 		714943D014D3008B008BCC08 /* NSHost+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "NSHost+N2.h"; path = "Nitrogen/Sources/NSHost+N2.h"; sourceTree = SOURCE_ROOT; };
@@ -2254,7 +2201,6 @@
 		71BC461B1F272CA400FD6CCF /* Scripts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Scripts; sourceTree = "<group>"; };
 		71C99EA41D1A7E9F00208F3B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Horos/Info.plist; sourceTree = "<group>"; };
 		71CE3C18157F489C00AC0112 /* List.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = List.pdf; sourceTree = "<group>"; };
-		71E6C0811FB5943B00FF75B6 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/O2HMigrationAssistant.xib; sourceTree = "<group>"; };
 		71E6C0881FB5995100FF75B6 /* BlackBody.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = BlackBody.plist; sourceTree = "<group>"; };
 		71E6C0891FB5995100FF75B6 /* VR Muscles-Bones.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "VR Muscles-Bones.plist"; sourceTree = "<group>"; };
 		71E6C08A1FB5995100FF75B6 /* PPU Viridis.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "PPU Viridis.plist"; sourceTree = "<group>"; };
@@ -2387,7 +2333,6 @@
 		849B44BA1552B2D800194728 /* OsiriXNotificationCenter.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OsiriXNotificationCenter.m; sourceTree = "<group>"; };
 		84A220E60F25E41800C6C3EB /* ROIs.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = ROIs.tif; sourceTree = "<group>"; };
 		84A220E70F25E41800C6C3EB /* Keys.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Keys.tif; sourceTree = "<group>"; };
-		84A9D49312F7F90700DA1F99 /* kdu_OsiriXSupport.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = kdu_OsiriXSupport.h; sourceTree = "<group>"; };
 		84ADF460115B622D00FE18B2 /* SRController+StereoVision.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "SRController+StereoVision.h"; sourceTree = "<group>"; };
 		84ADF461115B622D00FE18B2 /* SRController+StereoVision.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = "SRController+StereoVision.mm"; sourceTree = "<group>"; };
 		84ADF462115B622D00FE18B2 /* SRFlyThruAdapter+StereoVision.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "SRFlyThruAdapter+StereoVision.h"; sourceTree = "<group>"; };
@@ -2409,7 +2354,6 @@
 		84B5EA4211A2BC0900193FDB /* dsr2html */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = dsr2html; path = DCMTK/dsr2html; sourceTree = BUILT_PRODUCTS_DIR; };
 		84C450F41003384000138F70 /* OSIWindow.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSIWindow.h; sourceTree = "<group>"; };
 		84C450F51003384000138F70 /* OSIWindow.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSIWindow.m; sourceTree = "<group>"; };
-		84CD250C11EC5564004669D6 /* OsiriXDB_Previous_DataModel2.4.mom */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = OsiriXDB_Previous_DataModel2.4.mom; sourceTree = "<group>"; };
 		84D7BBE1154A941A007B5A86 /* NSNotificationCenter+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSNotificationCenter+N2.h"; sourceTree = "<group>"; };
 		84D7BBE2154A941A007B5A86 /* NSNotificationCenter+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = "NSNotificationCenter+N2.mm"; sourceTree = "<group>"; };
 		8B15E1602347CA600010A147 /* Horos.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Horos.entitlements; sourceTree = "<group>"; };
@@ -2427,7 +2371,6 @@
 		8CC299E02F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSIAutoroutingPreferencePanePref.xib; sourceTree = "<group>"; };
 		8CC299E12F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSI3DPreferencePanePref.xib; sourceTree = "<group>"; };
 		8CC299E22F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/AYDicomPrintPref.xib; sourceTree = "<group>"; };
-		991B8B5B1BB8B279006AF439 /* O2HMigrationAssistant.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = O2HMigrationAssistant.png; sourceTree = "<group>"; };
 		9923358B2009A7ED000E10BA /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		994FABED1CEBF25800980A15 /* OnOffSwitchControl.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OnOffSwitchControl.h; sourceTree = "<group>"; };
 		994FABEE1CEBF25800980A15 /* OnOffSwitchControl.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OnOffSwitchControl.m; sourceTree = "<group>"; };
@@ -2452,9 +2395,6 @@
 		998309101BB62D4100CAB197 /* JRSwizzle.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = JRSwizzle.m; sourceTree = "<group>"; };
 		998B52E11AE0890300D317CF /* Horos.sdef */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; path = Horos.sdef; sourceTree = "<group>"; };
 		998B52E31AE0893D00D317CF /* Horos.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Horos.icns; sourceTree = "<group>"; };
-		999B0B601BB70F0800AF018A /* O2HMigrationAssistant.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = O2HMigrationAssistant.h; path = Horos.xcodeproj/../O2HMigrationAssistant.h; sourceTree = "<group>"; };
-		999B0B611BB70F0800AF018A /* O2HMigrationAssistant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = O2HMigrationAssistant.m; path = Horos.xcodeproj/../O2HMigrationAssistant.m; sourceTree = "<group>"; };
-		999B0B661BB711ED00AF018A /* CurvedArrowGrayLeft.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = CurvedArrowGrayLeft.png; sourceTree = "<group>"; };
 		99BA4CD620A4BDDA00B5CD02 /* HorosCloud.horosplugin.zip */ = {isa = PBXFileReference; lastKnownFileType = archive.zip; name = HorosCloud.horosplugin.zip; path = Binaries/EmbeddedPlugins/HorosCloud.horosplugin.zip; sourceTree = SOURCE_ROOT; };
 		99C0EE22202A70CB00D88E8D /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
 		A085E103141E53210072BF0D /* DCMUSRegion.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DCMUSRegion.h; sourceTree = "<group>"; };
@@ -2670,8 +2610,6 @@
 		AB10FAA411293378009EB238 /* N2MinMax.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2MinMax.mm; sourceTree = "<group>"; };
 		AB10FAA511293378009EB238 /* N2Alignment.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Alignment.h; sourceTree = "<group>"; };
 		AB10FAA611293378009EB238 /* N2Alignment.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Alignment.mm; sourceTree = "<group>"; };
-		AB10FAA711293378009EB238 /* N2Resizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Resizer.h; sourceTree = "<group>"; };
-		AB10FAA811293378009EB238 /* N2Resizer.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Resizer.mm; sourceTree = "<group>"; };
 		AB10FAA911293378009EB238 /* N2Shell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Shell.h; sourceTree = "<group>"; };
 		AB10FAAA11293378009EB238 /* N2Shell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = N2Shell.mm; path = Nitrogen/Sources/N2Shell.mm; sourceTree = SOURCE_ROOT; };
 		AB10FAAB11293378009EB238 /* N2UserDefaults.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2UserDefaults.h; sourceTree = "<group>"; };
@@ -2680,36 +2618,12 @@
 		AB10FACB1129338A009EB238 /* N2ButtonCell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2ButtonCell.mm; sourceTree = "<group>"; };
 		AB10FACC1129338A009EB238 /* N2Button.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Button.h; sourceTree = "<group>"; };
 		AB10FACD1129338A009EB238 /* N2Button.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Button.mm; sourceTree = "<group>"; };
-		AB10FACE1129338A009EB238 /* N2DisclosureBox.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2DisclosureBox.h; sourceTree = "<group>"; };
-		AB10FACF1129338A009EB238 /* N2DisclosureBox.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2DisclosureBox.mm; sourceTree = "<group>"; };
-		AB10FAD01129338A009EB238 /* N2DisclosureButtonCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2DisclosureButtonCell.h; sourceTree = "<group>"; };
-		AB10FAD11129338A009EB238 /* N2DisclosureButtonCell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2DisclosureButtonCell.mm; sourceTree = "<group>"; };
 		AB10FAD21129338A009EB238 /* N2ColorWell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2ColorWell.h; sourceTree = "<group>"; };
 		AB10FAD31129338A009EB238 /* N2ColorWell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2ColorWell.mm; sourceTree = "<group>"; };
 		AB10FAD41129338A009EB238 /* N2PopUpButton.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2PopUpButton.h; sourceTree = "<group>"; };
 		AB10FAD51129338A009EB238 /* N2PopUpButton.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2PopUpButton.mm; sourceTree = "<group>"; };
 		AB10FAD71129338A009EB238 /* N2Exceptions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Exceptions.h; sourceTree = "<group>"; };
 		AB10FAD81129338A009EB238 /* N2Exceptions.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Exceptions.mm; sourceTree = "<group>"; };
-		AB10FAE31129338A009EB238 /* N2View.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2View.h; sourceTree = "<group>"; };
-		AB10FAE41129338A009EB238 /* N2View.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2View.mm; sourceTree = "<group>"; };
-		AB10FAE51129338A009EB238 /* N2Panel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Panel.h; sourceTree = "<group>"; };
-		AB10FAE61129338A009EB238 /* N2Panel.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Panel.mm; sourceTree = "<group>"; };
-		AB10FAE71129338A009EB238 /* N2Window.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Window.h; sourceTree = "<group>"; };
-		AB10FAE81129338A009EB238 /* N2Window.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Window.mm; sourceTree = "<group>"; };
-		AB10FAE91129338A009EB238 /* N2Layout.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Layout.h; sourceTree = "<group>"; };
-		AB10FAEA1129338A009EB238 /* N2Layout.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Layout.mm; sourceTree = "<group>"; };
-		AB10FAEB1129338A009EB238 /* N2ColumnLayout.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2ColumnLayout.h; sourceTree = "<group>"; };
-		AB10FAEC1129338A009EB238 /* N2ColumnLayout.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2ColumnLayout.mm; sourceTree = "<group>"; };
-		AB10FAED1129338A009EB238 /* N2CellDescriptor.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2CellDescriptor.h; sourceTree = "<group>"; };
-		AB10FAEE1129338A009EB238 /* N2CellDescriptor.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2CellDescriptor.mm; sourceTree = "<group>"; };
-		AB10FAF01129338A009EB238 /* N2Step.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Step.h; sourceTree = "<group>"; };
-		AB10FAF11129338A009EB238 /* N2Step.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Step.mm; sourceTree = "<group>"; };
-		AB10FAF21129338A009EB238 /* N2Steps.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Steps.h; sourceTree = "<group>"; };
-		AB10FAF31129338A009EB238 /* N2Steps.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Steps.mm; sourceTree = "<group>"; };
-		AB10FAF41129338A009EB238 /* N2StepView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2StepView.h; sourceTree = "<group>"; };
-		AB10FAF51129338A009EB238 /* N2StepView.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2StepView.mm; sourceTree = "<group>"; };
-		AB10FAF61129338A009EB238 /* N2StepsView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2StepsView.h; sourceTree = "<group>"; };
-		AB10FAF71129338A009EB238 /* N2StepsView.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2StepsView.mm; sourceTree = "<group>"; };
 		AB10FAF91129338A009EB238 /* N2Pair.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Pair.h; sourceTree = "<group>"; };
 		AB10FAFA1129338A009EB238 /* N2Pair.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Pair.mm; sourceTree = "<group>"; };
 		AB10FAFB1129338A009EB238 /* N2SingletonObject.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2SingletonObject.h; sourceTree = "<group>"; };
@@ -2821,12 +2735,6 @@
 		AB94E72406343D91003E4C48 /* MutableArrayCategory.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = MutableArrayCategory.h; sourceTree = "<group>"; };
 		AB95C0380A2B08ED00380C65 /* FileNotFound.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = FileNotFound.tif; sourceTree = "<group>"; };
 		AB9693BF0E823E3A00F09EEA /* ROIsAndKeys.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = ROIsAndKeys.tif; sourceTree = "<group>"; };
-		AB9723890C684B4E00DC727C /* OsiriXDB_Previous_DataModel1.1.mom */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = OsiriXDB_Previous_DataModel1.1.mom; sourceTree = "<group>"; };
-		AB97238A0C684B4E00DC727C /* OsiriXDB_Previous_DataModel1.5.mom */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = OsiriXDB_Previous_DataModel1.5.mom; sourceTree = "<group>"; };
-		AB97238B0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.0.mom */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = OsiriXDB_Previous_DataModel2.0.mom; sourceTree = "<group>"; };
-		AB97238C0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.1.mom */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = OsiriXDB_Previous_DataModel2.1.mom; sourceTree = "<group>"; };
-		AB97238D0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.2.mom */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = OsiriXDB_Previous_DataModel2.2.mom; sourceTree = "<group>"; };
-		AB97238E0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.3.mom */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = OsiriXDB_Previous_DataModel2.3.mom; sourceTree = "<group>"; };
 		AB9E05460B30107A00661F7E /* key.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = key.png; sourceTree = "<group>"; };
 		ABA71D3F06726B1800335A62 /* Horos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Horos.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABAA284B058A4F7F00F0601D /* NSFullScreenWindow.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NSFullScreenWindow.h; sourceTree = "<group>"; };
@@ -3292,6 +3200,8 @@
 		F4A100000002000000000013 /* Horos/Sources/MetalViewer/Metal3DHistogramPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DHistogramPanelController.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000014 /* Horos/Sources/MetalViewer/MetalPreviewImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalPreviewImageView.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000015 /* Horos/Sources/HorosSettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosSettingsWindowController.swift; sourceTree = SOURCE_ROOT; };
+		F4CDA0020000000000000001 /* HorosDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HorosDataModels.swift; sourceTree = "<group>"; };
+		F4CDA0020000000000000002 /* HorosDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HorosDataStore.swift; sourceTree = "<group>"; };
 		F4A100000002000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000017 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.h; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm; sourceTree = SOURCE_ROOT; };
@@ -3575,6 +3485,17 @@
 		1058C7A0FEA54F0111CA2CBB /* Linked Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				F4A100000002000000000006 /* Metal.framework */,
+				F4A100000002000000000007 /* MetalKit.framework */,
+				F4CF00000000000000000004 /* CoreFoundation.framework */,
+				F4CF00000000000000000002 /* CFNetwork.framework */,
+				F4DCM000000200000000001 /* IOKit.framework */,
+				F4DCM000000200000000002 /* Accelerate.framework */,
+				F4DCM000000200000000003 /* ApplicationServices.framework */,
+				F4DCM000000200000000004 /* libxml2.tbd */,
+				F4DCM000000200000000005 /* libz.tbd */,
+				F4DEC000000200000000001 /* WebKit.framework */,
+				F4DEC000000200000000002 /* Quartz.framework */,
 				719D3F251FB46738004CFB27 /* Foundation.framework */,
 				719D3F231FB46737004CFB27 /* AppKit.framework */,
 				9966A1AA1AE09D7C00F2D81A /* Quartz.framework */,
@@ -3664,7 +3585,7 @@
 				19C28FACFE9D520D11CA2CBB /* Products */,
 				7E0B3A08067525FD00908593 /* DCM */,
 				9923358A2009A790000E10BA /* API */,
-				8C1A82D72FA24BE400C314C5 /* Recovered References */,
+				8C1A82D72FA24BE400C314C5 /* DCMTK JPEG Sources */,
 			);
 			name = OsiriX;
 			sourceTree = "<group>";
@@ -3672,12 +3593,9 @@
 		29B97315FDCFA39411CA2CEA /* Other Sources */ = {
 			isa = PBXGroup;
 			children = (
-				710EF1F11FD00E28000B555B /* Horos.h */,
-				710EF1F21FD00E29000B555B /* Horos.m */,
 				4307C62B1A2091900083877C /* url.h */,
 				29B97316FDCFA39411CA2CEA /* main.m */,
 				434B46151A19F2A3008CF8CF /* options.h */,
-				71125D4A215376FC00EB0AA5 /* PathForImage.h */,
 				841722AE10D90595001A833F /* DDKeychain.h */,
 				841722AF10D90595001A833F /* DDKeychain.m */,
 			);
@@ -3860,18 +3778,6 @@
 			children = (
 				AB10FAAB11293378009EB238 /* N2UserDefaults.h */,
 				AB10FAAC11293378009EB238 /* N2UserDefaults.mm */,
-				AB10FAE31129338A009EB238 /* N2View.h */,
-				AB10FAE41129338A009EB238 /* N2View.mm */,
-				AB10FAE51129338A009EB238 /* N2Panel.h */,
-				AB10FAE61129338A009EB238 /* N2Panel.mm */,
-				AB10FAE71129338A009EB238 /* N2Window.h */,
-				AB10FAE81129338A009EB238 /* N2Window.mm */,
-				AB10FAE91129338A009EB238 /* N2Layout.h */,
-				AB10FAEA1129338A009EB238 /* N2Layout.mm */,
-				AB10FAEB1129338A009EB238 /* N2ColumnLayout.h */,
-				AB10FAEC1129338A009EB238 /* N2ColumnLayout.mm */,
-				AB10FAED1129338A009EB238 /* N2CellDescriptor.h */,
-				AB10FAEE1129338A009EB238 /* N2CellDescriptor.mm */,
 			);
 			name = Deprecated;
 			sourceTree = "<group>";
@@ -3935,10 +3841,9 @@
 		719D3F1A1FB461CA004CFB27 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				84A9D44712F7F8BE00DA1F99 /* KDU */,
 				434B461A1A19F4E4008CF8CF /* OpenJPEG */,
+				F4A100000003000000000001 /* Metal Viewer */,
 				29B97315FDCFA39411CA2CEA /* Other Sources */,
-				99B7AAD51BB70E2F00A0605C /* MigrationAssitant */,
 				5997894211B7B3C6002DB107 /* Anonymization */,
 				59BDF10B117EE68F007F1F2C /* Preferences */,
 				592681FB11CF5F5000CFA81F /* Activity */,
@@ -3988,7 +3893,6 @@
 				A926BFC80A76577600F1B366 /* QTExportSeriesTemplate.html */,
 				A9A9F4C00A74C9A9005A1CA7 /* QTExportStyle.css */,
 				848A6BE514C5BB9500C936C3 /* Tiling */,
-				AB9723880C684B4E00DC727C /* DB_Previous_Models */,
 				ABBB639A0635874D00D9531F /* DCMTK */,
 				ABBB647A063587B200D9531F /* Icons */,
 				CE40ED570D86D634007C6D49 /* 3DPosition.xib */,
@@ -4242,15 +4146,6 @@
 			path = Icons/Tiling;
 			sourceTree = "<group>";
 		};
-		84A9D44712F7F8BE00DA1F99 /* KDU */ = {
-			isa = PBXGroup;
-			children = (
-				434B47A11A1A18D3008CF8CF /* kdu_OsiriX_NO_Support.cpp */,
-				84A9D49312F7F90700DA1F99 /* kdu_OsiriXSupport.h */,
-			);
-			name = KDU;
-			sourceTree = "<group>";
-		};
 		84AA013C104EA39E0091E49B /* Log Window */ = {
 			isa = PBXGroup;
 			children = (
@@ -4291,10 +4186,9 @@
 			name = StereoVision;
 			sourceTree = "<group>";
 		};
-		8C1A82D72FA24BE400C314C5 /* Recovered References */ = {
+		F4A100000003000000000001 /* Metal Viewer */ = {
 			isa = PBXGroup;
 			children = (
-				CED2CF960C9B288C0047F123 /* Horos/Sources/CIADICOMField.h */,
 				F4A100000002000000000001 /* Horos/Sources/MetalViewer/MetalViewerLauncher.swift */,
 				F4A10000000200000000000C /* Horos/Sources/MetalViewer/Metal3DViewerLauncher.swift */,
 				F4A100000002000000000010 /* Horos/Sources/MetalViewer/Metal3DVolumeRenderer.swift */,
@@ -4317,11 +4211,13 @@
 				F4A100000002000000000017 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.h */,
 				F4A100000002000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm */,
 				F4A100000002000000000019 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.h */,
-				CED2CF950C9B288C0047F123 /* Horos/Sources/CIADICOMField.m */,
-				F4A100000002000000000006 /* Metal.framework */,
-				F4A100000002000000000007 /* MetalKit.framework */,
-				F4CF00000000000000000004 /* CoreFoundation.framework */,
-				F4CF00000000000000000002 /* CFNetwork.framework */,
+			);
+			name = "Metal Viewer";
+			sourceTree = "<group>";
+		};
+		8C1A82D72FA24BE400C314C5 /* DCMTK JPEG Sources */ = {
+			isa = PBXGroup;
+			children = (
 				F809A0D83CE2777DAC4EBB3E /* ijg8_jcapimin.c */,
 				F85956EBF27F06827AA31BE0 /* ijg8_jcapistd.c */,
 				F8D6CF1C2EF9247F00F52127 /* ijg8_jcarith.c */,
@@ -4511,15 +4407,8 @@
 				F865971E75CE7C94D5881F88 /* ijg16_jquant1.c */,
 				F8288758CB7568D7B9807307 /* ijg16_jquant2.c */,
 				F86C8E6206FEF290BA07440F /* ijg16_jutils.c */,
-				F4DCM000000200000000001 /* IOKit.framework */,
-				F4DCM000000200000000002 /* Accelerate.framework */,
-				F4DCM000000200000000003 /* ApplicationServices.framework */,
-				F4DCM000000200000000004 /* libxml2.tbd */,
-				F4DCM000000200000000005 /* libz.tbd */,
-				F4DEC000000200000000001 /* WebKit.framework */,
-				F4DEC000000200000000002 /* Quartz.framework */,
 			);
-			name = "Recovered References";
+			name = "DCMTK JPEG Sources";
 			sourceTree = "<group>";
 		};
 		9923358A2009A790000E10BA /* API */ = {
@@ -4529,16 +4418,6 @@
 				59F1A4C7104BA5BE009E3215 /* HorosAPI.m */,
 			);
 			path = API;
-			sourceTree = "<group>";
-		};
-		99B7AAD51BB70E2F00A0605C /* MigrationAssitant */ = {
-			isa = PBXGroup;
-			children = (
-				999B0B601BB70F0800AF018A /* O2HMigrationAssistant.h */,
-				999B0B611BB70F0800AF018A /* O2HMigrationAssistant.m */,
-				71E6C0821FB5943B00FF75B6 /* O2HMigrationAssistant.xib */,
-			);
-			name = MigrationAssitant;
 			sourceTree = "<group>";
 		};
 		99BA4CC620A4ACF300B5CD02 /* EmbeddedPlugins */ = {
@@ -4667,8 +4546,6 @@
 				AB10FAA411293378009EB238 /* N2MinMax.mm */,
 				AB10FAA511293378009EB238 /* N2Alignment.h */,
 				AB10FAA611293378009EB238 /* N2Alignment.mm */,
-				AB10FAA711293378009EB238 /* N2Resizer.h */,
-				AB10FAA811293378009EB238 /* N2Resizer.mm */,
 				AB10FAA911293378009EB238 /* N2Shell.h */,
 				AB10FAAA11293378009EB238 /* N2Shell.mm */,
 				5997898011B7B461002DB107 /* N2HexadecimalNumberFormatter.h */,
@@ -4679,8 +4556,6 @@
 				59E8352612F9ABAC006B930A /* N2ManagedDatabase.mm */,
 				59DB270214507ADF00E78E03 /* N2MutableUInteger.h */,
 				59DB270314507ADF00E78E03 /* N2MutableUInteger.mm */,
-				713A26F417003DF900878CAB /* N2Locker.h */,
-				713A26F517003DF900878CAB /* N2Locker.m */,
 				4F8A1A791302C6E100A022D9 /* 3DGeometry */,
 				AB10FB1C1129338A009EB238 /* 3rd Party */,
 				AB10FAFD1129338A009EB238 /* Extras */,
@@ -4715,10 +4590,6 @@
 				AB10FACB1129338A009EB238 /* N2ButtonCell.mm */,
 				AB10FACC1129338A009EB238 /* N2Button.h */,
 				AB10FACD1129338A009EB238 /* N2Button.mm */,
-				AB10FACE1129338A009EB238 /* N2DisclosureBox.h */,
-				AB10FACF1129338A009EB238 /* N2DisclosureBox.mm */,
-				AB10FAD01129338A009EB238 /* N2DisclosureButtonCell.h */,
-				AB10FAD11129338A009EB238 /* N2DisclosureButtonCell.mm */,
 				AB10FAD21129338A009EB238 /* N2ColorWell.h */,
 				AB10FAD31129338A009EB238 /* N2ColorWell.mm */,
 				AB10FAD41129338A009EB238 /* N2PopUpButton.h */,
@@ -4752,14 +4623,6 @@
 		AB10FAEF1129338A009EB238 /* Steps */ = {
 			isa = PBXGroup;
 			children = (
-				AB10FAF01129338A009EB238 /* N2Step.h */,
-				AB10FAF11129338A009EB238 /* N2Step.mm */,
-				AB10FAF21129338A009EB238 /* N2Steps.h */,
-				AB10FAF31129338A009EB238 /* N2Steps.mm */,
-				AB10FAF41129338A009EB238 /* N2StepView.h */,
-				AB10FAF51129338A009EB238 /* N2StepView.mm */,
-				AB10FAF61129338A009EB238 /* N2StepsView.h */,
-				AB10FAF71129338A009EB238 /* N2StepsView.mm */,
 			);
 			name = Steps;
 			sourceTree = "<group>";
@@ -4962,21 +4825,6 @@
 			name = XML;
 			sourceTree = "<group>";
 		};
-		AB9723880C684B4E00DC727C /* DB_Previous_Models */ = {
-			isa = PBXGroup;
-			children = (
-				AB9723890C684B4E00DC727C /* OsiriXDB_Previous_DataModel1.1.mom */,
-				AB97238A0C684B4E00DC727C /* OsiriXDB_Previous_DataModel1.5.mom */,
-				AB97238B0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.0.mom */,
-				AB97238C0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.1.mom */,
-				AB97238D0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.2.mom */,
-				AB97238E0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.3.mom */,
-				84CD250C11EC5564004669D6 /* OsiriXDB_Previous_DataModel2.4.mom */,
-			);
-			name = DB_Previous_Models;
-			path = Binaries/DB_Previous_Models;
-			sourceTree = SOURCE_ROOT;
-		};
 		ABAA285A058A675600F0601D /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
@@ -5153,8 +5001,6 @@
 			isa = PBXGroup;
 			children = (
 				9966BCB41CEB5BA50086A8D7 /* osirixplugin.icns */,
-				991B8B5B1BB8B279006AF439 /* O2HMigrationAssistant.png */,
-				999B0B661BB711ED00AF018A /* CurvedArrowGrayLeft.png */,
 				9966A1AF1AE09FFE00F2D81A /* Osirix.icns */,
 				718416061654022400180467 /* DownArrowGreyRev.pdf */,
 				ABBB647B063587B200D9531F /* 2DBlending.tif */,
@@ -5378,9 +5224,19 @@
 			path = Icons;
 			sourceTree = "<group>";
 		};
+		F4CDA0030000000000000001 /* Persistence */ = {
+			isa = PBXGroup;
+			children = (
+				F4CDA0020000000000000001 /* HorosDataModels.swift */,
+				F4CDA0020000000000000002 /* HorosDataStore.swift */,
+			);
+			path = Persistence;
+			sourceTree = "<group>";
+		};
 		ABD9E69C05B49D6C0077115D /* Database */ = {
 			isa = PBXGroup;
 			children = (
+				F4CDA0030000000000000001 /* Persistence */,
 				59DB26FC14507ACA00E78E03 /* PrettyCell.h */,
 				59DB26FD14507ACA00E78E03 /* PrettyCell.mm */,
 				CEC0BF9E15A597DB0012D879 /* ComparativeCell.h */,
@@ -5460,6 +5316,8 @@
 			children = (
 				84AA013C104EA39E0091E49B /* Log Window */,
 				ABB7A43606343BFF00AD1777 /* Query */,
+				CED2CF960C9B288C0047F123 /* Horos/Sources/CIADICOMField.h */,
+				CED2CF950C9B288C0047F123 /* Horos/Sources/CIADICOMField.m */,
 				BF9201E80883667800A3D77B /* OsiriXSCPDataHandler.h */,
 				F4QRDBQ000000000000001 /* dcmqrdbq.h */,
 				F4QRDBQ000000000000002 /* dcmqrdbq.mm */,
@@ -5910,7 +5768,6 @@
 				BFDDE5C1091717F80033317B /* DCMEncapsulatedPDF.h in Headers */,
 				CE8D05CE0FD851F400165DDE /* DCMAbstractSyntaxUID.h in Headers */,
 				434499B21A1D70840047F0F2 /* options.h in Headers */,
-				84A9D49C12F7F90700DA1F99 /* kdu_OsiriXSupport.h in Headers */,
 			);
 		};
 		AB28B42A05B7921E00A9906C /* Headers */ = {
@@ -6022,9 +5879,6 @@
 				998309111BB62D4100CAB197 /* JRSwizzle.h in Headers */,
 				9953FE531BF540D000BD0DA6 /* vtkHorosFixedPointVolumeRayCastMIPHelper.h in Headers */,
 				994FABF71CEBFB8C00980A15 /* MiddleAlignedTextFieldCell.h in Headers */,
-				999B0B631BB70F0800AF018A /* O2HMigrationAssistant.h in Headers */,
-				710EF1F31FD00E29000B555B /* Horos.h in Headers */,
-				71125D4B215376FC00EB0AA5 /* PathForImage.h in Headers */,
 				433F9A8A1A1B7C1C00E52C6C /* vtkHorosFixedPointVolumeRayCastMapper.h in Headers */,
 				994FABF31CEBF25800980A15 /* OnOffSwitchControlCell.h in Headers */,
 				BF7A835F09B8B8E70051F091 /* DICOMToNSString.h in Headers */,
@@ -6105,26 +5959,13 @@
 				AB10FAAF11293378009EB238 /* N2Operators.h in Headers */,
 				AB10FAB111293378009EB238 /* N2MinMax.h in Headers */,
 				AB10FAB311293378009EB238 /* N2Alignment.h in Headers */,
-				AB10FAB511293378009EB238 /* N2Resizer.h in Headers */,
 				AB10FAB711293378009EB238 /* N2Shell.h in Headers */,
 				AB10FAB911293378009EB238 /* N2UserDefaults.h in Headers */,
 				AB10FB1F1129338A009EB238 /* N2ButtonCell.h in Headers */,
 				AB10FB211129338A009EB238 /* N2Button.h in Headers */,
-				AB10FB231129338A009EB238 /* N2DisclosureBox.h in Headers */,
-				AB10FB251129338A009EB238 /* N2DisclosureButtonCell.h in Headers */,
 				AB10FB271129338A009EB238 /* N2ColorWell.h in Headers */,
 				AB10FB291129338A009EB238 /* N2PopUpButton.h in Headers */,
 				AB10FB2B1129338A009EB238 /* N2Exceptions.h in Headers */,
-				AB10FB351129338A009EB238 /* N2View.h in Headers */,
-				AB10FB371129338A009EB238 /* N2Panel.h in Headers */,
-				AB10FB391129338A009EB238 /* N2Window.h in Headers */,
-				AB10FB3B1129338A009EB238 /* N2Layout.h in Headers */,
-				AB10FB3D1129338A009EB238 /* N2ColumnLayout.h in Headers */,
-				AB10FB3F1129338A009EB238 /* N2CellDescriptor.h in Headers */,
-				AB10FB411129338A009EB238 /* N2Step.h in Headers */,
-				AB10FB431129338A009EB238 /* N2Steps.h in Headers */,
-				AB10FB451129338A009EB238 /* N2StepView.h in Headers */,
-				AB10FB471129338A009EB238 /* N2StepsView.h in Headers */,
 				AB10FB491129338A009EB238 /* N2Pair.h in Headers */,
 				AB10FB4B1129338A009EB238 /* N2SingletonObject.h in Headers */,
 				AB10FB4D1129338A009EB238 /* NSTextView+N2.h in Headers */,
@@ -6213,7 +6054,6 @@
 				CE90550F12F5B64300263AB6 /* CPRUnsignedInt16ImageRep.h in Headers */,
 				CE90551112F5B64300263AB6 /* CPRStraightenedView.h in Headers */,
 				CE90551312F5B64300263AB6 /* CPRVolumeData.h in Headers */,
-				84A9D49612F7F90700DA1F99 /* kdu_OsiriXSupport.h in Headers */,
 				59E8352712F9ABAC006B930A /* N2ManagedDatabase.h in Headers */,
 				59E83A1312FC6556006B930A /* NSManagedObject+N2.h in Headers */,
 				4F8A1A851302C72300A022D9 /* N3BezierCore.h in Headers */,
@@ -6316,7 +6156,6 @@
 				4307C62C1A2091900083877C /* url.h in Headers */,
 				71EB83CC16DCB7FF00D48646 /* O2DicomPredicateEditorView.h in Headers */,
 				71EB83D016DCB9AE00D48646 /* N2PopUpMenu.h in Headers */,
-				713A26F617003DF900878CAB /* N2Locker.h in Headers */,
 			);
 		};
 		CEC4468110664C300061B338 /* Headers */ = {
@@ -6589,7 +6428,6 @@
 				CE1335EA06B02DC000B7FC03 /* iChat.icns in Resources */,
 				CE74824206C9701200FFA74C /* trash.icns in Resources */,
 				BFD4BFFC06F2A96900EC9A90 /* ContrastCursor.tif in Resources */,
-				999B0B671BB711ED00AF018A /* CurvedArrowGrayLeft.png in Resources */,
 				BFD4BFFD06F2A96900EC9A90 /* RotateCursor.tif in Resources */,
 				71AD676A1FC4256E00A1E2F8 /* Tiling2x3.pdf in Resources */,
 				71AD67561FC4248100A1E2F8 /* PPU Inferno.plist in Resources */,
@@ -6694,12 +6532,6 @@
 				CE27BA100C113BBA00BDC9B3 /* 3DPresetsPanel.tif in Resources */,
 				CE897DD50C21D951005C669E /* texture.tif in Resources */,
 				A922F3BB0C631F3C0007AB98 /* CustomImageAnnotations.png in Resources */,
-				AB9723950C684B4E00DC727C /* OsiriXDB_Previous_DataModel1.1.mom in Resources */,
-				AB9723960C684B4E00DC727C /* OsiriXDB_Previous_DataModel1.5.mom in Resources */,
-				AB9723970C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.0.mom in Resources */,
-				AB9723980C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.1.mom in Resources */,
-				AB9723990C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.2.mom in Resources */,
-				AB97239A0C684B4E00DC727C /* OsiriXDB_Previous_DataModel2.3.mom in Resources */,
 				9952F26E2020C1010020CCD4 /* ICloudDriveDetector.xib in Resources */,
 				841B0B3C18980EFF0007E5C5 /* 3DCutWrite.png in Resources */,
 				CEC4B5C10C7DF2D600AF5A76 /* 3DPRESETS in Resources */,
@@ -6776,7 +6608,6 @@
 				A9D4D0490F738BEA00483A3A /* loupe.png in Resources */,
 				A9D4D06D0F73922500483A3A /* loupeMask.png in Resources */,
 				CE1C4EF20FDA6F4600185561 /* nameDictionary.plist in Resources */,
-				991B8B5C1BB8B279006AF439 /* O2HMigrationAssistant.png in Resources */,
 				71AD67681FC4256E00A1E2F8 /* Tiling2x1.pdf in Resources */,
 				CE1C4EF30FDA6F5300185561 /* tagDictionary.plist in Resources */,
 				CED1FD1B1035E9BB0076AB33 /* SetPixelValue.pdf in Resources */,
@@ -6797,7 +6628,6 @@
 				5997897E11B7B423002DB107 /* AnonymizationTemplateNamePanel.xib in Resources */,
 				5997897F11B7B423002DB107 /* AnonymizationView.xib in Resources */,
 				5926822411CF60BD00CFA81F /* ThreadModalForWindow.xib in Resources */,
-				84CD250D11EC5564004669D6 /* OsiriXDB_Previous_DataModel2.4.mom in Resources */,
 				A9A80E3811F73E22009F54B9 /* Activity_Stop.tif in Resources */,
 				A9A80E3911F73E22009F54B9 /* Activity_StopPressed.tif in Resources */,
 				9966BCB51CEB5BA50086A8D7 /* osirixplugin.icns in Resources */,
@@ -6843,7 +6673,6 @@
 				A9701A5C15C958020019EE55 /* burn_iris00.tif in Resources */,
 				71AD67551FC4248100A1E2F8 /* Perfusion.plist in Resources */,
 				A9701A5E15C958020019EE55 /* burn_iris01.tif in Resources */,
-				71E6C0801FB5943B00FF75B6 /* O2HMigrationAssistant.xib in Resources */,
 				A9701A6015C958020019EE55 /* burn_iris02.tif in Resources */,
 				A9701A6215C958020019EE55 /* burn_iris03.tif in Resources */,
 				A9701A6415C958020019EE55 /* burn_iris04.tif in Resources */,
@@ -7423,7 +7252,6 @@
 				BFDDE5C2091717F80033317B /* DCMEncapsulatedPDF.m in Sources */,
 				CE79D9890FD84C350043DD73 /* DCMAbstractSyntaxUID.m in Sources */,
 				434B461F1A19F640008CF8CF /* OPJSupport.cpp in Sources */,
-				434B47A41A1A194F008CF8CF /* kdu_OsiriX_NO_Support.cpp in Sources */,
 				F96AE60696721E2E41B890D5 /* ijg8_jcapimin.c in Sources */,
 				F91776006D344DC1FF0DA55E /* ijg8_jcapistd.c in Sources */,
 				F9BE500E44790E936A69DD64 /* ijg8_jcarith.c in Sources */,
@@ -7625,6 +7453,8 @@
 			isa = PBXSourcesBuildPhase;
 			files = (
 				F4A100000001000000000015 /* Horos/Sources/HorosSettingsWindowController.swift in Sources */,
+				F4CDA0010000000000000001 /* HorosDataModels.swift in Sources */,
+				F4CDA0010000000000000002 /* HorosDataStore.swift in Sources */,
 				F4A100000001000000000001 /* Horos/Sources/MetalViewer/MetalViewerLauncher.swift in Sources */,
 				F4A10000000100000000000C /* Horos/Sources/MetalViewer/Metal3DViewerLauncher.swift in Sources */,
 				F4A100000001000000000010 /* Horos/Sources/MetalViewer/Metal3DVolumeRenderer.swift in Sources */,
@@ -7763,7 +7593,6 @@
 				BF432BDC09E31B9B00AC322E /* DCMTKStudyQueryNode.mm in Sources */,
 				BF432BE609E31BE800AC322E /* DCMTKSeriesQueryNode.mm in Sources */,
 				BF432BF209E31C0F00AC322E /* DCMTKImageQueryNode.mm in Sources */,
-				434B47A21A1A18D3008CF8CF /* kdu_OsiriX_NO_Support.cpp in Sources */,
 				BF432BFD09E31CD800AC322E /* DCMTKRootQueryNode.mm in Sources */,
 				BFBCD8A809E4C2E40078ABB6 /* DCMTKServiceClassUser.mm in Sources */,
 				BF83CD8D09E741BC002041F3 /* ReportPluginFilter.m in Sources */,
@@ -7829,26 +7658,13 @@
 				AB10FAB011293378009EB238 /* N2Operators.mm in Sources */,
 				AB10FAB211293378009EB238 /* N2MinMax.mm in Sources */,
 				AB10FAB411293378009EB238 /* N2Alignment.mm in Sources */,
-				AB10FAB611293378009EB238 /* N2Resizer.mm in Sources */,
 				AB10FAB811293378009EB238 /* N2Shell.mm in Sources */,
 				AB10FABA11293378009EB238 /* N2UserDefaults.mm in Sources */,
 				AB10FB201129338A009EB238 /* N2ButtonCell.mm in Sources */,
 				AB10FB221129338A009EB238 /* N2Button.mm in Sources */,
-				AB10FB241129338A009EB238 /* N2DisclosureBox.mm in Sources */,
-				AB10FB261129338A009EB238 /* N2DisclosureButtonCell.mm in Sources */,
 				AB10FB281129338A009EB238 /* N2ColorWell.mm in Sources */,
 				AB10FB2A1129338A009EB238 /* N2PopUpButton.mm in Sources */,
 				AB10FB2C1129338A009EB238 /* N2Exceptions.mm in Sources */,
-				AB10FB361129338A009EB238 /* N2View.mm in Sources */,
-				AB10FB381129338A009EB238 /* N2Panel.mm in Sources */,
-				AB10FB3A1129338A009EB238 /* N2Window.mm in Sources */,
-				AB10FB3C1129338A009EB238 /* N2Layout.mm in Sources */,
-				AB10FB3E1129338A009EB238 /* N2ColumnLayout.mm in Sources */,
-				AB10FB401129338A009EB238 /* N2CellDescriptor.mm in Sources */,
-				AB10FB421129338A009EB238 /* N2Step.mm in Sources */,
-				AB10FB441129338A009EB238 /* N2Steps.mm in Sources */,
-				AB10FB461129338A009EB238 /* N2StepView.mm in Sources */,
-				AB10FB481129338A009EB238 /* N2StepsView.mm in Sources */,
 				AB10FB4A1129338A009EB238 /* N2Pair.mm in Sources */,
 				AB10FB4C1129338A009EB238 /* N2SingletonObject.mm in Sources */,
 				AB10FB4E1129338A009EB238 /* NSTextView+N2.mm in Sources */,
@@ -7987,14 +7803,12 @@
 				4F1FCE1C143092DC008683F9 /* OSIPlanarBrushROI.m in Sources */,
 				596D30B71439BA17004EE9EC /* DicomStudy+Report.mm in Sources */,
 				596D30BC1439BABD004EE9EC /* NSAppleScript+N2.mm in Sources */,
-				999B0B641BB70F0800AF018A /* O2HMigrationAssistant.m in Sources */,
 				CE5EEFC9182D249B009D2045 /* ThumbnailsListPanel.m in Sources */,
 				994FABF41CEBF25800980A15 /* OnOffSwitchControlCell.m in Sources */,
 				998309121BB62D4100CAB197 /* JRSwizzle.m in Sources */,
 				994FABF81CEBFB8C00980A15 /* MiddleAlignedTextFieldCell.m in Sources */,
 				994FABF21CEBF25800980A15 /* OnOffSwitchControl.m in Sources */,
 				434B461D1A19F631008CF8CF /* OPJSupport.cpp in Sources */,
-				710EF1F41FD00E29000B555B /* Horos.m in Sources */,
 				841722B110D90595001A833F /* DDKeychain.m in Sources */,
 				59DB270014507ACA00E78E03 /* PrettyCell.mm in Sources */,
 				59DB270614507ADF00E78E03 /* N2MutableUInteger.mm in Sources */,
@@ -8045,7 +7859,6 @@
 				71EB83CB16DCB7FF00D48646 /* O2DicomPredicateEditorPopUpButton.m in Sources */,
 				71EB83CD16DCB7FF00D48646 /* O2DicomPredicateEditorView.m in Sources */,
 				71EB83D116DCB9AE00D48646 /* N2PopUpMenu.mm in Sources */,
-				713A26F717003DF900878CAB /* N2Locker.m in Sources */,
 				716DBDBF173920AF00BDB1E4 /* ViewerController.mm in Sources */,
 			);
 		};
@@ -8054,9 +7867,7 @@
 			files = (
 				59DB26FB1450787E00E78E03 /* N2Debug.mm in Sources */,
 				434B46201A19F642008CF8CF /* OPJSupport.cpp in Sources */,
-				710EF1F61FD025BC000B555B /* Horos.m in Sources */,
 				AB7250620ADE705C00A212A0 /* Decompress.mm in Sources */,
-				434B47A51A1A1951008CF8CF /* kdu_OsiriX_NO_Support.cpp in Sources */,
 				ABE59B850F494CA1004EBF28 /* DefaultsOsiriX.m in Sources */,
 				CE142E7F1119DA53000F4A8C /* DCMPix.m in Sources */,
 				CE142ED71119DE4F000F4A8C /* DicomFile.mm in Sources */,
@@ -8318,15 +8129,6 @@
 			);
 			name = DiscMountedAskTheUserDialog.xib;
 			sourceTree = "<group>";
-		};
-		71E6C0821FB5943B00FF75B6 /* O2HMigrationAssistant.xib */ = {
-			isa = PBXVariantGroup;
-			children = (
-				71E6C0811FB5943B00FF75B6 /* Base */,
-			);
-			name = O2HMigrationAssistant.xib;
-			path = Horos/Resources;
-			sourceTree = SOURCE_ROOT;
 		};
 		848327A915ED08F3003BAEEB /* CustomIntervalPanel.xib */ = {
 			isa = PBXVariantGroup;

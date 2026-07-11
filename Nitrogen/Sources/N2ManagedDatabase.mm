@@ -120,21 +120,16 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
 
 @property(readwrite,retain) NSString* sqlFilePath;
 @property(readwrite,retain) id mainDatabase;
+- (id)_objectWithIDOnContextQueue:(id)objectID;
+- (void)_mergeChangesFromContextDidSaveNotificationOnMainThread:(NSDictionary *)payload;
 
 @end
 
 #define N2PersistentStoreCoordinator NSPersistentStoreCoordinator // for debug purposes, disable this #define and enable the commented N2PersistentStoreCoordinator implementation
 
-@interface N2ManagedObjectContext ()
-
-@property (strong) N2ManagedObjectContext *confinementParentContext;
-
-@end
-
 @implementation N2ManagedObjectContext
 
 @synthesize database = _database;
-@synthesize confinementParentContext = _confinementParentContext;
 
 - (id)initWithDatabase:(N2ManagedDatabase *)db concurrencyType:(NSManagedObjectContextConcurrencyType)ct
 {
@@ -164,151 +159,23 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
 
 -(void)dealloc {
 #ifndef NDEBUG
-    [_database checkForCorrectContextThread: self];
-    
     gTotalN2ManagedObjectContext--;
 #endif
     
     [NSNotificationCenter.defaultCenter removeObserver:self];
 
-    self.confinementParentContext = nil;
     _database = nil;
 	
     [super dealloc]; //test if db is deallocated
 }
 
--(BOOL)save:(NSError**)error {
-    [self lock];
-#ifndef NDEBUG
-    [_database checkForCorrectContextThread: self];
-#endif
-    @try {
-        return [super save:error];
-//        for (NSPersistentStore* ps in [[self persistentStoreCoordinator] persistentStores])
-//            if (ps.URL.isFileURL)
-//                [NSFileManager.defaultManager applyFileModeOfParentToItemAtPath:ps.URL.path];
-    } @catch (...) {
-        @throw;
-    } @finally {
-        [self unlock];
-    }
-    
-    return NO;
-}
-
--(NSManagedObject*)existingObjectWithID:(NSManagedObjectID*)objectID error:(NSError**)error {
-    [self lock];
-#ifndef NDEBUG
-    [_database checkForCorrectContextThread: self];
-#endif
-    @try {
-        return [super existingObjectWithID:objectID error:error];
-    } @catch (...) {
-        @throw;
-    } @finally {
-        [self unlock];
-    }
-    
-    return nil;
-}
-
-/*
- http://developer.apple.com/DOCUMENTATION/Cocoa/Conceptual/CoreData/Articles/cdMultiThreading.html#//apple_ref/doc/uid/TP40003385-SW2
- "If you lock (or successfully tryLock) a context, that context must be retained until
- you invoke unlock. If you don’t properly retain a context in a multi-threaded environment, you may cause a deadlock."
- */
-
--(void)lock {
-    [self retain];
-//    [self.persistentStoreCoordinator lock];
-    [super lock];
-    
-#ifndef NDEBUG
-    [_database checkForCorrectContextThread: self];
-#endif
-    // for debug
-/*    if (!lockhist)
-        lockhist = [[NSMutableArray alloc] init];
-    NSString* stack = nil;
-    @try {
-        [NSException raise:NSGenericException format:@""];
-    } @catch (NSException* e) {
-        stack = [e stackTrace];
-    }
-    if (stack)
-        [lockhist addObject:stack];*/
-}
-
--(void)unlock {
-  //  [lockhist removeLastObject];
-    [super unlock];
-//    [self.persistentStoreCoordinator unlock];
-    [self autorelease];
-}
-
-#ifndef NDEBUG
-- (NSArray *)executeFetchRequest:(NSFetchRequest *)request error:(NSError **)error
-{
-    [_database checkForCorrectContextThread: self];
-    
-	return [super executeFetchRequest: request error: error];
-}
-
-- (void)deleteObject:(NSManagedObject *)object
-{
-    [_database checkForCorrectContextThread: self];
-    
-	return [super deleteObject: object];
-}
-- (NSUInteger)countForFetchRequest:(NSFetchRequest *)request error:(NSError **)error
-{
-    [_database checkForCorrectContextThread: self];
-    
-    return [super countForFetchRequest: request error: error];
-}
-- (NSManagedObject *)objectWithID:(NSManagedObjectID *)objectID
-{
-    [_database checkForCorrectContextThread: self];
-    
-    return [super objectWithID: objectID];
-}
-- (void)mergeChangesFromContextDidSaveNotification:(NSNotification *)notification
-{
-    [_database checkForCorrectContextThread: self];
-    
-    return [super mergeChangesFromContextDidSaveNotification: notification];
-}
-#endif
-
 @end
 
 
 @implementation N2ManagedDatabase
-#ifndef NDEBUG
-@synthesize associatedThread;
-#endif
 @synthesize sqlFilePath = _sqlFilePath;
 @synthesize managedObjectContext = _managedObjectContext;
 @synthesize mainDatabase = _mainDatabase;
-
-#ifndef NDEBUG
--(void) checkForCorrectContextThread
-{
-    [self checkForCorrectContextThread: _managedObjectContext];
-}
-
--(void) checkForCorrectContextThread: (NSManagedObjectContext*) c
-{
-
-    if( c == _managedObjectContext && associatedThread && associatedThread != [NSThread currentThread])
-    {
-        NSLog( @"------------------------------");
-        NSLog( @"SQL path: %@", _sqlFilePath);
-        N2LogStackTrace( @"--- warning : managedObjectContext was created in (%@, mainThread=%d), and is now used in (%@, mainThread=%d)", associatedThread.name, associatedThread == [NSThread mainThread], [[NSThread currentThread] name], [NSThread isMainThread]);
-        NSLog( @"--");
-    }
-}
-#endif
 
 -(BOOL)isMainDatabase {
     return (_mainDatabase == nil);
@@ -324,11 +191,6 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
         
         [_managedObjectContext autorelease];
 		_managedObjectContext = [managedObjectContext retain];
-        
-#ifndef NDEBUG
-        [associatedThread release];
-        associatedThread = [[NSThread currentThread] retain];
-#endif
         
         [self didChangeValueForKey:@"managedObjectContext"];
     }
@@ -356,13 +218,11 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
 	return dict;
 }*/
 
--(BOOL)migratePersistentStoresAutomatically {
-	return YES;
-}
-
 - (void) renewManagedObjectContext
 {
-    self.managedObjectContext = self.isMainDatabase? [self contextAtPath: self.sqlFilePath] : [self.mainDatabase contextAtPath: self.sqlFilePath];
+    self.managedObjectContext = self.isMainDatabase
+        ? [self contextAtPath:self.sqlFilePath concurrencyType:NSMainQueueConcurrencyType]
+        : [self.mainDatabase contextAtPath:self.sqlFilePath];
 }
 
 - (Class)NSManagedObjectContextClass {
@@ -370,12 +230,19 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
 }
 
 - (NSManagedObjectContext *)contextAtPath:(NSString *)sqlFilePath {
+    BOOL createsPrimaryContext = self.isMainDatabase && self.managedObjectContext == nil;
+    NSManagedObjectContextConcurrencyType concurrencyType = createsPrimaryContext ? NSMainQueueConcurrencyType : NSPrivateQueueConcurrencyType;
+    return [self contextAtPath:sqlFilePath concurrencyType:concurrencyType];
+}
+
+- (NSManagedObjectContext *)contextAtPath:(NSString *)sqlFilePath concurrencyType:(NSManagedObjectContextConcurrencyType)concurrencyType {
 	sqlFilePath = sqlFilePath.stringByExpandingTildeInPath;
-	
+
     if( sqlFilePath.length == 0)
         return nil;
-    
-    N2ManagedObjectContext *moc = [[[self.NSManagedObjectContextClass alloc] initWithDatabase:self concurrencyType:NSConfinementConcurrencyType] autorelease];
+
+    N2ManagedObjectContext *moc = [[[self.NSManagedObjectContextClass alloc] initWithDatabase:self concurrencyType:concurrencyType] autorelease];
+    moc.name = concurrencyType == NSMainQueueConcurrencyType ? @"Horos main database context" : @"Horos worker database context";
     //	NSLog(@"---------- NEW %@ at %@", moc, sqlFilePath);
 	moc.undoManager = nil;
 	
@@ -387,8 +254,13 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
     //            [self save];
             
             if ([sqlFilePath isEqualToString:self.sqlFilePath] && [NSFileManager.defaultManager fileExistsAtPath:sqlFilePath]) {
-                moc.confinementParentContext = (id)self.managedObjectContext; // just for retain purpose
-                moc.persistentStoreCoordinator = self.managedObjectContext.persistentStoreCoordinator;
+                NSManagedObjectContext *primaryContext = self.managedObjectContext;
+                __block NSPersistentStoreCoordinator *coordinator = nil;
+                N2PerformManagedObjectContextBlockAndWait(primaryContext, ^{
+                    coordinator = [primaryContext.persistentStoreCoordinator retain];
+                });
+                moc.persistentStoreCoordinator = coordinator;
+                [coordinator release];
             }
             
             if (!moc.persistentStoreCoordinator) {
@@ -403,15 +275,7 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
                 
                 if (!moc.persistentStoreCoordinator)
                 {
-                    NSString *localModelsPath = [[sqlFilePath stringByDeletingPathExtension] stringByAppendingPathExtension: @"momd"];
                     NSManagedObjectModel *models = self.managedObjectModel;
-                    
-                    if ([[NSFileManager defaultManager] fileExistsAtPath:localModelsPath]) @try {
-                        NSManagedObjectModel *localModels = [[[NSManagedObjectModel alloc] initWithContentsOfURL: [NSURL fileURLWithPath: localModelsPath]] autorelease]; //Forward compatibility !
-                        models = [NSManagedObjectModel modelByMergingModels: [NSArray arrayWithObjects: self.managedObjectModel, localModels, nil]]; //warning localModels can be nil: put it at last position
-                    } @catch (NSException *exception) {
-                        models = self.managedObjectModel;
-                    }
                     
                     NSPersistentStoreCoordinator* persistentStoreCoordinator = moc.persistentStoreCoordinator = [[[N2PersistentStoreCoordinator alloc] initWithManagedObjectModel: models] autorelease];
                     
@@ -423,13 +287,13 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
                         ++i;
                         
                         NSError* err = nil;
-                        NSDictionary* options = @{ NSInferMappingModelAutomaticallyOption: @YES,
-                                                   NSMigratePersistentStoresAutomaticallyOption: @([self migratePersistentStoresAutomatically]),
+                        NSDictionary* options = @{ NSInferMappingModelAutomaticallyOption: @NO,
+                                                   NSMigratePersistentStoresAutomaticallyOption: @NO,
                                                    NSSQLitePragmasOption: @{ @"journal_mode": @"delete" } };
                         NSURL* url = [NSURL fileURLWithPath:sqlFilePath];
                         @try {
                             pStore = [persistentStoreCoordinator addPersistentStoreWithType:NSSQLiteStoreType configuration:nil URL:url options:options error:&err];
-                            
+
                         } @catch (...) {
                         }
                         
@@ -490,21 +354,16 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
                         }
                     } while (!pStore && i < 2);
                     
-                    // Save the models for forward compatibility with old OsiriX versions that don't know the current model
-                    if (self.saveDatabaseModel){
-                        NSString *modelsPath = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent: [[self class] modelName]];
-                        [[NSFileManager defaultManager] removeItemAtPath: localModelsPath error: nil];
-                        [[NSFileManager defaultManager] copyItemAtPath:modelsPath toPath:localModelsPath error:nil];
-                    }
-
                 }
                 
                 if (isNewFile) {
-                    [moc save:NULL];
+                    [moc performBlockAndWait:^{
+                        [moc save:NULL];
+                    }];
 //                    NSLog(@"New database file created at %@", sqlFilePath);
                 }
                 
-            } else {
+            } else if (concurrencyType == NSPrivateQueueConcurrencyType) {
                 if (self.mainDatabase)
                     N2LogStackTrace(@"****************************: creating independent context from already independent database");
                 
@@ -522,58 +381,40 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
     return moc;
 }
 
-- (BOOL)saveDatabaseModel {
-    return YES;
+-(void)mergeChangesFromContextDidSaveNotification:(NSNotification*)n {
+    NSManagedObjectContext *sourceContext = n.object;
+    if (self.managedObjectContext == sourceContext)
+        return;
+
+    NSPersistentStoreCoordinator *sourceCoordinator = [sourceContext.persistentStoreCoordinator retain];
+    if (!sourceCoordinator)
+        return;
+
+    NSDictionary *payload = [NSDictionary dictionaryWithObjectsAndKeys:
+        n, @"notification",
+        sourceCoordinator, @"coordinator",
+        nil];
+    [sourceCoordinator release];
+    [self performSelectorOnMainThread:@selector(_mergeChangesFromContextDidSaveNotificationOnMainThread:)
+                           withObject:payload
+                        waitUntilDone:NO];
 }
 
--(void)mergeChangesFromContextDidSaveNotification:(NSNotification*)n {
-    NSManagedObjectContext* moc = [n object];
-    
-    if (self.managedObjectContext.persistentStoreCoordinator != moc.persistentStoreCoordinator)
-        return;
-    
-    if (self.managedObjectContext == moc)
-        return;
-    
-    if (![NSThread isMainThread])
-    {
-        [self performSelectorOnMainThread:@selector(mergeChangesFromContextDidSaveNotification:) withObject:n waitUntilDone:NO];
-    }
-    else
-    {
-        [self.managedObjectContext lock];
+- (void)_mergeChangesFromContextDidSaveNotificationOnMainThread:(NSDictionary *)payload {
+    NSNotification *notification = [payload objectForKey:@"notification"];
+    NSPersistentStoreCoordinator *sourceCoordinator = [payload objectForKey:@"coordinator"];
+    NSManagedObjectContext *targetContext = self.managedObjectContext;
+
+    N2PerformManagedObjectContextBlockAndWait(targetContext, ^{
+        if (targetContext.persistentStoreCoordinator != sourceCoordinator)
+            return;
+
         @try {
-            [self.managedObjectContext mergeChangesFromContextDidSaveNotification:n];
-            
+            [targetContext mergeChangesFromContextDidSaveNotification:notification];
         } @catch (NSException* e) {
             N2LogExceptionWithStackTrace(e);
-        } @finally {
-            [self.managedObjectContext unlock];
         }
-    }
-}
-
--(BOOL)lockBeforeDate:(NSDate*) date
-{
-    while( [[NSDate date] laterDate: date] == date)
-    {
-        if( [self.managedObjectContext tryLock])
-            return YES;
-        [NSThread sleepForTimeInterval: 0.1];
-    }
-    return NO;
-}
-
--(void)lock {
-	[self.managedObjectContext lock];
-}
-
--(BOOL)tryLock {
-	return [self.managedObjectContext tryLock];
-}
-
--(void)unlock {
-	[self.managedObjectContext unlock];
+    });
 }
 
 -(id)initWithPath:(NSString*)p {
@@ -606,17 +447,18 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
         return;
     _isDeallocating = YES;
     
-#ifndef NDEBUG
-    [associatedThread release];
-    associatedThread = nil;
-#endif
-    
     [NSNotificationCenter.defaultCenter postNotificationName: @"N2ManagedDatabaseDealloced" object:self];
     
     [NSNotificationCenter.defaultCenter removeObserver:self];
     
-    if ([self.managedObjectContext hasChanges] && [NSFileManager.defaultManager fileExistsAtPath:[self.sqlFilePath stringByDeletingLastPathComponent]])
-        [self save];
+    if ([NSFileManager.defaultManager fileExistsAtPath:[self.sqlFilePath stringByDeletingLastPathComponent]]) {
+        __block BOOL hasChanges = NO;
+        [self.managedObjectContext performBlockAndWait:^{
+            hasChanges = self.managedObjectContext.hasChanges;
+        }];
+        if (hasChanges)
+            [self save];
+    }
     
     if (self.mainDatabase)
         [NSNotificationCenter.defaultCenter removeObserver:self.mainDatabase name:NSManagedObjectContextDidSaveNotification object:self];
@@ -651,68 +493,63 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
 }
 
 -(id)objectWithID:(id)oid {
-    
-#ifndef NDEBUG
-    [self checkForCorrectContextThread];
-#endif
-    [self.managedObjectContext lock];
-    @try {
-        if ([oid isKindOfClass:[NSManagedObjectID class]]) {
-            // nothing, just avoid all other checks for performance
-        } else if ([oid isKindOfClass:[NSManagedObject class]]) {
-            oid = [oid objectID];
+    __block id result = nil;
+    [self.managedObjectContext performBlockAndWait:^{
+        @try {
+            result = [[self _objectWithIDOnContextQueue:oid] retain];
+        } @catch (...) {
+            result = nil;
         }
-        else if ([oid isKindOfClass:[DCMTKQueryNode class]]) {
-            return oid;
-        }
-        else if ([oid isKindOfClass:[NSURL class]]) {
-            oid = [self.managedObjectContext.persistentStoreCoordinator managedObjectIDForURIRepresentation:oid];
-        } else if ([oid isKindOfClass:[NSString class]]) {
-            oid = [self.managedObjectContext.persistentStoreCoordinator managedObjectIDForURIRepresentation:[NSURL URLWithString:oid]];
-        } // else we're in trouble: oid is invalid, but let's give Core Data a chance to handle it anyway
-        return [self.managedObjectContext existingObjectWithID:oid error:NULL];
-    } @catch (...) {
-        // nothing, just return nil
-    } @finally {
-        [self.managedObjectContext unlock];
-    }
-    
-    return nil;
+    }];
+    return [result autorelease];
 }
 
 -(NSArray*)objectsWithIDs:(NSArray*)objectIDs {
-    
-#ifndef NDEBUG
-    [self checkForCorrectContextThread];
-#endif
-    
-    [self.managedObjectContext lock];
-    @try {
-        NSMutableArray* r = [NSMutableArray arrayWithCapacity:objectIDs.count];
-        for (id oid in objectIDs)
+    __block NSArray *result = nil;
+    [self.managedObjectContext performBlockAndWait:^{
+        NSMutableArray *objects = [NSMutableArray arrayWithCapacity:objectIDs.count];
+        for (id objectID in objectIDs) {
             @try {
-                id o = [self objectWithID:oid];
-                if (o) [r addObject:o];
+                id object = [self _objectWithIDOnContextQueue:objectID];
+                if (object)
+                    [objects addObject:object];
             } @catch (NSException* e) {
-                // nothing, just look for other objects
+                // Ignore invalid IDs and continue with the remaining objects.
             }
-        return r;
-    } @catch (...) {
-        @throw;
-    } @finally {
-        [self.managedObjectContext unlock];
+        }
+        result = [objects copy];
+    }];
+    return [result autorelease];
+}
+
+-(id)_objectWithIDOnContextQueue:(id)objectID {
+    if ([objectID isKindOfClass:[NSManagedObjectID class]]) {
+        // Already an object ID.
+    } else if ([objectID isKindOfClass:[NSManagedObject class]]) {
+        objectID = [objectID objectID];
+    } else if ([objectID isKindOfClass:[DCMTKQueryNode class]]) {
+        return objectID;
+    } else if ([objectID isKindOfClass:[NSURL class]]) {
+        objectID = [self.managedObjectContext.persistentStoreCoordinator managedObjectIDForURIRepresentation:objectID];
+    } else if ([objectID isKindOfClass:[NSString class]]) {
+        NSURL *URL = [NSURL URLWithString:objectID];
+        objectID = [self.managedObjectContext.persistentStoreCoordinator managedObjectIDForURIRepresentation:URL];
     }
-    
-    return nil;
+
+    return [self.managedObjectContext existingObjectWithID:objectID error:NULL];
 }
 
 -(NSEntityDescription*)entityForName:(NSString*)name {
-	return [NSEntityDescription entityForName:name inManagedObjectContext:self.managedObjectContext];
+	__block NSEntityDescription *result = nil;
+    [self.managedObjectContext performBlockAndWait:^{
+        result = [[NSEntityDescription entityForName:name inManagedObjectContext:self.managedObjectContext] retain];
+    }];
+    return [result autorelease];
 }
 
 -(NSEntityDescription*)_entity:(id*)entity {
     if ([*entity isKindOfClass:[NSString class]])
-        *entity = [self entityForName:*entity];
+        *entity = [NSEntityDescription entityForName:*entity inManagedObjectContext:self.managedObjectContext];
     return *entity;
 }
 
@@ -729,31 +566,37 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
 }
 
 -(NSArray*)objectsForEntity:(id)e predicate:(NSPredicate*)p error:(NSError**)error fetchLimit:(NSUInteger)fetchLimit sortDescriptors:(NSArray*)sortDescriptors{
-	[self _entity:&e];
-    
-#ifndef NDEBUG
-    [self checkForCorrectContextThread];
-#endif
-    
-    NSFetchRequest* req = [[[NSFetchRequest alloc] init] autorelease];
-	req.entity = e;
-	req.predicate = p? p : [NSPredicate predicateWithValue:YES];
-    req.sortDescriptors = sortDescriptors;
-    if( fetchLimit>0)
-        req.fetchLimit = fetchLimit;
-    
-    [self.managedObjectContext lock];
-    @try {
-        return [self.managedObjectContext executeFetchRequest:req error:error];
-    } @catch (NSException* e) {
-        if (error && !*error)
-            *error = [NSError errorWithDomain:N2ErrorDomain code:1 userInfo:[NSDictionary dictionaryWithObject:e.reason forKey:NSLocalizedDescriptionKey]];
-        else N2LogException(e);
-    } @finally {
-        [self.managedObjectContext unlock];
+	__block NSArray *result = nil;
+    __block NSError *blockError = nil;
+    [self.managedObjectContext performBlockAndWait:^{
+        id entity = e;
+        [self _entity:&entity];
+
+        NSFetchRequest *request = [[[NSFetchRequest alloc] init] autorelease];
+        request.entity = entity;
+        request.predicate = p ? p : [NSPredicate predicateWithValue:YES];
+        request.sortDescriptors = sortDescriptors;
+        if (fetchLimit > 0)
+            request.fetchLimit = fetchLimit;
+
+        NSError *operationError = nil;
+        @try {
+            result = [[self.managedObjectContext executeFetchRequest:request error:&operationError] retain];
+        } @catch (NSException *exception) {
+            operationError = [NSError errorWithDomain:N2ErrorDomain
+                                                  code:1
+                                              userInfo:@{NSLocalizedDescriptionKey: exception.reason ?: @"Core Data fetch failed"}];
+        }
+        blockError = [operationError retain];
+    }];
+
+    if (error)
+        *error = [blockError autorelease];
+    else if (blockError) {
+        N2LogError(blockError.description);
+        [blockError release];
     }
-    
-    return nil;
+    return [result autorelease];
 }
 
 -(NSUInteger)countObjectsForEntity:(id)e {
@@ -765,29 +608,44 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
 }
 
 -(NSUInteger)countObjectsForEntity:(id)e predicate:(NSPredicate*)p error:(NSError**)error {
-	[self _entity:&e];
+	__block NSUInteger result = 0;
+    __block NSError *blockError = nil;
+    [self.managedObjectContext performBlockAndWait:^{
+        id entity = e;
+        [self _entity:&entity];
 
-	NSFetchRequest* req = [[[NSFetchRequest alloc] init] autorelease];
-	req.entity = e;
-	req.predicate = p? p : [NSPredicate predicateWithValue:YES];
-    
-    [self.managedObjectContext lock];
-    @try {
-        return [self.managedObjectContext countForFetchRequest:req error:error];
-    } @catch (NSException* e) {
-        if (error && !*error)
-            *error = [NSError errorWithDomain:N2ErrorDomain code:1 userInfo:[NSDictionary dictionaryWithObject:e.reason forKey:NSLocalizedDescriptionKey]];
-        else N2LogException(e);
-    } @finally {
-        [self.managedObjectContext unlock];
+        NSFetchRequest *request = [[[NSFetchRequest alloc] init] autorelease];
+        request.entity = entity;
+        request.predicate = p ? p : [NSPredicate predicateWithValue:YES];
+
+        NSError *operationError = nil;
+        @try {
+            result = [self.managedObjectContext countForFetchRequest:request error:&operationError];
+        } @catch (NSException *exception) {
+            operationError = [NSError errorWithDomain:N2ErrorDomain
+                                                  code:1
+                                              userInfo:@{NSLocalizedDescriptionKey: exception.reason ?: @"Core Data count failed"}];
+        }
+        blockError = [operationError retain];
+    }];
+
+    if (error)
+        *error = [blockError autorelease];
+    else if (blockError) {
+        N2LogError(blockError.description);
+        [blockError release];
     }
-    
-	return 0;
+	return result;
 }
 
 -(id)newObjectForEntity:(id)entity {
-    [self _entity:&entity];
-    return [NSEntityDescription insertNewObjectForEntityForName:[entity name] inManagedObjectContext:self.managedObjectContext];
+    __block id result = nil;
+    [self.managedObjectContext performBlockAndWait:^{
+        id resolvedEntity = entity;
+        [self _entity:&resolvedEntity];
+        result = [[NSEntityDescription insertNewObjectForEntityForName:[resolvedEntity name] inManagedObjectContext:self.managedObjectContext] retain];
+    }];
+    return [result autorelease];
 }
 
 -(BOOL)save {
@@ -795,28 +653,27 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
 }
 
 -(BOOL)save:(NSError**)error {
-	NSError* perr = NULL;
-	if (!error) error = &perr;
-	
-	BOOL b = NO;
-	
-#ifndef NDEBUG
-    [self checkForCorrectContextThread];
-#endif
-    
-    [self.managedObjectContext lock];
-    
-    @try {
-        b = [self.managedObjectContext save:error];
-    } @catch(NSException* e) {
-        if (error && !*error)
-            *error = [NSError errorWithDomain:N2ErrorDomain code:1 userInfo:[NSDictionary dictionaryWithObject:e.reason forKey:NSLocalizedDescriptionKey]];
-        else N2LogException(e);
-    } @finally {
-        [self.managedObjectContext unlock];
+	__block BOOL saved = NO;
+    __block NSError *blockError = nil;
+    [self.managedObjectContext performBlockAndWait:^{
+        NSError *operationError = nil;
+        @try {
+            saved = [self.managedObjectContext save:&operationError];
+        } @catch(NSException *exception) {
+            operationError = [NSError errorWithDomain:N2ErrorDomain
+                                                  code:1
+                                              userInfo:@{NSLocalizedDescriptionKey: exception.reason ?: @"Core Data save failed"}];
+        }
+        blockError = [operationError retain];
+    }];
+
+    if (error)
+        *error = [blockError autorelease];
+    else if (blockError) {
+        N2LogError(blockError.description);
+        [blockError release];
     }
-	
-	return b;
+	return saved;
 }
 
 

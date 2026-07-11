@@ -129,7 +129,7 @@ extern "C"
     BOOL				hasSUV, SUVConverted, displaySUVValue;
     NSString			*units, *decayCorrection;
     float				decayFactor, factorPET2SUV, radionuclideTotalDose, radionuclideTotalDoseCorrected;
-    NSCalendarDate		*acquisitionTime, *radiopharmaceuticalStartTime;
+	NSDate				*acquisitionTime, *radiopharmaceuticalStartTime;
     float				halflife, frameReferenceTime, philipsFactor;
     
     // DICOM params for Overlays - 0x6000 group
@@ -336,9 +336,9 @@ extern "C"
 // Properties (aka accessors) needed for SUV calculations
 @property(readonly) float philipsFactor;
 @property float patientsWeight, halflife, radionuclideTotalDose, radionuclideTotalDoseCorrected;
-@property(retain) NSCalendarDate *acquisitionTime;
+@property(retain) NSDate *acquisitionTime;
 @property(copy) NSString *acquisitionDate, *rescaleType;
-@property(retain) NSCalendarDate *radiopharmaceuticalStartTime;
+@property(retain) NSDate *radiopharmaceuticalStartTime;
 @property BOOL SUVConverted, needToCompute8bitRepresentation;
 
 @property BOOL full32bitPipeline;

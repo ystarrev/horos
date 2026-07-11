@@ -3,7 +3,6 @@ using namespace metal;
 
 constant uint kRegistrationHistogramBins = 64;
 constant uint kMetalViewerInterpolationNearest = 0;
-constant uint kMetalViewerInterpolationLinear = 1;
 constant uint kMetalViewerInterpolationLanczos = 2;
 
 struct MetalVertex {
@@ -1906,10 +1905,6 @@ kernel void metalViewerRegistrationSamplingProbe(
             }
 
             if (accepted) {
-                const float baseNormalized = metalViewerNormalizedValue(basePixelValue, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
-                const float overlayNormalized = metalViewerNormalizedValue(overlayPixelValue, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
-                const uint baseBin = min(uint(baseNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
-                const uint overlayBin = min(uint(overlayNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
                 atomic_fetch_add_explicit(&localCount, 1, memory_order_relaxed);
             }
         }

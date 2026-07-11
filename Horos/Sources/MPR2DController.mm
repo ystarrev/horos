@@ -1261,12 +1261,8 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 	{
 		NSMutableArray *imagesForThisStudy = [NSMutableArray array];
 		
-		[[[BrowserController currentBrowser] managedObjectContext] lock];
-		
-		for( NSManagedObject *s in [[[viewerController currentStudy] valueForKey: @"series"] allObjects])
-			[imagesForThisStudy addObjectsFromArray: [[s valueForKey: @"images"] allObjects]];
-		
-		[[[BrowserController currentBrowser] managedObjectContext] unlock];
+			for( NSManagedObject *s in [[[viewerController currentStudy] valueForKey: @"series"] allObjects])
+				[imagesForThisStudy addObjectsFromArray: [[s valueForKey: @"images"] allObjects]];
 		
 		NSArray *sopArray = [producedFiles valueForKey: @"SOPInstanceUID"];
 		

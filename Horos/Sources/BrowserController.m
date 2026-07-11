@@ -115,6 +115,7 @@
 #import "Notifications.h"
 #import "NSImage+OsiriX.h"
 #import "NSString+N2.h"
+#import "NSString+SymlinksAndAliases.h"
 #import "NSView+N2.h"
 #import "NSUserDefaultsController+OsiriX.h"
 #import "NSUserDefaultsController+N2.h"
@@ -141,7 +142,6 @@
 #import "XMLControllerDCMTKCategory.h"
 #import "DicomDir.h"
 #import "CPRVolumeData.h"
-#import "O2HMigrationAssistant.h"
 #import "ICloudDriveDetector.h"
 #import "NSException+N2.h"
 
@@ -154,8 +154,6 @@
 
 
 #define DISTANTSTUDYFONT @"Helvetica-BoldOblique"
-
-//#define DATABASEVERSION @"2.5"
 
 static NSString * const HorosSuppressDeleteImagesConfirmationKey = @"HorosSuppressDeleteImagesConfirmation";
 
@@ -238,6 +236,11 @@ NSString* asciiString(NSString* str)
 @end
 
 @interface BrowserController ()
+
+- (int)findObjectOnContextQueue:(NSString *)request table:(NSString *)table execute:(NSString *)execute elements:(NSString **)elements;
+- (NSArray *)subSearchForComparativeStudiesOnContextQueue:(id)studySelectedID database:(DicomDatabase *)database;
+- (NSArray *)exportDICOMFileIntOnContextQueue:(NSMutableDictionary *)parameters database:(DicomDatabase *)database;
+- (NSArray *)relatedStudiesForStudyOnContextQueue:(id)study;
 
 -(void)setDBWindowTitle;
 -(void)previewMatrixScrollViewFrameDidChange:(NSNotification*)note;
@@ -406,8 +409,6 @@ static NSString*	OpenKeyImagesToolbarItemIdentifier	= @"Keys.tif";
 static NSString*	OpenROIsToolbarItemIdentifier	= @"ROIs.tif";
 static NSString*	ViewersToolbarItemIdentifier	= @"windows.tif";
 static NSString*    ResetSplitViewsItemIdentifier = @"Reset.pdf";
-static NSString*    HorosMigrationAssistantIdentifier = @"O2HMigrationAssistant.png";
-
 static NSTimeInterval gLastActivity = 0;
 static BOOL dontShowOpenSubSeries = NO;
 static BOOL gHorizontalHistory = NO;
@@ -1064,8 +1065,6 @@ static NSConditionLock *threadLock = nil;
         
         NSManagedObjectContext *context = self.database.managedObjectContext;
         
-        [context lock];
-        
         // Take a study for the test
         NSFetchRequest	*dbRequest = [[[NSFetchRequest alloc] init] autorelease];
         [dbRequest setEntity: [[self.database.managedObjectModel entitiesByName] objectForKey:@"Study"]];
@@ -1101,7 +1100,6 @@ static NSConditionLock *threadLock = nil;
             }
         }
         
-        [context unlock];
     }
 }
 
@@ -1169,7 +1167,8 @@ static NSConditionLock *threadLock = nil;
         BOOL studyLevel = [[NSUserDefaults standardUserDefaults] boolForKey: @"COMMENTSAUTOFILLStudyLevel"];
         BOOL seriesLevel = [[NSUserDefaults standardUserDefaults] boolForKey: @"COMMENTSAUTOFILLSeriesLevel"];
         BOOL commentsAutoFill = [[NSUserDefaults standardUserDefaults] boolForKey: @"COMMENTSAUTOFILL"];
-        
+
+        N2PerformManagedObjectContextBlockAndWait(context, ^{
         int x = 0;
         for( NSManagedObjectID *studyID in studiesArray)
         {
@@ -1307,6 +1306,7 @@ static NSConditionLock *threadLock = nil;
         }
         
         [context save: nil];
+        });
         
         [self performSelectorOnMainThread: @selector( outlineViewRefresh)  withObject: nil waitUntilDone: NO];
     }
@@ -1832,7 +1832,6 @@ static NSConditionLock *threadLock = nil;
                 [_distantAlbumNoOfStudiesCache removeAllObjects];
             }
             
-            [[_database managedObjectContext] lock];
             @try
             {
                 [databaseOutline reloadData];
@@ -1857,10 +1856,7 @@ static NSConditionLock *threadLock = nil;
             {
                 N2LogExceptionWithStackTrace(e);
             }
-            @finally
-            {
-                [[_database managedObjectContext] unlock];
-            }
+            @finally {}
             
             [[LogManager currentLogManager] resetLogs];
         }
@@ -2185,7 +2181,6 @@ static NSConditionLock *threadLock = nil;
     [[splash progress] setMaxValue:[objects count]];
     [splash setCancel: YES];
     
-    //	[_database lock];
     
     [files removeDuplicatedStringsInSyncWithThisArray: objects];
     
@@ -2234,7 +2229,6 @@ static NSConditionLock *threadLock = nil;
     }
     @finally
     {
-        //		[_database unlock];
     }
     [splash close];
     [splash autorelease];
@@ -3023,7 +3017,6 @@ static NSConditionLock *threadLock = nil;
     if( predicate == nil)
         predicate = [NSPredicate predicateWithValue: YES];
     
-    //	[_database lock];
     error = nil;
     [outlineViewArray release];
     outlineViewArray = nil;
@@ -3279,7 +3272,6 @@ static NSConditionLock *threadLock = nil;
     
     outlineViewArray = [outlineViewArray retain];
     
-    //	[_database unlock];
     
     [databaseOutline reloadData];
     [comparativeTable reloadData];
@@ -3398,7 +3390,8 @@ static NSConditionLock *threadLock = nil;
             [self performSelectorOnMainThread:@selector(delayedRefreshAlbums) withObject:nil waitUntilDone:NO modes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
             return;
         }
-        
+
+        N2PerformManagedObjectContextBlockAndWait(idatabase.managedObjectContext, ^{
         @try
         {
             NSMutableArray* NoOfStudies = [NSMutableArray array];
@@ -3557,6 +3550,7 @@ static NSConditionLock *threadLock = nil;
         {
             _computingNumberOfStudiesForAlbums = NO;
         }
+        });
     } @catch (NSException* e) {
         N2LogExceptionWithStackTrace(e);
     } @finally {
@@ -3638,18 +3632,15 @@ static NSConditionLock *threadLock = nil;
     
     if ([[item valueForKey:@"type"] isEqualToString:@"Series"])
     {
-        //		[_database lock];
         
         NSArray *sortedArray = [item sortedImages];
         
-        //		[_database unlock];
         
         return sortedArray;
     }
     
     if ([[item valueForKey:@"type"] isEqualToString:@"Study"])
     {
-        //		[_database lock];
         
         NSArray *sortedArray = nil;
         @try
@@ -3680,7 +3671,6 @@ static NSConditionLock *threadLock = nil;
             N2LogExceptionWithStackTrace(e);
         }
         
-        //		[_database unlock];
         
         return sortedArray;
     }
@@ -3701,7 +3691,6 @@ static NSConditionLock *threadLock = nil;
     if( childrenArray == nil)
         return nil;
     
-    //	[_database lock];
     
     @try
     {
@@ -3776,7 +3765,6 @@ static NSConditionLock *threadLock = nil;
         N2LogExceptionWithStackTrace(e);
     }
     
-    //	[_database unlock];
     
     return imagesPathArray;
 }
@@ -3805,7 +3793,6 @@ static NSConditionLock *threadLock = nil;
 {
     NSManagedObject *aFile = [databaseOutline itemAtRow:[databaseOutline selectedRow]];
     
-    //	[_database lock];
     
     if( [[aFile valueForKey:@"type"] isEqualToString:@"Study"])
         aFile = [[aFile valueForKey:@"series"] anyObject];
@@ -3813,7 +3800,6 @@ static NSConditionLock *threadLock = nil;
     if( [[aFile valueForKey:@"type"] isEqualToString:@"Series"])
         aFile = [[aFile valueForKey:@"images"] anyObject];
     
-    //	[_database unlock];
     
     return aFile;
 }
@@ -3843,7 +3829,6 @@ static NSConditionLock *threadLock = nil;
     if( treeManagedObjects == nil) treeManagedObjects = [NSMutableSet set];
     
     [context retain];
-    [context lock];
     
     @try
     {
@@ -3944,7 +3929,6 @@ static NSConditionLock *threadLock = nil;
     
     [context save: nil];
     [context release];
-    [context unlock];
     
     if( onlyImages)
     {
@@ -4527,13 +4511,21 @@ static NSConditionLock *threadLock = nil;
 
 - (NSArray*) subSearchForComparativeStudies: (id) studySelectedID
 {
+    DicomDatabase *database = [NSThread isMainThread] ? self.database : self.database.independentDatabase;
+    __block NSArray *result = nil;
+    N2PerformManagedObjectContextBlockAndWait(database.managedObjectContext, ^{
+        result = [[self subSearchForComparativeStudiesOnContextQueue:studySelectedID database:database] retain];
+    });
+    return [result autorelease];
+}
+
+- (NSArray*)subSearchForComparativeStudiesOnContextQueue:(id)studySelectedID database:(DicomDatabase *)idatabase
+{
     @try
     {
         NSMutableArray *mergedStudies = nil;
         
         //[NSNotificationCenter.defaultCenter postNotificationOnMainThreadName:O2SearchForComparativeStudiesStartedNotification object:self userInfo:[NSDictionary dictionaryWithObjectsAndKeys: studySelectedID, @"study", nil]];
-        
-        DicomDatabase *idatabase = [NSThread isMainThread] ? self.database : self.database.independentDatabase;
         
         DicomStudy *studySelected = nil;
         
@@ -4556,7 +4548,6 @@ static NSConditionLock *threadLock = nil;
             {
                 // Local studies
                 NSArray *localStudies = nil;
-                [idatabase lock];
                 @try
                 {
                     localStudies = [idatabase objectsForEntity: idatabase.studyEntity predicate: samePatientPredicate];
@@ -4565,8 +4556,6 @@ static NSConditionLock *threadLock = nil;
                 {
                     NSLog( @"*** Comparative Studies exception: %@", e);
                 }
-                [idatabase unlock];
-                
                 mergedStudies = [NSMutableArray arrayWithArray: localStudies];
                 [mergedStudies sortUsingDescriptors: [NSArray arrayWithObject: [NSSortDescriptor sortDescriptorWithKey:@"date" ascending: NO]]];
                 
@@ -5028,7 +5017,6 @@ static NSConditionLock *threadLock = nil;
                 NSMutableArray *selectedRowColumns = [NSMutableArray array], *selectedCellsIDs = [NSMutableArray array];
                 BOOL imageLevel = NO;
                 
-                [self.database lock];
                 @try {
                     [animationSlider setEnabled:NO];
                     [animationSlider setNumberOfTickMarks:0];
@@ -5074,7 +5062,6 @@ static NSConditionLock *threadLock = nil;
                 } @catch (NSException* e) {
                     N2LogExceptionWithStackTrace(e);
                 } @finally {
-                    [self.database unlock];
                 }
                 
                 BOOL separateThread = YES;
@@ -5247,8 +5234,6 @@ static NSConditionLock *threadLock = nil;
     {
         NSManagedObjectContext	*context = self.database.managedObjectContext;
         
-        [context lock];
-        
         if( [seriesArray count])
         {
             // The destination series
@@ -5305,7 +5290,6 @@ static NSConditionLock *threadLock = nil;
             [self refreshMatrix: self];
         }
         
-        [context unlock];
     }
 }
 
@@ -5692,8 +5676,6 @@ static NSConditionLock *threadLock = nil;
     
     [reportFilesToCheck removeAllObjects];
     
-    [database lock];
-    
     @try
     {
         NSManagedObject	*study = nil, *series = nil;
@@ -5831,7 +5813,6 @@ static NSConditionLock *threadLock = nil;
     for( DicomStudy *study in studiesSet)
         [study noFiles];
     [database save];
-    [database unlock];
     [database release];
     
     [self outlineViewRefresh];
@@ -5877,10 +5858,6 @@ static NSConditionLock *threadLock = nil;
 - (void) delObjects:(NSMutableArray*) objectsToDelete tree:(NSMutableSet*)treeObjs
 {
     int result;
-    NSManagedObjectContext	*context = self.database.managedObjectContext;
-    
-    [context lock];
-    
     // Are some images locked?
     NSArray	*lockedImages = [objectsToDelete filteredArrayUsingPredicate: [NSPredicate predicateWithFormat:@"series.study.lockedStudy == YES"]];
     
@@ -6011,8 +5988,6 @@ static NSConditionLock *threadLock = nil;
         }
     }
     
-    [context unlock];
-    
     [self refreshMatrix: self];
     
     [[QueryController currentQueryController] executeRefresh: self];
@@ -6110,7 +6085,6 @@ static NSConditionLock *threadLock = nil;
     }
     
     [context retain];
-    [context lock];
     
     if( result == NSAlertOtherReturn)	// REMOVE FROM CURRENT ALBUMS, BUT DONT DELETE IT FROM THE DATABASE
     {
@@ -6169,7 +6143,6 @@ static NSConditionLock *threadLock = nil;
     else if (![_database isLocal])
     {
         [context release];
-        [context unlock];
         
         NSRunAlertPanel( NSLocalizedString(@"Distant Database", nil),  NSLocalizedString(@"You cannot modify a Distant Database.", nil), nil, nil, nil);
         return;
@@ -6195,7 +6168,6 @@ static NSConditionLock *threadLock = nil;
         }
     }
     
-    [context unlock];
     [context release];
 }
 
@@ -6274,7 +6246,6 @@ static NSConditionLock *threadLock = nil;
     NSEnumerator	*enumerator			= [columnsDatabase keyEnumerator];
     NSString		*key;
     
-    //	[_database lock];
     @try
     {
         while( key = [enumerator nextObject])
@@ -6308,7 +6279,6 @@ static NSConditionLock *threadLock = nil;
     }
     @finally
     {
-        //		[_database unlock];
     }
 }
 
@@ -6318,7 +6288,6 @@ static NSConditionLock *threadLock = nil;
     
     id returnVal = nil;
     
-    //	[_database lock];
     
     @try
     {
@@ -6339,7 +6308,6 @@ static NSConditionLock *threadLock = nil;
         N2LogExceptionWithStackTrace(e);
     }
     
-    //	[_database unlock];
     
     return returnVal;
 }
@@ -6348,7 +6316,6 @@ static NSConditionLock *threadLock = nil;
 {
     BOOL returnVal = NO;
     
-    //	[_database lock];
     
     if( [item isDistant])
     {
@@ -6362,7 +6329,6 @@ static NSConditionLock *threadLock = nil;
         returnVal = NO;
     else returnVal = YES;
     
-    //	[_database unlock];
     
     return returnVal;
 }
@@ -6373,7 +6339,6 @@ static NSConditionLock *threadLock = nil;
     
     int returnVal = 0;
     
-    //	[_database lock];
     
     if (!item)
     {
@@ -6416,7 +6381,6 @@ static NSConditionLock *threadLock = nil;
             else if ([[item valueForKey:@"type"] isEqualToString:@"Study"]) returnVal = [[item valueForKey:@"imageSeries"] count];
     }
     
-    //	[_database unlock];
     
     return returnVal;
 }
@@ -6589,7 +6553,6 @@ static NSConditionLock *threadLock = nil;
     if (_database == nil)
         return nil;
     [item retain];
-    //	[_database lock];
     @try {
         return [self intOutlineView:outlineView objectValueForTableColumn:tableColumn byItem:item];
     }
@@ -6598,7 +6561,6 @@ static NSConditionLock *threadLock = nil;
         N2LogExceptionWithStackTrace(e);
     }
     @finally {
-        //        [_database unlock];
         [item release];
     }
     
@@ -6612,7 +6574,6 @@ static NSConditionLock *threadLock = nil;
     
     DatabaseIsEdited = NO;
     
-    //	[_database lock];
     @try {
         if (![_database isLocal])
             [(RemoteDicomDatabase*)_database object:item setValue:object forKey:key];
@@ -6649,7 +6610,6 @@ static NSConditionLock *threadLock = nil;
     }
     @finally
     {
-        //        [_database unlock];
     }
     
     [_database save:NULL];
@@ -6723,10 +6683,6 @@ static NSConditionLock *threadLock = nil;
         [(ImageAndTextCell*) cell setImage: nil];
         [(ImageAndTextCell*) cell setLastImage: nil];
     }
-    
-    NSManagedObjectContext	*context = self.database.managedObjectContext;
-    
-    [context lock];
     
     @try
     {
@@ -6856,8 +6812,6 @@ static NSConditionLock *threadLock = nil;
         N2LogExceptionWithStackTrace(e);
     }
     
-    [context unlock];
-    
 }
 
 - (void)tableView:(NSTableView *)tableView mouseDownInHeaderOfTableColumn:(NSTableColumn *)tableColumn
@@ -6937,7 +6891,6 @@ static NSConditionLock *threadLock = nil;
 
 - (void)outlineViewItemWillCollapse:(NSNotification *)notification
 {
-    //	[_database lock];
     
     id object = [[notification userInfo] objectForKey:@"NSObject"];
     
@@ -6952,19 +6905,16 @@ static NSConditionLock *threadLock = nil;
         if( [[image valueForKey:@"type"] isEqualToString:@"Image"]) [self findAndSelectFile: nil image: image shouldExpand :NO];
     }
     
-    //	[_database unlock];
 }
 
 - (void)outlineViewItemWillExpand:(NSNotification *)notification
 {
-    //	[_database lock];
     
     id object = [[notification userInfo] objectForKey:@"NSObject"];
     
     if( [object isDistant] == NO)
         [object setValue:[NSNumber numberWithBool:YES] forKey:@"expanded"];
     
-    //	[_database unlock];
 }
 
 - (BOOL)isUsingExternalViewer: (NSManagedObject*) item
@@ -6973,8 +6923,6 @@ static NSConditionLock *threadLock = nil;
     
     if ([[item valueForKey:@"type"] isEqualToString:@"Series"])
     {
-        [_database lock];
-        
         NSArray *images = [self childrenArray: item onlyImages: NO];
         
         DicomImage *im = nil;
@@ -7106,7 +7054,6 @@ static NSConditionLock *threadLock = nil;
         }
         
         
-        [_database unlock];
     }
     
     return r;
@@ -7660,8 +7607,6 @@ static NSConditionLock *threadLock = nil;
                         NSError *error = nil;
                         NSManagedObjectContext *context = self.database.managedObjectContext;
                         
-                        [context lock];
-                        
                         NSMutableArray *seriesForThisViewer =  nil;
                         
                         @try
@@ -7707,7 +7652,6 @@ static NSConditionLock *threadLock = nil;
                             N2LogExceptionWithStackTrace(e);
                         }
                         
-                        [context unlock];
                     }
                     @catch (NSException *e)
                     {
@@ -8058,8 +8002,6 @@ static NSConditionLock *threadLock = nil;
                 [dbRequest setEntity: [[self.database.managedObjectModel entitiesByName] objectForKey:@"Study"]];
                 [dbRequest setPredicate: [NSPredicate predicateWithValue:YES]];
                 
-                [context lock];
-                
                 @try
                 {
                     error = nil;
@@ -8087,7 +8029,6 @@ static NSConditionLock *threadLock = nil;
                 
                 [curFile release];
                 
-                [context unlock];
             }
         }
     }
@@ -8245,6 +8186,14 @@ static NSConditionLock *threadLock = nil;
 }
 
 - (int) findObject:(NSString*) request table:(NSString*) table execute: (NSString*) execute elements:(NSString**) elements { // __deprecated
+    __block int result = -1;
+    N2PerformManagedObjectContextBlockAndWait(self.database.managedObjectContext, ^{
+        result = [self findObjectOnContextQueue:request table:table execute:execute elements:elements];
+    });
+    return result;
+}
+
+- (int) findObjectOnContextQueue:(NSString*) request table:(NSString*) table execute:(NSString*) execute elements:(NSString**) elements {
     if( elements)
         *elements = nil;
     
@@ -8265,9 +8214,6 @@ static NSConditionLock *threadLock = nil;
     [dbRequest setEntity: [[self.database.managedObjectModel entitiesByName] objectForKey: table]];
     [dbRequest setPredicate: [NSPredicate predicateWithFormat: request]];
     
-    [context retain];
-    [context lock];
-    
     @try
     {
         error = nil;
@@ -8275,9 +8221,6 @@ static NSConditionLock *threadLock = nil;
         
         if( error)
         {
-            [context unlock];
-            [context release];
-            
             return [error code];
         }
         
@@ -8303,10 +8246,6 @@ static NSConditionLock *threadLock = nil;
     {
         N2LogExceptionWithStackTrace(e);
     }
-    
-    [context unlock];
-    [context release];
-    
     
     if( element)
     {
@@ -8366,9 +8305,6 @@ static NSConditionLock *threadLock = nil;
         
         if( [execute isEqualToString: @"Delete"])
         {
-            [context retain];
-            [context lock];
-            
             @try
             {
                 
@@ -8393,8 +8329,6 @@ static NSConditionLock *threadLock = nil;
                 N2LogExceptionWithStackTrace(e);
             }
             
-            [context unlock];
-            [context release];
         }
         
         return 0;
@@ -8547,9 +8481,6 @@ static NSConditionLock *threadLock = nil;
     [dbRequest setEntity: [[model entitiesByName] objectForKey:@"Study"]];
     [dbRequest setPredicate: predicate];
     
-    [context retain];
-    [context lock];
-    
     NSMutableArray *viewersArray = [NSMutableArray array];
     
     @try
@@ -8620,8 +8551,6 @@ static NSConditionLock *threadLock = nil;
         N2LogExceptionWithStackTrace(e);
     }
     @finally {
-        [context unlock];
-        [context release];
     }
     
     if( viewersArray.count == viewersList.count)
@@ -9482,7 +9411,6 @@ static BOOL withReset = NO;
             if( img == nil) NSLog( @"Error: [previewPixThumbnails objectAtIndex: i] == nil");
         }
         
-        //        [_database lock];
         @try
         {
             NSString *modality, *seriesSOPClassUID, *fileType;
@@ -9693,7 +9621,6 @@ static BOOL withReset = NO;
         }
         @finally
         {
-            //            [_database unlock];
         }
         
         [img release];
@@ -9723,7 +9650,6 @@ static BOOL withReset = NO;
     NSManagedObject	*curObj = [matrixViewArray objectAtIndex: [[sender selectedCell] tag]];
     NSLog( @"%@", [curObj valueForKey: @"type"]);
     
-    //	[_database lock];
     
     @try
     {
@@ -9736,7 +9662,6 @@ static BOOL withReset = NO;
         N2LogExceptionWithStackTrace(e);
     }
     
-    //	[_database unlock];
     
     NSLog( @"%@", [curObj valueForKey: @"completePath"]);
     
@@ -9858,8 +9783,6 @@ static BOOL withReset = NO;
             
             if( r == NSAlertDefaultReturn)
             {
-                [context lock];
-                
                 @try
                 {
                     [context deleteObject: studyObject];
@@ -9871,8 +9794,6 @@ static BOOL withReset = NO;
                     N2LogExceptionWithStackTrace(ne);
                 }
                 
-                [context unlock];
-                
                 [self outlineViewRefresh];
                 [self refreshMatrix: self];
             }
@@ -9883,42 +9804,29 @@ static BOOL withReset = NO;
     
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"] == NO)
     {
-        if( [_database tryLock])
+        DatabaseIsEdited = YES;
+
+        @try
         {
-            if( [context tryLock])
-            {
-                DatabaseIsEdited = YES;
-                
-                @try
-                {
-                    NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
-                    [dbRequest setEntity: [[model entitiesByName] objectForKey:@"Series"]];
-                    [dbRequest setPredicate: [NSPredicate predicateWithFormat:@"thumbnail == NIL"]];
-                    [dbRequest setFetchLimit: 60];
-                    
-                    NSError	*error = nil;
-                    NSArray *seriesArray = [context executeFetchRequest:dbRequest error:&error];
-                    
-                    int maxSeries = [seriesArray count];
-                    
-                    if( maxSeries > 60) maxSeries = 60;	// We will continue next time...
-                    
-                    for( int i = 0; i < maxSeries; i++)
-                    {
-                        [self buildThumbnail: [seriesArray objectAtIndex: i]];
-                    }
-                    
-                    [_database save:NULL];
-                }
-                
-                @catch( NSException *ne)
-                {
-                    N2LogExceptionWithStackTrace(ne);
-                }
-                
-                [context unlock];
-            }
-            [_database unlock];
+            NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
+            [dbRequest setEntity: [[model entitiesByName] objectForKey:@"Series"]];
+            [dbRequest setPredicate: [NSPredicate predicateWithFormat:@"thumbnail == NIL"]];
+            [dbRequest setFetchLimit: 60];
+
+            NSError	*error = nil;
+            NSArray *seriesArray = [context executeFetchRequest:dbRequest error:&error];
+
+            int maxSeries = [seriesArray count];
+            if( maxSeries > 60) maxSeries = 60;	// We will continue next time...
+
+            for( int i = 0; i < maxSeries; i++)
+                [self buildThumbnail: [seriesArray objectAtIndex: i]];
+
+            [_database save:NULL];
+        }
+        @catch( NSException *ne)
+        {
+            N2LogExceptionWithStackTrace(ne);
         }
     }
     
@@ -9928,10 +9836,6 @@ static BOOL withReset = NO;
 - (IBAction) resetWindowsState:(id)sender
 {
     NSInteger				x, row;
-    NSManagedObjectContext	*context = self.database.managedObjectContext;
-    
-    [context lock];
-    
     @try
     {
         NSIndexSet *selectedRows = [databaseOutline selectedRowIndexes];
@@ -9983,7 +9887,6 @@ static BOOL withReset = NO;
         N2LogExceptionWithStackTrace(e);
     }
     
-    [context unlock];
 }
 
 -(IBAction)retrieveSelectedPODStudies:(id) sender
@@ -10018,7 +9921,6 @@ static BOOL withReset = NO;
 
 -(IBAction)rebuildThumbnails:(id)sender
 {
-    //	[_database lock];
     @try
     {
         NSIndexSet* selectedRows = [databaseOutline selectedRowIndexes];
@@ -10046,7 +9948,6 @@ static BOOL withReset = NO;
     }
     @finally
     {
-        //		[_database unlock];
     }
     
     [self refreshMatrix: self];
@@ -10081,6 +9982,7 @@ static BOOL withReset = NO;
             tempPreviewPix = [[previewPix mutableCopy] autorelease];
         }
         
+        N2PerformManagedObjectContextBlockAndWait(idatabase.managedObjectContext, ^{
         for (int i = 0; i < objectIDs.count; i++)
         {
             @try
@@ -10180,6 +10082,7 @@ static BOOL withReset = NO;
             [tempPreviewPixThumbnails replaceObjectAtIndex: i withObject: notFoundImage];
             [tempPreviewPix addObject: [[[DCMPix alloc] myinitEmpty] autorelease]];
         }
+        });
         
         
         @synchronized( previewPixThumbnails)
@@ -10757,11 +10660,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
     
     if( correspondingManagedObjects == nil) correspondingManagedObjects = [NSMutableArray array];
     
-    NSManagedObjectContext	*context = self.database.managedObjectContext;
-    
-    [context retain];
-    [context lock];
-    
     @try
     {
         if( cells != nil && aFile != nil)
@@ -10828,9 +10726,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
     {
         N2LogExceptionWithStackTrace(e);
     }
-    
-    [context release];
-    [context unlock];
     
     return selectedFiles;
 }
@@ -11001,7 +10896,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
      [dbRequest setPredicate: [NSPredicate predicateWithValue:YES]];
      NSManagedObjectContext *context = self.database.managedObjectContext;
      
-     [context lock];
      
      @try
      {
@@ -11052,7 +10946,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
      N2LogExceptionWithStackTrace(e);
      }
      
-     [context unlock];
      
      [self outlineViewRefresh];
      
@@ -11128,8 +11021,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
         
         NSManagedObjectContext *context = self.database.managedObjectContext;
         
-        [context lock];
-        
         @try
         {
             NSError *error = nil;
@@ -11153,8 +11044,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
             NSLog( @"***** exception in %s: %@", __PRETTY_FUNCTION__, e);
             [e printStackTrace];
         }
-        
-        [context unlock];
         
         [self outlineViewRefresh];
     }
@@ -11189,7 +11078,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
                                      nil,
                                      album.name) == NSAlertDefaultReturn)
     {
-        [self.database lock];
         @try
         {
             [self.database.managedObjectContext deleteObject:album];
@@ -11213,7 +11101,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
         }
         @finally
         {
-            [self.database unlock];
         }
     }
 }
@@ -11265,8 +11152,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
                     [dbRequest setPredicate: [NSPredicate predicateWithValue:YES]];
                     NSManagedObjectContext *context = self.database.managedObjectContext;
                     
-                    [context retain];
-                    [context lock];
                     NSError *error = nil;
                     
                     @try
@@ -11297,8 +11182,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
                         N2LogExceptionWithStackTrace(e);
                     }
                     
-                    [context unlock];
-                    [context release];
                 }
             }
         }
@@ -11319,11 +11202,16 @@ constrainSplitPosition:(CGFloat)proposedPosition
         d = [NSThread isMainThread] ? _database : _database.independentDatabase;
     
     NSString *albumName = self.selectedAlbumName;
-    
-    if( albumName)
-        return [((NSManagedObject *) [[d objectsForEntity: d.albumEntity predicate: [NSPredicate predicateWithFormat: @"name == %@", albumName]] lastObject]) objectID];
-    
-    return nil;
+
+    if (!albumName)
+        return nil;
+
+    __block NSManagedObjectID *result = nil;
+    N2PerformManagedObjectContextBlockAndWait(d.managedObjectContext, ^{
+        NSManagedObject *album = [[d objectsForEntity:d.albumEntity predicate:[NSPredicate predicateWithFormat:@"name == %@", albumName]] lastObject];
+        result = [album.objectID retain];
+    });
+    return [result autorelease];
 }
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
@@ -11442,8 +11330,8 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 - (NSManagedObject*) findStudyUID: (NSString*) uid
 {
-    NSArray						*studyArray = nil;
-    NSError						*error = nil;
+    __block NSManagedObject *result = nil;
+    __block NSError				*error = nil;
     NSFetchRequest				*request = [[[NSFetchRequest alloc] init] autorelease];
     NSManagedObjectContext		*context = BrowserController.currentBrowser.database.managedObjectContext;
     NSPredicate					*predicate = [NSPredicate predicateWithFormat: @"(studyInstanceUID == %@)", uid];
@@ -11451,29 +11339,24 @@ constrainSplitPosition:(CGFloat)proposedPosition
     [request setEntity: [[self.database.managedObjectModel entitiesByName] objectForKey:@"Study"]];
     [request setPredicate: predicate];
     
-    [context retain];
-    [context lock];
-    
-    @try
-    {
-        studyArray = [context executeFetchRequest:request error:&error];
-    }
-    @catch (NSException * e)
-    {
-        N2LogExceptionWithStackTrace(e);
-    }
-    
-    [context unlock];
-    [context release];
-    
-    if( [studyArray count]) return [studyArray objectAtIndex: 0];
-    else return nil;
+    N2PerformManagedObjectContextBlockAndWait(context, ^{
+        @try
+        {
+            NSArray *studyArray = [context executeFetchRequest:request error:&error];
+            result = [[studyArray firstObject] retain];
+        }
+        @catch (NSException * e)
+        {
+            N2LogExceptionWithStackTrace(e);
+        }
+    });
+    return [result autorelease];
 }
 
 - (NSManagedObject*) findSeriesUID: (NSString*) uid
 {
-    NSArray						*seriesArray = nil;
-    NSError						*error = nil;
+    __block NSManagedObject *result = nil;
+    __block NSError				*error = nil;
     NSFetchRequest				*request = [[[NSFetchRequest alloc] init] autorelease];
     NSManagedObjectContext		*context = BrowserController.currentBrowser.database.managedObjectContext;
     NSPredicate					*predicate = [NSPredicate predicateWithFormat: @"(seriesDICOMUID == %@)", uid];
@@ -11481,23 +11364,18 @@ constrainSplitPosition:(CGFloat)proposedPosition
     [request setEntity: [[BrowserController.currentBrowser.database.managedObjectModel entitiesByName] objectForKey:@"Series"]];
     [request setPredicate: predicate];
     
-    [context retain];
-    [context lock];
-    
-    @try
-    {
-        seriesArray = [context executeFetchRequest:request error:&error];
-    }
-    @catch (NSException * e)
-    {
-        N2LogExceptionWithStackTrace(e);
-    }
-    
-    [context unlock];
-    [context release];
-    
-    if( [seriesArray count]) return [seriesArray objectAtIndex: 0];
-    else return nil;
+    N2PerformManagedObjectContextBlockAndWait(context, ^{
+        @try
+        {
+            NSArray *seriesArray = [context executeFetchRequest:request error:&error];
+            result = [[seriesArray firstObject] retain];
+        }
+        @catch (NSException * e)
+        {
+            N2LogExceptionWithStackTrace(e);
+        }
+    });
+    return [result autorelease];
 }
 
 - (void) sendFilesToCurrentBonjourDB: (NSArray*) files
@@ -12980,10 +12858,9 @@ constrainSplitPosition:(CGFloat)proposedPosition
                         
                         // Create the new series
                         
-                        [_database lock];
-                        
-                        @try
-                        {
+                        N2PerformManagedObjectContextBlockAndWait(_database.managedObjectContext, ^{
+                            @try
+                            {
                             int reparseIndex = 1;
                             
                             DicomSeries *originalSeries = [[[splittedSeries lastObject] lastObject] valueForKey: @"Series"];
@@ -13027,14 +12904,12 @@ constrainSplitPosition:(CGFloat)proposedPosition
                             [_database.managedObjectContext deleteObject:originalSeries];
                             
                             [_database save: nil];
-                        }
-                        @catch (NSException * e)
-                        {
-                            N2LogExceptionWithStackTrace(e/*, @"reparsing"*/);
-                        }
-                        @finally {
-                            [_database unlock];
-                        }
+                            }
+                            @catch (NSException * e)
+                            {
+                                N2LogExceptionWithStackTrace(e/*, @"reparsing"*/);
+                            }
+                        });
                         
                         [self refreshDatabase: self];
                         [self refreshMatrix: self];
@@ -13047,10 +12922,9 @@ constrainSplitPosition:(CGFloat)proposedPosition
                         
                         // Create the new series
                         
-                        [_database lock];
-                        
-                        @try
-                        {
+                        N2PerformManagedObjectContextBlockAndWait(_database.managedObjectContext, ^{
+                            @try
+                            {
                             int reparseIndex = 1;
                             
                             DicomSeries *originalSeries = [[[splittedSeries lastObject] lastObject] valueForKey: @"Series"];
@@ -13099,14 +12973,12 @@ constrainSplitPosition:(CGFloat)proposedPosition
                             [_database.managedObjectContext deleteObject: originalSeries];
                             
                             [_database save:nil];
-                        }
-                        @catch (NSException * e)
-                        {
-                            N2LogExceptionWithStackTrace(e/*, @"reparsing"*/);
-                        }
-                        @finally {
-                            [_database unlock];
-                        }
+                            }
+                            @catch (NSException * e)
+                            {
+                                N2LogExceptionWithStackTrace(e/*, @"reparsing"*/);
+                            }
+                        });
                         
                         [self refreshDatabase: self];
                         [self refreshMatrix: self];
@@ -13234,8 +13106,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
 - (void) viewerDICOMInt:(BOOL) movieViewer dcmFile:(NSArray *)selectedLines viewer:(ViewerController*) viewer tileWindows: (BOOL) tileWindows protocol: (NSDictionary*) protocol
 {
     if( [selectedLines count] == 0) return;
-    
-    [_database lock];
     
     @try
     {
@@ -13381,7 +13251,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
         NSRunAlertPanel( NSLocalizedString(@"Opening Error", nil), NSLocalizedString(@"Opening Error : %@\r\r%@", nil) , nil, nil, nil, e, [AppController printStackTrace: e]);
     }
     
-    [_database unlock];
 }
 
 - (void) viewerSubSeriesDICOM: (id)sender
@@ -13716,8 +13585,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 - (void)newViewerDICOM: (id)sender
 {
-    [_database lock];
-    
     NSManagedObject	*item = [databaseOutline itemAtRow: [databaseOutline selectedRow]];
     
     @try
@@ -13757,8 +13624,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
     {
         N2LogExceptionWithStackTrace(e);
     }
-    
-    [_database unlock];
     
     [[NSNotificationCenter defaultCenter] postNotificationName:OsirixDidLoadNewObjectNotification object:item userInfo:nil];
     
@@ -14919,7 +14784,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     }
     
     [ICloudDriveDetector performStartupICloudDriveTasks:self];
-    [O2HMigrationAssistant performStartupO2HTasks:self];
 }
 
 - (IBAction) clickBanner:(id) sender
@@ -17134,10 +16998,9 @@ static volatile int numberOfThreadsForJPEG = 0;
     {
         NSManagedObjectContext *context = self.database.managedObjectContext;
         
-        [context lock];
-        
-        @try
-        {
+        N2PerformManagedObjectContextBlockAndWait(context, ^{
+            @try
+            {
             NSFetchRequest	*dbRequest = [[[NSFetchRequest alloc] init] autorelease];
             [dbRequest setEntity: [[self.database.managedObjectModel entitiesByName] objectForKey:@"Study"]];
             [dbRequest setPredicate: [NSPredicate predicateWithFormat:  @"studyInstanceUID == %@", uid]];
@@ -17160,14 +17023,12 @@ static volatile int numberOfThreadsForJPEG = 0;
                 [[NSFileManager defaultManager] copyPath: path toPath: reportURL handler: nil];
                 [s setValue: reportURL forKey: @"reportURL"];
             }
-        }
-        
-        @catch (NSException * e)
-        {
-            N2LogExceptionWithStackTrace(e);
-        }
-        
-        [context unlock];
+            }
+            @catch (NSException * e)
+            {
+                N2LogExceptionWithStackTrace(e);
+            }
+        });
     }
 }
 
@@ -17185,6 +17046,16 @@ static volatile int numberOfThreadsForJPEG = 0;
 
 - (NSArray*) exportDICOMFileInt: (NSMutableDictionary*) parameters
 {
+    DicomDatabase *database = [NSThread isMainThread] ? self.database : self.database.independentDatabase;
+    __block NSArray *result = nil;
+    N2PerformManagedObjectContextBlockAndWait(database.managedObjectContext, ^{
+        result = [[self exportDICOMFileIntOnContextQueue:parameters database:database] retain];
+    });
+    return [result autorelease];
+}
+
+- (NSArray*)exportDICOMFileIntOnContextQueue:(NSMutableDictionary*)parameters database:(DicomDatabase *)idatabase
+{
     NSAutoreleasePool *pool = nil;
     
     if( [NSThread isMainThread] == NO) // This is IMPORTANT for the result ! A thread cannot return a 'autorelease' object without a pool.... DO NOT MODIFY !
@@ -17199,7 +17070,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     
     @try
     {
-        DicomDatabase *idatabase = [NSThread isMainThread] ? self.database : self.database.independentDatabase;
         NSString *location = [parameters objectForKey: @"location"];
         NSMutableArray *filesToExport = [parameters objectForKey: @"filesToExport"];
         NSMutableArray *dicomFiles2Export = [NSMutableArray arrayWithArray: [idatabase objectsWithIDs: [parameters objectForKey: @"dicomFiles2Export"]]];
@@ -19219,15 +19089,6 @@ static volatile int numberOfThreadsForJPEG = 0;
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(restoreWindowState:)];
     }
-    else if ([itemIdent isEqualToString: HorosMigrationAssistantIdentifier])
-    {
-        [toolbarItem setLabel: NSLocalizedString(@"Migration Assistant",nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"Migration Assistant",nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"Open Horos Migration Assistant",nil)];
-        [toolbarItem setImage: [NSImage imageNamed: HorosMigrationAssistantIdentifier]];
-        [toolbarItem setTarget: self];
-        [toolbarItem setAction: @selector(openHorosMigrationAssistant:)];
-    }
     else
     {
         if( [itemIdent isEqualToString: @"Cloud Dashboard"] || [itemIdent isEqualToString: @"Cloud Report"] || [itemIdent isEqualToString: @"Cloud Sharing"] )
@@ -19278,23 +19139,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     }
     
     return toolbarItem;
-}
-
-
-- (void) openHorosMigrationAssistant:(id) sender
-{
-    [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"O2H_MIGRATION_USER_ACTION"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-
-    if ([O2HMigrationAssistant isOsiriXInstalled] == NO)
-    {
-        NSRunInformationalAlertPanel(NSLocalizedString(@"Horos Migration Assistant", nil),
-                                     NSLocalizedString(@"It seems you don't have OsiriX installed.", nil),
-                                     NSLocalizedString(@"Return",nil), nil, nil);
-        return;
-    }
-    
-    [O2HMigrationAssistant performStartupO2HTasks:self];
 }
 
 
@@ -19456,7 +19300,6 @@ static volatile int numberOfThreadsForJPEG = 0;
                              ReportToolbarItemIdentifier,
                              ToggleDrawerToolbarItemIdentifier,
                              ResetSplitViewsItemIdentifier,
-                             HorosMigrationAssistantIdentifier,
                              nil];
     
     NSArray*		allPlugins = [[PluginManager pluginsDict] allKeys];
@@ -20787,6 +20630,18 @@ static volatile int numberOfThreadsForJPEG = 0;
     if( study == nil || self.database == nil)
         return nil;
 
+    __block NSArray *result = nil;
+    N2PerformManagedObjectContextBlockAndWait(self.database.managedObjectContext, ^{
+        result = [[self relatedStudiesForStudyOnContextQueue:study] retain];
+    });
+    return [result autorelease];
+}
+
+- (NSArray *)relatedStudiesForStudyOnContextQueue:(id)study
+{
+    if( study == nil || self.database == nil)
+        return nil;
+
     NSPredicate *predicate = [self samePatientStudiesPredicateForStudy: study];
     if( predicate == nil)
         return nil;
@@ -20799,8 +20654,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
     dbRequest.entity = [model.entitiesByName objectForKey:@"Study"];
     dbRequest.predicate = predicate;
-    
-    [context lock];
     
     NSError	*error = nil;
     NSArray *studiesArray = [context executeFetchRequest:dbRequest error:&error];
@@ -20834,8 +20687,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     {
         N2LogExceptionWithStackTrace(e);
     }
-    
-    [context unlock];
     
     return studiesArray;
 }

@@ -128,9 +128,7 @@ void signal_EXC(int sig_num)
                         dicomData = [[NSMutableData alloc] initWithBytesNoCopy: ptr length: data.length freeWhenDone: YES];
                         _ptr = (unsigned char *)[dicomData bytes];
                         
-                        if (![self determineTransferSyntax])
-                            [dicomData release];
-                        else
+                        if ([self determineTransferSyntax])
                             object = self;
                     }
                     else
@@ -144,7 +142,7 @@ void signal_EXC(int sig_num)
 	}
     
     if( object == nil)
-        [self autorelease];
+        [self release];
     
     return object;
 }
@@ -195,12 +193,12 @@ void signal_EXC(int sig_num)
 - (id)initWithBytes:(const void *)bytes length:(NSUInteger)length{
 	if (self = [super init]) {
 		dicomData = [[NSMutableData dataWithBytes:bytes length:length] retain];
-		_ptr = (unsigned char *)[dicomData bytes];
-		if (![self determineTransferSyntax])
-		{
-            [self autorelease];
-            return nil;
-        }
+			_ptr = (unsigned char *)[dicomData bytes];
+			if (![self determineTransferSyntax])
+			{
+				[self release];
+				return nil;
+			}
 	}
 	return self;
 }
@@ -208,13 +206,12 @@ void signal_EXC(int sig_num)
 - (id)initWithBytesNoCopy:(void *)bytes length:(NSUInteger)length{
 	if (self = [super init]) {
 		dicomData = [[NSMutableData dataWithBytesNoCopy:bytes length:length] retain];
-		_ptr = (unsigned char *)[dicomData bytes];
-		if (![self determineTransferSyntax])
-		{
-            [dicomData release];
-            [self autorelease];
-            return nil;
-        }
+			_ptr = (unsigned char *)[dicomData bytes];
+			if (![self determineTransferSyntax])
+			{
+				[self release];
+				return nil;
+			}
 	}
 	return self;
 }
@@ -222,13 +219,12 @@ void signal_EXC(int sig_num)
  - (id)initWithBytesNoCopy:(void *)bytes length:(NSUInteger)length freeWhenDone:(BOOL)flag{
 	if (self = [super init]) {
 		dicomData = [[NSMutableData dataWithBytesNoCopy:bytes length:length freeWhenDone:flag] retain];
-		_ptr = (unsigned char *)[dicomData bytes];
-		if (![self determineTransferSyntax])
-		{
-            [dicomData release];
-            [self autorelease];
-            return nil;
-        }
+			_ptr = (unsigned char *)[dicomData bytes];
+			if (![self determineTransferSyntax])
+			{
+				[self release];
+				return nil;
+			}
 	}
 	return self;
 }

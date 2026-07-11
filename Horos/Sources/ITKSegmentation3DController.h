@@ -57,7 +57,7 @@
 	IBOutlet	NSPopUpButton			*algorithmPopup;
 				NSPoint					startingPoint;
 	IBOutlet	NSTextField				*startingPointWorldPosition, *startingPointPixelPosition, *startingPointValue;
-	IBOutlet	NSForm					*params;
+	IBOutlet	NSMatrix				*params;
 	// results
 	IBOutlet	NSBox					*resultsBox;
 	IBOutlet	NSMatrix				*outputResult;

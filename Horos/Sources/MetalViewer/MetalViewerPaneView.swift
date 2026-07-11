@@ -1332,8 +1332,8 @@ final class MetalViewerPaneView: NSView {
             self.metalView?.renderer.setOverlayPixList(
                 series.loadedPixList(),
                 windowLevelState: series.windowLevelState,
-                windowLevelStateDidChange: { [weak series] state in
-                    series?.windowLevelState = state
+                windowLevelStateDidChange: { state in
+                    series.windowLevelState = state
                 }
             )
             self.overlayBlendSlider.doubleValue = 0.5

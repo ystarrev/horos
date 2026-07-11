@@ -56,18 +56,16 @@ NSString* N2ConnectionListenerOpenedConnection = @"N2ConnectionListenerOpenedCon
 		struct sockaddr* sa = (struct sockaddr*)[addr bytes];
 		switch (sa->sa_family) {
 			case AF_INET: {
-                size_t len = INET_ADDRSTRLEN;
-                char tmp[len];
-				struct sockaddr_in* sain = (struct sockaddr_in*)sa;
-				inet_ntop(sa->sa_family, &sain->sin_addr.s_addr, tmp, len);
-				address = [NSString stringWithUTF8String:tmp];
-			} break;
-			case AF_INET6: {
-                size_t len = INET6_ADDRSTRLEN;
-                char tmp[len];
-				struct sockaddr_in6* sain6 = (struct sockaddr_in6*)sa;
-				inet_ntop(sa->sa_family, &sain6->sin6_addr, tmp, len);
-				address = [NSString stringWithUTF8String:tmp];
+	                char tmp[INET_ADDRSTRLEN];
+					struct sockaddr_in* sain = (struct sockaddr_in*)sa;
+					inet_ntop(sa->sa_family, &sain->sin_addr.s_addr, tmp, sizeof(tmp));
+					address = [NSString stringWithUTF8String:tmp];
+				} break;
+				case AF_INET6: {
+	                char tmp[INET6_ADDRSTRLEN];
+					struct sockaddr_in6* sain6 = (struct sockaddr_in6*)sa;
+					inet_ntop(sa->sa_family, &sain6->sin6_addr, tmp, sizeof(tmp));
+					address = [NSString stringWithUTF8String:tmp];
 			} break;
 		}
 	}

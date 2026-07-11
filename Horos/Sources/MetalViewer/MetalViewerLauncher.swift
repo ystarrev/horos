@@ -616,7 +616,7 @@ final class MetalViewerLauncher: NSObject {
         if let browser,
            let comparativePatientUID = browser.comparativePatientUID,
            comparativePatientUID.compare(currentPatientUID, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) == .orderedSame,
-           let comparativeStudies = browser.comparativeStudies as? [Any] {
+           let comparativeStudies = browser.comparativeStudies {
             return comparativeStudies.compactMap { $0 as? DicomStudy }
         }
 

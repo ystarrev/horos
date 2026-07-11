@@ -20,7 +20,6 @@ DICOMPrint/libxerces-c.27.dylib
 DICOMPrint/libdcmprintscu.dylib
 
 Binaries/3DconnexionClient.framework/
-Binaries/DB_Previous_Models/
 Binaries/DCMTK/
 Binaries/dciodvfy
 Binaries/Growl.framework/

@@ -181,10 +181,6 @@
 	return NO;
 }
 
-- (BOOL)saveDatabaseModel {
-    return NO;
-}
-
 -(void)_updateTimerCallback {
 	[self initiateUpdate];
 }
@@ -215,23 +211,24 @@
     
     NSArray* objectIDs = [super addFilesDescribedInDictionaries:dicomFilesArray postNotifications:postNotifications rereadExistingItems:rereadExistingItems generatedByOsiriX:generatedByOsiriX returnArray: YES];
     
-    NSArray* r = [self objectsWithIDs:objectIDs];
-    
-    NSMutableArray* filesToSend = [NSMutableArray arrayWithCapacity:r.count];
-    NSMutableArray* filesToSendObjectIDs = [NSMutableArray arrayWithCapacity:r.count];
-    for (NSInteger i = 0; i < r.count; ++i) {
-        DicomImage* image = [r objectAtIndex:i];
-        NSString* path = image.completePath;
-        if ([path hasPrefix:self.dataDirPath]) { // is in DATABASE dir, remote databases work in TEMP dir only
-            NSString* tpath = [self localPathForImage:image];
-            [[NSFileManager defaultManager] removeItemAtPath:tpath error:NULL];
-            [[NSFileManager defaultManager] moveItemAtPath:path toPath:tpath error:NULL];
-            path = tpath;
-        } 
-        
-        [filesToSend addObject:path];
-        [filesToSendObjectIDs addObject:image.objectID];
-    }
+    NSMutableArray* filesToSend = [NSMutableArray arrayWithCapacity:objectIDs.count];
+    NSMutableArray* filesToSendObjectIDs = [NSMutableArray arrayWithCapacity:objectIDs.count];
+    N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+        NSArray* images = [self objectsWithIDs:objectIDs];
+        for (NSInteger i = 0; i < images.count; ++i) {
+            DicomImage* image = [images objectAtIndex:i];
+            NSString* path = image.completePath;
+            if ([path hasPrefix:self.dataDirPath]) { // is in DATABASE dir, remote databases work in TEMP dir only
+                NSString* tpath = [self localPathForImage:image];
+                [[NSFileManager defaultManager] removeItemAtPath:tpath error:NULL];
+                [[NSFileManager defaultManager] moveItemAtPath:path toPath:tpath error:NULL];
+                path = tpath;
+            }
+
+            [filesToSend addObject:path];
+            [filesToSendObjectIDs addObject:image.objectID];
+        }
+    });
     
     if (filesToSend.count)
     {
@@ -254,16 +251,19 @@
         thread.status = NSLocalizedString(@"Sending data...", nil);
         [[ThreadsManager defaultManager] addThreadAndStart:thread];
         
-        NSMutableArray* images = [NSMutableArray arrayWithCapacity: objIDs.count];
-        for (id oid in objIDs)
-            @try {
-                id o = [iContext objectWithID:oid];
-                if (o) [images addObject:o];
-            } @catch (NSException* e) {
-                // nothing, just look for other objects
-            }
-        
-        [remoteDB uploadFilesAtPaths:paths imageObjects:images generatedByOsiriX:byOsiriX];
+        N2PerformManagedObjectContextBlockAndWait(iContext, ^{
+            NSMutableArray* images = [NSMutableArray arrayWithCapacity: objIDs.count];
+            for (id oid in objIDs)
+                @try {
+                    id object = [iContext objectWithID:oid];
+                    if (object)
+                        [images addObject:object];
+                } @catch (NSException* e) {
+                    // Ignore invalid IDs and continue with the remaining objects.
+                }
+
+            [remoteDB uploadFilesAtPaths:paths imageObjects:images generatedByOsiriX:byOsiriX];
+        });
         
     } @catch (NSException* e) {
         N2LogExceptionWithStackTrace(e);
@@ -446,13 +446,7 @@
 {
     [_updateLock lock];
 
-    NSManagedObjectContext *context = [self contextAtPath:path];
-    
-    NSPersistentStoreCoordinator *cc = context.persistentStoreCoordinator;
-    NSPersistentStoreCoordinator *c = self.managedObjectContext.persistentStoreCoordinator;
-    
-    [c lock];
-    [cc lock];
+    NSManagedObjectContext *context = [self contextAtPath:path concurrencyType:NSMainQueueConcurrencyType];
     
     @try
     {
@@ -484,11 +478,9 @@
             [[NSRunLoop mainRunLoop] addTimer:_updateTimer forMode:NSDefaultRunLoopMode];
         }
         
-    } @catch (NSException* e) {
+	} @catch (NSException* e) {
 		N2LogExceptionWithStackTrace(e);
 	} @finally {
-        [cc unlock];
-        [c unlock];
         [_updateLock unlock];
     }
 }

@@ -185,43 +185,29 @@ extern int delayedTileWindows;
 		case 3:
 			{
 			NSLog( @"patient level");
-			
-			NSPredicate *predicate = [NSPredicate predicateWithFormat:  @"(patientID == %@)", [imObj valueForKeyPath:@"series.study.patientID"]];
-			NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
-			[dbRequest setEntity: [[BrowserController.currentBrowser.database.managedObjectModel entitiesByName] objectForKey:@"Study"]];
-			[dbRequest setPredicate: predicate];
-			
-			[BrowserController.currentBrowser.database.managedObjectContext lock];
-			
-			NSError	*error = nil;
-			NSMutableArray *result = [NSMutableArray array];
-			NSArray *studiesArray = nil;
-			
-			@try 
-			{
-				studiesArray = [BrowserController.currentBrowser.database.managedObjectContext executeFetchRequest:dbRequest error:&error];
-			}
-			@catch (NSException * e) 
-			{
-                N2LogExceptionWithStackTrace(e);
-			}
-			
-			[BrowserController.currentBrowser.database.managedObjectContext unlock];
-			
-			if ([studiesArray count] > 0)
-			{
-				for( NSManagedObject *s in studiesArray)
+
+			__block NSMutableArray *result = nil;
+			NSManagedObjectContext *context = BrowserController.currentBrowser.database.managedObjectContext;
+			N2PerformManagedObjectContextBlockAndWait(context, ^{
+				result = [[NSMutableArray alloc] init];
+				@try
 				{
-					NSArray	*allSeries =  [[BrowserController currentBrowser] childrenArray: s];
-					
-					for( NSManagedObject *w in allSeries)
-					{
-						[result addObjectsFromArray: [[BrowserController currentBrowser] childrenArray: w]];
-					}
+					NSPredicate *predicate = [NSPredicate predicateWithFormat:@"patientID == %@", [imObj valueForKeyPath:@"series.study.patientID"]];
+					NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
+					dbRequest.entity = [BrowserController.currentBrowser.database.managedObjectModel.entitiesByName objectForKey:@"Study"];
+					dbRequest.predicate = predicate;
+					NSArray *studiesArray = [context executeFetchRequest:dbRequest error:nil];
+
+					for (NSManagedObject *study in studiesArray)
+						for (NSManagedObject *series in [[BrowserController currentBrowser] childrenArray:study])
+							[result addObjectsFromArray:[[BrowserController currentBrowser] childrenArray:series]];
 				}
-			}
-			
-			return result;
+				@catch (NSException *e)
+				{
+					N2LogExceptionWithStackTrace(e);
+				}
+			});
+			return [result autorelease];
 			}
 		break;
 	}

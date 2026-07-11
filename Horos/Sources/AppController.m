@@ -104,8 +104,6 @@
 #import "NSString+SymlinksAndAliases.h"
 #include <OpenGL/OpenGL.h>
 
-#include <kdu_OsiriXSupport.h>
-
 #include <execinfo.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -131,7 +129,6 @@ static NSInvocation *fill12BitBufferInvocation = nil;
 BOOL					NEEDTOREBUILD = NO;
 BOOL					COMPLETEREBUILD = NO;
 BOOL					USETOOLBARPANEL = NO;
-short                   Use_kdu_IfAvailable = 0;
 AppController			*appController = nil;
 DCMTKQueryRetrieveSCP   *dcmtkQRSCP = nil, *dcmtkQRSCPTLS = nil;
 NSRecursiveLock			*PapyrusLock = nil, *STORESCP = nil, *STORESCPTLS = nil;			// Papyrus is NOT thread-safe
@@ -587,11 +584,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 	[[NSFileManager defaultManager] confirmNoIndexDirectoryAtPath:path];
 }
 
-+ (void) pause
-{
-	[[AppController sharedAppController] performSelectorOnMainThread: @selector(pause) withObject: nil waitUntilDone: NO];
-}
-
 - (void)applicationDidChangeScreenParameters:(NSNotification *)aNotification {
     [self updateScreenParameters];
 }
@@ -700,11 +692,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 }
 #endif
 
-+ (BOOL) isKDUEngineAvailable
-{
-	return kdu_available();
-}
-
 + (void) checkForPreferencesUpdate: (BOOL) b
 {
 	checkForPreferencesUpdate = b;
@@ -712,7 +699,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 
 + (void) cleanOsiriXSubProcesses
 {
-	const int kPIDArrayLength = 100;
+	enum { kPIDArrayLength = 100 };
     
     pid_t MyArray [kPIDArrayLength];
     unsigned int NumberOfMatches;
@@ -936,13 +923,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 	BOOL returnValue = YES;
 	
 	return returnValue;
-}
-
-- (void) pause
-{ // __deprecated
-	[[[BrowserController currentBrowser] database] lock]; // was checkIncomingLock
-	sleep( 2);
-	[[[BrowserController currentBrowser] database] unlock]; // was checkIncomingLock
 }
 
 // Plugins installation
@@ -1407,10 +1387,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
         {
             NSLog( @"%@", e);
         }
-        
-        Use_kdu_IfAvailable = [[NSUserDefaults standardUserDefaults] boolForKey:@"UseKDUForJPEG2000"];
-        
-        [DCMPixelDataAttribute setUse_kdu_IfAvailable: Use_kdu_IfAvailable];
         
         [[BrowserController currentBrowser] setNetworkLogs];
         [DicomFile resetDefaults];
@@ -2325,11 +2301,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 							NSMutableArray *allImages = [NSMutableArray array];
 							[[BrowserController currentBrowser] filesForDatabaseOutlineSelection: allImages];
 							
-							NSManagedObjectContext *context = [[[BrowserController currentBrowser] database] managedObjectContext];
-							
-							[context lock];
-							
-							@try
+								@try
 							{
 								NSPredicate	*request = [NSComparisonPredicate predicateWithLeftExpression: [NSExpression expressionForKeyPath: @"compressedSopInstanceUID"] rightExpression: [NSExpression expressionForConstantValue: [DicomImage sopInstanceUIDEncodeString: sopinstanceuid]] customSelector: @selector(isEqualToSopInstanceUID:)];
 								
@@ -2346,7 +2318,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
                                 N2LogExceptionWithStackTrace(e);
 							}
 							
-							[context unlock];
 						}
 						//Second option, try to find the uid in the ENTIRE db....
 						
@@ -2357,8 +2328,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 							[dbRequest setPredicate: [NSPredicate predicateWithFormat: @"seriesSOPClassUID == %@", sopclassuid]];
 							
 							NSManagedObjectContext *context = [[[BrowserController currentBrowser] database] managedObjectContext];
-							
-							[context lock];
 							
 							WaitRendering *wait = [[WaitRendering alloc] init: NSLocalizedString( @"Locating the image in the database...", nil)];
 							[wait showWindow: self];
@@ -2399,7 +2368,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 							[wait end];
 							[wait close];
 							
-							[context unlock];
 						}
 					}
 				}
@@ -3057,10 +3025,6 @@ static BOOL initialized = NO;
                 }
                 
                 [path writeToFile:path atomically:NO encoding: NSUTF8StringEncoding error: nil];
-				
-				Use_kdu_IfAvailable = [[NSUserDefaults standardUserDefaults] boolForKey:@"UseKDUForJPEG2000"];
-				
-				[DCMPixelDataAttribute setUse_kdu_IfAvailable: Use_kdu_IfAvailable];
 				
 				// CHECK FOR THE HTML TEMPLATES DIRECTORY
 //				
@@ -3868,7 +3832,6 @@ static BOOL initialized = NO;
 	
 	[[NSUserDefaults standardUserDefaults] setBool:YES forKey: @"SAMESTUDY"];
 		
-    [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"UseKDUForJPEG2000"];
     [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"UseOpenJpegForJPEG2000"];
     [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"useDCMTKForJP2K"];
     
@@ -3913,8 +3876,6 @@ static BOOL initialized = NO;
 	
 //	[html2pdf pdfFromURL: @"http://zimbra.latour.ch"];
 
-	if( [AppController isKDUEngineAvailable])
-		NSLog( @"/*\\ /*\\ KDU Engine AVAILABLE /*\\ /*\\");
     }
 
 - (IBAction) updateViews:(id) sender

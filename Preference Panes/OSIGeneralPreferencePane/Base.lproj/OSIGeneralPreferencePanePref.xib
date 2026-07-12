@@ -43,17 +43,6 @@
                                         <binding destination="167" name="hidden" keyPath="values.MACAPPSTORE" id="392"/>
                                     </connections>
                                 </button>
-                                <button toolTip="Connect to Horos and check for latest version." horizontalCompressionResistancePriority="1000" id="191">
-                                    <rect key="frame" x="15" y="31" width="428" height="18"/>
-                                    <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                    <buttonCell key="cell" type="check" title="Automatically check for installed Plugins updates at startup time" bezelStyle="regularSquare" imagePosition="left" alignment="left" scrollable="YES" lineBreakMode="clipping" inset="2" id="192">
-                                        <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
-                                        <font key="font" metaFont="system"/>
-                                    </buttonCell>
-                                    <connections>
-                                        <binding destination="167" name="value" keyPath="values.checkForUpdatesPlugins" id="193"/>
-                                    </connections>
-                                </button>
                             </subviews>
                         </view>
                         <color key="borderColor" white="0.0" alpha="0.41999999999999998" colorSpace="calibratedWhite"/>

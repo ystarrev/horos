@@ -116,7 +116,6 @@
 
 - (NSMutableDictionary *)dicomElements;  
 - (id)elementForKey:(id)key;  /**< Returns the dicomElement for the key */
-- (short)getPluginFile;  /**< Looks for a plugin to decode the file. If one is found decodes the file */
 /** Parses the fileName to get the Series/Study/Image numbers
 *  Used for files that don't have the information embedded such as TIFFs and jpegs
 *  In these cases the files are sorted based on the file name.
@@ -156,5 +155,4 @@
 - (BOOL) containsString: (NSString*) s inArray: (NSArray*) a;
 - (BOOL) containsLocalizerInString: (NSString*) str;
 @end
-
 

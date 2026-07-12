@@ -47,7 +47,6 @@
 #import "N2OpenGLViewWithSplitsWindow.h"
 #import "N2Debug.h"
 #import "DicomDatabase.h"
-#import "PluginManager.h"
 
 static NSString* 	PETCTToolbarIdentifier						= @"PETCT Viewer Toolbar Identifier";
 static NSString*	SameHeightSplitViewToolbarItemIdentifier	= @"sameHeightSplitView";
@@ -1212,17 +1211,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
         toolbarItem = nil;
     }
     
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarItemForItemIdentifier:forViewer:)])
-        {
-            NSToolbarItem *item = [[[PluginManager plugins] objectForKey:key] toolbarItemForItemIdentifier: itemIdent forViewer: self];
-            
-            if( item)
-                toolbarItem = item;
-        }
-    }
-    
     return toolbarItem;
 }
 
@@ -1269,12 +1257,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
                              VRPanelToolbarItemIdentifier,
                              ThreeDPositionToolbarItemIdentifier,
                              nil];
-    
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForViewer:)])
-            [array addObjectsFromArray: [[[PluginManager plugins] objectForKey:key] toolbarAllowedIdentifiersForViewer: self]];
-    }
     
     return array;
 }

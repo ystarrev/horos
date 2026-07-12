@@ -41,7 +41,6 @@
 #import "DefaultsOsiriX.h"
 #import "AYDicomPrintWindowController.h"
 #import "MyOutlineView.h"
-#import "PluginFilter.h"
 #import "DCMPix.h"
 #import "DicomImage.h"
 #import "VRController.h"
@@ -102,7 +101,6 @@
 #import "HornRegistration.h"
 #import "N2Stuff.h"
 #import "BonjourBrowser.h"
-#import "PluginManager.h"
 #import "DCMObject.h"
 #import "DCMAttributeTag.h"
 #import "NavigatorWindowController.h"
@@ -466,7 +464,7 @@ enum
 
 @synthesize currentOrientationTool, speedSlider, speedText, toolbarPanel;
 @synthesize timer, keyImageCheck, injectionDateTime, blendedWindow;
-@synthesize blendingTypeWindow, blendingTypeMultiply, blendingTypeSubtract, blendingTypeRGB, blendingPlugins, blendingResample;
+@synthesize blendingTypeWindow, blendingTypeMultiply, blendingTypeSubtract, blendingTypeRGB, blendingResample;
 @synthesize flagListPODComparatives, windowsStateName, titledGantry;
 @synthesize movieRateSlider = movieRateSlider, movieTextSlide = movieTextSlide;
 
@@ -5661,8 +5659,6 @@ static ViewerController *draggedController = nil;
         }
     }
     
-    int iz, xz;
-    
     if( [[[vc imageView] curDCM] pwidth] != [[imageView curDCM] pwidth] ||
        [[[vc imageView] curDCM] pheight] != [[imageView curDCM] pheight])
     {
@@ -5676,30 +5672,6 @@ static ViewerController *draggedController = nil;
     
     if( [[self studyInstanceUID] isEqualToString: [vc studyInstanceUID]] == NO)
         [blendingResample setEnabled: NO];
-    
-    // Prepare fusion plug-ins menu
-    for( iz = 0; iz < [[PluginManager fusionPluginsMenu] numberOfItems]; iz++)
-    {
-        [[[PluginManager fusionPluginsMenu] itemAtIndex:iz] setTag: -iz];
-        
-        if( [[[PluginManager fusionPluginsMenu] itemAtIndex:iz] hasSubmenu])
-        {
-            NSMenu  *subMenu = [[[PluginManager fusionPluginsMenu] itemAtIndex:iz] submenu];
-            
-            for( xz = 0; xz < [subMenu numberOfItems]; xz++)
-            {
-                [[subMenu itemAtIndex:xz] setTag: -iz];
-                [[subMenu itemAtIndex:xz] setTarget:self];
-                [[subMenu itemAtIndex:xz] setAction:@selector(endBlendingType:)];
-            }
-        }
-        else
-        {
-            [[[PluginManager fusionPluginsMenu] itemAtIndex:iz] setTarget:self];
-            [[[PluginManager fusionPluginsMenu] itemAtIndex:iz] setAction:@selector(endBlendingType:)];
-        }
-    }
-    [blendingPlugins setMenu: [PluginManager fusionPluginsMenu]];
     
     [blendedWindow release];
     blendedWindow = [vc retain];
@@ -5724,21 +5696,6 @@ static ViewerController *draggedController = nil;
             if ([[[[vi window] windowController] blendingController] isEqual:self])
                 return NO;
             if( [[vi window] windowController] != self) [self completeDragOperation: [[vi window] windowController]];
-        }
-    }
-	else if ([paste availableTypeFromArray:DCMView.PluginPasteboardTypes])
-    {
-        // in this case, the drag operation was performed from a plugin.
-        id source = [sender draggingSource];
-        
-        NSMutableDictionary* userInfo = [NSMutableDictionary dictionaryWithCapacity:2];
-        [userInfo setValue:self forKey:@"destination"]; // should not be used anymore, as [notification object] is the same (was NULL)
-        [userInfo setValue:sender forKey:@"dragOperation"]; // should use key "NSDraggingInfo"
-        [userInfo setValue:sender forKey:@"id<NSDraggingInfo>"];
-        [[NSNotificationCenter defaultCenter] postNotificationName:OsirixPerformDragOperationNotification object:self userInfo:userInfo];
-        
-        if ([source respondsToSelector:@selector(performPluginDragOperation:destination:)]) {
-            return [source performPluginDragOperation:sender destination:self];
         }
     }
     else if ([paste availableTypeFromArray:BrowserController.DatabaseObjectXIDsPasteboardTypes])
@@ -6619,42 +6576,7 @@ static ViewerController *draggedController = nil;
         [toolbarItem setAction:@selector(navigator:)];
     }
     else
-    {
-        // Is it a plugin menu item?
-        if( [[PluginManager pluginsDict] objectForKey: itemIdent] != nil)
-        {
-            NSBundle *bundle = [[PluginManager pluginsDict] objectForKey: itemIdent];
-            NSDictionary *info = [bundle infoDictionary];
-            
-            [toolbarItem setLabel: itemIdent];
-            [toolbarItem setPaletteLabel: itemIdent];
-            NSDictionary* toolTips = [info objectForKey: @"ToolbarToolTips"];
-            if( toolTips)
-                [toolbarItem setToolTip: [toolTips objectForKey: itemIdent]];
-            else
-                [toolbarItem setToolTip: itemIdent];
-            
-            NSImage	*image = [[[NSImage alloc] initWithContentsOfFile:[bundle pathForImageResource:[info objectForKey:@"ToolbarIcon"]]] autorelease];
-            if( !image) image = [[NSWorkspace sharedWorkspace] iconForFile: [bundle bundlePath]];
-            [toolbarItem setImage: image];
-            
-            [toolbarItem setTarget: self];
-            [toolbarItem setAction: @selector(executeFilterFromToolbar:)];
-        }
-        else
-            toolbarItem = nil;
-    }
-    
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarItemForItemIdentifier:forViewer:)])
-        {
-            NSToolbarItem *item = [[[PluginManager plugins] objectForKey:key] toolbarItemForItemIdentifier: itemIdent forViewer: self];
-            
-            if( item)
-                toolbarItem = item;
-        }
-    }
+        toolbarItem = nil;
 
     if( toolbarItem && [toolbarItem view] == nil && [toolbarItem image])
     {
@@ -6751,50 +6673,6 @@ static ViewerController *draggedController = nil;
                              nil];
     
     if([AppController canDisplay12Bit]) [array addObject: LUT12BitToolbarItemIdentifier];
-    
-    NSArray*		allPlugins = [[PluginManager pluginsDict] allKeys];
-    NSMutableSet*	pluginsItems = [NSMutableSet setWithCapacity: [allPlugins count]];
-    
-    for( NSString* plugin in allPlugins)
-    {
-        if ([plugin isEqualToString: @"(-"])
-            continue;
-        
-        NSBundle		*bundle = [[PluginManager pluginsDict] objectForKey: plugin];
-        NSDictionary	*info = [bundle infoDictionary];
-        NSString		*pluginType = [info objectForKey: @"pluginType"];
-        
-        if( [pluginType isEqualToString: @"imageFilter"] ||
-           [pluginType isEqualToString: @"roiTool"] ||
-           [pluginType isEqualToString: @"other"])
-        {
-            id allowToolbarIcon = [info objectForKey: @"allowToolbarIcon"];
-            
-            if( allowToolbarIcon)
-            {
-                if( [allowToolbarIcon boolValue] == YES)
-                {
-                    NSArray* toolbarNames = [info objectForKey: @"ToolbarNames"];
-                    if( toolbarNames)
-                    {
-                        if( [toolbarNames containsObject: plugin])
-                            [pluginsItems addObject: plugin];
-                    }
-                    else
-                        [pluginsItems addObject: plugin];
-                }
-            }
-        }
-    }
-    
-    if( [pluginsItems count])
-        [array addObjectsFromArray: [pluginsItems allObjects]];
-    
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForViewer:)])
-            [array addObjectsFromArray: [[[PluginManager plugins] objectForKey:key] toolbarAllowedIdentifiersForViewer: self]];
-    }
     
     return array;
 }
@@ -9364,98 +9242,6 @@ static int avoidReentryRefreshDatabase = 0;
 
 
 #pragma mark 4.1.1. DICOM pipeline
-
-#pragma mark 4.1.1.1 Filters
-
-
-// filter from plugin
-- (void)executeFilterFromString:(NSString*)name {
-    [self executeFilterFromBundle:nil title:name];
-}
-
-- (void)executeFilterFromBundle:(NSBundle*)bundle title:(NSString*)name
-{
-    long			result;
-    id				filter = nil;
-    
-    if (bundle) {
-        
-    } else
-        filter = [[PluginManager plugins] objectForKey:name];
-    
-    if( [AppController willExecutePlugin: filter] == NO)
-        return;
-    
-    if( filter == nil)
-    {
-        NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"OsiriX cannot launch the selected plugin.", nil), nil, nil, nil);
-        return;
-    }
-    
-    [self checkEverythingLoaded];
-    [self computeInterval];
-    
-    [imageView stopROIEditingForce: YES];
-    
-    [PluginManager startProtectForCrashWithFilter: filter];
-    
-
-    NSLog( @"executeFilter");
-    
-    @try
-    {
-        result = [filter prepareFilter: self];
-        if( result)
-        {
-            NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"OsiriX cannot launch the selected plugin.", nil), nil, nil, nil);
-            [PluginManager endProtectForCrash];
-            
-            return;
-        }
-    }
-    @catch (NSException * e)
-    {
-        N2LogExceptionWithStackTrace(e);
-        NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"OsiriX cannot launch the selected plugin.", nil), nil, nil, nil);
-        [PluginManager endProtectForCrash];
-        
-        return;
-    }
-    
-    @try
-    {
-        result = [filter filterImage: name];
-        if( result)
-        {
-            NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"OsiriX cannot apply the selected plugin.", nil), nil, nil, nil);
-            [PluginManager endProtectForCrash];
-            
-            return;
-        }
-    }
-    @catch (NSException * e)
-    {
-        N2LogExceptionWithStackTrace(e);
-        NSRunAlertPanel(NSLocalizedString(@"Plugins Error", nil), NSLocalizedString(@"OsiriX cannot launch the selected plugin.", nil), nil, nil, nil);
-    }
-    
-    [PluginManager endProtectForCrash];
-    
-    [imageView roiSet];
-    
-    [[NSNotificationCenter defaultCenter] postNotificationName: OsirixRecomputeROINotification object:self userInfo: nil];
-}
-
-
-- (void)executeFilter:(id)sender
-{
-    [self executeFilterFromString: [sender title]];
-}
-
-- (void) executeFilterFromToolbar:(id) sender
-{
-    [self executeFilterFromString: [sender label]];
-}
 
 #pragma mark resample image
 
@@ -12684,17 +12470,7 @@ static float oldsetww, oldsetwl;
 
 - (void)blendingSheetDidEnd:(NSWindow *)sheet returnCode:(int)returnCode contextInfo:(void *)contextInfo
 {
-    if (returnCode < 0)
-    {
-        returnCode = -returnCode - 1;
-        [self clear8bitRepresentations];
-        
-        if( [[[PluginManager fusionPlugins] objectAtIndex: returnCode] isEqualToString: @"Subtraction Angio-CT"])
-            [self blendWithViewer:blendedWindow blendingType: 9]; // LL filter
-        else
-            [self executeFilterFromString: [[PluginManager fusionPlugins] objectAtIndex: returnCode]];
-    }
-    else if (returnCode > 0)
+    if (returnCode > 0)
     {
         [self clear8bitRepresentations];
         [self blendWithViewer:blendedWindow blendingType: returnCode];
@@ -12978,7 +12754,7 @@ static float oldsetww, oldsetwl;
 
 //class setter and getter
 // of ViewerController class field   static NSArray*	DefaultROINames;
-// used in self generateROINameArray hereafter and in PluginManager.m
+// used in self generateROINameArray hereafter
 
 + (NSArray*) defaultROINames
 {
@@ -20694,7 +20470,6 @@ static float oldsetww, oldsetwl;
     NSMutableArray *draggedTypes = [NSMutableArray arrayWithObject:NSFilenamesPboardType];
     [draggedTypes addObjectsFromArray:BrowserController.DatabaseObjectXIDsPasteboardTypes];
     [draggedTypes addObjectsFromArray:DCMView.PasteboardTypes];
-    [draggedTypes addObjectsFromArray:DCMView.PluginPasteboardTypes];
     [[self window] registerForDraggedTypes:draggedTypes];
     
     if( [[pixList[0] objectAtIndex: 0] isRGB] == NO)

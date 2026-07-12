@@ -45,7 +45,6 @@
 #import "DCMAbstractSyntaxUID.h"
 #import "BrowserController.h"
 #import "BrowserControllerDCMTKCategory.h"
-#import "PluginManager.h"
 #import "ROI.h"
 #import "SRAnnotation.h"
 #import "Notifications.h"
@@ -69,7 +68,6 @@
 
 #import "ThickSlabController.h"
 #import "DicomFile.h"
-#import "PluginFileFormatDecoder.h"
 
 #import "url.h"
 
@@ -7680,30 +7678,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             NSImage		*otherImage = nil;
             NSString	*extension = [[self.srcFile pathExtension] lowercaseString];
             
-#ifdef OSIRIX_VIEWER
-            id fileFormatBundle;
-            if ((fileFormatBundle = [[PluginManager fileFormatPlugins] objectForKey:[self.srcFile pathExtension]]))
-            {
-                PluginFileFormatDecoder *decoder = [[[fileFormatBundle principalClass] alloc] init];
-                
-                [PluginManager startProtectForCrashWithFilter: decoder];
-                
-                fImage = [decoder checkLoadAtPath:self.srcFile];
-                //NSLog(@"decoder width %d", [decoder width]);
-                width = [[decoder width] intValue];
-                //width = 832;
-                //NSLog(@"width %d : %d", width, [decoder width]);
-                height = [[decoder height] intValue];
-                //NSLog(@"height %d : %d", height, [decoder height]);
-                isRGB = [decoder isRGB];
-                [decoder release];
-                
-                [PluginManager endProtectForCrash];
-            }
-            else
-#endif
-                
-                if( [extension isEqualToString:@"zip"])
+            if( [extension isEqualToString:@"zip"])
                 {
                     // the ZIP icon
                     NSImage *icon = [[NSWorkspace sharedWorkspace] iconForFile:self.srcFile];

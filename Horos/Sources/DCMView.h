@@ -97,15 +97,10 @@ typedef NS_ENUM(short, ToolMode)
 };
 
 extern NSString * const HorosPasteboardType;
-extern NSString * const HorosPasteboardTypePlugin;
 // these older pasteboard keys are deprecated, but they still work
 extern NSString * const __deprecated pasteBoardOsiriX; // use HorosPasteboardType
-extern NSString * const __deprecated pasteBoardOsiriXPlugin; // use HorosPasteboardTypePlugin
-extern NSString * const __deprecated OsirixPluginPboardUTI; // use HorosPasteboardTypePlugin
 extern NSString * const __deprecated pasteBoardHoros; // use HorosPasteboardType
 extern NSString * const __deprecated HorosPboardUTI; // use HorosPasteboardType
-extern NSString * const __deprecated pasteBoardHorosPlugin; // use HorosPasteboardTypePlugin
-extern NSString * const __deprecated HorosPluginPboardUTI; // use HorosPasteboardTypePlugin
 
 extern int CLUTBARS, ANNOTATIONS, SOFTWAREINTERPOLATION_MAX, DISPLAYCROSSREFERENCELINES;
 
@@ -600,7 +595,5 @@ typedef enum {DCMViewTextAlignLeft, DCMViewTextAlignCenter, DCMViewTextAlignRigh
 + (NSArray*)cleanedOutDcmPixArray:(NSArray*)input; // filters the input array of DCMPix by returning only the pix with the most common ImageType in the input array
 
 + (NSArray<NSString *> *)PasteboardTypes;
-+ (NSArray<NSString *> *)PluginPasteboardTypes;
-
 @end
 #endif

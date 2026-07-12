@@ -67,10 +67,6 @@
 
 #define ToolsMenuIconSize NSMakeSize(28.0, 28.0)
 
-@interface NSObject(AppPluginDraggingDestination)
-- (BOOL)performPluginDragOperation:(id <NSDraggingInfo>)sender destination:(ViewerController*)vc;
-@end
-
 #import "OSIWindowController.h"
 
 extern BOOL SyncButtonBehaviorIsBetweenStudies;
@@ -208,7 +204,6 @@ enum
 	IBOutlet NSWindow       *blendingTypeWindow;
 	IBOutlet NSButton		*blendingTypeMultiply, *blendingTypeSubtract;
 	IBOutlet NSSegmentedControl		*blendingTypeRGB;
-	IBOutlet NSPopUpButton  *blendingPlugins;
 	IBOutlet NSButton		*blendingResample;
 	
 	IBOutlet NSWindow       *roiPropaWindow;
@@ -383,17 +378,14 @@ enum
 @property(readonly) NSTextField *movieTextSlide;
 //@property(readonly) NSSplitView *leftSplitView;
 @property(retain) NSString *windowsStateName;
-/** Accessors for plugins using blending window */
 @property(readonly) NSWindow *blendingTypeWindow;
 @property(readonly) NSButton *blendingTypeMultiply;
 @property(readonly) NSButton *blendingTypeSubtract;
 @property(readonly) NSSegmentedControl *blendingTypeRGB;
-@property(readonly) NSPopUpButton *blendingPlugins;
 @property(readonly) NSButton *blendingResample;
 @property(readonly) BOOL titledGantry;
 @property(readonly) ToolbarPanelController *toolbarPanel;
 
-/** Return the 'dragged' window, the destination window is contained in the 'viewerController' object of the 'PluginFilter' object */
 @property(nonatomic, retain) ViewerController *blendedWindow;
 
 @property(retain) NSNumber* flagListPODComparatives;
@@ -434,7 +426,6 @@ enum
 */
 - (void) replaceSeriesWith:(NSMutableArray*)newPixList :(NSMutableArray*)newDcmList :(NSData*) newData;
 
-/** Return the 'dragged' window, the destination window is contained in the 'viewerController' object of the 'PluginFilter' object */
 - (ViewerController*) blendedWindow;
 
 /**  Display a Wait window with the message
@@ -862,14 +853,12 @@ enum
 - (void)exportTextFieldDidChange:(NSNotification *)note;
 - (short) orientationVector;
 - (short) orthogonalOrientation;
-// functions s that plugins can also play with globals
 + (ViewerController *) draggedController;
 + (void) setDraggedController:(ViewerController *) controller;
 + (void) activateSYNCSERIESBetweenStudies;
 - (void) clear8bitRepresentations;
 - (void) ApplyConvString:(NSString*) str;
 - (void)checkView:(NSView *)aView :(BOOL) OnOff;
-- (void)executeFilterFromString:(NSString*) name;
 - (IBAction) applyConvolutionOnSource:(id) sender;
 - (float) factorPET2SUV;
 - (IBAction) flipDataSeries: (id) sender;

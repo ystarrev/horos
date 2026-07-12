@@ -36,9 +36,9 @@
  ============================================================================*/
 
 #import "DefaultsOsiriX.h"
-#import "PluginManager.h"
 #import "NSUserDefaults+OsiriX.h"
 #import "DCMAbstractSyntaxUID.h"
+#import "DCMView.h"
 #import <AVFoundation/AVFoundation.h>
 
 #ifdef OSIRIX_VIEWER
@@ -159,12 +159,6 @@ static NSHost *currentHost = nil;
 //	{
 //		int i;
 //		
-//		for( i = 0; i < [[PluginManager preProcessPlugins] count]; i++)
-//		{
-//			id filter = [[PluginManager preProcessPlugins] objectAtIndex:i];
-//			
-//			if( [[filter className] isEqualToString:@"LavimAnonymize"]) return YES;
-//		}
 //	}
 //	else if([self isUniGE])
 //	{
@@ -882,8 +876,6 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"0" forKey:@"CheckForMultipleVolumesInSeries"];
 	[defaultValues setObject:@"3000" forKey:@"MAXWindowSize"];
 	[defaultValues setObject:@"1" forKey:@"ScreenCaptureSmartCropping"];
-	[defaultValues setObject:@"1" forKey:@"checkForUpdatesPlugins"];
-    [defaultValues setObject:@"0" forKey:@"DoNotDeleteCrashingPlugins"];
 	[defaultValues setObject:@"1" forKey:@"magnifyingLens"];
 	[defaultValues setObject:@"12" forKey:@"LabelFONTSIZE"];
 	[defaultValues setObject:@"Geneva" forKey:@"LabelFONTNAME"];

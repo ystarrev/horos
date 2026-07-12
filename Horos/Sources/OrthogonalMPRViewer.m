@@ -52,7 +52,6 @@
 #import "DicomStudy.h"
 #import "DicomSeries.h"
 #import "DicomImage.h"
-#import "PluginManager.h"
 
 static NSString* 	MPROrthoToolbarIdentifier				= @"MPROrtho Viewer Toolbar Identifier";
 static NSString*	AdjustSplitViewToolbarItemIdentifier	= @"sameSizeSplitView";
@@ -1192,17 +1191,6 @@ static SyncSeriesScope globalSyncSeriesScope;
     else
         toolbarItem = nil;
     
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarItemForItemIdentifier:forViewer:)])
-        {
-            NSToolbarItem *item = [[[PluginManager plugins] objectForKey:key] toolbarItemForItemIdentifier: itemIdent forViewer: self];
-            
-            if( item)
-                toolbarItem = item;
-        }
-    }
-    
     return toolbarItem;
 }
 
@@ -1248,12 +1236,6 @@ static SyncSeriesScope globalSyncSeriesScope;
                              FlipVolumeToolbarItemIdentifier,
                              VRPanelToolbarItemIdentifier,
                              nil];
-    
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForViewer:)])
-            [array addObjectsFromArray: [[[PluginManager plugins] objectForKey:key] toolbarAllowedIdentifiersForViewer: self]];
-    }
     
     return array;
 }

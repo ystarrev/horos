@@ -49,7 +49,7 @@
 @class LogWindowController,PreviewView;
 @class MyOutlineView,DCMView,DCMPix;
 @class StructuredReportController,BrowserMatrix;
-@class PluginManagerController,WaitRendering, Wait, ActivityWindowController;
+@class WaitRendering, Wait, ActivityWindowController;
 @class DCMTKStudyQueryNode;
 
 enum RootTypes{PatientRootType, StudyRootType, RandomRootType};
@@ -224,8 +224,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     
     BOOL							avoidRecursive, openSubSeriesFlag, openReparsedSeriesFlag;
     
-    IBOutlet PluginManagerController *pluginManagerController;
-    
     WaitRendering					*waitOpeningWindow;
     BOOL							waitCompressionAbort;
     
@@ -306,7 +304,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 @property(nonatomic) int timeIntervalType;
 @property (nonatomic) NSTimeInterval databaseLastModification __deprecated;
 @property(readonly) NSMutableDictionary *databaseIndexDictionary;
-@property(readonly) PluginManagerController *pluginManagerController;
 @property int distantSearchType;
 
 +(void)initializeBrowserControllerClass;
@@ -543,9 +540,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (BOOL)study:(id)study matchesSamePatientAsStudy:(id)referenceStudy;
 - (NSArray *)studiesForDisplayOnlyThisPatientMatchingStudy:(id)study;
 - (NSArray *)relatedStudiesForStudy:(id)study;
-
-//DB plugins
-- (void)executeFilterDB:(id)sender;
 
 + (NSString*) defaultDocumentsDirectory  __deprecated;
 - (NSString *)documentsDirectoryFor:(int) mode url:(NSString*) url  __deprecated;

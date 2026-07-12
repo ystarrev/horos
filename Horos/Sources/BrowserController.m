@@ -67,8 +67,6 @@
 #import "DicomData.h"
 #import "BrowserController.h"
 #import "ViewerController.h"
-#import "PluginFilter.h"
-#import "ReportPluginFilter.h"
 #import "DicomFile.h"
 #import "DicomFileDCMTKCategory.h"
 #import "NSSplitViewSave.h"
@@ -108,8 +106,6 @@
 #import "BrowserControllerDCMTKCategory.h"
 #import "BrowserMatrix.h"
 #import "DicomAlbum.h"
-#import "PluginManager.h"
-#import "PluginManagerController.h"
 #import "N2OpenGLViewWithSplitsWindow.h"
 #import "XMLController.h"
 #import "Notifications.h"
@@ -617,7 +613,7 @@ static volatile BOOL waitForRunningProcess = NO;
 @synthesize bonjourBrowser, pathToEncryptedFile, comparativeStudies, distantTimeIntervalStart, distantTimeIntervalEnd;
 @synthesize searchString = _searchString, fetchPredicate = _fetchPredicate, distantSearchType, distantSearchString;
 @synthesize filterPredicate = _filterPredicate, filterPredicateDescription = _filterPredicateDescription;
-@synthesize pluginManagerController, modalityFilter;
+@synthesize modalityFilter;
 
 + (BOOL) tryLock:(id) c during:(NSTimeInterval) sec
 {
@@ -1567,26 +1563,7 @@ static NSConditionLock *threadLock = nil;
         [self setDatabase:[DicomDatabase databaseAtPath:filenames.firstObject]];
     }
     else
-    {
-        NSMutableArray *filenamesWithoutPlugins = [NSMutableArray arrayWithArray: filenames];
-        NSMutableArray *pluginsArray = [NSMutableArray array];
-        
-        for( int i = 0; i < [filenames count]; i++)
-        {
-            NSString *aPath = [filenames objectAtIndex:i];
-            if ([[aPath pathExtension] isEqualToString:@"horosplugin"] || [[aPath pathExtension] isEqualToString:@"osirixplugin"])
-                [pluginsArray addObject:aPath];
-        }
-        
-        [filenamesWithoutPlugins removeObjectsInArray: pluginsArray];
-        
-        [self addFilesAndFolderToDatabase: filenamesWithoutPlugins options: options];
-        
-        if( [pluginsArray count] > 0)
-        {
-            [[AppController sharedAppController] installPlugins: pluginsArray];
-        }
-    }
+        [self addFilesAndFolderToDatabase: filenames options: options];
 }
 
 - (IBAction)selectFilesAndFoldersToAdd: (id)sender
@@ -6387,34 +6364,7 @@ static NSConditionLock *threadLock = nil;
 
 - (id)intOutlineView:(NSOutlineView *)outlineView objectValueForTableColumn:(NSTableColumn *)tableColumn byItem:(id)item
 {
-    // *********************************************
-    //	PLUGINS
-    // *********************************************
-    
-    if( [[[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSMODE"] intValue] == 3 && [[tableColumn identifier] isEqualToString:@"reportURL"])
-    {
-        if ([[item valueForKey:@"type"] isEqualToString:@"Study"])
-        {
-            NSBundle *plugin = [[PluginManager reportPlugins] objectForKey: [[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSPLUGIN"]];
-            
-            if( plugin)
-            {
-                PluginFilter* filter = [[plugin principalClass] filter];
-                
-                [PluginManager startProtectForCrashWithFilter: filter];
-                
-                id returnValue = [filter reportDateForStudy: item];
-                
-                [PluginManager endProtectForCrash];
-                
-                return returnValue;
-                //return [filter report: item action: @"dateReport"];
-            }
-            return nil;
-        }
-        return nil;
-    }
-    else if( [[tableColumn identifier] isEqualToString:@"reportURL"])
+    if( [[tableColumn identifier] isEqualToString:@"reportURL"])
     {
         if ([[item valueForKey:@"type"] isEqualToString:@"Study"])
         {
@@ -14759,25 +14709,10 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     }
     
     BOOL firstTimeExecution = ([[NSUserDefaults standardUserDefaults] objectForKey:@"FIRST_TIME_EXECUTION_2_0"] == nil);
-    BOOL foundNotValidatedOsiriXPlugins = NO;
-    
     if (firstTimeExecution)
     {
         [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithBool:YES] forKey:@"FIRST_TIME_EXECUTION_2_0"];
-        
-        
-        
-        NSArray* installedPlugins = [self->pluginManagerController plugins];
-        for (NSDictionary* pluginDesc in installedPlugins)
-        {
-            if ([[pluginDesc objectForKey:@"HorosCompatiblePlugin"] boolValue] == NO)
-            {
-                foundNotValidatedOsiriXPlugins = YES;
-                break;
-            }
-        }
-        
-        
+
         [[NSUserDefaults standardUserDefaults] setInteger:CPRInterpolationModeCubic
                                                    forKey:@"selectedCPRInterpolationMode"];
         
@@ -14788,21 +14723,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             
         });
     }
-    
-    
-    
-    if (firstTimeExecution == YES && foundNotValidatedOsiriXPlugins == YES)
-    {
-        NSAlert *alert = [[NSAlert alloc] init];
-        [alert addButtonWithTitle:NSLocalizedString(@"OK",nil)];
-        [alert setMessageText:NSLocalizedString(@"Not validated OsiriX plugins were detected!",nil)];
-        [alert setInformativeText:NSLocalizedString(@"Not validated OsiriX plugins may cause Horos run-time errors. In case of problems, you can disable/uninstall them in [Plugins => Plugin Manager]. A brand new Horos plugin database is being built for you.",nil)];
-        [alert setAlertStyle:NSAlertStyleWarning];
-        [alert runModal];
-        [alert release];
-    }
-    
-    
     NSUserDefaults *userDefaults= [NSUserDefaults standardUserDefaults];
     if ([[[userDefaults dictionaryRepresentation] allKeys] containsObject:@"ROIColorRotation"] == NO)
     {
@@ -18477,27 +18397,7 @@ static volatile int numberOfThreadsForJPEG = 0;
             
             if( result == NSAlertDefaultReturn)
             {
-                if( [[[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSMODE"] intValue] == 3)
-                {
-                    NSBundle *plugin = [[PluginManager reportPlugins] objectForKey: [[NSUserDefaults standardUserDefaults] stringForKey:@"REPORTSPLUGIN"]];
-                    
-                    if( plugin)
-                    {
-                        PluginFilter* filter = [[plugin principalClass] filter];
-                        
-                        [PluginManager startProtectForCrashWithFilter: filter];
-                        [filter deleteReportForStudy: studySelected];
-                        [PluginManager endProtectForCrash];
-                        
-                        //[filter report: studySelected action: @"deleteReport"];
-                    }
-                    else
-                    {
-                        NSRunAlertPanel( NSLocalizedString(@"Report Error", nil), NSLocalizedString(@"Report Plugin not available.", nil), nil, nil, nil);
-                        return;
-                    }
-                }
-                else if( [studySelected valueForKey:@"reportURL"] != nil)
+                if( [studySelected valueForKey:@"reportURL"] != nil)
                 {
                     if( [[studySelected valueForKey:@"reportURL"] lastPathComponent])
                         [reportFilesToCheck removeObjectForKey: [[studySelected valueForKey:@"reportURL"] lastPathComponent]];
@@ -19119,42 +19019,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     {
         if( [itemIdent isEqualToString: @"Cloud Dashboard"] || [itemIdent isEqualToString: @"Cloud Report"] || [itemIdent isEqualToString: @"Cloud Sharing"] )
             return nil;
-
-        // Is it a plugin menu item?
-        if( [[PluginManager pluginsDict] objectForKey: itemIdent] != nil)
-        {
-            NSBundle *bundle = [[PluginManager pluginsDict] objectForKey: itemIdent];
-            NSDictionary *info = [bundle infoDictionary];
-            
-            [toolbarItem setLabel: itemIdent];
-            [toolbarItem setPaletteLabel: itemIdent];
-            NSDictionary* toolTips = [info objectForKey: @"ToolbarToolTips"];
-            if( toolTips)
-                [toolbarItem setToolTip: [toolTips objectForKey: itemIdent]];
-            else
-                [toolbarItem setToolTip: itemIdent];
-            
-            //			NSLog( @"ICON:");
-            //			NSLog( [info objectForKey:@"ToolbarIcon"]);
-            
-            NSImage	*image = [[[NSImage alloc] initWithContentsOfFile:[bundle pathForImageResource:[info objectForKey:@"ToolbarIcon"]]] autorelease];
-            if( !image) image = [[NSWorkspace sharedWorkspace] iconForFile: [bundle bundlePath]];
-            [toolbarItem setImage: image];
-            
-            [toolbarItem setTarget: self];
-            [toolbarItem setAction: @selector(executeFilterFromToolbar:)];
-        }
-        
-        for (id key in [PluginManager plugins])
-        {
-            if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarItemForItemIdentifier:forBrowserController:)])
-            {
-                NSToolbarItem *item = [[[PluginManager plugins] objectForKey:key] toolbarItemForItemIdentifier: itemIdent forBrowserController: self];
-                
-                if( item)
-                    toolbarItem = item;
-            }
-        }
+        toolbarItem = nil;
     }
     
     if (![toolbarItem view] && [toolbarItem image])
@@ -19328,48 +19193,6 @@ static volatile int numberOfThreadsForJPEG = 0;
                              ResetSplitViewsItemIdentifier,
                              nil];
     
-    NSArray*		allPlugins = [[PluginManager pluginsDict] allKeys];
-    NSMutableSet*	pluginsItems = [NSMutableSet setWithCapacity: [allPlugins count]];
-    
-    for( NSString *plugin in allPlugins)
-    {
-        if ([plugin isEqualToString: @"(-"])
-            continue;
-        if( [plugin isEqualToString: @"Cloud Dashboard"] || [plugin isEqualToString: @"Cloud Report"] || [plugin isEqualToString: @"Cloud Sharing"] )
-            continue;
-        
-        NSBundle		*bundle = [[PluginManager pluginsDict] objectForKey: plugin];
-        NSDictionary	*info = [bundle infoDictionary];
-        
-        if( [[info objectForKey: @"pluginType"] isEqualToString: @"Database"])
-        {
-            id allowToolbarIcon = [info objectForKey: @"allowToolbarIcon"];
-            if( allowToolbarIcon)
-            {
-                if( [allowToolbarIcon boolValue] == YES)
-                {
-                    NSArray* toolbarNames = [info objectForKey: @"ToolbarNames"];
-                    if( toolbarNames)
-                    {
-                        if( [toolbarNames containsObject: plugin])
-                            [pluginsItems addObject: plugin];
-                    }
-                    else
-                        [pluginsItems addObject: plugin];
-                }
-            }
-        }
-    }
-    
-    if( [pluginsItems count])
-        [array addObjectsFromArray: [pluginsItems allObjects]];
-    
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForBrowserController:)])
-            [array addObjectsFromArray: [[[PluginManager plugins] objectForKey:key] toolbarAllowedIdentifiersForBrowserController: self]];
-    }
-
     [array removeObject: @"Cloud Dashboard"];
     [array removeObject: @"Cloud Report"];
     [array removeObject: @"Cloud Sharing"];
@@ -19931,43 +19754,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 }
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-
-#pragma mark-
-#pragma mark Plugins
-
-- (void)executeFilterFromString: (NSString*)name
-{
-    id filter = [[PluginManager plugins] objectForKey:name];
-    
-    if( filter == nil)
-    {
-        NSRunAlertPanel( NSLocalizedString( @"Plugins Error", nil), NSLocalizedString( @"OsiriX cannot launch the selected plugin.", nil), nil, nil, nil);
-        return;
-    }
-    
-    [PluginManager startProtectForCrashWithFilter: filter];
-    
-
-    long result = [filter prepareFilter: nil];
-    [filter filterImage: name];
-    
-    if( result)
-    {
-        NSRunAlertPanel( NSLocalizedString( @"Plugins Error", nil), NSLocalizedString( @"OsiriX cannot launch the selected plugin.", nil), nil, nil, nil);
-    }
-    
-    [PluginManager endProtectForCrash];
-}
-
-- (void)executeFilterDB: (id)sender
-{
-    [self executeFilterFromString:[sender title]];
-}
-
-- (void)executeFilterFromToolbar: (id)sender
-{
-    [self executeFilterFromString:[sender label]];
-}
 
 - (void)setNetworkLogs
 {

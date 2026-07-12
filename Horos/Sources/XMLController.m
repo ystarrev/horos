@@ -57,7 +57,6 @@
 #import "DCMAttribute.h"
 #import "DCMAttributeTag.h"
 #import "DicomDatabase.h"
-#import "PluginManager.h"
 
 static NSString* 	XMLToolbarIdentifier					= @"XML Toolbar Identifier";
 static NSString*	ExportToolbarItemIdentifier				= @"Export.icns";
@@ -1605,17 +1604,6 @@ extern int delayedTileWindows;
 		toolbarItem = nil;
 	}
     
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarItemForItemIdentifier:forViewer:)])
-        {
-            NSToolbarItem *item = [[[PluginManager plugins] objectForKey:key] toolbarItemForItemIdentifier: itemIdent forViewer: self];
-            
-            if( item)
-                toolbarItem = item;
-        }
-    }
-	
     return toolbarItem;
 }
 
@@ -1653,12 +1641,6 @@ extern int delayedTileWindows;
 										VerifyToolbarItemIdentifier,
 										SearchToolbarItemIdentifier,
 										nil];
-    
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForViewer:)])
-            [array addObjectsFromArray: [[[PluginManager plugins] objectForKey:key] toolbarAllowedIdentifiersForViewer: self]];
-    }
     
     return array;
 }

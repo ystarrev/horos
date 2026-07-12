@@ -53,7 +53,6 @@
 #import "AppController.h"
 #import "NSDictionary+N2.h"
 #import "BrowserControllerDCMTKCategory.h"
-#import "PluginManager.h"
 #import "NSThread+N2.h"
 #import "NSArray+N2.h"
 #import "DicomDatabase+DCMTK.h"
@@ -3745,24 +3744,6 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
         {
             //				if ( [[NSUserDefaults standardUserDefaults] boolForKey:@"ANONYMIZELISTENER"] == YES)
             //					[self listenerAnonymizeFiles: filesArray];
-            
-            if ([[PluginManager preProcessPlugins] count])
-            {
-                thread.status = [NSString stringWithFormat:NSLocalizedString(@"Preprocessing %lu files with %lu plugins...", nil), (unsigned long)filesArray.count, (unsigned long)[[PluginManager preProcessPlugins] count]];
-                for (id filter in [PluginManager preProcessPlugins])
-                {
-                    @try
-                    {
-                        [PluginManager startProtectForCrashWithFilter: filter];
-                        [filter processFiles: filesArray];
-                        [PluginManager endProtectForCrash];
-                    }
-                    @catch (NSException* e)
-                    {
-                        N2LogExceptionWithStackTrace(e);
-                    }
-                }
-            }
             
             thread.status = [NSString stringWithFormat:NSLocalizedString(@"Processing %@...", nil), N2LocalizedSingularPluralCount(filesArray.count, NSLocalizedString(@"file", nil),NSLocalizedString(@"files", nil))];
             

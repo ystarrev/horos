@@ -68,7 +68,6 @@
 #import "DefaultsOsiriX.h"
 #include "NSFont_OpenGL.h"
 #import "Notifications.h"
-#import "PluginManager.h"
 #import "N2Debug.h"
 #import "OSIEnvironment.h"
 #import "OSIEnvironment+Private.h"
@@ -96,15 +95,9 @@ static		NSRecursiveLock				*drawLock = nil;
 static		NSMutableArray				*globalStringTextureCache = nil;
 
 NSString * const HorosPasteboardType = @"com.opensource.horos";
-NSString * const HorosPasteboardTypePlugin = @"com.opensource.horos.plugin";
-
 NSString * const pasteBoardOsiriX = @"OsiriX pasteboard"; // deprecated
-NSString * const pasteBoardOsiriXPlugin = @"OsiriXPluginDataType"; // deprecated
-NSString * const OsirixPluginPboardUTI = @"com.opensource.osirix.plugin.uti"; // deprecated
 NSString * const pasteBoardHoros = @"Horos pasteboard"; // deprecated
 NSString * const HorosPboardUTI = @"com.opensource.horos.uti"; // deprecated
-NSString * const pasteBoardHorosPlugin = @"HorosPluginDataType"; // deprecated
-NSString * const HorosPluginPboardUTI = @"com.opensource.horos.plugin.uti"; // deprecated
 
 // intersect3D_SegmentPlane(): intersect a segment and a plane
 //    Input:  S = a segment, and Pn = a plane = {Point V0; Vector n;}
@@ -540,20 +533,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 @synthesize volumicSeries;
 @synthesize isKeyView, mouseDragging;
 @synthesize annotationType;
-
-- (BOOL) eventToPlugins: (NSEvent*) event
-{
-    BOOL used = NO;
-    
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(handleEvent:forViewer:)])
-            if ([[[PluginManager plugins] objectForKey:key] handleEvent:event forViewer:[self windowController]])
-                used = YES;
-    }
-    
-    return used;
-}
 
 + (void) setDontListenToSyncMessage: (BOOL) v
 {
@@ -2725,7 +2704,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 - (void) keyDown:(NSEvent *)event
 {
-    if ([self eventToPlugins:event]) return;
     if( [[event characters] length] == 0) return;
     
     unichar		c = [[event characters] characterAtIndex:0];
@@ -3318,7 +3296,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 - (void)mouseUp:(NSEvent *)event
 {
     if( CGCursorIsVisible() == NO && lensTexture == nil) return; //For Synergy compatibility
-    if ([self eventToPlugins:event]) return;
     
     mouseDragging = NO;
         
@@ -3959,7 +3936,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             return;
     }
     
-    if ([self eventToPlugins:theEvent]) return;
     
     if( !drawing) return;
     
@@ -4215,7 +4191,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 - (void) mouseDown:(NSEvent *)event
 {
     if( CGCursorIsVisible() == NO && lensTexture == nil) return; //For Synergy compatibility
-    if ([self eventToPlugins:event]) return;
     
     currentMouseEventTool = -1;
     
@@ -4971,9 +4946,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     
                     if( change > 0)
                     {
-                        if( [PluginManager isComPACS])
-                            change = 1;
-                        else if( change < 1)
+                        if( change < 1)
                             change = 1;
                         
                         inc = _imageRows * _imageColumns * change;
@@ -4981,9 +4954,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     }
                     else
                     {
-                        if( [PluginManager isComPACS])
-                            change = -1;
-                        else if( change > -1)
+                        if( change > -1)
                             change = -1;
                         
                         inc = _imageRows * _imageColumns * change;
@@ -5046,7 +5017,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 - (void) otherMouseDown:(NSEvent *)event
 {
-    if ([self eventToPlugins:event]) return;
     
     if( curImage < 0) return;
     
@@ -5059,7 +5029,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 - (void) rightMouseDown:(NSEvent *)event
 {
-    if ([self eventToPlugins:event]) return;
     
     if( curImage < 0) return;
     
@@ -5080,7 +5049,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 - (void) rightMouseUp:(NSEvent *)event
 {
-    if ([self eventToPlugins:event]) return;
     
     mouseDragging = NO;
     
@@ -5121,17 +5089,14 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 - (void)otherMouseDragged:(NSEvent *)event
 {
-    if ([self eventToPlugins:event]) return;
     [self mouseDragged:(NSEvent *)event];
 }
 
 -(void)otherMouseUp:(NSEvent*)event {
-    [self eventToPlugins:event];
 }
 
 - (void)rightMouseDragged:(NSEvent *)event
 {
-    if ([self eventToPlugins:event]) return;
     
     if ( pluginOverridesMouse )
     {
@@ -5191,7 +5156,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     
     if( CGCursorIsVisible() == NO && lensTexture == nil) return; //For Synergy compatibility
     
-    if ([self eventToPlugins:event]) return;
     
     [self deleteLens];
     
@@ -12550,7 +12514,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 -(void)keyUp:(NSEvent *)theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     [super keyUp:theEvent];
 }
 
@@ -12683,13 +12646,11 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 
 - (void)mouseEntered:(NSEvent *)theEvent
 {
-    [self eventToPlugins:theEvent];
     cursorSet = YES;
 }
 
 - (void)mouseExited:(NSEvent *)theEvent
 {
-    [self eventToPlugins: theEvent];
     
     [self mouseMoved: theEvent];
     
@@ -13758,15 +13719,6 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
              HorosPboardUTI, pasteBoardHoros, pasteBoardOsiriX
-#pragma clang diagnostic pop
-             ];
-}
-
-+ (NSArray<NSString *> *)PluginPasteboardTypes {
-    return @[HorosPasteboardTypePlugin,
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-             HorosPluginPboardUTI, pasteBoardHorosPlugin, OsirixPluginPboardUTI, pasteBoardOsiriXPlugin
 #pragma clang diagnostic pop
              ];
 }

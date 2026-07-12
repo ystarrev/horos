@@ -80,8 +80,6 @@ enum
 	ask = 3
 };
 
-@class PluginFilter;
-
 #ifdef __cplusplus
 extern "C"
 {
@@ -110,10 +108,6 @@ extern AppController* OsiriX;
 {
 	IBOutlet BrowserController		*browserController;
 
-    IBOutlet NSMenu					*filtersMenu;
-	IBOutlet NSMenu					*roisMenu;
-	IBOutlet NSMenu					*othersMenu;
-	IBOutlet NSMenu					*dbMenu;
 	IBOutlet NSWindow				*dbWindow;
 	IBOutlet NSMenu					*windowsTilingMenuRows, *windowsTilingMenuColumns;
     IBOutlet NSMenu                 *recentStudiesMenu;
@@ -140,13 +134,11 @@ extern AppController* OsiriX;
 }
 
 @property BOOL checkAllWindowsAreVisibleIsOff, isSessionInactive;
-@property (readonly) NSMenu *filtersMenu, *recentStudiesMenu, *windowsTilingMenuRows, *windowsTilingMenuColumns;
+@property (readonly) NSMenu *recentStudiesMenu, *windowsTilingMenuRows, *windowsTilingMenuColumns;
 @property(readonly) NSNetService* dicomBonjourPublisher;
 @property(readonly) BonjourPublisher* bonjourPublisher;
 
 + (BOOL) isFDACleared;
-+ (BOOL) willExecutePlugin;
-+ (BOOL) willExecutePlugin:(id) filter;
 
 +(NSString*)UID;
 
@@ -173,7 +165,6 @@ extern AppController* OsiriX;
 - (void) restartSTORESCP; /**< Restart listener (Q/R SCP) */
 - (void) startSTORESCP:(id) sender; /**< Start listener (Q/R SCP) */
 - (void) startSTORESCPTLS:(id) sender; /**< Start TLS listener (Q/R SCP) */
-- (void) installPlugins: (NSArray*) pluginsArray;
 - (BOOL) isStoreSCPRunning;
 
 #pragma mark-

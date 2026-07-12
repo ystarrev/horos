@@ -39,7 +39,6 @@
 #import <objc/runtime.h>
 
 #import "Notifications.h"
-#import "PluginManager.h"
 
 #import "url.h"
 
@@ -193,11 +192,7 @@ const static void *namesKey = &namesKey;
         SEL selector = [[observerDictionary objectForKey: @"selector"] pointerValue];
         id observer = [[observerDictionary objectForKey: @"observer"] pointerValue];
         
-        [PluginManager startProtectForCrashWithPath: [[NSBundle bundleForClass: [observer class]] bundlePath]];
-        
         [observer performSelector: selector withObject: notification];
-        
-        [PluginManager endProtectForCrash];
     }
 }
 

@@ -65,28 +65,11 @@
 
 #define URL_HOROS_VERSION          URL_HOROS_VIEWER@"/horos-content/version.xml"
 
-#define URL_HOROS_PLUGINS          URL_HOROS_VIEWER@"/horos-content/plugins/index.html"
-
 ////////////////////////////////////////////////////////////////////////////////
 // We want our own Defaults plist saved in ~/Library/Preferences/
 // Make sure it matches "Bundle Identifier" in Info.plist
 
 #define BUNDLE_IDENTIFIER_PREFIX    "org.horosproject"
 #define BUNDLE_IDENTIFIER           "org.horosproject.horos"
-
-////////////////////////////////////////////////////////////////////////////////
-// This is the address of the plist containing the list of the available plugins.
-// the alternative link will be used if the first one doesn't reply...
-
-//#define OSIRIX_PLUGIN_LIST_URL            @"http://www.osirix-viewer.com/osirix_plugins/plugins.plist"
-//#define OSIRIX_PLUGIN_LIST_ALT_URL        @"http://www.osirixviewer.com/osirix_plugins/plugins.plist"
-
-#define OSIRIX_PLUGIN_LIST_URL              URL_HOROS_VIEWER@"/horos-content/plugins/osirixplugins.plist"
-#define OSIRIX_PLUGIN_LIST_ALT_URL          URL_HOROS_VIEWER@"/horos-content/plugins/osirixplugins.plist"
-
-#define HOROS_PLUGIN_LIST_URL               URL_HOROS_VIEWER@"/horos-content/plugins/horosplugins.plist"
-#define HOROS_PLUGIN_LIST_ALT_URL           URL_HOROS_VIEWER@"/horos-content/plugins/horosplugins.plist"
-
-#define HOROS_PLUGIN_SUBMISSION_URL         URL_HOROS_VIEWER@"/horos-content/plugins/submit.html"
 
 #endif

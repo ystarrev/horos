@@ -49,7 +49,6 @@
 #import "NSUserDefaultsController+OsiriX.h"
 #import "N2OpenGLViewWithSplitsWindow.h"
 #import "DicomDatabase.h"
-#import "PluginManager.h"
 
 extern void setvtkMeanIPMode( int m);
 extern short intersect3D_2Planes( float *Pn1, float *Pv1, float *Pn2, float *Pv2, float *u, float *iP);
@@ -3086,17 +3085,6 @@ static float deg2rad = M_PI/180.0;
 		toolbarItem = nil;
 	}
 	
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarItemForItemIdentifier:forViewer:)])
-        {
-            NSToolbarItem *item = [[[PluginManager plugins] objectForKey:key] toolbarItemForItemIdentifier: itemIdent forViewer: self];
-            
-            if( item)
-                toolbarItem = item;
-        }
-    }
-    
 	return toolbarItem;
 }
 
@@ -3112,12 +3100,6 @@ static float deg2rad = M_PI/180.0;
 											NSToolbarSpaceItemIdentifier,
 											NSToolbarSeparatorItemIdentifier,
 											@"tbTools", @"tbWLWW", @"tbLOD", @"tbThickSlab", @"tbBlending", @"tbShading", @"tbMovie", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisColors", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"ViewsPosition", nil];
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForViewer:)])
-            [array addObjectsFromArray: [[[PluginManager plugins] objectForKey:key] toolbarAllowedIdentifiersForViewer: self]];
-    }
-
     return array;
 }
 

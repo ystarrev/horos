@@ -52,7 +52,6 @@
 #import "NSFont_OpenGL.h"
 #import "DicomFile.h"
 #import "DCM.h"
-#import "PluginManager.h"
 #import "DCMTKQueryRetrieveSCP.h"
 #import "BLAuthentication.h"
 #import "AppControllerDCMTKCategory.h"
@@ -74,7 +73,6 @@
 //#import <ILCrashReporter/ILCrashReporter.h>
 #import "VRView.h"
 #endif
-#import "PluginManagerController.h"
 #import "OSIWindowController.h"
 #import "Notifications.h"
 #import "WaitRendering.h"
@@ -116,7 +114,6 @@ ThumbnailsListPanel *thumbnailsListPanel[ MAXSCREENS] = {nil, nil, nil, nil, nil
 static NSMenu *mainMenuCLUTMenu = nil, *mainMenuWLWWMenu = nil, *mainMenuConvMenu = nil, *mainOpacityMenu = nil;
 static NSDictionary *previousWLWWKeys = nil, *previousCLUTKeys = nil, *previousConvKeys = nil, *previousOpacityKeys = nil;
 static BOOL checkForPreferencesUpdate = YES;
-static PluginManager *pluginManager = nil;
 static unsigned char *LUT12toRGB = nil;
 static BOOL canDisplay12Bit = NO;
 static NSInvocation *fill12BitBufferInvocation = nil;
@@ -551,7 +548,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 
 @implementation AppController
 
-@synthesize checkAllWindowsAreVisibleIsOff, filtersMenu, windowsTilingMenuRows, recentStudiesMenu, windowsTilingMenuColumns, isSessionInactive, dicomBonjourPublisher = BonjourDICOMService;
+@synthesize checkAllWindowsAreVisibleIsOff, windowsTilingMenuRows, recentStudiesMenu, windowsTilingMenuColumns, isSessionInactive, dicomBonjourPublisher = BonjourDICOMService;
 @synthesize bonjourPublisher = _bonjourPublisher;
 
 + (void)load
@@ -901,107 +898,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 	}
 	
 	return r;
-}
-
-+ (BOOL) willExecutePlugin
-{
-    return [self willExecutePlugin: nil];
-}
-
-+ (BOOL) willExecutePlugin:(id) filter;
-{
-	BOOL returnValue = YES;
-	
-	return returnValue;
-}
-
-// Plugins installation
-- (void) installPlugins: (NSArray*) pluginsArray
-{	
-	NSMutableString *pluginNames = [NSMutableString string];
-	NSMutableString *replacingPlugins = [NSMutableString string];
-	
-	NSString *replacing = NSLocalizedString(@" will be replaced by ", @"");
-	NSString *strVersion = NSLocalizedString(@" version ", @"");
-	
-	
-	for(NSString *path in pluginsArray)
-	{
-		[pluginNames appendFormat:@"%@, ", [[path lastPathComponent] stringByDeletingPathExtension]];
-		
-		NSString *pluginBundleName = [[path lastPathComponent] stringByDeletingPathExtension];
-		
-		NSURL *bundleURL = [NSURL fileURLWithPath:path.stringByResolvingAlias];
-		CFDictionaryRef bundleInfoDict = CFBundleCopyInfoDictionaryInDirectory((CFURLRef)bundleURL);
-		
-		CFStringRef versionString = nil;
-		if(bundleInfoDict != NULL)
-        {
-			versionString = CFDictionaryGetValue(bundleInfoDict, CFSTR("CFBundleVersion"));
-		
-            if( versionString == nil)
-                versionString = CFDictionaryGetValue(bundleInfoDict, CFSTR("CFBundleShortVersionString"));
-        }
-        
-		NSString *pluginBundleVersion = nil;
-		if(versionString != NULL)
-            pluginBundleVersion = (__bridge NSString*) versionString;
-		else
-			pluginBundleVersion = @"";
-		
-		if (bundleInfoDict != NULL)
-			CFRelease(bundleInfoDict);
-		
-		for(NSDictionary *plug in [PluginManager pluginsList])
-		{
-			if([pluginBundleName isEqualToString: [plug objectForKey:@"name"]])
-			{
-				[replacingPlugins appendString: [plug objectForKey:@"name"]];
-				[replacingPlugins appendString: strVersion];
-				[replacingPlugins appendString: [plug objectForKey:@"version"]];
-				[replacingPlugins appendString: replacing];
-				[replacingPlugins appendString: pluginBundleName];
-				[replacingPlugins appendString: strVersion];
-				[replacingPlugins appendString: pluginBundleVersion];
-				[replacingPlugins appendString: @".\n\n"];
-			}
-		}
-		
-		if( bundleInfoDict)
-			CFRelease( bundleInfoDict);
-	}
-	
-	pluginNames = [NSMutableString stringWithString: [pluginNames substringToIndex:[pluginNames length]-2]];
-	if([replacingPlugins length]) replacingPlugins = [NSMutableString stringWithString:[replacingPlugins substringToIndex:[replacingPlugins length]-2]];
-	
-	NSString *msg;
-	NSString *areYouSure = NSLocalizedString(@"Are you sure you want to install", @"");
-	
-	if( [pluginsArray count] == 1)
-		msg = [NSString stringWithFormat:NSLocalizedString(@"%@ the plugin named : %@ ?", @""), areYouSure, pluginNames];
-	else
-		msg = [NSString stringWithFormat:NSLocalizedString(@"%@ the following plugins : %@ ?", @""), areYouSure, pluginNames];
-	
-	if( [replacingPlugins length])
-		msg = [NSString stringWithFormat:@"%@\n\n%@", msg, replacingPlugins];
-	
-	NSInteger res = NSRunAlertPanel(NSLocalizedString(@"Plugins Installation", @""), @"%@", NSLocalizedString(@"OK", @""), NSLocalizedString(@"Cancel", @""), nil, msg);
-	
-	if( res)
-	{
-		for( NSString *path in pluginsArray)
-            [PluginManager installPluginFromPath: path];
-		
-		[PluginManager setMenus: filtersMenu :roisMenu :othersMenu :dbMenu];
-		
-		// refresh the plugin manager window (if open)
-		NSArray *winList = [NSApp windows];		
-		for(NSWindow *window in winList)
-		{
-			if( [[window windowController] isKindOfClass:[PluginManagerController class]])
-				[[window windowController] refreshPluginList];
-		}
-	}
 }
 
 - (NSString *)computerName
@@ -2381,24 +2277,11 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 		}
 	}
 
-    // exclude --LoadPlugin arguments
-    NSMutableArray* passedFilenames = [NSMutableArray array];
-    NSArray* args = [[NSProcessInfo processInfo] arguments];
-    for (NSString* path in filenames) {
-        BOOL isLoadPlugin = NO;
-        for (NSInteger i = 0; !isLoadPlugin && i < (long)args.count-1; ++i)
-            if ([[args objectAtIndex:i] isEqualToString:@"--LoadPlugin"])
-                if ([[args objectAtIndex:i+1] isEqualToString:path])
-                    isLoadPlugin = YES;
-        if (!isLoadPlugin)
-            [passedFilenames addObject:path];
-    }
-
     NSDictionary *importOptions = [NSDictionary dictionaryWithObjectsAndKeys:
                                    [NSNumber numberWithBool: YES], @"COPYDATABASE",
                                    [NSNumber numberWithInteger: always], @"COPYDATABASEMODE",
                                    nil];
-	[[BrowserController currentBrowser] subSelectFilesAndFoldersToAdd: passedFilenames options: importOptions];
+	[[BrowserController currentBrowser] subSelectFilesAndFoldersToAdd: filenames options: importOptions];
 }
 
 static BOOL firstCall = YES;
@@ -2893,8 +2776,6 @@ static BOOL initialized = NO;
                 
                 
                 
-                pluginManager = [[PluginManager alloc] init];
-                
 				//Add Endoscopy LUT, WL/WW, shading to existing prefs
 				// Shading Preset
 				NSMutableArray *shadingArray = [[[NSUserDefaults standardUserDefaults] objectForKey:@"shadingsPresets"] mutableCopy];
@@ -3231,9 +3112,6 @@ static BOOL initialized = NO;
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SingleProcessMultiThreadedListener"] == NO)
 		NSLog( @"----- %@", NSLocalizedString( @"DICOM Listener is multi-processes mode.", nil));
 	
-	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"])
-		[[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"checkForUpdatesPlugins"];
-	
     [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"USEALWAYSTOOLBARPANEL2"];
     [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"syncPreviewList"];
     [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"SeriesListVisible"];
@@ -3241,9 +3119,6 @@ static BOOL initialized = NO;
     
     
 	#ifndef MACAPPSTORE
-	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"checkForUpdatesPlugins"])
-		[NSThread detachNewThreadSelector:@selector(checkForUpdates:) toTarget:pluginManager withObject:pluginManager];
-	
     
     // If Horos crashed before...
     NSString *HorosCrashed = @"/tmp/HorosCrashed";
@@ -3262,14 +3137,6 @@ static BOOL initialized = NO;
     
 	#endif
     
-    // Remove PluginManager items...
-    #ifdef MACAPPSTORE
-    NSMenu *pluginsMenu = [filtersMenu supermenu];
-    
-    [pluginsMenu removeItemAtIndex: [pluginsMenu numberOfItems]-1];
-    [pluginsMenu removeItemAtIndex: [pluginsMenu numberOfItems]-1];
-    #endif
-	
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"]) // Server mode
 		[[[BrowserController currentBrowser] window] orderOut: self];
 
@@ -3715,8 +3582,6 @@ static BOOL initialized = NO;
 	#endif
 	*/
      
-	[PluginManager setMenus: filtersMenu :roisMenu :othersMenu :dbMenu];
-    
 	appController = self;
 	[self initDCMTK];
 	[self restartSTORESCP];

@@ -36,7 +36,6 @@
  ============================================================================*/
 
 #import "OSIDatabasePreferencePanePref.h"
-#import "PluginManager.h"
 #import "BrowserController.h"
 #import "PreferencesWindowController+DCMTK.h"
 #import "DCMAbstractSyntaxUID.h"
@@ -134,30 +133,6 @@
 	[super dealloc];
 }
 
-- (void) buildPluginsMenu
-{
-	int numberOfReportPlugins = 0;
-	for( NSString *k in [[PluginManager reportPlugins] allKeys])
-	{
-		[reportsMode addItemWithTitle: k];
-		[[reportsMode lastItem] setIndentationLevel:1];
-		numberOfReportPlugins++;
-	}
-	
-	if( numberOfReportPlugins <= 0)
-	{
-		[reportsMode removeItemAtIndex:[reportsMode indexOfItem:[reportsMode lastItem]]];
-		[reportsMode removeItemAtIndex:[reportsMode indexOfItem:[reportsMode lastItem]]];
-	}
-	else
-	{
-		if(numberOfReportPlugins == 1)
-			[[reportsMode itemAtIndex:4] setTitle:@"Plugin"];
-		[reportsMode setAutoenablesItems:NO];
-		[[reportsMode itemAtIndex:4] setEnabled:NO];
-	}
-}
-
 -(void) willUnselect
 {
     BOOL recompute = NO;
@@ -243,15 +218,14 @@
     if( [[[NSUserDefaults standardUserDefaults] stringForKey: @"commentFieldForAutoFill"] isEqualToString: @"comment4"]) self.currentCommentsField = 4;
 	
 	// REPORTS
-	[self buildPluginsMenu];
-	if([[defaults stringForKey:@"REPORTSMODE"] intValue] == 3)
+	NSInteger reportsModeValue = [defaults integerForKey:@"REPORTSMODE"];
+	if (reportsModeValue == 3)
 	{
-		[reportsMode selectItemWithTitle:[defaults stringForKey:@"REPORTSPLUGIN"]];
+		reportsModeValue = 2;
+		[defaults setInteger:reportsModeValue forKey:@"REPORTSMODE"];
+		[defaults removeObjectForKey:@"REPORTSPLUGIN"];
 	}
-	else
-	{
-		[reportsMode selectItemWithTag:[[defaults stringForKey:@"REPORTSMODE"] intValue]];
-	}
+	[reportsMode selectItemWithTag:reportsModeValue];
 	
 	// DATABASE AUTO-CLEANING
 	
@@ -307,27 +281,12 @@
 	// 0 : Microsoft Word
 	// 1 : TextEdit
 	// 2 : Pages
-	// 3 : Plugin
 	// 4 : DICOM SR
 	// 5 : OO
 	
 	NSUserDefaults	*defaults = [NSUserDefaults standardUserDefaults];
 	
-	int indexOfPluginsLabel = [reportsMode indexOfItemWithTitle:@"Plugins"];
-	int indexOfPluginLabel = [reportsMode indexOfItemWithTitle:@"Plugin"];
-	int indexOfLabel = (indexOfPluginsLabel>indexOfPluginLabel)?indexOfPluginsLabel:indexOfPluginLabel;
-	
-	indexOfLabel = (indexOfLabel<=0)? 10000 : indexOfLabel ;
-	
-	if([reportsMode indexOfSelectedItem] >= indexOfLabel) // in this case it is a plugin
-	{
-		[defaults setInteger:3 forKey:@"REPORTSMODE"];
-		[defaults setObject:[[reportsMode selectedItem] title] forKey:@"REPORTSPLUGIN"];
-	}
-	else
-	{
-		[defaults setInteger:[[reportsMode selectedItem] tag] forKey:@"REPORTSMODE"];
-	}
+	[defaults setInteger:[[reportsMode selectedItem] tag] forKey:@"REPORTSMODE"];
 	[[NSNotificationCenter defaultCenter] postNotificationName:@"reportModeChanged" object:nil];
 }
 

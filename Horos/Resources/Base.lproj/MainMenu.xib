@@ -1855,32 +1855,6 @@ CA
                         </items>
                     </menu>
                 </menuItem>
-                <menuItem title="Plugins" id="1701">
-                    <menu key="submenu" title="Plugins" id="1703">
-                        <items>
-                            <menuItem title="Image Filters" id="1704">
-                                <menu key="submenu" title="Image Filters" id="1705"/>
-                            </menuItem>
-                            <menuItem title="ROI Tools" id="1708">
-                                <menu key="submenu" title="ROI Tools" id="1709"/>
-                            </menuItem>
-                            <menuItem title="Others" id="1711">
-                                <menu key="submenu" title="Others" id="1710"/>
-                            </menuItem>
-                            <menuItem title="Database" id="11712">
-                                <menu key="submenu" title="Database" id="11713"/>
-                            </menuItem>
-                            <menuItem isSeparatorItem="YES" id="12990">
-                                <modifierMask key="keyEquivalentModifierMask" command="YES"/>
-                            </menuItem>
-                            <menuItem title="Plugins Manager..." id="12989">
-                                <connections>
-                                    <action selector="showWindow:" target="12930" id="12991"/>
-                                </connections>
-                            </menuItem>
-                        </items>
-                    </menu>
-                </menuItem>
                 <menuItem title="Recent Studies" id="62R-VA-Hjt">
                     <modifierMask key="keyEquivalentModifierMask"/>
                     <menu key="submenu" title="Recent Studies" id="a5x-qR-mZL">
@@ -1964,12 +1938,8 @@ CA
         <customObject id="694" userLabel="AppController" customClass="AppController">
             <connections>
                 <outlet property="browserController" destination="898" id="1906"/>
-                <outlet property="dbMenu" destination="11713" id="11825"/>
                 <outlet property="dbWindow" destination="aMa-Mw-HRb" id="ZU8-I9-hIG"/>
-                <outlet property="filtersMenu" destination="1705" id="11822"/>
-                <outlet property="othersMenu" destination="1710" id="11824"/>
                 <outlet property="recentStudiesMenu" destination="a5x-qR-mZL" id="501-X4-zlN"/>
-                <outlet property="roisMenu" destination="1709" id="11823"/>
                 <outlet property="windowsTilingMenuColumns" destination="14018" id="14037"/>
                 <outlet property="windowsTilingMenuRows" destination="14015" id="14036"/>
             </connections>
@@ -2009,7 +1979,6 @@ CA
                 <outlet property="noOfFilesToRebuild" destination="14368" id="14396"/>
                 <outlet property="oMatrix" destination="12411" id="12414"/>
                 <outlet property="password" destination="11809" id="11813"/>
-                <outlet property="pluginManagerController" destination="12930" id="13569"/>
                 <outlet property="rdAccessory" destination="11361" id="11438"/>
                 <outlet property="rdOffsetForm" destination="11410" id="11435"/>
                 <outlet property="rdPatientForm" destination="11362" id="11433"/>
@@ -3206,14 +3175,6 @@ Gw
                 </subviews>
             </view>
         </window>
-        <customObject id="12930" userLabel="PluginManagerController" customClass="PluginManagerController">
-            <connections>
-                <outlet property="dbMenu" destination="11713" id="12935"/>
-                <outlet property="filtersMenu" destination="1705" id="12932"/>
-                <outlet property="othersMenu" destination="1710" id="12934"/>
-                <outlet property="roisMenu" destination="1709" id="12933"/>
-            </connections>
-        </customObject>
         <window title="CD/DVD Password" allowsToolTipsWhenApplicationIsInactive="NO" autorecalculatesKeyViewLoop="NO" visibleAtLaunch="NO" animationBehavior="default" id="13805" userLabel="Password">
             <windowStyleMask key="styleMask" titled="YES"/>
             <rect key="contentRect" x="0.0" y="0.0" width="508" height="149"/>

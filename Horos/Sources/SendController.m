@@ -40,8 +40,6 @@
 #import "Wait.h"
 #import "DCMNetServiceDelegate.h"
 #import "DCM.h"
-#import "PluginFilter.h"
-#import "PluginManager.h"
 #import "DCMTKStoreSCU.h"
 #import "MutableArrayCategory.h"
 #import "Notifications.h"

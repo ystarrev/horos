@@ -159,34 +159,6 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 		</dict>
-		<dict>
-			<key>CFBundleTypeExtensions</key>
-			<array>
-				<string>horosplugin</string>
-			</array>
-			<key>CFBundleTypeIconFile</key>
-			<string>horosplugin.png</string>
-			<key>CFBundleTypeName</key>
-			<string>Horos Plugin</string>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSTypeIsPackage</key>
-			<true/>
-		</dict>
-		<dict>
-			<key>CFBundleTypeExtensions</key>
-			<array>
-				<string>osirixplugin</string>
-			</array>
-			<key>CFBundleTypeIconFile</key>
-			<string>osirixplugin.icns</string>
-			<key>CFBundleTypeName</key>
-			<string>OsiriX Plugin</string>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSTypeIsPackage</key>
-			<integer>1</integer>
-		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>Horos</string>

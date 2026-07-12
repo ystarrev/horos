@@ -66,7 +66,6 @@
 #import "Notifications.h"
 #import "NSUserDefaultsController+OsiriX.h"
 #import "N2Debug.h"
-#import "PluginManager.h"
 
 #include <vtkMath.h>
 #include <vtkAbstractPropPicker.h>
@@ -277,20 +276,6 @@ public:
 @synthesize clipRangeActivated, projectionMode, clippingRangeThickness, keep3DRotateCentered, dontResetImage, renderingMode, currentOpacityArray, exportDCM, dcmSeriesString, bestRenderingMode;
 @synthesize lowResLODFactor, engine, lodDisplayed;
 
-
-- (BOOL) eventToPlugins: (NSEvent*) event
-{
-    BOOL used = NO;
-    
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(handleEvent:forVRViewer:)])
-            if ([[[PluginManager plugins] objectForKey:key] handleEvent:event forVRViewer: [[self window] windowController]])
-                used = YES;
-    }
-    
-    return used;
-}
 
 - (BOOL) checkPointInVolume: (double*) position
 {
@@ -2971,14 +2956,12 @@ public:
 
 - (void) scrollWheel:(NSEvent *)theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     
     return [self scrollInStack: [theEvent deltaY]];
 }
 
 - (void)otherMouseDown:(NSEvent *)theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     
     _hasChanged = YES;
     ToolMode tool = [self getTool: theEvent];
@@ -2994,7 +2977,6 @@ public:
 
 -(void) mouseMoved: (NSEvent*) theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     
     if( ![[self window] isVisible])
         return;
@@ -3131,17 +3113,14 @@ public:
 
 -(void) magnifyWithEvent:(NSEvent *)event
 {
-    if ([self eventToPlugins:event]) return;
 }
 
 -(void) rotateWithEvent:(NSEvent *)event
 {
-    if ([self eventToPlugins:event]) return;
 }
 
 - (void)mouseDragged:(NSEvent *)theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     
     _hasChanged = YES;
     
@@ -3535,7 +3514,6 @@ public:
 
 - (void)rightMouseDragged:(NSEvent *)theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     
     _hasChanged = YES;
     [drawLock lock];
@@ -3581,7 +3559,6 @@ public:
 
 - (void)mouseUp:(NSEvent *)theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     
     _hasChanged = YES;
     [self deleteMouseDownTimer];
@@ -3679,7 +3656,6 @@ public:
 
 - (void)zoomMouseUp:(NSEvent *)theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     
     _hasChanged = YES;
     if (_tool == tZoom)
@@ -3706,7 +3682,6 @@ public:
 
 - (void)rightMouseDown:(NSEvent *)theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     
     _hasChanged = YES;
     [drawLock lock];
@@ -3721,7 +3696,6 @@ public:
 
 - (void)rightMouseUp:(NSEvent *)theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     
     _hasChanged = YES;
     [drawLock lock];
@@ -3769,7 +3743,6 @@ public:
 
 - (void)mouseDown:(NSEvent *)theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     
     dontRenderVolumeRenderingOsiriX = 0;
     
@@ -5067,7 +5040,6 @@ public:
 
 - (void) keyUp:(NSEvent *)event
 {
-    if ([self eventToPlugins: event]) return;
     
     if( [[event characters] length] == 0) return;
     
@@ -5082,7 +5054,6 @@ public:
 
 - (void) keyDown:(NSEvent *)event
 {
-    if ([self eventToPlugins: event]) return;
     
     if( [[event characters] length] == 0) return;
     
@@ -8659,21 +8630,18 @@ public:
 
 - (void)mouseEntered:(NSEvent *)theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     
     cursorSet = YES;
 }
 
 - (void)mouseExited:(NSEvent *)theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     
     cursorSet = NO;
 }
 
 -(void)cursorUpdate:(NSEvent *)theEvent
 {
-    if ([self eventToPlugins:theEvent]) return;
     
     cursorSet = YES;
     [cursor set];

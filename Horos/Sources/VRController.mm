@@ -61,7 +61,6 @@
 #import "DicomSeries.h"
 #import "DicomImage.h"
 #import "N2Debug.h"
-#import "PluginManager.h"
 #import "DicomDatabase.h"
 
 static NSString* 	VRStandardToolbarIdentifier = @"VR Toolbar Identifier";
@@ -2060,16 +2059,6 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
     else
         toolbarItem = nil;
     
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarItemForItemIdentifier:forVRViewer:)])
-        {
-            NSToolbarItem *item = [[[PluginManager plugins] objectForKey:key] toolbarItemForItemIdentifier: itemIdent forVRViewer: self];
-            
-            if( item)
-                toolbarItem = item;
-        }
-    }
     if (![toolbarItem view] && [toolbarItem image])
     {
         NSImage *toolbarImage = [[toolbarItem image] copy];
@@ -2162,12 +2151,6 @@ static NSString*	CLUTEditorsViewToolbarItemIdentifier = @"CLUTEditors";
                               nil];
         
         
-        
-        for (id key in [PluginManager plugins])
-        {
-            if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForVRViewer:)])
-                [a addObjectsFromArray: [[[PluginManager plugins] objectForKey:key] toolbarAllowedIdentifiersForVRViewer: self]];
-        }
         
         return a;
     }

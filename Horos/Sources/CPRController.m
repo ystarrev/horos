@@ -62,7 +62,6 @@
 #import "AppController.h"
 #import "DicomDatabase.h"
 #import <N2Debug.h>
-#import "PluginManager.h"
 #import "DicomDatabase.h"
 
 static NSString *MPRPlaneObservationContext = @"MPRPlaneObservationContext";
@@ -4061,17 +4060,6 @@ static float deg2rad = M_PI / 180.0;
 		toolbarItem = nil;
 	}
 	
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarItemForItemIdentifier:forViewer:)])
-        {
-            NSToolbarItem *item = [[[PluginManager plugins] objectForKey:key] toolbarItemForItemIdentifier: itemIdent forViewer: self];
-            
-            if( item)
-                toolbarItem = item;
-        }
-    }
-    
 	return toolbarItem;
 }
 
@@ -4087,12 +4075,6 @@ static float deg2rad = M_PI / 180.0;
             NSToolbarSpaceItemIdentifier,
             NSToolbarSeparatorItemIdentifier,
             @"tbTools", @"tbWLWW", @"tbLOD", @"tbStraightenedCPRAngle", @"tbCPRType", @"tbHighRes", @"tbPathAssistant", @"tbCPRPathMode", @"tbViewsPosition", @"tbThickSlab", @"Reset.pdf", @"Export.icns", @"curvedPath.icns", @"BestRendering.pdf", @"AxisColors", @"AxisShowHide", @"CPRAxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"tbInterpolationMode", nil];
-    
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForViewer:)])
-            [array addObjectsFromArray: [[[PluginManager plugins] objectForKey:key] toolbarAllowedIdentifiersForViewer: self]];
-    }
     
     return array;
 }

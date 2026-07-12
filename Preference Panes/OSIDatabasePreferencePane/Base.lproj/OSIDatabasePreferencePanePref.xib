@@ -919,10 +919,6 @@ If a study is in an album, it will NOT be deleted.</string>
                                                 <menuItem title="LibreOffice (.odt)" tag="5" id="828"/>
                                                 <menuItem title="TextEdit (.rtf)" tag="1" id="538"/>
                                                 <menuItem title="Microsoft Word (.doc)" id="539"/>
-                                                <menuItem isSeparatorItem="YES" id="542">
-                                                    <modifierMask key="keyEquivalentModifierMask" command="YES"/>
-                                                </menuItem>
-                                                <menuItem title="Plugins" tag="-1" id="541"/>
                                             </items>
                                         </menu>
                                     </popUpButtonCell>

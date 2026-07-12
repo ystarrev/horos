@@ -47,7 +47,6 @@
 #import "SRAnnotation.h"
 #import "DicomFile.h"
 #import "ViewerController.h"
-#import "PluginFileFormatDecoder.h"
 #import "DCMCalendarDate.h"
 #import "DCMAbstractSyntaxUID.h"
 #import "DCMSequenceAttribute.h"
@@ -57,7 +56,6 @@
 #import <vtk_tiff.h>
 
 #import "DicomFileDCMTKCategory.h"
-#import "PluginManager.h"
 #import "NSString+N2.h"
 #import "N2Debug.h"
 #include "NSFileManager+N2.h"
@@ -2189,10 +2187,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
             {
                 returnVal = self;
             }
-            else if ([self getPluginFile] == 0)
-            {
-                returnVal = self;
-            }
             else if( [self getBioradPicFile] == 0)
             {
                 returnVal = self;
@@ -2316,105 +2310,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
 - (id)elementForKey:(id)key
 {
     return [dicomElements objectForKey:key];
-}
-
-- (short)getPluginFile
-{
-#ifdef OSIRIX_VIEWER
-    NSString	*extension = [[filePath pathExtension] lowercaseString];	
-    NoOfFrames = 1;	
-    
-    id fileFormatBundle;
-    
-    if ((fileFormatBundle = [[PluginManager fileFormatPlugins] objectForKey:extension]))
-    {
-        fileType = [@"IMAGE" retain];
-        
-        PluginFileFormatDecoder *decoder = [[[fileFormatBundle principalClass] alloc] init];
-        
-        [PluginManager startProtectForCrashWithFilter: decoder];
-        
-        float *fImage = [decoder checkLoadAtPath:filePath];
-        width = [[decoder width] floatValue];
-        height = [[decoder height] floatValue];
-        [self extractSeriesStudyImageNumbersFromFileName:[[filePath lastPathComponent] stringByDeletingPathExtension]];
-        
-        if ([decoder patientName] != nil)
-            name = [[decoder patientName] retain];
-        else 
-            name = [[NSString alloc] initWithString:[filePath lastPathComponent]];
-        
-        
-        if ([decoder patientID])
-            patientID = [[decoder patientID] retain];
-        else			
-            patientID = [[NSString alloc] initWithString:name];
-        
-        if ([decoder studyDescription])
-            study = [[decoder studyDescription] retain];
-        else
-            study = [[NSString alloc] initWithString:[filePath lastPathComponent]];
-        
-        Modality = [[NSString alloc] initWithString:extension];
-        date = [[[[NSFileManager defaultManager] attributesOfItemAtPath:filePath error:NULL] fileCreationDate] retain];
-        if( date == nil) date = [[NSDate date] retain];
-        
-        if ([decoder seriesDescription])
-            serie = [[decoder seriesDescription] retain];
-        else
-            serie = [[NSString alloc] initWithString:[filePath lastPathComponent]];
-        
-        if ([decoder studyID])
-            [dicomElements setObject:[decoder studyID] forKey:@"studyID"];
-        else 
-            [dicomElements setObject:studyID forKey:@"studyID"];
-        NSLog(@"studyID ; %@", studyID);
-        if ([decoder studyDescription])
-            [dicomElements setObject:[decoder studyDescription]forKey:@"studyDescription"];
-        else
-            [dicomElements setObject:study forKey:@"studyDescription"];
-        
-        
-        [dicomElements setObject:date forKey:@"studyDate"];
-        [dicomElements setObject:Modality forKey:@"modality"];
-        
-        if ([decoder patientID])
-            [dicomElements setObject:[decoder patientID] forKey:@"patientID"];
-        else	
-            [dicomElements setObject:patientID forKey:@"patientID"];
-        
-        if ([decoder patientName])
-            [dicomElements setObject:[decoder patientName] forKey:@"patientName"];
-        else	
-            [dicomElements setObject:name forKey:@"patientName"];
-        
-        [dicomElements setObject:[self patientUID] forKey: @"patientUID"];
-        
-        if ([decoder seriesID])
-            [dicomElements setObject:[decoder seriesID] forKey:@"seriesID"];
-        else
-            [dicomElements setObject:self.serieID forKey:@"seriesID"];
-        
-        if ([decoder seriesDescription])
-            [dicomElements setObject:[decoder seriesDescription] forKey:@"seriesDescription"];
-        else
-            [dicomElements setObject:name forKey:@"seriesDescription"];
-        
-        [dicomElements setObject:[NSNumber numberWithInt: 0] forKey:@"seriesNumber"];
-        [dicomElements setObject:imageID forKey:@"SOPUID"];
-        [dicomElements setObject:[NSNumber numberWithInt:[imageID intValue]] forKey:@"imageID"];
-        [dicomElements setObject:fileType forKey:@"fileType"];
-        
-        [decoder release];
-        free(fImage);
-        
-        [PluginManager endProtectForCrash];
-        
-        return 0;				
-    }
-#endif
-    
-    return -1;
 }
 
 - (void)extractSeriesStudyImageNumbersFromFileName:(NSString *)tempString{

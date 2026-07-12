@@ -46,7 +46,6 @@
 #import "BrowserController.h"
 #import "DicomFile.h"
 #import "DCMView.h"
-#import "PluginManagerController.h"
 #import <Foundation/NSObjCRuntime.h>
 #include <algorithm>
 
@@ -134,8 +133,6 @@ static NSMutableDictionary *prefPanes = nil;
 
 @synthesize animations, authView;
 
-static const NSMutableArray* pluginPanes = [[NSMutableArray alloc] init];
-
 + (PreferencesWindowController*) sharedPreferencesWindowController
 {
     PreferencesWindowController* prefsController = NULL;
@@ -202,41 +199,6 @@ static const NSMutableArray* pluginPanes = [[NSMutableArray alloc] init];
 	PreferencesWindowContext* context = [[PreferencesWindowContext alloc] initWithTitle:title withResourceNamed:resourceName inBundle:parentBundle];
 	[panesListView addItemWithTitle:title image:image toGroupWithName:groupName context:context];
     [context release];
-}
-
-
-+ (void) addPluginPaneWithResourceNamed:(NSString*)resourceName inBundle:(NSBundle*)parentBundle withTitle:(NSString*)title image:(NSImage*)image
-{
-	if (!image)
-    {
-        image = [NSImage imageNamed:@"horosplugin"];
-        
-        if ([resourceName rangeOfString:@"osirixplugin" options:NSCaseInsensitiveSearch].location == NSNotFound)
-        {
-            image = [NSImage imageNamed:@"horosplugin"];
-        }
-        else
-        {
-            image = [NSImage imageNamed:@"osirixplugin"];
-        }
-    }
-    
-	[pluginPanes addObject:[NSArray arrayWithObjects:resourceName, parentBundle, title, image, NULL]];
-}
-
-
-+(void) removePluginPaneWithBundle:(NSBundle*)parentBundle
-{
-    for( NSArray *pluginPane in pluginPanes)
-    {
-        if( [pluginPane objectAtIndex: 1] == parentBundle)
-        {
-            [pluginPane retain];
-            
-            [pluginPanes removeObject: pluginPane];
-            return;
-        }
-    }
 }
 
 
@@ -391,25 +353,12 @@ static const NSMutableArray* pluginPanes = [[NSMutableArray alloc] init];
 	[self addPaneWithResourceNamed:@"OSIAutoroutingPreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"Routing", @"Panel in preferences window") image:[NSImage imageNamed:@"route"] toGroupWithName:name];
     [self addPaneWithResourceNamed:@"OSIPACSOnDemandPreferencePane" inBundle:bundle withTitle:NSLocalizedString(@"On-Demand", @"Panel in preferences window") image:[NSImage imageNamed:@"Cloud"] toGroupWithName:name];
 	
-	for (NSArray* pluginPane in pluginPanes)
-		[self addPaneWithResourceNamed:[pluginPane objectAtIndex:0]
-                              inBundle:[pluginPane objectAtIndex:1]
-                             withTitle:[pluginPane objectAtIndex:2]
-                                 image:[pluginPane objectAtIndex:3]
-                       toGroupWithName:NSLocalizedString(@"Plugins", @"Title of Plugins section in preferences window")];
-	
     NSSize initialSize = [panesListView frame].size;
     
     [[self window] setContentView:panesListView];
     
     [self synchronizeSizeWithContent:initialSize];
     
-    // If we need to remove a plugin with a custom pref pane
-    for (NSWindow* window in [NSApp windows])
-    {
-        if ([window.windowController isKindOfClass:[PluginManagerController class]])
-            [window close];
-    }
 }
 
 

@@ -6,9 +6,6 @@ unzip -uo OsiriXReport.template.zip
 unzip -uo dciodvfy.zip
 unzip -uo Ming.zip
 
-cd "$SRCROOT/Binaries/EmbeddedPlugins"
-#unzip -uo HorosCloud.horosplugin.zip
-
 cd "$SRCROOT/Binaries/PAGES"
 rm ._*
 

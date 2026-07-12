@@ -51,7 +51,6 @@
 #import "DicomSeries.h"
 #import "DicomImage.h"
 #import "DicomDatabase.h"
-#import "PluginManager.h"
 
 #define	NAVIGATORMODE_BASIC 1
 #define NAVIGATORMODE_2POINT 2
@@ -1069,17 +1068,6 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
         toolbarItem = nil;
     }
     
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarItemForItemIdentifier:forViewer:)])
-        {
-            NSToolbarItem *item = [[[PluginManager plugins] objectForKey:key] toolbarItemForItemIdentifier: itemIdent forViewer: self];
-            
-            if( item)
-                toolbarItem = item;
-        }
-    }
-    
     return toolbarItem;
 }
 
@@ -1119,12 +1107,6 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
                              LODToolbarItemIdentifier,
                              PathAssistantToolbarItemIdentifier,
                              nil];
-    
-    for (id key in [PluginManager plugins])
-    {
-        if ([[[PluginManager plugins] objectForKey:key] respondsToSelector:@selector(toolbarAllowedIdentifiersForViewer:)])
-            [array addObjectsFromArray: [[[PluginManager plugins] objectForKey:key] toolbarAllowedIdentifiersForViewer: self]];
-    }
     
     return array;
 }

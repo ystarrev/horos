@@ -34,7 +34,6 @@
                 <outlet property="addWLWWWindow" destination="103" id="109"/>
                 <outlet property="annotations" destination="2577" id="2600"/>
                 <outlet property="blendingPercentage" destination="481" id="488"/>
-                <outlet property="blendingPlugins" destination="875" id="878"/>
                 <outlet property="blendingPopupMenu" destination="820" id="1934"/>
                 <outlet property="blendingResample" destination="2099" id="2107"/>
                 <outlet property="blendingSlider" destination="482" id="492"/>
@@ -3110,38 +3109,11 @@ DQ
                             <action selector="endBlendingType:" target="-2" id="838"/>
                         </connections>
                     </button>
-                    <textField verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" translatesAutoresizingMaskIntoConstraints="NO" id="871">
-                        <rect key="frame" x="8" y="17" width="52" height="17"/>
-                        <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" alignment="left" title="Plug-in:" id="2237">
-                            <font key="font" metaFont="system"/>
-                            <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
-                            <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
-                        </textFieldCell>
-                    </textField>
-                    <popUpButton verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="875">
-                        <rect key="frame" x="63" y="10" width="227" height="25"/>
-                        <constraints>
-                            <constraint firstAttribute="width" constant="221" id="5cb-EO-g4q"/>
-                        </constraints>
-                        <popUpButtonCell key="cell" type="push" title="Select the plug-in method" bezelStyle="rounded" alignment="left" lineBreakMode="clipping" borderStyle="borderAndBezel" inset="2" pullsDown="YES" arrowPosition="arrowAtCenter" preferredEdge="maxY" selectedItem="874" id="2238">
-                            <behavior key="behavior" lightByBackground="YES" lightByGray="YES"/>
-                            <font key="font" metaFont="menu"/>
-                            <menu key="menu" title="OtherViews" id="876">
-                                <items>
-                                    <menuItem title="Select the plug-in method" hidden="YES" id="874"/>
-                                    <menuItem title="Empty" id="877"/>
-                                </items>
-                            </menu>
-                        </popUpButtonCell>
-                    </popUpButton>
                     <box verticalHuggingPriority="750" boxType="separator" translatesAutoresizingMaskIntoConstraints="NO" id="981">
                         <rect key="frame" x="0.0" y="138" width="466" height="5"/>
                     </box>
                     <box verticalHuggingPriority="750" boxType="separator" translatesAutoresizingMaskIntoConstraints="NO" id="984">
                         <rect key="frame" x="0.0" y="182" width="466" height="5"/>
-                    </box>
-                    <box verticalHuggingPriority="750" boxType="separator" translatesAutoresizingMaskIntoConstraints="NO" id="985">
-                        <rect key="frame" x="0.0" y="41" width="466" height="5"/>
                     </box>
                     <button toolTip="Perform a 3D registration from the dragged series to the destination series, according to the 3D points." verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" tag="7" translatesAutoresizingMaskIntoConstraints="NO" id="987">
                         <rect key="frame" x="329" y="144" width="126" height="32"/>
@@ -3203,23 +3175,20 @@ DQ
                 </subviews>
                 <constraints>
                     <constraint firstItem="987" firstAttribute="baseline" secondItem="G8w-oS-Z7f" secondAttribute="baseline" id="0s2-Xq-Wfh"/>
+                    <constraint firstAttribute="bottom" secondItem="831" secondAttribute="bottom" constant="10" id="0zN-yq-8Qv"/>
                     <constraint firstAttribute="trailing" secondItem="831" secondAttribute="trailing" constant="20" symbolic="YES" id="1sr-GO-ww0"/>
                     <constraint firstItem="2103" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="829" secondAttribute="leading" constant="10" id="43e-cp-hrm"/>
                     <constraint firstItem="G8w-oS-Z7f" firstAttribute="leading" secondItem="2017" secondAttribute="leading" id="43t-O4-dVn"/>
                     <constraint firstItem="833" firstAttribute="baseline" secondItem="834" secondAttribute="baseline" id="4l6-vi-8tp"/>
                     <constraint firstItem="987" firstAttribute="leading" secondItem="G8w-oS-Z7f" secondAttribute="trailing" constant="45" id="5cJ-LK-QIZ"/>
-                    <constraint firstItem="875" firstAttribute="top" secondItem="871" secondAttribute="top" id="9qP-Q2-zCc"/>
-                    <constraint firstItem="2015" firstAttribute="leading" secondItem="985" secondAttribute="leading" id="COx-QG-iit"/>
                     <constraint firstItem="2103" firstAttribute="top" secondItem="981" secondAttribute="bottom" constant="15" id="CZY-6D-JDX"/>
                     <constraint firstItem="833" firstAttribute="width" secondItem="832" secondAttribute="width" id="Db8-aK-Nlc"/>
                     <constraint firstAttribute="trailing" secondItem="834" secondAttribute="trailing" constant="17" id="I7W-Gm-mq7"/>
                     <constraint firstItem="834" firstAttribute="leading" secondItem="833" secondAttribute="trailing" constant="45" id="JrX-zp-gN0"/>
                     <constraint firstItem="834" firstAttribute="width" secondItem="833" secondAttribute="width" id="K3z-JA-5oN"/>
-                    <constraint firstItem="871" firstAttribute="leading" secondItem="829" secondAttribute="leading" constant="10" id="Ksd-5g-ikS"/>
                     <constraint firstItem="981" firstAttribute="trailing" secondItem="2015" secondAttribute="trailing" id="LTy-pS-mQi"/>
                     <constraint firstItem="2017" firstAttribute="top" secondItem="2015" secondAttribute="bottom" constant="14" id="LqO-mn-Tcd"/>
                     <constraint firstItem="833" firstAttribute="leading" secondItem="832" secondAttribute="trailing" constant="45" id="M2N-2S-zC6"/>
-                    <constraint firstItem="985" firstAttribute="trailing" secondItem="2015" secondAttribute="trailing" id="NOm-co-VGS"/>
                     <constraint firstItem="987" firstAttribute="trailing" secondItem="834" secondAttribute="trailing" id="Nkx-vk-bZz"/>
                     <constraint firstItem="832" firstAttribute="leading" secondItem="829" secondAttribute="leading" constant="17" id="Ool-fu-nTR"/>
                     <constraint firstItem="981" firstAttribute="leading" secondItem="984" secondAttribute="leading" id="Ox1-4F-oVv"/>
@@ -3238,14 +3207,10 @@ DQ
                     <constraint firstItem="2015" firstAttribute="top" secondItem="2103" secondAttribute="bottom" constant="14" id="hf0-kc-28h"/>
                     <constraint firstItem="834" firstAttribute="leading" secondItem="987" secondAttribute="leading" id="hmj-mM-dcF"/>
                     <constraint firstItem="832" firstAttribute="baseline" secondItem="833" secondAttribute="baseline" id="loP-pj-LcC"/>
-                    <constraint firstItem="875" firstAttribute="top" secondItem="2017" secondAttribute="bottom" constant="20" symbolic="YES" id="loX-92-mR7"/>
                     <constraint firstItem="2015" firstAttribute="leading" secondItem="981" secondAttribute="leading" id="meO-Fz-gcW"/>
-                    <constraint firstItem="875" firstAttribute="leading" secondItem="871" secondAttribute="trailing" constant="8" symbolic="YES" id="nVw-Ov-lwQ"/>
                     <constraint firstItem="984" firstAttribute="top" secondItem="832" secondAttribute="bottom" constant="14" id="nZE-1A-JfI"/>
                     <constraint firstItem="2099" firstAttribute="top" secondItem="984" secondAttribute="bottom" constant="12" id="r3k-DE-26A"/>
-                    <constraint firstItem="871" firstAttribute="top" secondItem="985" secondAttribute="bottom" constant="9" id="rdC-3e-Xn8"/>
                     <constraint firstItem="G8w-oS-Z7f" firstAttribute="leading" secondItem="2099" secondAttribute="trailing" constant="45" id="tt0-L6-bTb"/>
-                    <constraint firstItem="831" firstAttribute="baseline" secondItem="875" secondAttribute="baseline" id="vXz-PP-fJO"/>
                     <constraint firstItem="984" firstAttribute="trailing" secondItem="981" secondAttribute="trailing" id="z7p-Wb-8TQ"/>
                     <constraint firstItem="2099" firstAttribute="leading" secondItem="832" secondAttribute="leading" id="zfT-Xe-pR8"/>
                 </constraints>

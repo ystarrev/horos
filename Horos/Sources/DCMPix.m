@@ -211,6 +211,30 @@ static float deg2rad = M_PI / 180.0;
 
 static const int maxNumberOfOverlays = 16;
 
+#ifdef OSIRIX_VIEWER
+static NSManagedObject *HorosDCMPixExistingImageOnContextQueue(NSManagedObjectContext *context, NSManagedObjectID *objectID)
+{
+    if (context == nil || objectID == nil || objectID.isTemporaryID)
+        return nil;
+
+    @try
+    {
+        return [context existingObjectWithID:objectID error:nil];
+    }
+    @catch (NSException *exception)
+    {
+        // A DCMPix can outlive an import context, and temporary decoder pix objects
+        // intentionally have no Core Data object.  Resolving either kind of ID in an
+        // independent context raises an Objective-C exception rather than returning
+        // an NSError.  Pixel decoding must still succeed; the database size update is
+        // only a cache correction and can safely be skipped.
+        if ([[NSUserDefaults standardUserDefaults] boolForKey:@"HorosMetalViewerTimingLogEnabled"])
+            NSLog(@"HOROS_METAL_TIMING DCMPix skipped unavailable image object %@: %@", objectID, exception.reason);
+        return nil;
+    }
+}
+#endif
+
 static void HorosApplyUInt8MinMax(const float *a, const float *b, float *result, long pixelCount, BOOL maximum)
 {
     const unsigned char *aBytes = (const unsigned char *)a;
@@ -4144,7 +4168,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
             
             N2PerformManagedObjectContextBlockAndWait(iContext, ^{
-                [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:width] forKey:@"width"];
+                [HorosDCMPixExistingImageOnContextQueue(iContext, imageObjectID) setValue:[NSNumber numberWithInt:width] forKey:@"width"];
             });
             
             if( width > savedWidthInDB && fExternalOwnedImage)
@@ -4160,7 +4184,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
             
             N2PerformManagedObjectContextBlockAndWait(iContext, ^{
-                [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:height] forKey:@"height"];
+                [HorosDCMPixExistingImageOnContextQueue(iContext, imageObjectID) setValue:[NSNumber numberWithInt:height] forKey:@"height"];
             });
             
             if( height > savedHeightInDB && fExternalOwnedImage)
@@ -4382,7 +4406,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
             
             N2PerformManagedObjectContextBlockAndWait(iContext, ^{
-                [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:height] forKey:@"height"];
+                [HorosDCMPixExistingImageOnContextQueue(iContext, imageObjectID) setValue:[NSNumber numberWithInt:height] forKey:@"height"];
             });
             
             if( height > savedHeightInDB && fExternalOwnedImage)
@@ -4398,7 +4422,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
             
             N2PerformManagedObjectContextBlockAndWait(iContext, ^{
-                [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:width] forKey:@"width"];
+                [HorosDCMPixExistingImageOnContextQueue(iContext, imageObjectID) setValue:[NSNumber numberWithInt:width] forKey:@"width"];
             });
             
             if( width > savedWidthInDB && fExternalOwnedImage)
@@ -4985,7 +5009,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                             iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
                         
                         N2PerformManagedObjectContextBlockAndWait(iContext, ^{
-                            [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:width] forKey:@"width"];
+                            [HorosDCMPixExistingImageOnContextQueue(iContext, imageObjectID) setValue:[NSNumber numberWithInt:width] forKey:@"width"];
                         });
                         
                         if( width > savedWidthInDB && fExternalOwnedImage)
@@ -5006,7 +5030,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                             iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
                         
                         N2PerformManagedObjectContextBlockAndWait(iContext, ^{
-                            [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:height] forKey:@"height"];
+                            [HorosDCMPixExistingImageOnContextQueue(iContext, imageObjectID) setValue:[NSNumber numberWithInt:height] forKey:@"height"];
                         });
                         
                         if( height > savedHeightInDB && fExternalOwnedImage)
@@ -5935,7 +5959,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
         
         N2PerformManagedObjectContextBlockAndWait(iContext, ^{
-            [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:height] forKey:@"height"];
+            [HorosDCMPixExistingImageOnContextQueue(iContext, imageObjectID) setValue:[NSNumber numberWithInt:height] forKey:@"height"];
         });
         
         if( height > savedHeightInDB && fExternalOwnedImage)
@@ -5951,7 +5975,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
         
         N2PerformManagedObjectContextBlockAndWait(iContext, ^{
-            [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:width] forKey:@"width"];
+            [HorosDCMPixExistingImageOnContextQueue(iContext, imageObjectID) setValue:[NSNumber numberWithInt:width] forKey:@"width"];
         });
         
         if( width > savedWidthInDB && fExternalOwnedImage)
@@ -7462,7 +7486,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                     iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
 
                 N2PerformManagedObjectContextBlockAndWait(iContext, ^{
-                    [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:height] forKey:@"height"];
+                    [HorosDCMPixExistingImageOnContextQueue(iContext, imageObjectID) setValue:[NSNumber numberWithInt:height] forKey:@"height"];
                 });
             }
 
@@ -7478,7 +7502,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                     iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
 
                 N2PerformManagedObjectContextBlockAndWait(iContext, ^{
-                    [[iContext existingObjectWithID:imageObjectID error:nil] setValue:[NSNumber numberWithInt:width] forKey:@"width"];
+                    [HorosDCMPixExistingImageOnContextQueue(iContext, imageObjectID) setValue:[NSNumber numberWithInt:width] forKey:@"width"];
                 });
             }
 
@@ -7569,7 +7593,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 NSManagedObjectContext *context = [[[BrowserController currentBrowser] database] independentContext];
                 __block NSString *localPath = nil;
                 N2PerformManagedObjectContextBlockAndWait(context, ^{
-                    NSManagedObject *image = [context existingObjectWithID:imageObjectID error:nil];
+                    NSManagedObject *image = HorosDCMPixExistingImageOnContextQueue(context, imageObjectID);
                     localPath = [[[BrowserController currentBrowser] getLocalDCMPath:image :0] copy];
                 });
                 self.srcFile = [localPath autorelease];

@@ -809,6 +809,50 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
+    func setPixList(_ newPixList: [DCMPix], preservingSliceIndex: Bool = true) {
+        guard newPixList.isEmpty == false else { return }
+
+        let previousSliceIndex = currentSliceIndex
+        registrationGeneration += 1
+        baseVolumePyramidBuildGeneration += 1
+        registrationWaitingForBasePyramid = false
+        pendingRegistrationInitialState = nil
+        registrationNeedsRestartAfterBasePyramidBuild = false
+        registrationInProgress = false
+        registrationProgress = 0
+        registrationStatusMessage = nil
+
+        pixList = newPixList
+        currentSliceIndex = preservingSliceIndex
+            ? min(max(previousSliceIndex, 0), newPixList.count - 1)
+            : 0
+
+        baseTexture = nil
+        baseVolumeTexture = nil
+        stackVolumeTextureEntry = nil
+        baseVolumeDimensions = SIMD3<Int>(repeating: 1)
+        baseVolumeLevels = []
+        baseVolumePyramidBuildInProgress = false
+        baseVolumePyramidBuildCompleted = false
+        fixedVoxelToWorld = matrix_identity_float4x4
+        baseVolumeCenterWorld = .zero
+        baseInformativeCenterWorld = .zero
+        baseUsesGantryTiltCorrectedVolume = false
+        baseIsThinSlab = false
+        baseSlabGeometry = nil
+
+        if overlayPixList.isEmpty == false {
+            clearOverlayPixList()
+        }
+
+        loadSlice(at: currentSliceIndex)
+        if displayMode.isMPRLike {
+            prepareBaseVolumeIfNeeded()
+            resetMPRPlaneToCurrentSlice()
+        }
+        stateDidChange?(stateDescription)
+    }
+
     func setDisplayMode(_ mode: MetalViewerDisplayMode) {
         guard displayMode != mode else { return }
         displayMode = mode

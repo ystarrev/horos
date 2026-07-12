@@ -298,7 +298,7 @@
 	<string>0022,1420</string>
 	<key>AcquisitionsinStudy</key>
 	<string>0020,1004</string>
-	<key>AcquisitonMethodAlgorithmSequence</key>
+	<key>AcquisitionMethodAlgorithmSequence</key>
 	<string>0022,1423</string>
 	<key>AcrossScanSpatialResolution</key>
 	<string>0022,0048</string>
@@ -1726,9 +1726,9 @@
 	<string>0054,0022</string>
 	<key>DetectorLinesofResponseUsed</key>
 	<string>0054,1104</string>
-	<key>DetectorManfacturerName</key>
+	<key>DetectorManufacturerName</key>
 	<string>0018,702A</string>
-	<key>DetectorManfacturersModelName</key>
+	<key>DetectorManufacturerModelName</key>
 	<string>0018,702B</string>
 	<key>DetectorMode</key>
 	<string>0018,7008</string>
@@ -2628,7 +2628,7 @@
 	<string>0072,000E</string>
 	<key>HardcopyCreationDeviceID</key>
 	<string>0018,1011</string>
-	<key>HardcopyDeviceManfuacturer'sModelName</key>
+	<key>HardcopyDeviceManufacturerModelName</key>
 	<string>0018,101B</string>
 	<key>HardcopyDeviceManufacturer</key>
 	<string>0018,1017</string>
@@ -2674,9 +2674,9 @@
 	<string>0046,0030</string>
 	<key>HumanPerformerCodeSequence</key>
 	<string>0040,4009</string>
-	<key>HumanPerformer‚ÄôsName</key>
+	<key>HumanPerformerName</key>
 	<string>0040,4037</string>
-	<key>HumanPerformer‚ÄôsOrganization</key>
+	<key>HumanPerformerOrganization</key>
 	<string>0040,4036</string>
 	<key>ICCProfile</key>
 	<string>0028,2000</string>
@@ -3176,7 +3176,7 @@
 	<string>0014,5002</string>
 	<key>LINACOutput</key>
 	<string>0014,5004</string>
-	<key>LUTDataUS/SS/OW</key>
+	<key>LUTData</key>
 	<string>0028,3006</string>
 	<key>LUTDescriptor</key>
 	<string>0028,3002</string>
@@ -3774,7 +3774,7 @@
 	<string>0018,6050</string>
 	<key>NumberofTableEntries</key>
 	<string>0018,6056</string>
-	<key>NumberofTemporalPositions</key>
+	<key>NumberOfTemporalPositions</key>
 	<string>0020,0105</string>
 	<key>NumberofTimeSlices</key>
 	<string>0054,0101</string>
@@ -4510,9 +4510,9 @@
 	<string>0070,0082</string>
 	<key>PresentationCreationTime</key>
 	<string>0070,0083</string>
-	<key>PresentationCreator‚ÄôsName</key>
+	<key>ContentCreatorName</key>
 	<string>0070,0084</string>
-	<key>PresentationDescription</key>
+	<key>ContentDescription</key>
 	<string>0070,0081</string>
 	<key>PresentationGroupNumber</key>
 	<string>003A,0241</string>
@@ -4526,7 +4526,7 @@
 	<string>2050,0010</string>
 	<key>PresentationLUTShape</key>
 	<string>2050,0020</string>
-	<key>PresentationLabel</key>
+	<key>ContentLabel</key>
 	<string>0070,0080</string>
 	<key>PresentationPixelAspectRatio</key>
 	<string>0070,0102</string>

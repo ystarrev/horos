@@ -516,6 +516,14 @@ final class MetalImageView: MTKView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    func display(pixList: [DCMPix], preservingSliceIndex: Bool = true) {
+        renderer.setPixList(pixList, preservingSliceIndex: preservingSliceIndex)
+        needsDisplay = true
+        mprPreviewOverlayView.needsDisplay = true
+        publishMeasurementOverlays()
+        annotationStateDidChange?()
+    }
+
     override func layout() {
         super.layout()
         mprPreviewOverlayView.needsDisplay = true

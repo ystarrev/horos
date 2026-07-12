@@ -4786,7 +4786,7 @@
 	<key>0018,101B</key>
 	<dict>
 		<key>Description</key>
-		<string>HardcopyDeviceManfuacturer'sModelName</string>
+		<string>HardcopyDeviceManufacturerModelName</string>
 		<key>VM</key>
 		<string>1</string>
 		<key>VR</key>
@@ -7171,18 +7171,18 @@
 	<key>0018,702A</key>
 	<dict>
 		<key>Description</key>
-		<string>DetectorManfacturerName</string>
+		<string>DetectorManufacturerName</string>
 		<key>VM</key>
-		<string>2</string>
+		<string>1</string>
 		<key>VR</key>
 		<string>LO</string>
 	</dict>
 	<key>0018,702B</key>
 	<dict>
 		<key>Description</key>
-		<string>DetectorManfacturersModelName</string>
+		<string>DetectorManufacturerModelName</string>
 		<key>VM</key>
-		<string>2</string>
+		<string>1</string>
 		<key>VR</key>
 		<string>LO</string>
 	</dict>
@@ -10744,7 +10744,7 @@
 	<key>0020,0105</key>
 	<dict>
 		<key>Description</key>
-		<string>NumberofTemporalPositions</string>
+		<string>NumberOfTemporalPositions</string>
 		<key>VM</key>
 		<string>1</string>
 		<key>VR</key>
@@ -12553,7 +12553,7 @@
 	<key>0022,1423</key>
 	<dict>
 		<key>Description</key>
-		<string>AcquisitonMethodAlgorithmSequence</string>
+		<string>AcquisitionMethodAlgorithmSequence</string>
 		<key>VM</key>
 		<string>1</string>
 		<key>VR</key>
@@ -17566,7 +17566,7 @@
 	<key>0040,4036</key>
 	<dict>
 		<key>Description</key>
-		<string>HumanPerformer‚ÄôsOrganization</string>
+		<string>HumanPerformerOrganization</string>
 		<key>VM</key>
 		<string>1</string>
 		<key>VR</key>
@@ -17575,7 +17575,7 @@
 	<key>0040,4037</key>
 	<dict>
 		<key>Description</key>
-		<string>HumanPerformer‚ÄôsName</string>
+		<string>HumanPerformerName</string>
 		<key>VM</key>
 		<string>1</string>
 		<key>VR</key>
@@ -22489,7 +22489,7 @@
 	<key>0070,0084</key>
 	<dict>
 		<key>Description</key>
-		<string>ContentCreatorsName</string>
+		<string>ContentCreatorName</string>
 		<key>VM</key>
 		<string>1</string>
 		<key>VR</key>

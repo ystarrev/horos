@@ -3079,7 +3079,7 @@ update to OsiriX 64-bit:</string>
 DQ
 </string>
                                 </buttonCell>
-                                <buttonCell type="push" title="4D Viewer" bezelStyle="rounded" alignment="center" borderStyle="border" tag="3" inset="2" id="12851">
+                                <buttonCell type="push" title="Dynamic" bezelStyle="rounded" alignment="center" borderStyle="border" tag="3" inset="2" id="12851">
                                     <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
                                     <font key="font" metaFont="system"/>
                                 </buttonCell>

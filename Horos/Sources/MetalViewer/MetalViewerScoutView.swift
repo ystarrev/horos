@@ -452,7 +452,13 @@ private final class MetalViewerScoutItemView: NSView {
         )
         timeOverlayLabel.stringValue = isStructuredReport ? "" : (series.studyDate.map { Self.studyTimeFormatter.string(from: $0) } ?? "")
         titleOverlayLabel.stringValue = isStructuredReport ? "" : series.title
-        countOverlayLabel.stringValue = isStructuredReport ? "" : "\(series.imageCount) image\(series.imageCount == 1 ? "" : "s")"
+        if isStructuredReport {
+            countOverlayLabel.stringValue = ""
+        } else if let timePointCount = series.dynamicTimePointCountHint {
+            countOverlayLabel.stringValue = "\(timePointCount) time point\(timePointCount == 1 ? "" : "s")"
+        } else {
+            countOverlayLabel.stringValue = "\(series.imageCount) image\(series.imageCount == 1 ? "" : "s")"
+        }
 
         timeOverlayLabel.isHidden = isStructuredReport
         titleOverlayLabel.isHidden = isStructuredReport

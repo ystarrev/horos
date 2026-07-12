@@ -8593,7 +8593,14 @@ static NSConditionLock *threadLock = nil;
         openReparsedSeriesFlag = NO;
     }
     else
-        return [self openViewerFromImages :[NSArray arrayWithObject: [self childrenArray: series]] movie: movie4D viewer :viewer keyImagesOnly:keyImages tryToFlipData: YES];
+    {
+        if( movie4D)
+        {
+            [self openMetalViewerForImages:[self childrenArray:series] forceDynamicInterpretation:YES];
+            return nil;
+        }
+        return [self openViewerFromImages :[NSArray arrayWithObject: [self childrenArray: series]] movie: NO viewer :viewer keyImagesOnly:keyImages tryToFlipData: YES];
+    }
     
     return nil;
 }
@@ -10780,7 +10787,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     if ( contextual == nil) contextual	= [[NSMenu alloc] initWithTitle: NSLocalizedString(@"Tools", nil)];
     
     [contextual addItemWithTitle: NSLocalizedString(@"Open Images", nil) action:@selector(viewerDICOM:) keyEquivalent:@""];
-    [contextual addItemWithTitle: NSLocalizedString(@"Open Images in 4D", nil) action:@selector(MovieViewerDICOM:) keyEquivalent:@""];
+    [contextual addItemWithTitle: NSLocalizedString(@"Open as Dynamic in Metal Viewer", nil) action:@selector(MovieViewerDICOM:) keyEquivalent:@""];
     [contextual addItemWithTitle: NSLocalizedString(@"Open Sub-Selection", nil) action:@selector(viewerSubSeriesDICOM:) keyEquivalent:@""];
     [contextual addItemWithTitle: NSLocalizedString(@"Open Reparsed series", nil) action:@selector(viewerReparsedSeries:) keyEquivalent:@""];
     [contextual addItemWithTitle: NSLocalizedString(@"Open Key Images", nil) action:@selector(viewerDICOMKeyImages:) keyEquivalent:@""];
@@ -10829,7 +10836,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     
     // Now remove non-applicable items - usually related to images (most RT objects don't have embedded images)
     
-    NSInteger indx = [contextualRT indexOfItemWithTitle: NSLocalizedString( @"Open Images in 4D", nil)];
+    NSInteger indx = [contextualRT indexOfItemWithTitle: NSLocalizedString( @"Open as Dynamic in Metal Viewer", nil)];
     if ( indx >= 0) [contextualRT removeItemAtIndex: indx];
     indx = [contextualRT indexOfItemWithTitle: NSLocalizedString( @"Open Key Images", nil)];
     if ( indx >= 0) [contextualRT removeItemAtIndex: indx];
@@ -13020,9 +13027,15 @@ constrainSplitPosition:(CGFloat)proposedPosition
                             toOpenArray = [NSMutableArray arrayWithObject: [splittedSeries objectAtIndex: [subOpenMatrix3D selectedColumn]]];
                             break;
                             
-                        case 3:	// 4D Viewer
-                            toOpenArray = splittedSeries;
-                            movieViewer = YES;
+                        case 3:	// Dynamic Metal Viewer
+                        {
+                            NSMutableArray *dynamicImages = [NSMutableArray array];
+                            for( NSArray *array in splittedSeries)
+                                [dynamicImages addObjectsFromArray:array];
+                            [self openMetalViewerForImages:dynamicImages forceDynamicInterpretation:YES];
+                            toOpenArray = nil;
+                            movieError = YES;
+                        }
                             break;
                             
                         case 5: // selected 4D
@@ -13441,6 +13454,11 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 - (void)openMetalViewerForImages:(NSArray*)loadList
 {
+    [self openMetalViewerForImages:loadList forceDynamicInterpretation:NO];
+}
+
+- (void)openMetalViewerForImages:(NSArray*)loadList forceDynamicInterpretation:(BOOL)forceDynamicInterpretation
+{
     CFAbsoluteTime launchStart = CFAbsoluteTimeGetCurrent();
     BOOL metalTimingLogEnabled = [[NSUserDefaults standardUserDefaults] boolForKey: @"HorosMetalViewerTimingLogEnabled"];
     if ([loadList count] == 0)
@@ -13507,7 +13525,11 @@ constrainSplitPosition:(CGFloat)proposedPosition
     NSString *patientName = [firstObject valueForKeyPath:@"series.study.name"] ?: NSLocalizedString(@"Patient", nil);
     NSString *seriesName = [firstObject valueForKeyPath:@"series.name"] ?: NSLocalizedString(@"Series", nil);
     NSString *title = [NSString stringWithFormat:@"%@ - %@", patientName, seriesName];
-    NSDictionary *context = [NSDictionary dictionaryWithObjectsAndKeys:viewerPix, @"pixList", title, @"title", nil];
+    NSDictionary *context = [NSDictionary dictionaryWithObjectsAndKeys:
+                             viewerPix, @"pixList",
+                             title, @"title",
+                             [NSNumber numberWithBool:forceDynamicInterpretation], @"forceDynamicInterpretation",
+                             nil];
     
     Class launcherClass = NSClassFromString(@"HorosMetalViewerLauncher");
     if (launcherClass)
@@ -13719,16 +13741,20 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 - (void) MovieViewerDICOM:(id) sender
 {
-    NSInteger				index;
-    NSMutableArray			*selectedItems = [NSMutableArray array];
-    
-    NSIndexSet				*selectedRowIndexes = [databaseOutline selectedRowIndexes];
-    for (index = [selectedRowIndexes firstIndex]; 1+[selectedRowIndexes lastIndex] != index; ++index)
+    NSMutableArray *selectedItems = [NSMutableArray array];
+
+    if (([sender isKindOfClass:[NSMenuItem class]] && [sender menu] == [oMatrix menu]) || [[self window] firstResponder] == oMatrix)
+        [self filesForDatabaseMatrixSelection:selectedItems onlyImages:YES];
+    else
+        [self filesForDatabaseOutlineSelection:selectedItems onlyImages:YES];
+
+    if ([selectedItems count] == 0)
     {
-        if ([selectedRowIndexes containsIndex:index]) [selectedItems addObject: [databaseOutline itemAtRow:index]];
+        NSBeep();
+        return;
     }
-    
-    [self viewerDICOMInt:YES dcmFile: selectedItems viewer:nil];
+
+    [self openMetalViewerForImages:selectedItems forceDynamicInterpretation:YES];
 }
 
 static NSArray*	openSubSeriesArray = nil;
@@ -14262,7 +14288,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     
     [menu addItem: [NSMenuItem separatorItem]];
     [menu addItemWithTitle: NSLocalizedString(@"Open Images", nil) action: @selector(viewerDICOM:) keyEquivalent:@""];
-    [menu addItemWithTitle: NSLocalizedString(@"Open Images in 4D", nil) action: @selector(MovieViewerDICOM:) keyEquivalent:@""];
+    [menu addItemWithTitle: NSLocalizedString(@"Open as Dynamic in Metal Viewer", nil) action: @selector(MovieViewerDICOM:) keyEquivalent:@""];
     [menu addItemWithTitle: NSLocalizedString(@"Open Sub-Selection", nil)  action:@selector(viewerSubSeriesDICOM:) keyEquivalent:@""];
     [menu addItemWithTitle: NSLocalizedString(@"Open Reparsed Series", nil)  action:@selector(viewerReparsedSeries:) keyEquivalent:@""];
     [menu addItemWithTitle: NSLocalizedString(@"Open Key Images", nil) action: @selector(viewerDICOMKeyImages:) keyEquivalent:@""];
@@ -18989,9 +19015,9 @@ static volatile int numberOfThreadsForJPEG = 0;
     else if ([itemIdent isEqualToString: MovieToolbarItemIdentifier])
     {
         
-        [toolbarItem setLabel: NSLocalizedString(@"4D Viewer",nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"4D Viewer",nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"Load multiple series into an animated 4D series",nil)];
+        [toolbarItem setLabel: NSLocalizedString(@"Dynamic Viewer",nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString(@"Dynamic Viewer",nil)];
+        [toolbarItem setToolTip: NSLocalizedString(@"Open the selection as a dynamic series in the Metal viewer",nil)];
         [toolbarItem setImage: [NSImage imageNamed: MovieToolbarItemIdentifier]];
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(MovieViewerDICOM:)];

@@ -482,34 +482,31 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     @discardableResult
     func updateStudy(_ study: MetalViewerStudy, selectInitialSeries: Bool = false) -> Int {
         let updateStart = CFAbsoluteTimeGetCurrent()
-        var previousWindowLevelStates: [String: MetalViewerWindowLevelState] = [:]
-        var previousWindowLevelPresetTitles: [String: String] = [:]
-        for series in self.study.series {
-            previousWindowLevelStates[series.identifier] = series.windowLevelState
-            previousWindowLevelPresetTitles[series.identifier] = series.windowLevelPresetTitle
-        }
         for series in study.series {
-            if let windowLevelState = previousWindowLevelStates[series.identifier] {
-                series.windowLevelState = windowLevelState
-            }
-            if let windowLevelPresetTitle = previousWindowLevelPresetTitles[series.identifier] {
-                series.windowLevelPresetTitle = windowLevelPresetTitle
+            let previousSeries = self.study.series.first(where: { $0.identifier == series.identifier })
+                ?? self.study.series.first(where: { $0.sharesSourceSeries(with: series) })
+            if let previousSeries {
+                series.windowLevelState = previousSeries.windowLevelState
+                series.windowLevelPresetTitle = previousSeries.windowLevelPresetTitle
             }
         }
         self.study = study
         window?.title = study.title
         scoutView.reload(series: study.series, loadThumbnailsImmediately: false)
-        let selectedIdentifier = selectInitialSeries ? study.initialSeriesIdentifier : (activePaneView?.series.identifier ?? study.initialSeriesIdentifier)
+        let selectedSeries = selectInitialSeries
+            ? study.series.first(where: { $0.identifier == study.initialSeriesIdentifier })
+            : activePaneView.flatMap { matchingSeries(for: $0.series, in: study) }
+        let selectedIdentifier = selectedSeries?.identifier ?? study.initialSeriesIdentifier
         scoutView.setSelectedSeries(identifier: selectedIdentifier)
 
         var refreshedPaneCount = 0
         for pane in paneViews {
-            guard let updatedSeries = study.series.first(where: { $0.identifier == pane.series.identifier }) else {
+            guard let updatedSeries = matchingSeries(for: pane.series, in: study) else {
                 continue
             }
             let syncedScale = synchronizedScaleValue(excluding: pane) ?? pane.currentScale
             let updatedOverlaySeries = pane.overlaySeries.flatMap { overlaySeries in
-                study.series.first(where: { $0.identifier == overlaySeries.identifier })
+                matchingSeries(for: overlaySeries, in: study)
             }
             if pane.refreshAfterDatabaseUpdate(series: updatedSeries, overlaySeries: updatedOverlaySeries) {
                 applySyncedScaleIfNeeded(to: pane, preferredScale: syncedScale)
@@ -538,6 +535,11 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         recalibrateScoutLayoutAfterPresentation()
         metalWindowTimingLog("MetalViewerWindowController updateStudy", since: updateStart)
         return refreshedPaneCount
+    }
+
+    private func matchingSeries(for previousSeries: MetalViewerSeries, in study: MetalViewerStudy) -> MetalViewerSeries? {
+        study.series.first(where: { $0.identifier == previousSeries.identifier })
+            ?? study.series.first(where: { $0.sharesSourceSeries(with: previousSeries) })
     }
 
     private func updateToolbarStatus() {

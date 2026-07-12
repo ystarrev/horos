@@ -1,4 +1,6 @@
 #import "DCMPix.h"
+#import "DCMObject.h"
+#import "DCMSequenceAttribute.h"
 #import "BrowserController.h"
 #import "DicomStudy.h"
 #import "Sources/StructuredReportSupport.h"

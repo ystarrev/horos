@@ -1,4 +1,5 @@
 import AppKit
+import Metal
 import simd
 import WebKit
 
@@ -1044,6 +1045,106 @@ final class MetalViewerPaneView: NSView {
         private static let measurementColor = NSColor(calibratedRed: 0.18, green: 1.0, blue: 0.28, alpha: 1.0)
     }
 
+    private final class DynamicControlsView: NSVisualEffectView {
+        private let previousButton = NSButton(title: "|◀", target: nil, action: nil)
+        private let playButton = NSButton(title: "▶", target: nil, action: nil)
+        private let nextButton = NSButton(title: "▶|", target: nil, action: nil)
+        private let timeSlider = NSSlider(value: 0, minValue: 0, maxValue: 1, target: nil, action: nil)
+        private let timeLabel = NSTextField(labelWithString: "1/1")
+        private let speedPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+
+        var previousHandler: (() -> Void)?
+        var playHandler: (() -> Void)?
+        var nextHandler: (() -> Void)?
+        var timeHandler: ((Int) -> Void)?
+        var speedHandler: ((Double) -> Void)?
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            translatesAutoresizingMaskIntoConstraints = false
+            material = .hudWindow
+            blendingMode = .withinWindow
+            state = .active
+            wantsLayer = true
+            layer?.cornerRadius = 8
+            layer?.masksToBounds = true
+
+            for button in [previousButton, playButton, nextButton] {
+                button.translatesAutoresizingMaskIntoConstraints = false
+                button.bezelStyle = .texturedRounded
+                button.controlSize = .small
+                button.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+                button.widthAnchor.constraint(equalToConstant: 30).isActive = true
+            }
+            previousButton.toolTip = NSLocalizedString("Previous time point", comment: "")
+            playButton.toolTip = NSLocalizedString("Play or pause the dynamic series", comment: "")
+            nextButton.toolTip = NSLocalizedString("Next time point", comment: "")
+            previousButton.target = self
+            previousButton.action = #selector(previousPressed(_:))
+            playButton.target = self
+            playButton.action = #selector(playPressed(_:))
+            nextButton.target = self
+            nextButton.action = #selector(nextPressed(_:))
+
+            timeSlider.translatesAutoresizingMaskIntoConstraints = false
+            timeSlider.isContinuous = true
+            timeSlider.target = self
+            timeSlider.action = #selector(timeChanged(_:))
+            timeSlider.widthAnchor.constraint(equalToConstant: 150).isActive = true
+
+            timeLabel.translatesAutoresizingMaskIntoConstraints = false
+            timeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+            timeLabel.textColor = .white
+            timeLabel.alignment = .center
+            timeLabel.widthAnchor.constraint(equalToConstant: 58).isActive = true
+
+            speedPopup.translatesAutoresizingMaskIntoConstraints = false
+            speedPopup.controlSize = .small
+            for rate in [0.25, 0.5, 1.0, 2.0, 4.0] {
+                speedPopup.addItem(withTitle: String(format: "%gx", rate))
+                speedPopup.lastItem?.representedObject = NSNumber(value: rate)
+            }
+            speedPopup.selectItem(withTitle: "1x")
+            speedPopup.target = self
+            speedPopup.action = #selector(speedChanged(_:))
+
+            let stack = NSStackView(views: [previousButton, playButton, nextButton, timeSlider, timeLabel, speedPopup])
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            stack.orientation = .horizontal
+            stack.alignment = .centerY
+            stack.spacing = 6
+            addSubview(stack)
+            NSLayoutConstraint.activate([
+                stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+                stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+                stack.topAnchor.constraint(equalTo: topAnchor, constant: 5),
+                stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -5),
+            ])
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        func update(index: Int, count: Int, isPlaying: Bool) {
+            let safeCount = max(count, 1)
+            timeSlider.maxValue = Double(max(safeCount - 1, 0))
+            timeSlider.doubleValue = Double(min(max(index, 0), safeCount - 1))
+            timeLabel.stringValue = "\(min(max(index, 0), safeCount - 1) + 1)/\(safeCount)"
+            playButton.title = isPlaying ? "❚❚" : "▶"
+        }
+
+        @objc private func previousPressed(_ sender: Any?) { previousHandler?() }
+        @objc private func playPressed(_ sender: Any?) { playHandler?() }
+        @objc private func nextPressed(_ sender: Any?) { nextHandler?() }
+        @objc private func timeChanged(_ sender: NSSlider) { timeHandler?(Int(sender.doubleValue.rounded())) }
+        @objc private func speedChanged(_ sender: NSPopUpButton) {
+            guard let rate = sender.selectedItem?.representedObject as? NSNumber else { return }
+            speedHandler?(rate.doubleValue)
+        }
+    }
+
     private let contentView = NSView()
     private let closeButton = NSButton()
     private let overlayBlendSlider = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
@@ -1052,6 +1153,7 @@ final class MetalViewerPaneView: NSView {
     private let measurementOverlay = MeasurementOverlayView()
     private let orientationOverlay = MetalOrientationOverlayView()
     private let registrationStatusView = RegistrationStatusView()
+    private let dynamicControls = DynamicControlsView(frame: .zero)
     private var metalView: MetalImageView?
     private var reportWebView: WKWebView?
     private var trackingAreaRef: NSTrackingArea?
@@ -1061,6 +1163,10 @@ final class MetalViewerPaneView: NSView {
     private var mouseToolAssignments = MetalViewerMouseToolAssignments()
     private var tumourSeeds: [MetalViewerTumourSeed] = []
     private var tumourSeedObserver: NSObjectProtocol?
+    private var dynamicSequence: MetalDynamicSequence?
+    private var dynamicTimeIndex = 0
+    private var dynamicPlaybackRate = 1.0
+    private var dynamicPlaybackTimer: Timer?
 
     private(set) var series: MetalViewerSeries
     private(set) var overlaySeries: MetalViewerSeries?
@@ -1115,6 +1221,20 @@ final class MetalViewerPaneView: NSView {
         overlayBlendSlider.controlSize = .small
         contentView.addSubview(overlayBlendSlider)
 
+        dynamicControls.isHidden = true
+        dynamicControls.previousHandler = { [weak self] in self?.stepDynamicTime(by: -1) }
+        dynamicControls.playHandler = { [weak self] in self?.toggleDynamicPlayback() }
+        dynamicControls.nextHandler = { [weak self] in self?.stepDynamicTime(by: 1) }
+        dynamicControls.timeHandler = { [weak self] index in self?.setDynamicTimeIndex(index) }
+        dynamicControls.speedHandler = { [weak self] rate in
+            guard let self else { return }
+            self.dynamicPlaybackRate = rate
+            if self.dynamicPlaybackTimer != nil {
+                self.startDynamicPlayback()
+            }
+        }
+        contentView.addSubview(dynamicControls)
+
         NSLayoutConstraint.activate([
             contentView.leadingAnchor.constraint(equalTo: leadingAnchor),
             contentView.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -1129,6 +1249,9 @@ final class MetalViewerPaneView: NSView {
             overlayBlendSlider.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
             overlayBlendSlider.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -18),
             overlayBlendSlider.widthAnchor.constraint(equalToConstant: 180),
+
+            dynamicControls.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            dynamicControls.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -16),
         ])
 
         updateAppearance()
@@ -1151,6 +1274,7 @@ final class MetalViewerPaneView: NSView {
     }
 
     deinit {
+        dynamicPlaybackTimer?.invalidate()
         if let tumourSeedObserver {
             NotificationCenter.default.removeObserver(tumourSeedObserver)
         }
@@ -1174,6 +1298,10 @@ final class MetalViewerPaneView: NSView {
     }
 
     func display(series: MetalViewerSeries) {
+        stopDynamicPlayback()
+        dynamicSequence = nil
+        dynamicTimeIndex = 0
+        dynamicControls.isHidden = true
         self.series = series
         self.overlaySeries = nil
         reloadTumourSeeds()
@@ -1238,11 +1366,11 @@ final class MetalViewerPaneView: NSView {
             self?.windowLevelInteractionHandler?()
         }
         metalView.titleDidChange = { [weak self] state in
-            self?.currentStateDescription = state
-            self?.stateDidChange?(state)
-            self?.updateAnnotationOverlay()
-            self?.updateReferenceLineOverlay()
-            self?.updateOrientationOverlay()
+            guard let self else { return }
+            self.updateCurrentStateDescription(rendererState: state)
+            self.updateAnnotationOverlay()
+            self.updateReferenceLineOverlay()
+            self.updateOrientationOverlay()
         }
         metalView.annotationStateDidChange = { [weak self] in
             self?.updateAnnotationOverlay()
@@ -1276,6 +1404,7 @@ final class MetalViewerPaneView: NSView {
         contentView.addSubview(orientationOverlay, positioned: .above, relativeTo: measurementOverlay)
         contentView.addSubview(registrationStatusView, positioned: .above, relativeTo: orientationOverlay)
         contentView.addSubview(overlayBlendSlider, positioned: .above, relativeTo: registrationStatusView)
+        contentView.addSubview(dynamicControls, positioned: .above, relativeTo: overlayBlendSlider)
 
         NSLayoutConstraint.activate([
             metalView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -1316,14 +1445,107 @@ final class MetalViewerPaneView: NSView {
             self?.registrationStatusView.update(isRunning: isRunning, message: message, progress: progress)
             self?.dismissRegistrationStatusOnMouseMove = !isRunning && message.isEmpty == false
         }
-        currentStateDescription = metalView.renderer.stateDescription
-        stateDidChange?(currentStateDescription)
+        updateCurrentStateDescription(rendererState: metalView.renderer.stateDescription)
         updateAnnotationOverlay()
         updateReferenceLineOverlay()
         updateOrientationOverlay()
+        detectDynamicSequence(for: series)
+    }
+
+    private func detectDynamicSequence(for series: MetalViewerSeries) {
+        series.detectDynamicSequence { [weak self, weak series] sequence in
+            guard let self, let series, self.series === series, let sequence else { return }
+            self.applyDynamicSequence(sequence)
+        }
+    }
+
+    private func applyDynamicSequence(_ sequence: MetalDynamicSequence) {
+        guard sequence.count > 1 else { return }
+        dynamicSequence = sequence
+        dynamicTimeIndex = 0
+        dynamicControls.isHidden = false
+        dynamicControls.toolTip = sequence.evidence.joined(separator: " • ")
+        setDynamicTimeIndex(0)
+
+        if sequence.confidence == .manual {
+            startDynamicPlayback()
+        }
+    }
+
+    private func setDynamicTimeIndex(_ requestedIndex: Int) {
+        guard let dynamicSequence, dynamicSequence.timePoints.isEmpty == false else { return }
+        let count = dynamicSequence.timePoints.count
+        let index = (requestedIndex % count + count) % count
+        dynamicTimeIndex = index
+
+        if overlaySeries != nil {
+            stopDynamicPlayback()
+            overlaySeries = nil
+            overlayBlendSlider.isHidden = true
+            metalView?.renderer.clearOverlayPixList()
+        }
+
+        metalView?.display(pixList: dynamicSequence.timePoints[index], preservingSliceIndex: true)
+        dynamicControls.update(index: index, count: count, isPlaying: dynamicPlaybackTimer != nil)
+        updateCurrentStateDescription(rendererState: metalView?.renderer.stateDescription ?? currentStateDescription)
+        prefetchDynamicTimePoint(at: index + 1)
+    }
+
+    private func stepDynamicTime(by offset: Int) {
+        guard dynamicSequence != nil else { return }
+        setDynamicTimeIndex(dynamicTimeIndex + offset)
+    }
+
+    private func toggleDynamicPlayback() {
+        if dynamicPlaybackTimer == nil {
+            startDynamicPlayback()
+        } else {
+            stopDynamicPlayback()
+        }
+    }
+
+    private func startDynamicPlayback() {
+        guard let dynamicSequence, dynamicSequence.count > 1 else { return }
+        dynamicPlaybackTimer?.invalidate()
+        let interval = max(dynamicSequence.frameDuration / max(dynamicPlaybackRate, 0.01), 1.0 / 60.0)
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            self?.stepDynamicTime(by: 1)
+        }
+        dynamicPlaybackTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        dynamicControls.update(index: dynamicTimeIndex, count: dynamicSequence.count, isPlaying: true)
+    }
+
+    private func stopDynamicPlayback() {
+        dynamicPlaybackTimer?.invalidate()
+        dynamicPlaybackTimer = nil
+        if let dynamicSequence {
+            dynamicControls.update(index: dynamicTimeIndex, count: dynamicSequence.count, isPlaying: false)
+        }
+    }
+
+    private func prefetchDynamicTimePoint(at requestedIndex: Int) {
+        guard let dynamicSequence, dynamicSequence.count > 1,
+              let device = MTLCreateSystemDefaultDevice() else { return }
+        let index = (requestedIndex % dynamicSequence.count + dynamicSequence.count) % dynamicSequence.count
+        let pixList = dynamicSequence.timePoints[index]
+        guard pixList.count > 1 else { return }
+        MetalSeriesTextureCache.shared.requestEntry(for: pixList, device: device) { _ in }
+    }
+
+    private func updateCurrentStateDescription(rendererState: String) {
+        if let dynamicSequence {
+            currentStateDescription = "\(rendererState)  •  Time \(dynamicTimeIndex + 1)/\(dynamicSequence.count)"
+        } else {
+            currentStateDescription = rendererState
+        }
+        stateDidChange?(currentStateDescription)
     }
 
     func overlay(series: MetalViewerSeries) {
+        stopDynamicPlayback()
+        dynamicSequence = nil
+        dynamicControls.isHidden = true
         overlaySeries = series
         registrationStatusView.update(isRunning: true, message: "Preparing registration...", progress: 0)
         window?.displayIfNeeded()
@@ -1338,8 +1560,9 @@ final class MetalViewerPaneView: NSView {
             )
             self.overlayBlendSlider.doubleValue = 0.5
             self.overlayBlendSlider.isHidden = false
-            self.currentStateDescription = self.metalView?.renderer.stateDescription ?? self.currentStateDescription
-            self.stateDidChange?(self.currentStateDescription)
+            self.updateCurrentStateDescription(
+                rendererState: self.metalView?.renderer.stateDescription ?? self.currentStateDescription
+            )
             self.updateAnnotationOverlay()
             self.updateReferenceLineOverlay()
             self.updateOrientationOverlay()

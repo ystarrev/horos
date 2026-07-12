@@ -138,6 +138,7 @@ final class MetalViewerLauncher: NSObject {
         let frames: [DCMPix]
         let fallbackTitle: String
         let identifiers: RefreshIdentifiers
+        let forceDynamicInterpretation: Bool
     }
 
     private struct RefreshIdentifiers {
@@ -174,6 +175,44 @@ final class MetalViewerLauncher: NSObject {
         let initialPixList: [DCMPix]?
     }
 
+    private struct CrossSeriesTemporalKey: Hashable {
+        let modality: String
+        let seriesDescription: String
+        let protocolName: String
+        let sequenceName: String
+        let frameOfReferenceUID: String
+        let imageCount: Int
+        let dimensions: String
+        let orientation: String
+        let pixelSpacing: String
+        let slicePositions: String
+        let echoTime: String
+    }
+
+    private struct CrossSeriesTemporalMetadata {
+        let key: CrossSeriesTemporalKey
+        let temporalPositionCount: Int
+        let acquisitionNumber: Int
+        let acquisitionSeconds: Double
+    }
+
+    private struct PendingSeriesPresentation {
+        let imageGroup: SeriesImageGroup
+        let displaySeriesNumber: String
+        let temporalMetadata: CrossSeriesTemporalMetadata?
+    }
+
+    private struct SeriesPresentation {
+        let identifier: String
+        let title: String
+        let seriesNumber: String
+        let imageObjects: [NSManagedObject]
+        let containsCurrentImage: Bool
+        let initialPixList: [DCMPix]?
+        let sourceSeriesIdentifiers: Set<String>
+        let dynamicTimePointCountHint: Int?
+    }
+
     @objc(launchWithContext:)
     class func launch(withContext context: NSDictionary) {
         let launchStart = CFAbsoluteTimeGetCurrent()
@@ -184,6 +223,7 @@ final class MetalViewerLauncher: NSObject {
             NSSound.beep()
             return
         }
+        let forceDynamicInterpretation = (context["forceDynamicInterpretation"] as? NSNumber)?.boolValue ?? false
 
         let launchIdentifiers = refreshIdentifiers(from: frames)
         if let existingController = existingController(matching: launchIdentifiers) {
@@ -191,12 +231,17 @@ final class MetalViewerLauncher: NSObject {
             refreshContexts[controllerIdentifier] = ViewerRefreshContext(
                 frames: frames,
                 fallbackTitle: title,
-                identifiers: launchIdentifiers
+                identifiers: launchIdentifiers,
+                forceDynamicInterpretation: forceDynamicInterpretation
             )
             ensureDatabaseAddObserver()
 
             let fullStudyStart = CFAbsoluteTimeGetCurrent()
-            let fullStudy = buildStudy(from: frames, fallbackTitle: title)
+            let fullStudy = buildStudy(
+                from: frames,
+                fallbackTitle: title,
+                forceDynamicInterpretation: forceDynamicInterpretation
+            )
             metalTimingLog("MetalViewerLauncher build reused study", since: fullStudyStart)
             let updateStart = CFAbsoluteTimeGetCurrent()
             existingController.updateStudy(fullStudy, selectInitialSeries: true)
@@ -208,7 +253,11 @@ final class MetalViewerLauncher: NSObject {
         }
 
         let initialStudyStart = CFAbsoluteTimeGetCurrent()
-        let study = buildInitialStudy(from: frames, fallbackTitle: title)
+        let study = buildInitialStudy(
+            from: frames,
+            fallbackTitle: title,
+            forceDynamicInterpretation: forceDynamicInterpretation
+        )
         metalTimingLog("MetalViewerLauncher buildInitialStudy", since: initialStudyStart)
         let controllerStart = CFAbsoluteTimeGetCurrent()
         let controller = MetalViewerWindowController(study: study)
@@ -218,7 +267,8 @@ final class MetalViewerLauncher: NSObject {
         refreshContexts[controllerIdentifier] = ViewerRefreshContext(
             frames: frames,
             fallbackTitle: title,
-            identifiers: launchIdentifiers
+            identifiers: launchIdentifiers,
+            forceDynamicInterpretation: forceDynamicInterpretation
         )
         ensureDatabaseAddObserver()
 
@@ -250,10 +300,14 @@ final class MetalViewerLauncher: NSObject {
 
         DispatchQueue.main.async {
             let fullStudyStart = CFAbsoluteTimeGetCurrent()
-            let fullStudy = buildStudy(from: frames, fallbackTitle: title)
+            let fullStudy = buildStudy(
+                from: frames,
+                fallbackTitle: title,
+                forceDynamicInterpretation: forceDynamicInterpretation
+            )
             metalTimingLog("MetalViewerLauncher build full study", since: fullStudyStart)
             let updateStart = CFAbsoluteTimeGetCurrent()
-            controller.updateStudy(fullStudy)
+            controller.updateStudy(fullStudy, selectInitialSeries: forceDynamicInterpretation)
             metalTimingLog("MetalViewerLauncher update full study", since: updateStart)
         }
     }
@@ -360,7 +414,11 @@ final class MetalViewerLauncher: NSObject {
             }
 
             let refreshStart = CFAbsoluteTimeGetCurrent()
-            let updatedStudy = buildStudy(from: context.frames, fallbackTitle: context.fallbackTitle)
+            let updatedStudy = buildStudy(
+                from: context.frames,
+                fallbackTitle: context.fallbackTitle,
+                forceDynamicInterpretation: context.forceDynamicInterpretation
+            )
             let changedPaneCount = controller.updateStudy(updatedStudy)
             if changedPaneCount > 0 {
                 metalTimingLog("MetalViewerLauncher refreshed open viewer panes=\(changedPaneCount)", since: refreshStart)
@@ -443,7 +501,11 @@ final class MetalViewerLauncher: NSObject {
         return ""
     }
 
-    private class func buildInitialStudy(from frames: [DCMPix], fallbackTitle: String) -> MetalViewerStudy {
+    private class func buildInitialStudy(
+        from frames: [DCMPix],
+        fallbackTitle: String,
+        forceDynamicInterpretation: Bool
+    ) -> MetalViewerStudy {
         guard let currentImageObject = frames.first?.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSManagedObject else {
             let series = MetalViewerSeries(
                 title: fallbackTitle,
@@ -455,7 +517,8 @@ final class MetalViewerLauncher: NSObject {
                 showsStudyHeader: true,
                 imageObjects: [],
                 isBonjour: (BrowserController.currentBrowser()?.isCurrentDatabaseBonjour ?? false),
-                initialPixList: frames
+                initialPixList: frames,
+                forceDynamicInterpretation: forceDynamicInterpretation
             )
             return MetalViewerStudy(title: fallbackTitle, series: [series], initialSeriesIdentifier: series.identifier)
         }
@@ -484,12 +547,17 @@ final class MetalViewerLauncher: NSObject {
             showsStudyHeader: true,
             imageObjects: [],
             isBonjour: isBonjour,
-            initialPixList: frames
+            initialPixList: frames,
+            forceDynamicInterpretation: forceDynamicInterpretation
         )
         return MetalViewerStudy(title: studyTitle, series: [series], initialSeriesIdentifier: currentSeriesID)
     }
 
-    private class func buildStudy(from frames: [DCMPix], fallbackTitle: String) -> MetalViewerStudy {
+    private class func buildStudy(
+        from frames: [DCMPix],
+        fallbackTitle: String,
+        forceDynamicInterpretation: Bool
+    ) -> MetalViewerStudy {
         guard let currentImageObject = frames.first?.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSManagedObject,
               let currentStudy = currentImageObject.value(forKeyPath: "series.study") as? DicomStudy else {
             let series = MetalViewerSeries(
@@ -502,7 +570,8 @@ final class MetalViewerLauncher: NSObject {
                 showsStudyHeader: true,
                 imageObjects: [],
                 isBonjour: (BrowserController.currentBrowser()?.isCurrentDatabaseBonjour ?? false),
-                initialPixList: frames
+                initialPixList: frames,
+                forceDynamicInterpretation: forceDynamicInterpretation
             )
             return MetalViewerStudy(title: fallbackTitle, series: [series], initialSeriesIdentifier: series.identifier)
         }
@@ -539,9 +608,10 @@ final class MetalViewerLauncher: NSObject {
         for (studyIndex, study) in sortedStudies.enumerated() {
             guard let browser else { continue }
             let seriesObjects = browser.childrenArray(study, onlyImages: false) as? [NSManagedObject] ?? []
-            var hasShownStudyHeader = false
+            var pendingPresentations: [PendingSeriesPresentation] = []
 
             for seriesObject in seriesObjects {
+                guard shouldShowInScout(seriesObject) else { continue }
                 let images = browser.childrenArray(seriesObject) as? [NSManagedObject] ?? []
                 guard images.isEmpty == false else { continue }
 
@@ -555,31 +625,44 @@ final class MetalViewerLauncher: NSObject {
                     currentImageObject: currentImageObject,
                     frames: frames
                 )
-                let studyIdentifier = study.studyInstanceUID ?? String(describing: study.objectID)
                 let displaySeriesNumber = seriesNumber(from: seriesObject)
 
                 for imageGroup in imageGroups {
-                    if imageGroup.containsCurrentImage {
-                        currentSeriesID = imageGroup.identifier
-                    }
-
-                    flattenedSeries.append(
-                        MetalViewerSeries(
-                            identifier: imageGroup.identifier,
-                            title: imageGroup.title,
-                            seriesNumber: displaySeriesNumber,
-                            studyIdentifier: studyIdentifier,
-                            studyTitle: study.name ?? study.studyName ?? fallbackTitle,
-                            studyDate: study.date,
-                            studyNumber: studyIndex + 1,
-                            showsStudyHeader: hasShownStudyHeader == false,
-                            imageObjects: imageGroup.imageObjects,
-                            isBonjour: isBonjour,
-                            initialPixList: imageGroup.initialPixList
+                    pendingPresentations.append(
+                        PendingSeriesPresentation(
+                            imageGroup: imageGroup,
+                            displaySeriesNumber: displaySeriesNumber,
+                            temporalMetadata: imageGroups.count == 1
+                                ? crossSeriesTemporalMetadata(for: imageGroup, seriesObject: seriesObject)
+                                : nil
                         )
                     )
-                    hasShownStudyHeader = true
                 }
+            }
+
+            let presentations = makeSeriesPresentations(from: pendingPresentations, frames: frames)
+            for (presentationIndex, presentation) in presentations.enumerated() {
+                if presentation.containsCurrentImage {
+                    currentSeriesID = presentation.identifier
+                }
+
+                flattenedSeries.append(
+                    MetalViewerSeries(
+                        identifier: presentation.identifier,
+                        title: presentation.title,
+                        seriesNumber: presentation.seriesNumber,
+                        studyIdentifier: study.studyInstanceUID ?? String(describing: study.objectID),
+                        studyTitle: study.name ?? study.studyName ?? fallbackTitle,
+                        studyDate: study.date,
+                        studyNumber: studyIndex + 1,
+                        showsStudyHeader: presentationIndex == 0,
+                        imageObjects: presentation.imageObjects,
+                        isBonjour: isBonjour,
+                        initialPixList: presentation.initialPixList,
+                        sourceSeriesIdentifiers: presentation.sourceSeriesIdentifiers,
+                        dynamicTimePointCountHint: presentation.dynamicTimePointCountHint
+                    )
+                )
             }
         }
 
@@ -598,6 +681,40 @@ final class MetalViewerLauncher: NSObject {
                 initialPixList: frames
             )
             flattenedSeries = [series]
+        }
+
+        let selectedSourceSeriesIdentifiers = Set(frames.compactMap { frame -> String? in
+            guard let imageObject = frame.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSManagedObject,
+                  let seriesObject = imageObject.value(forKey: "series") as? NSManagedObject else {
+                return nil
+            }
+            return seriesObject.objectID.uriRepresentation().absoluteString
+        })
+        let matchingGroupedSeries = flattenedSeries.first {
+            $0.dynamicTimePointCountHint != nil
+                && $0.sourceSeriesIdentifiers.isDisjoint(with: selectedSourceSeriesIdentifiers) == false
+        }
+
+        if forceDynamicInterpretation, let matchingGroupedSeries {
+            currentSeriesID = matchingGroupedSeries.identifier
+        } else if forceDynamicInterpretation, frames.count > 1 {
+            let dynamicIdentifier = "\(currentStudy.studyInstanceUID ?? studyTitle)::dynamic-selection"
+            let dynamicSeries = MetalViewerSeries(
+                identifier: dynamicIdentifier,
+                title: NSLocalizedString("Dynamic Selection", comment: ""),
+                seriesNumber: "",
+                studyIdentifier: currentStudy.studyInstanceUID ?? UUID().uuidString,
+                studyTitle: studyTitle,
+                studyDate: currentStudy.date,
+                studyNumber: 1,
+                showsStudyHeader: true,
+                imageObjects: [],
+                isBonjour: isBonjour,
+                initialPixList: frames,
+                forceDynamicInterpretation: true
+            )
+            flattenedSeries.insert(dynamicSeries, at: 0)
+            currentSeriesID = dynamicIdentifier
         }
 
         return MetalViewerStudy(title: studyTitle, series: flattenedSeries, initialSeriesIdentifier: currentSeriesID)
@@ -637,6 +754,281 @@ final class MetalViewerLauncher: NSObject {
         if let currentStudy = currentImageObject.value(forKeyPath: "series.study") as? NSManagedObject {
             context.refresh(currentStudy, mergeChanges: true)
         }
+    }
+
+    private class func makeSeriesPresentations(
+        from pending: [PendingSeriesPresentation],
+        frames: [DCMPix]
+    ) -> [SeriesPresentation] {
+        let candidates = pending.enumerated().compactMap { index, item -> (Int, CrossSeriesTemporalMetadata)? in
+            guard let metadata = item.temporalMetadata else { return nil }
+            return (index, metadata)
+        }
+        let groupedCandidates = Dictionary(grouping: candidates, by: { $0.1.key })
+        var combinedIndexesByMember: [Int: [Int]] = [:]
+
+        for candidatesWithSameGeometry in groupedCandidates.values {
+            let ordered = candidatesWithSameGeometry.sorted { lhs, rhs in
+                lhs.1.acquisitionNumber < rhs.1.acquisitionNumber
+            }
+            let declaredCounts = Set(ordered.map(\.1.temporalPositionCount).filter { $0 > 1 })
+            guard declaredCounts.count <= 1 else { continue }
+            let expectedCount = declaredCounts.first ?? ordered.count
+            guard expectedCount > 1,
+                  ordered.count == expectedCount,
+                  ordered.allSatisfy({ $0.1.temporalPositionCount <= 1 || $0.1.temporalPositionCount == expectedCount }) else {
+                continue
+            }
+
+            let acquisitionNumbers = ordered.map { $0.1.acquisitionNumber }
+            guard Set(acquisitionNumbers).count == expectedCount,
+                  let firstAcquisition = acquisitionNumbers.first,
+                  acquisitionNumbers == Array(firstAcquisition..<(firstAcquisition + expectedCount)) else {
+                continue
+            }
+
+            let acquisitionTimes = ordered.map { $0.1.acquisitionSeconds }
+            guard zip(acquisitionTimes.dropFirst(), acquisitionTimes).allSatisfy({ $0.0 > $0.1 }) else {
+                continue
+            }
+
+            let memberIndexes = ordered.map(\.0)
+            for memberIndex in memberIndexes {
+                combinedIndexesByMember[memberIndex] = memberIndexes
+            }
+        }
+
+        var presentations: [SeriesPresentation] = []
+        var consumedIndexes = Set<Int>()
+
+        for index in pending.indices {
+            guard consumedIndexes.contains(index) == false else { continue }
+            let item = pending[index]
+
+            if let memberIndexes = combinedIndexesByMember[index], memberIndexes.first == index {
+                let members = memberIndexes.map { pending[$0] }
+                consumedIndexes.formUnion(memberIndexes)
+                let orderedImages = members.flatMap { $0.imageGroup.imageObjects }
+                let sourceIdentifiers = Set(members.map { $0.imageGroup.identifier })
+                let cachedFrames = filteredFrames(frames, matching: orderedImages)
+                let timePointCount = memberIndexes.count
+                let seriesNumbers = members.compactMap { Int($0.displaySeriesNumber) }
+                let displaySeriesNumber: String
+                if let firstNumber = seriesNumbers.first, let lastNumber = seriesNumbers.last {
+                    displaySeriesNumber = firstNumber == lastNumber ? "\(firstNumber)" : "\(firstNumber)–\(lastNumber)"
+                } else {
+                    displaySeriesNumber = item.displaySeriesNumber
+                }
+
+                presentations.append(
+                    SeriesPresentation(
+                        identifier: "\(item.imageGroup.identifier)::dynamic-\(timePointCount)",
+                        title: item.imageGroup.title,
+                        seriesNumber: displaySeriesNumber,
+                        imageObjects: orderedImages,
+                        containsCurrentImage: members.contains(where: { $0.imageGroup.containsCurrentImage }),
+                        initialPixList: cachedFrames.count == orderedImages.count ? cachedFrames : nil,
+                        sourceSeriesIdentifiers: sourceIdentifiers,
+                        dynamicTimePointCountHint: timePointCount
+                    )
+                )
+                continue
+            }
+
+            if combinedIndexesByMember[index] != nil {
+                consumedIndexes.insert(index)
+                continue
+            }
+
+            consumedIndexes.insert(index)
+            presentations.append(
+                SeriesPresentation(
+                    identifier: item.imageGroup.identifier,
+                    title: item.imageGroup.title,
+                    seriesNumber: item.displaySeriesNumber,
+                    imageObjects: item.imageGroup.imageObjects,
+                    containsCurrentImage: item.imageGroup.containsCurrentImage,
+                    initialPixList: item.imageGroup.initialPixList,
+                    sourceSeriesIdentifiers: [item.imageGroup.identifier],
+                    dynamicTimePointCountHint: nil
+                )
+            )
+        }
+
+        return presentations
+    }
+
+    private class func crossSeriesTemporalMetadata(
+        for imageGroup: SeriesImageGroup,
+        seriesObject: NSManagedObject
+    ) -> CrossSeriesTemporalMetadata? {
+        guard let firstImage = imageGroup.imageObjects.first else { return nil }
+        guard let path = resolvedPath(for: firstImage) else { return nil }
+        guard let object = DCMObject.object(withContentsOfFile: path, decodingPixelData: false) as? DCMObject else { return nil }
+
+        let modality = normalizedMetadataString(
+            attributeString(in: object, tag: "0008,0060")
+                ?? seriesObject.value(forKey: "modality") as? String
+        )
+        guard ["CT", "MR", "NM", "PT", "RF", "US", "XA"].contains(modality) else { return nil }
+
+        let temporalPositionCount = attributeInt(in: object, tag: "0020,0105") ?? 0
+        let acquisitionNumber = attributeInt(in: object, tag: "0020,0012")
+        let acquisitionSeconds = dicomClockSeconds(object.attributeValue(forKey: "0008,0032"))
+        let frameOfReferenceUID = normalizedMetadataString(attributeString(in: object, tag: "0020,0052"))
+        guard let acquisitionNumber,
+              let acquisitionSeconds,
+              frameOfReferenceUID.isEmpty == false else {
+            return nil
+        }
+
+        let seriesDescription = normalizedMetadataString(
+            attributeString(in: object, tag: "0008,103E")
+                ?? seriesObject.value(forKey: "seriesDescription") as? String
+                ?? imageGroup.title
+        )
+        guard seriesDescription.isEmpty == false else { return nil }
+
+        let protocolName = normalizedMetadataString(attributeString(in: object, tag: "0018,1030"))
+        let sequenceName = normalizedMetadataString(attributeString(in: object, tag: "0018,0024"))
+        let rows = attributeInt(in: object, tag: "0028,0010")
+            ?? (firstImage.value(forKey: "height") as? NSNumber)?.intValue
+            ?? 0
+        let columns = attributeInt(in: object, tag: "0028,0011")
+            ?? (firstImage.value(forKey: "width") as? NSNumber)?.intValue
+            ?? 0
+        guard rows > 0, columns > 0 else { return nil }
+
+        let orientation = metadataSignature(attributeNumbers(in: object, tag: "0020,0037"), precision: 6)
+        let pixelSpacing = metadataSignature(attributeNumbers(in: object, tag: "0028,0030"), precision: 6)
+        guard orientation.isEmpty == false, pixelSpacing.isEmpty == false else { return nil }
+
+        let positions = imageGroup.imageObjects.compactMap {
+            ($0.value(forKey: "sliceLocation") as? NSNumber)?.doubleValue
+        }.sorted()
+        guard positions.count == imageGroup.imageObjects.count else { return nil }
+
+        let echoTime = metadataSignature(
+            attributeDouble(in: object, tag: "0018,0081").map { [$0] } ?? [],
+            precision: 4
+        )
+
+        return CrossSeriesTemporalMetadata(
+            key: CrossSeriesTemporalKey(
+                modality: modality,
+                seriesDescription: seriesDescription,
+                protocolName: protocolName,
+                sequenceName: sequenceName,
+                frameOfReferenceUID: frameOfReferenceUID,
+                imageCount: imageGroup.imageObjects.count,
+                dimensions: "\(columns)x\(rows)",
+                orientation: orientation,
+                pixelSpacing: pixelSpacing,
+                slicePositions: metadataSignature(positions, precision: 3),
+                echoTime: echoTime
+            ),
+            temporalPositionCount: temporalPositionCount,
+            acquisitionNumber: acquisitionNumber,
+            acquisitionSeconds: acquisitionSeconds
+        )
+    }
+
+    private class func resolvedPath(for imageObject: NSManagedObject) -> String? {
+        if imageObject.responds(to: NSSelectorFromString("completePathResolved")),
+           let path = imageObject.perform(NSSelectorFromString("completePathResolved"))?.takeUnretainedValue() as? String,
+           path.isEmpty == false {
+            return path
+        }
+        if let path = imageObject.value(forKey: "completePath") as? String, path.isEmpty == false {
+            return path
+        }
+        return nil
+    }
+
+    private class func shouldShowInScout(_ seriesObject: NSManagedObject) -> Bool {
+        let modality = (seriesObject.value(forKey: "modality") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+        if modality == "PR" || modality == "KO" {
+            return false
+        }
+
+        let sopClassUID = (seriesObject.value(forKey: "seriesSOPClassUID") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if sopClassUID?.hasPrefix("1.2.840.10008.5.1.4.1.1.11.") == true {
+            return false
+        }
+        return sopClassUID != "1.2.840.10008.5.1.4.1.1.88.59"
+    }
+
+    private class func attributeString(in object: DCMObject, tag: String) -> String? {
+        if let value = object.attributeValue(forKey: tag) as? String {
+            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let value = object.attributeValue(forKey: tag) as? NSNumber {
+            return value.stringValue
+        }
+        return nil
+    }
+
+    private class func attributeDouble(in object: DCMObject, tag: String) -> Double? {
+        if let value = object.attributeValue(forKey: tag) as? NSNumber {
+            return value.doubleValue
+        }
+        guard let value = attributeString(in: object, tag: tag) else { return nil }
+        return Double(value.components(separatedBy: "\\").first ?? value)
+    }
+
+    private class func attributeInt(in object: DCMObject, tag: String) -> Int? {
+        guard let value = attributeDouble(in: object, tag: tag), value.isFinite else { return nil }
+        return Int(value.rounded())
+    }
+
+    private class func attributeNumbers(in object: DCMObject, tag: String) -> [Double] {
+        if let values = object.attributeArray(forKey: tag) as? [NSNumber] {
+            return values.map(\.doubleValue)
+        }
+        if let values = object.attributeArray(forKey: tag) as? [String] {
+            return values.compactMap(Double.init)
+        }
+        return attributeString(in: object, tag: tag)?
+            .components(separatedBy: "\\")
+            .compactMap(Double.init) ?? []
+    }
+
+    private class func normalizedMetadataString(_ value: String?) -> String {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    }
+
+    private class func metadataSignature(_ values: [Double], precision: Int) -> String {
+        let format = "%0.\(precision)f"
+        return values.map { String(format: format, $0) }.joined(separator: "\\")
+    }
+
+    private class func dicomClockSeconds(_ rawValue: Any?) -> Double? {
+        if let date = rawValue as? Date {
+            let components = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+            guard let hour = components.hour else { return nil }
+            return Double(hour * 3_600 + (components.minute ?? 0) * 60 + (components.second ?? 0))
+                + Double(components.nanosecond ?? 0) / 1_000_000_000
+        }
+
+        let stringValue: String?
+        if let value = rawValue as? String {
+            stringValue = value
+        } else if let value = rawValue as? NSNumber {
+            stringValue = value.stringValue
+        } else {
+            stringValue = nil
+        }
+        guard let value = stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), value.count >= 2 else { return nil }
+        let normalized = value.replacingOccurrences(of: ":", with: "")
+        let hour = Double(normalized.prefix(2)) ?? 0
+        let minuteStart = normalized.index(normalized.startIndex, offsetBy: min(2, normalized.count))
+        let minuteEnd = normalized.index(minuteStart, offsetBy: min(2, normalized.distance(from: minuteStart, to: normalized.endIndex)))
+        let minute = Double(normalized[minuteStart..<minuteEnd]) ?? 0
+        let second = minuteEnd < normalized.endIndex ? Double(normalized[minuteEnd...]) ?? 0 : 0
+        return hour * 3_600 + minute * 60 + second
     }
 
     private class func splitSeriesImages(

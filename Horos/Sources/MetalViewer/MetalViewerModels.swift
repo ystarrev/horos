@@ -1140,7 +1140,516 @@ final class MetalSeriesTextureCache {
     }
 }
 
+enum MetalDynamicDetectionConfidence: Int {
+    case manual = 0
+    case high = 2
+}
+
+struct MetalDynamicSequence {
+    let timePoints: [[DCMPix]]
+    let frameDuration: TimeInterval
+    let confidence: MetalDynamicDetectionConfidence
+    let evidence: [String]
+
+    var count: Int { timePoints.count }
+}
+
+private struct MetalDynamicFrameMetadata {
+    let sourceIndex: Int
+    let pix: DCMPix
+    let temporalIndex: Int?
+    let inStackPosition: Int?
+    let position: SIMD3<Double>?
+    let acquisitionSeconds: Double?
+    let triggerMilliseconds: Double?
+    let echoMilliseconds: Double?
+    let hasExplicitTemporalDimension: Bool
+    let hasCineTiming: Bool
+    let hasDynamicImageType: Bool
+    let excludesTimingHeuristic: Bool
+    let preferredFrameDuration: TimeInterval?
+
+    var spatialKey: String {
+        if let inStackPosition {
+            return "stack:\(inStackPosition)"
+        }
+        if let position {
+            return String(
+                format: "position:%.3f:%.3f:%.3f",
+                position.x,
+                position.y,
+                position.z
+            )
+        }
+        return "single-position"
+    }
+
+    var temporalSortValue: Double {
+        if let triggerMilliseconds { return triggerMilliseconds / 1_000 }
+        if let acquisitionSeconds { return acquisitionSeconds }
+        if let temporalIndex { return Double(temporalIndex) }
+        return Double(sourceIndex)
+    }
+}
+
+private enum MetalDynamicSeriesDetector {
+    private static let defaultFrameDuration: TimeInterval = 0.1
+
+    static func detect(pixList: [DCMPix], force: Bool) -> MetalDynamicSequence? {
+        guard pixList.count > 1 else { return nil }
+
+        let metadata = readMetadata(for: pixList)
+        guard metadata.count == pixList.count else {
+            return force ? forcedSequence(from: pixList, metadata: metadata) : nil
+        }
+
+        if let explicit = sequenceFromExplicitTemporalDimension(metadata) {
+            return makeSequence(
+                timePoints: explicit,
+                metadata: metadata,
+                confidence: force ? .manual : .high,
+                evidence: [NSLocalizedString("DICOM temporal position dimension", comment: "")]
+            )
+        }
+
+        let hasDynamicImageType = metadata.contains(where: \.hasDynamicImageType)
+        let hasCineTiming = metadata.contains(where: \.hasCineTiming)
+        let excludesTimingHeuristic = metadata.contains(where: \.excludesTimingHeuristic)
+        let hasVaryingEcho = Set(
+            metadata.compactMap(\.echoMilliseconds).map { Int(($0 * 1_000).rounded()) }
+        ).count > 1
+
+        if excludesTimingHeuristic == false, hasVaryingEcho == false,
+           let repeatedGeometry = sequenceFromRepeatedGeometry(metadata),
+           hasDynamicImageType || hasCineTiming || hasUsefulAcquisitionTiming(metadata) {
+            var evidence = [NSLocalizedString("Repeated spatial geometry with acquisition timing", comment: "")]
+            if hasDynamicImageType {
+                evidence.append(NSLocalizedString("DICOM Image Type identifies dynamic or gated data", comment: ""))
+            }
+            return makeSequence(
+                timePoints: repeatedGeometry,
+                metadata: metadata,
+                confidence: force ? .manual : .high,
+                evidence: evidence
+            )
+        }
+
+        if isSinglePosition(metadata), hasDynamicImageType || hasCineTiming {
+            let timePoints = metadata
+                .sorted { temporalOrdering($0, $1) }
+                .map { [$0.pix] }
+            return makeSequence(
+                timePoints: timePoints,
+                metadata: metadata,
+                confidence: force ? .manual : .high,
+                evidence: [NSLocalizedString("DICOM cine timing", comment: "")]
+            )
+        }
+
+        return force ? forcedSequence(from: pixList, metadata: metadata) : nil
+    }
+
+    private static func readMetadata(for pixList: [DCMPix]) -> [MetalDynamicFrameMetadata] {
+        var cachedPath: String?
+        var cachedObject: DCMObject?
+        var result: [MetalDynamicFrameMetadata] = []
+        result.reserveCapacity(pixList.count)
+
+        for (index, pix) in pixList.enumerated() {
+            guard let path = nonEmpty(pix.srcFile) else { continue }
+            let object: DCMObject
+            if path == cachedPath, let cached = cachedObject {
+                object = cached
+            } else {
+                guard let parsed = DCMObject.object(withContentsOfFile: path, decodingPixelData: false) as? DCMObject else {
+                    continue
+                }
+                cachedPath = path
+                cachedObject = parsed
+                object = parsed
+            }
+
+            result.append(metadata(for: pix, sourceIndex: index, object: object))
+        }
+        return result
+    }
+
+    private static func metadata(for pix: DCMPix, sourceIndex: Int, object: DCMObject) -> MetalDynamicFrameMetadata {
+        let frameNumber = max(Int(pix.frameNo), 0)
+        let perFrameItem = sequenceItems(in: object, named: "Per-frameFunctionalGroupsSequence").element(at: frameNumber)
+        let frameContent = perFrameItem.flatMap { firstSequenceItem(in: $0, named: "FrameContentSequence") }
+        let planePosition = perFrameItem.flatMap {
+            firstSequenceItem(in: $0, named: "PlanePositionSequence")
+                ?? firstSequenceItem(in: $0, named: "PlanePositionVolumeSequence")
+        }
+        let cardiac = perFrameItem.flatMap { firstSequenceItem(in: $0, named: "CardiacSynchronizationSequence") }
+        let temporalPosition = perFrameItem.flatMap { firstSequenceItem(in: $0, named: "TemporalPositionSequence") }
+        let mrEcho = perFrameItem.flatMap { firstSequenceItem(in: $0, named: "MREchoSequence") }
+        let mrDiffusion = perFrameItem.flatMap { firstSequenceItem(in: $0, named: "MRDiffusionSequence") }
+
+        let dimensionOrganizationType = stringValue(in: object, named: "DimensionOrganizationType")?.uppercased()
+        let isExplicit3DTemporal = dimensionOrganizationType == "3D_TEMPORAL"
+        let dimensionValues = frameContent.flatMap { numberArray(in: $0, named: "DimensionIndexValues") } ?? []
+        let nuclearMedicineTemporalIndex = numberArray(in: object, named: "TimeSliceVector")?.element(at: frameNumber)
+            ?? numberArray(in: object, named: "TimeSlotVector")?.element(at: frameNumber)
+        let temporalIndex = intValue(in: frameContent, named: "TemporalPositionIndex")
+            ?? intValue(in: object, named: "TemporalPositionIdentifier")
+            ?? (isExplicit3DTemporal ? dimensionValues.first.map { Int($0.rounded()) } : nil)
+            ?? nuclearMedicineTemporalIndex.map { Int($0.rounded()) }
+        let numberOfTemporalPositions = intValue(in: object, tag: "0020,0105") ?? 0
+
+        let nuclearMedicineSliceIndex = numberArray(in: object, named: "SliceVector")?.element(at: frameNumber)
+        let inStackPosition = intValue(in: frameContent, named: "InStackPositionNumber")
+            ?? nuclearMedicineSliceIndex.map { Int($0.rounded()) }
+        let positionValues = numberArray(in: planePosition ?? object, named: "ImagePositionPatient")
+            ?? numberArray(in: planePosition ?? object, named: "ImagePositionVolume")
+        let position: SIMD3<Double>? = positionValues.flatMap {
+            guard $0.count >= 3 else { return nil }
+            return SIMD3<Double>($0[0], $0[1], $0[2])
+        }
+
+        let triggerMilliseconds = doubleValue(in: cardiac, named: "CardiacTriggerDelayTime")
+            ?? doubleValue(in: cardiac, named: "NominalPercentageOfCardiacPhase")
+            ?? doubleValue(in: temporalPosition, named: "TemporalPositionTimeOffset")
+            ?? doubleValue(in: object, named: "TriggerTime")
+        let echoMilliseconds = doubleValue(in: mrEcho, named: "EffectiveEchoTime")
+            ?? doubleValue(in: mrEcho, named: "EchoTime")
+            ?? doubleValue(in: object, named: "EchoTime")
+        let acquisitionSeconds = dicomTimeSeconds(
+            attributeValue(in: frameContent, tag: "0018,9074")
+                ?? attributeValue(in: object, tag: "0008,002A")
+                ?? attributeValue(in: object, tag: "0008,0032")
+                ?? attributeValue(in: object, tag: "0008,0033")
+        )
+
+        let imageType = (stringArray(in: object, named: "ImageType") ?? [])
+            .map { $0.uppercased() }
+        let hasDynamicImageType = imageType.contains(where: {
+            $0 == "DYNAMIC" || $0 == "GATED" || $0.contains("PERFUSION") || $0.contains("CINE")
+        })
+        let excludesTimingHeuristic = mrDiffusion != nil
+            || imageType.contains(where: {
+                $0.contains("DIFFUSION") || $0 == "ADC" || $0.contains("TRACEW")
+                    || $0.contains("MIP") || $0.contains("SUBTRACTION")
+                    || $0 == "PHASE" || $0.contains("MAGNITUDE") || $0.contains("ENERGY")
+            })
+
+        let recommendedRate = doubleValue(in: object, named: "RecommendedDisplayFrameRate")
+            ?? doubleValue(in: object, named: "CineRate")
+        let frameTimeMilliseconds = doubleValue(in: object, named: "FrameTime")
+            ?? numberArray(in: object, named: "FrameTimeVector")?.first
+        let preferredFrameDuration: TimeInterval?
+        if let recommendedRate, recommendedRate > 0 {
+            preferredFrameDuration = 1 / recommendedRate
+        } else if let frameTimeMilliseconds, frameTimeMilliseconds > 0 {
+            preferredFrameDuration = frameTimeMilliseconds / 1_000
+        } else {
+            preferredFrameDuration = nil
+        }
+
+        return MetalDynamicFrameMetadata(
+            sourceIndex: sourceIndex,
+            pix: pix,
+            temporalIndex: temporalIndex,
+            inStackPosition: inStackPosition,
+            position: position,
+            acquisitionSeconds: acquisitionSeconds,
+            triggerMilliseconds: triggerMilliseconds,
+            echoMilliseconds: echoMilliseconds,
+            hasExplicitTemporalDimension: isExplicit3DTemporal || numberOfTemporalPositions > 1 || temporalIndex != nil,
+            hasCineTiming: preferredFrameDuration != nil,
+            hasDynamicImageType: hasDynamicImageType,
+            excludesTimingHeuristic: excludesTimingHeuristic,
+            preferredFrameDuration: preferredFrameDuration
+        )
+    }
+
+    private static func sequenceFromExplicitTemporalDimension(_ metadata: [MetalDynamicFrameMetadata]) -> [[DCMPix]]? {
+        guard metadata.contains(where: \.hasExplicitTemporalDimension) else { return nil }
+        let indexed = metadata.compactMap { item -> (Int, MetalDynamicFrameMetadata)? in
+            guard let temporalIndex = item.temporalIndex else { return nil }
+            return (temporalIndex, item)
+        }
+        guard indexed.count == metadata.count else { return nil }
+
+        let grouped = Dictionary(grouping: indexed, by: { $0.0 })
+        guard grouped.count > 1 else { return nil }
+        let ordered = grouped.keys.sorted().compactMap { key in
+            grouped[key].flatMap { values -> [DCMPix]? in
+                let frames = values.map(\.1)
+                let spatialCounts = Dictionary(grouping: frames, by: \.spatialKey).values.map(\.count)
+                guard spatialCounts.allSatisfy({ $0 == 1 }) else { return nil }
+                return orderedPix(frames)
+            }
+        }
+        return ordered.count == grouped.count && rectangular(timePoints: ordered) ? ordered : nil
+    }
+
+    private static func sequenceFromRepeatedGeometry(_ metadata: [MetalDynamicFrameMetadata]) -> [[DCMPix]]? {
+        let grouped = Dictionary(grouping: metadata, by: \.spatialKey)
+        guard grouped.isEmpty == false else { return nil }
+        let occurrenceCounts = Set(grouped.values.map(\.count))
+        guard occurrenceCounts.count == 1, let timeCount = occurrenceCounts.first, timeCount > 1 else { return nil }
+
+        if grouped.count == 1 {
+            return metadata.sorted(by: temporalOrdering).map { [$0.pix] }
+        }
+
+        let orderedSpatialGroups = spatiallyOrderedGroups(grouped)
+        var timePoints = Array(repeating: [MetalDynamicFrameMetadata](), count: timeCount)
+        for spatialGroup in orderedSpatialGroups {
+            let occurrences = spatialGroup.sorted(by: temporalOrdering)
+            for index in 0..<timeCount {
+                timePoints[index].append(occurrences[index])
+            }
+        }
+        return timePoints.map { $0.map(\.pix) }
+    }
+
+    private static func forcedSequence(from pixList: [DCMPix], metadata: [MetalDynamicFrameMetadata]) -> MetalDynamicSequence? {
+        let timePoints: [[DCMPix]]
+        if metadata.count == pixList.count, let repeated = sequenceFromRepeatedGeometry(metadata) {
+            timePoints = repeated
+        } else {
+            timePoints = pixList.map { [$0] }
+        }
+        guard timePoints.count > 1 else { return nil }
+        return makeSequence(
+            timePoints: timePoints,
+            metadata: metadata,
+            confidence: .manual,
+            evidence: [NSLocalizedString("User requested dynamic interpretation", comment: "")]
+        )
+    }
+
+    private static func makeSequence(
+        timePoints: [[DCMPix]],
+        metadata: [MetalDynamicFrameMetadata],
+        confidence: MetalDynamicDetectionConfidence,
+        evidence: [String]
+    ) -> MetalDynamicSequence? {
+        guard timePoints.count > 1, timePoints.allSatisfy({ $0.isEmpty == false }) else { return nil }
+        let preferred = metadata.compactMap(\.preferredFrameDuration).first
+        let inferred = inferredFrameDuration(from: metadata)
+        let duration: TimeInterval
+        if let preferred {
+            duration = min(max(preferred, 1.0 / 60.0), 2.0)
+        } else if let inferred {
+            // Acquisition intervals identify temporal order, but long scanner intervals
+            // are not useful as literal cine playback delays.
+            duration = min(max(inferred, 1.0 / 60.0), 0.5)
+        } else {
+            duration = defaultFrameDuration
+        }
+        return MetalDynamicSequence(
+            timePoints: timePoints,
+            frameDuration: duration,
+            confidence: confidence,
+            evidence: evidence
+        )
+    }
+
+    private static func rectangular(timePoints: [[DCMPix]]) -> Bool {
+        guard let count = timePoints.first?.count, count > 0 else { return false }
+        return timePoints.allSatisfy { $0.count == count }
+    }
+
+    private static func orderedPix(_ metadata: [MetalDynamicFrameMetadata]) -> [DCMPix] {
+        spatiallyOrderedGroups(Dictionary(grouping: metadata, by: \.spatialKey))
+            .flatMap { $0.sorted { $0.sourceIndex < $1.sourceIndex } }
+            .map(\.pix)
+    }
+
+    private static func spatiallyOrderedGroups(
+        _ groups: [String: [MetalDynamicFrameMetadata]]
+    ) -> [[MetalDynamicFrameMetadata]] {
+        let representatives = groups.values.compactMap(\.first)
+        let ranges: [Double] = (0..<3).map { axis in
+            let values = representatives.compactMap { item -> Double? in
+                guard let position = item.position else { return nil }
+                return position[axis]
+            }
+            guard let minimum = values.min(), let maximum = values.max() else { return 0 }
+            return maximum - minimum
+        }
+        let dominantAxis = ranges.enumerated().max(by: { $0.element < $1.element })?.offset ?? 2
+
+        return groups.values.sorted { lhs, rhs in
+            guard let left = lhs.first, let right = rhs.first else { return lhs.count < rhs.count }
+            if let leftStack = left.inStackPosition, let rightStack = right.inStackPosition, leftStack != rightStack {
+                return leftStack < rightStack
+            }
+            if let leftPosition = left.position, let rightPosition = right.position,
+               leftPosition[dominantAxis] != rightPosition[dominantAxis] {
+                return leftPosition[dominantAxis] < rightPosition[dominantAxis]
+            }
+            return left.sourceIndex < right.sourceIndex
+        }
+    }
+
+    private static func temporalOrdering(_ lhs: MetalDynamicFrameMetadata, _ rhs: MetalDynamicFrameMetadata) -> Bool {
+        if lhs.temporalSortValue != rhs.temporalSortValue {
+            return lhs.temporalSortValue < rhs.temporalSortValue
+        }
+        return lhs.sourceIndex < rhs.sourceIndex
+    }
+
+    private static func isSinglePosition(_ metadata: [MetalDynamicFrameMetadata]) -> Bool {
+        Set(metadata.map(\.spatialKey)).count == 1
+    }
+
+    private static func hasUsefulAcquisitionTiming(_ metadata: [MetalDynamicFrameMetadata]) -> Bool {
+        let acquisitionTimes = Set(metadata.compactMap(\.acquisitionSeconds).map { Int(($0 * 1_000).rounded()) })
+        let triggerTimes = Set(metadata.compactMap(\.triggerMilliseconds).map { Int($0.rounded()) })
+        let echoTimes = Set(metadata.compactMap(\.echoMilliseconds).map { Int(($0 * 1_000).rounded()) })
+        return (acquisitionTimes.count > 1 || triggerTimes.count > 1) && echoTimes.count <= 1
+    }
+
+    private static func inferredFrameDuration(from metadata: [MetalDynamicFrameMetadata]) -> TimeInterval? {
+        let grouped = Dictionary(grouping: metadata, by: \.spatialKey)
+        guard let longest = grouped.values.max(by: { $0.count < $1.count }) else { return nil }
+        let times = longest.compactMap(\.acquisitionSeconds).sorted()
+        guard times.count > 1 else { return nil }
+        let differences = zip(times.dropFirst(), times).compactMap { pair -> Double? in
+            let difference = pair.0 - pair.1
+            return difference > 0 ? difference : nil
+        }.sorted()
+        guard differences.isEmpty == false else { return nil }
+        return differences[differences.count / 2]
+    }
+
+    private static func sequenceItems(in object: DCMObject, named name: String) -> [DCMObject] {
+        guard let sequence = object.attribute(withName: name) as? DCMSequenceAttribute else { return [] }
+        return sequence.sequence.compactMap { $0 as? DCMObject }
+    }
+
+    private static func firstSequenceItem(in object: DCMObject, named name: String) -> DCMObject? {
+        sequenceItems(in: object, named: name).first
+    }
+
+    private static func stringValue(in object: DCMObject?, named name: String) -> String? {
+        guard let object else { return nil }
+        if let value = object.attributeValue(withName: name) as? String {
+            return nonEmpty(value)
+        }
+        if let value = object.attributeValue(withName: name) as? NSNumber {
+            return value.stringValue
+        }
+        return nil
+    }
+
+    private static func attributeValue(in object: DCMObject?, tag: String) -> Any? {
+        object?.attributeValue(forKey: tag)
+    }
+
+    private static func intValue(in object: DCMObject?, named name: String) -> Int? {
+        guard let value = stringValue(in: object, named: name), let number = Double(value), number.isFinite else {
+            return nil
+        }
+        return Int(number.rounded())
+    }
+
+    private static func intValue(in object: DCMObject?, tag: String) -> Int? {
+        guard let object else { return nil }
+        let value: Double?
+        if let number = object.attributeValue(forKey: tag) as? NSNumber {
+            value = number.doubleValue
+        } else if let string = object.attributeValue(forKey: tag) as? String {
+            value = Double(string.trimmingCharacters(in: .whitespacesAndNewlines))
+        } else {
+            value = nil
+        }
+        guard let value, value.isFinite else { return nil }
+        return Int(value.rounded())
+    }
+
+    private static func doubleValue(in object: DCMObject?, named name: String) -> Double? {
+        guard let object else { return nil }
+        if let value = object.attributeValue(withName: name) as? NSNumber {
+            return value.doubleValue
+        }
+        guard let value = stringValue(in: object, named: name) else { return nil }
+        return Double(value.components(separatedBy: "\\").first ?? value)
+    }
+
+    private static func numberArray(in object: DCMObject?, named name: String) -> [Double]? {
+        guard let object else { return nil }
+        if let values = object.attributeArray(withName: name) as? [NSNumber] {
+            return values.map(\.doubleValue)
+        }
+        if let values = object.attributeArray(withName: name) as? [String] {
+            return values.compactMap(Double.init)
+        }
+        if let string = stringValue(in: object, named: name) {
+            return string.components(separatedBy: "\\").compactMap(Double.init)
+        }
+        return nil
+    }
+
+    private static func stringArray(in object: DCMObject?, named name: String) -> [String]? {
+        guard let object else { return nil }
+        if let values = object.attributeArray(withName: name) as? [String], values.isEmpty == false {
+            return values
+        }
+        return stringValue(in: object, named: name)?.components(separatedBy: "\\")
+    }
+
+    private static func dicomTimeSeconds(_ rawValue: Any?) -> Double? {
+        if let date = rawValue as? Date {
+            let components = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+            guard let hour = components.hour else { return nil }
+            return Double(hour * 3_600 + (components.minute ?? 0) * 60 + (components.second ?? 0))
+                + Double(components.nanosecond ?? 0) / 1_000_000_000
+        }
+
+        let stringValue: String?
+        if let value = rawValue as? String {
+            stringValue = value
+        } else if let value = rawValue as? NSNumber {
+            stringValue = value.stringValue
+        } else {
+            stringValue = nil
+        }
+        guard let value = nonEmpty(stringValue) else { return nil }
+        let timeComponent: String
+        if value.count >= 14, value.prefix(8).allSatisfy(\.isNumber) {
+            timeComponent = String(value.dropFirst(8))
+        } else {
+            timeComponent = value
+        }
+        let normalized = timeComponent
+            .components(separatedBy: CharacterSet(charactersIn: "+-"))
+            .first?
+            .replacingOccurrences(of: ":", with: "") ?? timeComponent
+        guard normalized.count >= 2 else { return nil }
+        let hour = Double(normalized.prefix(2)) ?? 0
+        let minuteStart = normalized.index(normalized.startIndex, offsetBy: min(2, normalized.count))
+        let minuteEnd = normalized.index(minuteStart, offsetBy: min(2, normalized.distance(from: minuteStart, to: normalized.endIndex)))
+        let minute = Double(normalized[minuteStart..<minuteEnd]) ?? 0
+        let second = minuteEnd < normalized.endIndex ? Double(normalized[minuteEnd...]) ?? 0 : 0
+        return hour * 3_600 + minute * 60 + second
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), trimmed.isEmpty == false else {
+            return nil
+        }
+        return trimmed
+    }
+}
+
+private extension Array {
+    func element(at index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}
+
 final class MetalViewerSeries {
+    private static let dynamicDetectionQueue = DispatchQueue(
+        label: "org.horosproject.horos.metalviewer.dynamic-detection",
+        qos: .userInitiated
+    )
+
     let identifier: String
     let title: String
     let seriesNumber: String
@@ -1151,11 +1660,18 @@ final class MetalViewerSeries {
     let showsStudyHeader: Bool
     let imageCount: Int
     let modality: String
+    let forcesDynamicInterpretation: Bool
+    let sourceSeriesIdentifiers: Set<String>
+    let dynamicTimePointCountHint: Int?
 
     private let imageObjects: [NSManagedObject]
     private let isBonjour: Bool
     private var cachedPixList: [DCMPix]?
     private var cachedStructuredReportHTML: String?
+    private var cachedDynamicSequence: MetalDynamicSequence?
+    private var hasCompletedDynamicDetection = false
+    private var dynamicDetectionInProgress = false
+    private var dynamicDetectionCompletions: [(MetalDynamicSequence?) -> Void] = []
     var windowLevelState = MetalViewerWindowLevelState()
     var windowLevelPresetTitle = NSLocalizedString("Default WL & WW", comment: "")
 
@@ -1170,7 +1686,10 @@ final class MetalViewerSeries {
         showsStudyHeader: Bool,
         imageObjects: [NSManagedObject],
         isBonjour: Bool,
-        initialPixList: [DCMPix]? = nil
+        initialPixList: [DCMPix]? = nil,
+        forceDynamicInterpretation: Bool = false,
+        sourceSeriesIdentifiers: Set<String>? = nil,
+        dynamicTimePointCountHint: Int? = nil
     ) {
         self.identifier = identifier
         self.title = title
@@ -1184,8 +1703,43 @@ final class MetalViewerSeries {
         self.isBonjour = isBonjour
         self.imageCount = imageObjects.isEmpty ? (initialPixList?.count ?? 0) : imageObjects.count
         self.modality = Self.modality(for: imageObjects, initialPixList: initialPixList)
+        self.forcesDynamicInterpretation = forceDynamicInterpretation
+        self.sourceSeriesIdentifiers = sourceSeriesIdentifiers ?? [identifier]
+        self.dynamicTimePointCountHint = dynamicTimePointCountHint
         self.cachedPixList = initialPixList
         self.cachedStructuredReportHTML = nil
+    }
+
+    func sharesSourceSeries(with other: MetalViewerSeries) -> Bool {
+        sourceSeriesIdentifiers.isDisjoint(with: other.sourceSeriesIdentifiers) == false
+    }
+
+    func detectDynamicSequence(completion: @escaping (MetalDynamicSequence?) -> Void) {
+        precondition(Thread.isMainThread, "Dynamic DICOM detection must be requested on the main thread.")
+
+        if hasCompletedDynamicDetection {
+            completion(cachedDynamicSequence)
+            return
+        }
+
+        dynamicDetectionCompletions.append(completion)
+        guard dynamicDetectionInProgress == false else { return }
+        dynamicDetectionInProgress = true
+
+        let pixList = loadedPixList()
+        let force = forcesDynamicInterpretation
+        Self.dynamicDetectionQueue.async { [weak self] in
+            let sequence = MetalDynamicSeriesDetector.detect(pixList: pixList, force: force)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.cachedDynamicSequence = sequence
+                self.hasCompletedDynamicDetection = true
+                self.dynamicDetectionInProgress = false
+                let completions = self.dynamicDetectionCompletions
+                self.dynamicDetectionCompletions.removeAll()
+                completions.forEach { $0(sequence) }
+            }
+        }
     }
 
     var isStructuredReport: Bool {
@@ -1297,6 +1851,11 @@ final class MetalViewerSeries {
         if cachedStructuredReportHTML == nil {
             cachedStructuredReportHTML = previousSeries.cachedStructuredReportHTML
         }
+
+        if hasCompletedDynamicDetection == false, previousSeries.hasCompletedDynamicDetection {
+            cachedDynamicSequence = previousSeries.cachedDynamicSequence
+            hasCompletedDynamicDetection = true
+        }
     }
 
     func firstPreviewPix() -> DCMPix? {
@@ -1401,7 +1960,9 @@ final class MetalViewerSeries {
     }
 
     private static func isStructuredReportSOPClassUID(_ sopClassUID: String?) -> Bool {
-        sopClassUID?.hasPrefix("1.2.840.10008.5.1.4.1.1.88") == true
+        guard let sopClassUID else { return false }
+        return sopClassUID.hasPrefix("1.2.840.10008.5.1.4.1.1.88")
+            && sopClassUID != "1.2.840.10008.5.1.4.1.1.88.59"
     }
 
     private static func nonEmpty(_ value: String?) -> String? {

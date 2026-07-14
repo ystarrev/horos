@@ -50,7 +50,6 @@
 */
 
 #import <AppKit/AppKit.h>
-#import "UserNotifications/UserNotifications.h"
 
 #include "options.h"
 
@@ -104,7 +103,7 @@ extern "C"
 
 extern AppController* OsiriX;
 
-@interface AppController : NSObject	<NSNetServiceBrowserDelegate, NSNetServiceDelegate, NSSoundDelegate, NSMenuDelegate, UNUserNotificationCenterDelegate, NSMenuItemValidation >
+@interface AppController : NSObject	<NSNetServiceBrowserDelegate, NSNetServiceDelegate, NSSoundDelegate, NSMenuDelegate, NSMenuItemValidation >
 {
 	IBOutlet BrowserController		*browserController;
 

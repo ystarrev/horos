@@ -323,7 +323,7 @@
             </connections>
         </arrayController>
         <customView id="67" userLabel="View">
-            <rect key="frame" x="0.0" y="8" width="452" height="582"/>
+            <rect key="frame" x="0.0" y="0.0" width="452" height="582"/>
             <autoresizingMask key="autoresizingMask"/>
             <subviews>
                 <textField focusRingType="none" verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" verticalCompressionResistancePriority="1000" translatesAutoresizingMaskIntoConstraints="NO" id="132">
@@ -378,7 +378,7 @@
                     <rect key="frame" x="20" y="135" width="412" height="253"/>
                     <clipView key="contentView" id="Y9W-ac-BxB">
                         <rect key="frame" x="0.0" y="0.0" width="412" height="253"/>
-                        <autoresizingMask key="autoresizingMask"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <tableView verticalHuggingPriority="750" allowsExpansionToolTips="YES" columnAutoresizingStyle="lastColumnOnly" columnReordering="NO" columnResizing="NO" multipleSelection="NO" autosaveColumns="NO" headerView="173" id="93">
                                 <rect key="frame" x="0.0" y="0.0" width="441" height="230"/>
@@ -487,7 +487,7 @@
                         <rect key="frame" x="-100" y="-100" width="15" height="212"/>
                         <autoresizingMask key="autoresizingMask"/>
                     </scroller>
-                    <tableHeaderView key="headerView" id="173">
+                    <tableHeaderView key="headerView" wantsLayer="YES" id="173">
                         <rect key="frame" x="0.0" y="0.0" width="441" height="23"/>
                         <autoresizingMask key="autoresizingMask"/>
                     </tableHeaderView>
@@ -579,6 +579,7 @@
                 <constraint firstItem="92" firstAttribute="leading" secondItem="67" secondAttribute="leading" constant="20" symbolic="YES" id="sCp-qf-jGO"/>
                 <constraint firstAttribute="trailing" secondItem="113" secondAttribute="trailing" constant="18" id="wY5-xM-7pw"/>
             </constraints>
+            <point key="canvasLocation" x="139" y="154"/>
         </customView>
     </objects>
 </document>

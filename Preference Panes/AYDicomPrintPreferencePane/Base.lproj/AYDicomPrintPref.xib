@@ -9,7 +9,7 @@
         <customObject id="-2" userLabel="File's Owner" customClass="AYDicomPrintPref">
             <connections>
                 <outlet property="_window" destination="12" id="26"/>
-                <outlet property="m_PrinterController" destination="226" id="257"/>
+                <outlet property="printerController" destination="226" id="257"/>
                 <outlet property="mainWindow" destination="12" id="439"/>
             </connections>
         </customObject>

@@ -83,14 +83,14 @@
 #import "N2MutableUInteger.h"
 #import "Window3DController.h"
 #import <MetalKit/MetalKit.h>
+#import <PreferencePanes/PreferencePanes.h>
+#import <UserNotifications/UserNotifications.h>
 #import "Horos-Swift.h"
 #import "N2Stuff.h"
-#import "OSIGeneralPreferencePanePref.h"
 #import "Security/Security.h"
 #import "Security/SecRequirement.h"
 #import "Security/SecCode.h"
 #import "PFMoveApplication.h"
-#import "OSIGeneralPreferencePanePref.h"
 #import "NSArray+N2.h"
 #import "DICOMTLS.h"
 #import "DicomStudy.h"
@@ -2491,7 +2491,7 @@ static BOOL firstCall = YES;
     
 	[[NSUserDefaults standardUserDefaults] synchronize];
 	
-    [OSIGeneralPreferencePanePref applyLanguagesIfNeeded];
+    [HorosGeneralPreferences applyLanguagesIfNeeded];
     
 	[NSApp terminate: sender];
 }
@@ -2609,7 +2609,9 @@ static BOOL initialized = NO;
 				#endif
 				
                 
-				[[NSUserDefaults standardUserDefaults] registerDefaults: [DefaultsOsiriX getDefaults]];
+				NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
+				[userDefaults registerDefaults: [DefaultsOsiriX getDefaults]];
+				[HorosGeneralPreferences registerDefaults];
                 
                 
                 if( [BrowserController _currentModifierFlags] & NSCommandKeyMask &&
@@ -2949,22 +2951,7 @@ static BOOL initialized = NO;
 
 - (void) notificationTitle:(NSString*) title description:(NSString*) description name:(NSString*) name
 {
-#ifndef MACAPPSTORE
-    UNMutableNotificationContent *notification = [[UNMutableNotificationContent alloc] init];
-    notification.title = title;
-    notification.body = description;
-    notification.categoryIdentifier = name;
-    notification.sound = [UNNotificationSound defaultSound];
-    
-    UNNotificationTrigger* trigger = nil; // deliver immediately
-    UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier: [[NSUUID UUID] UUIDString] content: notification trigger: trigger];
-    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
-    [center addNotificationRequest:request withCompletionHandler:^(NSError * _Nullable error) {
-        if (error) {
-            NSLog(@"User Notification failed for title=[%@] description=[%@] error=[%@]", title, [description stringByReplacingOccurrencesOfString: @"\r" withString: @"\n"], error.localizedDescription);
-        }
-    }];
-#endif
+    [HorosNotificationService postWithTitle: title description: description name: name];
 }
 
 #pragma mark-
@@ -3073,21 +3060,7 @@ static BOOL initialized = NO;
             name:NSWorkspaceSessionDidResignActiveNotification
             object:nil];
     
-    // Will request authorization for notifications now even if not enabled in preferences as user may update
-    // preferences while running. NOTE: requirements for application to be able to get authorization are more
-    // stringent for later releases (e.g., properly signed, notarized).
-    //
-    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
-    [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings * _Nonnull settings) {
-        if (settings.authorizationStatus != UNAuthorizationStatusNotDetermined)
-            return;
-
-        [center requestAuthorizationWithOptions:(UNAuthorizationOptionSound | UNAuthorizationOptionAlert)
-                              completionHandler:^(BOOL granted, NSError * _Nullable error) {
-            if (error)
-                NSLog(@"User Notification authorization request failed, error=[%@]", error.localizedDescription);
-        }];
-    }];
+    [HorosNotificationService configure];
     
 //	if ([[NSUserDefaultsController sharedUserDefaultsController] boolForKey: @"ActivityWindowVisibleFlag"])
 //		[[[ActivityWindowController defaultController] window] makeKeyAndOrderFront:self];
@@ -3255,7 +3228,7 @@ static BOOL initialized = NO;
 #endif // NDEBUG
     
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SyncPreferencesFromURL"])
-        [NSThread detachNewThreadSelector: @selector( addPreferencesFromURL:) toTarget: [OSIGeneralPreferencePanePref class] withObject: [NSURL URLWithString: [[NSUserDefaults standardUserDefaults] stringForKey: @"SyncPreferencesURL"]]];
+        [NSThread detachNewThreadSelector: @selector( addPreferencesFromURL:) toTarget: [HorosGeneralPreferences class] withObject: [NSURL URLWithString: [[NSUserDefaults standardUserDefaults] stringForKey: @"SyncPreferencesURL"]]];
 
 
     [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"NSConstraintBasedLayoutVisualizeMutuallyExclusiveConstraints"];

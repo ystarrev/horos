@@ -1095,10 +1095,9 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     }
     else if ([type isEqualToString:HorosOsiriXDatabaseBonjourType])
     {
-        NSString *localName = [NSUserDefaults bonjourSharingName];
         NSInteger localPort = [[[AppController sharedAppController] bonjourPublisher] OsiriXDBCurrentPort];
 
-        if (localPort == port && [name length] && [localName length] && [name caseInsensitiveCompare:localName] == NSOrderedSame)
+        if (localPort > 0 && localPort == port)
         {
             NSLog(@"DNS-SD Horos Bonjour source ignored as this Horos instance: %@ %@:%ld", name, host, (long)port);
             return YES;
@@ -1608,21 +1607,6 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
                 }
             }
 
-            if (![source0 isKindOfClass:[PhoneVolumeRenderNodeIdentifier class]] && [[resolvedTXTDictionary objectForKey:@"UID"] isEqualToString:[AppController UID]])
-            {
-                @synchronized (_bonjourSources)
-                {
-                    NSLog( @"Remove Service: %@ ignored as this Horos instance UID=%@", service, [resolvedTXTDictionary objectForKey:@"UID"]);
-                    if( [_bonjourServices indexOfObject: service] != NSNotFound)
-                    {
-                        [_bonjourSources removeObjectAtIndex: [_bonjourServices indexOfObject: service]];
-                        [_bonjourServices removeObject: service];
-                    }
-                    else
-                        NSLog( @"***** unknown didResolve Service");
-                }
-                return; // it's me
-            }
         }
         @catch (NSException *exception) {
             N2LogException( exception);
@@ -1663,6 +1647,41 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
                         [addresses addObject:[NSArray arrayWithObjects: host, [NSNumber numberWithInteger:port], NULL]];
                     }
                 }
+            }
+
+            NSString *serviceType = nil;
+            if ([source0 isKindOfClass:[RemoteDatabaseNodeIdentifier class]])
+                serviceType = HorosOsiriXDatabaseBonjourType;
+            else if ([source0 isKindOfClass:[DicomNodeIdentifier class]])
+                serviceType = HorosDicomBonjourType;
+
+            NSString *resolvedHost = service.hostName;
+            NSInteger resolvedPort = service.port;
+            if ([addresses count])
+            {
+                NSArray *address = [addresses objectAtIndex:0];
+                if ([address count] >= 2)
+                {
+                    resolvedHost = [address objectAtIndex:0];
+                    resolvedPort = [[address objectAtIndex:1] integerValue];
+                }
+            }
+
+            if (serviceType && [self _dnssdResolvedServiceIsThisHorosType:serviceType name:service.name host:resolvedHost port:resolvedPort txt:resolvedTXTDictionary])
+            {
+                @synchronized (_bonjourSources)
+                {
+                    NSUInteger serviceIndex = [_bonjourServices indexOfObject:service];
+                    NSLog(@"Remove Service: %@ ignored as this Horos instance", service);
+                    if (serviceIndex != NSNotFound)
+                    {
+                        [_bonjourSources removeObjectAtIndex:serviceIndex];
+                        [_bonjourServices removeObjectAtIndex:serviceIndex];
+                    }
+                    else
+                        NSLog(@"***** unknown didResolve Service");
+                }
+                return;
             }
 
             DataNodeIdentifier* source = source0;

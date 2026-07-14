@@ -50,7 +50,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private let paneContainer = NSView()
     private let paneStackView = NSStackView()
     private let scoutWidthConstraint: NSLayoutConstraint
-    private let scoutMinimumWidthConstraint: NSLayoutConstraint
 
     private var paneViews: [MetalViewerPaneView] = []
     private weak var activePaneView: MetalViewerPaneView?
@@ -89,7 +88,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         self.scoutView = MetalViewerScoutView(series: study.series)
         metalWindowTimingLog("MetalViewerWindowController scout init", since: scoutStart)
         self.scoutWidthConstraint = scoutContainer.widthAnchor.constraint(equalToConstant: Self.savedScoutWidth(forSplitWidth: contentRect.width))
-        self.scoutMinimumWidthConstraint = scoutContainer.widthAnchor.constraint(greaterThanOrEqualToConstant: Layout.minimumScoutWidth)
 
         window.title = study.title
         window.minSize = NSSize(width: 980, height: 640)
@@ -178,7 +176,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             paneStackView.bottomAnchor.constraint(equalTo: paneContainer.bottomAnchor, constant: -8),
 
             scoutWidthConstraint,
-            scoutMinimumWidthConstraint,
         ])
 
         let firstPaneStart = CFAbsoluteTimeGetCurrent()

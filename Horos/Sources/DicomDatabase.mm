@@ -51,6 +51,7 @@
 #import "DicomFileDCMTKCategory.h"
 #import "ThreadsManager.h"
 #import "AppController.h"
+#import "ViewerController.h"
 #import "NSDictionary+N2.h"
 #import "BrowserControllerDCMTKCategory.h"
 #import "NSThread+N2.h"

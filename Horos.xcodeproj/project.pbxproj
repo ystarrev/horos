@@ -546,7 +546,6 @@
 		841B0B3C18980EFF0007E5C5 /* 3DCutWrite.png in Resources */ = {isa = PBXBuildFile; fileRef = 841B0B3918980EFF0007E5C5 /* 3DCutWrite.png */; };
 		84281FFE13BC91380093BA26 /* N2OpenGLViewWithSplitsWindow.m in Sources */ = {isa = PBXBuildFile; fileRef = 84281FFC13BC91380093BA26 /* N2OpenGLViewWithSplitsWindow.m */; };
 		84281FFF13BC91380093BA26 /* N2OpenGLViewWithSplitsWindow.h in Headers */ = {isa = PBXBuildFile; fileRef = 84281FFD13BC91380093BA26 /* N2OpenGLViewWithSplitsWindow.h */; };
-		843F847B12439E00004FBBF6 /* AYDicomPrintPref.h in Headers */ = {isa = PBXBuildFile; fileRef = 843F847A12439E00004FBBF6 /* AYDicomPrintPref.h */; };
 		848327AB15ED08F4003BAEEB /* CustomIntervalPanel.xib in Resources */ = {isa = PBXBuildFile; fileRef = 848327A915ED08F3003BAEEB /* CustomIntervalPanel.xib */; };
 		8483ABA60E1BE33900C21B31 /* crossCursor.tif in Resources */ = {isa = PBXBuildFile; fileRef = 8483ABA50E1BE33900C21B31 /* crossCursor.tif */; };
 		848CE28F145AC9AE00BEB249 /* curvedPath.icns in Resources */ = {isa = PBXBuildFile; fileRef = 848CE28E145AC9AE00BEB249 /* curvedPath.icns */; };
@@ -1299,9 +1298,8 @@
 		CEB98BE9133508180083F3FD /* OSIHangingPreferencePanePref.xib in Resources */ = {isa = PBXBuildFile; fileRef = CEB98BDB133508180083F3FD /* OSIHangingPreferencePanePref.xib */; };
 		CEB98BEE133508180083F3FD /* OSIHangingPreferencePanePref.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98BE1133508180083F3FD /* OSIHangingPreferencePanePref.h */; };
 		CEB98BEF133508180083F3FD /* OSIHangingPreferencePanePref.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98BE2133508180083F3FD /* OSIHangingPreferencePanePref.m */; };
-		CEB98C05133508280083F3FD /* OSIGeneralPreferencePanePref.xib in Resources */ = {isa = PBXBuildFile; fileRef = CEB98C01133508280083F3FD /* OSIGeneralPreferencePanePref.xib */; };
-		CEB98C06133508280083F3FD /* OSIGeneralPreferencePanePref.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C03133508280083F3FD /* OSIGeneralPreferencePanePref.h */; };
-		CEB98C07133508280083F3FD /* OSIGeneralPreferencePanePref.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C04133508280083F3FD /* OSIGeneralPreferencePanePref.m */; };
+		7A894518D95B40BD811DE473 /* Horos/Sources/HorosAlertPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8651938FF95C43CFAC9A5CD1 /* Horos/Sources/HorosAlertPresenter.swift */; };
+		C7C376B281784C8A9C2DAEA8 /* GeneralSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9216B1B86854BA881AB5AF7 /* GeneralSettingsPane.swift */; };
 		CEB98C0F133508350083F3FD /* OSIDatabasePreferencePanePref.xib in Resources */ = {isa = PBXBuildFile; fileRef = CEB98C0B133508350083F3FD /* OSIDatabasePreferencePanePref.xib */; };
 		CEB98C10133508350083F3FD /* OSIDatabasePreferencePanePref.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C0D133508350083F3FD /* OSIDatabasePreferencePanePref.h */; };
 		CEB98C11133508350083F3FD /* OSIDatabasePreferencePanePref.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C0E133508350083F3FD /* OSIDatabasePreferencePanePref.m */; };
@@ -1311,12 +1309,11 @@
 		CEB98C6B1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.xib in Resources */ = {isa = PBXBuildFile; fileRef = CEB98C651335086B0083F3FD /* OSIAutoroutingPreferencePanePref.xib */; };
 		CEB98C6C1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C671335086B0083F3FD /* OSIAutoroutingPreferencePanePref.h */; };
 		CEB98C6D1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C681335086B0083F3FD /* OSIAutoroutingPreferencePanePref.m */; };
-		CEB98C6E1335086B0083F3FD /* RoutesTableView.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C691335086B0083F3FD /* RoutesTableView.h */; };
-		CEB98C6F1335086B0083F3FD /* RoutesTableView.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C6A1335086B0083F3FD /* RoutesTableView.m */; };
+		CEB98C6F1335086B0083F3FD /* RoutesTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C6A1335086B0083F3FD /* RoutesTableView.swift */; };
 		CEB98C791335087D0083F3FD /* OSI3DPreferencePanePref.xib in Resources */ = {isa = PBXBuildFile; fileRef = CEB98C751335087D0083F3FD /* OSI3DPreferencePanePref.xib */; };
 		CEB98C7A1335087D0083F3FD /* OSI3DPreferencePane.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C771335087D0083F3FD /* OSI3DPreferencePane.h */; };
 		CEB98C7B1335087D0083F3FD /* OSI3DPreferencePane.mm in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C781335087D0083F3FD /* OSI3DPreferencePane.mm */; };
-		CEB98C841335088C0083F3FD /* AYDicomPrintPref.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C801335088C0083F3FD /* AYDicomPrintPref.m */; };
+		CEB98C841335088C0083F3FD /* AYDicomPrintPref.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C801335088C0083F3FD /* AYDicomPrintPref.swift */; };
 		CEB98C851335088C0083F3FD /* AYDicomPrintPref.xib in Resources */ = {isa = PBXBuildFile; fileRef = CEB98C811335088C0083F3FD /* AYDicomPrintPref.xib */; };
 		CEBA5FE011B244EA005F3A0E /* SpectroIcon.jpg in Resources */ = {isa = PBXBuildFile; fileRef = CEBA5FDF11B244EA005F3A0E /* SpectroIcon.jpg */; };
 		CEBA709D10C70039003A6186 /* GetPrimaryMACAddress.m in Sources */ = {isa = PBXBuildFile; fileRef = CEBA709C10C70039003A6186 /* GetPrimaryMACAddress.m */; };
@@ -2263,7 +2260,6 @@
 		841B0B3918980EFF0007E5C5 /* 3DCutWrite.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = 3DCutWrite.png; sourceTree = "<group>"; };
 		84281FFC13BC91380093BA26 /* N2OpenGLViewWithSplitsWindow.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = N2OpenGLViewWithSplitsWindow.m; sourceTree = "<group>"; };
 		84281FFD13BC91380093BA26 /* N2OpenGLViewWithSplitsWindow.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2OpenGLViewWithSplitsWindow.h; sourceTree = "<group>"; };
-		843F847A12439E00004FBBF6 /* AYDicomPrintPref.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = AYDicomPrintPref.h; path = "Preference Panes/AYDicomPrintPreferencePane/AYDicomPrintPref.h"; sourceTree = SOURCE_ROOT; };
 		844003990E8CF99500A00EBD /* dciodvfy */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = dciodvfy; path = ../../Binaries/dciodvfy; sourceTree = "<group>"; };
 		844719AF0FD8EF50003BFDF8 /* DCM.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = DCM.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		848327AA15ED08F3003BAEEB /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/CustomIntervalPanel.xib; sourceTree = "<group>"; };
@@ -2303,7 +2299,6 @@
 		8CC299D82F3158B500669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSIListenerPreferencePanePref.xib; sourceTree = "<group>"; };
 		8CC299D92F3158B500669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSIHotKeysPref.xib; sourceTree = "<group>"; };
 		8CC299DA2F3158B500669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSIHangingPreferencePanePref.xib; sourceTree = "<group>"; };
-		8CC299DB2F3158B500669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSIGeneralPreferencePanePref.xib; sourceTree = "<group>"; };
 		8CC299DC2F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSIDatabasePreferencePanePref.xib; sourceTree = "<group>"; };
 		8CC299DE2F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSICDPreferencePanePref.xib; sourceTree = "<group>"; };
 		8CC299DF2F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/DiscMountedAskTheUserDialog.xib; sourceTree = "<group>"; };
@@ -3032,20 +3027,18 @@
 		CEB98BC2133508040083F3FD /* OSIHotKeysPref.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSIHotKeysPref.m; sourceTree = "<group>"; };
 		CEB98BE1133508180083F3FD /* OSIHangingPreferencePanePref.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSIHangingPreferencePanePref.h; sourceTree = "<group>"; };
 		CEB98BE2133508180083F3FD /* OSIHangingPreferencePanePref.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSIHangingPreferencePanePref.m; sourceTree = "<group>"; };
-		CEB98C03133508280083F3FD /* OSIGeneralPreferencePanePref.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSIGeneralPreferencePanePref.h; sourceTree = "<group>"; };
-		CEB98C04133508280083F3FD /* OSIGeneralPreferencePanePref.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSIGeneralPreferencePanePref.m; sourceTree = "<group>"; };
+		8651938FF95C43CFAC9A5CD1 /* Horos/Sources/HorosAlertPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosAlertPresenter.swift; sourceTree = SOURCE_ROOT; };
+		E9216B1B86854BA881AB5AF7 /* GeneralSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsPane.swift; sourceTree = "<group>"; };
 		CEB98C0D133508350083F3FD /* OSIDatabasePreferencePanePref.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSIDatabasePreferencePanePref.h; sourceTree = "<group>"; };
 		CEB98C0E133508350083F3FD /* OSIDatabasePreferencePanePref.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSIDatabasePreferencePanePref.m; sourceTree = "<group>"; };
 		CEB98C5D1335085D0083F3FD /* OSICDPreferencePanePref.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSICDPreferencePanePref.h; sourceTree = "<group>"; };
 		CEB98C5E1335085D0083F3FD /* OSICDPreferencePanePref.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSICDPreferencePanePref.m; sourceTree = "<group>"; };
 		CEB98C671335086B0083F3FD /* OSIAutoroutingPreferencePanePref.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSIAutoroutingPreferencePanePref.h; sourceTree = "<group>"; };
 		CEB98C681335086B0083F3FD /* OSIAutoroutingPreferencePanePref.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSIAutoroutingPreferencePanePref.m; sourceTree = "<group>"; };
-		CEB98C691335086B0083F3FD /* RoutesTableView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RoutesTableView.h; sourceTree = "<group>"; };
-		CEB98C6A1335086B0083F3FD /* RoutesTableView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RoutesTableView.m; sourceTree = "<group>"; };
+		CEB98C6A1335086B0083F3FD /* RoutesTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutesTableView.swift; sourceTree = "<group>"; };
 		CEB98C771335087D0083F3FD /* OSI3DPreferencePane.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSI3DPreferencePane.h; sourceTree = "<group>"; };
 		CEB98C781335087D0083F3FD /* OSI3DPreferencePane.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = OSI3DPreferencePane.mm; sourceTree = "<group>"; };
-		CEB98C7F1335088C0083F3FD /* AYDicomPrintPref.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AYDicomPrintPref.h; sourceTree = "<group>"; };
-		CEB98C801335088C0083F3FD /* AYDicomPrintPref.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AYDicomPrintPref.m; sourceTree = "<group>"; };
+		CEB98C801335088C0083F3FD /* AYDicomPrintPref.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AYDicomPrintPref.swift; sourceTree = "<group>"; };
 		CEBA5FDF11B244EA005F3A0E /* SpectroIcon.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = SpectroIcon.jpg; sourceTree = "<group>"; };
 		CEBA709C10C70039003A6186 /* GetPrimaryMACAddress.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GetPrimaryMACAddress.m; sourceTree = "<group>"; };
 		CEBD8E5B0B675A75008FD772 /* Propagate.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Propagate.tif; sourceTree = "<group>"; };
@@ -3749,6 +3742,7 @@
 		719D3F1A1FB461CA004CFB27 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				8651938FF95C43CFAC9A5CD1 /* Horos/Sources/HorosAlertPresenter.swift */,
 				434B461A1A19F4E4008CF8CF /* OpenJPEG */,
 				F4A100000003000000000001 /* Metal Viewer */,
 				29B97315FDCFA39411CA2CEA /* Other Sources */,
@@ -4640,7 +4634,6 @@
 		AB80EBA30AF1F5B600E7E934 /* AYDicomPrint */ = {
 			isa = PBXGroup;
 			children = (
-				843F847A12439E00004FBBF6 /* AYDicomPrintPref.h */,
 				AB80EBA50AF1F5B600E7E934 /* AYDicomPrintWindowController.h */,
 				AB80EBA60AF1F5B600E7E934 /* AYDicomPrintWindowController.mm */,
 				AB80EBA70AF1F5B600E7E934 /* AYNSImageToDicom.h */,
@@ -5491,9 +5484,7 @@
 		CEB98CF413350D3C0083F3FD /* General */ = {
 			isa = PBXGroup;
 			children = (
-				CEB98C01133508280083F3FD /* OSIGeneralPreferencePanePref.xib */,
-				CEB98C03133508280083F3FD /* OSIGeneralPreferencePanePref.h */,
-				CEB98C04133508280083F3FD /* OSIGeneralPreferencePanePref.m */,
+				E9216B1B86854BA881AB5AF7 /* GeneralSettingsPane.swift */,
 			);
 			name = General;
 			path = OSIGeneralPreferencePane;
@@ -5530,8 +5521,7 @@
 				CEB98C651335086B0083F3FD /* OSIAutoroutingPreferencePanePref.xib */,
 				CEB98C671335086B0083F3FD /* OSIAutoroutingPreferencePanePref.h */,
 				CEB98C681335086B0083F3FD /* OSIAutoroutingPreferencePanePref.m */,
-				CEB98C691335086B0083F3FD /* RoutesTableView.h */,
-				CEB98C6A1335086B0083F3FD /* RoutesTableView.m */,
+				CEB98C6A1335086B0083F3FD /* RoutesTableView.swift */,
 			);
 			name = Autorouting;
 			path = OSIAutoroutingPreferencePane;
@@ -5551,8 +5541,7 @@
 		CEB98CFA13350DAB0083F3FD /* DicomPrint */ = {
 			isa = PBXGroup;
 			children = (
-				CEB98C7F1335088C0083F3FD /* AYDicomPrintPref.h */,
-				CEB98C801335088C0083F3FD /* AYDicomPrintPref.m */,
+				CEB98C801335088C0083F3FD /* AYDicomPrintPref.swift */,
 				CEB98C811335088C0083F3FD /* AYDicomPrintPref.xib */,
 			);
 			name = DicomPrint;
@@ -5905,7 +5894,6 @@
 				59F5F4EC11F485CC0047A90D /* BrowserController+Activity.h in Headers */,
 				592CFF081212F84F00176E39 /* N2Connection.h in Headers */,
 				592CFF0A1212F84F00176E39 /* N2ConnectionListener.h in Headers */,
-				843F847B12439E00004FBBF6 /* AYDicomPrintPref.h in Headers */,
 				59526E9E1281896F0016F6C0 /* NSMutableString+N2.h in Headers */,
 				592BA51D12966ABD00179C27 /* NSError+OsiriX.h in Headers */,
 				597BB93112A7E0F200D0A172 /* NSUserDefaults+OsiriX.h in Headers */,
@@ -5944,11 +5932,9 @@
 				CEB98BCA133508040083F3FD /* HotKeyTextFieldCell.h in Headers */,
 				CEB98BCC133508040083F3FD /* OSIHotKeysPref.h in Headers */,
 				CEB98BEE133508180083F3FD /* OSIHangingPreferencePanePref.h in Headers */,
-				CEB98C06133508280083F3FD /* OSIGeneralPreferencePanePref.h in Headers */,
 				CEB98C10133508350083F3FD /* OSIDatabasePreferencePanePref.h in Headers */,
 				CEB98C601335085D0083F3FD /* OSICDPreferencePanePref.h in Headers */,
 				CEB98C6C1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.h in Headers */,
-				CEB98C6E1335086B0083F3FD /* RoutesTableView.h in Headers */,
 				CEB98C7A1335087D0083F3FD /* OSI3DPreferencePane.h in Headers */,
 				59B696641337C957009356ED /* N2DirectoryEnumerator.h in Headers */,
 				4FC5E3F6138AB91E00CB635F /* CPRStretchedOperation.h in Headers */,
@@ -6509,7 +6495,6 @@
 				CEB98BC3133508040083F3FD /* OSIHotKeysPref.xib in Resources */,
 				CEB98BE9133508180083F3FD /* OSIHangingPreferencePanePref.xib in Resources */,
 				71AD674F1FC4248100A1E2F8 /* HotMetal.plist in Resources */,
-				CEB98C05133508280083F3FD /* OSIGeneralPreferencePanePref.xib in Resources */,
 				CEB98C0F133508350083F3FD /* OSIDatabasePreferencePanePref.xib in Resources */,
 				71AD67531FC4248100A1E2F8 /* Jet.plist in Resources */,
 				71AD67521FC4248100A1E2F8 /* ired.plist in Resources */,
@@ -7622,13 +7607,14 @@
 				CEB98BCB133508040083F3FD /* HotKeyTextFieldCell.m in Sources */,
 				CEB98BCD133508040083F3FD /* OSIHotKeysPref.m in Sources */,
 				CEB98BEF133508180083F3FD /* OSIHangingPreferencePanePref.m in Sources */,
-				CEB98C07133508280083F3FD /* OSIGeneralPreferencePanePref.m in Sources */,
+				7A894518D95B40BD811DE473 /* Horos/Sources/HorosAlertPresenter.swift in Sources */,
+				C7C376B281784C8A9C2DAEA8 /* GeneralSettingsPane.swift in Sources */,
 				CEB98C11133508350083F3FD /* OSIDatabasePreferencePanePref.m in Sources */,
 				CEB98C611335085D0083F3FD /* OSICDPreferencePanePref.m in Sources */,
 				CEB98C6D1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.m in Sources */,
-				CEB98C6F1335086B0083F3FD /* RoutesTableView.m in Sources */,
+				CEB98C6F1335086B0083F3FD /* RoutesTableView.swift in Sources */,
 				CEB98C7B1335087D0083F3FD /* OSI3DPreferencePane.mm in Sources */,
-				CEB98C841335088C0083F3FD /* AYDicomPrintPref.m in Sources */,
+				CEB98C841335088C0083F3FD /* AYDicomPrintPref.swift in Sources */,
 				59B696651337C957009356ED /* N2DirectoryEnumerator.mm in Sources */,
 				4FC5E3F7138AB91E00CB635F /* CPRStretchedOperation.m in Sources */,
 				4F00A9E4139A778000ABD529 /* CPRStretchedView.m in Sources */,
@@ -8333,14 +8319,6 @@
 				8CC299DA2F3158B500669578 /* Base */,
 			);
 			name = OSIHangingPreferencePanePref.xib;
-			sourceTree = "<group>";
-		};
-		CEB98C01133508280083F3FD /* OSIGeneralPreferencePanePref.xib */ = {
-			isa = PBXVariantGroup;
-			children = (
-				8CC299DB2F3158B500669578 /* Base */,
-			);
-			name = OSIGeneralPreferencePanePref.xib;
 			sourceTree = "<group>";
 		};
 		CEB98C0B133508350083F3FD /* OSIDatabasePreferencePanePref.xib */ = {

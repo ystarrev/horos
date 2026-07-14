@@ -48,6 +48,29 @@
 
 static DCMNetServiceDelegate *_netServiceDelegate = nil;
 
+static BOOL DCMNetServiceHostIsLocal(NSString *host)
+{
+    if (![host length])
+        return NO;
+
+    NSString *lowercaseHost = [host lowercaseString];
+    if ([lowercaseHost isEqualToString:@"localhost"] ||
+        [lowercaseHost isEqualToString:@"127.0.0.1"] ||
+        [lowercaseHost isEqualToString:@"::1"])
+        return YES;
+
+    NSHost *currentHost = [NSHost currentHost];
+    if ([[currentHost addresses] containsObject:host])
+        return YES;
+
+    NSHost *resolvedHost = [NSHost hostWithAddress:host];
+    for (NSString *address in [resolvedHost addresses])
+        if ([[currentHost addresses] containsObject:address])
+            return YES;
+
+    return NO;
+}
+
 @implementation DCMNetServiceDelegate
 
 + (id)sharedNetServiceDelegate
@@ -622,10 +645,18 @@ static DCMNetServiceDelegate *_netServiceDelegate = nil;
         NSDictionary *publisherInfo = [DCMNetServiceDelegate DICOMNodeInfoFromTXTRecordData: [publisher TXTRecordData]];
         NSString *serviceUID = [serviceInfo objectForKey: @"UID"];
         NSString *publisherUID = [publisherInfo objectForKey: @"UID"];
+        BOOL isThisHoros = [serviceUID length] && [serviceUID isEqualToString: publisherUID];
 
-        if( [serviceUID length] && [serviceUID isEqualToString: publisherUID])
+        if( !isThisHoros && [[aNetService name] caseInsensitiveCompare:[publisher name]] == NSOrderedSame)
         {
-            NSLog( @"DICOM Bonjour node ignored as this Horos instance UID=%@", serviceUID);
+            int servicePort = 0;
+            NSString *serviceHost = [DCMNetServiceDelegate gethostnameAndPort:&servicePort forService:aNetService];
+            isThisHoros = servicePort > 0 && servicePort == [publisher port] && DCMNetServiceHostIsLocal(serviceHost);
+        }
+
+        if( isThisHoros)
+        {
+            NSLog( @"DICOM Bonjour node ignored as this Horos instance: %@", aNetService);
             if( [_dicomServices containsObject: aNetService])
             {
                 [_dicomServices removeObject: aNetService];

@@ -786,7 +786,6 @@ static NSHost *currentHost = nil;
 	
 	[defaultValues setObject:@"1" forKey:@"StoreThumbnailsInDB"];
 	[defaultValues setObject:@"1" forKey:@"DisplayDICOMOverlays"];
-	[defaultValues setObject:@"0" forKey:@"ALLOWDICOMEDITING"];
 	[defaultValues setObject:@"/~Documents/FolderToBurn" forKey:@"SupplementaryBurnPath"];
     
 	NSMutableArray *presets = [NSMutableArray array];
@@ -977,7 +976,6 @@ static NSHost *currentHost = nil;
     [defaultValues setObject: @"0" forKey: @"TryIMAGELevelDICOMRetrieveIfLocalImages"];
 	[defaultValues setObject: @"1" forKey: @"SingleProcessMultiThreadedListener"];
 	[defaultValues setObject: @"0" forKey: @"AUTHENTICATION"];
-	[defaultValues setObject: @"1" forKey: @"CheckHorosUpdates"];
 	[defaultValues setObject: @"-1" forKey:@"MOUNT"];
 	[defaultValues setObject: @"1" forKey:@"CDDVDEjectAfterAutoCopy"];
 //	[defaultValues setObject: @"1" forKey:@"UNMOUNT"];
@@ -1072,7 +1070,6 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"1" forKey:@"openPDFwithPreview"];
 	[defaultValues setObject:@"1" forKey:@"ROIArrowThickness"];
 	[defaultValues setObject:@"1" forKey:@"loopScrollWheel"];
-	[defaultValues setObject:@"1" forKey:@"UseJPEGColorSpace"];
 	[defaultValues setObject:@"0" forKey:@"displayCobbAngle"];
 	[defaultValues setObject:@"0" forKey:@"onlyDisplayImagesOfSamePatient"];
 	[defaultValues setObject:@"1" forKey:@"activateCGETSCP"];
@@ -1273,47 +1270,6 @@ static NSHost *currentHost = nil;
 //		[hotkeysModifiers setObject:[NSNumber numberWithInt:0] forKey:stringValue];
 	}
 	[defaultValues setObject:hotkeys forKey:@"HOTKEYS"];
-	
-	NSArray *compressionSettings = [NSArray arrayWithObjects: 
-							[NSDictionary dictionaryWithObjectsAndKeys: NSLocalizedString( @"default", nil), @"modality", @"3", @"compression", @"1", @"quality", nil], 
-							[NSDictionary dictionaryWithObjectsAndKeys: @"CR", @"modality", @"0", @"compression", @"1", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"CT", @"modality", @"0", @"compression", @"1", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"DX", @"modality", @"0", @"compression", @"1", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"ES", @"modality", @"0", @"compression", @"1", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"MG", @"modality", @"0", @"compression", @"1", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"MR", @"modality", @"0", @"compression", @"1", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"NM", @"modality", @"0", @"compression", @"1", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"OT", @"modality", @"0", @"compression", @"1", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"PT", @"modality", @"0", @"compression", @"1", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"RF", @"modality", @"0", @"compression", @"1", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"SC", @"modality", @"0", @"compression", @"1", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"US", @"modality", @"0", @"compression", @"1", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"XA", @"modality", @"0", @"compression", @"1", @"quality", nil],
-							nil]; 
-	
-	[defaultValues setObject: @"512" forKey: @"CompressionResolutionLimit"];
-	
-	[defaultValues setObject: compressionSettings forKey:@"CompressionSettings"];
-	
-	NSArray *compressionSettingsLowRes = [NSArray arrayWithObjects: 
-							[NSDictionary dictionaryWithObjectsAndKeys: NSLocalizedString( @"default", nil), @"modality", @"3", @"compression", @"0", @"quality", nil], 
-							[NSDictionary dictionaryWithObjectsAndKeys: @"CR", @"modality", @"0", @"compression", @"0", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"CT", @"modality", @"0", @"compression", @"0", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"DX", @"modality", @"0", @"compression", @"0", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"ES", @"modality", @"0", @"compression", @"0", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"MG", @"modality", @"0", @"compression", @"0", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"MR", @"modality", @"0", @"compression", @"0", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"NM", @"modality", @"0", @"compression", @"0", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"OT", @"modality", @"0", @"compression", @"0", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"PT", @"modality", @"0", @"compression", @"0", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"RF", @"modality", @"0", @"compression", @"0", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"SC", @"modality", @"0", @"compression", @"0", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"US", @"modality", @"0", @"compression", @"0", @"quality", nil],
-							[NSDictionary dictionaryWithObjectsAndKeys: @"XA", @"modality", @"0", @"compression", @"0", @"quality", nil],
-							nil]; 
-	
-	[defaultValues setObject: compressionSettingsLowRes forKey:@"CompressionSettingsLowRes"];
-	
 	
 	// Comparison Body Regions
 //	NSArray *headRegions = [NSArray arrayWithObjects: 

@@ -15,7 +15,7 @@ private final class HorosSettingsPaneContainerView: NSView {
     override var isFlipped: Bool { true }
 }
 
-private class HorosSettingsPaneViewController: NSViewController {
+class HorosSettingsPaneViewController: NSViewController {
     let paneTitle: String
 
     init(paneTitle: String) {
@@ -1935,94 +1935,6 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
     }
 }
 
-private final class GeneralSettingsPaneViewController: HorosSettingsPaneViewController {
-    private enum Layout {
-        static let contentWidth: CGFloat = 780
-    }
-
-    init() {
-        super.init(paneTitle: "General")
-    }
-
-    override func loadView() {
-        let rootView = HorosSettingsPaneContainerView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
-        rootView.wantsLayer = true
-        rootView.layer?.backgroundColor = NSColor(calibratedWhite: 0.14, alpha: 1).cgColor
-
-        let titleLabel = makeLabel(
-            string: "General",
-            font: .systemFont(ofSize: 28, weight: .semibold),
-            color: NSColor(calibratedWhite: 0.95, alpha: 1)
-        )
-        titleLabel.frame = NSRect(x: 42, y: 36, width: 240, height: 36)
-        rootView.addSubview(titleLabel)
-
-        let subtitleLabel = makeWrappingLabel(
-            string: "This new settings shell is now hosted in Swift/AppKit. We’ll migrate the old Horos preference panes into this window one by one, keeping the existing stored preferences unchanged.",
-            font: .systemFont(ofSize: 14),
-            color: NSColor(calibratedWhite: 0.68, alpha: 1)
-        )
-        subtitleLabel.frame = NSRect(x: 42, y: 80, width: Layout.contentWidth, height: 44)
-        rootView.addSubview(subtitleLabel)
-
-        let cardView = NSView(frame: NSRect(x: 42, y: 150, width: Layout.contentWidth, height: 220))
-        cardView.wantsLayer = true
-        cardView.layer?.backgroundColor = NSColor(calibratedWhite: 0.17, alpha: 1).cgColor
-        cardView.layer?.cornerRadius = 14
-        cardView.layer?.borderWidth = 1
-        cardView.layer?.borderColor = NSColor(calibratedWhite: 0.24, alpha: 1).cgColor
-        rootView.addSubview(cardView)
-
-        let cardTitle = makeLabel(
-            string: "Migration Status",
-            font: .systemFont(ofSize: 18, weight: .medium),
-            color: NSColor(calibratedWhite: 0.92, alpha: 1)
-        )
-        cardTitle.frame = NSRect(x: 22, y: 20, width: 240, height: 24)
-        cardView.addSubview(cardTitle)
-
-        let statusLines = [
-            "New settings window and top navigation are in place.",
-            "The old preferences window remains available as OldSettings.",
-            "Next we can start moving real panes into this shell, beginning with General."
-        ]
-
-        for (index, line) in statusLines.enumerated() {
-            let bullet = makeLabel(
-                string: "•",
-                font: .systemFont(ofSize: 18, weight: .semibold),
-                color: NSColor.systemBlue
-            )
-            bullet.frame = NSRect(x: 22, y: 62 + CGFloat(index) * 42, width: 16, height: 22)
-            cardView.addSubview(bullet)
-
-            let text = makeWrappingLabel(
-                string: line,
-                font: .systemFont(ofSize: 15),
-                color: NSColor(calibratedWhite: 0.84, alpha: 1)
-            )
-            text.frame = NSRect(x: 42, y: 60 + CGFloat(index) * 42, width: Layout.contentWidth - 70, height: 28)
-            cardView.addSubview(text)
-        }
-
-        self.view = rootView
-    }
-
-    private func makeLabel(string: String, font: NSFont, color: NSColor) -> NSTextField {
-        let label = NSTextField(labelWithString: string)
-        label.font = font
-        label.textColor = color
-        return label
-    }
-
-    private func makeWrappingLabel(string: String, font: NSFont, color: NSColor) -> NSTextField {
-        let label = NSTextField(wrappingLabelWithString: string)
-        label.font = font
-        label.textColor = color
-        return label
-    }
-}
-
 private final class PlaceholderSettingsPaneViewController: HorosSettingsPaneViewController {
     init(title: String) {
         super.init(paneTitle: title)
@@ -2175,9 +2087,7 @@ final class HorosSettingsWindowController: NSWindowController {
         contentContainer.layer?.backgroundColor = NSColor(calibratedWhite: 0.14, alpha: 1.0).cgColor
         rootView.addSubview(contentContainer)
 
-        if let annotationsButton = toolbarButtons.first(where: { $0.identifier?.rawValue == "annotations" }) {
-            updateSelection(annotationsButton)
-        } else if let first = toolbarButtons.first {
+        if let first = toolbarButtons.first {
             updateSelection(first)
         }
     }

@@ -48,6 +48,8 @@
 #import "SRAnnotation.h"
 #import <WebKit/WebKit.h>
 #import <MetalKit/MetalKit.h>
+#import <PreferencePanes/PreferencePanes.h>
+#import <UserNotifications/UserNotifications.h>
 #import "Horos-Swift.h"
 #include <dlfcn.h>
 

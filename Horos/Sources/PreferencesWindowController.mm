@@ -335,7 +335,6 @@ static NSMutableDictionary *prefPanes = nil;
 	NSString* name;
 	
 	name = NSLocalizedString(@"Basics", @"Section in preferences window");
-	[self addPaneWithResourceNamed:@"OSIGeneralPreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"General", @"Panel in preferences window") image:[NSImage imageNamed:@"GeneralPreferences"] toGroupWithName:name];
 	[self addPaneWithResourceNamed:@"OSIDatabasePreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"Database", @"Panel in preferences window") image:[NSImage imageNamed:@"DatabaseIcon"] toGroupWithName:name];
 	[self addPaneWithResourceNamed:@"OSICDPreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"CD/DVD", @"Panel in preferences window") image:[NSImage imageNamed:@"CD"] toGroupWithName:name];
 	[self addPaneWithResourceNamed:@"OSIHangingPreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"Protocols", @"Panel in preferences window") image:[NSImage imageNamed:@"ZoomToFit"] toGroupWithName:name];

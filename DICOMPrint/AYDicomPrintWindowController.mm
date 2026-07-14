@@ -37,7 +37,6 @@
 
 #import "QueryController.h"
 #import "AYDicomPrintWindowController.h"
-#import "AYDicomPrintPref.h"
 #import "NSFont_OpenGL.h"
 #import "AYNSImageToDicom.h"
 #import "Notifications.h"

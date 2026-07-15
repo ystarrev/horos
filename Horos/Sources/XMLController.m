@@ -82,12 +82,10 @@ extern int delayedTileWindows;
 /////////////////////////////////////////////////
 - (void)setWindowFrame:(NSRect)rect showWindow:(BOOL) showWindow animate: (BOOL) animate
 {
-	[AppController resizeWindowWithAnimation: [self window] newSize: rect];
-    
-    BOOL wasAlreadyVisible = [[self window] isVisible];
-    
-    if( showWindow && wasAlreadyVisible)
-        [[self window] orderFront:self];
+	[[self window] setFrame:rect display:YES animate:animate];
+
+	if (showWindow)
+		[[self window] orderFront:self];
 }
 
 - (NSArray*) fileList
@@ -615,7 +613,7 @@ extern int delayedTileWindows;
     
 	if (self = [super initWithWindowNibName: @"XMLViewer"])
 	{
-		[self setMagnetic: YES];
+		[self setMagnetic:NO];
 		
 		allowSelectionChange = YES;
 		editingLevel = [[NSUserDefaults standardUserDefaults] integerForKey: @"editingLevel"];
@@ -633,6 +631,8 @@ extern int delayedTileWindows;
 		
 		[[self window] setFrameAutosaveName:@"XMLWindow"];
 		[[self window] setDelegate:self];
+		[[self window] setContentMinSize:NSMakeSize(640, 360)];
+		[table setRowHeight:22.0];
 		
 		[table expandItem:[table itemAtRow:0] expandChildren:NO];
 		
@@ -897,6 +897,7 @@ extern int delayedTileWindows;
 - (void)outlineView:(NSOutlineView *)outlineView willDisplayCell:(id)cell forTableColumn:(NSTableColumn *)tableColumn item:(id)item
 {
 	BOOL found = NO;
+	CGFloat fontSize = [NSFont systemFontSize];
 	
 	if( [[search stringValue] isEqualToString:@""] == NO)
 	{
@@ -904,24 +905,24 @@ extern int delayedTileWindows;
 		
 		if( found)
 		{
-			[cell setTextColor: [NSColor blackColor]];
-			[cell setFont:[NSFont boldSystemFontOfSize:12]];
+			[cell setTextColor:[NSColor labelColor]];
+			[cell setFont:[NSFont boldSystemFontOfSize:fontSize]];
 		}
 		else
 		{
-			[cell setTextColor: [NSColor grayColor]];
-			[cell setFont:[NSFont systemFontOfSize:12]];
+			[cell setTextColor:[NSColor secondaryLabelColor]];
+			[cell setFont:[NSFont systemFontOfSize:fontSize]];
 		}
 	}
 	else
 	{
-		[cell setTextColor: [NSColor blackColor]];
-		[cell setFont:[NSFont systemFontOfSize:12]];
+		[cell setTextColor:[NSColor labelColor]];
+		[cell setFont:[NSFont systemFontOfSize:fontSize]];
 	}
 	[cell setLineBreakMode: NSLineBreakByTruncatingMiddle];
     
      if( [modifiedFields containsObject: [self getPath: item]])
-         [cell setTextColor: [NSColor redColor]];
+         [cell setTextColor:[NSColor systemRedColor]];
 }
 
 - (void) traverse: (NSXMLNode*) node string:(NSMutableString*) string

@@ -37,6 +37,7 @@
 
 #import "DCMObject.h"
 #import "OSIAutoroutingPreferencePanePref.h"
+#import "Horos-Swift.h"
 #import "NSPreferencePane+OsiriX.h"
 #import "AppController.h"
 
@@ -122,7 +123,12 @@
         }
         
         if( found == NO)
-            NSRunCriticalAlertPanel(NSLocalizedString(@"Unknown Server", nil), NSLocalizedString( @"This server doesn't exist in the Locations list: %@", nil),NSLocalizedString( @"OK", nil), nil, nil, [[routesArray objectAtIndex: i] valueForKey:@"server"]);
+	            [HorosAlertPresenter runWithTitle:NSLocalizedString(@"Unknown Server", nil)
+	                                        message:[NSString stringWithFormat:NSLocalizedString(@"This server doesn't exist in the Locations list: %@", nil), [[routesArray objectAtIndex:i] valueForKey:@"server"]]
+	                                          style:NSAlertStyleCritical
+	                                    firstButton:NSLocalizedString(@"OK", nil)
+	                                   secondButton:nil
+	                                    thirdButton:nil];
     }
 }
 
@@ -210,7 +216,12 @@ static BOOL newRouteMode = NO;
     
     if( [serversArray count] == 0)
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"New Route", nil),NSLocalizedString( @"No destination servers exist. Create at least one destination in the Locations preferences.", nil),NSLocalizedString( @"OK", nil), nil, nil);
+	        [HorosAlertPresenter runWithTitle:NSLocalizedString(@"New Route", nil)
+	                                    message:NSLocalizedString(@"No destination servers exist. Create at least one destination in the Locations preferences.", nil)
+	                                      style:NSAlertStyleCritical
+	                                firstButton:NSLocalizedString(@"OK", nil)
+	                               secondButton:nil
+	                                thirdButton:nil];
     }
     else
     {
@@ -265,12 +276,17 @@ static BOOL newRouteMode = NO;
             
             if( count > 1)
             {
-                NSRunCriticalAlertPanel(NSLocalizedString(@"Multiples Servers", nil), NSLocalizedString( @"Warning, multiples destination servers have the same name: %@. Each destination should have a unique name.", nil),NSLocalizedString( @"OK", nil), nil, nil, [selectedRoute valueForKey: @"server"]);
+	                [HorosAlertPresenter runWithTitle:NSLocalizedString(@"Multiples Servers", nil)
+	                                            message:[NSString stringWithFormat:NSLocalizedString(@"Warning, multiples destination servers have the same name: %@. Each destination should have a unique name.", nil), [selectedRoute valueForKey:@"server"]]
+	                                              style:NSAlertStyleCritical
+	                                        firstButton:NSLocalizedString(@"OK", nil)
+	                                       secondButton:nil
+	                                        thirdButton:nil];
             }
             
             [self selectServer: serverPopup];
             
-            [NSApp beginSheet: newRoute modalForWindow: [[self mainView] window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+	            [[[self mainView] window] beginSheet:newRoute completionHandler:nil];
         }
     }
 }

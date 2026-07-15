@@ -51,6 +51,9 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 #include <iostream>
 
 #include <dcmtk/ofstd/ofthread.h>
@@ -58,6 +61,41 @@
 //#define WITH_OPJ_BUFFER_STREAM
 #define WITH_OPJ_FILE_STREAM
 //#define OPJ_VERBOSE
+
+static bool createOpenJPEGTemporaryFile(char *path, size_t pathCapacity)
+{
+    if (path == NULL || pathCapacity == 0)
+        return false;
+
+    const char *temporaryDirectory = getenv("TMPDIR");
+    if (temporaryDirectory == NULL || temporaryDirectory[0] == '\0')
+        temporaryDirectory = "/tmp";
+
+    size_t directoryLength = strlen(temporaryDirectory);
+    const char *separator = temporaryDirectory[directoryLength - 1] == '/' ? "" : "/";
+    int written = snprintf(path, pathCapacity, "%s%sHorosOpenJPEG.XXXXXX", temporaryDirectory, separator);
+    if (written < 0 || (size_t)written >= pathCapacity)
+    {
+        path[0] = '\0';
+        return false;
+    }
+
+    int fileDescriptor = mkstemp(path);
+    if (fileDescriptor < 0)
+    {
+        path[0] = '\0';
+        return false;
+    }
+
+    if (close(fileDescriptor) != 0)
+    {
+        unlink(path);
+        path[0] = '\0';
+        return false;
+    }
+
+    return true;
+}
 
 struct opj_memory_stream
 {
@@ -819,10 +857,6 @@ OPJSupport::compressJPEG2K(void *data,
     parameters.cod_format = JP2_CFMT; //JP2_CFMT; //J2K_CFMT;
     OPJ_BOOL forceJ2K = (parameters.cod_format == J2K_CFMT ? OPJ_FALSE:(((OPJ_TRUE /*force here*/))));
     
-#ifdef WITH_OPJ_FILE_STREAM
-    tmpnam(parameters.outfile);
-#endif
-    
     image = rawtoimage( (char*) data,
                        &parameters,
                        static_cast<int>( columns*rows*samplesPerPixel*bitsAllocated/8), // [data length], fragment_size
@@ -946,6 +980,15 @@ OPJSupport::compressJPEG2K(void *data,
     
     
 #ifdef WITH_OPJ_FILE_STREAM
+    if (!createOpenJPEGTemporaryFile(parameters.outfile, sizeof(parameters.outfile)))
+    {
+        fprintf(stderr,"%s:%d:\n\ttemporary file creation failed\n",__FILE__,__LINE__);
+        if (l_codec) opj_destroy_codec(l_codec);
+        if (image) opj_image_destroy(image);
+        *compressedDataSize = 0;
+        return NULL;
+    }
+
     l_stream = opj_stream_create_default_file_stream(parameters.outfile, OPJ_STREAM_WRITE);
 #endif
     
@@ -962,6 +1005,11 @@ OPJSupport::compressJPEG2K(void *data,
         
         /* free image data */
         if (image) opj_image_destroy(image);
+
+#ifdef WITH_OPJ_FILE_STREAM
+        if (parameters.outfile[0] != '\0')
+            remove(parameters.outfile);
+#endif
         
         *compressedDataSize = 0;
         
@@ -1003,6 +1051,11 @@ OPJSupport::compressJPEG2K(void *data,
                 
                 /* free image data */
                 if (image) opj_image_destroy(image);
+
+#ifdef WITH_OPJ_FILE_STREAM
+                if (parameters.outfile[0] != '\0')
+                    remove(parameters.outfile);
+#endif
                 
                 *compressedDataSize = 0;
                 
@@ -1025,6 +1078,11 @@ OPJSupport::compressJPEG2K(void *data,
                     if (image) opj_image_destroy(image);
                     
                     free(l_data);
+
+#ifdef WITH_OPJ_FILE_STREAM
+                    if (parameters.outfile[0] != '\0')
+                        remove(parameters.outfile);
+#endif
                     
                     *compressedDataSize = 0;
                     

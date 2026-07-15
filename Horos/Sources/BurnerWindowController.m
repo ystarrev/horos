@@ -323,7 +323,6 @@
                         return;
                     }
                     
-                    [[BrowserController currentBrowser] removePathFromSources: writeVolumePath];
                 }
                 
                 if( [[NSUserDefaults standardUserDefaults] integerForKey: @"burnDestination"] == DMGFile)

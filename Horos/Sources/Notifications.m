@@ -112,8 +112,6 @@ NSString* const OsirixViewerControllerWillFreeVolumeDataNotification = @"OsirixV
 NSString* const OsirixViewerControllerDidAllocateVolumeDataNotification = @"OsirixViewerControllerDidAllocateVolumeDataNotification"; // userinfo dict will contain an NSData with @"volumeData" key and a NSNumber with @"movieIndex" key
 NSString* const KFSplitViewDidCollapseSubviewNotification = @"KFSplitViewDidCollapseSubviewNotification";
 NSString* const KFSplitViewDidExpandSubviewNotification = @"KFSplitViewDidExpandSubviewNotification";
-NSString* const BLAuthenticatedNotification = @"BLAuthenticatedNotification";
-NSString* const BLDeauthenticatedNotification = @"BLDeauthenticatedNotification";
 
 NSString* const OsirixActiveLocalDatabaseDidChangeNotification = @"OsirixActiveLocalDatabaseDidChangeNotification";
 

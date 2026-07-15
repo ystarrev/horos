@@ -101,14 +101,14 @@ static const NSInteger labelHeight = 38, labelSeparator = 3;
 	NSImage* image = [self isHighlighted]? self.alternateImage : self.image;
 	NSSize imageSize = [image size];
 	if (imageSize.width > 32 || imageSize.height > 32) [image setSize:imageSize = NSMakeSize(32,32)];
-	[image drawAtPoint:imageRect.origin+NSMakePoint((imageRect.size.width-imageSize.width)/2, 0) fromRect:NSMakeRect(NSZeroPoint, imageSize) operation:NSCompositeSourceOver fraction:1];
+	[image drawAtPoint:imageRect.origin+NSMakePoint((imageRect.size.width-imageSize.width)/2, 0) fromRect:NSMakeRect(NSZeroPoint, imageSize) operation:NSCompositingOperationSourceOver fraction:1];
 
 	[NSGraphicsContext restoreGraphicsState];
 	
 	NSRect labelRect = NSMakeRect(frame.origin.x, frame.size.height-labelHeight, frame.size.width, labelHeight);
 	
 	NSMutableParagraphStyle* style = [[[NSMutableParagraphStyle defaultParagraphStyle] mutableCopy] autorelease];
-	[style setAlignment:NSCenterTextAlignment];
+	[style setAlignment:NSTextAlignmentCenter];
 	NSFont* font = [NSFont labelFontOfSize:[NSFont smallSystemFontSize]];
     
     [self.title drawInRect:labelRect
@@ -294,8 +294,6 @@ static const NSUInteger colWidth = 80, colSeparator = 1, rowHeight = 101, titleH
 }
 
 @end
-
-
 
 
 

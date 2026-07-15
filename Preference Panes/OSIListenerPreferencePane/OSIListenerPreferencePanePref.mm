@@ -39,6 +39,7 @@
 #import "DefaultsOsiriX.h"
 #import "BrowserController.h"
 #import "NSUserDefaultsController+OsiriX.h"
+#import "Horos-Swift.h"
 //#import "DDKeychain.h"
 #import <SecurityInterface/SFChooseIdentityPanel.h>
 #import "NSAppleScript+N2.h"
@@ -181,9 +182,18 @@
 
 - (IBAction) openKeyChainAccess:(id) sender
 {
-	NSString *path = [[NSWorkspace sharedWorkspace] absolutePathForAppBundleWithIdentifier:@"com.apple.keychainaccess"];
-	
-	[[NSWorkspace sharedWorkspace] launchApplication: path];
+	NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
+	NSURL *applicationURL = [workspace URLForApplicationWithBundleIdentifier:@"com.apple.keychainaccess"];
+	if (applicationURL)
+	{
+		[workspace openApplicationAtURL:applicationURL
+		                    configuration:[NSWorkspaceOpenConfiguration configuration]
+		                completionHandler:^(NSRunningApplication *application, NSError *error) {
+			(void)application;
+			if (error)
+				NSLog(@"Unable to open Keychain Access: %@", error);
+		}];
+	}
 }
 
 -(IBAction)editAddresses:(id)sender {
@@ -247,11 +257,7 @@
 	if( [[NSUserDefaults standardUserDefaults] integerForKey: @"TLSStoreSCPAEPORT"] <= 0)
 		[[NSUserDefaults standardUserDefaults] setInteger: [[NSUserDefaults standardUserDefaults] integerForKey: @"AEPORT"] + 1 forKey: @"TLSStoreSCPAEPORT"]; 
 		
-	[NSApp beginSheet: TLSSettingsWindow
-	   modalForWindow: [[self mainView] window]
-		modalDelegate: nil
-	   didEndSelector: nil
-		  contextInfo: nil];
+	[[[self mainView] window] beginSheet:TLSSettingsWindow completionHandler:nil];
 	
 	int result = [NSApp runModalForWindow: TLSSettingsWindow];
 	[TLSSettingsWindow makeFirstResponder: nil];
@@ -259,7 +265,7 @@
 	[NSApp endSheet: TLSSettingsWindow];
 	[TLSSettingsWindow orderOut: self];
 	
-	if( result == NSRunStoppedResponse)
+	if( result == NSModalResponseStop)
 	{
 		if( [self.TLSStoreSCPAETITLE length] <= 0)
 		{
@@ -278,7 +284,12 @@
 		[[NSUserDefaults standardUserDefaults] setObject:self.TLSStoreSCPAETITLE forKey:@"TLSStoreSCPAETITLE"];
 		[[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithBool:self.TLSStoreSCPAETITLEIsDefaultAET] forKey:@"TLSStoreSCPAETITLEIsDefaultAET"];
 		
-		NSRunAlertPanel( NSLocalizedString( @"DICOM Listener", nil), NSLocalizedString( @"Restart Horos to apply these changes.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+		[HorosAlertPresenter runWithTitle:NSLocalizedString(@"DICOM Listener", nil)
+		                            message:NSLocalizedString(@"Restart Horos to apply these changes.", nil)
+		                              style:NSAlertStyleWarning
+		                        firstButton:NSLocalizedString(@"OK", nil)
+		                       secondButton:nil
+		                        thirdButton:nil];
 	}
 }
 
@@ -313,7 +324,7 @@
 		[[SFChooseIdentityPanel sharedChooseIdentityPanel] setAlternateButtonTitle:NSLocalizedString(@"Cancel", nil)];
 		NSInteger clickedButton = [[SFChooseIdentityPanel sharedChooseIdentityPanel] runModalForIdentities:certificates message:NSLocalizedString( @"Choose a certificate from the following list.", nil)];
 		
-		if(clickedButton==NSOKButton)
+		if(clickedButton == NSModalResponseOK)
 		{
 			SecIdentityRef identity = [[SFChooseIdentityPanel sharedChooseIdentityPanel] identity];
 			if(identity)
@@ -322,14 +333,19 @@
 				[self getTLSCertificate];
 			}
 		}
-		else if(clickedButton==NSCancelButton)
+		else if(clickedButton == NSModalResponseCancel)
 			return;
 	}
 	else
 	{
-		NSInteger clickedButton = NSRunCriticalAlertPanel(NSLocalizedString(@"No Valid Certificate", nil), NSLocalizedString(@"Your Keychain does not contain any valid certificate.", nil), NSLocalizedString(@"Help", nil), NSLocalizedString(@"Cancel", nil), nil);
+		NSInteger clickedButton = [HorosAlertPresenter runWithTitle:NSLocalizedString(@"No Valid Certificate", nil)
+		                                                     message:NSLocalizedString(@"Your Keychain does not contain any valid certificate.", nil)
+		                                                       style:NSAlertStyleCritical
+		                                                 firstButton:NSLocalizedString(@"Help", nil)
+		                                                secondButton:NSLocalizedString(@"Cancel", nil)
+		                                                 thirdButton:nil];
 		
-		if(clickedButton==NSOKButton)
+		if(clickedButton == NSAlertFirstButtonReturn)
 		{
 			[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_DOC_SECURITY]];
 		}
@@ -420,7 +436,12 @@
 			[[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithInt:newPort] forKey:@"TLSStoreSCPAEPORT"];
 			
 			NSString *msg = [NSString stringWithFormat:NSLocalizedString( @"The port %d is already use by the standard DICOM Listener. The port %d was automatically chosen instead.", nil), submittedPort, newPort];
-			NSRunAlertPanel(NSLocalizedString(@"Port already in use", nil),  @"%@", NSLocalizedString(@"OK", nil), nil, nil, msg);
+			[HorosAlertPresenter runWithTitle:NSLocalizedString(@"Port already in use", nil)
+			                            message:msg
+			                              style:NSAlertStyleWarning
+			                        firstButton:NSLocalizedString(@"OK", nil)
+			                       secondButton:nil
+			                        thirdButton:nil];
 		}
 	}
 }

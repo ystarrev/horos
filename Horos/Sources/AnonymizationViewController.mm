@@ -280,8 +280,6 @@ NSInteger CompareArraysByNameOfDCMAttributeTagAtIndexZero(id arg1, id arg2, void
 	
 	NSMutableArray* zeroTags = [self.tags mutableCopy];
 	
-    NSDisableScreenUpdates();
-    
 	// this removes all previous tags
 	if (tagsValues.count)
 		while (self.tags.count)
@@ -313,9 +311,7 @@ NSInteger CompareArraysByNameOfDCMAttributeTagAtIndexZero(id arg1, id arg2, void
 	
 	[self observeValueForKeyPath:NULL ofObject:NULL change:NULL context:self.tagsView];
     
-    NSEnableScreenUpdates();
-    
-    /* UGLY HOTFIX / WORKAROUND UNTIL REVIEWING N2AdaptiveBox
+	/* UGLY HOTFIX / WORKAROUND UNTIL REVIEWING N2AdaptiveBox
      ------------------------------------------------------ */
     NSRect frame =  [[[BrowserController currentBrowser] window] frame];
     frame.size.width--;
@@ -352,14 +348,15 @@ NSInteger CompareArraysByNameOfDCMAttributeTagAtIndexZero(id arg1, id arg2, void
 
 -(IBAction)saveTemplateAction:(id)sender {
 	AnonymizationTemplateNamePanelController* panelController = [[AnonymizationTemplateNamePanelController alloc] initWithReplaceValues:[[[NSUserDefaultsController sharedUserDefaultsController] dictionaryForKey:@"anonymizeTemplate"] allKeys]];
-	[NSApp beginSheet:panelController.window modalForWindow:self.view.window modalDelegate:self didEndSelector:@selector(saveTemplateNamePanelDidEnd:returnCode:contextInfo:) contextInfo:panelController];
-	[panelController.window orderFront:self];
+	[self.view.window beginSheet:panelController.window completionHandler:^(NSModalResponse returnCode) {
+		[self saveTemplateNamePanelDidEnd:panelController.window returnCode:returnCode contextInfo:panelController];
+	}];
 }
 
--(void)saveTemplateNamePanelDidEnd:(NSPanel*)panel returnCode:(NSInteger)returnCode contextInfo:(void*)contextInfo {
+-(void)saveTemplateNamePanelDidEnd:(NSWindow*)panel returnCode:(NSInteger)returnCode contextInfo:(void*)contextInfo {
 	AnonymizationTemplateNamePanelController* panelController = (id)contextInfo;
 	
-	if (returnCode == NSRunStoppedResponse) {
+	if (returnCode == NSModalResponseStop) {
 		[self saveTemplate:[self tagsValues] withName:panelController.value];
 	}
 	

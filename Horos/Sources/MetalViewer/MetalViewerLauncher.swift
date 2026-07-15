@@ -240,7 +240,8 @@ final class MetalViewerLauncher: NSObject {
             let fullStudy = buildStudy(
                 from: frames,
                 fallbackTitle: title,
-                forceDynamicInterpretation: forceDynamicInterpretation
+                forceDynamicInterpretation: forceDynamicInterpretation,
+                markScoutStudiesOpened: true
             )
             metalTimingLog("MetalViewerLauncher build reused study", since: fullStudyStart)
             let updateStart = CFAbsoluteTimeGetCurrent()
@@ -303,7 +304,8 @@ final class MetalViewerLauncher: NSObject {
             let fullStudy = buildStudy(
                 from: frames,
                 fallbackTitle: title,
-                forceDynamicInterpretation: forceDynamicInterpretation
+                forceDynamicInterpretation: forceDynamicInterpretation,
+                markScoutStudiesOpened: true
             )
             metalTimingLog("MetalViewerLauncher build full study", since: fullStudyStart)
             let updateStart = CFAbsoluteTimeGetCurrent()
@@ -417,7 +419,8 @@ final class MetalViewerLauncher: NSObject {
             let updatedStudy = buildStudy(
                 from: context.frames,
                 fallbackTitle: context.fallbackTitle,
-                forceDynamicInterpretation: context.forceDynamicInterpretation
+                forceDynamicInterpretation: context.forceDynamicInterpretation,
+                markScoutStudiesOpened: false
             )
             let changedPaneCount = controller.updateStudy(updatedStudy)
             if changedPaneCount > 0 {
@@ -556,7 +559,8 @@ final class MetalViewerLauncher: NSObject {
     private class func buildStudy(
         from frames: [DCMPix],
         fallbackTitle: String,
-        forceDynamicInterpretation: Bool
+        forceDynamicInterpretation: Bool,
+        markScoutStudiesOpened: Bool
     ) -> MetalViewerStudy {
         guard let currentImageObject = frames.first?.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSManagedObject,
               let currentStudy = currentImageObject.value(forKeyPath: "series.study") as? DicomStudy else {
@@ -604,9 +608,11 @@ final class MetalViewerLauncher: NSObject {
         let studyTitle = patientWindowTitle(patientName: currentStudy.name, patientID: currentStudy.patientID, fallbackTitle: fallbackTitle)
 
         var flattenedSeries: [MetalViewerSeries] = []
+        var additionalScoutStudies: [DicomStudy] = []
 
         for (studyIndex, study) in sortedStudies.enumerated() {
             guard let browser else { continue }
+            let seriesCountBeforeStudy = flattenedSeries.count
             let seriesObjects = browser.childrenArray(study, onlyImages: false) as? [NSManagedObject] ?? []
             var pendingPresentations: [PendingSeriesPresentation] = []
 
@@ -664,6 +670,15 @@ final class MetalViewerLauncher: NSObject {
                     )
                 )
             }
+
+            if flattenedSeries.count > seriesCountBeforeStudy,
+               study.objectID != currentStudy.objectID {
+                additionalScoutStudies.append(study)
+            }
+        }
+
+        if markScoutStudiesOpened, additionalScoutStudies.isEmpty == false {
+            browser?.markStudies(asOpened: additionalScoutStudies)
         }
 
         if flattenedSeries.isEmpty {

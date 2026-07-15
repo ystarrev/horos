@@ -111,8 +111,6 @@ extern NSString* const OsirixViewerControllerWillFreeVolumeDataNotification; // 
 extern NSString* const OsirixViewerControllerDidAllocateVolumeDataNotification; // userinfo dict will contain an NSData with @"volumeData" key and a NSNumber with @"movieIndex" key
 extern NSString* const KFSplitViewDidCollapseSubviewNotification;
 extern NSString* const KFSplitViewDidExpandSubviewNotification;
-extern NSString* const BLAuthenticatedNotification;
-extern NSString* const BLDeauthenticatedNotification;
 extern NSString* const OsiriXLogEvent;
 
 extern NSString* const OsirixActiveLocalDatabaseDidChangeNotification;

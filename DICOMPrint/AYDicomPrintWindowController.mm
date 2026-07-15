@@ -45,6 +45,7 @@
 #import "NSUserDefaults+OsiriX.h"
 #import "N2Debug.h"
 #import "AppController.h"
+#import "Horos-Swift.h"
 
 // Template for DCMTK presentation state command-line applications (sample .cfg files in DCMTK source under dcmpstat/etc)
 //
@@ -243,7 +244,12 @@ NSString *mediumTag[] = {@"Blue Film", @"Clear Film", @"Paper"};
 	// show dialog if no printers are configured OR open modal print dialog
 	if ([printers count] == 0)
 	{
-		NSRunAlertPanel(NSLocalizedString(@"DICOM Print", nil), NSLocalizedString(@"No DICOM printers were found, please add a dicom printer in the preferences.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+		[HorosAlertPresenter runWithTitle:NSLocalizedString(@"DICOM Print", nil)
+		                            message:NSLocalizedString(@"No DICOM printers were found, please add a dicom printer in the preferences.", nil)
+		                              style:NSAlertStyleWarning
+		                        firstButton:NSLocalizedString(@"OK", nil)
+		                       secondButton:nil
+		                        thirdButton:nil];
 		[self close];
 		return;
 	}
@@ -323,7 +329,12 @@ NSString *mediumTag[] = {@"Blue Film", @"Clear Film", @"Paper"};
 {
 	if( [m_pages intValue] > 10 && [[m_ImageSelection selectedCell] tag] == eAllImages)
 	{
-		if( NSRunInformationalAlertPanel( NSLocalizedString(@"DICOM Print", nil), NSLocalizedString(@"Are you really sure you want to print %d pages?", nil) , NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil, [m_pages intValue]) != NSAlertDefaultReturn) return;
+		if ([HorosAlertPresenter runWithTitle:NSLocalizedString(@"DICOM Print", nil)
+		                                message:[NSString stringWithFormat:NSLocalizedString(@"Are you really sure you want to print %d pages?", nil), [m_pages intValue]]
+		                                  style:NSAlertStyleInformational
+		                            firstButton:NSLocalizedString(@"OK", nil)
+		                           secondButton:NSLocalizedString(@"Cancel", nil)
+		                            thirdButton:nil] != NSAlertFirstButtonReturn) return;
 	}
 	
 	[sender setEnabled: NO];
@@ -498,7 +509,7 @@ NSString *mediumTag[] = {@"Blue Film", @"Clear Film", @"Paper"};
 {
     // show progress sheet
     [self _setProgressMessage: nil];
-    [NSApp beginSheet: m_ProgressSheet modalForWindow: [self window] modalDelegate: self didEndSelector: nil contextInfo: nil];
+	[[self window] beginSheet:m_ProgressSheet completionHandler:nil];
     
     // dictionary for selected printer
     NSDictionary *dict = [[m_PrinterController selectedObjects] objectAtIndex: 0];
@@ -761,7 +772,12 @@ NSString *mediumTag[] = {@"Blue Film", @"Clear Film", @"Paper"};
 
 - (void) errorMessage:(NSArray*) msg
 {
-	NSRunCriticalAlertPanel( [msg objectAtIndex: 0], @"%@", [msg objectAtIndex: 2], nil, nil, [msg objectAtIndex: 1]) ;
+	[HorosAlertPresenter runWithTitle:[msg objectAtIndex:0]
+	                            message:[msg objectAtIndex:1]
+	                              style:NSAlertStyleCritical
+	                        firstButton:[msg objectAtIndex:2]
+	                       secondButton:nil
+	                        thirdButton:nil];
 }
 
 - (void) _setProgressMessage: (NSString *) message

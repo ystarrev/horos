@@ -1371,6 +1371,11 @@ private final class ViewerScreensPreviewView: NSView {
         let previewFrame: NSRect
     }
 
+    private struct ScreenRecord {
+        let screen: NSScreen
+        let previewFrame: NSRect
+    }
+
     private struct DragState {
         let role: WindowRole
         let window: NSWindow
@@ -1413,17 +1418,22 @@ private final class ViewerScreensPreviewView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        guard let record = windowRecord(at: point) else {
-            super.mouseDown(with: event)
+        if let record = windowRecord(at: point) {
+            dragState = DragState(
+                role: record.role,
+                window: record.window,
+                offsetInPreviewFrame: NSPoint(x: point.x - record.previewFrame.minX, y: point.y - record.previewFrame.minY)
+            )
+            needsDisplay = true
             return
         }
 
-        dragState = DragState(
-            role: record.role,
-            window: record.window,
-            offsetInPreviewFrame: NSPoint(x: point.x - record.previewFrame.minX, y: point.y - record.previewFrame.minY)
-        )
-        needsDisplay = true
+        if let record = screenRecord(at: point) {
+            toggleViewerUse(for: record.screen)
+            return
+        }
+
+        super.mouseDown(with: event)
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -1445,6 +1455,19 @@ private final class ViewerScreensPreviewView: NSView {
     override func mouseUp(with event: NSEvent) {
         dragState = nil
         needsDisplay = true
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard let map = screenMap() else { return }
+
+        for record in screenRecords(in: map) {
+            addCursorRect(record.previewFrame, cursor: .pointingHand)
+        }
+
+        for record in windowRecords(in: map) {
+            addCursorRect(record.previewFrame, cursor: .openHand)
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1529,6 +1552,7 @@ private final class ViewerScreensPreviewView: NSView {
 
     @objc private func refreshScreens(_ notification: Notification) {
         needsDisplay = true
+        window?.invalidateCursorRects(for: self)
     }
 
     private func drawEmptyState() {
@@ -1674,6 +1698,59 @@ private final class ViewerScreensPreviewView: NSView {
         }
     }
 
+    private func screenRecord(at point: NSPoint) -> ScreenRecord? {
+        guard let map = screenMap() else { return nil }
+
+        let matchingRecords = screenRecords(in: map).filter { record in
+            record.previewFrame.contains(point)
+        }
+        let viewerScreenNumbers = Self.viewerScreenNumbers(from: NSScreen.screens)
+
+        return matchingRecords.first { record in
+            guard let screenNumber = record.screen.horosScreenNumber else { return false }
+            return viewerScreenNumbers.contains(screenNumber)
+        } ?? matchingRecords.first
+    }
+
+    private func screenRecords(in map: ScreenMap) -> [ScreenRecord] {
+        NSScreen.screens.compactMap { screen in
+            let frame = previewFrame(for: screen.frame, map: map)
+            guard frame.width > 0, frame.height > 0 else { return nil }
+            return ScreenRecord(screen: screen, previewFrame: frame)
+        }
+    }
+
+    private func toggleViewerUse(for screen: NSScreen) {
+        let screens = NSScreen.screens
+        guard let screenNumber = screen.horosScreenNumber else { return }
+
+        var nonViewerScreenNumbers = Self.nonViewerScreenNumbers(from: screens)
+        var viewerScreenNumbers = Self.viewerScreenNumbers(from: screens)
+
+        if viewerScreenNumbers.isEmpty {
+            viewerScreenNumbers = Set(screens.compactMap(\.horosScreenNumber))
+            nonViewerScreenNumbers.removeAll()
+        }
+
+        if viewerScreenNumbers.contains(screenNumber) {
+            guard viewerScreenNumbers.count > 1 else {
+                NSSound.beep()
+                return
+            }
+            nonViewerScreenNumbers.insert(screenNumber)
+        } else {
+            nonViewerScreenNumbers.remove(screenNumber)
+        }
+
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: DefaultsKey.nonViewerScreens) == nil,
+           defaults.integer(forKey: DefaultsKey.reserveScreenForDatabase) == 2 {
+            defaults.set(0, forKey: DefaultsKey.reserveScreenForDatabase)
+        }
+        defaults.set(nonViewerScreenNumbers.sorted().map { NSNumber(value: $0) }, forKey: DefaultsKey.nonViewerScreens)
+        needsDisplay = true
+    }
+
     private func windowRecords(in map: ScreenMap) -> [WindowRecord] {
         NSApp.windows.compactMap { window in
             guard window.isVisible,
@@ -1746,6 +1823,15 @@ private final class ViewerScreensPreviewView: NSView {
     }
 
     private static func viewerScreenNumbers(from screens: [NSScreen]) -> Set<UInt32> {
+        let nonViewerNumbers = nonViewerScreenNumbers(from: screens)
+
+        return Set(screens.compactMap { screen in
+            guard let screenNumber = screen.horosScreenNumber else { return nil }
+            return nonViewerNumbers.contains(screenNumber) ? nil : screenNumber
+        })
+    }
+
+    private static func nonViewerScreenNumbers(from screens: [NSScreen]) -> Set<UInt32> {
         let defaults = UserDefaults.standard
         let nonViewerNumbers: Set<UInt32>
 
@@ -1771,10 +1857,7 @@ private final class ViewerScreensPreviewView: NSView {
             nonViewerNumbers = []
         }
 
-        return Set(screens.compactMap { screen in
-            guard let screenNumber = screen.horosScreenNumber else { return nil }
-            return nonViewerNumbers.contains(screenNumber) ? nil : screenNumber
-        })
+        return nonViewerNumbers
     }
 }
 

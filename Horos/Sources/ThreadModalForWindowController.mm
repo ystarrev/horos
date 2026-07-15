@@ -74,7 +74,9 @@ NSString* const NSThreadModalForWindowControllerKey = @"ThreadModalForWindowCont
     
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(threadWillExitNotification:) name:NSThreadWillExitNotification object:_thread];
 
-	[NSApp beginSheet:self.window modalForWindow:self.docWindow modalDelegate:self didEndSelector:@selector(sheetDidEnd:returnCode:contextInfo:) contextInfo:NULL];
+	[self.docWindow beginSheet:self.window completionHandler:^(NSModalResponse returnCode) {
+		[self sheetDidEnd:self.window returnCode:returnCode contextInfo:NULL];
+	}];
     
 	[self retain];
 
@@ -220,7 +222,7 @@ static NSString* ThreadModalForWindowControllerObservationContext = @"ThreadModa
 }
 
 -(NSFont*)smallSystemFont {
-    return [NSFont systemFontOfSize:[NSFont systemFontSizeForControlSize:NSSmallControlSize]];
+    return [NSFont systemFontOfSize:[NSFont systemFontSizeForControlSize:NSControlSizeSmall]];
 }
 
 -(void)observeValueForKeyPath:(NSString*)keyPath ofObject:(NSThread*)obj change:(NSDictionary*)change context:(void*)context {

@@ -81,7 +81,7 @@
 	[openPanel setCanChooseFiles: NO];
     
     [openPanel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+	        if (result != NSModalResponseOK)
             return;
         
         [[NSUserDefaults standardUserDefaults] setObject:openPanel.URL.path forKey:@"SupplementaryBurnPath"];

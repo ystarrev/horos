@@ -68,7 +68,7 @@
 	panel.prompt = NSLocalizedString(@"Choose", NULL);
 	// TODO: save and reuse location
     [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse returnCode) {
-        if (returnCode != NSFileHandlingPanelOKButton)
+		if (returnCode != NSModalResponseOK)
             return;
         
         self.outputDir = [panel.URL path];

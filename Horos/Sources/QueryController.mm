@@ -331,6 +331,7 @@ extern "C"
 - (void)applySeriesFiltersAfterQueryRefreshWithAutoExpand:(BOOL)autoExpandSmallResults;
 - (void)refreshList:(NSArray*)l autoExpandSmallResults:(BOOL)autoExpandSmallResults;
 - (NSArray *)seriesSelectedByHighlight;
+- (NSArray *)seriesSelectedForRetrieve;
 - (NSArray *)seriesChildrenForStudyItem:(id)item;
 - (void)setSeriesItems:(NSArray *)seriesItems highlighted:(BOOL)highlighted;
 - (void)toggleHighlightForSeriesItem:(id)item;
@@ -1746,7 +1747,10 @@ extern "C"
 		}
 		else if( c == NSNewlineCharacter || c == NSEnterCharacter || c == NSCarriageReturnCharacter)
 		{
-			[self retrieveAndView: self];
+			if( [retrieveSelectedSeriesButton isEnabled])
+				[self retrieveSelectedSeries: retrieveSelectedSeriesButton];
+			else
+				[self retrieveAndView: self];
 		}
 		else if( c == 27) //Escape
 		{
@@ -1776,8 +1780,16 @@ extern "C"
 
 - (void) executeRefresh: (id) sender
 {
-    if (currentQueryController.DatabaseIsEdited == NO) [currentQueryController.outlineView reloadData];
-	if (currentAutoQueryController.DatabaseIsEdited == NO) [currentAutoQueryController.outlineView reloadData];
+	if (currentQueryController.DatabaseIsEdited == NO)
+	{
+		[currentQueryController.outlineView reloadData];
+		[currentQueryController updateRetrieveSelectedSeriesButtonTitle];
+	}
+	if (currentAutoQueryController.DatabaseIsEdited == NO)
+	{
+		[currentAutoQueryController.outlineView reloadData];
+		[currentAutoQueryController updateRetrieveSelectedSeriesButtonTitle];
+	}
 	
     [NSThread detachNewThreadSelector:@selector(computeStudyArrayInstanceUID:) toTarget:self withObject:nil];
 }
@@ -4146,10 +4158,13 @@ extern "C"
 
 - (void) retrieveClick:(id)sender
 {
-	if( [outlineView clickedRow] >= 0)
-	{
-		[self retrieve: sender];
-	}
+	NSInteger clickedRow = [outlineView clickedRow];
+	if( clickedRow < 0)
+		return;
+
+	id item = [outlineView itemAtRow: clickedRow];
+	if( item)
+		[self retrieve: sender onlyIfNotAvailable: NO forViewing: NO items: [NSArray arrayWithObject: item] showGUI: YES];
 }
 
 - (IBAction) setBirthDate:(id) sender
@@ -5776,7 +5791,6 @@ extern "C"
     [retrieveSelectedButton setTarget: self];
     [retrieveSelectedButton setAction: @selector(retrieveSelectedSeries:)];
     retrieveSelectedSeriesButton = retrieveSelectedButton;
-    [self updateRetrieveSelectedSeriesButtonTitle];
 
     NSArray *controls = [NSArray arrayWithObjects: expandButton, t1Button, t1GadButton, t2Button, flairButton, flairGadButton, ignoreMPRButton, retrieveSelectedButton, nil];
     for( NSView *control in controls)
@@ -5801,6 +5815,7 @@ extern "C"
     }
 
     seriesHighlightFilterMask = [self currentSeriesHighlightFilterMask];
+    [self updateRetrieveSelectedSeriesButtonTitle];
 }
 
 - (NSArray *)selectedModalityStrings
@@ -5945,11 +5960,11 @@ extern "C"
 
 - (IBAction)retrieveSelectedSeries:(id)sender
 {
-    NSArray *selectedSeries = [self seriesSelectedByHighlight];
+    NSArray *selectedSeries = [self seriesSelectedForRetrieve];
 
     if( [selectedSeries count] == 0)
     {
-        NSRunInformationalAlertPanel( NSLocalizedString( @"Retrieve Selected", nil), NSLocalizedString( @"Highlight at least one series first.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+        [self updateRetrieveSelectedSeriesButtonTitle];
         return;
     }
 
@@ -5992,6 +6007,19 @@ extern "C"
     }
 
     return selectedSeries;
+}
+
+- (NSArray *)seriesSelectedForRetrieve
+{
+    NSMutableArray *seriesToRetrieve = [NSMutableArray array];
+
+    for( id item in [self seriesSelectedByHighlight])
+    {
+        if( [self queryItemNeedsRetrieve: item])
+            [seriesToRetrieve addObject: item];
+    }
+
+    return seriesToRetrieve;
 }
 
 - (NSString *)seriesSelectionIdentifierForItem:(id)item
@@ -6225,9 +6253,18 @@ extern "C"
     if( retrieveSelectedSeriesButton == nil)
         return;
 
-    NSUInteger selectedSeriesCount = [[self seriesSelectedByHighlight] count];
+    NSUInteger selectedSeriesCount = [[self seriesSelectedForRetrieve] count];
     NSString *title = [NSString stringWithFormat: NSLocalizedString( @"Retrieve %@ Series", nil), N2LocalizedDecimal( selectedSeriesCount)];
     [retrieveSelectedSeriesButton setTitle: title];
+    [retrieveSelectedSeriesButton setEnabled: selectedSeriesCount > 0];
+    [retrieveSelectedSeriesButton setKeyEquivalent: selectedSeriesCount > 0 ? @"\r" : @""];
+
+    NSWindow *window = [retrieveSelectedSeriesButton window];
+    if( selectedSeriesCount > 0)
+        [window setDefaultButtonCell: [retrieveSelectedSeriesButton cell]];
+    else if( [window defaultButtonCell] == [retrieveSelectedSeriesButton cell])
+        [window setDefaultButtonCell: nil];
+
     [retrieveSelectedSeriesButton setNeedsDisplay: YES];
 }
 
@@ -6466,6 +6503,7 @@ extern "C"
 		return;
 
 	[outlineView reloadData];
+	[self updateRetrieveSelectedSeriesButtonTitle];
 }
 
 - (void)configureQueryWindowMinimumContentSize

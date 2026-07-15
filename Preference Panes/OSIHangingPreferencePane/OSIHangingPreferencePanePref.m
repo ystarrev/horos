@@ -41,6 +41,7 @@
 #import "NSPreferencePane+OsiriX.h"
 #import "Notifications.h"
 #import "AppController.h"
+#import "Horos-Swift.h"
 
 @implementation OSIHangingPreferencePanePref
 
@@ -125,7 +126,7 @@
 	
     currentWLWWProtocol = [sender retain];
     
-	[NSApp beginSheet: addWLWWWindow modalForWindow: self.mainView.window modalDelegate:self didEndSelector:nil contextInfo:nil];
+	[self.mainView.window beginSheet:addWLWWWindow completionHandler:nil];
 }
 
 -(IBAction) endNameWLWW:(id) sender
@@ -136,7 +137,12 @@
     {        
         if( WLnew == nil || WWnew == nil)
         {
-            NSRunCriticalAlertPanel( NSLocalizedString( @"WL / WW Error", nil), NSLocalizedString( @"Provide values for WL and WW.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+            [HorosAlertPresenter runWithTitle:NSLocalizedString(@"WL / WW Error", nil)
+                                       message:NSLocalizedString(@"Provide values for WL and WW.", nil)
+                                         style:NSAlertStyleCritical
+                                   firstButton:NSLocalizedString(@"OK", nil)
+                                  secondButton:nil
+                                   thirdButton:nil];
             return;
         }
         
@@ -152,7 +158,12 @@
             
             if( [presetsDict valueForKey: self.WLWWNewName])
             {
-                if( NSRunInformationalAlertPanel(NSLocalizedString( @"WL / WW", 0L), NSLocalizedString( @"Another WL/WW setting with this name already exists. Are you sure you want to replace it with this one?", 0L), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) != NSAlertDefaultReturn)
+                if ([HorosAlertPresenter runWithTitle:NSLocalizedString(@"WL / WW", nil)
+                                               message:NSLocalizedString(@"Another WL/WW setting with this name already exists. Are you sure you want to replace it with this one?", nil)
+                                                 style:NSAlertStyleInformational
+                                           firstButton:NSLocalizedString(@"OK", nil)
+                                          secondButton:NSLocalizedString(@"Cancel", nil)
+                                           thirdButton:nil] != NSAlertFirstButtonReturn)
                 {
                     return;
                 }
@@ -181,7 +192,12 @@
         }
         else
         {
-            NSRunCriticalAlertPanel( NSLocalizedString( @"WL / WW Error", nil), NSLocalizedString( @"Provide a name for this setting.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+            [HorosAlertPresenter runWithTitle:NSLocalizedString(@"WL / WW Error", nil)
+                                       message:NSLocalizedString(@"Provide a name for this setting.", nil)
+                                         style:NSAlertStyleCritical
+                                   firstButton:NSLocalizedString(@"OK", nil)
+                                  secondButton:nil
+                                   thirdButton:nil];
             return;
         }
     }
@@ -277,36 +293,27 @@
 	return self;
 }
 
-- (void)deleteWLWW:(NSWindow *)sheet returnCode:(int)returnCode contextInfo:(void *)contextInfo
+- (void)deleteWLWWNamed:(NSString *)name
 {
-	NSString *name = (id) contextInfo;
-	
-    if( returnCode == 1)
+    NSMutableDictionary *presetsDict = [[[[NSUserDefaults standardUserDefaults] dictionaryForKey:@"WLWW3"] mutableCopy] autorelease];
+    NSUInteger index = [[[presetsDict allKeys] sortedArrayUsingSelector:@selector(caseInsensitiveCompare:)] indexOfObject:name];
+
+    [presetsDict removeObjectForKey:name];
+    [[NSUserDefaults standardUserDefaults] setObject:presetsDict forKey:@"WLWW3"];
+    [self buildWLWWMenu];
+
+    for (NSString *modality in hangingProtocols)
     {
-		NSMutableDictionary *presetsDict = [[[[NSUserDefaults standardUserDefaults] dictionaryForKey:@"WLWW3"] mutableCopy] autorelease];
-        
-        NSUInteger index = [[[presetsDict allKeys] sortedArrayUsingSelector:@selector(caseInsensitiveCompare:)] indexOfObject: name];
-        
-		[presetsDict removeObjectForKey: name];
-		[[NSUserDefaults standardUserDefaults] setObject: presetsDict forKey:@"WLWW3"];
-        
-        [self buildWLWWMenu];
-        
-        for( NSString *modality in hangingProtocols)
+        for (NSMutableDictionary *p in [hangingProtocols objectForKey:modality])
         {
-            for( NSMutableDictionary *p in [hangingProtocols objectForKey: modality])
+            if ([[p valueForKey:@"WLWW"] intValue] == index+1)
             {
-                if( [[p valueForKey: @"WLWW"] intValue] == index+1)
-                {
-                    [p setValue: @0 forKey: @"WL"];
-                    [p setValue: @0 forKey: @"WW"];
-                    [p setValue: @100 forKey: @"WLWW"];
-                }
+                [p setValue:@0 forKey:@"WL"];
+                [p setValue:@0 forKey:@"WW"];
+                [p setValue:@100 forKey:@"WLWW"];
             }
         }
     }
-	
-	[name release];
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id) object change:(NSDictionary *)change context:(void *)context
@@ -320,14 +327,24 @@
             
             if( [[d valueForKey: @"WLWW"] intValue] != 0 && [[d valueForKey: @"WLWW"] intValue] != 100 && [[d valueForKey: @"WLWW"] intValue] != 101)
             {
-                if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask) // Delete
+                if ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSEventModifierFlagShift) // Delete
                 {
                     NSDictionary *wlwwDict = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"WLWW3"];
                     NSArray *sortedKeys = [[wlwwDict allKeys] sortedArrayUsingSelector:@selector(caseInsensitiveCompare:)];
                     
                     NSString *name = [sortedKeys objectAtIndex: [[d valueForKey: @"WLWW"] intValue]-1];
                     
-                    NSBeginAlertSheet( NSLocalizedString(@"Remove a WL/WW preset", nil), NSLocalizedString(@"Delete", nil), NSLocalizedString(@"Cancel", nil), nil, self.mainView.window, self, @selector(deleteWLWW:returnCode:contextInfo:), NULL, [name retain], NSLocalizedString( @"Are you sure you want to delete preset : '%@'?", nil), name);
+                    [HorosAlertPresenter beginSheetForWindow:self.mainView.window
+                                                       title:NSLocalizedString(@"Remove a WL/WW preset", nil)
+                                                     message:[NSString stringWithFormat:NSLocalizedString(@"Are you sure you want to delete preset : '%@'?", nil), name]
+                                                       style:NSAlertStyleWarning
+                                                 firstButton:NSLocalizedString(@"Delete", nil)
+                                                secondButton:NSLocalizedString(@"Cancel", nil)
+                                                 thirdButton:nil
+                                                  completion:^(NSModalResponse response) {
+                        if (response == NSAlertFirstButtonReturn)
+                            [self deleteWLWWNamed:name];
+                    }];
                 }
             }
         }
@@ -341,7 +358,12 @@
            {
                if( [[d valueForKey: @"Study Description"] isEqualToString: NSLocalizedString( @"Default", nil)] == NO && [[d valueForKey: @"Study Description"] isEqualToString: @"Default"] == NO)
                {
-                   NSRunCriticalAlertPanel( NSLocalizedString( @"Default Protocol", nil), NSLocalizedString( @"Default protocol cannot be renamed", nil), NSLocalizedString( @"OK", nil), nil, nil);
+                   [HorosAlertPresenter runWithTitle:NSLocalizedString(@"Default Protocol", nil)
+                                              message:NSLocalizedString(@"Default protocol cannot be renamed", nil)
+                                                style:NSAlertStyleCritical
+                                          firstButton:NSLocalizedString(@"OK", nil)
+                                         secondButton:nil
+                                          thirdButton:nil];
                    
                    [d setValue: NSLocalizedString( @"Default", nil) forKey: @"Study Description"];
                }
@@ -402,7 +424,12 @@
 
 - (void) deleteSelectedRow:(NSTableView*)sender
 {
-    if( NSRunInformationalAlertPanel(NSLocalizedString( @"Delete Protocol", 0L), NSLocalizedString( @"Are you sure you want to delete the selected protocol?", 0L), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn)
+    if ([HorosAlertPresenter runWithTitle:NSLocalizedString(@"Delete Protocol", nil)
+                                   message:NSLocalizedString(@"Are you sure you want to delete the selected protocol?", nil)
+                                     style:NSAlertStyleInformational
+                               firstButton:NSLocalizedString(@"OK", nil)
+                              secondButton:NSLocalizedString(@"Cancel", nil)
+                               thirdButton:nil] == NSAlertFirstButtonReturn)
     {
         [self willChangeValueForKey: @"currentHangingProtocol"];
         [[hangingProtocols objectForKey:modalityForHangingProtocols] removeObjectAtIndex: sender.selectedRow];
@@ -483,11 +510,15 @@
         if( [self selectedRow] > 0)
             [(OSIHangingPreferencePanePref*)[self delegate] deleteSelectedRow: self];
         else
-            NSRunCriticalAlertPanel( NSLocalizedString( @"Delete Protocol", 0L), NSLocalizedString( @"You cannot delete the default protocol", nil), NSLocalizedString( @"OK", nil), nil, nil);
+            [HorosAlertPresenter runWithTitle:NSLocalizedString(@"Delete Protocol", nil)
+                                       message:NSLocalizedString(@"You cannot delete the default protocol", nil)
+                                         style:NSAlertStyleCritical
+                                   firstButton:NSLocalizedString(@"OK", nil)
+                                  secondButton:nil
+                                   thirdButton:nil];
 	}
 	else
         [super keyDown:event];
 }
 
 @end
-

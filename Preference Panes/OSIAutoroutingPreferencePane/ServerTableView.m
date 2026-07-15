@@ -39,6 +39,7 @@
 
 #import "ServerTableView.h"
 #import "OSIAutoroutingPreferencePanePref.h"
+#import "Horos-Swift.h"
 
 @implementation ServerTableView
 
@@ -46,7 +47,12 @@
 	unichar c = [[event characters] characterAtIndex:0];
 	if ((c == NSDeleteCharacter || c == NSBackspaceCharacter) && [self selectedRow] >= 0 && [self numberOfRows] > 0)
 	{
-		if( NSRunInformationalAlertPanel(NSLocalizedStringFromTableInBundle( @"Delete Route", nil, [NSBundle bundleForClass: [OSIAutoroutingPreferencePanePref class]], 0L), NSLocalizedStringFromTableInBundle( @"Are you sure you want to delete the selected route?", nil, [NSBundle bundleForClass: [OSIAutoroutingPreferencePanePref class]], 0L), NSLocalizedStringFromTableInBundle(@"OK", nil, [NSBundle bundleForClass: [OSIAutoroutingPreferencePanePref class]], nil), NSLocalizedStringFromTableInBundle(@"Cancel", nil, [NSBundle bundleForClass: [OSIAutoroutingPreferencePanePref class]], nil), nil) == NSAlertDefaultReturn)
+		if ([HorosAlertPresenter runWithTitle:NSLocalizedStringFromTableInBundle(@"Delete Route", nil, [NSBundle bundleForClass:[OSIAutoroutingPreferencePanePref class]], nil)
+		                                    message:NSLocalizedStringFromTableInBundle(@"Are you sure you want to delete the selected route?", nil, [NSBundle bundleForClass:[OSIAutoroutingPreferencePanePref class]], nil)
+		                                      style:NSAlertStyleInformational
+		                                firstButton:NSLocalizedStringFromTableInBundle(@"OK", nil, [NSBundle bundleForClass:[OSIAutoroutingPreferencePanePref class]], nil)
+		                               secondButton:NSLocalizedStringFromTableInBundle(@"Cancel", nil, [NSBundle bundleForClass:[OSIAutoroutingPreferencePanePref class]], nil)
+		                                thirdButton:nil] == NSAlertFirstButtonReturn)
 			[[self delegate] deleteSelectedRow:self];
 	}
 	else

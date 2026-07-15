@@ -4,6 +4,7 @@ import AppKit
 @objc(HorosAlertPresenter)
 final class HorosAlertPresenter: NSObject {
   @objc(runWithTitle:message:style:firstButton:secondButton:thirdButton:)
+  @discardableResult
   static func run(
     title: String,
     message: String,

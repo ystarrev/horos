@@ -55,6 +55,7 @@
 #import "ModernDCMTKBridge.h"
 #include <signal.h>
 #include <dlfcn.h>
+#include <stdint.h>
 
 #ifdef OSIRIX_VIEWER
 #import "NSThread+N2.h"
@@ -208,6 +209,44 @@ static NSConditionLock *purgeCacheLock = nil;
 static float deg2rad = M_PI / 180.0;
 
 static const int maxNumberOfOverlays = 16;
+
+static BOOL HorosDecodeDICOMOverlayData(NSData *data, int rows, int columns, unsigned char **decodedData)
+{
+    if (decodedData == NULL)
+        return NO;
+
+    *decodedData = NULL;
+    if (![data isKindOfClass:[NSData class]] || rows <= 0 || columns <= 0)
+        return NO;
+
+    size_t rowCount = (size_t)rows;
+    size_t columnCount = (size_t)columns;
+    if (columnCount > SIZE_MAX / rowCount)
+        return NO;
+
+    size_t pixelCount = rowCount * columnCount;
+    size_t requiredByteCount = pixelCount / 8 + (pixelCount % 8 != 0);
+    if (requiredByteCount > (size_t)data.length)
+        return NO;
+
+    const uint8_t *packedData = (const uint8_t *)data.bytes;
+    if (packedData == NULL)
+        return NO;
+
+    unsigned char *overlayData = (unsigned char *)calloc(pixelCount, sizeof(*overlayData));
+    if (overlayData == NULL)
+        return NO;
+
+    for (size_t pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++)
+    {
+        uint8_t packedByte = packedData[pixelIndex / 8];
+        if (packedByte & (uint8_t)(1U << (pixelIndex % 8)))
+            overlayData[pixelIndex] = 0xFF;
+    }
+
+    *decodedData = overlayData;
+    return YES;
+}
 
 #ifdef OSIRIX_VIEWER
 static NSManagedObject *HorosDCMPixExistingImageOnContextQueue(NSManagedObjectContext *context, NSManagedObjectID *objectID)
@@ -6697,84 +6736,82 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         
 #pragma mark *tag group 6000
 
-        memset(overlaysChannelON, false, 16*sizeof(bool));
+        for (int i = 0; i < maxNumberOfOverlays; i++)
+        {
+            free(oData[i]);
+            oData[i] = NULL;
+        }
+        memset(overlaysChannelON, 0, sizeof(overlaysChannelON));
+        memset(oRows, 0, sizeof(oRows));
+        memset(oColumns, 0, sizeof(oColumns));
+        memset(oType, 0, sizeof(oType));
+        memset(oOrigin, 0, sizeof(oOrigin));
+        memset(oBits, 0, sizeof(oBits));
+        memset(oBitPosition, 0, sizeof(oBitPosition));
+
         NSString *DICOMTag;
         for(int i=0; i<maxNumberOfOverlays; i++)
         {
             DICOMTag = [NSString stringWithFormat:@"%4X,3000", 0x6000+i*2]; //  These are the OverlayData fields
-            if([dcmObject attributeArrayForKey:DICOMTag]) {
-                overlaysChannelON[i] = true;
-            }
-            else {
+            id overlayDataValue = [dcmObject attributeValueForKey:DICOMTag];
+            if (![overlayDataValue isKindOfClass:[NSData class]])
                 continue;
-            }
             
             @try
             {
+                int overlayRows = 0;
+                int overlayColumns = 0;
+                int overlayType = 0;
+                int overlayOrigin[2] = {0, 0};
+                int overlayBits = 0;
+                int overlayBitPosition = 0;
+
                 DICOMTag = [NSString stringWithFormat:@"%4X,0010", 0x6000+i*2];
-                if ([dcmObject attributeValueForKey: DICOMTag]) //  OverlayRows
-                    if ([[dcmObject attributeValueForKey: DICOMTag] isKindOfClass:[NSNumber class]])
-                        oRows[i] = [[dcmObject attributeValueForKey: DICOMTag] intValue];
+                id attributeValue = [dcmObject attributeValueForKey:DICOMTag];
+                if ([attributeValue isKindOfClass:[NSNumber class]]) // OverlayRows
+                    overlayRows = [attributeValue intValue];
                 
                 DICOMTag = [NSString stringWithFormat:@"%4X,0011", 0x6000+i*2];
-                if ([dcmObject attributeValueForKey: DICOMTag])  //  OverlayColumns
-                    if ([[dcmObject attributeValueForKey: DICOMTag] isKindOfClass:[NSNumber class]])
-                        oColumns[i] = [[dcmObject attributeValueForKey: DICOMTag] intValue];
+                attributeValue = [dcmObject attributeValueForKey:DICOMTag];
+                if ([attributeValue isKindOfClass:[NSNumber class]]) // OverlayColumns
+                    overlayColumns = [attributeValue intValue];
                 
                 DICOMTag = [NSString stringWithFormat:@"%4X,0040", 0x6000+i*2];
-                if ([dcmObject attributeValueForKey: DICOMTag]) //  OverlayType
-                    if ([[dcmObject attributeValueForKey: DICOMTag] isKindOfClass:[NSString class]])
-                        oType[i] = [[dcmObject attributeValueForKey: DICOMTag] characterAtIndex: 0];
-                
-                DICOMTag = [NSString stringWithFormat:@"%4X0050", 0x6000+i*2];
-                if ([dcmObject attributeValueForKey: DICOMTag] && //  OverlayOrigin
-                    [[dcmObject attributeValueForKey: DICOMTag] isKindOfClass:[NSArray class]] &&
-                    [[dcmObject attributeValueForKey: DICOMTag] count] >= 2)
+                attributeValue = [dcmObject attributeValueForKey:DICOMTag];
+                if ([attributeValue isKindOfClass:[NSString class]] && [attributeValue length] > 0) // OverlayType
+                    overlayType = [attributeValue characterAtIndex:0];
+
+                DICOMTag = [NSString stringWithFormat:@"%4X,0050", 0x6000+i*2];
+                attributeValue = [dcmObject attributeArrayForKey:DICOMTag];
+                if ([attributeValue isKindOfClass:[NSArray class]] && [attributeValue count] >= 2) // OverlayOrigin
                 {
-                    oOrigin[i][ 0] = [[[dcmObject attributeArrayForKey: DICOMTag] objectAtIndex: 0] intValue] -1;
-                    oOrigin[i][ 1] = [[[dcmObject attributeArrayForKey: DICOMTag] objectAtIndex: 1] intValue] -1;
+                    overlayOrigin[0] = [[attributeValue objectAtIndex:0] intValue] - 1;
+                    overlayOrigin[1] = [[attributeValue objectAtIndex:1] intValue] - 1;
                 }
                 
                 DICOMTag = [NSString stringWithFormat:@"%4X,0100", 0x6000+i*2];
-                if ([dcmObject attributeValueForKey: DICOMTag])    //  OverlayBitsAllocated
-                    if ([[dcmObject attributeValueForKey: DICOMTag] isKindOfClass:[NSNumber class]])
-                        oBits[i] = [[dcmObject attributeValueForKey: DICOMTag] intValue];
+                attributeValue = [dcmObject attributeValueForKey:DICOMTag];
+                if ([attributeValue isKindOfClass:[NSNumber class]]) // OverlayBitsAllocated
+                    overlayBits = [attributeValue intValue];
                 
                 DICOMTag = [NSString stringWithFormat:@"%4X,0102", 0x6000+i*2];
-                if ([dcmObject attributeValueForKey: DICOMTag])  //  OverlayBitPosition
-                    if ([[dcmObject attributeValueForKey: DICOMTag] isKindOfClass:[NSNumber class]])
-                        oBitPosition[i] = [[dcmObject attributeValueForKey: DICOMTag] intValue];
-                
-                DICOMTag = [NSString stringWithFormat:@"%4X,3000", 0x6000+i*2];
-                NSData	*data = [dcmObject attributeValueForKey: DICOMTag]; //  OverlayData
-                
-                if (data && oBits[i] == 1 && oBitPosition[i] == 0)
+                attributeValue = [dcmObject attributeValueForKey:DICOMTag];
+                if ([attributeValue isKindOfClass:[NSNumber class]]) // OverlayBitPosition
+                    overlayBitPosition = [attributeValue intValue];
+
+                unsigned char *decodedOverlayData = NULL;
+                if (overlayBits == 1 && overlayBitPosition == 0 &&
+                    HorosDecodeDICOMOverlayData((NSData *)overlayDataValue, overlayRows, overlayColumns, &decodedOverlayData))
                 {
-                    if( oData[i]) free( oData[i]);
-                    oData[i] = calloc( oRows[i]*oColumns[i], 1);
-                    if( oData[i])
-                    {
-                        unsigned short *pixels = (unsigned short*) [data bytes];
-                        unsigned char *oD = oData[i];
-                        char mask = 1;
-                        long t = oColumns[i]*oRows[i]/16;
-                        
-                        while( t-->0)
-                        {
-                            unsigned short	octet = *pixels++;
-                            int x = 16;
-                            while( x-->0)
-                            {
-                                char v = octet & mask ? 1 : 0;
-                                octet = octet >> 1;
-                                
-                                if( v)
-                                    *oD = 0xFF;
-                                
-                                oD++;
-                            }
-                        }
-                    }
+                    oRows[i] = overlayRows;
+                    oColumns[i] = overlayColumns;
+                    oType[i] = overlayType;
+                    oOrigin[i][0] = overlayOrigin[0];
+                    oOrigin[i][1] = overlayOrigin[1];
+                    oBits[i] = overlayBits;
+                    oBitPosition[i] = overlayBitPosition;
+                    oData[i] = decodedOverlayData;
+                    overlaysChannelON[i] = YES;
                 }
             }
             @catch (NSException *e)
@@ -7143,14 +7180,18 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                             {
                                 for( int x = 0; x < oColumns[i]; x++)
                                 {
-                                    if (oData[i] && oData[i][y * oColumns[i] + x])
+                                    size_t overlayIndex = (size_t)y * (size_t)oColumns[i] + (size_t)x;
+                                    if (oData[i] && oData[i][overlayIndex])
                                     {
-                                        if( (x + oOrigin[i][ 0]) >= 0 && (x + oOrigin[i][ 0]) < width &&
-                                           (y + oOrigin[i][ 1]) >= 0 && (y + oOrigin[i][ 1]) < height)
+                                        long destinationX = (long)x + (long)oOrigin[i][0];
+                                        long destinationY = (long)y + (long)oOrigin[i][1];
+                                        if (destinationX >= 0 && destinationX < width &&
+                                            destinationY >= 0 && destinationY < height)
                                         {
-                                            rgbData[ (y + oOrigin[i][ 1]) * width*4 + (x + oOrigin[i][ 0])*4 + 1] = 0xFF;
-                                            rgbData[ (y + oOrigin[i][ 1]) * width*4 + (x + oOrigin[i][ 0])*4 + 2] = 0xFF;
-                                            rgbData[ (y + oOrigin[i][ 1]) * width*4 + (x + oOrigin[i][ 0])*4 + 3] = 0xFF;
+                                            size_t destinationIndex = ((size_t)destinationY * (size_t)width + (size_t)destinationX) * 4;
+                                            rgbData[destinationIndex + 1] = 0xFF;
+                                            rgbData[destinationIndex + 2] = 0xFF;
+                                            rgbData[destinationIndex + 3] = 0xFF;
                                         }
                                     }
                                 }
@@ -7276,12 +7317,16 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                             {
                                 for( int x = 0; x < oColumns[i]; x++)
                                 {
-                                    if (oData[i] && oData[i][y * oColumns[i] + x])
+                                    size_t overlayIndex = (size_t)y * (size_t)oColumns[i] + (size_t)x;
+                                    if (oData[i] && oData[i][overlayIndex])
                                     {
-                                        if( (x + oOrigin[i][ 0]) >= 0 && (x + oOrigin[i][ 0]) < width &&
-                                           (y + oOrigin[i][ 1]) >= 0 && (y + oOrigin[i][ 1]) < height)
+                                        long destinationX = (long)x + (long)oOrigin[i][0];
+                                        long destinationY = (long)y + (long)oOrigin[i][1];
+                                        if (destinationX >= 0 && destinationX < width &&
+                                            destinationY >= 0 && destinationY < height)
                                         {
-                                            fImage[ (y + oOrigin[i][ 1]) * width + x + oOrigin[i][ 0]] = maxValue;
+                                            size_t destinationIndex = (size_t)destinationY * (size_t)width + (size_t)destinationX;
+                                            fImage[destinationIndex] = maxValue;
                                         }
                                     }
                                 }

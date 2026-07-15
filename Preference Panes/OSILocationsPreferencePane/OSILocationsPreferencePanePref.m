@@ -38,6 +38,8 @@
 #import "OSILocationsPreferencePanePref.h"
 #import "N2Debug.h"
 #import "url.h"
+#import "Horos-Swift.h"
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 //#import "DDKeychain.h"
 
@@ -437,11 +439,11 @@
 {
 	NSSavePanel		*sPanel		= [NSSavePanel savePanel];
 
-	[sPanel setAllowedFileTypes:@[@"plist"]];
+	sPanel.allowedContentTypes = @[UTTypePropertyList];
     sPanel.nameFieldStringValue = NSLocalizedString(@"OsiriXDB.plist", nil);
 	
     [sPanel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+	        if (result != NSModalResponseOK)
             return;
         
         [[osiriXServers arrangedObjects] writeToURL:sPanel.URL atomically: YES];
@@ -463,9 +465,19 @@
 				[osiriXServers removeObjects: [osiriXServers arrangedObjects]];
 				[osiriXServers addObjects: r];
 			}
-			else NSRunInformationalAlertPanel(NSLocalizedString(@"URL Invalid", 0L), NSLocalizedString( @"Cannot download data from this URL.", 0L), NSLocalizedString( @"OK", nil), nil, nil);
-		}
-		else NSRunInformationalAlertPanel(NSLocalizedString(@"URL Invalid", 0L), NSLocalizedString( @"This URL is invalid. Check syntax.", 0L), NSLocalizedString( @"OK", nil), nil, nil);
+				else [HorosAlertPresenter runWithTitle:NSLocalizedString(@"URL Invalid", nil)
+				                                    message:NSLocalizedString(@"Cannot download data from this URL.", nil)
+				                                      style:NSAlertStyleInformational
+				                                firstButton:NSLocalizedString(@"OK", nil)
+				                               secondButton:nil
+				                                thirdButton:nil];
+			}
+			else [HorosAlertPresenter runWithTitle:NSLocalizedString(@"URL Invalid", nil)
+			                                message:NSLocalizedString(@"This URL is invalid. Check syntax.", nil)
+			                                  style:NSAlertStyleInformational
+			                            firstButton:NSLocalizedString(@"OK", nil)
+			                           secondButton:nil
+			                            thirdButton:nil];
 	}
 }
 
@@ -475,17 +487,22 @@
 	
 	[self resetTest];
 	
-	[sPanel setAllowedFileTypes:@[@"plist"]];
+	sPanel.allowedContentTypes = @[UTTypePropertyList];
     
     [sPanel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+	        if (result != NSModalResponseOK)
             return;
         
 		NSArray	*r = [NSArray arrayWithContentsOfURL:sPanel.URL];
 		
 		if( r)
 		{
-			if( NSRunInformationalAlertPanel(NSLocalizedString(@"Load locations", 0L), NSLocalizedString(@"Should I add or replace this locations list? If you choose 'replace', the current list will be deleted.", 0L), NSLocalizedString(@"Add", nil), NSLocalizedString(@"Replace", nil), nil) == NSAlertDefaultReturn)
+				if ([HorosAlertPresenter runWithTitle:NSLocalizedString(@"Load locations", nil)
+				                                      message:NSLocalizedString(@"Should I add or replace this locations list? If you choose 'replace', the current list will be deleted.", nil)
+				                                        style:NSAlertStyleInformational
+				                                  firstButton:NSLocalizedString(@"Add", nil)
+				                                 secondButton:NSLocalizedString(@"Replace", nil)
+				                                  thirdButton:nil] == NSAlertFirstButtonReturn)
 			{
 				
 			}
@@ -524,14 +541,14 @@
 {
 	NSSavePanel		*sPanel		= [NSSavePanel savePanel];
 
-	[sPanel setAllowedFileTypes:@[@"plist"]];
+	sPanel.allowedContentTypes = @[UTTypePropertyList];
 	
 	[self resetTest];
 	
     sPanel.nameFieldStringValue = NSLocalizedString(@"DICOMNodes.plist", nil);
     
     [sPanel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+	        if (result != NSModalResponseOK)
             return;
         
         [[dicomNodes arrangedObjects] writeToURL:sPanel.URL atomically: YES];
@@ -553,9 +570,19 @@
 				[dicomNodes removeObjects: [dicomNodes arrangedObjects]];
 				[dicomNodes addObjects: r];
 			}
-			else NSRunInformationalAlertPanel(NSLocalizedString(@"URL Invalid", 0L), NSLocalizedString(@"Cannot download data from this URL.", 0L), NSLocalizedString(@"OK", nil), nil, nil);
-		}
-		else NSRunInformationalAlertPanel(NSLocalizedString(@"URL Invalid", 0L), NSLocalizedString(@"This URL is invalid. Check syntax.", 0L), NSLocalizedString(@"OK", nil), nil, nil);
+				else [HorosAlertPresenter runWithTitle:NSLocalizedString(@"URL Invalid", nil)
+				                                    message:NSLocalizedString(@"Cannot download data from this URL.", nil)
+				                                      style:NSAlertStyleInformational
+				                                firstButton:NSLocalizedString(@"OK", nil)
+				                               secondButton:nil
+				                                thirdButton:nil];
+			}
+			else [HorosAlertPresenter runWithTitle:NSLocalizedString(@"URL Invalid", nil)
+			                                message:NSLocalizedString(@"This URL is invalid. Check syntax.", nil)
+			                                  style:NSAlertStyleInformational
+			                            firstButton:NSLocalizedString(@"OK", nil)
+			                           secondButton:nil
+			                            thirdButton:nil];
 	}
 }
 
@@ -565,10 +592,10 @@
 	
 	[self resetTest];
 	
-	[sPanel setAllowedFileTypes:@[@"plist"]];
+	sPanel.allowedContentTypes = @[UTTypePropertyList];
 	
     [sPanel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton) {
+	        if (result != NSModalResponseOK) {
             [self resetTest];
             return;
         }
@@ -577,7 +604,12 @@
 		
 		if( r)
 		{
-			if( NSRunInformationalAlertPanel(NSLocalizedString(@"Load locations", 0L), NSLocalizedString(@"Should I add or replace this locations list? If you choose 'replace', the current list will be deleted.", 0L), NSLocalizedString(@"Add", nil), NSLocalizedString(@"Replace", nil), nil) == NSAlertDefaultReturn)
+				if ([HorosAlertPresenter runWithTitle:NSLocalizedString(@"Load locations", nil)
+				                                      message:NSLocalizedString(@"Should I add or replace this locations list? If you choose 'replace', the current list will be deleted.", nil)
+				                                        style:NSAlertStyleInformational
+				                                  firstButton:NSLocalizedString(@"Add", nil)
+				                                 secondButton:NSLocalizedString(@"Replace", nil)
+				                                  thirdButton:nil] == NSAlertFirstButtonReturn)
 			{
 				
 			}
@@ -711,10 +743,12 @@
     [oPanel setCanChooseFiles:YES];
     [oPanel setCanChooseDirectories:YES];
 
-    oPanel.allowedFileTypes = @[@"sql"];
+	    UTType *sqlType = [UTType typeWithFilenameExtension:@"sql"];
+	    if (sqlType)
+	        oPanel.allowedContentTypes = @[sqlType];
     
     [oPanel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+	        if (result != NSModalResponseOK)
             return;
         
 		NSString	*location = oPanel.URL.path;
@@ -778,11 +812,7 @@
 	else
 		self.TLSCertificateVerification = IgnorePeerCertificate;
 		
-	[NSApp beginSheet: TLSSettings
-	   modalForWindow: [[self mainView] window]
-		modalDelegate: nil
-	   didEndSelector: nil
-		  contextInfo: nil];
+	[[[self mainView] window] beginSheet:TLSSettings completionHandler:nil];
 	
 	int result = [NSApp runModalForWindow: TLSSettings];
 	[TLSSettings makeFirstResponder: nil];
@@ -790,7 +820,7 @@
 	[NSApp endSheet: TLSSettings];
 	[TLSSettings orderOut: self];
 	
-	if( result == NSRunStoppedResponse)
+	if( result == NSModalResponseStop)
 	{
 		[aServer setObject:[NSNumber numberWithBool:self.TLSEnabled] forKey:@"TLSEnabled"];
 		
@@ -819,7 +849,7 @@
 		[[SFChooseIdentityPanel sharedChooseIdentityPanel] setAlternateButtonTitle:NSLocalizedString(@"Cancel", @"Cancel")];
 		NSInteger clickedButton = [[SFChooseIdentityPanel sharedChooseIdentityPanel] runModalForIdentities:certificates message:NSLocalizedString(@"Choose a certificate from the following list.", nil)];
 		
-		if(clickedButton==NSOKButton)
+		if(clickedButton == NSModalResponseOK)
 		{
 			SecIdentityRef identity = [[SFChooseIdentityPanel sharedChooseIdentityPanel] identity];
 			if(identity)
@@ -828,14 +858,19 @@
 				[self getTLSCertificate];
 			}
 		}
-		else if(clickedButton==NSCancelButton)
+		else if(clickedButton == NSModalResponseCancel)
 			return;
 	}
 	else
 	{
-		NSInteger clickedButton = NSRunCriticalAlertPanel( NSLocalizedString( @"No Valid Certificate", nil), NSLocalizedString( @"Your Keychain does not contain any valid certificate.", nil), NSLocalizedString( @"Help", nil), NSLocalizedString( @"Cancel", nil), nil);
+		NSInteger clickedButton = [HorosAlertPresenter runWithTitle:NSLocalizedString(@"No Valid Certificate", nil)
+		                                                     message:NSLocalizedString(@"Your Keychain does not contain any valid certificate.", nil)
+		                                                       style:NSAlertStyleCritical
+		                                                 firstButton:NSLocalizedString(@"Help", nil)
+		                                                secondButton:NSLocalizedString(@"Cancel", nil)
+		                                                 thirdButton:nil];
 		
-		if(clickedButton==NSOKButton)
+		if(clickedButton == NSAlertFirstButtonReturn)
 		{
 			[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_DOC_SECURITY]];
 		}

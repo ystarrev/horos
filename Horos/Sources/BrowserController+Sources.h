@@ -53,5 +53,4 @@
 -(void)selectCurrentDatabaseSource;
 
 -(int)findDBPath:(NSString*)path dbFolder:(NSString*)DBFolderLocation __deprecated;
--(void)removePathFromSources:(NSString*) path;
 @end

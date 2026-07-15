@@ -255,8 +255,9 @@ static NSString *templateDicomFile = nil;
 	ro.action = sel;
 	panelController.representedObject = ro;
 	
-	[NSApp beginSheet:panelController.window modalForWindow:window modalDelegate:self didEndSelector:@selector(panelDidEnd:returnCode:contextInfo:) contextInfo:panelController];
-	[panelController.window orderFront:self];
+	[window beginSheet:panelController.window completionHandler:^(NSModalResponse returnCode) {
+		[self panelDidEnd:panelController.window returnCode:returnCode contextInfo:panelController];
+	}];
 	
 	if (!delegate)
 		[NSApp runModalForWindow:panelController.window];
@@ -272,7 +273,7 @@ static NSString *templateDicomFile = nil;
 	return [self showPanelClass:[AnonymizationSavePanelController class] forDefaultsKey:defaultsKey modalForWindow:window modalDelegate:delegate didEndSelector:sel representedObject:representedObject];
 }
 
-+(void)panelDidEnd:(NSPanel*)panel returnCode:(NSInteger)returnCode contextInfo:(void*)contextInfo {
++(void)panelDidEnd:(NSWindow*)panel returnCode:(NSInteger)returnCode contextInfo:(void*)contextInfo {
 	AnonymizationPanelController* panelController = (id)contextInfo;
 	AnonymizationPanelRepresentation* ro = panelController.representedObject;
 	
@@ -307,7 +308,12 @@ static NSString *templateDicomFile = nil;
 
 + (void) error: (NSString*) s
 {
-    NSRunCriticalAlertPanel( NSLocalizedString( @"Error", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, s);
+	NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+	alert.alertStyle = NSAlertStyleCritical;
+	alert.messageText = NSLocalizedString(@"Error", nil);
+	alert.informativeText = s ?: @"";
+	[alert addButtonWithTitle:NSLocalizedString(@"OK", nil)];
+	[alert runModal];
 }
 
 +(NSDictionary*)anonymizeFiles:(NSArray*)files dicomImages: (NSArray*) dicomImages toPath:(NSString*)dirPath withTags:(NSArray*)intags

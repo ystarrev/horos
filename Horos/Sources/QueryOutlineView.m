@@ -48,6 +48,13 @@
 {
     NSPoint point = [self convertPoint: [event locationInWindow] fromView: nil];
     NSInteger row = [self rowAtPoint: point];
+    NSInteger column = [self columnAtPoint: point];
+
+    if( column >= 0 && [[[[self tableColumns] objectAtIndex: column] identifier] isEqualToString: @"Button"])
+    {
+        [super mouseDown: event];
+        return;
+    }
 
     if( row >= 0 && NSPointInRect( point, [self frameOfOutlineCellAtRow: row]) == NO)
     {

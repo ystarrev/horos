@@ -178,14 +178,15 @@ NSInteger CompareDCMAttributeTagStringValues(id lsp, id rsp, void* context) {
 -(void)customMenuItemAction:(id)sender {
 	AnonymizationCustomTagPanelController* panelController = [[AnonymizationCustomTagPanelController alloc] init];
 	[panelController setAttributeTag:self.selectedDCMAttributeTag];
-	[NSApp beginSheet:panelController.window modalForWindow:self.window modalDelegate:self didEndSelector:@selector(addCustomTagPanelDidEnd:returnCode:contextInfo:) contextInfo:panelController];
-	[panelController.window orderFront:self];
+	[self.window beginSheet:panelController.window completionHandler:^(NSModalResponse returnCode) {
+		[self addCustomTagPanelDidEnd:panelController.window returnCode:returnCode contextInfo:panelController];
+	}];
 }
 
--(void)addCustomTagPanelDidEnd:(NSPanel*)panel returnCode:(NSInteger)returnCode contextInfo:(void*)contextInfo {
+-(void)addCustomTagPanelDidEnd:(NSWindow*)panel returnCode:(NSInteger)returnCode contextInfo:(void*)contextInfo {
 	AnonymizationCustomTagPanelController* panelController = (id)contextInfo;
 	
-	if (returnCode == NSRunStoppedResponse) {
+	if (returnCode == NSModalResponseStop) {
 		[self setSelectedDCMAttributeTag:[panelController attributeTag]];
 	}
 	

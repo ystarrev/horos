@@ -44,6 +44,7 @@
 #import "DicomFile.h"
 #import "WaitRendering.h"
 #import "ICloudDriveDetector.h"
+#import "Horos-Swift.h"
 
 @implementation OSIDatabasePreferencePanePref
 
@@ -76,13 +77,23 @@
         {
             if( [[NSUserDefaults standardUserDefaults] boolForKey: @"eraseEntireDBAtStartup"])
             {
-                NSRunCriticalAlertPanel( NSLocalizedString( @"Erase Entire Database", nil), NSLocalizedString( @"Warning! With this option, each time OsiriX is restarted, the entire database will be erased. All studies will be deleted. This cannot be undone.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+	                [HorosAlertPresenter runWithTitle:NSLocalizedString(@"Erase Entire Database", nil)
+	                                            message:NSLocalizedString(@"Warning! With this option, each time OsiriX is restarted, the entire database will be erased. All studies will be deleted. This cannot be undone.", nil)
+	                                              style:NSAlertStyleCritical
+	                                        firstButton:NSLocalizedString(@"OK", nil)
+	                                       secondButton:nil
+	                                        thirdButton:nil];
             }
         }
         
         if ([keyPath isEqualToString:@"values.horizontalHistory" ])
         {
-            NSRunCriticalAlertPanel( NSLocalizedString( @"Restart", nil), NSLocalizedString( @"Restart Horos to apply this change.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+	            [HorosAlertPresenter runWithTitle:NSLocalizedString(@"Restart", nil)
+	                                        message:NSLocalizedString(@"Restart Horos to apply this change.", nil)
+	                                          style:NSAlertStyleCritical
+	                                    firstButton:NSLocalizedString(@"OK", nil)
+	                                   secondButton:nil
+	                                    thirdButton:nil];
         }
         
         if ([keyPath isEqualToString:@"values.dbFontSize"])
@@ -139,7 +150,12 @@
     
     if( self.newUsePatientBirthDateForUID == NO && self.newUsePatientNameForUID == NO && self.newUsePatientIDForUID == NO)
     {
-        NSRunCriticalAlertPanel( NSLocalizedString( @"Patient UID", nil), NSLocalizedString( @"At least one parameter has to be selected to generate a valid Patient UID. Patient ID will be used.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+	        [HorosAlertPresenter runWithTitle:NSLocalizedString(@"Patient UID", nil)
+	                                    message:NSLocalizedString(@"At least one parameter has to be selected to generate a valid Patient UID. Patient ID will be used.", nil)
+	                                      style:NSAlertStyleCritical
+	                                firstButton:NSLocalizedString(@"OK", nil)
+	                               secondButton:nil
+	                                thirdButton:nil];
         
         self.newUsePatientIDForUID = YES;
     }
@@ -437,7 +453,12 @@
 			
 			if (![[NSFileManager defaultManager] fileExistsAtPath:[[NSUserDefaults standardUserDefaults] stringForKey:@"DEFAULT_DATABASELOCATIONURL"] isDirectory:&isDir])
 			{
-				NSRunAlertPanel(@"Horos Database Location", @"This location is not valid. Select another location.", @"OK", nil, nil);
+					[HorosAlertPresenter runWithTitle:@"Horos Database Location"
+					                                    message:@"This location is not valid. Select another location."
+					                                      style:NSAlertStyleWarning
+					                                firstButton:@"OK"
+					                               secondButton:nil
+					                                thirdButton:nil];
 				
 				[locationMatrix selectCellWithTag:0];
 			}
@@ -485,7 +506,7 @@
     [oPanel setCanChooseDirectories:YES];
     
     [oPanel beginWithCompletionHandler:^(NSInteger result) {
-        if (result == NSFileHandlingPanelOKButton)
+	        if (result == NSModalResponseOK)
         {
             NSString	*location = oPanel.URL.path;
             

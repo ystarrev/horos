@@ -41,6 +41,7 @@
 #import "DicomAlbum.h"
 #import "N2Debug.h"
 #import "BrowserController.h"
+#import "Horos-Swift.h"
 
 static NSMatrix *gDateMatrix = nil;
 
@@ -194,7 +195,12 @@ static NSMatrix *gDateMatrix = nil;
         {
             if( [[d objectForKey: @"date"] intValue] == 0 && [[d objectForKey: @"modality"] count] == 0)
             {
-                NSRunInformationalAlertPanel( NSLocalizedString( @"Filter", nil), NSLocalizedString( @"The Smart Album filter (%@) needs to have at least one parameter defined to be activated: date or modality.", nil), NSLocalizedString( @"OK", nil), nil, nil, [d objectForKey: @"name"]);
+	                [HorosAlertPresenter runWithTitle:NSLocalizedString(@"Filter", nil)
+	                                            message:[NSString stringWithFormat:NSLocalizedString(@"The Smart Album filter (%@) needs to have at least one parameter defined to be activated: date or modality.", nil), [d objectForKey:@"name"]]
+	                                              style:NSAlertStyleInformational
+	                                        firstButton:NSLocalizedString(@"OK", nil)
+	                                       secondButton:nil
+	                                        thirdButton:nil];
                 
                 [self willChangeValueForKey: @"smartAlbumsArray"];
                 [d setValue: [NSNumber numberWithBool: NO] forKey: @"activated"];
@@ -392,7 +398,12 @@ static NSMatrix *gDateMatrix = nil;
 {
     if( [smartAlbumsArray count] == 0)
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"New Route", nil),NSLocalizedString( @"No smart album exists.", nil),NSLocalizedString( @"OK", nil), nil, nil);
+	        [HorosAlertPresenter runWithTitle:NSLocalizedString(@"New Route", nil)
+	                                    message:NSLocalizedString(@"No smart album exists.", nil)
+	                                      style:NSAlertStyleCritical
+	                                firstButton:NSLocalizedString(@"OK", nil)
+	                               secondButton:nil
+	                                thirdButton:nil];
     }
     else
     {
@@ -406,7 +417,7 @@ static NSMatrix *gDateMatrix = nil;
             NSUInteger index = [[albumDBArray valueForKey: @"name"] indexOfObject: [selectedAlbum objectForKey: @"name"]];
             self.smartAlbumFilter = [[albumDBArray objectAtIndex: index] valueForKey: @"predicateString"];
             
-            [NSApp beginSheet: smartAlbumsEditWindow modalForWindow: [[self mainView] window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+	            [[[self mainView] window] beginSheet:smartAlbumsEditWindow completionHandler:nil];
         }
     }
 }

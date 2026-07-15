@@ -371,6 +371,28 @@ static void HorosBrowserSetToolbarItemSizedView(NSToolbarItem *toolbarItem, NSVi
     [toolbarItem setView:HorosBrowserToolbarSizedView(view)];
 }
 
+static void HorosBrowserFitSidebarTable(NSTableView *tableView)
+{
+    NSScrollView *scrollView = tableView.enclosingScrollView;
+    NSView *container = scrollView.superview;
+    if (scrollView == nil || container == nil)
+        return;
+
+    scrollView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    scrollView.frame = container.bounds;
+    tableView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    tableView.columnAutoresizingStyle = NSTableViewFirstColumnOnlyAutoresizingStyle;
+
+    NSTableColumn *column = tableView.tableColumns.firstObject;
+    column.resizingMask = NSTableColumnAutoresizingMask;
+    [scrollView layoutSubtreeIfNeeded];
+
+    NSRect tableFrame = tableView.frame;
+    tableFrame.size.width = NSWidth(scrollView.contentView.bounds);
+    tableView.frame = tableFrame;
+    [tableView sizeLastColumnToFit];
+}
+
 @implementation BrowserController
 
 +(void)initializeBrowserControllerClass
@@ -11233,7 +11255,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
                     [[_albumNoOfStudiesCache objectAtIndex: rowIndex] isEqualToString:@""])
                 {
                     [self refreshAlbums];
-                    // It will be computed in a separate thread, and then displayed later.
                     noOfStudies = @"#";
                 }
                 else
@@ -13372,6 +13393,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     Class launcherClass = NSClassFromString(@"HorosMetal3DViewerLauncher");
     if (launcherClass)
     {
+        [self markImagesAsOpened:correspondingObjects];
         [launcherClass launchWithContext:context];
     }
     else
@@ -13405,6 +13427,42 @@ constrainSplitPosition:(CGFloat)proposedPosition
 - (void)openMetalViewerForImages:(NSArray*)loadList
 {
     [self openMetalViewerForImages:loadList forceDynamicInterpretation:NO];
+}
+
+- (void)markImagesAsOpened:(NSArray*)images
+{
+    if ([images count] == 0)
+        return;
+
+    NSMutableSet *openedSeries = [NSMutableSet set];
+    NSMutableSet *openedStudies = [NSMutableSet set];
+    for (NSManagedObject *image in images)
+    {
+        NSManagedObject *series = [image valueForKey:@"series"];
+        NSManagedObject *study = [image valueForKeyPath:@"series.study"];
+        if (series)
+            [openedSeries addObject:series];
+        if (study)
+            [openedStudies addObject:study];
+    }
+
+    NSDate *openedDate = [NSDate date];
+    for (NSManagedObject *series in openedSeries)
+        [series setValue:openedDate forKey:@"dateOpened"];
+    for (NSManagedObject *study in openedStudies)
+        [study setValue:openedDate forKey:@"dateOpened"];
+    [self.database save];
+}
+
+- (void)markStudiesAsOpened:(NSArray*)studies
+{
+    if ([studies count] == 0)
+        return;
+
+    NSDate *openedDate = [NSDate date];
+    for (NSManagedObject *study in studies)
+        [study setValue:openedDate forKey:@"dateOpened"];
+    [self.database save];
 }
 
 - (void)openMetalViewerForImages:(NSArray*)loadList forceDynamicInterpretation:(BOOL)forceDynamicInterpretation
@@ -13484,23 +13542,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     Class launcherClass = NSClassFromString(@"HorosMetalViewerLauncher");
     if (launcherClass)
     {
-        NSDate *openedDate = [NSDate date];
-        NSMutableSet *openedSeries = [NSMutableSet set];
-        NSMutableSet *openedStudies = [NSMutableSet set];
-        for (NSManagedObject *imageObject in correspondingObjects)
-        {
-            NSManagedObject *series = [imageObject valueForKey:@"series"];
-            NSManagedObject *study = [imageObject valueForKeyPath:@"series.study"];
-            if (series)
-                [openedSeries addObject:series];
-            if (study)
-                [openedStudies addObject:study];
-        }
-        for (NSManagedObject *series in openedSeries)
-            [series setValue:openedDate forKey:@"dateOpened"];
-        for (NSManagedObject *study in openedStudies)
-            [study setValue:openedDate forKey:@"dateOpened"];
-        [self.database save];
+        [self markImagesAsOpened:correspondingObjects];
 
         CFAbsoluteTime swiftLaunchStart = CFAbsoluteTimeGetCurrent();
         [launcherClass launchWithContext:context];
@@ -14646,6 +14688,9 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         [self outlineViewRefresh];
         
         [self awakeActivity];
+        HorosBrowserFitSidebarTable(albumTable);
+        HorosBrowserFitSidebarTable(_sourcesTableView);
+        HorosBrowserFitSidebarTable(_activityTableView);
         [self.window makeKeyAndOrderFront: self];
         
         [self refreshMatrix: self];

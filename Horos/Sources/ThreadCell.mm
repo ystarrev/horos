@@ -67,7 +67,7 @@
 	[_cancelButton setImage:[NSImage imageNamed:@"Activity_Stop"]];
 	[_cancelButton setAlternateImage:[NSImage imageNamed:@"Activity_StopPressed"]];
 	[_cancelButton setBordered:NO];
-	[_cancelButton setButtonType:NSMomentaryChangeButton];
+	[_cancelButton setButtonType:NSButtonTypeMomentaryChange];
 	_cancelButton.target = self;
 	_cancelButton.action = @selector(cancelThreadAction:);
     

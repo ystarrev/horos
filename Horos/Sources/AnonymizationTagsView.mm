@@ -69,7 +69,7 @@
 	intercellSpacing = NSMakeSize(13,1);
 	
 	dcmTagsSearchField = [[NSTextField alloc] initWithFrame:NSZeroRect];
-	[dcmTagsSearchField.cell setControlSize:NSMiniControlSize];
+	[dcmTagsSearchField.cell setControlSize:NSControlSizeMini];
 	[dcmTagsSearchField setFont:[NSFont labelFontOfSize:[NSFont smallSystemFontSize]-2]];
 	dcmTagsSearchField.delegate = self;
 	[dcmTagsSearchField.cell setPlaceholderString:NSLocalizedString(@"Search DICOM tags...", NULL)];
@@ -429,15 +429,15 @@
 	static NSFont* font = [[NSFont labelFontOfSize:[NSFont smallSystemFontSize]-1] retain];
 
 	NSButton* checkBox = [[NSButton alloc] initWithFrame:NSZeroRect];
-	[[checkBox cell] setControlSize:NSMiniControlSize];
+	[[checkBox cell] setControlSize:NSControlSizeMini];
 	[checkBox setFont:font];
 	[[checkBox cell] setLineBreakMode:NSLineBreakByTruncatingMiddle];
-	[checkBox setButtonType:NSSwitchButton];
+	[checkBox setButtonType:NSButtonTypeSwitch];
 	[checkBox setTitle:tag.name];
 	[self addSubview:checkBox];
 	
 	N2TextField* textField = [[N2TextField alloc] initWithFrame:NSZeroRect];
-	[[textField cell] setControlSize:NSMiniControlSize];
+	[[textField cell] setControlSize:NSControlSizeMini];
 	[textField setFont:font];
 	[textField setBezeled:YES];
 	[textField setBezelStyle:NSTextFieldSquareBezel];

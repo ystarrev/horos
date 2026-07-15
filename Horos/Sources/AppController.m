@@ -53,7 +53,6 @@
 #import "DicomFile.h"
 #import "DCM.h"
 #import "DCMTKQueryRetrieveSCP.h"
-#import "BLAuthentication.h"
 #import "AppControllerDCMTKCategory.h"
 #import "DefaultsOsiriX.h"
 #import "OrthogonalMPRViewer.h"

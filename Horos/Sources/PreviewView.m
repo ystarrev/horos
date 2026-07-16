@@ -118,30 +118,6 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     return dlsym(handle, name);
 }
 
-@implementation StructuredReportSupport
-
-+ (NSString *)htmlStringForPath:(NSString *)path
-{
-    if (path.length == 0)
-        return nil;
-
-    HorosModernDCMTKCopyStructuredReportHTMLFn renderFn = (HorosModernDCMTKCopyStructuredReportHTMLFn) PreviewModernDCMTKSymbol("HorosModernDCMTKCopyStructuredReportHTML");
-    HorosModernDCMTKFreeStringFn freeFn = (HorosModernDCMTKFreeStringFn) PreviewModernDCMTKSymbol("HorosModernDCMTKFreeString");
-    if (renderFn == NULL)
-        return nil;
-
-    char *html = renderFn(path.UTF8String);
-    if (html == NULL)
-        return nil;
-
-    NSString *htmlString = [NSString stringWithUTF8String:html];
-    if (freeFn)
-        freeFn(html);
-    return htmlString;
-}
-
-@end
-
 @implementation PreviewView
 {
     MetalPreviewImageView *_metalView;

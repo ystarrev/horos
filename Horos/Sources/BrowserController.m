@@ -61,6 +61,7 @@
 #import "DCMView.h"
 #import "MyOutlineView.h"
 #import "PreviewView.h"
+#import "StructuredReportSupport.h"
 #import "QueryController.h"
 #import "DicomSeries.h"
 #import "DicomImage.h"
@@ -6961,43 +6962,17 @@ static NSConditionLock *threadLock = nil;
             else if( [DCMAbstractSyntaxUID isStructuredReport: [im valueForKeyPath: @"series.seriesSOPClassUID"]])
             {
                 [[NSFileManager defaultManager] confirmDirectoryAtPath:@"/tmp/dicomsr_osirix"];
-                
-                NSString *htmlpath = [[@"/tmp/dicomsr_osirix/" stringByAppendingPathComponent: [[im valueForKey: @"completePath"] lastPathComponent]] stringByAppendingPathExtension: @"xml"];
-                
-                if( [[NSFileManager defaultManager] fileExistsAtPath: htmlpath] == NO)
+
+                path = [[@"/tmp/dicomsr_osirix/" stringByAppendingPathComponent:
+                         [[im valueForKey: @"completePath"] lastPathComponent]] stringByAppendingPathExtension: @"pdf"];
+                if( [[NSFileManager defaultManager] fileExistsAtPath: path] == NO)
                 {
-                    NSTask *aTask = [[[NSTask alloc] init] autorelease];
-                    [aTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
-                    [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dsr2html"]]];
-                    [aTask setArguments: [NSArray arrayWithObjects: @"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items", [im completePathResolved], htmlpath, nil]];
-                    [aTask setStandardOutput:[NSPipe pipe]];
-                    [aTask setStandardError:[NSPipe pipe]];
-                    HorosLaunchTaskOrRaise(aTask);
-                    while( [aTask isRunning])
-                        [NSThread sleepForTimeInterval: 0.1];
-                    
-                    //[aTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
-                    [aTask interrupt];
+                    NSError *conversionError = nil;
+                    if( [StructuredReportSupport writePDFForDICOMAtPath:[im completePathResolved]
+                                                                 toPath:path
+                                                                  error:&conversionError] == NO)
+                        NSLog( @"Failed to render structured report PDF %@: %@", [im completePathResolved], conversionError);
                 }
-                
-                if( [[NSFileManager defaultManager] fileExistsAtPath: [htmlpath stringByAppendingPathExtension: @"pdf"]] == NO)
-                {
-                    if( [[NSFileManager defaultManager] fileExistsAtPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]])
-                    {
-                        NSTask *aTask = [[[NSTask alloc] init] autorelease];
-                        [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]]];
-                        [aTask setArguments: [NSArray arrayWithObjects: htmlpath, @"pdfFromURL", nil]];
-                        HorosLaunchTaskOrRaise(aTask);
-                        NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
-                        while( [aTask isRunning] && [NSDate timeIntervalSinceReferenceDate] - start < 10)
-                            [NSThread sleepForTimeInterval: 0.1];
-                        
-                        //[aTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
-                        [aTask interrupt];
-                    }
-                }
-                
-                path = [htmlpath stringByAppendingPathExtension: @"pdf"];
             }
             else path = [im valueForKey: @"completePath"];
             
@@ -16055,7 +16030,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     return result;
 }
 
-// Always modify this function in sync with compressionForModality in Decompress.mm / BrowserController.m
+// Keep this function in sync with the database compression implementation.
 + (int) compressionForModality: (NSString*) mod quality:(int*) quality resolution: (int) resolution
 {
     NSArray *array;
@@ -16554,43 +16529,19 @@ static volatile int numberOfThreadsForJPEG = 0;
             else if( [DCMAbstractSyntaxUID isStructuredReport: [curImage valueForKeyPath: @"series.seriesSOPClassUID"]])
             {
                 [[NSFileManager defaultManager] confirmDirectoryAtPath:@"/tmp/dicomsr_osirix/"];
-                
-                NSString *htmlpath = [[@"/tmp/dicomsr_osirix/" stringByAppendingPathComponent: [[curImage valueForKey: @"completePath"] lastPathComponent]] stringByAppendingPathExtension: @"xml"];
-                
-                if( [[NSFileManager defaultManager] fileExistsAtPath: htmlpath] == NO)
+
+                NSString *pdfPath = [[@"/tmp/dicomsr_osirix/" stringByAppendingPathComponent:
+                                      [[curImage valueForKey: @"completePath"] lastPathComponent]] stringByAppendingPathExtension: @"pdf"];
+                if( [[NSFileManager defaultManager] fileExistsAtPath: pdfPath] == NO)
                 {
-                    NSTask *aTask = [[[NSTask alloc] init] autorelease];
-                    [aTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
-                    [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dsr2html"]]];
-                    [aTask setArguments: [NSArray arrayWithObjects: @"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items", [curImage valueForKey: @"completePath"], htmlpath, nil]];
-                    [aTask setStandardOutput:[NSPipe pipe]];
-                    [aTask setStandardError:[NSPipe pipe]];
-                    HorosLaunchTaskOrRaise(aTask);
-                    while( [aTask isRunning])
-                        [NSThread sleepForTimeInterval: 0.1];
-                    
-                    //[aTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
-                    [aTask interrupt];
+                    NSError *conversionError = nil;
+                    if( [StructuredReportSupport writePDFForDICOMAtPath:[curImage valueForKey: @"completePath"]
+                                                                 toPath:pdfPath
+                                                                  error:&conversionError] == NO)
+                        NSLog( @"Failed to render structured report PDF %@: %@", [curImage valueForKey: @"completePath"], conversionError);
                 }
-                
-                if( [[NSFileManager defaultManager] fileExistsAtPath: [htmlpath stringByAppendingPathExtension: @"pdf"]] == NO)
-                {
-                    if( [[NSFileManager defaultManager] fileExistsAtPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]])
-                    {
-                        NSTask *aTask = [[[NSTask alloc] init] autorelease];
-                        [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]]];
-                        [aTask setArguments: [NSArray arrayWithObjects: htmlpath, @"pdfFromURL", nil]];
-                        HorosLaunchTaskOrRaise(aTask);
-                        NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
-                        while( [aTask isRunning] && [NSDate timeIntervalSinceReferenceDate] - start < 10)
-                            [NSThread sleepForTimeInterval: 0.1];
-                        
-                        //[aTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
-                        [aTask interrupt];
-                    }
-                }
-                
-                NSImage *im = [[[NSImage alloc] initWithData: [NSData dataWithContentsOfFile: [htmlpath stringByAppendingPathExtension: @"pdf"]]] autorelease];
+
+                NSImage *im = [[[NSImage alloc] initWithData: [NSData dataWithContentsOfFile: pdfPath]] autorelease];
                 
                 if( im)
                 {

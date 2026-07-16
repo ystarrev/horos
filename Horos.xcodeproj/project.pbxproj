@@ -177,7 +177,6 @@
 		434B461D1A19F631008CF8CF /* OPJSupport.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434B461B1A19F631008CF8CF /* OPJSupport.cpp */; };
 		434B461E1A19F631008CF8CF /* OPJSupport.h in Headers */ = {isa = PBXBuildFile; fileRef = 434B461C1A19F631008CF8CF /* OPJSupport.h */; };
 		434B461F1A19F640008CF8CF /* OPJSupport.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434B461B1A19F631008CF8CF /* OPJSupport.cpp */; };
-		434B46201A19F642008CF8CF /* OPJSupport.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434B461B1A19F631008CF8CF /* OPJSupport.cpp */; };
 		4F00A9E4139A778000ABD529 /* CPRStretchedView.m in Sources */ = {isa = PBXBuildFile; fileRef = 4F00A9E3139A778000ABD529 /* CPRStretchedView.m */; };
 		4F00A9E8139A779200ABD529 /* CPRStretchedView.h in Headers */ = {isa = PBXBuildFile; fileRef = 4F00A9E7139A779200ABD529 /* CPRStretchedView.h */; };
 		4F1FCE1B143092DC008683F9 /* OSIPlanarBrushROI.h in Headers */ = {isa = PBXBuildFile; fileRef = 4F1FCE19143092DC008683F9 /* OSIPlanarBrushROI.h */; };
@@ -261,8 +260,6 @@
 		596EB3F7118ABBB000880192 /* NSWindow+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = 596EB3F5118ABBB000880192 /* NSWindow+N2.mm */; };
 		597BB93112A7E0F200D0A172 /* NSUserDefaults+OsiriX.h in Headers */ = {isa = PBXBuildFile; fileRef = 597BB92F12A7E0F200D0A172 /* NSUserDefaults+OsiriX.h */; };
 		597BB93212A7E0F200D0A172 /* NSUserDefaults+OsiriX.mm in Sources */ = {isa = PBXBuildFile; fileRef = 597BB93012A7E0F200D0A172 /* NSUserDefaults+OsiriX.mm */; };
-		597BB99912A9225700D0A172 /* NSUserDefaults+OsiriX.mm in Sources */ = {isa = PBXBuildFile; fileRef = 597BB93012A7E0F200D0A172 /* NSUserDefaults+OsiriX.mm */; };
-		597BB9E712A923FD00D0A172 /* N2Shell.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAAA11293378009EB238 /* N2Shell.mm */; };
 		599115F012D7224A00924B5C /* BrowserController.m in Sources */ = {isa = PBXBuildFile; fileRef = 599115EF12D7224A00924B5C /* BrowserController.m */; };
 		5997895D11B7B3E9002DB107 /* Anonymization.h in Headers */ = {isa = PBXBuildFile; fileRef = 5997894D11B7B3E9002DB107 /* Anonymization.h */; };
 		5997895E11B7B3E9002DB107 /* Anonymization.mm in Sources */ = {isa = PBXBuildFile; fileRef = 5997894E11B7B3E9002DB107 /* Anonymization.mm */; };
@@ -306,7 +303,6 @@
 		59B696651337C957009356ED /* N2DirectoryEnumerator.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59B696631337C957009356ED /* N2DirectoryEnumerator.mm */; };
 		59BDEF41117DA2DF007F1F2C /* NSUserDefaultsController+OsiriX.h in Headers */ = {isa = PBXBuildFile; fileRef = 59BDEF3F117DA2DF007F1F2C /* NSUserDefaultsController+OsiriX.h */; };
 		59BDEF42117DA2DF007F1F2C /* NSUserDefaultsController+OsiriX.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59BDEF40117DA2DF007F1F2C /* NSUserDefaultsController+OsiriX.mm */; };
-		59BDEF45117DA2DF007F1F2C /* NSUserDefaultsController+OsiriX.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59BDEF40117DA2DF007F1F2C /* NSUserDefaultsController+OsiriX.mm */; };
 		59BDF106117EE61E007F1F2C /* PreferencesWindow.xib in Resources */ = {isa = PBXBuildFile; fileRef = 59BDF104117EE61E007F1F2C /* PreferencesWindow.xib */; };
 		59BDF112117EE6A1007F1F2C /* PreferencesWindowController.h in Headers */ = {isa = PBXBuildFile; fileRef = 59BDF110117EE6A1007F1F2C /* PreferencesWindowController.h */; };
 		59BDF113117EE6A1007F1F2C /* PreferencesWindowController.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59BDF111117EE6A1007F1F2C /* PreferencesWindowController.mm */; };
@@ -333,7 +329,6 @@
 		59C447EA1451710F00D71580 /* NSArray+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59C447E71451710F00D71580 /* NSArray+N2.mm */; };
 		59C512C01189C0E40074ECBC /* SFHorosAuthorizationView.h in Headers */ = {isa = PBXBuildFile; fileRef = 59C512BE1189C0E40074ECBC /* SFHorosAuthorizationView.h */; };
 		59C512C11189C0E40074ECBC /* SFHorosAuthorizationView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59C512BF1189C0E40074ECBC /* SFHorosAuthorizationView.mm */; };
-		59DB26FB1450787E00E78E03 /* N2Debug.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAA011293378009EB238 /* N2Debug.mm */; };
 		59DB26FE14507ACA00E78E03 /* PrettyCell.h in Headers */ = {isa = PBXBuildFile; fileRef = 59DB26FC14507ACA00E78E03 /* PrettyCell.h */; };
 		59DB270014507ACA00E78E03 /* PrettyCell.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59DB26FD14507ACA00E78E03 /* PrettyCell.mm */; };
 		59DB270414507ADF00E78E03 /* N2MutableUInteger.h in Headers */ = {isa = PBXBuildFile; fileRef = 59DB270214507ADF00E78E03 /* N2MutableUInteger.h */; };
@@ -373,9 +368,8 @@
 		59F5F3FA11F476030047A90D /* N2ImageButtonCell.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59F5F3F811F476030047A90D /* N2ImageButtonCell.mm */; };
 		59F5F4EC11F485CC0047A90D /* BrowserController+Activity.h in Headers */ = {isa = PBXBuildFile; fileRef = 59F5F4EA11F485CC0047A90D /* BrowserController+Activity.h */; };
 		59F5F4ED11F485CC0047A90D /* BrowserController+Activity.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59F5F4EB11F485CC0047A90D /* BrowserController+Activity.mm */; };
-		59FB64DD1231295400EBA136 /* NSUserDefaultsController+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = 5997899111B7B48E002DB107 /* NSUserDefaultsController+N2.mm */; };
 		5F200F8024292385003EC23E /* dciodvfy in Resources */ = {isa = PBXBuildFile; fileRef = 844003990E8CF99500A00EBD /* dciodvfy */; };
-		5FCC11EE2423CEB00039EE8F /* Decompress in Resources */ = {isa = PBXBuildFile; fileRef = AB724FF60ADE6ECB00A212A0 /* Decompress */; };
+		5FCC11EE2423CEB00039EE8F /* DICOMValidator in Resources */ = {isa = PBXBuildFile; fileRef = AB724FF60ADE6ECB00A212A0 /* DICOMValidator */; };
 		5FCC11EF2423D0220039EE8F /* dcmdump in Resources */ = {isa = PBXBuildFile; fileRef = ABBB639D0635874D00D9531F /* dcmdump */; };
 		5FCC11F02423D0220039EE8F /* dcmprscu in Resources */ = {isa = PBXBuildFile; fileRef = 5F92186123F455A8000B8754 /* dcmprscu */; };
 		5FCC11F12423D0220039EE8F /* dcmpsprt in Resources */ = {isa = PBXBuildFile; fileRef = 5F92185F23F45592000B8754 /* dcmpsprt */; };
@@ -406,7 +400,6 @@
 		7188E85816301A61006105BE /* KBPopUpToolbarItem.m in Sources */ = {isa = PBXBuildFile; fileRef = 7188E85516301A61006105BE /* KBPopUpToolbarItem.m */; };
 		71A28B771637F0D200489F2A /* DCMWaveform.h in Headers */ = {isa = PBXBuildFile; fileRef = 71A28B751637F0D200489F2A /* DCMWaveform.h */; };
 		71A28B791637F0D200489F2A /* DCMWaveform.m in Sources */ = {isa = PBXBuildFile; fileRef = 71A28B761637F0D200489F2A /* DCMWaveform.m */; };
-		71A28B8416383B2900489F2A /* DCMWaveform.m in Sources */ = {isa = PBXBuildFile; fileRef = 71A28B761637F0D200489F2A /* DCMWaveform.m */; };
 		71AA5A2E1611F1EB006A6A5F /* JSON.h in Headers */ = {isa = PBXBuildFile; fileRef = 71AA5A211611F1EB006A6A5F /* JSON.h */; };
 		71AA5A2F1611F1EB006A6A5F /* NSObject+SBJSON.h in Headers */ = {isa = PBXBuildFile; fileRef = 71AA5A221611F1EB006A6A5F /* NSObject+SBJSON.h */; };
 		71AA5A301611F1EB006A6A5F /* NSObject+SBJSON.m in Sources */ = {isa = PBXBuildFile; fileRef = 71AA5A231611F1EB006A6A5F /* NSObject+SBJSON.m */; };
@@ -538,7 +531,6 @@
 		8406956310B6800E00C37AD0 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8406956210B6800E00C37AD0 /* SystemConfiguration.framework */; };
 		840C2D5E1588CE4600C4FE09 /* CustomIntervalPanel.h in Headers */ = {isa = PBXBuildFile; fileRef = 840C2D5B1588CE4600C4FE09 /* CustomIntervalPanel.h */; };
 		840C2D601588CE4600C4FE09 /* CustomIntervalPanel.m in Sources */ = {isa = PBXBuildFile; fileRef = 840C2D5C1588CE4600C4FE09 /* CustomIntervalPanel.m */; };
-		8412AF9D1758C54400092D95 /* NSException+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = 592D333612F2C71A00C7C002 /* NSException+N2.mm */; };
 		841524C5113D6BDB008250E6 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 841524C4113D6BDB008250E6 /* QuartzCore.framework */; };
 		841722B010D90595001A833F /* DDKeychain.h in Headers */ = {isa = PBXBuildFile; fileRef = 841722AE10D90595001A833F /* DDKeychain.h */; };
 		841722B110D90595001A833F /* DDKeychain.m in Sources */ = {isa = PBXBuildFile; fileRef = 841722AF10D90595001A833F /* DDKeychain.m */; };
@@ -896,7 +888,7 @@
 		AB6AC6490624AC5200AFC7AF /* VRController.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB6AC6450624AC5200AFC7AF /* VRController.mm */; };
 		AB6FF59B0A47D08000C501F0 /* DefaultsOsiriX.h in Headers */ = {isa = PBXBuildFile; fileRef = AB6FF5950A47D08000C501F0 /* DefaultsOsiriX.h */; };
 		AB6FF59C0A47D08000C501F0 /* DefaultsOsiriX.m in Sources */ = {isa = PBXBuildFile; fileRef = AB6FF5960A47D08000C501F0 /* DefaultsOsiriX.m */; };
-		AB7250620ADE705C00A212A0 /* Decompress.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB724F1E0ADE6D9C00A212A0 /* Decompress.mm */; };
+		F4D1C0A10001000000000001 /* DICOMValidator.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4D1C0A10002000000000001 /* DICOMValidator.mm */; };
 		AB726C87063F3AD500787EF6 /* QTExportVR.icns in Resources */ = {isa = PBXBuildFile; fileRef = AB726C85063F3AD500787EF6 /* QTExportVR.icns */; };
 		AB73E13A06497EDA00545980 /* PreviewView.h in Headers */ = {isa = PBXBuildFile; fileRef = AB73E13606497EDA00545980 /* PreviewView.h */; };
 		AB73E13B06497EDA00545980 /* PreviewView.m in Sources */ = {isa = PBXBuildFile; fileRef = AB73E13706497EDA00545980 /* PreviewView.m */; };
@@ -995,7 +987,6 @@
 		ABE1E8B00649F4150028E2E0 /* iPod.icns in Resources */ = {isa = PBXBuildFile; fileRef = ABE1E8AE0649F4150028E2E0 /* iPod.icns */; };
 		ABE3336B063D624400C8E087 /* QueryFilter.h in Headers */ = {isa = PBXBuildFile; fileRef = ABE33369063D624400C8E087 /* QueryFilter.h */; };
 		ABE3336C063D624400C8E087 /* QueryFilter.m in Sources */ = {isa = PBXBuildFile; fileRef = ABE3336A063D624400C8E087 /* QueryFilter.m */; };
-		ABE59B850F494CA1004EBF28 /* DefaultsOsiriX.m in Sources */ = {isa = PBXBuildFile; fileRef = AB6FF5960A47D08000C501F0 /* DefaultsOsiriX.m */; };
 		ABF09BBA0642FD220044FE6C /* Stereo.icns in Resources */ = {isa = PBXBuildFile; fileRef = ABF09BB80642FD220044FE6C /* Stereo.icns */; };
 		ABF68A44061DD18600FEED6D /* StringTexture.m in Sources */ = {isa = PBXBuildFile; fileRef = ABF68A40061DD18600FEED6D /* StringTexture.m */; };
 		ABF68A45061DD18600FEED6D /* StringTexture.h in Headers */ = {isa = PBXBuildFile; fileRef = ABF68A41061DD18600FEED6D /* StringTexture.h */; };
@@ -1098,9 +1089,6 @@
 		CE114AC417F9568600CB4ED7 /* RTStructIcon.jpg in Resources */ = {isa = PBXBuildFile; fileRef = CE114AC317F9568600CB4ED7 /* RTStructIcon.jpg */; };
 		CE1335EA06B02DC000B7FC03 /* iChat.icns in Resources */ = {isa = PBXBuildFile; fileRef = CE1335E806B02DC000B7FC03 /* iChat.icns */; };
 		CE1366B50B41D0F200944876 /* mpeg2.tif in Resources */ = {isa = PBXBuildFile; fileRef = CE1366B40B41D0F200944876 /* mpeg2.tif */; };
-		CE142E7F1119DA53000F4A8C /* DCMPix.m in Sources */ = {isa = PBXBuildFile; fileRef = CE0CB16F084A623C00C6385F /* DCMPix.m */; };
-		CE142ED71119DE4F000F4A8C /* DicomFile.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB06EDEF05635642006AFFB9 /* DicomFile.mm */; };
-		CE142ED81119DE4F000F4A8C /* DicomFileDCMTKCategory.mm in Sources */ = {isa = PBXBuildFile; fileRef = BF2425500A51D39500D3D76B /* DicomFileDCMTKCategory.mm */; };
 		CE1C4EF20FDA6F4600185561 /* nameDictionary.plist in Resources */ = {isa = PBXBuildFile; fileRef = BFEB763B0677FDA700F242F3 /* nameDictionary.plist */; };
 		CE1C4EF30FDA6F5300185561 /* tagDictionary.plist in Resources */ = {isa = PBXBuildFile; fileRef = BFEB763C0677FDA700F242F3 /* tagDictionary.plist */; };
 		CE1D97D00883B661005A3A22 /* FlyThru.pdf in Resources */ = {isa = PBXBuildFile; fileRef = CE1D97CE0883B65E005A3A22 /* FlyThru.pdf */; };
@@ -1367,7 +1355,6 @@
 		F4A100000001000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal */; };
 		F4A100000001000000000006 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000006 /* Metal.framework */; };
 		F4A100000001000000000007 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000007 /* MetalKit.framework */; };
-		F4DEC000000100000000011 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000006 /* Metal.framework */; };
 		F4A100000001000000000008 /* Horos/Sources/MetalViewer/MetalViewerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000008 /* Horos/Sources/MetalViewer/MetalViewerModels.swift */; };
 		F4A100000001000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift */; };
 		F4A10000000100000000000A /* Horos/Sources/MetalViewer/MetalViewerToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000A /* Horos/Sources/MetalViewer/MetalViewerToolbarView.swift */; };
@@ -1383,6 +1370,7 @@
 		F4A100000001000000000014 /* Horos/Sources/MetalViewer/MetalPreviewImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000014 /* Horos/Sources/MetalViewer/MetalPreviewImageView.swift */; };
 		F4A100000001000000000015 /* Horos/Sources/HorosSettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000015 /* Horos/Sources/HorosSettingsWindowController.swift */; };
 		F4AC70010001000000000001 /* HorosActivityTaskCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4AC70010002000000000001 /* HorosActivityTaskCoordinator.swift */; };
+		F4D1C0A10001000000000002 /* StructuredReportSupport.m in Sources */ = {isa = PBXBuildFile; fileRef = F4D1C0A10002000000000002 /* StructuredReportSupport.m */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
 		F4A100000001000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm */; };
 		F4A100000001000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm */; };
 		F4A100100001000000000001 /* libHorosModernDCMTKBridge.dylib in Resources */ = {isa = PBXBuildFile; fileRef = F4A100100001000000000002 /* libHorosModernDCMTKBridge.dylib */; };
@@ -1399,15 +1387,6 @@
 		F4DCM000000100000000005 /* libxml2.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = F4DCM000000200000000004 /* libxml2.tbd */; };
 		F4DCM000000100000000006 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = F4DCM000000200000000005 /* libz.tbd */; };
 		F4DEC000000100000000001 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 29B97325FDCFA39411CA2CEA /* Foundation.framework */; };
-		F4DEC000000100000000002 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */; };
-		F4DEC000000100000000003 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4DCM000000200000000001 /* IOKit.framework */; };
-		F4DEC000000100000000004 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = F4DCM000000200000000005 /* libz.tbd */; };
-		F4DEC000000100000000005 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4DEC000000200000000001 /* WebKit.framework */; };
-		F4DEC000000100000000006 /* Quartz.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4DEC000000200000000002 /* Quartz.framework */; };
-		F4DEC000000100000000007 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4DCM000000200000000002 /* Accelerate.framework */; };
-		F4DEC000000100000000008 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9966A1A21AE09D4800F2D81A /* AVFoundation.framework */; };
-		F4DEC000000100000000009 /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9966A1A41AE09D5100F2D81A /* CoreMedia.framework */; };
-		F4DEC000000100000000010 /* DCM.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 844719AF0FD8EF50003BFDF8 /* DCM.framework */; };
 		F4QRDBQ000000000000003 /* dcmqrdbq.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4QRDBQ000000000000002 /* dcmqrdbq.mm */; };
 		F90069BC494CC4317E4A6B95 /* ijg8_jcshuff.c in Sources */ = {isa = PBXBuildFile; fileRef = F8CC7D31816C18E1FCADF884 /* ijg8_jcshuff.c */; };
 		F9006FCB60C96E2EEAD913A5 /* ijg8_jmemnobs.c in Sources */ = {isa = PBXBuildFile; fileRef = F80995F96189DD1B1533D1E7 /* ijg8_jmemnobs.c */; };
@@ -1781,7 +1760,7 @@
 			containerPortal = 29B97313FDCFA39411CA2CEA /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = AB724F300ADE6ECB00A212A0;
-			remoteInfo = Decompress;
+			remoteInfo = DICOMValidator;
 		};
 		9920CBEE202A0BA600FE0A2A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -2089,7 +2068,6 @@
 		59F5F3F811F476030047A90D /* N2ImageButtonCell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = N2ImageButtonCell.mm; path = Nitrogen/Sources/N2ImageButtonCell.mm; sourceTree = SOURCE_ROOT; };
 		59F5F4EA11F485CC0047A90D /* BrowserController+Activity.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "BrowserController+Activity.h"; path = "Horos/Sources/BrowserController+Activity.h"; sourceTree = SOURCE_ROOT; };
 		59F5F4EB11F485CC0047A90D /* BrowserController+Activity.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "BrowserController+Activity.mm"; path = "Horos/Sources/BrowserController+Activity.mm"; sourceTree = SOURCE_ROOT; };
-		5F026FFB242055690083A650 /* Decompress.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Decompress.entitlements; sourceTree = "<group>"; };
 		5F92185F23F45592000B8754 /* dcmpsprt */ = {isa = PBXFileReference; lastKnownFileType = text; name = dcmpsprt; path = DCMTK/dcmpsprt; sourceTree = BUILT_PRODUCTS_DIR; };
 		5F92186123F455A8000B8754 /* dcmprscu */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = dcmprscu; path = DCMTK/dcmprscu; sourceTree = BUILT_PRODUCTS_DIR; };
 		7128FD751487D54A00AB54A1 /* N2UnclickableSplitView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = N2UnclickableSplitView.h; path = Nitrogen/Sources/N2UnclickableSplitView.h; sourceTree = SOURCE_ROOT; };
@@ -2620,8 +2598,8 @@
 		AB6F34FC0574081F00CDCA47 /* Wait.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = Wait.m; sourceTree = "<group>"; };
 		AB6FF5950A47D08000C501F0 /* DefaultsOsiriX.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DefaultsOsiriX.h; sourceTree = "<group>"; };
 		AB6FF5960A47D08000C501F0 /* DefaultsOsiriX.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = DefaultsOsiriX.m; path = Horos/Sources/DefaultsOsiriX.m; sourceTree = SOURCE_ROOT; };
-		AB724F1E0ADE6D9C00A212A0 /* Decompress.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = Decompress.mm; path = Decompress/Decompress.mm; sourceTree = SOURCE_ROOT; };
-		AB724FF60ADE6ECB00A212A0 /* Decompress */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Decompress; sourceTree = BUILT_PRODUCTS_DIR; };
+		F4D1C0A10002000000000001 /* DICOMValidator.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = DICOMValidator.mm; path = DICOMValidator/DICOMValidator.mm; sourceTree = SOURCE_ROOT; };
+		AB724FF60ADE6ECB00A212A0 /* DICOMValidator */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = DICOMValidator; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB726C85063F3AD500787EF6 /* QTExportVR.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = QTExportVR.icns; sourceTree = "<group>"; };
 		AB73E13606497EDA00545980 /* PreviewView.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = PreviewView.h; sourceTree = "<group>"; };
 		AB73E13706497EDA00545980 /* PreviewView.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = PreviewView.m; sourceTree = "<group>"; };
@@ -3113,6 +3091,8 @@
 		F4A100000002000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000019 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.h; sourceTree = SOURCE_ROOT; };
 		F4A100100001000000000002 /* libHorosModernDCMTKBridge.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libHorosModernDCMTKBridge.dylib; path = DCMTK/libHorosModernDCMTKBridge.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
+		F4D1C0A10002000000000002 /* StructuredReportSupport.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = StructuredReportSupport.m; path = Horos/Sources/StructuredReportSupport.m; sourceTree = SOURCE_ROOT; };
+		F4D1C0A10002000000000003 /* StructuredReportSupport.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = StructuredReportSupport.h; path = Horos/Sources/StructuredReportSupport.h; sourceTree = SOURCE_ROOT; };
 		F4A200000002000000000001 /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
 		F4CDA0020000000000000001 /* HorosDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HorosDataModels.swift; sourceTree = "<group>"; };
 		F4CDA0020000000000000002 /* HorosDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HorosDataStore.swift; sourceTree = "<group>"; };
@@ -3375,17 +3355,7 @@
 		AB724FEA0ADE6ECB00A212A0 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
-				F4DEC000000100000000011 /* Metal.framework in Frameworks */,
 				F4DEC000000100000000001 /* Foundation.framework in Frameworks */,
-				F4DEC000000100000000002 /* Cocoa.framework in Frameworks */,
-				F4DEC000000100000000003 /* IOKit.framework in Frameworks */,
-				F4DEC000000100000000004 /* libz.tbd in Frameworks */,
-				F4DEC000000100000000005 /* WebKit.framework in Frameworks */,
-				F4DEC000000100000000006 /* Quartz.framework in Frameworks */,
-				F4DEC000000100000000007 /* Accelerate.framework in Frameworks */,
-				F4DEC000000100000000008 /* AVFoundation.framework in Frameworks */,
-				F4DEC000000100000000009 /* CoreMedia.framework in Frameworks */,
-				F4DEC000000100000000010 /* DCM.framework in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -3470,7 +3440,7 @@
 			isa = PBXGroup;
 			children = (
 				ABA71D3F06726B1800335A62 /* Horos.app */,
-				AB724FF60ADE6ECB00A212A0 /* Decompress */,
+				AB724FF60ADE6ECB00A212A0 /* DICOMValidator */,
 				844719AF0FD8EF50003BFDF8 /* DCM.framework */,
 				AB0F3A2C1046BD2B004129DD /* Horos.framework */,
 			);
@@ -3489,7 +3459,7 @@
 				71C99EA41D1A7E9F00208F3B /* Info.plist */,
 				710EF1F51FD014E8000B555B /* Horos */,
 				AB10FA9611293361009EB238 /* Nitrogen */,
-				AB724F1C0ADE6CFC00A212A0 /* Decompress */,
+				AB724F1C0ADE6CFC00A212A0 /* DICOMValidator */,
 				29B97323FDCFA39411CA2CEA /* Frameworks */,
 				19C28FACFE9D520D11CA2CBB /* Products */,
 				7E0B3A08067525FD00908593 /* DCM */,
@@ -4615,13 +4585,12 @@
 			name = "VR/MIP 3D";
 			sourceTree = "<group>";
 		};
-		AB724F1C0ADE6CFC00A212A0 /* Decompress */ = {
+		AB724F1C0ADE6CFC00A212A0 /* DICOMValidator */ = {
 			isa = PBXGroup;
 			children = (
-				5F026FFB242055690083A650 /* Decompress.entitlements */,
-				AB724F1E0ADE6D9C00A212A0 /* Decompress.mm */,
+				F4D1C0A10002000000000001 /* DICOMValidator.mm */,
 			);
-			path = Decompress;
+			path = DICOMValidator;
 			sourceTree = "<group>";
 		};
 		AB80EBA30AF1F5B600E7E934 /* AYDicomPrint */ = {
@@ -5171,6 +5140,8 @@
 				A910FB2E0D5767610095A956 /* NavigatorWindowController.m */,
 				AB73E13606497EDA00545980 /* PreviewView.h */,
 				AB73E13706497EDA00545980 /* PreviewView.m */,
+				F4D1C0A10002000000000003 /* StructuredReportSupport.h */,
+				F4D1C0A10002000000000002 /* StructuredReportSupport.m */,
 				CE6692D80AF545F90073D923 /* printView.h */,
 				CE6692D90AF545F90073D923 /* printView.m */,
 				7E55ADDB06C7FFCD0059D6EB /* SeriesView.h */,
@@ -6088,9 +6059,9 @@
 			productReference = ABA71D3F06726B1800335A62 /* Horos.app */;
 			productType = "com.apple.product-type.application";
 		};
-		AB724F300ADE6ECB00A212A0 /* Decompress */ = {
+		AB724F300ADE6ECB00A212A0 /* DICOMValidator */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AB724FF30ADE6ECB00A212A0 /* Build configuration list for PBXNativeTarget "Decompress" */;
+			buildConfigurationList = AB724FF30ADE6ECB00A212A0 /* Build configuration list for PBXNativeTarget "DICOMValidator" */;
 			buildPhases = (
 				AB724F310ADE6ECB00A212A0 /* Sources */,
 				AB724FEA0ADE6ECB00A212A0 /* Frameworks */,
@@ -6099,17 +6070,10 @@
 			);
 			dependencies = (
 				F4DECD000000000000000002 /* PBXTargetDependency */,
-				99C0EE1D202A102600D88E8D /* PBXTargetDependency */,
-				71A5231B2021D2480065793A /* PBXTargetDependency */,
-				71A5230B2021C8A80065793A /* PBXTargetDependency */,
-				71A5234F20220FA10065793A /* PBXTargetDependency */,
-				71A523412021DB800065793A /* PBXTargetDependency */,
-				99C0EE21202A63EA00D88E8D /* PBXTargetDependency */,
-				99C0EE24202A825800D88E8D /* PBXTargetDependency */,
 			);
-			name = Decompress;
-			productName = SafeDBRebuild;
-			productReference = AB724FF60ADE6ECB00A212A0 /* Decompress */;
+			name = DICOMValidator;
+			productName = DICOMValidator;
+			productReference = AB724FF60ADE6ECB00A212A0 /* DICOMValidator */;
 			productType = "com.apple.product-type.tool";
 		};
 /* End PBXNativeTarget section */
@@ -6174,7 +6138,7 @@
 				AB28B42E05B7921E00A9906C /* Horos */,
 				7E0B3A3E067526CD00908593 /* DCM */,
 				AB0F3A2B1046BD2B004129DD /* API */,
-				AB724F300ADE6ECB00A212A0 /* Decompress */,
+				AB724F300ADE6ECB00A212A0 /* DICOMValidator */,
 				4A2F5931078D148300C514A2 /* Unzip Binaries */,
 				BF7486A50CC6AA5C00198387 /* Documentation */,
 				71A5234420220F780065793A /* VTK */,
@@ -6210,7 +6174,7 @@
 				5FCC11F32423D0220039EE8F /* dsr2html in Resources */,
 				5FCC11F42423D0220039EE8F /* echoscu in Resources */,
 				F4A100100001000000000001 /* libHorosModernDCMTKBridge.dylib in Resources */,
-				5FCC11EE2423CEB00039EE8F /* Decompress in Resources */,
+				5FCC11EE2423CEB00039EE8F /* DICOMValidator in Resources */,
 				71AD67621FC4248100A1E2F8 /* VR Muscles-Bones.plist in Resources */,
 				71AD674D1FC4248100A1E2F8 /* HotGreen.plist in Resources */,
 				998B52E41AE0893D00D317CF /* Horos.icns in Resources */,
@@ -7330,6 +7294,7 @@
 				AB0128650635991400A74AA1 /* QuicktimeExport.m in Sources */,
 				ABE3336C063D624400C8E087 /* QueryFilter.m in Sources */,
 				AB73E13B06497EDA00545980 /* PreviewView.m in Sources */,
+				F4D1C0A10001000000000002 /* StructuredReportSupport.m in Sources */,
 				7E56939A065007D6001A9762 /* SmartWindowController.m in Sources */,
 				BF5C0188065320A800BAFCF7 /* ImageAndTextCell.m in Sources */,
 				AB86603B066E40970015E1C4 /* ToolbarPanel.m in Sources */,
@@ -7682,19 +7647,7 @@
 		AB724F310ADE6ECB00A212A0 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
-				59DB26FB1450787E00E78E03 /* N2Debug.mm in Sources */,
-				434B46201A19F642008CF8CF /* OPJSupport.cpp in Sources */,
-				AB7250620ADE705C00A212A0 /* Decompress.mm in Sources */,
-				ABE59B850F494CA1004EBF28 /* DefaultsOsiriX.m in Sources */,
-				CE142E7F1119DA53000F4A8C /* DCMPix.m in Sources */,
-				CE142ED71119DE4F000F4A8C /* DicomFile.mm in Sources */,
-				CE142ED81119DE4F000F4A8C /* DicomFileDCMTKCategory.mm in Sources */,
-				59BDEF45117DA2DF007F1F2C /* NSUserDefaultsController+OsiriX.mm in Sources */,
-				59FB64DD1231295400EBA136 /* NSUserDefaultsController+N2.mm in Sources */,
-				597BB99912A9225700D0A172 /* NSUserDefaults+OsiriX.mm in Sources */,
-				597BB9E712A923FD00D0A172 /* N2Shell.mm in Sources */,
-				71A28B8416383B2900489F2A /* DCMWaveform.m in Sources */,
-				8412AF9D1758C54400092D95 /* NSException+N2.mm in Sources */,
+				F4D1C0A10001000000000001 /* DICOMValidator.mm in Sources */,
 			);
 		};
 /* End PBXSourcesBuildPhase section */
@@ -7827,7 +7780,7 @@
 		};
 		71C99EA11D19A80A00208F3B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = AB724F300ADE6ECB00A212A0 /* Decompress */;
+			target = AB724F300ADE6ECB00A212A0 /* DICOMValidator */;
 			targetProxy = 71C99EA01D19A80A00208F3B /* PBXContainerItemProxy */;
 		};
 		9920CBED202A0BA600FE0A2A /* PBXTargetDependency */ = {
@@ -8667,112 +8620,19 @@
 			};
 			name = Release;
 		};
-		43E98D211A32BF6A001B9E51 /* Release configuration for PBXNativeTarget "Decompress" */ = {
+		43E98D211A32BF6A001B9E51 /* Release configuration for PBXNativeTarget "DICOMValidator" */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = F3C3F0702893A429004B2F61 /* Horos.xcconfig */;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_ENTITLEMENTS = Decompress/Decompress.entitlements;
+				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20201201;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TA74QT8SLC;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(BUILT_PRODUCTS_DIR)",
-					Binaries,
-				);
-				GCC_PRECOMPILE_PREFIX_HEADER = YES;
-				GCC_PREFIX_HEADER = Decompress/prefix.pch;
-				HEADER_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/Horos/Sources",
-					"$(PROJECT_DIR)/Nitrogen/Sources",
-					"$(PROJECT_DIR)/DCM",
-					Framework,
-					"$(PROJECT_DIR)/cocoahttpserver",
-					"$(PROJECT_DIR)/LetsMoveAndDock",
-					"$(PROJECT_DIR)/NSFont_OpenGL",
-				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(BUILT_PRODUCTS_DIR)/DCMTK/lib",
-					"$(CONFIGURATION_BUILD_DIR)/DCMTK/lib",
-					"$(inherited)",
-					$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/lib,
-					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/wlib,
-					$CONFIGURATION_TEMP_DIR/Grok.build/Install/lib,
-					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/lib,
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/lib,
-				);
-				OTHER_CFLAGS = (
-					"$(inherited)",
-					"-I$(PROJECT_DIR)/Horos/Sources",
-					"-I$(PROJECT_DIR)/Nitrogen/Sources",
-					"-I$(PROJECT_DIR)/DCM\\ Framework",
-					"-I$(PROJECT_DIR)/cocoahttpserver",
-					"-I$(PROJECT_DIR)/LetsMoveAndDock",
-					"-I$(PROJECT_DIR)/NSFont_OpenGL",
-				);
-				OTHER_CPLUSPLUSFLAGS = (
-					"$(inherited)",
-					"-I$(PROJECT_DIR)/Horos/Sources",
-					"-I$(PROJECT_DIR)/Nitrogen/Sources",
-					"-I$(PROJECT_DIR)/DCM\\ Framework",
-					"-I$(PROJECT_DIR)/cocoahttpserver",
-					"-I$(PROJECT_DIR)/LetsMoveAndDock",
-					"-I$(PROJECT_DIR)/NSFont_OpenGL",
-				);
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-ldcmjpeg",
-					"-ldcmjpls",
-					"-ldcmimgle",
-					"-ldcmimage",
-					"-ldcmdata",
-					"-ldcmtkcharls",
-					"-loflog",
-					"-loficonv",
-					"-lofstd",
-					"-lijg8",
-					"-lijg12",
-					"-lijg16",
-					"-lGDCM",
-					"-lopenjp2",
-					"-lCharLS",
-					"-framework",
-					AVFoundation,
-					"-framework",
-					CoreMedia,
-					"-framework",
-					DCM,
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).decompress";
-				PRODUCT_NAME = Decompress;
-				SYSTEM_HEADER_SEARCH_PATHS = (
-					$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/DCMTK.build/CMake/config/include,
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
-					$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/VTK.build/Install/include,
-					"$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6",
-					"$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6/vtktiff/libtiff",
-				);
-				USER_HEADER_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/Horos/Sources",
-					"$(PROJECT_DIR)/Nitrogen/Sources",
-					"$(PROJECT_DIR)/DCM",
-					Framework,
-					"$(PROJECT_DIR)/cocoahttpserver",
-					"$(PROJECT_DIR)/LetsMoveAndDock",
-					"$(PROJECT_DIR)/NSFont_OpenGL",
-				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).dicomvalidator";
+				PRODUCT_NAME = DICOMValidator;
 			};
 			name = Release;
 		};
@@ -9315,114 +9175,21 @@
 			};
 			name = Debug;
 		};
-		AB724FF40ADE6ECB00A212A0 /* Debug configuration for PBXNativeTarget "Decompress" */ = {
+		AB724FF40ADE6ECB00A212A0 /* Debug configuration for PBXNativeTarget "DICOMValidator" */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = F3C3F0702893A429004B2F61 /* Horos.xcconfig */;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_ENTITLEMENTS = Decompress/Decompress.entitlements;
+				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20201201;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TA74QT8SLC;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(BUILT_PRODUCTS_DIR)",
-					Binaries,
-				);
-				GCC_PRECOMPILE_PREFIX_HEADER = YES;
-				GCC_PREFIX_HEADER = Decompress/prefix.pch;
-				HEADER_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/Horos/Sources",
-					"$(PROJECT_DIR)/Nitrogen/Sources",
-					"$(PROJECT_DIR)/DCM",
-					Framework,
-					"$(PROJECT_DIR)/cocoahttpserver",
-					"$(PROJECT_DIR)/LetsMoveAndDock",
-					"$(PROJECT_DIR)/NSFont_OpenGL",
-				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(BUILT_PRODUCTS_DIR)/DCMTK/lib",
-					"$(CONFIGURATION_BUILD_DIR)/DCMTK/lib",
-					"$(inherited)",
-					$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/lib,
-					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/wlib,
-					$CONFIGURATION_TEMP_DIR/Grok.build/Install/lib,
-					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/lib,
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/lib,
-				);
-				OTHER_CFLAGS = (
-					"$(inherited)",
-					"-I$(PROJECT_DIR)/Horos/Sources",
-					"-I$(PROJECT_DIR)/Nitrogen/Sources",
-					"-I$(PROJECT_DIR)/DCM\\ Framework",
-					"-I$(PROJECT_DIR)/cocoahttpserver",
-					"-I$(PROJECT_DIR)/LetsMoveAndDock",
-					"-I$(PROJECT_DIR)/NSFont_OpenGL",
-				);
-				OTHER_CPLUSPLUSFLAGS = (
-					"$(inherited)",
-					"-I$(PROJECT_DIR)/Horos/Sources",
-					"-I$(PROJECT_DIR)/Nitrogen/Sources",
-					"-I$(PROJECT_DIR)/DCM\\ Framework",
-					"-I$(PROJECT_DIR)/cocoahttpserver",
-					"-I$(PROJECT_DIR)/LetsMoveAndDock",
-					"-I$(PROJECT_DIR)/NSFont_OpenGL",
-				);
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-ldcmjpeg",
-					"-ldcmjpls",
-					"-ldcmimgle",
-					"-ldcmimage",
-					"-ldcmdata",
-					"-ldcmtkcharls",
-					"-loflog",
-					"-loficonv",
-					"-lofstd",
-					"-lijg8",
-					"-lijg12",
-					"-lijg16",
-					"-lGDCM",
-					"-lopenjp2",
-					"-lCharLS",
-					"-framework",
-					AVFoundation,
-					"-framework",
-					CoreMedia,
-					"-framework",
-					DCM,
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).decompress";
-				PRODUCT_NAME = Decompress;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_PREFIX).dicomvalidator";
+				PRODUCT_NAME = DICOMValidator;
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				SYSTEM_HEADER_SEARCH_PATHS = (
-					$CONFIGURATION_TEMP_DIR/DCMTK.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/DCMTK.build/CMake/config/include,
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/include/OpenJPEG,
-					$CONFIGURATION_TEMP_DIR/Grok.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/include,
-					$CONFIGURATION_TEMP_DIR/VTK.build/Install/include,
-					"$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6",
-					"$CONFIGURATION_TEMP_DIR/VTK.build/Install/include/vtk-9.6/vtktiff/libtiff",
-				);
-				USER_HEADER_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/Horos/Sources",
-					"$(PROJECT_DIR)/Nitrogen/Sources",
-					"$(PROJECT_DIR)/DCM",
-					Framework,
-					"$(PROJECT_DIR)/cocoahttpserver",
-					"$(PROJECT_DIR)/LetsMoveAndDock",
-					"$(PROJECT_DIR)/NSFont_OpenGL",
-				);
 			};
 			name = Debug;
 		};
@@ -9551,11 +9318,11 @@
 			);
 			defaultConfigurationName = Release;
 		};
-		AB724FF30ADE6ECB00A212A0 /* Build configuration list for PBXNativeTarget "Decompress" */ = {
+		AB724FF30ADE6ECB00A212A0 /* Build configuration list for PBXNativeTarget "DICOMValidator" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AB724FF40ADE6ECB00A212A0 /* Debug configuration for PBXNativeTarget "Decompress" */,
-				43E98D211A32BF6A001B9E51 /* Release configuration for PBXNativeTarget "Decompress" */,
+				AB724FF40ADE6ECB00A212A0 /* Debug configuration for PBXNativeTarget "DICOMValidator" */,
+				43E98D211A32BF6A001B9E51 /* Release configuration for PBXNativeTarget "DICOMValidator" */,
 			);
 			defaultConfigurationName = Release;
 		};

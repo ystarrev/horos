@@ -410,11 +410,12 @@ static NSString* _dcmElementKey(DcmElement* element) {
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"validateFilesBeforeImporting"])
     {
         // Test DICOMDIR validity on a separate process...
-        if( [[NSFileManager defaultManager] fileExistsAtPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]])
+        NSString *validatorPath = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"DICOMValidator"];
+        if( [[NSFileManager defaultManager] fileExistsAtPath: validatorPath])
         {
             NSTask *aTask = [[[NSTask alloc] init] autorelease];
-            [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]]];
-            [aTask setArguments: [NSArray arrayWithObjects: path, @"testDICOMDIR", nil]];
+            [aTask setExecutableURL:[NSURL fileURLWithPath:validatorPath]];
+            [aTask setArguments: [NSArray arrayWithObjects: @"--dicomdir", path, nil]];
             HorosLaunchTaskOrRaise(aTask);
             while( [aTask isRunning])
                 [NSThread sleepForTimeInterval: 0.1];

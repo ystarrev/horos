@@ -57,6 +57,8 @@ typedef struct HorosModernDCMTKDecodedFrame {
 } HorosModernDCMTKDecodedFrame;
 
 int HorosModernDCMTKIsDICOMFile(const char* path);
+int HorosModernDCMTKValidateDICOMFile(const char* path, char** failureReason);
+int HorosModernDCMTKValidateDICOMDIR(const char* path, char** failureReason);
 char* HorosModernDCMTKCopyGeneratedUID(void);
 char* HorosModernDCMTKCopySpecificCharacterSet(const char* path);
 char* HorosModernDCMTKCopyField(const char* path, const char* fieldName);

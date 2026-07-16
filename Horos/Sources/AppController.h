@@ -264,8 +264,6 @@ extern AppController* OsiriX;
 #pragma mark -
 
 
--(void)setReceivingIcon;
--(void)unsetReceivingIcon;
 -(void)setBadgeLabel:(NSString*)label;
 
 - (void)playGrabSound;

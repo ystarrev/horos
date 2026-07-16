@@ -81,7 +81,6 @@
 #import "ThreadsManager.h"
 #import "NSThread+N2.h"
 #import "DicomDatabase.h"
-#import "N2MutableUInteger.h"
 #import "Window3DController.h"
 #import <MetalKit/MetalKit.h>
 #import <PreferencePanes/PreferencePanes.h>
@@ -5155,48 +5154,6 @@ static BOOL initialized = NO;
 
 #pragma mark -
 
-
-static NSMutableDictionary* _receivingDict = nil;
-
--(void)_receivingIconUpdate {
-	if (!_receivingDict.count)
-		[NSApp setApplicationIconImage:nil];
-	else [NSApp setApplicationIconImage:[NSImage imageNamed:@"HorosDownload.png"]];
-}
-
--(void)_receivingIconSet:(BOOL)flag {
-	@synchronized (self) {
-		if (!_receivingDict)
-			_receivingDict = [[NSMutableDictionary alloc] init];
-		
-		NSThread* thread = [NSThread currentThread];
-        NSValue* threadValue = [NSValue valueWithPointer:CFBridgingRetain(thread)];
-		N2MutableUInteger* setCount = [_receivingDict objectForKey:threadValue];
-		
-		if (flag) {
-			if (!setCount)
-				[_receivingDict setObject: setCount = [N2MutableUInteger mutableUIntegerWithUInteger:1] forKey:threadValue];
-			else [setCount increment];
-		} else {
-			if (setCount) {
-                if (setCount.unsignedIntegerValue > 0)
-                    [setCount decrement];
-				if (!setCount.unsignedIntegerValue)
-					[_receivingDict removeObjectForKey:threadValue];
-			}
-		}
-		
-		[self performSelectorOnMainThread:@selector(_receivingIconUpdate) withObject:nil waitUntilDone:NO];
-	}
-}
-
--(void)setReceivingIcon {
-	[self _receivingIconSet:YES];
-}
-
--(void)unsetReceivingIcon {
-	[self _receivingIconSet:NO];
-}
 
 -(void)setBadgeLabel:(NSString*)label {
 	[[NSApp dockTile] setBadgeLabel:label];

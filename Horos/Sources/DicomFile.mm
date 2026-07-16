@@ -44,6 +44,7 @@
 #include "FVTiff.h"
 #import "MutableArrayCategory.h"
 #import "SRAnnotation.h"
+#import "StructuredReportSupport.h"
 #import "DicomFile.h"
 #import "ViewerController.h"
 #import "DCMCalendarDate.h"
@@ -62,10 +63,8 @@
 #import <AVFoundation/AVFoundation.h>
 #import <dlfcn.h>
 
-#ifndef DECOMPRESS_APP
 #include "nifti1.h"
 #include "nifti1_io.h"
-#endif
 
 #ifdef OSIRIX_VIEWER
 #import "DicomStudy.h"
@@ -712,7 +711,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     return success;
 }
 
-#ifndef DECOMPRESS_APP
 + (BOOL) isNIfTIFile:(NSString *) file
 {
     // NIfTI support developed by Zack Mahdavi at the Center for Neurological Imaging, a division of Harvard Medical School
@@ -744,7 +742,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     }
     return success;
 }
-#endif
 
 
 + (BOOL) isDICOMFile:(NSString *) filePath compressed:(BOOL*) compressed image:(BOOL*) image
@@ -1888,7 +1885,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     return -1;
 }
 
-#ifndef DECOMPRESS_APP
 -(short) getNIfTI
 {
     // NIfTI support developed by Zack Mahdavi at the Center for Neurological Imaging, a division of Harvard Medical School
@@ -2048,50 +2044,25 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     }
     return xmlDoc;
 }
-#endif
 
 - (NSPDFImageRep*) PDFImageRep
 {
 #ifdef OSIRIX_VIEWER
     
     [[NSFileManager defaultManager] confirmDirectoryAtPath:@"/tmp/dicomsr_osirix/"];
-    
-    NSString *htmlpath = [[@"/tmp/dicomsr_osirix/" stringByAppendingPathComponent: [filePath lastPathComponent]] stringByAppendingPathExtension: @"xml"];
-    
-    if( [[NSFileManager defaultManager] fileExistsAtPath: htmlpath] == NO)
+
+    NSString *pdfPath = [[@"/tmp/dicomsr_osirix/" stringByAppendingPathComponent:
+                          [filePath lastPathComponent]] stringByAppendingPathExtension: @"pdf"];
+    if( [[NSFileManager defaultManager] fileExistsAtPath: pdfPath] == NO)
     {
-        NSTask *aTask = [[[NSTask alloc] init] autorelease];
-        [aTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
-        [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dsr2html"]]];
-        [aTask setArguments: [NSArray arrayWithObjects: @"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items", filePath, htmlpath, nil]];
-        [aTask setStandardOutput:[NSPipe pipe]];
-        [aTask setStandardError:[NSPipe pipe]];
-        HorosLaunchTaskOrRaise(aTask);
-        while( [aTask isRunning])
-            [NSThread sleepForTimeInterval: 0.1];
-        
-        //[aTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
-        [aTask interrupt];
+        NSError *conversionError = nil;
+        if( [StructuredReportSupport writePDFForDICOMAtPath:filePath
+                                                     toPath:pdfPath
+                                                      error:&conversionError] == NO)
+            NSLog( @"Failed to render structured report PDF %@: %@", filePath, conversionError);
     }
-    
-    if( [[NSFileManager defaultManager] fileExistsAtPath: [htmlpath stringByAppendingPathExtension: @"pdf"]] == NO)
-    {
-        if( [[NSFileManager defaultManager] fileExistsAtPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]])
-        {
-            NSTask *aTask = [[[NSTask alloc] init] autorelease];
-            [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]]];
-            [aTask setArguments: [NSArray arrayWithObjects: htmlpath, @"pdfFromURL", nil]];
-            HorosLaunchTaskOrRaise(aTask);
-            NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
-            while( [aTask isRunning] && [NSDate timeIntervalSinceReferenceDate] - start < 10)
-                [NSThread sleepForTimeInterval: 0.1];
-            
-            //[aTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
-            [aTask interrupt];
-        }
-    }
-    
-    return [NSPDFImageRep imageRepWithData: [NSData dataWithContentsOfFile: [htmlpath stringByAppendingPathExtension: @"pdf"]]];
+
+    return [NSPDFImageRep imageRepWithData: [NSData dataWithContentsOfFile: pdfPath]];
 #endif
     
     return nil;
@@ -2207,12 +2178,10 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
             {
                 returnVal = self;
             }
-#ifndef DECOMPRESS_APP
             else if( [self getNIfTI] == 0)
             {
                 returnVal = self;
             }
-#endif
             else if( [self getLSM] == 0)
             {
                 returnVal = self;

@@ -3552,7 +3552,6 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
             
             if( filesArray.count && !activityFeedbackShown && showGUI.boolValue) {
                 [ThreadsManager.defaultManager addThreadAndStart:thread];
-                [OsiriX setReceivingIcon];
                 activityFeedbackShown = YES;
             }
             
@@ -3813,7 +3812,6 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
         if (activityFeedbackShown)
         {
             [ThreadsManager.defaultManager removeThread:thread];
-            [OsiriX unsetReceivingIcon];
         }
     }
     

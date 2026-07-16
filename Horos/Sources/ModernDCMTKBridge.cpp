@@ -3,6 +3,7 @@
 #include <dcmtk/config/osconfig.h>
 #include <dcmtk/dcmdata/dcfilefo.h>
 #include <dcmtk/dcmdata/dcdeftag.h>
+#include <dcmtk/dcmdata/dcdicdir.h>
 #include <dcmtk/dcmdata/dcdicent.h>
 #include <dcmtk/dcmdata/dcdict.h>
 #include <dcmtk/dcmdata/dcmetinf.h>
@@ -127,6 +128,13 @@ static char* HorosModernDCMTKDuplicateOFString(const OFString& value)
         return nullptr;
 
     return HorosModernDCMTKDuplicateCString(sanitized.c_str());
+}
+
+static int HorosModernDCMTKValidationFail(char** failureReason, const std::string& reason)
+{
+    if (failureReason != nullptr)
+        *failureReason = HorosModernDCMTKDuplicateCString(reason.c_str());
+    return 0;
 }
 
 static int HorosModernDCMTKDecodedFrameFail(HorosModernDCMTKDecodedFrame* frame, const std::string& reason)
@@ -946,6 +954,141 @@ int HorosModernDCMTKIsDICOMFile(const char* path)
 
     DcmFileFormat fileformat;
     return fileformat.loadFile(path).good() ? 1 : 0;
+}
+
+int HorosModernDCMTKValidateDICOMDIR(const char* path, char** failureReason)
+{
+    if (failureReason != nullptr)
+        *failureReason = nullptr;
+    if (path == nullptr || path[0] == '\0')
+        return HorosModernDCMTKValidationFail(failureReason, "invalid DICOMDIR path");
+
+    HorosModernDCMTKEnsureDataDictionary();
+
+    OFFilename fileName(path);
+    DcmDicomDir dicomDir(fileName);
+    OFCondition status = dicomDir.error();
+    if (status.bad())
+    {
+        std::ostringstream reason;
+        reason << "DICOMDIR load failed: " << status.text();
+        return HorosModernDCMTKValidationFail(failureReason, reason.str());
+    }
+
+    // Force construction of the directory record hierarchy inside the
+    // isolated validator process.
+    (void)dicomDir.getRootRecord();
+    return 1;
+}
+
+int HorosModernDCMTKValidateDICOMFile(const char* path, char** failureReason)
+{
+    if (failureReason != nullptr)
+        *failureReason = nullptr;
+    if (path == nullptr || path[0] == '\0')
+        return HorosModernDCMTKValidationFail(failureReason, "invalid DICOM path");
+
+    HorosModernDCMTKEnsureDataDictionary();
+    HorosModernDCMTKEnsureCodecRegistration();
+
+    DcmFileFormat fileformat;
+    OFCondition status = fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect);
+    if (status.bad())
+    {
+        std::ostringstream reason;
+        reason << "loadFile failed: " << status.text();
+        return HorosModernDCMTKValidationFail(failureReason, reason.str());
+    }
+
+    DcmDataset* dataset = fileformat.getDataset();
+    if (dataset == nullptr)
+        return HorosModernDCMTKValidationFail(failureReason, "missing dataset");
+
+    DcmElement* element = nullptr;
+    if (dataset->findAndGetElement(DCM_PixelData, element).bad() || element == nullptr)
+        return 1;
+
+    DcmPixelData* pixelData = dynamic_cast<DcmPixelData*>(element);
+    if (pixelData == nullptr)
+        return HorosModernDCMTKValidationFail(failureReason, "PixelData is not DcmPixelData");
+
+    const DcmXfer xfer(dataset->getOriginalXfer());
+    bool pixelDataIsUncompressed = !xfer.usesEncapsulatedFormat();
+    Uint32 frameSize = 0;
+    status = pixelData->getUncompressedFrameSize(dataset, frameSize, pixelDataIsUncompressed ? OFTrue : OFFalse);
+
+    std::string representationFailure;
+    if ((status.bad() || frameSize == 0) && !pixelDataIsUncompressed)
+    {
+        OFCondition representationStatus = HorosModernDCMTKChooseUncompressedRepresentation(dataset, representationFailure);
+        if (representationStatus.good())
+        {
+            element = nullptr;
+            if (dataset->findAndGetElement(DCM_PixelData, element).good() && element != nullptr)
+            {
+                pixelData = dynamic_cast<DcmPixelData*>(element);
+                if (pixelData != nullptr)
+                {
+                    pixelDataIsUncompressed = true;
+                    frameSize = 0;
+                    status = pixelData->getUncompressedFrameSize(dataset, frameSize, OFTrue);
+                }
+            }
+        }
+    }
+
+    if (status.bad() || frameSize == 0)
+    {
+        HorosModernDCMTKDecodedFrame decodedFrame;
+        if (HorosModernDCMTKCopyDecodedFrame(path, 0, &decodedFrame))
+        {
+            HorosModernDCMTKFreeDecodedFrame(&decodedFrame);
+            return 1;
+        }
+
+        std::string decodedFailure = decodedFrame.failureReason != nullptr ? decodedFrame.failureReason : "";
+        HorosModernDCMTKFreeDecodedFrame(&decodedFrame);
+        std::ostringstream reason;
+        reason << "cannot decode PixelData: ";
+        if (!decodedFailure.empty())
+            reason << decodedFailure;
+        else if (!representationFailure.empty())
+            reason << representationFailure;
+        else
+            reason << status.text();
+        return HorosModernDCMTKValidationFail(failureReason, reason.str());
+    }
+
+    const Uint32 bufferSize = (frameSize & 1) ? frameSize + 1 : frameSize;
+    std::vector<unsigned char> frameBytes(bufferSize);
+    Uint32 startFragment = 0;
+    OFString colorModel;
+    status = pixelData->getUncompressedFrame(dataset,
+                                             0,
+                                             startFragment,
+                                             frameBytes.data(),
+                                             bufferSize,
+                                             colorModel,
+                                             nullptr);
+    if (status.bad())
+    {
+        HorosModernDCMTKDecodedFrame decodedFrame;
+        if (HorosModernDCMTKCopyDecodedFrame(path, 0, &decodedFrame))
+        {
+            HorosModernDCMTKFreeDecodedFrame(&decodedFrame);
+            return 1;
+        }
+
+        std::string decodedFailure = decodedFrame.failureReason != nullptr ? decodedFrame.failureReason : "";
+        HorosModernDCMTKFreeDecodedFrame(&decodedFrame);
+        std::ostringstream reason;
+        reason << "first-frame decode failed: " << status.text();
+        if (!decodedFailure.empty())
+            reason << " (" << decodedFailure << ")";
+        return HorosModernDCMTKValidationFail(failureReason, reason.str());
+    }
+
+    return 1;
 }
 
 char* HorosModernDCMTKCopyGeneratedUID(void)

@@ -15,8 +15,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "AB724F300ADE6ECB00A212A0"
-               BuildableName = "Decompress"
-               BlueprintName = "Decompress"
+               BuildableName = "DICOMValidator"
+               BlueprintName = "DICOMValidator"
                ReferencedContainer = "container:Horos.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -31,8 +31,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AB724F300ADE6ECB00A212A0"
-            BuildableName = "Decompress"
-            BlueprintName = "Decompress"
+            BuildableName = "DICOMValidator"
+            BlueprintName = "DICOMValidator"
             ReferencedContainer = "container:Horos.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
@@ -49,13 +49,12 @@
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
-      <BuildableProductRunnable
-         runnableDebuggingMode = "0">
+      <BuildableProductRunnable runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AB724F300ADE6ECB00A212A0"
-            BuildableName = "Decompress"
-            BlueprintName = "Decompress"
+            BuildableName = "DICOMValidator"
+            BlueprintName = "DICOMValidator"
             ReferencedContainer = "container:Horos.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -66,19 +65,17 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
-      <BuildableProductRunnable
-         runnableDebuggingMode = "0">
+      <BuildableProductRunnable runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AB724F300ADE6ECB00A212A0"
-            BuildableName = "Decompress"
-            BlueprintName = "Decompress"
+            BuildableName = "DICOMValidator"
+            BlueprintName = "DICOMValidator"
             ReferencedContainer = "container:Horos.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
-   <AnalyzeAction
-      buildConfiguration = "Debug">
+   <AnalyzeAction buildConfiguration = "Debug">
    </AnalyzeAction>
    <ArchiveAction
       buildConfiguration = "Release"

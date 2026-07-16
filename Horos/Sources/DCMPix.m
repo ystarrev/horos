@@ -78,10 +78,8 @@
 #include "FVTiff.h"
 #include "Analyze.h"
 
-#ifndef DECOMPRESS_APP
 #include "nifti1.h"
 #include "nifti1_io.h"
-#endif
 
 #include <Accelerate/Accelerate.h>
 #include "AppController.h"
@@ -6407,7 +6405,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             
             if( [[NSFileManager defaultManager] fileExistsAtPath: [htmlpath stringByAppendingPathExtension: @"pdf"]] == NO)
             {
-                // Avoid spawning the Decompress helper here just to synthesize an SR preview PDF.
+                // Avoid launching an external process just to synthesize an SR preview PDF.
                 // In debug/dev builds that helper may be unavailable or codesign-mismatched, which
                 // causes noisy console errors even though the report itself can still be opened.
             }
@@ -7731,7 +7729,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 {
                     [self LoadFVTiff];
                 }
-#ifndef DECOMPRESS_APP
                 else if( (( [extension isEqualToString:@"hdr"]) &&
                           ([[NSFileManager defaultManager] fileExistsAtPath:[[self.srcFile stringByDeletingPathExtension] stringByAppendingPathExtension:@"img"]] == YES)) ||
                         ( [extension isEqualToString:@"nii"]))
@@ -8334,7 +8331,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                     free( NIfTI);
                     NIfTI = nil;
                 }
-#endif
                 else if( [extension isEqualToString:@"jpg"] ||
                         [extension isEqualToString:@"jp2"] ||
                         [extension isEqualToString:@"jpeg"] ||

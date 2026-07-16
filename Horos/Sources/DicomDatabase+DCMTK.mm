@@ -598,8 +598,9 @@ static BOOL HorosModernDCMTKDecompressFile(NSString *sourcePath, NSString *desti
 }
 
 +(BOOL)testFiles:(NSArray*)files {
-    
-    if( [[NSFileManager defaultManager] fileExistsAtPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]] == NO)
+
+    NSString *validatorPath = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"DICOMValidator"];
+    if( [[NSFileManager defaultManager] fileExistsAtPath: validatorPath] == NO)
         return YES;
     
     WaitRendering *splash = nil;
@@ -645,10 +646,10 @@ static BOOL HorosModernDCMTKDecompressFile(NSString *sourcePath, NSString *desti
                 
                 [tasksArray addObject: theTask];
                 
-                NSArray *parameters = [[NSArray arrayWithObjects: @"unused", @"testFiles", nil] arrayByAddingObjectsFromArray: subArray];
+                NSArray *parameters = [[NSArray arrayWithObject: @"--files"] arrayByAddingObjectsFromArray: subArray];
                 
                 [theTask setArguments: parameters];
-                [theTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/Decompress"]]];
+                [theTask setExecutableURL:[NSURL fileURLWithPath:validatorPath]];
                 HorosLaunchTaskOrRaise(theTask);
                 
                 free( objs);

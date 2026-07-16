@@ -125,11 +125,9 @@
 
 -(short) getDicomFile;  /**< Decode DICOM.  Returns -1 for failure 0 for success */
 
-#ifndef DECOMPRESS_APP
 -(short) getNIfTI; /**< Decode NIfTI  Returns -1 for failure 0 for success */
 +(NSXMLDocument *) getNIfTIXML : (NSString *) file; /**< Converts NIfTI to XML */
 + (BOOL) isNIfTIFile:(NSString *) file; /**< Test for Nifti file format */
-#endif
 
 /** Returns the COMMENTSAUTOFILL default. 
 * If Yes, comments will be filled from the DICOM tag  commentsGroup/commentsElement
@@ -155,4 +153,3 @@
 - (BOOL) containsString: (NSString*) s inArray: (NSArray*) a;
 - (BOOL) containsLocalizerInString: (NSString*) str;
 @end
-

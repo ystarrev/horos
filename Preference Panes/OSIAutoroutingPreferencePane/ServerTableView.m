@@ -39,7 +39,7 @@
 
 #import "ServerTableView.h"
 #import "OSIAutoroutingPreferencePanePref.h"
-#import "Horos-Swift.h"
+#import "HorosSwiftInterop.h"
 
 @implementation ServerTableView
 

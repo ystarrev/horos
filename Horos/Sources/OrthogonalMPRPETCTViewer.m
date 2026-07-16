@@ -2418,9 +2418,9 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
             else
             {
                 long nCT, nPETCT, nPET;
-                nCT = 15300 + [[NSCalendarDate date] minuteOfHour] + [[NSCalendarDate date] secondOfMinute];
-                nPETCT = 25300 + [[NSCalendarDate date] minuteOfHour] + [[NSCalendarDate date] secondOfMinute];
-                nPET = 35300 + [[NSCalendarDate date] minuteOfHour] + [[NSCalendarDate date] secondOfMinute];
+                nCT = 15300 + [DICOMExport currentTimeSeriesNumberOffset];
+                nPETCT = 25300 + [DICOMExport currentTimeSeriesNumberOffset];
+                nPET = 35300 + [DICOMExport currentTimeSeriesNumberOffset];
                 
                 if ([[self keyView] isEqualTo:[[[self keyView] controller] originalView]])
                 {
@@ -2521,7 +2521,7 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
             @try
             {
                 if( exportDCM == nil) exportDCM = [[DICOMExport alloc] init];
-                [exportDCM setSeriesNumber:5300 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];	//Try to create a unique series number... Do you have a better idea??
+                [exportDCM setSeriesNumber:5300 + [DICOMExport currentTimeSeriesNumberOffset]];	//Try to create a unique series number... Do you have a better idea??
                 [exportDCM setSeriesDescription: [dcmSeriesName stringValue]];
                 
                 if( [[NSUserDefaults standardUserDefaults] boolForKey: @"export3modalities"] == NO)
@@ -2561,9 +2561,9 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
                     [[splash progress] setMaxValue:(int) 3 * ((to-from)/interval)];
                     
                     long nCT, nPETCT, nPET;
-                    nCT = 15300 + [[NSCalendarDate date] minuteOfHour] + [[NSCalendarDate date] secondOfMinute];
-                    nPETCT = 25300 + [[NSCalendarDate date] minuteOfHour] + [[NSCalendarDate date] secondOfMinute];
-                    nPET = 35300 + [[NSCalendarDate date] minuteOfHour] + [[NSCalendarDate date] secondOfMinute];
+                    nCT = 15300 + [DICOMExport currentTimeSeriesNumberOffset];
+                    nPETCT = 25300 + [DICOMExport currentTimeSeriesNumberOffset];
+                    nPET = 35300 + [DICOMExport currentTimeSeriesNumberOffset];
                     
                     [exportDCM setSeriesNumber:nCT];
                     for( i = from; i < to; i+=interval)

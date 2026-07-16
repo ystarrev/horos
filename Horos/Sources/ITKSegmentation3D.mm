@@ -707,7 +707,6 @@ The Horos Project was based originally upon the OsiriX Project which at the time
                             [theNewROI setROIMode: ROI_selected];
                             [[NSNotificationCenter defaultCenter] postNotificationName: OsirixROISelectedNotification object:theNewROI userInfo: nil];
                             
-                            [theNewROI setSliceThickness:[[[srcViewer imageView] curDCM] sliceThickness]];
                             [theNewROI release];
                         }
                         
@@ -751,7 +750,6 @@ The Horos Project was based originally upon the OsiriX Project which at the time
                                                 spacingY:[[[srcViewer imageView] curDCM] pixelSpacingY]
                                                 imageOrigin:[DCMPix originCorrectedAccordingToOrientation: [[srcViewer imageView] curDCM]]];
                 [theNewROI reduceTextureIfPossible];
-                [theNewROI setSliceThickness:[[[srcViewer imageView] curDCM] sliceThickness]];
                 [[[srcViewer roiList] objectAtIndex:slice] addObject:theNewROI];
                 [[srcViewer imageView] roiSet];
                 NSDictionary *userInfo = [NSDictionary dictionaryWithObjectsAndKeys:theNewROI, @"ROI",

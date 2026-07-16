@@ -38,7 +38,7 @@
 #import "OSILocationsPreferencePanePref.h"
 #import "N2Debug.h"
 #import "url.h"
-#import "Horos-Swift.h"
+#import "HorosSwiftInterop.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 //#import "DDKeychain.h"

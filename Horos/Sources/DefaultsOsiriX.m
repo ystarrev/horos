@@ -1644,8 +1644,6 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:[NSNumber numberWithInt:0] forKey:@"growingRegionROIType"];
 	[defaultValues setObject:[NSNumber numberWithInt:20] forKey:@"growingRegionPointCount"];
 	[defaultValues setObject:NSLocalizedString(@"Growing Region", nil) forKey:@"growingRegionROIName"];
-	[defaultValues setObject:[NSNumber numberWithInt:0] forKey:@"displayCalciumScore"];
-	[defaultValues setObject:[NSNumber numberWithInt:0] forKey:@"CalciumScoreCTType"];
     [defaultValues setObject: @YES forKey: @"defaultShading"];
     [defaultValues setObject: @YES forKey: @"dontDeleteStudiesIfInAlbum"];
 		

@@ -44,7 +44,7 @@
 #import "DicomFile.h"
 #import "WaitRendering.h"
 #import "ICloudDriveDetector.h"
-#import "Horos-Swift.h"
+#import "HorosSwiftInterop.h"
 
 @implementation OSIDatabasePreferencePanePref
 

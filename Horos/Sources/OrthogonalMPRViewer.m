@@ -1617,7 +1617,7 @@ static SyncSeriesScope globalSyncSeriesScope;
         else if( [[dcmSelection selectedCell] tag] == 2) // 4th Dimension
         {
             if( exportDCM == nil) exportDCM = [[DICOMExport alloc] init];
-            [exportDCM setSeriesNumber:5600 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];	//Try to create a unique series number... Do you have a better idea??
+            [exportDCM setSeriesNumber:5600 + [DICOMExport currentTimeSeriesNumberOffset]];	//Try to create a unique series number... Do you have a better idea??
             
             for( int i = 0; i < maxMovieIndex; i ++)
             {
@@ -1687,7 +1687,7 @@ static SyncSeriesScope globalSyncSeriesScope;
             @try
             {
                 if( exportDCM == nil) exportDCM = [[DICOMExport alloc] init];
-                [exportDCM setSeriesNumber:5600 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];	//Try to create a unique series number... Do you have a better idea??
+                [exportDCM setSeriesNumber:5600 + [DICOMExport currentTimeSeriesNumberOffset]];	//Try to create a unique series number... Do you have a better idea??
                 
                 for( i = from; i < to; i+=interval)
                 {

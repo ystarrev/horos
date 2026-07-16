@@ -368,8 +368,6 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 @synthesize mousePosMeasure;
 @synthesize rgbcolor = color;
 @synthesize parentROI;
-@synthesize displayCalciumScoring = _displayCalciumScoring, calciumThreshold = _calciumThreshold;
-@synthesize sliceThickness = _sliceThickness;
 @synthesize layerReferenceFilePath;
 @synthesize layerImage;
 @synthesize layerPixelSpacingX, layerPixelSpacingY;
@@ -767,8 +765,8 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 		}
 		
 		if (fileVersion >= 5) {
-			_calciumThreshold = [[coder decodeObject] intValue];
-			_displayCalciumScoring = [[coder decodeObject] boolValue];
+			[coder decodeObject];
+			[coder decodeObject];
 		}
 
 		if (fileVersion >= 6)
@@ -956,9 +954,6 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 	c->offsetTextBox_x = offsetTextBox_x;
 	c->offsetTextBox_y = offsetTextBox_y;
 	
-	c->_calciumThreshold = _calciumThreshold;
-	c->_displayCalciumScoring = _displayCalciumScoring;
-
 	c->groupID = groupID;
 	if (c->type == tLayerROI)
 	{
@@ -1052,8 +1047,9 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 	[coder encodeObject:zPositions];
 	[coder encodeObject:[NSNumber numberWithFloat:offsetTextBox_x]];
 	[coder encodeObject:[NSNumber numberWithFloat:offsetTextBox_y]];
-	[coder encodeObject:[NSNumber numberWithInt:_calciumThreshold]];
-	[coder encodeObject:[NSNumber numberWithBool:_displayCalciumScoring]];
+	// Preserve the two version-5 archive positions for compatibility with existing saved ROIs.
+	[coder encodeObject:[NSNumber numberWithInt:0]];
+	[coder encodeObject:[NSNumber numberWithBool:NO]];
 	
 	// ROIVERSION = 6
 	[coder encodeObject:[NSNumber numberWithDouble:groupID]];
@@ -4053,10 +4049,6 @@ void gl_round_box(int mode, float minx, float miny, float maxx, float maxy, floa
     if( hidden)
         return NO;
     
-	// NO text for Calcium Score
-	if (_displayCalciumScoring)
-		return NO;
-		
 	BOOL drawTextBox = NO;
 	
 	if( ROITEXTIFSELECTED == NO || mode == ROI_selected || mode == ROI_selectedModify || mode == ROI_drawing)
@@ -4656,11 +4648,7 @@ void gl_round_box(int mode, float minx, float miny, float maxx, float maxy, floa
 						if(highlightIfSelected && ROIDrawPlainEdge == NO)
 						{
 							glColor3f (0.5f, 0.5f, 1.0f);
-							//smaller points for calcium scoring
-							if (_displayCalciumScoring)
-								glPointSize( 3.0 * backingScaleFactor);
-							else
-								glPointSize( 8.0 * backingScaleFactor);
+							glPointSize( 8.0 * backingScaleFactor);
 							glBegin(GL_POINTS);
 							glVertex3f(screenXUpL, screenYUpL, 0.0);
 							glVertex3f(screenXDr, screenYUpL, 0.0);
@@ -4688,9 +4676,6 @@ void gl_round_box(int mode, float minx, float miny, float maxx, float maxy, floa
 						
 						float area = [self plainArea];
 
-						if (!_displayCalciumScoring)
-						{
-                            
                             // US Regions (Brush) --->
                             BOOL roiInside2DUSRegion = FALSE;
                             if ([[self pix] hasUSRegions]) {
@@ -4745,14 +4730,6 @@ void gl_round_box(int mode, float minx, float miny, float maxx, float maxy, floa
                                 self.textualBoxLine4 = [NSString stringWithFormat: NSLocalizedString( @"Min: %0.3f%@ Max: %0.3f%@ Skewness: %0.3f Kurtosis: %0.3f", nil), rmin, pixelUnit, rmax, pixelUnit, rskewness, rkurtosis];
                             else
                                 self.textualBoxLine4 = [NSString stringWithFormat: NSLocalizedString( @"Min: %0.3f%@ Max: %0.3f%@", nil), rmin, pixelUnit, rmax, pixelUnit];
-						}
-						else
-						{
-							self.textualBoxLine2 = [NSString stringWithFormat: NSLocalizedString( @"Calcium Score: %0.1f", nil), [self calciumScore]];
-							self.textualBoxLine3 = [NSString stringWithFormat: NSLocalizedString( @"Calcium Volume: %0.1f", nil), [self calciumVolume]];
-							self.textualBoxLine4 = [NSString stringWithFormat: NSLocalizedString( @"Calcium Mass: %0.1f", nil), [self calciumMass]];
-						}
-						
 						if( [curView blendingView])
 						{
 							DCMPix	*blendedPix = [[curView blendingView] curDCM];
@@ -4775,7 +4752,6 @@ void gl_round_box(int mode, float minx, float miny, float maxx, float maxy, floa
                                 self.textualBoxLine6 = [NSString stringWithFormat: NSLocalizedString( @"Fused Image Min: %0.3f%@ Max: %0.3f%@", nil), Brmin, pixelUnit, Brmax, pixelUnit];
 						}
 					}
-					//if (!_displayCalciumScoring)
 					[self prepareTextualData:tPt];
 				}
 			}
@@ -6928,71 +6904,6 @@ void gl_round_box(int mode, float minx, float miny, float maxx, float maxy, floa
     textureUpLeftCornerY -= margin;
     
     [self textureBufferHasChanged];
-}
-
-// Calcium Scoring
-// Should we check to see if we using a brush ROI and other appropriate checks before return a calcium measurement?
-
-- (int)calciumScoreCofactor
-{
-	/* 
-	Cofactor values used by Agaston.  
-	Using a threshold of 90 rather than 130. Assuming
-	multislice CT rather than electron beam.
-	We could have a flag for Electron beam rather than multichannel CT
-	and use 130 as a cutoff
-	*/	
-	if( rtotal == -1) [[self pix] computeROI:self :&rmean :&rtotal :&rdev :&rmin :&rmax];
-	if (_calciumCofactor == 0)
-		_calciumCofactor =  [[self pix] calciumCofactorForROI:self threshold:_calciumThreshold];
-	//NSLog(@"cofactor: %d", _calciumCofactor);
-	return _calciumCofactor;
-}
-
-- (float)calciumScore
-{
-	// roi Area * cofactor;  area is is mm2.
-	//plainArea is number of pixels 
-	// still to compensate for overlapping slices interval/sliceThickness
-	
-	if( rtotal == -1) [[self pix] computeROI:self :&rmean :&rtotal :&rdev :&rmin :&rmax];
-	//area needs to be > 1 mm
-	
-	float intervalRatio = 1;
-	
-	if( curView)
-		intervalRatio = fabs([[self pix] sliceInterval] / [[self pix] sliceThickness]);
-	else
-		NSLog( @"curView == nil");
-	
-	if (intervalRatio > 1)
-		intervalRatio = 1;
-	
-	float area = [self plainArea] * pixelSpacingX * pixelSpacingY;
-	//if (area < 1)
-	//	return 0;
-	return area * [self calciumScoreCofactor] * intervalRatio ;   
-}
-
-- (float)calciumVolume
-{
-	// area * thickness
-	
-	if( rtotal == -1) [[self pix] computeROI:self :&rmean :&rtotal :&rdev :&rmin :&rmax];
-	float area = [self plainArea] * pixelSpacingX * pixelSpacingY;
-	//if (area < 1)
-	//	return 0;
-	
-	return area * [[self pix] sliceThickness];
-	//return [self roiArea] * [self thickness] * 100;
-}
-- (float) calciumMass
-{
-	//Volume * mean CT Density / 250 
-	if( rtotal == -1)
-		[[self pix] computeROI:self :&rmean :&rtotal :&rdev :&rmin :&rmax];
-	
-	return fabs( [self calciumVolume] * rmean)/ 250;
 }
 
 - (void) setLayerImage:(NSImage*)image;

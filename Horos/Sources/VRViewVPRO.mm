@@ -1025,7 +1025,7 @@ public:
 			[progress showWindow:self];
 			[[progress progress] setMaxValue: [[[self window] windowController] movieFrames]];
 			
-			[dcmSequence setSeriesNumber:5250 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];
+			[dcmSequence setSeriesNumber:5250 + [DICOMExport currentTimeSeriesNumberOffset]];
 			[dcmSequence setSeriesDescription: [dcmSeriesName stringValue]];
 			[dcmSequence setSourceFile: [firstObject sourceFile]];
 			
@@ -1093,7 +1093,7 @@ public:
 			[progress showWindow:self];
 			[[progress progress] setMaxValue: numberOfFrames];
 			
-			[dcmSequence setSeriesNumber:5600 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];
+			[dcmSequence setSeriesNumber:5600 + [DICOMExport currentTimeSeriesNumberOffset]];
 			[dcmSequence setSeriesDescription: [dcmSeriesName stringValue]];
 			[dcmSequence setSourceFile: [firstObject sourceFile]];
 			

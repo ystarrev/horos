@@ -41,7 +41,7 @@
 #import "DicomAlbum.h"
 #import "N2Debug.h"
 #import "BrowserController.h"
-#import "Horos-Swift.h"
+#import "HorosSwiftInterop.h"
 
 static NSMatrix *gDateMatrix = nil;
 

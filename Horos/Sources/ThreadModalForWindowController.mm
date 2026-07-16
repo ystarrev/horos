@@ -37,6 +37,7 @@
 
 
 #import "ThreadModalForWindowController.h"
+#import "HorosSwiftInterop.h"
 #import "ThreadsManager.h"
 #import "NSThread+N2.h"
 #import "N2Debug.h"
@@ -72,7 +73,9 @@ NSString* const NSThreadModalForWindowControllerKey = @"ThreadModalForWindowCont
     
 	[thread.threadDictionary setObject:self forKey:NSThreadModalForWindowControllerKey];
     
-	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(threadWillExitNotification:) name:NSThreadWillExitNotification object:_thread];
+	_completionToken = [[[HorosActivityTaskCoordinator sharedCoordinator] addCompletionHandlerForThread:_thread handler:^{
+        [self invalidate];
+    }] retain];
 
 	[self.docWindow beginSheet:self.window completionHandler:^(NSModalResponse returnCode) {
 		[self sheetDidEnd:self.window returnCode:returnCode contextInfo:NULL];
@@ -140,6 +143,7 @@ static NSString* ThreadModalForWindowControllerObservationContext = @"ThreadModa
     [self.thread removeObserver:self forKeyPath:NSThreadSupportsBackgroundingKey];
 	
     [_retainedThreadDictionary release]; _retainedThreadDictionary = nil;
+    [_completionToken release]; _completionToken = nil;
 	[_thread release];
 	[_docWindow release];
 	
@@ -288,9 +292,16 @@ static NSString* ThreadModalForWindowControllerObservationContext = @"ThreadModa
     }
     else
     {
-        
+        if (!_isValid)
+            return;
+
         DLog(@"[ThreadModalForWindowController invalidate]");
-        [[NSNotificationCenter defaultCenter] removeObserver:self name:NSThreadWillExitNotification object:_thread];
+        if (_completionToken)
+        {
+            [[HorosActivityTaskCoordinator sharedCoordinator] removeCompletionHandlerForThread:_thread token:_completionToken];
+            [_completionToken release];
+            _completionToken = nil;
+        }
         
         [self.progressIndicator setDoubleValue:self.thread.subthreadsAwareProgress];
         [self.progressIndicator setIndeterminate: self.thread.progress < 0];
@@ -314,10 +325,6 @@ static NSString* ThreadModalForWindowControllerObservationContext = @"ThreadModa
         //        else [self.window performSelectorOnMainThread:@selector(orderOut:) withObject:self waitUntilDone:NO];
         //    }
     }
-}
-
--(void)threadWillExitNotification:(NSNotification*)notification {
-	[self invalidate];
 }
 
 -(void)cancelAction:(id)source {

@@ -41,7 +41,7 @@
 #import "NSPreferencePane+OsiriX.h"
 #import "Notifications.h"
 #import "AppController.h"
-#import "Horos-Swift.h"
+#import "HorosSwiftInterop.h"
 
 @implementation OSIHangingPreferencePanePref
 

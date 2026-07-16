@@ -45,7 +45,7 @@
 #import "NSUserDefaults+OsiriX.h"
 #import "N2Debug.h"
 #import "AppController.h"
-#import "Horos-Swift.h"
+#import "HorosSwiftInterop.h"
 
 // Template for DCMTK presentation state command-line applications (sample .cfg files in DCMTK source under dcmpstat/etc)
 //

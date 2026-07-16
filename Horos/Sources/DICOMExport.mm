@@ -150,6 +150,13 @@ static float deg2rad = M_PI / 180.0f;
 
 @synthesize rotateRawDataBy90degrees, metaDataDict;
 
++ (NSInteger)currentTimeSeriesNumberOffset
+{
+    NSDateComponents *components = [[NSCalendar currentCalendar] components:NSCalendarUnitMinute | NSCalendarUnitSecond
+                                                                    fromDate:[NSDate date]];
+    return components.minute + components.second;
+}
+
 - (NSString*) seriesDescription
 {
 	return exportSeriesDescription;
@@ -210,11 +217,21 @@ static float deg2rad = M_PI / 180.0f;
 		for( i = 0; i < 6; i++) orientation[ i] = 0;
 		for( i = 0; i < 3; i++) position[ i] = 0;
         
+        NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+        calendar.timeZone = [NSTimeZone localTimeZone];
+        NSDateComponents *birthdateComponents = [[[NSDateComponents alloc] init] autorelease];
+        birthdateComponents.year = 1900;
+        birthdateComponents.month = 1;
+        birthdateComponents.day = 1;
+        birthdateComponents.hour = 1;
+        birthdateComponents.minute = 1;
+        birthdateComponents.second = 1;
+
         metaDataDict = [[NSMutableDictionary dictionaryWithObjectsAndKeys:@"unknown", @"patientsName",
          @"unknown ID", @"patientID",
-         [NSCalendarDate dateWithYear: 1900 month: 1 day: 1 hour: 1 minute: 1 second: 1 timeZone: nil], @"patientsBirthdate",
+         [calendar dateFromComponents:birthdateComponents], @"patientsBirthdate",
          @"M", @"patientsSex",
-         [NSCalendarDate date], @"studyDate", 
+         [NSDate date], @"studyDate",
          nil] retain];
 	}
 	

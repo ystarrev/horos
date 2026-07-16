@@ -2163,7 +2163,7 @@ static float deg2rad = M_PI/180.0;
 			
 			curExportView.vrView.exportDCM = [[[DICOMExport alloc] init] autorelease];
 			[curExportView.vrView.exportDCM setSeriesDescription: self.dcmSeriesName];
-			[curExportView.vrView.exportDCM setSeriesNumber:8730 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];
+			[curExportView.vrView.exportDCM setSeriesNumber:8730 + [DICOMExport currentTimeSeriesNumberOffset]];
 			
 			for( int i = 0; i < maxMovieIndex+1; i++)
 			{
@@ -2210,7 +2210,7 @@ static float deg2rad = M_PI/180.0;
 			
 			curExportView.vrView.exportDCM = [[[DICOMExport alloc] init] autorelease];
 			[curExportView.vrView.exportDCM setSeriesDescription: self.dcmSeriesName];
-			[curExportView.vrView.exportDCM setSeriesNumber:8930 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];
+			[curExportView.vrView.exportDCM setSeriesNumber:8930 + [DICOMExport currentTimeSeriesNumberOffset]];
 			
 			if( dcmSeriesMode == 1) // 3D rotation
 			{

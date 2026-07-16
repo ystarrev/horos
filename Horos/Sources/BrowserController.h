@@ -48,7 +48,7 @@
 @class AnonymizerWindowController,QueryController;
 @class LogWindowController,PreviewView;
 @class MyOutlineView,DCMView,DCMPix;
-@class StructuredReportController,BrowserMatrix;
+@class BrowserMatrix;
 @class WaitRendering, Wait, ActivityWindowController;
 @class DCMTKStudyQueryNode;
 

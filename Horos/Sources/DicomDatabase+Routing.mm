@@ -226,10 +226,10 @@
 }
 
 -(void)routingOnContextQueue {
+	NSThread* thread = [NSThread currentThread];
+	BOOL activityAdded = NO;
 	[_routingLock lock];
 	@try {
-		NSThread* thread = [NSThread currentThread];
-		
 		NSArray* serversArray = [[NSUserDefaults standardUserDefaults] arrayForKey:@"SERVERS"];
 		
 		NSArray* routingSendQueues = nil;
@@ -240,6 +240,7 @@
 		
 		if (routingSendQueues.count) {
 			[ThreadsManager.defaultManager addThreadAndStart:thread];
+			activityAdded = YES;
 			
 			NSInteger total = 0;
 			for (NSDictionary *copy in routingSendQueues)
@@ -332,6 +333,8 @@
 	} @catch (NSException* e) {
 		N2LogExceptionWithStackTrace(e);
 	} @finally {
+		if (activityAdded)
+			[ThreadsManager.defaultManager removeThread:thread];
 		[_routingLock unlock];
 	}
 }

@@ -96,7 +96,6 @@
 #import "JPEGExif.h"
 #import "NSFont_OpenGL.h"
 #import "SRAnnotation.h"
-#import "CalciumScoringWindowController.h"
 #import "EndoscopySegmentationController.h"
 #import "HornRegistration.h"
 #import "N2Stuff.h"
@@ -18724,7 +18723,7 @@ static float oldsetww, oldsetwl;
         if( [[exportDCM seriesDescription] isEqualToString: name] == NO)
         {
             [exportDCM setSeriesDescription: name];
-            [exportDCM setSeriesNumber: 8200 + [[NSCalendarDate date] minuteOfHour] + [[NSCalendarDate date] secondOfMinute]];
+            [exportDCM setSeriesNumber: 8200 + [DICOMExport currentTimeSeriesNumberOffset]];
         }
         
         [imageView getWLWW:&cwl :&cww];
@@ -18797,7 +18796,7 @@ static float oldsetww, oldsetwl;
     NSMutableArray *producedFiles = [NSMutableArray array];
     
     if (exportDCM == nil) exportDCM = [[DICOMExport alloc] init];
-    [exportDCM setSeriesNumber:5300 + [[NSCalendarDate date] minuteOfHour] + [[NSCalendarDate date] secondOfMinute]];	//Try to create a unique series number... Do you have a better idea??
+    [exportDCM setSeriesNumber:5300 + [DICOMExport currentTimeSeriesNumberOffset]];	//Try to create a unique series number... Do you have a better idea??
     [exportDCM setSeriesDescription: seriesName];
     
     NSLog( @"export start");
@@ -18898,7 +18897,7 @@ static float oldsetww, oldsetwl;
             curImage = [imageView curImage];
             
             if (exportDCM == nil) exportDCM = [[DICOMExport alloc] init];
-            [exportDCM setSeriesNumber:5300 + [[NSCalendarDate date] minuteOfHour] + [[NSCalendarDate date] secondOfMinute]];	//Try to create a unique series number... Do you have a better idea??
+            [exportDCM setSeriesNumber:5300 + [DICOMExport currentTimeSeriesNumberOffset]];	//Try to create a unique series number... Do you have a better idea??
             [exportDCM setSeriesDescription: [dcmSeriesName stringValue]];
             
             NSLog( @"export start");
@@ -22245,23 +22244,6 @@ static float oldsetww, oldsetwl;
     }
     
     [self setImageRows: rows columns: columns];
-}
-
-- (IBAction)calciumScoring:(id)sender
-{
-    BOOL	found = NO;
-    NSArray *winList = [NSApp windows];
-    
-    for( id loopItem in winList)
-    {
-        if( [[[loopItem windowController] windowNibName] isEqualToString:@"CalciumScoring"]) found = YES;
-    }
-    
-    if( !found)
-    {
-        CalciumScoringWindowController *calciumScoringWindowController = [[CalciumScoringWindowController alloc] initWithViewer:self];
-        [calciumScoringWindowController showWindow:self];
-    }
 }
 
 //- (IBAction)centerline: (id)sender

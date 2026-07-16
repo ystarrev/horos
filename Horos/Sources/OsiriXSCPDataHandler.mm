@@ -127,16 +127,20 @@ extern BOOL forkedProcess;
 	return [[OsiriXSCPDataHandler alloc] init];
 }
 
--(NSTimeInterval) endOfDay:(NSCalendarDate *)day
+-(NSTimeInterval) endOfDay:(NSDate *)day
 {
-	NSCalendarDate *start = [NSCalendarDate dateWithYear:[day yearOfCommonEra] month:[day monthOfYear] day:[day dayOfMonth] hour:0 minute:0 second:0 timeZone: nil];
-	NSCalendarDate *end = [start dateByAddingYears:0 months:0 days:0 hours:24 minutes:0 seconds:0];
+	NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+	calendar.timeZone = [NSTimeZone localTimeZone];
+	NSDate *start = [calendar startOfDayForDate:day];
+	NSDate *end = [calendar dateByAddingUnit:NSCalendarUnitDay value:1 toDate:start options:0];
 	return [end timeIntervalSinceReferenceDate];
 }
 
--(NSTimeInterval) startOfDay:(NSCalendarDate *)day
+-(NSTimeInterval) startOfDay:(NSDate *)day
 {
-	NSCalendarDate	*start = [NSCalendarDate dateWithYear:[day yearOfCommonEra] month:[day monthOfYear] day:[day dayOfMonth] hour:0 minute:0 second:0 timeZone: nil];
+	NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+	calendar.timeZone = [NSTimeZone localTimeZone];
+	NSDate *start = [calendar startOfDayForDate:day];
 	return [start timeIntervalSinceReferenceDate];
 }
 

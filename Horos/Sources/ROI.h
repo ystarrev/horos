@@ -149,11 +149,6 @@ enum
 	
 	NSString		*textualBoxLine1, *textualBoxLine2, *textualBoxLine3, *textualBoxLine4, *textualBoxLine5, *textualBoxLine6;
 	
-	BOOL			_displayCalciumScoring;
-	int				_calciumThreshold;
-	double			_sliceThickness;
-	int				_calciumCofactor;
-	
 	NSString		*layerReferenceFilePath;
 	NSImage			*layerImage;//, *layerImageWhenSelected;
 	NSData			*layerImageJPEG;//, *layerImageWhenSelectedJPEG;
@@ -201,7 +196,7 @@ enum
 @property(nonatomic, setter=setColor:) RGBColor rgbcolor;
 @property(nonatomic) float thickness;
 @property(retain) ROI *parentROI;
-@property double sliceThickness, pixelSpacingX, pixelSpacingY;
+@property double pixelSpacingX, pixelSpacingY;
 @property float min, max, mean;
 @property(assign) NSColor* NSColor;
 @property(assign) BOOL isSpline;
@@ -400,35 +395,6 @@ enum
 
 /** Set cab resize layer */
 - (void) setCanResizeLayer:(BOOL)boo;
-// Calcium Scoring
-/** Cofactor for Calcium Score 
-*	Cofactor values used by Agaston.  
-*	Using a threshold of 90 rather than 130. Assuming
-*	multislice CT rather than electron beam.
-*	We could have a flag for Electron beam rather than multichannel CT
-*	and use 130 as a cutoff
-*   Based on Hounsfield density of Calcium
-*/
-- (int)calciumScoreCofactor;
-/** Calcium score 
-* roi Area * cofactor;  area is is mm2.
-*plainArea is number of pixels 
-*/
-- (float)calciumScore;
-
-/** Calcium volume 
-* area * thickness
-*/
-- (float)calciumVolume;
-
-/** Calcium mass
-* Volume * mean CT Density / 250 
- */
-- (float)calciumMass;
-
-@property BOOL displayCalciumScoring;
-@property int calciumThreshold;
-
 @property(retain) NSString *layerReferenceFilePath;
 @property(nonatomic, retain) NSImage *layerImage;
 @property float layerPixelSpacingX, layerPixelSpacingY;

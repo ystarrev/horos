@@ -100,6 +100,8 @@ typedef char* DcmFileFormat;
 @property( readonly) NSMutableDictionary *metaDataDict;
 @property BOOL rotateRawDataBy90degrees;
 
++ (NSInteger)currentTimeSeriesNumberOffset;
+
 // Is this DCM file based on another DCM file?
 - (void) setSourceFile:(NSString*) isource;
 

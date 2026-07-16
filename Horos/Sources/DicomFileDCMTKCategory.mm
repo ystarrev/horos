@@ -343,7 +343,7 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
             patientID = [[NSString alloc] initWithString:name];
             study = [[NSString alloc] initWithString:[filePath lastPathComponent]];
             Modality = [[NSString alloc] initWithString:@"RD"];
-            date = [[NSCalendarDate date] retain];
+            date = [[NSDate date] retain];
             serie = [[NSString alloc] initWithString:[filePath lastPathComponent]];
             fileType = [@"IMAGE" retain];
             

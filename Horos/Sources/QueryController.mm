@@ -366,7 +366,14 @@ extern "C"
     QueryArrayController *qm = nil;
 	NSArray *array = nil;
 	
-    NSCalendarDate *date = [NSCalendarDate dateWithYear: 2013 month: 1 day: 17 hour: 0 minute: 0 second: 1 timeZone: nil];
+    NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    calendar.timeZone = [NSTimeZone localTimeZone];
+    NSDateComponents *dateComponents = [[[NSDateComponents alloc] init] autorelease];
+    dateComponents.year = 2013;
+    dateComponents.month = 1;
+    dateComponents.day = 17;
+    dateComponents.second = 1;
+    NSDate *date = [calendar dateFromComponents:dateComponents];
     
     for( int i = 0; i < 90; i++)
     {
@@ -381,7 +388,7 @@ extern "C"
                 {
                     qm = [[[QueryArrayController alloc] initWithCallingAET:[NSUserDefaults defaultAETitle] distantServer:aServer] autorelease];
                     
-                    NSCalendarDate *endDate = [date dateByAddingYears: 0 months: 0 days: 0 hours: 0 minutes: 0 seconds: 0];
+                    NSDate *endDate = date;
                     
                     [qm addFilter: [NSString stringWithFormat: @"%@-%@", [[DCMCalendarDate dicomDateWithDate: date] dateString], [[DCMCalendarDate dicomDateWithDate: endDate] dateString]] forDescription:@"StudyDate"];
                     
@@ -834,23 +841,35 @@ extern "C"
 
 + (BOOL) echoServer:(NSDictionary*)serverParameters
 {
+	BOOL strictResult = [[serverParameters objectForKey:@"HorosHeartbeatStrict"] boolValue];
 	@try
 	{
 		NSString *address = [serverParameters objectForKey:@"Address"];
 		NSNumber *port = [serverParameters objectForKey:@"Port"];
 		NSString *aet = [serverParameters objectForKey:@"AETitle"];
-		
+		NSInteger timeout = [[serverParameters objectForKey:@"HorosHeartbeatTimeout"] integerValue];
+		if (timeout <= 0)
+			timeout = [[NSUserDefaults standardUserDefaults] integerForKey:@"DICOMTimeout"];
+		if (timeout <= 0)
+			timeout = 5;
+		NSString *timeoutArgument = [NSString stringWithFormat:@"%ld", (long)timeout];
+
 		NSString *uniqueStringID = [NSString stringWithFormat:@"%d.%d.%d", getpid(), inc++, (int) random()];
-		
+
 		NSTask* theTask = [[[NSTask alloc]init]autorelease];
-		
+
 		if( [[NSFileManager defaultManager] fileExistsAtPath: [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/echoscu"]] == NO)
-			return YES;
-		
+			return strictResult ? NO : YES;
+
 		[theTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/echoscu"]]];
-		
+
 		[theTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
 		[theTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/echoscu"]]];
+		if ([[serverParameters objectForKey:@"HorosHeartbeatQuiet"] boolValue])
+		{
+			[theTask setStandardOutput:[NSFileHandle fileHandleWithNullDevice]];
+			[theTask setStandardError:[NSFileHandle fileHandleWithNullDevice]];
+		}
 		
 		//NSArray *args = [NSArray arrayWithObjects: address, [NSString stringWithFormat:@"%d", port], @"-aet", [[NSUserDefaults standardUserDefaults] stringForKey: @"AETITLE"], @"-aec", aet, @"-to", [[NSUserDefaults standardUserDefaults] stringForKey:@"DICOMTimeout"], @"-ta", [[NSUserDefaults standardUserDefaults] stringForKey:@"DICOMTimeout"], @"-td", [[NSUserDefaults standardUserDefaults] stringForKey:@"DICOMTimeout"], nil];
 		
@@ -862,11 +881,11 @@ extern "C"
 		[args addObject: @"-aec"]; // set called AE title of peer
 		[args addObject: aet];
 		[args addObject: @"-to"]; // timeout for connection requests
-		[args addObject: [[NSUserDefaults standardUserDefaults] stringForKey:@"DICOMTimeout"]];
+		[args addObject: timeoutArgument];
 		[args addObject: @"-ta"]; // timeout for ACSE messages
-		[args addObject: [[NSUserDefaults standardUserDefaults] stringForKey:@"DICOMTimeout"]];
+		[args addObject: timeoutArgument];
 		[args addObject: @"-td"]; // timeout for DIMSE messages
-		[args addObject: [[NSUserDefaults standardUserDefaults] stringForKey:@"DICOMTimeout"]];
+		[args addObject: timeoutArgument];
 		
 		if([[serverParameters objectForKey:@"TLSEnabled"] boolValue])
 		{
@@ -983,10 +1002,11 @@ extern "C"
 	}
 	@catch (NSException * e)
 	{
-		N2LogExceptionWithStackTrace(e);
+		if (![[serverParameters objectForKey:@"HorosHeartbeatQuiet"] boolValue])
+			N2LogExceptionWithStackTrace(e);
 	}
 	
-	return YES;
+	return strictResult ? NO : YES;
 }
 
 - (void) setAutoRefreshQueryResults: (NSInteger) i
@@ -3714,7 +3734,7 @@ extern "C"
 			for( id item in selectedItems)
 				[item setShowErrorMessage: NO];
 			
-			NSThread *t = [[[NSThread alloc] initWithTarget:self selector:@selector(performRetrieve:) object: selectedItems] autorelease];
+			NSThread *t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(performRetrieve:) object:selectedItems] autorelease];
             t.name = NSLocalizedString( @"Retrieving images...", nil);
             t.status = N2LocalizedSingularPluralCount(selectedItems.count, NSLocalizedString( @"study", nil), NSLocalizedString( @"studies", nil));
             if ([selectedItems count] > 1)
@@ -3754,7 +3774,7 @@ extern "C"
 {
 	if( [[instance objectForKey: @"autoRetrieving"] boolValue] && autoQuery == YES)
 	{
-		NSThread *t = [[[NSThread alloc] initWithTarget: self selector:@selector(autoRetrieveThread:) object: instance] autorelease];
+		NSThread *t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(autoRetrieveThread:) object:instance] autorelease];
 		t.name = NSLocalizedString( @"Retrieving images...", nil);
 		[[ThreadsManager defaultManager] addThreadAndStart: t];
 	}
@@ -3830,7 +3850,7 @@ extern "C"
                                 
                                 [[AppController sharedAppController] notificationTitle: NSLocalizedString( @"Q&R Auto-Query", nil) description: NSLocalizedString( @"Refreshing...", nil) name: @"autoquery"];
                                 
-                                NSThread *t = [[[NSThread alloc] initWithTarget:self selector: @selector(autoQueryThread: ) object: [NSDictionary dictionaryWithObjectsAndKeys: [[QRInstance mutableCopy] autorelease], @"instance", [NSNumber numberWithInt: i], @"index", nil]] autorelease];
+                                NSThread *t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(autoQueryThread:) object:[NSDictionary dictionaryWithObjectsAndKeys: [[QRInstance mutableCopy] autorelease], @"instance", [NSNumber numberWithInt: i], @"index", nil]] autorelease];
                                 
                                 if( [[QRInstance objectForKey: @"instanceName"] length] && autoQRInstances.count > 1)
                                     t.name = [NSString stringWithFormat: NSLocalizedString( @"Auto-Querying images (%@)...", nil), [QRInstance objectForKey: @"instanceName"]];
@@ -3868,7 +3888,7 @@ extern "C"
                         
                         [self saveSettings];
                         
-                        NSThread *t = [[[NSThread alloc] initWithTarget:self selector: @selector(autoQueryThread: ) object: nil] autorelease];
+                        NSThread *t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(autoQueryThread:) object:nil] autorelease];
                         t.name = NSLocalizedString( @"Auto-Querying images...", nil);
                         t.supportsCancel = YES;
                         [[ThreadsManager defaultManager] addThreadAndStart: t];
@@ -4088,7 +4108,7 @@ extern "C"
 				
 				checkAndViewTry = -1;
 				
-				NSThread *t = [[[NSThread alloc] initWithTarget:self selector:@selector(performRetrieve:) object: selectedItems] autorelease];
+				NSThread *t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(performRetrieve:) object:selectedItems] autorelease];
 				t.name = NSLocalizedString( @"Retrieving images...", nil);
                 t.status = N2LocalizedSingularPluralCount(selectedItems.count, NSLocalizedString(@"study", nil), NSLocalizedString(@"studies", nil));
                 if ([selectedItems count] > 1)
@@ -4169,29 +4189,7 @@ extern "C"
 
 - (IBAction) setBirthDate:(id) sender
 {
-	NSCalendarDate *momsBDay = [NSCalendarDate dateWithTimeIntervalSinceReferenceDate: [[searchBirth dateValue] timeIntervalSinceReferenceDate]];
-	NSCalendarDate *dateOfBirth = [NSCalendarDate date];
-	NSString *yearOld = nil;
-	NSInteger years, months, days;
-	
-	[dateOfBirth years:&years months:&months days:&days hours:NULL minutes:NULL seconds:NULL sinceDate:momsBDay];
-	
-	if( years < 2)
-	{
-		if( years < 1)
-		{
-			if( months < 1)
-            {
-                if( days < 0) yearOld = @"";
-                else yearOld = [NSString stringWithFormat: NSLocalizedString( @"%d d", @"d = day"), (int) days];
-            }
-            else yearOld = [NSString stringWithFormat: @"%d%@", (int) months, NSLocalizedString( @" m", @"m = month")];
-        }
-        else yearOld = [NSString stringWithFormat: @"%d%@ %d%@", (int) years, NSLocalizedString( @" y", @"y = year"), (int) months, NSLocalizedString( @" m", @"m = month")];
-    }
-    else yearOld = [NSString stringWithFormat: @"%d%@", (int) years, NSLocalizedString( @" y", @"y = year")];
-    
-	[yearOldBirth setStringValue: yearOld];
+	[yearOldBirth setStringValue:[DicomStudy yearOldFromDateOfBirth:[searchBirth dateValue]]];
 }
 
 - (void) performRetrieve:(NSArray*) array
@@ -5063,8 +5061,9 @@ extern "C"
 	
 	[self autoQueryTimer: self];
 	
-	[fromDate setDateValue: [NSCalendarDate dateWithYear:[[NSCalendarDate date] yearOfCommonEra] month:[[NSCalendarDate date] monthOfYear] day:[[NSCalendarDate date] dayOfMonth] hour:0 minute:0 second:0 timeZone: nil]];
-	[toDate setDateValue: [NSCalendarDate dateWithYear:[[NSCalendarDate date] yearOfCommonEra] month:[[NSCalendarDate date] monthOfYear] day:[[NSCalendarDate date] dayOfMonth] hour:0 minute:0 second:0 timeZone: nil]];
+	NSDate *startOfToday = [[NSCalendar currentCalendar] startOfDayForDate:[NSDate date]];
+	[fromDate setDateValue:startOfToday];
+	[toDate setDateValue:startOfToday];
 	
 	[[self window] setDelegate: self];
 	
@@ -5537,7 +5536,7 @@ extern "C"
 	
 	[[NSUserDefaults standardUserDefaults] setObject:sourcesArray forKey: queryArrayPrefs];
 	[pressedKeys release];
-	[fromDate setDateValue: [NSCalendarDate dateWithYear:[[NSCalendarDate date] yearOfCommonEra] month:[[NSCalendarDate date] monthOfYear] day:[[NSCalendarDate date] dayOfMonth] hour:0 minute:0 second:0 timeZone: nil]];
+	[fromDate setDateValue:[[NSCalendar currentCalendar] startOfDayForDate:[NSDate date]]];
 	[queryManager release];
 	[queryFilters release];
 		[sourcesArray release];
@@ -5780,8 +5779,9 @@ extern "C"
 
     NSButton *retrieveSelectedButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
     [retrieveSelectedButton setButtonType: NSMomentaryPushInButton];
-    [retrieveSelectedButton setBezelStyle: NSRoundRectBezelStyle];
+    [retrieveSelectedButton setBezelStyle: NSBezelStyleFlexiblePush];
     [retrieveSelectedButton setFont: [NSFont boldSystemFontOfSize: 12]];
+    [retrieveSelectedButton setKeyEquivalentModifierMask: 0];
     id retrieveSelectedCell = [retrieveSelectedButton cell];
     [retrieveSelectedCell setAlignment: NSCenterTextAlignment];
     [retrieveSelectedCell setWraps: YES];
@@ -6254,13 +6254,15 @@ extern "C"
         return;
 
     NSUInteger selectedSeriesCount = [[self seriesSelectedForRetrieve] count];
+    BOOL canRetrieve = selectedSeriesCount > 0;
     NSString *title = [NSString stringWithFormat: NSLocalizedString( @"Retrieve %@ Series", nil), N2LocalizedDecimal( selectedSeriesCount)];
     [retrieveSelectedSeriesButton setTitle: title];
-    [retrieveSelectedSeriesButton setEnabled: selectedSeriesCount > 0];
-    [retrieveSelectedSeriesButton setKeyEquivalent: selectedSeriesCount > 0 ? @"\r" : @""];
+    [retrieveSelectedSeriesButton setEnabled: canRetrieve];
+    [retrieveSelectedSeriesButton setKeyEquivalentModifierMask: 0];
+    [retrieveSelectedSeriesButton setKeyEquivalent: canRetrieve ? @"\r" : @""];
 
-    NSWindow *window = [retrieveSelectedSeriesButton window];
-    if( selectedSeriesCount > 0)
+    NSWindow *window = [self window];
+    if( canRetrieve)
         [window setDefaultButtonCell: [retrieveSelectedSeriesButton cell]];
     else if( [window defaultButtonCell] == [retrieveSelectedSeriesButton cell])
         [window setDefaultButtonCell: nil];

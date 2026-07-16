@@ -613,7 +613,7 @@ typedef struct _xyzArray
 			[progress showWindow:self];
 			[[progress progress] setMaxValue: numberOfFrames];
 			
-			[dcmSequence setSeriesNumber:5500 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];
+			[dcmSequence setSeriesNumber:5500 + [DICOMExport currentTimeSeriesNumberOffset]];
 			[dcmSequence setSeriesDescription: [dcmSeriesName stringValue]];
 			[dcmSequence setSourceFile: [firstObject srcFile]];
 			

@@ -375,14 +375,6 @@ extern "C"
 - (void) changeWLWW:(float)newWL :(float)newWW;  /**< Change window level to window width to the new values */
 - (void) computePixMinPixMax;  /**< Compute the min and max values in the image */
 
-// Compute ROI data
-/** Calculates the cofactor used Calcium scoring.
- * Depends on the threshold used for scoring
- * Threshold is usually 90 or 120 depending on whether the source is
- * Electron Beam or Multislice CT
- */
-- (int)calciumCofactorForROI:(ROI *)roi threshold:(int)threshold;
-
 /** returns calculated values for ROI:
  *  mean, total, deviation, min, max
  */

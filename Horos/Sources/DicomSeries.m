@@ -190,7 +190,7 @@
 				{
 					NSDictionary *dict = [NSDictionary dictionaryWithObjectsAndKeys: [[self paths] allObjects], @"files", @"(0020,4000)", @"field", c, @"value", nil];
 					
-					NSThread *t = [[[NSThread alloc] initWithTarget:self selector:@selector(dcmodifyThread:) object: dict] autorelease];
+					NSThread *t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(dcmodifyThread:) object:dict] autorelease];
 					t.name = NSLocalizedString( @"Updating DICOM files...", nil);
 					t.status = N2LocalizedSingularPluralCount( [[dict objectForKey: @"files"] count], NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));
 					[[ThreadsManager defaultManager] addThreadAndStart: t];

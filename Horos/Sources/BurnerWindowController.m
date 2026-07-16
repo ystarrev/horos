@@ -382,7 +382,7 @@
                     }
                 }
                 
-                NSThread* t = [[[NSThread alloc] initWithTarget:self selector:@selector(performBurn:) object: nil] autorelease];
+                NSThread* t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(performBurn:) object:nil] autorelease];
                 t.name = NSLocalizedString( @"Burning...", nil);
                 [[ThreadsManager defaultManager] addThreadAndStart: t];
             }

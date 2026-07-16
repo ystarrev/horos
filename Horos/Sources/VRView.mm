@@ -1404,7 +1404,7 @@ public:
             if( exportDCM == nil)
             {
                 exportDCM = [[DICOMExport alloc] init];
-                [exportDCM setSeriesNumber:5220 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];
+                [exportDCM setSeriesNumber:5220 + [DICOMExport currentTimeSeriesNumberOffset]];
             }
             
             [producedFiles addObject: [self exportDCMCurrentImageIn16bit: fullDepthCapture]];
@@ -1418,7 +1418,7 @@ public:
             
             if( exportDCM) [exportDCM release];
             exportDCM = [[DICOMExport alloc] init];
-            [exportDCM setSeriesNumber:5250 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];
+            [exportDCM setSeriesNumber:5250 + [DICOMExport currentTimeSeriesNumberOffset]];
             
             for( int i = 0; i < [[[self window] windowController] movieFrames]; i++)
             {
@@ -1454,7 +1454,7 @@ public:
             
             if( exportDCM) [exportDCM release];
             exportDCM = [[DICOMExport alloc] init];
-            [exportDCM setSeriesNumber:5500 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];
+            [exportDCM setSeriesNumber:5500 + [DICOMExport currentTimeSeriesNumberOffset]];
             
             if( croppingBox)
             {

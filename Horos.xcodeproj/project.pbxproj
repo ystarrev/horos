@@ -781,7 +781,7 @@
 		AB0CA46205BE159500F52729 /* ColorTransferView.m in Sources */ = {isa = PBXBuildFile; fileRef = AB0CA46005BE159500F52729 /* ColorTransferView.m */; };
 		AB0F20AD06460F7F0075465D /* Burner.icns in Resources */ = {isa = PBXBuildFile; fileRef = AB0F20AB06460F7F0075465D /* Burner.icns */; };
 		AB10FA231129302A009EB238 /* PopUpArrows.png in Resources */ = {isa = PBXBuildFile; fileRef = AB10FA221129302A009EB238 /* PopUpArrows.png */; };
-		AB10FA680B96C95500D74684 /* OsirixDownload.icns in Resources */ = {isa = PBXBuildFile; fileRef = AB10FA670B96C95500D74684 /* OsirixDownload.icns */; };
+		AB10FA680B96C95500D74684 /* HorosDownload.png in Resources */ = {isa = PBXBuildFile; fileRef = AB10FA670B96C95500D74684 /* HorosDownload.png */; };
 		AB10FAAD11293378009EB238 /* N2Debug.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FA9F11293378009EB238 /* N2Debug.h */; };
 		AB10FAAE11293378009EB238 /* N2Debug.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAA011293378009EB238 /* N2Debug.mm */; };
 		AB10FAAF11293378009EB238 /* N2Operators.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAA111293378009EB238 /* N2Operators.h */; };
@@ -1110,8 +1110,6 @@
 		CE26442306DCF096007F5B71 /* ITKSegmentation3DController.m in Sources */ = {isa = PBXBuildFile; fileRef = CE26441F06DCF096007F5B71 /* ITKSegmentation3DController.m */; };
 		CE279EF006AEFB87008315C8 /* Mail.icns in Resources */ = {isa = PBXBuildFile; fileRef = CE279EEE06AEFB87008315C8 /* Mail.icns */; };
 		CE27BA100C113BBA00BDC9B3 /* 3DPresetsPanel.tif in Resources */ = {isa = PBXBuildFile; fileRef = CE27BA0E0C113BBA00BDC9B3 /* 3DPresetsPanel.tif */; };
-		CE28086B0B6B76730093E9D3 /* CalciumScoringWindowController.h in Headers */ = {isa = PBXBuildFile; fileRef = CE2808630B6B76730093E9D3 /* CalciumScoringWindowController.h */; };
-		CE28086C0B6B76730093E9D3 /* CalciumScoringWindowController.m in Sources */ = {isa = PBXBuildFile; fileRef = CE2808640B6B76730093E9D3 /* CalciumScoringWindowController.m */; };
 		CE286C120964196C001A4573 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = CE286C100964196C001A4573 /* Localizable.strings */; };
 		CE2AC2681830BEFB00C2B67B /* ThickSlab.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE2AC2661830BEFB00C2B67B /* ThickSlab.xib */; };
 		CE2BFE57153B177C00037546 /* iPad.png in Resources */ = {isa = PBXBuildFile; fileRef = CE2BFE56153B177C00037546 /* iPad.png */; };
@@ -1132,7 +1130,6 @@
 		CE3F994A0C84724B00CB38F1 /* ToolbarPanel.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F98F00C84724B00CB38F1 /* ToolbarPanel.xib */; };
 		CE3F99500C84724B00CB38F1 /* Splash.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F98FC0C84724B00CB38F1 /* Splash.xib */; };
 		CE3F99510C84724B00CB38F1 /* ROI.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F98FE0C84724B00CB38F1 /* ROI.xib */; };
-		CE3F99520C84724B00CB38F1 /* CalciumScoring.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99000C84724B00CB38F1 /* CalciumScoring.xib */; };
 		CE3F99530C84724B00CB38F1 /* ROIManager.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99020C84724B00CB38F1 /* ROIManager.xib */; };
 		CE3F99540C84724B00CB38F1 /* Send.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99040C84724B00CB38F1 /* Send.xib */; };
 		CE3F99550C84724B00CB38F1 /* OrthogonalMPR.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99060C84724B00CB38F1 /* OrthogonalMPR.xib */; };
@@ -1148,7 +1145,6 @@
 		CE3F99690C84724B00CB38F1 /* ROIDefaults.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F992E0C84724B00CB38F1 /* ROIDefaults.xib */; };
 		CE3F996A0C84724B00CB38F1 /* VR.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99300C84724B00CB38F1 /* VR.xib */; };
 		CE3F996B0C84724B00CB38F1 /* QuicktimeExport.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99320C84724B00CB38F1 /* QuicktimeExport.xib */; };
-		CE3F996C0C84724B00CB38F1 /* SR.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99340C84724B00CB38F1 /* SR.xib */; };
 		CE3F996D0C84724B00CB38F1 /* Viewer.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99360C84724B00CB38F1 /* Viewer.xib */; };
 		CE3F996E0C84724B00CB38F1 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99380C84724B00CB38F1 /* MainMenu.xib */; };
 		CE3F996F0C84724B00CB38F1 /* Wait.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F993A0C84724B00CB38F1 /* Wait.xib */; };
@@ -1385,6 +1381,7 @@
 		F4A100000001000000000013 /* Horos/Sources/MetalViewer/Metal3DHistogramPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000013 /* Horos/Sources/MetalViewer/Metal3DHistogramPanelController.swift */; };
 		F4A100000001000000000014 /* Horos/Sources/MetalViewer/MetalPreviewImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000014 /* Horos/Sources/MetalViewer/MetalPreviewImageView.swift */; };
 		F4A100000001000000000015 /* Horos/Sources/HorosSettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000015 /* Horos/Sources/HorosSettingsWindowController.swift */; };
+		F4AC70010001000000000001 /* HorosActivityTaskCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4AC70010002000000000001 /* HorosActivityTaskCoordinator.swift */; };
 		F4A100000001000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm */; };
 		F4A100000001000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm */; };
 		F4A100100001000000000001 /* libHorosModernDCMTKBridge.dylib in Resources */ = {isa = PBXBuildFile; fileRef = F4A100100001000000000002 /* libHorosModernDCMTKBridge.dylib */; };
@@ -2526,7 +2523,7 @@
 		AB0F20AB06460F7F0075465D /* Burner.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Burner.icns; sourceTree = "<group>"; };
 		AB0F3A2C1046BD2B004129DD /* Horos.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Horos.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB10FA221129302A009EB238 /* PopUpArrows.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = PopUpArrows.png; path = Nitrogen/Resources/PopUpArrows.png; sourceTree = SOURCE_ROOT; };
-		AB10FA670B96C95500D74684 /* OsirixDownload.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = OsirixDownload.icns; sourceTree = "<group>"; };
+		AB10FA670B96C95500D74684 /* HorosDownload.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = HorosDownload.png; sourceTree = "<group>"; };
 		AB10FA9F11293378009EB238 /* N2Debug.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Debug.h; sourceTree = "<group>"; };
 		AB10FAA011293378009EB238 /* N2Debug.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = N2Debug.mm; path = Nitrogen/Sources/N2Debug.mm; sourceTree = SOURCE_ROOT; };
 		AB10FAA111293378009EB238 /* N2Operators.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Operators.h; sourceTree = "<group>"; };
@@ -2846,8 +2843,6 @@
 		CE26441F06DCF096007F5B71 /* ITKSegmentation3DController.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = ITKSegmentation3DController.m; sourceTree = "<group>"; };
 		CE279EEE06AEFB87008315C8 /* Mail.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Mail.icns; sourceTree = "<group>"; };
 		CE27BA0E0C113BBA00BDC9B3 /* 3DPresetsPanel.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = 3DPresetsPanel.tif; sourceTree = "<group>"; };
-		CE2808630B6B76730093E9D3 /* CalciumScoringWindowController.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = CalciumScoringWindowController.h; sourceTree = "<group>"; };
-		CE2808640B6B76730093E9D3 /* CalciumScoringWindowController.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = CalciumScoringWindowController.m; sourceTree = "<group>"; };
 		CE286C110964196C001A4573 /* English */ = {isa = PBXFileReference; fileEncoding = 10; lastKnownFileType = text.plist.strings; name = English; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		CE2AC2671830BEFB00C2B67B /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ThickSlab.xib; sourceTree = "<group>"; };
 		CE2BFE56153B177C00037546 /* iPad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = iPad.png; sourceTree = "<group>"; };
@@ -2867,7 +2862,6 @@
 		CE3F98F10C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ToolbarPanel.xib; sourceTree = "<group>"; };
 		CE3F98FD0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Splash.xib; sourceTree = "<group>"; };
 		CE3F98FF0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ROI.xib; sourceTree = "<group>"; };
-		CE3F99010C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/CalciumScoring.xib; sourceTree = "<group>"; };
 		CE3F99030C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ROIManager.xib; sourceTree = "<group>"; };
 		CE3F99050C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Send.xib; sourceTree = "<group>"; };
 		CE3F99070C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OrthogonalMPR.xib; sourceTree = "<group>"; };
@@ -2883,7 +2877,6 @@
 		CE3F992F0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ROIDefaults.xib; sourceTree = "<group>"; };
 		CE3F99310C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/VR.xib; sourceTree = "<group>"; };
 		CE3F99330C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/QuicktimeExport.xib; sourceTree = "<group>"; };
-		CE3F99350C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/SR.xib; sourceTree = "<group>"; };
 		CE3F99370C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Viewer.xib; sourceTree = "<group>"; };
 		CE3F99390C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		CE3F993B0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Wait.xib; sourceTree = "<group>"; };
@@ -3112,6 +3105,8 @@
 		F4A100000002000000000013 /* Horos/Sources/MetalViewer/Metal3DHistogramPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DHistogramPanelController.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000014 /* Horos/Sources/MetalViewer/MetalPreviewImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalPreviewImageView.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000015 /* Horos/Sources/HorosSettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosSettingsWindowController.swift; sourceTree = SOURCE_ROOT; };
+		F4AC70010002000000000001 /* HorosActivityTaskCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HorosActivityTaskCoordinator.swift; path = Horos/Sources/HorosActivityTaskCoordinator.swift; sourceTree = SOURCE_ROOT; };
+		F4AC70010003000000000001 /* HorosSwiftInterop.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = HorosSwiftInterop.h; path = Horos/Sources/HorosSwiftInterop.h; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000017 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.h; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm; sourceTree = SOURCE_ROOT; };
@@ -3604,6 +3599,8 @@
 		592681FB11CF5F5000CFA81F /* Activity */ = {
 			isa = PBXGroup;
 			children = (
+				F4AC70010002000000000001 /* HorosActivityTaskCoordinator.swift */,
+				F4AC70010003000000000001 /* HorosSwiftInterop.h */,
 				59F5F4EA11F485CC0047A90D /* BrowserController+Activity.h */,
 				59F5F4EB11F485CC0047A90D /* BrowserController+Activity.mm */,
 				5926823E11CF62DA00CFA81F /* ThreadCell.h */,
@@ -3799,7 +3796,6 @@
 				5997897911B7B423002DB107 /* AnonymizationView.xib */,
 				CE3F99400C84724B00CB38F1 /* AYDicomPrint.xib */,
 				CE3F992C0C84724B00CB38F1 /* BurnViewer.xib */,
-				CE3F99000C84724B00CB38F1 /* CalciumScoring.xib */,
 				CE90551612F5B68100263AB6 /* CPR.xib */,
 				848327A915ED08F3003BAEEB /* CustomIntervalPanel.xib */,
 				CE3F990A0C84724B00CB38F1 /* Endoscopy.xib */,
@@ -3827,7 +3823,6 @@
 				CE3F99040C84724B00CB38F1 /* Send.xib */,
 				CE3F98E40C84724B00CB38F1 /* SmartAlbum.xib */,
 				CE3F98FC0C84724B00CB38F1 /* Splash.xib */,
-				CE3F99340C84724B00CB38F1 /* SR.xib */,
 				CE2AC2661830BEFB00C2B67B /* ThickSlab.xib */,
 				5926822111CF60BD00CFA81F /* ThreadModalForWindow.xib */,
 				CEF09315182D23B20020C70A /* ThumbnailsList.xib */,
@@ -4961,7 +4956,7 @@
 				A9B23D1E15CFE917000E47C3 /* Opened Polygon.pdf */,
 				CEE619EE0912C73000C31D78 /* OrientationWidget.tif */,
 				A9FEC13F0907EBA600B218BE /* orthogonalReslice.tif */,
-				AB10FA670B96C95500D74684 /* OsirixDownload.icns */,
+				AB10FA670B96C95500D74684 /* HorosDownload.png */,
 				CEAF4ECC089D6E9400DE46AF /* OsiriXTables.pdf */,
 				A9B23D1215CFE8B3000E47C3 /* Oval.pdf */,
 				B7CDAD000AB30E7600068D70 /* page.tif */,
@@ -5166,8 +5161,6 @@
 		BF952BA206C9C7F40063B562 /* Single Window */ = {
 			isa = PBXGroup;
 			children = (
-				CE2808630B6B76730093E9D3 /* CalciumScoringWindowController.h */,
-				CE2808640B6B76730093E9D3 /* CalciumScoringWindowController.m */,
 				AB59B18405697FD700B77AFC /* DCMView.h */,
 				AB59B18205697FD400B77AFC /* DCMView.m */,
 				A910FB330D57728A0095A956 /* NavigatorView.h */,
@@ -5767,7 +5760,6 @@
 				ABC3E5530B330A58006704E3 /* DNDArrayController.h in Headers */,
 				ABC3E55B0B330A69006704E3 /* sourcesTableView.h in Headers */,
 				A9F8A4180B5F6460002CC763 /* CLUTOpacityView.h in Headers */,
-				CE28086B0B6B76730093E9D3 /* CalciumScoringWindowController.h in Headers */,
 				BFF97D710BDE8BE6008333CF /* ShadingArrayController.h in Headers */,
 				CE96D0E30BEE6F9800C4E397 /* XMLControllerDCMTKCategory.h in Headers */,
 				A90A04970BF09BA000D00273 /* VRPresetPreview.h in Headers */,
@@ -6363,7 +6355,7 @@
 				CEBD8E5F0B675A75008FD772 /* Propagate.tif in Resources */,
 				CEBD8EF80B6761CC008FD772 /* PropagateOn.tif in Resources */,
 				71AD674B1FC4248100A1E2F8 /* GEcolor.plist in Resources */,
-				AB10FA680B96C95500D74684 /* OsirixDownload.icns in Resources */,
+				AB10FA680B96C95500D74684 /* HorosDownload.png in Resources */,
 				71AD675A1FC4248100A1E2F8 /* Rainbow.plist in Resources */,
 				71AD67571FC4248100A1E2F8 /* PPU Magma.plist in Resources */,
 				999B0B681BB7309200AF018A /* Osirix.icns in Resources */,
@@ -6390,7 +6382,6 @@
 				CE3F99500C84724B00CB38F1 /* Splash.xib in Resources */,
 				CE3F99510C84724B00CB38F1 /* ROI.xib in Resources */,
 				71AD67541FC4248100A1E2F8 /* NIH.plist in Resources */,
-				CE3F99520C84724B00CB38F1 /* CalciumScoring.xib in Resources */,
 				CE3F99530C84724B00CB38F1 /* ROIManager.xib in Resources */,
 				CE3F99540C84724B00CB38F1 /* Send.xib in Resources */,
 				CE3F99550C84724B00CB38F1 /* OrthogonalMPR.xib in Resources */,
@@ -6409,7 +6400,6 @@
 				71AD67511FC4248100A1E2F8 /* Hue2.plist in Resources */,
 				CE3F996A0C84724B00CB38F1 /* VR.xib in Resources */,
 				CE3F996B0C84724B00CB38F1 /* QuicktimeExport.xib in Resources */,
-				CE3F996C0C84724B00CB38F1 /* SR.xib in Resources */,
 				CE3F996D0C84724B00CB38F1 /* Viewer.xib in Resources */,
 				71AD674C1FC4248100A1E2F8 /* GrayRainbow.plist in Resources */,
 				CE3F996E0C84724B00CB38F1 /* MainMenu.xib in Resources */,
@@ -7439,7 +7429,6 @@
 				ABC3E5520B330A58006704E3 /* DNDArrayController.m in Sources */,
 				ABC3E55A0B330A69006704E3 /* sourcesTableView.m in Sources */,
 				A9F8A4190B5F6460002CC763 /* CLUTOpacityView.mm in Sources */,
-				CE28086C0B6B76730093E9D3 /* CalciumScoringWindowController.m in Sources */,
 				BFF97D720BDE8BE6008333CF /* ShadingArrayController.m in Sources */,
 				CE96D0E40BEE6F9800C4E397 /* XMLControllerDCMTKCategory.mm in Sources */,
 				CE0DB327182D604900C90B43 /* ThumbnailsListNSWindow.m in Sources */,
@@ -7551,6 +7540,7 @@
 				5926824D11CF62DA00CFA81F /* ThreadCell.mm in Sources */,
 				5926824F11CF62DA00CFA81F /* ThreadModalForWindowController.mm in Sources */,
 				5926825111CF62DA00CFA81F /* ThreadsManager.mm in Sources */,
+				F4AC70010001000000000001 /* HorosActivityTaskCoordinator.swift in Sources */,
 				84CD254C11ECB49A004669D6 /* OsiriXDB_DataModel.xcdatamodel in Sources */,
 				EC9BD81D11EDF349007421B2 /* FlyAssistant.mm in Sources */,
 				59F5F3FA11F476030047A90D /* N2ImageButtonCell.mm in Sources */,
@@ -8065,14 +8055,6 @@
 			name = ROI.xib;
 			sourceTree = "<group>";
 		};
-		CE3F99000C84724B00CB38F1 /* CalciumScoring.xib */ = {
-			isa = PBXVariantGroup;
-			children = (
-				CE3F99010C84724B00CB38F1 /* Base */,
-			);
-			name = CalciumScoring.xib;
-			sourceTree = "<group>";
-		};
 		CE3F99020C84724B00CB38F1 /* ROIManager.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
@@ -8191,14 +8173,6 @@
 				CE3F99330C84724B00CB38F1 /* Base */,
 			);
 			name = QuicktimeExport.xib;
-			sourceTree = "<group>";
-		};
-		CE3F99340C84724B00CB38F1 /* SR.xib */ = {
-			isa = PBXVariantGroup;
-			children = (
-				CE3F99350C84724B00CB38F1 /* Base */,
-			);
-			name = SR.xib;
 			sourceTree = "<group>";
 		};
 		CE3F99360C84724B00CB38F1 /* Viewer.xib */ = {

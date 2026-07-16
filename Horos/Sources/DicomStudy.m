@@ -1013,7 +1013,7 @@ static NSRecursiveLock *dbModifyLock = nil;
             {
                 NSDictionary *dict = [NSDictionary dictionaryWithObjectsAndKeys: [[self paths] allObjects], @"files", @"(0032,4000)", @"field", c, @"value", nil];
                 
-                NSThread *t = [[[NSThread alloc] initWithTarget:self selector:@selector(dcmodifyThread:) object: dict] autorelease];
+                NSThread *t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(dcmodifyThread:) object:dict] autorelease];
                 t.name = NSLocalizedString( @"Updating DICOM files...", nil);
                 t.status = N2LocalizedSingularPluralCount( [[dict objectForKey: @"files"] count], NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));
                 
@@ -1066,7 +1066,7 @@ static NSRecursiveLock *dbModifyLock = nil;
             {
                 NSDictionary *dict = [NSDictionary dictionaryWithObjectsAndKeys: [[self paths] allObjects], @"files", @"(4008,0212)", @"field", [c stringValue], @"value", nil];
                 
-                NSThread *t = [[[NSThread alloc] initWithTarget:self selector:@selector(dcmodifyThread:) object: dict] autorelease];
+                NSThread *t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(dcmodifyThread:) object:dict] autorelease];
                 t.name = NSLocalizedString( @"Updating DICOM files...", nil);
                 t.status = N2LocalizedSingularPluralCount( [[dict objectForKey: @"files"] count], NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));
                 
@@ -1274,12 +1274,15 @@ static NSRecursiveLock *dbModifyLock = nil;
 {
     if( dateOfBirth && acquisitionDate)
     {
-        NSCalendarDate *momsBDay = [NSCalendarDate dateWithTimeIntervalSinceReferenceDate: [dateOfBirth timeIntervalSinceReferenceDate]];
-        NSCalendarDate *dateOfBirth = [NSCalendarDate dateWithTimeIntervalSinceReferenceDate: [acquisitionDate timeIntervalSinceReferenceDate]];
-        
-        NSInteger years, months, days;
-        
-        [dateOfBirth years:&years months:&months days:&days hours:NULL minutes:NULL seconds:NULL sinceDate:momsBDay];
+        NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+        calendar.timeZone = [NSTimeZone localTimeZone];
+        NSDateComponents *components = [calendar components:NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay
+                                                    fromDate:dateOfBirth
+                                                      toDate:acquisitionDate
+                                                     options:0];
+        NSInteger years = components.year;
+        NSInteger months = components.month;
+        NSInteger days = components.day;
         
         if( years < 2)
         {
@@ -1308,12 +1311,15 @@ static NSRecursiveLock *dbModifyLock = nil;
 {
     if( dateOfBirth)
     {
-        NSCalendarDate *momsBDay = [NSCalendarDate dateWithTimeIntervalSinceReferenceDate: [dateOfBirth timeIntervalSinceReferenceDate]];
-        NSCalendarDate *dateOfBirth = [NSCalendarDate date];
-        
-        NSInteger years, months, days;
-        
-        [dateOfBirth years:&years months:&months days:&days hours:NULL minutes:NULL seconds:NULL sinceDate:momsBDay];
+        NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+        calendar.timeZone = [NSTimeZone localTimeZone];
+        NSDateComponents *components = [calendar components:NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay
+                                                    fromDate:dateOfBirth
+                                                      toDate:[NSDate date]
+                                                     options:0];
+        NSInteger years = components.year;
+        NSInteger months = components.month;
+        NSInteger days = components.day;
         
         if( years < 2)
         {

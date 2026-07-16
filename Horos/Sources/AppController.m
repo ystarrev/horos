@@ -84,7 +84,7 @@
 #import <MetalKit/MetalKit.h>
 #import <PreferencePanes/PreferencePanes.h>
 #import <UserNotifications/UserNotifications.h>
-#import "Horos-Swift.h"
+#import "HorosSwiftInterop.h"
 #import "N2Stuff.h"
 #import "Security/Security.h"
 #import "Security/SecRequirement.h"
@@ -5193,7 +5193,7 @@ static NSMutableDictionary* _receivingDict = nil;
 -(void)_receivingIconUpdate {
 	if (!_receivingDict.count)
 		[NSApp setApplicationIconImage:nil];
-	else [NSApp setApplicationIconImage:[NSImage imageNamed:@"OsirixDownload.icns"]];
+	else [NSApp setApplicationIconImage:[NSImage imageNamed:@"HorosDownload.png"]];
 }
 
 -(void)_receivingIconSet:(BOOL)flag {

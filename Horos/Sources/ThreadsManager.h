@@ -51,6 +51,7 @@ The Horos Project was based originally upon the OsiriX Project which at the time
 -(NSArray*)threads;
 -(NSUInteger)threadsCount;
 -(NSThread*)threadAtIndex:(NSUInteger)index;
+-(NSThread*)newActivityThreadWithTarget:(id)target selector:(SEL)selector object:(id)object NS_RETURNS_RETAINED;
 -(void)addThreadAndStart:(NSThread*)thread;
 -(void)removeThread:(NSThread*)thread;
 

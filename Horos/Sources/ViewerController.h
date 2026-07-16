@@ -1069,13 +1069,6 @@ enum
 - (IBAction)setImageTiling: (id)sender;
 
 #pragma mark-
-#pragma mark Calcium scoring
-/** Deprecated
-* Calcium Scoring moved to a plugin
-*/
-- (IBAction)calciumScoring:(id)sender;
-
-#pragma mark-
 #pragma mark Centerline
 /** Nonfunctional
 * Centerline only works in Endoscopy Mode 

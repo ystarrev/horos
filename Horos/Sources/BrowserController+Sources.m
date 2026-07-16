@@ -50,6 +50,7 @@
 #import "NSThread+N2.h"
 #import "N2Operators.h"
 #import "ThreadModalForWindowController.h"
+#import "ThreadsManager.h"
 #import "BonjourPublisher.h"
 #import "DicomFile.h"
 #import "NSDictionary+N2.h"
@@ -63,6 +64,13 @@
 #import "NSString+SymlinksAndAliases.h"
 #import "NSUserDefaults+OsiriX.h"
 #import "WaitRendering.h"
+#import "QueryController.h"
+#import <errno.h>
+#import <fcntl.h>
+#import <netdb.h>
+#import <poll.h>
+#import <sys/socket.h>
+#import <unistd.h>
 
 static BOOL HorosIsTemporaryLocalDatabaseSourcePath(NSString *path)
 {
@@ -87,6 +95,79 @@ static NSString* const HorosDicomBonjourType = @"_dicom._tcp";
 static NSString* const HorosPhoneVolumeRenderBonjourType = @"_horosiphone._tcp";
 static NSString* const HorosPhoneVolumeRenderDisplayName = @"iPhonePlanner";
 static NSString* const HorosNativeBonjourRecoveryNotificationShownKey = @"HorosNativeBonjourRecoveryNotificationShown";
+static NSTimeInterval const HorosBonjourHeartbeatInterval = 30.0;
+static NSTimeInterval const HorosBonjourHeartbeatTimeout = 5.0;
+static NSInteger const HorosBonjourHeartbeatFailureLimit = 2;
+
+static BOOL HorosCanOpenTCPConnection(NSString *host, NSUInteger port, NSTimeInterval timeout)
+{
+    if (![host length] || port == 0)
+        return NO;
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    NSString *portString = [NSString stringWithFormat:@"%lu", (unsigned long)port];
+    struct addrinfo *addresses = NULL;
+    if (getaddrinfo([host UTF8String], [portString UTF8String], &hints, &addresses) != 0)
+        return NO;
+
+    BOOL connected = NO;
+    NSTimeInterval deadline = [NSDate timeIntervalSinceReferenceDate] + timeout;
+    for (struct addrinfo *address = addresses; address && !connected; address = address->ai_next)
+    {
+        int timeoutMilliseconds = (int)((deadline - [NSDate timeIntervalSinceReferenceDate]) * 1000.0);
+        if (timeoutMilliseconds <= 0)
+            break;
+
+        int socketFD = socket(address->ai_family, address->ai_socktype, address->ai_protocol);
+        if (socketFD < 0)
+            continue;
+
+#ifdef SO_NOSIGPIPE
+        int noSigPipe = 1;
+        setsockopt(socketFD, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe));
+#endif
+
+        int flags = fcntl(socketFD, F_GETFL, 0);
+        if (flags < 0 || fcntl(socketFD, F_SETFL, flags | O_NONBLOCK) < 0)
+        {
+            close(socketFD);
+            continue;
+        }
+
+        int connectResult = connect(socketFD, address->ai_addr, address->ai_addrlen);
+        if (connectResult == 0)
+            connected = YES;
+        else if (errno == EINPROGRESS)
+        {
+            struct pollfd descriptor;
+            descriptor.fd = socketFD;
+            descriptor.events = POLLOUT;
+            descriptor.revents = 0;
+
+            int pollResult;
+            do
+                pollResult = poll(&descriptor, 1, timeoutMilliseconds);
+            while (pollResult < 0 && errno == EINTR);
+
+            if (pollResult > 0)
+            {
+                int socketError = 0;
+                socklen_t socketErrorLength = sizeof(socketError);
+                if (getsockopt(socketFD, SOL_SOCKET, SO_ERROR, &socketError, &socketErrorLength) == 0 && socketError == 0)
+                    connected = YES;
+            }
+        }
+
+        close(socketFD);
+    }
+
+    freeaddrinfo(addresses);
+    return connected;
+}
 
 static NSDictionary* HorosSourceTXTDictionaryFromRecordData(NSData *recordData)
 {
@@ -187,11 +268,17 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
     NSMutableArray* _bonjourSources, *_bonjourServices;
     NSMutableDictionary *_dnssdBrowseTasks, *_dnssdBrowseBuffers;
     NSMutableDictionary *_dnssdResolveTasks, *_dnssdResolveBuffers, *_dnssdResolveInfos;
+    NSTimer *_bonjourHeartbeatTimer;
+    NSOperationQueue *_bonjourHeartbeatQueue;
+    NSMutableDictionary *_bonjourHeartbeatFailureCounts;
+    NSMutableSet *_bonjourHeartbeatInFlight;
 
     BOOL dontListenToSourcesChanges;
+    BOOL _invalidated;
 }
 
 -(id)initWithBrowser:(BrowserController*)browser;
+-(void)invalidate;
 -(void)_scheduleBonjourBrowserStart;
 -(void)_startBonjourBrowsers;
 -(void)_startOsirixBonjourBrowser;
@@ -211,6 +298,9 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
 -(void)_addDNSSDResolvedServiceForKey:(NSString*)key;
 -(void)_notifyIfNativeBonjourSearchRecoveredForType:(NSString*)type;
 -(NSString*)_bonjourServiceTypeForBrowser:(NSNetServiceBrowser*)browser;
+-(void)_verifyBonjourSources;
+-(void)_verifyBonjourSource:(DataNodeIdentifier*)source;
+-(void)_preflightAndCopyImages:(NSArray*)dicomImages toBonjourSource:(DataNodeIdentifier*)destination;
 
 @end
 
@@ -257,6 +347,7 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
 
 -(void)deallocSources
 {
+    [(BrowserSourcesHelper*)_sourcesHelper invalidate];
     [_sourcesHelper release]; _sourcesHelper = nil;
 }
 
@@ -392,7 +483,7 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
 {
     NSArray* io = [NSMutableArray arrayWithObjects: @"Local", path, name, nil];
 
-    NSThread* thread = [[[NSThread alloc] initWithTarget:self selector:@selector(setDatabaseThread:) object:io] autorelease];
+    NSThread* thread = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(setDatabaseThread:) object:io] autorelease];
     thread.name = NSLocalizedString(@"Loading database...", nil);
     thread.supportsCancel = YES;
     thread.status = NSLocalizedString(@"Reading data...", nil);
@@ -407,7 +498,7 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
 {
     NSArray* io = [NSMutableArray arrayWithObjects: @"Remote", address, [NSNumber numberWithInteger:port], name, nil];
 
-    NSThread* thread = [[NSThread alloc] initWithTarget:self selector:@selector(setDatabaseThread:) object:io];
+    NSThread* thread = [[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(setDatabaseThread:) object:io];
     thread.name = NSLocalizedString(@"Loading remote database...", nil);
     thread.supportsCancel = YES;
     [thread startModalForWindow:self.window];
@@ -507,6 +598,19 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         _dnssdResolveTasks = [[NSMutableDictionary alloc] init];
         _dnssdResolveBuffers = [[NSMutableDictionary alloc] init];
         _dnssdResolveInfos = [[NSMutableDictionary alloc] init];
+        _bonjourHeartbeatFailureCounts = [[NSMutableDictionary alloc] init];
+        _bonjourHeartbeatInFlight = [[NSMutableSet alloc] init];
+        _bonjourHeartbeatQueue = [[NSOperationQueue alloc] init];
+        [_bonjourHeartbeatQueue setName:@"Horos Bonjour availability"];
+        [_bonjourHeartbeatQueue setMaxConcurrentOperationCount:1];
+
+        _bonjourHeartbeatTimer = [[NSTimer timerWithTimeInterval:HorosBonjourHeartbeatInterval
+                                                          target:self
+                                                        selector:@selector(_bonjourHeartbeatTimerFired:)
+                                                        userInfo:nil
+                                                         repeats:YES] retain];
+        [[NSRunLoop mainRunLoop] addTimer:_bonjourHeartbeatTimer forMode:NSRunLoopCommonModes];
+        [self performSelector:@selector(_verifyBonjourSources) withObject:nil afterDelay:5.0];
         [[NSUserDefaultsController sharedUserDefaultsController] addObserver:self forValuesKey:@"searchDICOMBonjour" options:NSKeyValueObservingOptionInitial context:SearchDicomNodesContext];
         [[NSUserDefaultsController sharedUserDefaultsController] addObserver:self forValuesKey:@"DoNotSearchForBonjourServices" options:NSKeyValueObservingOptionInitial context:SearchBonjourNodesContext];
         NSLog(@"Horos NSBonjourServices: %@", [[NSBundle mainBundle] objectForInfoDictionaryKey:@"NSBonjourServices"]);
@@ -519,7 +623,31 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
 -(void)dealloc
 {
+    [self invalidate];
+    [_bonjourSources release];
+    [_bonjourServices release];
+    [_dnssdBrowseTasks release];
+    [_dnssdBrowseBuffers release];
+    [_dnssdResolveTasks release];
+    [_dnssdResolveBuffers release];
+    [_dnssdResolveInfos release];
+    [_bonjourHeartbeatQueue release];
+    [_bonjourHeartbeatFailureCounts release];
+    [_bonjourHeartbeatInFlight release];
+
+    //	[[[NSUserDefaults standardUserDefaults] objectForKey:@"localDatabasePaths"] removeObserver:self forValuesKey:@"values"];
+    _browser = nil;
+    [super dealloc];
+}
+
+-(void)invalidate
+{
+    if (_invalidated)
+        return;
+
+    _invalidated = YES;
     [[NSNotificationCenter defaultCenter] removeObserver:self name:NSApplicationDidBecomeActiveNotification object:NSApp];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_verifyBonjourSources) object:nil];
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startBonjourBrowsers) object:nil];
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startOsirixBonjourBrowser) object:nil];
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startDicomBonjourBrowser) object:nil];
@@ -531,28 +659,30 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     [[NSUserDefaultsController sharedUserDefaultsController] removeObserver:self forValuesKey:@"OSIRIXSERVERS"];
     [[NSUserDefaultsController sharedUserDefaultsController] removeObserver:self forValuesKey:@"localDatabasePaths"];
 
+    [_bonjourHeartbeatTimer invalidate];
+    [_bonjourHeartbeatTimer release];
+    _bonjourHeartbeatTimer = nil;
+    [_bonjourHeartbeatQueue cancelAllOperations];
     [self _stopBonjourBrowsers];
     [self _stopDNSSDFallbacks];
-    [_bonjourSources release];
-    [_bonjourServices release];
-    [_dnssdBrowseTasks release];
-    [_dnssdBrowseBuffers release];
-    [_dnssdResolveTasks release];
-    [_dnssdResolveBuffers release];
-    [_dnssdResolveInfos release];
-
-    //	[[[NSUserDefaults standardUserDefaults] objectForKey:@"localDatabasePaths"] removeObserver:self forValuesKey:@"values"];
     _browser = nil;
-    [super dealloc];
 }
 
 -(void)_applicationDidBecomeActive:(NSNotification*)notification
 {
+    if (_invalidated)
+        return;
+
     [self _scheduleBonjourBrowserStart];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_verifyBonjourSources) object:nil];
+    [self performSelector:@selector(_verifyBonjourSources) withObject:nil afterDelay:2.0];
 }
 
 -(void)_scheduleBonjourBrowserStart
 {
+    if (_invalidated)
+        return;
+
     if (![NSThread isMainThread])
     {
         [self performSelectorOnMainThread:@selector(_scheduleBonjourBrowserStart) withObject:nil waitUntilDone:NO];
@@ -602,6 +732,260 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     [_dnssdResolveTasks removeAllObjects];
     [_dnssdResolveBuffers removeAllObjects];
     [_dnssdResolveInfos removeAllObjects];
+}
+
+-(void)_bonjourHeartbeatTimerFired:(NSTimer*)timer
+{
+    [self _verifyBonjourSources];
+}
+
+-(BOOL)_bonjourHeartbeatShouldProbeSource:(DataNodeIdentifier*)source
+{
+    if (![source.location length] || source.port == 0)
+        return NO;
+
+    if ([source isKindOfClass:[DicomNodeIdentifier class]])
+        return [[NSUserDefaults standardUserDefaults] boolForKey:@"searchDICOMBonjour"];
+
+    if ([source isKindOfClass:[RemoteDatabaseNodeIdentifier class]])
+        return ![[NSUserDefaults standardUserDefaults] boolForKey:@"DoNotSearchForBonjourServices"];
+
+    return NO;
+}
+
+-(NSString*)_bonjourHeartbeatKeyForSource:(DataNodeIdentifier*)source
+{
+    NSString *serviceKey = [source.dictionary objectForKey:@"DNSSDServiceKey"];
+    if ([serviceKey length])
+        return serviceKey;
+
+    NSString *type = nil;
+    if ([source isKindOfClass:[DicomNodeIdentifier class]])
+        type = HorosDicomBonjourType;
+    else if ([source isKindOfClass:[RemoteDatabaseNodeIdentifier class]])
+        type = HorosOsiriXDatabaseBonjourType;
+    else
+        return nil;
+
+    return [NSString stringWithFormat:@"%@|%@|%@|%lu|%@",
+            type,
+            source.description ? source.description : @"",
+            source.location ? source.location : @"",
+            (unsigned long)source.port,
+            source.aetitle ? source.aetitle : @""];
+}
+
+-(NSDictionary*)_bonjourHeartbeatProbeInfoForSource:(DataNodeIdentifier*)source
+{
+    if (![self _bonjourHeartbeatShouldProbeSource:source])
+        return nil;
+
+    NSString *key = [self _bonjourHeartbeatKeyForSource:source];
+    if (![key length])
+        return nil;
+
+    NSMutableDictionary *info = [NSMutableDictionary dictionaryWithObjectsAndKeys:
+                                 key, @"Key",
+                                 source.location, @"Address",
+                                 [NSNumber numberWithUnsignedInteger:source.port], @"Port",
+                                 source.description ? source.description : @"", @"Description",
+                                 nil];
+
+    if ([source isKindOfClass:[DicomNodeIdentifier class]])
+    {
+        NSString *aetitle = source.aetitle;
+        if (![aetitle length])
+            aetitle = [source.dictionary objectForKey:@"AETitle"];
+        if (![aetitle length])
+            aetitle = source.description;
+        if (![aetitle length])
+            return nil;
+
+        [info setObject:@"DICOM" forKey:@"Kind"];
+        [info setObject:aetitle forKey:@"AETitle"];
+    }
+    else
+        [info setObject:@"TCP" forKey:@"Kind"];
+
+    return info;
+}
+
+-(BOOL)_runBonjourHeartbeatProbe:(NSDictionary*)probeInfo
+{
+    if ([[probeInfo objectForKey:@"Kind"] isEqualToString:@"DICOM"])
+    {
+        NSDictionary *parameters = [NSDictionary dictionaryWithObjectsAndKeys:
+                                    [probeInfo objectForKey:@"Address"], @"Address",
+                                    [probeInfo objectForKey:@"Port"], @"Port",
+                                    [probeInfo objectForKey:@"AETitle"], @"AETitle",
+                                    [NSNumber numberWithBool:NO], @"TLSEnabled",
+                                    [NSNumber numberWithInteger:(NSInteger)HorosBonjourHeartbeatTimeout], @"HorosHeartbeatTimeout",
+                                    [NSNumber numberWithBool:YES], @"HorosHeartbeatQuiet",
+                                    [NSNumber numberWithBool:YES], @"HorosHeartbeatStrict",
+                                    nil];
+        return [QueryController echoServer:parameters];
+    }
+
+    return HorosCanOpenTCPConnection([probeInfo objectForKey:@"Address"],
+                                     [[probeInfo objectForKey:@"Port"] unsignedIntegerValue],
+                                     HorosBonjourHeartbeatTimeout);
+}
+
+-(BOOL)_bonjourHeartbeatManagesSource:(DataNodeIdentifier*)source
+{
+    @synchronized (_bonjourSources)
+    {
+        return [_bonjourSources indexOfObjectIdenticalTo:source] != NSNotFound;
+    }
+}
+
+-(void)_forgetBonjourHeartbeatStateForSource:(DataNodeIdentifier*)source
+{
+    NSString *key = [self _bonjourHeartbeatKeyForSource:source];
+    if ([key length])
+        [_bonjourHeartbeatFailureCounts removeObjectForKey:key];
+}
+
+-(void)_applyBonjourHeartbeatResult:(BOOL)available source:(DataNodeIdentifier*)source key:(NSString*)key
+{
+    if (_invalidated || ![self _bonjourHeartbeatManagesSource:source])
+        return;
+
+    BOOL isDisplayed = [_browser.sources.content indexOfObjectIdenticalTo:source] != NSNotFound;
+    NSInteger previousFailureCount = [[_bonjourHeartbeatFailureCounts objectForKey:key] integerValue];
+
+    if (available)
+    {
+        [_bonjourHeartbeatFailureCounts removeObjectForKey:key];
+        if (![self _bonjourHeartbeatShouldProbeSource:source])
+        {
+            source.detected = NO;
+            return;
+        }
+
+        BOOL changed = !source.detected || !isDisplayed;
+        source.detected = YES;
+
+        if (!isDisplayed)
+            [_browser.sources addObject:source];
+
+        if (changed)
+        {
+            NSLog(@"Bonjour source responding again: %@ %@:%lu", source.description, source.location, (unsigned long)source.port);
+            [_browser redrawSources];
+        }
+        return;
+    }
+
+    NSInteger failureCount = MIN(previousFailureCount + 1, HorosBonjourHeartbeatFailureLimit);
+    [_bonjourHeartbeatFailureCounts setObject:[NSNumber numberWithInteger:failureCount] forKey:key];
+    if (failureCount < HorosBonjourHeartbeatFailureLimit)
+        return;
+
+    source.detected = NO;
+    if (!source.entered && isDisplayed)
+    {
+        [source retain];
+        [_browser.sources removeObject:source];
+        [source performSelector:@selector(autorelease) withObject:nil afterDelay:60];
+    }
+
+    if ([source isKindOfClass:[RemoteDatabaseNodeIdentifier class]] &&
+        [[_browser sourceIdentifierForDatabase:_browser.database] isEqualToDataNodeIdentifier:source])
+        [_browser performSelector:@selector(setDatabase:) withObject:DicomDatabase.defaultDatabase afterDelay:0.01];
+
+    if (previousFailureCount < HorosBonjourHeartbeatFailureLimit)
+    {
+        NSLog(@"Bonjour source hidden after %ld failed availability checks: %@ %@:%lu",
+              (long)HorosBonjourHeartbeatFailureLimit,
+              source.description,
+              source.location,
+              (unsigned long)source.port);
+        [_browser redrawSources];
+    }
+}
+
+-(void)_verifyBonjourSource:(DataNodeIdentifier*)source
+{
+    if (_invalidated || ![NSThread isMainThread] || ![self _bonjourHeartbeatManagesSource:source])
+        return;
+
+    NSDictionary *probeInfo = [self _bonjourHeartbeatProbeInfoForSource:source];
+    NSString *key = [probeInfo objectForKey:@"Key"];
+    if (!probeInfo || [_bonjourHeartbeatInFlight containsObject:key])
+        return;
+
+    [_bonjourHeartbeatInFlight addObject:key];
+    BrowserSourcesHelper *helper = self;
+    NSBlockOperation *operation = [NSBlockOperation blockOperationWithBlock:^{
+        @autoreleasepool
+        {
+            BOOL available = [helper _runBonjourHeartbeatProbe:probeInfo];
+            [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+                [helper->_bonjourHeartbeatInFlight removeObject:key];
+                [helper _applyBonjourHeartbeatResult:available source:source key:key];
+            }];
+        }
+    }];
+    [_bonjourHeartbeatQueue addOperation:operation];
+}
+
+-(void)_verifyBonjourSources
+{
+    if (_invalidated)
+        return;
+
+    if (![NSThread isMainThread])
+    {
+        [self performSelectorOnMainThread:@selector(_verifyBonjourSources) withObject:nil waitUntilDone:NO];
+        return;
+    }
+
+    NSArray *sources = nil;
+    @synchronized (_bonjourSources)
+    {
+        sources = [[_bonjourSources copy] autorelease];
+    }
+
+    for (DataNodeIdentifier *source in sources)
+        [self _verifyBonjourSource:source];
+}
+
+-(void)_preflightAndCopyImages:(NSArray*)dicomImages toBonjourSource:(DataNodeIdentifier*)destination
+{
+    NSDictionary *probeInfo = [self _bonjourHeartbeatProbeInfoForSource:destination];
+    if (!probeInfo)
+    {
+        [_browser initiateCopyImages:dicomImages toSource:destination];
+        return;
+    }
+
+    NSString *key = [probeInfo objectForKey:@"Key"];
+    BrowserSourcesHelper *helper = self;
+    NSBlockOperation *operation = [NSBlockOperation blockOperationWithBlock:^{
+        @autoreleasepool
+        {
+            BOOL available = [helper _runBonjourHeartbeatProbe:probeInfo];
+            [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+                if (helper->_invalidated)
+                    return;
+
+                [helper _applyBonjourHeartbeatResult:available source:destination key:key];
+                if (available && [helper _bonjourHeartbeatManagesSource:destination])
+                    [helper->_browser initiateCopyImages:dicomImages toSource:destination];
+                else
+                {
+                    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+                    [alert setAlertStyle:NSAlertStyleCritical];
+                    [alert setMessageText:NSLocalizedString(@"Destination Unavailable", nil)];
+                    [alert setInformativeText:[NSString stringWithFormat:NSLocalizedString(@"%@ is not responding and the transfer was not started.", nil), destination.description]];
+                    [alert beginSheetModalForWindow:helper->_browser.window completionHandler:nil];
+                }
+            }];
+        }
+    }];
+    [operation setQueuePriority:NSOperationQueuePriorityVeryHigh];
+    [_bonjourHeartbeatQueue addOperation:operation];
 }
 
 -(void)_startDNSSDBrowseFallbackForType:(NSString*)type
@@ -1006,6 +1390,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         }
     }
 
+    [self _verifyBonjourSource:source];
     [self _stopDNSSDResolveTaskForKey:key];
 }
 
@@ -1020,6 +1405,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
             if (![[source.dictionary objectForKey:@"DNSSDServiceKey"] isEqualToString:key])
                 continue;
 
+            [self _forgetBonjourHeartbeatStateForSource:source];
             source.detected = NO;
             if (!source.entered && [_browser.sources.content containsObject:source])
             {
@@ -1429,10 +1815,14 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
             else
             {
                 resolvedTXTDictionary = [DCMNetServiceDelegate DICOMNodeInfoFromTXTRecordData:service.TXTRecordData];
-                if (![resolvedTXTDictionary objectForKey:@"UID"] && [rawTXTDictionary objectForKey:@"UID"])
+                if ((![resolvedTXTDictionary objectForKey:@"UID"] && [rawTXTDictionary objectForKey:@"UID"]) ||
+                    (![resolvedTXTDictionary objectForKey:@"AETitle"] && [rawTXTDictionary objectForKey:@"AETitle"]))
                 {
                     NSMutableDictionary *mergedTXTDictionary = [NSMutableDictionary dictionaryWithDictionary:resolvedTXTDictionary ? resolvedTXTDictionary : [NSDictionary dictionary]];
-                    [mergedTXTDictionary setObject:[rawTXTDictionary objectForKey:@"UID"] forKey:@"UID"];
+                    if (![mergedTXTDictionary objectForKey:@"UID"] && [rawTXTDictionary objectForKey:@"UID"])
+                        [mergedTXTDictionary setObject:[rawTXTDictionary objectForKey:@"UID"] forKey:@"UID"];
+                    if (![mergedTXTDictionary objectForKey:@"AETitle"] && [rawTXTDictionary objectForKey:@"AETitle"])
+                        [mergedTXTDictionary setObject:[rawTXTDictionary objectForKey:@"AETitle"] forKey:@"AETitle"];
                     resolvedTXTDictionary = mergedTXTDictionary;
                 }
             }
@@ -1526,8 +1916,6 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
                         source.port = [[address objectAtIndex:1] integerValue];
                     }
 
-                    if( [source isKindOfClass:[DicomNodeIdentifier class]])
-                        source.aetitle = source.description;
                 }
             }
 
@@ -1543,8 +1931,16 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
             if ([source isKindOfClass:[PhoneVolumeRenderNodeIdentifier class]])
                 source.description = NSLocalizedString(HorosPhoneVolumeRenderDisplayName, nil);
+            else if ([source isKindOfClass:[DicomNodeIdentifier class]])
+            {
+                NSString *resolvedAETitle = [resolvedTXTDictionary objectForKey:@"AETitle"];
+                source.aetitle = [resolvedAETitle length] ? resolvedAETitle : service.name;
+            }
 
-            source.dictionary = resolvedTXTDictionary;
+            NSMutableDictionary *sourceDictionary = [NSMutableDictionary dictionaryWithDictionary:resolvedTXTDictionary ? resolvedTXTDictionary : [NSDictionary dictionary]];
+            if ([serviceType length] && [service.name length])
+                [sourceDictionary setObject:HorosDNSSDServiceKey(serviceType, service.name) forKey:@"DNSSDServiceKey"];
+            source.dictionary = sourceDictionary;
 
             if (source.location)
             {
@@ -1558,6 +1954,8 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
                         [_browser.sources addObject:source];
                         NSLog(@"Bonjour source added: %@ %@:%ld", source.description, source.location, (long)source.port);
                     }
+
+                    [self _verifyBonjourSource:source];
                 }
             }
 
@@ -1593,6 +1991,8 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
             return;
 
         NSLog( @"Remove Service: %@", bsk);
+        DataNodeIdentifier *source = [_bonjourSources objectAtIndex:[_bonjourServices indexOfObject:bsk]];
+        [self _forgetBonjourHeartbeatStateForSource:source];
         [_bonjourSources removeObjectAtIndex: [_bonjourServices indexOfObject: bsk]];
         [_bonjourServices removeObject: bsk];
     }
@@ -1662,6 +2062,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
             [_browser performSelector: @selector(setDatabase:) withObject: DicomDatabase.defaultDatabase afterDelay: 0.01]; //This will guarantee that this will not happen in middle of a drag & drop, for example
         }
         NSLog( @"Remove Service: %@", bsk);
+        [self _forgetBonjourHeartbeatStateForSource:dni];
         [_bonjourSources removeObjectAtIndex: [_bonjourServices indexOfObject: bsk]];
         [_bonjourServices removeObject: bsk];
     }
@@ -1735,6 +2136,12 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     NSMutableArray* dicomImages = [DicomImage dicomImagesInObjects:items];
 
     DataNodeIdentifier *destination = [_browser sourceIdentifierAtRow:row];
+    if ([self _bonjourHeartbeatManagesSource:destination] && [self _bonjourHeartbeatProbeInfoForSource:destination])
+    {
+        [self _preflightAndCopyImages:dicomImages toBonjourSource:destination];
+        return YES;
+    }
+
     return [_browser initiateCopyImages:dicomImages toSource:destination];
 }
 

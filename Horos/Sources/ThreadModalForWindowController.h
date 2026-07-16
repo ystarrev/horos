@@ -50,6 +50,7 @@ The Horos Project was based originally upon the OsiriX Project which at the time
     NSScrollView* _statusFieldScroll;
 	NSTextField* _progressDetailsField;
     BOOL _isValid;
+    NSUUID* _completionToken;
 
     CGFloat _lastDisplayedProgress;
     NSString* _lastPositionedStatus;

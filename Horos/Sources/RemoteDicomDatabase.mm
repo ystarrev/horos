@@ -268,6 +268,7 @@
     } @catch (NSException* e) {
         N2LogExceptionWithStackTrace(e);
     } @finally {
+        [[ThreadsManager defaultManager] removeThread:[NSThread currentThread]];
         [pool release];
     }
 }
@@ -532,7 +533,7 @@
 	
 	if ([_updateLock tryLock])
 		@try {
-			NSThread* thread = [[NSThread alloc] initWithTarget:self selector:@selector(updateThread:) object:nil];
+			NSThread* thread = [[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(updateThread:) object:nil];
 			[thread start];
 			return thread;
 		} @catch (NSException* e) {

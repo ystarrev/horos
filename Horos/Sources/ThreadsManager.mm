@@ -36,12 +36,35 @@
  ============================================================================*/
 
 #import "ThreadsManager.h"
-#import "ThreadModalForWindowController.h"
-#import "NSThread+N2.h"
+#import "HorosSwiftInterop.h"
 
 @interface ThreadsManager ()
 
 -(void)subRemoveThread:(NSThread*)thread;
+-(HorosActivityTask*)activityForThread:(NSThread*)thread;
+-(void)activityDidComplete:(HorosActivityTask*)activity;
+
+@end
+
+@interface HorosActivityThread : NSThread
+@end
+
+@implementation HorosActivityThread
+
+-(void)main
+{
+    @autoreleasepool
+    {
+        @try
+        {
+            [super main];
+        }
+        @finally
+        {
+            [HorosActivityTaskCoordinator completeThread:self];
+        }
+    }
+}
 
 @end
 
@@ -62,9 +85,9 @@
 	_threadsController = [[NSArrayController alloc] init];
 	[_threadsController setSelectsInsertedObjects:NO];
 	[_threadsController setAvoidsEmptySelection:NO];
-	[_threadsController setObjectClass:[NSThread class]];
+	[_threadsController setObjectClass:[HorosActivityTask class]];
     
-    // cleanup timer
+    // Compatibility fallback for plugins that still submit plain NSThread instances.
 	_timer = [[NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(cleanupFinishedThreads:) userInfo:nil repeats:YES] retain];
     
 	return self;
@@ -78,20 +101,21 @@
 }
 
 -(void)cleanupFinishedThreads:(NSTimer*)timer {
+    NSArray* activities = nil;
     @synchronized (_threadsController) {
-        for (NSThread* thread in [[_threadsController.content copy] autorelease])
-        {
-            if (thread.isFinished)
-                [self subRemoveThread:thread];
-        }
+        activities = [[_threadsController.content copy] autorelease];
     }
+
+    for (HorosActivityTask* activity in activities)
+        if (activity.thread.isFinished)
+            [self subRemoveThread:activity.thread];
 }
 
 #pragma mark Interface
 
 -(NSArray*)threads {
 	@synchronized (_threadsController) {
-		return _threadsController.arrangedObjects;
+		return [_threadsController.arrangedObjects valueForKey:@"thread"];
 	} return nil;
 }
 
@@ -103,8 +127,37 @@
 
 -(NSThread*)threadAtIndex:(NSUInteger)index {
 	@synchronized (_threadsController) {
-		return [_threadsController.arrangedObjects objectAtIndex:index];
+		return [[_threadsController.arrangedObjects objectAtIndex:index] thread];
 	} return nil;
+}
+
+-(NSThread*)newActivityThreadWithTarget:(id)target selector:(SEL)selector object:(id)object
+{
+    return [[HorosActivityThread alloc] initWithTarget:target selector:selector object:object];
+}
+
+-(HorosActivityTask*)activityForThread:(NSThread*)thread
+{
+    for (HorosActivityTask* activity in _threadsController.content)
+        if (activity.thread == thread)
+            return activity;
+
+    return nil;
+}
+
+-(void)activityDidComplete:(HorosActivityTask*)activity
+{
+    if (![NSThread isMainThread])
+    {
+        [self performSelectorOnMainThread:@selector(activityDidComplete:) withObject:activity waitUntilDone:NO];
+        return;
+    }
+
+    @synchronized (_threadsController)
+    {
+        if ([_threadsController.content containsObject:activity])
+            [_threadsController removeObject:activity];
+    }
 }
 
 -(void)subAddThread:(NSThread*)thread
@@ -116,7 +169,7 @@
 		if (![NSThread isMainThread])
 			NSLog( @"***** NSThread we should NOT be here");
         
-		if ([_threadsController.arrangedObjects containsObject:thread] || [thread isFinished])
+		if ([self activityForThread:thread] || [thread isFinished])
 		{
             // Do nothing
         }
@@ -130,8 +183,11 @@
                 {
 
                     if (!isDone) {
-                        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(threadWillExit:) name:NSThreadWillExitNotification object:thread];
-                        [_threadsController addObject:thread];
+                        HorosActivityTask* activity = [[HorosActivityTaskCoordinator sharedCoordinator] registerThread:thread];
+                        [[HorosActivityTaskCoordinator sharedCoordinator] addCompletionHandlerForThread:thread handler:^{
+                            [self activityDidComplete:activity];
+                        }];
+                        [_threadsController addObject:activity];
                     }
                     if (!isExe && !isDone) { // not executing, not done executing... execute now
                         [thread start];
@@ -139,14 +195,12 @@
                     
                     if ([thread isFinished]) // already done?? wtf..
                     {
-                        [[NSNotificationCenter defaultCenter] removeObserver:self name:NSThreadWillExitNotification object:thread];
-                        [_threadsController removeObject:thread];
+                        [[HorosActivityTaskCoordinator sharedCoordinator] completeRegisteredThread:thread];
                     }
                 }
                 @catch (NSException* e)
                 {
-                    [[NSNotificationCenter defaultCenter] removeObserver:self name:NSThreadWillExitNotification object:thread];
-                    [_threadsController removeObject:thread];
+                    [[HorosActivityTaskCoordinator sharedCoordinator] completeRegisteredThread:thread];
                 }
             }
         }
@@ -167,18 +221,20 @@
 
 -(void) subRemoveThread:(NSThread*)thread
 {
-	@synchronized (_threadsController) {
-	@synchronized (thread)
-	{
-		if (![NSThread isMainThread])
-			NSLog( @"***** NSThread we should NOT be here");
-        
-        if ([_threadsController.content containsObject:thread]) {
-            [[NSNotificationCenter defaultCenter] removeObserver:self name:NSThreadWillExitNotification object:thread];
-            [_threadsController removeObject:thread];
-        }
-	}
-	}
+    if (![NSThread isMainThread])
+        NSLog( @"***** NSThread we should NOT be here");
+
+    HorosActivityTask* activity = nil;
+    @synchronized (_threadsController)
+    {
+        activity = [[self activityForThread:thread] retain];
+    }
+
+    if (activity)
+    {
+        [[HorosActivityTaskCoordinator sharedCoordinator] completeRegisteredThread:thread];
+        [activity release];
+    }
 }
 
 -(void)removeThread:(NSThread*)thread
@@ -186,10 +242,6 @@
     if (![NSThread isMainThread])
         [self performSelectorOnMainThread:@selector(subRemoveThread:) withObject:thread waitUntilDone:NO];
     else [self subRemoveThread:thread];
-}
-
--(void)threadWillExit:(NSNotification*)notification {
-	[self removeThread:notification.object];
 }
 
 @end

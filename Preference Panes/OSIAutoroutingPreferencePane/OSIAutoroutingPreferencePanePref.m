@@ -37,7 +37,7 @@
 
 #import "DCMObject.h"
 #import "OSIAutoroutingPreferencePanePref.h"
-#import "Horos-Swift.h"
+#import "HorosSwiftInterop.h"
 #import "NSPreferencePane+OsiriX.h"
 #import "AppController.h"
 

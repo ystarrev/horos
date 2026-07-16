@@ -1421,7 +1421,7 @@ static NSConditionLock *threadLock = nil;
         }
         
         NSThread *t = nil;
-        t = [[[NSThread alloc] initWithTarget: self selector:@selector(regenerateAutoCommentsThread:) object: [NSDictionary dictionaryWithObjectsAndKeys: studiesArray, @"studyArrayIDs", seriesArray, @"seriesArrayIDs", nil]] autorelease];
+        t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(regenerateAutoCommentsThread:) object:[NSDictionary dictionaryWithObjectsAndKeys: studiesArray, @"studyArrayIDs", seriesArray, @"seriesArrayIDs", nil]] autorelease];
         
         t.name = NSLocalizedString( @"Regenerate Auto Comments...", nil);
         t.status = N2LocalizedSingularPluralCount( [studiesArray count], NSLocalizedString(@"study", nil), NSLocalizedString(@"studies", nil));
@@ -2312,9 +2312,9 @@ static NSConditionLock *threadLock = nil;
             
             NSThread *t = nil;
             if( [NSThread isMainThread] == NO)
-                t = [[[NSThread alloc] initWithTarget:_database.independentDatabase selector:@selector(copyFilesThread:) object: dict] autorelease];
+                t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:_database.independentDatabase selector:@selector(copyFilesThread:) object:dict] autorelease];
             else
-                t = [[[NSThread alloc] initWithTarget:_database selector:@selector(copyFilesThread:) object: dict] autorelease];
+                t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:_database selector:@selector(copyFilesThread:) object:dict] autorelease];
             
             if( [[options objectForKey: @"mountedVolume"] boolValue]) t.name = NSLocalizedString( @"Copying and indexing files from CD/DVD...", nil);
             else t.name = NSLocalizedString( @"Copying and indexing files...", nil);
@@ -2395,7 +2395,7 @@ static NSConditionLock *threadLock = nil;
         
         [dict addEntriesFromDictionary: options];
         
-        NSThread *t = [[[NSThread alloc] initWithTarget:_database selector:@selector(copyFilesThread:) object: dict] autorelease];
+        NSThread *t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:_database selector:@selector(copyFilesThread:) object:dict] autorelease];
         
         if( [[options objectForKey: @"mountedVolume"] boolValue]) t.name = NSLocalizedString( @"Indexing files from CD/DVD...", nil);
         else t.name = NSLocalizedString( @"Indexing files...", nil);
@@ -2440,7 +2440,7 @@ static NSConditionLock *threadLock = nil;
     
     NSArray* io = [NSMutableArray arrayWithObjects: database, [NSNumber numberWithBool:complete], nil];
     
-    NSThread* thread = [[NSThread alloc] initWithTarget:self selector:@selector(rebuildDatabaseThread:) object:io];
+    NSThread* thread = [[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(rebuildDatabaseThread:) object:io];
     thread.name = NSLocalizedString(@"Rebuilding database...", nil);
     
     [thread startModalForWindow:self.window];
@@ -2536,11 +2536,11 @@ static NSConditionLock *threadLock = nil;
     [self setDatabase:nil];
     [self outlineViewRefresh];
     
-    NSThread* thread = [[NSThread alloc] initWithTarget:self selector:@selector(rebuildSqlThread:) object:database];
+    NSThread* thread = [[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(rebuildSqlThread:) object:database];
     thread.name = NSLocalizedString(@"Rebuilding database index...", nil);
     
-    [thread start];
     [thread startModalForWindow:self.window];
+    [thread start];
     
     return [thread autorelease];
 }
@@ -2682,32 +2682,30 @@ static NSConditionLock *threadLock = nil;
             break;
             
         case 4:	{ // Today
-            
-            NSCalendarDate *now = [NSCalendarDate calendarDate];
-            NSCalendarDate *start = [NSCalendarDate dateWithYear:[now yearOfCommonEra] month:[now monthOfYear] day:[now dayOfMonth] hour:0 minute:0 second:0 timeZone: [now timeZone]];
-            
-            [timeIntervalStart release];		timeIntervalStart = [[NSDate dateWithTimeIntervalSinceNow: [start timeIntervalSinceDate: now]] retain];
+            NSDate *start = [[NSCalendar currentCalendar] startOfDayForDate:[NSDate date]];
+
+            [timeIntervalStart release];		timeIntervalStart = [start retain];
             [timeIntervalEnd release];			timeIntervalEnd = nil;
         }
             break;
             
         case 5:
         {	// One week
-            
-            NSCalendarDate *now		= [NSCalendarDate calendarDate];
-            NSCalendarDate *oneWeek = [now dateByAddingYears:0 months:0 days:-7 hours:0 minutes:0 seconds:0];
-            
-            [timeIntervalStart release];		timeIntervalStart = [[NSDate dateWithTimeIntervalSinceNow: [oneWeek timeIntervalSinceDate: now]] retain];
+            NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+            calendar.timeZone = [NSTimeZone localTimeZone];
+            NSDate *oneWeek = [calendar dateByAddingUnit:NSCalendarUnitDay value:-7 toDate:[NSDate date] options:0];
+
+            [timeIntervalStart release];		timeIntervalStart = [oneWeek retain];
             [timeIntervalEnd release];			timeIntervalEnd = nil;
         }
             break;
             
         case 6:	{ // One month
-            
-            NSCalendarDate *now		= [NSCalendarDate calendarDate];
-            NSCalendarDate *oneWeek = [now dateByAddingYears:0 months:-1 days:0 hours:0 minutes:0 seconds:0];
-            
-            [timeIntervalStart release];		timeIntervalStart = [[NSDate dateWithTimeIntervalSinceNow: [oneWeek timeIntervalSinceDate: now]] retain];
+            NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+            calendar.timeZone = [NSTimeZone localTimeZone];
+            NSDate *oneMonth = [calendar dateByAddingUnit:NSCalendarUnitMonth value:-1 toDate:[NSDate date] options:0];
+
+            [timeIntervalStart release];		timeIntervalStart = [oneMonth retain];
             [timeIntervalEnd release];			timeIntervalEnd = nil;
         }
             break;
@@ -2788,8 +2786,8 @@ static NSConditionLock *threadLock = nil;
     
     NSMutableString *pred = [NSMutableString stringWithString: string];
     
-    NSCalendarDate	*now = [NSCalendarDate calendarDate];
-    NSDate	*start = [NSDate dateWithTimeIntervalSinceReferenceDate: [[NSCalendarDate dateWithYear:[now yearOfCommonEra] month:[now monthOfYear] day:[now dayOfMonth] hour:0 minute:0 second:0 timeZone: [now timeZone]] timeIntervalSinceReferenceDate]];
+    NSDate *now = [NSDate date];
+    NSDate *start = [[NSCalendar currentCalendar] startOfDayForDate:now];
     
     NSDictionary	*sub = [NSDictionary dictionaryWithObjectsAndKeys:	[NSString stringWithFormat:@"%lf", [[now dateByAddingTimeInterval: -60*60*1] timeIntervalSinceReferenceDate]],			@"$LASTHOUR",
                             [NSString stringWithFormat:@"%lf", [[now dateByAddingTimeInterval: -60*60*6] timeIntervalSinceReferenceDate]],			@"$LAST6HOURS",
@@ -3142,7 +3140,7 @@ static NSConditionLock *threadLock = nil;
                 
                 if( autoretrievingPACSOnDemandSmartAlbum == NO && studyToAutoretrieve.count)
                 {
-                    NSThread* t = [[[NSThread alloc] initWithTarget:self selector:@selector(autoretrievePACSOnDemandSmartAlbum:) object: studyToAutoretrieve] autorelease];
+                    NSThread* t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(autoretrievePACSOnDemandSmartAlbum:) object:studyToAutoretrieve] autorelease];
                     t.name = NSLocalizedString( @"Auto-Retrieving...", nil);
                     t.supportsCancel = YES;
                     [[ThreadsManager defaultManager] addThreadAndStart: t];
@@ -3496,7 +3494,7 @@ static NSConditionLock *threadLock = nil;
                             
                             if( autoretrievingPACSOnDemandSmartAlbum == NO && studyToAutoretrieve.count)
                             {
-                                NSThread* t = [[[NSThread alloc] initWithTarget:self selector:@selector(autoretrievePACSOnDemandSmartAlbum:) object: studyToAutoretrieve] autorelease];
+                                NSThread* t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(autoretrievePACSOnDemandSmartAlbum:) object:studyToAutoretrieve] autorelease];
                                 t.name = NSLocalizedString( @"Auto-Retrieving Album...", nil);
                                 t.supportsCancel = YES;
                                 [[ThreadsManager defaultManager] addThreadAndStart: t];
@@ -3553,6 +3551,7 @@ static NSConditionLock *threadLock = nil;
     } @catch (NSException* e) {
         N2LogExceptionWithStackTrace(e);
     } @finally {
+        [[ThreadsManager defaultManager] removeThread:[NSThread currentThread]];
         [pool release];
     }
 }
@@ -4231,6 +4230,10 @@ static NSConditionLock *threadLock = nil;
                     {
                         N2LogExceptionWithStackTrace(e);
                     }
+                    @finally
+                    {
+                        [[ThreadsManager defaultManager] removeThread:[NSThread currentThread]];
+                    }
                 }
             }
             
@@ -4359,6 +4362,10 @@ static NSConditionLock *threadLock = nil;
                     @catch (NSException* e)
                     {
                         N2LogExceptionWithStackTrace(e);
+                    }
+                    @finally
+                    {
+                        [[ThreadsManager defaultManager] removeThread:[NSThread currentThread]];
                     }
                 }
             }
@@ -4492,6 +4499,10 @@ static NSConditionLock *threadLock = nil;
                     @catch (NSException* e)
                     {
                         N2LogExceptionWithStackTrace(e);
+                    }
+                    @finally
+                    {
+                        [[ThreadsManager defaultManager] removeThread:[NSThread currentThread]];
                     }
                 }
             }
@@ -4648,7 +4659,7 @@ static NSConditionLock *threadLock = nil;
                                 
                                 if( studyToAutoretrieve.count)
                                 {
-                                    NSThread* t = [[[NSThread alloc] initWithTarget:self selector:@selector(autoretrievePACSOnDemandSmartAlbum:) object: studyToAutoretrieve] autorelease];
+                                    NSThread* t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(autoretrievePACSOnDemandSmartAlbum:) object:studyToAutoretrieve] autorelease];
                                     t.name = NSLocalizedString( @"Auto-Retrieving...", nil);
                                     t.supportsCancel = YES;
                                     [[ThreadsManager defaultManager] addThreadAndStart: t];
@@ -4665,6 +4676,10 @@ static NSConditionLock *threadLock = nil;
                         @catch (NSException* e)
                         {
                             N2LogExceptionWithStackTrace(e);
+                        }
+                        @finally
+                        {
+                            [[ThreadsManager defaultManager] removeThread:[NSThread currentThread]];
                         }
                     }
                 }
@@ -6699,9 +6714,7 @@ static NSConditionLock *threadLock = nil;
                 
                 if( [[item valueForKey:@"date"] timeIntervalSinceNow] > -24*60*60)	// 24 hours
                 {
-                    NSCalendarDate	*now = [NSCalendarDate calendarDate];
-                    NSCalendarDate	*start = [NSCalendarDate dateWithYear:[now yearOfCommonEra] month:[now monthOfYear] day:[now dayOfMonth] hour:0 minute:0 second:0 timeZone: [now timeZone]];
-                    NSDate			*today = [NSDate dateWithTimeIntervalSinceNow: [start timeIntervalSinceDate: now]];
+                    NSDate *today = [[NSCalendar currentCalendar] startOfDayForDate:[NSDate date]];
                     
                     icon = YES;
                     if( [[item valueForKey:@"date"] timeIntervalSinceNow] > -60*10) [(ImageAndTextCell*) cell setImage:[NSImage imageNamed:@"Realised1.tif"]];													// 10 min
@@ -6812,7 +6825,7 @@ static NSConditionLock *threadLock = nil;
                 
                 NSMutableDictionary *d = [NSMutableDictionary dictionaryWithObjectsAndKeys: [dropDestination path], @"location", filesToExport, @"filesToExport", [dicomFiles2Export valueForKey: @"objectID"], @"dicomFiles2Export", nil];
                 
-                NSThread* t = [[[NSThread alloc] initWithTarget:self selector:@selector(exportDICOMFileInt: ) object: d] autorelease];
+                NSThread* t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(exportDICOMFileInt:) object:d] autorelease];
                 t.name = NSLocalizedString( @"Exporting...", nil);
                 t.supportsCancel = YES;
                 t.status = N2LocalizedSingularPluralCount( [filesToExport count], NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));
@@ -8676,7 +8689,7 @@ static NSConditionLock *threadLock = nil;
         DICOMExport *e = [[[DICOMExport alloc] init] autorelease];
         
         [e setSeriesDescription: [NSString stringWithFormat: NSLocalizedString( @"Clipboard - %@", nil), [BrowserController DateTimeWithSecondsFormat: [NSDate date]]]];
-        [e setSeriesNumber: 66532 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];
+        [e setSeriesNumber: 66532 + [DICOMExport currentTimeSeriesNumberOffset]];
         
         NSBitmapImageRep *rep = (NSBitmapImageRep*) [image bestRepresentationForRect:NSMakeRect(0, 0, image.size.width, image.size.height) context:nil hints:nil];
         
@@ -11664,7 +11677,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
             w = [[[WaitRendering alloc] init: NSLocalizedString(@"Retrieving...", nil)] autorelease];
         [w showWindow: self];
         
-        NSThread *t = [[[NSThread alloc] initWithTarget:self selector:@selector(comparativeRetrieve:) object: study] autorelease];
+        NSThread *t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(comparativeRetrieve:) object:study] autorelease];
         t.name = NSLocalizedString( @"Retrieving images...", nil);
         t.status = N2LocalizedSingularPluralCount( 1, NSLocalizedString(@"study", nil), NSLocalizedString(@"studies", nil));
         t.supportsCancel = YES;
@@ -15709,7 +15722,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         {
             [deleteInProgress unlock];
             
-            NSThread *t = [[[NSThread alloc] initWithTarget:self selector:@selector(emptyDeleteQueueThread) object:  nil] autorelease];
+            NSThread *t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(emptyDeleteQueueThread) object:nil] autorelease];
             t.name = NSLocalizedString( @"Deleting files...", nil);
             t.status = N2LocalizedSingularPluralCount(deleteQueueArray.count, NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));
             t.progress = 0;
@@ -17776,7 +17789,7 @@ static volatile int numberOfThreadsForJPEG = 0;
         
         NSMutableDictionary *d = [NSMutableDictionary dictionaryWithObjectsAndKeys: [[sPanel filenames] objectAtIndex:0], @"location", filesToExport, @"filesToExport", [dicomFiles2Export valueForKey: @"objectID"], @"dicomFiles2Export", nil];
         
-        NSThread* t = [[[NSThread alloc] initWithTarget:self selector:@selector(exportDICOMFileInt: ) object: d] autorelease];
+        NSThread* t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(exportDICOMFileInt:) object:d] autorelease];
         t.name = NSLocalizedString( @"Exporting...", nil);
         t.supportsCancel = YES;
         t.status = N2LocalizedSingularPluralCount( [filesToExport count], NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));
@@ -18272,27 +18285,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 
 #pragma mark -
 #pragma mark Report functions
-
-//- (IBAction)srReports: (id)sende
-//{
-//	NSIndexSet			*index = [databaseOutline selectedRowIndexes];
-//	NSManagedObject		*item = [databaseOutline itemAtRow:[index firstIndex]];
-//
-//	NSManagedObject *studySelected;
-//	
-//	if (item)
-//	{
-//		if ([[[item valueForKey: @"type"] isEqualToString:@"Study"])
-//			studySelected = item;
-//		else
-//			studySelected = [item valueForKey:@"study"];
-//		
-//		if (structuredReportController)
-//			[structuredReportController release];
-//		
-//		structuredReportController = [[StructuredReportController alloc] initWithStudy:studySelected];
-//	}
-//}
 
 - (void) checkReportsDICOMSRConsistency // __deprecated
 {
@@ -20350,9 +20342,10 @@ static volatile int numberOfThreadsForJPEG = 0;
     NSDate *dateOfBirth = [self samePatientMatchingDateValueForKey: @"dateOfBirth" item: study];
     if( dateOfBirth)
     {
-        NSCalendarDate *birthCalendarDate = [NSCalendarDate dateWithTimeIntervalSinceReferenceDate: [dateOfBirth timeIntervalSinceReferenceDate]];
-        NSDate *birthDateStart = [NSCalendarDate dateWithYear: [birthCalendarDate yearOfCommonEra] month: [birthCalendarDate monthOfYear] day: [birthCalendarDate dayOfMonth] hour: 0 minute: 0 second: 0 timeZone: nil];
-        NSDate *birthDateEnd = [(NSCalendarDate*) birthDateStart dateByAddingYears: 0 months: 0 days: 1 hours: 0 minutes: 0 seconds: 0];
+        NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+        calendar.timeZone = [NSTimeZone localTimeZone];
+        NSDate *birthDateStart = [calendar startOfDayForDate:dateOfBirth];
+        NSDate *birthDateEnd = [calendar dateByAddingUnit:NSCalendarUnitDay value:1 toDate:birthDateStart options:0];
         [identityPredicates addObject: [NSPredicate predicateWithFormat: @"(dateOfBirth >= %@) AND (dateOfBirth < %@)", birthDateStart, birthDateEnd]];
     }
 

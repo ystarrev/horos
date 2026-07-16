@@ -50,7 +50,7 @@
 #import <MetalKit/MetalKit.h>
 #import <PreferencePanes/PreferencePanes.h>
 #import <UserNotifications/UserNotifications.h>
-#import "Horos-Swift.h"
+#import "HorosSwiftInterop.h"
 #include <dlfcn.h>
 
 @class PreviewView;

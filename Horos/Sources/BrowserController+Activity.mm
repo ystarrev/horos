@@ -141,7 +141,7 @@ static NSString* const BrowserActivityHelperContext = @"BrowserActivityHelperCon
         @synchronized (ThreadsManager.defaultManager.threadsController) {
             // we are looking for removed threads
             NSMutableArray* threadsThatHaveCellsToRemove = [[[_cells valueForKey:@"thread"] mutableCopy] autorelease];
-            [threadsThatHaveCellsToRemove removeObjectsInArray:object.arrangedObjects];
+            [threadsThatHaveCellsToRemove removeObjectsInArray:[object.arrangedObjects valueForKey:@"thread"]];
             
             NSMutableArray *cellsToRemove = [NSMutableArray array];
             for (NSThread* thread in threadsThatHaveCellsToRemove)
@@ -167,8 +167,9 @@ static NSString* const BrowserActivityHelperContext = @"BrowserActivityHelperCon
             }
             
             // Check for new added threads
-            for (NSThread *thread in object.arrangedObjects)
+            for (id activity in object.arrangedObjects)
             {
+                NSThread* thread = [activity valueForKey:@"thread"];
                 id cell = [self cellForThread: thread];
                 if (cell == nil)
                 {

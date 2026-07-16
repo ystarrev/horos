@@ -1137,7 +1137,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 		
 		DICOMExport		*dcmSequence = [[DICOMExport alloc] init];
 		
-		[dcmSequence setSeriesNumber:6870 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];
+		[dcmSequence setSeriesNumber:6870 + [DICOMExport currentTimeSeriesNumberOffset]];
 		[dcmSequence setSeriesDescription:@"4D MPR - 2D"];
 		[dcmSequence setSourceFile: [[fileList objectAtIndex:0] valueForKey:@"completePath"]];
 		

@@ -231,7 +231,7 @@
                             
                             NSMutableDictionary *d = [NSMutableDictionary dictionaryWithObjectsAndKeys: [dropDestination path], @"location", filesToExport, @"filesToExport", [dicomFiles2Export valueForKey: @"objectID"], @"dicomFiles2Export", nil];
                             
-                            NSThread* t = [[[NSThread alloc] initWithTarget:[BrowserController currentBrowser] selector:@selector(exportDICOMFileInt: ) object: d] autorelease];
+                            NSThread* t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:[BrowserController currentBrowser] selector:@selector(exportDICOMFileInt:) object:d] autorelease];
                             t.name = NSLocalizedString( @"Exporting...", nil);
                             t.supportsCancel = YES;
                             t.status = N2LocalizedSingularPluralCount( [filesToExport count], NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));

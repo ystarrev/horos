@@ -39,7 +39,7 @@
 #import "DefaultsOsiriX.h"
 #import "BrowserController.h"
 #import "NSUserDefaultsController+OsiriX.h"
-#import "Horos-Swift.h"
+#import "HorosSwiftInterop.h"
 //#import "DDKeychain.h"
 #import <SecurityInterface/SFChooseIdentityPanel.h>
 #import "NSAppleScript+N2.h"

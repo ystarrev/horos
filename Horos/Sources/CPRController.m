@@ -2815,7 +2815,7 @@ static float deg2rad = M_PI / 180.0;
 		{
 			dicomExport = [[[DICOMExport alloc] init] autorelease];
 			[dicomExport setSeriesDescription: self.exportSeriesName];
-			[dicomExport setSeriesNumber:8930 + [[NSCalendarDate date] minuteOfHour]  + [[NSCalendarDate date] secondOfMinute]];
+			[dicomExport setSeriesNumber:8930 + [DICOMExport currentTimeSeriesNumberOffset]];
             [dicomExport setSourceFile:[[pixList[0] lastObject] srcFile]];
 			
 			if( self.exportImageFormat == CPR8BitRGBExportImageFormat)

@@ -580,19 +580,19 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
 
             DicomDatabase *dst = [DicomDatabase databaseAtPath:destination.location]; // Create the mainDatabase on the MAIN thread, if necessary !
 
-            NSThread* thread = [[[NSThread alloc] initWithTarget:self selector:@selector(copyImagesToLocalBrowserSourceThread:) object:[NSArray arrayWithObjects: [dicomImages valueForKey:@"objectID"], destination, _database, dst, NULL]] autorelease];
+            NSThread* thread = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(copyImagesToLocalBrowserSourceThread:) object:[NSArray arrayWithObjects: [dicomImages valueForKey:@"objectID"], destination, _database, dst, NULL]] autorelease];
             thread.name = NSLocalizedString(@"Copying images...", nil);
             thread.supportsCancel = YES;
             [[ThreadsManager defaultManager] addThreadAndStart:thread];
             return YES;
         } else if ([destination isKindOfClass:[RemoteDatabaseNodeIdentifier class]]) { // local Horos to remote Horos
-            NSThread* thread = [[[NSThread alloc] initWithTarget:self selector:@selector(copyImagesToRemoteBrowserSourceThread:) object:[NSArray arrayWithObjects: [dicomImages valueForKey:@"objectID"], destination, _database, NULL]] autorelease];
+            NSThread* thread = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(copyImagesToRemoteBrowserSourceThread:) object:[NSArray arrayWithObjects: [dicomImages valueForKey:@"objectID"], destination, _database, NULL]] autorelease];
             thread.supportsCancel = YES;
             thread.name = NSLocalizedString(@"Sending images...", nil);
             [[ThreadsManager defaultManager] addThreadAndStart:thread];
             return YES;
         } else if ([destination isKindOfClass:[PhoneVolumeRenderNodeIdentifier class]]) { // local Horos to iPhone planning app
-            NSThread* thread = [[[NSThread alloc] initWithTarget:self selector:@selector(copyImagesToPhoneVolumeRenderThread:) object:[NSArray arrayWithObjects: [dicomImages valueForKey:@"objectID"], destination, _database, NULL]] autorelease];
+            NSThread* thread = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(copyImagesToPhoneVolumeRenderThread:) object:[NSArray arrayWithObjects: [dicomImages valueForKey:@"objectID"], destination, _database, NULL]] autorelease];
             thread.supportsCancel = YES;
             thread.name = NSLocalizedString(@"Sending study to iPhone...", nil);
             [[ThreadsManager defaultManager] addThreadAndStart:thread];
@@ -631,13 +631,13 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
 
             [DicomDatabase databaseAtPath:destination.location]; // Create the mainDatabase on the MAIN thread, if necessary !
 
-            NSThread* thread = [[[NSThread alloc] initWithTarget:self selector:@selector(copyRemoteImagesToLocalBrowserSourceThread:) object:[NSArray arrayWithObjects: [dicomImages valueForKey:@"objectID"], destination, _database, NULL]] autorelease];
+            NSThread* thread = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(copyRemoteImagesToLocalBrowserSourceThread:) object:[NSArray arrayWithObjects: [dicomImages valueForKey:@"objectID"], destination, _database, NULL]] autorelease];
             thread.name = NSLocalizedString(@"Copying images...", nil);
             thread.supportsCancel = YES;
             [[ThreadsManager defaultManager] addThreadAndStart:thread];
             return YES;
 		} else if ([destination isKindOfClass:[RemoteDatabaseNodeIdentifier class]] || [destination isKindOfClass:[DicomNodeIdentifier class]]) { // remote Horos to remote Horos // remote Horos to remote DICOM
-				NSThread* thread = [[[NSThread alloc] initWithTarget:self selector:@selector(copyRemoteImagesToRemoteBrowserSourceThread:) object:[NSArray arrayWithObjects: [dicomImages valueForKey:@"objectID"], destination, _database, NULL]] autorelease];
+				NSThread* thread = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(copyRemoteImagesToRemoteBrowserSourceThread:) object:[NSArray arrayWithObjects: [dicomImages valueForKey:@"objectID"], destination, _database, NULL]] autorelease];
 				thread.name = NSLocalizedString(@"Initiating image transfer...", nil);
                 thread.supportsCancel = YES;
 				[[ThreadsManager defaultManager] addThreadAndStart:thread];

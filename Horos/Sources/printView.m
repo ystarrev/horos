@@ -116,16 +116,18 @@
 			headerHeight += 13;
 			string2draw = [string2draw stringByAppendingFormat:@"Study: "];
 
-			NSCalendarDate  *date = [NSCalendarDate dateWithTimeIntervalSinceReferenceDate: [[file valueForKey:@"date"] timeIntervalSinceReferenceDate]];
-			if( date && [date yearOfCommonEra] != 3000)
+			NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+			calendar.timeZone = [NSTimeZone localTimeZone];
+			NSDate *date = [file valueForKey:@"date"];
+			if( date && [calendar component:NSCalendarUnitYear fromDate:date] != 3000)
 			{
 				NSString *tempString = [[NSUserDefaults dateFormatter] stringFromDate: date];
 				string2draw = [string2draw stringByAppendingFormat:@"%@", tempString];
 			
 				DCMPix *pic = [[viewer pixList] objectAtIndex: 0];
 				
-				if( [pic acquisitionTime]) date = [NSCalendarDate dateWithTimeIntervalSinceReferenceDate: [[pic acquisitionTime] timeIntervalSinceReferenceDate]];
-				if( date && [date yearOfCommonEra] != 3000)
+				if( [pic acquisitionTime]) date = [pic acquisitionTime];
+				if( date && [calendar component:NSCalendarUnitYear fromDate:date] != 3000)
 				{
 					tempString = [BrowserController TimeFormat: date];
 					string2draw = [string2draw stringByAppendingFormat:@" - %@    ", tempString];

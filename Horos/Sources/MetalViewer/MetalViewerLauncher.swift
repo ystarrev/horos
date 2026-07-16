@@ -175,18 +175,22 @@ final class MetalViewerLauncher: NSObject {
         let initialPixList: [DCMPix]?
     }
 
-    private struct CrossSeriesTemporalKey: Hashable {
+    private struct CrossSeriesIdentityKey: Hashable {
         let modality: String
         let seriesDescription: String
         let protocolName: String
         let sequenceName: String
         let frameOfReferenceUID: String
-        let imageCount: Int
         let dimensions: String
         let orientation: String
         let pixelSpacing: String
-        let slicePositions: String
         let echoTime: String
+    }
+
+    private struct CrossSeriesTemporalKey: Hashable {
+        let identity: CrossSeriesIdentityKey
+        let imageCount: Int
+        let slicePositions: String
     }
 
     private struct CrossSeriesTemporalMetadata {
@@ -196,10 +200,33 @@ final class MetalViewerLauncher: NSObject {
         let acquisitionSeconds: Double
     }
 
+    private struct CrossSeriesSlicePartitionKey: Hashable {
+        let identity: CrossSeriesIdentityKey
+        let timePointCount: Int
+    }
+
+    private struct CrossSeriesSlicePartitionMetadata {
+        let key: CrossSeriesSlicePartitionKey
+        let spatialPosition: String
+        let acquisitionNumbers: [Int]
+    }
+
+    private struct CrossSeriesMetadata {
+        let temporal: CrossSeriesTemporalMetadata
+        let slicePartition: CrossSeriesSlicePartitionMetadata?
+    }
+
     private struct PendingSeriesPresentation {
         let imageGroup: SeriesImageGroup
         let displaySeriesNumber: String
-        let temporalMetadata: CrossSeriesTemporalMetadata?
+        let crossSeriesMetadata: CrossSeriesMetadata?
+    }
+
+    private struct CombinedSeriesPresentation {
+        let anchorIndex: Int
+        let memberIndexes: [Int]
+        let orderedImageObjects: [NSManagedObject]
+        let timePointCount: Int
     }
 
     private struct SeriesPresentation {
@@ -638,8 +665,8 @@ final class MetalViewerLauncher: NSObject {
                         PendingSeriesPresentation(
                             imageGroup: imageGroup,
                             displaySeriesNumber: displaySeriesNumber,
-                            temporalMetadata: imageGroups.count == 1
-                                ? crossSeriesTemporalMetadata(for: imageGroup, seriesObject: seriesObject)
+                            crossSeriesMetadata: imageGroups.count == 1
+                                ? crossSeriesMetadata(for: imageGroup, seriesObject: seriesObject)
                                 : nil
                         )
                     )
@@ -776,11 +803,11 @@ final class MetalViewerLauncher: NSObject {
         frames: [DCMPix]
     ) -> [SeriesPresentation] {
         let candidates = pending.enumerated().compactMap { index, item -> (Int, CrossSeriesTemporalMetadata)? in
-            guard let metadata = item.temporalMetadata else { return nil }
+            guard let metadata = item.crossSeriesMetadata?.temporal else { return nil }
             return (index, metadata)
         }
         let groupedCandidates = Dictionary(grouping: candidates, by: { $0.1.key })
-        var combinedIndexesByMember: [Int: [Int]] = [:]
+        var combinedPresentationByMember: [Int: CombinedSeriesPresentation] = [:]
 
         for candidatesWithSameGeometry in groupedCandidates.values {
             let ordered = candidatesWithSameGeometry.sorted { lhs, rhs in
@@ -808,8 +835,69 @@ final class MetalViewerLauncher: NSObject {
             }
 
             let memberIndexes = ordered.map(\.0)
+            guard let anchorIndex = memberIndexes.min() else { continue }
+            let combination = CombinedSeriesPresentation(
+                anchorIndex: anchorIndex,
+                memberIndexes: memberIndexes,
+                orderedImageObjects: memberIndexes.flatMap { pending[$0].imageGroup.imageObjects },
+                timePointCount: memberIndexes.count
+            )
             for memberIndex in memberIndexes {
-                combinedIndexesByMember[memberIndex] = memberIndexes
+                combinedPresentationByMember[memberIndex] = combination
+            }
+        }
+
+        // Some older scanners transpose a 4D acquisition: one series per slice,
+        // with the images inside each series representing successive timepoints.
+        let slicePartitionCandidates = pending.enumerated().compactMap {
+            index, item -> (Int, CrossSeriesSlicePartitionMetadata)? in
+            guard combinedPresentationByMember[index] == nil,
+                  let metadata = item.crossSeriesMetadata?.slicePartition else {
+                return nil
+            }
+            return (index, metadata)
+        }
+        let groupedSlicePartitions = Dictionary(grouping: slicePartitionCandidates, by: { $0.1.key })
+
+        for candidatesWithSameLayout in groupedSlicePartitions.values {
+            let ordered = candidatesWithSameLayout.sorted { lhs, rhs in
+                let leftSeriesNumber = Int(pending[lhs.0].displaySeriesNumber) ?? Int.max
+                let rightSeriesNumber = Int(pending[rhs.0].displaySeriesNumber) ?? Int.max
+                return leftSeriesNumber == rightSeriesNumber ? lhs.0 < rhs.0 : leftSeriesNumber < rightSeriesNumber
+            }
+            guard ordered.count > 1 else { continue }
+
+            let seriesNumbers = ordered.compactMap { Int(pending[$0.0].displaySeriesNumber) }
+            guard seriesNumbers.count == ordered.count,
+                  let firstSeriesNumber = seriesNumbers.first,
+                  seriesNumbers == Array(firstSeriesNumber..<(firstSeriesNumber + ordered.count)) else {
+                continue
+            }
+
+            let spatialPositions = Set(ordered.map(\.1.spatialPosition))
+            guard spatialPositions.count == ordered.count,
+                  let acquisitionNumbers = ordered.first?.1.acquisitionNumbers,
+                  acquisitionNumbers.count > 1,
+                  ordered.allSatisfy({ $0.1.acquisitionNumbers == acquisitionNumbers }) else {
+                continue
+            }
+
+            let memberIndexes = ordered.map(\.0)
+            guard let anchorIndex = memberIndexes.min(),
+                  memberIndexes.allSatisfy({ pending[$0].imageGroup.imageObjects.count == acquisitionNumbers.count }) else {
+                continue
+            }
+            let orderedImages = acquisitionNumbers.indices.flatMap { timeIndex in
+                memberIndexes.map { pending[$0].imageGroup.imageObjects[timeIndex] }
+            }
+            let combination = CombinedSeriesPresentation(
+                anchorIndex: anchorIndex,
+                memberIndexes: memberIndexes,
+                orderedImageObjects: orderedImages,
+                timePointCount: acquisitionNumbers.count
+            )
+            for memberIndex in memberIndexes {
+                combinedPresentationByMember[memberIndex] = combination
             }
         }
 
@@ -820,16 +908,16 @@ final class MetalViewerLauncher: NSObject {
             guard consumedIndexes.contains(index) == false else { continue }
             let item = pending[index]
 
-            if let memberIndexes = combinedIndexesByMember[index], memberIndexes.first == index {
-                let members = memberIndexes.map { pending[$0] }
-                consumedIndexes.formUnion(memberIndexes)
-                let orderedImages = members.flatMap { $0.imageGroup.imageObjects }
+            if let combination = combinedPresentationByMember[index], combination.anchorIndex == index {
+                let members = combination.memberIndexes.map { pending[$0] }
+                consumedIndexes.formUnion(combination.memberIndexes)
+                let orderedImages = combination.orderedImageObjects
                 let sourceIdentifiers = Set(members.map { $0.imageGroup.identifier })
                 let cachedFrames = filteredFrames(frames, matching: orderedImages)
-                let timePointCount = memberIndexes.count
+                let timePointCount = combination.timePointCount
                 let seriesNumbers = members.compactMap { Int($0.displaySeriesNumber) }
                 let displaySeriesNumber: String
-                if let firstNumber = seriesNumbers.first, let lastNumber = seriesNumbers.last {
+                if let firstNumber = seriesNumbers.min(), let lastNumber = seriesNumbers.max() {
                     displaySeriesNumber = firstNumber == lastNumber ? "\(firstNumber)" : "\(firstNumber)–\(lastNumber)"
                 } else {
                     displaySeriesNumber = item.displaySeriesNumber
@@ -850,7 +938,7 @@ final class MetalViewerLauncher: NSObject {
                 continue
             }
 
-            if combinedIndexesByMember[index] != nil {
+            if combinedPresentationByMember[index] != nil {
                 consumedIndexes.insert(index)
                 continue
             }
@@ -873,10 +961,10 @@ final class MetalViewerLauncher: NSObject {
         return presentations
     }
 
-    private class func crossSeriesTemporalMetadata(
+    private class func crossSeriesMetadata(
         for imageGroup: SeriesImageGroup,
         seriesObject: NSManagedObject
-    ) -> CrossSeriesTemporalMetadata? {
+    ) -> CrossSeriesMetadata? {
         guard let firstImage = imageGroup.imageObjects.first else { return nil }
         guard let path = resolvedPath(for: firstImage) else { return nil }
         guard let object = DCMObject.object(withContentsOfFile: path, decodingPixelData: false) as? DCMObject else { return nil }
@@ -928,24 +1016,116 @@ final class MetalViewerLauncher: NSObject {
             precision: 4
         )
 
-        return CrossSeriesTemporalMetadata(
+        let identity = CrossSeriesIdentityKey(
+            modality: modality,
+            seriesDescription: seriesDescription,
+            protocolName: protocolName,
+            sequenceName: sequenceName,
+            frameOfReferenceUID: frameOfReferenceUID,
+            dimensions: "\(columns)x\(rows)",
+            orientation: orientation,
+            pixelSpacing: pixelSpacing,
+            echoTime: echoTime
+        )
+        let temporal = CrossSeriesTemporalMetadata(
             key: CrossSeriesTemporalKey(
-                modality: modality,
-                seriesDescription: seriesDescription,
-                protocolName: protocolName,
-                sequenceName: sequenceName,
-                frameOfReferenceUID: frameOfReferenceUID,
+                identity: identity,
                 imageCount: imageGroup.imageObjects.count,
-                dimensions: "\(columns)x\(rows)",
-                orientation: orientation,
-                pixelSpacing: pixelSpacing,
-                slicePositions: metadataSignature(positions, precision: 3),
-                echoTime: echoTime
+                slicePositions: metadataSignature(positions, precision: 3)
             ),
             temporalPositionCount: temporalPositionCount,
             acquisitionNumber: acquisitionNumber,
             acquisitionSeconds: acquisitionSeconds
         )
+        let slicePartition = crossSeriesSlicePartitionMetadata(
+            for: imageGroup,
+            firstObject: object,
+            identity: identity,
+            temporalPositionCount: temporalPositionCount,
+            seriesDescription: seriesDescription,
+            protocolName: protocolName,
+            sequenceName: sequenceName,
+            sliceLocations: positions
+        )
+        return CrossSeriesMetadata(temporal: temporal, slicePartition: slicePartition)
+    }
+
+    private class func crossSeriesSlicePartitionMetadata(
+        for imageGroup: SeriesImageGroup,
+        firstObject: DCMObject,
+        identity: CrossSeriesIdentityKey,
+        temporalPositionCount: Int,
+        seriesDescription: String,
+        protocolName: String,
+        sequenceName: String,
+        sliceLocations: [Double]
+    ) -> CrossSeriesSlicePartitionMetadata? {
+        guard imageGroup.imageObjects.count > 1,
+              Set(sliceLocations.map { metadataSignature([$0], precision: 3) }).count == 1,
+              temporalPositionCount > 1 || indicatesDynamicAcquisition([
+                seriesDescription,
+                protocolName,
+                sequenceName
+              ]) else {
+            return nil
+        }
+
+        let timePointCount = temporalPositionCount > 1 ? temporalPositionCount : imageGroup.imageObjects.count
+        guard timePointCount == imageGroup.imageObjects.count else { return nil }
+
+        var acquisitionNumbers: [Int] = []
+        var acquisitionSeconds: [Double] = []
+        var spatialPositions: [String] = []
+        acquisitionNumbers.reserveCapacity(timePointCount)
+        acquisitionSeconds.reserveCapacity(timePointCount)
+        spatialPositions.reserveCapacity(timePointCount)
+
+        for (index, imageObject) in imageGroup.imageObjects.enumerated() {
+            let object: DCMObject
+            if index == 0 {
+                object = firstObject
+            } else {
+                guard let path = resolvedPath(for: imageObject),
+                      let parsed = DCMObject.object(withContentsOfFile: path, decodingPixelData: false) as? DCMObject else {
+                    return nil
+                }
+                object = parsed
+            }
+
+            guard let acquisitionNumber = attributeInt(in: object, tag: "0020,0012"),
+                  let seconds = dicomClockSeconds(object.attributeValue(forKey: "0008,0032")) else {
+                return nil
+            }
+            let position = metadataSignature(attributeNumbers(in: object, tag: "0020,0032"), precision: 3)
+            guard position.isEmpty == false else { return nil }
+            acquisitionNumbers.append(acquisitionNumber)
+            acquisitionSeconds.append(seconds)
+            spatialPositions.append(position)
+        }
+
+        guard let firstAcquisition = acquisitionNumbers.first,
+              acquisitionNumbers == Array(firstAcquisition..<(firstAcquisition + timePointCount)),
+              zip(acquisitionSeconds.dropFirst(), acquisitionSeconds).allSatisfy({ $0.0 > $0.1 }),
+              Set(spatialPositions).count == 1,
+              let spatialPosition = spatialPositions.first else {
+            return nil
+        }
+
+        return CrossSeriesSlicePartitionMetadata(
+            key: CrossSeriesSlicePartitionKey(identity: identity, timePointCount: timePointCount),
+            spatialPosition: spatialPosition,
+            acquisitionNumbers: acquisitionNumbers
+        )
+    }
+
+    private class func indicatesDynamicAcquisition(_ values: [String]) -> Bool {
+        let markers: Set<String> = ["DCE", "DSC", "DYN", "DYNAMIC", "CINE", "PERFUSION", "MULTIPHASE"]
+        let tokens = Set(values.flatMap {
+            normalizedMetadataString($0)
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.isEmpty == false }
+        })
+        return markers.isDisjoint(with: tokens) == false
     }
 
     private class func resolvedPath(for imageObject: NSManagedObject) -> String? {

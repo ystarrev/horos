@@ -598,7 +598,7 @@ static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys(void)
     {
         NSDictionary *dict = [NSDictionary dictionaryWithObjectsAndKeys: arraysOfFiles, @"arraysOfFiles", arrayOfPatientNames, @"arrayOfPatientNames", nil];
         
-        NSThread* t = [[[NSThread alloc] initWithTarget:self selector:@selector(sendDICOMFilesOffis:) object: dict] autorelease];
+        NSThread* t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(sendDICOMFilesOffis:) object:dict] autorelease];
         t.name = NSLocalizedString( @"Sending...", nil);
         t.supportsCancel = YES;
         t.progress = 0;

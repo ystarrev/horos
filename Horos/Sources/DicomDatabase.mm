@@ -1365,8 +1365,8 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
     NSMutableString* pred = [NSMutableString stringWithString: string];
     
     // DATES
-    NSCalendarDate* now = [NSCalendarDate calendarDate];
-    NSDate *start = [NSDate dateWithTimeIntervalSinceReferenceDate: [[NSCalendarDate dateWithYear:[now yearOfCommonEra] month:[now monthOfYear] day:[now dayOfMonth] hour:0 minute:0 second:0 timeZone: [now timeZone]] timeIntervalSinceReferenceDate]];
+    NSDate *now = [NSDate date];
+    NSDate *start = [[NSCalendar currentCalendar] startOfDayForDate:now];
     
     NSDictionary	*sub = [NSDictionary dictionaryWithObjectsAndKeys:	[NSString stringWithFormat:@"%lf", [[now dateByAddingTimeInterval: -60*60*1] timeIntervalSinceReferenceDate]],			@"$LASTHOUR",
                             [NSString stringWithFormat:@"%lf", [[now dateByAddingTimeInterval:-60*60*6] timeIntervalSinceReferenceDate]],			@"$LAST6HOURS",
@@ -1633,18 +1633,21 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
     static NSString *singleThread = @"threadBridgeForProcessFilesAtPaths";
     static int numberOfWaitingThreads = 0;
     
-    if( numberOfWaitingThreads < 50)
+    @try
     {
-        numberOfWaitingThreads++;
-        
-        @synchronized( singleThread)
+        if( numberOfWaitingThreads < 50)
         {
+            numberOfWaitingThreads++;
+
             @try
             {
-                if( self.isMainDatabase)
-                    [self.independentDatabase processFilesAtPaths:[params objectForKey:@":"] intoDirAtPath:[params objectForKey:@"intoDirAtPath:"] mode:[[params objectForKey:@"mode:"] intValue]];
-                else
-                    [self processFilesAtPaths:[params objectForKey:@":"] intoDirAtPath:[params objectForKey:@"intoDirAtPath:"] mode:[[params objectForKey:@"mode:"] intValue]];
+                @synchronized( singleThread)
+                {
+                    if( self.isMainDatabase)
+                        [self.independentDatabase processFilesAtPaths:[params objectForKey:@":"] intoDirAtPath:[params objectForKey:@"intoDirAtPath:"] mode:[[params objectForKey:@"mode:"] intValue]];
+                    else
+                        [self processFilesAtPaths:[params objectForKey:@":"] intoDirAtPath:[params objectForKey:@"intoDirAtPath:"] mode:[[params objectForKey:@"mode:"] intValue]];
+                }
             }
             @catch (NSException* e)
             {
@@ -1652,11 +1655,14 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
             }
             @finally
             {
-                [pool release];
+                numberOfWaitingThreads--;
             }
         }
-        
-        numberOfWaitingThreads--;
+    }
+    @finally
+    {
+        [ThreadsManager.defaultManager removeThread:thread];
+        [pool release];
     }
 }
 
@@ -2029,6 +2035,8 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init]; // It has to be done after the NSMutableArray autorelease: we will return it.
     
     [self cleanForFreeSpace];
+
+    NSArray *roiSRReferenceImages = nil;
     
     @try
     {
@@ -2051,7 +2059,13 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
         NSMutableArray* modifiedStudiesArray = [NSMutableArray array];
         NSMutableSet* modifiedStudyObjectIDs = [NSMutableSet set];
         
-        NSDate *defaultDate = [NSCalendarDate dateWithYear:1901 month:1 day:1 hour:0 minute:0 second:0 timeZone:nil];
+        NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+        calendar.timeZone = [NSTimeZone localTimeZone];
+        NSDateComponents *defaultDateComponents = [[[NSDateComponents alloc] init] autorelease];
+        defaultDateComponents.year = 1901;
+        defaultDateComponents.month = 1;
+        defaultDateComponents.day = 1;
+        NSDate *defaultDate = [calendar dateFromComponents:defaultDateComponents];
         
         DicomStudy *study = nil;
         DicomSeries *seriesTable = nil;
@@ -2100,7 +2114,6 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
               [NSDate timeIntervalSinceReferenceDate] - existingImageFetchStartTime);
 
         NSMutableDictionary *seriesImagesBySOPFrame = [NSMutableDictionary dictionary];
-        NSArray *roiSRReferenceImages = nil;
         NSString *curPatientUID = nil, *curStudyID = nil, *curSerieID = nil;
         BOOL newObject = NO;
         
@@ -2214,7 +2227,7 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                             {
                                 NSFetchRequest *referenceRequest = [NSFetchRequest fetchRequestWithEntityName:@"Image"];
                                 referenceRequest.predicate = [NSPredicate predicateWithFormat:@"compressedSopInstanceUID != NIL"];
-                                roiSRReferenceImages = [self.managedObjectContext executeFetchRequest:referenceRequest error:nil];
+                                roiSRReferenceImages = [[self.managedObjectContext executeFetchRequest:referenceRequest error:nil] retain];
                             }
 
                             NSArray *candidateImages = roiSRReferenceImages;
@@ -2991,6 +3004,8 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
     {
         N2LogExceptionWithStackTrace(e);
     }
+
+    [roiSRReferenceImages release];
     
     @try
     {
@@ -3257,7 +3272,8 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                         NSThread* thread = [NSThread currentThread];
                         thread.name = NSLocalizedString(@"Adding files...", nil);
                         [[ThreadsManager defaultManager] addThreadAndStart:thread];
-                        
+                        @try
+                        {
                         BOOL succeed = YES;
                         
                         thread.status = NSLocalizedString(@"Validating the files...", nil);
@@ -3334,8 +3350,11 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                                 N2LogExceptionWithStackTrace(e);
                             }
                         }
-                        
-                        [[ThreadsManager defaultManager] removeThread:thread]; // NSOperationQueue threads don't finish after ablock execution, they're recycled
+                        }
+                        @finally
+                        {
+                            [[ThreadsManager defaultManager] removeThread:thread]; // NSOperationQueue threads are recycled after block execution.
+                        }
                     }];
                     
                     if( [NSThread currentThread].isCancelled)
@@ -3791,7 +3810,10 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
     {
         [_importFilesFromIncomingDirLock unlock];
         if (activityFeedbackShown)
+        {
+            [ThreadsManager.defaultManager removeThread:thread];
             [OsiriX unsetReceivingIcon];
+        }
     }
     
     if (enumer.nextObject) // there is more data
@@ -3852,7 +3874,7 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
         @synchronized (_decompressQueue) {
             DicomDatabase* mdb = self.isMainDatabase? self : self.mainDatabase;
             if (!mdb.compressDecompressThread) {
-                mdb.compressDecompressThread = [[[NSThread alloc] initWithTarget:self selector:@selector(_threadCompressDecompress) object:nil] autorelease];
+                mdb.compressDecompressThread = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(_threadCompressDecompress) object:nil] autorelease];
                 [mdb.compressDecompressThread start];
             } else {
                 mdb.compressDecompressThread.status = [NSString stringWithFormat:NSLocalizedString(@"%lu additional files queued", nil), (unsigned long)(_compressQueue.count+_decompressQueue.count)];

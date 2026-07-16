@@ -1,3 +1,4 @@
+#import "HorosDCMTKCondition.h"
 /*
  *
  *  Copyright (C) 1994-2005, OFFIS
@@ -301,7 +302,7 @@ static const char* transferSyntaxes[] = {
 	/* initialize network, i.e. create an instance of T_ASC_Network*. */
     cond = ASC_initializeNetwork(NET_REQUESTOR, 0, _acse_timeout, &net);
     if (cond.bad()) {
-        DimseCondition::dump(cond);
+        HorosLogDIMSECondition(cond);
 		verifyException = [NSException exceptionWithName:@"DICOM Network Failure (verifyscu)" reason:[NSString stringWithFormat: @"ASC_initializeNetwork %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil];
 		[verifyException raise];
         //return;
@@ -317,10 +318,10 @@ static const char* transferSyntaxes[] = {
 #endif
 
 /* initialize asscociation parameters, i.e. create an instance of T_ASC_Parameters*. */
-    cond = ASC_createAssociationParameters(&params, _maxReceivePDULength);
-	DimseCondition::dump(cond);
+    cond = ASC_createAssociationParameters(&params, _maxReceivePDULength, dcmConnectionTimeout.get());
+	HorosLogDIMSECondition(cond);
     if (cond.bad()) {
-        DimseCondition::dump(cond);
+        HorosLogDIMSECondition(cond);
 		verifyException = [NSException exceptionWithName:@"DICOM Network Failure (verifyscu)" reason:[NSString stringWithFormat: @"ASC_createAssociationParameters %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil];
 		[verifyException raise];
 		//return;
@@ -335,7 +336,7 @@ static const char* transferSyntaxes[] = {
 	/* available the user is able to request an encrypted,secure connection. */
 	cond = ASC_setTransportLayerType(params, _secureConnection);
 	if (cond.bad()) {
-		DimseCondition::dump(cond);
+		HorosLogDIMSECondition(cond);
 		verifyException = [NSException exceptionWithName:@"DICOM Network Failure (findscu)" reason:[NSString stringWithFormat: @"ASC_setTransportLayerType %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil];
 		[verifyException raise];
 		//return;
@@ -344,7 +345,7 @@ static const char* transferSyntaxes[] = {
 	/* Figure out the presentation addresses and copy the */
 	/* corresponding values into the association parameters.*/
 	gethostname(localHost, sizeof(localHost) - 1);
-	sprintf(peerHost, "%s:%d", opt_peer, (int)opt_port);
+	snprintf(peerHost, sizeof(peerHost), "%s:%d", opt_peer, (int)opt_port);
 	//NSLog(@"peer host: %s", peerHost);
 	ASC_setPresentationAddresses(params, localHost, peerHost);
 	
@@ -359,15 +360,14 @@ static const char* transferSyntaxes[] = {
 	cond = [self addPresentationContext:params abstractSyntax:UID_VerificationSOPClass];
     
     if (cond.bad()) {
-        DimseCondition::dump(cond);
+        HorosLogDIMSECondition(cond);
 		verifyException = [NSException exceptionWithName:@"DICOM Network Failure (findscu)" reason:[NSString stringWithFormat: @"addPresentationContext %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil];
         [verifyException raise];
     }
 
     /* dump presentation contexts if required */
     if (_debug) {
-        printf("Request Parameters:\n");
-        ASC_dumpParameters(params, COUT);
+        HorosLogAssociationParameters(params, ASC_ASSOC_RQ);
     }
 	
 	    /* create association, i.e. try to establish a network connection to another */
@@ -383,12 +383,12 @@ static const char* transferSyntaxes[] = {
 
 				ASC_getRejectParameters(params, &rej);
 				errmsg("Association Rejected:");
-				ASC_printRejectParameters(stderr, &rej);
+				HorosLogAssociationRejection(&rej);
 				verifyException = [NSException exceptionWithName:@"DICOM Network Failure (verifyscu)" reason:[NSString stringWithFormat: @"Association Rejected %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil];
 				[verifyException raise];
 			} else {
 				errmsg("Association Request Failed:");
-				DimseCondition::dump(cond);
+				HorosLogDIMSECondition(cond);
 				verifyException = [NSException exceptionWithName:@"DICOM Network Failure (verifyscu)" reason:[NSString stringWithFormat: @"Association Request Failed %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil];
 				[verifyException raise];
 			}
@@ -397,8 +397,7 @@ static const char* transferSyntaxes[] = {
 
     /* dump the presentation contexts which have been accepted/refused */
     if (_debug) {
-        printf("Association Parameters Negotiated:\n");
-        ASC_dumpParameters(params, COUT);
+        HorosLogAssociationParameters(params, ASC_ASSOC_AC);
     }
 	
 			/* count the presentation contexts which have been accepted by the SCP */
@@ -432,7 +431,7 @@ static const char* transferSyntaxes[] = {
             cond = ASC_abortAssociation(assoc);
             if (cond.bad()) {
                 errmsg("Association Abort Failed:");
-                DimseCondition::dump(cond);
+                HorosLogDIMSECondition(cond);
                 verifyException = [NSException exceptionWithName:@"DICOM Network Failure (verifyscu)" reason:[NSString stringWithFormat: @"Association Abort Failed %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil];
 				[verifyException raise];
             }
@@ -444,7 +443,7 @@ static const char* transferSyntaxes[] = {
             if (cond.bad())
             {
                 errmsg("Association Release Failed:");
-                DimseCondition::dump(cond);
+                HorosLogDIMSECondition(cond);
                 verifyException = [NSException exceptionWithName:@"DICOM Network Failure (verifyscu)" reason:[NSString stringWithFormat: @"Association Release Failed %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil];
 				[verifyException raise];
             }
@@ -459,7 +458,7 @@ static const char* transferSyntaxes[] = {
         cond = ASC_abortAssociation(assoc);
         if (cond.bad()) {
             errmsg("Association Abort Failed:");
-            DimseCondition::dump(cond);
+            HorosLogDIMSECondition(cond);
         }
 		[verifyException raise];
     }
@@ -470,14 +469,14 @@ static const char* transferSyntaxes[] = {
     else
     {
         errmsg("SCU Failed:");
-        DimseCondition::dump(cond);
+        HorosLogDIMSECondition(cond);
         if (_verbose)
             printf("Aborting Association\n");
 		verifyException = [NSException exceptionWithName:@"DICOM Network Failure (verifyscu)" reason:[NSString stringWithFormat: @"SCU Failed %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil];
         cond = ASC_abortAssociation(assoc);
         if (cond.bad()) {
             errmsg("Association Abort Failed:");
-            DimseCondition::dump(cond);
+            HorosLogDIMSECondition(cond);
         }
 		[verifyException raise];
     }
@@ -494,7 +493,7 @@ static const char* transferSyntaxes[] = {
     /* call is the counterpart of ASC_requestAssociation(...) which was called above. */
     cond = ASC_destroyAssociation(&assoc);
     if (cond.bad()) {
-        DimseCondition::dump(cond);  
+        HorosLogDIMSECondition(cond);
     
     }
 	
@@ -502,7 +501,7 @@ static const char* transferSyntaxes[] = {
     /* is the counterpart of ASC_initializeNetwork(...) which was called above. */
     cond = ASC_dropNetwork(&net);
     if (cond.bad()) {
-        DimseCondition::dump(cond);
+        HorosLogDIMSECondition(cond);
 
     }
 	
@@ -585,7 +584,7 @@ static const char* transferSyntaxes[] = {
         }
     } else {
         errmsg("Failed:");
-        DimseCondition::dump(cond);
+        HorosLogDIMSECondition(cond);
     }
 
     /* check for status detail information, there should never be any */
@@ -602,4 +601,3 @@ static const char* transferSyntaxes[] = {
 
 
 @end
-

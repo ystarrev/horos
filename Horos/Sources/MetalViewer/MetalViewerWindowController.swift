@@ -15,6 +15,7 @@ private final class MetalViewerSplitView: NSSplitView {
 
 private final class MetalViewerWindow: NSWindow {
     var tabKeyHandler: ((Bool) -> Bool)?
+    var annotationLevelHandler: ((MetalViewerAnnotationLevel) -> Void)?
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown,
@@ -25,6 +26,27 @@ private final class MetalViewerWindow: NSWindow {
         }
 
         super.sendEvent(event)
+    }
+
+    @objc func annotMenu(_ sender: Any?) {
+        guard let menuItem = sender as? NSMenuItem,
+              let level = MetalViewerAnnotationLevel(rawValue: menuItem.tag) else {
+            return
+        }
+        annotationLevelHandler?(level)
+    }
+
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard menuItem.action == #selector(annotMenu(_:)) else {
+            return true
+        }
+
+        guard let level = MetalViewerAnnotationLevel(rawValue: menuItem.tag) else {
+            menuItem.state = .off
+            return false
+        }
+        menuItem.state = level == MetalViewerAnnotationLevel.current ? .on : .off
+        return true
     }
 
     private func shouldUseTabForPaneTraversal(_ event: NSEvent) -> Bool {
@@ -60,6 +82,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private var isSyncScaleEnabled = UserDefaults.standard.bool(forKey: Layout.syncScaleAutosaveKey)
     private var isApplyingSyncedScale = false
     private var lastPaneScales: [ObjectIdentifier: Float] = [:]
+    private var annotationDefaultsObserver: NSObjectProtocol?
 
     init(study: MetalViewerStudy) {
         let initStart = CFAbsoluteTimeGetCurrent()
@@ -136,12 +159,21 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         window.tabKeyHandler = { [weak self] moveBackward in
             self?.moveActivePane(backward: moveBackward) ?? false
         }
+        window.annotationLevelHandler = { [weak self] level in
+            self?.setAnnotationLevel(level)
+        }
         contentSplitView.delegate = self
         contentSplitView.dividerDragEnded = { [weak self] in
             self?.saveSplitPosition()
         }
         toolbarView.wlwwSelectionHandler = { [weak self] command in
             self?.applyWLWWCommand(command)
+        }
+        toolbarView.clutSelectionHandler = { [weak self] presetName in
+            self?.applyCLUT(named: presetName)
+        }
+        toolbarView.opacitySelectionHandler = { [weak self] presetName in
+            self?.applyOpacity(named: presetName)
         }
         toolbarView.viewerModeSelectionHandler = { [weak self] mode in
             self?.applyViewerMode(mode)
@@ -153,6 +185,21 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         toolbarView.setSyncScaleEnabled(isSyncScaleEnabled)
         toolbarView.syncScaleSelectionHandler = { [weak self] isEnabled in
             self?.setSyncScaleEnabled(isEnabled)
+        }
+        toolbarView.annotationLevelSelectionHandler = { [weak self] level in
+            self?.setAnnotationLevel(level)
+        }
+        setAnnotationLevel(MetalViewerAnnotationLevel.current)
+        annotationDefaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: UserDefaults.standard,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.applyAnnotationLevel(MetalViewerAnnotationLevel.current)
+            if let activePaneView = self.activePaneView {
+                self.reloadDisplayMenus(for: activePaneView)
+            }
         }
 
         NSLayoutConstraint.activate([
@@ -190,8 +237,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
                 let syncedScale = self.synchronizedScaleValue(excluding: targetPane) ?? targetPane.currentScale
                 targetPane.display(series: series)
                 self.applySyncedScaleIfNeeded(to: targetPane, preferredScale: syncedScale)
-                self.selectedWLWWTitle = series.windowLevelPresetTitle
-                self.toolbarView.reloadWLWWMenu(selectedTitle: self.selectedWLWWTitle, modality: series.modality)
+                self.reloadWLWWMenu(for: targetPane)
                 if self.activePaneView == nil {
                     self.setActivePane(targetPane)
                 } else {
@@ -214,6 +260,12 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
 
         metalWindowTimingLog("MetalViewerWindowController init total", since: initStart)
+    }
+
+    deinit {
+        if let annotationDefaultsObserver {
+            NotificationCenter.default.removeObserver(annotationDefaultsObserver)
+        }
     }
 
     @available(*, unavailable)
@@ -325,6 +377,10 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             self.selectedWLWWTitle = NSLocalizedString("Other", comment: "")
             self.toolbarView.selectWLWWTitle(self.selectedWLWWTitle)
         }
+        pane.windowLevelTargetDidChange = { [weak self, weak pane] _ in
+            guard let self, let pane, self.activePaneView === pane else { return }
+            self.reloadWLWWMenu(for: pane)
+        }
         pane.seriesDropHandler = { [weak self, weak pane] identifier, isOverlay in
             guard let self, let pane else { return }
             self.assignSeries(withIdentifier: identifier, to: pane, overlay: isOverlay)
@@ -360,8 +416,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         for candidate in paneViews {
             candidate.isActive = (candidate === pane)
         }
-        selectedWLWWTitle = pane.series.windowLevelPresetTitle
-        toolbarView.reloadWLWWMenu(selectedTitle: selectedWLWWTitle, modality: pane.series.modality)
+        reloadWLWWMenu(for: pane)
         pane.focusImageView()
         updateToolbarStatus()
         updateReferenceLines()
@@ -465,8 +520,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             let syncedScale = synchronizedScaleValue(excluding: pane) ?? pane.currentScale
             pane.display(series: series)
             applySyncedScaleIfNeeded(to: pane, preferredScale: syncedScale)
-            selectedWLWWTitle = series.windowLevelPresetTitle
-            toolbarView.reloadWLWWMenu(selectedTitle: selectedWLWWTitle, modality: series.modality)
+            if activePaneView === pane {
+                reloadWLWWMenu(for: pane)
+            }
         }
         scoutView.setSelectedSeries(identifier: series.identifier)
 
@@ -483,8 +539,14 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             let previousSeries = self.study.series.first(where: { $0.identifier == series.identifier })
                 ?? self.study.series.first(where: { $0.sharesSourceSeries(with: series) })
             if let previousSeries {
-                series.windowLevelState = previousSeries.windowLevelState
+                let automaticWindowNeedsRefresh =
+                    previousSeries.windowLevelPresetTitle == NSLocalizedString("Auto", comment: "")
+                    && series.imageCount != previousSeries.imageCount
+                series.windowLevelState = automaticWindowNeedsRefresh
+                    ? MetalViewerWindowLevelState()
+                    : previousSeries.windowLevelState
                 series.windowLevelPresetTitle = previousSeries.windowLevelPresetTitle
+                series.transferFunctionState = previousSeries.transferFunctionState
             }
         }
         self.study = study
@@ -517,15 +579,12 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             let syncedScale = synchronizedScaleValue(excluding: targetPane) ?? targetPane.currentScale
             targetPane.display(series: selectedSeries)
             applySyncedScaleIfNeeded(to: targetPane, preferredScale: syncedScale)
-            selectedWLWWTitle = selectedSeries.windowLevelPresetTitle
-            toolbarView.reloadWLWWMenu(selectedTitle: selectedWLWWTitle, modality: selectedSeries.modality)
             setActivePane(targetPane)
             refreshedPaneCount += 1
         }
 
-        if let activeSeries = activePaneView?.series {
-            selectedWLWWTitle = activeSeries.windowLevelPresetTitle
-            toolbarView.reloadWLWWMenu(selectedTitle: selectedWLWWTitle, modality: activeSeries.modality)
+        if let activePaneView {
+            reloadWLWWMenu(for: activePaneView)
         }
         updateToolbarStatus()
         updateReferenceLines()
@@ -547,6 +606,23 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
 
         let modeTitle = title(for: viewerMode)
         toolbarView.updateStatus("\(activePaneView.series.title)  •  \(modeTitle)  •  \(activePaneView.currentStateDescription)")
+    }
+
+    private func reloadWLWWMenu(for pane: MetalViewerPaneView) {
+        let series = pane.activeWindowLevelSeries
+        selectedWLWWTitle = series.windowLevelPresetTitle
+        toolbarView.reloadWLWWMenu(selectedTitle: selectedWLWWTitle, modality: series.modality)
+        reloadTransferMenus(for: pane)
+    }
+
+    private func reloadDisplayMenus(for pane: MetalViewerPaneView) {
+        reloadWLWWMenu(for: pane)
+    }
+
+    private func reloadTransferMenus(for pane: MetalViewerPaneView) {
+        let state = pane.activeTransferFunctionState
+        toolbarView.reloadCLUTMenu(selectedTitle: state.clutName)
+        toolbarView.reloadOpacityMenu(selectedTitle: state.opacityName)
     }
 
     private func applyViewerMode(_ mode: MetalViewerToolbarView.ViewerMode) {
@@ -602,6 +678,20 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
            let sourcePane = activePaneView ?? paneViews.first,
            let sourceScale = sourcePane.currentScale {
             synchronizeScale(from: sourcePane, scale: sourceScale)
+        }
+    }
+
+    private func setAnnotationLevel(_ level: MetalViewerAnnotationLevel) {
+        if UserDefaults.standard.integer(forKey: MetalViewerAnnotationLevel.defaultsKey) != level.rawValue {
+            UserDefaults.standard.set(level.rawValue, forKey: MetalViewerAnnotationLevel.defaultsKey)
+        }
+        applyAnnotationLevel(level)
+    }
+
+    private func applyAnnotationLevel(_ level: MetalViewerAnnotationLevel) {
+        toolbarView.selectAnnotationLevel(level)
+        for pane in paneViews {
+            pane.setAnnotationLevel(level)
         }
     }
 
@@ -691,26 +781,27 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
 
     private func applyWLWWCommand(_ command: MetalViewerToolbarView.WLWWCommand) {
         guard let activePaneView else { return }
+        let targetSeries = activePaneView.activeWindowLevelSeries
 
         switch command {
         case .other:
             selectedWLWWTitle = NSLocalizedString("Other", comment: "")
-            activePaneView.series.windowLevelPresetTitle = selectedWLWWTitle
+            targetSeries.windowLevelPresetTitle = selectedWLWWTitle
 
         case .defaultWindow:
             activePaneView.applyDefaultWindowLevelPreset()
             selectedWLWWTitle = NSLocalizedString("Default WL & WW", comment: "")
-            activePaneView.series.windowLevelPresetTitle = selectedWLWWTitle
+            targetSeries.windowLevelPresetTitle = selectedWLWWTitle
 
-        case .robustSeries:
-            activePaneView.applyRobustSeriesWindowLevelPreset()
-            selectedWLWWTitle = NSLocalizedString("Robust MRI series", comment: "")
-            activePaneView.series.windowLevelPresetTitle = selectedWLWWTitle
+        case .automatic:
+            activePaneView.applyAutomaticWindowLevelPreset()
+            selectedWLWWTitle = NSLocalizedString("Auto", comment: "")
+            targetSeries.windowLevelPresetTitle = selectedWLWWTitle
 
         case .fullDynamic:
             activePaneView.applyFullDynamicWindowLevelPreset()
             selectedWLWWTitle = NSLocalizedString("Full dynamic", comment: "")
-            activePaneView.series.windowLevelPresetTitle = selectedWLWWTitle
+            targetSeries.windowLevelPresetTitle = selectedWLWWTitle
 
         case .preset(let name):
             if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
@@ -720,7 +811,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             guard let window = wlwwPreset(named: name) else { return }
             activePaneView.applyWindowLevel(window)
             selectedWLWWTitle = name
-            activePaneView.series.windowLevelPresetTitle = selectedWLWWTitle
+            targetSeries.windowLevelPresetTitle = selectedWLWWTitle
 
         case .addCurrent:
             addCurrentWLWWPreset()
@@ -732,6 +823,20 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
 
         toolbarView.selectWLWWTitle(selectedWLWWTitle)
+        updateToolbarStatus()
+    }
+
+    private func applyCLUT(named presetName: String) {
+        guard let activePaneView else { return }
+        activePaneView.applyCLUT(named: presetName)
+        reloadTransferMenus(for: activePaneView)
+        updateToolbarStatus()
+    }
+
+    private func applyOpacity(named presetName: String) {
+        guard let activePaneView else { return }
+        activePaneView.applyOpacity(named: presetName)
+        reloadTransferMenus(for: activePaneView)
         updateToolbarStatus()
     }
 
@@ -751,7 +856,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
 
     private func addCurrentWLWWPreset() {
         guard let currentWindow = activePaneView?.currentWindowLevel else { return }
-        let modality = activePaneView?.series.modality ?? "OT"
+        let modality = activePaneView?.activeWindowLevelSeries.modality ?? "OT"
         let defaultName = modality == "OT"
             ? NSLocalizedString("Unnamed", comment: "")
             : "\(modality) - \(NSLocalizedString("Unnamed", comment: ""))"
@@ -767,8 +872,8 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             UserDefaults.standard.set(presets, forKey: "WLWW3")
             selectedWLWWTitle = name
             activePaneView?.applyWindowLevel(window)
-            activePaneView?.series.windowLevelPresetTitle = name
-            toolbarView.reloadWLWWMenu(selectedTitle: name, modality: activePaneView?.series.modality ?? "OT")
+            activePaneView?.activeWindowLevelSeries.windowLevelPresetTitle = name
+            toolbarView.reloadWLWWMenu(selectedTitle: name, modality: activePaneView?.activeWindowLevelSeries.modality ?? "OT")
             updateToolbarStatus()
         }
     }
@@ -784,7 +889,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             guard let self else { return }
             selectedWLWWTitle = NSLocalizedString("Other", comment: "")
             activePaneView?.applyWindowLevel(window)
-            activePaneView?.series.windowLevelPresetTitle = selectedWLWWTitle
+            activePaneView?.activeWindowLevelSeries.windowLevelPresetTitle = selectedWLWWTitle
             toolbarView.selectWLWWTitle(selectedWLWWTitle)
             updateToolbarStatus()
         }
@@ -807,7 +912,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             self?.selectedWLWWTitle = NSLocalizedString("Default WL & WW", comment: "")
             self?.toolbarView.reloadWLWWMenu(
                 selectedTitle: self?.selectedWLWWTitle ?? "",
-                modality: self?.activePaneView?.series.modality ?? "OT"
+                modality: self?.activePaneView?.activeWindowLevelSeries.modality ?? "OT"
             )
         }
 

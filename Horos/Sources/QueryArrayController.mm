@@ -48,6 +48,16 @@
 #import "MutableArrayCategory.h"
 #import "N2Debug.h"
 
+static void HorosShowQueryError(NSString *message)
+{
+    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+    alert.alertStyle = NSAlertStyleCritical;
+    alert.messageText = NSLocalizedString(@"Query Error", nil);
+    alert.informativeText = message ?: @"";
+    [alert addButtonWithTitle:NSLocalizedString(@"OK", nil)];
+    [alert runModal];
+}
+
 @implementation QueryArrayController
 
 - (id)initWithCallingAET:(NSString *) myAET distantServer: (NSDictionary*) ds;
@@ -164,8 +174,7 @@
         {
             if( [NSThread isMainThread] && showError)
             {
-                NSAlert *alert = [NSAlert alertWithMessageText: NSLocalizedString( @"Query Error", nil) defaultButton:@"OK" alternateButton:nil otherButton:nil informativeTextWithFormat:@"%@", NSLocalizedString( @"OsiriX cannot generate a DICOM query on itself.", nil)];
-                [alert runModal];
+                HorosShowQueryError(NSLocalizedString(@"OsiriX cannot generate a DICOM query on itself.", nil));
             }
         }
         else
@@ -252,8 +261,7 @@
     {	
         if( [NSThread isMainThread] && showError)
         {
-            NSAlert *alert = [NSAlert alertWithMessageText:@"Query Error" defaultButton:@"OK" alternateButton:nil otherButton:nil informativeTextWithFormat:@"%@", @"Query Failed"];
-            [alert runModal];
+            HorosShowQueryError(NSLocalizedString(@"Query Failed", nil));
         }
         N2LogExceptionWithStackTrace( e);
 	}
@@ -280,9 +288,7 @@
 		[params setObject:[DCMTransferSyntax ExplicitVRLittleEndianTransferSyntax] forKey:@"transferSyntax"];		//
 		[params setObject:[DCMAbstractSyntaxUID  studyRootQueryRetrieveInformationModelFind] forKey:@"affectedSOPClassUID"];
 	} @catch( NSException *localException) {
-		NSAlert *alert = [NSAlert alertWithMessageText:@"Query Error" defaultButton:@"OK" alternateButton:nil otherButton:nil informativeTextWithFormat:@"%@", @"Unable to perform Q/R. There was a missing parameter. Make sure you have AE Titles, IP addresses and ports for the queried computer"];
-	
-		[alert runModal];
+		HorosShowQueryError(NSLocalizedString(@"Unable to perform Q/R. There was a missing parameter. Make sure you have AE Titles, IP addresses and ports for the queried computer", nil));
 		NSLog(@"Missing parameter for Query/retrieve: %@", [localException name]);
 		params = nil;
 	}

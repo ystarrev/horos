@@ -185,8 +185,6 @@ static NSString*	BackgroundColorViewToolbarItemIdentifier		= @"BackgroundColorVi
 		[toolbarItem setPaletteLabel: NSLocalizedString(@"Stereo",nil)];
 		[toolbarItem setToolTip: NSLocalizedString(@"Switch Stereo Modes",nil)];
 		[toolbarItem setView: stereoIconView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([stereoIconView frame]), NSHeight([stereoIconView frame]))];
-		[toolbarItem setMaxSize:NSMakeSize(NSWidth([stereoIconView frame]), NSHeight([stereoIconView frame]))];
 	}
 	else if ([itemIdent isEqualToString: QTExportToolbarItemIdentifier]) {
 		
@@ -212,8 +210,6 @@ static NSString*	BackgroundColorViewToolbarItemIdentifier		= @"BackgroundColorVi
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Export 3D-SR",nil)];
 		[toolbarItem setToolTip: NSLocalizedString(@"Export this series in a 3D file format",nil)];
 		[toolbarItem setView: export3DView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([export3DView frame]), NSHeight([export3DView frame]))];
-		[toolbarItem setMaxSize:NSMakeSize(NSWidth([export3DView frame]), NSHeight([export3DView frame]))];
 	}
 	else if ([itemIdent isEqualToString: SRSettingsToolbarItemIdentifier]) {
 		
@@ -248,8 +244,6 @@ static NSString*	BackgroundColorViewToolbarItemIdentifier		= @"BackgroundColorVi
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Mouse button function",nil)];
 		
 		[toolbarItem setView: toolsView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([toolsView frame]), NSHeight([toolsView frame]))];
-		[toolbarItem setMaxSize:NSMakeSize(NSWidth([toolsView frame]), NSHeight([toolsView frame]))];
 	}
 	else if([itemIdent isEqualToString: FlyThruToolbarItemIdentifier]) {
 		// Set up the standard properties 
@@ -280,7 +274,6 @@ static NSString*	BackgroundColorViewToolbarItemIdentifier		= @"BackgroundColorVi
 		
 		// Use a custom view, a text field, for the search item 
 		[toolbarItem setView: perspectiveView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([perspectiveView frame]), NSHeight([perspectiveView frame]))];
 	}
 	else if ([itemIdent isEqualToString: ROIManagerToolbarItemIdentifier]) {
 		
@@ -307,8 +300,6 @@ static NSString*	BackgroundColorViewToolbarItemIdentifier		= @"BackgroundColorVi
 		[toolbarItem setToolTip: NSLocalizedString(@"Background Color", nil)];
 		
 		[toolbarItem setView: BackgroundColorView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([BackgroundColorView frame]), NSHeight([BackgroundColorView frame]))];
-		[toolbarItem setMaxSize:NSMakeSize(NSWidth([BackgroundColorView frame]), NSHeight([BackgroundColorView frame]))];
 	}
 	else if([itemIdent isEqualToString: OrientationsViewToolbarItemIdentifier]) {
 		// Set up the standard properties 
@@ -318,8 +309,6 @@ static NSString*	BackgroundColorViewToolbarItemIdentifier		= @"BackgroundColorVi
 		
 		// Use a custom view, a text field, for the search item 
 		[toolbarItem setView: OrientationsView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([OrientationsView frame]), NSHeight([OrientationsView frame]))];
-		[toolbarItem setMaxSize:NSMakeSize(NSWidth([OrientationsView frame]), NSHeight([OrientationsView frame]))];
 	}
 	else if ([itemIdent isEqualToString: ExportToolbarItemIdentifier]) {
 		
@@ -376,7 +365,7 @@ static NSString*	BackgroundColorViewToolbarItemIdentifier		= @"BackgroundColorVi
         NSRect       contentRect;
 		
         StartingWindow = [self window];
-        windowStyle    = NSBorderlessWindowMask; 
+        windowStyle    = NSWindowStyleMaskBorderless;
         contentRect    = [[NSScreen mainScreen] frame];
         FullScreenWindow = [[NSFullScreenWindow alloc] initWithContentRect:contentRect styleMask: windowStyle backing:NSBackingStoreBuffered defer: NO];
         if(FullScreenWindow != nil)

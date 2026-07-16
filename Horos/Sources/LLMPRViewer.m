@@ -1,3 +1,5 @@
+#import "HorosSheetPresenter.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
   Program:   OsiriX
 
@@ -51,7 +53,6 @@ static NSString*	ParameterPanelToolbarItemIdentifier		= @"3D";
 	scoutViewer = sV;
 
 	[[self window] setDelegate:self];
-	[[self window] setShowsResizeIndicator:YES];
 	[[self window] performZoom:self];
 	
 	NSRect selfWindowRect = [[self window] frame];
@@ -808,10 +809,9 @@ static NSString*	ParameterPanelToolbarItemIdentifier		= @"3D";
     // Required delegate method:  Returns the list of all allowed items by identifier.  By default, the toolbar 
     // does not assume any items are allowed, even the separator.  So, every allowed item must be explicitly listed   
     // The set of allowed items is used to construct the customization palette 
-    return [NSArray arrayWithObjects: 	NSToolbarCustomizeToolbarItemIdentifier,
+    return [NSArray arrayWithObjects:
 										NSToolbarFlexibleSpaceItemIdentifier,
 										NSToolbarSpaceItemIdentifier,
-										NSToolbarSeparatorItemIdentifier,
 										WLWWToolbarItemIdentifier,
 										ToolsToolbarItemIdentifier,
 										ThickSlabToolbarItemIdentifier,
@@ -836,8 +836,6 @@ static NSString*	ParameterPanelToolbarItemIdentifier		= @"3D";
 		
 		// Use a custom view, a text field, for the search item 
 		[toolbarItem setView: toolsView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([toolsView frame]), NSHeight([toolsView frame]))];
-		[toolbarItem setMaxSize:NSMakeSize(NSWidth([toolsView frame]), NSHeight([toolsView frame]))];
     }
 	else if([itemIdent isEqualToString: WLWWToolbarItemIdentifier])
 	{
@@ -848,8 +846,6 @@ static NSString*	ParameterPanelToolbarItemIdentifier		= @"3D";
 		
 		// Use a custom view, a text field, for the search item 
 		[toolbarItem setView: WLWWView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
-		[toolbarItem setMaxSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
 
 		[[wlwwPopup cell] setUsesItemFromMenu:YES];
 	}
@@ -861,7 +857,6 @@ static NSString*	ParameterPanelToolbarItemIdentifier		= @"3D";
 		// Use a custom view, a text field, for the search item 
 		[toolbarItem setView: ThickSlabView];
 	//	[toolbarItem setMinSize:NSMakeSize(NSWidth([ThickSlabView frame]), NSHeight([ThickSlabView frame]))];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([ThickSlabView frame]) + 200, NSHeight([ThickSlabView frame]))];
     }
 	else if([itemIdent isEqualToString: Produce2DResultToolbarItemIdentifier]) {
 		// Set up the standard properties 
@@ -1241,7 +1236,7 @@ static NSString*	ParameterPanelToolbarItemIdentifier		= @"3D";
 	if([*volumeData length]< mem || [pix count]==0)
 	{
 		//NSLog(@"Not enough memory");
-		NSRunCriticalAlertPanel(NSLocalizedString(@"Memory Error", nil), NSLocalizedString(@"Not enough memory", nil), NSLocalizedString(@"OK", nil), nil, nil);
+		HorosPresentCriticalAlert(NSLocalizedString(@"Memory Error", nil), NSLocalizedString(@"Not enough memory", nil), NSLocalizedString(@"OK", nil), nil, nil);
 	}
 	else
 	{
@@ -1720,7 +1715,7 @@ static NSString*	ParameterPanelToolbarItemIdentifier		= @"3D";
 
 - (void)addCurrentSettings:(id)sender;
 {
-	[NSApp beginSheet:settingsNameSheetWindow modalForWindow:parametersPanel modalDelegate:self didEndSelector:nil contextInfo:nil];
+	HorosBeginSheet(settingsNameSheetWindow, parametersPanel, self, nil, nil);
 }
 
 - (IBAction)cancelAddSettings:(id)sender;

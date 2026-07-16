@@ -428,6 +428,11 @@ struct MetalViewerWindowLevelState {
     var customWindow: MetalViewerWindowLevel?
 }
 
+struct MetalViewerTransferFunctionState {
+    var clutName = NSLocalizedString("No CLUT", comment: "")
+    var opacityName = NSLocalizedString("Linear Table", comment: "")
+}
+
 enum MetalSeriesTextureStorageMode: Equatable {
     case rescaledFloat
     case storedInt16
@@ -1674,6 +1679,7 @@ final class MetalViewerSeries {
     private var dynamicDetectionCompletions: [(MetalDynamicSequence?) -> Void] = []
     var windowLevelState = MetalViewerWindowLevelState()
     var windowLevelPresetTitle = NSLocalizedString("Default WL & WW", comment: "")
+    var transferFunctionState = MetalViewerTransferFunctionState()
 
     init(
         identifier: String = UUID().uuidString,
@@ -1708,6 +1714,9 @@ final class MetalViewerSeries {
         self.dynamicTimePointCountHint = dynamicTimePointCountHint
         self.cachedPixList = initialPixList
         self.cachedStructuredReportHTML = nil
+        if modality == "MR" {
+            self.windowLevelPresetTitle = NSLocalizedString("Auto", comment: "")
+        }
     }
 
     func sharesSourceSeries(with other: MetalViewerSeries) -> Bool {

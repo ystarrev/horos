@@ -1,3 +1,6 @@
+#import "HorosSheetPresenter.h"
+#import "HorosFilePanelContentTypes.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -361,17 +364,17 @@ typedef struct _xyzArray
 	
 	switch( [sender tag])
 	{
-        case 1: [panel setAllowedFileTypes:@[@"rib"]]; break;
-		case 2: [panel setAllowedFileTypes:@[@"wrl"]]; break;
-		case 3: [panel setAllowedFileTypes:@[@"iv"]]; break;
-		case 4: [panel setAllowedFileTypes:@[@"obj"]]; break;
-		case 5: [panel setAllowedFileTypes:@[@"stl"]]; break;
+        case 1: panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"rib"]); break;
+		case 2: panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"wrl"]); break;
+		case 3: panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"iv"]); break;
+		case 4: panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"obj"]); break;
+		case 5: panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"stl"]); break;
 	}
 	
     panel.nameFieldStringValue = @"3DFile";
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
 		BOOL orientationSwitch = NO;
@@ -394,7 +397,7 @@ typedef struct _xyzArray
 			{
 				vtkRIBExporter  *exporter = vtkRIBExporter::New();
 				
-				exporter->SetInput( [self renderWindow]);
+				exporter->SetRenderWindow( [self renderWindow]);
                 exporter->SetFilePrefix( [[panel.URL.path stringByDeletingPathExtension] UTF8String]);
 				exporter->Write();
 				
@@ -406,7 +409,7 @@ typedef struct _xyzArray
 			{
 				vtkVRMLExporter  *exporter = vtkVRMLExporter::New();
 				
-				exporter->SetInput( [self renderWindow]);
+				exporter->SetRenderWindow( [self renderWindow]);
 				exporter->SetFileName( [panel.URL.path UTF8String]);
 				exporter->Write();
 				
@@ -418,7 +421,7 @@ typedef struct _xyzArray
 			{
 				vtkIVExporter  *exporter = vtkIVExporter::New();
 				
-				exporter->SetInput( [self renderWindow]);
+				exporter->SetRenderWindow( [self renderWindow]);
 				exporter->SetFileName( [panel.URL.path UTF8String]);
 				exporter->Write();
 				
@@ -430,7 +433,7 @@ typedef struct _xyzArray
 			{
 				vtkOBJExporter  *exporter = vtkOBJExporter::New();
 				
-				exporter->SetInput( [self renderWindow]);
+				exporter->SetRenderWindow( [self renderWindow]);
 				exporter->SetFilePrefix( [[panel.URL.path stringByDeletingPathExtension] UTF8String]);
 				exporter->Write();
 				
@@ -515,13 +518,13 @@ typedef struct _xyzArray
 
 -(IBAction) exportQuicktime3DVR:(id) sender
 {
-	[NSApp beginSheet: export3DVRWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+	HorosBeginSheet(export3DVRWindow, [self window], self, nil, (void*) nil);
 }
 
 - (IBAction) exportQuicktime :(id) sender
 {
 	
-    [NSApp beginSheet: export3DWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+    HorosBeginSheet(export3DWindow, [self window], self, nil, (void*) nil);
 }
 
 - (void)checkView:(NSView *)aView :(BOOL) OnOff
@@ -595,7 +598,7 @@ typedef struct _xyzArray
 //					[exportDCM setPixelSpacing: [self getResolution] :[self getResolution]];
 				
 				NSString *f = [exportDCM writeDCMFile: nil];
-				if( f == nil) NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+				if( f == nil) HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
 				
 				if( f)
 					[producedFiles addObject: [NSDictionary dictionaryWithObjectsAndKeys: f, @"file", nil]];
@@ -715,7 +718,7 @@ typedef struct _xyzArray
 	[self setCurrentdcmExport: dcmExportMode];
 	//if( [[[self window] windowController] movieFrames] > 1) [[dcmExportMode cellWithTag:2] setEnabled: YES];
 	//else [[dcmExportMode cellWithTag:2] setEnabled: NO];
-	[NSApp beginSheet: exportDCMWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+	HorosBeginSheet(exportDCMWindow, [self window], self, nil, (void*) nil);
 }
 
 -(BOOL) acceptsFirstMouse:(NSEvent*) theEvent
@@ -787,16 +790,16 @@ typedef struct _xyzArray
 {
 	ToolMode tool;
 	
-	if( [event type] == NSRightMouseDown || [event type] == NSRightMouseDragged || [event type] == NSRightMouseUp) tool = tZoom;
-	else if( [event type] == NSOtherMouseDown || [event type] == NSOtherMouseDragged || [event type] == NSOtherMouseUp) tool = tTranslate;
+	if( [event type] == NSEventTypeRightMouseDown || [event type] == NSEventTypeRightMouseDragged || [event type] == NSEventTypeRightMouseUp) tool = tZoom;
+	else if( [event type] == NSEventTypeOtherMouseDown || [event type] == NSEventTypeOtherMouseDragged || [event type] == NSEventTypeOtherMouseUp) tool = tTranslate;
 	else tool = currentTool;
 	
-	if (([event modifierFlags] & NSControlKeyMask))  tool = tRotate;
-	if (([event modifierFlags] & NSShiftKeyMask))  tool = tZoom;
-	if (([event modifierFlags] & NSCommandKeyMask))  tool = tTranslate;
-	if (([event modifierFlags] & NSAlternateKeyMask))  tool = tWL;
-	if (([event modifierFlags] & NSCommandKeyMask) && ([event modifierFlags] & NSAlternateKeyMask))  tool = tRotate;
-	if (([event modifierFlags] & NSCommandKeyMask) && ([event modifierFlags] & NSControlKeyMask))  tool = tCamera3D;
+	if (([event modifierFlags] & NSEventModifierFlagControl))  tool = tRotate;
+	if (([event modifierFlags] & NSEventModifierFlagShift))  tool = tZoom;
+	if (([event modifierFlags] & NSEventModifierFlagCommand))  tool = tTranslate;
+	if (([event modifierFlags] & NSEventModifierFlagOption))  tool = tWL;
+	if (([event modifierFlags] & NSEventModifierFlagCommand) && ([event modifierFlags] & NSEventModifierFlagOption))  tool = tRotate;
+	if (([event modifierFlags] & NSEventModifierFlagCommand) && ([event modifierFlags] & NSEventModifierFlagControl))  tool = tCamera3D;
 	
 	return tool;
 }
@@ -1013,7 +1016,7 @@ typedef struct _xyzArray
 		NSRect	beforeFrame = [self frame];;
 		NSPoint mouseLoc = [theEvent locationInWindow];	//[self convertPoint: [theEvent locationInWindow] fromView:nil];
 		
-		if( [theEvent modifierFlags] & NSShiftKeyMask)
+		if( [theEvent modifierFlags] & NSEventModifierFlagShift)
 		{
 			newFrame.size.width = [[[self window] contentView] frame].size.width - mouseLoc.x*2;
 			newFrame.size.height = newFrame.size.width;
@@ -1171,7 +1174,7 @@ typedef struct _xyzArray
 	
 	noWaitDialog = YES;
 	tool = currentTool;
-	if ([theEvent type] == NSLeftMouseDown) {
+	if ([theEvent type] == NSEventTypeLeftMouseDown) {
 		if (_mouseDownTimer) {
 			[self deleteMouseDownTimer];
 		}
@@ -1192,13 +1195,13 @@ typedef struct _xyzArray
 		
 		do
 		{
-			theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+			theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 			
 			mouseLoc = [theEvent locationInWindow];	//[self convertPoint: [theEvent locationInWindow] fromView:nil];
 			
 			switch ([theEvent type])
 			{
-				case NSLeftMouseDragged:
+				case NSEventTypeLeftMouseDragged:
 					beforeFrame = [self frame];
 				
 					if( [[[self window] contentView] frame].size.width - mouseLoc.x*2 < 100)
@@ -1229,12 +1232,12 @@ typedef struct _xyzArray
 				//	NSLog(@"%f", aCamera->GetViewAngle());
 				break;
 				
-				case NSLeftMouseUp:
+				case NSEventTypeLeftMouseUp:
 					noWaitDialog = NO;
 					keepOn = NO;
 				break;
 					
-				case NSPeriodic:
+				case NSEventTypePeriodic:
 					
 				break;
 					
@@ -1291,20 +1294,20 @@ typedef struct _xyzArray
 			
 			/*
 			do {
-				theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+				theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 				mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 				[self getInteractor]->SetEventInformation((int) mouseLoc.x, (int) mouseLoc.y, controlDown, shiftDown);
 				switch ([theEvent type]) {
-				case NSLeftMouseDragged:
+				case NSEventTypeLeftMouseDragged:
 					[self computeOrientationText];
 					[self getInteractor]->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);
 					break;
-				case NSLeftMouseUp:
+				case NSEventTypeLeftMouseUp:
 					noWaitDialog = NO;
 					[self getInteractor]->InvokeEvent(vtkCommand::LeftButtonReleaseEvent, NULL);
 					keepOn = NO;
 					break;
-				case NSPeriodic:
+				case NSEventTypePeriodic:
 					[self getInteractor]->InvokeEvent(vtkCommand::TimerEvent, NULL);
 					break;
 				default:
@@ -1315,29 +1318,29 @@ typedef struct _xyzArray
 		}
 		else if( tool == t3DRotate)
 		{
-			int shiftDown = 0;//([theEvent modifierFlags] & NSShiftKeyMask);
-			int controlDown = 0;//([theEvent modifierFlags] & NSControlKeyMask);
+			int shiftDown = 0;//([theEvent modifierFlags] & NSEventModifierFlagShift);
+			int controlDown = 0;//([theEvent modifierFlags] & NSEventModifierFlagControl);
 
 			mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 			[self getInteractor]->SetEventInformation((int)mouseLoc.x, (int)mouseLoc.y, controlDown, shiftDown);
 			[self getInteractor]->InvokeEvent(vtkCommand::LeftButtonPressEvent,NULL);
 			/*			
 			do {
-				theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+				theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 				mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 				[self getInteractor]->SetEventInformation((int)mouseLoc.x, (int)mouseLoc.y, controlDown, shiftDown);
 				switch ([theEvent type]) {
-				case NSLeftMouseDragged:
+				case NSEventTypeLeftMouseDragged:
 					[self computeOrientationText];
 					[self getInteractor]->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);
 					break;
-				case NSLeftMouseUp:
+				case NSEventTypeLeftMouseUp:
 					noWaitDialog = NO;
 					[self getInteractor]->InvokeEvent(vtkCommand::LeftButtonReleaseEvent, NULL);
 					keepOn = NO;
 					break;
-				case NSPeriodic:
-					NSLog(@"NSPeriodic 3D rotate");
+				case NSEventTypePeriodic:
+					NSLog(@"NSEventTypePeriodic 3D rotate");
 					[self getInteractor]->InvokeEvent(vtkCommand::TimerEvent, NULL);
 					break;
 				default:
@@ -1356,19 +1359,19 @@ typedef struct _xyzArray
 			[self getInteractor]->InvokeEvent(vtkCommand::LeftButtonPressEvent,NULL);
 			/*
 			do {
-				theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+				theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 				mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 				[self getInteractor]->SetEventInformation((int) mouseLoc.x, (int) mouseLoc.y, controlDown, shiftDown);
 				switch ([theEvent type]) {
-				case NSLeftMouseDragged:
+				case NSEventTypeLeftMouseDragged:
 					[self getInteractor]->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);
 					break;
-				case NSLeftMouseUp:
+				case NSEventTypeLeftMouseUp:
 					noWaitDialog = NO;
 					[self getInteractor]->InvokeEvent(vtkCommand::LeftButtonReleaseEvent, NULL);
 					keepOn = NO;
 					break;
-				case NSPeriodic:
+				case NSEventTypePeriodic:
 					[self getInteractor]->InvokeEvent(vtkCommand::TimerEvent, NULL);
 					break;
 				default:
@@ -1389,21 +1392,21 @@ typedef struct _xyzArray
 				[self getInteractor]->InvokeEvent(vtkCommand::RightButtonPressEvent,NULL);
 				/*
 				do {
-					theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+					theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 					mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 					[self getInteractor]->SetEventInformation((int) mouseLoc.x, (int) mouseLoc.y, controlDown, shiftDown);
 					switch ([theEvent type]) {
-					case NSLeftMouseDragged:
-					case NSRightMouseDragged:
+					case NSEventTypeLeftMouseDragged:
+					case NSEventTypeRightMouseDragged:
 						[self getInteractor]->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);
 						break;
-					case NSLeftMouseUp:
-					case NSRightMouseUp:
+					case NSEventTypeLeftMouseUp:
+					case NSEventTypeRightMouseUp:
 						noWaitDialog = NO;
 						[self getInteractor]->InvokeEvent(vtkCommand::LeftButtonReleaseEvent, NULL);
 						keepOn = NO;
 						break;
-					case NSPeriodic:
+					case NSEventTypePeriodic:
 						[self getInteractor]->InvokeEvent(vtkCommand::TimerEvent, NULL);
 						break;
 					default:
@@ -1421,12 +1424,12 @@ typedef struct _xyzArray
 				/*
 				do
 				{
-					theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+					theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 					mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 					switch ([theEvent type])
 					{
-					case NSLeftMouseDragged:
-					case NSRightMouseDragged:
+					case NSEventTypeLeftMouseDragged:
+					case NSEventTypeRightMouseDragged:
 					{
 						float distance = aCamera->GetDistance();
 						aCamera->Dolly( 1.0 + (mouseLoc.y - mouseLocPre.y) / 1200.);
@@ -1439,13 +1442,13 @@ typedef struct _xyzArray
 					}
 					break;
 					
-					case NSLeftMouseUp:
-					case NSRightMouseUp:
+					case NSEventTypeLeftMouseUp:
+					case NSEventTypeRightMouseUp:
 						noWaitDialog = NO;
 						keepOn = NO;
 						break;
 						
-					case NSPeriodic:
+					case NSEventTypePeriodic:
 						
 						break;
 						
@@ -1472,11 +1475,11 @@ typedef struct _xyzArray
 			do
 			{
 				
-				theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+				theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 				mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 				switch ([theEvent type])
 				{
-				case NSLeftMouseDragged:
+				case NSEventTypeLeftMouseDragged:
 				{
 					aCamera->Yaw( -(mouseLoc.x - mouseLocPre.x) / 5.);
 					aCamera->Pitch( (mouseLoc.y - mouseLocPre.y) / 5.);
@@ -1490,12 +1493,12 @@ typedef struct _xyzArray
 				}
 				break;
 				
-				case NSLeftMouseUp:
+				case NSEventTypeLeftMouseUp:
 					noWaitDialog = NO;
 					keepOn = NO;
 					break;
 					
-				case NSPeriodic:
+				case NSEventTypePeriodic:
 					
 					break;
 					
@@ -1513,12 +1516,12 @@ typedef struct _xyzArray
 		}
 		else if( tool == t3Dpoint)
 		{
-			NSEvent *artificialPKeyDown = [NSEvent keyEventWithType:NSKeyDown
+			NSEvent *artificialPKeyDown = [NSEvent keyEventWithType:NSEventTypeKeyDown
 												location:[theEvent locationInWindow]
 												modifierFlags:0x0
 												timestamp:[theEvent timestamp]
 												windowNumber:[theEvent windowNumber]
-												context:[theEvent context]
+												context:nil
 												characters:@"p"
 												charactersIgnoringModifiers:@"p"
 												isARepeat:NO
@@ -1845,7 +1848,7 @@ typedef struct _xyzArray
 	{
 		NSLog( @"Exception during drawRect... not enough memory?");
 		
-		if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
+		if( HorosPresentAlert( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == HorosAlertResponseSecondButton)
 			[[AppController sharedAppController] osirix64bit: self];
 		
 		[[self window] performSelector:@selector(performClose:) withObject:self afterDelay: 1.0];
@@ -2042,7 +2045,7 @@ typedef struct _xyzArray
 	}
 	catch (...)
 	{
-		if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
+		if( HorosPresentAlert( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == HorosAlertResponseSecondButton)
 			[[AppController sharedAppController] osirix64bit: self];
 	}
 }
@@ -2370,7 +2373,7 @@ typedef struct _xyzArray
 		textX->SetTextScaleModeToNone();
 		textX->GetPositionCoordinate()->SetCoordinateSystemToViewport();
 		textX->GetPositionCoordinate()->SetValue( 2., 2.);
-		aRenderer->AddActor2D(textX);
+		aRenderer->AddViewProp(textX);
 		
 		for( i = 0; i < 4; i++)
 		{
@@ -2383,7 +2386,7 @@ typedef struct _xyzArray
 			oText[ i]->GetTextProperty()->SetShadow( true);
 			oText[ i]->GetTextProperty()->SetShadowOffset(1, 1);
 			
-			aRenderer->AddActor2D( oText[ i]);
+			aRenderer->AddViewProp( oText[ i]);
 		}
 		oText[ 0]->GetPositionCoordinate()->SetValue( 0.01, 0.5);
 		oText[ 1]->GetPositionCoordinate()->SetValue( 0.99, 0.5);
@@ -2445,12 +2448,12 @@ typedef struct _xyzArray
 		if( orientationWidget->GetEnabled())
 		{
 			orientationWidget->Off();
-			for( i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+			for( i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
 		}
 		else if( [self renderWindow]->GetStereoRender() == false)
 		{
 			orientationWidget->On();
-			for( i = 0; i < 4; i++) aRenderer->AddActor2D( oText[ i]);
+			for( i = 0; i < 4; i++) aRenderer->AddViewProp( oText[ i]);
 		}
 	}
 	
@@ -2468,7 +2471,7 @@ typedef struct _xyzArray
 		
 		if( orientationWidget)
 			orientationWidget->Off();
-		for( i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+		for( i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
 	}
 	else
 	{
@@ -2739,7 +2742,7 @@ typedef struct _xyzArray
 {	
 	if( [backColor isActive])
 	{
-		NSColor *color=  [[(NSColorPanel*)sender color] colorUsingColorSpaceName: NSCalibratedRGBColorSpace];
+		NSColor *color=  [[(NSColorPanel*)sender color] colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
 		aRenderer->SetBackground([color redComponent],[color greenComponent],[ color blueComponent]);
 		[self setNeedsDisplay:YES];
 	}
@@ -3050,7 +3053,7 @@ typedef struct _xyzArray
 	if([point3DPropagateToAll state])
 	{
 		[self setAll3DPointsRadius: [sender floatValue]];
-		[self setAll3DPointsColor: [[point3DColorWell color] colorUsingColorSpaceName: NSCalibratedRGBColorSpace]];
+		[self setAll3DPointsColor: [[point3DColorWell color] colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]]];
 	}
 	else
 	{
@@ -3064,7 +3067,7 @@ typedef struct _xyzArray
 	if([sender state]==NSControlStateValueOn)
 	{
 		[self setAll3DPointsRadius: [point3DRadiusSlider floatValue]];
-		[self setAll3DPointsColor: [[point3DColorWell color] colorUsingColorSpaceName: NSCalibratedRGBColorSpace]];
+		[self setAll3DPointsColor: [[point3DColorWell color] colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]]];
 		[self IBSetSelected3DPointAnnotation: point3DDisplayPositionButton];
 		[self IBSetSelected3DPointAnnotationColor: point3DTextColorWell];
 		[self IBSetSelected3DPointAnnotationSize: point3DTextSizeSlider];
@@ -3135,7 +3138,7 @@ typedef struct _xyzArray
 
 - (IBAction) save3DPointsDefaultProperties: (id) sender
 {
-    NSColor *color = [[point3DColorWell color] colorUsingColorSpaceName: NSCalibratedRGBColorSpace];
+    NSColor *color = [[point3DColorWell color] colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
     
 	//color
 	point3DDefaultColorRed = [color redComponent];
@@ -3405,14 +3408,14 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
         _dragInProgress = YES;
         NSEvent *event = [theTimer userInfo];
         
-        NSImage *image = [self nsimage:(event.modifierFlags&NSShiftKeyMask)];
+        NSImage *image = [self nsimage:(event.modifierFlags&NSEventModifierFlagShift)];
         
         NSSize originalSize = [image size];
         float ratio = originalSize.width / originalSize.height;
         NSImage *thumbnail = [[[NSImage alloc] initWithSize: NSMakeSize(100, 100/ratio)] autorelease];
         if( [thumbnail size].width > 0 && [thumbnail size].height > 0) {
             [thumbnail lockFocus];
-            [image drawInRect: NSMakeRect(0, 0, 100, 100/ratio) fromRect: NSMakeRect(0, 0, originalSize.width, originalSize.height) operation: NSCompositeSourceOver fraction: 1.0];
+            [image drawInRect: NSMakeRect(0, 0, 100, 100/ratio) fromRect: NSMakeRect(0, 0, originalSize.width, originalSize.height) operation: NSCompositingOperationSourceOver fraction: 1.0];
             [thumbnail unlockFocus];
         }
         
@@ -3421,7 +3424,7 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
         NSEventModifierFlags mf = event.modifierFlags;
         [pbi setData:[NSData dataWithBytes:&mf length:sizeof(NSEventModifierFlags)] forType:O2PasteboardTypeEventModifierFlags];
         [pbi setDataProvider:self forTypes:@[NSPasteboardTypeString, (NSString *)kPasteboardTypeFileURLPromise]];
-        [pbi setString:(id)kUTTypeImage forType:(id)kPasteboardTypeFilePromiseContent];
+        [pbi setString:UTTypeImage.identifier forType:(id)kPasteboardTypeFilePromiseContent];
         
         NSDraggingItem* di = [[[NSDraggingItem alloc] initWithPasteboardWriter:pbi] autorelease];
         NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
@@ -3468,10 +3471,11 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
             while ([url checkResourceIsReachableAndReturnError:NULL])
                 url = [(NSURL *)urlRef URLByAppendingPathComponent:[name stringByAppendingFormat:@" (%lu).jpg", ++i]];
             
-            NSEventModifierFlags mf; [[item dataForType:O2PasteboardTypeEventModifierFlags] getBytes:&mf];
-            NSImage *image = [self nsimage:(mf&NSShiftKeyMask)];
+            NSEventModifierFlags mf;
+            [[item dataForType:O2PasteboardTypeEventModifierFlags] getBytes:&mf length:sizeof(mf)];
+            NSImage *image = [self nsimage:(mf&NSEventModifierFlagShift)];
             
-            NSData *idata = [[NSBitmapImageRep imageRepWithData:image.TIFFRepresentation] representationUsingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+            NSData *idata = [[NSBitmapImageRep imageRepWithData:image.TIFFRepresentation] representationUsingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
             [idata writeToURL:url atomically:YES];
             
             [item setString:[url absoluteString] forType:type];

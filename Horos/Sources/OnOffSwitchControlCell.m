@@ -159,7 +159,7 @@ NSRect DKCenterRect(NSRect smallRect, NSRect bigRect)
 	NSRect thumbFrame = cellFrame;
 	thumbFrame.size.width *= THUMB_WIDTH_FRACTION;
 
-	NSCellStateValue state = [self state];
+	NSControlStateValue state = [self state];
 	switch (state) {
 		case NSControlStateValueOff:
 			//Far left. We're already there; don't do anything.
@@ -300,7 +300,7 @@ NSRect DKCenterRect(NSRect smallRect, NSRect bigRect)
 		trackingCellFrame = cellFrame;
 
 	NSGraphicsContext *context = [NSGraphicsContext currentContext];
-	CGContextRef quartzContext = [context graphicsPort];
+	CGContextRef quartzContext = context.CGContext;
 	CGContextBeginTransparencyLayer(quartzContext, /*auxInfo*/ NULL);
 
 	//Draw the background, then the frame.
@@ -450,7 +450,7 @@ NSRect DKCenterRect(NSRect smallRect, NSRect bigRect)
 		BOOL isClickNotDrag = isClickNotDragByTime && isClickNotDragBySpaceX && isClickNotDragBySpaceY;
 
 		if (!isClickNotDrag) {
-			NSCellStateValue desiredState;
+			NSControlStateValue desiredState;
 
 			if ([self allowsMixedState]) {
 				if (xFraction < ONE_THIRD)
@@ -467,7 +467,7 @@ NSRect DKCenterRect(NSRect smallRect, NSRect bigRect)
 			}
 
 			//We actually need to set the state to the one *before* the one we want, because NSCell will advance it. I'm not sure how to thwart that without breaking -setNextState, which breaks AXPress and the space bar.
-			NSCellStateValue stateBeforeDesiredState;
+			NSControlStateValue stateBeforeDesiredState;
 			switch (desiredState) {
 				case NSControlStateValueOn:
 					if ([self allowsMixedState]) {

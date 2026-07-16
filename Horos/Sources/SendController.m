@@ -1,3 +1,5 @@
+#import "HorosSheetPresenter.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -115,7 +117,7 @@ static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys(void)
 
 	NSString *message = [NSString stringWithFormat:@"%@\r\r%@\r%@", NSLocalizedString( @"DICOM StoreSCU operation failed.", nil), [ne name], [ne reason]];
     
-	NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Send Error",nil), @"%@", NSLocalizedString( @"OK",nil), nil, nil, message);
+	HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Send Error",nil), @"%@", NSLocalizedString( @"OK",nil), nil, nil, message);
 }
 
 - (void) clearShownErrorKey:(NSString*) errorKey
@@ -220,7 +222,7 @@ static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys(void)
 {
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"DICOMSENDALLOWED"] == NO)
 	{
-		NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Send",nil),NSLocalizedString( @"DICOM Sending is not activated. Contact your PACS manager for more information about DICOM Send.",nil),NSLocalizedString( @"OK",nil), nil, nil);
+		HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Send",nil),NSLocalizedString( @"DICOM Sending is not activated. Contact your PACS manager for more information about DICOM Send.",nil),NSLocalizedString( @"OK",nil), nil, nil);
 		return;
 	}
 
@@ -229,16 +231,16 @@ static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys(void)
 		if( [[DCMNetServiceDelegate DICOMServersListSendOnly: YES QROnly: NO] count] > 0)
 		{
 			SendController *sendController = [[SendController alloc] initWithFiles:files];
-			[NSApp beginSheet: [sendController window] modalForWindow:[NSApp mainWindow] modalDelegate:sendController didEndSelector:@selector(sheetDidEnd:returnCode:contextInfo:) contextInfo:nil];
+			HorosBeginSheet([sendController window], [NSApp mainWindow], sendController, @selector(sheetDidEnd:returnCode:contextInfo:), nil);
 		}
 		else
 		{
-			NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Send",nil),NSLocalizedString( @"No DICOM destinations available. See Preferences to add DICOM locations.",nil),NSLocalizedString( @"OK",nil), nil, nil);
+			HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Send",nil),NSLocalizedString( @"No DICOM destinations available. See Preferences to add DICOM locations.",nil),NSLocalizedString( @"OK",nil), nil, nil);
 		}
 	}
 	else
 	{
-		NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Send",nil),NSLocalizedString( @"No files are selected...",nil),NSLocalizedString( @"OK",nil), nil, nil);
+		HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Send",nil),NSLocalizedString( @"No files are selected...",nil),NSLocalizedString( @"OK",nil), nil, nil);
 	}
 }
 
@@ -486,7 +488,7 @@ static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys(void)
 		}
 		else
 		{
-			NSRunAlertPanel(NSLocalizedString(@"DICOM Send",nil),NSLocalizedString( @"There are no files of selected type to send.",nil),NSLocalizedString( @"OK",nil), nil, nil);
+			HorosPresentAlert(NSLocalizedString(@"DICOM Send",nil),NSLocalizedString( @"There are no files of selected type to send.",nil),NSLocalizedString( @"OK",nil), nil, nil);
 			
 			[self autorelease];
 		}

@@ -84,8 +84,6 @@
 	
 	if( [self frame].size.width > 0 && [self frame].size.height > 0)
 	{
-		[self lockFocus];
-		
 		NSManagedObject	*file = [[viewer fileList] objectAtIndex: 0];
 		NSString *string2draw = @"";
 		headerHeight = 13; //leaves in all cases a white line at the end of the header
@@ -143,8 +141,7 @@
 		[attribs setObject:[NSFont systemFontOfSize:10] forKey:NSFontAttributeName];
 		//
 		NSPoint where2draw = NSMakePoint(20, borderSize.height - (headerHeight+15));
-		[string2draw drawAtPoint: where2draw withAttributes:attribs]; //only invoke this method when an NSView object has focus
-		[self unlockFocus];
+		[string2draw drawAtPoint: where2draw withAttributes:attribs];
 	}
 }
 
@@ -220,7 +217,7 @@
 				
 				//NSZeroRect = complete image
 				//NSInsetRect(dstRect, 1, 1) leaves one pixel border separation around the image
-				[im drawInRect: NSInsetRect(dstRect, 1, 1)  fromRect:NSZeroRect operation:NSCompositeCopy fraction: 1.0];
+				[im drawInRect: NSInsetRect(dstRect, 1, 1) fromRect:NSZeroRect operation:NSCompositingOperationCopy fraction: 1.0];
 				
 				[im release];
 			}

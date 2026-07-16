@@ -471,13 +471,20 @@ final class MetalImageView: MTKView {
         frame frameRect: NSRect,
         pixList: [DCMPix],
         windowLevelState: MetalViewerWindowLevelState = MetalViewerWindowLevelState(),
-        windowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)? = nil
+        windowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)? = nil,
+        transferFunctionState: MetalViewerTransferFunctionState = MetalViewerTransferFunctionState(),
+        transferFunctionStateDidChange: ((MetalViewerTransferFunctionState) -> Void)? = nil
     ) {
         guard let device = MTLCreateSystemDefaultDevice() else {
             fatalError("Metal is not available on this Mac.")
         }
 
-        renderer = MetalViewerRenderer(device: device, pixList: pixList, windowLevelState: windowLevelState)
+        renderer = MetalViewerRenderer(
+            device: device,
+            pixList: pixList,
+            windowLevelState: windowLevelState,
+            transferFunctionState: transferFunctionState
+        )
         super.init(frame: frameRect, device: device)
 
         self.delegate = renderer
@@ -505,6 +512,7 @@ final class MetalImageView: MTKView {
             self?.annotationStateDidChange?()
         }
         renderer.windowLevelStateDidChange = windowLevelStateDidChange
+        renderer.transferFunctionStateDidChange = transferFunctionStateDidChange
         renderer.resetAndLoadInitialSlice()
         titleDidChange?(renderer.stateDescription)
     }

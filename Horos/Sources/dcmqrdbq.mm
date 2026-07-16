@@ -1248,7 +1248,7 @@ OFCondition DcmQueryRetrieveOsiriXDatabaseHandle::makeNewStoreFileName(
 
     const char *m = dcmSOPClassUIDToModality(SOPClassUID);
     if (m == NULL) m = "XX";
-    sprintf(prefix, "%s_%d_", m, getpid());	// getpid is very important, to be sure that this filename is UNIQUE, if multiple associations are currently running
+    snprintf(prefix, sizeof(prefix), "%s_%d_", m, getpid());	// getpid is very important, to be sure that this filename is UNIQUE, if multiple associations are currently running
 	
 	seed++;
 	
@@ -1339,7 +1339,7 @@ void DcmQueryRetrieveOsiriXDatabaseHandle::dbdebug(int level, const char* format
     if (level <= debugLevel) {
         CERR << "DB:";
         va_start(ap, format);
-        vsprintf(buf, format, ap);
+        vsnprintf(buf, sizeof(buf), format, ap);
         va_end(ap);
         CERR << buf << std::endl;
     }

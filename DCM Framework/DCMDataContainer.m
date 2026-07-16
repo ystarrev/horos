@@ -40,6 +40,17 @@
 
 static NSString *signalCatch = @"signalCatch";
 
+static NSDate *DCMDataContainerDateFromString(NSString *value, NSString *format)
+{
+    NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
+    formatter.calendar = [[[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian] autorelease];
+    formatter.locale = [[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"] autorelease];
+    formatter.timeZone = [NSTimeZone defaultTimeZone];
+    formatter.dateFormat = format;
+    formatter.lenient = NO;
+    return [formatter dateFromString:value];
+}
+
 void (*signal(int signum, void (*sighandler)(int)))(int);
 
 static sigjmp_buf mark;
@@ -498,13 +509,12 @@ void signal_EXC(int sig_num)
 	return nil;
 }
 
-- (NSCalendarDate *)nextDate{	
+- (NSDate *)nextDate{
 	NSException *exception = [self testForLength:8];
 	if (!exception) {
-		NSString *format = @"%Y%m%d";
 		NSString *dateString;
 		dateString = [[[NSString alloc] initWithBytes:(_ptr + position) length:8 encoding:NSUTF8StringEncoding] autorelease];
-		NSCalendarDate *date = [[[NSCalendarDate alloc] initWithString:dateString  calendarFormat:format] autorelease];
+		NSDate *date = DCMDataContainerDateFromString(dateString, @"yyyyMMdd");
 		position += 8;
 		return date;
 	}
@@ -540,20 +550,20 @@ void signal_EXC(int sig_num)
 	return nil;
 }
 
-- (NSCalendarDate *)nextTimeWithLength:(int)length{
+- (NSDate *)nextTimeWithLength:(int)length{
 	NSException *exception = [self testForLength:length];
 	if (!exception) {
 		NSString *format;
 		if (length == 4)
-			format = @"%H%M";
+			format = @"HHmm";
 		else if (length == 6)
-			format = @"%H%M%S";
+			format = @"HHmmss";
 		else
-			format = @"%H%M%S.%F";
+			format = @"HHmmss.SSSSSS";
 		
 		NSString *dateString;
 		dateString = [[[NSString alloc] initWithBytes:(_ptr + position) length:length encoding:NSUTF8StringEncoding] autorelease];
-		NSCalendarDate *date = [[[NSCalendarDate alloc] initWithString:dateString  calendarFormat:format] autorelease];
+		NSDate *date = DCMDataContainerDateFromString(dateString, format);
 		position += length;
 		return date;
 	}
@@ -592,24 +602,24 @@ void signal_EXC(int sig_num)
 
 }
 
-- (NSCalendarDate *)nextDateTimeWithLength:(int)length{
+- (NSDate *)nextDateTimeWithLength:(int)length{
 	NSException *exception = [self testForLength:length];
 	if (!exception) {
 		NSString *format;
 		if (length == 12)
-			format = @"%Y%m%d%H%M";
+			format = @"yyyyMMddHHmm";
 		else if (length == 14)
-			format = @"%Y%m%d%H%M%S";
+			format = @"yyyyMMddHHmmss";
 		else if (length == 18)
-			format = @"%Y%m%d%H%M%S.%F";
+			format = @"yyyyMMddHHmmss.SSSSSS";
 		else
-			format = @"%Y%m%d%H%M%S.%F%z";
+			format = @"yyyyMMddHHmmss.SSSSSSxx";
 		//YYYYMMDDHHMMSS.FFFFFF&ZZZZ 
 		NSString *dateString;
 
 		dateString = [[[NSString alloc] initWithBytes:(_ptr + position) length:length encoding:NSUTF8StringEncoding] autorelease];
 
-		NSCalendarDate *date = [[[NSCalendarDate alloc] initWithString:dateString  calendarFormat:format] autorelease];
+		NSDate *date = DCMDataContainerDateFromString(dateString, format);
 		position += length;
 
 		return date;

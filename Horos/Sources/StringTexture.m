@@ -280,14 +280,17 @@
 		[textColor set];
 		[string drawAtPoint:NSMakePoint (marginSize.width, marginSize.height)];
 		
+		[image unlockFocus];
+
         if( frameSize.width > 0 && frameSize.height > 0)
         {
-            bitmap = [[NSBitmapImageRep alloc] initWithFocusedViewRect:NSMakeRect (0.0f, 0.0f, frameSize.width, frameSize.height)];
+            NSRect imageRect = NSMakeRect(0.0f, 0.0f, frameSize.width, frameSize.height);
+            CGImageRef imageRef = [image CGImageForProposedRect:&imageRect context:nil hints:nil];
+            if (imageRef)
+                bitmap = [[NSBitmapImageRep alloc] initWithCGImage:imageRef];
         }
-		else
+        else
             NSLog( @"StringTexture: frameSize.width > 0 && frameSize.height > 0");
-        
-		[image unlockFocus];
                 
         //NSLog(@"%@",bitmap);
         

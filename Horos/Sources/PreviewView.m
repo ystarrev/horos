@@ -441,7 +441,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 
     @try
     {
-        id object = [NSUnarchiver unarchiveObjectWithData:data];
+        id object = [SRAnnotation unarchiveROIsFromCompatibilityData:data];
         return [object isKindOfClass:[NSArray class]] ? object : nil;
     }
     @catch (NSException *exception)

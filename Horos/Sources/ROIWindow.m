@@ -1,3 +1,7 @@
+#import "HorosSheetPresenter.h"
+#import "HorosFilePanelContentTypes.h"
+#import "HorosUnkeyedArchiveCompatibility.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -96,15 +100,15 @@
 	NSMutableArray  *selectedROIs = [NSMutableArray  arrayWithObject:curROI];
 	
 	[panel setCanSelectHiddenExtension:NO];
-	[panel setAllowedFileTypes:@[@"roi"]];
+	panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"roi"]);
 	
     panel.nameFieldStringValue = [[selectedROIs objectAtIndex:0] name];
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
-        [NSArchiver archiveRootObject: selectedROIs toFile:panel.URL.path];
+        HorosArchiveUnkeyedObjectToFile(selectedROIs, panel.URL.path);
     }];
 }
 
@@ -139,11 +143,7 @@
 	float	pixels;
 	float   newResolution;
 	
-    [NSApp beginSheet:recalibrateWindow 
-            modalForWindow: [self window]
-            modalDelegate:self 
-            didEndSelector:NULL 
-            contextInfo:NULL];
+    HorosBeginSheet(recalibrateWindow, [self window], self, NULL, NULL);
 	
 	[recalibrateValue setStringValue: [NSString stringWithFormat:@"%0.3f", (float) [curROI MesureLength :&pixels]] ];
 	
@@ -347,7 +347,7 @@
 	
 	CGFloat r, g, b;
 	
-	[[[sender color] colorUsingColorSpaceName: NSCalibratedRGBColorSpace] getRed:&r green:&g blue:&b alpha:nil];
+	[[[sender color] colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]] getRed:&r green:&g blue:&b alpha:nil];
 	
 	RGBColor c;
 	
@@ -388,22 +388,22 @@
 {
 	if([curROI type]==tPlain)
 	{
-		NSInteger confirm = NSRunInformationalAlertPanel(NSLocalizedString(@"Export to XML", @""), NSLocalizedString(@"Exporting this kind of ROI to XML will only export the contour line.", @""), NSLocalizedString(@"OK", @""), NSLocalizedString(@"Cancel", @""), nil);
+		NSInteger confirm = HorosPresentInformationalAlert(NSLocalizedString(@"Export to XML", @""), NSLocalizedString(@"Exporting this kind of ROI to XML will only export the contour line.", @""), NSLocalizedString(@"OK", @""), NSLocalizedString(@"Cancel", @""), nil);
 		if(!confirm) return;
 	}
 	else if([curROI type]==tLayerROI)
 	{
-		NSRunAlertPanel(NSLocalizedString(@"Export to XML", @""), NSLocalizedString(@"This kind of ROI can not be exported to XML.", @""), NSLocalizedString(@"OK", @""), nil, nil);
+		HorosPresentAlert(NSLocalizedString(@"Export to XML", @""), NSLocalizedString(@"This kind of ROI can not be exported to XML.", @""), NSLocalizedString(@"OK", @""), nil, nil);
 		return;
 	}
 	
 	NSSavePanel *panel = [NSSavePanel savePanel];
     panel.canSelectHiddenExtension = NO;
-    panel.allowedFileTypes = @[@"xml"];
+    panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"xml"]);
     panel.nameFieldStringValue = curROI.name;
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
 
         NSMutableDictionary *xml = [NSMutableDictionary dictionary];
@@ -466,7 +466,7 @@
 			HistoWindow* roiWin = [[HistoWindow alloc] initWithROI: curROI];
 			[roiWin showWindow:self];
 		}
-		else NSRunAlertPanel(NSLocalizedString(@"Error", nil), NSLocalizedString(@"Cannot create an histogram from this ROI.", nil), nil, nil, nil);
+		else HorosPresentAlert(NSLocalizedString(@"Error", nil), NSLocalizedString(@"Cannot create an histogram from this ROI.", nil), nil, nil, nil);
 	}
 }
 

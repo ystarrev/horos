@@ -82,7 +82,7 @@
 				
 	Change History (most recent first):
         
-            <3>	 	09/15/05	Updated to produce a universal binary. Use kIOMasterPortDefault
+            <3>	 	09/15/05	Updated to produce a universal binary. Use kIOMainPortDefault
 								instead of older IOMasterPort function. Print the MAC address
 								to stdout in response to <rdar://problem/4021220>.
             <2>		04/30/02	Fix bug in creating the matching dictionary that caused the
@@ -168,7 +168,7 @@ static kern_return_t FindEthernetInterfaces(io_iterator_t *matchingServices)
     // IOServiceGetMatchingServices retains the returned iterator, so release the iterator when we're done with it.
     // IOServiceGetMatchingServices also consumes a reference on the matching dictionary so we don't need to release
     // the dictionary explicitly.
-    kernResult = IOServiceGetMatchingServices(kIOMasterPortDefault, matchingDict, matchingServices);    
+    kernResult = IOServiceGetMatchingServices(kIOMainPortDefault, matchingDict, matchingServices);
     if (KERN_SUCCESS != kernResult) {
         printf("IOServiceGetMatchingServices returned 0x%08x\n", kernResult);
     }

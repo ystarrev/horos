@@ -1,3 +1,4 @@
+#import "HorosUnkeyedArchiveCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -436,7 +437,7 @@
 	NSMutableData* request = [NSMutableData dataWithBytes:"GETDI" length:6];
 	NSData* response = [N2Connection sendSynchronousRequest:request toAddress:address port:port];
 	if (!response.length) [NSException raise:NSObjectInaccessibleException format:@"%@", NSLocalizedString(@"Failed to connect to the remote host. Is database sharing activated on the distant computer?", nil)];
-	return [NSUnarchiver unarchiveObjectWithData:response];
+	return HorosUnarchiveUnkeyedObject(response);
 }
 
 -(NSDictionary*)fetchDicomDestinationInfo {

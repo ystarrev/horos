@@ -56,13 +56,13 @@
         self.rightSubviews = [NSMutableArray array];
         
         [self setImagePosition:NSImageLeft];
-        [self setAlignment:NSLeftTextAlignment];
+        [self setAlignment:NSTextAlignmentLeft];
         [self setImageScaling: NSImageScaleProportionallyUpOrDown];
         [self setHighlightsBy:NSNoCellMask];
         [self setShowsStateBy:NSNoCellMask];
         [self setBordered:NO];
         [self setLineBreakMode:NSLineBreakByTruncatingMiddle];
-        [self setButtonType:NSMomentaryChangeButton];
+        [self setButtonType:NSButtonTypeMomentaryChange];
     }
     
     return self;
@@ -135,7 +135,7 @@
     if (self.rightText.length && self.rightText.length < 100) {
         NSMutableDictionary* attributes = [[[self.attributedTitle attributesAtIndex:0 effectiveRange:NULL] mutableCopy] autorelease];
         NSMutableParagraphStyle* rightAlignmentParagraphStyle = [[[NSParagraphStyle defaultParagraphStyle] mutableCopy] autorelease];
-        [rightAlignmentParagraphStyle setAlignment:NSRightTextAlignment];
+        [rightAlignmentParagraphStyle setAlignment:NSTextAlignmentRight];
         [attributes setObject:rightAlignmentParagraphStyle forKey:NSParagraphStyleAttributeName];
 
         frame.origin.y += 2;

@@ -120,7 +120,7 @@ static float backgroundInset = 1.5;
 									   modifierFlags:[theEvent modifierFlags]
 										   timestamp:[theEvent timestamp]
 										windowNumber:[theEvent windowNumber]
-											 context:[theEvent context]
+											 context:nil
 										 eventNumber:[theEvent eventNumber]
 										  clickCount:[theEvent clickCount]
 											pressure:[theEvent pressure]];
@@ -170,7 +170,7 @@ static float backgroundInset = 1.5;
 		else
 			endDate = [NSDate distantFuture];
 		
-		event = [NSApp nextEventMatchingMask:(NSLeftMouseUpMask|NSLeftMouseDraggedMask)
+		event = [NSApp nextEventMatchingMask:(NSEventMaskLeftMouseUp|NSEventMaskLeftMouseDragged)
 								   untilDate:endDate
 									  inMode:NSEventTrackingRunLoopMode
 									 dequeue:YES];
@@ -193,7 +193,7 @@ static float backgroundInset = 1.5;
 				}
 			}
 			
-			mouseIsUp = ([event type] == NSLeftMouseUp);
+			mouseIsUp = ([event type] == NSEventTypeLeftMouseUp);
 			done = done || mouseIsUp;
 			
 			if (untilMouseUp)
@@ -238,7 +238,7 @@ static float backgroundInset = 1.5;
 			NSString *title = [self title];
 			if (title == nil) title = @"";			
 			[self setCell:[[[KBDelayedPopUpButtonCell alloc] initTextCell:title] autorelease]];
-			[[self cell] setControlSize:NSRegularControlSize];
+			[[self cell] setControlSize:NSControlSizeRegular];
 		}
 	}
 	return self;
@@ -254,14 +254,12 @@ static float backgroundInset = 1.5;
 	if (self = [super initWithItemIdentifier:ident])
 	{
         button = [[KBDelayedPopUpButton alloc] initWithFrame:NSMakeRect(0,0,42,32)];
-		[button setButtonType:NSMomentaryChangeButton];
+		[button setButtonType:NSButtonTypeMomentaryChange];
 		[button setBordered:NO];
 
         [button setImagePosition: NSImageLeft];
         [button setTitle:@""];
 		[self setView:button];
-		[self setMinSize:NSMakeSize(42,32)];
-		[self setMaxSize:NSMakeSize(42,32)];
         
     }
 	return self;

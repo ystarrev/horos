@@ -106,7 +106,7 @@
 - (void)mouseDragged:(NSEvent*)event {
     if (_menuWindow) {
         NSRect r = {event.locationInWindow,NSZeroSize};
-        [_menuWindow sendEvent:[NSEvent mouseEventWithType:NSLeftMouseDragged location:[_menuWindow convertRectFromScreen:[event.window convertRectToScreen:r]].origin modifierFlags:event.modifierFlags timestamp:event.timestamp windowNumber:_menuWindow.windowNumber context:event.context eventNumber:event.eventNumber clickCount:event.clickCount pressure:event.pressure]];
+        [_menuWindow sendEvent:[NSEvent mouseEventWithType:NSEventTypeLeftMouseDragged location:[_menuWindow convertRectFromScreen:[event.window convertRectToScreen:r]].origin modifierFlags:event.modifierFlags timestamp:event.timestamp windowNumber:_menuWindow.windowNumber context:nil eventNumber:event.eventNumber clickCount:event.clickCount pressure:event.pressure]];
     }
     else [super mouseDragged:event];
 }
@@ -114,7 +114,7 @@
 - (void)mouseUp:(NSEvent*)event {
     if (_menuWindow) {
         NSRect r = {event.locationInWindow,NSZeroSize};
-        [_menuWindow sendEvent:[NSEvent mouseEventWithType:NSLeftMouseUp location:[_menuWindow convertRectFromScreen:[event.window convertRectToScreen:r]].origin modifierFlags:event.modifierFlags timestamp:event.timestamp windowNumber:_menuWindow.windowNumber context:event.context eventNumber:event.eventNumber clickCount:event.clickCount pressure:event.pressure]];
+        [_menuWindow sendEvent:[NSEvent mouseEventWithType:NSEventTypeLeftMouseUp location:[_menuWindow convertRectFromScreen:[event.window convertRectToScreen:r]].origin modifierFlags:event.modifierFlags timestamp:event.timestamp windowNumber:_menuWindow.windowNumber context:nil eventNumber:event.eventNumber clickCount:event.clickCount pressure:event.pressure]];
     }
     else [super mouseUp:event];
 }

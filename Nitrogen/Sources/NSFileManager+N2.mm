@@ -1,3 +1,4 @@
+#import "NSDate+N2.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -74,7 +75,7 @@ static NSUInteger N2FileSizeAtURL(NSURL *url)
 }
 
 -(NSString*)tmpFilePathInDir:(NSString*)dirPath {
-    NSString *pre = [dirPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%@_%@_%u_%lu_XXXXXX", [[NSBundle mainBundle] objectForInfoDictionaryKey:(NSString*)kCFBundleNameKey], [[NSDate date] descriptionWithCalendarFormat:@"%Y%m%d%H%M%S" timeZone:NULL locale:NULL], getpid(), (long)[NSThread currentThread]]];
+    NSString *pre = [dirPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%@_%@_%u_%lu_XXXXXX", [[NSBundle mainBundle] objectForInfoDictionaryKey:(NSString*)kCFBundleNameKey], [[NSDate date] n2_descriptionWithCalendarFormat:@"%Y%m%d%H%M%S" timeZone:NULL locale:NULL], getpid(), (long)[NSThread currentThread]]];
     
     NSUInteger len = pre.length+1;
     char *temp = (char *)malloc(len + 1);

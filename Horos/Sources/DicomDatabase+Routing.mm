@@ -649,7 +649,7 @@
                     toTime = [dateFormatter dateFromString:toTimeString_justHHmm];
                     
                     NSCalendar *calendar = [NSCalendar currentCalendar];
-                    NSDateComponents *components = [calendar components:(NSHourCalendarUnit | NSMinuteCalendarUnit | NSSecondCalendarUnit) fromDate:[NSDate date]];
+                    NSDateComponents *components = [calendar components:(NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond) fromDate:[NSDate date]];
                     NSInteger currentHour = [components hour];
                     NSInteger currentMinute = [components minute];
                     NSInteger currentSecond = [components second];

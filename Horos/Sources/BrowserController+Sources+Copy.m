@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
 
@@ -600,7 +601,7 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
         } else if ([destination isKindOfClass:[DicomNodeIdentifier class]]) { // local Horos to remote DICOM
             if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DICOMSENDALLOWED"] == NO)
             {
-                NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Send", nil),
+                HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Send", nil),
                                         NSLocalizedString(@"DICOM Sending is not activated. Contact your PACS manager for more information about DICOM Send.", nil),
                                         NSLocalizedString(@"OK", nil),
                                         nil,
@@ -611,7 +612,7 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
             NSDictionary *node = HorosDICOMSendNodeDictionaryFromSource((DicomNodeIdentifier*)destination);
             if (!node)
             {
-                NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Send", nil),
+                HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Send", nil),
                                         NSLocalizedString(@"The selected DICOM destination is missing its address, port, or AE title.", nil),
                                         NSLocalizedString(@"OK", nil),
                                         nil,

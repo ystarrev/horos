@@ -54,12 +54,12 @@
     if ((self = [super init]))
     {
         [self setImagePosition:NSImageLeft];
-        [self setAlignment:NSLeftTextAlignment];
+        [self setAlignment:NSTextAlignmentLeft];
         [self setHighlightsBy:NSNoCellMask];
         [self setShowsStateBy:NSNoCellMask];
         [self setBordered:NO];
         [self setLineBreakMode:NSLineBreakByTruncatingMiddle];
-        [self setButtonType:NSMomentaryChangeButton];
+        [self setButtonType:NSButtonTypeMomentaryChange];
     }
     
     return self;
@@ -130,7 +130,7 @@
         {
             NSMutableDictionary* attributes = [[[self.attributedTitle attributesAtIndex:0 effectiveRange:NULL] mutableCopy] autorelease];
             NSMutableParagraphStyle* leftAlignmentParagraphStyle = [[[NSParagraphStyle defaultParagraphStyle] mutableCopy] autorelease];
-            [leftAlignmentParagraphStyle setAlignment:NSLeftTextAlignment];
+            [leftAlignmentParagraphStyle setAlignment:NSTextAlignmentLeft];
             [leftAlignmentParagraphStyle setLineBreakMode: NSLineBreakByTruncatingTail];
             [attributes setObject:leftAlignmentParagraphStyle forKey:NSParagraphStyleAttributeName];
             
@@ -142,7 +142,7 @@
         frame.origin.x += 80;
         
         NSMutableParagraphStyle* leftAlignmentParagraphStyle = [[[NSParagraphStyle defaultParagraphStyle] mutableCopy] autorelease];
-        [leftAlignmentParagraphStyle setAlignment:NSLeftTextAlignment];
+        [leftAlignmentParagraphStyle setAlignment:NSTextAlignmentLeft];
         [leftAlignmentParagraphStyle setLineBreakMode: NSLineBreakByTruncatingTail];
         [attributes setObject:leftAlignmentParagraphStyle forKey:NSParagraphStyleAttributeName];
         
@@ -156,7 +156,7 @@
         {
             NSMutableDictionary* attributes = [[[self.attributedTitle attributesAtIndex:0 effectiveRange:NULL] mutableCopy] autorelease];
             NSMutableParagraphStyle* rightAlignmentParagraphStyle = [[[NSParagraphStyle defaultParagraphStyle] mutableCopy] autorelease];
-            [rightAlignmentParagraphStyle setAlignment:NSLeftTextAlignment];
+            [rightAlignmentParagraphStyle setAlignment:NSTextAlignmentLeft];
             [attributes setObject:rightAlignmentParagraphStyle forKey:NSParagraphStyleAttributeName];
             
             frame.origin.y += 1;
@@ -172,7 +172,7 @@
         {
             NSMutableDictionary* attributes = [[[self.attributedTitle attributesAtIndex:0 effectiveRange:NULL] mutableCopy] autorelease];
             NSMutableParagraphStyle* rightAlignmentParagraphStyle = [[[NSParagraphStyle defaultParagraphStyle] mutableCopy] autorelease];
-            [rightAlignmentParagraphStyle setAlignment:NSLeftTextAlignment];
+            [rightAlignmentParagraphStyle setAlignment:NSTextAlignmentLeft];
             [attributes setObject:rightAlignmentParagraphStyle forKey:NSParagraphStyleAttributeName];
             
             frame.origin.y += 1;
@@ -189,7 +189,7 @@
         {
             NSMutableDictionary* attributes = [[[self.attributedTitle attributesAtIndex:0 effectiveRange:NULL] mutableCopy] autorelease];
             NSMutableParagraphStyle* rightAlignmentParagraphStyle = [[[NSParagraphStyle defaultParagraphStyle] mutableCopy] autorelease];
-            [rightAlignmentParagraphStyle setAlignment:NSRightTextAlignment];
+            [rightAlignmentParagraphStyle setAlignment:NSTextAlignmentRight];
             [attributes setObject:rightAlignmentParagraphStyle forKey:NSParagraphStyleAttributeName];
 
             frame.origin.y += 1;
@@ -212,7 +212,7 @@
             }
             
             NSMutableParagraphStyle* leftAlignmentParagraphStyle = [[[NSParagraphStyle defaultParagraphStyle] mutableCopy] autorelease];
-            [leftAlignmentParagraphStyle setAlignment:NSLeftTextAlignment];
+            [leftAlignmentParagraphStyle setAlignment:NSTextAlignmentLeft];
             [leftAlignmentParagraphStyle setLineBreakMode: NSLineBreakByTruncatingTail];
             [attributes setObject:leftAlignmentParagraphStyle forKey:NSParagraphStyleAttributeName];
             
@@ -228,7 +228,7 @@
         {
             NSMutableDictionary* attributes = [[[self.attributedTitle attributesAtIndex:0 effectiveRange:NULL] mutableCopy] autorelease];
             NSMutableParagraphStyle* rightAlignmentParagraphStyle = [[[NSParagraphStyle defaultParagraphStyle] mutableCopy] autorelease];
-            [rightAlignmentParagraphStyle setAlignment:NSRightTextAlignment];
+            [rightAlignmentParagraphStyle setAlignment:NSTextAlignmentRight];
             [attributes setObject:rightAlignmentParagraphStyle forKey:NSParagraphStyleAttributeName];
             
             initialFrame.origin.y += [[BrowserController currentBrowser] fontSize: @"comparativeLineSpace"];
@@ -243,7 +243,7 @@
         {
             NSMutableDictionary* attributes = [[[self.attributedTitle attributesAtIndex:0 effectiveRange:NULL] mutableCopy] autorelease];
             NSMutableParagraphStyle* leftAlignmentParagraphStyle = [[[NSParagraphStyle defaultParagraphStyle] mutableCopy] autorelease];
-            [leftAlignmentParagraphStyle setAlignment:NSLeftTextAlignment];
+            [leftAlignmentParagraphStyle setAlignment:NSTextAlignmentLeft];
             [leftAlignmentParagraphStyle setLineBreakMode: NSLineBreakByTruncatingTail];
             [attributes setObject:leftAlignmentParagraphStyle forKey:NSParagraphStyleAttributeName];
             

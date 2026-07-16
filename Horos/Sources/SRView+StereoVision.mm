@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -333,7 +334,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 	}
 	catch (...)
 	{
-		if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
+		if( HorosPresentAlert( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == HorosAlertResponseSecondButton)
 			[[AppController sharedAppController] osirix64bit: self];
 	}
 }
@@ -457,7 +458,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 			[self renderWindow]->SetStereoTypeToAnaglyph();
 			if( orientationWidget)
 				orientationWidget->Off();
-			for(int i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+			for(int i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
 			[self setNeedsDisplay:YES];
 		}
 			break;
@@ -470,7 +471,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 			[self renderWindow]->SetStereoTypeToRedBlue();
 			if( orientationWidget)
 				orientationWidget->Off();
-			for(int i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+			for(int i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
 			[self setNeedsDisplay:YES];
 		}
 			break;
@@ -483,7 +484,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 			[self renderWindow]->SetStereoTypeToInterlaced();
 			if( orientationWidget)
 				orientationWidget->Off();
-			for(int i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+			for(int i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
 			[self setNeedsDisplay:YES];
 		}
 			break;
@@ -597,7 +598,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 	
 	if( orientationWidget)
 		orientationWidget->Off();
-	for(int i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+	for(int i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
 	
 	NSRect contentRectLeftScreen;
 	NSRect contentRectRightScreen;
@@ -647,9 +648,9 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 	
 	if( orientationWidget)
 		orientationWidget->Off();
-	for(int i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+	for(int i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
 	
-	unsigned int windowStyle    = NSBorderlessWindowMask;		
+	unsigned int windowStyle    = NSWindowStyleMaskBorderless;
 	NSRect contentRectLeftScreen;
 	NSRect contentRectRightScreen;
 	
@@ -771,7 +772,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 	[self renderWindow]->StereoRenderOff();
 	if( orientationWidget)
 		orientationWidget->On();
-	for(int i = 0; i < 4; i++) aRenderer->AddActor2D( oText[ i]);
+	for(int i = 0; i < 4; i++) aRenderer->AddViewProp( oText[ i]);
 	[self setNeedsDisplay:YES];
 	
 	[rightView getInteractor]->RemoveObserver(vtkCommand::AnyEvent);	rightView = nil;
@@ -839,9 +840,9 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 	
 	if( orientationWidget)
 		orientationWidget->Off();
-	for(int i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+	for(int i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
 	
-	unsigned int windowStyle    = NSBorderlessWindowMask;
+	unsigned int windowStyle    = NSWindowStyleMaskBorderless;
 	NSRect contentRectLeftScreen;
 	NSRect contentRectRightScreen;
 	
@@ -1235,7 +1236,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 {	
 	if( [backgroundColor isActive])
 	{
-		NSColor *color=  [[(NSColorPanel*)sender color]  colorUsingColorSpaceName: NSCalibratedRGBColorSpace];
+		NSColor *color=  [[(NSColorPanel*)sender color]  colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
 		aRenderer->SetBackground([color redComponent],[color greenComponent],[ color blueComponent]);
 		
 		//Added SilvanWidmer 20-08-09
@@ -1435,7 +1436,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 	
 	noWaitDialog = YES;
 	tool = currentTool;	
-	if ([theEvent type] == NSLeftMouseDown) {
+	if ([theEvent type] == NSEventTypeLeftMouseDown) {
 		if (_mouseDownTimer) {
 			[self deleteMouseDownTimer];
 		}
@@ -1506,8 +1507,8 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 		}
 		else if( tool == t3DRotate)
 		{
-			int shiftDown = 0;//([theEvent modifierFlags] & NSShiftKeyMask);
-			int controlDown = 0;//([theEvent modifierFlags] & NSControlKeyMask);
+			int shiftDown = 0;//([theEvent modifierFlags] & NSEventModifierFlagShift);
+			int controlDown = 0;//([theEvent modifierFlags] & NSEventModifierFlagControl);
 			
 			mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 			// Added SilvanWidmer 10-08-09
@@ -1582,12 +1583,12 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 		}
 		else if( tool == t3Dpoint)
 		{
-			NSEvent *artificialPKeyDown = [NSEvent keyEventWithType:NSKeyDown
+			NSEvent *artificialPKeyDown = [NSEvent keyEventWithType:NSEventTypeKeyDown
 														   location:[theEvent locationInWindow]
 													  modifierFlags:nil
 														  timestamp:[theEvent timestamp]
 													   windowNumber:[theEvent windowNumber]
-															context:[theEvent context]
+															context:nil
 														 characters:@"p"
 										charactersIgnoringModifiers:nil
 														  isARepeat:NO
@@ -1688,7 +1689,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
 		NSRect	beforeFrame = [self frame];;
 		NSPoint mouseLoc = [theEvent locationInWindow];	//[self convertPoint: [theEvent locationInWindow] fromView:nil];
 		
-		if( [theEvent modifierFlags] & NSShiftKeyMask)
+		if( [theEvent modifierFlags] & NSEventModifierFlagShift)
 		{
 			newFrame.size.width = [[[self window] contentView] frame].size.width - mouseLoc.x*2;
 			newFrame.size.height = newFrame.size.width;

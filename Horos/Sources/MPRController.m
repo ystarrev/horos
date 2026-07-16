@@ -1,3 +1,6 @@
+#import "HorosAlertCompatibility.h"
+#import "HorosSheetPresenter.h"
+#import "HorosFilePanelContentTypes.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -313,7 +316,6 @@ static float deg2rad = M_PI/180.0;
 {
 	if( windowWillClose) return;
 	
-    NSDisableScreenUpdates();
     
     NSWindow *win = [self window];
     
@@ -347,7 +349,6 @@ static float deg2rad = M_PI/180.0;
 	[mprView2 setNeedsDisplay: YES];
 	[mprView3 setNeedsDisplay: YES];
     
-    NSEnableScreenUpdates();
 }
 
 - (void) windowDidLoad
@@ -453,7 +454,6 @@ static float deg2rad = M_PI/180.0;
     else
         portrait = NO;
     
-    NSDisableScreenUpdates();
     
     [verticalSplit setTranslatesAutoresizingMaskIntoConstraints: YES];
     [horizontalSplit setTranslatesAutoresizingMaskIntoConstraints: YES];
@@ -597,7 +597,6 @@ static float deg2rad = M_PI/180.0;
         break;
     }
     
-    NSEnableScreenUpdates();
 }
 
 -(void) awakeFromNib
@@ -1387,9 +1386,9 @@ static float deg2rad = M_PI/180.0;
 	}
 	else
 	{
-		if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask)
+		if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift)
 		{
-			NSBeginAlertSheet( NSLocalizedString(@"Delete a WL/WW preset",nil), NSLocalizedString(@"Delete",nil), NSLocalizedString(@"Cancel",nil), nil, [self window], self, @selector(deleteWLWW:returnCode:contextInfo:), NULL, [menuString retain], NSLocalizedString( @"Are you sure you want to delete preset : '%@'?", nil), menuString);
+			HorosBeginAlertSheet( NSLocalizedString(@"Delete a WL/WW preset",nil), NSLocalizedString(@"Delete",nil), NSLocalizedString(@"Cancel",nil), nil, [self window], self, @selector(deleteWLWW:returnCode:contextInfo:), NULL, [menuString retain], NSLocalizedString( @"Are you sure you want to delete preset : '%@'?", nil), menuString);
 		}
 		else
 		{
@@ -2483,9 +2482,9 @@ static float deg2rad = M_PI/180.0;
 	curExportView = [self selectedView];
 	
 	if( quicktimeExportMode)
-		[NSApp beginSheet: quicktimeWindow modalForWindow:self.window modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+		HorosBeginSheet(quicktimeWindow, self.window, self, nil, (void*) nil);
 	else
-		[NSApp beginSheet: dcmWindow modalForWindow:self.window modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+		HorosBeginSheet(dcmWindow, self.window, self, nil, (void*) nil);
 	
 	if( [self selectedView] != mprView1) mprView1.displayCrossLines = YES;
 	if( [self selectedView] != mprView2) mprView2.displayCrossLines = YES;
@@ -2691,11 +2690,11 @@ static float deg2rad = M_PI/180.0;
     NSSavePanel     *panel = [NSSavePanel savePanel];
 
 	[panel setCanSelectHiddenExtension:YES];
-	[panel setAllowedFileTypes:@[@"jpg"]];
+	panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"jpg"]);
     panel.nameFieldStringValue = NSLocalizedString(@"MPR Image", nil);
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         NSImage *im = [[self selectedView] nsimage:NO];
@@ -2705,7 +2704,7 @@ static float deg2rad = M_PI/180.0;
         
         representations = [im representations];
         
-        bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+        bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
         
         [bitmapData writeToURL:panel.URL atomically:YES];
         
@@ -2724,7 +2723,7 @@ static float deg2rad = M_PI/180.0;
 	
 	representations = [im representations];
 	
-    bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+    bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
 	
     NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingString:@"Horos.jpg"];
 	[bitmapData writeToFile:path atomically:YES];
@@ -2739,11 +2738,11 @@ static float deg2rad = M_PI/180.0;
     NSSavePanel     *panel = [NSSavePanel savePanel];
 
 	[panel setCanSelectHiddenExtension:YES];
-	[panel setAllowedFileTypes:@[@"tif"]];
+	panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"tif"]);
 	panel.nameFieldStringValue = @"3D MPR Image";
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         NSImage *im = [[self selectedView] nsimage:NO];
@@ -2949,7 +2948,6 @@ static float deg2rad = M_PI/180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"LOD",nil)];
 		
 		[toolbarItem setView: tbLOD];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbLOD frame]), NSHeight([tbLOD frame]))];
     }
 	else if ([itemIdent isEqualToString: @"Reset.pdf"])
 	{
@@ -2990,7 +2988,6 @@ static float deg2rad = M_PI/180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Fusion",nil)];
 		
 		[toolbarItem setView: tbBlending];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbBlending frame]), NSHeight([tbBlending frame]))];
     }
 	else if ([itemIdent isEqualToString: @"tbThickSlab"])
 	{
@@ -2998,7 +2995,6 @@ static float deg2rad = M_PI/180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Thick Slab",nil)];
 		
 		[toolbarItem setView: tbThickSlab];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbThickSlab frame]), NSHeight([tbThickSlab frame]))];
     }
 	else if ([itemIdent isEqualToString: @"tbWLWW"])
 	{
@@ -3006,7 +3002,6 @@ static float deg2rad = M_PI/180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"WL & WW",nil)];
 		
 		[toolbarItem setView: tbWLWW];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbWLWW frame]), NSHeight([tbWLWW frame]))];
     }
 	else if ([itemIdent isEqualToString: @"tbTools"])
 	{
@@ -3014,7 +3009,6 @@ static float deg2rad = M_PI/180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Tools",nil)];
 		
 		[toolbarItem setView: tbTools];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbTools frame]), NSHeight([tbTools frame]))];
     }
 	else if ([itemIdent isEqualToString: @"tbMovie"])
 	{
@@ -3022,7 +3016,6 @@ static float deg2rad = M_PI/180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"4D Player",nil)];
 		
 		[toolbarItem setView: tbMovie];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbMovie frame]), NSHeight([tbMovie frame]))];
     }
 	else if ([itemIdent isEqualToString: @"tbShading"])
 	{
@@ -3030,21 +3023,18 @@ static float deg2rad = M_PI/180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Shadings",nil)];
 		
 		[toolbarItem setView: tbShading];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbShading frame]), NSHeight([tbShading frame]))];
     }
 	else if ([itemIdent isEqualToString:@"AxisColors"])
 	{
 		[toolbarItem setLabel: NSLocalizedString(@"Axis Colors",nil)];
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Axis Colors",nil)];
 		[toolbarItem setView: tbAxisColors];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbAxisColors frame]), NSHeight([tbAxisColors frame]))];
     }
     else if ([itemIdent isEqualToString:@"ViewsPosition"] && tbViewsPosition)
 	{
 		[toolbarItem setLabel: NSLocalizedString(@"Views",nil)];
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Views",nil)];
 		[toolbarItem setView: tbViewsPosition];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbViewsPosition frame]), NSHeight([tbViewsPosition frame]))];
     }
 	else if ([itemIdent isEqualToString:@"AxisShowHide"])
 	{
@@ -3078,7 +3068,6 @@ static float deg2rad = M_PI/180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Sync Zoom",nil)];
 		
 		[toolbarItem setView: tbSyncZoomLevel];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbSyncZoomLevel frame]), NSHeight([tbSyncZoomLevel frame]))];
     }
 	else
 	{
@@ -3095,10 +3084,9 @@ static float deg2rad = M_PI/180.0;
 
 - (NSArray *) toolbarAllowedItemIdentifiers: (NSToolbar *) toolbar
 {
-    NSMutableArray *array = [NSMutableArray arrayWithObjects: NSToolbarCustomizeToolbarItemIdentifier,
+    NSMutableArray *array = [NSMutableArray arrayWithObjects:
 											NSToolbarFlexibleSpaceItemIdentifier,
 											NSToolbarSpaceItemIdentifier,
-											NSToolbarSeparatorItemIdentifier,
 											@"tbTools", @"tbWLWW", @"tbLOD", @"tbThickSlab", @"tbBlending", @"tbShading", @"tbMovie", @"Reset.pdf", @"Export.icns", @"BestRendering.pdf", @"QTExport.pdf", @"AxisColors", @"AxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"ViewsPosition", nil];
     return array;
 }
@@ -3129,7 +3117,7 @@ static float deg2rad = M_PI/180.0;
 
 - (void)toogleAxisVisibility:(id) sender;
 {
-	if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask)
+	if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift)
 	{
 		if( mprView1 != [self selectedView]) mprView1.displayCrossLines = !mprView1.displayCrossLines;
 		if( mprView2 != [self selectedView]) mprView2.displayCrossLines = !mprView2.displayCrossLines;

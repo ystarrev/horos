@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
 
@@ -476,7 +477,7 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
     if ([[why objectAtIndex:0] isKindOfClass:[NSNumber class]])
         [self performSelector:@selector(_complain:) withObject:[why subarrayWithRange:NSMakeRange(1, (long)why.count-1)] afterDelay:[[why objectAtIndex:0] floatValue]];
     else
-        NSBeginAlertSheet([why objectAtIndex:0], nil, nil, nil, self.window, NSApp, @selector(endSheet:), nil, nil, @"%@", [why objectAtIndex:1]);
+        HorosBeginAlertSheet([why objectAtIndex:0], nil, nil, nil, self.window, NSApp, @selector(endSheet:), nil, nil, @"%@", [why objectAtIndex:1]);
 }
 
 -(NSThread*)initiateSetDatabaseAtPath:(NSString*)path name:(NSString*)name
@@ -554,7 +555,7 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
         }
     } @catch (UnavaliableDataNodeException* e)
     {
-        NSBeginAlertSheet(NSLocalizedString(@"Sources", nil), nil, nil, nil, self.window, NSApp, @selector(endSheet:), nil, nil, @"%@", [e reason]);
+        HorosBeginAlertSheet(NSLocalizedString(@"Sources", nil), nil, nil, nil, self.window, NSApp, @selector(endSheet:), nil, nil, @"%@", [e reason]);
         [self selectCurrentDatabaseSource];
     }
 }
@@ -1308,7 +1309,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     }
     else if ([type isEqualToString:HorosOsiriXDatabaseBonjourType])
     {
-        NSInteger localPort = [[[AppController sharedAppController] bonjourPublisher] OsiriXDBCurrentPort];
+        NSInteger localPort = [[[AppController sharedAppController] bonjourPublisher] port];
 
         if (localPort > 0 && localPort == port)
         {

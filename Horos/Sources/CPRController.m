@@ -1,3 +1,7 @@
+#import "HorosSheetPresenter.h"
+#import "HorosFilePanelContentTypes.h"
+#import "HorosAlertCompatibility.h"
+#import "HorosKeyedArchive.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -157,7 +161,7 @@ static float deg2rad = M_PI / 180.0;
             
             if( succeed == NO)
             {
-                if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot compute the high resolution data.\r\rUpgrade to Horos 64-bit or Horos MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Horos 64-bit", nil), nil) == NSAlertAlternateReturn)
+                if( HorosPresentAlert( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot compute the high resolution data.\r\rUpgrade to Horos 64-bit or Horos MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Horos 64-bit", nil), nil) == HorosAlertResponseSecondButton)
                     [[AppController sharedAppController] osirix64bit: self];
                 
                 [HR_PixList release];
@@ -227,7 +231,7 @@ static float deg2rad = M_PI / 180.0;
 		
 		if( [originalPix isRGB])
 		{
-			NSRunCriticalAlertPanel( NSLocalizedString(@"RGB",nil), NSLocalizedString( @"RGB images are not supported.",nil), NSLocalizedString(@"OK",nil), nil, nil);
+			HorosPresentCriticalAlert( NSLocalizedString(@"RGB",nil), NSLocalizedString( @"RGB images are not supported.",nil), NSLocalizedString(@"OK",nil), nil, nil);
             [self autorelease];
             
 			return nil;
@@ -493,7 +497,7 @@ static float deg2rad = M_PI / 180.0;
         
         self.cprType = [[NSUserDefaults standardUserDefaults] integerForKey: @"SavedCPRType"];
         
-        [[self window] registerForDraggedTypes: [NSArray arrayWithObjects: NSFilenamesPboardType, nil]];
+        [[self window] registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
         
         [self setupToolbar];
 	}
@@ -1213,11 +1217,11 @@ static float deg2rad = M_PI / 180.0;
             }
             else if(err == ERROR_NOENOUGHMEM)
             {
-                NSRunAlertPanel(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Path Assistant can not allocate enough memory, try to increase the resample voxel size in the settings.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                HorosPresentAlert(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Path Assistant can not allocate enough memory, try to increase the resample voxel size in the settings.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             }
             else if(err == ERROR_CANNOTFINDPATH)
             {
-                NSRunAlertPanel(NSLocalizedString(@"Can't find path", nil), NSLocalizedString(@"Path Assistant can not find a path from A to B.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                HorosPresentAlert(NSLocalizedString(@"Can't find path", nil), NSLocalizedString(@"Path Assistant can not find a path from A to B.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             }
             else if(err==ERROR_DISTTRANSNOTFINISH)
             {
@@ -1243,13 +1247,13 @@ static float deg2rad = M_PI / 180.0;
                 }
                 if(err==ERROR_CANNOTFINDPATH)
                 {
-                    NSRunAlertPanel(NSLocalizedString(@"Can't find path", nil), NSLocalizedString(@"Path Assistant can not find a path from current location.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                    HorosPresentAlert(NSLocalizedString(@"Can't find path", nil), NSLocalizedString(@"Path Assistant can not find a path from current location.", nil), NSLocalizedString(@"OK", nil), nil, nil);
                     [waiting close];
                     return;
                 }
                 else if(err==ERROR_DISTTRANSNOTFINISH)
                 {
-                    NSRunAlertPanel(NSLocalizedString(@"Unexpected error", nil), NSLocalizedString(@"Path Assistant failed to initialize!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                    HorosPresentAlert(NSLocalizedString(@"Unexpected error", nil), NSLocalizedString(@"Path Assistant failed to initialize!", nil), NSLocalizedString(@"OK", nil), nil, nil);
                     [waiting close];
                     return;
                 }        
@@ -1446,7 +1450,7 @@ static float deg2rad = M_PI / 180.0;
 		
 		return [NSDictionary dictionaryWithObjectsAndKeys: string, @"type", cameras, @"cameras", angleMPRs, @"angleMPRs", nil];
 	} else if ([string isEqualToString:@"curvedPath"]) {
-		return [NSDictionary dictionaryWithObjectsAndKeys:string, @"type", [NSKeyedArchiver archivedDataWithRootObject:curvedPath], @"curvedPath", nil];
+		return [NSDictionary dictionaryWithObjectsAndKeys:string, @"type", HorosArchiveKeyedObject(curvedPath, nil), @"curvedPath", nil];
 	}
 	
 	return nil;
@@ -1472,7 +1476,7 @@ static float deg2rad = M_PI / 180.0;
 			
 			[self updateViewsAccordingToFrame: nil];
 		} else if( [[[u lastObject] objectForKey: @"type"] isEqualToString:@"curvedPath"]) {
-			self.curvedPath = [NSKeyedUnarchiver unarchiveObjectWithData:[[u lastObject] objectForKey:@"curvedPath"]];
+			self.curvedPath = HorosUnarchiveKeyedObject([[u lastObject] objectForKey:@"curvedPath"], nil);
 			mprView1.curvedPath = curvedPath;
 			mprView2.curvedPath = curvedPath;
 			mprView3.curvedPath = curvedPath;
@@ -1706,9 +1710,9 @@ static float deg2rad = M_PI / 180.0;
 	}
 	else
 	{
-		if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask)
+		if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift)
 		{
-			NSBeginAlertSheet( NSLocalizedString(@"Delete a WL/WW preset",nil), NSLocalizedString(@"Delete",nil), NSLocalizedString(@"Cancel",nil), nil, [self window], self, @selector(deleteWLWW:returnCode:contextInfo:), NULL, [menuString retain], NSLocalizedString( @"Are you sure you want to delete preset : '%@'?", nil), menuString);
+			HorosBeginAlertSheet( NSLocalizedString(@"Delete a WL/WW preset",nil), NSLocalizedString(@"Delete",nil), NSLocalizedString(@"Cancel",nil), nil, [self window], self, @selector(deleteWLWW:returnCode:contextInfo:), NULL, [menuString retain], NSLocalizedString( @"Are you sure you want to delete preset : '%@'?", nil), menuString);
 		}
 		else
 		{
@@ -2799,7 +2803,7 @@ static float deg2rad = M_PI / 180.0;
 					f = [dicomExport writeDCMFile: nil];
                     if( f == nil)
 					{
-                        NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                        HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
                     }
                     [producedFiles addObject: [NSDictionary dictionaryWithObjectsAndKeys: f, @"file", nil]];
 				}
@@ -2909,7 +2913,7 @@ static float deg2rad = M_PI / 180.0;
                                 f = [dicomExport writeDCMFile: nil];
                                 if( f == nil)
                                 {
-                                    NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                                    HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
                                     break;
                                 }
                                 [producedFiles addObject: [NSDictionary dictionaryWithObjectsAndKeys: f, @"file", nil]];
@@ -3038,7 +3042,7 @@ static float deg2rad = M_PI / 180.0;
                             f = [dicomExport writeDCMFile: nil];
                             if( f == nil)
 							{
-                                NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                                HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
                                 break;
                             }
                             [producedFiles addObject: [NSDictionary dictionaryWithObjectsAndKeys: f, @"file", nil]];
@@ -3100,7 +3104,7 @@ static float deg2rad = M_PI / 180.0;
                             f = [dicomExport writeDCMFile: nil];
                             if( f == nil)
                             {
-                                NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                                HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
                                 break;
                             }
                             [producedFiles addObject: [NSDictionary dictionaryWithObjectsAndKeys: f, @"file", nil]];
@@ -3193,9 +3197,9 @@ static float deg2rad = M_PI / 180.0;
 	curExportView = [self selectedView];
 	
 	if( quicktimeExportMode)
-        [NSApp beginSheet:quicktimeWindow modalForWindow:self.window modalDelegate:self didEndSelector:nil contextInfo:NULL];
+        HorosBeginSheet(quicktimeWindow, self.window, self, nil, NULL);
 	else
-        [NSApp beginSheet:dcmWindow modalForWindow:self.window modalDelegate:self didEndSelector:nil contextInfo:NULL];
+        HorosBeginSheet(dcmWindow, self.window, self, nil, NULL);
     
     self.exportSlabThickness = fabs([self getClippingRangeThicknessInMm]);
     self.exportSliceInterval = fabs([cprView.volumeData minPixelSpacing]);
@@ -3419,11 +3423,11 @@ static float deg2rad = M_PI / 180.0;
     NSSavePanel     *panel = [NSSavePanel savePanel];
     
 	[panel setCanSelectHiddenExtension:YES];
-    [panel setAllowedFileTypes:@[@"jpg"]];
+    panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"jpg"]);
     panel.nameFieldStringValue = NSLocalizedString(@"Curved MPR Image", nil);
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         NSImage *im = [[self selectedViewOnlyMPRView: NO] nsimage:NO];
@@ -3435,7 +3439,7 @@ static float deg2rad = M_PI / 180.0;
         
         if( representations.count)
         {
-            bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+            bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
             
             [bitmapData writeToURL:panel.URL atomically:YES];
             
@@ -3455,7 +3459,7 @@ static float deg2rad = M_PI / 180.0;
 	
 	representations = [im representations];
 	
-	bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+	bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
 	
     NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"Horos.jpg"];
     [bitmapData writeToFile:path atomically:YES];
@@ -3470,11 +3474,11 @@ static float deg2rad = M_PI / 180.0;
     NSSavePanel     *panel = [NSSavePanel savePanel];
     
 	[panel setCanSelectHiddenExtension:YES];
-    [panel setAllowedFileTypes:@[@"tif"]];
+    panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"tif"]);
     panel.nameFieldStringValue = @"3D MPR Image";
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         NSImage *im = [[self selectedView] nsimage:NO];
@@ -3558,15 +3562,14 @@ static float deg2rad = M_PI / 180.0;
 - (BOOL)performDragOperation:(id <NSDraggingInfo>)sender
 {
     NSPasteboard *paste = [sender draggingPasteboard];
-    NSArray	*types = [NSArray arrayWithObjects: NSFilenamesPboardType, nil];
-    NSString *desiredType = [paste availableTypeFromArray: types];
+    NSArray<NSURL *> *fileURLs = [paste readObjectsForClasses:@[[NSURL class]]
+                                                     options:@{NSPasteboardURLReadingFileURLsOnlyKey: @YES}];
 
-    if( [desiredType isEqualToString: NSFilenamesPboardType])
+    if( fileURLs.count)
     {
-        NSArray *fileArray = [paste propertyListForType: @"NSFilenamesPboardType"];
-        
-        for( NSString *file in fileArray)
+        for( NSURL *fileURL in fileURLs)
         {
+            NSString *file = fileURL.path;
             if( [[file pathExtension] isEqualToString: @"curvedPath"])
             {
                 [self loadBezierPathFromFile: file];
@@ -3582,11 +3585,11 @@ static float deg2rad = M_PI / 180.0;
 - (IBAction) saveBezierPath: (id) sender
 {
     NSSavePanel *sPanel	= [NSSavePanel savePanel];
-    [sPanel setAllowedFileTypes:@[@"curvedPath"]];
+    sPanel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"curvedPath"]);
     sPanel.nameFieldStringValue = [[[viewer2D currentStudy] valueForKey: @"name"] stringByAppendingPathExtension: @"curvedPath"];
     
     [sPanel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         [self saveBezierPathToFile:sPanel.URL.path];
@@ -3596,10 +3599,10 @@ static float deg2rad = M_PI / 180.0;
 - (IBAction) loadBezierPath: (id) sender;
 {
     NSOpenPanel *oPanel = [NSOpenPanel openPanel];
-    [oPanel setAllowedFileTypes:@[@"curvedPath"]];
+    oPanel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"curvedPath"]);
     
     [oPanel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         [self loadBezierPathFromFile:oPanel.URL.path];
@@ -3608,7 +3611,7 @@ static float deg2rad = M_PI / 180.0;
 
 -(void) saveBezierPathToFile: (NSString*) path
 {
-    NSData *curvedPathData = [NSKeyedArchiver archivedDataWithRootObject:curvedPath];
+    NSData *curvedPathData = HorosArchiveKeyedObject(curvedPath, nil);
 
     [curvedPathData writeToFile: path atomically: YES];
 }
@@ -3618,7 +3621,7 @@ static float deg2rad = M_PI / 180.0;
     NSData *data = [NSData dataWithContentsOfFile: path];
     if( data)
     {
-        CPRCurvedPath *newCurvedPath = [NSKeyedUnarchiver unarchiveObjectWithData: data];
+        CPRCurvedPath *newCurvedPath = HorosUnarchiveKeyedObject(data, nil);
         
         if( newCurvedPath)
         {
@@ -3850,7 +3853,6 @@ static float deg2rad = M_PI / 180.0;
         [toolbarItem setPaletteLabel:NSLocalizedString( @"LOD",nil)];
         
         [toolbarItem setView: tbLOD];
-        [toolbarItem setMinSize: NSMakeSize(NSWidth([tbLOD frame]), NSHeight([tbLOD frame]))];
     }
     else
 	if ([itemIdent isEqualToString: @"tbCPRType"])
@@ -3859,7 +3861,6 @@ static float deg2rad = M_PI / 180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Reformation Type",nil)];
 		
 		[toolbarItem setView: tbCPRType];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbCPRType frame]), NSHeight([tbCPRType frame]))];
     }
     else if ([itemIdent isEqualToString: @"tbCPRPathMode"])
 	{
@@ -3867,7 +3868,6 @@ static float deg2rad = M_PI / 180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Path Mode",nil)];
 		
 		[toolbarItem setView: tbCPRPathMode];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbCPRPathMode frame]), NSHeight([tbCPRPathMode frame]))];
     }
     else if ([itemIdent isEqualToString: @"tbViewsPosition"])
 	{
@@ -3875,7 +3875,6 @@ static float deg2rad = M_PI / 180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Views",nil)];
 		
 		[toolbarItem setView: tbViewsPosition];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbViewsPosition frame]), NSHeight([tbViewsPosition frame]))];
     }
 	else if ([itemIdent isEqualToString: @"tbStraightenedCPRAngle"])
 	{
@@ -3883,7 +3882,6 @@ static float deg2rad = M_PI / 180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Curved MPR Angle",nil)];
 		
 		[toolbarItem setView: tbStraightenedCPRAngle];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbStraightenedCPRAngle frame]), NSHeight([tbStraightenedCPRAngle frame]))];
     }    
 	else if ([itemIdent isEqualToString: @"Reset.pdf"])
 	{
@@ -3941,8 +3939,6 @@ static float deg2rad = M_PI / 180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Thick Slab",nil)];
 		
 		[toolbarItem setView: tbThickSlab];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbThickSlab frame]), NSHeight([tbThickSlab frame]))];
-        [toolbarItem setMaxSize: NSMakeSize(2*NSWidth([tbThickSlab frame]), NSHeight([tbThickSlab frame]))];
     }
 	else if ([itemIdent isEqualToString: @"tbWLWW"])
 	{
@@ -3950,7 +3946,6 @@ static float deg2rad = M_PI / 180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"WL & WW",nil)];
 		
 		[toolbarItem setView: tbWLWW];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbWLWW frame]), NSHeight([tbWLWW frame]))];
     }
 	else if ([itemIdent isEqualToString: @"tbTools"])
 	{
@@ -3958,7 +3953,6 @@ static float deg2rad = M_PI / 180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Tools",nil)];
 		
 		[toolbarItem setView: tbTools];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbTools frame]), NSHeight([tbTools frame]))];
     }
 	else if ([itemIdent isEqualToString: @"tbPathAssistant"])
 	{
@@ -3967,7 +3961,6 @@ static float deg2rad = M_PI / 180.0;
 		[toolbarItem setToolTip:NSLocalizedString(@"Automatically finds a path between two points", nil)];
 		
 		[toolbarItem setView: tbPathAssistant];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbPathAssistant frame]), NSHeight([tbPathAssistant frame]))];
     }
     else if ([itemIdent isEqualToString: @"tbHighRes"])
 	{
@@ -3975,7 +3968,6 @@ static float deg2rad = M_PI / 180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Resolution",nil)];
 		
 		[toolbarItem setView: tbHighResolution];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbHighResolution frame]), NSHeight([tbHighResolution frame]))];
     }
     else if ([itemIdent isEqualToString: @"tbInterpolationMode"])
 	{
@@ -3983,7 +3975,6 @@ static float deg2rad = M_PI / 180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Interpolation Mode",nil)];
 		
 		[toolbarItem setView: tbInterpolationMode];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbInterpolationMode frame]), NSHeight([tbInterpolationMode frame]))];
     }
 //	else if ([itemIdent isEqualToString: @"tbMovie"])
 //	{
@@ -4006,7 +3997,6 @@ static float deg2rad = M_PI / 180.0;
 		[toolbarItem setLabel: NSLocalizedString(@"Axis Colors",nil)];
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Axis Colors",nil)];
 		[toolbarItem setView: tbAxisColors];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbAxisColors frame]), NSHeight([tbAxisColors frame]))];
     }
 	else if ([itemIdent isEqualToString:@"AxisShowHide"])
 	{
@@ -4053,7 +4043,6 @@ static float deg2rad = M_PI / 180.0;
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Sync Zoom",nil)];
 		
 		[toolbarItem setView: tbSyncZoomLevel];
-		[toolbarItem setMinSize: NSMakeSize(NSWidth([tbSyncZoomLevel frame]), NSHeight([tbSyncZoomLevel frame]))];
     }
 	else
 	{
@@ -4070,10 +4059,9 @@ static float deg2rad = M_PI / 180.0;
 
 - (NSArray *) toolbarAllowedItemIdentifiers: (NSToolbar *) toolbar
 {
-    NSMutableArray *array = [NSMutableArray arrayWithObjects: NSToolbarCustomizeToolbarItemIdentifier,
+    NSMutableArray *array = [NSMutableArray arrayWithObjects:
             NSToolbarFlexibleSpaceItemIdentifier,
             NSToolbarSpaceItemIdentifier,
-            NSToolbarSeparatorItemIdentifier,
             @"tbTools", @"tbWLWW", @"tbLOD", @"tbStraightenedCPRAngle", @"tbCPRType", @"tbHighRes", @"tbPathAssistant", @"tbCPRPathMode", @"tbViewsPosition", @"tbThickSlab", @"Reset.pdf", @"Export.icns", @"curvedPath.icns", @"BestRendering.pdf", @"AxisColors", @"AxisShowHide", @"CPRAxisShowHide", @"MousePositionShowHide", @"syncZoomLevel", @"tbInterpolationMode", nil];
     
     return array;
@@ -4170,7 +4158,7 @@ static float deg2rad = M_PI / 180.0;
 
 - (void)toogleAxisVisibility:(id) sender;
 {
-	if ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSShiftKeyMask)
+	if ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSEventModifierFlagShift)
 	{
 		[[self selectedViewOnlyMPRView: YES] setDisplayCrossLines: ![[self selectedViewOnlyMPRView: YES] displayCrossLines]];
 	}
@@ -4543,7 +4531,6 @@ static float deg2rad = M_PI / 180.0;
 
 - (void)setViewsPosition:(ViewsPosition) newViewsPosition
 {
-    NSDisableScreenUpdates();
     
     viewsPosition = newViewsPosition;
     
@@ -4580,7 +4567,6 @@ static float deg2rad = M_PI / 180.0;
 	mprView3.camera.forceUpdate = YES;
 	[mprView3 updateViewMPROnLoading:isInitializing];
     
-    NSEnableScreenUpdates();
 }
 
 - (ViewsPosition)viewsPosition
@@ -4690,7 +4676,7 @@ static float deg2rad = M_PI / 180.0;
 //		}
 		
 		f = [dicomExport writeDCMFile: nil];
-		if( f == nil) NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+		if( f == nil) HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
 		
 //		free( dataPtr);
 	}
@@ -5059,7 +5045,7 @@ static float deg2rad = M_PI / 180.0;
     if( [curvedPath.nodes count] > 1 && [curvedPath.nodes count] <= 5)
         [self assistedCurvedPath:nil];
     else
-         NSRunAlertPanel(NSLocalizedString(@"Path Assistant error", nil), NSLocalizedString(@"Path Assistant requires at least 2 points, and no more than 5 points. Use the Curved Path tool to define at least two points.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+         HorosPresentAlert(NSLocalizedString(@"Path Assistant error", nil), NSLocalizedString(@"Path Assistant requires at least 2 points, and no more than 5 points. Use the Curved Path tool to define at least two points.", nil), NSLocalizedString(@"OK", nil), nil, nil);
     
     [self willChangeValueForKey: @"onSliderEnabled"];
     [self didChangeValueForKey: @"onSliderEnabled"];

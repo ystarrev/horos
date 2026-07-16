@@ -1,3 +1,4 @@
+#import "HorosUnkeyedArchiveCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -165,7 +166,52 @@ static FunctionType HorosSRAnnotationSymbol(const char* name)
 	return reinterpret_cast<FunctionType>(dlsym(handle, name));
 }
 
+static NSDateFormatter* HorosSRAnnotationDICOMDateFormatter()
+{
+	NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
+	formatter.calendar = [[[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian] autorelease];
+	formatter.locale = [[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"] autorelease];
+	formatter.timeZone = [NSTimeZone localTimeZone];
+	formatter.dateFormat = @"yyyyMMdd";
+	formatter.lenient = NO;
+	return formatter;
+}
+
+static NSDate* HorosSRAnnotationDateFromDICOMString(NSString* value)
+{
+	if (value.length == 0)
+		return nil;
+	return [HorosSRAnnotationDICOMDateFormatter() dateFromString:value];
+}
+
+static NSString* HorosSRAnnotationDICOMStringFromDate(NSDate* date)
+{
+	if (date == nil)
+		return nil;
+	return [HorosSRAnnotationDICOMDateFormatter() stringFromDate:date];
+}
+
+static NSData* HorosSRAnnotationArchiveLegacyROIs(NSArray* rois)
+{
+	return HorosArchiveUnkeyedObject(rois);
+}
+
+static NSArray* HorosSRAnnotationUnarchiveLegacyROIs(NSData* data)
+{
+	return HorosUnarchiveUnkeyedObject(data);
+}
+
 @implementation SRAnnotation
+
++ (NSArray *)unarchiveROIsFromCompatibilityData:(NSData *)data
+{
+	return data ? HorosSRAnnotationUnarchiveLegacyROIs(data) : nil;
+}
+
++ (NSData *)archiveROIsForCompatibility:(NSArray *)rois
+{
+	return HorosSRAnnotationArchiveLegacyROIs(rois ?: [NSArray array]);
+}
 
 static NSString* HorosSRAnnotationBridgeString(char* value)
 {
@@ -350,7 +396,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 	NSString* patientName = HorosSRAnnotationBridgeString(copyFieldFn([path UTF8String], "PatientName"));
 	NSString* patientID = HorosSRAnnotationBridgeString(copyFieldFn([path UTF8String], "PatientID"));
 	NSString* patientDOB = HorosSRAnnotationBridgeString(copyFieldFn([path UTF8String], "PatientBirthDate"));
-	NSCalendarDate* DOB = [NSCalendarDate dateWithString:patientDOB calendarFormat:@"%Y%m%d"];
+	NSDate* DOB = HorosSRAnnotationDateFromDICOMString(patientDOB);
 
 	if (accessionNumber == nil)
 		accessionNumber = @"";
@@ -712,9 +758,9 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 - (void) addROIs: (NSArray *) someROIs;
 {
 	if( !_dataEncapsulated)
-		_dataEncapsulated = [[NSArchiver archivedDataWithRootObject: [NSArray array]] retain];
+		_dataEncapsulated = [HorosSRAnnotationArchiveLegacyROIs([NSArray array]) retain];
 		
-	NSArray *preExistingROIs = [NSUnarchiver unarchiveObjectWithData: _dataEncapsulated];
+	NSArray *preExistingROIs = HorosSRAnnotationUnarchiveLegacyROIs(_dataEncapsulated);
 	
 //	for( ROI *aROI in someROIs)
 //	{
@@ -734,12 +780,12 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 	NSArray *newROIs = [preExistingROIs arrayByAddingObjectsFromArray: someROIs];
 	
 	[_dataEncapsulated release];
-	_dataEncapsulated = [[NSArchiver archivedDataWithRootObject: newROIs] retain];
+	_dataEncapsulated = [HorosSRAnnotationArchiveLegacyROIs(newROIs) retain];
 }
 
 - (NSArray *) ROIs
 {
-	return [NSUnarchiver unarchiveObjectWithData: _dataEncapsulated];
+	return HorosSRAnnotationUnarchiveLegacyROIs(_dataEncapsulated);
 }
 
 #pragma mark -
@@ -858,7 +904,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 	if (canonicalPatientBirthDate.length)
 		document->setPatientBirthDate([canonicalPatientBirthDate UTF8String]);
 	else if ([study valueForKey:@"dateOfBirth"])
-		document->setPatientBirthDate([[[study valueForKey:@"dateOfBirth"] descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil] UTF8String]);
+		document->setPatientBirthDate([HorosSRAnnotationDICOMStringFromDate([study valueForKey:@"dateOfBirth"]) UTF8String]);
 		
 	if ([study valueForKey:@"patientSex"])
 		document->setPatientSex([[study valueForKey:@"patientSex"] UTF8String]);
@@ -950,7 +996,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 		if (resolvedPatientBirthDate.length == 0 && sourcePatientBirthDate.length)
 			resolvedPatientBirthDate = sourcePatientBirthDate;
 		if (resolvedPatientBirthDate.length == 0 && [study valueForKey:@"dateOfBirth"])
-			resolvedPatientBirthDate = [[study valueForKey:@"dateOfBirth"] descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil];
+			resolvedPatientBirthDate = HorosSRAnnotationDICOMStringFromDate([study valueForKey:@"dateOfBirth"]);
 		NSString *resolvedPatientSex = sourcePatientSex.length ? sourcePatientSex : [study valueForKey:@"patientSex"];
 		NSString *contentDateString = nil;
 		NSString *contentTimeString = nil;
@@ -1020,7 +1066,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 		if (resolvedPatientBirthDate.length == 0 && sourcePatientBirthDate.length)
 			resolvedPatientBirthDate = sourcePatientBirthDate;
 		if (resolvedPatientBirthDate.length == 0 && [study valueForKey:@"dateOfBirth"])
-			resolvedPatientBirthDate = [[study valueForKey:@"dateOfBirth"] descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil];
+			resolvedPatientBirthDate = HorosSRAnnotationDICOMStringFromDate([study valueForKey:@"dateOfBirth"]);
 		NSString *resolvedPatientSex = sourcePatientSex.length ? sourcePatientSex : [study valueForKey:@"patientSex"];
 		NSString *contentDateString = nil;
 		NSString *contentTimeString = nil;
@@ -1101,7 +1147,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 		if (resolvedPatientBirthDate.length == 0 && sourcePatientBirthDate.length)
 			resolvedPatientBirthDate = sourcePatientBirthDate;
 		if (resolvedPatientBirthDate.length == 0 && [study valueForKey:@"dateOfBirth"])
-			resolvedPatientBirthDate = [[study valueForKey:@"dateOfBirth"] descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil];
+			resolvedPatientBirthDate = HorosSRAnnotationDICOMStringFromDate([study valueForKey:@"dateOfBirth"]);
 
 		if (replaceTagFn != NULL)
 		{

@@ -43,7 +43,7 @@
 
 - (id)initWithFrame:(NSRect)frameRect {
     if ((self = [super initWithFrame:frameRect])) {
-        self.datePickerStyle = NSTextFieldAndStepperDatePickerStyle;
+        self.datePickerStyle = NSDatePickerStyleTextFieldAndStepper;
         self.backgroundColor = [NSColor whiteColor];
         self.drawsBackground = YES;
         self.bezeled = YES;
@@ -66,7 +66,7 @@
     [dp.cell setControlSize:[self.cell controlSize]];
     dp.font = self.font;
     dp.datePickerElements = self.datePickerElements;
-    dp.datePickerStyle = NSClockAndCalendarDatePickerStyle;
+    dp.datePickerStyle = NSDatePickerStyleClockAndCalendar;
     //dp.backgroundColor = [NSColor grayColor];
     //dp.drawsBackground = YES;
     dp.bezeled = NO;
@@ -80,7 +80,7 @@
     
     NSRect cwr = NSMakeRect(0, 0, dp.frame.size.width+kBorderThicknessX*2, dp.frame.size.height+kBorderThicknessY*2);
     
-    _helperWindow = [[NSWindow alloc] initWithContentRect:cwr styleMask:NSBorderlessWindowMask backing:NSBackingStoreBuffered defer:NO];
+    _helperWindow = [[NSWindow alloc] initWithContentRect:cwr styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
     [_helperWindow.contentView addSubview:dp];
     _helperWindow.backgroundColor = [NSColor grayColor];//[NSColor whiteColor];
     _helperWindow.hasShadow = YES;

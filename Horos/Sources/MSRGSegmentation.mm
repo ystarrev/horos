@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -147,7 +148,7 @@ int i,j,k,l;
 	}
 	
 	NSLog(@"Memory problem in: MSRGSegmentation/buildMarkerWithStackHeigt !");
-	NSRunAlertPanel( NSLocalizedString( @"Memory Error", nil), NSLocalizedString( @"Sorry, but there is not enough memory", 0), nil, nil, nil);
+	HorosPresentAlert( NSLocalizedString( @"Memory Error", nil), NSLocalizedString( @"Sorry, but there is not enough memory", 0), nil, nil, nil);
 	return NO;
 }
 -(BOOL) buildMarkerBufferWithStackHeigth
@@ -212,7 +213,7 @@ int i,j,k,l;
 	}
 	
 	NSLog(@"Memory problem in: MSRGSegmentation/buildMarkerWithStackHeigt !");
-	NSRunAlertPanel( NSLocalizedString( @"Memory Error", nil), NSLocalizedString( @"Sorry, but there is not enough memory", 0), nil, nil, nil);
+	HorosPresentAlert( NSLocalizedString( @"Memory Error", nil), NSLocalizedString( @"Sorry, but there is not enough memory", 0), nil, nil, nil);
 	return NO;
 }
 
@@ -252,7 +253,7 @@ int i,j,k,l;
 	 }
 	 
 	 NSLog(@"Memory problem in : MSRGSegmentation/buildCriteriaBufferFor2DColorImageWithStackHeigt !");
-	 NSRunAlertPanel( NSLocalizedString( @"Memory Error", nil), NSLocalizedString( @"Sorry, but there is not enough memory", 0), nil, nil, nil);
+	 HorosPresentAlert( NSLocalizedString( @"Memory Error", nil), NSLocalizedString( @"Sorry, but there is not enough memory", 0), nil, nil, nil);
 	 */
 	return NO;
 	
@@ -293,7 +294,7 @@ int i,j,k,l;
 	 }
 	 
 	 NSLog(@"Memory problem in : MSRGSegmentation/buildCriteriaBufferWithStackHeigt !");
-	 NSRunAlertPanel( NSLocalizedString( @"Memory Error", nil), NSLocalizedString( @"Sorry, but there is not enough memory", 0), nil, nil, nil);
+	 HorosPresentAlert( NSLocalizedString( @"Memory Error", nil), NSLocalizedString( @"Sorry, but there is not enough memory", 0), nil, nil, nil);
 	 
 	 */
 	return NO;

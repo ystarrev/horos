@@ -1477,23 +1477,26 @@ void info_callback(const char *msg, void *a) {
 {
     NSMutableData* pixelData = nil;
     
-    unsigned long processors = 0;
-    
-    if( [jpegLsData length] > 512*1024)
-        processors = [[NSProcessInfo processInfo] processorCount] /2;
-    
-    JlsParameters jlsParameters = {};
-    charls::ApiResult readHeaderResult = JpegLsReadHeader([jpegLsData bytes], [jpegLsData length], &jlsParameters, NULL);
-    
-    if (readHeaderResult == charls::ApiResult::OK)
+    charls_jpegls_decoder *decoder = charls_jpegls_decoder_create();
+    if (decoder == NULL)
+        return nil;
+
+    charls_jpegls_errc result = charls_jpegls_decoder_set_source_buffer(decoder, [jpegLsData bytes], [jpegLsData length]);
+    if (result == charls::jpegls_errc::success)
+        result = charls_jpegls_decoder_read_header(decoder);
+
+    size_t uncompressedLength = 0;
+    if (result == charls::jpegls_errc::success)
+        result = charls_jpegls_decoder_get_destination_size(decoder, 0, &uncompressedLength);
+
+    if (result == charls::jpegls_errc::success)
     {
-        size_t uncompressedLength = jlsParameters.height * jlsParameters.stride;
         void *uncompressedData = (void*) malloc(uncompressedLength);
         
         if (uncompressedData)
         {
-            charls::ApiResult decodeResult = JpegLsDecode(uncompressedData, uncompressedLength, [jpegLsData bytes], [jpegLsData length], NULL, NULL);
-            if (decodeResult != charls::ApiResult::OK)
+            result = charls_jpegls_decoder_decode_to_buffer(decoder, uncompressedData, uncompressedLength, 0);
+            if (result != charls::jpegls_errc::success)
             {
                 free(uncompressedData);
             }
@@ -1505,6 +1508,8 @@ void info_callback(const char *msg, void *a) {
             }
         }
     }
+
+    charls_jpegls_decoder_destroy(decoder);
     
     return pixelData;
 }

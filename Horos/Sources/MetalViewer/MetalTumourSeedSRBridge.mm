@@ -14,16 +14,6 @@ static NSString * const HorosMetalTumourSeedROIName = @"Horos Tumour Seed";
 static NSString * const HorosMetalTumourSeedCommentPrefix = @"HorosMetalTumourSeed:";
 static NSString * const HorosMetalTumourSeedSchema = @"com.horos.metalviewer.tumour-seed-roi.v1";
 
-static id HorosUnarchiveLegacyROIData(NSData *data)
-{
-    // Existing ROI SR payloads use NSArchiver's unkeyed format and cannot be read by NSKeyedUnarchiver.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    id object = [NSUnarchiver unarchiveObjectWithData:data];
-#pragma clang diagnostic pop
-    return object;
-}
-
 @implementation MetalTumourSeedSRBridge
 
 + (NSArray<NSDictionary<NSString *, id> *> *)seedDictionariesForPixList:(NSArray *)pixList
@@ -305,7 +295,7 @@ static id HorosUnarchiveLegacyROIData(NSData *data)
 
     @try
     {
-        id object = HorosUnarchiveLegacyROIData(data);
+        id object = [SRAnnotation unarchiveROIsFromCompatibilityData:data];
         if ([object isKindOfClass:NSArray.class])
             return object;
     }

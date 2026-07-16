@@ -1,3 +1,5 @@
+#import "HorosSheetPresenter.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -52,6 +54,7 @@
 #include "vtkImageResample.h"
 #import "ROI.h"
 #import "BrowserController.h"
+#import "DicomDatabase.h"
 #import "DICOMExport.h"
 
 #define id Id
@@ -1007,12 +1010,12 @@ public:
 			//	[exportDCM setPixelSpacing: 1 :1];
 				
 				NSString *f = [exportDCM writeDCMFile: nil];
-				if( f == nil) NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+				if( f == nil) HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
 				
 				free( dataPtr);
 			}
 			
-			[[BrowserController currentBrowser] checkIncoming: self];
+			[[DicomDatabase activeLocalDatabase] initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
 		}
 		// 4th dimension
 		else if( [[dcmExportMode selectedCell] tag] == 2)
@@ -1075,7 +1078,7 @@ public:
 			
 			[dcmSequence release];
 			
-			[[BrowserController currentBrowser] checkIncoming: self];
+			[[DicomDatabase activeLocalDatabase] initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
 		}
 		else // A 3D sequence
 		{
@@ -1162,7 +1165,7 @@ public:
 			
 			[dcmSequence release];
 			
-			[[BrowserController currentBrowser] checkIncoming: self];
+			[[DicomDatabase activeLocalDatabase] initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
 		}
 		
 		[self restoreViewSizeAfterMatrix3DExport];
@@ -1174,7 +1177,7 @@ public:
 	[self setCurrentdcmExport: dcmExportMode];
 	if( [[[self window] windowController] movieFrames] > 1) [[dcmExportMode cellWithTag:2] setEnabled: YES];
 	else [[dcmExportMode cellWithTag:2] setEnabled: NO];
-	[NSApp beginSheet: exportDCMWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+	HorosBeginSheet(exportDCMWindow, [self window], self, nil, (void*) nil);
 }
 
 -(IBAction) endQuicktimeSettings:(id) sender
@@ -1383,7 +1386,7 @@ public:
 
 -(IBAction) exportQuicktime3DVR:(id) sender
 {
-	[NSApp beginSheet: export3DVRWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+	HorosBeginSheet(export3DVRWindow, [self window], self, nil, (void*) nil);
 }
 
 - (IBAction) exportQuicktime:(id) sender
@@ -1392,9 +1395,9 @@ public:
 	
 	if( [[[self window] windowController] movieFrames] > 1)
 	{
-		if( NSRunInformationalAlertPanel( NSLocalizedString(@"Quicktime Export", nil), NSLocalizedString(@"Should I export the temporal series or the 3D scene?", nil), NSLocalizedString(@"3D Scene", nil), NSLocalizedString(@"Temporal Series", nil), nil) == NSAlertDefaultReturn)
+		if( HorosPresentInformationalAlert( NSLocalizedString(@"Quicktime Export", nil), NSLocalizedString(@"Should I export the temporal series or the 3D scene?", nil), NSLocalizedString(@"3D Scene", nil), NSLocalizedString(@"Temporal Series", nil), nil) == HorosAlertResponseFirstButton)
 		{
-			[NSApp beginSheet: export3DWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+			HorosBeginSheet(export3DWindow, [self window], self, nil, (void*) nil);
 		}
 		else
 		{
@@ -1405,7 +1408,7 @@ public:
 			[mov release];
 		}
 	}
-	else [NSApp beginSheet: export3DWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+	else HorosBeginSheet(export3DWindow, [self window], self, nil, (void*) nil);
 }
 
 -(BOOL) acceptsFirstMouse:(NSEvent*) theEvent
@@ -1468,16 +1471,16 @@ public:
 {
 	long tool;
 	
-	if( [event type] == NSRightMouseDown || [event type] == NSRightMouseDragged || [event type] == NSRightMouseUp) tool = tZoom;
-	else if( [event type] == NSOtherMouseDown || [event type] == NSOtherMouseDragged || [event type] == NSOtherMouseUp) tool = tTranslate;
+	if( [event type] == NSEventTypeRightMouseDown || [event type] == NSEventTypeRightMouseDragged || [event type] == NSEventTypeRightMouseUp) tool = tZoom;
+	else if( [event type] == NSEventTypeOtherMouseDown || [event type] == NSEventTypeOtherMouseDragged || [event type] == NSEventTypeOtherMouseUp) tool = tTranslate;
 	else tool = currentTool;
 	
-	if (([event modifierFlags] & NSControlKeyMask))  tool = tRotate;
-	if (([event modifierFlags] & NSShiftKeyMask))  tool = tZoom;
-	if (([event modifierFlags] & NSCommandKeyMask))  tool = tTranslate;
-	if (([event modifierFlags] & NSAlternateKeyMask))  tool = tWL;
-	if (([event modifierFlags] & NSCommandKeyMask) && ([event modifierFlags] & NSAlternateKeyMask))  tool = tRotate;
-	if (([event modifierFlags] & NSCommandKeyMask) && ([event modifierFlags] & NSControlKeyMask))  tool = tCamera3D;
+	if (([event modifierFlags] & NSEventModifierFlagControl))  tool = tRotate;
+	if (([event modifierFlags] & NSEventModifierFlagShift))  tool = tZoom;
+	if (([event modifierFlags] & NSEventModifierFlagCommand))  tool = tTranslate;
+	if (([event modifierFlags] & NSEventModifierFlagOption))  tool = tWL;
+	if (([event modifierFlags] & NSEventModifierFlagCommand) && ([event modifierFlags] & NSEventModifierFlagOption))  tool = tRotate;
+	if (([event modifierFlags] & NSEventModifierFlagCommand) && ([event modifierFlags] & NSEventModifierFlagControl))  tool = tCamera3D;
 	
 	return tool;
 }
@@ -1715,7 +1718,7 @@ public:
 	[self mouseDown:theEvent];
 
 	//show contextual menu  added LP 12/5/05
-//		if ([theEvent type] == NSRightMouseDown && [theEvent clickCount] > 1)
+//		if ([theEvent type] == NSEventTypeRightMouseDown && [theEvent clickCount] > 1)
 //			[NSMenu popUpContextMenu:[self menu] withEvent:theEvent forView:self];
 			
 //    BOOL		keepOn = YES;
@@ -1740,19 +1743,19 @@ public:
 //		[self getInteractor]->InvokeEvent(vtkCommand::RightButtonPressEvent,NULL);
 //		
 //		do {
-//			theEvent = [[self window] nextEventMatchingMask: NSRightMouseUpMask | NSRightMouseDraggedMask | NSPeriodicMask];
+//			theEvent = [[self window] nextEventMatchingMask: NSEventMaskRightMouseUp | NSEventMaskRightMouseDragged | NSEventMaskPeriodic];
 //			mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 //			[self getInteractor]->SetEventInformation((int) mouseLoc.x, (int) mouseLoc.y, controlDown, shiftDown);
 //			switch ([theEvent type]) {
-//			case NSRightMouseDragged:
+//			case NSEventTypeRightMouseDragged:
 //				[self getInteractor]->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);
 //				break;
-//			case NSRightMouseUp:
+//			case NSEventTypeRightMouseUp:
 //				noWaitDialog = NO;
 //				[self getInteractor]->InvokeEvent(vtkCommand::RightButtonReleaseEvent, NULL);
 //				keepOn = NO;
 //				break;
-//			case NSPeriodic:
+//			case NSEventTypePeriodic:
 //				[self getInteractor]->InvokeEvent(vtkCommand::TimerEvent, NULL);
 //				break;
 //			default:
@@ -1824,9 +1827,9 @@ public:
 		else Line2DText->GetPositionCoordinate()->SetValue( point2[0], point2[ 1]);
 		
 		if (length/10. < .1)
-			sprintf( text, "Length: %2.2f %cm", (length/10.) * 10000.0, 0xB5);
+			snprintf(text, sizeof(text), "Length: %2.2f %cm", (length/10.) * 10000.0, 0xB5);
 		else
-			sprintf( text, "Length: %2.2f cm", length/10.);
+			snprintf(text, sizeof(text), "Length: %2.2f cm", length/10.);
 		
 		Line2DText->SetInput( text);
 		aRenderer->AddActor(Line2DText);
@@ -1923,7 +1926,7 @@ public:
 		
 		do
 		{
-			theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+			theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 			
 			mouseLoc = [theEvent locationInWindow];	//[self convertPoint: [theEvent locationInWindow] fromView:nil];
 			
@@ -1936,10 +1939,10 @@ public:
 			
 			switch ([theEvent type])
 			{
-				case NSLeftMouseDragged:
+				case NSEventTypeLeftMouseDragged:
 					beforeFrame = [self frame];
 					
-					if( [theEvent modifierFlags] & NSShiftKeyMask)
+					if( [theEvent modifierFlags] & NSEventModifierFlagShift)
 					{
 						newFrame.size.width = [[[self window] contentView] frame].size.width - mouseLoc.x*2;
 						newFrame.size.height = newFrame.size.width;
@@ -1976,12 +1979,12 @@ public:
 				//	NSLog(@"%f", aCamera->GetViewAngle());
 				break;
 				
-				case NSLeftMouseUp:
+				case NSEventTypeLeftMouseUp:
 					noWaitDialog = NO;
 					keepOn = NO;
 				break;
 					
-				case NSPeriodic:
+				case NSEventTypePeriodic:
 					
 				break;
 					
@@ -2139,11 +2142,11 @@ public:
 			
 			do
 			{
-				theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+				theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 				mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 				switch ([theEvent type])
 				{
-				case NSLeftMouseDragged:
+				case NSEventTypeLeftMouseDragged:
 				{
 					float WWAdapter  = startWW / 100.0;
 					
@@ -2153,7 +2156,7 @@ public:
 					
 					if( ww > 10000) ww = 10000;
 					
-					sprintf(WLWWString, "WL: %0.f WW: %0.f", wl, ww);
+					snprintf(WLWWString, sizeof(WLWWString), "WL: %0.f WW: %0.f", wl, ww);
 					textWLWW->SetInput( WLWWString);
 					
 					if( textureMapper) textureMapper->SetLookUpTable( OFFSET16 + wl - ww/2, OFFSET16 + wl + ww/2, r, g, b, o, aRenderer, volume);	//vtkDataSet
@@ -2162,12 +2165,12 @@ public:
 				}
 				break;
 				
-				case NSLeftMouseUp:
+				case NSEventTypeLeftMouseUp:
 					noWaitDialog = NO;
 					keepOn = NO;
 					break;
 					
-				case NSPeriodic:
+				case NSEventTypePeriodic:
 					
 					break;
 					
@@ -2205,20 +2208,20 @@ public:
 			[self getInteractor]->InvokeEvent(vtkCommand::LeftButtonPressEvent,NULL);
 			
 			do {
-				theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+				theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 				mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 				[self getInteractor]->SetEventInformation((int) mouseLoc.x, (int) mouseLoc.y, controlDown, shiftDown);
 				switch ([theEvent type]) {
-				case NSLeftMouseDragged:
+				case NSEventTypeLeftMouseDragged:
 					[self computeOrientationText];
 					[self getInteractor]->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);
 					break;
-				case NSLeftMouseUp:
+				case NSEventTypeLeftMouseUp:
 					noWaitDialog = NO;
 					[self getInteractor]->InvokeEvent(vtkCommand::LeftButtonReleaseEvent, NULL);
 					keepOn = NO;
 					break;
-				case NSPeriodic:
+				case NSEventTypePeriodic:
 					[self getInteractor]->InvokeEvent(vtkCommand::TimerEvent, NULL);
 					break;
 				default:
@@ -2237,8 +2240,8 @@ public:
 		}
 		else if( tool == t3DRotate)
 		{
-			int shiftDown = 0;//([theEvent modifierFlags] & NSShiftKeyMask);
-			int controlDown = 0;//([theEvent modifierFlags] & NSControlKeyMask);
+			int shiftDown = 0;//([theEvent modifierFlags] & NSEventModifierFlagShift);
+			int controlDown = 0;//([theEvent modifierFlags] & NSEventModifierFlagControl);
 			
 			if( textureMapper)
 			{
@@ -2255,20 +2258,20 @@ public:
 			[self getInteractor]->InvokeEvent(vtkCommand::LeftButtonPressEvent,NULL);
 			
 			do {
-				theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+				theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 				mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 				[self getInteractor]->SetEventInformation((int)mouseLoc.x, (int)mouseLoc.y, controlDown, shiftDown);
 				switch ([theEvent type]) {
-				case NSLeftMouseDragged:
+				case NSEventTypeLeftMouseDragged:
 					[self computeOrientationText];
 					[self getInteractor]->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);
 					break;
-				case NSLeftMouseUp:
+				case NSEventTypeLeftMouseUp:
 					noWaitDialog = NO;
 					[self getInteractor]->InvokeEvent(vtkCommand::LeftButtonReleaseEvent, NULL);
 					keepOn = NO;
 					break;
-				case NSPeriodic:
+				case NSEventTypePeriodic:
 					[self getInteractor]->InvokeEvent(vtkCommand::TimerEvent, NULL);
 					break;
 				default:
@@ -2302,19 +2305,19 @@ public:
 			[self getInteractor]->InvokeEvent(vtkCommand::LeftButtonPressEvent,NULL);
 			
 			do {
-				theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+				theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 				mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 				[self getInteractor]->SetEventInformation((int) mouseLoc.x, (int) mouseLoc.y, controlDown, shiftDown);
 				switch ([theEvent type]) {
-				case NSLeftMouseDragged:
+				case NSEventTypeLeftMouseDragged:
 					[self getInteractor]->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);
 					break;
-				case NSLeftMouseUp:
+				case NSEventTypeLeftMouseUp:
 					noWaitDialog = NO;
 					[self getInteractor]->InvokeEvent(vtkCommand::LeftButtonReleaseEvent, NULL);
 					keepOn = NO;
 					break;
-				case NSPeriodic:
+				case NSEventTypePeriodic:
 					[self getInteractor]->InvokeEvent(vtkCommand::TimerEvent, NULL);
 					break;
 				default:
@@ -2350,22 +2353,22 @@ public:
 				[self getInteractor]->InvokeEvent(vtkCommand::RightButtonPressEvent,NULL);
 				
 				do {
-					theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+					theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 					mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 					[self getInteractor]->SetEventInformation((int) mouseLoc.x, (int) mouseLoc.y, controlDown, shiftDown);
 					switch ([theEvent type]) {
-					case NSLeftMouseDragged:
-					case NSRightMouseDragged:
+					case NSEventTypeLeftMouseDragged:
+					case NSEventTypeRightMouseDragged:
 						[self computeLength];
 						[self getInteractor]->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);
 						break;
-					case NSLeftMouseUp:
-					case NSRightMouseUp:
+					case NSEventTypeLeftMouseUp:
+					case NSEventTypeRightMouseUp:
 						noWaitDialog = NO;
 						[self getInteractor]->InvokeEvent(vtkCommand::LeftButtonReleaseEvent, NULL);
 						keepOn = NO;
 						break;
-					case NSPeriodic:
+					case NSEventTypePeriodic:
 						[self getInteractor]->InvokeEvent(vtkCommand::TimerEvent, NULL);
 						break;
 					default:
@@ -2397,12 +2400,12 @@ public:
 				
 				do
 				{
-					theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+					theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 					mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 					switch ([theEvent type])
 					{
-					case NSLeftMouseDragged:
-					case NSRightMouseDragged:
+					case NSEventTypeLeftMouseDragged:
+					case NSEventTypeRightMouseDragged:
 					{
 						float distance = aCamera->GetDistance();
 						aCamera->Dolly( 1.0 + (mouseLoc.y - mouseLocPre.y) / 1200.);
@@ -2415,13 +2418,13 @@ public:
 					}
 					break;
 					
-					case NSLeftMouseUp:
-					case NSRightMouseUp:
+					case NSEventTypeLeftMouseUp:
+					case NSEventTypeRightMouseUp:
 						noWaitDialog = NO;
 						keepOn = NO;
 						break;
 						
-					case NSPeriodic:
+					case NSEventTypePeriodic:
 						
 						break;
 						
@@ -2457,11 +2460,11 @@ public:
 			
 			do
 			{
-				theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+				theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 				mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 				switch ([theEvent type])
 				{
-				case NSLeftMouseDragged:
+				case NSEventTypeLeftMouseDragged:
 				{
 					aCamera->Yaw( -(mouseLoc.x - mouseLocPre.x) / 5.);
 					aCamera->Pitch( (mouseLoc.y - mouseLocPre.y) / 5.);
@@ -2475,12 +2478,12 @@ public:
 				}
 				break;
 				
-				case NSLeftMouseUp:
+				case NSEventTypeLeftMouseUp:
 					noWaitDialog = NO;
 					keepOn = NO;
 					break;
 					
-				case NSPeriodic:
+				case NSEventTypePeriodic:
 					
 					break;
 					
@@ -2867,7 +2870,7 @@ public:
 		
 		if( roiPts->GetNumberOfPoints() < 3)
 		{
-			NSRunAlertPanel(NSLocalizedString(@"3D Cut", nil), NSLocalizedString(@"Draw an ROI on the 3D image and then press Return (include) or Delete (exclude) keys.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+			HorosPresentAlert(NSLocalizedString(@"3D Cut", nil), NSLocalizedString(@"Draw an ROI on the 3D image and then press Return (include) or Delete (exclude) keys.", nil), NSLocalizedString(@"OK", nil), nil, nil);
 		}
 		else
 		{
@@ -3400,7 +3403,7 @@ public:
 	
 //	vImageConvert_PlanarFtoPlanar8( &srcf, &dst8, wl + ww/2, wl - ww/2, 0);
 		
-	sprintf(WLWWString, "WL: %0.f WW: %0.f", wl, ww);
+	snprintf(WLWWString, sizeof(WLWWString), "WL: %0.f WW: %0.f", wl, ww);
 	textWLWW->SetInput( WLWWString);
 
 	[self updateVolumePRO];
@@ -3420,7 +3423,7 @@ public:
 //	aRenderer->RemoveActor(outlineRect);
 	aRenderer->RemoveActor(textX);
 	
-	if( [[NSApp currentEvent] modifierFlags] & NSShiftKeyMask)
+	if( [[NSApp currentEvent] modifierFlags] & NSEventModifierFlagShift)
 	{
 		if( volumeMapper) volumeMapper->SetMinimumImageSampleDistance( 0.5);
 		NSLog(@"resol = 0.5");
@@ -3441,7 +3444,7 @@ public:
 
 	if( blendingController)
 	{
-		if( [[NSApp currentEvent] modifierFlags] & NSShiftKeyMask)
+		if( [[NSApp currentEvent] modifierFlags] & NSEventModifierFlagShift)
 		{
 			if( blendingVolumeMapper) blendingVolumeMapper->SetMinimumImageSampleDistance( 0.5);
 			NSLog(@"resol = 0.5");
@@ -4063,7 +4066,7 @@ public:
 //	
 //	representations = [image representations];
 //	
-//	bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+//	bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
 //	
 //	[bitmapData writeToFile:[[[BrowserController currentBrowser] documentsDirectory] stringByAppendingFormat:@"/TEMP/VPRO.jpg"] atomically:YES];
 //	
@@ -4338,19 +4341,19 @@ public:
 //	textMapper->GetTextProperty()->SetFontSize( 12);
 //	textMapper->GetTextProperty()->SetFontFamilyToArial();
 	textWLWW = vtkTextActor::New();
-	sprintf(WLWWString, "WL: %0.f WW: %0.f", wl, ww);
+	snprintf(WLWWString, sizeof(WLWWString), "WL: %0.f WW: %0.f", wl, ww);
 	textWLWW->SetInput( WLWWString);
 	textWLWW->SetScaledText( false);
 	textWLWW->GetPositionCoordinate()->SetCoordinateSystemToDisplay();
 	textWLWW->GetPositionCoordinate()->SetValue( 0,0);
-	aRenderer->AddActor2D(textWLWW);
+	aRenderer->AddViewProp(textWLWW);
 	
 	textX = vtkTextActor::New();
 	textX->SetInput( "X");
 	textX->SetScaledText( false);
 	textX->GetPositionCoordinate()->SetCoordinateSystemToViewport();
 	textX->GetPositionCoordinate()->SetValue( 2., 2.);
-	aRenderer->AddActor2D(textX);
+	aRenderer->AddViewProp(textX);
 
 	for( i = 0; i < 4; i++)
 	{
@@ -4362,7 +4365,7 @@ public:
 		oText[ i]->GetTextProperty()->SetBold( true);
 //		oText[ i]->GetTextProperty()->SetShadow( true);
 		
-		aRenderer->AddActor2D( oText[ i]);
+		aRenderer->AddViewProp( oText[ i]);
 	}
 	oText[ 0]->GetPositionCoordinate()->SetValue( 0.01, 0.5);
 	oText[ 1]->GetPositionCoordinate()->SetValue( 0.99, 0.5);
@@ -4413,7 +4416,7 @@ public:
 	ROI3DActor->GetProperty()->SetLineWidth( 2);
 	ROI3DActor->GetProperty()->SetColor(0.3,1,0);
 	
-	aRenderer->AddActor2D( ROI3DActor);
+	aRenderer->AddViewProp( ROI3DActor);
 
 	//	2D Line
 	pts = vtkPoints::New();
@@ -4442,7 +4445,7 @@ public:
 	Line2DText->GetPositionCoordinate()->SetValue( 2., 2.);
 //	Line2DText->GetTextProperty()->SetShadow( YES);
 	
-	aRenderer->AddActor2D( Line2DActor);
+	aRenderer->AddViewProp( Line2DActor);
 	
 	[self saView:self];
 	
@@ -4686,12 +4689,12 @@ public:
 		if( orientationWidget->GetEnabled())
 		{
 			orientationWidget->Off();
-			for( i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+			for( i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
 		}
 		else
 		{
 			orientationWidget->On();
-			for( i = 0; i < 4; i++) aRenderer->AddActor2D( oText[ i]);
+			for( i = 0; i < 4; i++) aRenderer->AddViewProp( oText[ i]);
 		}
 	}
 	
@@ -4752,11 +4755,11 @@ public:
 					memcpy( data, [volumeData bytes], volumeSize);
 					[[NSNotificationCenter defaultCenter] postNotificationName: @"updateVolumeData" object: pixList userInfo: 0];
 				}
-				else NSRunAlertPanel(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"No saved data are available.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+				else HorosPresentAlert(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"No saved data are available.", nil), NSLocalizedString(@"OK", nil), nil, nil);
 				
 				[volumeData release];
 			}
-			else NSRunAlertPanel(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"No saved data are available.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+			else HorosPresentAlert(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"No saved data are available.", nil), NSLocalizedString(@"OK", nil), nil, nil);
 		break;
 		
 		case 0:	// Save

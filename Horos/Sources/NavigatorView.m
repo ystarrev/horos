@@ -710,14 +710,14 @@ static float deg2rad = M_PI/180.0;
 
 	mouseClickedWithCommandKey = NO;
 	
-	if([theEvent modifierFlags] & NSShiftKeyMask) userAction=zoom;
-	else if(([theEvent modifierFlags] & NSAlternateKeyMask) && ([theEvent modifierFlags] & NSCommandKeyMask)) userAction=rotate;
-	else if([theEvent modifierFlags] & NSCommandKeyMask) 
+	if([theEvent modifierFlags] & NSEventModifierFlagShift) userAction=zoom;
+	else if(([theEvent modifierFlags] & NSEventModifierFlagOption) && ([theEvent modifierFlags] & NSEventModifierFlagCommand)) userAction=rotate;
+	else if([theEvent modifierFlags] & NSEventModifierFlagCommand)
 	{
 		userAction=translate;
 		mouseClickedWithCommandKey = YES;
 	}
-	else if([theEvent modifierFlags] & NSAlternateKeyMask) userAction=wlww;
+	else if([theEvent modifierFlags] & NSEventModifierFlagOption) userAction=wlww;
 	else
 	{
 		if(!scrollLeft && !scrollRight) [self displaySelectedViewInNewWindow:NO];
@@ -1068,7 +1068,7 @@ static float deg2rad = M_PI/180.0;
 	
 	[[[self viewer] imageView] scrollWheel:theEvent];
 
-	if(!([theEvent modifierFlags] & NSAlternateKeyMask))
+	if(!([theEvent modifierFlags] & NSEventModifierFlagOption))
 		[self displaySelectedImage];
 }	
 

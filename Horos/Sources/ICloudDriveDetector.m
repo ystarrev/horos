@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -303,7 +304,7 @@ static NSString* purgedDatabasePath = nil;
             
             if ([[BrowserController currentBrowser] shouldTerminate:nil] == NO)
             {
-                NSRunInformationalAlertPanel( NSLocalizedString( @"Abort", nil),
+                HorosPresentInformationalAlert( NSLocalizedString( @"Abort", nil),
                                               NSLocalizedString( @"Operation was aborted because there are background tasks executing.", nil),
                                               NSLocalizedString( @"Return", nil), nil, nil, nil );
                 
@@ -316,7 +317,7 @@ static NSString* purgedDatabasePath = nil;
             [[NSFileManager defaultManager] createDirectoryAtPath:nosyncPath withIntermediateDirectories:YES attributes:nil error:&error];
             if (error)
             {
-                NSRunInformationalAlertPanel( NSLocalizedString( @"Failure", nil),
+                HorosPresentInformationalAlert( NSLocalizedString( @"Failure", nil),
                                              NSLocalizedString( @"Operation has failed. Horos will restart and try to restore your database.", nil),
                                              NSLocalizedString( @"Restart", nil), nil, nil, nil );
                 
@@ -343,7 +344,7 @@ static NSString* purgedDatabasePath = nil;
                 
                 [[NSFileManager defaultManager] removeItemAtPath:newDatabasePath error:nil];
                 
-                NSRunInformationalAlertPanel( NSLocalizedString( @"Failure", nil),
+                HorosPresentInformationalAlert( NSLocalizedString( @"Failure", nil),
                                               NSLocalizedString( @"Operation has failed. Horos will restart and try to restore your database.", nil),
                                               NSLocalizedString( @"Restart", nil), nil, nil, nil );
                 

@@ -40,6 +40,8 @@
 #import "DCMAbstractSyntaxUID.h"
 #import "DCMView.h"
 #import <AVFoundation/AVFoundation.h>
+#import <Metal/Metal.h>
+#include <limits.h>
 
 #ifdef OSIRIX_VIEWER
 #import "DCMNetServiceDelegate.h"
@@ -200,7 +202,7 @@ static NSHost *currentHost = nil;
 + (mach_vm_size_t) GPUModelVRAMInfo
 {
     io_iterator_t Iterator;
-    kern_return_t err = IOServiceGetMatchingServices(kIOMasterPortDefault, IOServiceMatching("IOPCIDevice"), &Iterator);
+    kern_return_t err = IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOPCIDevice"), &Iterator);
     if (err != KERN_SUCCESS)
     {
         NSLog(@"IOServiceGetMatchingServices failed: %u\n", err);
@@ -260,41 +262,9 @@ static NSHost *currentHost = nil;
 
 + (long) vramSize
 {
-	int					i = 0;
-	short				MAXDISPLAYS = 8;
-	io_service_t		dspPorts[MAXDISPLAYS];
-	CGDirectDisplayID   displays[MAXDISPLAYS];
-	CFTypeRef			typeCode;
-	CGDisplayCount		displayCount = 0;
-	
-	// First we're going to grab the online displays
-	CGGetOnlineDisplayList(MAXDISPLAYS, displays, &displayCount);
-	
-    if( displayCount <= 0)
-        return 0;
-    
-	// Now we iterate through them
-	for(i = 0; i < displayCount; i++)
-		dspPorts[i] = CGDisplayIOServicePort(displays[i]);
-
-	// Ask for the physical size of VRAM of the primary display
-	typeCode = IORegistryEntryCreateCFProperty(dspPorts[0], CFSTR("IOFBMemorySize"), kCFAllocatorDefault, kNilOptions);
-	
-	// Validate our data and make sure we're getting the right type
-	if(typeCode)
-	{
-		SInt32 vramStorage = 0;
-		// Convert this to a useable number
-		
-		if( CFGetTypeID(typeCode) == CFNumberGetTypeID())
-			CFNumberGetValue(typeCode, kCFNumberSInt32Type, &vramStorage);
-		
-		CFRelease( typeCode);
-		
-		return vramStorage;
-	}
-	
-	return 0;
+	id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+	NSUInteger workingSetSize = device.recommendedMaxWorkingSetSize;
+	return workingSetSize > LONG_MAX ? LONG_MAX : (long)workingSetSize;
 }
 
 + (NSMutableDictionary*) getDefaults
@@ -1078,7 +1048,7 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"10" forKey:@"defaultFrameRate"];
     [defaultValues setObject:@"10" forKey:@"defaultMovieRate"];
 	[defaultValues setObject:@"10" forKey:@"quicktimeExportRateValue"];
-    [defaultValues setObject:AVVideoCodecJPEG forKey:@"selectedMenuAVFoundationExport"];
+    [defaultValues setObject:AVVideoCodecTypeJPEG forKey:@"selectedMenuAVFoundationExport"];
 	[defaultValues setObject:@"0" forKey:@"32bitDICOMAreAlwaysIntegers"];
 	[defaultValues setObject:@"1" forKey:@"archiveReportsAndAnnotationsAsDICOMSR"];
 	[defaultValues setObject:@"1" forKey:@"SelectWindowScrollWheel"];

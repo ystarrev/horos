@@ -100,7 +100,7 @@
         return;
     }
     
-    NSColor *deviceColor = [self.fillColor colorUsingColorSpaceName:NSDeviceRGBColorSpace];
+    NSColor *deviceColor = [self.fillColor colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
     
     double dicomToPixGLTransform[16];
 	    

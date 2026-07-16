@@ -94,7 +94,7 @@
 	N2Image* croppedImage = [[N2Image alloc] initWithSize:cropRect.size inches:NSMakeSize(_inchSize.width/size.width*cropRect.size.width, _inchSize.height/size.height*cropRect.size.height) portion:portion];
 	
 	[croppedImage lockFocus];
-    [self drawAtPoint:NSZeroPoint fromRect:cropRect operation:NSCompositeSourceOver fraction:0];
+    [self drawAtPoint:NSZeroPoint fromRect:cropRect operation:NSCompositingOperationSourceOver fraction:0];
     [croppedImage unlockFocus];
 	
 	return [croppedImage autorelease];
@@ -114,9 +114,9 @@
 {
 	NSImage* dark = [[NSImage alloc] initWithSize:[self size]];
 	[dark lockFocus];
-	[self drawInRect: NSMakeRect( 0, 0, self.size.width, self.size.height) fromRect: NSMakeRect( 0, 0, self.size.width, self.size.height) operation: NSCompositeSourceOver fraction: 1.0];
+	[self drawInRect: NSMakeRect( 0, 0, self.size.width, self.size.height) fromRect: NSMakeRect( 0, 0, self.size.width, self.size.height) operation: NSCompositingOperationSourceOver fraction: 1.0];
     [[NSColor colorWithCalibratedWhite: 0 alpha: 0.5] set];
-    NSRectFillUsingOperation( NSMakeRect( 0, 0, self.size.width, self.size.height), NSCompositeSourceAtop);
+    NSRectFillUsingOperation( NSMakeRect( 0, 0, self.size.width, self.size.height), NSCompositingOperationSourceAtop);
 	[dark unlockFocus];
     
 	return [dark autorelease];
@@ -171,8 +171,7 @@
 	NSBitmapImageRep* bitmap = [[NSBitmapImageRep alloc] initWithData:[self TIFFRepresentation]];
 	uint8* data = [bitmap bitmapData];
 	
-	if ([color colorSpaceName] != NSCalibratedRGBColorSpace)
-		color = [color colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
+	color = [color colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
 	NSInteger componentsCount = [color numberOfComponents];
 	CGFloat *components = (CGFloat *)malloc(componentsCount * sizeof(CGFloat));
 	if (components == NULL) {
@@ -332,7 +331,7 @@ end_size_y:
 
             [self drawInRect: thumbnailRect
                            fromRect: NSZeroRect
-                          operation: NSCompositeCopy
+                          operation: NSCompositingOperationCopy
                            fraction: 1.0];
 
             [newImage unlockFocus];
@@ -402,9 +401,11 @@ end_size_y:
 			{
 				NSSize size = [sourceImage size];
 				
-				[sourceImage lockFocus];
-				
-				NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithFocusedViewRect: NSMakeRect(0, 0, size.width, size.height)];
+				NSRect sourceRect = NSMakeRect(0, 0, size.width, size.height);
+				CGImageRef sourceCGImage = [sourceImage CGImageForProposedRect:&sourceRect context:nil hints:nil];
+				NSBitmapImageRep* rep = sourceCGImage ? [[NSBitmapImageRep alloc] initWithCGImage:sourceCGImage] : nil;
+				if (rep == nil)
+					return nil;
 				CIImage *bitmap = [[CIImage alloc] initWithBitmapImageRep: rep];
 				
 				CIFilter *scaleTransformFilter = [CIFilter filterWithName:@"CILanczosScaleTransform"];
@@ -437,14 +438,12 @@ end_size_y:
 						
 						[outputCIImage drawInRect: thumbnailRect
 										 fromRect: NSMakeRect( extent.origin.x , extent.origin.y, extent.size.width, extent.size.height)
-										operation: NSCompositeCopy
+										operation: NSCompositingOperationCopy
 										 fraction: 1.0];
 						
 						[newImage unlockFocus];
 					}
 				}
-				
-				[sourceImage unlockFocus];
 				
 				[rep release];
 				[bitmap release];
@@ -468,7 +467,7 @@ end_size_y:
 			//				
 			//				[sourceImage drawInRect: thumbnailRect
 			//							   fromRect: NSZeroRect
-			//							  operation: NSCompositeCopy
+			//							  operation: NSCompositingOperationCopy
 			//							   fraction: 1.0];
 			//				
 			//				[newImage unlockFocus];

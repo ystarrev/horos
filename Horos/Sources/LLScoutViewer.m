@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
   Program:   OsiriX
 
@@ -77,7 +78,7 @@
 	BOOL error = !samePixelSpacing || !sameImagesCount || !sameImagesLocations;
 	
 	if(error)
-		NSRunAlertPanel(NSLocalizedString(@"Error", nil),  alertMessage, NSLocalizedString(@"OK", nil), nil, nil);
+		HorosPresentAlert(NSLocalizedString(@"Error", nil),  alertMessage, NSLocalizedString(@"OK", nil), nil, nil);
 	
 	return !error;
 }
@@ -86,7 +87,6 @@
 {
 	self = [super initWithWindowNibName:@"LLScoutView"];
 	[[self window] setDelegate:self];
-	[[self window] setShowsResizeIndicator:NO];
 		
 	// initialisations
 	dcmPixList = [pix retain];

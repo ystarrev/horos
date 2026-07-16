@@ -62,7 +62,7 @@
 }
 
 - (id)initWithContentsOfFile:(NSString *)file lastGroup:(unsigned short)lastGroup{
-	NSData *aData = [NSData dataWithContentsOfMappedFile:file];
+	NSData *aData = [NSData dataWithContentsOfURL:[NSURL fileURLWithPath:file] options:NSDataReadingMappedIfSafe error:nil];
 	return [self initWithData:aData lastGroup:(unsigned short)lastGroup] ;
 }
 

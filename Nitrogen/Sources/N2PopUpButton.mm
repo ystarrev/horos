@@ -55,7 +55,7 @@
 @implementation N2PopUpButton
 
 -(void)customize {
-	[self setBezelStyle:NSRecessedBezelStyle];
+	[self setBezelStyle:NSBezelStyleRecessed];
 	[self setImagePosition:NSImageRight];
 }
 

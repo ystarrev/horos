@@ -45,7 +45,11 @@
 - (NSString*) posixStylePathFromHfsPath:(NSString*) s isDirectory:(Boolean)isDirectory
 {
 	CFStringRef hfsStyle;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+	// AppleScript still supplies classic HFS-style paths for this command.
 	CFURLRef url = CFURLCreateWithFileSystemPath(kCFAllocatorDefault, (CFStringRef) s, kCFURLHFSPathStyle, isDirectory);
+#pragma clang diagnostic pop
 
 	if (url == NULL)
 	{

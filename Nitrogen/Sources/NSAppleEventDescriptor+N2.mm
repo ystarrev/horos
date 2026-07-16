@@ -107,9 +107,13 @@
 	}
 	
 	@try {
-		return [NSAppleEventDescriptor descriptorWithDescriptorType:'ObjC' data:[NSKeyedArchiver archivedDataWithRootObject:object]];
+		NSError *error = nil;
+		NSData *data = [NSKeyedArchiver archivedDataWithRootObject:object requiringSecureCoding:NO error:&error];
+		if (data)
+			return [NSAppleEventDescriptor descriptorWithDescriptorType:'ObjC' data:data];
+		NSLog(@"tried to archive an Apple event object but failed: %@", error);
 	} @catch (NSException* e) {
-		NSLog(@"tried to use archivedDataWithRootObject but failed: %@", e.description);
+		NSLog(@"tried to archive an Apple event object but failed: %@", e.description);
 	}
 	
 	[NSException raise:NSGenericException format:@"unknown NSAppleEventDescriptor type for class %@", [object className]];
@@ -170,12 +174,19 @@
         } break;
         case typeEnumerated:
         case typeType: {
-            uint32 temp; [descriptor.data getBytes:&temp length:sizeof(temp)]; return [NSString stringWithFormat:@"%c%c%c%c", ((char*)&temp)[3], ((char*)&temp)[2], ((char*)&temp)[1], ((char*)&temp)[0]];
+            uint32_t temp; [descriptor.data getBytes:&temp length:sizeof(temp)]; return [NSString stringWithFormat:@"%c%c%c%c", ((char*)&temp)[3], ((char*)&temp)[2], ((char*)&temp)[1], ((char*)&temp)[0]];
         } break;
 			// 'exte': extended float
 			// 'ldbl': 128 bits
 		case 'ObjC': {
-			return [NSKeyedUnarchiver unarchiveObjectWithData:descriptor.data];
+			NSError *error = nil;
+			NSKeyedUnarchiver *unarchiver = [[[NSKeyedUnarchiver alloc] initForReadingFromData:descriptor.data error:&error] autorelease];
+			unarchiver.requiresSecureCoding = NO;
+			id object = [unarchiver decodeObjectForKey:NSKeyedArchiveRootObjectKey];
+			[unarchiver finishDecoding];
+			if (error)
+				NSLog(@"could not unarchive an Apple event object: %@", error);
+			return object;
 		} break;
 	}
 	

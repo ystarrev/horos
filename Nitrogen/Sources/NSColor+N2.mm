@@ -53,8 +53,8 @@
 	if ([[self colorSpace] isEqual:[color colorSpace]]) {
 		c1 = self; c2 = color;
 	} else {
-		c1 = [self colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
-		c2 = [color colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
+		c1 = [self colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
+		c2 = [color colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
 	}
 	
 	NSInteger numberOfComponents = [c1 numberOfComponents];

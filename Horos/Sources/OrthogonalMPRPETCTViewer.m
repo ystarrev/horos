@@ -1,3 +1,6 @@
+#import "HorosSheetPresenter.h"
+#import "HorosFilePanelContentTypes.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -283,7 +286,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
     [moviePosSlider setMaxValue:maxMovieIndex-1];
     [moviePosSlider setNumberOfTickMarks:maxMovieIndex];
     
-    [[self window] setShowsResizeIndicator:YES];
     //	[[self window] performZoom:self];
     //	[[self window] display];
     
@@ -1073,8 +1075,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: toolsView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([toolsView frame]), NSHeight([toolsView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([toolsView frame]),NSHeight([toolsView frame]))];
         
     }
     /*	 else if([itemIdent isEqualToString: ThickSlabToolbarItemIdentifier])
@@ -1085,8 +1085,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
      
      // Use a custom view, a text field, for the search item
      [toolbarItem setView: ThickSlabView];
-     [toolbarItem setMinSize:NSMakeSize(NSWidth([ThickSlabView frame]), NSHeight([ThickSlabView frame]))];
-     [toolbarItem setMinSize:NSMakeSize(NSWidth([ThickSlabView frame]) + 100, NSHeight([ThickSlabView frame]))];
      }*/
     else if([itemIdent isEqualToString: BlendingToolbarItemIdentifier])
     {
@@ -1097,8 +1095,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: blendingToolView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([blendingToolView frame]), NSHeight([blendingToolView frame]))];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([blendingToolView frame]), NSHeight([blendingToolView frame]))];
     }
     else if ([itemIdent isEqualToString: VRPanelToolbarItemIdentifier])
     {
@@ -1185,8 +1181,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: WLWWView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
         
         [[wlwwPopup cell] setUsesItemFromMenu:YES];
     }
@@ -1199,8 +1193,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: movieView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([movieView frame]), NSHeight([movieView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([movieView frame]),NSHeight([movieView frame]))];
     }
     else if ([itemIdent isEqualToString: SyncSeriesToolbarItemIdentifier])
     {
@@ -1238,10 +1230,9 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
     // Required delegate method:  Returns the list of all allowed items by identifier.  By default, the toolbar
     // does not assume any items are allowed, even the separator.  So, every allowed item must be explicitly listed
     // The set of allowed items is used to construct the customization palette
-    NSMutableArray *array = [NSMutableArray arrayWithObjects: 	NSToolbarCustomizeToolbarItemIdentifier,
+    NSMutableArray *array = [NSMutableArray arrayWithObjects:
                              NSToolbarFlexibleSpaceItemIdentifier,
                              NSToolbarSpaceItemIdentifier,
-                             NSToolbarSeparatorItemIdentifier,
                              BlendingToolbarItemIdentifier,
                              ThickSlabToolbarItemIdentifier,
                              MovieToolbarItemIdentifier,
@@ -1335,7 +1326,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
 
 - (void) adjustHeightSplitView
 {
-    NSDisableScreenUpdates();
     
     NSSize splitViewSize = [modalitySplitView frame].size;
     NSSize newSubViewSize;
@@ -1380,12 +1370,10 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
         [modalitySplitView setNeedsDisplay:YES];
     }
     
-    NSEnableScreenUpdates();
 }
 
 - (void) adjustWidthSplitView
 {
-    NSDisableScreenUpdates();
     
     NSSize splitViewSize = [modalitySplitView frame].size;
     NSSize newSubViewSize;
@@ -1431,7 +1419,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
         [modalitySplitView setNeedsDisplay:YES];
     }
     
-    NSEnableScreenUpdates();
 }
 
 //- (void) turnModalitySplitView
@@ -1912,7 +1899,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
 
 - (void)splitViewDidResizeSubviews:(NSNotification *)aNotification
 {
-    NSDisableScreenUpdates();
     
     NSSplitView	*currentSplitView = [aNotification object];
     if(![currentSplitView isEqual:modalitySplitView])
@@ -2017,12 +2003,10 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
         [yReslicedSplitView setNeedsDisplay:YES];
     }
     
-    NSEnableScreenUpdates();
 }
 
 - (void)splitViewDidCollapseSubview:(NSNotification *)notification
 {
-    NSDisableScreenUpdates();
     
     NSSplitView	*currentSplitView = [notification object];
     if(![currentSplitView isEqual:modalitySplitView])
@@ -2049,12 +2033,10 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
         }
     }
     
-    NSEnableScreenUpdates();
 }
 
 - (void)splitViewDidExpandSubview:(NSNotification *)notification;
 {
-    NSDisableScreenUpdates();
     
     NSSplitView	*currentSplitView = [notification object];
     if(![currentSplitView isEqual:modalitySplitView])
@@ -2081,7 +2063,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
         }
     }
     
-    NSEnableScreenUpdates();
 }
 
 #pragma mark-
@@ -2107,7 +2088,7 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
     else if( [item action] == @selector(syncSeriesStateAction:))   {
         [item setState: (syncSeriesState == [item tag] ? NSControlStateValueOn : NSControlStateValueOff)];
     }
-    else valid = [super validateMenuItem: item];
+    else valid = [super validateUserInterfaceItem:item];
     
     return valid;
 }
@@ -2130,7 +2111,7 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
     
     representations = [im representations];
     
-    bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+    bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
     
     NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"Horos.jpg"];
     [bitmapData writeToFile:path atomically:YES];
@@ -2148,11 +2129,11 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
     BOOL			all = YES;
     
     [panel setCanSelectHiddenExtension:YES];
-    [panel setAllowedFileTypes:@[@"jpg"]];
+    panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"jpg"]);
     panel.nameFieldStringValue = [[filesList objectAtIndex:0] valueForKeyPath:@"series.name"];
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         if( all)
@@ -2209,7 +2190,7 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
                 
                 representations = [im representations];
                 
-                bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+                bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
                 
                 [bitmapData writeToURL:[[panel.URL URLByDeletingPathExtension] URLByAppendingPathExtension:[NSString stringWithFormat:@"%d.jpg", i+1]] atomically:YES];
             }
@@ -2232,7 +2213,7 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
             
             representations = [im representations];
             
-            bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+            bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
             
             [bitmapData writeToURL:panel.URL atomically:YES];
             
@@ -2382,7 +2363,7 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
         
         f = [exportDCM writeDCMFile: nil];
         if( f == nil)
-            NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString(@"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString(@"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
         
         free( data);
     }
@@ -2530,7 +2511,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
                     
                     for( i = from; i < to; i+=interval)
                     {
-                        NSDisableScreenUpdates();
                         
                         [view setCrossPosition:x+i*deltaX+0.5 :y+i*deltaY+0.5];
                         [modalitySplitView display];
@@ -2548,7 +2528,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
                             [pool release];
                         }
                         
-                        NSEnableScreenUpdates();
                         
                         [splash incrementBy: 1];
                         
@@ -2568,7 +2547,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
                     [exportDCM setSeriesNumber:nCT];
                     for( i = from; i < to; i+=interval)
                     {
-                        NSDisableScreenUpdates();
                         
                         [view setCrossPosition:x+i*deltaX+0.5 :y+i*deltaY+0.5];
                         [modalitySplitView display];
@@ -2587,7 +2565,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
                             [pool release];
                         }
                         
-                        NSEnableScreenUpdates();
                         
                         [splash incrementBy: 1];
                         
@@ -2598,7 +2575,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
                     [exportDCM setSeriesNumber:nPETCT];
                     for( i = from; i < to; i+=interval)
                     {
-                        NSDisableScreenUpdates();
                         
                         [view setCrossPosition:x+i*deltaX+0.5 :y+i*deltaY+0.5];
                         [modalitySplitView display];
@@ -2617,7 +2593,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
                             [pool release];
                         }
                         
-                        NSEnableScreenUpdates();
                         
                         [splash incrementBy: 1];
                         
@@ -2628,7 +2603,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
                     [exportDCM setSeriesNumber:nPET];
                     for( i = from; i < to; i+=interval)
                     {
-                        NSDisableScreenUpdates();
                         
                         [view setCrossPosition:x+i*deltaX+0.5 :y+i*deltaY+0.5];
                         [modalitySplitView display];
@@ -2647,7 +2621,6 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
                             [pool release];
                         }
                         
-                        NSEnableScreenUpdates();
                         
                         [splash incrementBy: 1];
                         
@@ -2733,7 +2706,7 @@ static NSString*	ThreeDPositionToolbarItemIdentifier			= @"3DPosition";
     
     [self checkView: dcmBox :([[dcmSelection selectedCell] tag] == 1)];
     
-    [NSApp beginSheet: dcmExportWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(dcmExportWindow, [self window], self, nil, nil);
 }
 
 - (IBAction) changeFromAndToBounds:(id) sender

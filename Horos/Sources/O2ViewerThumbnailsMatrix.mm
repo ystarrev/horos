@@ -90,7 +90,7 @@
                 [[NSColor grayColor] set];
                 NSRectFill(NSMakeRect(0,0, [thumbnail size].width, [thumbnail size].height));
                 
-                [firstCell drawAtPoint: NSMakePoint( MARGIN, MARGIN) fromRect:NSMakeRect(0,0,[firstCell size].width, [firstCell size].height) operation: NSCompositeCopy fraction: 0.8];
+                [firstCell drawAtPoint: NSMakePoint( MARGIN, MARGIN) fromRect:NSMakeRect(0,0,[firstCell size].width, [firstCell size].height) operation: NSCompositingOperationCopy fraction: 0.8];
                 
                 [thumbnail unlockFocus];
             }
@@ -211,12 +211,12 @@
         else
             start = [NSDate dateWithTimeIntervalSinceNow: DRAGTIMEOUT]; // Force drag
         
-        event = [self.window nextEventMatchingMask:NSLeftMouseUpMask|NSLeftMouseDraggedMask|NSPeriodicMask];
+        event = [self.window nextEventMatchingMask:NSEventMaskLeftMouseUp|NSEventMaskLeftMouseDragged|NSEventMaskPeriodic];
         
-        if(event.type != NSPeriodic)
+        if(event.type != NSEventTypePeriodic)
             lastMouse = event;
     }
-    while (lastMouse.type != NSLeftMouseUp && [start timeIntervalSinceNow] >= DRAGTIMEOUT);
+    while (lastMouse.type != NSEventTypeLeftMouseUp && [start timeIntervalSinceNow] >= DRAGTIMEOUT);
     
     id cell = self.selectedCell;
     

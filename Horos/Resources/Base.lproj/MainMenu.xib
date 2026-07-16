@@ -1102,11 +1102,6 @@
                                                 <action selector="annotMenu:" target="-1" id="13238"/>
                                             </connections>
                                         </menuItem>
-                                        <menuItem title="Plugin Only" tag="4" id="13156">
-                                            <connections>
-                                                <action selector="annotMenu:" target="-1" id="13237"/>
-                                            </connections>
-                                        </menuItem>
                                         <menuItem isSeparatorItem="YES" id="13555"/>
                                         <menuItem title="Display Cross Reference Lines" id="13556">
                                             <modifierMask key="keyEquivalentModifierMask"/>

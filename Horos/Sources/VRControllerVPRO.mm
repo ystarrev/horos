@@ -1,3 +1,5 @@
+#import "HorosSheetPresenter.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -102,7 +104,7 @@ static NSString*	ModeToolbarItemIdentifier			= @"Mode";
 	status = VLIOpen();
 	if ( status != kVLIOK )
 	{
-		NSRunCriticalAlertPanel( NSLocalizedString(@"VolumePRO Error", nil),  NSLocalizedString(@"This function requires a VolumePRO board, the VLI.framework, and the VolumePRO.kext files", nil), NSLocalizedString(@"OK", nil), nil, nil);
+		HorosPresentCriticalAlert( NSLocalizedString(@"VolumePRO Error", nil),  NSLocalizedString(@"This function requires a VolumePRO board, the VLI.framework, and the VolumePRO.kext files", nil), NSLocalizedString(@"OK", nil), nil, nil);
 		return NO;
 	}
 	VLIClose();
@@ -344,7 +346,7 @@ static NSString*	ModeToolbarItemIdentifier			= @"Mode";
 		char	*testPtr = (char*) malloc( [firstObject pwidth] * [firstObject pheight] * [pix count] * sizeof( short) + 4UL * 1024UL * 1024UL);
 		if( testPtr == nil)
 		{
-			NSRunCriticalAlertPanel( NSLocalizedString(@"Not Enough Memory",nil), NSLocalizedString( @"Not enough memory (RAM) to use the 3D engine.",nil), NSLocalizedString(@"OK",nil), nil, nil);
+			HorosPresentCriticalAlert( NSLocalizedString(@"Not Enough Memory",nil), NSLocalizedString( @"Not enough memory (RAM) to use the 3D engine.",nil), NSLocalizedString(@"OK",nil), nil, nil);
 			return nil;
 		}
 		else
@@ -376,10 +378,10 @@ static NSString*	ModeToolbarItemIdentifier			= @"Mode";
 		
 		testInterval = NO;
 		
-		if( sliceThickness > 0) NSRunCriticalAlertPanel( NSLocalizedString(@"Slice interval", nil),  NSLocalizedString(@"I'm not able to find the slice interval. Slice interval will be equal to slice thickness.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+		if( sliceThickness > 0) HorosPresentCriticalAlert( NSLocalizedString(@"Slice interval", nil),  NSLocalizedString(@"I'm not able to find the slice interval. Slice interval will be equal to slice thickness.", nil), NSLocalizedString(@"OK", nil), nil, nil);
 		else
 		{
-			NSRunCriticalAlertPanel( NSLocalizedString(@"Slice interval/thickness", nil),  NSLocalizedString(@"Problems with slice thickness/interval to do a 3D reconstruction.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+			HorosPresentCriticalAlert( NSLocalizedString(@"Slice interval/thickness", nil),  NSLocalizedString(@"Problems with slice thickness/interval to do a 3D reconstruction.", nil), NSLocalizedString(@"OK", nil), nil, nil);
 			return nil;
 		}
     }
@@ -392,7 +394,7 @@ static NSString*	ModeToolbarItemIdentifier			= @"Mode";
     }
     if( err)
     {
-        NSRunCriticalAlertPanel( NSLocalizedString(@"Images size", nil),  NSLocalizedString(@"These images don't have the same height and width to allow a 3D reconstruction...", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentCriticalAlert( NSLocalizedString(@"Images size", nil),  NSLocalizedString(@"These images don't have the same height and width to allow a 3D reconstruction...", nil), NSLocalizedString(@"OK", nil), nil, nil);
         return nil;
     }
     
@@ -407,7 +409,7 @@ static NSString*	ModeToolbarItemIdentifier			= @"Mode";
 //		}
 //		if( err)
 //		{
-//			if( NSRunCriticalAlertPanel( @"Slices location",  @"Slice thickness/interval is not exactly equal for all images. This could distord the 3D reconstruction...", @"Continue", @"Cancel", nil) != NSAlertDefaultReturn) return nil;
+//			if( HorosPresentCriticalAlert( @"Slices location",  @"Slice thickness/interval is not exactly equal for all images. This could distord the 3D reconstruction...", @"Continue", @"Cancel", nil) != HorosAlertResponseFirstButton) return nil;
 //			err = 0;
 //		}
 //	}
@@ -809,9 +811,9 @@ static NSString*	ModeToolbarItemIdentifier			= @"Mode";
 
 - (void) ApplyWLWW:(id) sender
 {
-    if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask)
+    if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift)
     {
-        NSBeginAlertSheet( NSLocalizedString(@"Delete a WL/WW preset", nil), NSLocalizedString(@"Delete", nil), NSLocalizedString(@"Cancel", nil), nil, [self window], self, @selector(deleteWLWW:returnCode:contextInfo:), NULL, [[sender title] retain], [NSString stringWithFormat: NSLocalizedString( @"Are you sure you want to delete preset : '%@'?", nil), [sender title]]);
+        HorosBeginAlertSheet( NSLocalizedString(@"Delete a WL/WW preset", nil), NSLocalizedString(@"Delete", nil), NSLocalizedString(@"Cancel", nil), nil, [self window], self, @selector(deleteWLWW:returnCode:contextInfo:), NULL, [[sender title] retain], [NSString stringWithFormat: NSLocalizedString( @"Are you sure you want to delete preset : '%@'?", nil), [sender title]]);
     }
     else
     {
@@ -905,7 +907,7 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	[[shadingForm cellAtRow:2 column:0] setFloatValue: savedspecular];
 	[[shadingForm cellAtRow:3 column:0] setFloatValue: savedspecularpower];
 	
-    [NSApp beginSheet: shadingEditWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(shadingEditWindow, [self window], self, nil, nil);
 }
 
 
@@ -920,7 +922,7 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
     
 	[newName setStringValue: NSLocalizedString(@"Unnamed", nil)];
 	
-    [NSApp beginSheet: addWLWWWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(addWLWWWindow, [self window], self, nil, nil);
 }
 
 
@@ -1121,7 +1123,7 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	
 	[OpacityName setStringValue: NSLocalizedString(@"Unnamed", nil)];
 	
-    [NSApp beginSheet: addOpacityWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(addOpacityWindow, [self window], self, nil, nil);
 }
 
 
@@ -1211,7 +1213,6 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	
 	// Use a custom view, a text field, for the search item 
 	[toolbarItem setView: shadingView];
-	[toolbarItem setMinSize:NSMakeSize(NSWidth([shadingView frame]), NSHeight([shadingView frame]))];
     }
 	else if ([itemIdent isEqual: EngineToolbarItemIdentifier]) {
      // Set up the standard properties 
@@ -1221,7 +1222,6 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	
 	// Use a custom view, a text field, for the search item 
 	[toolbarItem setView: engineView];
-	[toolbarItem setMinSize:NSMakeSize(NSWidth([engineView frame]), NSHeight([engineView frame]))];
     }
 	else if ([itemIdent isEqual: PerspectiveToolbarItemIdentifier]) {
      // Set up the standard properties 
@@ -1231,7 +1231,6 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	
 	// Use a custom view, a text field, for the search item 
 	[toolbarItem setView: perspectiveView];
-	[toolbarItem setMinSize:NSMakeSize(NSWidth([perspectiveView frame]), NSHeight([perspectiveView frame]))];
     }
 	else if ([itemIdent isEqual: QTExportToolbarItemIdentifier]) {
         
@@ -1340,8 +1339,6 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	
 	// Use a custom view, a text field, for the search item 
 	[toolbarItem setView: WLWWView];
-	[toolbarItem setMinSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
-	[toolbarItem setMinSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
         
         [[wlwwPopup cell] setUsesItemFromMenu:YES];
     }
@@ -1353,8 +1350,6 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	
 	// Use a custom view, a text field, for the search item 
 	[toolbarItem setView: movieView];
-	[toolbarItem setMinSize:NSMakeSize(NSWidth([movieView frame]), NSHeight([movieView frame]))];
-	[toolbarItem setMaxSize:NSMakeSize(NSWidth([movieView frame]),NSHeight([movieView frame]))];
     }
 	else if([itemIdent isEqual: ScissorStateToolbarItemIdentifier]) {
 	// Set up the standard properties 
@@ -1364,8 +1359,6 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	
 	// Use a custom view, a text field, for the search item 
 	[toolbarItem setView: scissorStateView];
-	[toolbarItem setMinSize:NSMakeSize(NSWidth([scissorStateView frame]), NSHeight([scissorStateView frame]))];
-	[toolbarItem setMaxSize:NSMakeSize(NSWidth([scissorStateView frame]), NSHeight([scissorStateView frame]))];
     }
 	else if([itemIdent isEqual: BlendingToolbarItemIdentifier]) {
 	// Set up the standard properties 
@@ -1375,8 +1368,6 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	
 	// Use a custom view, a text field, for the search item 
 	[toolbarItem setView: BlendingView];
-	[toolbarItem setMinSize:NSMakeSize(NSWidth([BlendingView frame]), NSHeight([BlendingView frame]))];
-	[toolbarItem setMinSize:NSMakeSize(NSWidth([BlendingView frame]), NSHeight([BlendingView frame]))];
     }
 	else if([itemIdent isEqualToString: ModeToolbarItemIdentifier]) {
 		 // Set up the standard properties 
@@ -1386,7 +1377,6 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 		 
 		 // Use a custom view, a text field, for the search item 
 		 [toolbarItem setView: modeView];
-		 [toolbarItem setMinSize:NSMakeSize(NSWidth([modeView frame]), NSHeight([modeView frame]))];
 	 }
 	 else if([itemIdent isEqual: ToolsToolbarItemIdentifier]) {
 	// Set up the standard properties 
@@ -1396,8 +1386,6 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	
 	// Use a custom view, a text field, for the search item 
 	[toolbarItem setView: toolsView];
-	[toolbarItem setMinSize:NSMakeSize(NSWidth([toolsView frame]), NSHeight([toolsView frame]))];
-	[toolbarItem setMaxSize:NSMakeSize(NSWidth([toolsView frame]), NSHeight([toolsView frame]))];
     }
 	else if([itemIdent isEqual: FlyThruToolbarItemIdentifier]) {
 	// Set up the standard properties 
@@ -1450,10 +1438,9 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
     // Required delegate method:  Returns the list of all allowed items by identifier.  By default, the toolbar 
     // does not assume any items are allowed, even the separator.  So, every allowed item must be explicitly listed   
     // The set of allowed items is used to construct the customization palette 
-    return [NSArray arrayWithObjects: 	NSToolbarCustomizeToolbarItemIdentifier,
+    return [NSArray arrayWithObjects:
                                         NSToolbarFlexibleSpaceItemIdentifier,
                                         NSToolbarSpaceItemIdentifier,
-                                        NSToolbarSeparatorItemIdentifier,
                                         WLWWToolbarItemIdentifier,
 								//		LODToolbarItemIdentifier,
 								//		CaptureToolbarItemIdentifier,
@@ -1537,7 +1524,7 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	[panel setCanSelectHiddenExtension:YES];
 	[panel setRequiredFileType:@"jpg"];
 	
-	if( [panel runModalForDirectory:nil file:@"3D VR Image"] == NSFileHandlingPanelOKButton)
+	if( [panel runModalForDirectory:nil file:@"3D VR Image"] == NSModalResponseOK)
 	{
 		NSImage *im = [view nsimage:NO];
 		
@@ -1546,7 +1533,7 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 		
 		representations = [im representations];
 		
-		bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+		bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
 		
 		[bitmapData writeToFile:[panel filename] atomically:YES];
 		
@@ -1566,7 +1553,7 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	
 	representations = [im representations];
 	
-	bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+	bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
 	
 	[bitmapData writeToFile:[[[BrowserController currentBrowser] documentsDirectory] stringByAppendingFormat:@"/TEMP/OsiriX.jpg"] atomically:YES];
 	
@@ -1582,7 +1569,7 @@ static float	savedambient, saveddiffuse, savedspecular, savedspecularpower;
 	[panel setCanSelectHiddenExtension:YES];
 	[panel setRequiredFileType:@"tif"];
 	
-	if( [panel runModalForDirectory:nil file:@"3D VR Image"] == NSFileHandlingPanelOKButton)
+	if( [panel runModalForDirectory:nil file:@"3D VR Image"] == NSModalResponseOK)
 	{
 		NSImage *im = [view nsimage:NO];
 		

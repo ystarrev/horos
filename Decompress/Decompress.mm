@@ -332,7 +332,7 @@ int main(int argc, const char *argv[])
 							
                             BOOL alreadyCompressed = NO;
                             
-                            if (original_xfer.isEncapsulated())
+                            if (original_xfer.usesEncapsulatedFormat())
                             {
                                 switch( compression)
                                 {
@@ -773,7 +773,7 @@ int main(int argc, const char *argv[])
 			@try
 			{
 				WebView *webView = [[[WebView alloc] initWithFrame: NSMakeRect(0,0,1,1) frameName: @"myFrame" groupName: @"myGroup"] autorelease];
-				NSWindow *w = [[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,1,1) styleMask:NSBorderlessWindowMask backing:NSBackingStoreNonretained defer:NO] autorelease];
+				NSWindow *w = [[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,1,1) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO] autorelease];
 				[w setContentView:webView];
 				
 				WebPreferences *webPrefs = [WebPreferences standardPreferences];
@@ -781,7 +781,6 @@ int main(int argc, const char *argv[])
 				[webPrefs setLoadsImagesAutomatically: YES];
 				[webPrefs setAllowsAnimatedImages: YES];
 				[webPrefs setAllowsAnimatedImageLooping: NO];
-				[webPrefs setJavaEnabled: NO];
 				[webPrefs setPlugInsEnabled: NO];
 				[webPrefs setJavaScriptEnabled: YES];
 				[webPrefs setJavaScriptCanOpenWindowsAutomatically: NO];
@@ -824,8 +823,8 @@ int main(int argc, const char *argv[])
                     [printInfo setLeftMargin: 24];
                     [printInfo setRightMargin: 24];
                     
-					[printInfo setHorizontalPagination: NSAutoPagination];
-					[printInfo setVerticalPagination: NSAutoPagination];
+					[printInfo setHorizontalPagination:NSPrintingPaginationModeAutomatic];
+					[printInfo setVerticalPagination:NSPrintingPaginationModeAutomatic];
 					[printInfo setVerticallyCentered:NO];
 					
 					NSView *viewToPrint = [[[webView mainFrame] frameView] documentView];

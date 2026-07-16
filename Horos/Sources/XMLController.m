@@ -1,3 +1,6 @@
+#import "HorosSheetPresenter.h"
+#import "HorosFilePanelContentTypes.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -341,7 +344,7 @@ extern int delayedTileWindows;
 		}
 		else
 		{
-			NSRunAlertPanel( NSLocalizedString( @"Add DICOM Field", nil), NSLocalizedString( @"Illegal group / element values", nil), NSLocalizedString( @"OK", nil), nil, nil);
+			HorosPresentAlert( NSLocalizedString( @"Add DICOM Field", nil), NSLocalizedString( @"Illegal group / element values", nil), NSLocalizedString( @"OK", nil), nil, nil);
 			return;
 		}
 	}
@@ -354,7 +357,7 @@ extern int delayedTileWindows;
 - (IBAction) addDICOMField:(id) sender
 {
 	[self setGroupElement: self];
-	[NSApp beginSheet: addWindow modalForWindow:[self window] modalDelegate:self didEndSelector: nil contextInfo:nil];
+	HorosBeginSheet(addWindow, [self window], self, nil, nil);
 }
 
 - (void) reloadFromDCMDocument
@@ -396,7 +399,7 @@ extern int delayedTileWindows;
 	[table selectRowIndexes: [NSIndexSet indexSetWithIndex: selectedRow] byExtendingSelection: NO];
 	[[tableScrollView contentView] scrollToPoint: origin];
 	[tableScrollView reflectScrolledClipView: [tableScrollView contentView]];
-	[table setNeedsDisplay];
+	table.needsDisplay = YES;
 	[[self window] makeFirstResponder: table];
 }
 
@@ -443,7 +446,7 @@ extern int delayedTileWindows;
 	[table selectRowIndexes: [NSIndexSet indexSetWithIndex: selectedRow] byExtendingSelection: NO];
 	[[tableScrollView contentView] scrollToPoint: origin];
 	[tableScrollView reflectScrolledClipView: [tableScrollView contentView]];
-	[table setNeedsDisplay];
+	table.needsDisplay = YES;
 	[[self window] makeFirstResponder: table];
 	
 	[viewer checkEverythingLoaded];
@@ -463,12 +466,12 @@ extern int delayedTileWindows;
     NSSavePanel     *panel = [NSSavePanel savePanel];
 	
     [panel setCanSelectHiddenExtension:NO];
-    [panel setAllowedFileTypes:@[@"xml"]];
+    panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"xml"]);
     
     panel.nameFieldStringValue = [NSString stringWithFormat: @"%@ - %@", imObj.series.study.name, imObj.series.study.studyName];
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         [[xmlDocument XMLString] writeToFile:panel.URL.path atomically:NO encoding:NSUTF8StringEncoding error:NULL];
@@ -480,12 +483,12 @@ extern int delayedTileWindows;
     NSSavePanel     *panel = [NSSavePanel savePanel];
 	
     [panel setCanSelectHiddenExtension:NO];
-    [panel setAllowedFileTypes:@[@"txt"]];
+    panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"txt"]);
     
     panel.nameFieldStringValue = [NSString stringWithFormat: @"%@ - %@", imObj.series.study.name, imObj.series.study.studyName];
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         [[dcmDocument description] writeToFile:panel.URL.path atomically:NO encoding:NSUTF8StringEncoding error:NULL];
@@ -587,7 +590,7 @@ extern int delayedTileWindows;
     [table selectRowIndexes: [NSIndexSet indexSetWithIndex: selectedRow] byExtendingSelection: NO];
 	[[tableScrollView contentView] scrollToPoint: origin];
 	[tableScrollView reflectScrolledClipView: [tableScrollView contentView]];
-	[table setNeedsDisplay];
+	table.needsDisplay = YES;
 	[[self window] makeFirstResponder: table];
     
 	if( [validatorWindow isVisible])
@@ -695,7 +698,7 @@ extern int delayedTileWindows;
 {
     if( editingActivated == YES && modifiedValues.count > 0)
     {
-        if( NSRunInformationalAlertPanel( NSLocalizedString( @"Cancel modifications", nil), NSLocalizedString(@"Are you sure you want to close the window? The modifications to DICOM fields have not been applied. The DICOM files will NOT be modified.", nil), NSLocalizedString(@"Close Window", nil), NSLocalizedString(@"Continue Editing", nil), nil) == NSAlertDefaultReturn)
+        if( HorosPresentInformationalAlert( NSLocalizedString( @"Cancel modifications", nil), NSLocalizedString(@"Are you sure you want to close the window? The modifications to DICOM fields have not been applied. The DICOM files will NOT be modified.", nil), NSLocalizedString(@"Close Window", nil), NSLocalizedString(@"Continue Editing", nil), nil) == HorosAlertResponseFirstButton)
         {
             return YES;
         }
@@ -1028,17 +1031,17 @@ extern int delayedTileWindows;
     {
         if( [[NSFileManager defaultManager] isWritableFileAtPath: [imObj valueForKey:@"completePath"]] == NO)
         {
-            NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"This file is not editable. It is a read-only file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"This file is not editable. It is a read-only file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             editingActivated = NO;
         }
         else if( [[NSUserDefaults standardUserDefaults] boolForKey:@"ALLOWDICOMEDITING"] == NO)
         {
-            NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"DICOM editing is deactivated.\r\rSee General - Preferences to activate it.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"DICOM editing is deactivated.\r\rSee General - Preferences to activate it.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             editingActivated = NO;
         }
         else if( isDICOM == NO)
         {
-            NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"DICOM editing is allowed only on DICOM files.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"DICOM editing is allowed only on DICOM files.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             
             editingActivated = NO;
         }
@@ -1072,7 +1075,7 @@ extern int delayedTileWindows;
     }
     else if( editingActivated == YES && modifiedValues.count > 0)
     {
-        if( NSRunInformationalAlertPanel( NSLocalizedString( @"Cancel modifications", nil), NSLocalizedString(@"Are you sure you want to stop editing the fields? The modifications have not been applied. The DICOM files will NOT be modified.", nil), NSLocalizedString(@"Cancel Modifications", nil), NSLocalizedString(@"Continue Editing", nil), nil) == NSAlertDefaultReturn)
+        if( HorosPresentInformationalAlert( NSLocalizedString( @"Cancel modifications", nil), NSLocalizedString(@"Are you sure you want to stop editing the fields? The modifications have not been applied. The DICOM files will NOT be modified.", nil), NSLocalizedString(@"Cancel Modifications", nil), NSLocalizedString(@"Continue Editing", nil), nil) == HorosAlertResponseFirstButton)
 		{
             [modificationsToApplyArray removeAllObjects];
             [modifiedValues removeAllObjects];
@@ -1262,7 +1265,7 @@ extern int delayedTileWindows;
 	if( [[tableColumn identifier] isEqualToString: @"stringValue"] == NO)
 	{
 		if( [previousValue isEqual: object] == NO)
-			NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"You can only edit the 'Content' column.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+			HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"You can only edit the 'Content' column.", nil), NSLocalizedString(@"OK", nil), nil, nil);
 		
 		return;
 	}
@@ -1277,9 +1280,9 @@ extern int delayedTileWindows;
 		else
 		{
 			if( [[NSUserDefaults standardUserDefaults] boolForKey:@"ALLOWDICOMEDITING"] == NO || self.editingActivated == NO)
-				NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"Activate DICOM editing to change the values.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+				HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"Activate DICOM editing to change the values.", nil), NSLocalizedString(@"OK", nil), nil, nil);
 			else
-				NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"DICOM editing not possible for this file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+				HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"DICOM editing not possible for this file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
 		}
 	}
 }
@@ -1293,7 +1296,7 @@ extern int delayedTileWindows;
 {
 	if( isDICOM == NO)
 	{
-		NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Validator", nil), NSLocalizedString(@"DICOM Validator requires a DICOM file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+		HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Validator", nil), NSLocalizedString(@"DICOM Validator requires a DICOM file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
 		return;
 	}
 	
@@ -1332,7 +1335,7 @@ extern int delayedTileWindows;
 	
 	if( [selectedRowIndexes count] != 1)
 	{
-		NSRunAlertPanel( NSLocalizedString( @"Sort Series Images", nil) , NSLocalizedString( @"Select an element to use to sort the images of the series.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+		HorosPresentAlert( NSLocalizedString( @"Sort Series Images", nil) , NSLocalizedString( @"Select an element to use to sort the images of the series.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 		return;
 	}
 	
@@ -1341,7 +1344,7 @@ extern int delayedTileWindows;
 	
 	if( index > 0 && item && [[item attributeForName:@"group"] objectValue] && [[item attributeForName:@"element"] objectValue])
 	{
-		if( NSRunInformationalAlertPanel( NSLocalizedString( @"Sort Series Images", nil), NSLocalizedString(@"Are you sure you want to re-sort the series images according to this field?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn)
+		if( HorosPresentInformationalAlert( NSLocalizedString( @"Sort Series Images", nil), NSLocalizedString(@"Are you sure you want to re-sort the series images according to this field?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
 		{
 			unsigned gr = 0, el = 0;
 			
@@ -1362,13 +1365,13 @@ extern int delayedTileWindows;
 			@catch( NSException *e)
 			{
 				NSLog( @"%@", e);
-				NSRunAlertPanel( NSLocalizedString( @"Sort Series Images", nil) , NSLocalizedString( @"Select an element to use to sort the images of the series.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+				HorosPresentAlert( NSLocalizedString( @"Sort Series Images", nil) , NSLocalizedString( @"Select an element to use to sort the images of the series.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 			}
 			
 			dontListenToIndexChange = NO;
 		}
 	}
-	else NSRunAlertPanel( NSLocalizedString( @"Sort Series Images", nil) , NSLocalizedString( @"Select an element to use to sort the images of the series.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+	else HorosPresentAlert( NSLocalizedString( @"Sort Series Images", nil) , NSLocalizedString( @"Select an element to use to sort the images of the series.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 }
 
 - (void)keyDown:(NSEvent *)event
@@ -1379,7 +1382,7 @@ extern int delayedTileWindows;
 	
 	if( self.editingActivated && [[NSFileManager defaultManager] isWritableFileAtPath: [imObj valueForKey:@"completePath"]] && [[NSUserDefaults standardUserDefaults] boolForKey:@"ALLOWDICOMEDITING"] && isDICOM && (c == NSDeleteFunctionKey || c == NSDeleteCharacter || c == NSBackspaceCharacter || c == NSDeleteCharFunctionKey))
 	{
-		if( NSRunInformationalAlertPanel( NSLocalizedString( @"DICOM Editing", nil), NSLocalizedString(@"Are you sure you want to delete selected field(s)?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn)
+		if( HorosPresentInformationalAlert( NSLocalizedString( @"DICOM Editing", nil), NSLocalizedString(@"Are you sure you want to delete selected field(s)?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
 		{
 			NSIndexSet*			selectedRowIndexes = [table selectedRowIndexes];
 			NSInteger			index;
@@ -1546,8 +1549,6 @@ extern int delayedTileWindows;
 		[toolbarItem setToolTip: NSLocalizedString(@"DICOM Editing", nil)];
 		
 		[toolbarItem setView: dicomEditingView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([dicomEditingView frame]), NSHeight([dicomEditingView frame]))];
-		[toolbarItem setMaxSize:NSMakeSize(NSWidth([dicomEditingView frame]), NSHeight([dicomEditingView frame]))];
     }
 	else if ([itemIdent isEqualToString: SearchToolbarItemIdentifier])
 	{
@@ -1556,8 +1557,6 @@ extern int delayedTileWindows;
 		[toolbarItem setToolTip: NSLocalizedString(@"Search", nil)];
 		
 		[toolbarItem setView: searchView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([searchView frame]), NSHeight([searchView frame]))];
-		[toolbarItem setMaxSize:NSMakeSize(NSWidth([searchView frame]), NSHeight([searchView frame]))];
     }
 	else if ([itemIdent isEqualToString: ExportTextToolbarItemIdentifier]) {
 		[toolbarItem setLabel: NSLocalizedString(@"Export Text", nil)];
@@ -1629,10 +1628,9 @@ extern int delayedTileWindows;
     // Required delegate method:  Returns the list of all allowed items by identifier.  By default, the toolbar 
     // does not assume any items are allowed, even the separator.  So, every allowed item must be explicitly listed   
     // The set of allowed items is used to construct the customization palette 
-    NSMutableArray *array = [NSMutableArray arrayWithObjects: 	NSToolbarCustomizeToolbarItemIdentifier,
+    NSMutableArray *array = [NSMutableArray arrayWithObjects:
 										NSToolbarFlexibleSpaceItemIdentifier,
 										NSToolbarSpaceItemIdentifier,
-										NSToolbarSeparatorItemIdentifier,
 										ExportToolbarItemIdentifier,
 										ExportTextToolbarItemIdentifier, 
 										ExpandAllItemsToolbarItemIdentifier,

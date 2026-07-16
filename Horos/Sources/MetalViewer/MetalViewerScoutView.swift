@@ -3,6 +3,7 @@ import CoreGraphics
 
 private let metalViewerScoutTextColor = NSColor(calibratedRed: 0.18, green: 1.0, blue: 0.28, alpha: 1.0)
 private let metalViewerScoutStudyNumberTextColor = NSColor.systemRed
+let metalViewerActiveSelectionBlue = NSColor(srgbRed: 0.0, green: 0.68, blue: 1.0, alpha: 1.0)
 
 private final class MetalViewerScoutDocumentView: NSView {
     override var isFlipped: Bool { true }
@@ -430,7 +431,12 @@ private final class MetalViewerScoutItemView: NSView {
 
     private func updateAppearance() {
         layer?.backgroundColor = (isSelected ? NSColor(calibratedRed: 0.18, green: 0.26, blue: 0.38, alpha: 1) : NSColor(calibratedWhite: 0.16, alpha: 1)).cgColor
-        layer?.borderColor = (isSelected ? NSColor.systemBlue : NSColor(calibratedWhite: 0.24, alpha: 1)).cgColor
+        layer?.borderWidth = isSelected ? 3 : 2
+        layer?.borderColor = (isSelected ? metalViewerActiveSelectionBlue : NSColor(calibratedWhite: 0.24, alpha: 1)).cgColor
+        layer?.shadowColor = metalViewerActiveSelectionBlue.cgColor
+        layer?.shadowOpacity = isSelected ? 0.95 : 0
+        layer?.shadowRadius = isSelected ? 5 : 0
+        layer?.shadowOffset = .zero
     }
 
     func loadThumbnailIfNeeded() {

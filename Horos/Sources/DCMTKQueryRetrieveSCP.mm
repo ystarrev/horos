@@ -1,3 +1,4 @@
+#import "HorosDCMTKCondition.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -341,7 +342,7 @@ void errmsg(const char* msg, ...)
     if (cond.bad())
 	{
 		errmsg("Error initialising network:");
-		DimseCondition::dump(cond);
+		HorosLogDIMSECondition(cond);
 		
         [[AppController sharedAppController] performSelectorOnMainThread:@selector(displayUpdateMessage:) withObject:@"LISTENER" waitUntilDone: NO];
 		return;
@@ -514,7 +515,7 @@ void errmsg(const char* msg, ...)
 		cond = ASC_setTransportLayer(options.net_, tLayer, 0);
 		if (cond.bad())
 		{
-			DimseCondition::dump(cond);
+			HorosLogDIMSECondition(cond);
 			NSString *errMessage = [NSString stringWithFormat: @"DICOM Network Failure (storescp TLS) : ASC_setTransportLayer - %04x:%04x %s. You can turn OFF TLS Listener in Preferences->Listener.", cond.module(), cond.code(), cond.text()];
 			[[AppController sharedAppController] performSelectorOnMainThread: @selector(displayListenerError:) withObject: errMessage waitUntilDone: NO];
 			return;
@@ -636,7 +637,7 @@ DcmTLSOptions tlsOptions(NET_ACCEPTORREQUESTOR);
 	cond = ASC_dropNetwork(&options.net_);
     if (cond.bad()) {
         errmsg("Error dropping network:");
-        DimseCondition::dump(cond);
+        HorosLogDIMSECondition(cond);
     }
 	
 	running = NO;

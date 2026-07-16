@@ -1,3 +1,4 @@
+#import "HorosUnkeyedArchiveCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -843,7 +844,7 @@ extern int splitPosition[ 3];
 	float previousScale = [self scaleValue];
 	float previousRotation = [self rotation];
 	int previousHeight = [self.curDCM pheight], previousWidth = [self.curDCM pwidth];
-	NSData *previousROIs = [NSArchiver archivedDataWithRootObject: [self curRoiList]];
+	NSData *previousROIs = HorosArchiveUnkeyedObject([self curRoiList]);
 	
 	[[self.curvedVolumeData retain] autorelease]; // make sure this is around long enough so that it doesn't disapear under the old DCMPix
     self.curvedVolumeData = volume;
@@ -902,7 +903,7 @@ extern int splitPosition[ 3];
 			[self setRotation: previousRotation];
 		}
 		
-		NSArray *roiArray = [NSUnarchiver unarchiveObjectWithData: previousROIs];
+		NSArray *roiArray = HorosUnarchiveUnkeyedObject(previousROIs);
 		for( ROI *r in roiArray)
 		{
 			r.pix = self.curDCM;
@@ -1071,7 +1072,7 @@ extern int splitPosition[ 3];
 
 		if( self.curDCM.pwidth != 0 && exportTransverseSliceInterval == 0 && _displayTransverseLines && (transverseLineDistance < 5.0 || transverseRunDistance < 5.0))
 		{
-			if( [theEvent type] == NSLeftMouseDragged || [theEvent type] == NSLeftMouseDown)
+			if( [theEvent type] == NSEventTypeLeftMouseDragged || [theEvent type] == NSEventTypeLeftMouseDown)
 				[[NSCursor closedHandCursor] set];
 			else
 				[[NSCursor openHandCursor] set];
@@ -1193,7 +1194,7 @@ extern int splitPosition[ 3];
             
 			@try
 			{
-				if( [event type] ==	NSLeftMouseDown || [event type] ==	NSRightMouseDown || [event type] ==	NSLeftMouseUp || [event type] == NSRightMouseUp)
+				if( [event type] ==	NSEventTypeLeftMouseDown || [event type] ==	NSEventTypeRightMouseDown || [event type] ==	NSEventTypeLeftMouseUp || [event type] == NSEventTypeRightMouseUp)
 					clickCount = [event clickCount];
 			}
 			@catch (NSException * e)
@@ -1370,7 +1371,7 @@ extern int splitPosition[ 3];
 - (void)scrollWheel:(NSEvent *)theEvent
 {
 	// Scroll/Move transverse lines
-	if( [theEvent modifierFlags] & NSAlternateKeyMask)
+	if( [theEvent modifierFlags] & NSEventModifierFlagOption)
 	{
 		CGFloat transverseSectionPosition = MIN(MAX(_curvedPath.transverseSectionPosition + [theEvent deltaY] * .002, 0.0), 1.0); 
 		
@@ -1383,7 +1384,7 @@ extern int splitPosition[ 3];
 	}
 	
 	// Scroll/Move transverse lines
-	else if( [theEvent modifierFlags] & NSCommandKeyMask)
+	else if( [theEvent modifierFlags] & NSEventModifierFlagCommand)
 	{
         float factor = 0.4;
         
@@ -1401,7 +1402,7 @@ extern int splitPosition[ 3];
 	}
     
     // Scroll/push the curve in and out
-	else if( [theEvent modifierFlags] & NSControlKeyMask) {
+	else if( [theEvent modifierFlags] & NSEventModifierFlagControl) {
         [self _pushBezierPath:[theEvent deltaY] * .4];
     }
     
@@ -2536,7 +2537,6 @@ extern int splitPosition[ 3];
 }
 
 @end
-
 
 
 

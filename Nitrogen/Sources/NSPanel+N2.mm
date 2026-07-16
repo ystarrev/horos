@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "NSPanel+N2.h"
+#import <objc/runtime.h>
 
 
 @implementation NSPanel (N2)
@@ -45,24 +46,27 @@
 }
 
 +(NSPanel*)alertWithTitle:(NSString*)title message:(NSString*)message defaultButton:(NSString*)defaultButton alternateButton:(NSString*)alternateButton icon:(NSImage*)icon sheet:(BOOL)sheet {
-	NSPanel* panel = NSGetAlertPanel(title, @"%@", defaultButton, alternateButton, NULL, message);
-	
-	if (icon) {
-		for (NSImageView* view in [[panel contentView] subviews])
-			if ([view isKindOfClass:[NSImageView class]])
-				[view setImage:icon];
-	}
+	NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+	alert.alertStyle = NSAlertStyleWarning;
+	alert.messageText = title ?: @"";
+	alert.informativeText = message ?: @"";
+	[alert addButtonWithTitle:defaultButton.length ? defaultButton : NSLocalizedString(@"OK", nil)];
+	if (alternateButton.length)
+		[alert addButtonWithTitle:alternateButton];
+	if (icon)
+		alert.icon = icon;
+
+	NSPanel *panel = (NSPanel *)alert.window;
+	objc_setAssociatedObject(panel, @selector(alertWithTitle:message:defaultButton:alternateButton:icon:sheet:), alert, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 	
 	if (sheet) {
-		for (NSButton* button in [[panel contentView] subviews])
-			if ([button isKindOfClass:[NSButton class]]) {
-//				NSLog(@"button: %@ --- %@ %@ --- %d", button, [button target], NSStringFromSelector([button action]), [button tag]);
-				[button setTarget:self];
-				[button setAction:@selector(_sheetButtonAction:)];
-			}
+		for (NSButton *button in alert.buttons) {
+			[button setTarget:self];
+			[button setAction:@selector(_sheetButtonAction:)];
+		}
 	}
 	
-	return [panel autorelease];
+	return panel;
 }
 
 +(void)_sheetButtonAction:(NSButton*)button {

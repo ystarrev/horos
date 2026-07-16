@@ -1,3 +1,4 @@
+#import "HorosUnkeyedArchiveCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -203,7 +204,7 @@ extern int splitPosition[ 3];
 			
 	@try
 	{
-		if( [event type] ==	NSLeftMouseDown || [event type] ==	NSRightMouseDown || [event type] ==	NSLeftMouseUp || [event type] == NSRightMouseUp)
+		if( [event type] ==	NSEventTypeLeftMouseDown || [event type] ==	NSEventTypeRightMouseDown || [event type] ==	NSEventTypeLeftMouseUp || [event type] == NSEventTypeRightMouseUp)
 			clickCount = [event clickCount];
 	}
 	@catch (NSException * e)
@@ -423,7 +424,7 @@ extern int splitPosition[ 3];
 
 - (void)scrollWheel:(NSEvent *)theEvent
 {
-	if( [theEvent modifierFlags] & NSCommandKeyMask)
+	if( [theEvent modifierFlags] & NSEventModifierFlagCommand)
 	{
 		CGFloat transverseSectionSpacing = MIN(MAX(_curvedPath.transverseSectionSpacing + [theEvent deltaY] * .4, 0.0), 300); 
 		
@@ -616,7 +617,7 @@ extern int splitPosition[ 3];
 	if( [self windowController] == nil)
 		return;
 	
-	NSData *previousROIs = [NSArchiver archivedDataWithRootObject: [self curRoiList]];
+	NSData *previousROIs = HorosArchiveUnkeyedObject([self curRoiList]);
 	CPRVolumeDataInlineBuffer inlineBuffer;
 	DCMPix *newPix;
     
@@ -662,7 +663,7 @@ extern int splitPosition[ 3];
 		
 		[[self windowController] propagateWLWW: [[self windowController] mprView1]];
 		
-		NSArray *roiArray = [NSUnarchiver unarchiveObjectWithData: previousROIs];
+		NSArray *roiArray = HorosUnarchiveUnkeyedObject(previousROIs);
 		for( ROI *r in roiArray)
 		{
 			r.pix = self.curDCM;
@@ -762,7 +763,6 @@ extern int splitPosition[ 3];
 
 
 @end
-
 
 
 

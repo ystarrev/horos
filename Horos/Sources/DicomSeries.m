@@ -349,7 +349,7 @@
                         NSImage* thumbnail = [[[NSImage alloc] initWithSize: NSMakeSize(THUMBNAILSIZE, THUMBNAILSIZE)] autorelease];
                         
                         [thumbnail lockFocus];
-                        [thumbAv drawInRect:NSMakeRect(0,0,THUMBNAILSIZE,THUMBNAILSIZE) fromRect:[thumbAv alignmentRect] operation:NSCompositeCopy fraction:1.0];
+                        [thumbAv drawInRect:NSMakeRect(0,0,THUMBNAILSIZE,THUMBNAILSIZE) fromRect:[thumbAv alignmentRect] operation:NSCompositingOperationCopy fraction:1.0];
                         [thumbnail unlockFocus];
                         
                         thumbnailData = [[thumbnail TIFFRepresentation] retain]; // autoreleased when returning
@@ -389,7 +389,7 @@
                             thumbnail = [[[NSImage alloc] initWithSize: NSMakeSize( THUMBNAILSIZE, THUMBNAILSIZE)] autorelease];
                             
                             [thumbnail lockFocus];
-                            [icon drawInRect: NSMakeRect( 0, 0, THUMBNAILSIZE, THUMBNAILSIZE) fromRect: [icon alignmentRect] operation: NSCompositeCopy fraction: 1.0];
+                            [icon drawInRect: NSMakeRect( 0, 0, THUMBNAILSIZE, THUMBNAILSIZE) fromRect: [icon alignmentRect] operation: NSCompositingOperationCopy fraction: 1.0];
                             [thumbnail unlockFocus];
                             
                             thumbnailData = [[thumbnail TIFFRepresentation] retain]; // autoreleased when returning

@@ -71,7 +71,6 @@
 
 //- (void)setServiceName:(NSString *) newName;
 //- (NSString *) serviceName;
-- (int) OsiriXDBCurrentPort __deprecated; // use -[[[AppController sharedAppController] bonjourPublisher] port]
 + (BonjourPublisher*) currentPublisher __deprecated; // use -[[AppController sharedAppController] bonjourPublisher]
 
 + (NSDictionary*)dictionaryFromXTRecordData:(NSData*)data;

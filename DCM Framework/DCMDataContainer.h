@@ -100,11 +100,11 @@
 - (NSString *)nextStringWithLength:(int)length;
 - (NSString *)nextStringWithLength:(int)length encoding:(NSStringEncoding)encoding;
 - (NSString *)nextStringWithLength:(int)length encodings:(NSStringEncoding*)encodings;
-- (NSCalendarDate *)nextDate;
+- (NSDate *)nextDate;
 - (NSMutableArray *)nextDatesWithLength:(int)length;
-- (NSCalendarDate *)nextTimeWithLength:(int)length;
+- (NSDate *)nextTimeWithLength:(int)length;
 - (NSMutableArray *)nextTimesWithLength:(int)length;
-- (NSCalendarDate *)nextDateTimeWithLength:(int)length;
+- (NSDate *)nextDateTimeWithLength:(int)length;
 - (NSMutableArray *)nextDateTimesWithLength:(int)length;
 - (NSMutableData *)nextDataWithLength:(int)length;
 - (BOOL)skipLength:(int)length;

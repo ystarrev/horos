@@ -1,3 +1,4 @@
+#import "HorosSheetPresenter.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -42,7 +43,7 @@
 
 - (void) exportDICOMFile:(id) sender
 {
-	[NSApp beginSheet: exportDCMWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+	HorosBeginSheet(exportDCMWindow, [self window], self, nil, (void*) nil);
 }
 
 -(void) mouseMoved: (NSEvent*) theEvent

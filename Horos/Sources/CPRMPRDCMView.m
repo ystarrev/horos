@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -210,7 +211,6 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
 
 - (void) setFrame:(NSRect)frameRect
 {
-    NSDisableScreenUpdates();
     
 	if( NSEqualRects( frameRect, [self frame]) == NO)
 	{
@@ -226,7 +226,6 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
 	
 	[super setFrame: frameRect];
     
-    NSEnableScreenUpdates();
 }
 
 - (void)setCurvedPath:(CPRCurvedPath *)newCurvedPath
@@ -1013,11 +1012,11 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
 - (void) deleteCurrentCurvedPath
 {
     if (curvedPath.nodes.count > 0) {
-        if( NSRunInformationalAlertPanel(	NSLocalizedString(@"Delete the Curve", nil),
+        if( HorosPresentInformationalAlert(	NSLocalizedString(@"Delete the Curve", nil),
                                          NSLocalizedString(@"Are you sure you want to delete the entire curve?", nil),
                                          NSLocalizedString(@"OK",nil),
                                          NSLocalizedString(@"Cancel",nil),
-                                         nil) == NSAlertDefaultReturn)
+                                         nil) == HorosAlertResponseFirstButton)
         {
             [self sendWillEditCurvedPath];
             [curvedPath clearPath];
@@ -1141,8 +1140,8 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
         
         float move = 2;
         
-        if( [theEvent modifierFlags] & NSAlternateKeyMask) move = 6;
-        if( [theEvent modifierFlags] & NSCommandKeyMask) move = 1;
+        if( [theEvent modifierFlags] & NSEventModifierFlagOption) move = 6;
+        if( [theEvent modifierFlags] & NSEventModifierFlagCommand) move = 1;
         
         if( c == NSDownArrowFunctionKey) { center.y -= move*slopeY; center.x += move*slopeX;}
         if( c == NSUpArrowFunctionKey) { center.y += move*slopeY; center.x -= move*slopeX;}
@@ -1580,7 +1579,7 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
 	
 	@try
 	{
-		if( [theEvent type] == NSLeftMouseDown || [theEvent type] == NSRightMouseDown || [theEvent type] == NSLeftMouseUp || [theEvent type] == NSRightMouseUp)
+		if( [theEvent type] == NSEventTypeLeftMouseDown || [theEvent type] == NSEventTypeRightMouseDown || [theEvent type] == NSEventTypeLeftMouseUp || [theEvent type] == NSEventTypeRightMouseUp)
 			clickCount = [theEvent clickCount];
 	}
 	@catch (NSException * e)
@@ -1708,7 +1707,7 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
 					vrView.keep3DRotateCentered = NO;
 				else
 				{
-					if( [theEvent modifierFlags] & NSAlternateKeyMask)
+					if( [theEvent modifierFlags] & NSEventModifierFlagOption)
 						vrView.keep3DRotateCentered = NO;
 				}
 			}
@@ -1782,7 +1781,7 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
 							[self sendWillEditCurvedPath];
                             
                             // if the shift key is down, place the point at the same level as the previous point
-                            if ([curvedPath.nodes count] > 0 && [theEvent modifierFlags] & NSControlKeyMask)
+                            if ([curvedPath.nodes count] > 0 && [theEvent modifierFlags] & NSEventModifierFlagControl)
 							{
                                 N3Vector lastPoint = [[curvedPath.nodes lastObject] N3VectorValue];
                                 viewToDicomTransform = N3AffineTransformConcat(N3AffineTransformMakeTranslation(0, 0,
@@ -2191,7 +2190,7 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
 			if ([CPRCurvedPath controlTokenIsNode:curveToken])
 			{
 				[cursor release];
-				if( [theEvent type] == NSLeftMouseDragged || [theEvent type] == NSLeftMouseDown)
+				if( [theEvent type] == NSEventTypeLeftMouseDragged || [theEvent type] == NSEventTypeLeftMouseDown)
 					cursor = [[NSCursor closedHandCursor]retain];
 				else
 					cursor = [[NSCursor openHandCursor]retain];
@@ -2202,7 +2201,7 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
 			else if (curveToken != CPRCurvedPathControlTokenNone)
 			{
 				[cursor release];
-				if( [theEvent type] == NSLeftMouseDragged || [theEvent type] == NSLeftMouseDown)
+				if( [theEvent type] == NSEventTypeLeftMouseDragged || [theEvent type] == NSEventTypeLeftMouseDown)
 					cursor = [[NSCursor closedHandCursor]retain];
 				else
 					cursor = [[NSCursor openHandCursor]retain];
@@ -2231,7 +2230,7 @@ static CGFloat CPRMPRDCMViewCurveMouseTrackingDistance = 20.0;
 		int mouseOnLines = [self mouseOnLines:viewPoint];
 		if( mouseOnLines==2)
 		{
-			if( [theEvent type] == NSLeftMouseDragged || [theEvent type] == NSLeftMouseDown) [[NSCursor closedHandCursor] set];
+			if( [theEvent type] == NSEventTypeLeftMouseDragged || [theEvent type] == NSEventTypeLeftMouseDown) [[NSCursor closedHandCursor] set];
 			else [[NSCursor openHandCursor] set];
 		}
 		else if( mouseOnLines==1)

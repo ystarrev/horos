@@ -1367,6 +1367,7 @@
 		F4A100000001000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal */; };
 		F4A100000001000000000006 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000006 /* Metal.framework */; };
 		F4A100000001000000000007 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000007 /* MetalKit.framework */; };
+		F4DEC000000100000000011 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000006 /* Metal.framework */; };
 		F4A100000001000000000008 /* Horos/Sources/MetalViewer/MetalViewerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000008 /* Horos/Sources/MetalViewer/MetalViewerModels.swift */; };
 		F4A100000001000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift */; };
 		F4A10000000100000000000A /* Horos/Sources/MetalViewer/MetalViewerToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000A /* Horos/Sources/MetalViewer/MetalViewerToolbarView.swift */; };
@@ -3374,6 +3375,7 @@
 		AB724FEA0ADE6ECB00A212A0 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				F4DEC000000100000000011 /* Metal.framework in Frameworks */,
 				F4DEC000000100000000001 /* Foundation.framework in Frameworks */,
 				F4DEC000000100000000002 /* Cocoa.framework in Frameworks */,
 				F4DEC000000100000000003 /* IOKit.framework in Frameworks */,

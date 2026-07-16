@@ -154,7 +154,7 @@ static const NSSize PopUpWindowBorder = NSMakeSize(10,4);
 
     NSRect viewFrame = [view.window convertRectToScreen:[view convertRect:view.bounds toView:nil]];
 
-    self.window = [[N2PopUpMenuWindow alloc] initWithContentRect:viewFrame styleMask:NSBorderlessWindowMask backing:NSBackingStoreBuffered defer:NO];
+    self.window = [[N2PopUpMenuWindow alloc] initWithContentRect:viewFrame styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
     [self.window setLevel:NSMainMenuWindowLevel];
     [self.window setOpaque:NO];
     [self.window setBackgroundColor:[[NSColor whiteColor] colorWithAlphaComponent:0]];
@@ -193,7 +193,7 @@ static const NSSize PopUpWindowBorder = NSMakeSize(10,4);
     _filterField = [[NSTextField alloc] initWithFrame:NSZeroRect];
     _filterField.delegate = self;
     
-    [_filterField.cell setControlSize:NSSmallControlSize];
+    [_filterField.cell setControlSize:NSControlSizeSmall];
     _filterField.font = [NSFont controlContentFontOfSize:[NSFont smallSystemFontSize]];
     _filterField.bezelStyle = NSTextFieldRoundedBezel;//NSRoundedBezelStyle;
     [_filterField sizeToFit];
@@ -216,7 +216,7 @@ static const NSSize PopUpWindowBorder = NSMakeSize(10,4);
 
     [self filter:YES];
     
-    [_view.window sendEvent:[NSEvent mouseEventWithType:NSLeftMouseUp location:event.locationInWindow modifierFlags:event.modifierFlags timestamp:event.timestamp windowNumber:event.windowNumber context:event.context eventNumber:event.eventNumber+1 clickCount:event.clickCount pressure:0]];
+    [_view.window sendEvent:[NSEvent mouseEventWithType:NSEventTypeLeftMouseUp location:event.locationInWindow modifierFlags:event.modifierFlags timestamp:event.timestamp windowNumber:event.windowNumber context:nil eventNumber:event.eventNumber+1 clickCount:event.clickCount pressure:0]];
 }
 
 - (void)windowDidResignKey:(NSNotification*)notification {
@@ -531,17 +531,17 @@ static const NSSize PopUpWindowBorder = NSMakeSize(10,4);
     
 //    NSLog(@"event %d", event.type);
 
-    if (event.type == NSKeyDown) {
+    if (event.type == NSEventTypeKeyDown) {
         [self keyDown:event];
         return YES;
     }
     
-    if (event.type == NSLeftMouseDragged) {
+    if (event.type == NSEventTypeLeftMouseDragged) {
         [_puView mouseDragged:event];
         return YES;
     }
     
-    if (event.type == NSLeftMouseUp) {
+    if (event.type == NSEventTypeLeftMouseUp) {
         [_puView mouseUp:event];
         return YES;
     }
@@ -680,7 +680,7 @@ static const NSSize PopUpWindowBorder = NSMakeSize(10,4);
     
     NSDictionary* attributes = nil;
     if (self.isHighlighted) {
-        [[[NSColor selectedMenuItemColor] colorWithAlphaComponent:1] setFill];
+        [[[NSColor selectedContentBackgroundColor] colorWithAlphaComponent:1] setFill];
         [NSBezierPath fillRect:NSInsetRect(cellFrame, -1, 0)];
         attributes = [NSDictionary dictionaryWithObjectsAndKeys: [NSColor selectedMenuItemTextColor], NSForegroundColorAttributeName, controlView.font, NSFontAttributeName, nil];
     } else {

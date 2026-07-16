@@ -1,3 +1,5 @@
+#import "HorosFilePanelContentTypes.h"
+#import "HorosKeyedArchive.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -130,11 +132,11 @@
 			NSOpenPanel	*oPanel = [NSOpenPanel openPanel];
 			[oPanel setAllowsMultipleSelection:NO];
 			[oPanel setCanChooseDirectories:NO];
-            oPanel.allowedFileTypes = @[@"xml"];
+            oPanel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"xml"]);
             
 			int result = [oPanel runModal];
 
-			if (result == NSOKButton) 
+			if (result == NSModalResponseOK)
 			{	
 				[self resetCameras:self];
 				NSDictionary* stepsDictionary = [[NSDictionary alloc] initWithContentsOfURL:oPanel.URL];
@@ -159,10 +161,10 @@
 			NSSavePanel     *panel = [NSSavePanel savePanel];
 
 			[panel setCanSelectHiddenExtension:NO];
-            panel.allowedFileTypes = @[@"xml"];
+            panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"xml"]);
             panel.nameFieldStringValue = @"OsiriX Fly Through";
             
-			if( [panel runModal] == NSFileHandlingPanelOKButton)
+			if( [panel runModal] == NSModalResponseOK)
 			{
 				NSMutableDictionary *xml;
 				xml = [flyThruController.flyThru exportToXML];
@@ -182,7 +184,7 @@
 {
 
 	 // Copy the row numbers to the pasteboard.
-    NSData *data = [NSKeyedArchiver archivedDataWithRootObject:rowIndexes];
+    NSData *data = HorosArchiveKeyedObject(rowIndexes, nil);
     [pboard declareTypes:[NSArray arrayWithObject:FlyThruTableViewDataType] owner:self];
     [pboard setData:data forType:FlyThruTableViewDataType];
     return YES;
@@ -205,7 +207,7 @@
 
     NSPasteboard* pboard = [info draggingPasteboard];
     NSData* rowData = [pboard dataForType:FlyThruTableViewDataType];
-    NSIndexSet* rowIndexes = [NSKeyedUnarchiver unarchiveObjectWithData:rowData];
+    NSIndexSet* rowIndexes = HorosUnarchiveKeyedObject(rowData, nil);
 	int rowIndex = [rowIndexes firstIndex];
 	if (rowIndex  < row)
 		row--;

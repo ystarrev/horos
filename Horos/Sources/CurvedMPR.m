@@ -1,3 +1,4 @@
+#import "HorosUnkeyedArchiveCompatibility.h"
 /*=========================================================================
   Program:   OsiriX
 
@@ -1035,7 +1036,7 @@ XYZ ArbitraryRotateCurvedMPR(XYZ p,double theta,XYZ r)
 	[pixList retain];
 	[volumeData retain];
 
-	selectedROI = [NSUnarchiver unarchiveObjectWithData: [NSArchiver archivedDataWithRootObject: roi]];
+	selectedROI = HorosUnarchiveUnkeyedObject(HorosArchiveUnkeyedObject(roi));
 	
 	[selectedROI setOriginAndSpacing:[[pixList objectAtIndex:0] pixelSpacingX] : [[pixList objectAtIndex:0] pixelSpacingY] :[roi imageOrigin]];
 	

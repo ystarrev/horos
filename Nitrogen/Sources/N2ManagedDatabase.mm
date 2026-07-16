@@ -81,6 +81,24 @@ static NSString *N2ManagedDatabaseStorageErrorDetails(NSError *error)
     return details.count ? [details componentsJoinedByString:@"\r"] : NSLocalizedString(@"No detailed error was provided by the persistent store.", nil);
 }
 
+static NSModalResponse N2ManagedDatabaseRunCriticalAlert(NSString *title,
+                                                         NSString *message,
+                                                         NSString *firstButton,
+                                                         NSString *secondButton,
+                                                         NSString *thirdButton)
+{
+    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+    alert.alertStyle = NSAlertStyleCritical;
+    alert.messageText = title ?: @"";
+    alert.informativeText = message ?: @"";
+    [alert addButtonWithTitle:firstButton.length ? firstButton : NSLocalizedString(@"OK", nil)];
+    if (secondButton.length)
+        [alert addButtonWithTitle:secondButton];
+    if (thirdButton.length)
+        [alert addButtonWithTitle:thirdButton];
+    return [alert runModal];
+}
+
 static NSString *N2ManagedDatabaseBackupPathForSQLFile(NSString *sqlFilePath)
 {
     NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
@@ -306,27 +324,26 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
                                     NSLocalizedString(@"Horos could not open the database SQL index file.\r\rThis can happen when the database volume is not mounted, macOS has not granted this copy of Horos access to the folder, the file is locked, or the SQL index is damaged.\r\rDatabase SQL index:\r%@\r\rDetails:\r%@\r\rIf this is not the database location you expected, do not reset this index. Continue, then select the correct database location.\r\rContinuing leaves this file untouched. Resetting the SQL index moves the old index aside and asks Horos to rebuild it.", nil),
                                     sqlFilePath,
                                     N2ManagedDatabaseStorageErrorDetails(err)];
-                                NSInteger result = NSRunCriticalAlertPanel(
+                                NSModalResponse result = N2ManagedDatabaseRunCriticalAlert(
                                     [NSString stringWithFormat:NSLocalizedString(@"%@ Storage Error", nil), [self className]],
-                                    @"%@",
+                                    message,
                                     NSLocalizedString(@"Continue", nil),
                                     NSLocalizedString(@"Reveal in Finder", nil),
-                                    self.deleteSQLFileIfOpeningFailed ? NSLocalizedString(@"Reset SQL Index...", nil) : nil,
-                                    message);
+                                    self.deleteSQLFileIfOpeningFailed ? NSLocalizedString(@"Reset SQL Index...", nil) : nil);
                                 
-                                if (result == NSAlertAlternateReturn) {
+                                if (result == NSAlertSecondButtonReturn) {
                                     [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[[NSURL fileURLWithPath:sqlFilePath]]];
-                                } else if (result == NSAlertOtherReturn && self.deleteSQLFileIfOpeningFailed) {
-                                    NSInteger confirmation = NSRunCriticalAlertPanel(
+                                } else if (result == NSAlertThirdButtonReturn && self.deleteSQLFileIfOpeningFailed) {
+                                    NSModalResponse confirmation = N2ManagedDatabaseRunCriticalAlert(
                                         [NSString stringWithFormat:NSLocalizedString(@"Reset %@ SQL Index?", nil), [self className]],
-                                        @"%@\r\r%@",
+                                        [NSString stringWithFormat:@"%@\r\r%@",
+                                         NSLocalizedString(@"Only reset the SQL index if this is the database Horos should rebuild. If Horos is opening an unexpected folder, cancel and choose the correct database instead.\r\rHoros will move the existing SQL index to a backup file beside it, then try to create a new one. DICOM image files are not intentionally deleted, but database-only metadata may be missing until the old index is restored.", nil),
+                                         sqlFilePath],
                                         NSLocalizedString(@"Cancel", nil),
                                         NSLocalizedString(@"Reset SQL Index", nil),
-                                        nil,
-                                        NSLocalizedString(@"Only reset the SQL index if this is the database Horos should rebuild. If Horos is opening an unexpected folder, cancel and choose the correct database instead.\r\rHoros will move the existing SQL index to a backup file beside it, then try to create a new one. DICOM image files are not intentionally deleted, but database-only metadata may be missing until the old index is restored.", nil),
-                                        sqlFilePath);
+                                        nil);
                                     
-                                    shouldResetSQLIndex = confirmation == NSAlertAlternateReturn;
+                                    shouldResetSQLIndex = confirmation == NSAlertSecondButtonReturn;
                                 }
                             }
                             
@@ -340,15 +357,15 @@ static NSString *N2ManagedDatabaseMoveSQLIndexAside(NSString *sqlFilePath, NSErr
                                     NSLog(@"Moved SQL index %@ to %@ before rebuilding.", sqlFilePath, backupPath);
                                     i = 0;
                                 } else if ([NSThread isMainThread]) {
-                                    NSRunCriticalAlertPanel(
+                                    N2ManagedDatabaseRunCriticalAlert(
                                         [NSString stringWithFormat:NSLocalizedString(@"%@ Storage Error", nil), [self className]],
-                                        @"%@\r\r%@\r\r%@",
+                                        [NSString stringWithFormat:@"%@\r\r%@\r\r%@",
+                                         NSLocalizedString(@"Horos could not move the SQL index aside, so it has not been reset.", nil),
+                                         sqlFilePath,
+                                         N2ManagedDatabaseStorageErrorDetails(moveError)],
                                         NSLocalizedString(@"Continue", nil),
                                         nil,
-                                        nil,
-                                        NSLocalizedString(@"Horos could not move the SQL index aside, so it has not been reset.", nil),
-                                        sqlFilePath,
-                                        N2ManagedDatabaseStorageErrorDetails(moveError));
+                                        nil);
                                 }
                             }
                         }

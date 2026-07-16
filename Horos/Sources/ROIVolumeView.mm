@@ -1,3 +1,5 @@
+#import "HorosFilePanelContentTypes.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -205,12 +207,12 @@
     NSSavePanel     *panel = [NSSavePanel savePanel];
 
 	[panel setCanSelectHiddenExtension:YES];
-	[panel setAllowedFileTypes:@[@"jpg"]];
+	panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"jpg"]);
 	
     panel.nameFieldStringValue = @"Volume Image";
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
 
         NSImage *im = [self nsimage:NO];
@@ -220,7 +222,7 @@
         
         representations = [im representations];
         
-        bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+        bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
         
         [bitmapData writeToFile:panel.URL.path atomically:YES];
         
@@ -263,7 +265,7 @@
         [exportDCM setPixelData:dataPtr samplesPerPixel:spp bitsPerSample:bpp width:width height:height];
 
 		NSString *f = [exportDCM writeDCMFile: nil];
-		if( f == nil) NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+		if( f == nil) HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
 		
 		if( f)
 			[producedFiles addObject: [NSDictionary dictionaryWithObjectsAndKeys: f, @"file", nil]];
@@ -384,7 +386,7 @@
         if( error == nil)
             error = NSLocalizedString( @"Not possible to compute a volume!", nil);
         
-        NSRunCriticalAlertPanel( NSLocalizedString( @"ROIs", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, error);
+        HorosPresentCriticalAlert( NSLocalizedString( @"ROIs", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, error);
         return nil;
     }
     
@@ -878,7 +880,7 @@
 		
 		roiVolumeActor->GetProperty()->SetOpacity( opacity);
 		
-		NSColor* rgbCol = [col colorUsingColorSpaceName: NSCalibratedRGBColorSpace];
+		NSColor* rgbCol = [col colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
 		
 		if( usecol) roiVolumeActor->GetProperty()->SetColor( [rgbCol redComponent], [rgbCol greenComponent], [rgbCol blueComponent]);
 		else roiVolumeActor->GetProperty()->SetColor( 1, 1, 1);

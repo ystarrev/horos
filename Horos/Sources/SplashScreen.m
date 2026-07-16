@@ -44,6 +44,8 @@
 #include <mach/machine.h>
 #include <sys/sysctl.h>
 #import <WebKit/WebKit.h>
+#import <Metal/Metal.h>
+#include <limits.h>
 
 @interface SplashScreen ()
 @property(retain) WKWebView *aboutContentWebView;
@@ -54,40 +56,9 @@
 
 long vramSize(void)
 {
-	int					i = 0;
-	short				MAXDISPLAYS = 8;
-	io_service_t		dspPorts[MAXDISPLAYS];
-	CGDirectDisplayID   displays[MAXDISPLAYS];
-	CFTypeRef			typeCode;
-	CGDisplayCount		displayCount = 0;
-	
-	// First we're going to grab the online displays
-	CGGetOnlineDisplayList(MAXDISPLAYS, displays, &displayCount);
-	
-	// Now we iterate through them
-	for(i = 0; i < displayCount; i++)
-		dspPorts[i] = CGDisplayIOServicePort(displays[i]);
-
-	// Ask for the physical size of VRAM of the primary display
-	typeCode = IORegistryEntryCreateCFProperty(dspPorts[0], CFSTR("IOFBMemorySize"), kCFAllocatorDefault, kNilOptions);
-	
-	// Validate our data and make sure we're getting the right type
-	if(typeCode)
-	{
-		SInt32 vramStorage = 0;
-		
-		if( CFGetTypeID(typeCode) == CFNumberGetTypeID())
-		{
-			// Convert this to a useable number
-			CFNumberGetValue(typeCode, kCFNumberSInt32Type, &vramStorage);
-		}
-		
-		CFRelease( typeCode);
-		
-		return vramStorage;
-	}
-	
-	return 0;
+	id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+	NSUInteger workingSetSize = device.recommendedMaxWorkingSetSize;
+	return workingSetSize > LONG_MAX ? LONG_MAX : (long)workingSetSize;
 }
 
 

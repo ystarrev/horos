@@ -63,11 +63,9 @@
     
     if( v.window.isVisible)
     {
-        NSDisableScreenUpdates();
         [super orderBack: self];
         [v.toolbarPanel applicationDidChangeScreenParameters: nil];
         [self orderWindow: NSWindowAbove relativeTo: v.window.windowNumber];
-        NSEnableScreenUpdates();
     }
 }
 
@@ -75,7 +73,6 @@
 {
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideToolbarIfNotActive"] == NO && [AppController USETOOLBARPANEL] == YES)
     {
-        NSDisableScreenUpdates();
         
         ViewerController *v = [ViewerController frontMostDisplayed2DViewerForScreen: self.screen];
         
@@ -90,7 +87,6 @@
             if( [v.toolbarPanel.window.toolbar customizationPaletteIsRunning] == NO)
                 [v.toolbarPanel.window orderBack: self];
         }
-        NSEnableScreenUpdates();
     }
     else
         [super orderOut:sender];

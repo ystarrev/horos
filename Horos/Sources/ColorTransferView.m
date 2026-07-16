@@ -72,7 +72,7 @@
 {
 	if( curIndex >= 0)
 	{
-		NSColor *newColor = [[pick color] colorUsingColorSpaceName: NSCalibratedRGBColorSpace];
+		NSColor *newColor = [[pick color] colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
 		
 		[colors replaceObjectAtIndex: curIndex withObject:[NSArray arrayWithObjects: [NSNumber numberWithFloat: [newColor redComponent]], [NSNumber numberWithFloat: [newColor greenComponent]], [NSNumber numberWithFloat: [newColor blueComponent]],nil]]; 
 	//	[[NSNotificationCenter defaultCenter] postNotificationName: OsirixCLUTChangedNotification object: self userInfo: nil];
@@ -160,7 +160,7 @@
 		
 		curIndex = [points indexOfObject:newPt];
 		
-		NSColor *newColor = [[pick color]  colorUsingColorSpaceName: NSCalibratedRGBColorSpace];
+		NSColor *newColor = [[pick color]  colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
 		
 		[colors insertObject:[NSArray arrayWithObjects: [NSNumber numberWithFloat: [newColor redComponent]], [NSNumber numberWithFloat: [newColor greenComponent]], [NSNumber numberWithFloat: [newColor blueComponent]],nil ] atIndex:curIndex];
 	}

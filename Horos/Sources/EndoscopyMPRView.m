@@ -1,3 +1,5 @@
+#import "HorosFilePanelContentTypes.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -292,7 +294,7 @@
 		BOOL keepOn = YES;
 		while (keepOn)
 		{
-			theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+			theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 			
 			mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView: self];
 			mouseLoc = [[[theEvent window] contentView] convertPoint:mouseLoc toView:self];
@@ -300,7 +302,7 @@
 			
 			switch ([theEvent type])
 			{
-				case NSLeftMouseDragged:
+				case NSEventTypeLeftMouseDragged:
 					focalShiftX = (mouseLoc.x - crossPositionX)*scaleFactor;
 					focalShiftY = (mouseLoc.y - crossPositionY)*scaleFactor;
 					
@@ -310,11 +312,11 @@
 					[[NSNotificationCenter defaultCenter] postNotificationName: OsirixChangeFocalPointNotification object:self  userInfo: nil];
 				break;
 				
-				case NSLeftMouseUp:
+				case NSEventTypeLeftMouseUp:
 					keepOn = NO;
 				break;
 					
-				case NSPeriodic:
+				case NSEventTypePeriodic:
 					
 				break;
 					
@@ -500,7 +502,7 @@
 
 	representations = [im representations];
 
-	bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+	bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
 
     NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"Horos.jpg"];
 	[bitmapData writeToFile:path atomically:YES];
@@ -517,12 +519,12 @@
     NSSavePanel     *panel = [NSSavePanel savePanel];
 	
 	[panel setCanSelectHiddenExtension:YES];
-	[panel setAllowedFileTypes:@[@"jpg"]];
+	panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"jpg"]);
 	
     panel.nameFieldStringValue = [[[controller originalDCMFilesList] objectAtIndex:0] valueForKeyPath:@"series.name"];
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         NSImage *im = [self nsimage:NO];
@@ -532,7 +534,7 @@
         
         representations = [im representations];
         
-        bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+        bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
         
         [bitmapData writeToFile:panel.URL.path atomically:YES];
         
@@ -588,7 +590,7 @@
 			[exportDCM setPixelData: data samplesPerPixel:spp bitsPerSample:bpp width: width height: height];
 			
 			NSString *f = [exportDCM writeDCMFile: nil];
-			if( f == nil) NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString(@"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+			if( f == nil) HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString(@"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
 			
 			if( f)
 				[producedFiles addObject: [NSDictionary dictionaryWithObjectsAndKeys: f, @"file", nil]];

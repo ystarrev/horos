@@ -75,11 +75,9 @@
 {
     [super setFrame:frameRect];
     
-    NSDisableScreenUpdates();
     [_straightenedView setFrame:[self bounds]];
     [_stretchedView setFrame:[self bounds]];
     
-    NSEnableScreenUpdates();
 }
 
 - (void)setReformationType:(CPRViewReformationType)reformationType

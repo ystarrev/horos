@@ -68,7 +68,6 @@
 	[[self window] setDelegate: self];
 	
 	[[self window] display];
-	[[self window] flushWindow];
 	[self orderWindowFrontWithoutForcingKey: sender];
 	
 	displayedTime = [NSDate timeIntervalSinceReferenceDate];

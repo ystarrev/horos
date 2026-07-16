@@ -38,7 +38,60 @@
 #import "DCMCalendarDate.h"//aTimeZone
 #import "DCM.h"
 
+static NSString *DCMUnicodeDateFormat(NSString *format)
+{
+	NSDictionary *formats = @{
+		@"%Y": @"yyyy",
+		@"%Y%m": @"yyyyMM",
+		@"%Y%m%d": @"yyyyMMdd",
+		@"%Y.%m.%d": @"yyyy.MM.dd",
+		@"%H": @"HH",
+		@"%H%M": @"HHmm",
+		@"%H%M%S": @"HHmmss",
+		@"%H:%M:%S": @"HH:mm:ss",
+		@"%H%M%S.%F": @"HHmmss.SSSSSS",
+		@"%Y%m%d%H": @"yyyyMMddHH",
+		@"%Y%m%d%H%M": @"yyyyMMddHHmm",
+		@"%Y%m%d%H%M%S": @"yyyyMMddHHmmss",
+		@"%Y%m%d%H%M%S%z": @"yyyyMMddHHmmssxx",
+		@"%z": @"xx"
+	};
+	return [formats objectForKey:format] ?: format;
+}
+
+static NSDateFormatter *DCMDateFormatter(NSString *format, NSTimeZone *timeZone)
+{
+	NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
+	formatter.calendar = [[[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian] autorelease];
+	formatter.locale = [[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"] autorelease];
+	formatter.timeZone = timeZone ?: [NSTimeZone defaultTimeZone];
+	formatter.defaultDate = [NSDate dateWithTimeIntervalSinceReferenceDate:0];
+	formatter.dateFormat = DCMUnicodeDateFormat(format);
+	formatter.lenient = NO;
+	return formatter;
+}
+
 @implementation DCMCalendarDate
+
++ (BOOL)supportsSecureCoding
+{
+	return YES;
+}
+
++ (instancetype)date
+{
+	return [[[self alloc] initWithTimeIntervalSinceReferenceDate:[NSDate timeIntervalSinceReferenceDate]] autorelease];
+}
+
++ (instancetype)dateWithTimeIntervalSinceNow:(NSTimeInterval)seconds
+{
+	return [[[self alloc] initWithTimeIntervalSinceReferenceDate:[NSDate timeIntervalSinceReferenceDate] + seconds] autorelease];
+}
+
++ (instancetype)dateWithTimeIntervalSinceReferenceDate:(NSTimeInterval)seconds
+{
+	return [[[self alloc] initWithTimeIntervalSinceReferenceDate:seconds] autorelease];
+}
 
 
 + (id)dicomDate:(NSString *)string{
@@ -198,17 +251,13 @@
 
 + (id)dicomDateWithDate:(NSDate *)date
 {
-	NSString *format = @"%Y%m%d";
-	NSCalendarDate  *cDate= [date dateWithCalendarFormat:format timeZone:nil];
-	NSString *dateString = [cDate descriptionWithCalendarFormat:format];
+	NSString *dateString = [DCMDateFormatter(@"%Y%m%d", nil) stringFromDate:date];
 	return [DCMCalendarDate dicomDate:dateString];
 }
 	
 + (id)dicomTimeWithDate:(NSDate *)date
 {
-	NSString *format = @"%H%M%S";
-	NSCalendarDate  *cDate= [date dateWithCalendarFormat:format timeZone:nil];
-	NSString *dateString = [cDate descriptionWithCalendarFormat:format];
+	NSString *dateString = [DCMDateFormatter(@"%H%M%S", nil) stringFromDate:date];
 	return [DCMCalendarDate dicomTime:dateString];
 }
 
@@ -217,8 +266,8 @@
 	if (date == nil || time == nil)
 		return nil;
 	
-	DCMCalendarDate *dateTime = [[[DCMCalendarDate alloc] initWithYear:[date yearOfCommonEra] month:[date monthOfYear] day:[date dayOfMonth]
-				hour:[time hourOfDay] minute:[time minuteOfHour] second:[time secondOfMinute] timeZone:[date timeZone]] autorelease];
+	DCMCalendarDate *dateTime = [[[DCMCalendarDate alloc] initWithYear:date.yearOfCommonEra month:date.monthOfYear day:date.dayOfMonth
+				hour:time.hourOfDay minute:time.minuteOfHour second:time.secondOfMinute timeZone:date.timeZone] autorelease];
 	
 	[dateTime setIsQuery:NO];
 	[dateTime setQueryString:nil];
@@ -244,24 +293,150 @@
 //------------------------------------------------------------------------------------------------------------------------------------
 #pragma mark•
 
-- (id) initWithString:(NSString *)description calendarFormat:(NSString *)format microseconds: (unsigned long) usecs
+- (id)init
 {
-    NSCalendarDate *d = [NSCalendarDate dateWithString: description calendarFormat: format];
-    
-    if( usecs != 0)
-        d = [NSCalendarDate dateWithTimeIntervalSinceReferenceDate: [[d dateByAddingTimeInterval: (NSTimeInterval) usecs / (NSTimeInterval) 1e6] timeIntervalSinceReferenceDate]];
-    
-    if( self = [super initWithTimeIntervalSinceReferenceDate: d.timeIntervalSinceReferenceDate])
-    {
-        [self setCalendarFormat: format];
-    }
-    
-    return self;
+	return [self initWithTimeIntervalSinceReferenceDate:0];
 }
 
-- (id)copyWithZone:(NSZone *)zone{
-	DCMCalendarDate *date = [super copyWithZone:zone];
+- (id)initWithTimeIntervalSinceReferenceDate:(NSTimeInterval)seconds
+{
+	self = [super init];
+	if (self) {
+		_timeIntervalSinceReferenceDate = seconds;
+		_timeZone = [[NSTimeZone defaultTimeZone] retain];
+	}
+	return self;
+}
+
+- (id)initWithCoder:(NSCoder *)coder
+{
+	self = [super initWithCoder:coder];
+	if (self) {
+		_timeIntervalSinceReferenceDate = [super timeIntervalSinceReferenceDate];
+		_timeZone = [[NSTimeZone defaultTimeZone] retain];
+
+		if (coder.allowsKeyedCoding) {
+			NSString *calendarFormat = [coder decodeObjectOfClass:[NSString class] forKey:@"DCMCalendarFormat"];
+			NSTimeZone *timeZone = [coder decodeObjectOfClass:[NSTimeZone class] forKey:@"DCMTimeZone"];
+			NSString *decodedQueryString = [coder decodeObjectOfClass:[NSString class] forKey:@"DCMQueryString"];
+			_calendarFormat = [calendarFormat copy];
+			[self setTimeZone:timeZone];
+			queryString = [decodedQueryString copy];
+			isQuery = [coder decodeBoolForKey:@"DCMIsQuery"];
+		}
+	}
+	return self;
+}
+
+- (void)encodeWithCoder:(NSCoder *)coder
+{
+	[super encodeWithCoder:coder];
+
+	// NSArchiver payloads written by old Horos only contained the inherited
+	// date value. Keep that unkeyed representation unchanged.
+	if (coder.allowsKeyedCoding) {
+		[coder encodeObject:_calendarFormat forKey:@"DCMCalendarFormat"];
+		[coder encodeObject:_timeZone forKey:@"DCMTimeZone"];
+		[coder encodeObject:queryString forKey:@"DCMQueryString"];
+		[coder encodeBool:isQuery forKey:@"DCMIsQuery"];
+	}
+}
+
+- (NSTimeInterval)timeIntervalSinceReferenceDate
+{
+	return _timeIntervalSinceReferenceDate;
+}
+
+- (id)initWithString:(NSString *)description calendarFormat:(NSString *)format
+{
+	return [self initWithString:description calendarFormat:format microseconds:0];
+}
+
+- (id) initWithString:(NSString *)description calendarFormat:(NSString *)format microseconds: (unsigned long) usecs
+{
+	NSDate *date = [DCMDateFormatter(format, nil) dateFromString:description];
+	if (date == nil) {
+		[self release];
+		return nil;
+	}
+
+	self = [self initWithTimeIntervalSinceReferenceDate:date.timeIntervalSinceReferenceDate + ((NSTimeInterval)usecs / 1e6)];
+	if (self)
+		_calendarFormat = [format copy];
+	return self;
+}
+
+- (id)initWithYear:(NSInteger)year month:(NSUInteger)month day:(NSUInteger)day hour:(NSUInteger)hour minute:(NSUInteger)minute second:(NSUInteger)second timeZone:(NSTimeZone *)timeZone
+{
+	NSDateComponents *components = [[[NSDateComponents alloc] init] autorelease];
+	components.year = year;
+	components.month = month;
+	components.day = day;
+	components.hour = hour;
+	components.minute = minute;
+	components.second = second;
+	components.timeZone = timeZone ?: [NSTimeZone defaultTimeZone];
+	NSCalendar *calendar = [[[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian] autorelease];
+	calendar.timeZone = components.timeZone;
+	NSDate *date = [calendar dateFromComponents:components];
+	if (date == nil) {
+		[self release];
+		return nil;
+	}
+
+	self = [self initWithTimeIntervalSinceReferenceDate:date.timeIntervalSinceReferenceDate];
+	if (self)
+		[self setTimeZone:components.timeZone];
+	return self;
+}
+
+- (id)copyWithZone:(NSZone *)zone
+{
+	DCMCalendarDate *date = [[[self class] allocWithZone:zone] initWithTimeIntervalSinceReferenceDate:self.timeIntervalSinceReferenceDate];
+	date->_calendarFormat = [_calendarFormat copy];
+	[date setTimeZone:_timeZone];
+	date->isQuery = isQuery;
+	date->queryString = [queryString copy];
 	return date;
+}
+
+- (NSString *)calendarFormat { return _calendarFormat; }
+
+- (void)setCalendarFormat:(NSString *)format
+{
+	if (_calendarFormat == format)
+		return;
+	[_calendarFormat release];
+	_calendarFormat = [format copy];
+}
+
+- (NSTimeZone *)timeZone { return _timeZone; }
+
+- (void)setTimeZone:(NSTimeZone *)timeZone
+{
+	if (_timeZone == timeZone)
+		return;
+	[_timeZone release];
+	_timeZone = [timeZone ?: [NSTimeZone defaultTimeZone] retain];
+}
+
+- (NSDateComponents *)dateComponents
+{
+	NSCalendar *calendar = [[[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian] autorelease];
+	calendar.timeZone = self.timeZone;
+	return [calendar components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay | NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond) fromDate:self];
+}
+
+- (NSInteger)yearOfCommonEra { return self.dateComponents.year; }
+- (NSInteger)monthOfYear { return self.dateComponents.month; }
+- (NSInteger)dayOfMonth { return self.dateComponents.day; }
+- (NSInteger)hourOfDay { return self.dateComponents.hour; }
+- (NSInteger)minuteOfHour { return self.dateComponents.minute; }
+- (NSInteger)secondOfMinute { return self.dateComponents.second; }
+
+- (NSString *)descriptionWithCalendarFormat:(NSString *)format
+{
+	return [DCMDateFormatter(format, self.timeZone) stringFromDate:self];
 }
 
 - (NSString *)dateString{
@@ -329,6 +504,8 @@
 }
 
 - (void)dealloc{
+	[_calendarFormat release];
+	[_timeZone release];
 	[queryString release];
 	[super dealloc];
 }
@@ -351,18 +528,6 @@
 		return [self timeString];
     
 	return [super description];
-}
-
-- (NSString *)descriptionWithLocale:(id)localeDictionary{
-	if (isQuery)
-		return queryString;
-	if ([[self calendarFormat] isEqualToString:@"%H:%M:%S"] ||
-			[[self calendarFormat] isEqualToString:@"%H%M%S"] ||
-			[[self calendarFormat] isEqualToString:@"%H%M"] ||
-			[[self calendarFormat] isEqualToString:@"%H"]) 
-		return [self timeString];
-    
-	return [super descriptionWithLocale:localeDictionary];
 }
 
 @end

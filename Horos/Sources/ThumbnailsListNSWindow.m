@@ -63,7 +63,6 @@
     
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"UseFloatingThumbnailsList"])
     {
-        NSDisableScreenUpdates();
         
         ViewerController *v = [ViewerController frontMostDisplayed2DViewerForScreen: self.screen];
         if( v)
@@ -79,7 +78,6 @@
             [self.windowController setThumbnailsView: nil viewer: nil];
         }
         
-        NSEnableScreenUpdates();
     }
     else
         [super orderOut:sender];

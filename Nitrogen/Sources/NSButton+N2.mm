@@ -54,8 +54,8 @@
 	NSSize size = [[self cell] cellSize];
 	if (size.width > width) size.width = width;
 	
-	if ([self bezelStyle] == NSRecessedBezelStyle) {
-        if ([[self cell] controlSize] == NSMiniControlSize) size.height -= 4;
+	if ([self bezelStyle] == NSBezelStyleRecessed) {
+        if ([[self cell] controlSize] == NSControlSizeMini) size.height -= 4;
     }
 	
 	return n2::ceil(size);

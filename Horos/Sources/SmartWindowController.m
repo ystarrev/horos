@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -122,7 +123,7 @@
 #pragma mark Actions
 
 - (IBAction)cancelAction:(id)sender {
-    [NSApp endSheet:self.window returnCode:NSRunAbortedResponse];
+    [NSApp endSheet:self.window returnCode:NSModalResponseAbort];
     
     [BrowserController currentBrowser].testPredicate = nil;
     [[BrowserController currentBrowser] outlineViewRefresh];;
@@ -168,11 +169,11 @@
         
         NSString* message = NSLocalizedString(@"This filter works: the result is now displayed in the Database Window.", nil);
         
-        NSRunInformationalAlertPanel( NSLocalizedString(@"It works!",nil), @"%@", nil, nil, nil, message);
+        HorosPresentInformationalAlert( NSLocalizedString(@"It works!",nil), @"%@", nil, nil, nil, message);
     }
     @catch (NSException* e) {
 //        N2LogExceptionWithStackTrace(e);
-        NSRunCriticalAlertPanel( NSLocalizedString(@"Error",nil), @"%@", nil, nil, nil, [NSString stringWithFormat: NSLocalizedString(@"This filter is NOT working: %@", nil), e]);
+        HorosPresentCriticalAlert( NSLocalizedString(@"Error",nil), @"%@", nil, nil, nil, [NSString stringWithFormat: NSLocalizedString(@"This filter is NOT working: %@", nil), e]);
     }
 }
 

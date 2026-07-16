@@ -44,9 +44,9 @@
 
 - (id)initWithContentRect:(NSRect)contentRect styleMask:(NSUInteger)aStyle backing:(NSBackingStoreType)bufferingType defer:(BOOL)flag
 {	
-    //Call NSWindow's version of this function, but pass in the all-important value of NSBorderlessWindowMask
+    //Call NSWindow's version of this function, but pass in the all-important value of NSWindowStyleMaskBorderless
     //for the styleMask so that the window doesn't have a title bar
-    self = [super initWithContentRect:contentRect styleMask:NSBorderlessWindowMask backing:NSBackingStoreBuffered defer:NO];
+    self = [super initWithContentRect:contentRect styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
     //Set the background color to clear so that (along with the setOpaque call below) we can see through the parts
     //of the window that we're not drawing into
     [self setBackgroundColor:[NSColor clearColor]];

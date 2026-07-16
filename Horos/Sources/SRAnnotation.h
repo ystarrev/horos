@@ -62,6 +62,12 @@ typedef char DSRDocument;
  */
 + (NSData *) roiFromDICOM:(NSString *)path;
 
+/** Reads the original unkeyed ROI archive stored in Horos/OsiriX SR files. */
++ (NSArray *)unarchiveROIsFromCompatibilityData:(NSData *)data;
+
+/** Produces the original unkeyed ROI archive required by pre-modern Horos. */
++ (NSData *)archiveROIsForCompatibility:(NSArray *)rois;
+
 /** Creates a DICOM SR from an array of ROIs
  * @param rois Array of ROI to archive
  * @param path Path to file 

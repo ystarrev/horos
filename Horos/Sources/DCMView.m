@@ -1,3 +1,6 @@
+#import "HorosFilePanelContentTypes.h"
+#import "HorosUnkeyedArchiveCompatibility.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -756,7 +759,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 //		for( NSScreen *s in screens)
 //		{
 //			NSWindow *newWindow = [[[NSWindow alloc] initWithContentRect: [s visibleFrame]
-//															  styleMask: NSBorderlessWindowMask
+//															  styleMask: NSWindowStyleMaskBorderless
 //																backing: NSBackingStoreBuffered
 //																  defer: NO
 //																 screen: s] autorelease];
@@ -1041,7 +1044,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         
         //	r = NSMakeRect( 0, 0, [im size].width, [im size].height);
         
-        //	NSWindow	*pwindow = [[NSWindow alloc]  initWithContentRect: r styleMask: NSBorderlessWindowMask backing: NSBackingStoreNonretained defer: NO];
+        //	NSWindow	*pwindow = [[NSWindow alloc]  initWithContentRect: r styleMask: NSWindowStyleMaskBorderless backing: NSBackingStoreBuffered defer: NO];
         
         //	[pwindow setContentView: imageView];
         
@@ -1320,7 +1323,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     
     for( NSString *path in filenames)
     {
-        NSMutableArray*    roiArray = [NSUnarchiver unarchiveObjectWithFile: path];
+        NSMutableArray* roiArray = HorosUnarchiveUnkeyedObjectFromFile(path);
         
         for( id loopItem1 in roiArray)
         {
@@ -1422,18 +1425,18 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     if ([selectedROIs count] > 0)
     {
         [panel setCanSelectHiddenExtension:NO];
-        panel.allowedFileTypes = @[@"roi"];
+        panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"roi"]);
         panel.nameFieldStringValue = [[selectedROIs objectAtIndex:0] name];
         
         [panel beginWithCompletionHandler:^(NSInteger result) {
-            if (result != NSFileHandlingPanelOKButton)
+            if (result != NSModalResponseOK)
                 return;
             
-            [NSArchiver archiveRootObject:selectedROIs toFile:panel.URL.path];
+            HorosArchiveUnkeyedObjectToFile(selectedROIs, panel.URL.path);
         }];
     }
     else
-        NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Save Error",nil), NSLocalizedString(@"No ROI(s) selected to save!",nil) , NSLocalizedString(@"OK",nil), nil, nil);
+        HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Save Error",nil), NSLocalizedString(@"No ROI(s) selected to save!",nil) , NSLocalizedString(@"OK",nil), nil, nil);
 }
 
 - (void) roiLoadFromXML: (NSDictionary *) xml
@@ -1544,7 +1547,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     {
         [[self windowController] addToUndoQueue:@"roi"];
         
-        NSMutableArray*	roiArray = [NSUnarchiver unarchiveObjectWithData: archived_data];
+        NSMutableArray *roiArray = HorosUnarchiveUnkeyedObject(archived_data);
         
         // Unselect all ROIs
         for( ROI *r in curRoiList) [r setROIMode: ROI_sleep];
@@ -1614,12 +1617,12 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         
         im = [self nsimage: NO allViewers: [sender tag]];
         
-        [pb setData: [[NSBitmapImageRep imageRepWithData: [im TIFFRepresentation]] representationUsingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]] forType:NSPasteboardTypeTIFF];
+        [pb setData: [[NSBitmapImageRep imageRepWithData: [im TIFFRepresentation]] representationUsingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]] forType:NSPasteboardTypeTIFF];
     }
     else
     {
         [pb declareTypes:[NSArray arrayWithObjects:@"ROIObject", NSPasteboardTypeString, nil] owner:nil];
-        [pb setData: [NSArchiver archivedDataWithRootObject: roiSelectedArray] forType:@"ROIObject"];
+        [pb setData:HorosArchiveUnkeyedObject(roiSelectedArray) forType:@"ROIObject"];
         
         NSMutableString *r = [NSMutableString string];
         
@@ -1948,7 +1951,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     int clickCount = 1;
     @try
     {
-        if( [event type] ==	NSLeftMouseDown || [event type] ==	NSRightMouseDown || [event type] ==	NSLeftMouseUp || [event type] == NSRightMouseUp)
+        if( [event type] ==	NSEventTypeLeftMouseDown || [event type] ==	NSEventTypeRightMouseDown || [event type] ==	NSEventTypeLeftMouseUp || [event type] == NSEventTypeRightMouseUp)
             clickCount = [event clickCount];
     }
     @catch (NSException * e)
@@ -1966,7 +1969,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             break;
             
         case tZoom:
-            if( [event type] != NSKeyDown)
+            if( [event type] != NSEventTypeKeyDown)
             {
                 if( clickCount == 2)
                 {
@@ -1985,7 +1988,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             break;
             
         case tRotate:
-            if( [event type] != NSKeyDown)
+            if( [event type] != NSEventTypeKeyDown)
             {
                 if( clickCount == 2 && gClickCountSet == NO && isKeyView == YES && [[self window] isKeyWindow] == YES)
                 {
@@ -1993,8 +1996,8 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     
                     float rot = [self rotation];
                     
-                    if ([event modifierFlags] & NSAlternateKeyMask) rot -= 180;		// -> 180
-                    else if ([event modifierFlags] & NSShiftKeyMask) rot -= 90;	// -> 90
+                    if ([event modifierFlags] & NSEventModifierFlagOption) rot -= 180;		// -> 180
+                    else if ([event modifierFlags] & NSEventModifierFlagShift) rot -= 90;	// -> 90
                     else rot += 90;	// -> 90
                     
                     self.rotation = rot;
@@ -2837,13 +2840,13 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         }
         else if (c == NSLeftArrowFunctionKey)
         {
-            if (([event modifierFlags] & NSCommandKeyMask))
+            if (([event modifierFlags] & NSEventModifierFlagCommand))
             {
                 [super keyDown:event];
             }
             else
             {
-                if( [event modifierFlags]  & NSControlKeyMask)
+                if( [event modifierFlags]  & NSEventModifierFlagControl)
                 {
                     inc = - self.curDCM.stack;
                     curImage += inc;
@@ -2854,7 +2857,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 }
                 else
                 {
-                    if( [event modifierFlags]  & NSAlternateKeyMask) [[self windowController] setKeyImage:self];
+                    if( [event modifierFlags]  & NSEventModifierFlagOption) [[self windowController] setKeyImage:self];
                     inc = -_imageRows * _imageColumns;
                     curImage -= _imageRows * _imageColumns;
                     
@@ -2866,13 +2869,13 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         }
         else if(c ==  NSRightArrowFunctionKey)
         {
-            if (([event modifierFlags] & NSCommandKeyMask))
+            if (([event modifierFlags] & NSEventModifierFlagCommand))
             {
                 [super keyDown:event];
             }
             else
             {
-                if( [event modifierFlags]  & NSControlKeyMask)
+                if( [event modifierFlags]  & NSEventModifierFlagControl)
                 {
                     inc = self.curDCM.stack;
                     curImage += inc;
@@ -2883,7 +2886,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 }
                 else
                 {
-                    if( [event modifierFlags]  & NSAlternateKeyMask) [[self windowController] setKeyImage:self];
+                    if( [event modifierFlags]  & NSEventModifierFlagOption) [[self windowController] setKeyImage:self];
                     inc = _imageRows * _imageColumns;
                     curImage += _imageRows * _imageColumns;
                     
@@ -3223,7 +3226,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         NSUInteger modifiers = [event modifierFlags];
         BOOL update = NO;
         
-        if ((modifiers & (NSCommandKeyMask | NSShiftKeyMask)) == (NSCommandKeyMask | NSShiftKeyMask))
+        if ((modifiers & (NSEventModifierFlagCommand | NSEventModifierFlagShift)) == (NSEventModifierFlagCommand | NSEventModifierFlagShift))
         {
             if (suppress_labels == NO) update = YES;
             suppress_labels = YES;
@@ -3238,11 +3241,11 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         
         BOOL cLarge = showDescriptionInLarge;
         showDescriptionInLarge = NO;
-        if( modifiers & NSControlKeyMask)
+        if( modifiers & NSEventModifierFlagControl)
         {
-            if(modifiers & NSCommandKeyMask) {}
-            else if(modifiers & NSShiftKeyMask) {}
-            else if(modifiers & NSAlternateKeyMask) {}
+            if(modifiers & NSEventModifierFlagCommand) {}
+            else if(modifiers & NSEventModifierFlagShift) {}
+            else if(modifiers & NSEventModifierFlagOption) {}
             else
                 showDescriptionInLarge = YES;
         }
@@ -3253,7 +3256,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             [[self windowController] showCurrentThumbnail: self];
         }
         
-        //		if( (modifiers & NSControlKeyMask) && (modifiers & NSAlternateKeyMask) && (modifiers & NSCommandKeyMask))
+        //		if( (modifiers & NSEventModifierFlagControl) && (modifiers & NSEventModifierFlagOption) && (modifiers & NSEventModifierFlagCommand))
         //		{
         //			for( ViewerController *v in [ViewerController get2DViewers])
         //			{
@@ -3272,9 +3275,9 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         if( [self clickInROI: tempPt])
             roiHit = YES;
     }
-    else if( ( [event modifierFlags] & NSShiftKeyMask) && !([event modifierFlags] & NSAlternateKeyMask)  && !([event modifierFlags] & NSCommandKeyMask)  && !([event modifierFlags] & NSControlKeyMask) && mouseDragging == NO)
+    else if( ( [event modifierFlags] & NSEventModifierFlagShift) && !([event modifierFlags] & NSEventModifierFlagOption)  && !([event modifierFlags] & NSEventModifierFlagCommand)  && !([event modifierFlags] & NSEventModifierFlagControl) && mouseDragging == NO)
     {
-        if( [event type] != NSLeftMouseDragged && [event type] != NSLeftMouseDown)
+        if( [event type] != NSEventTypeLeftMouseDragged && [event type] != NSEventTypeLeftMouseDown)
         {
             [self computeMagnifyLens: NSMakePoint( mouseXPos, mouseYPos)];
 #ifdef new_loupe
@@ -3314,12 +3317,12 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     
     // If caplock is on changes to scale, rotation, zoom, ww/wl will apply only to the current image
     BOOL modifyImageOnly = NO;
-    if ([event modifierFlags] & NSAlphaShiftKeyMask)
+    if ([event modifierFlags] & NSEventModifierFlagCapsLock)
         modifyImageOnly = YES;
     
     if( dcmPixList)
     {
-        if ( pluginOverridesMouse && ( [event modifierFlags] & NSControlKeyMask ) )
+        if ( pluginOverridesMouse && ( [event modifierFlags] & NSEventModifierFlagControl ) )
         {  // Simulate Right Mouse Button action
             [nc postNotificationName: OsirixRightMouseUpNotification object: self userInfo: userInfo];
             return;
@@ -3749,11 +3752,11 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 {
                     mouseOnImage = YES;
                     
-                    if( (modifierFlags & NSShiftKeyMask) && (modifierFlags & NSControlKeyMask) && mouseDragging == NO)
+                    if( (modifierFlags & NSEventModifierFlagShift) && (modifierFlags & NSEventModifierFlagControl) && mouseDragging == NO)
                     {
                         [self sync3DPosition];
                     }
-                    else if( (modifierFlags & (NSShiftKeyMask|NSCommandKeyMask|NSControlKeyMask|NSAlternateKeyMask)) == NSShiftKeyMask && mouseDragging == NO)
+                    else if( (modifierFlags & (NSEventModifierFlagShift|NSEventModifierFlagCommand|NSEventModifierFlagControl|NSEventModifierFlagOption)) == NSEventModifierFlagShift && mouseDragging == NO)
                     {
                         if( [self roiTool: currentTool] == NO)
                         {
@@ -3973,13 +3976,13 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 {
     ToolMode tool;
     
-    if( [event type] == NSRightMouseDown || [event type] == NSRightMouseDragged) tool = currentToolRight;
-    else if( [event type] == NSOtherMouseDown || [event type] == NSOtherMouseDragged) tool = tTranslate;
+    if( [event type] == NSEventTypeRightMouseDown || [event type] == NSEventTypeRightMouseDragged) tool = currentToolRight;
+    else if( [event type] == NSEventTypeOtherMouseDown || [event type] == NSEventTypeOtherMouseDragged) tool = tTranslate;
     else tool = currentTool;
     
-    if (([event modifierFlags] & NSCommandKeyMask))  tool = tTranslate;
-    if (([event modifierFlags] & (NSShiftKeyMask|NSAlternateKeyMask)) == NSAlternateKeyMask)  tool = tWL;
-    if (([event modifierFlags] & NSControlKeyMask) && ([event modifierFlags] & NSAlternateKeyMask))
+    if (([event modifierFlags] & NSEventModifierFlagCommand))  tool = tTranslate;
+    if (([event modifierFlags] & (NSEventModifierFlagShift|NSEventModifierFlagOption)) == NSEventModifierFlagOption)  tool = tWL;
+    if (([event modifierFlags] & NSEventModifierFlagControl) && ([event modifierFlags] & NSEventModifierFlagOption))
     {
         if( blendingView) tool = tWLBlended;
         else tool = tWL;
@@ -3987,14 +3990,14 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     
     if( [self roiTool:currentTool] != YES && currentTool != tROISelector)   // Not a ROI TOOL !
     {
-        if (([event modifierFlags] & NSCommandKeyMask) && ([event modifierFlags] & NSAlternateKeyMask))  tool = tRotate;
-        if (([event modifierFlags] & NSShiftKeyMask))  tool = tZoom;
+        if (([event modifierFlags] & NSEventModifierFlagCommand) && ([event modifierFlags] & NSEventModifierFlagOption))  tool = tRotate;
+        if (([event modifierFlags] & NSEventModifierFlagShift))  tool = tZoom;
     }
     else
     {
-        if (([event modifierFlags] & NSCommandKeyMask) && ([event modifierFlags] & NSAlternateKeyMask))  tool = tRotate;
-        // 		if (([event modifierFlags] & NSCommandKeyMask) && ([event modifierFlags] & NSAlternateKeyMask)) tool = currentTool;
-        //		if (([event modifierFlags] & NSCommandKeyMask)) tool = currentTool;
+        if (([event modifierFlags] & NSEventModifierFlagCommand) && ([event modifierFlags] & NSEventModifierFlagOption))  tool = tRotate;
+        // 		if (([event modifierFlags] & NSEventModifierFlagCommand) && ([event modifierFlags] & NSEventModifierFlagOption)) tool = currentTool;
+        //		if (([event modifierFlags] & NSEventModifierFlagCommand)) tool = currentTool;
     }
     
     return tool;
@@ -4203,9 +4206,9 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         if( [[self windowController] windowWillClose]) return;
     }
     
-    if( [self is2DViewer] == YES && [event type] == NSLeftMouseDown)
+    if( [self is2DViewer] == YES && [event type] == NSEventTypeLeftMouseDown)
     {
-        if( ([event modifierFlags] & NSShiftKeyMask) == 0 && ([event modifierFlags] & NSControlKeyMask) == 0 && ([event modifierFlags] & NSAlternateKeyMask) == 0 && ([event modifierFlags] & NSCommandKeyMask) == 0)
+        if( ([event modifierFlags] & NSEventModifierFlagShift) == 0 && ([event modifierFlags] & NSEventModifierFlagControl) == 0 && ([event modifierFlags] & NSEventModifierFlagOption) == 0 && ([event modifierFlags] & NSEventModifierFlagCommand) == 0)
         {
             NSPoint tempPt = [[[event window] contentView] convertPoint: [event locationInWindow] toView:self];
             tempPt = [self ConvertFromNSView2GL:tempPt];
@@ -4220,7 +4223,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     if (_mouseDownTimer)
         [self deleteMouseDownTimer];
     
-    if ([event type] == NSLeftMouseDown)
+    if ([event type] == NSEventTypeLeftMouseDown)
         _mouseDownTimer = [[NSTimer scheduledTimerWithTimeInterval: self.timeIntervalForDrag target:self selector:@selector(startDrag:) userInfo: event  repeats:NO] retain];
     
     if( dcmPixList)
@@ -4275,7 +4278,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             int clickCount = 1;
             @try
             {
-                if( [event type] ==	NSLeftMouseDown || [event type] ==	NSRightMouseDown || [event type] ==	NSLeftMouseUp || [event type] == NSRightMouseUp)
+                if( [event type] ==	NSEventTypeLeftMouseDown || [event type] ==	NSEventTypeRightMouseDown || [event type] ==	NSEventTypeLeftMouseUp || [event type] == NSEventTypeRightMouseUp)
                     clickCount = [event clickCount];
             }
             @catch (NSException * e)
@@ -4290,11 +4293,11 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             {
                 [[BrowserController currentBrowser] matrixDoublePressed:nil];
             }
-            else if( clickCount == 2 && roiHit == NO && ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSCommandKeyMask) && [self actionForHotKey: @"dbl-click + cmd"])
+            else if( clickCount == 2 && roiHit == NO && ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSEventModifierFlagCommand) && [self actionForHotKey: @"dbl-click + cmd"])
             {
                 return;
             }
-            else if( clickCount == 2 && roiHit == NO && ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSAlternateKeyMask) && [self actionForHotKey: @"dbl-click + alt"])
+            else if( clickCount == 2 && roiHit == NO && ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSEventModifierFlagOption) && [self actionForHotKey: @"dbl-click + alt"])
             {
                 return;
             }
@@ -4411,7 +4414,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     
                     if( [roiArray count] == 0 || distance == 0)
                     {
-                        NSRunCriticalAlertPanel(NSLocalizedString(@"Repulsor",nil),NSLocalizedString(@"The Repulsor tool works only if ROIs (Length ROI, Opened and Closed Polygon ROI and Pencil ROI) are on the image.",nil), NSLocalizedString(@"OK",nil), nil,nil);
+                        HorosPresentCriticalAlert(NSLocalizedString(@"Repulsor",nil),NSLocalizedString(@"The Repulsor tool works only if ROIs (Length ROI, Opened and Closed Polygon ROI and Pencil ROI) are on the image.",nil), NSLocalizedString(@"OK",nil), nil,nil);
                     }
                 }
             }
@@ -4421,7 +4424,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 ROISelectorSelectedROIList = [[NSMutableArray array] retain];
                 
                 // if shift key is pressed, we need to keep track of the ROIs that were selected before the click
-                if([event modifierFlags] & NSShiftKeyMask)
+                if([event modifierFlags] & NSEventModifierFlagShift)
                 {
                     for( ROI *r in curRoiList)
                     {
@@ -4497,7 +4500,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     
                     BOOL roiFound = NO;
                     
-                    if (!(([event modifierFlags] & NSCommandKeyMask) && ([event modifierFlags] & NSShiftKeyMask)))
+                    if (!(([event modifierFlags] & NSEventModifierFlagCommand) && ([event modifierFlags] & NSEventModifierFlagShift)))
                     {
                         for( ROI *r in curRoiList)
                         {
@@ -4526,7 +4529,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                         }
                     }
                     
-                    if (([event modifierFlags] & NSShiftKeyMask) && !([event modifierFlags] & NSCommandKeyMask) )
+                    if (([event modifierFlags] & NSEventModifierFlagShift) && !([event modifierFlags] & NSEventModifierFlagCommand) )
                     {
                         if( selected != -1 )
                         {
@@ -4716,7 +4719,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                                 }
                                 
                                 // Create aliases of current ROI to the entire series
-                                if (([event modifierFlags] & NSShiftKeyMask) && !([event modifierFlags] & NSCommandKeyMask))
+                                if (([event modifierFlags] & NSEventModifierFlagShift) && !([event modifierFlags] & NSEventModifierFlagCommand))
                                 {
                                     for( int i = 0; i < [dcmRoiList count]; i++)
                                     {
@@ -4841,7 +4844,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     
     BOOL SelectWindowScrollWheel = [[NSUserDefaults standardUserDefaults] boolForKey: @"SelectWindowScrollWheel"];
     
-    if( [theEvent modifierFlags] & NSAlphaShiftKeyMask) // Caps Lock
+    if( [theEvent modifierFlags] & NSEventModifierFlagCapsLock) // Caps Lock
         SelectWindowScrollWheel = !SelectWindowScrollWheel;
     
     if( SelectWindowScrollWheel)
@@ -4882,7 +4885,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             
             if( fabs(deltaY) * 2.0f >  fabs( deltaX) )
             {
-                if( [theEvent modifierFlags]  & NSCommandKeyMask)
+                if( [theEvent modifierFlags]  & NSEventModifierFlagCommand)
                 {
                     if( [self is2DViewer] && blendingView)
                     {
@@ -4892,7 +4895,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                         [self setBlendingFactor: blendingFactor];
                     }
                 }
-                else if( [theEvent modifierFlags]  & NSAlternateKeyMask)
+                else if( [theEvent modifierFlags]  & NSEventModifierFlagOption)
                 {
                     if( [self is2DViewer] && [[self windowController] maxMovieIndex] > 1)
                     {
@@ -4919,7 +4922,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                         [[self windowController] setMovieIndex: change];
                     }
                 }
-                else if( [theEvent modifierFlags]  & NSShiftKeyMask)
+                else if( [theEvent modifierFlags]  & NSEventModifierFlagShift)
                 {
                     float change = reverseScrollWheel * deltaY / 2.5f;
                     
@@ -5062,7 +5065,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         
         @try
         {
-            if( [event type] ==	NSLeftMouseDown || [event type] ==	NSRightMouseDown || [event type] ==	NSLeftMouseUp || [event type] == NSRightMouseUp)
+            if( [event type] ==	NSEventTypeLeftMouseDown || [event type] ==	NSEventTypeRightMouseDown || [event type] ==	NSEventTypeLeftMouseUp || [event type] == NSEventTypeRightMouseUp)
                 clickCount = [event clickCount];
         }
         @catch (NSException * e)
@@ -5117,7 +5120,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     NSPoint contextualMenuWhere = [theEvent locationInWindow]; 	//JF20070103 WindowAnchored ctrl-clickPoint registered
     contextualMenuInWindowPosX = contextualMenuWhere.x;
     contextualMenuInWindowPosY = contextualMenuWhere.y;
-    if (([theEvent modifierFlags] & NSControlKeyMask) && ([theEvent modifierFlags] & NSAlternateKeyMask)) return nil;
+    if (([theEvent modifierFlags] & NSEventModifierFlagControl) && ([theEvent modifierFlags] & NSEventModifierFlagOption)) return nil;
     return [self menu];
 }
 
@@ -5298,7 +5301,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         NSPoint current = [self currentPointInView:event];
         
         // Command and Alternate rotate ROI
-        if (([event modifierFlags] & NSCommandKeyMask) && ([event modifierFlags] & NSAlternateKeyMask))
+        if (([event modifierFlags] & NSEventModifierFlagCommand) && ([event modifierFlags] & NSEventModifierFlagOption))
         {
             if( !mouseDraggedForROIUndo) {
                 mouseDraggedForROIUndo = YES;
@@ -5322,7 +5325,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             }
         }
         // Command and Shift scale
-        else if (([event modifierFlags] & NSCommandKeyMask) && !([event modifierFlags] & NSShiftKeyMask))
+        else if (([event modifierFlags] & NSEventModifierFlagCommand) && !([event modifierFlags] & NSEventModifierFlagShift))
         {
             if( !mouseDraggedForROIUndo) {
                 mouseDraggedForROIUndo = YES;
@@ -5998,7 +6001,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         
         if(intersected)
         {
-            if([event modifierFlags] & NSShiftKeyMask) // invert the mode: selected->sleep, sleep->selected
+            if([event modifierFlags] & NSEventModifierFlagShift) // invert the mode: selected->sleep, sleep->selected
             {
                 long mode = [roi ROImode];
                 if(mode==ROI_sleep) mode=ROI_selected;
@@ -6467,7 +6470,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     NSOpenGLPixelFormat* pixFmt = [[[NSOpenGLPixelFormat alloc] initWithAttributes:attrs] autorelease];
     if ( !pixFmt )
     {
-        //        NSRunCriticalAlertPanel(NSLocalizedString(@"OPENGL ERROR",nil), NSLocalizedString(@"Not able to run Quartz Extreme: OpenGL+Quartz. Update your video hardware!",nil), NSLocalizedString(@"OK",nil), nil, nil);
+        //        HorosPresentCriticalAlert(NSLocalizedString(@"OPENGL ERROR",nil), NSLocalizedString(@"Not able to run Quartz Extreme: OpenGL+Quartz. Update your video hardware!",nil), NSLocalizedString(@"OK",nil), nil, nil);
         //		exit(1);
     }
     self = [super initWithFrame:frameRect pixelFormat:pixFmt];
@@ -8586,7 +8589,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 {
                     if( exceptionDisplayed == NO)
                     {
-                        NSRunCriticalAlertPanel(NSLocalizedString(@"Annotations Error",nil), @"%@\r\r%@", NSLocalizedString(@"OK",nil), nil, nil, e, annot);
+                        HorosPresentCriticalAlert(NSLocalizedString(@"Annotations Error",nil), @"%@\r\r%@", NSLocalizedString(@"OK",nil), nil, nil, e, annot);
                         
                         NSLog( @"draw custom annotation exception: %@\r\r%@", e, annot);
                         
@@ -9449,7 +9452,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     if( DISPLAYCROSSREFERENCELINES)
                     {
                         //						NSUInteger modifiers = [NSEvent modifierFlags];
-                        //						if( (modifiers & NSControlKeyMask) && (modifiers & NSAlternateKeyMask) && (modifiers & NSCommandKeyMask)) // Display all references lines for all images
+                        //						if( (modifiers & NSEventModifierFlagControl) && (modifiers & NSEventModifierFlagOption) && (modifiers & NSEventModifierFlagCommand)) // Display all references lines for all images
                         //						{
                         //							for( DCMPix *o in [[ViewerController frontMostDisplayed2DViewer] pixList])
                         //							{
@@ -11135,7 +11138,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         [exportDCM setModalityAsSource: NO];
         
         f = [exportDCM writeDCMFile: nil withExportDCM: dcmExportPlugin];
-        if( f == nil) NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString(@"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        if( f == nil) HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString(@"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
         
         free( data);
     }
@@ -11162,7 +11165,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     NSString			*colorSpace;
     unsigned char		*data;
     
-    NSDisableScreenUpdates();
     
     if( stringID == nil && originalSize == NO)
     {
@@ -11314,7 +11316,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     
     free( data);
     
-    NSEnableScreenUpdates();
     
     return image;
 }
@@ -12754,7 +12755,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
 {
     if( self.curDCM.pixelSpacingX == 0 || self.curDCM.pixelSpacingY == 0)
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"Actual Size Error",nil), NSLocalizedString(@"This image is not calibrated.",nil) , NSLocalizedString( @"OK",nil), nil, nil);
+        HorosPresentCriticalAlert(NSLocalizedString(@"Actual Size Error",nil), NSLocalizedString(@"This image is not calibrated.",nil) , NSLocalizedString( @"OK",nil), nil, nil);
     }
     else
     {
@@ -12770,11 +12771,11 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             }
             else
             {
-                NSRunCriticalAlertPanel(NSLocalizedString(@"Actual Size Error",nil), NSLocalizedString(@"Displayed pixels are non-squared pixel. Images cannot be displayed at actual size.",nil) , NSLocalizedString( @"OK",nil), nil, nil);
+                HorosPresentCriticalAlert(NSLocalizedString(@"Actual Size Error",nil), NSLocalizedString(@"Displayed pixels are non-squared pixel. Images cannot be displayed at actual size.",nil) , NSLocalizedString( @"OK",nil), nil, nil);
             }
         }
         else
-            NSRunCriticalAlertPanel(NSLocalizedString(@"Actual Size Error",nil), NSLocalizedString(@"This screen doesn't support this function.",nil) , NSLocalizedString( @"OK",nil), nil, nil);
+            HorosPresentCriticalAlert(NSLocalizedString(@"Actual Size Error",nil), NSLocalizedString(@"This screen doesn't support this function.",nil) , NSLocalizedString( @"OK",nil), nil, nil);
     }
 }
 
@@ -13209,14 +13210,14 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
         _dragInProgress = YES;
         NSEvent *event = [theTimer userInfo];
         
-        NSImage *image = [self nsimage:(event.modifierFlags&NSShiftKeyMask)];
+        NSImage *image = [self nsimage:(event.modifierFlags&NSEventModifierFlagShift)];
         
         NSSize originalSize = [image size];
         float ratio = originalSize.width / originalSize.height;
         NSImage *thumbnail = [[[NSImage alloc] initWithSize: NSMakeSize(100, 100/ratio)] autorelease];
         if( [thumbnail size].width > 0 && [thumbnail size].height > 0) {
             [thumbnail lockFocus];
-            [image drawInRect: NSMakeRect(0, 0, 100, 100/ratio) fromRect: NSMakeRect(0, 0, originalSize.width, originalSize.height) operation: NSCompositeSourceOver fraction: 1.0];
+            [image drawInRect: NSMakeRect(0, 0, 100, 100/ratio) fromRect: NSMakeRect(0, 0, originalSize.width, originalSize.height) operation: NSCompositingOperationSourceOver fraction: 1.0];
             [thumbnail unlockFocus];
         }
         
@@ -13228,7 +13229,7 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
         NSEventModifierFlags mf = event.modifierFlags;
         [pbi setData:[NSData dataWithBytes:&mf length:sizeof(NSEventModifierFlags)] forType:O2PasteboardTypeEventModifierFlags];
         [pbi setDataProvider:self forTypes:@[NSPasteboardTypeString, (NSString *)kPasteboardTypeFileURLPromise]];
-        [pbi setString:(id)kUTTypeImage forType:(id)kPasteboardTypeFilePromiseContent];
+        [pbi setString:UTTypeImage.identifier forType:(id)kPasteboardTypeFilePromiseContent];
 
         NSDraggingItem* di = [[[NSDraggingItem alloc] initWithPasteboardWriter:pbi] autorelease];
         NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
@@ -13277,10 +13278,11 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
             while ([url checkResourceIsReachableAndReturnError:NULL])
                 url = [(NSURL *)urlRef URLByAppendingPathComponent:[name stringByAppendingFormat:@" (%lu).jpg", ++i]];
 
-            NSEventModifierFlags mf; [[item dataForType:O2PasteboardTypeEventModifierFlags] getBytes:&mf];
-            NSImage *image = [self nsimage:(mf&NSShiftKeyMask)];
+            NSEventModifierFlags mf;
+            [[item dataForType:O2PasteboardTypeEventModifierFlags] getBytes:&mf length:sizeof(mf)];
+            NSImage *image = [self nsimage:(mf&NSEventModifierFlagShift)];
             
-            NSData *idata = [[NSBitmapImageRep imageRepWithData:image.TIFFRepresentation] representationUsingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+            NSData *idata = [[NSBitmapImageRep imageRepWithData:image.TIFFRepresentation] representationUsingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
             [idata writeToURL:url atomically:YES];
 
             [item setString:[url absoluteString] forType:type];
@@ -13616,7 +13618,7 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
             rect.size.height -= vertMargin;
         }
         
-        [image drawInRect:rect fromRect:imageBounds operation:NSCompositeSourceOver fraction:fraction];
+        [image drawInRect:rect fromRect:imageBounds operation:NSCompositingOperationSourceOver fraction:1.0];
     }
     
     //}

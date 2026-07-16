@@ -1,3 +1,5 @@
+#import "HorosSheetPresenter.h"
+#import "HorosUnkeyedArchiveCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -829,7 +831,7 @@
 				NSPoint pt = [[aCurve objectAtIndex:j] pointValue];
 				if((int) pt.x==(int) selectedPoint.x && (float) pt.y==(float) selectedPoint.y)
 				{
-					[self setColor:[[(NSColorPanel*)[notification object] color] colorUsingColorSpaceName: NSCalibratedRGBColorSpace] forPointAtIndex:j inCurveAtIndex:i];
+					[self setColor:[[(NSColorPanel*)[notification object] color] colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]] forPointAtIndex:j inCurveAtIndex:i];
 					[self updateView];
 					return;
 				}
@@ -837,7 +839,7 @@
 			NSPoint controlPoint = [self controlPointForCurveAtIndex:i];
 			if((int) controlPoint.x==(int) selectedPoint.x && (float) controlPoint.y==(float) selectedPoint.y)
 			{
-				[self setColor:[[(NSColorPanel*)[notification object] color] colorUsingColorSpaceName: NSCalibratedRGBColorSpace] forCurveAtIndex:i];
+				[self setColor:[[(NSColorPanel*)[notification object] color] colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]] forCurveAtIndex:i];
 				[self updateView];
 				return;
 			}
@@ -847,8 +849,8 @@
 
 - (void)setColor:(NSColor*)color forPointAtIndex:(int)pointIndex inCurveAtIndex:(int)curveIndex;
 {
-	NSColor *currentColor = [[[pointColors objectAtIndex:curveIndex] objectAtIndex:pointIndex] colorUsingColorSpaceName: NSCalibratedRGBColorSpace];
-	NSColor *newColor = [color colorUsingColorSpaceName: NSCalibratedRGBColorSpace];
+	NSColor *currentColor = [[[pointColors objectAtIndex:curveIndex] objectAtIndex:pointIndex] colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
+	NSColor *newColor = [color colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
 			
 	if([currentColor redComponent]!=[newColor redComponent] || [currentColor greenComponent]!=[newColor greenComponent] || [currentColor blueComponent]!=[newColor blueComponent])
 	{
@@ -1225,7 +1227,7 @@ NSRect rect = drawingRect;
 		{
 			NSMutableArray *aCurve = [curves objectAtIndex:i];
 			
-			if(!([theEvent modifierFlags] & NSAlternateKeyMask))
+			if(!([theEvent modifierFlags] & NSEventModifierFlagOption))
 			{
 				for (j=0; j<[aCurve count]; j++)
 				{
@@ -1301,7 +1303,7 @@ NSRect rect = drawingRect;
 					NSPoint pt = [[aCurve objectAtIndex:j] pointValue];
 					pt = [transformCoordinate2View transformPoint:pt];
 					NSPoint shiftedPoint;
-					if([theEvent modifierFlags] & NSAlternateKeyMask)
+					if([theEvent modifierFlags] & NSEventModifierFlagOption)
 					{
 						shiftY = 0;
 						
@@ -1805,7 +1807,7 @@ zoomFixedPoint = [sender floatValue] / [(NSSlider *)sender maxValue] * drawingRe
 		[dict setObject:[curves objectAtIndex:curveIndex] forKey:@"curve"];
 		[dict setObject:[pointColors objectAtIndex:curveIndex] forKey:@"colors"];
 
-		NSData* curveData = [NSArchiver archivedDataWithRootObject:dict];
+		NSData *curveData = HorosArchiveUnkeyedObject(dict);
 		NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
 
 		[pasteboard declareTypes:[NSArray arrayWithObjects:@"osirixCLUTOpacityCurve", nil] owner:self];
@@ -1824,7 +1826,7 @@ zoomFixedPoint = [sender floatValue] / [(NSSlider *)sender maxValue] * drawingRe
 					NSPoint pt = [[aCurve objectAtIndex:j] pointValue];
 					if((int) selectedPoint.x==(int) pt.x && (float) selectedPoint.y==(float) pt.y)
 					{
-						NSData* colorData = [NSArchiver archivedDataWithRootObject:[[pointColors objectAtIndex:i] objectAtIndex:j]];
+						NSData *colorData = HorosArchiveUnkeyedObject([[pointColors objectAtIndex:i] objectAtIndex:j]);
 						NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
 
 						[pasteboard declareTypes:[NSArray arrayWithObjects:@"osirixCLUTOpacityPointColor", nil] owner:self];
@@ -1844,7 +1846,7 @@ zoomFixedPoint = [sender floatValue] / [(NSSlider *)sender maxValue] * drawingRe
 	if([type isEqualToString:@"osirixCLUTOpacityCurve"])
 	{
 		NSData* curveData = [pasteboard dataForType:type];
-		NSMutableDictionary *dict = [NSUnarchiver unarchiveObjectWithData:curveData];
+		NSMutableDictionary *dict = HorosUnarchiveUnkeyedObject(curveData);
 		NSMutableArray *aCurve = [dict objectForKey:@"curve"];
 		NSMutableArray *newColors = [dict objectForKey:@"colors"];
 		
@@ -1885,7 +1887,7 @@ zoomFixedPoint = [sender floatValue] / [(NSSlider *)sender maxValue] * drawingRe
 					if((int) selectedPoint.x==(int) pt.x && (float) selectedPoint.y==(float) pt.y)
 					{
 						NSData* colorData = [pasteboard dataForType:type];
-						NSColor *color = [NSUnarchiver unarchiveObjectWithData:colorData];
+						NSColor *color = HorosUnarchiveUnkeyedObject(colorData);
 						[self setColor:color forPointAtIndex:j inCurveAtIndex:i];
 						[self updateView];
 					}
@@ -1973,7 +1975,7 @@ zoomFixedPoint = [sender floatValue] / [(NSSlider *)sender maxValue] * drawingRe
 		isSaveButtonHighlighted = NO;
 		[self setNeedsDisplay:YES];
 	}
-	[NSApp beginSheet:chooseNameAndSaveWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+	HorosBeginSheet(chooseNameAndSaveWindow, [self window], self, nil, nil);
 	[chooseNameAndSaveWindow orderFront:self];
 }
 
@@ -2023,7 +2025,7 @@ zoomFixedPoint = [sender floatValue] / [(NSSlider *)sender maxValue] * drawingRe
 	{
 		if([[path pathExtension] isEqualToString:@""])
 		{
-			NSMutableDictionary *clut = [NSUnarchiver unarchiveObjectWithFile:path];
+			NSMutableDictionary *clut = HorosUnarchiveUnkeyedObjectFromFile(path);
 			return clut;
 		}
 		else
@@ -2123,7 +2125,7 @@ zoomFixedPoint = [sender floatValue] / [(NSSlider *)sender maxValue] * drawingRe
 
 - (NSDictionary*)convertColorToDict:(NSColor*)color;
 {
-	NSColor *safeColor = [color colorUsingColorSpaceName: NSCalibratedRGBColorSpace];
+	NSColor *safeColor = [color colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
 	NSMutableDictionary *dict = [NSMutableDictionary dictionary];
 	[dict setObject:[NSNumber numberWithFloat:[safeColor redComponent]] forKey:@"red"];
 	[dict setObject:[NSNumber numberWithFloat:[safeColor greenComponent]] forKey:@"green"];
@@ -2319,7 +2321,7 @@ zoomFixedPoint = [sender floatValue] / [(NSSlider *)sender maxValue] * drawingRe
 	if( [cursorImage size].width > 0 && [cursorImage size].height > 0)
 	{
 		[cursorImage lockFocus];
-		[[[NSCursor arrowCursor] image] drawAtPoint: NSMakePoint( 0, 0) fromRect: NSZeroRect operation: NSCompositeCopy fraction: 1.0];
+		[[[NSCursor arrowCursor] image] drawAtPoint: NSMakePoint( 0, 0) fromRect: NSZeroRect operation: NSCompositingOperationCopy fraction: 1.0];
 		[[[NSColor blackColor] colorWithAlphaComponent:0.5] set];
 		//NSRectFill(NSMakeRect(labelPosition.x-2, labelPosition.y+1, labelBounds.size.width+4, labelBounds.size.height+4));
 		NSRectFill(NSMakeRect(labelPosition.x-2, labelPosition.y+1, labelBounds.size.width+4, 13)); // nicer if the height stays the same when moving the mouse

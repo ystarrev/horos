@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -62,7 +63,7 @@ NSString *CopiedRowsType = @"COPIED_ROWS_TYPE";
 {
     if( _authView == nil || [_authView authorizationState] == SFAuthorizationViewUnlockedState)
     {
-        if( NSRunInformationalAlertPanel(NSLocalizedString(@"Delete", nil), NSLocalizedString(@"Are you sure you want to delete the selected item?", nil), NSLocalizedString(@"OK",nil), NSLocalizedString(@"Cancel",nil), nil) == NSAlertDefaultReturn)
+        if( HorosPresentInformationalAlert(NSLocalizedString(@"Delete", nil), NSLocalizedString(@"Are you sure you want to delete the selected item?", nil), NSLocalizedString(@"OK",nil), NSLocalizedString(@"Cancel",nil), nil) == HorosAlertResponseFirstButton)
         {
             [self removeObjectAtArrangedObjectIndex: [tableView selectedRow]];
         }

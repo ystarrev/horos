@@ -1,3 +1,4 @@
+#import "NSDate+N2.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -140,7 +141,7 @@ NSString* N2NonNullString(NSString* s) {
 }
 
 +(NSString*)dateString:(NSTimeInterval)date {
-	return [[NSDate dateWithTimeIntervalSinceReferenceDate:date] descriptionWithCalendarFormat:@"le %d.%m.%Y à %Hh%M" timeZone:NULL locale:[[NSUserDefaults standardUserDefaults] dictionaryRepresentation]];
+	return [[NSDate dateWithTimeIntervalSinceReferenceDate:date] n2_descriptionWithCalendarFormat:@"le %d.%m.%Y à %Hh%M" timeZone:NULL locale:[[NSUserDefaults standardUserDefaults] dictionaryRepresentation]];
 }
 
 -(NSString*)stringByTrimmingStartAndEnd {

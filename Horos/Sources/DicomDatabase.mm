@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -289,7 +290,7 @@ static NSUInteger HorosIncomingDirectoryPendingFileCount(NSString *incomingDirPa
 +(NSString*)baseDirPathForMode:(int)mode path:(NSString*)path {
     switch (mode) {
         case 0:
-            path = [[[NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:kUserDomain] firstObject] path];
+            path = [[[NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] firstObject] path];
 #ifdef MACAPPSTORE
             NSString* temp = [self baseDirPathForPath:path];
             BOOL isDir;
@@ -692,7 +693,7 @@ static NSString* const HorosActiveLocalDatabasePathDefaultsKey = @"HorosActiveLo
         N2LogExceptionWithStackTrace( e);
         
         if( [NSThread isMainThread])
-            NSRunAlertPanel( NSLocalizedString( @"Database", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, e.reason);
+            HorosPresentAlert( NSLocalizedString( @"Database", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, e.reason);
         
         [self autorelease];
         return nil;

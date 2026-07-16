@@ -40,7 +40,5 @@
 @interface NSScreen (N2)
 
 -(NSUInteger)screenNumber;
--(NSString*)displayName;
--(NSNumber*)serialNumber;
 
 @end

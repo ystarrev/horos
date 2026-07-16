@@ -1,5 +1,18 @@
 import AppKit
 
+enum MetalViewerAnnotationLevel: Int, CaseIterable {
+    case none = 0
+    case graphics = 1
+    case basic = 2
+    case full = 3
+
+    static let defaultsKey = "ANNOTATIONS"
+
+    static var current: MetalViewerAnnotationLevel {
+        MetalViewerAnnotationLevel(rawValue: UserDefaults.standard.integer(forKey: defaultsKey)) ?? .none
+    }
+}
+
 final class MetalViewerToolbarView: NSView {
     enum ViewerMode: Int {
         case stack2D = 0
@@ -10,7 +23,7 @@ final class MetalViewerToolbarView: NSView {
     enum WLWWCommand {
         case other
         case defaultWindow
-        case robustSeries
+        case automatic
         case fullDynamic
         case preset(String)
         case addCurrent
@@ -20,6 +33,7 @@ final class MetalViewerToolbarView: NSView {
     private let contentStack = NSStackView()
     private let viewerModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let wlwwPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let clutPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let opacityPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let syncScaleButton = NSButton(frame: .zero)
     private let leftMouseButtonRadio = NSButton(radioButtonWithTitle: NSLocalizedString("Left Button", comment: ""), target: nil, action: nil)
@@ -27,10 +41,14 @@ final class MetalViewerToolbarView: NSView {
     private var selectedMouseButton: MetalViewerMouseButton = .left
     private var mouseToolAssignments = MetalViewerMouseToolAssignments()
     private var mouseToolButtons: [MetalViewerMouseTool: NSButton] = [:]
+    private var annotationButtons: [MetalViewerAnnotationLevel: NSButton] = [:]
     var viewerModeSelectionHandler: ((ViewerMode) -> Void)?
     var wlwwSelectionHandler: ((WLWWCommand) -> Void)?
+    var clutSelectionHandler: ((String) -> Void)?
+    var opacitySelectionHandler: ((String) -> Void)?
     var mouseToolSelectionHandler: ((MetalViewerMouseToolAssignments) -> Void)?
     var syncScaleSelectionHandler: ((Bool) -> Void)?
+    var annotationLevelSelectionHandler: ((MetalViewerAnnotationLevel) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -60,7 +78,7 @@ final class MetalViewerToolbarView: NSView {
         }
 
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 84),
+            heightAnchor.constraint(equalToConstant: 100),
 
             contentStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             contentStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
@@ -86,7 +104,6 @@ final class MetalViewerToolbarView: NSView {
     ) {
         wlwwPopup.removeAllItems()
         let normalizedModality = modality.uppercased()
-        let isMR = normalizedModality == "MR"
 
         func addItem(_ title: String, command: WLWWCommand?, state: NSControl.StateValue = .off) {
             let item = NSMenuItem(title: title, action: #selector(wlwwSelectionDidChange(_:)), keyEquivalent: "")
@@ -98,9 +115,7 @@ final class MetalViewerToolbarView: NSView {
 
         addItem(NSLocalizedString("Other", comment: ""), command: .other, state: selectedTitle == NSLocalizedString("Other", comment: "") ? .on : .off)
         addItem(NSLocalizedString("Default WL & WW", comment: ""), command: .defaultWindow, state: selectedTitle == NSLocalizedString("Default WL & WW", comment: "") ? .on : .off)
-        if isMR {
-            addItem(NSLocalizedString("Robust MRI series", comment: ""), command: .robustSeries, state: selectedTitle == NSLocalizedString("Robust MRI series", comment: "") ? .on : .off)
-        }
+        addItem(NSLocalizedString("Auto", comment: ""), command: .automatic, state: selectedTitle == NSLocalizedString("Auto", comment: "") ? .on : .off)
         addItem(NSLocalizedString("Full dynamic", comment: ""), command: .fullDynamic, state: selectedTitle == NSLocalizedString("Full dynamic", comment: "") ? .on : .off)
         wlwwPopup.menu?.addItem(.separator())
 
@@ -138,6 +153,34 @@ final class MetalViewerToolbarView: NSView {
         }
     }
 
+    func reloadCLUTMenu(selectedTitle: String = NSLocalizedString("No CLUT", comment: "")) {
+        let noCLUT = NSLocalizedString("No CLUT", comment: "")
+        let presetNames = (UserDefaults.standard.dictionary(forKey: "CLUT")?.keys.map { $0 } ?? [])
+            .filter { $0 != noCLUT }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        reloadTransferMenu(
+            clutPopup,
+            defaultTitle: noCLUT,
+            presetNames: presetNames,
+            selectedTitle: selectedTitle,
+            action: #selector(clutSelectionDidChange(_:))
+        )
+    }
+
+    func reloadOpacityMenu(selectedTitle: String = NSLocalizedString("Linear Table", comment: "")) {
+        let linearTable = NSLocalizedString("Linear Table", comment: "")
+        let presetNames = (UserDefaults.standard.dictionary(forKey: "OPACITY")?.keys.map { $0 } ?? [])
+            .filter { $0 != linearTable }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        reloadTransferMenu(
+            opacityPopup,
+            defaultTitle: linearTable,
+            presetNames: presetNames,
+            selectedTitle: selectedTitle,
+            action: #selector(opacitySelectionDidChange(_:))
+        )
+    }
+
     func selectViewerMode(_ mode: ViewerMode) {
         viewerModePopup.selectItem(withTag: mode.rawValue)
     }
@@ -153,10 +196,16 @@ final class MetalViewerToolbarView: NSView {
         updateSyncScaleButtonImage()
     }
 
+    func selectAnnotationLevel(_ level: MetalViewerAnnotationLevel) {
+        for (buttonLevel, button) in annotationButtons {
+            button.state = buttonLevel == level ? .on : .off
+        }
+    }
+
     private func makeAnnotationsContent() -> NSView {
         let grid = NSGridView(views: [
-            [makeToolbarRadio("None", selected: false), makeToolbarRadio("Basic", selected: false)],
-            [makeToolbarRadio("Graphic", selected: false), makeToolbarRadio("Full", selected: true)],
+            [makeAnnotationRadio("None", level: .none), makeAnnotationRadio("Basic", level: .basic)],
+            [makeAnnotationRadio("Graphics", level: .graphics), makeAnnotationRadio("Full", level: .full)],
         ])
         grid.translatesAutoresizingMaskIntoConstraints = false
         grid.rowSpacing = 0
@@ -173,6 +222,27 @@ final class MetalViewerToolbarView: NSView {
             grid.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
         return container
+    }
+
+    private func makeAnnotationRadio(_ title: String, level: MetalViewerAnnotationLevel) -> NSButton {
+        let button = NSButton(
+            radioButtonWithTitle: NSLocalizedString(title, comment: ""),
+            target: self,
+            action: #selector(annotationRadioPressed(_:))
+        )
+        button.font = NSFont.systemFont(ofSize: 11)
+        button.tag = level.rawValue
+        button.state = level == MetalViewerAnnotationLevel.current ? .on : .off
+        annotationButtons[level] = button
+        return button
+    }
+
+    @objc private func annotationRadioPressed(_ sender: NSButton) {
+        guard let level = MetalViewerAnnotationLevel(rawValue: sender.tag) else {
+            return
+        }
+        selectAnnotationLevel(level)
+        annotationLevelSelectionHandler?(level)
     }
 
     private func makeViewerModeContent() -> NSView {
@@ -282,17 +352,23 @@ final class MetalViewerToolbarView: NSView {
         configurePopup(wlwwPopup)
         reloadWLWWMenu()
 
+        configurePopup(clutPopup)
+        reloadCLUTMenu()
+
         configurePopup(opacityPopup)
-        opacityPopup.addItems(withTitles: [NSLocalizedString("Linear Table", comment: "")])
+        reloadOpacityMenu()
 
         let rows = [
             (NSLocalizedString("WL/WW:", comment: ""), wlwwPopup),
+            (NSLocalizedString("CLUT:", comment: ""), clutPopup),
             (NSLocalizedString("Opacity:", comment: ""), opacityPopup),
         ].map { label, popup in
             let labelField = NSTextField(labelWithString: label)
             labelField.font = NSFont.systemFont(ofSize: 10)
             labelField.textColor = NSColor(calibratedWhite: 0.82, alpha: 1)
             labelField.alignment = .right
+            labelField.translatesAutoresizingMaskIntoConstraints = false
+            labelField.widthAnchor.constraint(equalToConstant: 36).isActive = true
 
             let row = NSStackView(views: [labelField, popup])
             row.orientation = .horizontal
@@ -311,8 +387,8 @@ final class MetalViewerToolbarView: NSView {
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(vertical)
         NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(equalToConstant: 176),
-            container.heightAnchor.constraint(equalToConstant: 42),
+            container.widthAnchor.constraint(equalToConstant: 180),
+            container.heightAnchor.constraint(equalToConstant: 58),
 
             vertical.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             vertical.centerYAnchor.constraint(equalTo: container.centerYAnchor),
@@ -326,6 +402,34 @@ final class MetalViewerToolbarView: NSView {
         NSLayoutConstraint.activate([
             popup.widthAnchor.constraint(equalToConstant: 140),
         ])
+    }
+
+    private func reloadTransferMenu(
+        _ popup: NSPopUpButton,
+        defaultTitle: String,
+        presetNames: [String],
+        selectedTitle: String,
+        action: Selector
+    ) {
+        popup.removeAllItems()
+
+        func addItem(_ title: String) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            popup.menu?.addItem(item)
+        }
+
+        addItem(defaultTitle)
+        if presetNames.isEmpty == false {
+            popup.menu?.addItem(.separator())
+            presetNames.forEach(addItem)
+        }
+
+        let resolvedTitle = popup.itemTitles.contains(selectedTitle) ? selectedTitle : defaultTitle
+        popup.selectItem(withTitle: resolvedTitle)
+        for item in popup.itemArray where item.isSeparatorItem == false {
+            item.state = item.title == resolvedTitle ? .on : .off
+        }
     }
 
     private func shouldShowPreset(named name: String, modality: String) -> Bool {
@@ -355,6 +459,25 @@ final class MetalViewerToolbarView: NSView {
             return
         }
         wlwwSelectionHandler?(command)
+    }
+
+    @objc
+    private func clutSelectionDidChange(_ sender: NSMenuItem) {
+        selectTransferItem(sender, in: clutPopup)
+        clutSelectionHandler?(sender.title)
+    }
+
+    @objc
+    private func opacitySelectionDidChange(_ sender: NSMenuItem) {
+        selectTransferItem(sender, in: opacityPopup)
+        opacitySelectionHandler?(sender.title)
+    }
+
+    private func selectTransferItem(_ selectedItem: NSMenuItem, in popup: NSPopUpButton) {
+        popup.select(selectedItem)
+        for item in popup.itemArray where item.isSeparatorItem == false {
+            item.state = item === selectedItem ? .on : .off
+        }
     }
 
     @objc
@@ -571,14 +694,6 @@ final class MetalViewerToolbarView: NSView {
             button.heightAnchor.constraint(equalToConstant: 34),
         ])
         return container
-    }
-
-    private func makeToolbarRadio(_ title: String, selected: Bool, size: CGFloat = 11) -> NSView {
-        let button = NSButton(radioButtonWithTitle: title, target: nil, action: nil)
-        button.font = NSFont.systemFont(ofSize: size)
-        button.state = selected ? .on : .off
-        button.setButtonType(.radio)
-        return button
     }
 
     private func toolbarImage(named name: String) -> NSImage {

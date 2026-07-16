@@ -1,3 +1,7 @@
+#import "HorosSheetPresenter.h"
+#import "NSDate+N2.h"
+#import "HorosFilePanelContentTypes.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -425,7 +429,7 @@ extern "C"
             }
         }
         
-        date = [date dateByAddingYears: 0 months: 0 days: 1 hours: 0 minutes: 0 seconds: 0];
+        date = [date n2_dateByAddingYears: 0 months: 0 days: 1 hours: 0 minutes: 0 seconds: 0];
         
         NSLog( @"%@", date);
     }
@@ -661,7 +665,7 @@ extern "C"
                 [f setObject: [filters valueForKey: @"patientID"] forKey: PatientID];
             
             if( [filters valueForKey: PatientBirthDate] && [[NSUserDefaults standardUserDefaults] boolForKey: @"allow_qr_birthdate"])
-                [f setObject: [DCMCalendarDate queryDate: [[filters valueForKey: PatientBirthDate] descriptionWithCalendarFormat:@"%Y%m%d" timeZone: nil locale:nil]] forKey: PatientBirthDate];
+                [f setObject: [DCMCalendarDate queryDate: [[filters valueForKey: PatientBirthDate] n2_descriptionWithCalendarFormat:@"%Y%m%d" timeZone: nil locale:nil]] forKey: PatientBirthDate];
             
             if( [[filters valueForKey: @"date"] intValue] != 0 && [[NSUserDefaults standardUserDefaults] boolForKey: @"allow_qr_study_date"])
             {
@@ -1041,11 +1045,7 @@ extern "C"
 	NSNumber *retrieveSameModality = [[NSUserDefaults standardUserDefaults] objectForKey: @"retrieveSameModality"];
 	NSNumber *retrieveSameDescription = [[NSUserDefaults standardUserDefaults] objectForKey: @"retrieveSameDescription"];
 
-	[NSApp beginSheet:	autoRetrieveWindow
-				modalForWindow: self.window
-				modalDelegate: nil
-				didEndSelector: nil
-				contextInfo: nil];
+	HorosBeginSheet(autoRetrieveWindow, self.window, nil, nil, nil);
 			
 	int result = [NSApp runModalForWindow: autoRetrieveWindow];
 	
@@ -1053,7 +1053,7 @@ extern "C"
 	
 	[NSApp endSheet: autoRetrieveWindow];
 	
-	if( result != NSRunStoppedResponse) // Cancel
+	if( result != NSModalResponseStop) // Cancel
 	{
         if( NumberOfPreviousStudyToRetrieve)
             [[NSUserDefaults standardUserDefaults] setObject: NumberOfPreviousStudyToRetrieve forKey: @"NumberOfPreviousStudyToRetrieve"];
@@ -1105,7 +1105,7 @@ extern "C"
 - (IBAction) deleteAutoQRInstance:(id)sender
 {
     // Delete the instance
-    if (NSRunCriticalAlertPanel( NSLocalizedString(@"Delete Auto QR Instance", nil),  NSLocalizedString(@"Are you sure you want to delete the current Auto QR Instance (%@)?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil, [[autoQRInstances objectAtIndex: currentAutoQR] objectForKey: @"instanceName"]) == NSAlertDefaultReturn)
+    if (HorosPresentCriticalAlert( NSLocalizedString(@"Delete Auto QR Instance", nil),  NSLocalizedString(@"Are you sure you want to delete the current Auto QR Instance (%@)?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil, [[autoQRInstances objectAtIndex: currentAutoQR] objectForKey: @"instanceName"]) == HorosAlertResponseFirstButton)
     {
         [self willChangeValueForKey: @"instancesMenuList"];
         
@@ -1127,7 +1127,7 @@ extern "C"
 	{
 		if( [[autoQRInstanceName stringValue] isEqualToString: @""])
 		{
-			NSRunCriticalAlertPanel( NSLocalizedString(@"Create Auto QR Instance", nil),  NSLocalizedString(@"Give a name !", nil), NSLocalizedString(@"OK", nil), nil, nil);
+			HorosPresentCriticalAlert( NSLocalizedString(@"Create Auto QR Instance", nil),  NSLocalizedString(@"Give a name !", nil), NSLocalizedString(@"OK", nil), nil, nil);
 			return;
 		}
 		
@@ -1135,7 +1135,7 @@ extern "C"
         {
             if( [[instance objectForKey: @"instanceName"] isEqualToString: [autoQRInstanceName stringValue]])
             {
-                NSRunCriticalAlertPanel( NSLocalizedString(@"Create Auto QR Instance", nil),  NSLocalizedString(@"An Auto QR Instance with the same name already exists.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                HorosPresentCriticalAlert( NSLocalizedString(@"Create Auto QR Instance", nil),  NSLocalizedString(@"An Auto QR Instance with the same name already exists.", nil), NSLocalizedString(@"OK", nil), nil, nil);
                 return;
             }
 		}
@@ -1187,13 +1187,13 @@ extern "C"
 {
     if( autoQRInstances.count >= MAXINSTANCE)
     {
-        NSRunCriticalAlertPanel( NSLocalizedString( @"Create Auto QR Instance", nil),  NSLocalizedString(@"Too many Auto QR Instances already exist.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+        HorosPresentCriticalAlert( NSLocalizedString( @"Create Auto QR Instance", nil),  NSLocalizedString(@"Too many Auto QR Instances already exist.", nil), NSLocalizedString( @"OK", nil), nil, nil);
         return;
     }
     
     [autoQRInstanceName setStringValue: @""];
     
-    [NSApp beginSheet: addAutoQRInstanceWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(addAutoQRInstanceWindow, [self window], self, nil, nil);
 }
 
 - (void) setCurrentAutoQR: (int) index
@@ -1328,7 +1328,7 @@ extern "C"
 	{
 		if( [[presetName stringValue] isEqualToString: @""])
 		{
-			NSRunCriticalAlertPanel( NSLocalizedString(@"Add Preset", nil),  NSLocalizedString(@"Give a name !", nil), NSLocalizedString(@"OK", nil), nil, nil);
+			HorosPresentCriticalAlert( NSLocalizedString(@"Add Preset", nil),  NSLocalizedString(@"Give a name !", nil), NSLocalizedString(@"OK", nil), nil, nil);
 			return;
 		}
 		
@@ -1343,7 +1343,7 @@ extern "C"
 		
 		if( [savedPresets objectForKey: psName])
 		{
-			if (NSRunCriticalAlertPanel( NSLocalizedString(@"Add Preset", nil),  NSLocalizedString(@"A Preset with the same name already exists. Should I replace it with the current one?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) != NSAlertDefaultReturn) return;
+			if (HorosPresentCriticalAlert( NSLocalizedString(@"Add Preset", nil),  NSLocalizedString(@"A Preset with the same name already exists. Should I replace it with the current one?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) != HorosAlertResponseFirstButton) return;
 		}
 		
 		NSDictionary *presets = [self savePresetInDictionaryWithDICOMNodes: [[NSUserDefaults standardUserDefaults] boolForKey: @"includeDICOMNodes"]];
@@ -1364,7 +1364,7 @@ extern "C"
 {
     [presetName setStringValue: @""];
     
-	[NSApp beginSheet: presetWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+	HorosBeginSheet(presetWindow, [self window], self, nil, nil);
 }
 
 - (void) emptyPreset:(id) sender
@@ -1554,10 +1554,10 @@ extern "C"
 
 - (void) applyPreset:(id) sender
 {
-	if([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask)
+	if([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift)
 	{
 		// Delete the Preset
-		if (NSRunCriticalAlertPanel( NSLocalizedString( @"Delete Preset", nil), NSLocalizedString(@"Are you sure you want to delete the selected Preset (%@)?", nil), NSLocalizedString( @"OK", nil), NSLocalizedString( @"Cancel", nil), nil, [sender title]) == NSAlertDefaultReturn)
+		if (HorosPresentCriticalAlert( NSLocalizedString( @"Delete Preset", nil), NSLocalizedString(@"Are you sure you want to delete the selected Preset (%@)?", nil), NSLocalizedString( @"OK", nil), NSLocalizedString( @"Cancel", nil), nil, [sender title]) == HorosAlertResponseFirstButton)
 		{
 			NSDictionary *savedPresets = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"QRPresets"];
 			
@@ -1683,7 +1683,7 @@ extern "C"
     if( somethingToDelete == NO)
     {
         if( indices.count > 0)
-            NSRunInformationalAlertPanel(NSLocalizedString(@"Delete images", nil), NSLocalizedString(@"Select a study or series with local images to delete it.", nil), NSLocalizedString(@"OK",nil), nil, nil);
+            HorosPresentInformationalAlert(NSLocalizedString(@"Delete images", nil), NSLocalizedString(@"Select a study or series with local images to delete it.", nil), NSLocalizedString(@"OK",nil), nil, nil);
     }
     else
     {
@@ -2654,7 +2654,7 @@ extern "C"
 		queryButtonPressed = YES;
 		[self queryPatientID: [item valueForKey:@"patientID"]];
 	}
-	else NSRunCriticalAlertPanel( NSLocalizedString(@"No Study Selected", nil), NSLocalizedString(@"Select a study to query all studies of this patient.", nil), NSLocalizedString(@"OK", nil), nil, nil) ;
+	else HorosPresentCriticalAlert( NSLocalizedString(@"No Study Selected", nil), NSLocalizedString(@"Select a study to query all studies of this patient.", nil), NSLocalizedString(@"OK", nil), nil, nil) ;
 }
 
 - (NSArray*) queryPatientIDwithoutGUI: (NSString*) patientID
@@ -2844,7 +2844,7 @@ extern "C"
             }
             else
             {
-                if( [[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSAlternateKeyMask)
+                if( [[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSEventModifierFlagOption)
                 {
                     NSLog( @"--- Query ALL fields");
                     queryAllFields = YES;
@@ -2903,7 +2903,7 @@ extern "C"
                     
                     if( showError && [customValue cStringUsingEncoding: [NSString encodingForDICOMCharacterSet: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"]]] == nil)
                     {
-                        if (NSRunCriticalAlertPanel( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn)
+                        if (HorosPresentCriticalAlert( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
                         {
                             [[NSUserDefaults standardUserDefaults] setObject: @"ISO_IR 192" forKey: @"STRINGENCODING"];
                             [queryManager addFilter: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"] forDescription:@"SpecificCharacterSet"];
@@ -2934,7 +2934,7 @@ extern "C"
                     
                     if( showError && [patientNameValue cStringUsingEncoding: [NSString encodingForDICOMCharacterSet: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"]]] == nil)
                     {
-                        if (NSRunCriticalAlertPanel( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn)
+                        if (HorosPresentCriticalAlert( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
                         {
                             [[NSUserDefaults standardUserDefaults] setObject: @"ISO_IR 192" forKey: @"STRINGENCODING"];
                             [queryManager addFilter: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"] forDescription:@"SpecificCharacterSet"];
@@ -2960,7 +2960,7 @@ extern "C"
                     
                     if( showError && [refPhysicianValue cStringUsingEncoding: [NSString encodingForDICOMCharacterSet: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"]]] == nil)
                     {
-                        if (NSRunCriticalAlertPanel( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn)
+                        if (HorosPresentCriticalAlert( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
                         {
                             [[NSUserDefaults standardUserDefaults] setObject: @"ISO_IR 192" forKey: @"STRINGENCODING"];
                             [queryManager addFilter: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"] forDescription:@"SpecificCharacterSet"];
@@ -2986,7 +2986,7 @@ extern "C"
                     
                     if( showError && [institutionNameValue cStringUsingEncoding: [NSString encodingForDICOMCharacterSet: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"]]] == nil)
                     {
-                        if (NSRunCriticalAlertPanel( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn)
+                        if (HorosPresentCriticalAlert( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
                         {
                             [[NSUserDefaults standardUserDefaults] setObject: @"ISO_IR 192" forKey: @"STRINGENCODING"];
                             [queryManager addFilter: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"] forDescription:@"SpecificCharacterSet"];
@@ -3012,7 +3012,7 @@ extern "C"
                     
                     if( showError && [studyStatusValue cStringUsingEncoding: [NSString encodingForDICOMCharacterSet: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"]]] == nil)
                     {
-                        if (NSRunCriticalAlertPanel( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn)
+                        if (HorosPresentCriticalAlert( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
                         {
                             [[NSUserDefaults standardUserDefaults] setObject: @"ISO_IR 192" forKey: @"STRINGENCODING"];
                             [queryManager addFilter: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"] forDescription:@"SpecificCharacterSet"];
@@ -3044,13 +3044,13 @@ extern "C"
                     }
                     
                     if( tag == 0)
-                        [queryManager addFilter: [date descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil] forDescription:currentQueryKey];
+                        [queryManager addFilter: [date n2_descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil] forDescription:currentQueryKey];
                     
                     if( tag == -1)
-                        [queryManager addFilter: [date descriptionWithCalendarFormat:@"-%Y%m%d" timeZone:nil locale:nil] forDescription:currentQueryKey];
+                        [queryManager addFilter: [date n2_descriptionWithCalendarFormat:@"-%Y%m%d" timeZone:nil locale:nil] forDescription:currentQueryKey];
                     
                     if( tag == 1)
-                        [queryManager addFilter: [date descriptionWithCalendarFormat:@"%Y%m%d-" timeZone:nil locale:nil] forDescription:currentQueryKey];
+                        [queryManager addFilter: [date n2_descriptionWithCalendarFormat:@"%Y%m%d-" timeZone:nil locale:nil] forDescription:currentQueryKey];
                     
                     queryItem = YES;
                 }
@@ -3100,7 +3100,7 @@ extern "C"
                     
                     if( showError && [studyDescriptionValue cStringUsingEncoding: [NSString encodingForDICOMCharacterSet: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"]]] == nil)
                     {
-                        if (NSRunCriticalAlertPanel( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn)
+                        if (HorosPresentCriticalAlert( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
                         {
                             [[NSUserDefaults standardUserDefaults] setObject: @"ISO_IR 192" forKey: @"STRINGENCODING"];
                             [queryManager addFilter: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"] forDescription:@"SpecificCharacterSet"];
@@ -3126,7 +3126,7 @@ extern "C"
                     
                     if( showError && [commentsValue cStringUsingEncoding: [NSString encodingForDICOMCharacterSet: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"]]] == nil)
                     {
-                        if (NSRunCriticalAlertPanel( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn)
+                        if (HorosPresentCriticalAlert( NSLocalizedString(@"Query Encoding", nil),  NSLocalizedString(@"The query cannot be encoded in current character set. Should I switch to UTF-8 (ISO_IR 192) encoding?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
                         {
                             [[NSUserDefaults standardUserDefaults] setObject: @"ISO_IR 192" forKey: @"STRINGENCODING"];
                             [queryManager addFilter: [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"] forDescription:@"SpecificCharacterSet"];
@@ -3186,7 +3186,7 @@ extern "C"
                 if( [[NSUserDefaults standardUserDefaults] boolForKey: @"allow_qr_blank_query"] == NO)
                 {
                     if( [NSThread isMainThread])
-                        NSRunCriticalAlertPanel( NSLocalizedString(@"Query Error", nil), NSLocalizedString(@"No query parameters provided. Blank query is not allowed.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                        HorosPresentCriticalAlert( NSLocalizedString(@"Query Error", nil), NSLocalizedString(@"No query parameters provided. Blank query is not allowed.", nil), NSLocalizedString(@"OK", nil), nil, nil);
                 }
                 else
                 {
@@ -3263,7 +3263,7 @@ extern "C"
 //				
 //					response = [response stringByAppendingString:NSLocalizedString(@"Connection failed to this DICOM node (c-echo failed)", nil)];
 //					
-//					NSRunCriticalAlertPanel( NSLocalizedString(@"Query Error", nil), response, NSLocalizedString(@"Continue", nil), nil, nil) ;
+//					HorosPresentCriticalAlert( NSLocalizedString(@"Query Error", nil), response, NSLocalizedString(@"Continue", nil), nil, nil) ;
 //				}
         
             
@@ -3317,7 +3317,7 @@ extern "C"
 	if( atLeastOneSource == NO && [NSThread isMainThread])
 	{
 		if( showError)
-			NSRunCriticalAlertPanel( NSLocalizedString(@"Query", nil), NSLocalizedString( @"Please select a DICOM node (check box).", nil), NSLocalizedString(@"Continue", nil), nil, nil) ;
+			HorosPresentCriticalAlert( NSLocalizedString(@"Query", nil), NSLocalizedString( @"Please select a DICOM node (check box).", nil), NSLocalizedString(@"Continue", nil), nil, nil) ;
 	}
 	
     [temporaryCFindResultArray release];
@@ -3427,11 +3427,11 @@ extern "C"
 	NSString *list = [self exportDBListOnlySelected:NO];
 	
 	NSSavePanel *panel = [NSSavePanel savePanel];
-    panel.allowedFileTypes = @[@"txt"];
+    panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"txt"]);
     panel.nameFieldStringValue = NSLocalizedString(@"Horos Database List", nil);
 		
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         [list writeToURL:panel.URL atomically:YES encoding:NSUTF8StringEncoding error:NULL];
@@ -4094,7 +4094,7 @@ extern "C"
 			if( [sendToPopup indexOfSelectedItem] != 0 && forViewing == YES)
 			{
 				if( showGUI)
-					NSRunCriticalAlertPanel(NSLocalizedString( @"DICOM Query & Retrieve",nil), NSLocalizedString( @"If you want to retrieve & view these images, change the destination to this computer ('retrieve to' menu).",nil),NSLocalizedString( @"OK",nil), nil, nil);
+					HorosPresentCriticalAlert(NSLocalizedString( @"DICOM Query & Retrieve",nil), NSLocalizedString( @"If you want to retrieve & view these images, change the destination to this computer ('retrieve to' menu).",nil),NSLocalizedString( @"OK",nil), nil, nil);
 			}
 			else
 			{
@@ -4757,7 +4757,7 @@ extern "C"
 		NSDate *later = [from laterDate: to];
 		NSDate *earlier = [from earlierDate: to];
 		
-		NSString *between = [NSString stringWithFormat:@"%@-%@", [earlier descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil], [later descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil]];
+		NSString *between = [NSString stringWithFormat:@"%@-%@", [earlier n2_descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil], [later n2_descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil]];
 		
 		*dateQueryFilter = [QueryFilter queryFilterWithObject:between ofSearchType:searchExactMatch forKey:@"StudyDate"];
 	}
@@ -4819,9 +4819,9 @@ extern "C"
                     date = [DCMCalendarDate dateWithTimeIntervalSinceNow: -60*60*hours];
                     
                     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"DICOMQueryAllowFutureQuery"])
-                        between = [NSString stringWithFormat:@"%@.000-", [[NSCalendarDate dateWithTimeIntervalSinceNow: -60*60*hours] descriptionWithCalendarFormat: @"%H%M%S"]];
+                        between = [NSString stringWithFormat:@"%@.000-", [[NSDate dateWithTimeIntervalSinceNow:-60*60*hours] n2_descriptionWithCalendarFormat:@"%H%M%S"]];
                     else
-                        between = [NSString stringWithFormat:@"%@.000-%@.000", [[NSCalendarDate dateWithTimeIntervalSinceNow: -60*60*hours] descriptionWithCalendarFormat: @"%H%M%S"], [[NSCalendarDate date] descriptionWithCalendarFormat: @"%H%M%S"]];
+                        between = [NSString stringWithFormat:@"%@.000-%@.000", [[NSDate dateWithTimeIntervalSinceNow:-60*60*hours] n2_descriptionWithCalendarFormat:@"%H%M%S"], [[NSDate date] n2_descriptionWithCalendarFormat:@"%H%M%S"]];
                     
                     *timeQueryFilter = [QueryFilter queryFilterWithObject:between ofSearchType:searchExactMatch  forKey:@"StudyTime"];
                 }
@@ -4834,9 +4834,9 @@ extern "C"
                     date = [DCMCalendarDate dateWithTimeIntervalSinceNow: -60*min];
                     
                     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"DICOMQueryAllowFutureQuery"])
-                        between = [NSString stringWithFormat:@"%@.000-", [[NSCalendarDate dateWithTimeIntervalSinceNow: -60*min] descriptionWithCalendarFormat: @"%H%M%S"]];
+                        between = [NSString stringWithFormat:@"%@.000-", [[NSDate dateWithTimeIntervalSinceNow:-60*min] n2_descriptionWithCalendarFormat:@"%H%M%S"]];
                     else
-                        between = [NSString stringWithFormat:@"%@.000-%@.000", [[NSCalendarDate dateWithTimeIntervalSinceNow: -60*min] descriptionWithCalendarFormat: @"%H%M%S"], [[NSCalendarDate date] descriptionWithCalendarFormat: @"%H%M%S"]];
+                        between = [NSString stringWithFormat:@"%@.000-%@.000", [[NSDate dateWithTimeIntervalSinceNow:-60*min] n2_descriptionWithCalendarFormat:@"%H%M%S"], [[NSDate date] n2_descriptionWithCalendarFormat:@"%H%M%S"]];
                     
                     *timeQueryFilter = [QueryFilter queryFilterWithObject:between ofSearchType:searchExactMatch  forKey:@"StudyTime"];
                 }
@@ -5374,7 +5374,7 @@ extern "C"
 	{
 		if( [[DCMNetServiceDelegate DICOMServersList] count] == 0)
 		{
-			NSRunCriticalAlertPanel(NSLocalizedString(@"DICOM Query & Retrieve",nil),NSLocalizedString( @"No DICOM locations available. See Preferences to add DICOM locations.",nil),NSLocalizedString( @"OK",nil), nil, nil);
+			HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Query & Retrieve",nil),NSLocalizedString( @"No DICOM locations available. See Preferences to add DICOM locations.",nil),NSLocalizedString( @"OK",nil), nil, nil);
 		}
 		
 		[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(observeDatabaseAddNotification:) name:OsirixAddToDBNotification object:nil];
@@ -5424,7 +5424,7 @@ extern "C"
 			}
 			
 			if( listenerConfigured == NO && [[AppController sharedAppController] isStoreSCPRunning] == NO)
-				NSRunCriticalAlertPanel(NSLocalizedString( @"DICOM Query & Retrieve",nil), NSLocalizedString( @"Retrieve cannot work if the DICOM Listener is not activated. See Preferences - Listener.",nil),NSLocalizedString( @"OK",nil), nil, nil);
+				HorosPresentCriticalAlert(NSLocalizedString( @"DICOM Query & Retrieve",nil), NSLocalizedString( @"Retrieve cannot work if the DICOM Listener is not activated. See Preferences - Listener.",nil),NSLocalizedString( @"OK",nil), nil, nil);
             
             if( [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepQRWindowOnTop"])
                 [[self window] setLevel: NSFloatingWindowLevel];
@@ -5573,7 +5573,7 @@ extern "C"
     if( PatientModeMatrix == nil)
         return;
 
-    [PatientModeMatrix setControlSize: NSRegularControlSize];
+    [PatientModeMatrix setControlSize: NSControlSizeRegular];
     [PatientModeMatrix setFont: [NSFont boldSystemFontOfSize: 16]];
     [PatientModeMatrix setAllowsTruncatedLabels: YES];
 
@@ -5616,9 +5616,9 @@ extern "C"
         NSButton *button = [[[NSButton alloc] initWithFrame: NSZeroRect] autorelease];
 
         [button setTitle: title];
-        [button setButtonType: NSSwitchButton];
+        [button setButtonType: NSButtonTypeSwitch];
         [button setBordered: NO];
-        [button setControlSize: NSSmallControlSize];
+        [button setControlSize: NSControlSizeSmall];
         [[button cell] setFont: [NSFont systemFontOfSize: [NSFont smallSystemFontSize]]];
         [button setTag: HorosQRModalityButtonTagBase + i];
         [button setTarget: self];
@@ -5679,7 +5679,6 @@ extern "C"
 
     NSBox *panelBox = [[[NSBox alloc] initWithFrame:NSZeroRect] autorelease];
     [panelBox setTitle: NSLocalizedString( @"Series", nil)];
-    [panelBox setBorderType: NSBezelBorder];
     [panelBox setTranslatesAutoresizingMaskIntoConstraints: NO];
     [container addSubview: panelBox];
 
@@ -5724,66 +5723,66 @@ extern "C"
 
     NSButton *expandButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
     [expandButton setTitle: NSLocalizedString( @"Expand", nil)];
-    [expandButton setButtonType: NSMomentaryPushInButton];
-    [expandButton setBezelStyle: NSRoundRectBezelStyle];
+    [expandButton setButtonType: NSButtonTypeMomentaryPushIn];
+    [expandButton setBezelStyle: NSBezelStyleRoundRect];
     [expandButton setTarget: self];
     [expandButton setAction: @selector(expandAllQueryStudies:)];
 
     NSButton *t1Button = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
     [t1Button setTitle: @"T1"];
-    [t1Button setButtonType: NSSwitchButton];
+    [t1Button setButtonType: NSButtonTypeSwitch];
     [t1Button setTag: HorosQRSeriesHighlightT1];
-    [t1Button setState: (savedSeriesFilterMask & HorosQRSeriesHighlightT1) ? NSOnState : NSOffState];
+    [t1Button setState: (savedSeriesFilterMask & HorosQRSeriesHighlightT1) ? NSControlStateValueOn : NSControlStateValueOff];
     [t1Button setTarget: self];
     [t1Button setAction: @selector(seriesHighlightFilterChanged:)];
 
     NSButton *t1GadButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
     [t1GadButton setTitle: @"T1 Gad"];
-    [t1GadButton setButtonType: NSSwitchButton];
+    [t1GadButton setButtonType: NSButtonTypeSwitch];
     [t1GadButton setTag: HorosQRSeriesHighlightT1Gad];
-    [t1GadButton setState: (savedSeriesFilterMask & HorosQRSeriesHighlightT1Gad) ? NSOnState : NSOffState];
+    [t1GadButton setState: (savedSeriesFilterMask & HorosQRSeriesHighlightT1Gad) ? NSControlStateValueOn : NSControlStateValueOff];
     [t1GadButton setTarget: self];
     [t1GadButton setAction: @selector(seriesHighlightFilterChanged:)];
 
     NSButton *t2Button = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
     [t2Button setTitle: @"T2"];
-    [t2Button setButtonType: NSSwitchButton];
+    [t2Button setButtonType: NSButtonTypeSwitch];
     [t2Button setTag: HorosQRSeriesHighlightT2];
-    [t2Button setState: (savedSeriesFilterMask & HorosQRSeriesHighlightT2) ? NSOnState : NSOffState];
+    [t2Button setState: (savedSeriesFilterMask & HorosQRSeriesHighlightT2) ? NSControlStateValueOn : NSControlStateValueOff];
     [t2Button setTarget: self];
     [t2Button setAction: @selector(seriesHighlightFilterChanged:)];
 
     NSButton *flairButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
     [flairButton setTitle: @"FLAIR"];
-    [flairButton setButtonType: NSSwitchButton];
+    [flairButton setButtonType: NSButtonTypeSwitch];
     [flairButton setTag: HorosQRSeriesHighlightFLAIR];
-    [flairButton setState: (savedSeriesFilterMask & HorosQRSeriesHighlightFLAIR) ? NSOnState : NSOffState];
+    [flairButton setState: (savedSeriesFilterMask & HorosQRSeriesHighlightFLAIR) ? NSControlStateValueOn : NSControlStateValueOff];
     [flairButton setTarget: self];
     [flairButton setAction: @selector(seriesHighlightFilterChanged:)];
 
     NSButton *flairGadButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
     [flairGadButton setTitle: @"FLAIR+Gad"];
-    [flairGadButton setButtonType: NSSwitchButton];
+    [flairGadButton setButtonType: NSButtonTypeSwitch];
     [flairGadButton setTag: HorosQRSeriesHighlightFLAIRGad];
-    [flairGadButton setState: (savedSeriesFilterMask & HorosQRSeriesHighlightFLAIRGad) ? NSOnState : NSOffState];
+    [flairGadButton setState: (savedSeriesFilterMask & HorosQRSeriesHighlightFLAIRGad) ? NSControlStateValueOn : NSControlStateValueOff];
     [flairGadButton setTarget: self];
     [flairGadButton setAction: @selector(seriesHighlightFilterChanged:)];
 
     NSButton *ignoreMPRButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
     [ignoreMPRButton setTitle: NSLocalizedString( @"Ignore MPR/RFMT", nil)];
-    [ignoreMPRButton setButtonType: NSSwitchButton];
+    [ignoreMPRButton setButtonType: NSButtonTypeSwitch];
     [ignoreMPRButton setTag: HorosQRSeriesIgnoreMPR];
-    [ignoreMPRButton setState: savedIgnoreMPR ? NSOnState : NSOffState];
+    [ignoreMPRButton setState: savedIgnoreMPR ? NSControlStateValueOn : NSControlStateValueOff];
     [ignoreMPRButton setTarget: self];
     [ignoreMPRButton setAction: @selector(seriesIgnoreMPRChanged:)];
 
     NSButton *retrieveSelectedButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
-    [retrieveSelectedButton setButtonType: NSMomentaryPushInButton];
+    [retrieveSelectedButton setButtonType: NSButtonTypeMomentaryPushIn];
     [retrieveSelectedButton setBezelStyle: NSBezelStyleFlexiblePush];
     [retrieveSelectedButton setFont: [NSFont boldSystemFontOfSize: 12]];
     [retrieveSelectedButton setKeyEquivalentModifierMask: 0];
     id retrieveSelectedCell = [retrieveSelectedButton cell];
-    [retrieveSelectedCell setAlignment: NSCenterTextAlignment];
+    [retrieveSelectedCell setAlignment: NSTextAlignmentCenter];
     [retrieveSelectedCell setWraps: YES];
     [retrieveSelectedCell setLineBreakMode: NSLineBreakByWordWrapping];
     if( [retrieveSelectedCell respondsToSelector: @selector(setUsesSingleLineMode:)])
@@ -5827,7 +5826,7 @@ extern "C"
     {
         for( id view in [modalityFilterPanel subviews])
         {
-            if( [view isKindOfClass: [NSButton class]] == NO || [view state] != NSOnState)
+            if( [view isKindOfClass: [NSButton class]] == NO || [view state] != NSControlStateValueOn)
                 continue;
 
             NSInteger index = [view tag] - HorosQRModalityButtonTagBase;
@@ -5840,7 +5839,7 @@ extern "C"
     {
         for( NSCell *cell in [modalityFilterMatrix cells])
         {
-            if( [cell state] == NSOnState && [[cell title] length] > 0)
+            if( [cell state] == NSControlStateValueOn && [[cell title] length] > 0)
                 [modalityStrings addObject: [cell title]];
         }
     }
@@ -5854,7 +5853,7 @@ extern "C"
     NSArray *titles = HorosQRModalityTitles();
 
     for( NSCell *cell in [modalityFilterMatrix cells])
-        [cell setState: [selectedModalityStrings containsObject: [cell title]] ? NSOnState : NSOffState];
+        [cell setState: [selectedModalityStrings containsObject: [cell title]] ? NSControlStateValueOn : NSControlStateValueOff];
 
     for( id view in [modalityFilterPanel subviews])
     {
@@ -5864,7 +5863,7 @@ extern "C"
         NSInteger index = [view tag] - HorosQRModalityButtonTagBase;
 
         if( index >= 0 && index < [titles count])
-            [view setState: [selectedModalityStrings containsObject: [titles objectAtIndex: index]] ? NSOnState : NSOffState];
+            [view setState: [selectedModalityStrings containsObject: [titles objectAtIndex: index]] ? NSControlStateValueOn : NSControlStateValueOff];
     }
 
     [modalityFilterMatrix setNeedsDisplay: YES];
@@ -5882,7 +5881,7 @@ extern "C"
 
     for( id view in [modalityFilterPanel subviews])
     {
-        if( [view isKindOfClass: [NSButton class]] == NO || [view state] != NSOnState)
+        if( [view isKindOfClass: [NSButton class]] == NO || [view state] != NSControlStateValueOn)
             continue;
 
         NSInteger index = [view tag] - HorosQRModalityButtonTagBase;
@@ -6107,9 +6106,9 @@ extern "C"
         NSInteger tag = [view tag];
 
         if( tag == HorosQRSeriesHighlightT1 || tag == HorosQRSeriesHighlightT1Gad || tag == HorosQRSeriesHighlightT2 || tag == HorosQRSeriesHighlightFLAIR || tag == HorosQRSeriesHighlightFLAIRGad)
-            [view setState: (savedSeriesFilterMask & tag) ? NSOnState : NSOffState];
+            [view setState: (savedSeriesFilterMask & tag) ? NSControlStateValueOn : NSControlStateValueOff];
         else if( tag == HorosQRSeriesIgnoreMPR)
-            [view setState: savedIgnoreMPR ? NSOnState : NSOffState];
+            [view setState: savedIgnoreMPR ? NSControlStateValueOn : NSControlStateValueOff];
     }
 
     seriesHighlightFilterMask = [self currentSeriesHighlightFilterMask];
@@ -6222,7 +6221,7 @@ extern "C"
 
     for( id view in [seriesSelectionPanel subviews])
     {
-        if( [view isKindOfClass: [NSButton class]] && [view state] == NSOnState)
+        if( [view isKindOfClass: [NSButton class]] && [view state] == NSControlStateValueOn)
         {
             NSInteger tag = [view tag];
 
@@ -6242,7 +6241,7 @@ extern "C"
     for( id view in [seriesSelectionPanel subviews])
     {
         if( [view isKindOfClass: [NSButton class]] && [view tag] == HorosQRSeriesIgnoreMPR)
-            return [view state] == NSOnState;
+            return [view state] == NSControlStateValueOn;
     }
 
     return YES;
@@ -6645,9 +6644,9 @@ extern "C"
 	NSButtonCell *buttonCell = [[[NSButtonCell alloc] init] autorelease];
 	[buttonCell setTarget: self];
 	[buttonCell setAction: @selector(retrieveClick:)];
-	[buttonCell setControlSize: NSMiniControlSize];
+	[buttonCell setControlSize: NSControlSizeMini];
 	[buttonCell setImage: [NSImage imageNamed:@"InArrow.tif"]];
-	[buttonCell setBezelStyle: NSRoundRectBezelStyle]; // was NSRegularSquareBezelStyle
+	[buttonCell setBezelStyle: NSBezelStyleRoundRect]; // was NSRegularSquareBezelStyle
 	[tableColumn setDataCell: buttonCell];
 
     [self configureSeriesSelectionPanel];

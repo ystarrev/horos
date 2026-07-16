@@ -391,6 +391,7 @@ final class MetalViewerPaneView: NSView {
             let mouseState: MetalImageView.MouseAnnotationState?
             let showsSliceOrientation: Bool
             let showsGantryTiltCorrectionLabel: Bool
+            let annotationLevel: MetalViewerAnnotationLevel
         }
 
         private enum TextAlign {
@@ -413,6 +414,17 @@ final class MetalViewerPaneView: NSView {
             super.draw(dirtyRect)
 
             guard let overlayState else {
+                return
+            }
+
+            guard overlayState.annotationLevel != .none else {
+                return
+            }
+
+            if overlayState.annotationLevel == .graphics {
+                if overlayState.showsSliceOrientation {
+                    drawOrientation(state: overlayState, in: bounds)
+                }
                 return
             }
 
@@ -565,6 +577,11 @@ final class MetalViewerPaneView: NSView {
                 lowerRightY -= lineHeight
             }
 
+            if state.annotationLevel == .full,
+               let patientName = patientName(for: state.pix),
+               patientName.isEmpty == false {
+                drawTopLeft(patientName)
+            }
             drawTopLeft(state.series.title)
 
             drawTopRightStudySeriesNumber()
@@ -621,15 +638,15 @@ final class MetalViewerPaneView: NSView {
         }
 
         private func resolve(annotation: [Any], key: String, index: Int, state: State) -> [String] {
-            guard annotationContainsPatientIdentity(annotation, state: state) == false else {
-                return []
-            }
-
             var primary = ""
             var secondary: [String] = []
 
             for item in annotation {
                 guard let value = item as? String else {
+                    continue
+                }
+                if state.annotationLevel != .full,
+                   annotationItemContainsPatientIdentity(value, state: state) {
                     continue
                 }
 
@@ -678,7 +695,7 @@ final class MetalViewerPaneView: NSView {
                     } else if let patientPosition = state.pix.patientPosition {
                         primary += "Position: \(patientPosition)"
                     }
-                case "PatientName":
+                case "PatientName", "PatientsName":
                     primary += patientName(for: state.pix) ?? ""
                 case "PatientID":
                     primary += patientID(for: state.pix) ?? ""
@@ -705,26 +722,20 @@ final class MetalViewerPaneView: NSView {
             return secondary
         }
 
-        private func annotationContainsPatientIdentity(_ annotation: [Any], state: State) -> Bool {
+        private func annotationItemContainsPatientIdentity(_ value: String, state: State) -> Bool {
             let patientName = patientName(for: state.pix)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let patientID = patientID(for: state.pix)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            for item in annotation {
-                guard let value = item as? String else {
-                    continue
-                }
-                let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmedValue == "PatientName" || trimmedValue == "PatientsName" || trimmedValue == "PatientID" {
-                    return true
-                }
-                if let patientName, patientName.isEmpty == false, trimmedValue == patientName {
-                    return true
-                }
-                if let patientID, patientID.isEmpty == false, trimmedValue == patientID {
-                    return true
-                }
+            if trimmedValue == "PatientName" || trimmedValue == "PatientsName" || trimmedValue == "PatientID" {
+                return true
             }
-
+            if let patientName, patientName.isEmpty == false, trimmedValue == patientName {
+                return true
+            }
+            if let patientID, patientID.isEmpty == false, trimmedValue == patientID {
+                return true
+            }
             return false
         }
 
@@ -1167,6 +1178,7 @@ final class MetalViewerPaneView: NSView {
     private var dynamicTimeIndex = 0
     private var dynamicPlaybackRate = 1.0
     private var dynamicPlaybackTimer: Timer?
+    private var annotationLevel = MetalViewerAnnotationLevel.current
 
     private(set) var series: MetalViewerSeries
     private(set) var overlaySeries: MetalViewerSeries?
@@ -1176,6 +1188,7 @@ final class MetalViewerPaneView: NSView {
     var closeHandler: (() -> Void)?
     var seriesDropHandler: ((String, Bool) -> Void)?
     var windowLevelInteractionHandler: (() -> Void)?
+    var windowLevelTargetDidChange: ((MetalViewerSeries) -> Void)?
     var canClose: Bool = true {
         didSet { updateCloseButtonVisibility() }
     }
@@ -1351,6 +1364,10 @@ final class MetalViewerPaneView: NSView {
             windowLevelState: series.windowLevelState,
             windowLevelStateDidChange: { [weak series] state in
                 series?.windowLevelState = state
+            },
+            transferFunctionState: series.transferFunctionState,
+            transferFunctionStateDidChange: { [weak series] state in
+                series?.transferFunctionState = state
             }
         )
         metalView.translatesAutoresizingMaskIntoConstraints = false
@@ -1362,7 +1379,7 @@ final class MetalViewerPaneView: NSView {
             self?.dismissRegistrationStatusIfNeeded()
         }
         metalView.windowLevelInteractionHandler = { [weak self] in
-            self?.series.windowLevelPresetTitle = NSLocalizedString("Other", comment: "")
+            self?.activeWindowLevelSeries.windowLevelPresetTitle = NSLocalizedString("Other", comment: "")
             self?.windowLevelInteractionHandler?()
         }
         metalView.titleDidChange = { [weak self] state in
@@ -1440,7 +1457,7 @@ final class MetalViewerPaneView: NSView {
         self.metalView = metalView
         metalView.renderer.setTumourSeeds(tumourSeeds)
         metalView.setDisplayMode(displayMode)
-        referenceLineOverlay.showsScales = displayMode == .stack2D
+        referenceLineOverlay.showsScales = displayMode == .stack2D && annotationLevel != .none
         metalView.renderer.registrationDidChange = { [weak self] isRunning, message, progress in
             self?.registrationStatusView.update(isRunning: isRunning, message: message, progress: progress)
             self?.dismissRegistrationStatusOnMouseMove = !isRunning && message.isEmpty == false
@@ -1479,10 +1496,15 @@ final class MetalViewerPaneView: NSView {
         dynamicTimeIndex = index
 
         if overlaySeries != nil {
+            let previousWindowLevelSeries = activeWindowLevelSeries
             stopDynamicPlayback()
             overlaySeries = nil
             overlayBlendSlider.isHidden = true
             metalView?.renderer.clearOverlayPixList()
+            let currentWindowLevelSeries = activeWindowLevelSeries
+            if previousWindowLevelSeries !== currentWindowLevelSeries {
+                windowLevelTargetDidChange?(currentWindowLevelSeries)
+            }
         }
 
         metalView?.display(pixList: dynamicSequence.timePoints[index], preservingSliceIndex: true)
@@ -1556,9 +1578,13 @@ final class MetalViewerPaneView: NSView {
                 windowLevelState: series.windowLevelState,
                 windowLevelStateDidChange: { state in
                     series.windowLevelState = state
+                },
+                transferFunctionState: series.transferFunctionState,
+                transferFunctionStateDidChange: { state in
+                    series.transferFunctionState = state
                 }
             )
-            self.overlayBlendSlider.doubleValue = 0.5
+            self.setOverlayBlend(0.5)
             self.overlayBlendSlider.isHidden = false
             self.updateCurrentStateDescription(
                 rendererState: self.metalView?.renderer.stateDescription ?? self.currentStateDescription
@@ -1606,8 +1632,7 @@ final class MetalViewerPaneView: NSView {
             overlay(series: overlayForRefresh)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
                 guard let self else { return }
-                self.overlayBlendSlider.doubleValue = preservedOverlayBlend
-                self.metalView?.renderer.setOverlayBlend(Float(preservedOverlayBlend))
+                self.setOverlayBlend(preservedOverlayBlend)
             }
         }
 
@@ -1650,7 +1675,17 @@ final class MetalViewerPaneView: NSView {
 
     @objc private func overlayBlendSliderChanged(_ sender: NSSlider) {
         dismissRegistrationStatusIfNeeded()
-        metalView?.renderer.setOverlayBlend(Float(sender.doubleValue))
+        setOverlayBlend(sender.doubleValue)
+    }
+
+    private func setOverlayBlend(_ value: Double) {
+        let previousWindowLevelSeries = activeWindowLevelSeries
+        overlayBlendSlider.doubleValue = value
+        metalView?.renderer.setOverlayBlend(Float(value))
+        let currentWindowLevelSeries = activeWindowLevelSeries
+        if previousWindowLevelSeries !== currentWindowLevelSeries {
+            windowLevelTargetDidChange?(currentWindowLevelSeries)
+        }
     }
 
     private func dismissRegistrationStatusIfNeeded() {
@@ -1662,8 +1697,12 @@ final class MetalViewerPaneView: NSView {
 
     private func updateAppearance() {
         layer?.backgroundColor = NSColor.black.cgColor
-        layer?.borderWidth = isActive ? 2 : 1
-        layer?.borderColor = (isActive ? NSColor.systemBlue : NSColor(calibratedWhite: 0.18, alpha: 1)).cgColor
+        layer?.borderWidth = isActive ? 3 : 1
+        layer?.borderColor = (isActive ? metalViewerActiveSelectionBlue : NSColor(calibratedWhite: 0.18, alpha: 1)).cgColor
+        layer?.shadowColor = metalViewerActiveSelectionBlue.cgColor
+        layer?.shadowOpacity = isActive ? 0.95 : 0
+        layer?.shadowRadius = isActive ? 6 : 0
+        layer?.shadowOffset = .zero
     }
 
     private func updateCloseButtonVisibility() {
@@ -1680,10 +1719,18 @@ final class MetalViewerPaneView: NSView {
     func setDisplayMode(_ mode: MetalViewerDisplayMode) {
         displayMode = mode
         metalView?.setDisplayMode(mode)
-        referenceLineOverlay.showsScales = mode == .stack2D
+        referenceLineOverlay.showsScales = mode == .stack2D && annotationLevel != .none
         if mode.isMPRLike {
             referenceLineOverlay.referenceLine = nil
         }
+        updateAnnotationOverlay()
+        updateReferenceLineOverlay()
+        updateOrientationOverlay()
+    }
+
+    func setAnnotationLevel(_ level: MetalViewerAnnotationLevel) {
+        annotationLevel = level
+        referenceLineOverlay.showsScales = displayMode == .stack2D && level != .none
         updateAnnotationOverlay()
         updateReferenceLineOverlay()
         updateOrientationOverlay()
@@ -1717,6 +1764,25 @@ final class MetalViewerPaneView: NSView {
         return MetalViewerWindowLevel(level: renderer.activeWindowLevel, width: renderer.activeWindowWidth)
     }
 
+    var activeWindowLevelSeries: MetalViewerSeries {
+        if let overlaySeries, metalView?.renderer.isOverlayWindowLevelActive == true {
+            return overlaySeries
+        }
+        return series
+    }
+
+    var activeTransferFunctionState: MetalViewerTransferFunctionState {
+        metalView?.renderer.activeTransferFunctionState ?? activeWindowLevelSeries.transferFunctionState
+    }
+
+    func applyCLUT(named presetName: String) {
+        metalView?.renderer.applyCLUT(named: presetName)
+    }
+
+    func applyOpacity(named presetName: String) {
+        metalView?.renderer.applyOpacity(named: presetName)
+    }
+
     func applyWindowLevel(_ window: MetalViewerWindowLevel) {
         guard let renderer = metalView?.renderer else { return }
         renderer.applyWindowLevel(window, asCustom: true)
@@ -1735,9 +1801,9 @@ final class MetalViewerPaneView: NSView {
         updateAnnotationOverlay()
     }
 
-    func applyRobustSeriesWindowLevelPreset() {
+    func applyAutomaticWindowLevelPreset() {
         guard let renderer = metalView?.renderer else { return }
-        renderer.applyRobustSeriesWindowLevelPreset()
+        renderer.applyAutomaticWindowLevelPreset()
         updateAnnotationOverlay()
     }
 
@@ -1779,12 +1845,13 @@ final class MetalViewerPaneView: NSView {
             windowWidth: metalView.renderer.windowWidth,
             mouseState: metalView.mouseAnnotationState,
             showsSliceOrientation: displayMode == .stack2D,
-            showsGantryTiltCorrectionLabel: metalView.renderer.displaysGantryTiltCorrectedImage
+            showsGantryTiltCorrectionLabel: metalView.renderer.displaysGantryTiltCorrectedImage,
+            annotationLevel: annotationLevel
         )
     }
 
     private func updateOrientationOverlay() {
-        guard displayMode == .mpr, let metalView else {
+        guard annotationLevel != .none, displayMode == .mpr, let metalView else {
             orientationOverlay.overlayState = nil
             return
         }

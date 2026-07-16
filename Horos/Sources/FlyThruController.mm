@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -199,18 +200,18 @@
 - (IBAction) flyThruCompute:(id) sender
 {
 	int minSteps = (flyThru.loop)?2:3; // for the spline, 3 points are needed. (in the case of a loop, the 3rd point is added in the 'computePath' method of the FlyThru)
-	int userChoice = 1;
+	HorosAlertResponse userChoice = HorosAlertResponseFirstButton;
 	
 	if( [flyThru.steps count] < 2)
 	{
-		NSRunAlertPanel(NSLocalizedString(@"Error",nil), NSLocalizedString(@"Add at least 2 frames for a Fly Thru.",nil), nil, nil, nil);
+		HorosPresentAlert(NSLocalizedString(@"Error",nil), NSLocalizedString(@"Add at least 2 frames for a Fly Thru.",nil), nil, nil, nil);
 		return;
 	}
 	
 	if ([flyThru interpolationMethod] == 1 && [flyThru.steps count] < minSteps)
 	{
-		userChoice = NSRunAlertPanel(NSLocalizedString(@"Spline Interpolation Error", nil), NSLocalizedString(@"The Spline Interpolation needs at least 3 points to be run.", nil), NSLocalizedString(@"Use Linear Interpollation", nil), NSLocalizedString(@"Cancel", nil), nil);
-		if(userChoice == 1)
+		userChoice = HorosPresentAlert(NSLocalizedString(@"Spline Interpolation Error", nil), NSLocalizedString(@"The Spline Interpolation needs at least 3 points to be run.", nil), NSLocalizedString(@"Use Linear Interpollation", nil), NSLocalizedString(@"Cancel", nil), nil);
+		if(userChoice == HorosAlertResponseFirstButton)
 		{
 			flyThru.interpolationMethod = 2; // changing the method
 			// selection of the right radio button
@@ -219,7 +220,7 @@
 		}
 	}
 	
-	if(userChoice == 1)
+	if(userChoice == HorosAlertResponseFirstButton)
 	{
 		int v = [numberOfFramesTextField intValue];
 		

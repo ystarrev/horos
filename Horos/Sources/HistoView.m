@@ -93,7 +93,7 @@
 		curMousePosition = -1;
 		backgroundColor = [[NSColor whiteColor] retain];
 		binColor = [[NSColor lightGrayColor] retain];
-		selectedBinColor = [[NSColor selectedMenuItemColor] retain];
+		selectedBinColor = [[NSColor selectedContentBackgroundColor] retain];
 		textColor = [[NSColor blackColor] retain];
 		borderColor = [[NSColor grayColor] retain];
     }

@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -114,7 +115,7 @@
     {
         // Alert user to install preferred application.
         //
-        NSRunAlertPanel( NSLocalizedString(@"Report Error", nil), NSLocalizedString(@"LibreOffice is required to convert '.odt' reports to PDF. Please install the latest version of LibreOffice.", nil), nil, nil, nil);
+        HorosPresentAlert( NSLocalizedString(@"Report Error", nil), NSLocalizedString(@"LibreOffice is required to convert '.odt' reports to PDF. Please install the latest version of LibreOffice.", nil), nil, nil, nil);
     }
 }
 

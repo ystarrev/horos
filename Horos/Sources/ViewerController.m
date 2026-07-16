@@ -1,3 +1,8 @@
+#import "HorosSheetPresenter.h"
+#import "NSDate+N2.h"
+#import "HorosFilePanelContentTypes.h"
+#import "HorosUnkeyedArchiveCompatibility.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -1108,7 +1113,7 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
     self.windowsStateName = [NSUserDefaults formatDateTime: [NSDate date]];
     
     if( saveWindowsStateWindow)
-        [NSApp beginSheet: saveWindowsStateWindow modalForWindow: self.window modalDelegate:self didEndSelector:nil contextInfo:nil];
+        HorosBeginSheet(saveWindowsStateWindow, self.window, self, nil, nil);
     else
         [ViewerController saveWindowsStateWithDICOMSR: YES name: nil];
 }
@@ -1441,7 +1446,7 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
             
             if( equal == NO)
             {
-                NSRunInformationalAlertPanel( NSLocalizedString(@"Error!", nil), NSLocalizedString(@"These slices have not the same orientation. Gantry Tilt Correction cannot be applied to this dataset.", nil), NSLocalizedString(@"OK", nil), 0L, 0L);
+                HorosPresentInformationalAlert( NSLocalizedString(@"Error!", nil), NSLocalizedString(@"These slices have not the same orientation. Gantry Tilt Correction cannot be applied to this dataset.", nil), NSLocalizedString(@"OK", nil), 0L, 0L);
                 OK = NO;
                 break;
             }
@@ -1516,7 +1521,7 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
                     }
                     else
                     {
-                        NSRunInformationalAlertPanel( NSLocalizedString( @"Error!", nil), NSLocalizedString( @"Not Enough Memory", nil), NSLocalizedString(@"OK", nil), 0L, 0L);
+                        HorosPresentInformationalAlert( NSLocalizedString( @"Error!", nil), NSLocalizedString( @"Not Enough Memory", nil), NSLocalizedString(@"OK", nil), 0L, 0L);
                         break;
                     }
                     
@@ -2358,7 +2363,7 @@ static volatile int numberOfThreadsForRelisce = 0;
     
     if( volumicData == NO)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Data Error", nil), NSLocalizedString(@"This tool works only with 3D data series.", nil), nil, nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Data Error", nil), NSLocalizedString(@"This tool works only with 3D data series.", nil), nil, nil, nil);
         return;
     }
     
@@ -2366,8 +2371,7 @@ static volatile int numberOfThreadsForRelisce = 0;
     if( executed == NO)
         {
             // TODO check/create localizedStrings for first two strings
-            if( NSRunCriticalAlertPanel(@"Error", @"Cannot execute this reslicing.\r\rPlease report this issue in Horos Project Issue Tracker.", NSLocalizedString(@"OK", nil), nil, nil) == NSAlertAlternateReturn)
-                [[AppController sharedAppController] osirix64bit: self];
+            HorosPresentCriticalAlert(@"Error", @"Cannot execute this reslicing.\r\rPlease report this issue in Horos Project Issue Tracker.", NSLocalizedString(@"OK", nil), nil, nil);
         }
 }
 
@@ -2396,7 +2400,7 @@ static volatile int numberOfThreadsForRelisce = 0;
         
         if( volumicData == NO)
         {
-            NSRunAlertPanel(NSLocalizedString(@"Data Error", nil), NSLocalizedString(@"This tool works only with 3D data series.", nil), nil, nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"Data Error", nil), NSLocalizedString(@"This tool works only with 3D data series.", nil), nil, nil, nil);
             
             succeed = NO;
             
@@ -2405,7 +2409,7 @@ static volatile int numberOfThreadsForRelisce = 0;
         
         //		if( [[pixList[ curMovieIndex] objectAtIndex: 0] isRGB])
         //		{
-        //			NSRunAlertPanel(NSLocalizedString(@"Data Error", nil), NSLocalizedString(@"This tool works only with B/W data series.", nil), nil, nil, nil);
+        //			HorosPresentAlert(NSLocalizedString(@"Data Error", nil), NSLocalizedString(@"This tool works only with B/W data series.", nil), nil, nil, nil);
         //			return;
         //		}
         
@@ -2517,7 +2521,7 @@ static volatile int numberOfThreadsForRelisce = 0;
         
         if( succeed == NO)
         {
-            if( NSRunCriticalAlertPanel(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Cannot execute this reslicing.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
+            if( HorosPresentCriticalAlert(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Cannot execute this reslicing.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == HorosAlertResponseSecondButton)
                 [[AppController sharedAppController] osirix64bit: self];
         }
         else
@@ -3196,10 +3200,10 @@ static volatile int numberOfThreadsForRelisce = 0;
     if( [toolbar customizationPaletteIsRunning])
         return NO;
     
-    if( [[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSAlternateKeyMask)
+    if( [[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSEventModifierFlagOption)
         return NO;
     
-    if( [[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSShiftKeyMask)
+    if( [[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSEventModifierFlagShift)
     {
         [NSObject cancelPreviousPerformRequestsWithTarget: [AppController sharedAppController] selector:@selector(closeAllViewers:) object:nil];
         [[AppController sharedAppController] performSelector: @selector(closeAllViewers:) withObject:nil afterDelay: 0.1];
@@ -3450,7 +3454,6 @@ static volatile int numberOfThreadsForRelisce = 0;
 
 - (void) redrawToolbar
 {
-    NSDisableScreenUpdates();
     
     if( [AppController USETOOLBARPANEL])
     {
@@ -3495,7 +3498,6 @@ static volatile int numberOfThreadsForRelisce = 0;
             [[thumbnailsListPanel[ i] window] orderOut:self];
     }
     
-    NSEnableScreenUpdates();
 }
 
 - (void) refreshToolbar
@@ -3530,13 +3532,11 @@ static volatile int numberOfThreadsForRelisce = 0;
     
     if( recursiveCloseWindowsProtected) return;
     
-    NSDisableScreenUpdates();
     
     [self refreshToolbar];
     [self updateNavigator];
     [imageView setNeedsDisplay: YES];
     
-    NSEnableScreenUpdates();
 }
 
 //- (void) windowDidBecomeKey:(NSNotification *)aNotification
@@ -3627,7 +3627,6 @@ static volatile int numberOfThreadsForRelisce = 0;
 {
     //	float scaleValue = [imageView scaleValue];
     
-    NSDisableScreenUpdates();
     
     [self setUpdateTilingViewsValue: YES];
     [self selectFirstTilingView];
@@ -3684,7 +3683,7 @@ static volatile int numberOfThreadsForRelisce = 0;
         [imageView setIndex: selectedIndex];
         
         StartingWindow = [self window];
-        windowStyle = NSBorderlessWindowMask;
+        windowStyle = NSWindowStyleMaskBorderless;
         contentRect = [self.window.screen frame];
         
         previousScaledFit = imageView.isScaledFit;
@@ -3732,7 +3731,6 @@ static volatile int numberOfThreadsForRelisce = 0;
     
     [imageView display];
     
-    NSEnableScreenUpdates();
 }
 
 - (BOOL) FullScreenON { return FullScreenOn;}
@@ -3844,7 +3842,7 @@ static volatile int numberOfThreadsForRelisce = 0;
     
     [newName setStringValue: NSLocalizedString(@"Unnamed", nil)];
     
-    [NSApp beginSheet: addWLWWWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(addWLWWWindow, [self window], self, nil, nil);
 }
 
 -(IBAction) endNameWLWW:(id) sender
@@ -4341,9 +4339,9 @@ static volatile int numberOfThreadsForRelisce = 0;
             [viewerSeries addObject: [[fileList[ i] objectAtIndex:0] valueForKey:@"series"]];
     }
     
-    if( (rightClick || ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSCommandKeyMask)) && FullScreenOn == NO)
+    if( (rightClick || ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSEventModifierFlagCommand)) && FullScreenOn == NO)
     {
-        if( ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSShiftKeyMask) || [[BrowserController currentBrowser] isUsingExternalViewer: series] == NO)
+        if( ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSEventModifierFlagShift) || [[BrowserController currentBrowser] isUsingExternalViewer: series] == NO)
         {
             BOOL c = [[NSUserDefaults standardUserDefaults] boolForKey:@"syncPreviewList"];
             
@@ -4379,7 +4377,7 @@ static volatile int numberOfThreadsForRelisce = 0;
             BOOL found = NO;
             BOOL showWindowIfDisplayed = [[NSUserDefaults standardUserDefaults] boolForKey: @"showWindowInsteadOfSwitching"];
             
-            if( ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSShiftKeyMask))
+            if( ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSEventModifierFlagShift))
                 showWindowIfDisplayed = !showWindowIfDisplayed;
             
             if( showWindowIfDisplayed)
@@ -4404,7 +4402,7 @@ static volatile int numberOfThreadsForRelisce = 0;
                 
                 [[NSUserDefaults standardUserDefaults] setBool: NO forKey:@"AUTOHIDEMATRIX"];
                 
-                if( ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSShiftKeyMask) || [[BrowserController currentBrowser] isUsingExternalViewer: series] == NO)
+                if( ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSEventModifierFlagShift) || [[BrowserController currentBrowser] isUsingExternalViewer: series] == NO)
                 {
                     [[BrowserController currentBrowser] loadSeries :series :self :YES keyImagesOnly: displayOnlyKeyImages];
                     
@@ -4470,8 +4468,8 @@ static volatile int numberOfThreadsForRelisce = 0;
     [cell setTransparent:NO];
     [cell setEnabled:YES];
     
-    [cell setButtonType:NSMomentaryPushInButton];
-    [cell setBezelStyle:NSShadowlessSquareBezelStyle];
+    [cell setButtonType:NSButtonTypeMomentaryPushIn];
+    [cell setBezelStyle:NSBezelStyleShadowlessSquare];
     //[cell setShowsStateBy:NSPushInCellMask];
     [cell setHighlightsBy:NSContentsCellMask];
     [cell setImageScaling:NSImageScaleProportionallyDown];
@@ -4525,10 +4523,8 @@ static volatile int numberOfThreadsForRelisce = 0;
         if( noReentry == 0)
         {
             noReentry = 1;
-            NSDisableScreenUpdates();
             for( ViewerController *v in [ViewerController getDisplayed2DViewers])
                 [v setMatrixVisible: [[change objectForKey:NSKeyValueChangeNewKey] intValue]];
-            NSEnableScreenUpdates();
             noReentry = 0;
         }
     }
@@ -4598,7 +4594,6 @@ static volatile int numberOfThreadsForRelisce = 0;
         
         [self setMatrixVisible: !hide];
         
-        NSDisableScreenUpdates();
         
         int i = 0;
         for( DCMView * v in [seriesView imageViews])
@@ -4614,7 +4609,6 @@ static volatile int numberOfThreadsForRelisce = 0;
         for( DCMView * v in [seriesView imageViews])
             [v displayIfNeeded];
         
-        NSEnableScreenUpdates();
     }
 }
 
@@ -4669,7 +4663,7 @@ static volatile int numberOfThreadsForRelisce = 0;
         {
             BOOL syncThumbnails = [[NSUserDefaults standardUserDefaults] boolForKey: @"syncPreviewList"];
             
-            if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSCommandKeyMask)
+            if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagCommand)
                 syncThumbnails = !syncThumbnails;
             
             if( syncThumbnails)
@@ -4722,10 +4716,9 @@ static volatile int numberOfThreadsForRelisce = 0;
         
         if ([[NSUserDefaults standardUserDefaults] boolForKey:@"AUTOHIDEMATRIX"] == NO && FullScreenOn == NO)
         {
-            NSDisableScreenUpdates();
             
             // Apply show / hide matrix to all viewers
-            if( ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSAlternateKeyMask) == NO)
+            if( ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagOption) == NO)
             {
                 static BOOL noreentry = NO;
                 
@@ -4752,7 +4745,6 @@ static volatile int numberOfThreadsForRelisce = 0;
                 noreentry = NO;
             }
             
-            NSEnableScreenUpdates();
         }
     }
 }
@@ -4897,7 +4889,7 @@ static volatile int numberOfThreadsForRelisce = 0;
     
     if( [curStudy isKindOfClass: [DicomStudy class]]) //Local study
     {
-        if([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSCommandKeyMask)
+        if([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagCommand)
         {
             [[BrowserController currentBrowser] databaseOpenStudy: curStudy];
         }
@@ -5112,8 +5104,8 @@ static volatile int numberOfThreadsForRelisce = 0;
                 [cell setTransparent:NO];
                 [cell setEnabled:YES];
                 
-                [cell setButtonType:NSMomentaryPushInButton];
-                [cell setBezelStyle:NSShadowlessSquareBezelStyle];
+                [cell setButtonType:NSButtonTypeMomentaryPushIn];
+                [cell setBezelStyle:NSBezelStyleShadowlessSquare];
                 //[cell setShowsStateBy:NSPushInCellMask];
                 [cell setHighlightsBy:NSContentsCellMask];
                 [cell setImageScaling:NSImageScaleProportionallyDown];
@@ -5247,7 +5239,7 @@ static volatile int numberOfThreadsForRelisce = 0;
                         [attribs removeObjectForKey: NSBackgroundColorAttributeName];
                         [finalString setAttributes: attribs range: NSMakeRange( [[components objectAtIndex: 0] length], finalString.length - [[components objectAtIndex: 0] length])];
                         
-                        [finalString setAlignment:NSCenterTextAlignment range: NSMakeRange( 0, finalString.length)];
+                        [finalString setAlignment:NSTextAlignmentCenter range: NSMakeRange( 0, finalString.length)];
                         [cell setAttributedTitle: finalString];
                         
                         //                        index++;
@@ -5264,7 +5256,7 @@ static volatile int numberOfThreadsForRelisce = 0;
                         //                            [attribs setObject: [NSFont boldSystemFontOfSize: [[BrowserController currentBrowser] fontSize: @"dbSmallMatrixFont"]] forKey: NSFontAttributeName];
                         //                            [finalString setAttributes: attribs range: NSMakeRange( 0, finalString.length)];
                         //
-                        //                            [finalString setAlignment:NSCenterTextAlignment range: NSMakeRange( 0, finalString.length)];
+                        //                            [finalString setAlignment:NSTextAlignmentCenter range: NSMakeRange( 0, finalString.length)];
                         //                            [cell setAttributedTitle: finalString];
                         //                        }
                     }
@@ -5676,7 +5668,7 @@ static ViewerController *draggedController = nil;
     blendedWindow = [vc retain];
     
     // What type of blending?
-    [NSApp beginSheet: blendingTypeWindow modalForWindow:[self window] modalDelegate:self didEndSelector:@selector(blendingSheetDidEnd:returnCode:contextInfo:) contextInfo:nil];
+    HorosBeginSheet(blendingTypeWindow, [self window], self, @selector(blendingSheetDidEnd:returnCode:contextInfo:), nil);
     
     draggedController = nil;
 }
@@ -5715,26 +5707,21 @@ static ViewerController *draggedController = nil;
     }
     else
     {
-        NSArray			*types = [NSArray arrayWithObjects:NSFilenamesPboardType, nil];
-        NSString		*desiredType = [paste availableTypeFromArray:types];
-        NSData			*carriedData = nil;
+        NSArray<NSURL *> *fileURLs = [paste readObjectsForClasses:@[[NSURL class]]
+                                                          options:@{NSPasteboardURLReadingFileURLsOnlyKey: @YES}];
+        NSArray *fileArray = [fileURLs valueForKey:@"path"];
         
-        if( desiredType) carriedData = [paste dataForType: desiredType];
-        
-        if (nil == carriedData)
+        if (fileArray.count == 0)
         {
             //			//the operation failed for some reason
-            //			NSRunAlertPanel(NSLocalizedString(@"Paste Error", nil), NSLocalizedString(@"Sorry, but the past operation failed", nil), nil, nil, nil);
+            //			HorosPresentAlert(NSLocalizedString(@"Paste Error", nil), NSLocalizedString(@"Sorry, but the past operation failed", nil), nil, nil, nil);
             return NO;
         }
         else
         {
             //the pasteboard was able to give us some meaningful data
-            if ([desiredType isEqualToString:NSFilenamesPboardType])
+            if (fileArray.count)
             {
-                //we have a list of file names in an NSData object
-                NSArray				*fileArray = [paste propertyListForType:@"NSFilenamesPboardType"];
-                
                 // Find a 2D viewer containing this specific file!
                 
                 NSArray				*winList = [NSApp windows];
@@ -5956,11 +5943,11 @@ static ViewerController *draggedController = nil;
         }
         else [super keyDown:event];
     }
-    else if (c == NSLeftArrowFunctionKey && ([event modifierFlags] & NSCommandKeyMask))
+    else if (c == NSLeftArrowFunctionKey && ([event modifierFlags] & NSEventModifierFlagCommand))
     {
         [[BrowserController currentBrowser] loadNextSeries:[fileList[0] objectAtIndex:0] : -1 :self :YES keyImagesOnly: displayOnlyKeyImages];
     }
-    else if (c == NSRightArrowFunctionKey && ([event modifierFlags] & NSCommandKeyMask))
+    else if (c == NSRightArrowFunctionKey && ([event modifierFlags] & NSEventModifierFlagCommand))
     {
         [[BrowserController currentBrowser] loadNextSeries:[fileList[0] objectAtIndex:0] : 1 :self :YES keyImagesOnly: displayOnlyKeyImages];
     }
@@ -6619,10 +6606,9 @@ static ViewerController *draggedController = nil;
 
 - (NSArray *) toolbarAllowedItemIdentifiers: (NSToolbar *) toolbar
 {
-    NSMutableArray *array = [NSMutableArray arrayWithObjects: 	NSToolbarCustomizeToolbarItemIdentifier,
+    NSMutableArray *array = [NSMutableArray arrayWithObjects:
                              NSToolbarFlexibleSpaceItemIdentifier,
                              NSToolbarSpaceItemIdentifier,
-                             NSToolbarSeparatorItemIdentifier,
                              MailToolbarItemIdentifier,
                              Send2PACSToolbarItemIdentifier,
                              PrintToolbarItemIdentifier,
@@ -6941,7 +6927,7 @@ static ViewerController *draggedController = nil;
             {
                 [shutterOnOff setState:NSControlStateValueOff];
                 
-                NSRunCriticalAlertPanel(NSLocalizedString(@"Shutter", nil), NSLocalizedString(@"Please first define a rectangle with a rectangular ROI.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                HorosPresentCriticalAlert(NSLocalizedString(@"Shutter", nil), NSLocalizedString(@"Please first define a rectangle with a rectangular ROI.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             }
             else //reuse preconfigured shutterRect
             {
@@ -6958,7 +6944,7 @@ static ViewerController *draggedController = nil;
 
 - (IBAction) resetCLUT:(id) sender
 {
-    if( NSRunInformationalAlertPanel( NSLocalizedString(@"Reset CLUT List", nil), NSLocalizedString(@"Are you sure you want to reset the entire CLUT list to the default list?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn)
+    if( HorosPresentInformationalAlert( NSLocalizedString(@"Reset CLUT List", nil), NSLocalizedString(@"Are you sure you want to reset the entire CLUT list to the default list?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
     {
         [[NSUserDefaults standardUserDefaults] removeObjectForKey: @"CLUT"];
         [[NSUserDefaults standardUserDefaults] setObject: [[DefaultsOsiriX getDefaults] objectForKey: @"CLUT"] forKey: @"CLUT"];
@@ -7000,7 +6986,7 @@ static ViewerController *draggedController = nil;
     
     [OpacityName setStringValue: NSLocalizedString(@"Unnamed", nil)];
     
-    [NSApp beginSheet: addOpacityWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(addOpacityWindow, [self window], self, nil, nil);
 }
 
 
@@ -7009,7 +6995,7 @@ static ViewerController *draggedController = nil;
     [self clutAction:self];
     [clutName setStringValue: NSLocalizedString(@"Unnamed", nil)];
     
-    [NSApp beginSheet: addCLUTWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(addCLUTWindow, [self window], self, nil, nil);
 }
 
 
@@ -7068,7 +7054,6 @@ static ViewerController *draggedController = nil;
     // Set up toolbar properties: Allow customization, give a default display mode, and remember state in user defaults
     [toolbar setAllowsUserCustomization: YES];
     [toolbar setAutosavesConfiguration: YES];
-    [toolbar setShowsBaselineSeparator: NO];
     [toolbar setDisplayMode: NSToolbarDisplayModeIconOnly];
     [toolbar setSizeMode: NSToolbarSizeModeRegular];
     
@@ -8025,7 +8010,6 @@ static int avoidReentryRefreshDatabase = 0;
     
     @synchronized( self)
     {
-        NSDisableScreenUpdates();
         
         statusValueToApply = -1;
         
@@ -8607,7 +8591,6 @@ static int avoidReentryRefreshDatabase = 0;
             N2LogExceptionWithStackTrace(e);
         }
         @finally {
-            NSEnableScreenUpdates();
         }
     }
     
@@ -9213,9 +9196,9 @@ static int avoidReentryRefreshDatabase = 0;
 
 -(IBAction) calibrate:(id) sender
 {
-    NSInteger result = NSRunCriticalAlertPanel( NSLocalizedString( @"Warning !", nil), NSLocalizedString( @"Modifying these parameters will:\r\r- Change the measurements results (length, surface, volume, ...)\r-Change the orientation of the slices and of the 3D objects (Left, Right, ...)\r-Change the aspect of the 3D images. It can introduce distortions.\r\rONLY change these parameters if you know WHAT and WHY you are doing it.", nil), NSLocalizedString( @"I agree", nil), NSLocalizedString( @"Cancel", nil), nil);
+    NSInteger result = HorosPresentCriticalAlert( NSLocalizedString( @"Warning !", nil), NSLocalizedString( @"Modifying these parameters will:\r\r- Change the measurements results (length, surface, volume, ...)\r-Change the orientation of the slices and of the 3D objects (Left, Right, ...)\r-Change the aspect of the 3D images. It can introduce distortions.\r\rONLY change these parameters if you know WHAT and WHY you are doing it.", nil), NSLocalizedString( @"I agree", nil), NSLocalizedString( @"Cancel", nil), nil);
     
-    if( result == NSAlertDefaultReturn)
+    if( result == HorosAlertResponseFirstButton)
     {
         [self computeInterval];
         [self SetThicknessInterval:sender];
@@ -9251,7 +9234,7 @@ static int avoidReentryRefreshDatabase = 0;
     [self endWaitWindow: waitWindow];
     if(!isResampled)
     {
-        if( NSRunAlertPanel(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Cannot complete the resampling\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
+        if( HorosPresentAlert(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Cannot complete the resampling\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == HorosAlertResponseSecondButton)
             [[AppController sharedAppController] osirix64bit: self];
     }
 }
@@ -9290,7 +9273,7 @@ static int avoidReentryRefreshDatabase = 0;
         savedROIs[ j] = [NSMutableArray array];
         
         for( NSArray *r in roiList[ j])
-            [savedROIs[ j] addObject: [NSArchiver archivedDataWithRootObject: r]];
+            [savedROIs[j] addObject:HorosArchiveUnkeyedObject(r)];
         
         isResampled = [ViewerController resampleDataFromViewer:self inPixArray:newPixList fileArray:newDcmList data:&newData withXFactor:xFactor yFactor:yFactor zFactor:zFactor movieIndex: j];
         
@@ -9339,7 +9322,7 @@ static int avoidReentryRefreshDatabase = 0;
                 
                 NSData *r = [savedROIs[ j] objectAtIndex: index];
                 
-                [[roiList[ j] objectAtIndex: x] addObjectsFromArray: [NSUnarchiver unarchiveObjectWithData: r]];
+                [[roiList[j] objectAtIndex:x] addObjectsFromArray:HorosUnarchiveUnkeyedObject(r)];
                 
                 for( ROI *r in [roiList[ j] objectAtIndex: x])
                     [r setOriginAndSpacing :[imageView curDCM].pixelSpacingX : [imageView curDCM].pixelSpacingY :[DCMPix originCorrectedAccordingToOrientation: [imageView curDCM]]];	//NSMakePoint( [imageView curDCM].originX, [imageView curDCM].originY)];
@@ -9645,7 +9628,7 @@ static int avoidReentryRefreshDatabase = 0;
     }
     else
     {
-        NSRunAlertPanel(NSLocalizedString(@"Subtraction", nil), NSLocalizedString(@"Subtraction works only for XA modality.", nil), nil, nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Subtraction", nil), NSLocalizedString(@"Subtraction works only for XA modality.", nil), nil, nil, nil);
         [subCtrlOnOff setState: NSControlStateValueOff];
     }
 }
@@ -10034,7 +10017,7 @@ static int avoidReentryRefreshDatabase = 0;
     
     if( [[pixList[ curMovieIndex] objectAtIndex: 0] isRGB] == YES)
     {
-        NSRunAlertPanel(NSLocalizedString(@"RGB", nil), NSLocalizedString(@"Sorry, these images are already in RGB mode", nil), nil, nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"RGB", nil), NSLocalizedString(@"Sorry, these images are already in RGB mode", nil), nil, nil, nil);
     }
     else
     {
@@ -10061,7 +10044,7 @@ static int avoidReentryRefreshDatabase = 0;
     
     if( [[pixList[ curMovieIndex] objectAtIndex: 0] isRGB] == NO)
     {
-        NSRunAlertPanel(NSLocalizedString(@"BW", nil), NSLocalizedString(@"Sorry, these images are already in BW mode", nil), nil, nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"BW", nil), NSLocalizedString(@"Sorry, these images are already in BW mode", nil), nil, nil, nil);
     }
     else
     {
@@ -10262,9 +10245,9 @@ static int avoidReentryRefreshDatabase = 0;
     {
         NSString *message = nil;
         message = [NSString stringWithFormat: NSLocalizedString(@"These images were acquired with a gantry tilt: %0.2f\u00B0. This gantry tilt will produce a distortion in 3D post-processing. Should I convert these images to a real 3D dataset.", nil), titledGantryDegrees];
-        NSInteger r = NSRunInformationalAlertPanel( NSLocalizedString(@"Warning!", nil), @"%@", NSLocalizedString(@"Yes", nil), NSLocalizedString(@"No", nil), nil, message);
+        NSInteger r = HorosPresentInformationalAlert( NSLocalizedString(@"Warning!", nil), @"%@", NSLocalizedString(@"Yes", nil), NSLocalizedString(@"No", nil), nil, message);
         
-        if( r == NSAlertDefaultReturn)
+        if( r == HorosAlertResponseFirstButton)
             [ViewerController correctGangtryTilt: self];
     }
 }
@@ -10668,7 +10651,7 @@ static int avoidReentryRefreshDatabase = 0;
         
         if( nonContinuous)
         {
-            NSRunInformationalAlertPanel( NSLocalizedString(@"Warning!", nil), NSLocalizedString(@"These slices have a non regular slice interval, varying from %.3f mm to %.3f mm. This will produce distortion in 3D representations, and in measurements.", nil), NSLocalizedString(@"OK", nil), nil, nil, minInterval, maxInterval);
+            HorosPresentInformationalAlert( NSLocalizedString(@"Warning!", nil), NSLocalizedString(@"These slices have a non regular slice interval, varying from %.3f mm to %.3f mm. This will produce distortion in 3D representations, and in measurements.", nil), NSLocalizedString(@"OK", nil), nil, nil, minInterval, maxInterval);
             //
             //            // Resample origins, according to first and last image
             //
@@ -10708,7 +10691,7 @@ static int avoidReentryRefreshDatabase = 0;
         }
         else if( [self isDataVolumicIn4D: YES] == NO)
         {
-            NSRunInformationalAlertPanel( NSLocalizedString(@"Warning!", nil), NSLocalizedString(@"These slices doesn't represent a true 3D volumic data. This will produce distortion in 3D representations, and in measurements.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentInformationalAlert( NSLocalizedString(@"Warning!", nil), NSLocalizedString(@"These slices doesn't represent a true 3D volumic data. This will produce distortion in 3D representations, and in measurements.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         }
         
         nonVolumicDataWarningDisplayed = YES;
@@ -10749,7 +10732,7 @@ static int avoidReentryRefreshDatabase = 0;
     {
         if( [sender tag])
         {
-            NSRunCriticalAlertPanel(NSLocalizedString(@"Error", nil), NSLocalizedString(@"These values CANNOT be equal to ZERO!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentCriticalAlert(NSLocalizedString(@"Error", nil), NSLocalizedString(@"These values CANNOT be equal to ZERO!", nil), NSLocalizedString(@"OK", nil), nil, nil);
             return;
         }
     }
@@ -10869,7 +10852,7 @@ static int avoidReentryRefreshDatabase = 0;
     o[ 2] = [p originZ];
     for( i = 0; i < 3; i++) [[customOrigin cellWithTag: i] setFloatValue: o[ i]];
     
-    [NSApp beginSheet: ThickIntervalWindow modalForWindow:[self window] modalDelegate:self didEndSelector:@selector(sheetDidEnd:returnCode:contextInfo:) contextInfo:(void*) sender];
+    HorosBeginSheet(ThickIntervalWindow, [self window], self, @selector(sheetDidEnd:returnCode:contextInfo:), (void*) sender);
 }
 
 - (void)deleteWLWW:(NSWindow *)sheet returnCode:(int)returnCode contextInfo:(void *)contextInfo
@@ -10907,9 +10890,9 @@ static int avoidReentryRefreshDatabase = 0;
     {
         name = [[sender title] substringFromIndex: 4];
         
-        if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask)
+        if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift)
         {
-            NSBeginAlertSheet( NSLocalizedString(@"Remove a WL/WW preset", nil), NSLocalizedString(@"Delete", nil), NSLocalizedString(@"Cancel", nil), nil, [self window], self, @selector(deleteWLWW:returnCode:contextInfo:), NULL, [name retain], NSLocalizedString( @"Are you sure you want to delete preset : '%@'?", nil), name);
+            HorosBeginAlertSheet( NSLocalizedString(@"Remove a WL/WW preset", nil), NSLocalizedString(@"Delete", nil), NSLocalizedString(@"Cancel", nil), nil, [self window], self, @selector(deleteWLWW:returnCode:contextInfo:), NULL, [name retain], NSLocalizedString( @"Are you sure you want to delete preset : '%@'?", nil), name);
             
             return;
         }
@@ -10989,7 +10972,7 @@ static float oldsetww, oldsetwl;
     [fromset setStringValue: [NSString stringWithFormat:@"%.3f", [wlset floatValue] - [wwset floatValue]/2]];
     [toset setStringValue: [NSString stringWithFormat:@"%.3f", [wlset floatValue] + [wwset floatValue]/2]];
     
-    [NSApp beginSheet: setWLWWWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(setWLWWWindow, [self window], self, nil, nil);
 }
 
 //static NSMutableArray		*TEMPviewersList;
@@ -11045,7 +11028,7 @@ static float oldsetww, oldsetwl;
 //	[syncOffsetSeries setStringValue: [[self window] title]];
 //
 //	[syncOffsetText setIntValue: [imageView syncRelativeDiff]];
-//    [NSApp beginSheet: syncOffsetWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+//    HorosBeginSheet(syncOffsetWindow, [self window], self, nil, nil);
 //}
 
 
@@ -11239,7 +11222,7 @@ static float oldsetww, oldsetwl;
         
         [[NSNotificationCenter defaultCenter] postNotificationName: OsirixUpdateVolumeDataNotification object: pixList[ curMovieIndex] userInfo: nil];
     }
-    else NSRunAlertPanel(NSLocalizedString(@"Convolution", nil), NSLocalizedString(@"First, apply a convolution filter...", nil), nil, nil, nil);
+    else HorosPresentAlert(NSLocalizedString(@"Convolution", nil), NSLocalizedString(@"First, apply a convolution filter...", nil), nil, nil, nil);
     
     [convThread release];
     convThread = nil;
@@ -11287,7 +11270,7 @@ static float oldsetww, oldsetwl;
                             [theCell setStringValue:@"0"];
                     }
                     
-                    [theCell setAlignment:NSCenterTextAlignment];
+                    [theCell setAlignment:NSTextAlignmentCenter];
                 }
             }
             break;
@@ -11303,7 +11286,7 @@ static float oldsetww, oldsetwl;
                     if( [[theCell stringValue] isEqualToString:@""])
                         [theCell setStringValue:@"0"];
                     
-                    [theCell setAlignment:NSCenterTextAlignment];
+                    [theCell setAlignment:NSTextAlignmentCenter];
                 }
             }
             break;
@@ -11375,7 +11358,7 @@ static float oldsetww, oldsetwl;
         aConv = [[[NSUserDefaults standardUserDefaults] dictionaryForKey: @"Convolution"] objectForKey:str];
         
         if( aConv == nil)
-            NSRunAlertPanel(NSLocalizedString(@"Error", nil), NSLocalizedString(@"This convolution filter cannot be loaded.", nil), nil, nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"Error", nil), NSLocalizedString(@"This convolution filter cannot be loaded.", nil), nil, nil, nil);
         else
         {
             nomalization = [[aConv objectForKey:@"Normalization"] longValue];
@@ -11404,13 +11387,13 @@ static float oldsetww, oldsetwl;
 
 - (void) ApplyConv:(id) sender
 {
-    if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask)
+    if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift)
     {
-        NSBeginAlertSheet( NSLocalizedString(@"Remove a Convolution Filter", nil), NSLocalizedString(@"Delete", nil), NSLocalizedString(@"Cancel", nil), nil, [self window], self, @selector(deleteConv:returnCode:contextInfo:), NULL, [sender title], NSLocalizedString( @"Are you sure you want to delete this convolution filter : '%@'", nil), [sender title]);
+        HorosBeginAlertSheet( NSLocalizedString(@"Remove a Convolution Filter", nil), NSLocalizedString(@"Delete", nil), NSLocalizedString(@"Cancel", nil), nil, [self window], self, @selector(deleteConv:returnCode:contextInfo:), NULL, [sender title], NSLocalizedString( @"Are you sure you want to delete this convolution filter : '%@'", nil), [sender title]);
         
         [[NSNotificationCenter defaultCenter] postNotificationName: OsirixUpdateConvolutionMenuNotification object: curConvMenu userInfo: [NSDictionary dictionary]];
     }
-    else if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSAlternateKeyMask)
+    else if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagOption)
     {
         NSDictionary   *aConv;
         NSArray			*array;
@@ -11447,7 +11430,7 @@ static float oldsetww, oldsetwl;
                             if( [[theCell stringValue] isEqualToString:@""])
                                 [theCell setStringValue:@"0"];
                             
-                            [theCell setAlignment:NSCenterTextAlignment];
+                            [theCell setAlignment:NSTextAlignmentCenter];
                             [[convMatrix cellAtRow:x column:y] setFloatValue: [[array objectAtIndex:inc++] floatValue]];
                         }
                     }
@@ -11466,14 +11449,14 @@ static float oldsetww, oldsetwl;
                         if( [[theCell stringValue] isEqualToString:@""])
                             [theCell setStringValue:@"0"];
                         
-                        [theCell setAlignment:NSCenterTextAlignment];
+                        [theCell setAlignment:NSTextAlignmentCenter];
                         [[convMatrix cellAtRow:x column:y] setFloatValue: [[array objectAtIndex:inc++] floatValue]];
                     }
                 }
                 break;
         }
         
-        [NSApp beginSheet: addConvWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+        HorosBeginSheet(addConvWindow, [self window], self, nil, nil);
     }
     else
     {
@@ -11599,14 +11582,14 @@ static float oldsetww, oldsetwl;
             if( [[theCell stringValue] isEqualToString:@""])
                 [theCell setStringValue:@"0"];
             
-            [theCell setAlignment:NSCenterTextAlignment];
+            [theCell setAlignment:NSTextAlignmentCenter];
         }
     }
     
     [self convMatrixAction:self];
     [matrixName setStringValue: NSLocalizedString(@"Unnamed", nil)];
     
-    [NSApp beginSheet: addConvWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(addConvWindow, [self window], self, nil, nil);
 }
 
 
@@ -11768,13 +11751,13 @@ static float oldsetww, oldsetwl;
 
 - (void) ApplyCLUT:(id) sender
 {
-    if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask)
+    if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift)
     {
-        NSBeginAlertSheet( NSLocalizedString(@"Remove a Color Look Up Table", nil), NSLocalizedString(@"Delete", nil), NSLocalizedString(@"Cancel", nil), nil, [self window], self, @selector(deleteCLUT:returnCode:contextInfo:), NULL, [sender title], NSLocalizedString( @"Are you sure you want to delete this CLUT : '%@'", nil), [sender title]);
+        HorosBeginAlertSheet( NSLocalizedString(@"Remove a Color Look Up Table", nil), NSLocalizedString(@"Delete", nil), NSLocalizedString(@"Cancel", nil), nil, [self window], self, @selector(deleteCLUT:returnCode:contextInfo:), NULL, [sender title], NSLocalizedString( @"Are you sure you want to delete this CLUT : '%@'", nil), [sender title]);
         
         [[NSNotificationCenter defaultCenter] postNotificationName: OsirixUpdateCLUTMenuNotification object: curCLUTMenu userInfo: [NSDictionary dictionary]];
     }
-    else if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSAlternateKeyMask)
+    else if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagOption)
     {
         NSDictionary		*aCLUT;
         
@@ -11797,13 +11780,13 @@ static float oldsetww, oldsetwl;
                 [pts addObjectsFromArray: [aCLUT objectForKey:@"Points"]];
                 [cols addObjectsFromArray: [aCLUT objectForKey:@"Colors"]];
                 
-                [NSApp beginSheet: addCLUTWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+                HorosBeginSheet(addCLUTWindow, [self window], self, nil, nil);
                 
                 [clutView setNeedsDisplay:YES];
             }
             else
             {
-                NSRunAlertPanel(NSLocalizedString(@"Error", nil), NSLocalizedString(@"Only CLUT created in OsiriX 1.3.1 or higher can be edited...", nil), nil, nil, nil);
+                HorosPresentAlert(NSLocalizedString(@"Error", nil), NSLocalizedString(@"Only CLUT created in OsiriX 1.3.1 or higher can be edited...", nil), nil, nil, nil);
             }
         }
     }
@@ -11977,13 +11960,13 @@ static float oldsetww, oldsetwl;
 
 - (void) ApplyOpacity: (id) sender
 {
-    if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask)
+    if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift)
     {
-        NSBeginAlertSheet( NSLocalizedString(@"Remove a Color Look Up Table", nil), NSLocalizedString(@"Delete", nil), NSLocalizedString(@"Cancel", nil), nil, [self window], self, @selector(deleteOpacity:returnCode:contextInfo:), NULL, [sender title], NSLocalizedString( @"Are you sure you want to delete this Opacity Table : '%@'", nil), [sender title]);
+        HorosBeginAlertSheet( NSLocalizedString(@"Remove a Color Look Up Table", nil), NSLocalizedString(@"Delete", nil), NSLocalizedString(@"Cancel", nil), nil, [self window], self, @selector(deleteOpacity:returnCode:contextInfo:), NULL, [sender title], NSLocalizedString( @"Are you sure you want to delete this Opacity Table : '%@'", nil), [sender title]);
         
         [[NSNotificationCenter defaultCenter] postNotificationName: OsirixUpdateOpacityMenuNotification object: curOpacityMenu userInfo: [NSDictionary dictionary]];
     }
-    else if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSAlternateKeyMask)
+    else if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagOption)
     {
         NSDictionary		*aOpacity, *aCLUT;
         NSArray				*array;
@@ -12029,7 +12012,7 @@ static float oldsetww, oldsetwl;
                 
                 [pts addObjectsFromArray: [aOpacity objectForKey:@"Points"]];
                 
-                [NSApp beginSheet: addOpacityWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+                HorosBeginSheet(addOpacityWindow, [self window], self, nil, nil);
                 
                 [OpacityView setNeedsDisplay:YES];
             }
@@ -12294,7 +12277,7 @@ static float oldsetww, oldsetwl;
     
     if( fused == NO && sender != nil)
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"PET-CT Fusion", nil), NSLocalizedString(@"This function requires two parallel series: a PT/NM series and a CT series in the same study.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentCriticalAlert(NSLocalizedString(@"PET-CT Fusion", nil), NSLocalizedString(@"This function requires two parallel series: a PT/NM series and a CT series in the same study.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
     }
 }
 
@@ -12350,27 +12333,27 @@ static float oldsetww, oldsetwl;
                 
                 if( [[[[self fileList] objectAtIndex:0] valueForKeyPath:@"series.study.studyInstanceUID"] isEqualToString: [[[blendingController fileList] objectAtIndex:0] valueForKeyPath:@"series.study.studyInstanceUID"]])
                 {
-                    int result = NSRunCriticalAlertPanel(NSLocalizedString(@"2D Planes",nil),NSLocalizedString(@"These 2D planes are not parallel. If you continue the result will be distorted. You can instead 'Reorient' the series to have the same origin/orientation.",nil), NSLocalizedString(@"Reorient & Fusion",nil), NSLocalizedString(@"Cancel",nil), NSLocalizedString(@"Fusion",nil));
+                    int result = HorosPresentCriticalAlert(NSLocalizedString(@"2D Planes",nil),NSLocalizedString(@"These 2D planes are not parallel. If you continue the result will be distorted. You can instead 'Reorient' the series to have the same origin/orientation.",nil), NSLocalizedString(@"Reorient & Fusion",nil), NSLocalizedString(@"Cancel",nil), NSLocalizedString(@"Fusion",nil));
                     
                     switch( result)
                     {
-                        case NSAlertAlternateReturn:
+                        case HorosAlertResponseSecondButton:
                             proceed = NO;
                             break;
                             
-                        case NSAlertDefaultReturn:		// Resample
+                        case HorosAlertResponseFirstButton:		// Resample
                             blendingController = [self resampleSeries: blendingController rescale: NO];
                             if( blendingController) proceed = YES;
                             break;
                             
-                        case NSAlertOtherReturn:
+                        case HorosAlertResponseThirdButton:
                             proceed = YES;
                             break;
                     }
                 }
                 else	// FROM DIFFERENT STUDY
                 {
-                    if( NSRunCriticalAlertPanel(NSLocalizedString(@"2D Planes",nil),NSLocalizedString(@"These 2D planes are not parallel. If you continue the result will be distorted. You can instead perform a 'Point-based registration' to have correct alignment/orientation.",nil), NSLocalizedString(@"Continue",nil), NSLocalizedString(@"Cancel",nil), nil) != NSAlertDefaultReturn)
+                    if( HorosPresentCriticalAlert(NSLocalizedString(@"2D Planes",nil),NSLocalizedString(@"These 2D planes are not parallel. If you continue the result will be distorted. You can instead perform a 'Point-based registration' to have correct alignment/orientation.",nil), NSLocalizedString(@"Continue",nil), NSLocalizedString(@"Cancel",nil), nil) != HorosAlertResponseFirstButton)
                     {
                         proceed = NO;
                     }
@@ -12498,7 +12481,7 @@ static float oldsetww, oldsetwl;
         {	// Image subtraction
             NSUInteger modifierFlags = [[[NSApplication sharedApplication] currentEvent] modifierFlags];
             
-            if ((modifierFlags & NSControlKeyMask) != 0)
+            if ((modifierFlags & NSEventModifierFlagControl) != 0)
             {
                 NSUInteger count = MIN([[self pixList] count], [[bc pixList] count]);
                 for( i = 0; i < count; i++)
@@ -12511,7 +12494,7 @@ static float oldsetww, oldsetwl;
                     [[bc imageView] sendSyncMessage:0];
                     [[[bc seriesView] imageViews] makeObjectsPerformSelector:@selector(display)];
                     
-                    [imageView subtract: [bc imageView] absolute: ((modifierFlags & NSAlternateKeyMask) != 0)];
+                    [imageView subtract: [bc imageView] absolute: ((modifierFlags & NSEventModifierFlagOption) != 0)];
                 }
             }
             else
@@ -12522,7 +12505,7 @@ static float oldsetww, oldsetwl;
                     [imageView sendSyncMessage: 0];
                     [[seriesView imageViews] makeObjectsPerformSelector:@selector(display)];
                     
-                    [imageView subtract: [bc imageView] absolute: ((modifierFlags & NSAlternateKeyMask) != 0)];
+                    [imageView subtract: [bc imageView] absolute: ((modifierFlags & NSEventModifierFlagOption) != 0)];
                 }
             }
         }
@@ -12797,9 +12780,9 @@ static float oldsetww, oldsetwl;
                         @try
                         {
                             if (data)
-                                array = [NSUnarchiver unarchiveObjectWithData: data];
+                                array = HorosUnarchiveUnkeyedObject(data);
                             else
-                                array = [NSUnarchiver unarchiveObjectWithFile: str];
+                                array = HorosUnarchiveUnkeyedObjectFromFile(str);
                         }
                         @catch (NSException * e)
                         {
@@ -12939,7 +12922,7 @@ static float oldsetww, oldsetwl;
                             
                             if( [roisArray count])
                             {
-                                if( [ViewerController areROIsArraysIdentical: [NSUnarchiver unarchiveObjectWithData: [copyRoiList[ mIndex] objectAtIndex: i]] with: roisArray] == NO || forceArchive == YES)
+                                if ([ViewerController areROIsArraysIdentical:HorosUnarchiveUnkeyedObject([copyRoiList[mIndex] objectAtIndex:i]) with:roisArray] == NO || forceArchive == YES)
                                 {
                                     [SRAnnotation archiveROIsAsDICOM: roisArray toPath: str forImage: image];
                                     [allDICOMSR addObject: str];
@@ -12949,7 +12932,7 @@ static float oldsetww, oldsetwl;
                             {
                                 if( [[NSFileManager defaultManager] fileExistsAtPath: str])
                                 {
-                                    if( [ViewerController areROIsArraysIdentical: [NSUnarchiver unarchiveObjectWithData: [copyRoiList[ mIndex] objectAtIndex: i]] with: roisArray] == NO || forceArchive == YES)
+                                    if ([ViewerController areROIsArraysIdentical:HorosUnarchiveUnkeyedObject([copyRoiList[mIndex] objectAtIndex:i]) with:roisArray] == NO || forceArchive == YES)
                                     {
                                         [SRAnnotation archiveROIsAsDICOM: roisArray toPath: str forImage: image];
                                         [allDICOMSR addObject: str];
@@ -13683,7 +13666,7 @@ static float oldsetww, oldsetwl;
     // Unselect all ROIs
     [self roiSelectDeselectAll: nil];
     
-    NSArray *roisMovies = [NSUnarchiver unarchiveObjectWithFile: filename];
+    NSArray *roisMovies = HorosUnarchiveUnkeyedObjectFromFile(filename);
     
     for( int y = 0; y < maxMovieIndex; y++)
     {
@@ -13723,10 +13706,10 @@ static float oldsetww, oldsetwl;
     [panel setAllowsMultipleSelection:YES];
     [panel setCanChooseDirectories:NO];
     
-    panel.allowedFileTypes = @[@"roi", @"rois_series", @"xml"];
+    panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"roi", @"rois_series", @"xml"]);
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         if( [[panel.URLs.lastObject pathExtension] isEqualToString:@"xml"])
@@ -13770,18 +13753,18 @@ static float oldsetww, oldsetwl;
     if( rois > 0)
     {
         [panel setCanSelectHiddenExtension:NO];
-        [panel setAllowedFileTypes:@[@"rois_series"]];
+        panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"rois_series"]);
         panel.nameFieldStringValue = [[[self fileList] objectAtIndex:0] valueForKeyPath:@"series.name"];
         
         [panel beginWithCompletionHandler:^(NSInteger result) {
-            if (result != NSFileHandlingPanelOKButton)
+            if (result != NSModalResponseOK)
                 return;
-            [NSArchiver archiveRootObject: roisPerMovies toFile :panel.URL.path];
+            HorosArchiveUnkeyedObjectToFile(roisPerMovies, panel.URL.path);
         }];
     }
     else
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Save Error",nil), NSLocalizedString(@"No ROIs in this series!",nil) , NSLocalizedString(@"OK",nil), nil, nil);
+        HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Save Error",nil), NSLocalizedString(@"No ROIs in this series!",nil) , NSLocalizedString(@"OK",nil), nil, nil);
     }
 }
 
@@ -13823,7 +13806,7 @@ static float oldsetww, oldsetwl;
     
     if( selectedRoi == nil)
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Volume Error", nil), NSLocalizedString(@"Select a ROI.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Volume Error", nil), NSLocalizedString(@"Select a ROI.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
         return;
     }
     
@@ -13832,7 +13815,7 @@ static float oldsetww, oldsetwl;
     
     if( error)
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Volume Error", nil), @"%@" , NSLocalizedString(@"OK", nil), nil, nil, error);
+        HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Volume Error", nil), @"%@" , NSLocalizedString(@"OK", nil), nil, nil, error);
     }
     else
     {
@@ -13905,7 +13888,7 @@ static float oldsetww, oldsetwl;
     {
         [self roiIntDeleteAllROIsWithSameName: [selectedROI name]];
     }
-    else NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Error", nil), NSLocalizedString(@"Select a ROI to delete all ROIs with the same name.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+    else HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Error", nil), NSLocalizedString(@"Select a ROI to delete all ROIs with the same name.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
 }
 
 - (IBAction) roiDeleteWithName:(NSString*) name
@@ -13983,7 +13966,7 @@ static float oldsetww, oldsetwl;
     
     if( selectedRoi == nil)
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Volume Error", nil), NSLocalizedString(@"Select a ROI to compute volume of all ROIs with the same name.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Volume Error", nil), NSLocalizedString(@"Select a ROI to compute volume of all ROIs with the same name.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
         return;
     }
     
@@ -13999,7 +13982,7 @@ static float oldsetww, oldsetwl;
             {
                 if( fabs( [curPix sliceLocation] - preLocation - interval) > 1.0)
                 {
-                    NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Volume Error", nil), NSLocalizedString(@"Slice Interval is not constant!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+                    HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Volume Error", nil), NSLocalizedString(@"Slice Interval is not constant!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
                     return;
                 }
             }
@@ -14014,7 +13997,7 @@ static float oldsetww, oldsetwl;
     {
         if( interval == 0)
         {
-            NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Volume Error", nil), NSLocalizedString(@"Slice Locations not available to compute a volume.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Volume Error", nil), NSLocalizedString(@"Slice Locations not available to compute a volume.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
             return;
         }
     }
@@ -14038,7 +14021,7 @@ static float oldsetww, oldsetwl;
         
         int	numberOfGeneratedROIafter = [[self roisWithComment: @"morphing generated"] count];
         if(!numberOfGeneratedROIafter)
-            NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Volume Error", nil), NSLocalizedString(@"The missing ROIs were not created : this feature does not work with ROIs that don't contain an area.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Volume Error", nil), NSLocalizedString(@"The missing ROIs were not created : this feature does not work with ROIs that don't contain an area.", nil), NSLocalizedString(@"OK", nil), nil, nil);
     }
     
     [splash close];
@@ -14078,7 +14061,7 @@ static float oldsetww, oldsetwl;
     
     [self roiSetPixelsCheckButton: self];
     
-    [NSApp beginSheet: roiSetPixWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(roiSetPixWindow, [self window], self, nil, nil);
 }
 
 - (void) recomputeROI :(NSNotification*) note
@@ -14401,7 +14384,7 @@ static float oldsetww, oldsetwl;
 {
     [self addToUndoQueue: @"roi"];
     
-    [NSApp beginSheet: roiRenameWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(roiRenameWindow, [self window], self, nil, nil);
 }
 
 - (IBAction) closeModal:(id) sender
@@ -14418,7 +14401,7 @@ static float oldsetww, oldsetwl;
 
 - (NSArray*) roiApplyWindow:(id) sender
 {
-    [NSApp beginSheet: roiApplyWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(roiApplyWindow, [self window], self, nil, nil);
     
     int result = [NSApp runModalForWindow: roiApplyWindow];
     
@@ -14428,7 +14411,7 @@ static float oldsetww, oldsetwl;
     
     NSMutableArray	*applyToROIs = [NSMutableArray array];
     
-    if( result == NSRunStoppedResponse)
+    if( result == NSModalResponseStop)
     {
         long i, x, y;
         
@@ -14561,18 +14544,18 @@ static float oldsetww, oldsetwl;
         
         if( selectedRoi == nil)
         {
-            NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"No ROI(s) selected to propagate on the series!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"No ROI(s) selected to propagate on the series!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
         }
         else
         {
             if( maxMovieIndex <= 1) [[roiPropaDim cellWithTag:1] setEnabled:NO];
             
-            [NSApp beginSheet: roiPropaWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+            HorosBeginSheet(roiPropaWindow, [self window], self, nil, nil);
         }
     }
     else
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"There is only one image in this series. Nothing to propagate!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"There is only one image in this series. Nothing to propagate!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
     }
 }
 
@@ -14667,7 +14650,7 @@ static float oldsetww, oldsetwl;
     
     if( [[pixList[curMovieIndex] objectAtIndex:[imageView curImage]] stack] < 2)
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"This function is only usefull if you use Thick Slab!", nil) , NSLocalizedString(@"OK", nil), nil, nil, nil);
+        HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"This function is only usefull if you use Thick Slab!", nil) , NSLocalizedString(@"OK", nil), nil, nil, nil);
         
         return;
     }
@@ -14724,12 +14707,12 @@ static float oldsetww, oldsetwl;
         }
         else
         {
-            NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"No ROI(s) selected to propagate on the series!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"No ROI(s) selected to propagate on the series!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
         }
     }
     else
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"There is only one image in this series. Nothing to propagate!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"There is only one image in this series. Nothing to propagate!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
     }
 }
 
@@ -14844,12 +14827,12 @@ static float oldsetww, oldsetwl;
                 }
                 else
                 {
-                    NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"No ROI(s) selected to propagate on the series!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+                    HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"No ROI(s) selected to propagate on the series!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
                 }
             }
             else
             {
-                NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"There is only one image in this series. Nothing to propagate!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+                HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"There is only one image in this series. Nothing to propagate!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
             }
             break;
             
@@ -14895,7 +14878,7 @@ static float oldsetww, oldsetwl;
             }
             else
             {
-                NSRunCriticalAlertPanel(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"No ROI(s) selected to propagate on the series!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+                HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Propagate Error", nil), NSLocalizedString(@"No ROI(s) selected to propagate on the series!", nil) , NSLocalizedString(@"OK", nil), nil, nil);
             }
         }
             break;
@@ -15526,11 +15509,11 @@ static float oldsetww, oldsetwl;
     {
         [self addToUndoQueue: @"roi"];
         
-        [NSApp beginSheet:brushROIFilterOptionsWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+        HorosBeginSheet(brushROIFilterOptionsWindow, [self window], self, nil, nil);
     }
     else
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"Brush ROI Error", nil), NSLocalizedString(@"Select a Brush ROI before to run the filter.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentCriticalAlert(NSLocalizedString(@"Brush ROI Error", nil), NSLocalizedString(@"Select a Brush ROI before to run the filter.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
         return;
     }
 }
@@ -15769,11 +15752,7 @@ static float oldsetww, oldsetwl;
     if( [sender tag] == 1)
         self.injectionDateTime = [[[[imageView curDCM] acquisitionTime] copy] autorelease];
     
-    [NSApp beginSheet: injectionTimeWindow
-       modalForWindow: displaySUVWindow
-        modalDelegate: nil
-       didEndSelector: nil
-          contextInfo: nil];
+    HorosBeginSheet(injectionTimeWindow, displaySUVWindow, nil, nil, nil);
     
     [NSApp runModalForWindow: injectionTimeWindow];
     [NSApp endSheet: injectionTimeWindow];
@@ -15998,7 +15977,7 @@ static float oldsetww, oldsetwl;
             [displaySUVWindow orderOut:sender];
             [NSApp endSheet:displaySUVWindow returnCode:[sender tag]];
         }
-        else NSRunAlertPanel(NSLocalizedString(@"SUV Error", nil), NSLocalizedString(@"These values (weight and dose) are not correct.", nil), nil, nil, nil);
+        else HorosPresentAlert(NSLocalizedString(@"SUV Error", nil), NSLocalizedString(@"These values (weight and dose) are not correct.", nil), nil, nil, nil);
     }
     else
     {
@@ -16017,7 +15996,7 @@ static float oldsetww, oldsetwl;
     
     if( -[newDate timeIntervalSinceDate: [[imageView curDCM] acquisitionTime]] <= 0)
     {
-        NSRunAlertPanel(NSLocalizedString(@"SUV Error", nil), NSLocalizedString(@"Injection time CANNOT be after acquisition time !", nil), nil, nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"SUV Error", nil), NSLocalizedString(@"Injection time CANNOT be after acquisition time !", nil), nil, nil, nil);
         
         if( [[imageView curDCM] radiopharmaceuticalStartTime])
             [[suvForm cellAtRow:3 column:0] setObjectValue: [[imageView curDCM] radiopharmaceuticalStartTime]];
@@ -16049,7 +16028,7 @@ static float oldsetww, oldsetwl;
     
     if( [[imageView curDCM] hasSUV] == NO)
     {
-        NSRunAlertPanel(NSLocalizedString(@"SUV Error", nil), NSLocalizedString(@"Cannot compute SUV on these data.", nil), nil, nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"SUV Error", nil), NSLocalizedString(@"Cannot compute SUV on these data.", nil), nil, nil, nil);
     }
     else
     {
@@ -16071,7 +16050,7 @@ static float oldsetww, oldsetwl;
         [editedAcquisitionTime release];
         editedAcquisitionTime = nil;
         
-        [NSApp beginSheet: displaySUVWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+        HorosBeginSheet(displaySUVWindow, [self window], self, nil, nil);
     }
 }
 
@@ -16106,7 +16085,7 @@ static float oldsetww, oldsetwl;
     
     if ([composedMenuTitle isEqualToString:@"?"]) //creating a content panel
     {
-        [NSApp beginSheet: CommentsWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+        HorosBeginSheet(CommentsWindow, [self window], self, nil, nil);
     }
     else //same action as endSetComments, but with composedMenuTitle
     {
@@ -16283,7 +16262,7 @@ static float oldsetww, oldsetwl;
     {
         if( [imageView syncro] == syncroOFF)
         {
-            if( [[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSAlternateKeyMask)
+            if( [[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSEventModifierFlagOption)
                 [imageView setSyncro: syncroREL];
             else
                 [imageView setSyncro: syncroLOC];
@@ -16389,9 +16368,9 @@ static float oldsetww, oldsetwl;
             [imageView sendSyncMessage: 0];
             [self propagateSettings];
         }
-        else NSRunAlertPanel(NSLocalizedString(@"Error", nil), NSLocalizedString(@"Only useful if propagate settings is OFF.", nil), nil, nil, nil);
+        else HorosPresentAlert(NSLocalizedString(@"Error", nil), NSLocalizedString(@"Only useful if propagate settings is OFF.", nil), nil, nil, nil);
     }
-    else NSRunAlertPanel(NSLocalizedString(@"Error", nil), NSLocalizedString(@"Only useful if image fusion is activated.", nil), nil, nil, nil);
+    else HorosPresentAlert(NSLocalizedString(@"Error", nil), NSLocalizedString(@"Only useful if image fusion is activated.", nil), nil, nil, nil);
 }
 
 - (void) propagateSettingsToViewer: (ViewerController*) vC
@@ -16733,7 +16712,7 @@ static float oldsetww, oldsetwl;
     
     if( volumicSelf == NO || volumicMoving == NO)
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"Resampling Error", nil),
+        HorosPresentCriticalAlert(NSLocalizedString(@"Resampling Error", nil),
                                 NSLocalizedString(@"3D Resampling requires volumic data.", nil),
                                 NSLocalizedString(@"OK", nil), nil, nil);
         
@@ -16803,7 +16782,7 @@ static float oldsetww, oldsetwl;
     }
     else
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"Resampling Error", nil),
+        HorosPresentCriticalAlert(NSLocalizedString(@"Resampling Error", nil),
                                 NSLocalizedString(@"Resampling is only available for series in the SAME study.", nil),
                                 NSLocalizedString(@"OK", nil), nil, nil);
     }
@@ -16856,7 +16835,7 @@ static float oldsetww, oldsetwl;
     
     if( volumicSelf == NO || volumicMoving == NO)
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"Registration Error", nil),
+        HorosPresentCriticalAlert(NSLocalizedString(@"Registration Error", nil),
                                 NSLocalizedString(@"3D Resampling requires volumic data.", nil),
                                 NSLocalizedString(@"OK", nil), nil, nil);
         return;
@@ -17019,7 +16998,7 @@ static float oldsetww, oldsetwl;
     
     if([errorString length]!=0)
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"Point-Based Registration Error", nil),
+        HorosPresentCriticalAlert(NSLocalizedString(@"Point-Based Registration Error", nil),
                                 @"%@",
                                 NSLocalizedString(@"OK", nil), nil, nil, errorString);
     }
@@ -18301,7 +18280,7 @@ static float oldsetww, oldsetwl;
             [v.window orderOut: self];
     }
     
-    [NSApp beginSheet: printWindow modalForWindow:self.window modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(printWindow, self.window, self, nil, nil);
 }
 
 - (void) printDICOM:(id) sender
@@ -18440,7 +18419,7 @@ static float oldsetww, oldsetwl;
     NSString *path = [mov createMovieQTKit: NO  :produceImageFiles :[[[self fileList] objectAtIndex:0] valueForKeyPath:@"series.study.name"] :fps];
     
     if( [[NSFileManager defaultManager] fileExistsAtPath: path] == NO && path != nil)
-        NSRunAlertPanel(NSLocalizedString(@"Export", nil), NSLocalizedString(@"Failed to export this file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Export", nil), NSLocalizedString(@"Failed to export this file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
     
     if ([[NSUserDefaults standardUserDefaults] boolForKey: @"OPENVIEWER"])
     {
@@ -18574,7 +18553,7 @@ static float oldsetww, oldsetwl;
     
     [self exportQuicktimeSetNumber: self];
     
-    [NSApp beginSheet: quicktimeWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(quicktimeWindow, [self window], self, nil, nil);
 }
 
 - (NSDictionary*) exportDICOMFileInt:(int) screenCapture
@@ -18762,7 +18741,7 @@ static float oldsetww, oldsetwl;
         [exportDCM setModalityAsSource: modalityAsSource];
         
         f = [exportDCM writeDCMFile: nil withExportDCM: [imageView dcmExportPlugin]];
-        if( f == nil) NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString(@"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        if( f == nil) HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString(@"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
         
         free( data);
     }
@@ -18996,7 +18975,7 @@ static float oldsetww, oldsetwl;
     panel.nameFieldStringValue = [[fileList[ curMovieIndex] objectAtIndex:0] valueForKeyPath:@"series.name"];
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         for(int i = 0; i < [fileList[ curMovieIndex] count]; i++)
@@ -19167,7 +19146,7 @@ static float oldsetww, oldsetwl;
     [self setCurrentdcmExport: dcmSelection];
     [self exportDICOMSetNumber: self];
     
-    [NSApp beginSheet: dcmExportWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(dcmExportWindow, [self window], self, nil, nil);
 }
 
 - (IBAction) export2PACS:(id) sender
@@ -19181,11 +19160,11 @@ static float oldsetww, oldsetwl;
     
     if( [pixList[ curMovieIndex] count] > 1)
     {
-        int result = NSRunInformationalAlertPanel( NSLocalizedString(@"Send to DICOM node", nil), NSLocalizedString(@"Should I send only current image or all images of current series?", nil), NSLocalizedString(@"Current", nil), NSLocalizedString(@"All", nil), NSLocalizedString(@"Cancel", nil));
+        int result = HorosPresentInformationalAlert( NSLocalizedString(@"Send to DICOM node", nil), NSLocalizedString(@"Should I send only current image or all images of current series?", nil), NSLocalizedString(@"Current", nil), NSLocalizedString(@"All", nil), NSLocalizedString(@"Cancel", nil));
         
-        if( result == NSAlertOtherReturn) return;
+        if( result == HorosAlertResponseThirdButton) return;
         
-        if( result == NSAlertDefaultReturn) all = NO;
+        if( result == HorosAlertResponseFirstButton) all = NO;
         else all = YES;
     }
     
@@ -19224,8 +19203,8 @@ static float oldsetww, oldsetwl;
     if( [[[imageView seriesObj] valueForKey: @"keyImages"] count]) [[imageSelection cellWithTag: 2] setEnabled: YES];
     else [[imageSelection cellWithTag: 2] setEnabled: NO];
     
-    if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSAlternateKeyMask) [self endExportImage: nil];
-    else [NSApp beginSheet: imageExportWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagOption) [self endExportImage: nil];
+    else HorosBeginSheet(imageExportWindow, [self window], self, nil, nil);
 }
 
 -(void) sendMail:(id) sender
@@ -19257,7 +19236,8 @@ static float oldsetww, oldsetwl;
         [fileManager createDirectoryAtPath:pathToPAGES withIntermediateDirectories:YES attributes:nil error:NULL];
     
     //pathToPAGES = timeStamp
-    NSDateFormatter *datetimeFormatter = [[[NSDateFormatter alloc]initWithDateFormat:@"%Y%m%d.%H%M%S" allowNaturalLanguage:NO] autorelease];
+    NSDateFormatter *datetimeFormatter = [[[NSDateFormatter alloc] init] autorelease];
+    datetimeFormatter.dateFormat = @"%Y%m%d.%H%M%S";
     pathToPAGES = [pathToPAGES stringByAppendingPathComponent: [datetimeFormatter stringFromDate:[NSDate date]]];
     
     if (!([[sender title] isEqualToString: @"SCAN"]))
@@ -19278,9 +19258,12 @@ static float oldsetww, oldsetwl;
     //create pathToPages/timeStamp.cfg, sibling of pathToPages (allows for use of dcm4che lib to reinject the pdf produced into OsiriX)
     //init and DICOM dateFormatter AAAAMMDD
     NSDate *tagDate;
-    NSDateFormatter *NSDate2DA_Formatter = [[[NSDateFormatter alloc] initWithDateFormat:@"%Y%m%d" allowNaturalLanguage:NO] autorelease];
-    NSDateFormatter *NSDate2TM_Formatter = [[[NSDateFormatter alloc] initWithDateFormat:@"%H%M%S" allowNaturalLanguage:NO] autorelease];
-    NSDateFormatter *NSDate2DT_Formatter = [[[NSDateFormatter alloc] initWithDateFormat:@"%Y%m%d%H%M%S.%F00%z" allowNaturalLanguage:NO] autorelease];
+    NSDateFormatter *NSDate2DA_Formatter = [[[NSDateFormatter alloc] init] autorelease];
+    NSDate2DA_Formatter.dateFormat = @"%Y%m%d";
+    NSDateFormatter *NSDate2TM_Formatter = [[[NSDateFormatter alloc] init] autorelease];
+    NSDate2TM_Formatter.dateFormat = @"%H%M%S";
+    NSDateFormatter *NSDate2DT_Formatter = [[[NSDateFormatter alloc] init] autorelease];
+    NSDate2DT_Formatter.dateFormat = @"%Y%m%d%H%M%S.%F00%z";
     
     NSString *tagString;
     
@@ -19457,7 +19440,7 @@ static float oldsetww, oldsetwl;
         //open pathToPAGES
         
         if( [[NSFileManager defaultManager] fileExistsAtPath: [pathToPAGES stringByAppendingPathExtension:@"pages"]] == NO)
-            NSRunAlertPanel(NSLocalizedString(@"Export", nil), NSLocalizedString(@"Failed to export this file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"Export", nil), NSLocalizedString(@"Failed to export this file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         
         [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:[pathToPAGES stringByAppendingPathExtension:@"pages"]]];
         [NSThread sleepForTimeInterval: 1];
@@ -19520,9 +19503,9 @@ static float oldsetww, oldsetwl;
     [panel setCanSelectHiddenExtension:YES];
     
     if( [[imageFormat selectedCell] tag] == 0)
-        [panel setAllowedFileTypes:@[@"jpg"]];
+        panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"jpg"]);
     else
-        [panel setAllowedFileTypes:@[@"tif"]];
+        panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"tif"]);
     
     if( [sender tag] != 0 || sender == nil)
     {
@@ -19537,7 +19520,7 @@ static float oldsetww, oldsetwl;
             
             panel.nameFieldStringValue = defaultExportName;
             
-            if( [panel runModal] != NSFileHandlingPanelOKButton)
+            if( [panel runModal] != NSModalResponseOK)
                 pathOK = NO;
         }
         
@@ -19596,10 +19579,10 @@ static float oldsetww, oldsetwl;
                         //						if( [[NSUserDefaults standardUserDefaults] boolForKey: @"exportImageInGrayColorSpace"] && ) // 8-bit
                         //						{
                         //							NSBitmapImageRep *grayRepresentation = [NSBitmapImageRep imageRepWithData: [im TIFFRepresentation]];
-                        //							bitmapData = [[grayRepresentation bitmapImageRepByConvertingToColorSpace: [NSColorSpace genericGrayColorSpace] renderingIntent: NSColorRenderingIntentDefault] representationUsingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+                        //							bitmapData = [[grayRepresentation bitmapImageRepByConvertingToColorSpace: [NSColorSpace genericGrayColorSpace] renderingIntent: NSColorRenderingIntentDefault] representationUsingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
                         //						}
                         //						else
-                        bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+                        bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
                         
                         NSString *jpegFile = [[[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"EXPORT"] stringByAppendingPathComponent:[NSString stringWithFormat:@"%4.4d.jpg", fileIndex++]];
                         
@@ -19609,7 +19592,7 @@ static float oldsetww, oldsetwl;
                         
                         NSDictionary *exifDict = [NSDictionary dictionaryWithObjectsAndKeys:
                                                   @"Exported from OsiriX", kCGImagePropertyExifUserComment,
-                                                  [[curImage valueForKeyPath: @"series.study.date"] descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
+                                                  [[curImage valueForKeyPath: @"series.study.date"] n2_descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
                                                   nil];
                         
                         [JPEGExif addExif: [NSURL fileURLWithPath: jpegFile] properties: exifDict format:@"jpeg"];
@@ -19628,10 +19611,10 @@ static float oldsetww, oldsetwl;
                             //							if( [[NSUserDefaults standardUserDefaults] boolForKey: @"exportImageInGrayColorSpace"]) // 8-bit
                             //							{
                             //								NSBitmapImageRep *grayRepresentation = [NSBitmapImageRep imageRepWithData: [im TIFFRepresentation]];
-                            //								bitmapData = [[grayRepresentation bitmapImageRepByConvertingToColorSpace: [NSColorSpace genericGrayColorSpace] renderingIntent: NSColorRenderingIntentDefault] representationUsingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+                            //								bitmapData = [[grayRepresentation bitmapImageRepByConvertingToColorSpace: [NSColorSpace genericGrayColorSpace] renderingIntent: NSColorRenderingIntentDefault] representationUsingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
                             //							}
                             //							else
-                            bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+                            bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
                             
                             [bitmapData writeToFile: jpegFile atomically:YES];
                             
@@ -19639,7 +19622,7 @@ static float oldsetww, oldsetwl;
                             
                             NSDictionary *exifDict = [NSDictionary dictionaryWithObjectsAndKeys:
                                                       @"Exported from OsiriX", kCGImagePropertyExifUserComment,
-                                                      [[curImage valueForKeyPath: @"series.study.date"] descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
+                                                      [[curImage valueForKeyPath: @"series.study.date"] n2_descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
                                                       nil];
                             
                             [JPEGExif addExif: [NSURL fileURLWithPath: jpegFile] properties: exifDict format:@"jpeg"];
@@ -19696,7 +19679,7 @@ static float oldsetww, oldsetwl;
                 if( filePath)
                 {
                     if( [[NSFileManager defaultManager] fileExistsAtPath: filePath] == NO)
-                        NSRunAlertPanel(NSLocalizedString(@"Export", nil), NSLocalizedString(@"Failed to export this file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                        HorosPresentAlert(NSLocalizedString(@"Export", nil), NSLocalizedString(@"Failed to export this file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
                     
                     else if ([[NSUserDefaults standardUserDefaults] boolForKey: @"OPENVIEWER"])
                         [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:filePath]];
@@ -19713,7 +19696,7 @@ static float oldsetww, oldsetwl;
         //				
         //				if( [[imageFormat selectedCell] tag] == 2)	// ifoto
         //				{
-        //					bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+        //					bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
         //					
         //					NSString *jpegFile = [[[BrowserController currentBrowser] documentsDirectory] stringByAppendingFormat:@"/TEMP.noindex/Horos.jpg"];
         //					
@@ -19723,7 +19706,7 @@ static float oldsetww, oldsetwl;
         //								
         //					NSDictionary *exifDict = [NSDictionary dictionaryWithObjectsAndKeys:
         //													@"Exported from OsiriX", kCGImagePropertyExifUserComment,
-        //													[[curImage valueForKeyPath: @"series.study.date"] descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
+        //													[[curImage valueForKeyPath: @"series.study.date"] n2_descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
         //													nil];
         //
         //					[JPEGExif addExif: [NSURL fileURLWithPath: jpegFile] properties: exifDict format:@"jpeg"];
@@ -19736,14 +19719,14 @@ static float oldsetww, oldsetwl;
         //				{
         //					if( [[imageFormat selectedCell] tag] == 0)
         //					{
-        //						bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+        //						bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
         //						[bitmapData writeToFile:[panel filename] atomically:YES];
         //						
         //						NSManagedObject	*curImage = [fileList[0] objectAtIndex:0];
         //						
         //						NSDictionary *exifDict = [NSDictionary dictionaryWithObjectsAndKeys:
         //															@"Exported from OsiriX", kCGImagePropertyExifUserComment,
-        //															[[curImage valueForKeyPath: @"series.study.date"] descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
+        //															[[curImage valueForKeyPath: @"series.study.date"] n2_descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
         //															nil];
         //
         //						
@@ -19758,7 +19741,7 @@ static float oldsetww, oldsetwl;
         //						
         //						NSDictionary *exifDict = [NSDictionary dictionaryWithObjectsAndKeys:
         //															@"Exported from OsiriX", kCGImagePropertyExifUserComment,
-        //															[[curImage valueForKeyPath: @"series.study.date"] descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
+        //															[[curImage valueForKeyPath: @"series.study.date"] n2_descriptionWithCalendarFormat:@"%Y:%m:%d %H:%M:%S" timeZone:nil locale: nil] , kCGImagePropertyExifDateTimeOriginal,
         //															nil];
         //
         //						
@@ -19766,7 +19749,7 @@ static float oldsetww, oldsetwl;
         //					}
         //					
         //					if( [[NSFileManager defaultManager] fileExistsAtPath: [panel filename]] == NO)
-        //						NSRunAlertPanel(NSLocalizedString(@"Export", nil), NSLocalizedString(@"Failed to export this file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        //						HorosPresentAlert(NSLocalizedString(@"Export", nil), NSLocalizedString(@"Failed to export this file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         //					
         //					if ([[NSUserDefaults standardUserDefaults] boolForKey: @"OPENVIEWER"])
         //					{
@@ -20466,7 +20449,7 @@ static float oldsetww, oldsetwl;
     [nc addObserver:self selector:@selector(updateReportToolbarIcon:) name:OsirixDeletedReportNotification object:nil];
     
     
-    NSMutableArray *draggedTypes = [NSMutableArray arrayWithObject:NSFilenamesPboardType];
+    NSMutableArray *draggedTypes = [NSMutableArray arrayWithObject:NSPasteboardTypeFileURL];
     [draggedTypes addObjectsFromArray:BrowserController.DatabaseObjectXIDsPasteboardTypes];
     [draggedTypes addObjectsFromArray:DCMView.PasteboardTypes];
     [[self window] registerForDraggedTypes:draggedTypes];
@@ -20564,14 +20547,14 @@ static float oldsetww, oldsetwl;
     
     if( [self isDataVolumicIn4D: YES] == NO)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Volume Rendering", nil), NSLocalizedString(@"Volume Rendering requires volumic data.", nil), nil, nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Volume Rendering", nil), NSLocalizedString(@"Volume Rendering requires volumic data.", nil), nil, nil, nil);
         return;
     }
     
     if( [self computeInterval] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask))
+       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
     {
         [self SetThicknessInterval:sender];
     }
@@ -20670,7 +20653,7 @@ static float oldsetww, oldsetwl;
     if( ci == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask))
+       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
     {
         [self SetThicknessInterval:sender];
     }
@@ -20783,14 +20766,14 @@ static float oldsetww, oldsetwl;
     
     if( [self isDataVolumicIn4D: YES] == NO)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Volume Rendering", nil), NSLocalizedString(@"Volume Rendering requires volumic data.", nil), nil, nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Volume Rendering", nil), NSLocalizedString(@"Volume Rendering requires volumic data.", nil), nil, nil, nil);
         return;
     }
     
     if( [self computeInterval] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask))
+       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
     {
         [self SetThicknessInterval:sender];
     }
@@ -20802,7 +20785,7 @@ static float oldsetww, oldsetwl;
         
         if( [curConvMenu isEqualToString:NSLocalizedString(@"No Filter", nil)] == NO)
         {
-            if( NSRunInformationalAlertPanel( NSLocalizedString(@"Convolution", nil), NSLocalizedString(@"Should I apply current convolution filter on raw data? 2D/3D post-processing viewers can only display raw data.", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn)
+            if( HorosPresentInformationalAlert( NSLocalizedString(@"Convolution", nil), NSLocalizedString(@"Should I apply current convolution filter on raw data? 2D/3D post-processing viewers can only display raw data.", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
                 [self applyConvolutionOnSource: self];
         }
         
@@ -20876,14 +20859,14 @@ static float oldsetww, oldsetwl;
     
     if( [self isDataVolumicIn4D: YES] == NO)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Surface Rendering", nil), NSLocalizedString(@"Surface Rendering requires volumic data.", nil), nil, nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Surface Rendering", nil), NSLocalizedString(@"Surface Rendering requires volumic data.", nil), nil, nil, nil);
         return;
     }
     
     if( [self computeInterval] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask))
+       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
     {
         [self SetThicknessInterval:sender];
     }
@@ -20978,7 +20961,7 @@ static float oldsetww, oldsetwl;
         
         if( [DCMView angleBetweenVector: orientA+6 andVector:orientB+6] > [[NSUserDefaults standardUserDefaults] floatForKey: @"PARALLELPLANETOLERANCE"])  // Planes are not paralel!
         {
-            NSRunCriticalAlertPanel(NSLocalizedString(@"2D Planes",nil),NSLocalizedString(@"These 2D planes are not parallel, you cannot use the 2D Orthogonal MPR viewer. Instead, try the 3D MPR viewer.",nil), NSLocalizedString(@"OK",nil), nil, nil);
+            HorosPresentCriticalAlert(NSLocalizedString(@"2D Planes",nil),NSLocalizedString(@"These 2D planes are not parallel, you cannot use the 2D Orthogonal MPR viewer. Instead, try the 3D MPR viewer.",nil), NSLocalizedString(@"OK",nil), nil, nil);
         }
         else
         {
@@ -21031,7 +21014,7 @@ static float oldsetww, oldsetwl;
     if( [self computeInterval] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask))
+       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
     {
         [self SetThicknessInterval:sender];
     }
@@ -21039,7 +21022,7 @@ static float oldsetww, oldsetwl;
     {
         if( [self isDataVolumicIn4D: YES] == NO) // || [[imageView curDCM] isRGB] == YES)
         {
-            NSRunAlertPanel(NSLocalizedString(@"MPR", nil), NSLocalizedString(@"MPR requires volumic data.", nil), nil, nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"MPR", nil), NSLocalizedString(@"MPR requires volumic data.", nil), nil, nil, nil);
             return;
         }
         
@@ -21115,7 +21098,7 @@ static float oldsetww, oldsetwl;
     if( [self computeInterval] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask))
+       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
     {
         [self SetThicknessInterval:sender];
     }
@@ -21123,7 +21106,7 @@ static float oldsetww, oldsetwl;
     {
         if( [self isDataVolumicIn4D: YES] == NO)
         {
-            NSRunAlertPanel(NSLocalizedString(@"Endoscopy", nil), NSLocalizedString(@"Endoscopy requires volumic data.", nil), nil, nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"Endoscopy", nil), NSLocalizedString(@"Endoscopy requires volumic data.", nil), nil, nil, nil);
             return;
         }
         
@@ -21160,7 +21143,7 @@ static float oldsetww, oldsetwl;
 //	if( [self computeInterval] == 0 ||
 //		[[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
 //		[[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-//		([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask))
+//		([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
 //	{
 //		[self SetThicknessInterval:sender];
 //	}
@@ -21223,7 +21206,7 @@ static float oldsetww, oldsetwl;
     if( [self computeInterval] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask))
+       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
     {
         [self SetThicknessInterval:sender];
     }
@@ -21231,7 +21214,7 @@ static float oldsetww, oldsetwl;
     {
         if( [self isDataVolumicIn4D: YES] == NO) // || [[imageView curDCM] isRGB] == YES)
         {
-            NSRunAlertPanel(NSLocalizedString(@"MPR", nil), NSLocalizedString(@"MPR requires volumic data.", nil), nil, nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"MPR", nil), NSLocalizedString(@"MPR requires volumic data.", nil), nil, nil, nil);
             return;
         }
         
@@ -21292,7 +21275,7 @@ static float oldsetww, oldsetwl;
     if( [self computeInterval] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
        [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask))
+       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
     {
         [self SetThicknessInterval:sender];
     }
@@ -21300,7 +21283,7 @@ static float oldsetww, oldsetwl;
     {
         if( [self isDataVolumicIn4D: YES] == NO || [[imageView curDCM] isRGB] == YES)
         {
-            NSRunAlertPanel(NSLocalizedString(@"CPR", nil), NSLocalizedString(@"CPR requires volumic data and BW images.", nil), nil, nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"CPR", nil), NSLocalizedString(@"CPR requires volumic data and BW images.", nil), nil, nil, nil);
             return;
         }
         
@@ -21539,7 +21522,7 @@ static float oldsetww, oldsetwl;
 {
     if( postprocessed)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Revert", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot revert it.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Revert", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot revert it.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         
         return;
     }
@@ -21588,7 +21571,7 @@ static float oldsetww, oldsetwl;
 {
     if( postprocessed)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot create/modify/search key images. Revert to the original series or create a secondary capture series to do this.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot create/modify/search key images. Revert to the original series or create a secondary capture series to do this.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         return;
     }
     
@@ -21752,7 +21735,7 @@ static float oldsetww, oldsetwl;
 {
     if( postprocessed)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot create/modify/search key images. Revert to the original series or create a secondary capture series to do this.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot create/modify/search key images. Revert to the original series or create a secondary capture series to do this.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         return;
     }
     
@@ -21783,7 +21766,7 @@ static float oldsetww, oldsetwl;
             
             if( [keyImagesArray count] == 0)
             {
-                NSRunAlertPanel(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"No key images have been selected in this series.", nil), nil, nil, nil);
+                HorosPresentAlert(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"No key images have been selected in this series.", nil), nil, nil, nil);
                 [keyImagePopUpButton selectItemAtIndex: 0];
             }
             else
@@ -21799,7 +21782,7 @@ static float oldsetww, oldsetwl;
 {
     if( postprocessed)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot create/modify/search key images. Revert to the original series or create a secondary capture series to do this.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot create/modify/search key images. Revert to the original series or create a secondary capture series to do this.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         return;
     }
     
@@ -21839,7 +21822,7 @@ static float oldsetww, oldsetwl;
 {
     if( postprocessed)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot create/modify/search key images. Revert to the original series or create a secondary capture series to do this.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot create/modify/search key images. Revert to the original series or create a secondary capture series to do this.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         return;
     }
     
@@ -21870,7 +21853,7 @@ static float oldsetww, oldsetwl;
 {
     if( postprocessed)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot create/modify/search key images. Revert to the original series or create a secondary capture series to do this.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot create/modify/search key images. Revert to the original series or create a secondary capture series to do this.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         return;
     }
     
@@ -21901,7 +21884,7 @@ static float oldsetww, oldsetwl;
 {
     if( postprocessed)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot create/modify/search key images. Revert to the original series or create a secondary capture series to do this.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot create/modify/search key images. Revert to the original series or create a secondary capture series to do this.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         return;
     }
     
@@ -22013,7 +21996,7 @@ static float oldsetww, oldsetwl;
     
     [CommentsEditField selectText: self];
     
-    [NSApp beginSheet: CommentsWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(CommentsWindow, [self window], self, nil, nil);
 }
 
 - (void) applyStatusValue
@@ -22046,7 +22029,7 @@ static float oldsetww, oldsetwl;
 
 - (IBAction) databaseWindow : (id) sender
 {
-    if (!([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask))
+    if (!([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
     {
         [ViewerController closeAllWindows];
     }
@@ -22064,7 +22047,7 @@ static float oldsetww, oldsetwl;
 //{
 //	id study = [[imageView seriesObj] valueForKey:@"study"];
 //	KeyObjectController *controller = [[KeyObjectController alloc] initWithStudy:(id)study];
-//	[NSApp beginSheet:[controller window]  modalForWindow:[self window] modalDelegate:self didEndSelector:@selector(keyObjectSheetDidEnd:returnCode:contextInfo:) contextInfo:controller];
+//	HorosBeginSheet([controller window], [self window], self, @selector(keyObjectSheetDidEnd:returnCode:contextInfo:), controller);
 //}
 //
 //- (void)keyObjectSheetDidEnd:(NSWindow *)sheet returnCode:(int)returnCode  contextInfo:(id)contextInfo
@@ -22287,7 +22270,7 @@ static float oldsetww, oldsetwl;
 {
     if([[[self imageView] curDCM] isRGB])
     {
-        NSRunAlertPanel(NSLocalizedString(@"Data Error", nil), NSLocalizedString(@"This tool currently does not work with RGB data series.", nil), nil, nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Data Error", nil), NSLocalizedString(@"This tool currently does not work with RGB data series.", nil), nil, nil, nil);
         return;
     }
     
@@ -22297,7 +22280,7 @@ static float oldsetww, oldsetwl;
         
         if( volumicData == NO)
         {
-            NSRunAlertPanel(NSLocalizedString(@"Data Error", nil), NSLocalizedString(@"This tool works only with 3D data series with identical matrix sizes.", nil), nil, nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"Data Error", nil), NSLocalizedString(@"This tool works only with 3D data series with identical matrix sizes.", nil), nil, nil, nil);
             return;
         }
         
@@ -22316,7 +22299,7 @@ static float oldsetww, oldsetwl;
         
         if( volumicData == NO)
         {
-            NSRunAlertPanel(NSLocalizedString(@"Data Error", nil), NSLocalizedString(@"This tool works only with 3D data series with identical matrix sizes.", nil), nil, nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"Data Error", nil), NSLocalizedString(@"This tool works only with 3D data series with identical matrix sizes.", nil), nil, nil, nil);
             return;
         }
         

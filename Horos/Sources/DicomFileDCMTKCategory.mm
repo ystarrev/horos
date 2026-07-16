@@ -66,6 +66,34 @@ typedef void (*HorosModernDCMTKFreeBasicMetadataFn)(HorosModernDCMTKBasicMetadat
 typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
 typedef void (*HorosModernDCMTKFreeBufferFn)(void* buffer);
 
+static NSDateFormatter *HorosDICOMDateFormatter(NSString *format)
+{
+    NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
+    formatter.calendar = [[[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian] autorelease];
+    formatter.locale = [[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"] autorelease];
+    formatter.timeZone = [NSTimeZone defaultTimeZone];
+    formatter.dateFormat = format;
+    formatter.lenient = NO;
+    return formatter;
+}
+
+static NSDate *HorosDateFromDICOMString(NSString *value, NSString *format, NSUInteger expectedLength)
+{
+    if (value.length < expectedLength)
+        return nil;
+    return [HorosDICOMDateFormatter(format) dateFromString:[value substringToIndex:expectedLength]];
+}
+
+static NSDate *HorosDICOMFallbackDate(void)
+{
+    NSDateComponents *components = [[[NSDateComponents alloc] init] autorelease];
+    components.year = 1901;
+    components.month = 1;
+    components.day = 1;
+    components.timeZone = [NSTimeZone defaultTimeZone];
+    return [[NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian] dateFromComponents:components];
+}
+
 static void* HorosModernDCMTKBridgeHandle()
 {
     static void* handle = nullptr;
@@ -619,18 +647,18 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     if( studyDate && studyTime)
     {
         NSString *completeDate = [studyDate stringByAppendingString:studyTime];
-        if( [studyTime length] >= 6)
-            date = [[NSCalendarDate alloc] initWithString:completeDate calendarFormat:@"%Y%m%d%H%M%S"];
+        if ([studyTime length] >= 6)
+            date = [HorosDateFromDICOMString(completeDate, @"yyyyMMddHHmmss", 14) retain];
         else
-            date = [[NSCalendarDate alloc] initWithString:completeDate calendarFormat:@"%Y%m%d%H%M"];
+            date = [HorosDateFromDICOMString(completeDate, @"yyyyMMddHHmm", 12) retain];
     }
     else if( studyDate)
     {
         studyDate = [studyDate stringByAppendingString: @"120000"];
-        date = [[NSCalendarDate alloc] initWithString:studyDate calendarFormat: @"%Y%m%d%H%M%S"];
+        date = [HorosDateFromDICOMString(studyDate, @"yyyyMMddHHmmss", 14) retain];
     }
     else
-        date = [[NSCalendarDate dateWithYear:1901 month:1 day:1 hour:0 minute:0 second:0 timeZone:nil] retain];
+        date = [HorosDICOMFallbackDate() retain];
     
     if( date)
         [dicomElements setObject:date forKey:@"studyDate"];
@@ -729,13 +757,13 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
         patientBirthDateValue = HorosModernDCMTKCopyFieldByTagString(filePath.UTF8String, 0x0010, 0x0030, encoding.data(), copyFieldByTagFn, freeStringFn);
     if (patientBirthDateValue)
     {
-        NSCalendarDate *DOB = [NSCalendarDate dateWithString: patientBirthDateValue calendarFormat:@"%Y%m%d"];
+        NSDate *DOB = HorosDateFromDICOMString(patientBirthDateValue, @"yyyyMMdd", 8);
         if (DOB)
-            patientBirthDate = [[DOB descriptionWithCalendarFormat:@"%Y%m%d"] retain];
+            patientBirthDate = [[HorosDICOMDateFormatter(@"yyyyMMdd") stringFromDate:DOB] retain];
     }
     if( patientBirthDate)
     {
-        NSCalendarDate *DOB = [NSCalendarDate dateWithString: patientBirthDate calendarFormat:@"%Y%m%d"];
+        NSDate *DOB = HorosDateFromDICOMString(patientBirthDate, @"yyyyMMdd", 8);
         if (DOB)
             [dicomElements setObject:DOB forKey:@"patientBirthDate"];
     }
@@ -1020,7 +1048,7 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
                 if( referencedSOPInstanceUID)
                     [dicomElements setObject: referencedSOPInstanceUID forKey: @"referencedSOPInstanceUID"];
                 
-                int numberOfROIs = [[NSUnarchiver unarchiveObjectWithData: [SRAnnotation roiFromDICOM: filePath]] count];
+                int numberOfROIs = [[SRAnnotation unarchiveROIsFromCompatibilityData:[SRAnnotation roiFromDICOM:filePath]] count];
                 [dicomElements setObject: [NSNumber numberWithInt: numberOfROIs] forKey: @"numberOfROIs"];
             }
         }
@@ -1091,7 +1119,7 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     
     if( date == nil)
     {
-        date = [[NSCalendarDate dateWithYear:1901 month:1 day:1 hour:0 minute:0 second:0 timeZone:nil] retain];
+        date = [HorosDICOMFallbackDate() retain];
         [dicomElements setObject:date forKey:@"studyDate"];
     }
     

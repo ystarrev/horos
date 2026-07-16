@@ -1,3 +1,4 @@
+#import "HorosFilePanelContentTypes.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -76,8 +77,8 @@
 {
     NSMutableArray *compressors = [NSMutableArray array];
     
-    [compressors addObject: [NSDictionary dictionaryWithObjectsAndKeys: AVVideoCodecJPEG, @"videoCodec", @"JPEG Quicktime Movie", @"name", @"mov", @"extension", nil]];
-    [compressors addObject: [NSDictionary dictionaryWithObjectsAndKeys: AVVideoCodecH264, @"videoCodec", @"H264 Movie", @"name", @"mp4", @"extension", nil]];
+    [compressors addObject: [NSDictionary dictionaryWithObjectsAndKeys: AVVideoCodecTypeJPEG, @"videoCodec", @"JPEG Quicktime Movie", @"name", @"mov", @"extension", nil]];
+    [compressors addObject: [NSDictionary dictionaryWithObjectsAndKeys: AVVideoCodecTypeH264, @"videoCodec", @"H264 Movie", @"name", @"mp4", @"extension", nil]];
     
     return compressors;
 }
@@ -88,7 +89,7 @@
     {
         NSInteger indexOfSelectedItem = [type indexOfSelectedItem];
         
-        [panel setAllowedFileTypes:@[[[exportTypes objectAtIndex: indexOfSelectedItem] valueForKey:@"extension"]]];
+        panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[[[exportTypes objectAtIndex: indexOfSelectedItem] valueForKey:@"extension"]]);
         
         [[NSUserDefaults standardUserDefaults] setObject: [[exportTypes objectAtIndex: indexOfSelectedItem] valueForKey:@"videoCodec"] forKey:@"selectedMenuAVFoundationExport"];
     }
@@ -126,10 +127,10 @@
     }
     
     // draw
-    NSGraphicsContext *nsctxt = [NSGraphicsContext graphicsContextWithGraphicsPort:ctxt flipped:NO];
+    NSGraphicsContext *nsctxt = [NSGraphicsContext graphicsContextWithCGContext:ctxt flipped:NO];
     [NSGraphicsContext saveGraphicsState];
     [NSGraphicsContext setCurrentContext:nsctxt];
-    [image drawAtPoint:NSMakePoint(0.0, 0.0) fromRect: NSZeroRect operation:NSCompositeCopy fraction: 1.0];
+    [image drawAtPoint:NSMakePoint(0.0, 0.0) fromRect: NSZeroRect operation:NSCompositingOperationCopy fraction: 1.0];
     [NSGraphicsContext restoreGraphicsState];
     
     CVPixelBufferUnlockBaseAddress(buffer, 0);
@@ -160,7 +161,7 @@
     
     if( produceFiles)
     {
-        result = NSFileHandlingPanelOKButton;
+        result = NSModalResponseOK;
         
         NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"Photos"];
         [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
@@ -202,7 +203,7 @@
     
     @try
     {
-        if( result == NSFileHandlingPanelOKButton)
+        if( result == NSModalResponseOK)
         {
             CMTimeValue timeValue = 600 / [[NSUserDefaults standardUserDefaults] integerForKey:@"quicktimeExportRateValue"];
             CMTime frameDuration = CMTimeMake( timeValue, 600);
@@ -230,9 +231,7 @@
                     {
                         CVPixelBufferRef buffer = nil;
                         
-                        NSDisableScreenUpdates();
                         NSImage	*im = [object performSelector: selector withObject: [NSNumber numberWithLong: curSample] withObject:[NSNumber numberWithLong: numberOfFrames]];
-                        NSEnableScreenUpdates();
                         
                         if( im)
                         {
@@ -244,7 +243,7 @@
                                 
                                 NSDictionary *videoSettings = nil;
                                 
-                                if( [c isEqualToString: AVVideoCodecH264])
+                                if( [c isEqualToString: AVVideoCodecTypeH264])
                                 {
                                     double bitsPerSecond = im.size.width * im.size.height * fps * 4; //Maximum bit rate for best quality
                                     
@@ -260,7 +259,7 @@
                                     else
                                         N2LogStackTrace( @"********** bitsPerSecond == 0");
                                 }
-                                else if( [c isEqualToString: AVVideoCodecJPEG])
+                                else if( [c isEqualToString: AVVideoCodecTypeJPEG])
                                 {
                                     videoSettings = [NSDictionary dictionaryWithObjectsAndKeys:
                                                      c, AVVideoCodecKey,

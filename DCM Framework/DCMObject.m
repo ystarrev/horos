@@ -126,7 +126,7 @@ static kern_return_t FindEthernetInterfaces(io_iterator_t *matchingServices)
     // IOServiceGetMatchingServices retains the returned iterator, so release the iterator when we're done with it.
     // IOServiceGetMatchingServices also consumes a reference on the matching dictionary so we don't need to release
     // the dictionary explicitly.
-    kernResult = IOServiceGetMatchingServices(kIOMasterPortDefault, matchingDict, matchingServices);    
+    kernResult = IOServiceGetMatchingServices(kIOMainPortDefault, matchingDict, matchingServices);
     if (KERN_SUCCESS != kernResult) {
         printf("IOServiceGetMatchingServices returned 0x%08x\n", kernResult);
     }
@@ -687,7 +687,7 @@ PixelRepresentation
 
 - (id)initWithContentsOfFile:(NSString *)file decodingPixelData:(BOOL)decodePixelData{
 	if([[NSFileManager defaultManager] fileExistsAtPath:file] == NO) return nil;
-	NSData *aData = [NSData dataWithContentsOfMappedFile:file];
+	NSData *aData = [NSData dataWithContentsOfURL:[NSURL fileURLWithPath:file] options:NSDataReadingMappedIfSafe error:nil];
 	return [self initWithData:aData decodingPixelData:decodePixelData] ;
 }
 
@@ -1448,11 +1448,21 @@ PixelRepresentation
 								format = @"%H%M%S";
 				case DCM_DT:	if (!format)
 								format = @"%Y%m%d%H%M%S";
-					newValue = [DCMCalendarDate dateWithYear:[value yearOfCommonEra] month:[value monthOfYear] day:1 hour:12 minute:00 second:00 timeZone:[value timeZone]];
+					NSDateComponents *components = [[NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian]
+						components:(NSCalendarUnitYear | NSCalendarUnitMonth)
+						fromDate:value];
+					newValue = [DCMCalendarDate dateWithYear:components.year month:components.month day:1 hour:12 minute:00 second:00 timeZone:[NSTimeZone defaultTimeZone]];
 					if (![aValue isKindOfClass:[DCMCalendarDate class]])
                     {
-						if (aValue && [aValue isMemberOfClass:[NSCalendarDate class]])
-							aValue = [DCMCalendarDate dateWithString:[aValue descriptionWithCalendarFormat:format] calendarFormat:format];
+						if ([aValue isKindOfClass:[NSDate class]]) {
+							NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
+							formatter.calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+							formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+							formatter.timeZone = [NSTimeZone defaultTimeZone];
+							formatter.dateFormat = vr == DCM_DA ? @"yyyyMMdd" : (vr == DCM_TM ? @"HHmmss" : @"yyyyMMddHHmmss");
+							NSString *dateString = [formatter stringFromDate:aValue];
+							aValue = vr == DCM_DA ? [DCMCalendarDate dicomDate:dateString] : (vr == DCM_TM ? [DCMCalendarDate dicomTime:dateString] : [DCMCalendarDate dicomDateTime:dateString]);
+						}
 						else
                             aValue = nil;
                     }

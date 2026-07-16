@@ -310,7 +310,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
             [self renderWindow]->SetStereoTypeToAnaglyph();
             if( orientationWidget)
                 orientationWidget->Off();
-            for(int i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+            for(int i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
             [self setNeedsDisplay:YES];
         }
             break;
@@ -323,7 +323,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
             [self renderWindow]->SetStereoTypeToRedBlue();
             if( orientationWidget)
                 orientationWidget->Off();
-            for(int i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+            for(int i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
             [self setNeedsDisplay:YES];
         }
             break;
@@ -336,7 +336,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
             [self renderWindow]->SetStereoTypeToInterlaced();
             if( orientationWidget)
                 orientationWidget->Off();
-            for(int i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+            for(int i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
             [self setNeedsDisplay:YES];
         }
             break;
@@ -373,7 +373,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
     
     if( orientationWidget)
         orientationWidget->Off();
-    for(int i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+    for(int i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
     
     NSRect contentRectLeftScreen;
     NSRect contentRectRightScreen;
@@ -425,9 +425,9 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
     
     if( orientationWidget)
         orientationWidget->Off();
-    for(int i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+    for(int i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
     
-    unsigned int windowStyle    = NSBorderlessWindowMask;
+    unsigned int windowStyle    = NSWindowStyleMaskBorderless;
     NSRect contentRectLeftScreen;
     NSRect contentRectRightScreen;
     
@@ -596,7 +596,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
     [self renderWindow]->StereoRenderOff();
     if( orientationWidget)
         orientationWidget->On();
-    for(int i = 0; i < 4; i++) aRenderer->AddActor2D( oText[ i]);
+    for(int i = 0; i < 4; i++) aRenderer->AddViewProp( oText[ i]);
     [self setNeedsDisplay:YES];
     
     if( textWLWW)
@@ -626,9 +626,9 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
     
     if( orientationWidget)
         orientationWidget->Off();
-    for(int i = 0; i < 4; i++) aRenderer->RemoveActor2D( oText[ i]);
+    for(int i = 0; i < 4; i++) aRenderer->RemoveViewProp( oText[ i]);
     
-    unsigned int windowStyle    = NSBorderlessWindowMask;
+    unsigned int windowStyle    = NSWindowStyleMaskBorderless;
     NSRect contentRectLeftScreen;
     NSRect contentRectRightScreen;
     
@@ -996,7 +996,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
         
         beforeFrame = [self frame];
         
-        if( [theEvent modifierFlags] & NSShiftKeyMask)
+        if( [theEvent modifierFlags] & NSEventModifierFlagShift)
         {
             newFrame.size.width = [[[self window] contentView] frame].size.width - mouseLoc.x*2;
             newFrame.size.height = newFrame.size.width;
@@ -1210,13 +1210,13 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
                 
                 if( [[[controller viewer2D] modality] isEqualToString:@"PT"] || ([[NSUserDefaults standardUserDefaults] boolForKey:@"mouseWindowingNM"] == YES && [[[controller viewer2D] modality] isEqualToString:@"NM"]))
                 {
-                    if( ww < 50) sprintf(WLWWString, "From: %0.4f   To: %0.4f ", wl-ww/2, wl+ww/2);
-                    else sprintf(WLWWString, "From: %0.f   To: %0.f ", wl-ww/2, wl+ww/2);
+                    if( ww < 50) snprintf(WLWWString, sizeof(WLWWString), "From: %0.4f   To: %0.4f ", wl-ww/2, wl+ww/2);
+                    else snprintf(WLWWString, sizeof(WLWWString), "From: %0.f   To: %0.f ", wl-ww/2, wl+ww/2);
                 }
                 else
                 {
-                    if( ww < 50) sprintf(WLWWString, "WL: %0.4f WW: %0.4f ", wl, ww);
-                    else sprintf(WLWWString, "WL: %0.f WW: %0.f ", wl, ww);
+                    if( ww < 50) snprintf(WLWWString, sizeof(WLWWString), "WL: %0.4f WW: %0.4f ", wl, ww);
+                    else snprintf(WLWWString, sizeof(WLWWString), "WL: %0.f WW: %0.f ", wl, ww);
                 }
                 
                 //				if( [[NSUserDefaults standardUserDefaults] boolForKey: @"dontAutoCropScissors"] == NO)
@@ -1654,7 +1654,7 @@ static void  updateRight(vtkObject*, unsigned long eid, void* clientdata, void *
             }
         }
         
-        if( [[NSApp currentEvent] modifierFlags] & NSShiftKeyMask || projectionMode == 2)
+        if( [[NSApp currentEvent] modifierFlags] & NSEventModifierFlagShift || projectionMode == 2)
         {
             if( volumeMapper) volumeMapper->SetMinimumImageSampleDistance( 1.0);
             if( volumeMapper) volumeMapper->SetSampleDistance( 1.0);

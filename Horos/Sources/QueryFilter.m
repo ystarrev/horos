@@ -1,3 +1,4 @@
+#import "NSDate+N2.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -128,31 +129,31 @@
             
         case 3: //searchExactMatch
             if ([_object isKindOfClass:[NSDate class]]) //need to convert dates to strings
-                return [_object descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil];	
+                return [_object n2_descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil];
             else
                 return _object;
         break;
         
         case searchToday:
-            return [_object descriptionWithCalendarFormat:@"%Y%m%d-%Y%m%d" timeZone:nil locale:nil];  //today
+            return [_object n2_descriptionWithCalendarFormat:@"%Y%m%d-%Y%m%d" timeZone:nil locale:nil];  //today
         break;
         
         case searchYesterday:
-            return [_object descriptionWithCalendarFormat:@"%Y%m%d-%Y%m%d" timeZone:nil locale:nil];  //Yesterday
+            return [_object n2_descriptionWithCalendarFormat:@"%Y%m%d-%Y%m%d" timeZone:nil locale:nil];  //Yesterday
         break;
         
         case searchBefore:
-            return [NSString stringWithFormat:@"-%@", [_object descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil]]; //before
+            return [NSString stringWithFormat:@"-%@", [_object n2_descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil]]; //before
         break;
         
         case searchAfter:
             if( [[NSUserDefaults standardUserDefaults] boolForKey: @"DICOMQueryAllowFutureQuery"])
             {
-                return [NSString stringWithFormat:@"%@-", [_object descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil]]; //after
+                return [NSString stringWithFormat:@"%@-", [_object n2_descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil]]; //after
             }
             else
             {
-                return [NSString stringWithFormat:@"%@-%@", [_object descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil], [[DCMCalendarDate date] descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil]]; //after
+                return [NSString stringWithFormat:@"%@-%@", [_object n2_descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil], [[DCMCalendarDate date] n2_descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil]]; //after
             }
         break;
         
@@ -161,7 +162,7 @@
         break;
         
         case searchExactDate: 
-            return [_object descriptionWithCalendarFormat:@"%Y%m%d-%Y%m%d" timeZone:nil locale:nil];
+            return [_object n2_descriptionWithCalendarFormat:@"%Y%m%d-%Y%m%d" timeZone:nil locale:nil];
         break;
 	}
 	
@@ -171,7 +172,7 @@
 - (NSString *)withinDateString
 {
 	DCMCalendarDate *endDate = [DCMCalendarDate date];
-	NSCalendarDate *startDate = nil;
+	NSDate *startDate = nil;
 	
 	NSString *today = [endDate dateString];
 	NSString *dateRange = nil;
@@ -181,20 +182,20 @@
         default:
         case searchWithinToday: return today; //today
 		break;
-        case searchWithinLast2Days: startDate = [endDate dateByAddingYears:0 months:0 days:-1 hours:0 minutes:0 seconds:0 ];
+        case searchWithinLast2Days: startDate = [endDate n2_dateByAddingYears:0 months:0 days:-1 hours:0 minutes:0 seconds:0 ];
 		  //last 2 days
 		break;
-        case searchWithinLastWeek: startDate = [endDate dateByAddingYears:0 months:0 days:-7 hours:0 minutes:0 seconds:0 ];
+        case searchWithinLastWeek: startDate = [endDate n2_dateByAddingYears:0 months:0 days:-7 hours:0 minutes:0 seconds:0 ];
 		break;
-        case searchWithinLast2Weeks: startDate = [endDate dateByAddingYears:0 months:0 days:-14 hours:0 minutes:0 seconds:0 ];
+        case searchWithinLast2Weeks: startDate = [endDate n2_dateByAddingYears:0 months:0 days:-14 hours:0 minutes:0 seconds:0 ];
 		break;
-        case searchWithinLastMonth: startDate = [endDate dateByAddingYears:0 months:-1 days:0 hours:0 minutes:0 seconds:0 ];
+        case searchWithinLastMonth: startDate = [endDate n2_dateByAddingYears:0 months:-1 days:0 hours:0 minutes:0 seconds:0 ];
 		break;
-        case searchWithinLast2Months: startDate = [endDate dateByAddingYears:0 months:-2 days:0 hours:0 minutes:0 seconds:0 ];
+        case searchWithinLast2Months: startDate = [endDate n2_dateByAddingYears:0 months:-2 days:0 hours:0 minutes:0 seconds:0 ];
 		break;
-        case searchWithinLast3Months: startDate = [endDate dateByAddingYears:0 months:-3 days:0 hours:0 minutes:0 seconds:0 ];
+        case searchWithinLast3Months: startDate = [endDate n2_dateByAddingYears:0 months:-3 days:0 hours:0 minutes:0 seconds:0 ];
 		break;
-        case searchWithinLastYear: startDate = [endDate dateByAddingYears:-1 months:0 days:0 hours:0 minutes:0 seconds:0 ];
+        case searchWithinLastYear: startDate = [endDate n2_dateByAddingYears:-1 months:0 days:0 hours:0 minutes:0 seconds:0 ];
 		break;
 	}
     

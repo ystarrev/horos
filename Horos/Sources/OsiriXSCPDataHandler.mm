@@ -1,3 +1,4 @@
+#import "NSDate+N2.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -766,7 +767,7 @@ extern BOOL forkedProcess;
 				if( dcmstartTime)
 				{
 					DCMCalendarDate *time = [DCMCalendarDate dicomTime: dcmstartTime];
-					startDate = [[[DCMCalendarDate dicomDate: dcmstartDate] dateByAddingYears: 0 months: 0 days: 0 hours: [time hourOfDay] minutes: [time minuteOfHour] seconds: [time secondOfMinute]] timeIntervalSinceReferenceDate];
+					startDate = [[[DCMCalendarDate dicomDate: dcmstartDate] n2_dateByAddingYears: 0 months: 0 days: 0 hours: [time hourOfDay] minutes: [time minuteOfHour] seconds: [time secondOfMinute]] timeIntervalSinceReferenceDate];
 				}
 				else startDate = [self startOfDay: [DCMCalendarDate dicomDate: dcmstartDate]];
 			}
@@ -776,7 +777,7 @@ extern BOOL forkedProcess;
 				if( dcmendTime)
 				{
 					DCMCalendarDate *time = [DCMCalendarDate dicomTime: dcmendTime];
-					endDate = [[[DCMCalendarDate dicomDate: dcmendDate] dateByAddingYears: 0 months: 0 days: 0 hours: [time hourOfDay] minutes: [time minuteOfHour] seconds: [time secondOfMinute]] timeIntervalSinceReferenceDate];
+					endDate = [[[DCMCalendarDate dicomDate: dcmendDate] n2_dateByAddingYears: 0 months: 0 days: 0 hours: [time hourOfDay] minutes: [time minuteOfHour] seconds: [time secondOfMinute]] timeIntervalSinceReferenceDate];
 				}
 				else endDate = [self endOfDay: [DCMCalendarDate dicomDate: dcmendDate]];
 			}
@@ -1011,14 +1012,14 @@ extern BOOL forkedProcess;
                     {
                         int numberInstances = [[fetchedObject valueForKey:@"rawNoFiles"] intValue];
                         char value[10];
-                        sprintf(value, "%d", numberInstances);
+                        snprintf(value, sizeof(value), "%d", numberInstances);
                         dataset->putAndInsertString(DCM_NumberOfStudyRelatedInstances, value);
                     }
                     else if( key == DCM_NumberOfStudyRelatedSeries && [fetchedObject valueForKey:@"series"])
                     {
                         int numberInstances = [[fetchedObject valueForKey:@"series"] count];
                         char value[10];
-                        sprintf(value, "%d", numberInstances);
+                        snprintf(value, sizeof(value), "%d", numberInstances);
                         dataset->putAndInsertString(DCM_NumberOfStudyRelatedSeries, value);
                     }
                     else dataset->insertEmptyElement( key, OFTrue);
@@ -1108,7 +1109,7 @@ extern BOOL forkedProcess;
                     {
                         int numberInstances = [[fetchedObject valueForKey:@"rawNoFiles"] intValue];
                         char value[ 20];
-                        sprintf( value, "%d", numberInstances);
+                        snprintf(value, sizeof(value), "%d", numberInstances);
                         dataset->putAndInsertString(DCM_NumberOfSeriesRelatedInstances, value);
                     }
                     
@@ -1219,7 +1220,7 @@ extern BOOL forkedProcess;
                     {
                         int numberInstances = [[fetchedObject valueForKeyPath:@"study.rawNoFiles"] intValue];
                         char value[10];
-                        sprintf(value, "%d", numberInstances);
+                        snprintf(value, sizeof(value), "%d", numberInstances);
                         dataset->putAndInsertString(DCM_NumberOfStudyRelatedInstances, value);
                     }
                     else if( key == DCM_NumberOfStudyRelatedSeries)
@@ -1228,7 +1229,7 @@ extern BOOL forkedProcess;
                         
                         int numberInstances = [[study valueForKeyPath:@"series"] count];
                         char value[10];
-                        sprintf(value, "%d", numberInstances);
+                        snprintf(value, sizeof(value), "%d", numberInstances);
                         dataset->putAndInsertString(DCM_NumberOfStudyRelatedSeries, value);
                     }
                     
@@ -1362,7 +1363,7 @@ extern BOOL forkedProcess;
                     {
                         int numberInstances = [[fetchedObject valueForKeyPath:@"series.rawNoFiles"] intValue];
                         char value[ 20];
-                        sprintf( value, "%d", numberInstances);
+                        snprintf(value, sizeof(value), "%d", numberInstances);
                         dataset->putAndInsertString(DCM_NumberOfSeriesRelatedInstances, value);
                     }
                     
@@ -1467,7 +1468,7 @@ extern BOOL forkedProcess;
                     {
                         int numberInstances = [[fetchedObject valueForKeyPath:@"series.study.rawNoFiles"] intValue];
                         char value[10];
-                        sprintf(value, "%d", numberInstances);
+                        snprintf(value, sizeof(value), "%d", numberInstances);
                         dataset->putAndInsertString(DCM_NumberOfStudyRelatedInstances, value);
                     }
                     else if( key == DCM_NumberOfStudyRelatedSeries)
@@ -1476,7 +1477,7 @@ extern BOOL forkedProcess;
                         
                         int numberInstances = [[study valueForKeyPath:@"series"] count];
                         char value[10];
-                        sprintf(value, "%d", numberInstances);
+                        snprintf(value, sizeof(value), "%d", numberInstances);
                         dataset->putAndInsertString(DCM_NumberOfStudyRelatedSeries, value);
                     }
                     
@@ -1883,7 +1884,7 @@ extern BOOL forkedProcess;
             // See DcmQueryRetrieveSCP::unlockFile dcmqrsrv.mm
             BOOL fileExist = YES;
             char dir[ 1024];
-            sprintf( dir, "%s-%d", "/tmp/lock_process", getpid());
+            snprintf(dir, sizeof(dir), "%s-%d", "/tmp/lock_process", getpid());
             
             int inc = 0;
             do

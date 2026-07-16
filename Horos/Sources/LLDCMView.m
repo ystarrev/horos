@@ -59,7 +59,7 @@
 	
 	BOOL SelectWindowScrollWheel = [[NSUserDefaults standardUserDefaults] boolForKey: @"SelectWindowScrollWheel"];
 	
-	if( [theEvent modifierFlags] & NSAlphaShiftKeyMask) // Caps Lock
+	if( [theEvent modifierFlags] & NSEventModifierFlagCapsLock) // Caps Lock
 		SelectWindowScrollWheel = !SelectWindowScrollWheel;
 	
 	if( SelectWindowScrollWheel)
@@ -89,7 +89,7 @@
 		if( fabs( [theEvent deltaY]) > fabs( deltaX) && [theEvent deltaY] != 0)
 		{
 			
-			if( [theEvent modifierFlags]  & NSCommandKeyMask)
+			if( [theEvent modifierFlags]  & NSEventModifierFlagCommand)
 			{
 				if( blendingView)
 				{
@@ -99,7 +99,7 @@
 					[self setBlendingFactor: blendingFactor];
 				}
 			}
-			else if( [theEvent modifierFlags]  & NSAlternateKeyMask)
+			else if( [theEvent modifierFlags]  & NSEventModifierFlagOption)
 			{
 				// 4D Direction scroll - Cardiac CT eg	
 				float change = [theEvent deltaY] / -2.5f;

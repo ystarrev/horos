@@ -541,12 +541,12 @@ static BOOL kfScaleUInts(unsigned *integers, int numInts, unsigned targetTotal)
         }
 
         // get the next relevant event
-        theEvent = [NSApp nextEventMatchingMask:NSLeftMouseDraggedMask|NSLeftMouseUpMask
+        theEvent = [NSApp nextEventMatchingMask:NSEventMaskLeftMouseDragged|NSEventMaskLeftMouseUp
                                       untilDate:distantFuture
                                          inMode:NSEventTrackingRunLoopMode
                                         dequeue:YES];
         
-    } while ([theEvent type] == NSLeftMouseDragged);
+    } while ([theEvent type] == NSEventTypeLeftMouseDragged);
     
     // inform delegate that user has finished dragging divider
     if ([kfDelegate respondsToSelector:@selector(splitView:didFinishDragInDivider:)])
@@ -562,7 +562,6 @@ static BOOL kfScaleUInts(unsigned *integers, int numInts, unsigned targetTotal)
 //    3) cleans up some other layout, like divider positions
 - (void)resizeSubviewsWithOldSize:(NSSize)oldBoundsSize
 {
-	NSDisableScreenUpdates();
 	
     [kfNotificationCenter postNotificationName:NSSplitViewWillResizeSubviewsNotification object:self];
     
@@ -580,7 +579,6 @@ static BOOL kfScaleUInts(unsigned *integers, int numInts, unsigned targetTotal)
     
     [kfNotificationCenter postNotificationName:NSSplitViewDidResizeSubviewsNotification object:self];
 	
-	NSEnableScreenUpdates();
 }
 
 

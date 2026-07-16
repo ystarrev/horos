@@ -1,3 +1,5 @@
+#import "HorosDCMTKCondition.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -390,7 +392,7 @@ getCallback(void *callbackData, T_DIMSE_C_GetRQ *request,
 //    else if (cond != EC_Normal)
 //    {
 //        errmsg("DIMSE Failure (aborting sub-association):\n");
-//        DimseCondition::dump(cond);
+//        HorosLogDIMSECondition(cond);
 //        /* some kind of error so abort the association */
 //        cond = ASC_abortAssociation(*subAssoc);
 //    }
@@ -1558,7 +1560,7 @@ subOpCallback(void * /*subOpCallbackData*/ ,
         
         avoidErrorMessageReentry = YES;
         if ([[NSUserDefaults standardUserDefaults] boolForKey: alertSuppress] == NO)
-            NSRunCriticalAlertPanel( [msg objectAtIndex: 0], @"%@", [msg objectAtIndex: 2], nil, nil, [msg objectAtIndex: 1]);
+            HorosPresentCriticalAlert( [msg objectAtIndex: 0], @"%@", [msg objectAtIndex: 2], nil, nil, [msg objectAtIndex: 1]);
         
         avoidErrorMessageReentry = NO;
     }
@@ -1695,7 +1697,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
                 {
                     cond = ASC_destroyAssociation(&assoc);
                     if (cond.bad())
-                        DimseCondition::dump(cond); 
+                        HorosLogDIMSECondition(cond);
                 }
                 
                 /* drop the network, i.e. free memory of T_ASC_Network* structure. This call */
@@ -1704,7 +1706,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
                 {
                     cond = ASC_dropNetwork(&net);
                     if (cond.bad())
-                        DimseCondition::dump(cond);
+                        HorosLogDIMSECondition(cond);
                 }
                 
 #ifdef WITH_OPENSSL
@@ -1855,7 +1857,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 			if (cond.bad())
 			{
                 if (_verbose)
-                    DimseCondition::dump(cond);
+                    HorosLogDIMSECondition(cond);
                 [[NSException exceptionWithName:@"DICOM Network Failure (query)" reason:[NSString stringWithFormat: @"ASC_initializeNetwork - %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil] raise];
 			}
 			
@@ -1951,7 +1953,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				if (cond.bad())
 				{
                     if (_verbose)
-                        DimseCondition::dump(cond);
+                        HorosLogDIMSECondition(cond);
 					[[NSException exceptionWithName:@"DICOM Network Failure (TLS query)" reason:[NSString stringWithFormat: @"ASC_setTransportLayer - %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil] raise];
 				}
 			}
@@ -1960,11 +1962,11 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 			
 			
 		/* initialize asscociation parameters, i.e. create an instance of T_ASC_Parameters*. */
-			cond = ASC_createAssociationParameters(&params, _maxReceivePDULength);
-	//		DimseCondition::dump(cond);
+			cond = ASC_createAssociationParameters(&params, _maxReceivePDULength, dcmConnectionTimeout.get());
+	//		HorosLogDIMSECondition(cond);
 			if (cond.bad()) {
                 if (_verbose)
-                    DimseCondition::dump(cond);
+                    HorosLogDIMSECondition(cond);
 				[[NSException exceptionWithName:@"DICOM Network Failure (query)" reason:[NSString stringWithFormat: @"ASC_createAssociationParameters - %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil] raise];
 			}
 			
@@ -1978,14 +1980,14 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 			cond = ASC_setTransportLayerType(params, _secureConnection);
 			if (cond.bad()) {
                 if (_verbose)
-                    DimseCondition::dump(cond);
+                    HorosLogDIMSECondition(cond);
 				[[NSException exceptionWithName:@"DICOM Network Failure (query)" reason:[NSString stringWithFormat: @"ASC_setTransportLayerType - %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil] raise];
 			}
 			
 			/* Figure out the presentation addresses and copy the */
 			/* corresponding values into the association parameters.*/
 			gethostname(localHost, sizeof(localHost) - 1);
-			sprintf(peerHost, "%s:%d", opt_peer, (int)opt_port);
+			snprintf(peerHost, sizeof(peerHost), "%s:%d", opt_peer, (int)opt_port);
 			//NSLog(@"peer host: %s", peerHost);
 			ASC_setPresentationAddresses(params, localHost, peerHost);	//localHost
 			
@@ -2002,7 +2004,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 			if (cond.bad())
 			{
                 if (_verbose)
-                    DimseCondition::dump(cond);
+                    HorosLogDIMSECondition(cond);
 				[[NSException exceptionWithName:@"DICOM Network Failure (query)" reason:[NSString stringWithFormat: @"addPresentationContext - %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil] raise];
 			}
 
@@ -2016,10 +2018,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				}
 				else
 				{
-					[HorosDCMTKVerboseLogLock() lock];
-					printf("Request Parameters:\n");
-					ASC_dumpParameters(params, COUT);
-					[HorosDCMTKVerboseLogLock() unlock];
+					HorosLogAssociationParameters(params, ASC_ASSOC_RQ);
 				}
 			}
 			
@@ -2082,7 +2081,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
                         T_ASC_RejectParameters rej;
                         ASC_getRejectParameters(params, &rej);
                         errmsg("Association Rejected:");
-                        ASC_printRejectParameters(stderr, &rej);
+                        HorosLogAssociationRejection(&rej);
                         
                     }
 					[[NSException exceptionWithName:@"DICOM Network Failure (query)" reason:[NSString stringWithFormat: @"Association Rejected : %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil] raise];
@@ -2092,7 +2091,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				{
                     if (_verbose) {
                         errmsg("Association Request Failed:");
-                        DimseCondition::dump(cond);
+                        HorosLogDIMSECondition(cond);
                     }
 					[[NSException exceptionWithName:@"DICOM Network Failure (query)" reason:[NSString stringWithFormat: @"Association Request Failed : %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil] raise];
 				}
@@ -2106,14 +2105,11 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				strcmp(abstractSyntax, UID_GETPatientStudyOnlyQueryRetrieveInformationModel) == 0)
 				{
 	//				printf("Association Parameters Negotiated:\n");
-	//				ASC_dumpParameters(params, COUT);
+	//				HorosLogAssociationParameters(params, ASC_ASSOC_AC);
 				}
 				else
 				{
-					[HorosDCMTKVerboseLogLock() lock];
-					printf("Association Parameters Negotiated:\n");
-					ASC_dumpParameters(params, COUT);
-					[HorosDCMTKVerboseLogLock() unlock];
+					HorosLogAssociationParameters(params, ASC_ASSOC_AC);
 				}
 			}
 			
@@ -2199,7 +2195,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 					{
                         if (_verbose) {
                             errmsg("Association Abort Failed:");
-                            DimseCondition::dump(cond);
+                            HorosLogDIMSECondition(cond);
                         }
                         [[NSException exceptionWithName:@"DICOM Network Failure (query)" reason:[NSString stringWithFormat: @"Association Abort Failed %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil] raise];
 					}
@@ -2214,7 +2210,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 					{
                         if (_verbose) {
                             errmsg("Association Release Failed:");
-                            DimseCondition::dump(cond);
+                            HorosLogDIMSECondition(cond);
                         }
                         [[NSException exceptionWithName:@"DICOM Network Failure (query)" reason:[NSString stringWithFormat: @"Association Release Failed %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil] raise];
 					}
@@ -2236,7 +2232,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				{
                     if (_verbose) {
                         errmsg("Association Abort Failed:");
-                        DimseCondition::dump(cond);
+                        HorosLogDIMSECondition(cond);
                     }
 				}
 				[[NSException exceptionWithName:@"DICOM Network Failure (query)" reason: reason userInfo:nil] raise];
@@ -2249,7 +2245,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 			{
 				if (_verbose) {
                     errmsg("SCU Failed:");
-                    DimseCondition::dump(cond);
+                    HorosLogDIMSECondition(cond);
 					printf("Aborting Association\n");
 				}
                 
@@ -2263,7 +2259,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				{
                     if (_verbose) {
                         errmsg("Association Abort Failed:");
-                        DimseCondition::dump(cond);
+                        HorosLogDIMSECondition(cond);
                     }
 				}
 				
@@ -2317,7 +2313,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 //		{
 //			cond = ASC_destroyAssociation(&assoc);
 //			if (cond.bad())
-//				DimseCondition::dump(cond); 
+//				HorosLogDIMSECondition(cond);
 //		}
 //		
 //		/* drop the network, i.e. free memory of T_ASC_Network* structure. This call */
@@ -2326,7 +2322,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 //		{
 //			cond = ASC_dropNetwork(&net);
 //			if (cond.bad())
-//				DimseCondition::dump(cond);
+//				HorosLogDIMSECondition(cond);
 //		}
 //
 //	#ifdef WITH_OPENSSL
@@ -2482,7 +2478,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
             [HorosDCMTKVerboseLogLock() lock];
             errmsg("Find Failed\n Condition:\n");
             //dataset->print(COUT);
-            DimseCondition::dump(cond);
+            HorosLogDIMSECondition(cond);
             NSLog(@"Dimse Status: %@", [NSString stringWithUTF8String: DU_cfindStatusString(rsp.DimseStatus)]);
             [HorosDCMTKVerboseLogLock() unlock];
         }
@@ -2666,7 +2662,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
                 [DCMTKQueryNode performSelectorOnMainThread:@selector(errorMessage:) withObject:[NSArray arrayWithObjects: NSLocalizedString(@"Move Failed", nil), [NSString stringWithUTF8String: cond.text()], NSLocalizedString(@"Continue", nil), nil] waitUntilDone: NO];
             if (_verbose) {
                 errmsg("Move Failed:");
-                DimseCondition::dump(cond);
+                HorosLogDIMSECondition(cond);
             }
 		}
 	}
@@ -2784,7 +2780,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
             [DCMTKQueryNode performSelectorOnMainThread:@selector(errorMessage:) withObject:[NSArray arrayWithObjects: NSLocalizedString(@"Get Failed", nil), [NSString stringWithUTF8String: cond.text()], NSLocalizedString(@"Continue", nil), nil] waitUntilDone:NO];
         if (_verbose) {
             errmsg("Get Failed:");
-            DimseCondition::dump(cond);
+            HorosLogDIMSECondition(cond);
         }
     }
 	

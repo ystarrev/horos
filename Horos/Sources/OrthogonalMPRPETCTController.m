@@ -70,11 +70,11 @@
 
 - (void) doubleClick:(NSEvent *)event :(id) sender
 {
-	if ([event modifierFlags] & NSAlternateKeyMask)
+	if ([event modifierFlags] & NSEventModifierFlagOption)
 	{
 		[self fullWindowView: sender];
 	}
-	else if ([event modifierFlags] & NSShiftKeyMask)
+	else if ([event modifierFlags] & NSEventModifierFlagShift)
 	{
 		[self fullWindowModality: sender];
 	}

@@ -38,11 +38,15 @@
 #import <Foundation/Foundation.h>
 
 
-/** \brief Subclass of NSCalendarDate to deal with the  DICOM date and time formats 
+/** \brief NSDate subclass that deals with DICOM date and time formats.
 *
-* Subclass of NSCalendarDate to deal with the  DICOM date and time formats.
+* DICOM parsing and formatting are implemented with NSCalendar and
+* NSDateFormatter; no NSCalendarDate behavior is required.
 */
-@interface DCMCalendarDate : NSCalendarDate {
+@interface DCMCalendarDate : NSDate {
+	NSTimeInterval _timeIntervalSinceReferenceDate;
+	NSString *_calendarFormat;
+	NSTimeZone *_timeZone;
 	NSString *queryString;
 	BOOL isQuery;
 }
@@ -93,6 +97,18 @@
 /** return the query as a DICOM formatted string */
 - (NSString *)queryString;
 
+- (instancetype)initWithString:(NSString *)description calendarFormat:(NSString *)format;
+- (instancetype)initWithYear:(NSInteger)year month:(NSUInteger)month day:(NSUInteger)day hour:(NSUInteger)hour minute:(NSUInteger)minute second:(NSUInteger)second timeZone:(NSTimeZone *)timeZone;
+- (NSString *)descriptionWithCalendarFormat:(NSString *)format;
+- (NSInteger)yearOfCommonEra;
+- (NSInteger)monthOfYear;
+- (NSInteger)dayOfMonth;
+- (NSInteger)hourOfDay;
+- (NSInteger)minuteOfHour;
+- (NSInteger)secondOfMinute;
+- (NSTimeZone *)timeZone;
+- (void)setTimeZone:(NSTimeZone *)timeZone;
+
 
 /** return the date as an NSNumber YYYYMMDD*/
 - (NSNumber *)dateAsNumber;
@@ -111,5 +127,4 @@
 
 /** Human readable description of the date */
 - (NSString *)description;
-- (NSString *)descriptionWithLocale:(id)localeDictionary;
 @end

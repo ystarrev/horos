@@ -1,3 +1,5 @@
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -87,7 +89,7 @@
  
 	if( [self getRow: &row column: &column forPoint: [self convertPoint:[theEvent locationInWindow] fromView:nil]])
 	{
-		if( [theEvent modifierFlags] & NSShiftKeyMask )
+		if( [theEvent modifierFlags] & NSEventModifierFlagShift )
 		{
 			NSInteger start = [[self cells] indexOfObject: [[self selectedCells] objectAtIndex: 0]];
 			NSInteger end = [[self cells] indexOfObject: [self cellAtRow:row column:column]];
@@ -95,7 +97,7 @@
 			[self setSelectionFrom:start to:end anchor:start highlight: NO];
 			
 		}
-		else if( [theEvent modifierFlags] & NSCommandKeyMask )
+		else if( [theEvent modifierFlags] & NSEventModifierFlagCommand )
 		{
 			NSInteger end = [[self cells] indexOfObject: [self cellAtRow:row column:column]];
 			
@@ -159,7 +161,7 @@
 				NSRectFill( NSMakeRect( width, 0, [firstCell size].width, [firstCell size].height));
 				
 				NSImage	*im = [[subArray objectAtIndex: i] image];
-				[im drawAtPoint: NSMakePoint(width, 3) fromRect:NSMakeRect(0,0,[im size].width, [im size].height) operation: NSCompositeCopy fraction: 0.8];
+				[im drawAtPoint: NSMakePoint(width, 3) fromRect:NSMakeRect(0,0,[im size].width, [im size].height) operation: NSCompositingOperationCopy fraction: 0.8];
 			
 				width += [im size].width;
 				width += MARGIN;
@@ -169,7 +171,7 @@
 		
         NSPasteboardItem* pbi = [[[NSPasteboardItem alloc] init] autorelease];
         [pbi setDataProvider:self forTypes:@[NSPasteboardTypeString, (NSString *)kPasteboardTypeFileURLPromise]];
-        [pbi setString:(id)kUTTypeImage forType:(id)kPasteboardTypeFilePromiseContent];
+        [pbi setString:UTTypeImage.identifier forType:(id)kPasteboardTypeFilePromiseContent];
         
         NSMutableArray* objects = [NSMutableArray array];
         for( i = 0; i < [cells count]; i++)
@@ -268,7 +270,7 @@
                     url = [dropDestination URLByAppendingPathComponent:[NSString stringWithFormat:@"%@.%d (%lu).jpg", selectedObject.completePath.lastPathComponent, previewPix.imageObj.frameID.intValue, i]];
 
                 NSArray *representations = [[previewPix image] representations];
-                NSData *bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+                NSData *bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
                 [bitmapData writeToURL:url atomically:YES];
                 
                 [item setString:[url absoluteString] forType:type];
@@ -298,13 +300,13 @@
                 [[NSColor grayColor] set];
                 NSRectFill(NSMakeRect(0,0,thumbnailWidth, 70+6));		
                 NSRectFill( NSMakeRect( 3, 0, [image size].width, [image size].height));
-                [image drawAtPoint: NSMakePoint(3, 3) fromRect:NSMakeRect(0,0,[image size].width, [image size].height) operation: NSCompositeCopy fraction: 0.8];
+                [image drawAtPoint: NSMakePoint(3, 3) fromRect:NSMakeRect(0,0,[image size].width, [image size].height) operation: NSCompositingOperationCopy fraction: 0.8];
                 [thumbnail unlockFocus];
             }
 		
             NSPasteboardItem* pbi = [[[NSPasteboardItem alloc] init] autorelease];
             [pbi setDataProvider:self forTypes:@[NSPasteboardTypeString, (NSString *)kPasteboardTypeFileURLPromise]];
-            [pbi setString:(id)kUTTypeImage forType:(id)kPasteboardTypeFilePromiseContent];
+            [pbi setString:UTTypeImage.identifier forType:(id)kPasteboardTypeFilePromiseContent];
             
             NSDraggingItem* di = [[[NSDraggingItem alloc] initWithPasteboardWriter:pbi] autorelease];
             NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
@@ -321,11 +323,11 @@
 
 - (void) mouseDown:(NSEvent *)event
 {
-	if(([event modifierFlags]  & NSAlternateKeyMask) && ([event modifierFlags] & NSShiftKeyMask))
+	if(([event modifierFlags]  & NSEventModifierFlagOption) && ([event modifierFlags] & NSEventModifierFlagShift))
 	{
 		[self startDragOriginalFrame: event];
 	}
-	else if ([event modifierFlags]  & NSAlternateKeyMask)
+	else if ([event modifierFlags]  & NSEventModifierFlagOption)
 	{
 		[self startDrag: event];
 	}
@@ -349,8 +351,8 @@
 		{
 		do
 		{
-			ev = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
-			if (ev.type == NSLeftMouseDragged || ev.type == NSLeftMouseUp)
+			ev = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
+			if (ev.type == NSEventTypeLeftMouseDragged || ev.type == NSEventTypeLeftMouseUp)
 				keepOn = NO;
 		}while (keepOn && [start timeIntervalSinceNow] >= -1);
 		

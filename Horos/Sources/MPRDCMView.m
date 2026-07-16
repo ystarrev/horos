@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -176,7 +177,6 @@ unsigned int minimumStep;
 
 - (void) setFrame:(NSRect)frameRect
 {
-    NSDisableScreenUpdates();
     
 	if( NSEqualRects( frameRect, [self frame]) == NO)
 	{
@@ -192,7 +192,6 @@ unsigned int minimumStep;
 	
 	[super setFrame: frameRect];
     
-    NSEnableScreenUpdates();
 }
 
 - (void) checkForFrame
@@ -330,10 +329,10 @@ unsigned int minimumStep;
             [self updateViewMPR];
         }
         else
-            NSRunCriticalAlertPanel(NSLocalizedString(@"Actual Size Error",nil), NSLocalizedString(@"Displayed pixels are non-squared pixel. Images cannot be displayed at actual size.",nil) , NSLocalizedString( @"OK",nil), nil, nil);
+            HorosPresentCriticalAlert(NSLocalizedString(@"Actual Size Error",nil), NSLocalizedString(@"Displayed pixels are non-squared pixel. Images cannot be displayed at actual size.",nil) , NSLocalizedString( @"OK",nil), nil, nil);
     }
     else
-        NSRunCriticalAlertPanel(NSLocalizedString(@"Actual Size Error",nil), NSLocalizedString(@"This screen doesn't support this function.",nil) , NSLocalizedString( @"OK",nil), nil, nil);
+        HorosPresentCriticalAlert(NSLocalizedString(@"Actual Size Error",nil), NSLocalizedString(@"This screen doesn't support this function.",nil) , NSLocalizedString( @"OK",nil), nil, nil);
 }
 
 
@@ -1076,8 +1075,8 @@ unsigned int minimumStep;
         
         float move = 2;
         
-        if( [theEvent modifierFlags] & NSAlternateKeyMask) move = 6;
-        if( [theEvent modifierFlags] & NSCommandKeyMask) move = 1;
+        if( [theEvent modifierFlags] & NSEventModifierFlagOption) move = 6;
+        if( [theEvent modifierFlags] & NSEventModifierFlagCommand) move = 1;
         
         if( c == NSDownArrowFunctionKey) { center.y -= move*slopeY; center.x += move*slopeX;}
         if( c == NSUpArrowFunctionKey) { center.y += move*slopeY; center.x -= move*slopeX;}
@@ -1519,7 +1518,7 @@ unsigned int minimumStep;
 	
 	@try
 	{
-		if( [theEvent type] ==	NSLeftMouseDown || [theEvent type] ==	NSRightMouseDown || [theEvent type] ==	NSLeftMouseUp || [theEvent type] == NSRightMouseUp)
+		if( [theEvent type] ==	NSEventTypeLeftMouseDown || [theEvent type] ==	NSEventTypeRightMouseDown || [theEvent type] ==	NSEventTypeLeftMouseUp || [theEvent type] == NSEventTypeRightMouseUp)
 			clickCount = [theEvent clickCount];
 	}
 	@catch (NSException * e)
@@ -1631,7 +1630,7 @@ unsigned int minimumStep;
 					vrView.keep3DRotateCentered = NO;
 				else
 				{
-					if( [theEvent modifierFlags] & NSAlternateKeyMask)
+					if( [theEvent modifierFlags] & NSEventModifierFlagOption)
 						vrView.keep3DRotateCentered = NO;
 				}
 			}
@@ -1908,7 +1907,7 @@ unsigned int minimumStep;
 		int mouseOnLines = [self mouseOnLines: [self convertPoint: [theEvent locationInWindow] fromView:nil]];
 		if( mouseOnLines==2)
 		{
-			if( [theEvent type] == NSLeftMouseDragged) [[NSCursor closedHandCursor] set];
+			if( [theEvent type] == NSEventTypeLeftMouseDragged) [[NSCursor closedHandCursor] set];
 			else [[NSCursor openHandCursor] set];
 		}
 		else if( mouseOnLines==1)

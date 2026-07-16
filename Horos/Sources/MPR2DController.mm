@@ -1,3 +1,5 @@
+#import "HorosSheetPresenter.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -161,7 +163,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 	if( maxMovieIndex > 1) [[quicktimeMode cellAtRow:0 column:0] setEnabled:YES];
 	else [[quicktimeMode cellAtRow:0 column:0] setEnabled:NO];
 	
-	[NSApp beginSheet: quicktimeWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+	HorosBeginSheet(quicktimeWindow, [self window], self, nil, nil);
 }
 
 -(MPR2DView*) MPR2Dview { return view;}
@@ -414,10 +416,10 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 		
         testInterval = NO;
 		
-		if( sliceThickness > 0) NSRunCriticalAlertPanel(NSLocalizedString( @"Slice interval",nil), NSLocalizedString( @"I'm not able to find the slice interval. Slice interval will be equal to slice thickness.",nil), NSLocalizedString(@"OK",nil), nil, nil);
+		if( sliceThickness > 0) HorosPresentCriticalAlert(NSLocalizedString( @"Slice interval",nil), NSLocalizedString( @"I'm not able to find the slice interval. Slice interval will be equal to slice thickness.",nil), NSLocalizedString(@"OK",nil), nil, nil);
 		else
 		{
-			NSRunCriticalAlertPanel( NSLocalizedString(@"Slice interval/thickness",nil),  NSLocalizedString(@"Problems with slice thickness/interval to do a 3D reconstruction.",nil), NSLocalizedString(@"OK",nil), nil, nil);
+			HorosPresentCriticalAlert( NSLocalizedString(@"Slice interval/thickness",nil),  NSLocalizedString(@"Problems with slice thickness/interval to do a 3D reconstruction.",nil), NSLocalizedString(@"OK",nil), nil, nil);
 			return nil;
 		}
     }
@@ -430,7 +432,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
     }
     if( err)
     {
-        NSRunCriticalAlertPanel(NSLocalizedString( @"Images size",nil), NSLocalizedString( @"These images don't have the same height and width to allow a 3D reconstruction...",nil),NSLocalizedString( @"OK",nil), nil, nil);
+        HorosPresentCriticalAlert(NSLocalizedString( @"Images size",nil), NSLocalizedString( @"These images don't have the same height and width to allow a 3D reconstruction...",nil),NSLocalizedString( @"OK",nil), nil, nil);
         return nil;
     }
     
@@ -445,7 +447,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 //		}
 //		if( err)
 //		{
-//			if( NSRunCriticalAlertPanel( @"Slices location",  @"Slice thickness/interval is not exactly equal for all images. This could distord the 3D reconstruction...", @"Continue", @"Cancel", nil) != NSAlertDefaultReturn) return nil;
+//			if( HorosPresentCriticalAlert( @"Slices location",  @"Slice thickness/interval is not exactly equal for all images. This could distord the 3D reconstruction...", @"Continue", @"Cancel", nil) != HorosAlertResponseFirstButton) return nil;
 //			err = 0;
 //		}
 //	}
@@ -747,9 +749,9 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 	}
 	else
 	{
-		if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSShiftKeyMask)
+		if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift)
 		{
-			NSBeginAlertSheet(NSLocalizedString ( @"Delete a WL/WW preset",nil),NSLocalizedString ( @"Delete",nil),NSLocalizedString ( @"Cancel",nil), nil, [self window], self, @selector(deleteWLWW:returnCode:contextInfo:), NULL, [menuString retain], [NSString stringWithFormat:@"Are you sure you want to delete preset : '%@'?", menuString]);
+			HorosBeginAlertSheet(NSLocalizedString ( @"Delete a WL/WW preset",nil),NSLocalizedString ( @"Delete",nil),NSLocalizedString ( @"Cancel",nil), nil, [self window], self, @selector(deleteWLWW:returnCode:contextInfo:), NULL, [menuString retain], [NSString stringWithFormat:@"Are you sure you want to delete preset : '%@'?", menuString]);
 		}
 		else
 		{
@@ -781,7 +783,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
     
 	[newName setStringValue: @"Unnamed"];
 	
-    [NSApp beginSheet: addWLWWWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(addWLWWWindow, [self window], self, nil, nil);
 }
 
 
@@ -917,7 +919,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 	
 	[OpacityName setStringValue: @"Unnamed"];
 	
-    [NSApp beginSheet: addOpacityWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(addOpacityWindow, [self window], self, nil, nil);
 }
 
 - (void) scrollWheel:(NSEvent *)theEvent
@@ -979,8 +981,6 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 		[toolbarItem setPaletteLabel: NSLocalizedString(@"iPhoto",nil)];
 		[toolbarItem setToolTip: NSLocalizedString(@"Export this series to iPhoto",nil)];
 		[toolbarItem setView: iPhotoView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([iPhotoView frame]), NSHeight([iPhotoView frame]))];
-		[toolbarItem setMaxSize:NSMakeSize(NSWidth([iPhotoView frame]), NSHeight([iPhotoView frame]))];
     }
 	else if ([itemIdent isEqual: MailToolbarItemIdentifier])
 	{
@@ -1006,7 +1006,6 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 		[toolbarItem setPaletteLabel: NSLocalizedString(@"WL/WW & CLUT",nil)];
 		[toolbarItem setToolTip: NSLocalizedString(@"Modify WL/WW & CLUT",nil)];
 		[toolbarItem setView: WLWWView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
         [[wlwwPopup cell] setUsesItemFromMenu:YES];
     }
 	else if([itemIdent isEqual: ToolsToolbarItemIdentifier])
@@ -1015,15 +1014,12 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 		[toolbarItem setPaletteLabel: NSLocalizedString(@"Mouse button function",nil)];
 		[toolbarItem setToolTip:NSLocalizedString( @"Change the mouse function",nil)];
 		[toolbarItem setView: toolsView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([toolsView frame]), NSHeight([toolsView frame]))];
-		[toolbarItem setMaxSize:NSMakeSize(NSWidth([toolsView frame]), NSHeight([toolsView frame]))];
     }
 	else if([itemIdent isEqual: ThickSlabToolbarItemIdentifier])
 	{
 		[toolbarItem setLabel: NSLocalizedString(@"Thick Slab", @"Thick Slab")];
 		[toolbarItem setPaletteLabel: NSLocalizedString(@"Thick Slab", @"Thick Slab")];
 		[toolbarItem setView: ThickSlabView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([ThickSlabView frame]) + 100, NSHeight([ThickSlabView frame]))];
     }
 	 else if([itemIdent isEqual: BlendingToolbarItemIdentifier])
 	{
@@ -1031,7 +1027,6 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"Fusion",nil)];
 		[toolbarItem setToolTip: NSLocalizedString(@"Fusion Mode and Percentage",nil)];
 		[toolbarItem setView: BlendingView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([BlendingView frame]), NSHeight([BlendingView frame]))];
     }
 	else if([itemIdent isEqual: MovieToolbarItemIdentifier])
 	{
@@ -1039,8 +1034,6 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 		[toolbarItem setPaletteLabel:NSLocalizedString( @"4D Player",nil)];
 		[toolbarItem setToolTip:NSLocalizedString( @"4D Player",nil)];
 		[toolbarItem setView: movieView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([movieView frame]), NSHeight([movieView frame]))];
-		[toolbarItem setMaxSize:NSMakeSize(NSWidth([movieView frame]),NSHeight([movieView frame]))];
     }
 	else if([itemIdent isEqualToString: OrientationToolbarItemIdentifier])
 	 {
@@ -1048,8 +1041,6 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 		[toolbarItem setPaletteLabel: NSLocalizedString(@"Orientation", nil)];
 		[toolbarItem setToolTip: NSLocalizedString(@"Orientation", nil)];
 		[toolbarItem setView: orientationView];
-		[toolbarItem setMinSize:NSMakeSize(NSWidth([orientationView frame]), NSHeight([orientationView frame]))];
-		[toolbarItem setMaxSize:NSMakeSize(NSWidth([orientationView frame]), NSHeight([orientationView frame]))];
 	}
     else
 		{
@@ -1077,10 +1068,9 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 
 - (NSArray *) toolbarAllowedItemIdentifiers: (NSToolbar *) toolbar
 {
-    return [NSArray arrayWithObjects: 	NSToolbarCustomizeToolbarItemIdentifier,
+    return [NSArray arrayWithObjects:
                                         NSToolbarFlexibleSpaceItemIdentifier,
                                         NSToolbarSpaceItemIdentifier,
-                                        NSToolbarSeparatorItemIdentifier,
                                         WLWWToolbarItemIdentifier,
 										BlendingToolbarItemIdentifier,
 										ThickSlabToolbarItemIdentifier,
@@ -1115,7 +1105,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 	
 	if( maxMovieIndex > 1)
 	{
-		if( NSRunInformationalAlertPanel( NSLocalizedString(@"DICOM Export", nil), NSLocalizedString(@"Should I export the temporal series or only the current image?", nil), NSLocalizedString(@"Current Image", nil), NSLocalizedString(@"Temporal Series", nil), nil) == NSAlertDefaultReturn)
+		if( HorosPresentInformationalAlert( NSLocalizedString(@"DICOM Export", nil), NSLocalizedString(@"Should I export the temporal series or only the current image?", nil), NSLocalizedString(@"Current Image", nil), NSLocalizedString(@"Temporal Series", nil), nil) == HorosAlertResponseFirstButton)
 		{
 			export4DData = NO;
 		}
@@ -1194,7 +1184,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 		
 		[dcmSequence release];
 		
-		if( err)  NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+		if( err)  HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
 		
 		[[NSUserDefaults standardUserDefaults] setInteger: annotCopy forKey: @"ANNOTATIONS"];
 		[DCMView setDefaults];
@@ -1243,7 +1233,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 			[exportDCM setDefaultWWWL: (long) cww : (long) cwl];
 			
 			NSString *f = [exportDCM writeDCMFile: nil];
-			if( f == nil) NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+			if( f == nil) HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
 			if( f)
 				[producedFiles addObject: [NSDictionary dictionaryWithObjectsAndKeys: f, @"file", [exportDCM SOPInstanceUID], @"SOPInstanceUID", nil]];
 				
@@ -1309,7 +1299,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 		
 		representations = [im representations];
 		
-		bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+		bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
 		
 		[bitmapData writeToFile:[[[BrowserController currentBrowser] documentsDirectory] stringByAppendingFormat:@"/TEMP/OsiriX.jpg"] atomically:YES];
 		
@@ -1327,7 +1317,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 	[panel setCanSelectHiddenExtension:YES];
 	[panel setRequiredFileType:@"jpg"];
 	
-	if( [panel runModalForDirectory:nil file:@"2D MPR Image"] == NSFileHandlingPanelOKButton)
+	if( [panel runModalForDirectory:nil file:@"2D MPR Image"] == NSModalResponseOK)
 	{
 		NSImage *im = [view nsimage:NO];
 		
@@ -1336,7 +1326,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 		
 		representations = [im representations];
 		
-		bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+		bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
 		
 		[bitmapData writeToFile:[panel filename] atomically:YES];
 		
@@ -1353,7 +1343,7 @@ static NSString*	MailToolbarItemIdentifier		= @"Mail.icns";
 	[panel setCanSelectHiddenExtension:YES];
 	[panel setRequiredFileType:@"tif"];
 	
-	if( [panel runModalForDirectory:nil file:@"2D MPR Image"] == NSFileHandlingPanelOKButton)
+	if( [panel runModalForDirectory:nil file:@"2D MPR Image"] == NSModalResponseOK)
 	{
 		NSImage *im = [view nsimage:NO];
 		

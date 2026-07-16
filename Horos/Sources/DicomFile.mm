@@ -44,7 +44,6 @@
 #include "FVTiff.h"
 #import "MutableArrayCategory.h"
 #import "SRAnnotation.h"
-#import "SRAnnotation.h"
 #import "DicomFile.h"
 #import "ViewerController.h"
 #import "DCMCalendarDate.h"
@@ -84,6 +83,19 @@ static NSDateFormatter *DicomFileDateFormatter(void)
     formatter.timeZone = [NSTimeZone defaultTimeZone];
     formatter.dateFormat = @"yyyyMMdd";
     return formatter;
+}
+
+static NSDate *DicomFileDateFromNaturalLanguageString(NSString *value)
+{
+    if (value.length == 0)
+        return nil;
+
+    NSError *error = nil;
+    NSDataDetector *detector = [NSDataDetector dataDetectorWithTypes:NSTextCheckingTypeDate error:&error];
+    NSTextCheckingResult *match = [detector firstMatchInString:value options:0 range:NSMakeRange(0, value.length)];
+    if (error)
+        NSLog(@"Could not parse acquisition date %@: %@", value, error);
+    return match.date;
 }
 
 typedef int (*HorosModernDCMTKIsDICOMFileFn)(const char*);
@@ -933,7 +945,7 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
             }
             
             
-            date = [[NSDate dateWithNaturalLanguageString:datetime_string] retain];
+            date = [DicomFileDateFromNaturalLanguageString(datetime_string) retain];
             if (date == nil)
                 date = [[[[NSFileManager defaultManager] attributesOfItemAtPath:filePath error:NULL] valueForKey:NSFileCreationDate] retain];
             if( date == nil) date = [[NSDate date] retain];

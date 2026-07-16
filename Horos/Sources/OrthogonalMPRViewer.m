@@ -1,3 +1,6 @@
+#import "HorosSheetPresenter.h"
+#import "HorosFilePanelContentTypes.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -155,7 +158,6 @@ static SyncSeriesScope globalSyncSeriesScope;
     self = [super initWithWindowNibName:@"OrthogonalMPR"];
     
     [[self window] setDelegate:self];
-    [[self window] setShowsResizeIndicator:YES];
     //[[self window] performZoom:self];
     
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(CloseViewerNotification:) name:OsirixCloseViewerNotification object:nil];
@@ -617,7 +619,6 @@ static SyncSeriesScope globalSyncSeriesScope;
 
 - (void) adjustSplitView
 {
-    NSDisableScreenUpdates();
     
     NSSize splitViewSize = [splitView frame].size;
     float w,h;
@@ -647,7 +648,6 @@ static SyncSeriesScope globalSyncSeriesScope;
     [splitView setNeedsDisplay:YES];
     [self updateToolbarItems];
     
-    NSEnableScreenUpdates();
 }
 
 //- (void) turnSplitView
@@ -1060,8 +1060,6 @@ static SyncSeriesScope globalSyncSeriesScope;
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: toolsView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([toolsView frame]), NSHeight([toolsView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([toolsView frame]),NSHeight([toolsView frame]))];
         
     }
     else if([itemIdent isEqualToString: ThickSlabToolbarItemIdentifier]) {
@@ -1072,7 +1070,6 @@ static SyncSeriesScope globalSyncSeriesScope;
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: ThickSlabView];
         //	[toolbarItem setMinSize:NSMakeSize(NSWidth([ThickSlabView frame]), NSHeight([ThickSlabView frame]))];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([ThickSlabView frame]) + 200, NSHeight([ThickSlabView frame]))];
     }
     //	 else if([itemIdent isEqualToString: BlendingToolbarItemIdentifier]) {
     //	// Set up the standard properties
@@ -1168,8 +1165,6 @@ static SyncSeriesScope globalSyncSeriesScope;
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: WLWWView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([WLWWView frame]), NSHeight([WLWWView frame]))];
         
         [[wlwwPopup cell] setUsesItemFromMenu:YES];
     }
@@ -1181,8 +1176,6 @@ static SyncSeriesScope globalSyncSeriesScope;
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: movieView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([movieView frame]), NSHeight([movieView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([movieView frame]),NSHeight([movieView frame]))];
     }
     else if ([itemIdent isEqualToString: SyncSeriesToolbarItemIdentifier])
     {
@@ -1217,10 +1210,9 @@ static SyncSeriesScope globalSyncSeriesScope;
     // Required delegate method:  Returns the list of all allowed items by identifier.  By default, the toolbar
     // does not assume any items are allowed, even the separator.  So, every allowed item must be explicitly listed
     // The set of allowed items is used to construct the customization palette
-    NSMutableArray *array = [NSMutableArray arrayWithObjects: 	NSToolbarCustomizeToolbarItemIdentifier,
+    NSMutableArray *array = [NSMutableArray arrayWithObjects:
                              NSToolbarFlexibleSpaceItemIdentifier,
                              NSToolbarSpaceItemIdentifier,
-                             NSToolbarSeparatorItemIdentifier,
                              WLWWToolbarItemIdentifier,
                              BlendingToolbarItemIdentifier,
                              ThickSlabToolbarItemIdentifier,
@@ -1336,7 +1328,7 @@ static SyncSeriesScope globalSyncSeriesScope;
     
     representations = [im representations];
     
-    bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+    bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
     
     NSString *path = [[[[BrowserController currentBrowser] database] tempDirPath] stringByAppendingPathComponent:@"Horos.jpg"];
     [bitmapData writeToFile:path atomically:YES];
@@ -1354,12 +1346,12 @@ static SyncSeriesScope globalSyncSeriesScope;
     BOOL			all = NO;
     
     [panel setCanSelectHiddenExtension:YES];
-    [panel setAllowedFileTypes:@[@"jpg"]];
+    panel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"jpg"]);
     
     panel.nameFieldStringValue = [[[controller originalDCMFilesList] objectAtIndex:0] valueForKeyPath:@"series.name"];
     
     [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         long deltaX, deltaY, x, y, oldX, oldY, max;
@@ -1405,12 +1397,10 @@ static SyncSeriesScope globalSyncSeriesScope;
             
             for(int i = 0; i < max; i++)
             {
-                NSDisableScreenUpdates();
                 [view setCrossPosition:x+i*deltaX+0.5 :y+i*deltaY+0.5];
                 [splitView display];
                 
                 NSImage *im = [[self keyView] nsimage:NO];
-                NSEnableScreenUpdates();
                 
                 //[[im TIFFRepresentation] writeToFile:[[[panel filename] stringByDeletingPathExtension] stringByAppendingPathExtension:[NSString stringWithFormat:@"%d.tif", i+1]] atomically:NO];
                 
@@ -1419,7 +1409,7 @@ static SyncSeriesScope globalSyncSeriesScope;
                 
                 representations = [im representations];
                 
-                bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+                bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
                 
                 [bitmapData writeToFile:[[panel.URL.path stringByDeletingPathExtension] stringByAppendingPathExtension:[NSString stringWithFormat:@"%d.jpg", i+1]] atomically:YES];
             }
@@ -1440,7 +1430,7 @@ static SyncSeriesScope globalSyncSeriesScope;
             
             representations = [im representations];
             
-            bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+            bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
             
             [bitmapData writeToFile:panel.URL.path atomically:YES];
             
@@ -1583,7 +1573,7 @@ static SyncSeriesScope globalSyncSeriesScope;
         [exportDCM setModalityAsSource: YES];
         
         f = [exportDCM writeDCMFile: nil];
-        if( f == nil) NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString(@"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        if( f == nil) HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString(@"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
         
         free( data);
     }
@@ -1694,15 +1684,12 @@ static SyncSeriesScope globalSyncSeriesScope;
                     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
                     @try
                     {
-                        NSDisableScreenUpdates();
                         [view setCrossPosition:x+i*deltaX+0.5 :y+i*deltaY+0.5];
                         [splitView display];
                         [view display];
                         
                         [producedFiles addObject: [self exportDICOMFileInt:[[dcmFormat selectedCell] tag]]];
-                        NSEnableScreenUpdates();
                         
-                        NSEnableScreenUpdates();
                         
                         [splash incrementBy: 1];
                         
@@ -1758,7 +1745,7 @@ static SyncSeriesScope globalSyncSeriesScope;
 {
     if( dcmExportWindow == nil)
     {
-        NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString(@"DICOM Files Export not supported", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString(@"DICOM Files Export not supported", nil), NSLocalizedString(@"OK", nil), nil, nil);
         return;
     }
     
@@ -1814,7 +1801,7 @@ static SyncSeriesScope globalSyncSeriesScope;
     
     [self checkView: dcmBox :([[dcmSelection selectedCell] tag] == 1)];
     
-    [NSApp beginSheet: dcmExportWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:nil];
+    HorosBeginSheet(dcmExportWindow, [self window], self, nil, nil);
 }
 
 - (IBAction) changeFromAndToBounds:(id) sender
@@ -2049,9 +2036,9 @@ static SyncSeriesScope globalSyncSeriesScope;
     SyncSeriesBehavior newBehavior = [viewer syncSeriesBehavior];
     NSUInteger modifierFlags = [[[NSApplication sharedApplication] currentEvent] modifierFlags] ;
     
-    if( modifierFlags & NSAlternateKeyMask)
+    if( modifierFlags & NSEventModifierFlagOption)
         newBehavior = SyncSeriesBehaviorAbsolutePos;
-    else if( modifierFlags & NSShiftKeyMask)
+    else if( modifierFlags & NSEventModifierFlagShift)
         newBehavior = SyncSeriesBehaviorRelativePos;
     
     [OrthogonalMPRViewer updateSyncSeriesProperties:viewer :newState :globalSyncSeriesScope :newBehavior ];

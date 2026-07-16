@@ -1,3 +1,6 @@
+#import "HorosSheetPresenter.h"
+#import "HorosUnkeyedArchiveCompatibility.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -591,7 +594,7 @@ public:
                 Oval2DPix = nil;
                 
                 aRenderer->RemoveActor( Oval2DText);
-                aRenderer->RemoveActor2D( Oval2DActor);
+                aRenderer->RemoveViewProp( Oval2DActor);
                 Oval2DRadius = 0;
                 [self setNeedsDisplay: YES];
             }
@@ -981,7 +984,7 @@ public:
         
         if( vramMB <= 512)
         {
-            //NSRunCriticalAlertPanel(NSLocalizedString(@"GPU Rendering", nil),[NSString stringWithFormat: NSLocalizedString( @"Your graphic board has only %d MB of VRAM. Performances will be very limited with large dataset.", nil), vramMB],NSLocalizedString( @"OK", nil),nil,nil);
+            //HorosPresentCriticalAlert(NSLocalizedString(@"GPU Rendering", nil),[NSString stringWithFormat: NSLocalizedString( @"Your graphic board has only %d MB of VRAM. Performances will be very limited with large dataset.", nil), vramMB],NSLocalizedString( @"OK", nil),nil,nil);
         }
     }
     
@@ -1357,7 +1360,7 @@ public:
         }
         
         f = [exportDCM writeDCMFile: nil];
-        if( f == nil) NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        if( f == nil) HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
         
         free( dataPtr);
     }
@@ -1569,7 +1572,7 @@ public:
 {
     if( exportDCMWindow == nil)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Not available", nil), NSLocalizedString(@"This function is not available for this window.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Not available", nil), NSLocalizedString(@"This function is not available for this window.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         return;
     }
     
@@ -1586,7 +1589,7 @@ public:
     {
         [dcmExportDepth setEnabled: NO];
     }
-    [NSApp beginSheet: exportDCMWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+    HorosBeginSheet(exportDCMWindow, [self window], self, nil, (void*) nil);
 }
 
 -(float) rotation {return rotationValue;}
@@ -1786,12 +1789,12 @@ public:
 {
     if( export3DVRWindow == nil)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Not available", nil), NSLocalizedString(@"This function is not available for this window.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Not available", nil), NSLocalizedString(@"This function is not available for this window.", nil), NSLocalizedString(@"OK", nil), nil, nil);
     }
     
     [[VRquality cellWithTag: 1] setEnabled: YES];
     
-    [NSApp beginSheet: export3DVRWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+    HorosBeginSheet(export3DVRWindow, [self window], self, nil, (void*) nil);
 }
 
 - (IBAction) exportQuicktime:(id) sender
@@ -1799,7 +1802,7 @@ public:
     
     if( export3DWindow == nil)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Not available", nil), NSLocalizedString(@"This function is not available for this window.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Not available", nil), NSLocalizedString(@"This function is not available for this window.", nil), NSLocalizedString(@"OK", nil), nil, nil);
     }
     
     [[quality cellWithTag: 1] setEnabled: YES];
@@ -1807,9 +1810,9 @@ public:
     //	if( [[[self window] windowController] movieFrames] > 1)
     if( [controller movieFrames] > 1)
     {
-        if( NSRunInformationalAlertPanel( NSLocalizedString(@"Quicktime Export", nil), NSLocalizedString(@"Should I export the temporal series or the 3D scene?", nil), NSLocalizedString(@"3D Scene", nil), NSLocalizedString(@"Temporal Series", nil), nil) == NSAlertDefaultReturn)
+        if( HorosPresentInformationalAlert( NSLocalizedString(@"Quicktime Export", nil), NSLocalizedString(@"Should I export the temporal series or the 3D scene?", nil), NSLocalizedString(@"3D Scene", nil), NSLocalizedString(@"Temporal Series", nil), nil) == HorosAlertResponseFirstButton)
         {
-            [NSApp beginSheet: export3DWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+            HorosBeginSheet(export3DWindow, [self window], self, nil, (void*) nil);
         }
         else
         {
@@ -1818,7 +1821,7 @@ public:
             [mov release];
         }
     }
-    else [NSApp beginSheet: export3DWindow modalForWindow:[self window] modalDelegate:self didEndSelector:nil contextInfo:(void*) nil];
+    else HorosBeginSheet(export3DWindow, [self window], self, nil, (void*) nil);
 }
 
 -(BOOL) acceptsFirstMouse:(NSEvent*) theEvent
@@ -1854,16 +1857,16 @@ public:
 - (ToolMode) getTool: (NSEvent*) event
 {
     ToolMode tool;
-    if(([event type] == NSRightMouseDown || [event type] == NSRightMouseDragged || [event type] == NSRightMouseUp) && !_contextualMenuActive) tool = tZoom;
-    else if( [event type] == NSOtherMouseDown || [event type] == NSOtherMouseDragged || [event type] == NSOtherMouseUp) tool = tTranslate;
+    if(([event type] == NSEventTypeRightMouseDown || [event type] == NSEventTypeRightMouseDragged || [event type] == NSEventTypeRightMouseUp) && !_contextualMenuActive) tool = tZoom;
+    else if( [event type] == NSEventTypeOtherMouseDown || [event type] == NSEventTypeOtherMouseDragged || [event type] == NSEventTypeOtherMouseUp) tool = tTranslate;
     else tool = currentTool;
     
-    if (([event modifierFlags] & NSControlKeyMask))  tool = tRotate;
-    if (([event modifierFlags] & NSShiftKeyMask))  tool = tZoom;
-    if (([event modifierFlags] & NSCommandKeyMask))  tool = tTranslate;
-    if (([event modifierFlags] & NSAlternateKeyMask))  tool = tWL;
-    if (([event modifierFlags] & NSCommandKeyMask) && ([event modifierFlags] & NSAlternateKeyMask)) tool = tRotate;
-    if (([event modifierFlags] & NSCommandKeyMask) && ([event modifierFlags] & NSControlKeyMask)) tool = tCamera3D;
+    if (([event modifierFlags] & NSEventModifierFlagControl))  tool = tRotate;
+    if (([event modifierFlags] & NSEventModifierFlagShift))  tool = tZoom;
+    if (([event modifierFlags] & NSEventModifierFlagCommand))  tool = tTranslate;
+    if (([event modifierFlags] & NSEventModifierFlagOption))  tool = tWL;
+    if (([event modifierFlags] & NSEventModifierFlagCommand) && ([event modifierFlags] & NSEventModifierFlagOption)) tool = tRotate;
+    if (([event modifierFlags] & NSEventModifierFlagCommand) && ([event modifierFlags] & NSEventModifierFlagControl)) tool = tCamera3D;
     
     return tool;
 }
@@ -2243,7 +2246,7 @@ public:
         
         NSLog( @"C++ Exception during drawRect... not enough memory?");
         
-        if( NSRunAlertPanel( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == NSAlertAlternateReturn)
+        if( HorosPresentAlert( NSLocalizedString(@"32-bit",nil), NSLocalizedString( @"Cannot use the 3D engine.\r\rUpgrade to OsiriX 64-bit or OsiriX MD to solve this issue.",nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"OsiriX 64-bit", nil), nil) == HorosAlertResponseSecondButton)
             [[AppController sharedAppController] osirix64bit: self];
         
         [[self window] performClose: self];
@@ -2868,7 +2871,7 @@ public:
     else
         phi -= 180;
     
-    sprintf( string, "S-I: %2.1f\nL-R: %2.1f\nRoll: %2.1f", theta - 90., psi, phi);
+    snprintf(string, sizeof(string), "S-I: %2.1f\nL-R: %2.1f\nRoll: %2.1f", theta - 90., psi, phi);
     if( oText[ 4])
         oText[ 4]->SetInput( string);
     
@@ -3144,7 +3147,7 @@ public:
         
         beforeFrame = [self frame];
         
-        if( [theEvent modifierFlags] & NSShiftKeyMask)
+        if( [theEvent modifierFlags] & NSEventModifierFlagShift)
         {
             newFrame.size.width = [[[self window] contentView] frame].size.width - mouseLoc.x*2;
             newFrame.size.height = newFrame.size.width;
@@ -3221,7 +3224,7 @@ public:
                 Oval2DData->SetRadius( Oval2DRadius);
                 Oval2DData->SetCenter( Oval2DCenter.x, Oval2DCenter.y, 0);
                 
-                aRenderer->AddActor2D( Oval2DActor);
+                aRenderer->AddViewProp( Oval2DActor);
                 
                 [self computeLength];
                 
@@ -3404,13 +3407,13 @@ public:
                 
                 if( [[[controller viewer2D] modality] isEqualToString:@"PT"] || ([[NSUserDefaults standardUserDefaults] boolForKey:@"mouseWindowingNM"] == YES && [[[controller viewer2D] modality] isEqualToString:@"NM"]))
                 {
-                    if( ww < 50) sprintf(WLWWString, "From: %0.4f   To: %0.4f ", wl-ww/2, wl+ww/2);
-                    else sprintf(WLWWString, "From: %0.f   To: %0.f ", wl-ww/2, wl+ww/2);
+                    if( ww < 50) snprintf(WLWWString, sizeof(WLWWString), "From: %0.4f   To: %0.4f ", wl-ww/2, wl+ww/2);
+                    else snprintf(WLWWString, sizeof(WLWWString), "From: %0.f   To: %0.f ", wl-ww/2, wl+ww/2);
                 }
                 else
                 {
-                    if( ww < 50) sprintf(WLWWString, "WL: %0.4f WW: %0.4f ", wl, ww);
-                    else sprintf(WLWWString, "WL: %0.f WW: %0.f ", wl, ww);
+                    if( ww < 50) snprintf(WLWWString, sizeof(WLWWString), "WL: %0.4f WW: %0.4f ", wl, ww);
+                    else snprintf(WLWWString, sizeof(WLWWString), "WL: %0.f WW: %0.f ", wl, ww);
                 }
                 
                 //					if( [[NSUserDefaults standardUserDefaults] boolForKey: @"dontAutoCropScissors"] == NO)
@@ -3756,7 +3759,7 @@ public:
     noWaitDialog = YES;
     tool = currentTool;
     
-    if ([theEvent type] == NSLeftMouseDown)
+    if ([theEvent type] == NSEventTypeLeftMouseDown)
     {
         if (_mouseDownTimer)
         {
@@ -3773,7 +3776,7 @@ public:
     
     @try
     {
-        if( [theEvent type] ==	NSLeftMouseDown || [theEvent type] ==	NSRightMouseDown || [theEvent type] ==	NSLeftMouseUp || [theEvent type] == NSRightMouseUp)
+        if( [theEvent type] ==	NSEventTypeLeftMouseDown || [theEvent type] ==	NSEventTypeRightMouseDown || [theEvent type] ==	NSEventTypeLeftMouseUp || [theEvent type] == NSEventTypeRightMouseUp)
             clickCount = [theEvent clickCount];
     }
     @catch (NSException * e)
@@ -3914,7 +3917,7 @@ public:
             [self deleteMouseDownTimer];
             
             aRenderer->RemoveActor( Oval2DText);
-            aRenderer->RemoveActor2D( Oval2DActor);
+            aRenderer->RemoveViewProp( Oval2DActor);
             Oval2DRadius = 0;
             
             if( bestRenderingWasGenerated)
@@ -4063,8 +4066,8 @@ public:
             }
             else
             {
-                int shiftDown = 0;//([theEvent modifierFlags] & NSShiftKeyMask);
-                int controlDown = 0;//([theEvent modifierFlags] & NSControlKeyMask);
+                int shiftDown = 0;//([theEvent modifierFlags] & NSEventModifierFlagShift);
+                int controlDown = 0;//([theEvent modifierFlags] & NSEventModifierFlagControl);
                 
                 if( volumeMapper)
                     volumeMapper->SetMinimumImageSampleDistance( LOD*lowResLODFactor);
@@ -4128,12 +4131,12 @@ public:
         {
             [self deleteMouseDownTimer];
             
-            NSEvent *artificialPKeyDown = [NSEvent keyEventWithType:NSKeyDown
+            NSEvent *artificialPKeyDown = [NSEvent keyEventWithType:NSEventTypeKeyDown
                                                            location:[theEvent locationInWindow]
                                                       modifierFlags:0x0
                                                           timestamp:[theEvent timestamp]
                                                        windowNumber:[theEvent windowNumber]
-                                                            context:[theEvent context]
+                                                            context:nil
                                                          characters:@"p"
                                         charactersIgnoringModifiers:@"p"
                                                           isARepeat:NO
@@ -4300,7 +4303,7 @@ public:
                 
                 [[controller viewer2D] needsDisplayUpdate];
             }
-            else NSRunAlertPanel(NSLocalizedString(@"Bone Removing", nil), NSLocalizedString(@"Failed to detect a high density voxel to start growing region.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            else HorosPresentAlert(NSLocalizedString(@"Bone Removing", nil), NSLocalizedString(@"Failed to detect a high density voxel to start growing region.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             
             NSLog( @"**** Bone Removal End");
         }
@@ -4864,7 +4867,7 @@ public:
     
     if( c == NSDeleteFunctionKey || c == NSDeleteCharacter || c == NSBackspaceCharacter || c == NSDeleteCharFunctionKey)
     {
-        if( [[NSApp currentEvent] modifierFlags] & NSShiftKeyMask)
+        if( [[NSApp currentEvent] modifierFlags] & NSEventModifierFlagShift)
         {
             addition = YES;
             gDataValuesChanged = YES;
@@ -4872,7 +4875,7 @@ public:
             newVal = 1024;
         }
         
-        if( [[NSApp currentEvent] modifierFlags] & NSAlternateKeyMask)
+        if( [[NSApp currentEvent] modifierFlags] & NSEventModifierFlagOption)
         {
             addition = YES;
             gDataValuesChanged = YES;
@@ -5163,7 +5166,7 @@ public:
                 
                 // Delete current ROI
                 aRenderer->RemoveActor( Oval2DText);
-                aRenderer->RemoveActor2D( Oval2DActor);
+                aRenderer->RemoveViewProp( Oval2DActor);
                 Oval2DRadius = 0;
                 
                 [self computeLength];
@@ -5179,11 +5182,11 @@ public:
         
         if( roiPts->GetNumberOfPoints() < 3)
         {
-            NSRunAlertPanel(NSLocalizedString(@"3D Cut", nil), NSLocalizedString(@"Draw an ROI on the 3D image and then press Return (include) or Delete (exclude) keys.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"3D Cut", nil), NSLocalizedString(@"Draw an ROI on the 3D image and then press Return (include) or Delete (exclude) keys.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         }
         else if( c == NSTabCharacter && [[controller viewer2D] postprocessed] == YES)
         {
-            NSRunAlertPanel(NSLocalizedString(@"Restore", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot restore it.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"Restore", nil), NSLocalizedString(@"This dataset has been post processed (reslicing, MPR, ...). You cannot restore it.", nil), NSLocalizedString(@"OK", nil), nil, nil);
         }
         else
         {
@@ -5666,13 +5669,13 @@ public:
     
     if( [[[controller viewer2D] modality] isEqualToString:@"PT"] || ([[NSUserDefaults standardUserDefaults] boolForKey:@"mouseWindowingNM"] == YES && [[[controller viewer2D] modality] isEqualToString:@"NM"]))
     {
-        if( ww < 50) sprintf(WLWWString, "From: %0.4f   To: %0.4f ", wl-ww/2, wl+ww/2);
-        else sprintf(WLWWString, "From: %0.f   To: %0.f ", wl-ww/2, wl+ww/2);
+        if( ww < 50) snprintf(WLWWString, sizeof(WLWWString), "From: %0.4f   To: %0.4f ", wl-ww/2, wl+ww/2);
+        else snprintf(WLWWString, sizeof(WLWWString), "From: %0.f   To: %0.f ", wl-ww/2, wl+ww/2);
     }
     else
     {
-        if( ww < 50) sprintf(WLWWString, "WL: %0.4f WW: %0.4f ", wl, ww);
-        else sprintf(WLWWString, "WL: %0.f WW: %0.f ", wl, ww);
+        if( ww < 50) snprintf(WLWWString, sizeof(WLWWString), "WL: %0.4f WW: %0.4f ", wl, ww);
+        else snprintf(WLWWString, sizeof(WLWWString), "WL: %0.f WW: %0.f ", wl, ww);
     }
     textWLWW->SetInput( WLWWString);
     
@@ -5736,7 +5739,7 @@ public:
     // RAY CASTING SETTINGS
     if( best)
     {
-        if( [[NSApp currentEvent] modifierFlags] & NSShiftKeyMask || projectionMode == 2)
+        if( [[NSApp currentEvent] modifierFlags] & NSEventModifierFlagShift || projectionMode == 2)
         {
             if( volumeMapper)
             {
@@ -6630,7 +6633,7 @@ public:
         
         [self setShadingValues:0.15 :0.9 :0.3 :15];
         
-        if( [[NSApp currentEvent] modifierFlags] & NSAlternateKeyMask) volumeProperty->SetInterpolationTypeToNearest();
+        if( [[NSApp currentEvent] modifierFlags] & NSEventModifierFlagOption) volumeProperty->SetInterpolationTypeToNearest();
         else volumeProperty->SetInterpolationTypeToLinear();//SetInterpolationTypeToNearest();	//SetInterpolationTypeToLinear
         
 //        compositeFunction = vtkVolumeRayCastCompositeFunction::New();
@@ -6697,8 +6700,8 @@ public:
         }
         
         textWLWW = vtkTextActor::New();
-        if( ww < 50) sprintf(WLWWString, "WL: %0.4f WW: %0.4f ", wl, ww);
-        else sprintf(WLWWString, "WL: %0.f WW: %0.f ", wl, ww);
+        if( ww < 50) snprintf(WLWWString, sizeof(WLWWString), "WL: %0.4f WW: %0.4f ", wl, ww);
+        else snprintf(WLWWString, sizeof(WLWWString), "WL: %0.f WW: %0.f ", wl, ww);
         textWLWW->SetInput( WLWWString);
         textWLWW->SetTextScaleModeToNone();												//vtkviewPort
         textWLWW->GetPositionCoordinate()->SetCoordinateSystemToDisplay();
@@ -6708,7 +6711,7 @@ public:
         textWLWW->GetTextProperty()->SetShadowOffset(1, 1);
         textWLWW->GetTextProperty()->SetVerticalJustificationToTop();
         
-        aRenderer->AddActor2D(textWLWW);
+        aRenderer->AddViewProp(textWLWW);
         
         if (isViewportResizable)
         {
@@ -6720,7 +6723,7 @@ public:
             textX->GetTextProperty()->SetShadow(true);
             textX->GetTextProperty()->SetShadowOffset(1, 1);
             
-            aRenderer->AddActor2D(textX);
+            aRenderer->AddViewProp(textX);
         }
         
         for( i = 0; i < 5; i++)
@@ -6733,7 +6736,7 @@ public:
             oText[ i]->GetTextProperty()->SetShadow(true);
             oText[ i]->GetTextProperty()->SetShadowOffset(1, 1);
             
-            aRenderer->AddActor2D( oText[ i]);
+            aRenderer->AddViewProp( oText[ i]);
         }
         oText[ 0]->GetPositionCoordinate()->SetValue( 0.01, 0.5);
         oText[ 1]->GetPositionCoordinate()->SetValue( 0.99, 0.5);
@@ -6781,7 +6784,7 @@ public:
         ROI3DActor->GetProperty()->SetLineWidth( 2);
         ROI3DActor->GetProperty()->SetColor(0.3,1,0);
         
-        aRenderer->AddActor2D( ROI3DActor);
+        aRenderer->AddViewProp( ROI3DActor);
         
         // 2D Oval
         Oval2DData = vtkRegularPolygonSource::New();
@@ -6843,7 +6846,7 @@ public:
         Line2DText->GetTextProperty()->SetShadow(true);
         Line2DText->GetTextProperty()->SetShadowOffset(1, 1);
         
-        aRenderer->AddActor2D( Line2DActor);
+        aRenderer->AddViewProp( Line2DActor);
         
         [self saView:self];
         
@@ -6914,7 +6917,7 @@ public:
     if( [compositingImage size].width > 0 && [compositingImage size].height > 0)
     {
         [compositingImage lockFocus];
-        [currentImage drawInRect: imageRect fromRect: sourceRect operation: NSCompositeCopy fraction: 1.0];
+        [currentImage drawInRect: imageRect fromRect: sourceRect operation: NSCompositingOperationCopy fraction: 1.0];
         [compositingImage unlockFocus];
     }
     
@@ -7422,12 +7425,12 @@ public:
         if( orientationWidget->GetEnabled())
         {
             orientationWidget->Off();
-            for( i = 0; i < 5; i++) aRenderer->RemoveActor2D( oText[ i]);
+            for( i = 0; i < 5; i++) aRenderer->RemoveViewProp( oText[ i]);
         }
         else
         {
             orientationWidget->On();
-            for( i = 0; i < 5; i++) aRenderer->AddActor2D( oText[ i]);
+            for( i = 0; i < 5; i++) aRenderer->AddViewProp( oText[ i]);
         }
     }
     
@@ -7524,7 +7527,7 @@ public:
     switch( tag)
     {
         case 2:
-            if( NSRunAlertPanel(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"Are you sure you want to delete this 3D state? You cannot undo this operation.", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn)
+            if( HorosPresentAlert(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"Are you sure you want to delete this 3D state? You cannot undo this operation.", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
                 [[NSFileManager defaultManager] removeItemAtPath: str error:NULL];
             break;
             
@@ -7546,18 +7549,18 @@ public:
                         if( croppingBox)
                             cropcallback->Execute(croppingBox, 0, nil);
                     }
-                    else NSRunAlertPanel(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"No saved data are available.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                    else HorosPresentAlert(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"No saved data are available.", nil), NSLocalizedString(@"OK", nil), nil, nil);
                     
                     [volumeData release];
                 }
-                else NSRunAlertPanel(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"No saved data are available.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                else HorosPresentAlert(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"No saved data are available.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             }
-            else NSRunAlertPanel(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"No saved data are available.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            else HorosPresentAlert(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"No saved data are available.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             break;
             
         case 0:	// Save
             
-            if( ([[NSFileManager defaultManager] fileExistsAtPath: str] && NSRunAlertPanel(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"A 3D Scissor State already exists. Do you want to replace it with curent state?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == NSAlertDefaultReturn) || [[NSFileManager defaultManager] fileExistsAtPath: str] == NO)
+            if( ([[NSFileManager defaultManager] fileExistsAtPath: str] && HorosPresentAlert(NSLocalizedString(@"3D Scissor State", nil), NSLocalizedString(@"A 3D Scissor State already exists. Do you want to replace it with curent state?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton) || [[NSFileManager defaultManager] fileExistsAtPath: str] == NO)
             {
                 waiting = [[WaitRendering alloc] init:NSLocalizedString(@"Saving 3D object...", nil)];
                 [waiting showWindow:self];
@@ -7894,7 +7897,7 @@ public:
 - (void)changeColor:(id)sender
 {
     if( [viewBackgroundColor isActive])
-        [self changeColorWith: [[(NSColorPanel*)sender color]  colorUsingColorSpaceName: NSCalibratedRGBColorSpace]];
+        [self changeColorWith: [[(NSColorPanel*)sender color]  colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]]];
 }
 
 - (NSColor*)backgroundColor;
@@ -8468,7 +8471,7 @@ public:
     if([point3DPropagateToAll state])
     {
         [self setAll3DPointsRadius: [sender floatValue]];
-        [self setAll3DPointsColor: [[point3DColorWell color] colorUsingColorSpaceName: NSCalibratedRGBColorSpace]];
+        [self setAll3DPointsColor: [[point3DColorWell color] colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]]];
     }
     else
     {
@@ -8482,7 +8485,7 @@ public:
     if([sender state]==NSControlStateValueOn)
     {
         [self setAll3DPointsRadius: [point3DRadiusSlider floatValue]];
-        [self setAll3DPointsColor: [[point3DColorWell color] colorUsingColorSpaceName: NSCalibratedRGBColorSpace]];
+        [self setAll3DPointsColor: [[point3DColorWell color] colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]]];
         [self setNeedsDisplay:YES];
     }
 }
@@ -8549,7 +8552,7 @@ public:
 
 - (IBAction) save3DPointsDefaultProperties: (id) sender
 {
-    NSColor *color = [[point3DColorWell color] colorUsingColorSpaceName: NSCalibratedRGBColorSpace];
+    NSColor *color = [[point3DColorWell color] colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
     
     //color
     point3DDefaultColorRed = [color redComponent];
@@ -8703,14 +8706,14 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
         _dragInProgress = YES;
         NSEvent *event = (NSEvent *)[theTimer userInfo];
         
-        NSImage *image = [self nsimage:(event.modifierFlags&NSShiftKeyMask)];
+        NSImage *image = [self nsimage:(event.modifierFlags&NSEventModifierFlagShift)];
         
         NSSize originalSize = [image size];
         float ratio = originalSize.width / originalSize.height;
         NSImage *thumbnail = [[[NSImage alloc] initWithSize: NSMakeSize(100, 100/ratio)] autorelease];
         if( [thumbnail size].width > 0 && [thumbnail size].height > 0) {
             [thumbnail lockFocus];
-            [image drawInRect: NSMakeRect(0, 0, 100, 100/ratio) fromRect: NSMakeRect(0, 0, originalSize.width, originalSize.height) operation: NSCompositeSourceOver fraction: 1.0];
+            [image drawInRect: NSMakeRect(0, 0, 100, 100/ratio) fromRect: NSMakeRect(0, 0, originalSize.width, originalSize.height) operation: NSCompositingOperationSourceOver fraction: 1.0];
             [thumbnail unlockFocus];
         }
         
@@ -8719,7 +8722,7 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
         NSEventModifierFlags mf = event.modifierFlags;
         [pbi setData:[NSData dataWithBytes:&mf length:sizeof(NSEventModifierFlags)] forType:O2PasteboardTypeEventModifierFlags];
         [pbi setDataProvider:self forTypes:@[NSPasteboardTypeString, (NSString *)kPasteboardTypeFileURLPromise]];
-        [pbi setString:(id)kUTTypeImage forType:(id)kPasteboardTypeFilePromiseContent];
+        [pbi setString:UTTypeImage.identifier forType:(id)kPasteboardTypeFilePromiseContent];
 
         NSDraggingItem* di = [[[NSDraggingItem alloc] initWithPasteboardWriter:pbi] autorelease];
         NSPoint p = [self convertPointToBacking:event.locationInWindow];
@@ -8768,10 +8771,11 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
             while ([url checkResourceIsReachableAndReturnError:NULL])
                 url = [(NSURL *)urlRef URLByAppendingPathComponent:[name stringByAppendingFormat:@" (%lu).jpg", ++i]];
             
-            NSEventModifierFlags mf; [[item dataForType:O2PasteboardTypeEventModifierFlags] getBytes:&mf];
-            NSImage *image = [self nsimage:(mf&NSShiftKeyMask)];
+            NSEventModifierFlags mf;
+            [[item dataForType:O2PasteboardTypeEventModifierFlags] getBytes:&mf length:sizeof(mf)];
+            NSImage *image = [self nsimage:(mf&NSEventModifierFlagShift)];
             
-            NSData *idata = [[NSBitmapImageRep imageRepWithData:image.TIFFRepresentation] representationUsingType:NSJPEGFileType properties:[NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
+            NSData *idata = [[NSBitmapImageRep imageRepWithData:image.TIFFRepresentation] representationUsingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
             [idata writeToURL:url atomically:YES];
             
             [item setString:[url absoluteString] forType:type];
@@ -8942,7 +8946,7 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
     NSArray *pointColors = [clut objectForKey:@"colors"];
     
     
-    if( [[NSArchiver archivedDataWithRootObject: clut] isEqualToData: appliedCurves] == NO || (appliedResolution == YES && lowRes == NO))
+    if ([HorosArchiveUnkeyedObject(clut) isEqualToData:appliedCurves] == NO || (appliedResolution == YES && lowRes == NO))
     {
         colorTransferFunction->RemoveAllPoints();
         opacityTransferFunction->RemoveAllPoints();
@@ -8969,7 +8973,7 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
         }
         
         [appliedCurves release];
-        appliedCurves = [[NSArchiver archivedDataWithRootObject: clut] retain];
+        appliedCurves = [HorosArchiveUnkeyedObject(clut) retain];
         appliedResolution = lowRes;
         
         if( volumeMapper)
@@ -9088,7 +9092,7 @@ static NSString * const O2PasteboardTypeEventModifierFlags = @"com.opensource.os
             rect.size.height -= vertMargin;
         }
         
-        [image drawInRect:rect fromRect:imageBounds operation:NSCompositeSourceOver fraction:fraction];
+        [image drawInRect:rect fromRect:imageBounds operation:NSCompositingOperationSourceOver fraction:1.0];
     }
     
     //}

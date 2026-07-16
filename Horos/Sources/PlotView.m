@@ -197,11 +197,11 @@
 		
 		
 
-		[[NSColor selectedMenuItemColor] set];
+		[[NSColor selectedContentBackgroundColor] set];
 		NSRect lineRect = NSMakeRect( (curMousePosition * boundsRect.size.width)/(dataSize-1), 0, 2, boundsRect.size.height);
 		NSRectFill( lineRect);
 		
-		[paragraphStyle setAlignment:NSCenterTextAlignment];
+		[paragraphStyle setAlignment:NSTextAlignmentCenter];
 		
 		trace = [NSString stringWithFormat:@"X: %d", (int) curMousePosition+1];
 		
@@ -217,10 +217,10 @@
 		[[NSColor blackColor] set];
 		[trace drawAtPoint:xLabelPosition withAttributes:boldFont];
 		
-		if( lineRect.origin.x - boundsRect.size.width/2 > 0) [paragraphStyle setAlignment:NSLeftTextAlignment];
-		else [paragraphStyle setAlignment:NSRightTextAlignment];
+		if( lineRect.origin.x - boundsRect.size.width/2 > 0) [paragraphStyle setAlignment:NSTextAlignmentLeft];
+		else [paragraphStyle setAlignment:NSTextAlignmentRight];
 				
-		[[NSColor selectedMenuItemColor] set];
+		[[NSColor selectedContentBackgroundColor] set];
 		lineRect = NSMakeRect( 0, ((dataArray[ curMousePosition] - minValue) * boundsRect.size.height)/(maxValue- minValue), boundsRect.size.width, 2);
 		NSRectFill( lineRect);
 		

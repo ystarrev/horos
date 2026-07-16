@@ -348,7 +348,7 @@ NSString *pasteBoardTypeCover = @"KeyImages";
         return;
     }
     
-    if ([event modifierFlags] & NSCommandKeyMask) {
+    if ([event modifierFlags] & NSEventModifierFlagCommand) {
         int r,c, s, i, i2;
         r = [self selectedRow];
         c = [self selectedColumn];
@@ -356,7 +356,7 @@ NSString *pasteBoardTypeCover = @"KeyImages";
         i = r*s + c;
         i2 = row*s + column;
         [self setSelectionFrom:i2 to:i2 anchor:i2 highlight:YES];     
-    } else if ([event modifierFlags] & NSShiftKeyMask) {
+    } else if ([event modifierFlags] & NSEventModifierFlagShift) {
         int r,c, s, i, i2;
         r = [self selectedRow];
         c = [self selectedColumn];

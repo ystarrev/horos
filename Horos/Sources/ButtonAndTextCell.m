@@ -56,15 +56,15 @@
 	if (self = [super initWithCoder:decoder]) {
 
 		buttonCell = [[NSButtonCell alloc] initImageCell:nil];
-		[buttonCell setButtonType:NSSwitchButton];
-		[buttonCell  setControlSize:NSMiniControlSize];
+		[buttonCell setButtonType:NSButtonTypeSwitch];
+		[buttonCell  setControlSize:NSControlSizeMini];
 		[buttonCell setState:NSControlStateValueOn];
 		
 		//textCell = [[NSTextFieldCell alloc] initTextCell:@""];
 		[self setBezeled:YES];
 		[self setBezelStyle:NSTextFieldSquareBezel];
 		[self setDrawsBackground:YES];
-		[self setControlSize:NSMiniControlSize];
+		[self setControlSize:NSControlSizeMini];
 		[self setEditable:YES];
 		
 		

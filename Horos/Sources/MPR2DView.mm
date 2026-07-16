@@ -347,10 +347,10 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 	
 	tool = currentTool;
 	
-        if (([theEvent modifierFlags] & NSControlKeyMask))  tool = tZoom;
-        if (([theEvent modifierFlags] & NSCommandKeyMask))  tool = tTranslate;
-		if (([theEvent modifierFlags] & NSAlternateKeyMask))  tool = tWL;
-        if (([theEvent modifierFlags] & NSCommandKeyMask) && ([theEvent modifierFlags] & NSAlternateKeyMask))  tool = tRotate;
+        if (([theEvent modifierFlags] & NSEventModifierFlagControl))  tool = tZoom;
+        if (([theEvent modifierFlags] & NSEventModifierFlagCommand))  tool = tTranslate;
+		if (([theEvent modifierFlags] & NSEventModifierFlagOption))  tool = tWL;
+        if (([theEvent modifierFlags] & NSEventModifierFlagCommand) && ([theEvent modifierFlags] & NSEventModifierFlagOption))  tool = tRotate;
 
 //	if( tool == tWL)
 //	{
@@ -383,12 +383,12 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 		{
 			NSPoint mouseLocPrev;
 			
-			theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+			theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
             mouseLoc = mouseLocPrev = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 			
 			switch ([theEvent type])
             {
-				case NSLeftMouseDragged:
+				case NSEventTypeLeftMouseDragged:
 					
 					if( mouseLoc.x < mouseLocPrev.x) inc = -2;
 					else inc = 2;
@@ -397,12 +397,12 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 					
 				break;
 				
-				case NSLeftMouseUp:
+				case NSEventTypeLeftMouseUp:
 					
 					keepOn = NO;
 				return;
 					
-				case NSPeriodic:
+				case NSEventTypePeriodic:
 					
 				break;
 					
@@ -421,11 +421,11 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
         
         do
 		{
-            theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+            theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
             mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
             switch ([theEvent type])
             {
-            case NSLeftMouseDragged:
+            case NSEventTypeLeftMouseDragged:
 			{
                 double newValues[2];
                 float   WWAdapter;
@@ -446,12 +446,12 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 			}
             break;
 			
-            case NSLeftMouseUp:
+            case NSEventTypeLeftMouseUp:
                 
                 keepOn = NO;
                 return;
                 
-            case NSPeriodic:
+            case NSEventTypePeriodic:
                 
                 break;
                 
@@ -470,18 +470,18 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 		myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::LeftButtonPressEvent,NULL);
 		
 		do {
-			theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+			theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 			mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 			myVTKRenderWindowInteractor->SetEventInformation((int) mouseLoc.x, (int) mouseLoc.y, controlDown, shiftDown);
 			switch ([theEvent type]) {
-			case NSLeftMouseDragged:
+			case NSEventTypeLeftMouseDragged:
 				myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);
 				break;
-			case NSLeftMouseUp:
+			case NSEventTypeLeftMouseUp:
 				myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::LeftButtonReleaseEvent, NULL);
 				keepOn = NO;
 				return;
-			case NSPeriodic:
+			case NSEventTypePeriodic:
 				myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::TimerEvent, NULL);
 				break;
 			default:
@@ -499,18 +499,18 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 		myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::LeftButtonPressEvent,NULL);
 		
 		do {
-			theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+			theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 			mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 			myVTKRenderWindowInteractor->SetEventInformation((int) mouseLoc.x, (int) mouseLoc.y, controlDown, shiftDown);
 			switch ([theEvent type]) {
-			case NSLeftMouseDragged:
+			case NSEventTypeLeftMouseDragged:
 				myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);
 				break;
-			case NSLeftMouseUp:
+			case NSEventTypeLeftMouseUp:
 				myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::LeftButtonReleaseEvent, NULL);
 				keepOn = NO;
 				return;
-			case NSPeriodic:
+			case NSEventTypePeriodic:
 				myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::TimerEvent, NULL);
 				break;
 			default:
@@ -528,18 +528,18 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 		myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::LeftButtonPressEvent,NULL);
 		
 		do {
-			theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+			theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 			mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 			myVTKRenderWindowInteractor->SetEventInformation((int) mouseLoc.x, (int) mouseLoc.y, controlDown, shiftDown);
 			switch ([theEvent type]) {
-			case NSLeftMouseDragged:
+			case NSEventTypeLeftMouseDragged:
 				myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);
 				break;
-			case NSLeftMouseUp:
+			case NSEventTypeLeftMouseUp:
 				myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::LeftButtonReleaseEvent, NULL);
 				keepOn = NO;
 				return;
-			case NSPeriodic:
+			case NSEventTypePeriodic:
 				myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::TimerEvent, NULL);
 				break;
 			default:
@@ -557,18 +557,18 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 		myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::RightButtonPressEvent,NULL);
 		
 		do {
-			theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask | NSLeftMouseDraggedMask | NSPeriodicMask];
+			theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
 			mouseLoc = [self convertPoint: [theEvent locationInWindow] fromView:nil];
 			myVTKRenderWindowInteractor->SetEventInformation((int)mouseLoc.x, (int)mouseLoc.y, controlDown, shiftDown);
 			switch ([theEvent type]) {
-			case NSLeftMouseDragged:
+			case NSEventTypeLeftMouseDragged:
 				myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::MouseMoveEvent, NULL);
 				break;
-			case NSLeftMouseUp:
+			case NSEventTypeLeftMouseUp:
 				myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::LeftButtonReleaseEvent, NULL);
 				keepOn = NO;
 				return;
-			case NSPeriodic:
+			case NSEventTypePeriodic:
 				myVTKRenderWindowInteractor->InvokeEvent(vtkCommand::TimerEvent, NULL);
 				break;
 			default:
@@ -1861,7 +1861,7 @@ XYZ ArbitraryRotate(XYZ p,double theta,XYZ r)
 	
 	[NSObject cancelPreviousPerformRequestsWithTarget :self selector :@selector(crossStopMoving:) object :[note object]];
 	
-	if([[[note userInfo] objectForKey:@"action"] isEqualToString:@"dragged"] == YES && ([[NSApp currentEvent] modifierFlags] & NSShiftKeyMask) == NO && interval > MINIMUMINTERVAL)
+	if([[[note userInfo] objectForKey:@"action"] isEqualToString:@"dragged"] == YES && ([[NSApp currentEvent] modifierFlags] & NSEventModifierFlagShift) == NO && interval > MINIMUMINTERVAL)
 	{
 		
 		rotate->SetInterpolationModeToNearestNeighbor();

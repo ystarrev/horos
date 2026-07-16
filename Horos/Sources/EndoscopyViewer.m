@@ -1,3 +1,4 @@
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -77,7 +78,6 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
 - (id) initWithPixList: (NSMutableArray*) pix :(NSArray*) files :(NSData*) vData :(ViewerController*) bC : (ViewerController*) vC
 {
     self = [super initWithWindowNibName:@"Endoscopy"];
-    [[self window] setShowsResizeIndicator:YES];
     
     [topSplitView setDelegate:self];
     [bottomSplitView setDelegate:self];
@@ -930,8 +930,6 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: tools3DView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([tools3DView frame]), NSHeight([tools3DView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([tools3DView frame]),NSHeight([tools3DView frame]))];
     }
     else if([itemIdent isEqualToString: endoMPRToolsToolbarItemIdentifier])
     {
@@ -941,8 +939,6 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: tools2DView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([tools2DView frame]), NSHeight([tools2DView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([tools2DView frame]),NSHeight([tools2DView frame]))];
     }
     else if([itemIdent isEqualToString: FlyThruToolbarItemIdentifier])
     {
@@ -964,8 +960,6 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: engineView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([engineView frame]), NSHeight([engineView frame]))];
-        [toolbarItem setMaxSize:NSMakeSize(NSWidth([engineView frame]), NSHeight([engineView frame]))];
     }
     else if ([itemIdent isEqualToString: CroppingToolbarItemIdentifier])
     {
@@ -985,8 +979,6 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: WLWW3DView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([WLWW3DView frame]), NSHeight([WLWW3DView frame]))];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([WLWW3DView frame]), NSHeight([WLWW3DView frame]))];
         
         [[[vrController wlwwPopup] cell] setUsesItemFromMenu:YES];
     }
@@ -999,8 +991,6 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: WLWW2DView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([WLWW2DView frame]), NSHeight([WLWW2DView frame]))];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([WLWW2DView frame]), NSHeight([WLWW2DView frame]))];
         
         [[[vrController wlwwPopup] cell] setUsesItemFromMenu:YES];
     }
@@ -1023,7 +1013,6 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: shadingView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([shadingView frame]), NSHeight([shadingView frame]))];
     }
     //	else if([itemIdent isEqualToString: CenterlineToolbarItemIdentifier])
     //	{
@@ -1045,7 +1034,6 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
         
         // Use a custom view, a text field, for the search item
         [toolbarItem setView: LODView];
-        [toolbarItem setMinSize:NSMakeSize(NSWidth([LODView frame]), NSHeight([LODView frame]))];
         
         //[[wlwwPopup cell] setUsesItemFromMenu:YES];
     }
@@ -1077,7 +1065,6 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
     // user chooses to revert to the default items this set will be used
     return [NSArray arrayWithObjects:       endoMPRToolsToolbarItemIdentifier,
             NSToolbarFlexibleSpaceItemIdentifier,
-            NSToolbarSeparatorItemIdentifier,
             NSToolbarFlexibleSpaceItemIdentifier,
             FlyThruToolbarItemIdentifier,
             ShadingToolbarItemIdentifier,
@@ -1090,10 +1077,9 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
     // Required delegate method:  Returns the list of all allowed items by identifier.  By default, the toolbar
     // does not assume any items are allowed, even the separator.  So, every allowed item must be explicitly listed
     // The set of allowed items is used to construct the customization palette
-    NSMutableArray *array = [NSMutableArray arrayWithObjects:       NSToolbarCustomizeToolbarItemIdentifier,
+    NSMutableArray *array = [NSMutableArray arrayWithObjects:
                              NSToolbarFlexibleSpaceItemIdentifier,
                              NSToolbarSpaceItemIdentifier,
-                             NSToolbarSeparatorItemIdentifier,
                              ExportToolbarItemIdentifier,
                              endo3DToolsToolbarItemIdentifier,
                              endoMPRToolsToolbarItemIdentifier,
@@ -1186,7 +1172,7 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
             [exportDCM setPixelData: dataPtr samplesPerPixel:spp bitsPerSample:bpp width: width height: height];
             
             NSString *f = [exportDCM writeDCMFile: nil];
-            if( f == nil) NSRunCriticalAlertPanel( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            if( f == nil) HorosPresentCriticalAlert( NSLocalizedString(@"Error", nil),  NSLocalizedString( @"Error during the creation of the DICOM File!", nil), NSLocalizedString(@"OK", nil), nil, nil);
             if( f)
                 [producedFiles addObject: [NSDictionary dictionaryWithObjectsAndKeys: f, @"file", nil]];
             
@@ -1371,11 +1357,11 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
     }
     else if(err == ERROR_NOENOUGHMEM)
     {
-        NSRunAlertPanel(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Path Assistant can not allocate enough memory, try to increase the resample voxel size in the settings.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Path Assistant can not allocate enough memory, try to increase the resample voxel size in the settings.", nil), NSLocalizedString(@"OK", nil), nil, nil);
     }
     else if(err == ERROR_CANNOTFINDPATH)
     {
-        NSRunAlertPanel(NSLocalizedString(@"Can't find path", nil), NSLocalizedString(@"Path Assistant can not find a path from A to B.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"Can't find path", nil), NSLocalizedString(@"Path Assistant can not find a path from A to B.", nil), NSLocalizedString(@"OK", nil), nil, nil);
     }
     else if(err==ERROR_DISTTRANSNOTFINISH)
     {
@@ -1394,12 +1380,12 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
         [waiting autorelease];
         if(err==ERROR_CANNOTFINDPATH)
         {
-            NSRunAlertPanel(NSLocalizedString(@"Can't find path", nil), NSLocalizedString(@"Path Assistant can not find a path from current location.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"Can't find path", nil), NSLocalizedString(@"Path Assistant can not find a path from current location.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             return;
         }
         else if(err==ERROR_DISTTRANSNOTFINISH)
         {
-            NSRunAlertPanel(NSLocalizedString(@"Unexpected error", nil), NSLocalizedString(@"Path Assistant failed to initialize!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"Unexpected error", nil), NSLocalizedString(@"Path Assistant failed to initialize!", nil), NSLocalizedString(@"OK", nil), nil, nil);
             return;
         }
     }
@@ -1580,7 +1566,7 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
         [assistant setCenterlineResampleStepLength:centerlineResampleStepLength];
     }
     else {
-        NSRunAlertPanel(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Path Assistant can not allocate enough memory, try to increase the resample voxel size in the settings.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Path Assistant can not allocate enough memory, try to increase the resample voxel size in the settings.", nil), NSLocalizedString(@"OK", nil), nil, nil);
     }
     
     //misc
@@ -1650,7 +1636,7 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
         [waiting autorelease];
     }
     else {
-        NSRunAlertPanel(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Path Assistant can not allocate enough memory, try to increase the resample voxel size in the settings.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentAlert(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Path Assistant can not allocate enough memory, try to increase the resample voxel size in the settings.", nil), NSLocalizedString(@"OK", nil), nil, nil);
     }
 }
 - (void) flyThruAssistantGoForward: (NSNotification*)note
@@ -1681,12 +1667,12 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
         int err= [assistant caculateNextPositionFrom:pt Towards:dir];
         if(err==ERROR_NOENOUGHMEM)
         {
-            NSRunAlertPanel(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Path Assistant can not allocate enough memory, try to increase the resample voxel size in the settings.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"32-bit", nil), NSLocalizedString(@"Path Assistant can not allocate enough memory, try to increase the resample voxel size in the settings.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             return;
         }
         else if(err==ERROR_CANNOTFINDPATH)
         {
-            NSRunAlertPanel(NSLocalizedString(@"Can't find path", nil), NSLocalizedString(@"Path Assistant can not find a path from current location.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+            HorosPresentAlert(NSLocalizedString(@"Can't find path", nil), NSLocalizedString(@"Path Assistant can not find a path from current location.", nil), NSLocalizedString(@"OK", nil), nil, nil);
             return;
         }
         else if(err==ERROR_DISTTRANSNOTFINISH)
@@ -1706,12 +1692,12 @@ static NSString*	PathAssistantToolbarItemIdentifier		= @"PathAssistant";
             [waiting autorelease];
             if(err==ERROR_CANNOTFINDPATH)
             {
-                NSRunAlertPanel(NSLocalizedString(@"Can't find path", nil), NSLocalizedString(@"Path Assistant can not find a path from current location.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                HorosPresentAlert(NSLocalizedString(@"Can't find path", nil), NSLocalizedString(@"Path Assistant can not find a path from current location.", nil), NSLocalizedString(@"OK", nil), nil, nil);
                 return;
             }
             else if(err==ERROR_DISTTRANSNOTFINISH)
             {
-                NSRunAlertPanel(NSLocalizedString(@"Unexpected error", nil), NSLocalizedString(@"Path Assistant failed to initialize!", nil), NSLocalizedString(@"OK", nil), nil, nil);
+                HorosPresentAlert(NSLocalizedString(@"Unexpected error", nil), NSLocalizedString(@"Path Assistant failed to initialize!", nil), NSLocalizedString(@"OK", nil), nil, nil);
                 return;
             }
         }

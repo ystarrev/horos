@@ -1,3 +1,4 @@
+#import "HorosUnkeyedArchiveCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -134,11 +135,6 @@ extern const char *GetPrivateIP(void);
     }
     
     [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
-}
-
-- (int) OsiriXDBCurrentPort // __deprecated
-{
-    return [_listener port];
 }
 
 - (NSArray*)dnsSDTXTArgumentsForDictionary:(NSDictionary*)txtrec
@@ -647,7 +643,7 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
 - (void)GETDI {
     NSDictionary* dictionary = [NSDictionary dictionaryWithObjectsAndKeys: [[NSUserDefaults standardUserDefaults] stringForKey: @"AETITLE"], @"AETitle", [[NSUserDefaults standardUserDefaults] stringForKey: @"AEPORT"], @"Port", [NSString stringWithFormat: @"%d", [DCMTKStoreSCU sendSyntaxForListenerSyntax: [[NSUserDefaults standardUserDefaults] integerForKey: @"preferredSyntaxForIncoming"]]], @"TransferSyntax", nil];
     
-    [self writeData:[NSMutableData dataWithData: [NSArchiver archivedDataWithRootObject: dictionary]]];
+    [self writeData:[NSMutableData dataWithData:HorosArchiveUnkeyedObject(dictionary)]];
     
     _mode = DONE;
 }
@@ -1034,7 +1030,7 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
             //						if ([[NSFileManager defaultManager] fileExistsAtPath: path] == NO)
             //							NSLog( @"Bonjour Publisher - File doesn't exist at path: %@", path);
             
-            NSData* content = [NSData dataWithContentsOfMappedFile:path];
+            NSData *content = [NSData dataWithContentsOfURL:[NSURL fileURLWithPath:path] options:NSDataReadingMappedIfSafe error:nil];
             int size = NSSwapHostIntToBig([content length]);
             [self writeData:[NSData dataWithBytesNoCopy:&size length:4 freeWhenDone:NO]];
             [self writeData:content];

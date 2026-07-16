@@ -1,3 +1,5 @@
+#import "NSDate+N2.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -423,7 +425,7 @@ NSString* filenameWithDate( NSString *inputfile)
 	
 	if( createDate == nil) createDate = [NSDate date];
 	
-	return [[[[inputfile lastPathComponent] stringByDeletingPathExtension] stringByAppendingFormat:@"%@-%d-%@", [createDate descriptionWithCalendarFormat:@"%Y-%m-%d-%H-%M-%S" timeZone:nil locale:nil], [fileSize intValue], [[inputfile stringByDeletingLastPathComponent]lastPathComponent]] stringByAppendingString:@".dcm"];
+	return [[[[inputfile lastPathComponent] stringByDeletingPathExtension] stringByAppendingFormat:@"%@-%d-%@", [createDate n2_descriptionWithCalendarFormat:@"%Y-%m-%d-%H-%M-%S" timeZone:nil locale:nil], [fileSize intValue], [[inputfile stringByDeletingLastPathComponent]lastPathComponent]] stringByAppendingString:@".dcm"];
 }
 
 NSString* convertDICOM( NSString *inputfile)
@@ -520,30 +522,13 @@ void exceptionHandler(NSException *exception)
 //———————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
 
-#import "JRSwizzle.h"
-
-@implementation NSWindow (FFS)
-- (BOOL) HOROS_showsFullScreenButton {
-    return NO;
-}
-@end
-
-
-
-
 @interface AppController (Dummy)
 
 - (void)AddCurrentWLWW:(id)dummy;
 - (void)ApplyConv:(id)dummy;
 - (void)AddConv:(id)dummy;
 - (void)addPreferencesFromURL:(id)dummy;
-- (BOOL)showsFullScreenButton;
-
 @end
-
-static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize size)
-{
-}
 
 @implementation AppController
 
@@ -556,14 +541,6 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
     [defaults setBool:NO forKey:@"NSQuitAlwaysKeepsWindows"];
     [defaults setBool:YES forKey:@"ApplePersistenceIgnoreState"];
 
-    Method minSizeMethod = class_getInstanceMethod([NSToolbarItem class], @selector(setMinSize:));
-    Method maxSizeMethod = class_getInstanceMethod([NSToolbarItem class], @selector(setMaxSize:));
-    IMP ignoreSizeSetter = (IMP)HorosIgnoreDeprecatedToolbarItemSizeSetter;
-
-    if (minSizeMethod)
-        method_setImplementation(minSizeMethod, ignoreSizeSetter);
-    if (maxSizeMethod)
-        method_setImplementation(maxSizeMethod, ignoreSizeSetter);
 }
 
 + (void) createNoIndexDirectoryIfNecessary:(NSString*) path { // __deprecated
@@ -705,7 +682,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
                     kill( MyArray[ Counter], 15);
                     
                     char dir[ 1024];
-                    sprintf( dir, "%s-%d", "/tmp/lock_process", MyArray[ Counter]);
+                    snprintf(dir, sizeof(dir), "%s-%d", "/tmp/lock_process", MyArray[ Counter]);
                     unlink( dir);
                 }
             } 
@@ -966,9 +943,10 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
         [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_VIEWER@"/Horos-64bit.html"]];
     else
     {
-        NSArray* urls = [NSArray arrayWithObject: [NSURL URLWithString:URL_HOROS_VIEWER@"/Horos-64bit.html"]];
-        
-        [[NSWorkspace sharedWorkspace] openURLs:urls withAppBundleIdentifier: nil options: NSWorkspaceLaunchWithoutActivation additionalEventParamDescriptor: nil launchIdentifiers: nil];
+        NSURL *url = [NSURL URLWithString:URL_HOROS_VIEWER@"/Horos-64bit.html"];
+        NSWorkspaceOpenConfiguration *configuration = [NSWorkspaceOpenConfiguration configuration];
+        configuration.activates = NO;
+        [[NSWorkspace sharedWorkspace] openURL:url configuration:configuration completionHandler:nil];
     }
 }
 
@@ -1073,10 +1051,8 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
             }
             else
             {
-                NSDisableScreenUpdates();
                 for( ViewerController *v in [ViewerController getDisplayed2DViewers])
                     [v setMatrixVisible: [defaults integerForKey: @"SeriesListVisible"]];
-                NSEnableScreenUpdates();
             }
         }
             
@@ -1186,7 +1162,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
             if( showRestartNeeded == YES)
             {
                 showRestartNeeded = NO;
-                NSRunAlertPanel( NSLocalizedString( @"DICOM Listener", nil), NSLocalizedString( @"Restart Horos to apply these changes.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+                HorosPresentAlert( NSLocalizedString( @"DICOM Listener", nil), NSLocalizedString( @"Restart Horos to apply these changes.", nil), NSLocalizedString( @"OK", nil), nil, nil);
             }
         }
         
@@ -1954,7 +1930,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 					
 					[STORESCP unlock];
 				}
-				else NSRunCriticalAlertPanel( NSLocalizedString( @"DICOM Listener Error", nil), NSLocalizedString( @"Cannot start DICOM Listener. Another thread is already running. Restart Horos.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+				else HorosPresentCriticalAlert( NSLocalizedString( @"DICOM Listener Error", nil), NSLocalizedString( @"Cannot start DICOM Listener. Another thread is already running. Restart Horos.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 			}		
 		}
 		
@@ -1972,14 +1948,14 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 				
 				[STORESCPTLS unlock];
 			}
-			else NSRunCriticalAlertPanel( NSLocalizedString( @"DICOM TLS Listener Error", nil), NSLocalizedString( @"Cannot start DICOM TLS Listener. Another thread is already running. Restart Horos.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+			else HorosPresentCriticalAlert( NSLocalizedString( @"DICOM TLS Listener Error", nil), NSLocalizedString( @"Cannot start DICOM TLS Listener. Another thread is already running. Restart Horos.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 		}
 	
 	} @catch (NSException* e) {
 		N2LogExceptionWithStackTrace(e);
         
         if( [NSThread isMainThread])
-            NSRunAlertPanel( NSLocalizedString( @"Database", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, e.reason);
+            HorosPresentAlert( NSLocalizedString( @"Database", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, e.reason);
 	}
 	
     [self stopDICOMBonjourDNSRegistration];
@@ -1995,7 +1971,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
 
 -(void) displayError: (NSString*) err
 {
-	NSRunCriticalAlertPanel( NSLocalizedString( @"Error", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, err);
+	HorosPresentCriticalAlert( NSLocalizedString( @"Error", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, err);
 }
 
 -(void) displayListenerError: (NSString*) err // the DiscPublishing plugin swizzles this method, do not rename it
@@ -2124,7 +2100,7 @@ static void HorosIgnoreDeprecatedToolbarItemSizeSetter(id self, SEL _cmd, NSSize
         if([urlComponents count] == 2)
 		{
             NSString *parameterString = @"";
-			parameterString = [[urlComponents lastObject] stringByReplacingPercentEscapesUsingEncoding: NSUTF8StringEncoding];
+			parameterString = [[urlComponents lastObject] stringByRemovingPercentEncoding] ?: [urlComponents lastObject];
 		
 			NSMutableDictionary *urlParameters = [NSMutableDictionary dictionary];
 			if(![parameterString isEqualToString: @""])
@@ -2520,7 +2496,7 @@ static BOOL firstCall = YES;
     }
     @catch (NSException * e)
     {
-        NSRunCriticalAlertPanel(NSLocalizedString(@"Error", nil), @"%@", NSLocalizedString(@"OK", nil), nil, nil, e.reason);
+        HorosPresentCriticalAlert(NSLocalizedString(@"Error", nil), @"%@", NSLocalizedString(@"OK", nil), nil, nil, e.reason);
         
         N2LogExceptionWithStackTrace(e);
     }
@@ -2613,12 +2589,12 @@ static BOOL initialized = NO;
 				[HorosGeneralPreferences registerDefaults];
                 
                 
-                if( [BrowserController _currentModifierFlags] & NSCommandKeyMask &&
-                   [BrowserController _currentModifierFlags] & NSAlternateKeyMask)
+                if( [BrowserController _currentModifierFlags] & NSEventModifierFlagCommand &&
+                   [BrowserController _currentModifierFlags] & NSEventModifierFlagOption)
                 {
-                    NSInteger result = NSRunInformationalAlertPanel( NSLocalizedString(@"Reset Preferences", nil), NSLocalizedString(@"Are you sure you want to reset ALL preferences of Horos? All the preferences will be reseted to their default values.", nil), NSLocalizedString(@"Cancel",nil), NSLocalizedString(@"OK",nil),  nil);
+                    NSInteger result = HorosPresentInformationalAlert( NSLocalizedString(@"Reset Preferences", nil), NSLocalizedString(@"Are you sure you want to reset ALL preferences of Horos? All the preferences will be reseted to their default values.", nil), NSLocalizedString(@"Cancel",nil), NSLocalizedString(@"OK",nil),  nil);
                     
-                    if( result == NSAlertAlternateReturn)
+                    if( result == HorosAlertResponseSecondButton)
                     {
                         for( NSString *k in [[[NSUserDefaults standardUserDefaults] dictionaryRepresentation] allKeys])
                             [[NSUserDefaults standardUserDefaults] removeObjectForKey: k];
@@ -2713,9 +2689,9 @@ static BOOL initialized = NO;
                         NSTimeInterval endTime = [NSDate timeIntervalSinceReferenceDate]+10*60; // if ignored, the dialog stays up for 10 minutes
                         for (;;) {
                             NSInteger r = [NSApp runModalSession:session];
-                            if (r == NSAlertDefaultReturn) // default button says Quit
+                            if (r == NSAlertFirstButtonReturn) // default button says Quit
                                 exit(0);
-                            else if (r == NSAlertAlternateReturn) // alternate button says Continue
+                            else if (r == NSAlertSecondButtonReturn) // alternate button says Continue
                                 break;
                             if ([[NSFileManager defaultManager] fileExistsAtPath:volumePath]) // the volume has become available, we can close the dialog
                                 break;
@@ -2755,9 +2731,9 @@ static BOOL initialized = NO;
                         NSTimeInterval endTime = [NSDate timeIntervalSinceReferenceDate]+10*60; // if ignored, the dialog stays up for 10 minutes
                         for (;;) {
                             NSInteger r = [NSApp runModalSession:session];
-                            if (r == NSAlertDefaultReturn) // default button says Quit
+                            if (r == NSAlertFirstButtonReturn) // default button says Quit
                                 exit(0);
-                            else if (r == NSAlertAlternateReturn) // alternate button says Continue
+                            else if (r == NSAlertSecondButtonReturn) // alternate button says Continue
                                 break;
                             if ([[NSFileManager defaultManager] fileExistsAtPath:volumePath]) // the volume has become available, we can close the dialog
                                 break;
@@ -2892,14 +2868,14 @@ static BOOL initialized = NO;
                 {
                     if( [[NSFileManager defaultManager] fileExistsAtPath: path])
                     {
-                        int result = NSRunInformationalAlertPanel(NSLocalizedString(@"Horos crashed during last startup", nil), NSLocalizedString(@"Previous crash is maybe related to a corrupt database or corrupted images.\r\rShould I run Horos in Protected Mode (recommended) (no images displayed)? To allow you to delete the crashing/corrupted images/studies.\r\rOr Should I rebuild the local database? All albums, comments and status will be lost.", nil), NSLocalizedString(@"Continue normally",nil), NSLocalizedString(@"Protected Mode",nil), NSLocalizedString(@"Rebuild Database",nil));
+                        int result = HorosPresentInformationalAlert(NSLocalizedString(@"Horos crashed during last startup", nil), NSLocalizedString(@"Previous crash is maybe related to a corrupt database or corrupted images.\r\rShould I run Horos in Protected Mode (recommended) (no images displayed)? To allow you to delete the crashing/corrupted images/studies.\r\rOr Should I rebuild the local database? All albums, comments and status will be lost.", nil), NSLocalizedString(@"Continue normally",nil), NSLocalizedString(@"Protected Mode",nil), NSLocalizedString(@"Rebuild Database",nil));
                         
-                        if( result == NSAlertOtherReturn)
+                        if( result == HorosAlertResponseThirdButton)
                         {
                             NEEDTOREBUILD = YES;
                             COMPLETEREBUILD = YES;
                         }
-                        if( result == NSAlertAlternateReturn) [DCMPix setRunOsiriXInProtectedMode: YES];
+                        if( result == HorosAlertResponseSecondButton) [DCMPix setRunOsiriXInProtectedMode: YES];
                     }
                 }
                 
@@ -3218,7 +3194,7 @@ static BOOL initialized = NO;
         NSLog( @"SecStaticCodeCheckValidity: %d", (int) status);
         NSLog( @"%@", errors);
         
-        NSRunCriticalAlertPanel( NSLocalizedString( @"Code signing and Certificate", nil), NSLocalizedString( @"Invalid code signing or certificate. You should re-download Horos from the web site\r\rAre you using an utility such as CleanMyMac or CCleaner? Turn it off for Horos.", nil), NSLocalizedString( @"Continue", nil) , nil, nil);
+        HorosPresentCriticalAlert( NSLocalizedString( @"Code signing and Certificate", nil), NSLocalizedString( @"Invalid code signing or certificate. You should re-download Horos from the web site\r\rAre you using an utility such as CleanMyMac or CCleaner? Turn it off for Horos.", nil), NSLocalizedString( @"Continue", nil) , nil, nil);
 
     }
     CFRelease( requirement);
@@ -3279,7 +3255,7 @@ static BOOL initialized = NO;
     CFMutableDictionaryRef devices = IOServiceMatching(kIOPCIDevice);
     io_iterator_t entryIterator;
     
-    if (IOServiceGetMatchingServices(kIOMasterPortDefault, devices, &entryIterator) == kIOReturnSuccess) {
+    if (IOServiceGetMatchingServices(kIOMainPortDefault, devices, &entryIterator) == kIOReturnSuccess) {
         io_registry_entry_t device;
         
         while ((device = IOIteratorNext(entryIterator))) {
@@ -3319,7 +3295,7 @@ static BOOL initialized = NO;
 {
 	NSUInteger size = 32, size2 = size*size;
 	
-	NSWindow* win = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,size,size) styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO];
+	NSWindow* win = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,size,size) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
 	
 	long annotCopy = [[NSUserDefaults standardUserDefaults] integerForKey:@"ANNOTATIONS"];
 	long clutBarsCopy = [[NSUserDefaults standardUserDefaults] integerForKey:@"CLUTBARS"];
@@ -3447,12 +3423,6 @@ static BOOL initialized = NO;
     ////////////////////////////
     
     [AppController cleanOsiriXSubProcesses];
-    
-    NSError *error = nil;
-    [NSWindow jr_swizzleMethod:@selector(showsFullScreenButton) withMethod:@selector(HOROS_showsFullScreenButton) error:&error];
-    if (error) {
-        NSLog(@"Unable to swizzle showsFullScreenButton: %@", error);
-    }
     
     if( [NSDate timeIntervalSinceReferenceDate] - [[NSUserDefaults standardUserDefaults] doubleForKey: @"lastDate32bitPipelineCheck"] > 60L*60L*24L) // 1 days
 	{
@@ -3600,7 +3570,7 @@ static BOOL initialized = NO;
 	
 	if (startCount == 0) // Replaces FIRSTTIME.
 	{
-		switch( NSRunInformationalAlertPanel( NSLocalizedString(@"Horos Updates", nil), NSLocalizedString( @"Would you like to activate automatic checking for updates?", nil), NSLocalizedString( @"Yes", nil), NSLocalizedString( @"No", nil), nil))
+		switch( HorosPresentInformationalAlert( NSLocalizedString(@"Horos Updates", nil), NSLocalizedString( @"Would you like to activate automatic checking for updates?", nil), NSLocalizedString( @"Yes", nil), NSLocalizedString( @"No", nil), nil))
 		{
 			case 0:
 				[[NSUserDefaults standardUserDefaults] setObject: @"NO" forKey: @"CheckHorosUpdates"];
@@ -3613,7 +3583,7 @@ static BOOL initialized = NO;
 		{
 //			if ([[NSUserDefaults standardUserDefaults] integerForKey: @"STARTCOUNT2"] > 20)
 //			{
-//				switch( NSRunInformationalAlertPanel(@"Horos", @"Thank you for using Horos!\rDo you agree to answer a small survey to improve Horos?", @"Yes, sure!", @"Maybe next time", nil))
+//				switch( HorosPresentInformationalAlert(@"Horos", @"Thank you for using Horos!\rDo you agree to answer a small survey to improve Horos?", @"Yes, sure!", @"Maybe next time", nil))
 //				{
 //					case 1:
 //					{
@@ -3625,8 +3595,8 @@ static BOOL initialized = NO;
 //				}
 //			}
 			
-//			if( [[NSCalendarDate dateWithYear:2009 month:10 day:14 hour:12 minute:0 second:0 timeZone:[NSTimeZone timeZoneWithAbbreviation:@"EST"]] timeIntervalSinceNow] > 0 &&
-//				[[NSCalendarDate dateWithYear:2009 month:9 day:1 hour:12 minute:0 second:0 timeZone:[NSTimeZone timeZoneWithAbbreviation:@"EST"]] timeIntervalSinceNow] < 0)
+//			if( [[NSDate n2_dateWithYear:2009 month:10 day:14 hour:12 minute:0 second:0 timeZone:[NSTimeZone timeZoneWithAbbreviation:@"EST"]] timeIntervalSinceNow] > 0 &&
+//				[[NSDate n2_dateWithYear:2009 month:9 day:1 hour:12 minute:0 second:0 timeZone:[NSTimeZone timeZoneWithAbbreviation:@"EST"]] timeIntervalSinceNow] < 0)
 //			{
 //				Survey *survey = [[Survey alloc] initWithWindowNibName:@"Survey"];
 //				[[survey window] center];
@@ -3813,31 +3783,31 @@ static BOOL initialized = NO;
 {
 	if( [msg isEqualToString:@"LISTENER"])
 	{
-		NSRunAlertPanel( NSLocalizedString( @"DICOM Listener Error", nil), NSLocalizedString( @"Horos listener cannot start. Is the Port valid? Is there another process using this Port?\r\rSee Listener - Preferences.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+		HorosPresentAlert( NSLocalizedString( @"DICOM Listener Error", nil), NSLocalizedString( @"Horos listener cannot start. Is the Port valid? Is there another process using this Port?\r\rSee Listener - Preferences.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 	}
 	
 	if( [msg isEqualToString:@"UPTODATE"])
 	{
-		NSRunAlertPanel( NSLocalizedString( @"Horos is up-to-date", nil), NSLocalizedString( @"You have the most recent version of Horos.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+		HorosPresentAlert( NSLocalizedString( @"Horos is up-to-date", nil), NSLocalizedString( @"You have the most recent version of Horos.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 	}
 	
 	if( [msg isEqualToString:@"ERROR"])
 	{
-		NSRunAlertPanel( NSLocalizedString( @"No Internet connection", nil), NSLocalizedString( @"Unable to check latest version available.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+		HorosPresentAlert( NSLocalizedString( @"No Internet connection", nil), NSLocalizedString( @"Unable to check latest version available.", nil), NSLocalizedString( @"OK", nil), nil, nil);
 	}
 	
     if( [msg isEqualToString: @"UPDATECRASH"])
     {
-        NSRunInformationalAlertPanel(NSLocalizedString(@"Horos crashed", nil), NSLocalizedString(@"Horos crashed... You are running an outdated version of Horos ! This bug is probably corrected in the last version !", nil), NSLocalizedString(@"OK",nil), nil, nil);
+        HorosPresentInformationalAlert(NSLocalizedString(@"Horos crashed", nil), NSLocalizedString(@"Horos crashed... You are running an outdated version of Horos ! This bug is probably corrected in the last version !", nil), NSLocalizedString(@"OK",nil), nil, nil);
         
         [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_UPDATE_CRASH]];
     }
     
 	if( [msg isEqualToString:@"UPDATE"])
 	{
-		int button = NSRunAlertPanel( NSLocalizedString( @"New Version Available", nil), NSLocalizedString( @"A new version of Horos is available. Would you like to download the new version now?", nil), NSLocalizedString( @"Download", nil), NSLocalizedString( @"Continue", nil), nil);
+		int button = HorosPresentAlert( NSLocalizedString( @"New Version Available", nil), NSLocalizedString( @"A new version of Horos is available. Would you like to download the new version now?", nil), NSLocalizedString( @"Download", nil), NSLocalizedString( @"Continue", nil), nil);
 		
-		if (NSOKButton == button)
+		if (HorosAlertResponseFirstButton == button)
 			[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:URL_HOROS_UPDATE]];
 	}
 }
@@ -5080,7 +5050,6 @@ static BOOL initialized = NO;
 	[[NSUserDefaults standardUserDefaults] setBool: origCopySettings forKey: @"COPYSETTINGS"];
 	[AppController checkForPreferencesUpdate: YES];
 	
-    NSDisableScreenUpdates();
     
     for( int i = 0; i < [[NSScreen screens] count]; i++)
         [thumbnailsListPanel[ i] setThumbnailsView: nil viewer: nil];
@@ -5122,7 +5091,6 @@ static BOOL initialized = NO;
         
         [DCMView setDontListenToSyncMessage: NO];
 	}
-    NSEnableScreenUpdates();
 }
 
 

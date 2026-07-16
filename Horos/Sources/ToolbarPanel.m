@@ -117,7 +117,6 @@ static int fixedHeight = 60;
         [[self window] setLevel: NSNormalWindowLevel];
         [[self window] makeMainWindow];
         
-        [toolbar setShowsBaselineSeparator: NO];
         [toolbar setVisible: YES];
         
         [self applicationDidChangeScreenParameters: nil];

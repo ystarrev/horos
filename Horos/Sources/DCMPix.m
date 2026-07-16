@@ -1780,7 +1780,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 {
                     [compositingImage lockFocus];
                     //		[[NSGraphicsContext currentContext] setImageInterpolation: NSImageInterpolationDefault];
-                    [currentImage drawInRect: imageRect fromRect: sourceRect operation: NSCompositeCopy fraction: 1.0];
+                    [currentImage drawInRect: imageRect fromRect: sourceRect operation: NSCompositingOperationCopy fraction: 1.0];
                     [compositingImage unlockFocus];
                 }
                 
@@ -4433,7 +4433,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 {
                     unsigned char  *dst = (unsigned char*) oImage;
                     
-                    TIFFReadRGBAImage(tif, w, h, (uint32 *) dst, 0);
+                    TIFFReadRGBAImage(tif, w, h, (uint32_t *)dst, 0);
                     
                     for( i =0; i < height*width*4; i+= 4)
                     {
@@ -4504,7 +4504,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 {
                     unsigned char  *dst = (unsigned char*) oImage;
                     
-                    TIFFReadRGBAImage(tif, w, h, (uint32 *) dst, 0);
+                    TIFFReadRGBAImage(tif, w, h, (uint32_t *)dst, 0);
                     
                     BOOL trueRGB = NO;
                     
@@ -5636,7 +5636,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 NSData *data = [SRAnnotation roiFromDICOM: str];
                 if( data)
                 {
-                    NSMutableArray *array = [NSUnarchiver unarchiveObjectWithData: data];
+                    NSArray *array = [SRAnnotation unarchiveROIsFromCompatibilityData:data];
                     if( array)
                         [roiArray[ i] addObjectsFromArray: array];
                 }
@@ -6948,7 +6948,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             {
                 oImage =  malloc( [pixData length]);	//pointer to a memory zone where each pixel of the data has a short value reserved
                 if( oImage)
-                    [pixData getBytes:oImage];
+                    [pixData getBytes:oImage length:pixData.length];
                 else
                     NSLog( @"----- Major memory problems 1...");
             }

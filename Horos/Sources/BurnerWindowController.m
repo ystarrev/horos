@@ -1,3 +1,8 @@
+#import "HorosSheetPresenter.h"
+#import "NSDate+N2.h"
+#import "HorosVolumeUtilities.h"
+#import "HorosFilePanelContentTypes.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -305,7 +310,7 @@
                     
                     if( writeVolumePath == nil)
                     {
-                        NSRunCriticalAlertPanel( NSLocalizedString( @"USB Writing", nil), NSLocalizedString( @"No destination selected.", nil), NSLocalizedString( @"OK", nil), nil, nil);
+                        HorosPresentCriticalAlert( NSLocalizedString( @"USB Writing", nil), NSLocalizedString( @"No destination selected.", nil), NSLocalizedString( @"OK", nil), nil, nil);
                         
                         self.buttonsDisabled = NO;
                         runBurnAnimation = NO;
@@ -313,9 +318,9 @@
                         return;
                     }
                     
-                    NSInteger result = NSRunCriticalAlertPanel( NSLocalizedString( @"USB Writing", nil), NSLocalizedString( @"The ENTIRE content of the selected media (%@) will be deleted, before writing the new data. Do you confirm?", nil), NSLocalizedString( @"OK", nil), NSLocalizedString( @"Cancel", nil), nil, writeVolumePath, nil);
+                    NSInteger result = HorosPresentCriticalAlert( NSLocalizedString( @"USB Writing", nil), NSLocalizedString( @"The ENTIRE content of the selected media (%@) will be deleted, before writing the new data. Do you confirm?", nil), NSLocalizedString( @"OK", nil), NSLocalizedString( @"Cancel", nil), nil, writeVolumePath, nil);
                     
-                    if( result != NSAlertDefaultReturn)
+                    if( result != HorosAlertResponseFirstButton)
                     {
                         self.buttonsDisabled = NO;
                         runBurnAnimation = NO;
@@ -329,11 +334,11 @@
                 {
                     NSSavePanel *savePanel = [NSSavePanel savePanel];
                     [savePanel setCanSelectHiddenExtension:YES];
-                    [savePanel setAllowedFileTypes:@[@"dmg"]];
+                    savePanel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"dmg"]);
                     [savePanel setTitle:@"Save as DMG"];
                     savePanel.nameFieldStringValue = cdName;
                     
-                    if ([savePanel runModal] == NSFileHandlingPanelOKButton)
+                    if ([savePanel runModal] == NSModalResponseOK)
                     {
                         [writeDMGPath release];
                         writeDMGPath = [[[savePanel URL] path] retain];
@@ -355,11 +360,7 @@
                     int result = 0;
                     do
                     {
-                        [NSApp beginSheet: passwordWindow
-                           modalForWindow: self.window
-                            modalDelegate: nil
-                           didEndSelector: nil
-                              contextInfo: nil];
+                        HorosBeginSheet(passwordWindow, self.window, nil, nil, nil);
                         
                         result = [NSApp runModalForWindow: passwordWindow];
                         [passwordWindow makeFirstResponder: nil];
@@ -367,9 +368,9 @@
                         [NSApp endSheet: passwordWindow];
                         [passwordWindow orderOut: self];
                     }
-                    while( [self.password length] < 8 && result == NSRunStoppedResponse);
+                    while( [self.password length] < 8 && result == NSModalResponseStop);
                     
-                    if( result == NSRunStoppedResponse)
+                    if( result == NSModalResponseStop)
                     {
                         
                     }
@@ -388,7 +389,7 @@
             }
             else
             {
-                NSBeginAlertSheet( NSLocalizedString( @"Burn Warning", nil) , NSLocalizedString( @"OK", nil), nil, nil, nil, nil, nil, nil, nil, NSLocalizedString( @"Please add CD name", nil));
+                HorosBeginAlertSheet( NSLocalizedString( @"Burn Warning", nil) , NSLocalizedString( @"OK", nil), nil, nil, nil, nil, nil, nil, nil, NSLocalizedString( @"Please add CD name", nil));
                 
                 self.buttonsDisabled = NO;
                 runBurnAnimation = NO;
@@ -488,7 +489,7 @@
 		if( [[nameField stringValue] isEqualToString: [self defaultTitle]])
 		{
 			NSDate *date = [NSDate date];
-			[self setCDTitle: [NSString stringWithFormat:@"Archive-%@",  [date descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil]]];
+			[self setCDTitle: [NSString stringWithFormat:@"Archive-%@",  [date n2_descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil]]];
 		}
 	}
 }
@@ -518,7 +519,7 @@
 
 -(NSArray*) volumes
 {
-    NSArray	*removeableMedia = [[NSWorkspace sharedWorkspace] mountedRemovableMedia];
+    NSArray *removeableMedia = HorosMountedRemovableVolumePaths();
     NSMutableArray *array = [NSMutableArray array];
     
     for( NSString *mediaPath in removeableMedia)
@@ -608,7 +609,7 @@
         
         [bsp setDelegate: self];
         
-        if( [bsp runSetupPanel] == NSOKButton)
+        if( [bsp runSetupPanel] == NSModalResponseOK)
         {
             DRBurnProgressPanel *bpp = [DRBurnProgressPanel progressPanel];
             [bpp setDelegate: self];
@@ -677,7 +678,7 @@
 		NSDictionary*	errorStatus = [burnStatus objectForKey:DRErrorStatusKey];
 		NSString*		errorString = [errorStatus objectForKey:DRErrorStatusErrorStringKey];
 		
-		NSRunCriticalAlertPanel( NSLocalizedString( @"Burning failed", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, errorString);
+		HorosPresentCriticalAlert( NSLocalizedString( @"Burning failed", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, errorString);
 	}
 	else
     {
@@ -796,7 +797,7 @@
 	if( _multiplePatients || [[NSUserDefaults standardUserDefaults] boolForKey:@"anonymizedBeforeBurning"])
 	{
 		NSDate *date = [NSDate date];
-		title = [NSString stringWithFormat:@"Archive-%@",  [date descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil]];
+		title = [NSString stringWithFormat:@"Archive-%@",  [date n2_descriptionWithCalendarFormat:@"%Y%m%d" timeZone:nil locale:nil]];
 	}
 	else title = [[self defaultTitle] uppercaseString];
 	
@@ -822,7 +823,7 @@
     
     NSGraphicsContext* savedContext = [NSGraphicsContext currentContext];
     [NSGraphicsContext setCurrentContext:nsContext];
-    [image drawInRect:NSMakeRect(0,0,width,height) fromRect:NSMakeRect(0,0,image.size.width,image.size.height) operation:NSCompositeCopy fraction:1];
+    [image drawInRect:NSMakeRect(0,0,width,height) fromRect:NSMakeRect(0,0,image.size.width,image.size.height) operation:NSCompositingOperationCopy fraction:1];
     [NSGraphicsContext setCurrentContext:savedContext];
     
     NSMutableData* out = [NSMutableData data];
@@ -886,7 +887,9 @@
         //[duTool waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
 		
 		duOutput = [[fromPipe fileHandleForReading] availableData];
-		[duOutput getBytes:aBuffer];
+		NSUInteger bytesToCopy = MIN(duOutput.length, sizeof(aBuffer) - 1);
+		[duOutput getBytes:aBuffer length:bytesToCopy];
+		aBuffer[bytesToCopy] = '\0';
 		
 		size = [NSString stringWithUTF8String:aBuffer];
 		stringComponents = [size pathComponents];

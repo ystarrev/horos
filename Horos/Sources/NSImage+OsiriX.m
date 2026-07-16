@@ -51,7 +51,7 @@ extern NSRecursiveLock* PapyrusLock;
 	NSData* result = NULL;
 	NSDictionary* imageProps = [NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:quality]
                                                                forKey:NSImageCompressionFactor];
-	result = [imageRep representationUsingType:NSJPEGFileType properties:imageProps];
+	result = [imageRep representationUsingType:NSBitmapImageFileTypeJPEG properties:imageProps];
 	
 	return result;	
 }

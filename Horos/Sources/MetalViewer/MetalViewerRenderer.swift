@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Dispatch
 import Metal
@@ -54,6 +55,8 @@ private struct MetalUniforms {
     var hasOverlay: UInt32
     var useBaseVolumeTexture: UInt32
     var imageInterpolationMode: UInt32
+    var baseHasCustomCLUT: UInt32
+    var overlayHasCustomCLUT: UInt32
 }
 
 private struct MetalMPRUniforms {
@@ -70,6 +73,8 @@ private struct MetalMPRUniforms {
     var fixedVoxelToWorld: simd_float4x4
     var movingWorldToVoxel: simd_float4x4
     var hasOverlay: UInt32
+    var baseHasCustomCLUT: UInt32
+    var overlayHasCustomCLUT: UInt32
 }
 
 private struct RegistrationUniforms {
@@ -354,6 +359,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var overlayPixList: [DCMPix] = []
     private var baseTexture: MTLTexture?
     private var baseVolumeTexture: MTLTexture?
+    private var baseCLUTTexture: MTLTexture?
+    private var baseOpacityTexture: MTLTexture?
+    private var overlayCLUTTexture: MTLTexture?
+    private var overlayOpacityTexture: MTLTexture?
+    private var baseTransferFunctionState = MetalViewerTransferFunctionState()
+    private var overlayTransferFunctionState = MetalViewerTransferFunctionState()
+    private var baseHasCustomCLUT = false
+    private var overlayHasCustomCLUT = false
     private var stackVolumeTextureEntry: MetalSeriesTextureCache.Entry?
     private var overlayVolumeTexture: MTLTexture?
     private var baseVolumeDimensions = SIMD3<Int>(repeating: 1)
@@ -449,6 +462,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     var registrationDidChange: ((Bool, String, Float) -> Void)?
     var windowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)?
     var overlayWindowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)?
+    var transferFunctionStateDidChange: ((MetalViewerTransferFunctionState) -> Void)?
+    var overlayTransferFunctionStateDidChange: ((MetalViewerTransferFunctionState) -> Void)?
 
     var activeWindowLevel: Float {
         activeWindowLevelTarget == .overlay ? overlayWindowLevel : windowLevel
@@ -456,6 +471,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     var activeWindowWidth: Float {
         activeWindowLevelTarget == .overlay ? overlayWindowWidth : windowWidth
+    }
+
+    var isOverlayWindowLevelActive: Bool {
+        activeWindowLevelTarget == .overlay
+    }
+
+    var activeTransferFunctionState: MetalViewerTransferFunctionState {
+        activeWindowLevelTarget == .overlay ? overlayTransferFunctionState : baseTransferFunctionState
     }
 
     var currentPix: DCMPix? {
@@ -530,12 +553,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     init(
         device: MTLDevice,
         pixList: [DCMPix],
-        windowLevelState: MetalViewerWindowLevelState = MetalViewerWindowLevelState()
+        windowLevelState: MetalViewerWindowLevelState = MetalViewerWindowLevelState(),
+        transferFunctionState: MetalViewerTransferFunctionState = MetalViewerTransferFunctionState()
     ) {
         self.deviceRef = device
         self.pixList = pixList
         self.defaultSeriesWindowLevel = windowLevelState.defaultWindow
         self.customSeriesWindowLevel = windowLevelState.customWindow
+        self.baseTransferFunctionState = transferFunctionState
 
         guard let commandQueue = device.makeCommandQueue() else {
             fatalError("Could not create Metal command queue.")
@@ -646,6 +671,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         super.init()
 
+        rebuildBaseTransferTextures()
+        rebuildOverlayTransferTextures()
+
         defaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
             object: UserDefaults.standard,
@@ -677,7 +705,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     func setOverlayPixList(
         _ overlayPixList: [DCMPix],
         windowLevelState: MetalViewerWindowLevelState = MetalViewerWindowLevelState(),
-        windowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)? = nil
+        windowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)? = nil,
+        transferFunctionState: MetalViewerTransferFunctionState = MetalViewerTransferFunctionState(),
+        transferFunctionStateDidChange: ((MetalViewerTransferFunctionState) -> Void)? = nil
     ) {
         let overlayStart = CFAbsoluteTimeGetCurrent()
         MetalViewerDiagnostics.registrationTimingLog(
@@ -695,6 +725,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         overlayDefaultSeriesWindowLevel = windowLevelState.defaultWindow
         overlayCustomSeriesWindowLevel = windowLevelState.customWindow
         overlayWindowLevelStateDidChange = windowLevelStateDidChange
+        overlayTransferFunctionState = transferFunctionState
+        overlayTransferFunctionStateDidChange = transferFunctionStateDidChange
+        rebuildOverlayTransferTextures()
         let basePreparationStart = CFAbsoluteTimeGetCurrent()
         prepareBaseVolumeIfNeeded()
         MetalViewerDiagnostics.registrationTimingLog("MetalViewerRenderer registration basePreparation", since: basePreparationStart)
@@ -769,6 +802,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         overlayDefaultSeriesWindowLevel = nil
         overlayCustomSeriesWindowLevel = nil
         overlayWindowLevelStateDidChange = nil
+        overlayTransferFunctionState = MetalViewerTransferFunctionState()
+        overlayTransferFunctionStateDidChange = nil
+        rebuildOverlayTransferTextures()
         overlayWindowLevel = 0
         overlayWindowWidth = 1
         overlayRegistrationWindowLevel = 0
@@ -1391,7 +1427,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     func applyDefaultWindowLevelPreset() {
         guard let pix = activeWindowLevelPix else { return }
-        let defaults = windowLevelDefaults(for: pix, series: activeWindowLevelPixList)
+        let defaults = windowLevelDefaults(for: pix)
         let width = pix.savedWW > 0 ? pix.savedWW : defaults.width
         let level = pix.savedWW > 0 ? pix.savedWL : defaults.level
         applyWindowLevel(MetalViewerWindowLevel(level: level, width: width), asCustom: false)
@@ -1402,13 +1438,41 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         applyWindowLevel(MetalViewerWindowLevel(level: pix.fullwl, width: max(1, pix.fullww)), asCustom: false)
     }
 
-    func applyRobustSeriesWindowLevelPreset() {
+    func applyAutomaticWindowLevelPreset() {
         guard let pix = activeWindowLevelPix else { return }
-        let window = robustSeriesWindowLevel(for: activeWindowLevelPixList) ?? windowLevelDefaults(for: pix, series: activeWindowLevelPixList)
+        let window = automaticSeriesWindowLevel(for: activeWindowLevelPixList) ?? windowLevelDefaults(for: pix)
         applyWindowLevel(window, asCustom: false)
     }
 
     func commitWindowLevel() {
+        stateDidChange?(stateDescription)
+    }
+
+    func applyCLUT(named presetName: String) {
+        switch activeWindowLevelTarget {
+        case .base:
+            baseTransferFunctionState.clutName = presetName
+            rebuildBaseTransferTextures()
+            transferFunctionStateDidChange?(baseTransferFunctionState)
+        case .overlay:
+            overlayTransferFunctionState.clutName = presetName
+            rebuildOverlayTransferTextures()
+            overlayTransferFunctionStateDidChange?(overlayTransferFunctionState)
+        }
+        stateDidChange?(stateDescription)
+    }
+
+    func applyOpacity(named presetName: String) {
+        switch activeWindowLevelTarget {
+        case .base:
+            baseTransferFunctionState.opacityName = presetName
+            rebuildBaseTransferTextures()
+            transferFunctionStateDidChange?(baseTransferFunctionState)
+        case .overlay:
+            overlayTransferFunctionState.opacityName = presetName
+            rebuildOverlayTransferTextures()
+            overlayTransferFunctionStateDidChange?(overlayTransferFunctionState)
+        }
         stateDidChange?(stateDescription)
     }
 
@@ -2168,7 +2232,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             if pix.isLoaded() == false {
                 pix.checkLoad()
             }
-            let defaultWindow = windowLevelDefaults(for: pix)
+            let defaultWindow = initialWindowLevelDefaults(for: pix, series: pixList)
             defaultSeriesWindowLevel = defaultWindow
             applyBaseWindowLevel(defaultWindow)
             notifyWindowLevelStateDidChange()
@@ -2182,7 +2246,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             } else if let defaultWindow = overlayDefaultSeriesWindowLevel {
                 applyOverlayWindowLevel(defaultWindow)
             } else {
-                let defaultWindow = windowLevelDefaults(for: overlayPix, series: overlayPixList)
+                let defaultWindow = initialWindowLevelDefaults(for: overlayPix, series: overlayPixList)
                 overlayDefaultSeriesWindowLevel = defaultWindow
                 applyOverlayWindowLevel(defaultWindow)
                 notifyOverlayWindowLevelStateDidChange()
@@ -2235,22 +2299,24 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    private func windowLevelDefaults(for pix: DCMPix, series: [DCMPix]? = nil) -> MetalViewerWindowLevel {
-        let modality = pix.modalityString?.uppercased() ?? ""
-        if modality == "MR",
-           pix.savedWW <= 0,
-           pix.ww <= 0,
-           let robustWindow = robustSeriesWindowLevel(for: series ?? pixList) {
-            return robustWindow
-        }
-
+    private func windowLevelDefaults(for pix: DCMPix) -> MetalViewerWindowLevel {
         let defaultWW = pix.ww > 0 ? pix.ww : pix.fullww
         let defaultWL = pix.wl != 0 ? pix.wl : pix.fullwl
         return MetalViewerWindowLevel(level: defaultWL, width: max(1, defaultWW))
     }
 
-    private func robustSeriesWindowLevel(for seriesPixList: [DCMPix]) -> MetalViewerWindowLevel? {
+    private func initialWindowLevelDefaults(for pix: DCMPix, series: [DCMPix]) -> MetalViewerWindowLevel {
+        if pix.modalityString?.uppercased() == "MR",
+           let automaticWindow = automaticSeriesWindowLevel(for: series) {
+            return automaticWindow
+        }
+        return windowLevelDefaults(for: pix)
+    }
+
+    private func automaticSeriesWindowLevel(for seriesPixList: [DCMPix]) -> MetalViewerWindowLevel? {
         guard seriesPixList.isEmpty == false else { return nil }
+
+        let modality = seriesPixList.first?.modalityString?.uppercased() ?? ""
 
         let maxSliceSamples = 17
         let sliceStep = max(1, seriesPixList.count / maxSliceSamples)
@@ -2267,14 +2333,31 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             pix.checkLoad()
             guard let pixels = pix.fImage else { continue }
 
-            let pixelCount = max(Int(pix.pwidth) * Int(pix.pheight), 0)
+            let pixelWidth = max(Int(pix.pwidth), 0)
+            let pixelHeight = max(Int(pix.pheight), 0)
+            let pixelCount = pixelWidth * pixelHeight
             guard pixelCount > 0 else { continue }
+
+            let cornerIndexes = [
+                0,
+                max(pixelWidth - 1, 0),
+                max((pixelHeight - 1) * pixelWidth, 0),
+                max(pixelCount - 1, 0),
+            ]
+            let cornerValues = cornerIndexes
+                .map { pixels[$0] }
+                .filter { $0.isFinite }
+            let backgroundValue = repeatedCornerValue(in: cornerValues)
 
             let pixelStep = max(1, pixelCount / 5_000)
             var index = 0
             while index < pixelCount {
                 let value = pixels[index]
-                if value.isFinite && abs(value) > Float.ulpOfOne {
+                let isBackground = backgroundValue.map {
+                    abs(value - $0) <= max(abs($0) * 0.00001, 0.0001)
+                } ?? false
+                let isZeroBackground = modality == "MR" && abs(value) <= Float.ulpOfOne
+                if value.isFinite && isBackground == false && isZeroBackground == false {
                     samples.append(value)
                 }
                 index += pixelStep
@@ -2284,12 +2367,43 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         guard samples.count >= 32 else { return nil }
         samples.sort()
 
-        let lowIndex = percentileIndex(0.005, count: samples.count)
-        let highIndex = percentileIndex(0.995, count: samples.count)
-        let low = samples[lowIndex]
+        let percentileRange: (low: Float, high: Float)
+        switch modality {
+        case "US", "XA", "RF":
+            percentileRange = (0.01, 0.99)
+        default:
+            percentileRange = (0.005, 0.995)
+        }
+
+        let lowIndex = percentileIndex(percentileRange.low, count: samples.count)
+        let highIndex = percentileIndex(percentileRange.high, count: samples.count)
+        var low = samples[lowIndex]
         let high = samples[max(highIndex, lowIndex)]
+        if (modality == "PT" || modality == "NM") && low >= 0 {
+            low = 0
+        }
         let width = max(high - low, 1)
         return MetalViewerWindowLevel(level: low + width * 0.5, width: width)
+    }
+
+    private func repeatedCornerValue(in values: [Float]) -> Float? {
+        guard values.count >= 2 else { return nil }
+
+        var bestValue: Float?
+        var bestCount = 1
+        for candidate in values {
+            let tolerance = max(abs(candidate) * 0.00001, 0.0001)
+            let count = values.reduce(into: 0) { result, value in
+                if abs(value - candidate) <= tolerance {
+                    result += 1
+                }
+            }
+            if count > bestCount {
+                bestValue = candidate
+                bestCount = count
+            }
+        }
+        return bestValue
     }
 
     private func percentileIndex(_ percentile: Float, count: Int) -> Int {
@@ -2324,6 +2438,173 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 customWindow: overlayCustomSeriesWindowLevel
             )
         )
+    }
+
+    private func rebuildBaseTransferTextures() {
+        let clut = makeCLUTTexture(named: baseTransferFunctionState.clutName)
+        baseCLUTTexture = clut.texture
+        baseTransferFunctionState.clutName = clut.name
+        baseHasCustomCLUT = clut.isCustom
+
+        let opacity = makeOpacityTexture(named: baseTransferFunctionState.opacityName)
+        baseOpacityTexture = opacity.texture
+        baseTransferFunctionState.opacityName = opacity.name
+    }
+
+    private func rebuildOverlayTransferTextures() {
+        let clut = makeCLUTTexture(named: overlayTransferFunctionState.clutName)
+        overlayCLUTTexture = clut.texture
+        overlayTransferFunctionState.clutName = clut.name
+        overlayHasCustomCLUT = clut.isCustom
+
+        let opacity = makeOpacityTexture(named: overlayTransferFunctionState.opacityName)
+        overlayOpacityTexture = opacity.texture
+        overlayTransferFunctionState.opacityName = opacity.name
+    }
+
+    private func makeCLUTTexture(named presetName: String) -> (texture: MTLTexture?, name: String, isCustom: Bool) {
+        let noCLUT = NSLocalizedString("No CLUT", comment: "")
+        let presets = UserDefaults.standard.dictionary(forKey: "CLUT") ?? [:]
+        var pixels = (0..<256).map { value in
+            SIMD4<UInt8>(UInt8(value), UInt8(value), UInt8(value), 255)
+        }
+
+        guard presetName != noCLUT,
+              let preset = presets[presetName] as? [String: Any],
+              let red = preset["Red"] as? [NSNumber],
+              let green = preset["Green"] as? [NSNumber],
+              let blue = preset["Blue"] as? [NSNumber],
+              red.count >= 256,
+              green.count >= 256,
+              blue.count >= 256 else {
+            return (makeRGBA1DTexture(pixels: pixels), noCLUT, false)
+        }
+
+        for index in 0..<256 {
+            pixels[index] = SIMD4<UInt8>(
+                UInt8(clamping: red[index].intValue),
+                UInt8(clamping: green[index].intValue),
+                UInt8(clamping: blue[index].intValue),
+                255
+            )
+        }
+        return (makeRGBA1DTexture(pixels: pixels), presetName, true)
+    }
+
+    private func makeOpacityTexture(named presetName: String) -> (texture: MTLTexture?, name: String) {
+        let linearTable = NSLocalizedString("Linear Table", comment: "")
+        let presets = UserDefaults.standard.dictionary(forKey: "OPACITY") ?? [:]
+        let pointStrings: [String]
+        let resolvedName: String
+
+        if presetName == linearTable {
+            pointStrings = []
+            resolvedName = linearTable
+        } else if let preset = presets[presetName] as? [String: Any],
+                  let points = preset["Points"] as? [Any] {
+            pointStrings = points.compactMap { $0 as? String }
+            resolvedName = presetName
+        } else {
+            pointStrings = []
+            resolvedName = linearTable
+        }
+
+        let width = 4096
+        var values = [Float](repeating: 0, count: width)
+        var points = pointStrings.map { string -> (x: Float, y: Float) in
+            var point = NSPointFromString(string)
+            point.x -= 1000
+            return (
+                x: min(max(Float(point.x) / 256.0, 0), 1),
+                y: min(max(Float(point.y), 0), 1)
+            )
+        }
+        points.sort { $0.x < $1.x }
+
+        for index in 0..<width {
+            let sample = Float(index) / Float(max(width - 1, 1))
+            guard points.isEmpty == false else {
+                values[index] = sample
+                continue
+            }
+
+            if let first = points.first, sample <= first.x {
+                values[index] = first.x > 0 ? (sample / first.x) * first.y : first.y
+                continue
+            }
+
+            var assigned = false
+            for pointIndex in 1..<points.count {
+                let previous = points[pointIndex - 1]
+                let current = points[pointIndex]
+                if sample <= current.x {
+                    let fraction = (sample - previous.x) / max(current.x - previous.x, 0.0001)
+                    values[index] = previous.y + (current.y - previous.y) * fraction
+                    assigned = true
+                    break
+                }
+            }
+
+            if assigned == false {
+                let last = points.last ?? (x: 0, y: 0)
+                values[index] = last.y + (1 - last.y) * ((sample - last.x) / max(1 - last.x, 0.0001))
+            }
+        }
+
+        return (makeFloat1DTexture(values: values), resolvedName)
+    }
+
+    private func makeRGBA1DTexture(pixels: [SIMD4<UInt8>]) -> MTLTexture? {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm,
+            width: pixels.count,
+            height: 1,
+            mipmapped: false
+        )
+        descriptor.usage = [.shaderRead]
+        descriptor.storageMode = .shared
+        guard let texture = deviceRef.makeTexture(descriptor: descriptor) else { return nil }
+
+        pixels.withUnsafeBytes { bytes in
+            guard let baseAddress = bytes.baseAddress else { return }
+            texture.replace(
+                region: MTLRegionMake2D(0, 0, pixels.count, 1),
+                mipmapLevel: 0,
+                withBytes: baseAddress,
+                bytesPerRow: pixels.count * MemoryLayout<SIMD4<UInt8>>.stride
+            )
+        }
+        return texture
+    }
+
+    private func makeFloat1DTexture(values: [Float]) -> MTLTexture? {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .r32Float,
+            width: values.count,
+            height: 1,
+            mipmapped: false
+        )
+        descriptor.usage = [.shaderRead]
+        descriptor.storageMode = .shared
+        guard let texture = deviceRef.makeTexture(descriptor: descriptor) else { return nil }
+
+        values.withUnsafeBytes { bytes in
+            guard let baseAddress = bytes.baseAddress else { return }
+            texture.replace(
+                region: MTLRegionMake2D(0, 0, values.count, 1),
+                mipmapLevel: 0,
+                withBytes: baseAddress,
+                bytesPerRow: values.count * MemoryLayout<Float>.stride
+            )
+        }
+        return texture
+    }
+
+    private func setTransferTextures(on encoder: MTLRenderCommandEncoder) {
+        encoder.setFragmentTexture(baseCLUTTexture, index: 3)
+        encoder.setFragmentTexture(baseOpacityTexture, index: 4)
+        encoder.setFragmentTexture(overlayCLUTTexture, index: 5)
+        encoder.setFragmentTexture(overlayOpacityTexture, index: 6)
     }
 
     private func prepareBaseVolumeIfNeeded() {
@@ -4985,7 +5266,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             movingWorldToVoxel: movingWorldToVoxel,
             hasOverlay: overlayVolumeTexture == nil ? 0 : 1,
             useBaseVolumeTexture: displayVolumeTexture == nil ? 0 : 1,
-            imageInterpolationMode: UInt32(imageInterpolationMode.rawValue)
+            imageInterpolationMode: UInt32(imageInterpolationMode.rawValue),
+            baseHasCustomCLUT: baseHasCustomCLUT ? 1 : 0,
+            overlayHasCustomCLUT: overlayHasCustomCLUT ? 1 : 0
         )
 
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
@@ -5000,6 +5283,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         encoder.setFragmentTexture(baseTexture, index: 0)
         encoder.setFragmentTexture(overlayVolumeTexture, index: 1)
         encoder.setFragmentTexture(displayVolumeTexture, index: 2)
+        setTransferTextures(on: encoder)
         encoder.setFragmentSamplerState(samplerState, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
@@ -5050,6 +5334,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 0)
             encoder.setFragmentTexture(baseVolumeTexture, index: 0)
             encoder.setFragmentTexture(overlayVolumeTexture, index: 1)
+            setTransferTextures(on: encoder)
             encoder.setFragmentSamplerState(samplerState, index: 0)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
         }
@@ -5132,7 +5417,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             movingInverseRotation: rotationMatrix(for: -overlayRotationRadians),
             fixedVoxelToWorld: fixedVoxelToWorld,
             movingWorldToVoxel: movingWorldToVoxel,
-            hasOverlay: overlayVolumeTexture == nil ? 0 : 1
+            hasOverlay: overlayVolumeTexture == nil ? 0 : 1,
+            baseHasCustomCLUT: baseHasCustomCLUT ? 1 : 0,
+            overlayHasCustomCLUT: overlayHasCustomCLUT ? 1 : 0
         )
     }
 
@@ -5424,6 +5711,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 encoder.setFragmentBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 0)
                 encoder.setFragmentTexture(baseVolumeTexture, index: 0)
                 encoder.setFragmentTexture(overlayVolumeTexture, index: 1)
+                setTransferTextures(on: encoder)
                 encoder.setFragmentSamplerState(samplerState, index: 0)
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
             }

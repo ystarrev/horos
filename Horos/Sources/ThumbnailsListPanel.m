@@ -257,7 +257,6 @@ static 	NSMutableDictionary *associatedScreen = nil;
     
 	if( associatedScreen == nil) associatedScreen = [[NSMutableDictionary alloc] init];
 	
-    NSDisableScreenUpdates();
     
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SeriesListVisible"] == NO)
         tb = nil;
@@ -343,7 +342,6 @@ static 	NSMutableDictionary *associatedScreen = nil;
         N2LogException( exception);
     }
     @finally {
-        NSEnableScreenUpdates();
     }
 }
 

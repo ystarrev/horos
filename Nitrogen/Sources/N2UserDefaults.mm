@@ -37,6 +37,25 @@
 
 #import "N2UserDefaults.h"
 
+static id N2UnarchiveLegacyDefaultsObject(NSData *data)
+{
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+	// Preserve the format of values already stored by earlier Horos releases.
+	id object = [NSUnarchiver unarchiveObjectWithData:data];
+#pragma clang diagnostic pop
+	return object;
+}
+
+static NSData *N2ArchiveLegacyDefaultsObject(id object)
+{
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+	NSData *data = [NSArchiver archivedDataWithRootObject:object];
+#pragma clang diagnostic pop
+	return data;
+}
+
 
 @implementation N2UserDefaults
 @synthesize identifier = _identifier, autosave = _autosave;
@@ -145,14 +164,14 @@
 -(id)unarchiveObjectForKey:(NSString*)key default:(id)def class:(Class)c {
 	NSData* value = [self objectForKey:key];
 	if ([value isKindOfClass:[NSData class]]) {
-		id unarchivedValue = [NSUnarchiver unarchiveObjectWithData:value];
+		id unarchivedValue = N2UnarchiveLegacyDefaultsObject(value);
 		if ([unarchivedValue isKindOfClass:c])
 			return unarchivedValue;
 	} return def;
 }
 
 -(void)archiveAndSetObject:(id)value forKey:(NSString*)key {
-	[self setObject:[NSArchiver archivedDataWithRootObject:value] forKey:key];
+	[self setObject:N2ArchiveLegacyDefaultsObject(value) forKey:key];
 }
 
 -(NSColor*)colorForKey:(NSString*)key default:(NSColor*)def {

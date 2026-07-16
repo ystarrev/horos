@@ -1,3 +1,5 @@
+#import "HorosFilePanelContentTypes.h"
+#import "HorosAlertCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -94,12 +96,12 @@
 	
 	NSSavePanel *savePanel = [NSSavePanel savePanel];
 	
-	[savePanel setAllowedFileTypes:@[@"csv"]];
+	savePanel.allowedContentTypes = HorosContentTypesForFilenameExtensions(@[@"csv"]);
 	
     savePanel.nameFieldStringValue = filename;
     
     [savePanel beginWithCompletionHandler:^(NSInteger result) {
-        if (result != NSFileHandlingPanelOKButton)
+        if (result != NSModalResponseOK)
             return;
         
         [csv writeToURL: [savePanel URL] atomically: YES encoding:NSUTF8StringEncoding error:NULL];
@@ -129,7 +131,7 @@
 	
 	if( [[BrowserController currentBrowser] isNetworkLogsActive] == NO)
 	{
-		if( NSRunInformationalAlertPanel( NSLocalizedString( @"Network Logs", nil), NSLocalizedString( @"Network Logs are currently off. Do you want to activate them?\r\rYou can activate or de-activate them in the Preferences - Listener window.", nil), NSLocalizedString( @"Activate", nil), NSLocalizedString( @"Cancel", nil), nil) == 1)
+		if( HorosPresentInformationalAlert( NSLocalizedString( @"Network Logs", nil), NSLocalizedString( @"Network Logs are currently off. Do you want to activate them?\r\rYou can activate or de-activate them in the Preferences - Listener window.", nil), NSLocalizedString( @"Activate", nil), NSLocalizedString( @"Cancel", nil), nil) == HorosAlertResponseFirstButton)
 		{
 			[[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"NETWORKLOGS"];
 			[[BrowserController currentBrowser] setNetworkLogs];

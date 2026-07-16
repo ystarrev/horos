@@ -1,3 +1,4 @@
+#import "HorosUnkeyedArchiveCompatibility.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -1060,7 +1061,7 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 //			NSBitmapImageRep *imageRep = [NSBitmapImageRep imageRepWithData: [layerImage TIFFRepresentation]];
 //			NSDictionary *imageProps = [NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:0.3] forKey:NSImageCompressionFactor];
 //	
-//			layerImageJPEG = [[imageRep representationUsingType:NSJPEG2000FileType properties:imageProps] retain];	//NSJPEGFileType
+//			layerImageJPEG = [[imageRep representationUsingType:NSJPEG2000FileType properties:imageProps] retain];	//NSBitmapImageFileTypeJPEG
 			[self generateEncodedLayerImage];
 		}
 //		if( layerImageWhenSelectedJPEG == nil)
@@ -1068,7 +1069,7 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 //			NSBitmapImageRep *imageRep = [NSBitmapImageRep imageRepWithData: [layerImage TIFFRepresentation]];
 //			NSDictionary *imageProps = [NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:0.3] forKey:NSImageCompressionFactor];
 //	
-//			layerImageWhenSelectedJPEG = [[imageRep representationUsingType:NSJPEG2000FileType properties:imageProps] retain];	//NSJPEGFileType
+//			layerImageWhenSelectedJPEG = [[imageRep representationUsingType:NSJPEG2000FileType properties:imageProps] retain];	//NSBitmapImageFileTypeJPEG
 //		}
 		[coder encodeObject: layerImageJPEG];
 //		[coder encodeObject: layerImageWhenSelectedJPEG];
@@ -1102,7 +1103,7 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 
 - (NSData*) data
 {
-	return [NSArchiver archivedDataWithRootObject: self];
+	return HorosArchiveUnkeyedObject(self);
 }
 
 - (void) deleteTexture:(NSOpenGLContext*) c
@@ -3390,7 +3391,7 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 					if( ![curView eraserFlag]) val = 0xFF;
 					else val = 0x00;
 					
-					if( modifier & NSCommandKeyMask && !(modifier & NSShiftKeyMask))
+					if( modifier & NSEventModifierFlagCommand && !(modifier & NSEventModifierFlagShift))
 					{
 						if( val == 0xFF) val = 0;
 						else val = 0xFF;
@@ -3462,7 +3463,7 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 					rect.size.width = pt.x - rect.origin.x;
 					rect.size.height = pt.y - rect.origin.y;
 					
-					if( modifier & NSShiftKeyMask) rect.size.width = rect.size.height;
+					if( modifier & NSEventModifierFlagShift) rect.size.width = rect.size.height;
 						
 					rtotal = -1;
 					Brtotal = -1;
@@ -3507,7 +3508,7 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 					else  // tOval
 					{
 						rect.size.height = pt.y - rect.origin.y;
-						rect.size.width = ( modifier & NSShiftKeyMask) ? rect.size.height : pt.x - rect.origin.x;
+						rect.size.width = ( modifier & NSEventModifierFlagShift) ? rect.size.height : pt.x - rect.origin.x;
 						
 						action = YES;
 					}
@@ -3561,7 +3562,7 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
                     [[points lastObject] setPoint: pt];
                     if( type == tMesure)
                     {
-                        if( (modifier & NSShiftKeyMask) && points.count == 2)
+                        if( (modifier & NSEventModifierFlagShift) && points.count == 2)
                         {
                             NSPoint first = [[points objectAtIndex: 0] point];
                             NSPoint last = [[points lastObject] point];
@@ -3594,7 +3595,7 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 					
                         if( type == tMesure)
                         {
-                            if( (modifier & NSShiftKeyMask) && points.count == 2)
+                            if( (modifier & NSEventModifierFlagShift) && points.count == 2)
                             {
                                 NSPoint first = selectedModifyPoint ? [[points objectAtIndex: 0] point] : [[points objectAtIndex: 1] point];
                                 NSPoint last = [[points objectAtIndex: selectedModifyPoint] point];
@@ -7123,7 +7124,7 @@ void gl_round_box(int mode, float minx, float miny, float maxx, float maxy, floa
 		imageProps = [NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:0.3] forKey:NSImageCompressionFactor];
 	else
 		imageProps = [NSDictionary dictionaryWithObject:[NSNumber numberWithFloat:1.0] forKey:NSImageCompressionFactor];
-	layerImageJPEG = [[imageRep representationUsingType:NSPNGFileType properties:imageProps] retain];	//NSJPEGFileType //NSJPEG2000FileType
+	layerImageJPEG = [[imageRep representationUsingType:NSPNGFileType properties:imageProps] retain];	//NSBitmapImageFileTypeJPEG //NSJPEG2000FileType
 }
 
 NSInteger sortPointArrayAlongX(id point1, id point2, void *context)

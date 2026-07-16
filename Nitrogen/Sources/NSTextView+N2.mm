@@ -42,7 +42,7 @@
 @implementation NSTextView (N2)
 
 +(NSTextView*)labelWithText:(NSString*)text {
-	return [self labelWithText:text alignment:NSNaturalTextAlignment];
+	return [self labelWithText:text alignment:NSTextAlignmentNatural];
 }
 
 +(NSTextView*)labelWithText:(NSString*)text alignment:(NSTextAlignment)alignment {

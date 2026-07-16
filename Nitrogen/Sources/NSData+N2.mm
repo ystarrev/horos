@@ -185,7 +185,11 @@ static const char base64EncodingTable[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk
 
 -(NSData*)md5 {
     NSMutableData* hash = [NSMutableData dataWithLength:16];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    // MD5 is retained here for stable legacy identifiers, not for security.
     CC_MD5(self.bytes, self.length, (unsigned char*)hash.mutableBytes);
+#pragma clang diagnostic pop
     return hash;
 } 
 

@@ -690,7 +690,7 @@ static NSString* _dcmElementKey(DcmElement* element) {
         NSInteger mode = [NSUserDefaults.standardUserDefaults integerForKey:@"MOUNT"];
         
         
-        if (mode == -1 || [[NSApp currentEvent] modifierFlags]&NSCommandKeyMask)
+        if (mode == -1 || [[NSApp currentEvent] modifierFlags]&NSEventModifierFlagCommand)
             [self performSelectorOnMainThread:@selector(_askUserDiscDataCopyOrBrowse:) withObject:[NSArray arrayWithObjects: path, [NSNumber numberWithInteger:dicomImages.count], [NSValue valueWithPointer:&mode], nil] waitUntilDone:YES];
         
         if (mode == 1)

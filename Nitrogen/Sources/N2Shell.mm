@@ -152,7 +152,7 @@
 	 }
 	 
 	 io_iterator_t matchingServices;
-	 if (IOServiceGetMatchingServices(kIOMasterPortDefault, matchingDict, &matchingServices) == KERN_SUCCESS) {
+	 if (IOServiceGetMatchingServices(kIOMainPortDefault, matchingDict, &matchingServices) == KERN_SUCCESS) {
 	 io_object_t intfService;
 	 while (intfService = IOIteratorNext(matchingServices)) {
 	 io_object_t controllerService;
@@ -187,7 +187,7 @@
 }
 
 +(NSString*)serialNumber {
-    io_service_t platformExpert = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("IOPlatformExpertDevice"));
+    io_service_t platformExpert = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"));
     if (platformExpert) {
         NSString* serialNumber = [(NSString*)IORegistryEntryCreateCFProperty(platformExpert, CFSTR(kIOPlatformSerialNumberKey), kCFAllocatorDefault, 0) autorelease];
         IOObjectRelease(platformExpert);

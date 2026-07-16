@@ -48,7 +48,6 @@
 	if (inAltImage) // because subclassers might have assigned this through setImage
 		self.altImage = inAltImage;
 	
-	self.gradientType = NSGradientNone;
 	//self.bezelStyle = 0;
 	
 	return self;
@@ -63,7 +62,7 @@
 	if (![self isHighlighted])
 		image = self.altImage;
 	NSRect imageFrame = NSZeroRect; imageFrame.size = image.size;
-	[image drawInRect:frame fromRect:imageFrame operation:NSCompositeSourceOver fraction:1];
+	[image drawInRect:frame fromRect:imageFrame operation:NSCompositingOperationSourceOver fraction:1];
 }
 
 -(void)drawBezelWithFrame:(NSRect)frame inView:(NSView*)controlView {

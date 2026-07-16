@@ -246,12 +246,10 @@
 	{
 		NSPasteboard *paste = [sender draggingPasteboard];
 		
-		NSArray *types = [NSArray arrayWithObjects:NSFilenamesPboardType, nil];
-		
-		NSString *desiredType = [paste availableTypeFromArray:types];
-		NSData *carriedData = [paste dataForType:desiredType];
+		NSArray<NSURL *> *fileURLs = [paste readObjectsForClasses:@[[NSURL class]]
+										 options:@{NSPasteboardURLReadingFileURLsOnlyKey: @YES}];
 	
-		if (nil == carriedData)
+		if (fileURLs.count == 0)
 		{
 //			NSRunAlertPanel(NSLocalizedString(@"Drag Error",nil), NSLocalizedString(@"Sorry, but the past operation failed",nil), 
 //            nil, nil, nil);
@@ -260,16 +258,7 @@
 		else
 		{
         //the pasteboard was able to give us some meaningful data
-			if ([desiredType isEqualToString:NSFilenamesPboardType])
-			{
 			return YES;
-			}
-			else
-			{
-            //this can't happen
-				NSAssert(NO, @"This can't happen");
-				return NO;
-			}
 		}
 //		[self setNeedsDisplay:YES];    //redraw us with the new image
 //		return YES;
@@ -319,12 +308,10 @@
     
     NSPasteboard *paste = [sender draggingPasteboard];
         //gets the dragging-specific pasteboard from the sender
-    NSArray *types = [NSArray arrayWithObjects:NSFilenamesPboardType, nil];
-	//a list of types that we can accept
-    NSString *desiredType = [paste availableTypeFromArray:types];
-    NSData *carriedData = [paste dataForType:desiredType];
+	NSArray<NSURL *> *fileURLs = [paste readObjectsForClasses:@[[NSURL class]]
+									 options:@{NSPasteboardURLReadingFileURLsOnlyKey: @YES}];
 	
-    if (nil == carriedData)
+    if (fileURLs.count == 0)
     {
 //        //the operation failed for some reason
 //        NSRunAlertPanel(NSLocalizedString(@"Drag Error",nil), NSLocalizedString(@"Sorry, but the past operation failed",nil), 
@@ -334,18 +321,8 @@
     else
     {
         //the pasteboard was able to give us some meaningful data
-        if ([desiredType isEqualToString:NSFilenamesPboardType])
-        {	
-			//we have a list of file names in an NSData object
-            NSArray *fileArray = [paste propertyListForType:@"NSFilenamesPboardType"];
-			
-			[self performSelector:@selector(terminateDrag:) withObject:fileArray afterDelay:0.1];
-		}
-        else
-        {
-            //this can't happen
-            NSAssert(NO, @"This can't happen");
-        }
+        NSArray *fileArray = [fileURLs valueForKey:@"path"];
+		[self performSelector:@selector(terminateDrag:) withObject:fileArray afterDelay:0.1];
     }
     [self setNeedsDisplay:YES];
 }

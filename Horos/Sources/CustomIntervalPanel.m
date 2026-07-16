@@ -117,19 +117,19 @@
 {
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"betweenDatesMode"] && [[NSUserDefaults standardUserDefaults] boolForKey: @"customIntervalWithHoursAndMinutes"])
     {
-        [toPicker setDatePickerElements: NSYearMonthDayDatePickerElementFlag | NSHourMinuteDatePickerElementFlag];
-        [fromPicker setDatePickerElements: NSYearMonthDayDatePickerElementFlag | NSHourMinuteDatePickerElementFlag];
+        [toPicker setDatePickerElements: NSDatePickerElementFlagYearMonthDay | NSDatePickerElementFlagHourMinute];
+        [fromPicker setDatePickerElements: NSDatePickerElementFlagYearMonthDay | NSDatePickerElementFlagHourMinute];
         
-        [textualFromPicker setDatePickerElements: NSYearMonthDayDatePickerElementFlag | NSHourMinuteDatePickerElementFlag];
-        [textualToPicker setDatePickerElements: NSYearMonthDayDatePickerElementFlag | NSHourMinuteDatePickerElementFlag];
+        [textualFromPicker setDatePickerElements: NSDatePickerElementFlagYearMonthDay | NSDatePickerElementFlagHourMinute];
+        [textualToPicker setDatePickerElements: NSDatePickerElementFlagYearMonthDay | NSDatePickerElementFlagHourMinute];
     }
     else
     {
-        [toPicker setDatePickerElements: NSYearMonthDayDatePickerElementFlag];
-        [fromPicker setDatePickerElements: NSYearMonthDayDatePickerElementFlag];
+        [toPicker setDatePickerElements: NSDatePickerElementFlagYearMonthDay];
+        [fromPicker setDatePickerElements: NSDatePickerElementFlagYearMonthDay];
         
-        [textualFromPicker setDatePickerElements: NSYearMonthDayDatePickerElementFlag];
-        [textualToPicker setDatePickerElements: NSYearMonthDayDatePickerElementFlag];
+        [textualFromPicker setDatePickerElements: NSDatePickerElementFlagYearMonthDay];
+        [textualToPicker setDatePickerElements: NSDatePickerElementFlagYearMonthDay];
     }
 }
 
@@ -160,7 +160,7 @@
         }
         else
         {
-            unsigned unitFlags = NSYearCalendarUnit | NSMonthCalendarUnit |  NSDayCalendarUnit;
+            unsigned unitFlags = NSCalendarUnitYear | NSCalendarUnitMonth |  NSCalendarUnitDay;
             NSDateComponents *components = [[NSCalendar currentCalendar] components: unitFlags fromDate: date];
             
             fromDate = [[[NSCalendar currentCalendar] dateFromComponents: components] retain];
@@ -186,7 +186,7 @@
         }
         else
         {
-            unsigned unitFlags = NSYearCalendarUnit | NSMonthCalendarUnit |  NSDayCalendarUnit;
+            unsigned unitFlags = NSCalendarUnitYear | NSCalendarUnitMonth |  NSCalendarUnitDay;
             NSDateComponents *components = [[NSCalendar currentCalendar] components: unitFlags fromDate: date];
             
             [components setHour: 23];

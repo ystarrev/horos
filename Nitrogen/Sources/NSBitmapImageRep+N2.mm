@@ -80,7 +80,7 @@
             NSColor* xycolor = [NSColor colorWithColorSpace:colorSpace components:fsamples.data() count:spp];
             
             CGFloat brightness, alpha;
-            [[xycolor colorUsingColorSpaceName:NSCalibratedRGBColorSpace] getHue:NULL saturation:NULL brightness:&brightness alpha:&alpha];
+            [[xycolor colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]] getHue:NULL saturation:NULL brightness:&brightness alpha:&alpha];
             NSColor* fixedColor = [NSColor colorWithDeviceHue:[color hueComponent] saturation:[color saturationComponent] brightness:std::max((CGFloat).75, brightness) alpha:alpha];
             
             xycolor = [fixedColor colorUsingColorSpace:colorSpace];
@@ -101,16 +101,29 @@
 	return [image autorelease];
 }
 
--(NSBitmapImageRep*)repUsingColorSpaceName:(NSString*)colorSpaceName {
-	if ([[self colorSpaceName] isEqualToString:colorSpaceName])
+- (NSBitmapImageRep*)repUsingColorSpaceName:(NSString*)colorSpaceName {
+	NSColorSpace *targetColorSpace = [NSColorSpace genericRGBColorSpace];
+	if ([colorSpaceName isEqualToString:@"NSDeviceRGBColorSpace"])
+		targetColorSpace = [NSColorSpace deviceRGBColorSpace];
+	else if ([colorSpaceName isEqualToString:@"NSCalibratedWhiteColorSpace"] ||
+			 [colorSpaceName isEqualToString:@"NSGenericGrayColorSpace"])
+		targetColorSpace = [NSColorSpace genericGrayColorSpace];
+	else if ([colorSpaceName isEqualToString:@"NSDeviceWhiteColorSpace"])
+		targetColorSpace = [NSColorSpace deviceGrayColorSpace];
+	else if ([colorSpaceName isEqualToString:@"NSDeviceCMYKColorSpace"])
+		targetColorSpace = [NSColorSpace deviceCMYKColorSpace];
+	else if ([colorSpaceName isEqualToString:@"NSGenericCMYKColorSpace"])
+		targetColorSpace = [NSColorSpace genericCMYKColorSpace];
+
+	if ([[self colorSpace] isEqual:targetColorSpace])
 		return self;
 	
-	NSInteger spp = [self _spp];
+	NSInteger spp = targetColorSpace.numberOfColorComponents + ([self hasAlpha] ? 1 : 0);
 	
 	NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:[self pixelsWide] pixelsHigh:[self pixelsHigh] bitsPerSample:8 samplesPerPixel:spp hasAlpha:[self hasAlpha] isPlanar:NO colorSpaceName:colorSpaceName bytesPerRow:0 bitsPerPixel:0];
 	for (int y = [self pixelsHigh]-1; y >= 0; --y)
 		for (int x = [self pixelsWide]-1; x >= 0; --x)
-			[rep setColor:[[self colorAtX:x y:y] colorUsingColorSpaceName:colorSpaceName] atX:x y:y];
+			[rep setColor:[[self colorAtX:x y:y] colorUsingColorSpace:targetColorSpace] atX:x y:y];
 	
 	return [rep autorelease];
 }

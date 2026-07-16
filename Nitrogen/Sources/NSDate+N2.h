@@ -42,4 +42,24 @@
 
 +(id)dateWithYYYYMMDD:(NSString*)datestr HHMMss:(NSString*)timestr;
 
++ (NSDate *)n2_dateWithYear:(NSInteger)year
+                      month:(NSInteger)month
+                        day:(NSInteger)day
+                       hour:(NSInteger)hour
+                     minute:(NSInteger)minute
+                     second:(NSInteger)second
+                   timeZone:(NSTimeZone *)timeZone;
+
+- (NSDate *)n2_dateByAddingYears:(NSInteger)years
+                          months:(NSInteger)months
+                            days:(NSInteger)days
+                           hours:(NSInteger)hours
+                         minutes:(NSInteger)minutes
+                         seconds:(NSInteger)seconds;
+
+- (NSString *)n2_descriptionWithCalendarFormat:(NSString *)format;
+- (NSString *)n2_descriptionWithCalendarFormat:(NSString *)format
+                                       timeZone:(NSTimeZone *)timeZone
+                                          locale:(id)locale;
+
 @end

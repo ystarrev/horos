@@ -76,6 +76,18 @@ p {
 	flex-grow: 1;
 	font-weight: bold;
 }
+.box-title {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+.component-version {
+	font-size: 11px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	color: rgba(0,0,0,0.6);
+}
 .box-link {
 	font-size: 11px;
 	font-weight: normal;

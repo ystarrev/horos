@@ -246,6 +246,23 @@
 	[message display];
 }
 
+- (void)setProgressValue:(double)value maximum:(double)maximum
+{
+    if( maximum <= 0)
+    {
+        [progress setIndeterminate: YES];
+        [progress startAnimation: self];
+        return;
+    }
+
+    [progress stopAnimation: self];
+    [progress setIndeterminate: NO];
+    [progress setMinValue: 0];
+    [progress setMaxValue: maximum];
+    [progress setDoubleValue: MIN( MAX( value, 0), maximum)];
+    [progress displayIfNeeded];
+}
+
 -(void) windowDidLoad
 {
     [super windowDidLoad];

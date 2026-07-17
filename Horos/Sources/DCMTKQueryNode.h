@@ -64,7 +64,9 @@
 	NSManagedObject *_logEntry;
 	BOOL showErrorMessage, firstWadoErrorDisplayed, _dontCatchExceptions, _isAutoRetrieve, _noSmartMode, _suppressQueryFailureMessages;
 	OFCondition globalCondition;
-    NSUInteger _countOfSuboperations, _countOfSuccessfulSuboperations;
+	NSUInteger _countOfSuboperations, _countOfSuccessfulSuboperations;
+	NSArray *_batchQueryNodes;
+	volatile NSUInteger _batchQueryCompleted;
 }
 
 @property BOOL dontCatchExceptions;
@@ -113,6 +115,7 @@
 // values are a NSDictionary the key for the value is @"value" key for the name is @"name"  name is the tag descriptor from the tag dictionary
 - (void)queryWithValues:(NSArray *)values;
 - (void) queryWithValues:(NSArray *)values dataset:(DcmDataset*) dataset;
+- (BOOL)queryNodesWithSingleAssociation:(NSArray *)nodes;
 - (NSManagedObject *)logEntry;
 - (void)setLogEntry:(NSManagedObject *)logEntry;
 - (void)setShowErrorMessage:(BOOL) m;

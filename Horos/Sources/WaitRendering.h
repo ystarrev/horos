@@ -68,6 +68,7 @@
 - (void) setCancel :(BOOL) val;
 - (BOOL) aborted;
 - (void) setString:(NSString*) str;
+- (void)setProgressValue:(double)value maximum:(double)maximum;
 - (void) setCancelDelegate:(id) object;
 - (void) resetLastDuration;
 @end

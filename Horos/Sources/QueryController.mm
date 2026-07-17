@@ -337,6 +337,7 @@ extern "C"
 - (NSArray *)seriesSelectedByHighlight;
 - (NSArray *)seriesSelectedForRetrieve;
 - (NSArray *)seriesChildrenForStudyItem:(id)item;
+- (NSString *)queryEndpointIdentifierForItem:(DCMTKQueryNode *)item;
 - (void)setSeriesItems:(NSArray *)seriesItems highlighted:(BOOL)highlighted;
 - (void)toggleHighlightForSeriesItem:(id)item;
 - (void)toggleHighlightForStudyItem:(id)item;
@@ -2370,18 +2371,11 @@ extern "C"
 	return @"";
 }
 
-- (void)outlineViewItemDidCollapse:(NSNotification *)notification
-{
-	DCMTKStudyQueryNode *item = [[notification userInfo] valueForKey: @"NSObject"];
-	
-	if( [item children])
-	{
-		[item purgeChildren];
-	}
-}
-
 - (void)outlineViewItemDidExpand:(NSNotification *)notification
 {
+    if( expandingAllQueryStudies)
+        return;
+
     seriesHighlightFilterMask = [self currentSeriesHighlightFilterMask];
     if( seriesHighlightFilterMask == 0)
     {
@@ -5932,22 +5926,81 @@ extern "C"
 
 - (IBAction)expandAllQueryStudies:(id)sender
 {
-    BOOL expandedItem = YES;
+    expandingAllQueryStudies = YES;
 
-    while( expandedItem)
+    @try
     {
-        expandedItem = NO;
+        // Root nodes are uncommon, but expose their already-fetched studies before batching.
+        for( NSInteger row = 0; row < [outlineView numberOfRows]; row++)
+        {
+            id item = [outlineView itemAtRow: row];
+            if( [item isMemberOfClass: [DCMTKRootQueryNode class]] && [outlineView isItemExpanded: item] == NO)
+                [outlineView expandItem: item];
+        }
+
+        NSMutableDictionary *studiesByEndpoint = [NSMutableDictionary dictionary];
 
         for( NSInteger row = 0; row < [outlineView numberOfRows]; row++)
         {
             id item = [outlineView itemAtRow: row];
+            if( [item isMemberOfClass: [DCMTKStudyQueryNode class]] == NO || [item children] != nil)
+                continue;
 
-            if( ([item isMemberOfClass: [DCMTKStudyQueryNode class]] || [item isMemberOfClass: [DCMTKRootQueryNode class]]) && [outlineView isItemExpanded: item] == NO)
+            NSString *endpointIdentifier = [self queryEndpointIdentifierForItem: item];
+            NSMutableArray *studies = [studiesByEndpoint objectForKey: endpointIdentifier];
+
+            if( studies == nil)
             {
-                [outlineView expandItem: item];
-                expandedItem = YES;
+                studies = [NSMutableArray array];
+                [studiesByEndpoint setObject: studies forKey: endpointIdentifier];
+            }
+
+            [studies addObject: item];
+        }
+
+        if( [studiesByEndpoint count] > 0)
+        {
+            BOOL previousPerformingCFind = performingCFind;
+            performingCFind = YES;
+            [progressIndicator startAnimation: nil];
+
+            @try
+            {
+                for( NSArray *studies in [studiesByEndpoint allValues])
+                {
+                    DCMTKQueryNode *firstStudy = [studies objectAtIndex: 0];
+                    [firstStudy queryNodesWithSingleAssociation: studies];
+                }
+            }
+            @finally
+            {
+                [progressIndicator stopAnimation: nil];
+                performingCFind = previousPerformingCFind;
             }
         }
+
+        BOOL expandedItem = YES;
+        while( expandedItem)
+        {
+            expandedItem = NO;
+
+            for( NSInteger row = 0; row < [outlineView numberOfRows]; row++)
+            {
+                id item = [outlineView itemAtRow: row];
+                BOOL isRoot = [item isMemberOfClass: [DCMTKRootQueryNode class]];
+                BOOL isLoadedStudy = [item isMemberOfClass: [DCMTKStudyQueryNode class]] && [item children] != nil;
+
+                if( (isRoot || isLoadedStudy) && [outlineView isItemExpanded: item] == NO)
+                {
+                    [outlineView expandItem: item];
+                    expandedItem = YES;
+                }
+            }
+        }
+    }
+    @finally
+    {
+        expandingAllQueryStudies = NO;
     }
 
     seriesHighlightFilterMask = [self currentSeriesHighlightFilterMask];
@@ -5955,6 +6008,15 @@ extern "C"
         [self rebuildHighlightedSeriesFromFilters];
 
     [self refreshSeriesSelectionDisplay];
+}
+
+- (NSString *)queryEndpointIdentifierForItem:(DCMTKQueryNode *)item
+{
+    return [NSString stringWithFormat: @"%@|%@|%@|%d",
+            [item callingAET] ? [item callingAET] : @"",
+            [item calledAET] ? [item calledAET] : @"",
+            [item _hostname] ? [item _hostname] : @"",
+            [item _port]];
 }
 
 - (IBAction)retrieveSelectedSeries:(id)sender

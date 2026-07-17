@@ -146,6 +146,7 @@ enum
     NSButton                                *retrieveSelectedSeriesButton;
     NSInteger                               seriesHighlightFilterMask;
     NSMutableSet                            *selectedSeriesUIDs;
+    BOOL                                    expandingAllQueryStudies;
 }
 
 @property (readonly) NSRecursiveLock *autoQueryLock;

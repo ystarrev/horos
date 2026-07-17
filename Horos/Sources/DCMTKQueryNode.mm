@@ -523,7 +523,8 @@ subOpCallback(void * /*subOpCallbackData*/ ,
 	[_numberImages release];
 	[_specificCharacterSet release];
 	[_logEntry release];
-	
+	[_batchQueryNodes release];
+
 	[super dealloc];
 }
 
@@ -849,6 +850,51 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                 N2LogExceptionWithStackTrace(e);
         }
 	}
+}
+
+- (BOOL)queryNodesWithSingleAssociation:(NSArray *)nodes
+{
+    if( [nodes count] == 0)
+        return YES;
+
+    DCMTKQueryNode *firstNode = [nodes objectAtIndex: 0];
+    if( firstNode != self)
+        return [firstNode queryNodesWithSingleAssociation: nodes];
+
+    @synchronized( self)
+    {
+        CFAbsoluteTime startedAt = CFAbsoluteTimeGetCurrent();
+        BOOL succeeded = NO;
+        DcmDataset *placeholderDataset = nil;
+        NSUInteger completedQueries = 0;
+
+        [_batchQueryNodes release];
+        _batchQueryNodes = [nodes copy];
+        _batchQueryCompleted = 0;
+
+        @try
+        {
+            placeholderDataset = [self queryPrototype];
+            if( placeholderDataset)
+                succeeded = [self setupNetworkWithSyntax: UID_FINDStudyRootQueryRetrieveInformationModel dataset: placeholderDataset];
+        }
+        @finally
+        {
+            completedQueries = _batchQueryCompleted;
+
+            if( placeholderDataset)
+                delete placeholderDataset;
+
+            [_batchQueryNodes release];
+            _batchQueryNodes = nil;
+            _batchQueryCompleted = 0;
+        }
+
+        NSLog( @"DICOM series expand: completed %lu/%lu study queries in %.3f s using one association batch",
+               (unsigned long)completedQueries, (unsigned long)[nodes count], CFAbsoluteTimeGetCurrent() - startedAt);
+
+        return succeeded;
+    }
 }
 
 - (void) move:(NSDictionary*) dict
@@ -1642,7 +1688,43 @@ subOpCallback(void * /*subOpCallbackData*/ ,
 	
 	@try
 	{
-		OFCondition cond = [self cfind:assoc dataset:dataset];
+		OFCondition cond = EC_Normal;
+
+		if( [_batchQueryNodes count] > 0)
+		{
+			NSArray *nodes = [[_batchQueryNodes copy] autorelease];
+			NSString *stringEncoding = [[NSUserDefaults standardUserDefaults] stringForKey: @"STRINGENCODING"];
+
+			for( DCMTKQueryNode *node in nodes)
+			{
+				if( _abortAssociation || [NSThread currentThread].isCancelled)
+					break;
+
+				[node purgeChildren];
+				DcmDataset *nodeDataset = [node queryPrototype];
+
+				if( nodeDataset == nil)
+				{
+					cond = EC_IllegalParameter;
+					break;
+				}
+
+				nodeDataset->putAndInsertString( DCM_SpecificCharacterSet, [stringEncoding UTF8String]);
+				cond = [node cfind: assoc dataset: nodeDataset];
+				delete nodeDataset;
+
+				if( [node children] == nil)
+					[node setChildren: [NSArray array]];
+
+				_batchQueryCompleted++;
+
+				if( cond != EC_Normal)
+					break;
+			}
+		}
+		else
+			cond = [self cfind:assoc dataset:dataset];
+
 		globalCondition = cond;
 	}
     @catch (NSException* e) {
@@ -2120,48 +2202,64 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				[[NSException exceptionWithName:@"DICOM Network Failure (query)" reason:@"No acceptable presentation contexts" userInfo:nil] raise];
 			}
 			
-			//specific for Move vs find
+			// specific for Move vs find
 			if (strcmp(abstractSyntax, UID_FINDStudyRootQueryRetrieveInformationModel) == 0)
 			{
 				if (cond == EC_Normal) // compare with EC_Normal since DUL_PEERREQUESTEDRELEASE is also good()
 				{
-//					if( [NSThread isMainThread] == YES && [[NSUserDefaults standardUserDefaults] boolForKey: @"dontUseThreadForAssociationAndCFind"] == NO)
+					NSRecursiveLock *lock = [[NSRecursiveLock alloc] init];
+					NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithObjectsAndKeys: lock, @"lock", [NSValue valueWithPointer: assoc], @"assoc", [NSValue valueWithPointer: dataset], @"dataset", nil];
+					NSUInteger batchQueryTotal = [_batchQueryNodes count];
+					NSUInteger displayedBatchQueryCompleted = NSNotFound;
+
+					if( batchQueryTotal > 0)
 					{
-						NSRecursiveLock *lock = [[NSRecursiveLock alloc] init];
-						NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithObjectsAndKeys: lock, @"lock", [NSValue valueWithPointer: assoc], @"assoc", [NSValue valueWithPointer: dataset], @"dataset", nil];
-						
-						globalCondition = EC_Normal;
-						[NSThread detachNewThreadSelector: @selector(cFindThread:) toTarget: self withObject: dict];
-						[NSThread sleepForTimeInterval: 0.05];
-						
-						while( [wait aborted] == NO && _abortAssociation == NO && [NSThread currentThread].isCancelled == NO && [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"] == NO)
-						{
-							[wait run];
-							[NSThread sleepForTimeInterval: 0.05];
-                            
-                            if( [lock tryLock])
-                            {
-                                [lock unlock];
-                                break;
-                            }
-						}
-						
-						if( [wait aborted] || _abortAssociation || [NSThread currentThread].isCancelled || [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"])
-						{
-							_abortAssociation = YES;
-							cond = DUL_NETWORKCLOSED;
-						}
-						else
-						{
-							cond = globalCondition;
-						}
-						[lock release];
-						
-						[wait end];
-						[wait autorelease];
-						wait = nil;
+						[wait setString: [NSString stringWithFormat: NSLocalizedString( @"Loading series: %lu of %lu studies...", nil), (unsigned long)0, (unsigned long)batchQueryTotal]];
+						[wait setProgressValue: 0 maximum: batchQueryTotal];
 					}
-//					else cond = [self cfind:assoc dataset:dataset];
+
+					globalCondition = EC_Normal;
+					[NSThread detachNewThreadSelector: @selector(cFindThread:) toTarget: self withObject: dict];
+					[NSThread sleepForTimeInterval: 0.05];
+
+					while( [wait aborted] == NO && _abortAssociation == NO && [NSThread currentThread].isCancelled == NO && [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"] == NO)
+					{
+						[wait run];
+						[NSThread sleepForTimeInterval: 0.05];
+
+						if( batchQueryTotal > 0 && displayedBatchQueryCompleted != _batchQueryCompleted)
+						{
+							displayedBatchQueryCompleted = _batchQueryCompleted;
+							[wait setString: [NSString stringWithFormat: NSLocalizedString( @"Loading series: %lu of %lu studies...", nil), (unsigned long)displayedBatchQueryCompleted, (unsigned long)batchQueryTotal]];
+							[wait setProgressValue: displayedBatchQueryCompleted maximum: batchQueryTotal];
+						}
+
+						if( [lock tryLock])
+						{
+							[lock unlock];
+							break;
+						}
+					}
+
+					if( batchQueryTotal > 0)
+					{
+						[wait setString: [NSString stringWithFormat: NSLocalizedString( @"Loading series: %lu of %lu studies...", nil), (unsigned long)_batchQueryCompleted, (unsigned long)batchQueryTotal]];
+						[wait setProgressValue: _batchQueryCompleted maximum: batchQueryTotal];
+					}
+
+					if( [wait aborted] || _abortAssociation || [NSThread currentThread].isCancelled || [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/kill_all_storescu"])
+					{
+						_abortAssociation = YES;
+						cond = DUL_NETWORKCLOSED;
+					}
+					else
+						cond = globalCondition;
+
+					[lock release];
+
+					[wait end];
+					[wait autorelease];
+					wait = nil;
 				}
 			}
 			else if (strcmp(abstractSyntax, UID_MOVEStudyRootQueryRetrieveInformationModel) == 0)

@@ -2344,7 +2344,7 @@ Gw
                         <action selector="setSearchType:" target="898" id="14143"/>
                     </connections>
                 </menuItem>
-                <menuItem title="Study Description" tag="4" id="11588">
+                <menuItem title="Description" tag="4" id="11588">
                     <connections>
                         <action selector="setSearchType:" target="898" id="11592"/>
                     </connections>

@@ -247,6 +247,9 @@ NSString* asciiString(NSString* str)
 -(void)removeAlbumObject:(DicomAlbum*)album;
 -(void)openMetalViewerForDatabaseObject:(NSManagedObject*)item;
 
+-(NSPredicate*)createFilterPredicateIncludingSeriesDescriptions:(BOOL)includeSeriesDescriptions;
+-(BOOL)searchIncludesSeriesDescriptions;
+
 -(void)saveLoadAlbumsSortDescriptors;
 -(void)saveDatabaseWindowFramePreference;
 
@@ -2901,7 +2904,7 @@ static NSConditionLock *threadLock = nil;
         NSLog( @"******* We HAVE TO be in main thread !");
     
     NSError				*error =nil;
-    NSPredicate			*predicate = nil, *subPredicate = nil;
+    NSPredicate			*predicate = nil, *distantPredicate = nil, *subPredicate = nil;
     NSString			*description = [NSString string];
     NSIndexSet			*selectedRowIndexes =  [databaseOutline selectedRowIndexes];
     NSMutableArray		*previousObjects = [NSMutableArray array];
@@ -2975,6 +2978,7 @@ static NSConditionLock *threadLock = nil;
             description = [description stringByAppendingFormat:NSLocalizedString(@" / Time Interval: since: %@", nil), [[NSUserDefaults dateTimeFormatter] stringFromDate: timeIntervalStart]];
         }
         predicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: subPredicate, predicate, nil]];
+        distantPredicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: subPredicate, distantPredicate, nil]];
         filtered = YES;
     }
     
@@ -2989,6 +2993,7 @@ static NSConditionLock *threadLock = nil;
         description = [description stringByAppendingFormat: NSLocalizedString(@" / Modality: %@", nil), self.modalityFilter];
         
         predicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: subPredicate, predicate, nil]];
+        distantPredicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: subPredicate, distantPredicate, nil]];
         filtered = YES;
     }
     
@@ -2999,15 +3004,33 @@ static NSConditionLock *threadLock = nil;
     if( self.filterPredicate)
     {
         predicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: self.filterPredicate, predicate, nil]];
+
+        // A study-level PACS query has no series objects to evaluate. Keep its
+        // in-memory predicate limited to study fields while allowing the local
+        // Core Data search to include the Study -> Series relationship.
+        NSPredicate *distantFilterPredicate = self.filterPredicate;
+        if( _searchString.length)
+        {
+            NSPredicate *searchPredicate = [self createFilterPredicateIncludingSeriesDescriptions: NO];
+            if( searchPredicate)
+                distantFilterPredicate = searchPredicate;
+        }
+        distantPredicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: distantFilterPredicate, distantPredicate, nil]];
+
         description = [description stringByAppendingString: self.filterPredicateDescription];
         filtered = YES;
     }
     
     if( testPredicate)
+    {
         predicate = testPredicate;
+        distantPredicate = testPredicate;
+    }
     
     if( predicate == nil)
         predicate = [NSPredicate predicateWithValue: YES];
+    if( distantPredicate == nil)
+        distantPredicate = [NSPredicate predicateWithValue: YES];
     
     error = nil;
     [outlineViewArray release];
@@ -3027,11 +3050,16 @@ static NSConditionLock *threadLock = nil;
                     // Entire DB Result
                     
                     distantEntireDBResultCount = 0;
-                    localEntireDBResultCount = [[[_database objectsForEntity:_database.studyEntity predicate:nil error:&error] filteredArrayUsingPredicate: self.filterPredicate] count];
+                    if( [self searchIncludesSeriesDescriptions])
+                        localEntireDBResultCount = [_database countObjectsForEntity:_database.studyEntity predicate:self.filterPredicate error:&error];
+                    else
+                        localEntireDBResultCount = [[[_database objectsForEntity:_database.studyEntity predicate:nil error:&error] filteredArrayUsingPredicate: self.filterPredicate] count];
                     
                     [self refreshEntireDBResult];
                 }
             }
+            else if( [self searchIncludesSeriesDescriptions] && testPredicate == nil)
+                outlineViewArray = [_database objectsForEntity:_database.studyEntity predicate:predicate error:&error];
             else
                 outlineViewArray = [[_database objectsForEntity:_database.studyEntity predicate:nil error:&error] filteredArrayUsingPredicate:predicate];
         }
@@ -3070,7 +3098,7 @@ static NSConditionLock *threadLock = nil;
                 NSArray *filteredAlbumDistantStudies = nil;
                 @synchronized( smartAlbumDistantArraySync)
                 {
-                    filteredAlbumDistantStudies = [smartAlbumDistantArray filteredArrayUsingPredicate: predicate];
+                    filteredAlbumDistantStudies = [smartAlbumDistantArray filteredArrayUsingPredicate: distantPredicate];
                 }
                 
                 // Merge local and distant studies
@@ -3181,7 +3209,10 @@ static NSConditionLock *threadLock = nil;
     }
     else sortDescriptors = [databaseOutline sortDescriptors];
     
-    if( filtered == YES && [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesOfSamePatientTogether"] && outlineViewArray.count > 0 && outlineViewArray.count < 500)
+    // A description/all-fields search that inspects Series must remain an
+    // exact result set. Adding every other study for each matching patient
+    // makes unrelated studies appear to match the entered description.
+    if( filtered == YES && [self searchIncludesSeriesDescriptions] == NO && [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesOfSamePatientTogether"] && outlineViewArray.count > 0 && outlineViewArray.count < 500)
     {
         @try
         {
@@ -4036,8 +4067,8 @@ static NSConditionLock *threadLock = nil;
             return NSLocalizedString( @"Comments", nil);
             break;
             
-        case 4:			// Study Description
-            return NSLocalizedString( @"Study Description", nil);
+        case 4:			// Description
+            return NSLocalizedString( @"Description", nil);
             break;
             
         case 5:			// Modality
@@ -4088,7 +4119,7 @@ static NSConditionLock *threadLock = nil;
                 [d setObject: [curSearchString stringByAppendingString:@"*"] forKey: @"Comments"];
                 break;
                 
-            case 4:			// Study Description
+            case 4:			// PACS study-level queries can only search Study Description here
                 [d setObject: [curSearchString stringByAppendingString:@"*"] forKey: @"StudyDescription"];
                 break;
                 
@@ -19988,8 +20019,8 @@ static volatile int numberOfThreadsForJPEG = 0;
                 description = [[NSString alloc] initWithFormat: NSLocalizedString(@" / Search: Comments = %@", nil), _searchString];
                 break;
                 
-            case 4:			// Study Description
-                description = [[NSString alloc] initWithFormat: NSLocalizedString(@" / Search: Study Description = %@", nil), _searchString];
+            case 4:			// Study or Series Description
+                description = [[NSString alloc] initWithFormat: NSLocalizedString(@" / Search: Description = %@", nil), _searchString];
                 break;
                 
             case 5:			// Modality
@@ -20271,7 +20302,15 @@ static volatile int numberOfThreadsForJPEG = 0;
     return [predicate evaluateWithObject: study];
 }
 
-- (NSPredicate *)createFilterPredicate
+- (BOOL)searchIncludesSeriesDescriptions
+{
+    if( _searchString.length == 0)
+        return NO;
+
+    return searchType == 4 || (searchType == 7 && _searchString.length >= 3);
+}
+
+- (NSPredicate *)createFilterPredicateIncludingSeriesDescriptions:(BOOL)includeSeriesDescriptions
 {
     NSPredicate *predicate = nil;
     NSString *s = nil;
@@ -20284,7 +20323,15 @@ static volatile int numberOfThreadsForJPEG = 0;
                 s = _searchString;
                 
                 if( [s length] >= 3)
-                    predicate = [NSPredicate predicateWithFormat: @"(name CONTAINS[cd] %@) OR (patientID CONTAINS[cd] %@) OR (id CONTAINS[cd] %@) OR (comment CONTAINS[cd] %@) OR (comment2 CONTAINS[cd] %@) OR (comment3 CONTAINS[cd] %@) OR (comment4 CONTAINS[cd] %@) OR (studyName CONTAINS[cd] %@) OR (modality CONTAINS[cd] %@) OR (accessionNumber CONTAINS[cd] %@) OR (performingPhysician CONTAINS[cd] %@) OR (referringPhysician CONTAINS[cd] %@) OR (institutionName CONTAINS[cd] %@)", s, s, s, s, s, s, s, s, s, s, s, s, s];
+                {
+                    NSMutableArray *predicates = [NSMutableArray arrayWithObject: [NSPredicate predicateWithFormat: @"(name CONTAINS[cd] %@) OR (patientID CONTAINS[cd] %@) OR (id CONTAINS[cd] %@) OR (comment CONTAINS[cd] %@) OR (comment2 CONTAINS[cd] %@) OR (comment3 CONTAINS[cd] %@) OR (comment4 CONTAINS[cd] %@) OR (studyName CONTAINS[cd] %@) OR (modality CONTAINS[cd] %@) OR (accessionNumber CONTAINS[cd] %@) OR (performingPhysician CONTAINS[cd] %@) OR (referringPhysician CONTAINS[cd] %@) OR (institutionName CONTAINS[cd] %@)", s, s, s, s, s, s, s, s, s, s, s, s, s]];
+                    if( includeSeriesDescriptions)
+                    {
+                        [predicates addObject: [NSPredicate predicateWithFormat: @"ANY series.name CONTAINS[cd] %@", s]];
+                        [predicates addObject: [NSPredicate predicateWithFormat: @"ANY series.seriesDescription CONTAINS[cd] %@", s]];
+                    }
+                    predicate = [NSCompoundPredicate orPredicateWithSubpredicates: predicates];
+                }
                 else if( [s length] >= 1)
                     predicate = [self patientNameSearchPredicate: _searchString];
                 break;
@@ -20305,8 +20352,16 @@ static volatile int numberOfThreadsForJPEG = 0;
                 predicate = [NSPredicate predicateWithFormat: @"comment CONTAINS[cd] %@", _searchString];
                 break;
                 
-            case 4:			// Study Description
-                predicate = [NSPredicate predicateWithFormat: @"studyName CONTAINS[cd] %@", _searchString];
+            case 4:			// Study or Series Description
+                if( includeSeriesDescriptions)
+                {
+                    predicate = [NSCompoundPredicate orPredicateWithSubpredicates: [NSArray arrayWithObjects:
+                        [NSPredicate predicateWithFormat: @"studyName CONTAINS[cd] %@", _searchString],
+                        [NSPredicate predicateWithFormat: @"ANY series.name CONTAINS[cd] %@", _searchString],
+                        [NSPredicate predicateWithFormat: @"ANY series.seriesDescription CONTAINS[cd] %@", _searchString], nil]];
+                }
+                else
+                    predicate = [NSPredicate predicateWithFormat: @"studyName CONTAINS[cd] %@", _searchString];
                 break;
                 
             case 5:			// Modality
@@ -20334,6 +20389,11 @@ static volatile int numberOfThreadsForJPEG = 0;
         }
     }
     return predicate;
+}
+
+- (NSPredicate *)createFilterPredicate
+{
+    return [self createFilterPredicateIncludingSeriesDescriptions: YES];
 }
 
 - (NSArray *) databaseSelection

@@ -504,8 +504,6 @@
 		7E55ADDE06C7FFCD0059D6EB /* SeriesView.m in Sources */ = {isa = PBXBuildFile; fileRef = 7E55ADDC06C7FFCD0059D6EB /* SeriesView.m */; };
 		7E55AE1506C80E460059D6EB /* StudyView.h in Headers */ = {isa = PBXBuildFile; fileRef = 7E55AE1306C80E460059D6EB /* StudyView.h */; };
 		7E55AE1606C80E460059D6EB /* StudyView.m in Sources */ = {isa = PBXBuildFile; fileRef = 7E55AE1406C80E460059D6EB /* StudyView.m */; };
-		7E569399065007D6001A9762 /* SmartWindowController.h in Headers */ = {isa = PBXBuildFile; fileRef = 7E569397065007D6001A9762 /* SmartWindowController.h */; };
-		7E56939A065007D6001A9762 /* SmartWindowController.m in Sources */ = {isa = PBXBuildFile; fileRef = 7E569398065007D6001A9762 /* SmartWindowController.m */; };
 		7E82C63F08D9FF35000BAFF9 /* DCMLimitedObject.h in Headers */ = {isa = PBXBuildFile; fileRef = 7E82C63D08D9FF35000BAFF9 /* DCMLimitedObject.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		7E82C64008D9FF35000BAFF9 /* DCMLimitedObject.m in Sources */ = {isa = PBXBuildFile; fileRef = 7E82C63E08D9FF35000BAFF9 /* DCMLimitedObject.m */; };
 		7E8340DB08E9F7C500E41C5E /* DCMPresentationState.h in Headers */ = {isa = PBXBuildFile; fileRef = 7E8340D908E9F7C500E41C5E /* DCMPresentationState.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -1110,7 +1108,6 @@
 		CE3B7E641580F762003CB266 /* Quaternion.mm in Sources */ = {isa = PBXBuildFile; fileRef = CE3B7E631580F761003CB266 /* Quaternion.mm */; };
 		CE3DDDAF0D8AC94C00AE9588 /* QueryOutlineView.h in Headers */ = {isa = PBXBuildFile; fileRef = CE3DDDAD0D8AC94C00AE9588 /* QueryOutlineView.h */; };
 		CE3DDDB00D8AC94C00AE9588 /* QueryOutlineView.m in Sources */ = {isa = PBXBuildFile; fileRef = CE3DDDAE0D8AC94C00AE9588 /* QueryOutlineView.m */; };
-		CE3F99440C84724B00CB38F1 /* SmartAlbum.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F98E40C84724B00CB38F1 /* SmartAlbum.xib */; };
 		CE3F99450C84724B00CB38F1 /* ROIVolumeManager.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F98E60C84724B00CB38F1 /* ROIVolumeManager.xib */; };
 		CE3F99460C84724B00CB38F1 /* PETCT.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F98E80C84724B00CB38F1 /* PETCT.xib */; };
 		CE3F99470C84724B00CB38F1 /* LogWindow.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F98EA0C84724B00CB38F1 /* LogWindow.xib */; };
@@ -1377,6 +1374,7 @@
 		F4A200000001000000000001 /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A200000002000000000001 /* UniformTypeIdentifiers.framework */; };
 		F4CDA0010000000000000001 /* HorosDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4CDA0020000000000000001 /* HorosDataModels.swift */; };
 		F4CDA0010000000000000002 /* HorosDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4CDA0020000000000000002 /* HorosDataStore.swift */; };
+		F4CDA0010000000000000003 /* SmartAlbumEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4CDA0020000000000000003 /* SmartAlbumEditor.swift */; };
 		F4CF00000000000000000001 /* CFNetwork.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4CF00000000000000000002 /* CFNetwork.framework */; };
 		F4CF00000000000000000003 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4CF00000000000000000004 /* CoreFoundation.framework */; };
 		F4CTXCL0000000000000001 /* ContextCleaner.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4CTXCL0000000000000002 /* ContextCleaner.mm */; };
@@ -2202,8 +2200,6 @@
 		7E55ADDC06C7FFCD0059D6EB /* SeriesView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = SeriesView.m; path = Horos/Sources/SeriesView.m; sourceTree = SOURCE_ROOT; };
 		7E55AE1306C80E460059D6EB /* StudyView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = StudyView.h; path = Horos/Sources/StudyView.h; sourceTree = SOURCE_ROOT; };
 		7E55AE1406C80E460059D6EB /* StudyView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = StudyView.m; path = Horos/Sources/StudyView.m; sourceTree = SOURCE_ROOT; };
-		7E569397065007D6001A9762 /* SmartWindowController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SmartWindowController.h; path = Horos/Sources/SmartWindowController.h; sourceTree = SOURCE_ROOT; };
-		7E569398065007D6001A9762 /* SmartWindowController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = SmartWindowController.m; path = Horos/Sources/SmartWindowController.m; sourceTree = SOURCE_ROOT; };
 		7E82C63D08D9FF35000BAFF9 /* DCMLimitedObject.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DCMLimitedObject.h; path = "DCM Framework/DCMLimitedObject.h"; sourceTree = SOURCE_ROOT; };
 		7E82C63E08D9FF35000BAFF9 /* DCMLimitedObject.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; lineEnding = 0; name = DCMLimitedObject.m; path = "DCM Framework/DCMLimitedObject.m"; sourceTree = SOURCE_ROOT; xcLanguageSpecificationIdentifier = xcode.lang.objc; };
 		7E8340D908E9F7C500E41C5E /* DCMPresentationState.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DCMPresentationState.h; path = "DCM Framework/DCMPresentationState.h"; sourceTree = SOURCE_ROOT; };
@@ -2833,7 +2829,6 @@
 		CE3B7E631580F761003CB266 /* Quaternion.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = Quaternion.mm; sourceTree = "<group>"; };
 		CE3DDDAD0D8AC94C00AE9588 /* QueryOutlineView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = QueryOutlineView.h; sourceTree = "<group>"; };
 		CE3DDDAE0D8AC94C00AE9588 /* QueryOutlineView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = QueryOutlineView.m; sourceTree = "<group>"; };
-		CE3F98E50C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/SmartAlbum.xib; sourceTree = "<group>"; };
 		CE3F98E70C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/ROIVolumeManager.xib; sourceTree = "<group>"; };
 		CE3F98E90C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/PETCT.xib; sourceTree = "<group>"; };
 		CE3F98EB0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/LogWindow.xib; sourceTree = "<group>"; };
@@ -3096,6 +3091,7 @@
 		F4A200000002000000000001 /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
 		F4CDA0020000000000000001 /* HorosDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HorosDataModels.swift; sourceTree = "<group>"; };
 		F4CDA0020000000000000002 /* HorosDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HorosDataStore.swift; sourceTree = "<group>"; };
+		F4CDA0020000000000000003 /* SmartAlbumEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SmartAlbumEditor.swift; path = Horos/Sources/SmartAlbumEditor.swift; sourceTree = SOURCE_ROOT; };
 		F4CF00000000000000000002 /* CFNetwork.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CFNetwork.framework; path = System/Library/Frameworks/CFNetwork.framework; sourceTree = SDKROOT; };
 		F4CF00000000000000000004 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		F4CTXCL0000000000000002 /* ContextCleaner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ContextCleaner.mm; sourceTree = "<group>"; };
@@ -3793,7 +3789,6 @@
 				CE3F991E0C84724B00CB38F1 /* ROIVolume.xib */,
 				CE3F98E60C84724B00CB38F1 /* ROIVolumeManager.xib */,
 				CE3F99040C84724B00CB38F1 /* Send.xib */,
-				CE3F98E40C84724B00CB38F1 /* SmartAlbum.xib */,
 				CE3F98FC0C84724B00CB38F1 /* Splash.xib */,
 				CE2AC2661830BEFB00C2B67B /* ThickSlab.xib */,
 				5926822111CF60BD00CFA81F /* ThreadModalForWindow.xib */,
@@ -5036,8 +5031,8 @@
 				CE9DD29A086B35740058DD2A /* CoreData */,
 				A99B7E4F08858D0D004328C0 /* Bonjour */,
 				CE234014119E7B1500D83C19 /* File Reading */,
-				CE234016119E7B5500D83C19 /* SmartAlbums */,
 				71EB83B116DCB7E700D48646 /* Dicom Predicate Editor */,
+				F4CDA0020000000000000003 /* SmartAlbumEditor.swift */,
 				F4A100000002000000000015 /* Horos/Sources/HorosSettingsWindowController.swift */,
 				AB142DFC05600D76008461A0 /* AppController.h */,
 				AB142DFD05600D76008461A0 /* AppController.m */,
@@ -5207,15 +5202,6 @@
 				AB87FA740C06BEB200CD2976 /* NIfTI_Library */,
 			);
 			name = "File Reading";
-			sourceTree = "<group>";
-		};
-		CE234016119E7B5500D83C19 /* SmartAlbums */ = {
-			isa = PBXGroup;
-			children = (
-				7E569397065007D6001A9762 /* SmartWindowController.h */,
-				7E569398065007D6001A9762 /* SmartWindowController.m */,
-			);
-			name = SmartAlbums;
 			sourceTree = "<group>";
 		};
 		CE3E19E80875710E007FFD6F /* ITK */ = {
@@ -5631,7 +5617,6 @@
 				ABE3336B063D624400C8E087 /* QueryFilter.h in Headers */,
 				AB695A1F063D8261002BDF78 /* Analyze.h in Headers */,
 				AB73E13A06497EDA00545980 /* PreviewView.h in Headers */,
-				7E569399065007D6001A9762 /* SmartWindowController.h in Headers */,
 				BF5C0187065320A800BAFCF7 /* ImageAndTextCell.h in Headers */,
 				AB86603C066E40970015E1C4 /* ToolbarPanel.h in Headers */,
 				ABDC3C770670FF440042069D /* ToolBarNSWindow.h in Headers */,
@@ -6339,7 +6324,6 @@
 				9952F26E2020C1010020CCD4 /* ICloudDriveDetector.xib in Resources */,
 				841B0B3C18980EFF0007E5C5 /* 3DCutWrite.png in Resources */,
 				CEC4B5C10C7DF2D600AF5A76 /* 3DPRESETS in Resources */,
-				CE3F99440C84724B00CB38F1 /* SmartAlbum.xib in Resources */,
 				CE3F99450C84724B00CB38F1 /* ROIVolumeManager.xib in Resources */,
 				CE3F99460C84724B00CB38F1 /* PETCT.xib in Resources */,
 				CE3F99470C84724B00CB38F1 /* LogWindow.xib in Resources */,
@@ -7241,6 +7225,7 @@
 				F4A100000001000000000015 /* Horos/Sources/HorosSettingsWindowController.swift in Sources */,
 				F4CDA0010000000000000001 /* HorosDataModels.swift in Sources */,
 				F4CDA0010000000000000002 /* HorosDataStore.swift in Sources */,
+				F4CDA0010000000000000003 /* SmartAlbumEditor.swift in Sources */,
 				F4A100000001000000000001 /* Horos/Sources/MetalViewer/MetalViewerLauncher.swift in Sources */,
 				F4A10000000100000000000C /* Horos/Sources/MetalViewer/Metal3DViewerLauncher.swift in Sources */,
 				F4A100000001000000000010 /* Horos/Sources/MetalViewer/Metal3DVolumeRenderer.swift in Sources */,
@@ -7295,7 +7280,6 @@
 				ABE3336C063D624400C8E087 /* QueryFilter.m in Sources */,
 				AB73E13B06497EDA00545980 /* PreviewView.m in Sources */,
 				F4D1C0A10001000000000002 /* StructuredReportSupport.m in Sources */,
-				7E56939A065007D6001A9762 /* SmartWindowController.m in Sources */,
 				BF5C0188065320A800BAFCF7 /* ImageAndTextCell.m in Sources */,
 				AB86603B066E40970015E1C4 /* ToolbarPanel.m in Sources */,
 				ABDC3C760670FF440042069D /* ToolBarNSWindow.m in Sources */,
@@ -7944,14 +7928,6 @@
 				CE2AC2671830BEFB00C2B67B /* Base */,
 			);
 			name = ThickSlab.xib;
-			sourceTree = "<group>";
-		};
-		CE3F98E40C84724B00CB38F1 /* SmartAlbum.xib */ = {
-			isa = PBXVariantGroup;
-			children = (
-				CE3F98E50C84724B00CB38F1 /* Base */,
-			);
-			name = SmartAlbum.xib;
 			sourceTree = "<group>";
 		};
 		CE3F98E60C84724B00CB38F1 /* ROIVolumeManager.xib */ = {

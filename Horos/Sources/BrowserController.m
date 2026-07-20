@@ -79,7 +79,7 @@
 #import "NSSplitViewSave.h"
 #import "DicomDirParser.h"
 #import "MutableArrayCategory.h"
-#import "SmartWindowController.h"
+#import "HorosSwiftInterop.h"
 #import "QueryFilter.h"
 #import "ImageAndTextCell.h"
 #import "Wait.h"
@@ -246,6 +246,7 @@ NSString* asciiString(NSString* str)
 -(void)observeScrollerStyleDidChangeNotification:(NSNotification*)n;
 -(void)removeAlbumObject:(DicomAlbum*)album;
 -(void)openMetalViewerForDatabaseObject:(NSManagedObject*)item;
+-(void)saveSmartAlbumWithName:(NSString*)name predicateFormat:(NSString*)predicateFormat album:(DicomAlbum*)album;
 
 -(NSPredicate*)createFilterPredicateIncludingSeriesDescriptions:(BOOL)includeSeriesDescriptions;
 -(BOOL)searchIncludesSeriesDescriptions;
@@ -2832,6 +2833,25 @@ static NSConditionLock *threadLock = nil;
     return predicate;
 }
 
++ (NSPredicate*)safeSmartAlbumPredicateWithFormat:(NSString*)string
+{
+    @try
+    {
+        BrowserController *browser = [self currentBrowser];
+        if( browser)
+            return [browser smartAlbumPredicateString:string];
+
+        if( string.length == 0)
+            return [NSPredicate predicateWithValue:YES];
+        return [NSPredicate predicateWithFormat:string];
+    }
+    @catch (NSException *exception)
+    {
+        (void)exception;
+        return nil;
+    }
+}
+
 - (IBAction)selectNoAlbums:(id)sender
 {
     BOOL copyClearSearchAndTimeIntervalWhenSelectingAlbum = [[NSUserDefaults standardUserDefaults] boolForKey: @"clearSearchAndTimeIntervalWhenSelectingAlbum"];
@@ -3209,10 +3229,10 @@ static NSConditionLock *threadLock = nil;
     }
     else sortDescriptors = [databaseOutline sortDescriptors];
     
-    // A description/all-fields search that inspects Series must remain an
-    // exact result set. Adding every other study for each matching patient
-    // makes unrelated studies appear to match the entered description.
-    if( filtered == YES && [self searchIncludesSeriesDescriptions] == NO && [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesOfSamePatientTogether"] && outlineViewArray.count > 0 && outlineViewArray.count < 500)
+    // A series-aware search or Smart Album must remain an exact result set.
+    // Adding every other study for each matching patient would make unrelated
+    // studies appear to belong to the saved cohort.
+    if( filtered == YES && smartAlbumName == nil && [self searchIncludesSeriesDescriptions] == NO && [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesOfSamePatientTogether"] && outlineViewArray.count > 0 && outlineViewArray.count < 500)
     {
         @try
         {
@@ -10858,128 +10878,50 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 - (IBAction) addSmartAlbum: (id)sender
 {
-    SmartWindowController* swc = [[SmartWindowController alloc] initWithDatabase:self.database];
-    
-    HorosBeginSheet(swc.window, self.window, self, @selector(smartAlbumSheetDidEnd:returnCode:contextInfo:), nil);
-    
-    /*[smartWindowController addSubview: nil];
-     
-     int result = [NSApp runModalForWindow:sheet];
-     [sheet makeFirstResponder: nil];
-     
-     // Sheet is up here.
-     [NSApp endSheet: sheet];
-     [sheet orderOut: self];
-     [smartWindowController close];
-     
-     NSMutableArray *criteria = [smartWindowController criteria];
-     if( [criteria count] > 0 && result == NSModalResponseStop)
-     {
-     NSError *error = nil;
-     NSString *name;
-     
-     NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
-     [dbRequest setEntity: [[self.database.managedObjectModel entitiesByName] objectForKey:@"Album"]];
-     [dbRequest setPredicate: [NSPredicate predicateWithValue:YES]];
-     NSManagedObjectContext *context = self.database.managedObjectContext;
-     
-     
-     @try
-     {
-     error = nil;
-     NSArray *albumsArray = [context executeFetchRequest:dbRequest error:&error];
-     
-     int i = 2;
-     name = [smartWindowController albumTitle];
-     while( [[albumsArray valueForKey:@"name"] indexOfObject: name] != NSNotFound)
-     {
-     name = [NSString stringWithFormat:@"%@ #%d", [smartWindowController albumTitle], i++];
-     }
-     
-     NSManagedObject	*album = [NSEntityDescription insertNewObjectForEntityForName:@"Album" inManagedObjectContext: context];
-     [album setValue:name forKey:@"name"];
-     [album setValue:[NSNumber numberWithBool:YES] forKey:@"smartAlbum"];
-     
-     [album setValue: [smartWindowController sqlQueryString] forKey:@"predicateString"];
-     [_database save:NULL];
-     
-     // Distant DICOM node filter
-     if( [[[smartWindowController onDemandFilter] allKeys] count] > 0)
-     {
-     NSMutableArray *savedSmartAlbums = [[[[NSUserDefaults standardUserDefaults] objectForKey: @"smartAlbumStudiesDICOMNodes"] mutableCopy] autorelease];
-     
-     NSUInteger idx = [[savedSmartAlbums valueForKey: @"name"] indexOfObject: name];
-     
-     if( idx != NSNotFound)
-     [savedSmartAlbums removeObjectAtIndex: idx];
-     
-     NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithBool: NO], @"activated", name, @"name", nil];
-     
-     [dict addEntriesFromDictionary: [smartWindowController onDemandFilter]];
-     
-     [savedSmartAlbums addObject: dict];
-     
-     [[NSUserDefaults standardUserDefaults] setObject: savedSmartAlbums forKey: @"smartAlbumStudiesDICOMNodes"];
-     }
-     
-     [self refreshAlbums];
-     
-     NSInteger index = [self.albumArray indexOfObject:album];
-     if (index != NSNotFound)
-     [albumTable selectRowIndexes: [NSIndexSet indexSetWithIndex:index] byExtendingSelection: NO];
-     }
-     @catch (NSException * e)
-     {
-     N2LogExceptionWithStackTrace(e);
-     }
-     
-     
-     [self outlineViewRefresh];
-     
-     if( [smartWindowController editSqlQuery])
-     [self albumTableDoublePressed: self];
-     }
-     
-     [smartWindowController release];*/
+    NSArray *existingNames = [[self albumsInDatabase] valueForKey:@"name"];
+    [HorosSmartAlbumEditor presentForParentWindow:self.window
+                             managedObjectContext:self.database.managedObjectContext
+                                        albumName:nil
+                                   predicateFormat:nil
+                               existingAlbumNames:existingNames
+                                       completion:^(NSString *name, NSString *predicateFormat) {
+        [self saveSmartAlbumWithName:name predicateFormat:predicateFormat album:nil];
+    }];
 }
 
-- (void)smartAlbumSheetDidEnd:(NSWindow*)sheet returnCode:(NSInteger)returnCode contextInfo:(void*)contextInfo {
-    [sheet orderOut:self];
-    
-    if (returnCode == NSModalResponseStop) {
-        DicomAlbum* album = nil;
-        if ([(id)contextInfo isKindOfClass:[DicomAlbum class]])
-            album = [(id)contextInfo autorelease];
-        
-        if (!album)
+- (void)saveSmartAlbumWithName:(NSString*)name predicateFormat:(NSString*)predicateFormat album:(DicomAlbum*)album
+{
+    @try
+    {
+        if( album == nil)
             album = [self.database newObjectForEntity:self.database.albumEntity];
-        
-        SmartWindowController* swc = sheet.windowController;
-        
-        album.name = swc.name;
+
+        album.name = name;
         album.smartAlbum = [NSNumber numberWithBool:YES];
-        album.predicateString = [swc.predicate predicateFormat];
+        album.predicateString = predicateFormat;
         [self.database save];
-        
-        [albumTable reloadData];
-        
-        if( [self.albumArray indexOfObject:album] != NSNotFound)
-            [albumTable selectRowIndexes:[NSIndexSet indexSetWithIndex:[self.albumArray indexOfObject:album]] byExtendingSelection:NO];
-        
-        @synchronized (self) {
+
+        @synchronized (self)
+        {
+            [_cachedAlbums release];
+            _cachedAlbums = nil;
+            [_cachedAlbumsIDs release];
+            _cachedAlbumsIDs = nil;
             _cachedAlbumsContext = nil;
         }
-        
+
+        [albumTable reloadData];
         NSInteger index = [self.albumArray indexOfObject:album];
-        if (index != NSNotFound)
+        if( index != NSNotFound)
             [albumTable selectRowIndexes:[NSIndexSet indexSetWithIndex:index] byExtendingSelection:NO];
-        
-        [self outlineViewRefresh];
-        
+
         [self refreshAlbums];
+        [self outlineViewRefresh];
     }
-    
-    [sheet.windowController release];
+    @catch (NSException *exception)
+    {
+        N2LogExceptionWithStackTrace(exception);
+    }
 }
 
 - (IBAction) addAlbum:(id)sender
@@ -11096,13 +11038,15 @@ constrainSplitPosition:(CGFloat)proposedPosition
         
         if ([[album valueForKey:@"smartAlbum"] boolValue] == YES)
         {
-            SmartWindowController* swc = [[SmartWindowController alloc] initWithDatabase:self.database];
-            swc.name = album.name;
-            swc.predicate = [NSPredicate predicateWithFormat:album.predicateString];
-            swc.album = album;
-            
-            HorosBeginSheet(swc.window, self.window, self, @selector(smartAlbumSheetDidEnd:returnCode:contextInfo:), [album retain]);
-            
+            NSArray *existingNames = [[self albumsInDatabase] valueForKey:@"name"];
+            [HorosSmartAlbumEditor presentForParentWindow:self.window
+                                     managedObjectContext:self.database.managedObjectContext
+                                                albumName:album.name
+                                           predicateFormat:album.predicateString
+                                       existingAlbumNames:existingNames
+                                               completion:^(NSString *name, NSString *predicateFormat) {
+                [self saveSmartAlbumWithName:name predicateFormat:predicateFormat album:album];
+            }];
         }
         else
         {

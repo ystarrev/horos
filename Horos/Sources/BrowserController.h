@@ -350,6 +350,7 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (void)matrixNewIcon:(long) index : (NSManagedObject*)curFile;
 - (NSPredicate*) smartAlbumPredicate:(NSManagedObject*) album;
 - (NSPredicate*) smartAlbumPredicateString:(NSString*) string;
++ (NSPredicate*)safeSmartAlbumPredicateWithFormat:(NSString*)string NS_SWIFT_NAME(safeSmartAlbumPredicate(withFormat:));
 - (void) emptyDeleteQueueThread;
 - (void) emptyDeleteQueue:(id) sender;
 - (BOOL)isUsingExternalViewer: (NSManagedObject*) item;

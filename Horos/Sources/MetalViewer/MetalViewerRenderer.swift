@@ -524,7 +524,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         case .mpr3D:
             sliceText = "3D MPR"
         }
-        let zoomText = Int((zoomScale * 100).rounded())
+        let zoomText = formattedStateValue(zoomScale * 100)
         let registrationText: String
         if overlayVolumeTexture != nil {
             registrationText = String(
@@ -542,14 +542,24 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         let progressText: String
         if registrationInProgress {
-            let progressPercent = Int((registrationProgress * 100).rounded())
+            let progressPercent = formattedStateValue(registrationProgress * 100)
             let prefix = registrationStatusMessage ?? "Registering"
             progressText = "  \(prefix) \(progressPercent)%"
         } else {
             progressText = ""
         }
 
-        return "\(sliceText)  WL \(Int(windowLevel.rounded()))  WW \(Int(windowWidth.rounded()))  Zoom \(zoomText)%\(registrationText)\(progressText)"
+        return "\(sliceText)  WL \(formattedStateValue(windowLevel))  WW \(formattedStateValue(windowWidth))  Zoom \(zoomText)%\(registrationText)\(progressText)"
+    }
+
+    private func formattedStateValue(_ value: Float) -> String {
+        guard value.isFinite else { return "--" }
+
+        let roundedValue = Double(value.rounded())
+        if abs(roundedValue) < 1_000_000_000 {
+            return String(format: "%.0f", roundedValue)
+        }
+        return String(format: "%.3g", roundedValue)
     }
 
     init(

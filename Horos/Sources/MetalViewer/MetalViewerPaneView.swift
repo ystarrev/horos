@@ -410,6 +410,18 @@ final class MetalViewerPaneView: NSView {
             case center
         }
 
+        private static func formattedStateValue(_ value: Float) -> String {
+            guard value.isFinite else {
+                return "--"
+            }
+
+            let roundedValue = Double(value.rounded())
+            if abs(roundedValue) < 1_000_000_000 {
+                return String(format: "%.0f", roundedValue)
+            }
+            return String(format: "%.3g", roundedValue)
+        }
+
         var overlayState: State? {
             didSet { needsDisplay = true }
         }
@@ -595,7 +607,7 @@ final class MetalViewerPaneView: NSView {
             drawTopLeft(state.series.title)
 
             drawTopRightStudySeriesNumber()
-            drawTopRight(String(format: "WL: %d WW: %d", Int(state.windowLevel.rounded()), Int(state.windowWidth.rounded())))
+            drawTopRight("WL: \(Self.formattedStateValue(state.windowLevel)) WW: \(Self.formattedStateValue(state.windowWidth))")
             drawTopRight("Im: \(state.sliceIndex + 1)/\(state.sliceCount)")
 
             if state.pix.sliceThickness != 0 {
@@ -685,7 +697,7 @@ final class MetalViewerPaneView: NSView {
                     if ww < 50, wl.rounded() != wl || ww.rounded() != ww {
                         primary += String(format: "WL: %0.4f WW: %0.4f", wl, ww)
                     } else {
-                        primary += String(format: "WL: %d WW: %d", Int(wl.rounded()), Int(ww.rounded()))
+                        primary += "WL: \(Self.formattedStateValue(wl)) WW: \(Self.formattedStateValue(ww))"
                     }
                 case "Thickness / Location / Position":
                     if state.pix.sliceThickness != 0, state.pix.sliceLocation != 0 {

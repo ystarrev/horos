@@ -271,6 +271,7 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
     NSTimer *_bonjourHeartbeatTimer;
     NSOperationQueue *_bonjourHeartbeatQueue;
     NSMutableDictionary *_bonjourHeartbeatFailureCounts;
+    NSMutableSet *_bonjourHeartbeatVerifiedKeys;
     NSMutableSet *_bonjourHeartbeatInFlight;
 
     BOOL dontListenToSourcesChanges;
@@ -599,6 +600,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         _dnssdResolveBuffers = [[NSMutableDictionary alloc] init];
         _dnssdResolveInfos = [[NSMutableDictionary alloc] init];
         _bonjourHeartbeatFailureCounts = [[NSMutableDictionary alloc] init];
+        _bonjourHeartbeatVerifiedKeys = [[NSMutableSet alloc] init];
         _bonjourHeartbeatInFlight = [[NSMutableSet alloc] init];
         _bonjourHeartbeatQueue = [[NSOperationQueue alloc] init];
         [_bonjourHeartbeatQueue setName:@"Horos Bonjour availability"];
@@ -633,6 +635,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     [_dnssdResolveInfos release];
     [_bonjourHeartbeatQueue release];
     [_bonjourHeartbeatFailureCounts release];
+    [_bonjourHeartbeatVerifiedKeys release];
     [_bonjourHeartbeatInFlight release];
 
     //	[[[NSUserDefaults standardUserDefaults] objectForKey:@"localDatabasePaths"] removeObserver:self forValuesKey:@"values"];
@@ -810,7 +813,10 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 {
     NSString *key = [self _bonjourHeartbeatKeyForSource:source];
     if ([key length])
+    {
         [_bonjourHeartbeatFailureCounts removeObjectForKey:key];
+        [_bonjourHeartbeatVerifiedKeys removeObject:key];
+    }
 }
 
 -(void)_applyBonjourHeartbeatResult:(BOOL)available source:(DataNodeIdentifier*)source key:(NSString*)key
@@ -824,6 +830,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     if (available)
     {
         [_bonjourHeartbeatFailureCounts removeObjectForKey:key];
+        [_bonjourHeartbeatVerifiedKeys addObject:key];
         if (![self _bonjourHeartbeatShouldProbeSource:source])
         {
             source.detected = NO;
@@ -841,6 +848,15 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
             NSLog(@"Bonjour source responding again: %@ %@:%lu", source.description, source.location, (unsigned long)source.port);
             [_browser redrawSources];
         }
+        return;
+    }
+
+    // A service advertised by Bonjour remains visible until it has first
+    // demonstrated that this Mac can reach it. This prevents asymmetric local
+    // routing from turning a failed initial probe into a false disappearance.
+    if (![_bonjourHeartbeatVerifiedKeys containsObject:key])
+    {
+        [_bonjourHeartbeatFailureCounts removeObjectForKey:key];
         return;
     }
 

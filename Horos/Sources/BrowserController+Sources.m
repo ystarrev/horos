@@ -301,7 +301,6 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
 -(NSString*)_bonjourServiceTypeForBrowser:(NSNetServiceBrowser*)browser;
 -(void)_verifyBonjourSources;
 -(void)_verifyBonjourSource:(DataNodeIdentifier*)source;
--(void)_preflightAndCopyImages:(NSArray*)dicomImages toBonjourSource:(DataNodeIdentifier*)destination;
 
 @end
 
@@ -477,7 +476,7 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
     if ([[why objectAtIndex:0] isKindOfClass:[NSNumber class]])
         [self performSelector:@selector(_complain:) withObject:[why subarrayWithRange:NSMakeRange(1, (long)why.count-1)] afterDelay:[[why objectAtIndex:0] floatValue]];
     else
-        HorosBeginAlertSheet([why objectAtIndex:0], nil, nil, nil, self.window, NSApp, @selector(endSheet:), nil, nil, @"%@", [why objectAtIndex:1]);
+        HorosBeginAlertSheet([why objectAtIndex:0], nil, nil, nil, self.window, nil, nil, nil, nil, @"%@", [why objectAtIndex:1]);
 }
 
 -(NSThread*)initiateSetDatabaseAtPath:(NSString*)path name:(NSString*)name
@@ -555,7 +554,7 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
         }
     } @catch (UnavaliableDataNodeException* e)
     {
-        HorosBeginAlertSheet(NSLocalizedString(@"Sources", nil), nil, nil, nil, self.window, NSApp, @selector(endSheet:), nil, nil, @"%@", [e reason]);
+        HorosBeginAlertSheet(NSLocalizedString(@"Sources", nil), nil, nil, nil, self.window, nil, nil, nil, nil, @"%@", [e reason]);
         [self selectCurrentDatabaseSource];
     }
 }
@@ -932,43 +931,6 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
     for (DataNodeIdentifier *source in sources)
         [self _verifyBonjourSource:source];
-}
-
--(void)_preflightAndCopyImages:(NSArray*)dicomImages toBonjourSource:(DataNodeIdentifier*)destination
-{
-    NSDictionary *probeInfo = [self _bonjourHeartbeatProbeInfoForSource:destination];
-    if (!probeInfo)
-    {
-        [_browser initiateCopyImages:dicomImages toSource:destination];
-        return;
-    }
-
-    NSString *key = [probeInfo objectForKey:@"Key"];
-    BrowserSourcesHelper *helper = self;
-    NSBlockOperation *operation = [NSBlockOperation blockOperationWithBlock:^{
-        @autoreleasepool
-        {
-            BOOL available = [helper _runBonjourHeartbeatProbe:probeInfo];
-            [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-                if (helper->_invalidated)
-                    return;
-
-                [helper _applyBonjourHeartbeatResult:available source:destination key:key];
-                if (available && [helper _bonjourHeartbeatManagesSource:destination])
-                    [helper->_browser initiateCopyImages:dicomImages toSource:destination];
-                else
-                {
-                    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
-                    [alert setAlertStyle:NSAlertStyleCritical];
-                    [alert setMessageText:NSLocalizedString(@"Destination Unavailable", nil)];
-                    [alert setInformativeText:[NSString stringWithFormat:NSLocalizedString(@"%@ is not responding and the transfer was not started.", nil), destination.description]];
-                    [alert beginSheetModalForWindow:helper->_browser.window completionHandler:nil];
-                }
-            }];
-        }
-    }];
-    [operation setQueuePriority:NSOperationQueuePriorityVeryHigh];
-    [_bonjourHeartbeatQueue addOperation:operation];
 }
 
 -(void)_startDNSSDBrowseFallbackForType:(NSString*)type
@@ -2119,12 +2081,6 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     NSMutableArray* dicomImages = [DicomImage dicomImagesInObjects:items];
 
     DataNodeIdentifier *destination = [_browser sourceIdentifierAtRow:row];
-    if ([self _bonjourHeartbeatManagesSource:destination] && [self _bonjourHeartbeatProbeInfoForSource:destination])
-    {
-        [self _preflightAndCopyImages:dicomImages toBonjourSource:destination];
-        return YES;
-    }
-
     return [_browser initiateCopyImages:dicomImages toSource:destination];
 }
 

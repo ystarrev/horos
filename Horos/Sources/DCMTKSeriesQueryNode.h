@@ -44,6 +44,7 @@
 @interface DCMTKSeriesQueryNode : DCMTKQueryNode
 {
 	NSString *_studyInstanceUID;
+	NSString *_bodyPartExamined;
     DCMTKStudyQueryNode *study;
 }
 
@@ -51,5 +52,6 @@
 
 - (NSString*) studyInstanceUID;
 - (NSString*) seriesInstanceUID;
+- (NSString*) bodyPartExamined;
 
 @end

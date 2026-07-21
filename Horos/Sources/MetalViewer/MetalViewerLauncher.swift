@@ -197,6 +197,7 @@ final class MetalViewerLauncher: NSObject {
         let key: CrossSeriesTemporalKey
         let temporalPositionCount: Int
         let acquisitionNumber: Int
+        let seriesNumber: Int?
         let acquisitionSeconds: Double
     }
 
@@ -810,8 +811,22 @@ final class MetalViewerLauncher: NSObject {
         var combinedPresentationByMember: [Int: CombinedSeriesPresentation] = [:]
 
         for candidatesWithSameGeometry in groupedCandidates.values {
+            let acquisitionNumbersAreDistinct = Set(
+                candidatesWithSameGeometry.map(\.1.acquisitionNumber)
+            ).count == candidatesWithSameGeometry.count
             let ordered = candidatesWithSameGeometry.sorted { lhs, rhs in
-                lhs.1.acquisitionNumber < rhs.1.acquisitionNumber
+                if acquisitionNumbersAreDistinct {
+                    return lhs.1.acquisitionNumber < rhs.1.acquisitionNumber
+                }
+                if let leftSeries = lhs.1.seriesNumber,
+                   let rightSeries = rhs.1.seriesNumber,
+                   leftSeries != rightSeries {
+                    return leftSeries < rightSeries
+                }
+                if lhs.1.acquisitionSeconds != rhs.1.acquisitionSeconds {
+                    return lhs.1.acquisitionSeconds < rhs.1.acquisitionSeconds
+                }
+                return lhs.0 < rhs.0
             }
             let declaredCounts = Set(ordered.map(\.1.temporalPositionCount).filter { $0 > 1 })
             guard declaredCounts.count <= 1 else { continue }
@@ -823,9 +838,18 @@ final class MetalViewerLauncher: NSObject {
             }
 
             let acquisitionNumbers = ordered.map { $0.1.acquisitionNumber }
-            guard Set(acquisitionNumbers).count == expectedCount,
-                  let firstAcquisition = acquisitionNumbers.first,
-                  acquisitionNumbers == Array(firstAcquisition..<(firstAcquisition + expectedCount)) else {
+            let acquisitionNumbersAreSequential = acquisitionNumbers.first.map {
+                acquisitionNumbers == Array($0..<($0 + expectedCount))
+            } ?? false
+            // Older Siemens scanners keep Acquisition Number at 1 and write each
+            // declared dynamic phase as a consecutive Series Number instead.
+            let seriesNumbers = ordered.compactMap(\.1.seriesNumber)
+            let declaredSeriesNumbersAreSequential = declaredCounts.isEmpty == false
+                && seriesNumbers.count == expectedCount
+                && seriesNumbers.first.map {
+                    seriesNumbers == Array($0..<($0 + expectedCount))
+                } == true
+            guard acquisitionNumbersAreSequential || declaredSeriesNumbersAreSequential else {
                 continue
             }
 
@@ -975,8 +999,9 @@ final class MetalViewerLauncher: NSObject {
         )
         guard ["CT", "MR", "NM", "PT", "RF", "US", "XA"].contains(modality) else { return nil }
 
-        let temporalPositionCount = attributeInt(in: object, tag: "0020,0105") ?? 0
+        let standardTemporalPositionCount = attributeInt(in: object, tag: "0020,0105") ?? 0
         let acquisitionNumber = attributeInt(in: object, tag: "0020,0012")
+        let seriesNumber = attributeInt(in: object, tag: "0020,0011")
         let acquisitionSeconds = dicomClockSeconds(object.attributeValue(forKey: "0008,0032"))
         let frameOfReferenceUID = normalizedMetadataString(attributeString(in: object, tag: "0020,0052"))
         guard let acquisitionNumber,
@@ -994,6 +1019,17 @@ final class MetalViewerLauncher: NSObject {
 
         let protocolName = normalizedMetadataString(attributeString(in: object, tag: "0018,1030"))
         let sequenceName = normalizedMetadataString(attributeString(in: object, tag: "0018,0024"))
+        let acquisitionsInSeries = attributeInt(in: object, tag: "0020,1001") ?? 0
+        let identifiesDynamicAcquisition = indicatesDynamicAcquisition([
+            seriesDescription,
+            protocolName,
+            sequenceName,
+            normalizedMetadataString(attributeString(in: object, tag: "0020,4000")),
+            normalizedMetadataString(attributeString(in: object, tag: "0019,1510"))
+        ])
+        let temporalPositionCount = standardTemporalPositionCount > 1
+            ? standardTemporalPositionCount
+            : (acquisitionsInSeries > 1 && identifiesDynamicAcquisition ? acquisitionsInSeries : 0)
         let rows = attributeInt(in: object, tag: "0028,0010")
             ?? (firstImage.value(forKey: "height") as? NSNumber)?.intValue
             ?? 0
@@ -1035,6 +1071,7 @@ final class MetalViewerLauncher: NSObject {
             ),
             temporalPositionCount: temporalPositionCount,
             acquisitionNumber: acquisitionNumber,
+            seriesNumber: seriesNumber,
             acquisitionSeconds: acquisitionSeconds
         )
         let slicePartition = crossSeriesSlicePartitionMetadata(

@@ -396,10 +396,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private(set) var windowWidth: Float = 1
     private var defaultSeriesWindowLevel: MetalViewerWindowLevel?
     private var customSeriesWindowLevel: MetalViewerWindowLevel?
+    private var usesAutomaticBaseWindowLevel: Bool
     private(set) var overlayWindowLevel: Float = 0
     private(set) var overlayWindowWidth: Float = 1
     private var overlayDefaultSeriesWindowLevel: MetalViewerWindowLevel?
     private var overlayCustomSeriesWindowLevel: MetalViewerWindowLevel?
+    private var usesAutomaticOverlayWindowLevel = false
     private var baseRegistrationWindowLevel: Float = 0
     private var baseRegistrationWindowWidth: Float = 1
     private var overlayRegistrationWindowLevel: Float = 0
@@ -554,12 +556,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         device: MTLDevice,
         pixList: [DCMPix],
         windowLevelState: MetalViewerWindowLevelState = MetalViewerWindowLevelState(),
+        usesAutomaticWindowLevel: Bool = false,
         transferFunctionState: MetalViewerTransferFunctionState = MetalViewerTransferFunctionState()
     ) {
         self.deviceRef = device
         self.pixList = pixList
         self.defaultSeriesWindowLevel = windowLevelState.defaultWindow
         self.customSeriesWindowLevel = windowLevelState.customWindow
+        self.usesAutomaticBaseWindowLevel = usesAutomaticWindowLevel
         self.baseTransferFunctionState = transferFunctionState
 
         guard let commandQueue = device.makeCommandQueue() else {
@@ -706,6 +710,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         _ overlayPixList: [DCMPix],
         windowLevelState: MetalViewerWindowLevelState = MetalViewerWindowLevelState(),
         windowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)? = nil,
+        usesAutomaticWindowLevel: Bool = false,
         transferFunctionState: MetalViewerTransferFunctionState = MetalViewerTransferFunctionState(),
         transferFunctionStateDidChange: ((MetalViewerTransferFunctionState) -> Void)? = nil
     ) {
@@ -724,6 +729,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         overlayUsesGantryTiltCorrectedVolume = false
         overlayDefaultSeriesWindowLevel = windowLevelState.defaultWindow
         overlayCustomSeriesWindowLevel = windowLevelState.customWindow
+        usesAutomaticOverlayWindowLevel = usesAutomaticWindowLevel
         overlayWindowLevelStateDidChange = windowLevelStateDidChange
         overlayTransferFunctionState = transferFunctionState
         overlayTransferFunctionStateDidChange = transferFunctionStateDidChange
@@ -801,6 +807,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         overlayUsesGantryTiltCorrectedVolume = false
         overlayDefaultSeriesWindowLevel = nil
         overlayCustomSeriesWindowLevel = nil
+        usesAutomaticOverlayWindowLevel = false
         overlayWindowLevelStateDidChange = nil
         overlayTransferFunctionState = MetalViewerTransferFunctionState()
         overlayTransferFunctionStateDidChange = nil
@@ -2232,7 +2239,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             if pix.isLoaded() == false {
                 pix.checkLoad()
             }
-            let defaultWindow = initialWindowLevelDefaults(for: pix, series: pixList)
+            let defaultWindow = initialWindowLevelDefaults(
+                for: pix,
+                series: pixList,
+                usesAutomaticWindowLevel: usesAutomaticBaseWindowLevel
+            )
             defaultSeriesWindowLevel = defaultWindow
             applyBaseWindowLevel(defaultWindow)
             notifyWindowLevelStateDidChange()
@@ -2246,7 +2257,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             } else if let defaultWindow = overlayDefaultSeriesWindowLevel {
                 applyOverlayWindowLevel(defaultWindow)
             } else {
-                let defaultWindow = initialWindowLevelDefaults(for: overlayPix, series: overlayPixList)
+                let defaultWindow = initialWindowLevelDefaults(
+                    for: overlayPix,
+                    series: overlayPixList,
+                    usesAutomaticWindowLevel: usesAutomaticOverlayWindowLevel
+                )
                 overlayDefaultSeriesWindowLevel = defaultWindow
                 applyOverlayWindowLevel(defaultWindow)
                 notifyOverlayWindowLevelStateDidChange()
@@ -2305,8 +2320,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return MetalViewerWindowLevel(level: defaultWL, width: max(1, defaultWW))
     }
 
-    private func initialWindowLevelDefaults(for pix: DCMPix, series: [DCMPix]) -> MetalViewerWindowLevel {
-        if pix.modalityString?.uppercased() == "MR",
+    private func initialWindowLevelDefaults(
+        for pix: DCMPix,
+        series: [DCMPix],
+        usesAutomaticWindowLevel: Bool
+    ) -> MetalViewerWindowLevel {
+        if usesAutomaticWindowLevel,
            let automaticWindow = automaticSeriesWindowLevel(for: series) {
             return automaticWindow
         }
@@ -3002,6 +3021,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func makeTexture3D(from pixList: [DCMPix], dimensions: SIMD3<Int>) -> MTLTexture? {
+        guard MetalTextureLimits.supports3DTexture(
+            width: dimensions.x,
+            height: dimensions.y,
+            depth: dimensions.z
+        ) else {
+            return nil
+        }
+
         let descriptor = MTLTextureDescriptor()
         descriptor.textureType = .type3D
         descriptor.pixelFormat = .r32Float
@@ -3037,6 +3064,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func makeTexture3D(from volume: [Float], dimensions: SIMD3<Int>) -> MTLTexture? {
+        guard MetalTextureLimits.supports3DTexture(
+            width: dimensions.x,
+            height: dimensions.y,
+            depth: dimensions.z
+        ) else {
+            return nil
+        }
+
         let descriptor = MTLTextureDescriptor()
         descriptor.textureType = .type3D
         descriptor.pixelFormat = .r32Float
@@ -3196,6 +3231,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func makeWritableTexture3D(dimensions: SIMD3<Int>) -> MTLTexture? {
+        guard MetalTextureLimits.supports3DTexture(
+            width: dimensions.x,
+            height: dimensions.y,
+            depth: dimensions.z
+        ) else {
+            return nil
+        }
+
         let descriptor = MTLTextureDescriptor()
         descriptor.textureType = .type3D
         descriptor.pixelFormat = .r32Float

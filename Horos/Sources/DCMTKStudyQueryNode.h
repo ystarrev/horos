@@ -41,10 +41,12 @@
 /** \brief Study level DCMTKQueryNode */
 @interface DCMTKStudyQueryNode : DCMTKQueryNode {
     BOOL _sortChildren;
+    NSArray *_anatomicRegionMeanings;
 }
 
 - (NSString*) studyInstanceUID;// Match DicomStudy
 - (NSString*) studyName;// Match DicomStudy
+- (NSArray*) anatomicRegionMeanings;
 - (NSNumber*) numberOfImages;// Match DicomStudy
 - (NSDate*) dateOfBirth; // Match DicomStudy
 - (NSNumber*) noFiles; // Match DicomStudy

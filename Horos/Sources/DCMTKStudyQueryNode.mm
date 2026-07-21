@@ -111,9 +111,28 @@
 		if (dataset ->findAndGetString(DCM_StudyInstanceUID, string).good() && string != nil) 
 			_uid = [[NSString alloc] initWithCString:string encoding:NSISOLatin1StringEncoding];
 			
-		if (dataset ->findAndGetString(DCM_StudyDescription, string).good() && string != nil) 
+		if (dataset ->findAndGetString(DCM_StudyDescription, string).good() && string != nil)
 			_theDescription = [[DicomFile stringWithBytes: (char*) string encodings: encoding replaceBadCharacters: NO] retain];
-		
+
+		NSMutableArray *anatomicRegionMeanings = [NSMutableArray array];
+		for( signed long itemIndex = 0; ; itemIndex++)
+		{
+			DcmItem *regionItem = NULL;
+			if( dataset->findAndGetSequenceItem( DCM_AnatomicRegionsInStudyCodeSequence, regionItem, itemIndex).bad() || regionItem == NULL)
+				break;
+
+			const char *codeMeaning = NULL;
+			if( regionItem->findAndGetString( DCM_CodeMeaning, codeMeaning).good() && codeMeaning != NULL)
+			{
+				NSString *meaning = [DicomFile stringWithBytes: (char*) codeMeaning encodings: encoding replaceBadCharacters: NO];
+				if( [meaning length] > 0)
+					[anatomicRegionMeanings addObject: meaning];
+			}
+		}
+
+		if( [anatomicRegionMeanings count] > 0)
+			_anatomicRegionMeanings = [anatomicRegionMeanings copy];
+
 		if (dataset ->findAndGetString(DCM_PatientsName, string).good() && string != nil)
 			_name = [[DicomFile stringWithBytes: (char*) string encodings: encoding] retain];
 		
@@ -199,6 +218,12 @@
 	return self;
 }
 
+- (void)dealloc
+{
+	[_anatomicRegionMeanings release];
+	[super dealloc];
+}
+
 - (DcmDataset *)queryPrototype // When 'opening' a study -> SERIES level
 {
 	DcmDataset *dataset = new DcmDataset();
@@ -217,7 +242,8 @@
 	dataset-> putAndInsertString(DCM_StudyInstanceUID, [_uid UTF8String], OFTrue);
 	dataset-> putAndInsertString(DCM_QueryRetrieveLevel, "SERIES", OFTrue);
 	
-    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"CFINDBodyPartExaminedSupport"])
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"CFINDBodyPartExaminedSupport"] ||
+        [[NSUserDefaults standardUserDefaults] boolForKey: @"QRSeriesHeadOnly"])
         dataset-> insertEmptyElement(DCM_BodyPartExamined, OFTrue);
     
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"CFINDCommentsAndStatusSupport"])
@@ -248,6 +274,11 @@
         return @"";
     
     return _uid;
+}
+
+- (NSArray*) anatomicRegionMeanings
+{
+	return _anatomicRegionMeanings;
 }
 
 - (id) objectID // Match DicomStudy

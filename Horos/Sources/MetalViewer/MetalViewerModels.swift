@@ -56,6 +56,17 @@ enum MetalViewerDiagnostics {
     }
 }
 
+enum MetalTextureLimits {
+    static let maximum3DTextureDimension = 2_048
+
+    static func supports3DTexture(width: Int, height: Int, depth: Int) -> Bool {
+        width > 0 && height > 0 && depth > 0
+            && width <= maximum3DTextureDimension
+            && height <= maximum3DTextureDimension
+            && depth <= maximum3DTextureDimension
+    }
+}
+
 enum MetalViewerMouseButton: Int, Hashable {
     case left = 0
     case right = 1
@@ -758,6 +769,15 @@ final class MetalSeriesTextureCache {
         let width = max(firstDimensions.width, 1)
         let height = max(firstDimensions.height, 1)
         let depth = max(pixList.count, 1)
+        guard canCreateVolumeTexture(
+            width: width,
+            height: height,
+            depth: depth,
+            bytesPerVoxel: MemoryLayout<Float>.stride,
+            storageMode: .rescaledFloat
+        ) else {
+            return nil
+        }
         let dimensions = SIMD3<Int>(width, height, depth)
 
         let descriptor = MTLTextureDescriptor()
@@ -824,6 +844,15 @@ final class MetalSeriesTextureCache {
         let height = max(firstDimensions.height, 1)
         let depth = max(pixList.count, 1)
         guard firstSlice.width == width, firstSlice.height == height else { return nil }
+        guard canCreateVolumeTexture(
+            width: width,
+            height: height,
+            depth: depth,
+            bytesPerVoxel: MemoryLayout<UInt16>.stride,
+            storageMode: .storedInt16
+        ) else {
+            return nil
+        }
 
         let dimensions = SIMD3<Int>(width, height, depth)
         let descriptor = MTLTextureDescriptor()
@@ -891,6 +920,27 @@ final class MetalSeriesTextureCache {
             rescaleSlope: firstSlice.rescaleSlope,
             rescaleIntercept: firstSlice.rescaleIntercept
         )
+    }
+
+    private func canCreateVolumeTexture(
+        width: Int,
+        height: Int,
+        depth: Int,
+        bytesPerVoxel: Int,
+        storageMode: MetalSeriesTextureStorageMode
+    ) -> Bool {
+        guard MetalTextureLimits.supports3DTexture(width: width, height: height, depth: depth) else {
+            NSLog("%@", "MetalSeriesTextureCache: skipping \(storageMode.keyComponent) \(width)x\(height)x\(depth) volume; Metal limits 3D texture dimensions to \(MetalTextureLimits.maximum3DTextureDimension)")
+            return false
+        }
+
+        let byteCount = width * height * depth * bytesPerVoxel
+        guard byteCount <= maximumCachedBytes else {
+            NSLog("%@", "MetalSeriesTextureCache: skipping \(storageMode.keyComponent) \(width)x\(height)x\(depth) volume; \(byteCount) bytes exceeds the volume texture cache limit")
+            return false
+        }
+
+        return true
     }
 
     private func dimensionsWithoutLoading(for pix: DCMPix) -> SliceDimensions? {
@@ -1681,6 +1731,10 @@ final class MetalViewerSeries {
     var windowLevelPresetTitle = NSLocalizedString("Default WL & WW", comment: "")
     var transferFunctionState = MetalViewerTransferFunctionState()
 
+    var isMagneticResonance: Bool {
+        modality.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare("MR") == .orderedSame
+    }
+
     init(
         identifier: String = UUID().uuidString,
         title: String,
@@ -1714,7 +1768,7 @@ final class MetalViewerSeries {
         self.dynamicTimePointCountHint = dynamicTimePointCountHint
         self.cachedPixList = initialPixList
         self.cachedStructuredReportHTML = nil
-        if modality == "MR" {
+        if isMagneticResonance {
             self.windowLevelPresetTitle = NSLocalizedString("Auto", comment: "")
         }
     }

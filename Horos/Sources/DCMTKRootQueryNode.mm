@@ -78,7 +78,10 @@
     dataset-> insertEmptyElement(DCM_InstitutionName, OFTrue);
     dataset-> insertEmptyElement(DCM_ReferringPhysiciansName, OFTrue);
     dataset-> insertEmptyElement(DCM_PerformingPhysiciansName, OFTrue);
-    
+
+    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"QRSeriesHeadOnly"])
+        dataset-> insertEmptyElement(DCM_AnatomicRegionsInStudyCodeSequence, OFTrue);
+
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"CFINDBodyPartExaminedSupport"])
         dataset-> insertEmptyElement(DCM_BodyPartExamined, OFTrue);
     

@@ -93,6 +93,7 @@ static NSString * const HorosQueryWindowFrameDefaultsKey = @"NSWindow Frame QR";
 static NSString * const HorosQRModalityFilterMaskDefaultsKey = @"QRModalityFilterMask";
 static NSString * const HorosAutoQRModalityFilterMaskDefaultsKey = @"AutoQRModalityFilterMask";
 static NSString * const HorosQRSeriesFilterDefaultsKey = @"QRSeriesFilterMask";
+static NSString * const HorosQRSeriesHeadOnlyDefaultsKey = @"QRSeriesHeadOnly";
 static NSString * const HorosQRSeriesIgnoreMPRDefaultsKey = @"QRSeriesIgnoreMPR";
 static NSString * const HorosQRAllowConcurrentMoveForSameNodeThreadKey = @"HorosAllowConcurrentMoveForSameNode";
 static const NSInteger HorosQRModalityButtonTagBase = 6000;
@@ -105,7 +106,8 @@ enum
     HorosQRSeriesHighlightFLAIR = 1 << 2,
     HorosQRSeriesHighlightT1Gad = 1 << 3,
     HorosQRSeriesHighlightFLAIRGad = 1 << 4,
-    HorosQRSeriesIgnoreMPR = 1 << 5
+    HorosQRSeriesIgnoreMPR = 1 << 5,
+    HorosQRSeriesHeadOnly = 1 << 6
 };
 
 static NSArray *HorosQRModalityTitles(void)
@@ -322,9 +324,12 @@ extern "C"
 - (void)selectDefaultPatientNameQueryMode;
 - (IBAction)expandAllQueryStudies:(id)sender;
 - (IBAction)seriesHighlightFilterChanged:(id)sender;
+- (IBAction)seriesHeadOnlyChanged:(id)sender;
 - (IBAction)seriesIgnoreMPRChanged:(id)sender;
 - (IBAction)retrieveSelectedSeries:(id)sender;
 - (void)queryOutlineView:(NSOutlineView *)outlineView toggleHighlightAtRow:(NSInteger)row;
+- (void)rebuildVisibleTopLevelQueryItems;
+- (NSArray *)visibleTopLevelQueryItems;
 - (NSArray *)visibleQueryChildrenForItem:(DCMTKQueryNode *)item;
 - (BOOL)shouldDisplayQueryItem:(id)item;
 - (NSString *)seriesSelectionIdentifierForItem:(id)item;
@@ -342,9 +347,12 @@ extern "C"
 - (void)toggleHighlightForSeriesItem:(id)item;
 - (void)toggleHighlightForStudyItem:(id)item;
 - (NSInteger)currentSeriesHighlightFilterMask;
+- (BOOL)headOnly;
 - (BOOL)ignoreMPRSeries;
 - (void)refreshSeriesSelectionDisplay;
+- (void)updateNumberOfStudiesLabel;
 - (void)updateRetrieveSelectedSeriesButtonTitle;
+- (NSString *)normalizedSearchTextForStrings:(NSArray *)strings;
 - (NSString *)normalizedSeriesDescriptionForItem:(id)item;
 - (BOOL)seriesText:(NSString *)text containsToken:(NSString *)token;
 - (BOOL)seriesText:(NSString *)text containsAnyToken:(NSArray *)tokens;
@@ -353,6 +361,8 @@ extern "C"
 - (BOOL)seriesTextLooksLikeT1:(NSString *)text;
 - (BOOL)seriesTextLooksLikeT2:(NSString *)text;
 - (BOOL)seriesTextLooksLikeFLAIR:(NSString *)text;
+- (BOOL)textLooksLikeHeadRegion:(NSString *)text;
+- (BOOL)queryItemMatchesHeadRegion:(id)item;
 - (BOOL)seriesItemLooksContrastEnhanced:(id)item normalizedText:(NSString *)text;
 - (BOOL)seriesFilterMatchesItem:(id)item;
 - (BOOL)seriesHighlightMatchesItem:(id)item;
@@ -1849,6 +1859,35 @@ extern "C"
     [self autoQueryTimerFunction: QueryTimer]; 
 }
 
+- (NSArray *)visibleTopLevelQueryItems
+{
+    if( [self headOnly] == NO)
+        return resultArray;
+
+    if( headFilteredResultArray == nil)
+        [self rebuildVisibleTopLevelQueryItems];
+
+    return headFilteredResultArray;
+}
+
+- (void)rebuildVisibleTopLevelQueryItems
+{
+    [headFilteredResultArray release];
+    headFilteredResultArray = nil;
+
+    if( [self headOnly] == NO)
+        return;
+
+    NSMutableArray *visibleItems = [NSMutableArray arrayWithCapacity: [resultArray count]];
+    for( id item in resultArray)
+    {
+        if( [self shouldDisplayQueryItem: item])
+            [visibleItems addObject: item];
+    }
+
+    headFilteredResultArray = [visibleItems copy];
+}
+
 - (NSArray *)visibleQueryChildrenForItem:(DCMTKQueryNode *)item
 {
     NSArray *children = [item children];
@@ -1887,7 +1926,13 @@ extern "C"
 
 - (BOOL)shouldDisplayQueryItem:(id)item
 {
-    if( [item isMemberOfClass: [DCMTKSeriesQueryNode class]] == NO)
+    BOOL isStudy = [item isMemberOfClass: [DCMTKStudyQueryNode class]];
+    BOOL isSeries = [item isMemberOfClass: [DCMTKSeriesQueryNode class]];
+
+    if( [self headOnly] && (isStudy || isSeries) && [self queryItemMatchesHeadRegion: item] == NO)
+        return NO;
+
+    if( isSeries == NO)
         return YES;
 
     if( [self ignoreMPRSeries] == NO)
@@ -1910,8 +1955,9 @@ extern "C"
         {
             if( item == nil)
             {
-                if( [resultArray count] > index)
-                    return [resultArray objectAtIndex:index];
+                NSArray *visibleItems = [self visibleTopLevelQueryItems];
+                if( [visibleItems count] > index)
+                    return [visibleItems objectAtIndex:index];
                 else
                     return nil;
             }
@@ -1970,7 +2016,7 @@ extern "C"
         @try
         {
             if (item == nil)
-                return [resultArray count];
+                return [[self visibleTopLevelQueryItems] count];
             else
             {
                 if ( [item isMemberOfClass:[DCMTKStudyQueryNode class]] == YES || [item isMemberOfClass:[DCMTKRootQueryNode class]] == YES)
@@ -2017,7 +2063,7 @@ extern "C"
 					}
                 }
             }
-	            return  (item == nil) ? [resultArray count] : [[self visibleQueryChildrenForItem: item] count];
+	            return  (item == nil) ? [[self visibleTopLevelQueryItems] count] : [[self visibleQueryChildrenForItem: item] count];
 	        }
 	}
 	@catch (NSException * e)
@@ -2025,7 +2071,7 @@ extern "C"
 		N2LogExceptionWithStackTrace(e);
 	}
 	
-	return [resultArray count];
+	return [[self visibleTopLevelQueryItems] count];
 }
 
 - (NSArray*) localSeries:(id) item
@@ -2582,6 +2628,7 @@ extern "C"
 	id item = [outlineView itemAtRow: [outlineView selectedRow]];
 	
 	[resultArray sortUsingDescriptors: [self sortArray]];
+	[self rebuildVisibleTopLevelQueryItems];
 	[outlineView reloadData];
 	
 	NSArray *s = [outlineView sortDescriptors];
@@ -3338,15 +3385,14 @@ extern "C"
 	    [resultArray addObjectsFromArray: l];
 	    [resultArray sortUsingDescriptors: [self sortArray]];
 	}
+	[self rebuildVisibleTopLevelQueryItems];
 
 	seriesHighlightFilterMask = [self currentSeriesHighlightFilterMask];
 	[self ensureSelectedSeriesUIDs];
 	[selectedSeriesUIDs removeAllObjects];
 	[outlineView reloadData];
 	[self applySeriesFiltersAfterQueryRefreshWithAutoExpand: autoExpandSmallResults];
-    
-    [numberOfStudies setStringValue:N2LocalizedSingularPluralCount(resultArray.count, NSLocalizedString( @"study found", nil), NSLocalizedString( @"studies found", nil))];
-    
+
 	[l release];
 }
 
@@ -5535,6 +5581,7 @@ extern "C"
 	[queryFilters release];
 		[sourcesArray release];
 			[resultArray release];
+			[headFilteredResultArray release];
 			[pendingRetrieveAndViewItems release];
 			[selectedSeriesUIDs release];
             retrieveSelectedSeriesButton = nil;
@@ -5712,6 +5759,7 @@ extern "C"
     NSView *contentView = [panelBox contentView];
     seriesSelectionPanel = contentView;
     NSInteger savedSeriesFilterMask = [[NSUserDefaults standardUserDefaults] integerForKey: HorosQRSeriesFilterDefaultsKey];
+    BOOL savedHeadOnly = [[NSUserDefaults standardUserDefaults] boolForKey: HorosQRSeriesHeadOnlyDefaultsKey];
     id savedIgnoreMPRValue = [[NSUserDefaults standardUserDefaults] objectForKey: HorosQRSeriesIgnoreMPRDefaultsKey];
     BOOL savedIgnoreMPR = savedIgnoreMPRValue ? [savedIgnoreMPRValue boolValue] : YES;
 
@@ -5762,6 +5810,14 @@ extern "C"
     [flairGadButton setTarget: self];
     [flairGadButton setAction: @selector(seriesHighlightFilterChanged:)];
 
+    NSButton *headOnlyButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
+    [headOnlyButton setTitle: NSLocalizedString( @"Head only", nil)];
+    [headOnlyButton setButtonType: NSButtonTypeSwitch];
+    [headOnlyButton setTag: HorosQRSeriesHeadOnly];
+    [headOnlyButton setState: savedHeadOnly ? NSControlStateValueOn : NSControlStateValueOff];
+    [headOnlyButton setTarget: self];
+    [headOnlyButton setAction: @selector(seriesHeadOnlyChanged:)];
+
     NSButton *ignoreMPRButton = [[[NSButton alloc] initWithFrame:NSZeroRect] autorelease];
     [ignoreMPRButton setTitle: NSLocalizedString( @"Ignore MPR/RFMT", nil)];
     [ignoreMPRButton setButtonType: NSButtonTypeSwitch];
@@ -5785,15 +5841,15 @@ extern "C"
     [retrieveSelectedButton setAction: @selector(retrieveSelectedSeries:)];
     retrieveSelectedSeriesButton = retrieveSelectedButton;
 
-    NSArray *controls = [NSArray arrayWithObjects: expandButton, t1Button, t1GadButton, t2Button, flairButton, flairGadButton, ignoreMPRButton, retrieveSelectedButton, nil];
+    NSArray *controls = [NSArray arrayWithObjects: expandButton, t1Button, t1GadButton, t2Button, flairButton, flairGadButton, headOnlyButton, ignoreMPRButton, retrieveSelectedButton, nil];
     for( NSView *control in controls)
     {
         [control setTranslatesAutoresizingMaskIntoConstraints: NO];
         [contentView addSubview: control];
     }
 
-    NSDictionary *views = NSDictionaryOfVariableBindings(expandButton, t1Button, t1GadButton, t2Button, flairButton, flairGadButton, ignoreMPRButton, retrieveSelectedButton);
-    [contentView addConstraints: [NSLayoutConstraint constraintsWithVisualFormat: @"V:|-8-[expandButton(24)]-12-[t1Button(18)]-6-[t1GadButton(18)]-6-[t2Button(18)]-6-[flairButton(18)]-6-[flairGadButton(18)]-(>=8)-[ignoreMPRButton(18)]-8-[retrieveSelectedButton(46)]-8-|"
+    NSDictionary *views = NSDictionaryOfVariableBindings(expandButton, t1Button, t1GadButton, t2Button, flairButton, flairGadButton, headOnlyButton, ignoreMPRButton, retrieveSelectedButton);
+    [contentView addConstraints: [NSLayoutConstraint constraintsWithVisualFormat: @"V:|-8-[expandButton(24)]-12-[t1Button(18)]-6-[t1GadButton(18)]-6-[t2Button(18)]-6-[flairButton(18)]-6-[flairGadButton(18)]-(>=8)-[headOnlyButton(18)]-6-[ignoreMPRButton(18)]-8-[retrieveSelectedButton(46)]-8-|"
                                                                          options: 0
                                                                          metrics: nil
                                                                            views: views]];
@@ -6040,6 +6096,15 @@ extern "C"
     [self refreshSeriesSelectionDisplay];
 }
 
+- (IBAction)seriesHeadOnlyChanged:(id)sender
+{
+    [self saveSeriesSelectionPanelSettings];
+    [self rebuildVisibleTopLevelQueryItems];
+    if( [self currentSeriesHighlightFilterMask] != 0)
+        [self rebuildHighlightedSeriesFromFilters];
+    [self refreshSeriesSelectionDisplay];
+}
+
 - (IBAction)seriesIgnoreMPRChanged:(id)sender
 {
     [self saveSeriesSelectionPanelSettings];
@@ -6148,6 +6213,7 @@ extern "C"
 - (void)saveSeriesSelectionPanelSettings
 {
     [[NSUserDefaults standardUserDefaults] setInteger: [self currentSeriesHighlightFilterMask] forKey: HorosQRSeriesFilterDefaultsKey];
+    [[NSUserDefaults standardUserDefaults] setBool: [self headOnly] forKey: HorosQRSeriesHeadOnlyDefaultsKey];
     [[NSUserDefaults standardUserDefaults] setBool: [self ignoreMPRSeries] forKey: HorosQRSeriesIgnoreMPRDefaultsKey];
 }
 
@@ -6157,6 +6223,7 @@ extern "C"
         return;
 
     NSInteger savedSeriesFilterMask = [[NSUserDefaults standardUserDefaults] integerForKey: HorosQRSeriesFilterDefaultsKey];
+    BOOL savedHeadOnly = [[NSUserDefaults standardUserDefaults] boolForKey: HorosQRSeriesHeadOnlyDefaultsKey];
     id savedIgnoreMPRValue = [[NSUserDefaults standardUserDefaults] objectForKey: HorosQRSeriesIgnoreMPRDefaultsKey];
     BOOL savedIgnoreMPR = savedIgnoreMPRValue ? [savedIgnoreMPRValue boolValue] : YES;
 
@@ -6169,6 +6236,8 @@ extern "C"
 
         if( tag == HorosQRSeriesHighlightT1 || tag == HorosQRSeriesHighlightT1Gad || tag == HorosQRSeriesHighlightT2 || tag == HorosQRSeriesHighlightFLAIR || tag == HorosQRSeriesHighlightFLAIRGad)
             [view setState: (savedSeriesFilterMask & tag) ? NSControlStateValueOn : NSControlStateValueOff];
+        else if( tag == HorosQRSeriesHeadOnly)
+            [view setState: savedHeadOnly ? NSControlStateValueOn : NSControlStateValueOff];
         else if( tag == HorosQRSeriesIgnoreMPR)
             [view setState: savedIgnoreMPR ? NSControlStateValueOn : NSControlStateValueOff];
     }
@@ -6179,6 +6248,7 @@ extern "C"
 - (void)applySeriesFiltersAfterQueryRefreshWithAutoExpand:(BOOL)autoExpandSmallResults
 {
     [self restoreSeriesSelectionPanelSettings];
+    [self rebuildVisibleTopLevelQueryItems];
 
     if( autoExpandSmallResults && [resultArray count] > 0 && [resultArray count] < 10)
         [self expandAllQueryStudies: self];
@@ -6309,6 +6379,20 @@ extern "C"
     return YES;
 }
 
+- (BOOL)headOnly
+{
+    if( seriesSelectionPanel == nil)
+        return [[NSUserDefaults standardUserDefaults] boolForKey: HorosQRSeriesHeadOnlyDefaultsKey];
+
+    for( id view in [seriesSelectionPanel subviews])
+    {
+        if( [view isKindOfClass: [NSButton class]] && [view tag] == HorosQRSeriesHeadOnly)
+            return [view state] == NSControlStateValueOn;
+    }
+
+    return NO;
+}
+
 - (void)updateRetrieveSelectedSeriesButtonTitle
 {
     if( retrieveSelectedSeriesButton == nil)
@@ -6329,6 +6413,32 @@ extern "C"
         [window setDefaultButtonCell: nil];
 
     [retrieveSelectedSeriesButton setNeedsDisplay: YES];
+}
+
+- (void)updateNumberOfStudiesLabel
+{
+    NSUInteger visibleStudyCount = 0;
+
+    for( id item in resultArray)
+    {
+        if( [item isMemberOfClass: [DCMTKStudyQueryNode class]])
+        {
+            if( [self shouldDisplayQueryItem: item])
+                visibleStudyCount++;
+        }
+        else if( [item isMemberOfClass: [DCMTKRootQueryNode class]])
+        {
+            for( id child in [item children])
+            {
+                if( [child isMemberOfClass: [DCMTKStudyQueryNode class]] && [self shouldDisplayQueryItem: child])
+                    visibleStudyCount++;
+            }
+        }
+        else if( [self shouldDisplayQueryItem: item])
+            visibleStudyCount++;
+    }
+
+    [numberOfStudies setStringValue: N2LocalizedSingularPluralCount( visibleStudyCount, NSLocalizedString( @"study found", nil), NSLocalizedString( @"studies found", nil))];
 }
 
 - (void)refreshSeriesSelectionDisplay
@@ -6364,8 +6474,38 @@ extern "C"
         [outlineView selectRowIndexes: selection byExtendingSelection: NO];
 
     [self updateRetrieveSelectedSeriesButtonTitle];
+    [self updateNumberOfStudiesLabel];
     [outlineView setNeedsDisplay: YES];
     [outlineView displayIfNeeded];
+}
+
+- (NSString *)normalizedSearchTextForStrings:(NSArray *)strings
+{
+    NSMutableArray *textParts = [NSMutableArray array];
+    for( id value in strings)
+    {
+        if( [value isKindOfClass: [NSString class]] && [value length] > 0)
+            [textParts addObject: value];
+    }
+
+    if( [textParts count] == 0)
+        return @"";
+
+    NSString *foldedText = [[[textParts componentsJoinedByString: @" "] lowercaseString] stringByFoldingWithOptions: NSDiacriticInsensitiveSearch locale: nil];
+    NSMutableString *normalizedText = [NSMutableString stringWithCapacity: [foldedText length] + 2];
+    NSCharacterSet *alphanumericSet = [NSCharacterSet alphanumericCharacterSet];
+
+    [normalizedText appendString: @" "];
+
+    for( NSUInteger i = 0; i < [foldedText length]; i++)
+    {
+        unichar c = [foldedText characterAtIndex: i];
+        NSString *characterString = [alphanumericSet characterIsMember: c] ? [NSString stringWithCharacters: &c length: 1] : @" ";
+        [normalizedText appendString: characterString];
+    }
+
+    [normalizedText appendString: @" "];
+    return normalizedText;
 }
 
 - (NSString *)normalizedSeriesDescriptionForItem:(id)item
@@ -6390,25 +6530,7 @@ extern "C"
     if( [nameValue isKindOfClass: [NSString class]] && [nameValue length] > 0 && [textParts containsObject: nameValue] == NO)
         [textParts addObject: nameValue];
 
-    if( [textParts count] == 0)
-        return @"";
-
-    NSString *foldedText = [[[textParts componentsJoinedByString: @" "] lowercaseString] stringByFoldingWithOptions: NSDiacriticInsensitiveSearch locale: nil];
-    NSMutableString *normalizedText = [NSMutableString stringWithCapacity: [foldedText length] + 2];
-    NSCharacterSet *alphanumericSet = [NSCharacterSet alphanumericCharacterSet];
-
-    [normalizedText appendString: @" "];
-
-    for( NSUInteger i = 0; i < [foldedText length]; i++)
-    {
-        unichar c = [foldedText characterAtIndex: i];
-        NSString *characterString = [alphanumericSet characterIsMember: c] ? [NSString stringWithCharacters: &c length: 1] : @" ";
-        [normalizedText appendString: characterString];
-    }
-
-    [normalizedText appendString: @" "];
-
-    return normalizedText;
+    return [self normalizedSearchTextForStrings: textParts];
 }
 
 - (BOOL)seriesText:(NSString *)text containsToken:(NSString *)token
@@ -6493,6 +6615,75 @@ extern "C"
     NSArray *tokens = [NSArray arrayWithObjects: @"flair", nil];
     NSArray *phrases = [NSArray arrayWithObjects: @" fluid attenuated ", nil];
     return [self seriesText: text containsAnyToken: tokens] || [self seriesText: text containsAnyPhrase: phrases];
+}
+
+- (BOOL)textLooksLikeHeadRegion:(NSString *)text
+{
+    NSArray *tokens = [NSArray arrayWithObjects:
+                       @"brain", @"brainstem", @"cerebral", @"cerebrum", @"cerebellar", @"cerebellum",
+                       @"head", @"headneck", @"cranium", @"cranial", @"skull", @"skullbase",
+                       @"sella", @"sellar", @"pituitary", @"hypophysis", @"intracranial", @"cephalic",
+                       @"orbit", @"orbits", @"orbital", @"sinus", @"sinuses", @"face", @"facial",
+                       @"facialbones", @"maxilla", @"maxillary", @"mandible", @"mandibular", @"jaw",
+                       @"maxillofacial", @"iac", @"cpa", @"ear", @"ears", @"eye", @"eyes", @"mastoid",
+                       @"tmj", @"tmjs", @"nasal", @"nose", @"paranasalsinus", @"paranasalsinuses",
+                       @"nasopharynx", @"temporalbone", @"temporalbones", @"ent", nil];
+    NSArray *phrases = [NSArray arrayWithObjects: @" temporal bone ", @" temporal bones ", @" posterior fossa ", @" cerebellopontine angle ", nil];
+
+    return [self seriesText: text containsAnyToken: tokens] || [self seriesText: text containsAnyPhrase: phrases];
+}
+
+- (BOOL)queryItemMatchesHeadRegion:(id)item
+{
+    if( [item isMemberOfClass: [DCMTKStudyQueryNode class]])
+    {
+        DCMTKStudyQueryNode *study = item;
+        NSArray *regionMeanings = [study anatomicRegionMeanings];
+        NSString *studyDescription = [study studyName];
+        if( studyDescription == nil)
+            studyDescription = @"";
+
+        if( [regionMeanings count] > 0)
+        {
+            if( [self textLooksLikeHeadRegion: [self normalizedSearchTextForStrings: regionMeanings]])
+                return YES;
+
+            NSString *descriptionText = [self normalizedSearchTextForStrings: [NSArray arrayWithObject: studyDescription]];
+            NSArray *headAndNeckPhrases = [NSArray arrayWithObjects: @" head and neck ", @" head neck ", nil];
+            return [self seriesText: descriptionText containsAnyPhrase: headAndNeckPhrases];
+        }
+
+        return [self textLooksLikeHeadRegion: [self normalizedSearchTextForStrings: [NSArray arrayWithObject: studyDescription]]];
+    }
+
+    if( [item isMemberOfClass: [DCMTKSeriesQueryNode class]])
+    {
+        DCMTKSeriesQueryNode *series = item;
+        NSString *bodyPartExamined = [series bodyPartExamined];
+
+        if( [bodyPartExamined length] > 0)
+        {
+            if( [self textLooksLikeHeadRegion: [self normalizedSearchTextForStrings: [NSArray arrayWithObject: bodyPartExamined]]])
+                return YES;
+
+            NSString *studyDescription = [[series study] studyName];
+            if( studyDescription == nil)
+                studyDescription = @"";
+            NSString *descriptionText = [self normalizedSearchTextForStrings: [NSArray arrayWithObject: studyDescription]];
+            NSArray *headAndNeckPhrases = [NSArray arrayWithObjects: @" head and neck ", @" head neck ", nil];
+            return [self seriesText: descriptionText containsAnyPhrase: headAndNeckPhrases];
+        }
+
+        NSMutableArray *fallbackDescriptions = [NSMutableArray array];
+        if( [[series theDescription] length] > 0)
+            [fallbackDescriptions addObject: [series theDescription]];
+        if( [[[series study] studyName] length] > 0)
+            [fallbackDescriptions addObject: [[series study] studyName]];
+
+        return [self textLooksLikeHeadRegion: [self normalizedSearchTextForStrings: fallbackDescriptions]];
+    }
+
+    return YES;
 }
 
 - (BOOL)seriesItemLooksContrastEnhanced:(id)item normalizedText:(NSString *)text

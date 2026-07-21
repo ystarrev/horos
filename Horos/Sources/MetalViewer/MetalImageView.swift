@@ -461,6 +461,7 @@ final class MetalImageView: MTKView {
     var interactionEventHandler: (() -> Void)?
     var annotationStateDidChange: (() -> Void)?
     var windowLevelInteractionHandler: (() -> Void)?
+    var windowLevelInteractionAllowedHandler: (() -> Bool)?
     var tumourSeedPlacementHandler: ((MetalViewerTumourSeedPlacement) -> Void)?
     var tumourSeedDeletionHandler: ((String) -> Void)?
     var measurementsDidChange: (([MetalViewerMeasurementOverlay]) -> Void)?
@@ -472,6 +473,7 @@ final class MetalImageView: MTKView {
         pixList: [DCMPix],
         windowLevelState: MetalViewerWindowLevelState = MetalViewerWindowLevelState(),
         windowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)? = nil,
+        usesAutomaticWindowLevel: Bool = false,
         transferFunctionState: MetalViewerTransferFunctionState = MetalViewerTransferFunctionState(),
         transferFunctionStateDidChange: ((MetalViewerTransferFunctionState) -> Void)? = nil
     ) {
@@ -483,6 +485,7 @@ final class MetalImageView: MTKView {
             device: device,
             pixList: pixList,
             windowLevelState: windowLevelState,
+            usesAutomaticWindowLevel: usesAutomaticWindowLevel,
             transferFunctionState: transferFunctionState
         )
         super.init(frame: frameRect, device: device)
@@ -864,6 +867,7 @@ final class MetalImageView: MTKView {
     }
 
     private func updateWindowLevelFromDrag(deltaX: Float, deltaY: Float) {
+        guard windowLevelInteractionAllowedHandler?() ?? true else { return }
         renderer.updateWindowLevel(
             wl: wlAnchor - deltaY * max(abs(wlAnchor), 128) * 0.003,
             ww: wwAnchor + deltaX * max(abs(wwAnchor), 256) * 0.003

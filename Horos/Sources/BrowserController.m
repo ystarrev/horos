@@ -247,6 +247,9 @@ NSString* asciiString(NSString* str)
 -(void)removeAlbumObject:(DicomAlbum*)album;
 -(void)openMetalViewerForDatabaseObject:(NSManagedObject*)item;
 -(void)saveSmartAlbumWithName:(NSString*)name predicateFormat:(NSString*)predicateFormat album:(DicomAlbum*)album;
+-(NSArray*)cachedStudiesForSmartAlbum:(NSManagedObject*)album loading:(BOOL*)loading;
+-(void)invalidateSmartAlbumFetch;
+-(void)monitorSmartAlbumFetchActivity:(NSDictionary*)info;
 
 -(NSPredicate*)createFilterPredicateIncludingSeriesDescriptions:(BOOL)includeSeriesDescriptions;
 -(BOOL)searchIncludesSeriesDescriptions;
@@ -1675,6 +1678,7 @@ static NSConditionLock *threadLock = nil;
         [lastROIsImagesSelectedFiles release]; lastROIsImagesSelectedFiles = nil;
         [lastKeyImagesSelectedFiles release]; lastKeyImagesSelectedFiles = nil;
         
+        [self invalidateSmartAlbumFetch];
         [self outlineViewRefresh];
         [self refreshAlbums];
         
@@ -1684,6 +1688,7 @@ static NSConditionLock *threadLock = nil;
 
 -(void)_refreshDatabaseDisplay
 {
+    [self invalidateSmartAlbumFetch];
     [self outlineViewRefresh];
     [self refreshAlbums];
 }
@@ -1694,6 +1699,7 @@ static NSConditionLock *threadLock = nil;
         [self performSelectorOnMainThread:@selector(_observeDatabaseDidChangeContextNotification:) withObject:notification waitUntilDone:NO modes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
     else
     {
+        [self invalidateSmartAlbumFetch];
         [self outlineViewRefresh];
         [self refreshAlbums];
     }
@@ -1701,6 +1707,13 @@ static NSConditionLock *threadLock = nil;
 
 -(void)_observeDatabaseInvalidateAlbumsCacheNotification:(NSNotification*)notification
 {
+    if( [NSThread isMainThread] == NO)
+    {
+        [self performSelectorOnMainThread:@selector(_observeDatabaseInvalidateAlbumsCacheNotification:) withObject:notification waitUntilDone:NO modes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
+        return;
+    }
+
+    [self invalidateSmartAlbumFetch];
     @synchronized (self)
     {
         _cachedAlbumsContext = nil;
@@ -1776,6 +1789,7 @@ static NSConditionLock *threadLock = nil;
     {
         @try
         {
+            [self invalidateSmartAlbumFetch];
             [[LogManager currentLogManager] resetLogs];
             
             [self willChangeValueForKey:@"database"];
@@ -2852,6 +2866,84 @@ static NSConditionLock *threadLock = nil;
     }
 }
 
+static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **innerFormat)
+{
+    if( [predicate isKindOfClass:[NSComparisonPredicate class]] == NO)
+        return NO;
+
+    NSComparisonPredicate *comparison = (NSComparisonPredicate*)predicate;
+    if( comparison.comparisonPredicateModifier != NSAnyPredicateModifier || comparison.leftExpression.expressionType != NSKeyPathExpressionType)
+        return NO;
+
+    NSString *keyPath = comparison.leftExpression.keyPath;
+    if( [keyPath hasPrefix:@"series."] == NO)
+        return NO;
+
+    NSString *format = comparison.predicateFormat;
+    NSRange prefixRange = [format rangeOfString:@"ANY series." options:NSAnchoredSearch | NSCaseInsensitiveSearch];
+    if( prefixRange.location == NSNotFound)
+        return NO;
+
+    if( innerFormat)
+        *innerFormat = [format stringByReplacingCharactersInRange:prefixRange withString:@"$series."];
+    return YES;
+}
+
++ (NSPredicate*)optimizedSmartAlbumPredicate:(NSPredicate*)predicate
+{
+    if( [predicate isKindOfClass:[NSCompoundPredicate class]] == NO)
+        return predicate;
+
+    NSCompoundPredicate *compound = (NSCompoundPredicate*)predicate;
+    NSMutableArray *optimizedChildren = [NSMutableArray arrayWithCapacity:compound.subpredicates.count];
+    for( NSPredicate *child in compound.subpredicates)
+        [optimizedChildren addObject:[self optimizedSmartAlbumPredicate:child]];
+
+    if( compound.compoundPredicateType == NSOrPredicateType)
+    {
+        NSMutableArray *otherPredicates = [NSMutableArray array];
+        NSMutableArray *seriesPredicates = [NSMutableArray array];
+        NSMutableArray *seriesFormats = [NSMutableArray array];
+
+        for( NSPredicate *child in optimizedChildren)
+        {
+            NSString *innerFormat = nil;
+            if( HorosSeriesAnyPredicateFormat(child, &innerFormat))
+            {
+                [seriesPredicates addObject:child];
+                [seriesFormats addObject:[NSString stringWithFormat:@"(%@)", innerFormat]];
+            }
+            else
+                [otherPredicates addObject:child];
+        }
+
+        if( seriesPredicates.count > 1)
+        {
+            @try
+            {
+                NSString *subqueryFormat = [NSString stringWithFormat:@"SUBQUERY(series, $series, %@).@count > 0", [seriesFormats componentsJoinedByString:@" OR "]];
+                [otherPredicates addObject:[NSPredicate predicateWithFormat:subqueryFormat]];
+            }
+            @catch( NSException *exception)
+            {
+                N2LogExceptionWithStackTrace(exception);
+                [otherPredicates addObjectsFromArray:seriesPredicates];
+            }
+        }
+        else
+            [otherPredicates addObjectsFromArray:seriesPredicates];
+
+        return [NSCompoundPredicate orPredicateWithSubpredicates:otherPredicates];
+    }
+
+    if( compound.compoundPredicateType == NSAndPredicateType)
+        return [NSCompoundPredicate andPredicateWithSubpredicates:optimizedChildren];
+    if( compound.compoundPredicateType == NSNotPredicateType && optimizedChildren.count)
+        return [NSCompoundPredicate notPredicateWithSubpredicate:[optimizedChildren objectAtIndex:0]];
+
+    return predicate;
+}
+
 - (IBAction)selectNoAlbums:(id)sender
 {
     BOOL copyClearSearchAndTimeIntervalWhenSelectingAlbum = [[NSUserDefaults standardUserDefaults] boolForKey: @"clearSearchAndTimeIntervalWhenSelectingAlbum"];
@@ -2881,7 +2973,7 @@ static NSConditionLock *threadLock = nil;
     
     @try
     {
-        pred = [self smartAlbumPredicateString: [album valueForKey:@"predicateString"]];
+        pred = [[self class] optimizedSmartAlbumPredicate:[self smartAlbumPredicateString:[album valueForKey:@"predicateString"]]];
     }
     
     @catch( NSException *ne)
@@ -2891,6 +2983,169 @@ static NSConditionLock *threadLock = nil;
     }
     
     return pred;
+}
+
+- (void)invalidateSmartAlbumFetch
+{
+    [_smartAlbumFetchProgress cancel];
+    [_smartAlbumActivityThread cancel];
+
+    [_smartAlbumActivityThread release];
+    _smartAlbumActivityThread = nil;
+
+    [_smartAlbumFetchProgress release];
+    _smartAlbumFetchProgress = nil;
+
+    [_smartAlbumFetchKey release];
+    _smartAlbumFetchKey = nil;
+
+    [_smartAlbumFetchResults release];
+    _smartAlbumFetchResults = nil;
+}
+
+- (void)monitorSmartAlbumFetchActivity:(NSDictionary*)info
+{
+    @autoreleasepool
+    {
+        NSThread *thread = [NSThread currentThread];
+        NSProgress *progress = [info objectForKey:@"progress"];
+        NSString *albumName = [info objectForKey:@"albumName"];
+        NSTimeInterval startedAt = [NSDate timeIntervalSinceReferenceDate];
+        NSInteger previousElapsedSeconds = -1;
+
+        thread.progress = -1;
+        while( thread.isCancelled == NO && progress.isCancelled == NO && progress.isFinished == NO)
+        {
+            int64_t total = progress.totalUnitCount;
+            int64_t completed = progress.completedUnitCount;
+            if( total > 0 && completed >= 0)
+            {
+                thread.progress = MIN(MAX(progress.fractionCompleted, 0), 1);
+                thread.status = [NSString stringWithFormat:NSLocalizedString(@"%@ - %lld of %lld studies", nil), albumName, (long long)completed, (long long)total];
+            }
+            else
+            {
+                thread.progress = -1;
+                NSInteger elapsedSeconds = (NSInteger)([NSDate timeIntervalSinceReferenceDate] - startedAt);
+                if( elapsedSeconds != previousElapsedSeconds)
+                {
+                    previousElapsedSeconds = elapsedSeconds;
+                    thread.status = [NSString stringWithFormat:NSLocalizedString(@"Searching %@ - %ld s", nil), albumName, (long)elapsedSeconds];
+                }
+            }
+
+            [NSThread sleepForTimeInterval:0.1];
+        }
+
+        if( thread.isCancelled && progress.isFinished == NO)
+            [progress cancel];
+    }
+}
+
+- (NSArray*)cachedStudiesForSmartAlbum:(NSManagedObject*)album loading:(BOOL*)loading
+{
+    if( loading)
+        *loading = NO;
+
+    NSString *albumIdentifier = album.objectID.URIRepresentation.absoluteString;
+    if( albumIdentifier.length == 0)
+        albumIdentifier = [album valueForKey:@"name"];
+
+    NSString *predicateString = [album valueForKey:@"predicateString"];
+    NSString *fetchKey = [NSString stringWithFormat:@"%@\n%@", albumIdentifier ?: @"", predicateString ?: @""];
+
+    if( [_smartAlbumFetchKey isEqualToString:fetchKey])
+    {
+        if( _smartAlbumFetchResults == nil && loading)
+            *loading = YES;
+        return _smartAlbumFetchResults;
+    }
+
+    [self invalidateSmartAlbumFetch];
+    _smartAlbumFetchKey = [fetchKey copy];
+    if( loading)
+        *loading = YES;
+
+    DicomDatabase *database = _database;
+    NSManagedObjectContext *context = database.managedObjectContext;
+    if( context == nil)
+    {
+        _smartAlbumFetchResults = [[NSArray alloc] init];
+        if( loading)
+            *loading = NO;
+        return _smartAlbumFetchResults;
+    }
+
+    NSFetchRequest *fetchRequest = [[[NSFetchRequest alloc] init] autorelease];
+    fetchRequest.entity = database.studyEntity;
+    fetchRequest.predicate = [self smartAlbumPredicate:album];
+    fetchRequest.includesPendingChanges = NO;
+
+    NSAsynchronousFetchRequest *asynchronousRequest = [[[NSAsynchronousFetchRequest alloc] initWithFetchRequest:fetchRequest completionBlock:^(NSAsynchronousFetchResult *result) {
+        if( database != _database || [fetchKey isEqualToString:_smartAlbumFetchKey] == NO)
+            return;
+
+        NSError *error = result.operationError;
+        NSArray *results = result.finalResult;
+        if( error)
+            NSLog(@"Smart Album fetch failed: %@", error);
+
+        [_smartAlbumFetchResults release];
+        _smartAlbumFetchResults = results ? [results copy] : [[NSArray alloc] init];
+
+        [_smartAlbumFetchProgress release];
+        _smartAlbumFetchProgress = nil;
+
+        NSThread *activityThread = _smartAlbumActivityThread;
+        activityThread.progress = 1;
+        activityThread.status = N2LocalizedSingularPluralCount(results.count, NSLocalizedString(@"study found", nil), NSLocalizedString(@"studies found", nil));
+        [activityThread cancel];
+        [_smartAlbumActivityThread release];
+        _smartAlbumActivityThread = nil;
+
+        [self outlineViewRefresh];
+    }] autorelease];
+
+    NSError *error = nil;
+    @try
+    {
+        NSPersistentStoreResult *result = [context executeRequest:asynchronousRequest error:&error];
+        if( [result isKindOfClass:[NSPersistentStoreAsynchronousResult class]])
+        {
+            _smartAlbumFetchProgress = [[(NSPersistentStoreAsynchronousResult*)result progress] retain];
+            NSThread *activityThread = [[ThreadsManager defaultManager] newActivityThreadWithTarget:self
+                                                                                           selector:@selector(monitorSmartAlbumFetchActivity:)
+                                                                                             object:@{@"progress": _smartAlbumFetchProgress,
+                                                                                                      @"albumName": [album valueForKey:@"name"] ?: @""}];
+            activityThread.name = NSLocalizedString(@"Load Smart Album...", nil);
+            activityThread.status = [NSString stringWithFormat:NSLocalizedString(@"Searching %@", nil), [album valueForKey:@"name"] ?: @""];
+            activityThread.progress = -1;
+            _smartAlbumActivityThread = activityThread;
+            [[ThreadsManager defaultManager] addThreadAndStart:activityThread];
+        }
+    }
+    @catch( NSException *exception)
+    {
+        N2LogExceptionWithStackTrace(exception);
+        error = [NSError errorWithDomain:@"HorosSmartAlbum" code:1 userInfo:@{NSLocalizedDescriptionKey: exception.reason ?: @"Unable to load Smart Album"}];
+    }
+
+    if( error)
+    {
+        NSLog(@"Smart Album fetch could not start: %@", error);
+        [_smartAlbumFetchProgress cancel];
+        [_smartAlbumFetchProgress release];
+        _smartAlbumFetchProgress = nil;
+        [_smartAlbumActivityThread cancel];
+        [_smartAlbumActivityThread release];
+        _smartAlbumActivityThread = nil;
+        [_smartAlbumFetchResults release];
+        _smartAlbumFetchResults = [[NSArray alloc] init];
+        if( loading)
+            *loading = NO;
+    }
+
+    return _smartAlbumFetchResults;
 }
 
 - (void) refreshEntireDBResult
@@ -2907,11 +3162,6 @@ static NSConditionLock *threadLock = nil;
 
 - (NSString*) outlineViewRefresh		// This function creates the 'root' array for the outlineView
 {
-    @synchronized (self)
-    {
-        _cachedAlbumsContext = nil;
-    }
-    
     if( databaseOutline == nil) return nil;
     if( loadingIsOver == NO) return nil;
     
@@ -2930,6 +3180,7 @@ static NSConditionLock *threadLock = nil;
     NSMutableArray		*previousObjects = [NSMutableArray array];
     NSArray				*albumArrayContent = nil;
     BOOL				filtered = NO;
+    BOOL                smartAlbumLoading = NO;
     NSString			*exception = nil;
     
     NSInteger index = [selectedRowIndexes firstIndex];
@@ -2967,17 +3218,33 @@ static NSConditionLock *threadLock = nil;
             if( [[album valueForKey:@"smartAlbum"] boolValue] == YES)
             {
                 smartAlbumName = [album valueForKey:@"name"];
-                albumArrayContent = [_database objectsForEntity: _database.studyEntity predicate:[self smartAlbumPredicate: album]];
+                albumArrayContent = [self cachedStudiesForSmartAlbum:album loading:&smartAlbumLoading];
+                if( albumArrayContent == nil)
+                    albumArrayContent = [NSArray array];
+                if( smartAlbumLoading)
+                {
+                    @synchronized (_albumNoOfStudiesCache)
+                    {
+                        if( albumTable.selectedRow < _albumNoOfStudiesCache.count)
+                            [_albumNoOfStudiesCache replaceObjectAtIndex:albumTable.selectedRow withObject:@"..."];
+                    }
+                    [albumTable reloadData];
+                }
                 description = [description stringByAppendingFormat:NSLocalizedString(@"Smart Album selected: %@", nil), smartAlbumName];
             }
             else
             {
+                [self invalidateSmartAlbumFetch];
                 albumArrayContent = [[album valueForKey:@"studies"] allObjects];
                 description = [description stringByAppendingFormat:NSLocalizedString(@"Album selected: %@", nil), [album valueForKey:@"name"]];
             }
         }
     }
-    else description = [description stringByAppendingString: NSLocalizedString(@"No album selected", nil)];
+    else
+    {
+        [self invalidateSmartAlbumFetch];
+        description = [description stringByAppendingString: NSLocalizedString(@"No album selected", nil)];
+    }
     
     // ********************
     // TIME INTERVAL
@@ -3197,7 +3464,7 @@ static NSConditionLock *threadLock = nil;
         
         @synchronized (_albumNoOfStudiesCache)
         {
-            if ([_albumNoOfStudiesCache count] > albumTable.selectedRow && filtered == NO)
+            if ([_albumNoOfStudiesCache count] > albumTable.selectedRow && filtered == NO && smartAlbumLoading == NO)
             {
                 [_albumNoOfStudiesCache replaceObjectAtIndex:albumTable.selectedRow withObject:[decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInt:[outlineViewArray count]]]];
                 [albumTable reloadData];
@@ -3415,16 +3682,10 @@ static NSConditionLock *threadLock = nil;
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
     @try
     {
-        if (_computingNumberOfStudiesForAlbums)
-        {
-            [self performSelectorOnMainThread:@selector(delayedRefreshAlbums) withObject:nil waitUntilDone:NO modes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
-            return;
-        }
-        
-        _computingNumberOfStudiesForAlbums = YES;
-        
-        [NSThread currentThread].name = NSLocalizedString( @"Compute Albums...", nil);
-        [[ThreadsManager defaultManager] addThreadAndStart: [NSThread currentThread]];
+        NSThread *activityThread = [NSThread currentThread];
+        activityThread.name = NSLocalizedString( @"Compute Albums...", nil);
+        activityThread.status = NSLocalizedString(@"Counting database studies...", nil);
+        activityThread.progress = -1;
         
         DicomDatabase* idatabase = [self.database independentDatabase];
         if (!idatabase)
@@ -3434,9 +3695,18 @@ static NSConditionLock *threadLock = nil;
             return;
         }
 
+        __block NSArray *albumObjectIDs = nil;
+        @synchronized (self)
+        {
+            albumObjectIDs = _cachedAlbumsIDs ? [NSArray arrayWithArray:_cachedAlbumsIDs] : [NSArray array];
+        }
+
         N2PerformManagedObjectContextBlockAndWait(idatabase.managedObjectContext, ^{
         @try
         {
+            if( albumObjectIDs.count == 0)
+                albumObjectIDs = [[[[idatabase albums] valueForKey:@"objectID"] copy] autorelease];
+
             NSMutableArray* NoOfStudies = [NSMutableArray array];
             
             // compute number of studies in database
@@ -3450,25 +3720,21 @@ static NSConditionLock *threadLock = nil;
                 N2LogExceptionWithStackTrace(e);
             }
             [NoOfStudies addObject: count >= 0 ? [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInt:count]] : @"#"];
+
+            @synchronized (_albumNoOfStudiesCache)
+            {
+                if( _albumNoOfStudiesCache.count == 0)
+                    [_albumNoOfStudiesCache addObject:[NoOfStudies objectAtIndex:0]];
+                else
+                    [_albumNoOfStudiesCache replaceObjectAtIndex:0 withObject:[NoOfStudies objectAtIndex:0]];
+            }
+            [albumTable performSelectorOnMainThread:@selector(reloadData) withObject:nil waitUntilDone:NO modes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
             
             // compute every album's studies count
             
             DicomDatabase *currentDatabase = _database;
             
-            NSArray* albumObjectIDs;
-            @synchronized (self)
-            {
-                albumObjectIDs = [NSArray arrayWithArray: _cachedAlbumsIDs];
-            }
-            
-            NSTimeInterval lastTime = [NSDate timeIntervalSinceReferenceDate];
-            
-            
-            BOOL recomputeDistantStudies = NO;
-            
-            if( [NSDate timeIntervalSinceReferenceDate] - lastComputeAlbumsForDistantStudies > 120)
-                recomputeDistantStudies = YES;
-            
+            NSUInteger albumIndex = 0;
             for (NSManagedObjectID* albumObjectID in albumObjectIDs)
             {
                 if( currentDatabase != _database) // We switched the main database...
@@ -3478,110 +3744,66 @@ static NSConditionLock *threadLock = nil;
                 }
                 
                 DicomAlbum* ialbum = [idatabase objectWithID:albumObjectID];
-                
-                [NSThread currentThread].status = ialbum.name;
-                
+                NSUInteger countCacheIndex = NoOfStudies.count;
                 count = -1;
                 if( ialbum.smartAlbum.boolValue == YES)
                 {
-                    @try
+                    activityThread.status = [NSString stringWithFormat:NSLocalizedString(@"Counting %@...", nil), ialbum.name ?: NSLocalizedString(@"Smart Album", nil)];
+                    activityThread.progress = -1;
+
+                    @synchronized (_albumNoOfStudiesCache)
                     {
-                        NSArray *localStudies = [[idatabase objectsForEntity:idatabase.studyEntity predicate:[self smartAlbumPredicate:ialbum]] valueForKey: @"studyInstanceUID"];
-                        
-                        count = 0;
-                        
-                        if( [[NSUserDefaults standardUserDefaults] boolForKey: @"searchForSmartAlbumStudiesOnDICOMNodes"])
-                        {
-                            NSMutableArray *studyToAutoretrieve = [NSMutableArray array];
-                            BOOL autoretrieve = NO;
-                            
-                            if( autoretrievingPACSOnDemandSmartAlbum == NO)
-                            {
-                                for( NSDictionary *d in [[NSUserDefaults standardUserDefaults] objectForKey: @"smartAlbumStudiesDICOMNodes"])
-                                {
-                                    if( [[d valueForKey: @"autoretrieve"] boolValue] && [ialbum.name isEqualToString: [d valueForKey: @"name"]])
-                                        autoretrieve = YES;
-                                }
-                            }
-                            
-                            // Merge local and distant studies
-                            NSArray *distantStudies = nil;
-                            @synchronized(_albumNoOfStudiesCache)
-                            {
-                                distantStudies = [[[_distantAlbumNoOfStudiesCache objectForKey: ialbum.name] copy] autorelease];
-                            }
-                            
-                            if( recomputeDistantStudies || distantStudies == nil)
-                            {
-                                distantStudies = [self distantStudiesForSmartAlbum: ialbum.name];
-                                
-                                if( distantStudies)
-                                {
-                                    @synchronized(_albumNoOfStudiesCache)
-                                    {
-                                        if( currentDatabase == _database) // Did we switch the main database...
-                                            [_distantAlbumNoOfStudiesCache setObject: distantStudies forKey: ialbum.name];
-                                    }
-                                }
-                                
-                                lastComputeAlbumsForDistantStudies = [NSDate timeIntervalSinceReferenceDate];
-                            }
-                            
-                            for( DCMTKStudyQueryNode *distantStudy in distantStudies)
-                            {
-                                if( [localStudies containsObject: [distantStudy studyInstanceUID]] == NO)
-                                {
-                                    count++;
-                                    
-                                    if( autoretrieve)
-                                        [studyToAutoretrieve addObject: distantStudy];
-                                }
-                            }
-                            
-                            if( autoretrievingPACSOnDemandSmartAlbum == NO && studyToAutoretrieve.count)
-                            {
-                                NSThread* t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(autoretrievePACSOnDemandSmartAlbum:) object:studyToAutoretrieve] autorelease];
-                                t.name = NSLocalizedString( @"Auto-Retrieving Album...", nil);
-                                t.supportsCancel = YES;
-                                [[ThreadsManager defaultManager] addThreadAndStart: t];
-                            }
-                        }
-                        
-                        count += localStudies.count;
+                        while( _albumNoOfStudiesCache.count <= countCacheIndex)
+                            [_albumNoOfStudiesCache addObject:@"#"];
+                        [_albumNoOfStudiesCache replaceObjectAtIndex:countCacheIndex withObject:@"..."];
                     }
-                    @catch (NSException* e)
-                    {
-                        N2LogExceptionWithStackTrace(e);
-                    }
+                    [albumTable performSelectorOnMainThread:@selector(reloadData) withObject:nil waitUntilDone:NO modes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
+
+                    NSError *countError = nil;
+                    NSUInteger smartAlbumCount = [idatabase countObjectsForEntity:idatabase.studyEntity predicate:[self smartAlbumPredicate:ialbum] error:&countError];
+                    if( countError)
+                        NSLog(@"Smart Album count failed for %@: %@", ialbum.name, countError);
+                    else
+                        count = (NSInteger)smartAlbumCount;
                 }
-                else count = ialbum.studies.count;
-                
-                
-                [NoOfStudies addObject: count >= 0 ? [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInt:count]] : @"#"];
-                
-                if( [NSDate timeIntervalSinceReferenceDate] - lastTime >= 1)
+                else
                 {
-                    lastTime = [NSDate timeIntervalSinceReferenceDate];
-                    @synchronized(_albumNoOfStudiesCache)
-                    {
-                        int max = _albumNoOfStudiesCache.count;
-                        if( max > NoOfStudies.count)
-                            max = NoOfStudies.count;
-                        [_albumNoOfStudiesCache replaceObjectsInRange: NSMakeRange( 0, max) withObjectsFromArray: NoOfStudies];
-                    }
-                    [albumTable performSelectorOnMainThread: @selector(reloadData) withObject: nil waitUntilDone: NO modes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
+                    activityThread.status = ialbum.name;
+                    count = ialbum.studies.count;
                 }
                 
-                if( [[NSThread currentThread] isCancelled])
+                NSString *formattedCount = count >= 0 ? [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInteger:count]] : @"#";
+                [NoOfStudies addObject:formattedCount];
+
+                if( ialbum.smartAlbum.boolValue == YES)
+                {
+                    @synchronized (_albumNoOfStudiesCache)
+                    {
+                        if( currentDatabase == _database)
+                        {
+                            while( _albumNoOfStudiesCache.count <= countCacheIndex)
+                                [_albumNoOfStudiesCache addObject:@"#"];
+                            [_albumNoOfStudiesCache replaceObjectAtIndex:countCacheIndex withObject:formattedCount];
+                        }
+                    }
+                    [albumTable performSelectorOnMainThread:@selector(reloadData) withObject:nil waitUntilDone:NO modes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
+                }
+
+                albumIndex++;
+                if( albumObjectIDs.count)
+                    activityThread.progress = (CGFloat)albumIndex / (CGFloat)albumObjectIDs.count;
+                
+                if( activityThread.isCancelled)
                     break;
             }
             
             @synchronized (_albumNoOfStudiesCache)
             {
-                [_albumNoOfStudiesCache removeAllObjects];
                 if (currentDatabase == _database) // Did we switch the main database...
-                    [_albumNoOfStudiesCache addObjectsFromArray:NoOfStudies];
+                    [_albumNoOfStudiesCache setArray:NoOfStudies];
             }
+
+            activityThread.progress = 1;
             
             [albumTable performSelectorOnMainThread: @selector(reloadData) withObject: nil waitUntilDone: NO  modes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
         }
@@ -3589,15 +3811,11 @@ static NSConditionLock *threadLock = nil;
         {
             N2LogExceptionWithStackTrace(e);
         }
-        @finally
-        {
-            _computingNumberOfStudiesForAlbums = NO;
-        }
         });
     } @catch (NSException* e) {
         N2LogExceptionWithStackTrace(e);
     } @finally {
-        [[ThreadsManager defaultManager] removeThread:[NSThread currentThread]];
+        _computingNumberOfStudiesForAlbums = NO;
         [pool release];
     }
 }
@@ -3610,6 +3828,12 @@ static NSConditionLock *threadLock = nil;
 
 - (void)refreshAlbums
 {
+    if( [NSThread isMainThread] == NO)
+    {
+        [self performSelectorOnMainThread:@selector(refreshAlbums) withObject:nil waitUntilDone:NO modes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
+        return;
+    }
+
     if( _database)
     {
         if( _computingNumberOfStudiesForAlbums)
@@ -3617,7 +3841,14 @@ static NSConditionLock *threadLock = nil;
         else
         {
             if ([[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"] == NO || [self.window isVisible]) // Server Mode: dont refresh albums
-                [NSThread detachNewThreadSelector:@selector(_computeNumberOfStudiesForAlbumsThread) toTarget:self withObject: nil];
+            {
+                _computingNumberOfStudiesForAlbums = YES;
+                NSThread *thread = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(_computeNumberOfStudiesForAlbumsThread) object:nil] autorelease];
+                thread.name = NSLocalizedString(@"Compute Albums...", nil);
+                thread.status = NSLocalizedString(@"Counting database studies...", nil);
+                thread.progress = -1;
+                [[ThreadsManager defaultManager] addThreadAndStart:thread];
+            }
         }
     }
 }
@@ -3638,6 +3869,7 @@ static NSConditionLock *threadLock = nil;
     {
         @try
         {
+            [self invalidateSmartAlbumFetch];
             [self outlineViewRefresh];
             [self refreshAlbums];
         }
@@ -5012,11 +5244,6 @@ static NSConditionLock *threadLock = nil;
 {
     if( [NSThread isMainThread] == NO)
         N2LogStackTrace( @"***** We must be on MAIN thread");
-    
-    @synchronized (self)
-    {
-        _cachedAlbumsContext = nil;
-    }
     
     if( loadingIsOver == NO) return;
     
@@ -10880,7 +11107,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
 {
     NSArray *existingNames = [[self albumsInDatabase] valueForKey:@"name"];
     [HorosSmartAlbumEditor presentForParentWindow:self.window
-                             managedObjectContext:self.database.managedObjectContext
+                             managedObjectContext:self.database.independentContext
                                         albumName:nil
                                    predicateFormat:nil
                                existingAlbumNames:existingNames
@@ -10893,6 +11120,19 @@ constrainSplitPosition:(CGFloat)proposedPosition
 {
     @try
     {
+        [self invalidateSmartAlbumFetch];
+
+        NSArray *previousAlbumIDs = nil;
+        NSArray *previousAlbumCounts = nil;
+        @synchronized (self)
+        {
+            previousAlbumIDs = [[_cachedAlbumsIDs copy] autorelease];
+        }
+        @synchronized (_albumNoOfStudiesCache)
+        {
+            previousAlbumCounts = [[_albumNoOfStudiesCache copy] autorelease];
+        }
+
         if( album == nil)
             album = [self.database newObjectForEntity:self.database.albumEntity];
 
@@ -10910,13 +11150,38 @@ constrainSplitPosition:(CGFloat)proposedPosition
             _cachedAlbumsContext = nil;
         }
 
+        // Keep cached counts aligned by album ID so drawing the new row does not start a full recount.
+        NSArray *albumArray = self.albumArray;
+        NSMutableDictionary *countsByAlbumID = [NSMutableDictionary dictionary];
+        NSUInteger preservedAlbumCount = MIN(previousAlbumIDs.count, previousAlbumCounts.count > 0 ? previousAlbumCounts.count - 1 : 0);
+        for( NSUInteger albumIndex = 0; albumIndex < preservedAlbumCount; albumIndex++)
+        {
+            NSString *albumID = [[[previousAlbumIDs objectAtIndex:albumIndex] URIRepresentation] absoluteString];
+            if( albumID)
+                [countsByAlbumID setObject:[previousAlbumCounts objectAtIndex:albumIndex + 1] forKey:albumID];
+        }
+
+        NSMutableArray *updatedAlbumCounts = [NSMutableArray arrayWithCapacity:albumArray.count];
+        [updatedAlbumCounts addObject:previousAlbumCounts.count ? [previousAlbumCounts objectAtIndex:0] : @"#"];
+        for( NSUInteger albumIndex = 1; albumIndex < albumArray.count; albumIndex++)
+        {
+            NSManagedObject *albumObject = [albumArray objectAtIndex:albumIndex];
+            NSString *albumID = albumObject.objectID.URIRepresentation.absoluteString;
+            [updatedAlbumCounts addObject:[countsByAlbumID objectForKey:albumID] ?: @"#"];
+        }
+        @synchronized (_albumNoOfStudiesCache)
+        {
+            [_albumNoOfStudiesCache setArray:updatedAlbumCounts];
+        }
+
         [albumTable reloadData];
-        NSInteger index = [self.albumArray indexOfObject:album];
+        NSInteger index = [albumArray indexOfObject:album];
+        BOOL selectionWillChange = index != NSNotFound && albumTable.selectedRow != index;
         if( index != NSNotFound)
             [albumTable selectRowIndexes:[NSIndexSet indexSetWithIndex:index] byExtendingSelection:NO];
 
-        [self refreshAlbums];
-        [self outlineViewRefresh];
+        if( selectionWillChange == NO)
+            [self outlineViewRefresh];
     }
     @catch (NSException *exception)
     {
@@ -11040,7 +11305,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
         {
             NSArray *existingNames = [[self albumsInDatabase] valueForKey:@"name"];
             [HorosSmartAlbumEditor presentForParentWindow:self.window
-                                     managedObjectContext:self.database.managedObjectContext
+                                     managedObjectContext:self.database.independentContext
                                                 albumName:album.name
                                            predicateFormat:album.predicateString
                                        existingAlbumNames:existingNames
@@ -11194,7 +11459,8 @@ constrainSplitPosition:(CGFloat)proposedPosition
                     rowIndex >= [_albumNoOfStudiesCache count] ||
                     [[_albumNoOfStudiesCache objectAtIndex: rowIndex] isEqualToString:@""])
                 {
-                    [self refreshAlbums];
+                    if( _computingNumberOfStudiesForAlbums == NO)
+                        [self refreshAlbums];
                     noOfStudies = @"#";
                 }
                 else
@@ -11677,8 +11943,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
             }
             else
                 [self setSearchString: self.searchString];
-            
-            [self refreshAlbums];
             
             // Distant Smart Albums
             if( [[NSUserDefaults standardUserDefaults] boolForKey: @"searchForSmartAlbumStudiesOnDICOMNodes"] && albumTable.selectedRow > 0)
@@ -14746,6 +15010,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 
 -(void)dealloc
 {
+    [self invalidateSmartAlbumFetch];
     [self deallocActivity];
     [[NSUserDefaultsController sharedUserDefaultsController] removeObserver:self forValuesKey:OsirixBonjourSharingActiveFlagDefaultsKey];
     [self deallocSources];

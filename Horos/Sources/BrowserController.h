@@ -110,13 +110,16 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     
     BOOL					setDCMDone, dontUpdatePreviewPane;
     
-    NSTimeInterval          lastComputeAlbumsForDistantStudies;
     NSMutableDictionary     *_distantAlbumNoOfStudiesCache;
     NSThread                *distantSearchThread;
     NSMutableArray*         _albumNoOfStudiesCache;
     NSArray*                _cachedAlbums, *_cachedAlbumsIDs;
     NSManagedObjectContext* _cachedAlbumsContext;
     NSString                *selectedAlbumName;
+    NSString                *_smartAlbumFetchKey;
+    NSArray                 *_smartAlbumFetchResults;
+    NSProgress              *_smartAlbumFetchProgress;
+    NSThread                *_smartAlbumActivityThread;
     
     NSArray							*outlineViewArray, *originalOutlineViewArray;
     NSArray							*matrixViewArray;
@@ -351,6 +354,7 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (NSPredicate*) smartAlbumPredicate:(NSManagedObject*) album;
 - (NSPredicate*) smartAlbumPredicateString:(NSString*) string;
 + (NSPredicate*)safeSmartAlbumPredicateWithFormat:(NSString*)string NS_SWIFT_NAME(safeSmartAlbumPredicate(withFormat:));
++ (NSPredicate*)optimizedSmartAlbumPredicate:(NSPredicate*)predicate NS_SWIFT_NAME(optimizedSmartAlbumPredicate(_:));
 - (void) emptyDeleteQueueThread;
 - (void) emptyDeleteQueue:(id) sender;
 - (BOOL)isUsingExternalViewer: (NSManagedObject*) item;

@@ -2155,6 +2155,14 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func makeVolumeTexture() -> MTLTexture? {
+        guard MetalTextureLimits.supports3DTexture(
+            width: volumeDimensions.x,
+            height: volumeDimensions.y,
+            depth: volumeDimensions.z
+        ) else {
+            return nil
+        }
+
         let descriptor = MTLTextureDescriptor()
         descriptor.textureType = .type3D
         descriptor.pixelFormat = .r32Float
@@ -2886,6 +2894,14 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func makeSkinMaskTexture(mask: [UInt8]) -> MTLTexture? {
+        guard MetalTextureLimits.supports3DTexture(
+            width: volumeDimensions.x,
+            height: volumeDimensions.y,
+            depth: volumeDimensions.z
+        ) else {
+            return nil
+        }
+
         let descriptor = MTLTextureDescriptor()
         descriptor.textureType = .type3D
         descriptor.pixelFormat = .r8Unorm

@@ -115,8 +115,11 @@
             else
                 _studyInstanceUID = [[extraParameters valueForKey: @"StudyInstanceUID"] retain];
             
-            if (dataset ->findAndGetString(DCM_SeriesDescription, string).good() && string != nil) 
-                _theDescription = [[DicomFile stringWithBytes: (char*) string encodings: encoding replaceBadCharacters: NO] retain];
+			if (dataset ->findAndGetString(DCM_SeriesDescription, string).good() && string != nil)
+				_theDescription = [[DicomFile stringWithBytes: (char*) string encodings: encoding replaceBadCharacters: NO] retain];
+
+			if (dataset ->findAndGetString(DCM_BodyPartExamined, string).good() && string != nil)
+				_bodyPartExamined = [[DicomFile stringWithBytes: (char*) string encodings: encoding replaceBadCharacters: NO] retain];
 
             if (dataset ->findAndGetString(DCM_SeriesNumber, string).good() && string != nil)
                 _name = [[DicomFile stringWithBytes: (char*) string encodings: encoding] retain];
@@ -163,6 +166,7 @@
 {
     self.study = nil;
 	[_studyInstanceUID release];
+	[_bodyPartExamined release];
 	[super dealloc];
 }
 
@@ -208,6 +212,11 @@
         return @"";
     
     return _uid;
+}
+
+- (NSString*) bodyPartExamined
+{
+	return _bodyPartExamined;
 }
 
 - (void)addChild:(DcmDataset *)dataset

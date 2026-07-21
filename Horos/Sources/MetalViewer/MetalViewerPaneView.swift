@@ -4,6 +4,16 @@ import simd
 import WebKit
 
 final class MetalViewerPaneView: NSView {
+    private final class OverlayBlendSlider: NSSlider {
+        var trackingStateDidChange: ((Bool) -> Void)?
+
+        override func mouseDown(with event: NSEvent) {
+            trackingStateDidChange?(true)
+            defer { trackingStateDidChange?(false) }
+            super.mouseDown(with: event)
+        }
+    }
+
     private final class RegistrationStatusView: NSView {
         private let backgroundView = NSVisualEffectView()
         private let titleLabel = NSTextField(labelWithString: "")
@@ -1158,7 +1168,7 @@ final class MetalViewerPaneView: NSView {
 
     private let contentView = NSView()
     private let closeButton = NSButton()
-    private let overlayBlendSlider = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
+    private let overlayBlendSlider = OverlayBlendSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
     private let annotationOverlay = AnnotationOverlayView()
     private let referenceLineOverlay = ReferenceLineOverlayView()
     private let measurementOverlay = MeasurementOverlayView()
@@ -1170,6 +1180,7 @@ final class MetalViewerPaneView: NSView {
     private var trackingAreaRef: NSTrackingArea?
     private var isHovering = false
     private var dismissRegistrationStatusOnMouseMove = false
+    private var isAdjustingOverlayBlend = false
     private var displayMode: MetalViewerDisplayMode = .stack2D
     private var mouseToolAssignments = MetalViewerMouseToolAssignments()
     private var tumourSeeds: [MetalViewerTumourSeed] = []
@@ -1230,6 +1241,9 @@ final class MetalViewerPaneView: NSView {
         overlayBlendSlider.translatesAutoresizingMaskIntoConstraints = false
         overlayBlendSlider.target = self
         overlayBlendSlider.action = #selector(overlayBlendSliderChanged(_:))
+        overlayBlendSlider.trackingStateDidChange = { [weak self] isTracking in
+            self?.isAdjustingOverlayBlend = isTracking
+        }
         overlayBlendSlider.isHidden = true
         overlayBlendSlider.controlSize = .small
         contentView.addSubview(overlayBlendSlider)
@@ -1365,6 +1379,7 @@ final class MetalViewerPaneView: NSView {
             windowLevelStateDidChange: { [weak series] state in
                 series?.windowLevelState = state
             },
+            usesAutomaticWindowLevel: series.isMagneticResonance,
             transferFunctionState: series.transferFunctionState,
             transferFunctionStateDidChange: { [weak series] state in
                 series?.transferFunctionState = state
@@ -1381,6 +1396,9 @@ final class MetalViewerPaneView: NSView {
         metalView.windowLevelInteractionHandler = { [weak self] in
             self?.activeWindowLevelSeries.windowLevelPresetTitle = NSLocalizedString("Other", comment: "")
             self?.windowLevelInteractionHandler?()
+        }
+        metalView.windowLevelInteractionAllowedHandler = { [weak self] in
+            self?.isAdjustingOverlayBlend == false
         }
         metalView.titleDidChange = { [weak self] state in
             guard let self else { return }
@@ -1579,6 +1597,7 @@ final class MetalViewerPaneView: NSView {
                 windowLevelStateDidChange: { state in
                     series.windowLevelState = state
                 },
+                usesAutomaticWindowLevel: series.isMagneticResonance,
                 transferFunctionState: series.transferFunctionState,
                 transferFunctionStateDidChange: { state in
                     series.transferFunctionState = state

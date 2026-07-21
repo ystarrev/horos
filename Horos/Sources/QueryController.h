@@ -104,6 +104,7 @@ enum
 	
 	NSMutableString							*pressedKeys;
     NSMutableArray							*resultArray;
+    NSArray                                 *headFilteredResultArray;
     NSMutableArray							*queryFilters;
 	
 	NSString								*currentQueryKey, *queryArrayPrefs;

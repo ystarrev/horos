@@ -665,10 +665,10 @@ private final class SmartAlbumEditorWindowController: NSWindowController,
         switch sender.indexOfSelectedItem {
         case 1:
             suggestedName = NSLocalizedString("Sella MRI", comment: "Smart Album suggested name")
-            predicate = "modality CONTAINS[cd] \"MR\" AND (studyName CONTAINS[cd] \"SELLA\" OR studyName CONTAINS[cd] \"PITUITARY\" OR ANY series.name CONTAINS[cd] \"SELLA\" OR ANY series.name CONTAINS[cd] \"PITUITARY\" OR ANY series.seriesDescription CONTAINS[cd] \"SELLA\" OR ANY series.seriesDescription CONTAINS[cd] \"PITUITARY\")"
+            predicate = "modality CONTAINS[cd] \"MR\" AND (studyName CONTAINS[cd] \"SELLA\" OR studyName CONTAINS[cd] \"PITUITARY\" OR SUBQUERY(series, $series, $series.name CONTAINS[cd] \"SELLA\" OR $series.name CONTAINS[cd] \"PITUITARY\" OR $series.seriesDescription CONTAINS[cd] \"SELLA\" OR $series.seriesDescription CONTAINS[cd] \"PITUITARY\").@count > 0)"
         case 2:
             suggestedName = NSLocalizedString("Dynamic Sella MRI", comment: "Smart Album suggested name")
-            predicate = "modality CONTAINS[cd] \"MR\" AND (studyName CONTAINS[cd] \"SELLA\" OR studyName CONTAINS[cd] \"PITUITARY\" OR ANY series.name CONTAINS[cd] \"SELLA\" OR ANY series.name CONTAINS[cd] \"PITUITARY\" OR ANY series.seriesDescription CONTAINS[cd] \"SELLA\" OR ANY series.seriesDescription CONTAINS[cd] \"PITUITARY\") AND (ANY series.name CONTAINS[cd] \"DYNAMIC\" OR ANY series.seriesDescription CONTAINS[cd] \"DYNAMIC\")"
+            predicate = "modality CONTAINS[cd] \"MR\" AND (studyName CONTAINS[cd] \"SELLA\" OR studyName CONTAINS[cd] \"PITUITARY\" OR SUBQUERY(series, $series, $series.name CONTAINS[cd] \"SELLA\" OR $series.name CONTAINS[cd] \"PITUITARY\" OR $series.seriesDescription CONTAINS[cd] \"SELLA\" OR $series.seriesDescription CONTAINS[cd] \"PITUITARY\").@count > 0) AND SUBQUERY(series, $series, $series.name CONTAINS[cd] \"DYNAMIC\" OR $series.seriesDescription CONTAINS[cd] \"DYNAMIC\").@count > 0"
         case 3:
             suggestedName = NSLocalizedString("Added in the Last Week", comment: "Smart Album suggested name")
             predicate = "dateAdded >= $NSDATE_WEEK"
@@ -714,12 +714,16 @@ private final class SmartAlbumEditorWindowController: NSWindowController,
     }
 
     private func resolvedPredicate() -> NSPredicate? {
+        let predicate: NSPredicate?
         if isAdvancedMode {
             let format = predicateTextView.string.trimmingCharacters(in: .whitespacesAndNewlines)
             guard format.isEmpty == false else { return nil }
-            return BrowserController.safeSmartAlbumPredicate(withFormat: format)
+            predicate = BrowserController.safeSmartAlbumPredicate(withFormat: format)
+        } else {
+            predicate = rulesPredicate()
         }
-        return rulesPredicate()
+        guard let predicate else { return nil }
+        return BrowserController.optimizedSmartAlbumPredicate(predicate)
     }
 
     private func predicateFormatForSaving() -> String? {
@@ -791,24 +795,21 @@ private final class SmartAlbumEditorWindowController: NSWindowController,
             guard let self else { return }
 
             do {
-                let countRequest = NSFetchRequest<NSManagedObject>(entityName: "Study")
-                countRequest.predicate = predicate
-                countRequest.includesSubentities = false
-                let count = try self.managedObjectContext.count(for: countRequest)
-
-                let previewRequest = NSFetchRequest<NSManagedObject>(entityName: "Study")
+                let previewRequest = NSFetchRequest<NSDictionary>(entityName: "Study")
                 previewRequest.predicate = predicate
                 previewRequest.includesSubentities = false
-                previewRequest.fetchLimit = 12
+                previewRequest.resultType = .dictionaryResultType
+                previewRequest.propertiesToFetch = ["name", "studyName", "date"]
                 previewRequest.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
-                let objects = try self.managedObjectContext.fetch(previewRequest)
-                let studies = objects.map { object in
+                let rows = try self.managedObjectContext.fetch(previewRequest)
+                let studies = rows.prefix(12).map { row in
                     SmartAlbumPreviewStudy(
-                        patientName: object.value(forKey: "name") as? String ?? "",
-                        studyDescription: object.value(forKey: "studyName") as? String ?? "",
-                        date: object.value(forKey: "date") as? Date
+                        patientName: row["name"] as? String ?? "",
+                        studyDescription: row["studyName"] as? String ?? "",
+                        date: row["date"] as? Date
                     )
                 }
+                let count = rows.count
 
                 DispatchQueue.main.async { [weak self] in
                     guard let self, generation == self.previewGeneration else { return }

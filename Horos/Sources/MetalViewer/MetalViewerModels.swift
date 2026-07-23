@@ -434,6 +434,94 @@ struct MetalViewerWindowLevel: Equatable {
     var width: Float
 }
 
+enum MetalViewerAutomaticWindowLevel {
+    static func window(for pix: DCMPix) -> MetalViewerWindowLevel? {
+        var samples: [Float] = []
+        samples.reserveCapacity(5_000)
+
+        pix.checkLoad()
+        guard let pixels = pix.fImage else { return nil }
+        let modality = pix.modalityString?.uppercased() ?? ""
+
+        let pixelWidth = max(Int(pix.pwidth), 0)
+        let pixelHeight = max(Int(pix.pheight), 0)
+        let pixelCount = pixelWidth * pixelHeight
+        guard pixelCount > 0 else { return nil }
+
+        let cornerIndexes = [
+            0,
+            max(pixelWidth - 1, 0),
+            max((pixelHeight - 1) * pixelWidth, 0),
+            max(pixelCount - 1, 0),
+        ]
+        let cornerValues = cornerIndexes
+            .map { pixels[$0] }
+            .filter { $0.isFinite }
+        let backgroundValue = repeatedCornerValue(in: cornerValues)
+
+        let pixelStep = max(1, pixelCount / 5_000)
+        var index = 0
+        while index < pixelCount {
+            let value = pixels[index]
+            let isBackground = backgroundValue.map {
+                abs(value - $0) <= max(abs($0) * 0.00001, 0.0001)
+            } ?? false
+            let isZeroBackground = modality == "MR" && abs(value) <= Float.ulpOfOne
+            if value.isFinite && isBackground == false && isZeroBackground == false {
+                samples.append(value)
+            }
+            index += pixelStep
+        }
+
+        guard samples.count >= 32 else { return nil }
+        samples.sort()
+
+        let percentileRange: (low: Float, high: Float)
+        switch modality {
+        case "US", "XA", "RF":
+            percentileRange = (0.01, 0.99)
+        default:
+            percentileRange = (0.005, 0.995)
+        }
+
+        let lowIndex = percentileIndex(percentileRange.low, count: samples.count)
+        let highIndex = percentileIndex(percentileRange.high, count: samples.count)
+        var low = samples[lowIndex]
+        let high = samples[max(highIndex, lowIndex)]
+        if (modality == "PT" || modality == "NM") && low >= 0 {
+            low = 0
+        }
+        let width = max(high - low, 1)
+        return MetalViewerWindowLevel(level: low + width * 0.5, width: width)
+    }
+
+    private static func repeatedCornerValue(in values: [Float]) -> Float? {
+        guard values.count >= 2 else { return nil }
+
+        var bestValue: Float?
+        var bestCount = 1
+        for candidate in values {
+            let tolerance = max(abs(candidate) * 0.00001, 0.0001)
+            let count = values.reduce(into: 0) { result, value in
+                if abs(value - candidate) <= tolerance {
+                    result += 1
+                }
+            }
+            if count > bestCount {
+                bestValue = candidate
+                bestCount = count
+            }
+        }
+        return bestValue
+    }
+
+    private static func percentileIndex(_ percentile: Float, count: Int) -> Int {
+        guard count > 1 else { return 0 }
+        let clamped = min(max(percentile, 0), 1)
+        return min(max(Int((Float(count - 1) * clamped).rounded()), 0), count - 1)
+    }
+}
+
 struct MetalViewerWindowLevelState {
     var defaultWindow: MetalViewerWindowLevel?
     var customWindow: MetalViewerWindowLevel?
@@ -1939,6 +2027,58 @@ final class MetalViewerSeries {
         pix.setWidthWithoutLoading(
             (firstObject.value(forKey: "width") as? NSNumber)?.intValue ?? 0,
             heightWithoutLoading: (firstObject.value(forKey: "height") as? NSNumber)?.intValue ?? 0
+        )
+        return pix
+    }
+
+    func middlePreviewPix() -> DCMPix? {
+        if let cachedPixList, cachedPixList.isEmpty == false {
+            return cachedPixList[cachedPixList.count / 2]
+        }
+
+        guard imageObjects.isEmpty == false else {
+            return nil
+        }
+
+        let firstObject = imageObjects[0]
+        let numberOfFrames = (firstObject.value(forKey: "numberOfFrames") as? NSNumber)?.intValue ?? 0
+        let numberOfSeries = (firstObject.value(forKey: "numberOfSeries") as? NSNumber)?.intValue ?? 0
+        let multiFrame = imageObjects.count == 1 && (numberOfFrames > 1 || numberOfSeries > 1)
+
+        let object: NSManagedObject
+        let imageIndex: Int
+        let imageCount: Int
+        let frameID: Int
+
+        if multiFrame {
+            object = firstObject
+            imageCount = max(numberOfFrames > 0 ? numberOfFrames : numberOfSeries, 1)
+            imageIndex = imageCount / 2
+            frameID = imageIndex
+        } else {
+            imageCount = imageObjects.count
+            imageIndex = imageCount / 2
+            object = imageObjects[imageIndex]
+            frameID = (object.value(forKey: "frameID") as? NSNumber)?.intValue ?? 0
+        }
+
+        let path = Self.resolvedPath(for: object) ?? ""
+        let seriesID = (object.value(forKeyPath: "series.id") as? NSNumber)?.intValue ?? 0
+        guard let pix = DCMPix(
+            path: path,
+            imageIndex,
+            imageCount,
+            nil,
+            frameID,
+            seriesID,
+            isBonjour: isBonjour,
+            imageObj: object
+        ) else {
+            return nil
+        }
+        pix.setWidthWithoutLoading(
+            (object.value(forKey: "width") as? NSNumber)?.intValue ?? 0,
+            heightWithoutLoading: (object.value(forKey: "height") as? NSNumber)?.intValue ?? 0
         )
         return pix
     }

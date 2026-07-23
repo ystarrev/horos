@@ -938,7 +938,7 @@ private final class MetalViewerScoutItemView: NSView {
             return (Self.structuredReportIconThumbnail(size: Self.thumbnailSize), true)
         }
 
-        guard let pix = series.firstPreviewPix() else { return (nil, false) }
+        guard let pix = series.middlePreviewPix() else { return (nil, false) }
 
         pix.checkLoad()
         pix.computePixMinPixMax()
@@ -947,8 +947,15 @@ private final class MetalViewerScoutItemView: NSView {
         let height = max(Int(pix.pheight), 1)
         guard let imagePointer = pix.fImage else { return (nil, false) }
 
-        let windowWidth = max(Float(pix.ww > 0 ? pix.ww : pix.fullww), 1)
-        let windowLevel = Float(pix.wl != 0 ? pix.wl : pix.fullwl)
+        let defaultWindow = MetalViewerWindowLevel(
+            level: Float(pix.wl != 0 ? pix.wl : pix.fullwl),
+            width: max(Float(pix.ww > 0 ? pix.ww : pix.fullww), 1)
+        )
+        let displayWindow = series.isMagneticResonance
+            ? (MetalViewerAutomaticWindowLevel.window(for: pix) ?? defaultWindow)
+            : defaultWindow
+        let windowWidth = displayWindow.width
+        let windowLevel = displayWindow.level
         let low = windowLevel - windowWidth * 0.5
         let high = windowLevel + windowWidth * 0.5
         let count = width * height

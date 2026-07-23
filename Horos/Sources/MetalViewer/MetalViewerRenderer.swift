@@ -1576,7 +1576,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     func applyAutomaticWindowLevelPreset() {
         guard let pix = activeWindowLevelPix else { return }
-        let window = automaticWindowLevel(for: pix) ?? windowLevelDefaults(for: pix)
+        let window = MetalViewerAutomaticWindowLevel.window(for: pix) ?? windowLevelDefaults(for: pix)
         applyWindowLevel(window, asCustom: false)
     }
 
@@ -2443,97 +2443,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         usesAutomaticWindowLevel: Bool
     ) -> MetalViewerWindowLevel {
         if usesAutomaticWindowLevel,
-           let automaticWindow = automaticWindowLevel(for: pix) {
+           let automaticWindow = MetalViewerAutomaticWindowLevel.window(for: pix) {
             return automaticWindow
         }
         return windowLevelDefaults(for: pix)
-    }
-
-    private func automaticWindowLevel(for pix: DCMPix) -> MetalViewerWindowLevel? {
-        let modality = pix.modalityString?.uppercased() ?? ""
-
-        var samples: [Float] = []
-        samples.reserveCapacity(5_000)
-
-        pix.checkLoad()
-        guard let pixels = pix.fImage else { return nil }
-
-        let pixelWidth = max(Int(pix.pwidth), 0)
-        let pixelHeight = max(Int(pix.pheight), 0)
-        let pixelCount = pixelWidth * pixelHeight
-        guard pixelCount > 0 else { return nil }
-
-        let cornerIndexes = [
-            0,
-            max(pixelWidth - 1, 0),
-            max((pixelHeight - 1) * pixelWidth, 0),
-            max(pixelCount - 1, 0),
-        ]
-        let cornerValues = cornerIndexes
-            .map { pixels[$0] }
-            .filter { $0.isFinite }
-        let backgroundValue = repeatedCornerValue(in: cornerValues)
-
-        let pixelStep = max(1, pixelCount / 5_000)
-        var index = 0
-        while index < pixelCount {
-            let value = pixels[index]
-            let isBackground = backgroundValue.map {
-                abs(value - $0) <= max(abs($0) * 0.00001, 0.0001)
-            } ?? false
-            let isZeroBackground = modality == "MR" && abs(value) <= Float.ulpOfOne
-            if value.isFinite && isBackground == false && isZeroBackground == false {
-                samples.append(value)
-            }
-            index += pixelStep
-        }
-
-        guard samples.count >= 32 else { return nil }
-        samples.sort()
-
-        let percentileRange: (low: Float, high: Float)
-        switch modality {
-        case "US", "XA", "RF":
-            percentileRange = (0.01, 0.99)
-        default:
-            percentileRange = (0.005, 0.995)
-        }
-
-        let lowIndex = percentileIndex(percentileRange.low, count: samples.count)
-        let highIndex = percentileIndex(percentileRange.high, count: samples.count)
-        var low = samples[lowIndex]
-        let high = samples[max(highIndex, lowIndex)]
-        if (modality == "PT" || modality == "NM") && low >= 0 {
-            low = 0
-        }
-        let width = max(high - low, 1)
-        return MetalViewerWindowLevel(level: low + width * 0.5, width: width)
-    }
-
-    private func repeatedCornerValue(in values: [Float]) -> Float? {
-        guard values.count >= 2 else { return nil }
-
-        var bestValue: Float?
-        var bestCount = 1
-        for candidate in values {
-            let tolerance = max(abs(candidate) * 0.00001, 0.0001)
-            let count = values.reduce(into: 0) { result, value in
-                if abs(value - candidate) <= tolerance {
-                    result += 1
-                }
-            }
-            if count > bestCount {
-                bestValue = candidate
-                bestCount = count
-            }
-        }
-        return bestValue
-    }
-
-    private func percentileIndex(_ percentile: Float, count: Int) -> Int {
-        guard count > 1 else { return 0 }
-        let clamped = min(max(percentile, 0), 1)
-        return min(max(Int((Float(count - 1) * clamped).rounded()), 0), count - 1)
     }
 
     private func applyBaseWindowLevel(_ window: MetalViewerWindowLevel) {

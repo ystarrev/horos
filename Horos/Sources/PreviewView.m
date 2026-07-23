@@ -128,6 +128,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     NSString *_loadedReportPath;
     NSInteger _displayedImageIndex;
     NSInteger _displayedImageCount;
+    BOOL _displayingSurgicalProcedure;
 }
 
 @synthesize syncRelativeDiff;
@@ -185,6 +186,8 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 
 - (void) setPixels:(NSMutableArray*)pixels files:(NSArray*)files rois:(NSMutableArray*)rois firstImage:(short)firstImage level:(char)level reset:(BOOL)reset
 {
+    _displayingSurgicalProcedure = NO;
+
     if (_dcmPixList != pixels)
     {
         [_dcmPixList release];
@@ -220,6 +223,9 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 
 - (void) setIndex:(short)index
 {
+    if( _displayingSurgicalProcedure)
+        return;
+
     DCMPix *pix = nil;
     if (_dcmPixList && index >= 0 && index < [_dcmPixList count])
         pix = [_dcmPixList objectAtIndex:index];
@@ -236,6 +242,9 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 
 - (void) setIndexWithReset:(short)index :(BOOL)sizeToFit
 {
+    if( _displayingSurgicalProcedure)
+        return;
+
     DCMPix *pix = nil;
     if (_dcmPixList && index >= 0 && index < [_dcmPixList count])
         pix = [_dcmPixList objectAtIndex:index];
@@ -270,6 +279,25 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     _displayedImageCount = MAX(totalCount, 0);
     [_metalView setDisplayedImageIndex:_displayedImageIndex];
     [_annotationOverlay setNeedsDisplay:YES];
+}
+
+- (void)showSurgicalProcedure:(id)procedure
+{
+    if( [procedure isKindOfClass:[SurgicalProcedureEvent class]] == NO)
+        return;
+
+    _displayingSurgicalProcedure = YES;
+    [_metalView setHidden:YES];
+    [_annotationOverlay setHidden:YES];
+    [_reportWebView setHidden:NO];
+
+    NSString *cacheKey = [NSString stringWithFormat:@"procedure:%@", [procedure identifier]];
+    if( [_loadedReportPath isEqualToString:cacheKey] == NO)
+    {
+        [_loadedReportPath release];
+        _loadedReportPath = [cacheKey copy];
+        [[_reportWebView mainFrame] loadHTMLString:[procedure detailsHTML] baseURL:nil];
+    }
 }
 
 - (void)refreshMetalPixListIfNeeded
@@ -720,6 +748,9 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 
 - (void)refreshPreviewMode
 {
+    if( _displayingSurgicalProcedure)
+        return;
+
     DCMPix *pix = self.curDCM;
     if ([self currentPixIsStructuredReport] == NO)
     {

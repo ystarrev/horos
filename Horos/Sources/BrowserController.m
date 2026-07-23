@@ -151,6 +151,43 @@
 #define DISTANTSTUDYFONT @"Helvetica-BoldOblique"
 
 static NSString * const HorosSuppressDeleteImagesConfirmationKey = @"HorosSuppressDeleteImagesConfirmation";
+enum { HorosSeriesDescriptionSearchType = 11 };
+
+static BOOL HorosStringContainsStandaloneSearchTerm(NSString *value, NSString *searchTerm)
+{
+    if( value.length == 0 || searchTerm.length == 0)
+        return NO;
+
+    NSString *term = [searchTerm stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if( term.length == 0)
+        return NO;
+
+    NSCharacterSet *alphanumericCharacters = [NSCharacterSet alphanumericCharacterSet];
+    NSRange remainingRange = NSMakeRange(0, value.length);
+
+    while( remainingRange.length > 0)
+    {
+        NSRange match = [value rangeOfString:term
+                                     options:NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch
+                                       range:remainingRange];
+        if( match.location == NSNotFound)
+            return NO;
+
+        BOOL startsAtBoundary = match.location == 0 ||
+            ![alphanumericCharacters characterIsMember:[value characterAtIndex:match.location - 1]];
+        NSUInteger matchEnd = NSMaxRange(match);
+        BOOL endsAtBoundary = matchEnd == value.length ||
+            ![alphanumericCharacters characterIsMember:[value characterAtIndex:matchEnd]];
+
+        if( startsAtBoundary && endsAtBoundary)
+            return YES;
+
+        NSUInteger nextLocation = match.location + MAX((NSUInteger) 1, match.length);
+        remainingRange = NSMakeRange(nextLocation, value.length - nextLocation);
+    }
+
+    return NO;
+}
 
 static NSInteger HorosRunDeleteImagesConfirmationAlert(NSString *level)
 {
@@ -253,6 +290,19 @@ NSString* asciiString(NSString* str)
 
 -(NSPredicate*)createFilterPredicateIncludingSeriesDescriptions:(BOOL)includeSeriesDescriptions;
 -(BOOL)searchIncludesSeriesDescriptions;
+-(void)applyPendingSearchString:(id)sender;
+-(BOOL)seriesDescriptionSearchIsActive;
+-(BOOL)series:(id)series matchesSeriesDescriptionSearch:(NSString*)searchString;
+-(NSArray*)outlineChildrenArray:(id)item;
+-(NSArray*)studiesMatchingSeriesDescriptionSearchInStudies:(NSArray*)studies;
+-(NSString*)samePatientMatchingStringValueForKey:(NSString*)key item:(id)item;
+-(NSPredicate*)directSamePatientStudiesPredicateForStudy:(id)study;
+-(NSArray*)samePatientStudyGroupForStudy:(id)study database:(DicomDatabase*)database;
+-(NSArray*)resolvedSamePatientStudyGroupForStudy:(id)study;
+-(NSPredicate*)resolvedSamePatientStudiesPredicateForStudy:(id)study;
+-(void)invalidateSamePatientStudyGroupCache;
+-(BOOL)isSurgicalProcedureItem:(id)item;
+-(NSArray*)surgicalProcedureEventsForVisibleStudies:(NSArray*)items;
 
 -(void)saveLoadAlbumsSortDescriptors;
 -(void)saveDatabaseWindowFramePreference;
@@ -2600,8 +2650,8 @@ static NSConditionLock *threadLock = nil;
 
 - (IBAction)search: (id)sender
 {
-    [self outlineViewRefresh];
-    [databaseOutline scrollRowToVisible: [databaseOutline selectedRow]];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(applyPendingSearchString:) object:nil];
+    [self applyPendingSearchString:nil];
 }
 
 - (IBAction)setSearchType: (id)sender
@@ -2624,7 +2674,7 @@ static NSConditionLock *threadLock = nil;
     [self setSearchString:nil];
     [databaseOutline scrollRowToVisible: [databaseOutline selectedRow]];
     
-    if( _searchString.length > 2 || (_searchString.length >= 2 && searchType == 5))
+    if( searchType != HorosSeriesDescriptionSearchType && (_searchString.length > 2 || (_searchString.length >= 2 && searchType == 5)))
     {
         @synchronized( self)
         {
@@ -2644,7 +2694,7 @@ static NSConditionLock *threadLock = nil;
             distantSearchThread = nil;
         }
         
-        if( albumTable.selectedRow == 0)
+        if( albumTable.selectedRow == 0 && searchType != HorosSeriesDescriptionSearchType)
             [NSThread detachNewThreadSelector: @selector(searchForTimeIntervalFromTo:) toTarget:self withObject: [NSDictionary dictionaryWithObjectsAndKeys: timeIntervalStart, @"from", timeIntervalEnd, @"to", nil]];
     }
     else
@@ -2742,11 +2792,11 @@ static NSConditionLock *threadLock = nil;
                 distantSearchThread = nil;
             }
             
-            if( albumTable.selectedRow == 0)
+            if( albumTable.selectedRow == 0 && searchType != HorosSeriesDescriptionSearchType)
                 [NSThread detachNewThreadSelector: @selector(searchForTimeIntervalFromTo:) toTarget:self withObject: [NSDictionary dictionaryWithObjectsAndKeys: timeIntervalStart, @"from", timeIntervalEnd, @"to", nil]];
         }
     }
-    else if( _searchString.length > 2 || (_searchString.length >= 2 && searchType == 5))
+    else if( searchType != HorosSeriesDescriptionSearchType && (_searchString.length > 2 || (_searchString.length >= 2 && searchType == 5)))
         [self setSearchString: _searchString];
     else
     {
@@ -3337,15 +3387,23 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                     // Entire DB Result
                     
                     distantEntireDBResultCount = 0;
-                    if( [self searchIncludesSeriesDescriptions])
+                    BOOL storeBackedPatientNameSearch = searchType == 0 &&
+                        [[_searchString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] length] > 0;
+
+                    if( [self seriesDescriptionSearchIsActive])
+                        localEntireDBResultCount = 0;
+                    else if( [self searchIncludesSeriesDescriptions] || storeBackedPatientNameSearch)
                         localEntireDBResultCount = [_database countObjectsForEntity:_database.studyEntity predicate:self.filterPredicate error:&error];
                     else
                         localEntireDBResultCount = [[[_database objectsForEntity:_database.studyEntity predicate:nil error:&error] filteredArrayUsingPredicate: self.filterPredicate] count];
-                    
-                    [self refreshEntireDBResult];
+
+                    if( [self seriesDescriptionSearchIsActive] == NO)
+                        [self refreshEntireDBResult];
                 }
             }
-            else if( [self searchIncludesSeriesDescriptions] && testPredicate == nil)
+            else if( ([self searchIncludesSeriesDescriptions] ||
+                      (searchType == 0 && [[_searchString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] length] > 0)) &&
+                     testPredicate == nil)
                 outlineViewArray = [_database objectsForEntity:_database.studyEntity predicate:predicate error:&error];
             else
                 outlineViewArray = [[_database objectsForEntity:_database.studyEntity predicate:nil error:&error] filteredArrayUsingPredicate:predicate];
@@ -3461,6 +3519,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                     outlineViewArray = [outlineViewArray arrayByAddingObjectsFromArray: distantStudies];
             }
         }
+
+        if( [self seriesDescriptionSearchIsActive])
+            outlineViewArray = [self studiesMatchingSeriesDescriptionSearchInStudies:outlineViewArray];
         
         @synchronized (_albumNoOfStudiesCache)
         {
@@ -3508,26 +3569,37 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                 outlineViewArray = [outlineViewArray sortedArrayUsingDescriptors: sortDescriptors];
                 
                 NSMutableArray *copyOutlineViewArray = [NSMutableArray arrayWithArray: outlineViewArray];
+                NSMutableSet *resolvedStudyInstanceUIDs = [NSMutableSet set];
                 int studyIndex = 0;
                 
                 for( id obj in outlineViewArray)
                 {
                     @try {
-                        NSPredicate *samePatientPredicate = [self samePatientStudiesPredicateForStudy: obj];
-                        if( samePatientPredicate == nil)
-                            continue;
-
-                        NSPredicate* predicate = [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: samePatientPredicate, [NSPredicate predicateWithFormat: @"studyInstanceUID != %@", [obj valueForKey:@"studyInstanceUID"]], nil]];
-                        
-                        NSMutableArray *oulineViewArrayStudyInstanceUIDs = [[[copyOutlineViewArray valueForKey: @"studyInstanceUID"] mutableCopy] autorelease];
-                        
-                        for( id patientStudy in [[_database objectsForEntity:_database.studyEntity predicate:predicate] sortedArrayUsingDescriptors: [NSArray arrayWithObject: [NSSortDescriptor sortDescriptorWithKey:@"date" ascending:NO]]])
+                        NSString *objectStudyInstanceUID = [self samePatientMatchingStringValueForKey:@"studyInstanceUID" item:obj];
+                        if( objectStudyInstanceUID.length && [resolvedStudyInstanceUIDs containsObject:objectStudyInstanceUID])
                         {
-                            if( [oulineViewArrayStudyInstanceUIDs containsObject: [patientStudy valueForKey: @"studyInstanceUID"]] == NO && patientStudy != nil)
+                            studyIndex++;
+                            continue;
+                        }
+
+                        NSArray *samePatientStudies = [self resolvedSamePatientStudyGroupForStudy:obj];
+                        NSMutableArray *oulineViewArrayStudyInstanceUIDs = [[[copyOutlineViewArray valueForKey: @"studyInstanceUID"] mutableCopy] autorelease];
+
+                        for( id patientStudy in samePatientStudies)
+                        {
+                            NSString *patientStudyInstanceUID = [self samePatientMatchingStringValueForKey:@"studyInstanceUID" item:patientStudy];
+                            if( patientStudyInstanceUID.length)
+                                [resolvedStudyInstanceUIDs addObject:patientStudyInstanceUID];
+                        }
+
+                        for( id patientStudy in [samePatientStudies sortedArrayUsingDescriptors: [NSArray arrayWithObject: [NSSortDescriptor sortDescriptorWithKey:@"date" ascending:NO]]])
+                        {
+                            NSString *patientStudyInstanceUID = [self samePatientMatchingStringValueForKey:@"studyInstanceUID" item:patientStudy];
+                            if( patientStudy != obj && patientStudyInstanceUID.length && [oulineViewArrayStudyInstanceUIDs containsObject:patientStudyInstanceUID] == NO)
                             {
                                 studyIndex++;
                                 [copyOutlineViewArray insertObject: patientStudy atIndex: studyIndex];
-                                [oulineViewArrayStudyInstanceUIDs insertObject: [patientStudy valueForKey: @"studyInstanceUID"] atIndex: studyIndex];
+                                [oulineViewArrayStudyInstanceUIDs insertObject:patientStudyInstanceUID atIndex:studyIndex];
                             }
                         }
                     } @catch (NSException* e) { // object has become unavailable, who cares, we just won't be showing it anymore
@@ -3573,12 +3645,31 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     }
     
     long images = 0;
+    long matchingSeries = 0;
     for( id obj in outlineViewArray)
     {
-        images += [[obj valueForKey:@"noFiles"] intValue];
+        if( [self seriesDescriptionSearchIsActive])
+        {
+            NSArray *series = [self outlineChildrenArray:obj];
+            matchingSeries += [series count];
+            for( id matchingSeriesObject in series)
+                images += [[matchingSeriesObject valueForKey:@"noFiles"] intValue];
+        }
+        else
+            images += [[obj valueForKey:@"noFiles"] intValue];
     }
-    
-    description = [description stringByAppendingFormat: NSLocalizedString(@" / Result = %@ studies (%@ images)", nil), [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInt: [outlineViewArray count]]], [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInt:images]]];
+
+    if( [self seriesDescriptionSearchIsActive])
+        description = [description stringByAppendingFormat:NSLocalizedString(@" / Result = %@ studies (%@ matching series, %@ images)", nil), [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInteger:[outlineViewArray count]]], [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithLong:matchingSeries]], [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithLong:images]]];
+    else
+        description = [description stringByAppendingFormat: NSLocalizedString(@" / Result = %@ studies (%@ images)", nil), [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInt: [outlineViewArray count]]], [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInt:images]]];
+
+    if( smartAlbumName == nil && [self seriesDescriptionSearchIsActive] == NO)
+    {
+        NSArray *procedureEvents = [self surgicalProcedureEventsForVisibleStudies:outlineViewArray];
+        if( procedureEvents.count)
+            outlineViewArray = [[outlineViewArray arrayByAddingObjectsFromArray:procedureEvents] sortedArrayUsingDescriptors:sortDescriptors];
+    }
     
     outlineViewArray = [outlineViewArray retain];
     
@@ -3590,7 +3681,13 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     {
         for( id obj in outlineViewArray)
         {
-            if( [[obj valueForKey:@"expanded"] boolValue]) [databaseOutline expandItem: obj];
+            BOOL wasExpanded = [[obj valueForKey:@"expanded"] boolValue];
+            if( [self seriesDescriptionSearchIsActive] || wasExpanded)
+            {
+                [databaseOutline expandItem:obj];
+                if( [self seriesDescriptionSearchIsActive] && wasExpanded == NO)
+                    [obj setValue:[NSNumber numberWithBool:NO] forKey:@"expanded"];
+            }
         }
     }
     @catch( NSException *ne)
@@ -3604,8 +3701,12 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         BOOL extend = NO;
         for( id obj in previousObjects)
         {
-            [databaseOutline selectRowIndexes: [NSIndexSet indexSetWithIndex: [databaseOutline rowForItem: obj]] byExtendingSelection: extend];
-            extend = YES;
+            NSInteger row = [databaseOutline rowForItem:obj];
+            if( row >= 0)
+            {
+                [databaseOutline selectRowIndexes:[NSIndexSet indexSetWithIndex:row] byExtendingSelection:extend];
+                extend = YES;
+            }
         }
     }
     
@@ -3890,6 +3991,57 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         [[QueryController currentQueryController] refresh: self];
     else if( [QueryController currentAutoQueryController])
         [[QueryController currentAutoQueryController] refresh: self];
+}
+
+- (BOOL)seriesDescriptionSearchIsActive
+{
+    if( searchType != HorosSeriesDescriptionSearchType)
+        return NO;
+
+    return [[_searchString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] length] >= 2;
+}
+
+- (BOOL)series:(id)series matchesSeriesDescriptionSearch:(NSString*)searchString
+{
+    if( series == nil || searchString.length == 0)
+        return NO;
+
+    return HorosStringContainsStandaloneSearchTerm([series valueForKey:@"name"], searchString) ||
+        HorosStringContainsStandaloneSearchTerm([series valueForKey:@"seriesDescription"], searchString);
+}
+
+- (NSArray*)outlineChildrenArray:(id)item
+{
+    NSArray *children = [self childrenArray:item];
+    if( children == nil)
+        return [NSArray array];
+
+    if( [self seriesDescriptionSearchIsActive] == NO || ![[item valueForKey:@"type"] isEqualToString:@"Study"])
+        return children;
+
+    NSMutableArray *matchingSeries = [NSMutableArray array];
+    for( id series in children)
+    {
+        if( [self series:series matchesSeriesDescriptionSearch:_searchString])
+            [matchingSeries addObject:series];
+    }
+
+    return matchingSeries;
+}
+
+- (NSArray*)studiesMatchingSeriesDescriptionSearchInStudies:(NSArray*)studies
+{
+    if( [self seriesDescriptionSearchIsActive] == NO)
+        return studies ?: [NSArray array];
+
+    NSMutableArray *matchingStudies = [NSMutableArray array];
+    for( id study in studies)
+    {
+        if( [study isDistant] == NO && [[self outlineChildrenArray:study] count] > 0)
+            [matchingStudies addObject:study];
+    }
+
+    return matchingStudies;
 }
 
 - (NSArray*) childrenArray: (id)item onlyImages: (BOOL)onlyImages
@@ -4322,6 +4474,10 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         case 4:			// Description
             return NSLocalizedString( @"Description", nil);
             break;
+
+        case HorosSeriesDescriptionSearchType:
+            return NSLocalizedString(@"Series Name / Description", nil);
+            break;
             
         case 5:			// Modality
             return NSLocalizedString( @"Modality", nil);
@@ -4337,6 +4493,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 
 - (NSArray*) distantStudiesForSearchString: (NSString*) curSearchString type:(int) curSearchType
 {
+    if( curSearchType == HorosSeriesDescriptionSearchType)
+        return [NSArray array];
+
     if( !searchForComparativeStudiesLock)
         searchForComparativeStudiesLock = [NSRecursiveLock new];
     
@@ -4442,6 +4601,12 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     int selectedAlbumIndex = [[dict objectForKey: @"selectedAlbumIndex"] intValue];
     int curSearchType = [[dict objectForKey: @"searchType"] intValue];
     NSString *curSearchString = [dict objectForKey: @"searchString"];
+
+    if( curSearchType == HorosSeriesDescriptionSearchType)
+    {
+        [pool release];
+        return;
+    }
     
     [NSThread currentThread].name = NSLocalizedString( @"Search For Search Field...", nil);
     
@@ -5265,6 +5430,39 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         
         if( item)
         {
+            if( [self isSurgicalProcedureItem:item])
+            {
+                [animationSlider setEnabled:NO];
+                [animationSlider setNumberOfTickMarks:0];
+                [animationSlider setMaxValue:0];
+                [animationSlider setIntValue:0];
+
+                @synchronized( previewPixThumbnails)
+                {
+                    [matrixLoadIconsThread cancel];
+                    [matrixLoadIconsThread release];
+                    matrixLoadIconsThread = nil;
+                }
+
+                [matrixViewArray release];
+                matrixViewArray = [[NSArray array] retain];
+                [self matrixInit:0];
+                [imageView showSurgicalProcedure:item];
+
+                [previousItem release];
+                previousItem = [item retain];
+                previousNoOfFiles = 0;
+                ROIsAndKeyImagesButtonAvailable = NO;
+                self.distantStudyMessage = @"";
+                self.comparativePatientUID = nil;
+                self.comparativeStudies = nil;
+                [comparativeTable reloadData];
+                [[[comparativeTable tableColumnWithIdentifier:@"Cell"] headerCell] setStringValue:NSLocalizedString(@"History", nil)];
+                [self resetROIsAndKeysButton];
+                [self splitView:splitViewVert resizeSubviewsWithOldSize:[splitViewVert bounds].size];
+                return;
+            }
+
             if( [item isDistant])
             {
                 // Check to see if already in retrieving mode, if not download it
@@ -6316,11 +6514,45 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     
     if( matrixThumbnails == NO && [databaseOutline selectedRow] == -1)
         return;
+
+    if( [databaseOutline selectedRow] >= 0)
+    {
+        for( NSUInteger row = databaseOutline.selectedRowIndexes.firstIndex; row != NSNotFound; row = [databaseOutline.selectedRowIndexes indexGreaterThanIndex:row])
+        {
+            if( [self isSurgicalProcedureItem:[databaseOutline itemAtRow:row]])
+            {
+                NSBeep();
+                return;
+            }
+        }
+    }
+
+    if( matrixThumbnails == NO && [self seriesDescriptionSearchIsActive])
+    {
+        NSMutableIndexSet *selectedSeriesRows = [NSMutableIndexSet indexSet];
+        NSIndexSet *selectedRows = [databaseOutline selectedRowIndexes];
+        for( NSUInteger row = [selectedRows firstIndex]; row != NSNotFound; row = [selectedRows indexGreaterThanIndex:row])
+        {
+            id item = [databaseOutline itemAtRow:row];
+            if( [item isDistant] == NO && [[item valueForKey:@"type"] isEqualToString:@"Series"])
+                [selectedSeriesRows addIndex:row];
+        }
+
+        if( [selectedSeriesRows count] == 0)
+        {
+            NSBeep();
+            return;
+        }
+
+        [databaseOutline selectRowIndexes:selectedSeriesRows byExtendingSelection:NO];
+    }
     
     NSString *level = nil;
     
     if( matrixThumbnails)
         level = NSLocalizedString( @"Selected Thumbnails", nil);
+    else if( [self seriesDescriptionSearchIsActive])
+        level = NSLocalizedString(@"Selected Series", nil);
     else
         level = NSLocalizedString( @"Selected Lines", nil);
     
@@ -6587,7 +6819,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             if( [item isKindOfClass: [DCMTKStudyQueryNode class]])
                 returnVal = [[item children]  objectAtIndex: index];
             else
-                returnVal = [[self childrenArray: item] objectAtIndex: index];
+                returnVal = [[self outlineChildrenArray:item] objectAtIndex:index];
         }
     }
     @catch (NSException * e)
@@ -6602,6 +6834,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 - (BOOL)outlineView:(NSOutlineView *)outlineView isItemExpandable:(id)item
 {
     BOOL returnVal = NO;
+
+    if( [self isSurgicalProcedureItem:item])
+        return NO;
     
     
     if( [item isDistant])
@@ -6623,6 +6858,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 - (NSInteger)outlineView:(NSOutlineView *)outlineView numberOfChildrenOfItem:(id)item
 {
     if( _database == nil) return 0;
+
+    if( [self isSurgicalProcedureItem:item])
+        return 0;
     
     int returnVal = 0;
     
@@ -6665,7 +6903,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             if ([[item valueForKey:@"type"] isEqualToString:@"Image"]) returnVal = 0;
             else if ([[item valueForKey:@"type"] isEqualToString:@"Series"]) returnVal = [[item valueForKey:@"noFiles"] intValue];
         //else if ([[item valueForKey:@"type"] isEqualToString:@"Study"]) returnVal = [[item valueForKey:@"series"] count];
-            else if ([[item valueForKey:@"type"] isEqualToString:@"Study"]) returnVal = [[item valueForKey:@"imageSeries"] count];
+            else if ([[item valueForKey:@"type"] isEqualToString:@"Study"]) returnVal = [[self outlineChildrenArray:item] count];
     }
     
     
@@ -6674,6 +6912,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 
 - (id)intOutlineView:(NSOutlineView *)outlineView objectValueForTableColumn:(NSTableColumn *)tableColumn byItem:(id)item
 {
+    if( [self isSurgicalProcedureItem:item])
+        return [item displayValueForColumnIdentifier:[tableColumn identifier]];
+
     if( [[tableColumn identifier] isEqualToString:@"reportURL"])
     {
         if ([[item valueForKey:@"type"] isEqualToString:@"Study"])
@@ -6943,6 +7184,26 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         [(ImageAndTextCell*) cell setImage: nil];
         [(ImageAndTextCell*) cell setLastImage: nil];
     }
+
+    if( [self isSurgicalProcedureItem:item])
+    {
+        if( [cell respondsToSelector:@selector(setDrawsBackground:)])
+            [cell setDrawsBackground:NO];
+        if( [cell respondsToSelector:@selector(setTextColor:)])
+            [cell setTextColor:[NSColor systemOrangeColor]];
+        [cell setFont:[NSFont systemFontOfSize:[self fontSize:@"dbFont"] weight:NSFontWeightSemibold]];
+        [cell setLineBreakMode:NSLineBreakByTruncatingTail];
+
+        if( [[tableColumn identifier] isEqualToString:@"lockedStudy"] && [cell respondsToSelector:@selector(setTransparent:)])
+            [cell setTransparent:YES];
+        if( [[tableColumn identifier] isEqualToString:@"name"] && [cell isKindOfClass:[ImageAndTextCell class]])
+        {
+            NSImage *icon = [NSImage imageWithSystemSymbolName:@"cross.case.fill" accessibilityDescription:NSLocalizedString(@"Surgical Procedure", nil)];
+            [icon setSize:NSMakeSize(16, 16)];
+            [(ImageAndTextCell *)cell setImage:icon];
+        }
+        return;
+    }
     
     @try
     {
@@ -7132,7 +7393,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 {
     for( id item in pbItems)
     {
-        if( [item isDistant])
+        if( [self isSurgicalProcedureItem:item] || [item isDistant])
             return NO;
     }
 
@@ -8097,6 +8358,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             item = [databaseOutline itemAtRow:[databaseOutline clickedRow]];
         else
             item = [databaseOutline itemAtRow:[databaseOutline selectedRow]];
+
+        if( [self isSurgicalProcedureItem:item])
+            return;
         
         if ([[item numberOfImages] intValue] != 0)
         {
@@ -14925,7 +15189,11 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         [databaseOutline setNextKeyView: searchField];
         [searchField setNextKeyView: databaseOutline];
         
-        [self setSearchType: [[[searchField cell] searchMenuTemplate] itemWithTag: [[NSUserDefaults standardUserDefaults] integerForKey: @"searchType"]]];
+        NSMenu *databaseSearchMenu = [[searchField cell] searchMenuTemplate];
+        NSMenuItem *savedSearchType = [databaseSearchMenu itemWithTag:[[NSUserDefaults standardUserDefaults] integerForKey:@"searchType"]];
+        if( savedSearchType == nil)
+            savedSearchType = [databaseSearchMenu itemWithTag:0];
+        [self setSearchType:savedSearchType];
         
         //	NSFetchRequest	*dbRequest = [[[NSFetchRequest alloc] init] autorelease];
         //	[dbRequest setEntity: [[self.database.managedObjectModel entitiesByName] objectForKey:@"LogEntry"]];
@@ -15010,7 +15278,9 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 
 -(void)dealloc
 {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(applyPendingSearchString:) object:nil];
     [self invalidateSmartAlbumFetch];
+    [self invalidateSamePatientStudyGroupCache];
     [self deallocActivity];
     [[NSUserDefaultsController sharedUserDefaultsController] removeObserver:self forValuesKey:OsirixBonjourSharingActiveFlagDefaultsKey];
     [self deallocSources];
@@ -20059,7 +20329,26 @@ static volatile int numberOfThreadsForJPEG = 0;
         [_searchString release];
         _searchString = [searchString retain];
     }
-    
+
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(applyPendingSearchString:) object:nil];
+
+    id firstResponder = [[self window] firstResponder];
+    BOOL searchFieldIsBeingEdited = searchString != nil &&
+        (firstResponder == searchField || firstResponder == [searchField currentEditor]);
+
+    if( searchFieldIsBeingEdited)
+    {
+        [self performSelector:@selector(applyPendingSearchString:)
+                   withObject:nil
+                   afterDelay:0.15
+                      inModes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
+    }
+    else
+        [self applyPendingSearchString:nil];
+}
+
+- (void)applyPendingSearchString:(id)sender
+{
     self.distantSearchString = nil;
     self.distantSearchType = searchType;
     
@@ -20067,7 +20356,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     [self outlineViewRefresh];
     [databaseOutline scrollRowToVisible: [databaseOutline selectedRow]];
     
-    if( _searchString.length > 2 || (_searchString.length >= 2 && searchType == 5))
+    if( searchType != HorosSeriesDescriptionSearchType && (_searchString.length > 2 || (_searchString.length >= 2 && searchType == 5)))
     {
         @synchronized( self)
         {
@@ -20087,7 +20376,7 @@ static volatile int numberOfThreadsForJPEG = 0;
             distantSearchThread = nil;
         }
         
-        if( albumTable.selectedRow == 0)
+        if( albumTable.selectedRow == 0 && searchType != HorosSeriesDescriptionSearchType)
             [NSThread detachNewThreadSelector: @selector(searchForTimeIntervalFromTo:) toTarget:self withObject: [NSDictionary dictionaryWithObjectsAndKeys: timeIntervalStart, @"from", timeIntervalEnd, @"to", nil]];
     }
     else
@@ -20110,7 +20399,7 @@ static volatile int numberOfThreadsForJPEG = 0;
         if( aFile)
         {
             id study = [self studyForDisplayOnlyThisPatientItem: aFile];
-            NSPredicate *predicate = [self samePatientStudiesPredicateForStudy: study];
+            NSPredicate *predicate = [self resolvedSamePatientStudiesPredicateForStudy: study];
 
             if( predicate == nil)
                 return;
@@ -20230,6 +20519,10 @@ static volatile int numberOfThreadsForJPEG = 0;
                 
             case 4:			// Study or Series Description
                 description = [[NSString alloc] initWithFormat: NSLocalizedString(@" / Search: Description = %@", nil), _searchString];
+                break;
+
+            case HorosSeriesDescriptionSearchType:
+                description = [[NSString alloc] initWithFormat:NSLocalizedString(@" / Search: Series Name / Description = %@", nil), _searchString];
                 break;
                 
             case 5:			// Modality
@@ -20447,7 +20740,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     return nil;
 }
 
-- (NSPredicate *)samePatientStudiesPredicateForStudy:(id)study
+- (NSPredicate *)directSamePatientStudiesPredicateForStudy:(id)study
 {
     if( study == nil)
         return nil;
@@ -20502,13 +20795,240 @@ static volatile int numberOfThreadsForJPEG = 0;
     return [NSCompoundPredicate orPredicateWithSubpredicates: samePatientPredicates];
 }
 
+- (NSArray *)samePatientStudyGroupForStudy:(id)study database:(DicomDatabase *)database
+{
+    if( study == nil || database == nil)
+        return [NSArray array];
+
+    study = [self studyForDisplayOnlyThisPatientItem:study];
+    if( [study isKindOfClass:[NSManagedObject class]] == NO)
+        return [NSArray arrayWithObject:study];
+
+    static const NSUInteger samePatientPredicateBatchSize = 64;
+
+    NSMutableOrderedSet *patientStudies = [NSMutableOrderedSet orderedSetWithObject:study];
+    NSMutableSet *processedPredicates = [NSMutableSet set];
+    NSArray *pendingStudies = [NSArray arrayWithObject:study];
+
+    while( pendingStudies.count)
+    {
+        NSMutableArray *pendingPredicates = [NSMutableArray array];
+        for( id patientStudy in pendingStudies)
+        {
+            NSPredicate *predicate = [self directSamePatientStudiesPredicateForStudy:patientStudy];
+            if( predicate == nil)
+                continue;
+
+            NSString *predicateKey = predicate.predicateFormat;
+            if( [processedPredicates containsObject:predicateKey])
+                continue;
+            [processedPredicates addObject:predicateKey];
+            [pendingPredicates addObject:predicate];
+        }
+
+        if( pendingPredicates.count == 0)
+            break;
+
+        NSMutableOrderedSet *nextStudies = [NSMutableOrderedSet orderedSet];
+        for( NSUInteger predicateIndex = 0; predicateIndex < pendingPredicates.count; predicateIndex += samePatientPredicateBatchSize)
+        {
+            NSRange batchRange = NSMakeRange(predicateIndex, MIN(samePatientPredicateBatchSize, pendingPredicates.count - predicateIndex));
+            NSArray *predicateBatch = [pendingPredicates subarrayWithRange:batchRange];
+            NSPredicate *batchPredicate = predicateBatch.count == 1 ? [predicateBatch objectAtIndex:0] : [NSCompoundPredicate orPredicateWithSubpredicates:predicateBatch];
+
+            NSArray *directMatches = [database objectsForEntity:database.studyEntity predicate:batchPredicate];
+            for( id directMatch in directMatches)
+            {
+                if( directMatch && [patientStudies containsObject:directMatch] == NO)
+                {
+                    [patientStudies addObject:directMatch];
+                    [nextStudies addObject:directMatch];
+                }
+            }
+        }
+
+        pendingStudies = nextStudies.array;
+    }
+
+    return [patientStudies array];
+}
+
+- (NSPredicate *)samePatientStudiesPredicateForStudy:(id)study
+{
+    return [self directSamePatientStudiesPredicateForStudy:study];
+}
+
+- (void)invalidateSamePatientStudyGroupCache
+{
+    [_samePatientStudyGroupCache release];
+    _samePatientStudyGroupCache = nil;
+    _samePatientStudyGroupDatabaseModification = 0;
+}
+
+- (NSArray *)resolvedSamePatientStudyGroupForStudy:(id)study
+{
+    study = [self studyForDisplayOnlyThisPatientItem:study];
+    if( study == nil)
+        return [NSArray array];
+    if( [study isKindOfClass:[NSManagedObject class]] == NO)
+        return [NSArray arrayWithObject:study];
+
+    NSManagedObject *managedStudy = study;
+    NSManagedObjectContext *context = managedStudy.managedObjectContext;
+    DicomDatabase *database = context ? [DicomDatabase databaseForContext:context] : nil;
+    if( database == nil)
+        return [NSArray arrayWithObject:study];
+
+    NSManagedObjectID *referenceID = managedStudy.objectID;
+    NSTimeInterval databaseModification = database.timeOfLastModification;
+    BOOL mayUseCache = [NSThread isMainThread] && context == self.database.managedObjectContext;
+
+    if( mayUseCache && _samePatientStudyGroupCache && _samePatientStudyGroupDatabaseModification != databaseModification)
+        [self invalidateSamePatientStudyGroupCache];
+
+    if( mayUseCache)
+    {
+        NSArray *cachedPatientStudies = [_samePatientStudyGroupCache objectForKey:referenceID];
+        if( cachedPatientStudies)
+            return cachedPatientStudies;
+    }
+
+    NSArray *patientStudies = [self samePatientStudyGroupForStudy:study database:database];
+    if( mayUseCache)
+    {
+        if( _samePatientStudyGroupCache == nil)
+        {
+            _samePatientStudyGroupCache = [[NSCache alloc] init];
+            [_samePatientStudyGroupCache setName:@"Horos same-patient study groups"];
+            [_samePatientStudyGroupCache setCountLimit:4096];
+        }
+        _samePatientStudyGroupDatabaseModification = databaseModification;
+
+        for( id patientStudy in patientStudies)
+        {
+            if( [patientStudy isKindOfClass:[NSManagedObject class]])
+                [_samePatientStudyGroupCache setObject:patientStudies forKey:[patientStudy objectID]];
+        }
+    }
+
+    return patientStudies;
+}
+
+- (NSPredicate *)resolvedSamePatientStudiesPredicateForStudy:(id)study
+{
+    NSArray *patientStudies = [self resolvedSamePatientStudyGroupForStudy:study];
+    NSMutableOrderedSet *predicates = [NSMutableOrderedSet orderedSetWithCapacity:patientStudies.count];
+
+    for( id patientStudy in patientStudies)
+    {
+        NSPredicate *predicate = [self directSamePatientStudiesPredicateForStudy:patientStudy];
+        if( predicate)
+            [predicates addObject:predicate];
+    }
+
+    if( predicates.count == 0)
+        return nil;
+    if( predicates.count == 1)
+        return [predicates objectAtIndex:0];
+
+    return [NSCompoundPredicate orPredicateWithSubpredicates:predicates.array];
+}
+
 - (BOOL)study:(id)study matchesSamePatientAsStudy:(id)referenceStudy
 {
-    NSPredicate *predicate = [self samePatientStudiesPredicateForStudy: referenceStudy];
-    if( predicate == nil)
+    study = [self studyForDisplayOnlyThisPatientItem:study];
+    referenceStudy = [self studyForDisplayOnlyThisPatientItem:referenceStudy];
+    if( study == nil || referenceStudy == nil)
         return NO;
 
-    return [predicate evaluateWithObject: study];
+    NSArray *patientStudies = [self resolvedSamePatientStudyGroupForStudy:referenceStudy];
+    if( [study isKindOfClass:[NSManagedObject class]])
+    {
+        NSManagedObjectID *studyID = [study objectID];
+        for( id patientStudy in patientStudies)
+        {
+            if( [patientStudy isKindOfClass:[NSManagedObject class]] && [[patientStudy objectID] isEqual:studyID])
+                return YES;
+        }
+        return NO;
+    }
+
+    for( id patientStudy in patientStudies)
+    {
+        NSPredicate *predicate = [self directSamePatientStudiesPredicateForStudy:patientStudy];
+        if( predicate && [predicate evaluateWithObject:study])
+            return YES;
+    }
+    return NO;
+}
+
+- (BOOL)isSurgicalProcedureItem:(id)item
+{
+    return [item isKindOfClass:[SurgicalProcedureEvent class]];
+}
+
+- (NSDictionary *)surgicalProcedureImportDatabasePaths
+{
+    if( _database.isLocal == NO || _database.sqlFilePath.length == 0 || _database.baseDirPath.length == 0)
+        return nil;
+
+    return [NSDictionary dictionaryWithObjectsAndKeys:
+        _database.sqlFilePath, @"databasePath",
+        _database.baseDirPath, @"basePath", nil];
+}
+
+- (NSArray *)surgicalProcedureEventsForStudy:(id)study
+{
+    if( study == nil || _database.isLocal == NO || _database.baseDirPath.length == 0)
+        return [NSArray array];
+
+    NSArray *patientStudies = [self resolvedSamePatientStudyGroupForStudy:study];
+    NSMutableArray *patientPredicates = [NSMutableArray arrayWithCapacity:patientStudies.count];
+    NSMutableSet *patientPredicateFormats = [NSMutableSet setWithCapacity:patientStudies.count];
+    for( id patientStudy in patientStudies)
+    {
+        NSPredicate *predicate = [self directSamePatientStudiesPredicateForStudy:patientStudy];
+        NSString *predicateFormat = predicate.predicateFormat;
+        if( predicate && [patientPredicateFormats containsObject:predicateFormat] == NO)
+        {
+            [patientPredicates addObject:predicate];
+            [patientPredicateFormats addObject:predicateFormat];
+        }
+    }
+
+    if( patientPredicates.count == 0)
+        return [NSArray array];
+
+    NSArray *events = [SurgicalProcedureTimelineStore eventsForDatabaseBasePath:_database.baseDirPath];
+    if( events.count == 0)
+        return events;
+
+    NSPredicate *patientPredicate = patientPredicates.count == 1 ? [patientPredicates objectAtIndex:0] : [NSCompoundPredicate orPredicateWithSubpredicates:patientPredicates];
+    return [events filteredArrayUsingPredicate:patientPredicate];
+}
+
+- (NSArray *)surgicalProcedureEventsForVisibleStudies:(NSArray *)items
+{
+    NSMutableArray *studies = [NSMutableArray array];
+    for( id item in items)
+    {
+        if( [self isSurgicalProcedureItem:item])
+            continue;
+        if( [item isDistant] || [[item valueForKey:@"type"] isEqualToString:@"Study"] == NO)
+            return [NSArray array];
+        [studies addObject:item];
+    }
+
+    if( studies.count == 0 || studies.count > 500)
+        return [NSArray array];
+
+    id referenceStudy = [studies objectAtIndex:0];
+    for( id study in studies)
+    {
+        if( study != referenceStudy && [self study:study matchesSamePatientAsStudy:referenceStudy] == NO)
+            return [NSArray array];
+    }
+    return [self surgicalProcedureEventsForStudy:referenceStudy];
 }
 
 - (BOOL)searchIncludesSeriesDescriptions
@@ -20516,7 +21036,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     if( _searchString.length == 0)
         return NO;
 
-    return searchType == 4 || (searchType == 7 && _searchString.length >= 3);
+    return searchType == 4 || searchType == HorosSeriesDescriptionSearchType || (searchType == 7 && _searchString.length >= 3);
 }
 
 - (NSPredicate *)createFilterPredicateIncludingSeriesDescriptions:(BOOL)includeSeriesDescriptions
@@ -20571,6 +21091,17 @@ static volatile int numberOfThreadsForJPEG = 0;
                 }
                 else
                     predicate = [NSPredicate predicateWithFormat: @"studyName CONTAINS[cd] %@", _searchString];
+                break;
+
+            case HorosSeriesDescriptionSearchType:
+                if( includeSeriesDescriptions)
+                {
+                    predicate = [NSCompoundPredicate orPredicateWithSubpredicates:[NSArray arrayWithObjects:
+                        [NSPredicate predicateWithFormat:@"ANY series.name CONTAINS[cd] %@", _searchString],
+                        [NSPredicate predicateWithFormat:@"ANY series.seriesDescription CONTAINS[cd] %@", _searchString], nil]];
+                }
+                else
+                    predicate = [NSPredicate predicateWithValue:NO];
                 break;
                 
             case 5:			// Modality
@@ -20627,11 +21158,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     if( study == nil || self.database == nil)
         return nil;
 
-    NSPredicate *predicate = [self samePatientStudiesPredicateForStudy: study];
-    if( predicate == nil)
-        return nil;
-
-    NSArray *studies = [self.database objectsForEntity:self.database.studyEntity predicate:predicate];
+    NSArray *studies = [self resolvedSamePatientStudyGroupForStudy:study];
     if( studies.count == 0)
         return nil;
 
@@ -20655,21 +21182,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     if( study == nil || self.database == nil)
         return nil;
 
-    NSPredicate *predicate = [self samePatientStudiesPredicateForStudy: study];
-    if( predicate == nil)
-        return nil;
-
-    NSManagedObjectModel	*model = self.database.managedObjectModel;
-    NSManagedObjectContext	*context = self.database.managedObjectContext;
-    
-    // FIND ALL STUDIES of this patient
-    
-    NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
-    dbRequest.entity = [model.entitiesByName objectForKey:@"Study"];
-    dbRequest.predicate = predicate;
-    
-    NSError	*error = nil;
-    NSArray *studiesArray = [context executeFetchRequest:dbRequest error:&error];
+    NSArray *studiesArray = [self resolvedSamePatientStudyGroupForStudy:study];
     
     @try 
     {

@@ -337,6 +337,10 @@ private enum MetalViewerWindowLevelTarget {
 
 final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private static let mprPlanes: [MetalMPRPlane] = [.axial, .coronal, .sagittal]
+    private static let initialMPRRotation = simd_normalize(
+        simd_quatf(angle: -0.65, axis: SIMD3<Float>(0, 0, 1)) *
+        simd_quatf(angle: -0.55, axis: SIMD3<Float>(1, 0, 0))
+    )
 
     private let deviceRef: MTLDevice
     private let commandQueue: MTLCommandQueue
@@ -414,10 +418,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private(set) var panOffset = SIMD2<Float>(repeating: 0)
     private(set) var stackRotationRadians: Float = 0
     private(set) var displayMode: MetalViewerDisplayMode = .stack2D
-    private var mprRotation = simd_normalize(
-        simd_quatf(angle: -0.65, axis: SIMD3<Float>(0, 0, 1)) *
-        simd_quatf(angle: -0.55, axis: SIMD3<Float>(1, 0, 0))
-    )
+    private var mprRotation = MetalViewerRenderer.initialMPRRotation
     private var mprPlaneVoxel = SIMD3<Float>(repeating: 0)
     private var mprAxialTilt = SIMD2<Float>(repeating: 0)
     private var mprCoronalTilt = SIMD2<Float>(repeating: 0)
@@ -704,9 +705,127 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     func resetAndLoadInitialSlice() {
-        currentSliceIndex = 0
+        currentSliceIndex = Self.initialSliceIndex(for: pixList)
         loadSlice(at: currentSliceIndex)
         resetMPRPlaneToCurrentSlice()
+    }
+
+    private static func initialSliceIndex(for pixList: [DCMPix]) -> Int {
+        pixList.isEmpty ? 0 : pixList.count / 2
+    }
+
+    func replaceSeries(
+        with newPixList: [DCMPix],
+        windowLevelState: MetalViewerWindowLevelState,
+        windowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)?,
+        usesAutomaticWindowLevel: Bool,
+        transferFunctionState: MetalViewerTransferFunctionState,
+        transferFunctionStateDidChange: ((MetalViewerTransferFunctionState) -> Void)?
+    ) {
+        guard newPixList.isEmpty == false else { return }
+
+        // Reset all series-owned state while retaining the expensive immutable Metal resources.
+        registrationGeneration += 1
+        baseVolumePyramidBuildGeneration += 1
+        registrationInProgress = false
+        registrationProgress = 0
+        registrationStatusMessage = nil
+        registrationNeedsRestartAfterBasePyramidBuild = false
+        registrationWaitingForBasePyramid = false
+        pendingRegistrationInitialState = nil
+
+        pixList = newPixList
+        currentSliceIndex = Self.initialSliceIndex(for: newPixList)
+        baseTexture = nil
+        baseVolumeTexture = nil
+        stackVolumeTextureEntry = nil
+        baseVolumeDimensions = SIMD3<Int>(repeating: 1)
+        baseVolumeLevels = []
+        baseVolumePyramidBuildInProgress = false
+        baseVolumePyramidBuildCompleted = false
+        imageAspectRatio = 1
+        fixedVoxelToWorld = matrix_identity_float4x4
+        baseVolumeCenterWorld = .zero
+        baseInformativeCenterWorld = .zero
+        baseUsesGantryTiltCorrectedVolume = false
+        baseIsThinSlab = false
+        baseSlabGeometry = nil
+        baseRegistrationWindowLevel = 0
+        baseRegistrationWindowWidth = 1
+
+        defaultSeriesWindowLevel = windowLevelState.defaultWindow
+        customSeriesWindowLevel = windowLevelState.customWindow
+        usesAutomaticBaseWindowLevel = usesAutomaticWindowLevel
+        self.windowLevelStateDidChange = windowLevelStateDidChange
+        windowLevel = 0
+        windowWidth = 1
+
+        baseTransferFunctionState = transferFunctionState
+        self.transferFunctionStateDidChange = transferFunctionStateDidChange
+        rebuildBaseTransferTextures()
+
+        overlayPixList = []
+        overlayVolumeTexture = nil
+        overlayVolumeDimensions = SIMD3<Int>(repeating: 1)
+        overlayVolumeLevels = []
+        overlayUsesGantryTiltCorrectedVolume = false
+        overlayDefaultSeriesWindowLevel = nil
+        overlayCustomSeriesWindowLevel = nil
+        usesAutomaticOverlayWindowLevel = false
+        overlayWindowLevelStateDidChange = nil
+        overlayTransferFunctionState = MetalViewerTransferFunctionState()
+        overlayTransferFunctionStateDidChange = nil
+        rebuildOverlayTransferTextures()
+        overlayWindowLevel = 0
+        overlayWindowWidth = 1
+        overlayRegistrationWindowLevel = 0
+        overlayRegistrationWindowWidth = 1
+        overlayBlend = 0.5
+        overlayVolumeCenterWorld = .zero
+        overlayInformativeCenterWorld = .zero
+        overlayIsThinSlab = false
+        overlaySlabGeometry = nil
+        movingWorldToVoxel = matrix_identity_float4x4
+        movingRotationCenterWorld = .zero
+        overlayTranslationWorld = .zero
+        overlayRotationRadians = .zero
+        overlayTranslationPixels = .zero
+
+        zoomScale = 1
+        panOffset = .zero
+        stackRotationRadians = 0
+        displayMode = .stack2D
+        mprRotation = Self.initialMPRRotation
+        mprPlaneVoxel = .zero
+        mprAxialTilt = .zero
+        mprCoronalTilt = .zero
+        mprSagittalTilt = .zero
+        mprAxialTiltPivot = .zero
+        mprCoronalTiltPivot = .zero
+        mprSagittalTiltPivot = .zero
+        hoveredMPRPlane = nil
+        mprPlaneDragState = nil
+        mprPlaneTiltDragState = nil
+        mprPreviewLineDragContext = nil
+        tumourSeeds = []
+
+        registrationMetricCallCount = 0
+        registrationMetricDispatchCount = 0
+        registrationMetricTotalTime = 0
+        registrationMetricSetupTime = 0
+        registrationMetricGPUTime = 0
+        registrationMetricCPUTime = 0
+        registrationSamplingProbeTime = 0
+        registrationOptimizeTime = 0
+        registrationCoarseSeedSearchTime = 0
+        registrationNelderMeadTime = 0
+        registrationSmoothDescentTime = 0
+        registrationBatchedDescentTime = 0
+
+        loadSlice(at: currentSliceIndex)
+        resetMPRPlaneToCurrentSlice()
+        registrationDidChange?(false, "", 0)
+        stateDidChange?(stateDescription)
     }
 
     private func refreshImageInterpolationMode() {
@@ -878,7 +997,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         pixList = newPixList
         currentSliceIndex = preservingSliceIndex
             ? min(max(previousSliceIndex, 0), newPixList.count - 1)
-            : 0
+            : Self.initialSliceIndex(for: newPixList)
 
         baseTexture = nil
         baseVolumeTexture = nil
@@ -1457,7 +1576,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     func applyAutomaticWindowLevelPreset() {
         guard let pix = activeWindowLevelPix else { return }
-        let window = automaticSeriesWindowLevel(for: activeWindowLevelPixList) ?? windowLevelDefaults(for: pix)
+        let window = automaticWindowLevel(for: pix) ?? windowLevelDefaults(for: pix)
         applyWindowLevel(window, asCustom: false)
     }
 
@@ -2251,7 +2370,6 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             }
             let defaultWindow = initialWindowLevelDefaults(
                 for: pix,
-                series: pixList,
                 usesAutomaticWindowLevel: usesAutomaticBaseWindowLevel
             )
             defaultSeriesWindowLevel = defaultWindow
@@ -2269,7 +2387,6 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             } else {
                 let defaultWindow = initialWindowLevelDefaults(
                     for: overlayPix,
-                    series: overlayPixList,
                     usesAutomaticWindowLevel: usesAutomaticOverlayWindowLevel
                 )
                 overlayDefaultSeriesWindowLevel = defaultWindow
@@ -2315,15 +2432,6 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    private var activeWindowLevelPixList: [DCMPix] {
-        switch activeWindowLevelTarget {
-        case .base:
-            return pixList
-        case .overlay:
-            return overlayPixList
-        }
-    }
-
     private func windowLevelDefaults(for pix: DCMPix) -> MetalViewerWindowLevel {
         let defaultWW = pix.ww > 0 ? pix.ww : pix.fullww
         let defaultWL = pix.wl != 0 ? pix.wl : pix.fullwl
@@ -2332,65 +2440,52 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func initialWindowLevelDefaults(
         for pix: DCMPix,
-        series: [DCMPix],
         usesAutomaticWindowLevel: Bool
     ) -> MetalViewerWindowLevel {
         if usesAutomaticWindowLevel,
-           let automaticWindow = automaticSeriesWindowLevel(for: series) {
+           let automaticWindow = automaticWindowLevel(for: pix) {
             return automaticWindow
         }
         return windowLevelDefaults(for: pix)
     }
 
-    private func automaticSeriesWindowLevel(for seriesPixList: [DCMPix]) -> MetalViewerWindowLevel? {
-        guard seriesPixList.isEmpty == false else { return nil }
-
-        let modality = seriesPixList.first?.modalityString?.uppercased() ?? ""
-
-        let maxSliceSamples = 17
-        let sliceStep = max(1, seriesPixList.count / maxSliceSamples)
-        var sliceIndexes = Array(stride(from: 0, to: seriesPixList.count, by: sliceStep))
-        if let lastIndex = seriesPixList.indices.last, sliceIndexes.contains(lastIndex) == false {
-            sliceIndexes.append(lastIndex)
-        }
+    private func automaticWindowLevel(for pix: DCMPix) -> MetalViewerWindowLevel? {
+        let modality = pix.modalityString?.uppercased() ?? ""
 
         var samples: [Float] = []
-        samples.reserveCapacity(80_000)
+        samples.reserveCapacity(5_000)
 
-        for sliceIndex in sliceIndexes {
-            let pix = seriesPixList[sliceIndex]
-            pix.checkLoad()
-            guard let pixels = pix.fImage else { continue }
+        pix.checkLoad()
+        guard let pixels = pix.fImage else { return nil }
 
-            let pixelWidth = max(Int(pix.pwidth), 0)
-            let pixelHeight = max(Int(pix.pheight), 0)
-            let pixelCount = pixelWidth * pixelHeight
-            guard pixelCount > 0 else { continue }
+        let pixelWidth = max(Int(pix.pwidth), 0)
+        let pixelHeight = max(Int(pix.pheight), 0)
+        let pixelCount = pixelWidth * pixelHeight
+        guard pixelCount > 0 else { return nil }
 
-            let cornerIndexes = [
-                0,
-                max(pixelWidth - 1, 0),
-                max((pixelHeight - 1) * pixelWidth, 0),
-                max(pixelCount - 1, 0),
-            ]
-            let cornerValues = cornerIndexes
-                .map { pixels[$0] }
-                .filter { $0.isFinite }
-            let backgroundValue = repeatedCornerValue(in: cornerValues)
+        let cornerIndexes = [
+            0,
+            max(pixelWidth - 1, 0),
+            max((pixelHeight - 1) * pixelWidth, 0),
+            max(pixelCount - 1, 0),
+        ]
+        let cornerValues = cornerIndexes
+            .map { pixels[$0] }
+            .filter { $0.isFinite }
+        let backgroundValue = repeatedCornerValue(in: cornerValues)
 
-            let pixelStep = max(1, pixelCount / 5_000)
-            var index = 0
-            while index < pixelCount {
-                let value = pixels[index]
-                let isBackground = backgroundValue.map {
-                    abs(value - $0) <= max(abs($0) * 0.00001, 0.0001)
-                } ?? false
-                let isZeroBackground = modality == "MR" && abs(value) <= Float.ulpOfOne
-                if value.isFinite && isBackground == false && isZeroBackground == false {
-                    samples.append(value)
-                }
-                index += pixelStep
+        let pixelStep = max(1, pixelCount / 5_000)
+        var index = 0
+        while index < pixelCount {
+            let value = pixels[index]
+            let isBackground = backgroundValue.map {
+                abs(value - $0) <= max(abs($0) * 0.00001, 0.0001)
+            } ?? false
+            let isZeroBackground = modality == "MR" && abs(value) <= Float.ulpOfOne
+            if value.isFinite && isBackground == false && isZeroBackground == false {
+                samples.append(value)
             }
+            index += pixelStep
         }
 
         guard samples.count >= 32 else { return nil }

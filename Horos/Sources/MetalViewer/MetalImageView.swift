@@ -535,6 +535,48 @@ final class MetalImageView: MTKView {
         annotationStateDidChange?()
     }
 
+    func replaceSeries(
+        pixList: [DCMPix],
+        windowLevelState: MetalViewerWindowLevelState,
+        windowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)?,
+        usesAutomaticWindowLevel: Bool,
+        transferFunctionState: MetalViewerTransferFunctionState,
+        transferFunctionStateDidChange: ((MetalViewerTransferFunctionState) -> Void)?
+    ) {
+        dragAnchor = .zero
+        wlAnchor = 0
+        wwAnchor = 0
+        panAnchor = .zero
+        mprDragMode = .none
+        mprScrollAxisOverride = nil
+        isDraggingMPRPreviewDivider = false
+        didChangeWindowLevelDuringDrag = false
+        didDragMouseInteraction = false
+        sliceDragAccumulator = 0
+        preciseScrollSliceAccumulator = 0
+        activeMeasurementIdentifier = nil
+        selectedMeasurementIdentifier = nil
+        activeMeasurementDragMode = nil
+        activeTumourSeedDeletion = false
+        measurements.removeAll()
+        mouseAnnotationState = nil
+        resetMPRLineCursor()
+
+        renderer.replaceSeries(
+            with: pixList,
+            windowLevelState: windowLevelState,
+            windowLevelStateDidChange: windowLevelStateDidChange,
+            usesAutomaticWindowLevel: usesAutomaticWindowLevel,
+            transferFunctionState: transferFunctionState,
+            transferFunctionStateDidChange: transferFunctionStateDidChange
+        )
+        needsDisplay = true
+        mprPreviewOverlayView.needsDisplay = true
+        mprPreviewOverlayView.window?.invalidateCursorRects(for: mprPreviewOverlayView)
+        publishMeasurementOverlays()
+        annotationStateDidChange?()
+    }
+
     override func layout() {
         super.layout()
         mprPreviewOverlayView.needsDisplay = true

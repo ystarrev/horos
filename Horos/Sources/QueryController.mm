@@ -166,6 +166,25 @@ static BOOL HorosQueryStringContains(NSString *string, NSString *needle)
     return string.length > 0 && needle.length > 0 && [string rangeOfString: needle options: NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch | NSWidthInsensitiveSearch].location != NSNotFound;
 }
 
+static NSString *HorosQRDICOMPatientNameValue(NSString *value)
+{
+    NSString *trimmedValue = [value stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if( [trimmedValue rangeOfString: @"^"].location != NSNotFound)
+        return trimmedValue;
+
+    NSRange separator = [trimmedValue rangeOfCharacterFromSet: [NSCharacterSet whitespaceAndNewlineCharacterSet] options: NSBackwardsSearch];
+    if( separator.location == NSNotFound)
+        return trimmedValue;
+
+    NSString *familyName = [[trimmedValue substringToIndex: separator.location] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *givenName = [[trimmedValue substringFromIndex: NSMaxRange( separator)] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+    if( familyName.length == 0 || givenName.length == 0)
+        return trimmedValue;
+
+    return [NSString stringWithFormat: @"%@^%@", familyName, givenName];
+}
+
 static BOOL HorosQuerySeriesLooksLikeLocalizer(id item)
 {
     NSString *description = [item valueForKey: @"theDescription"];
@@ -2982,7 +3001,7 @@ extern "C"
                         }
                     }
                     
-                    NSString *filterValue = [patientNameValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                    NSString *filterValue = HorosQRDICOMPatientNameValue( patientNameValue);
                     
                     if ([filterValue length] > 0)
                     {

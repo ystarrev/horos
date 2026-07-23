@@ -108,7 +108,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         )
 
         let scoutStart = CFAbsoluteTimeGetCurrent()
-        self.scoutView = MetalViewerScoutView(series: study.series)
+        self.scoutView = MetalViewerScoutView(series: study.series, procedureEvents: study.procedureEvents)
         metalWindowTimingLog("MetalViewerWindowController scout init", since: scoutStart)
         self.scoutWidthConstraint = scoutContainer.widthAnchor.constraint(equalToConstant: Self.savedScoutWidth(forSplitWidth: contentRect.width))
 
@@ -228,11 +228,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         let firstPaneStart = CFAbsoluteTimeGetCurrent()
         addPane(for: firstSeries, makeActive: true)
         metalWindowTimingLog("MetalViewerWindowController first pane init", since: firstPaneStart)
-        scoutView.setSelectedSeries(identifier: firstSeries.identifier)
 
         scoutView.selectionHandler = { [weak self] series in
             guard let self else { return }
-            self.scoutView.setSelectedSeries(identifier: series.identifier)
             if let targetPane = self.activePaneView ?? self.paneViews.first {
                 let syncedScale = self.synchronizedScaleValue(excluding: targetPane) ?? targetPane.currentScale
                 targetPane.display(series: series)
@@ -385,6 +383,10 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             guard let self, let pane else { return }
             self.assignSeries(withIdentifier: identifier, to: pane, overlay: isOverlay)
         }
+        pane.displayedSeriesDidChange = { [weak self, weak pane] in
+            guard let self, let pane, self.activePaneView === pane else { return }
+            self.updateScoutHighlights(for: pane)
+        }
         pane.closeHandler = { [weak self, weak pane] in
             guard let self, let pane else { return }
             self.removePane(pane)
@@ -416,6 +418,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         for candidate in paneViews {
             candidate.isActive = (candidate === pane)
         }
+        updateScoutHighlights(for: pane)
         reloadWLWWMenu(for: pane)
         pane.focusImageView()
         updateToolbarStatus()
@@ -524,8 +527,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
                 reloadWLWWMenu(for: pane)
             }
         }
-        scoutView.setSelectedSeries(identifier: series.identifier)
-
         if activePaneView === pane {
             updateToolbarStatus()
         }
@@ -533,7 +534,11 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     }
 
     @discardableResult
-    func updateStudy(_ study: MetalViewerStudy, selectInitialSeries: Bool = false) -> Int {
+    func updateStudy(
+        _ study: MetalViewerStudy,
+        selectInitialSeries: Bool = false,
+        revealSelectedSeriesInScout: Bool = false
+    ) -> Int {
         let updateStart = CFAbsoluteTimeGetCurrent()
         for series in study.series {
             let previousSeries = self.study.series.first(where: { $0.identifier == series.identifier })
@@ -551,12 +556,23 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
         self.study = study
         window?.title = study.title
-        scoutView.reload(series: study.series, loadThumbnailsImmediately: false)
+        scoutView.reload(
+            series: study.series,
+            procedureEvents: study.procedureEvents,
+            loadThumbnailsImmediately: false
+        )
         let selectedSeries = selectInitialSeries
             ? study.series.first(where: { $0.identifier == study.initialSeriesIdentifier })
             : activePaneView.flatMap { matchingSeries(for: $0.series, in: study) }
         let selectedIdentifier = selectedSeries?.identifier ?? study.initialSeriesIdentifier
-        scoutView.setSelectedSeries(identifier: selectedIdentifier)
+        let selectedOverlayIdentifier = selectInitialSeries
+            ? nil
+            : activePaneView?.overlaySeries.flatMap { matchingSeries(for: $0, in: study) }?.identifier
+        scoutView.setDisplayedSeries(
+            primaryIdentifier: selectedIdentifier,
+            overlayIdentifier: selectedOverlayIdentifier,
+            scrollToVisible: revealSelectedSeriesInScout
+        )
 
         var refreshedPaneCount = 0
         for pane in paneViews {
@@ -584,6 +600,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
 
         if let activePaneView {
+            updateScoutHighlights(for: activePaneView)
             reloadWLWWMenu(for: activePaneView)
         }
         updateToolbarStatus()
@@ -596,6 +613,13 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private func matchingSeries(for previousSeries: MetalViewerSeries, in study: MetalViewerStudy) -> MetalViewerSeries? {
         study.series.first(where: { $0.identifier == previousSeries.identifier })
             ?? study.series.first(where: { $0.sharesSourceSeries(with: previousSeries) })
+    }
+
+    private func updateScoutHighlights(for pane: MetalViewerPaneView) {
+        scoutView.setDisplayedSeries(
+            primaryIdentifier: pane.series.identifier,
+            overlayIdentifier: pane.overlaySeries?.identifier
+        )
     }
 
     private func updateToolbarStatus() {

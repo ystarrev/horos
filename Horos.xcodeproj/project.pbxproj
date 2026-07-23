@@ -1375,6 +1375,8 @@
 		F4CDA0010000000000000001 /* HorosDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4CDA0020000000000000001 /* HorosDataModels.swift */; };
 		F4CDA0010000000000000002 /* HorosDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4CDA0020000000000000002 /* HorosDataStore.swift */; };
 		F4CDA0010000000000000003 /* SmartAlbumEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4CDA0020000000000000003 /* SmartAlbumEditor.swift */; };
+		F4E700010000000000000001 /* SurgicalProcedureImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E700020000000000000001 /* SurgicalProcedureImporter.swift */; };
+		F4E700010000000000000002 /* SurgicalProcedureTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E700020000000000000002 /* SurgicalProcedureTimeline.swift */; };
 		F4CF00000000000000000001 /* CFNetwork.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4CF00000000000000000002 /* CFNetwork.framework */; };
 		F4CF00000000000000000003 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4CF00000000000000000004 /* CoreFoundation.framework */; };
 		F4CTXCL0000000000000001 /* ContextCleaner.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4CTXCL0000000000000002 /* ContextCleaner.mm */; };
@@ -3092,6 +3094,8 @@
 		F4CDA0020000000000000001 /* HorosDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HorosDataModels.swift; sourceTree = "<group>"; };
 		F4CDA0020000000000000002 /* HorosDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HorosDataStore.swift; sourceTree = "<group>"; };
 		F4CDA0020000000000000003 /* SmartAlbumEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SmartAlbumEditor.swift; path = Horos/Sources/SmartAlbumEditor.swift; sourceTree = SOURCE_ROOT; };
+		F4E700020000000000000001 /* SurgicalProcedureImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SurgicalProcedureImporter.swift; path = Horos/Sources/SurgicalProcedureImporter.swift; sourceTree = SOURCE_ROOT; };
+		F4E700020000000000000002 /* SurgicalProcedureTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SurgicalProcedureTimeline.swift; path = Horos/Sources/SurgicalProcedureTimeline.swift; sourceTree = SOURCE_ROOT; };
 		F4CF00000000000000000002 /* CFNetwork.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CFNetwork.framework; path = System/Library/Frameworks/CFNetwork.framework; sourceTree = SDKROOT; };
 		F4CF00000000000000000004 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		F4CTXCL0000000000000002 /* ContextCleaner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ContextCleaner.mm; sourceTree = "<group>"; };
@@ -5033,6 +5037,8 @@
 				CE234014119E7B1500D83C19 /* File Reading */,
 				71EB83B116DCB7E700D48646 /* Dicom Predicate Editor */,
 				F4CDA0020000000000000003 /* SmartAlbumEditor.swift */,
+				F4E700020000000000000001 /* SurgicalProcedureImporter.swift */,
+				F4E700020000000000000002 /* SurgicalProcedureTimeline.swift */,
 				F4A100000002000000000015 /* Horos/Sources/HorosSettingsWindowController.swift */,
 				AB142DFC05600D76008461A0 /* AppController.h */,
 				AB142DFD05600D76008461A0 /* AppController.m */,
@@ -7226,6 +7232,8 @@
 				F4CDA0010000000000000001 /* HorosDataModels.swift in Sources */,
 				F4CDA0010000000000000002 /* HorosDataStore.swift in Sources */,
 				F4CDA0010000000000000003 /* SmartAlbumEditor.swift in Sources */,
+				F4E700010000000000000001 /* SurgicalProcedureImporter.swift in Sources */,
+				F4E700010000000000000002 /* SurgicalProcedureTimeline.swift in Sources */,
 				F4A100000001000000000001 /* Horos/Sources/MetalViewer/MetalViewerLauncher.swift in Sources */,
 				F4A10000000100000000000C /* Horos/Sources/MetalViewer/Metal3DViewerLauncher.swift in Sources */,
 				F4A100000001000000000010 /* Horos/Sources/MetalViewer/Metal3DVolumeRenderer.swift in Sources */,

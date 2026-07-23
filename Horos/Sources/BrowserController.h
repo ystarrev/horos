@@ -102,6 +102,8 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     //    NSTimer                 *timer, *refreshTimer, *databaseCleanerTimer, *deleteQueueTimer;
     long					loadPreviewIndex, previousNoOfFiles;
     NSManagedObject			*previousItem;
+    NSCache                 *_samePatientStudyGroupCache;
+    NSTimeInterval          _samePatientStudyGroupDatabaseModification;
     
     long					previousBonjourIndex;
     
@@ -544,6 +546,8 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (BOOL)study:(id)study matchesSamePatientAsStudy:(id)referenceStudy;
 - (NSArray *)studiesForDisplayOnlyThisPatientMatchingStudy:(id)study;
 - (NSArray *)relatedStudiesForStudy:(id)study;
+- (NSArray *)surgicalProcedureEventsForStudy:(id)study;
+- (NSDictionary *)surgicalProcedureImportDatabasePaths;
 
 + (NSString*) defaultDocumentsDirectory  __deprecated;
 - (NSString *)documentsDirectoryFor:(int) mode url:(NSString*) url  __deprecated;

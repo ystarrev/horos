@@ -2349,6 +2349,11 @@ Gw
                         <action selector="setSearchType:" target="898" id="11592"/>
                     </connections>
                 </menuItem>
+                <menuItem title="Series Name / Description" tag="11" id="21001">
+                    <connections>
+                        <action selector="setSearchType:" target="898" id="21002"/>
+                    </connections>
+                </menuItem>
                 <menuItem title="Modality" tag="5" id="11597">
                     <connections>
                         <action selector="setSearchType:" target="898" id="11599"/>

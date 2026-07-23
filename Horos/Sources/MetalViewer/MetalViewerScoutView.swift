@@ -2,8 +2,38 @@ import AppKit
 import CoreGraphics
 
 private let metalViewerScoutTextColor = NSColor(calibratedRed: 0.18, green: 1.0, blue: 0.28, alpha: 1.0)
-private let metalViewerScoutStudyNumberTextColor = NSColor.systemRed
+private let metalViewerScoutStudySeparatorColor = NSColor.systemRed
+private let metalViewerScoutProcedureColor = NSColor.systemOrange
 let metalViewerActiveSelectionBlue = NSColor(srgbRed: 0.0, green: 0.68, blue: 1.0, alpha: 1.0)
+
+private enum MetalViewerScoutHighlight {
+    case none
+    case singleSeries
+    case primaryOverlaySeries
+    case secondaryOverlaySeries
+
+    var color: NSColor? {
+        switch self {
+        case .none: return nil
+        case .singleSeries: return metalViewerActiveSelectionBlue
+        case .primaryOverlaySeries: return .systemGreen
+        case .secondaryOverlaySeries: return .systemRed
+        }
+    }
+
+    var backgroundColor: NSColor {
+        switch self {
+        case .none:
+            return NSColor(calibratedWhite: 0.16, alpha: 1)
+        case .singleSeries:
+            return NSColor(calibratedRed: 0.18, green: 0.26, blue: 0.38, alpha: 1)
+        case .primaryOverlaySeries:
+            return NSColor(calibratedRed: 0.10, green: 0.27, blue: 0.14, alpha: 1)
+        case .secondaryOverlaySeries:
+            return NSColor(calibratedRed: 0.30, green: 0.12, blue: 0.14, alpha: 1)
+        }
+    }
+}
 
 private final class MetalViewerScoutDocumentView: NSView {
     override var isFlipped: Bool { true }
@@ -17,12 +47,35 @@ private final class MetalViewerScoutClipView: NSClipView {
     }
 }
 
+private final class MetalViewerScoutSelectionTintView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 private enum MetalViewerScoutLayout {
     static let fallbackThumbnailWidth: CGFloat = 128
     static let thumbnailAspectRatio: CGFloat = 1.0
     static let thumbnailInset: CGFloat = 4
     static let studySeparatorSpacing: CGFloat = 0
     static let studySeparatorThickness: CGFloat = 10
+}
+
+private enum MetalViewerScoutTimelineEntry {
+    case study([MetalViewerSeries])
+    case procedure(SurgicalProcedureEvent)
+
+    var date: Date {
+        switch self {
+        case .study(let series): return series.first?.studyDate ?? .distantPast
+        case .procedure(let event): return event.date
+        }
+    }
+
+    var sortIdentifier: String {
+        switch self {
+        case .study(let series): return "0-\(series.first?.studyIdentifier ?? "")"
+        case .procedure(let event): return "1-\(event.identifier)"
+        }
+    }
 }
 
 extension NSPasteboard.PasteboardType {
@@ -34,6 +87,7 @@ final class MetalViewerScoutView: NSScrollView {
     private let stackView = NSStackView()
     private var itemViews: [MetalViewerScoutItemView] = []
     private var groupViews: [MetalViewerScoutStudyGroupView] = []
+    private var procedureViews: [MetalViewerScoutProcedureView] = []
     private var separatorViews: [MetalViewerScoutStudySeparatorView] = []
     private var pendingThumbnailRefresh: DispatchWorkItem?
 
@@ -41,7 +95,7 @@ final class MetalViewerScoutView: NSScrollView {
     var openSeriesHandler: ((MetalViewerSeries) -> Void)?
     var overlaySeriesHandler: ((MetalViewerSeries) -> Void)?
 
-    init(series: [MetalViewerSeries]) {
+    init(series: [MetalViewerSeries], procedureEvents: [SurgicalProcedureEvent] = []) {
         super.init(frame: .zero)
 
         translatesAutoresizingMaskIntoConstraints = false
@@ -73,7 +127,7 @@ final class MetalViewerScoutView: NSScrollView {
             stackView.widthAnchor.constraint(equalTo: contentView.widthAnchor),
         ])
 
-        reload(series: series)
+        reload(series: series, procedureEvents: procedureEvents)
     }
 
     @available(*, unavailable)
@@ -81,13 +135,21 @@ final class MetalViewerScoutView: NSScrollView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func reload(series: [MetalViewerSeries], loadThumbnailsImmediately: Bool = true) {
+    func reload(
+        series: [MetalViewerSeries],
+        procedureEvents: [SurgicalProcedureEvent] = [],
+        loadThumbnailsImmediately: Bool = true
+    ) {
         pendingThumbnailRefresh?.cancel()
         pendingThumbnailRefresh = nil
 
         groupViews.forEach { group in
             stackView.removeArrangedSubview(group)
             group.removeFromSuperview()
+        }
+        procedureViews.forEach { procedure in
+            stackView.removeArrangedSubview(procedure)
+            procedure.removeFromSuperview()
         }
         separatorViews.forEach { separator in
             stackView.removeArrangedSubview(separator)
@@ -96,9 +158,10 @@ final class MetalViewerScoutView: NSScrollView {
 
         itemViews = []
         groupViews = []
+        procedureViews = []
         separatorViews = []
 
-        for (index, studySeries) in Self.groupedByStudy(series).enumerated() {
+        for (index, entry) in Self.timelineEntries(series: series, procedureEvents: procedureEvents).enumerated() {
             if index > 0 {
                 let separator = MetalViewerScoutStudySeparatorView()
                 stackView.addArrangedSubview(separator)
@@ -107,32 +170,41 @@ final class MetalViewerScoutView: NSScrollView {
                 separatorViews.append(separator)
             }
 
-            let groupView = MetalViewerScoutStudyGroupView()
-            stackView.addArrangedSubview(groupView)
-            groupView.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -(stackView.edgeInsets.left + stackView.edgeInsets.right)).isActive = true
-            groupViews.append(groupView)
+            switch entry {
+            case .study(let studySeries):
+                let groupView = MetalViewerScoutStudyGroupView()
+                stackView.addArrangedSubview(groupView)
+                groupView.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -(stackView.edgeInsets.left + stackView.edgeInsets.right)).isActive = true
+                groupViews.append(groupView)
 
-            for series in studySeries {
-                let item = MetalViewerScoutItemView(series: series, loadThumbnailImmediately: loadThumbnailsImmediately)
-                item.onSelect = { [weak self] selectedSeries in
-                    self?.setSelectedSeries(identifier: selectedSeries.identifier)
-                    self?.selectionHandler?(selectedSeries)
+                for series in studySeries {
+                    let item = MetalViewerScoutItemView(series: series, loadThumbnailImmediately: loadThumbnailsImmediately)
+                    item.onSelect = { [weak self] selectedSeries in
+                        self?.setSelectedSeries(identifier: selectedSeries.identifier)
+                        self?.selectionHandler?(selectedSeries)
+                    }
+                    item.onOpen = { [weak self] openedSeries in
+                        self?.setSelectedSeries(identifier: openedSeries.identifier)
+                        self?.openSeriesHandler?(openedSeries)
+                    }
+                    item.onOverlay = { [weak self] overlaySeries in
+                        self?.setSelectedSeries(identifier: overlaySeries.identifier)
+                        self?.overlaySeriesHandler?(overlaySeries)
+                    }
+                    groupView.addItem(item)
+                    itemViews.append(item)
                 }
-                item.onOpen = { [weak self] openedSeries in
-                    self?.setSelectedSeries(identifier: openedSeries.identifier)
-                    self?.openSeriesHandler?(openedSeries)
-                }
-                item.onOverlay = { [weak self] overlaySeries in
-                    self?.setSelectedSeries(identifier: overlaySeries.identifier)
-                    self?.overlaySeriesHandler?(overlaySeries)
-                }
-                groupView.addItem(item)
-                itemViews.append(item)
+
+            case .procedure(let event):
+                let procedureView = MetalViewerScoutProcedureView(event: event)
+                stackView.addArrangedSubview(procedureView)
+                procedureView.widthAnchor.constraint(equalTo: stackView.widthAnchor, constant: -(stackView.edgeInsets.left + stackView.edgeInsets.right)).isActive = true
+                procedureViews.append(procedureView)
             }
         }
 
         if let first = itemViews.first {
-            first.isSelected = true
+            first.highlight = .singleSeries
         }
 
         if loadThumbnailsImmediately == false {
@@ -145,9 +217,37 @@ final class MetalViewerScoutView: NSScrollView {
         }
     }
 
-    func setSelectedSeries(identifier: String) {
+    func setSelectedSeries(identifier: String, scrollToVisible: Bool = false) {
+        setDisplayedSeries(
+            primaryIdentifier: identifier,
+            overlayIdentifier: nil,
+            scrollToVisible: scrollToVisible
+        )
+    }
+
+    func setDisplayedSeries(
+        primaryIdentifier: String,
+        overlayIdentifier: String?,
+        scrollToVisible: Bool = false
+    ) {
         for item in itemViews {
-            item.isSelected = (item.series.identifier == identifier)
+            if let overlayIdentifier {
+                if item.series.identifier == primaryIdentifier {
+                    item.highlight = .primaryOverlaySeries
+                } else if item.series.identifier == overlayIdentifier {
+                    item.highlight = .secondaryOverlaySeries
+                } else {
+                    item.highlight = .none
+                }
+            } else {
+                item.highlight = item.series.identifier == primaryIdentifier ? .singleSeries : .none
+            }
+        }
+
+        if scrollToVisible {
+            DispatchQueue.main.async { [weak self] in
+                self?.scrollSeriesToVisible(identifier: primaryIdentifier)
+            }
         }
     }
 
@@ -211,6 +311,39 @@ final class MetalViewerScoutView: NSScrollView {
         reflectScrolledClipView(contentView)
     }
 
+    private func scrollSeriesToVisible(identifier: String, retryCount: Int = 0) {
+        guard let documentView,
+              let item = itemViews.first(where: { $0.series.identifier == identifier }) else {
+            return
+        }
+
+        layoutSubtreeIfNeeded()
+        documentView.layoutSubtreeIfNeeded()
+        let itemFrame = item.convert(item.bounds, to: documentView)
+        guard itemFrame.height > 0, contentView.bounds.height > 0 else {
+            guard retryCount < 4 else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.scrollSeriesToVisible(identifier: identifier, retryCount: retryCount + 1)
+            }
+            return
+        }
+
+        let revealFrame = itemFrame.insetBy(dx: 0, dy: -8)
+        var visibleBounds = contentView.bounds
+        if revealFrame.minY < visibleBounds.minY {
+            visibleBounds.origin.y = revealFrame.minY
+        } else if revealFrame.maxY > visibleBounds.maxY {
+            visibleBounds.origin.y = revealFrame.maxY - visibleBounds.height
+        } else {
+            item.loadThumbnailIfNeeded()
+            return
+        }
+
+        contentView.scroll(to: contentView.constrainBoundsRect(visibleBounds).origin)
+        reflectScrolledClipView(contentView)
+        item.loadThumbnailIfNeeded()
+    }
+
     private static func groupedByStudy(_ series: [MetalViewerSeries]) -> [[MetalViewerSeries]] {
         var groups: [[MetalViewerSeries]] = []
         for item in series {
@@ -223,6 +356,20 @@ final class MetalViewerScoutView: NSScrollView {
         }
         return groups
     }
+
+    private static func timelineEntries(
+        series: [MetalViewerSeries],
+        procedureEvents: [SurgicalProcedureEvent]
+    ) -> [MetalViewerScoutTimelineEntry] {
+        let studies = groupedByStudy(series).map(MetalViewerScoutTimelineEntry.study)
+        let procedures = procedureEvents.map(MetalViewerScoutTimelineEntry.procedure)
+        return (studies + procedures).sorted {
+            if $0.date != $1.date {
+                return $0.date > $1.date
+            }
+            return $0.sortIdentifier < $1.sortIdentifier
+        }
+    }
 }
 
 private final class MetalViewerScoutStudySeparatorView: NSView {
@@ -232,13 +379,14 @@ private final class MetalViewerScoutStudySeparatorView: NSView {
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
         layer?.cornerRadius = MetalViewerScoutLayout.studySeparatorThickness / 2
-        layer?.backgroundColor = metalViewerScoutStudyNumberTextColor.withAlphaComponent(0.85).cgColor
+        layer?.backgroundColor = metalViewerScoutStudySeparatorColor.withAlphaComponent(0.85).cgColor
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
 }
 
 private final class MetalViewerScoutStudyGroupView: NSView {
@@ -280,6 +428,97 @@ private final class MetalViewerScoutStudyGroupView: NSView {
     }
 }
 
+private final class MetalViewerScoutProcedureView: NSView {
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter
+    }()
+
+    init(event: SurgicalProcedureEvent) {
+        super.init(frame: .zero)
+
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.borderWidth = 2
+        layer?.borderColor = metalViewerScoutProcedureColor.withAlphaComponent(0.9).cgColor
+        layer?.backgroundColor = metalViewerScoutProcedureColor.withAlphaComponent(0.10).cgColor
+
+        let iconView = NSImageView()
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.contentTintColor = metalViewerScoutProcedureColor
+        iconView.image = NSImage(
+            systemSymbolName: "cross.case.fill",
+            accessibilityDescription: NSLocalizedString("Surgical Procedure", comment: "")
+        )
+
+        let dateLabel = Self.label(
+            Self.dateFormatter.string(from: event.date),
+            font: .systemFont(ofSize: 12, weight: .semibold),
+            color: metalViewerScoutProcedureColor
+        )
+        let operationLabel = Self.label(
+            event.operation.isEmpty ? NSLocalizedString("Surgical Procedure", comment: "") : event.operation,
+            font: .systemFont(ofSize: 13, weight: .semibold),
+            color: .labelColor
+        )
+        operationLabel.maximumNumberOfLines = 3
+
+        let diagnosisLabel = Self.label(
+            event.diagnosis,
+            font: .systemFont(ofSize: 11),
+            color: .secondaryLabelColor
+        )
+        diagnosisLabel.maximumNumberOfLines = 2
+        diagnosisLabel.isHidden = event.diagnosis.isEmpty
+
+        let heading = NSStackView(views: [iconView, dateLabel])
+        heading.translatesAutoresizingMaskIntoConstraints = false
+        heading.orientation = .horizontal
+        heading.alignment = .centerY
+        heading.spacing = 6
+
+        let content = NSStackView(views: [heading, operationLabel, diagnosisLabel])
+        content.translatesAutoresizingMaskIntoConstraints = false
+        content.orientation = .vertical
+        content.alignment = .width
+        content.spacing = 3
+        addSubview(content)
+
+        NSLayoutConstraint.activate([
+            iconView.widthAnchor.constraint(equalToConstant: 18),
+            iconView.heightAnchor.constraint(equalToConstant: 18),
+            dateLabel.trailingAnchor.constraint(lessThanOrEqualTo: heading.trailingAnchor),
+            content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 9),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -9),
+            content.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            heightAnchor.constraint(greaterThanOrEqualToConstant: 74),
+        ])
+
+        toolTip = [event.operation, event.diagnosis, event.results]
+            .filter { $0.isEmpty == false }
+            .joined(separator: "\n")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private static func label(_ value: String, font: NSFont, color: NSColor) -> NSTextField {
+        let label = NSTextField(labelWithString: value)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = font
+        label.textColor = color
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return label
+    }
+}
+
 private final class MetalViewerScoutItemView: NSView {
     let series: MetalViewerSeries
 
@@ -288,6 +527,7 @@ private final class MetalViewerScoutItemView: NSView {
     private let timeOverlayLabel = NSTextField(labelWithString: "")
     private let titleOverlayLabel = NSTextField(labelWithString: "")
     private let countOverlayLabel = NSTextField(labelWithString: "")
+    private let selectionTintView = MetalViewerScoutSelectionTintView()
     private var mouseDownPoint: NSPoint?
     private var mouseDownEvent: NSEvent?
     private var dragTimer: Timer?
@@ -299,7 +539,7 @@ private final class MetalViewerScoutItemView: NSView {
     var onOpen: ((MetalViewerSeries) -> Void)?
     var onOverlay: ((MetalViewerSeries) -> Void)?
 
-    var isSelected: Bool = false {
+    var highlight: MetalViewerScoutHighlight = .none {
         didSet { updateAppearance() }
     }
 
@@ -323,6 +563,8 @@ private final class MetalViewerScoutItemView: NSView {
         configureOverlayLabel(timeOverlayLabel, alignment: .left)
         configureOverlayLabel(titleOverlayLabel, alignment: .left)
         configureOverlayLabel(countOverlayLabel, alignment: .left)
+        topOverlayLabel.lineBreakMode = .byClipping
+        timeOverlayLabel.lineBreakMode = .byClipping
         updateOverlayLabels(isStructuredReport: series.modality == "SR")
 
         addSubview(imageView)
@@ -331,12 +573,23 @@ private final class MetalViewerScoutItemView: NSView {
         imageView.addSubview(titleOverlayLabel)
         imageView.addSubview(countOverlayLabel)
 
+        selectionTintView.translatesAutoresizingMaskIntoConstraints = false
+        selectionTintView.wantsLayer = true
+        selectionTintView.layer?.backgroundColor = metalViewerActiveSelectionBlue.withAlphaComponent(0.20).cgColor
+        selectionTintView.layer?.cornerRadius = 8
+        addSubview(selectionTintView, positioned: .above, relativeTo: imageView)
+
         NSLayoutConstraint.activate([
             imageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: MetalViewerScoutLayout.thumbnailInset),
             imageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -MetalViewerScoutLayout.thumbnailInset),
             imageView.topAnchor.constraint(equalTo: topAnchor, constant: MetalViewerScoutLayout.thumbnailInset),
             imageView.heightAnchor.constraint(equalTo: imageView.widthAnchor, multiplier: MetalViewerScoutLayout.thumbnailAspectRatio),
             imageView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -MetalViewerScoutLayout.thumbnailInset),
+
+            selectionTintView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            selectionTintView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
+            selectionTintView.topAnchor.constraint(equalTo: topAnchor, constant: 2),
+            selectionTintView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
 
             topOverlayLabel.leadingAnchor.constraint(equalTo: imageView.leadingAnchor, constant: 4),
             topOverlayLabel.trailingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: -4),
@@ -365,6 +618,11 @@ private final class MetalViewerScoutItemView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        updateDateTimeFontForCurrentWidth()
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -430,12 +688,15 @@ private final class MetalViewerScoutItemView: NSView {
     }
 
     private func updateAppearance() {
-        layer?.backgroundColor = (isSelected ? NSColor(calibratedRed: 0.18, green: 0.26, blue: 0.38, alpha: 1) : NSColor(calibratedWhite: 0.16, alpha: 1)).cgColor
-        layer?.borderWidth = isSelected ? 3 : 2
-        layer?.borderColor = (isSelected ? metalViewerActiveSelectionBlue : NSColor(calibratedWhite: 0.24, alpha: 1)).cgColor
-        layer?.shadowColor = metalViewerActiveSelectionBlue.cgColor
-        layer?.shadowOpacity = isSelected ? 0.95 : 0
-        layer?.shadowRadius = isSelected ? 5 : 0
+        let highlightColor = highlight.color
+        selectionTintView.isHidden = highlightColor == nil
+        selectionTintView.layer?.backgroundColor = highlightColor?.withAlphaComponent(0.20).cgColor
+        layer?.backgroundColor = highlight.backgroundColor.cgColor
+        layer?.borderWidth = highlightColor == nil ? 2 : 3
+        layer?.borderColor = (highlightColor ?? NSColor(calibratedWhite: 0.24, alpha: 1)).cgColor
+        layer?.shadowColor = highlightColor?.cgColor
+        layer?.shadowOpacity = highlightColor == nil ? 0 : 0.95
+        layer?.shadowRadius = highlightColor == nil ? 0 : 5
         layer?.shadowOffset = .zero
     }
 
@@ -451,12 +712,8 @@ private final class MetalViewerScoutItemView: NSView {
     }
 
     private func updateOverlayLabels(isStructuredReport: Bool) {
-        topOverlayLabel.attributedStringValue = Self.studySeriesAttributedString(
-            for: series,
-            includeSeriesNumber: isStructuredReport == false,
-            includeTime: isStructuredReport
-        )
-        timeOverlayLabel.stringValue = isStructuredReport ? "" : (series.studyDate.map { Self.studyTimeFormatter.string(from: $0) } ?? "")
+        topOverlayLabel.stringValue = series.studyDate.map { Self.studyDateFormatter.string(from: $0) } ?? ""
+        timeOverlayLabel.stringValue = series.studyDate.map { Self.studyTimeFormatter.string(from: $0) } ?? ""
         titleOverlayLabel.stringValue = isStructuredReport ? "" : series.title
         if isStructuredReport {
             countOverlayLabel.stringValue = ""
@@ -466,9 +723,10 @@ private final class MetalViewerScoutItemView: NSView {
             countOverlayLabel.stringValue = "\(series.imageCount) image\(series.imageCount == 1 ? "" : "s")"
         }
 
-        timeOverlayLabel.isHidden = isStructuredReport
+        timeOverlayLabel.isHidden = timeOverlayLabel.stringValue.isEmpty
         titleOverlayLabel.isHidden = isStructuredReport
         countOverlayLabel.isHidden = isStructuredReport
+        needsLayout = true
     }
 
     private func showContextMenu(with event: NSEvent) {
@@ -504,34 +762,38 @@ private final class MetalViewerScoutItemView: NSView {
         label.isSelectable = false
     }
 
-    private static func studySeriesAttributedString(
-        for series: MetalViewerSeries,
-        includeSeriesNumber: Bool,
-        includeTime: Bool
-    ) -> NSAttributedString {
-        let font = NSFont.systemFont(ofSize: 11, weight: .regular)
-        let studyAttributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: metalViewerScoutStudyNumberTextColor,
-        ]
-        let seriesAttributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: metalViewerScoutTextColor,
-        ]
-        let text = NSMutableAttributedString(string: "\(series.studyNumber)", attributes: studyAttributes)
-        let seriesNumber = series.seriesNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func updateDateTimeFontForCurrentWidth() {
+        guard topOverlayLabel.stringValue.isEmpty == false else { return }
 
-        if includeSeriesNumber, seriesNumber.isEmpty == false {
-            text.append(NSAttributedString(string: "-\(seriesNumber)", attributes: seriesAttributes))
-        }
-        if let studyDate = series.studyDate {
-            let dateText = Self.studyDateFormatter.string(from: studyDate)
-            let metadataText = includeTime ? "\(dateText) \(Self.studyTimeFormatter.string(from: studyDate))" : dateText
-            let separator = includeTime ? " " : "  "
-            text.append(NSAttributedString(string: "\(separator)\(metadataText)", attributes: seriesAttributes))
+        let labelWidth = topOverlayLabel.bounds.width > 0
+            ? topOverlayLabel.bounds.width
+            : max(0, imageView.bounds.width - 8)
+        let availableWidth = max(0, labelWidth - 8)
+        guard availableWidth > 0 else { return }
+
+        let font = Self.fontFitting(text: topOverlayLabel.stringValue, width: availableWidth)
+        guard abs((topOverlayLabel.font?.pointSize ?? 0) - font.pointSize) > 0.25 else { return }
+        topOverlayLabel.font = font
+        timeOverlayLabel.font = font
+    }
+
+    private static func fontFitting(text: String, width: CGFloat) -> NSFont {
+        let minimumSize: CGFloat = 11
+        var lowerBound = minimumSize
+        var upperBound = max(minimumSize, width)
+
+        for _ in 0..<10 {
+            let candidateSize = (lowerBound + upperBound) * 0.5
+            let candidateFont = NSFont.systemFont(ofSize: candidateSize, weight: .regular)
+            let measuredWidth = (text as NSString).size(withAttributes: [.font: candidateFont]).width
+            if measuredWidth <= width {
+                lowerBound = candidateSize
+            } else {
+                upperBound = candidateSize
+            }
         }
 
-        return text
+        return NSFont.systemFont(ofSize: floor(lowerBound), weight: .regular)
     }
 
     private static func placeholderThumbnail(size: NSSize) -> NSImage {

@@ -1210,6 +1210,7 @@ final class MetalViewerPaneView: NSView {
     var activateHandler: (() -> Void)?
     var closeHandler: (() -> Void)?
     var seriesDropHandler: ((String, Bool) -> Void)?
+    var displayedSeriesDidChange: (() -> Void)?
     var windowLevelInteractionHandler: (() -> Void)?
     var windowLevelTargetDidChange: ((MetalViewerSeries) -> Void)?
     var canClose: Bool = true {
@@ -1343,10 +1344,11 @@ final class MetalViewerPaneView: NSView {
         dynamicControls.isHidden = true
         self.series = series
         self.overlaySeries = nil
-        reloadTumourSeeds()
+        displayedSeriesDidChange?()
         overlayBlendSlider.doubleValue = 0.5
         overlayBlendSlider.isHidden = true
 
+        let reusableMetalView = metalView
         metalView?.removeFromSuperview()
         metalView = nil
         reportWebView?.removeFromSuperview()
@@ -1358,7 +1360,9 @@ final class MetalViewerPaneView: NSView {
         annotationOverlay.removeFromSuperview()
         registrationStatusView.removeFromSuperview()
 
-        if let html = series.structuredReportHTML() {
+        let structuredReportHTML = series.structuredReportHTML()
+
+        if let html = structuredReportHTML {
             let reportWebView = WKWebView(frame: .zero)
             reportWebView.translatesAutoresizingMaskIntoConstraints = false
             reportWebView.setValue(true, forKey: "drawsBackground")
@@ -1376,6 +1380,7 @@ final class MetalViewerPaneView: NSView {
 
             reportWebView.loadHTMLString(html, baseURL: nil)
             self.reportWebView = reportWebView
+            tumourSeeds = []
             currentStateDescription = series.title
             stateDidChange?(currentStateDescription)
             updateAnnotationOverlay()
@@ -1384,19 +1389,35 @@ final class MetalViewerPaneView: NSView {
             return
         }
 
-        let metalView = MetalImageView(
-            frame: .zero,
-            pixList: series.loadedPixList(),
-            windowLevelState: series.windowLevelState,
-            windowLevelStateDidChange: { [weak series] state in
-                series?.windowLevelState = state
-            },
-            usesAutomaticWindowLevel: series.isMagneticResonance,
-            transferFunctionState: series.transferFunctionState,
-            transferFunctionStateDidChange: { [weak series] state in
-                series?.transferFunctionState = state
-            }
-        )
+        let pixList = series.loadedPixList()
+        let windowLevelStateDidChange: (MetalViewerWindowLevelState) -> Void = { [weak series] state in
+            series?.windowLevelState = state
+        }
+        let transferFunctionStateDidChange: (MetalViewerTransferFunctionState) -> Void = { [weak series] state in
+            series?.transferFunctionState = state
+        }
+        let metalView: MetalImageView
+        if let reusableMetalView, pixList.isEmpty == false {
+            reusableMetalView.replaceSeries(
+                pixList: pixList,
+                windowLevelState: series.windowLevelState,
+                windowLevelStateDidChange: windowLevelStateDidChange,
+                usesAutomaticWindowLevel: series.isMagneticResonance,
+                transferFunctionState: series.transferFunctionState,
+                transferFunctionStateDidChange: transferFunctionStateDidChange
+            )
+            metalView = reusableMetalView
+        } else {
+            metalView = MetalImageView(
+                frame: .zero,
+                pixList: pixList,
+                windowLevelState: series.windowLevelState,
+                windowLevelStateDidChange: windowLevelStateDidChange,
+                usesAutomaticWindowLevel: series.isMagneticResonance,
+                transferFunctionState: series.transferFunctionState,
+                transferFunctionStateDidChange: transferFunctionStateDidChange
+            )
+        }
         metalView.translatesAutoresizingMaskIntoConstraints = false
         metalView.mouseToolAssignments = mouseToolAssignments
         metalView.activateHandler = { [weak self] in
@@ -1485,7 +1506,7 @@ final class MetalViewerPaneView: NSView {
         ])
 
         self.metalView = metalView
-        metalView.renderer.setTumourSeeds(tumourSeeds)
+        reloadTumourSeeds()
         metalView.setDisplayMode(displayMode)
         referenceLineOverlay.showsScales = displayMode == .stack2D && annotationLevel != .none
         metalView.renderer.registrationDidChange = { [weak self] isRunning, message, progress in
@@ -1512,14 +1533,14 @@ final class MetalViewerPaneView: NSView {
         dynamicTimeIndex = 0
         dynamicControls.isHidden = false
         dynamicControls.toolTip = sequence.evidence.joined(separator: " • ")
-        setDynamicTimeIndex(0)
+        setDynamicTimeIndex(0, preservingSliceIndex: false)
 
         if sequence.confidence == .manual {
             startDynamicPlayback()
         }
     }
 
-    private func setDynamicTimeIndex(_ requestedIndex: Int) {
+    private func setDynamicTimeIndex(_ requestedIndex: Int, preservingSliceIndex: Bool = true) {
         guard let dynamicSequence, dynamicSequence.timePoints.isEmpty == false else { return }
         let count = dynamicSequence.timePoints.count
         let index = (requestedIndex % count + count) % count
@@ -1529,6 +1550,7 @@ final class MetalViewerPaneView: NSView {
             let previousWindowLevelSeries = activeWindowLevelSeries
             stopDynamicPlayback()
             overlaySeries = nil
+            displayedSeriesDidChange?()
             overlayBlendSlider.isHidden = true
             metalView?.renderer.clearOverlayPixList()
             let currentWindowLevelSeries = activeWindowLevelSeries
@@ -1537,7 +1559,10 @@ final class MetalViewerPaneView: NSView {
             }
         }
 
-        metalView?.display(pixList: dynamicSequence.timePoints[index], preservingSliceIndex: true)
+        metalView?.display(
+            pixList: dynamicSequence.timePoints[index],
+            preservingSliceIndex: preservingSliceIndex
+        )
         dynamicControls.update(index: index, count: count, isPlaying: dynamicPlaybackTimer != nil)
         updateCurrentStateDescription(rendererState: metalView?.renderer.stateDescription ?? currentStateDescription)
         prefetchDynamicTimePoint(at: index + 1)
@@ -1599,6 +1624,7 @@ final class MetalViewerPaneView: NSView {
         dynamicSequence = nil
         dynamicControls.isHidden = true
         overlaySeries = series
+        displayedSeriesDidChange?()
         registrationStatusView.update(isRunning: true, message: "Preparing registration...", progress: 0)
         window?.displayIfNeeded()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
@@ -1643,6 +1669,7 @@ final class MetalViewerPaneView: NSView {
                 overlayForRefresh.retainLoadedPixelCache(from: overlaySeries)
                 self.overlaySeries = overlayForRefresh
             }
+            displayedSeriesDidChange?()
             reloadTumourSeeds()
             updateAnnotationOverlay()
             updateReferenceLineOverlay()

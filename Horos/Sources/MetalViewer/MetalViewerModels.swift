@@ -2041,12 +2041,19 @@ final class MetalViewerStudy {
     let title: String
     let series: [MetalViewerSeries]
     let initialSeriesIdentifier: String
+    let procedureEvents: [SurgicalProcedureEvent]
 
-    init(title: String, series: [MetalViewerSeries], initialSeriesIdentifier: String) {
+    init(
+        title: String,
+        series: [MetalViewerSeries],
+        initialSeriesIdentifier: String,
+        procedureEvents: [SurgicalProcedureEvent] = []
+    ) {
         precondition(series.isEmpty == false, "MetalViewerStudy requires at least one series.")
         self.title = title
         self.series = series
         self.initialSeriesIdentifier = initialSeriesIdentifier
+        self.procedureEvents = procedureEvents
     }
 }
 

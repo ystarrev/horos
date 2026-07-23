@@ -3035,6 +3035,7 @@ static BOOL initialized = NO;
             object:nil];
     
     [HorosNotificationService configure];
+    [SurgicalProcedureImportController installMenuItem];
     
 //	if ([[NSUserDefaultsController sharedUserDefaultsController] boolForKey: @"ActivityWindowVisibleFlag"])
 //		[[[ActivityWindowController defaultController] window] makeKeyAndOrderFront:self];

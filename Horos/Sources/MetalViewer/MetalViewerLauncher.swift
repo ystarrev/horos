@@ -273,7 +273,11 @@ final class MetalViewerLauncher: NSObject {
             )
             metalTimingLog("MetalViewerLauncher build reused study", since: fullStudyStart)
             let updateStart = CFAbsoluteTimeGetCurrent()
-            existingController.updateStudy(fullStudy, selectInitialSeries: true)
+            existingController.updateStudy(
+                fullStudy,
+                selectInitialSeries: true,
+                revealSelectedSeriesInScout: true
+            )
             metalTimingLog("MetalViewerLauncher update reused window", since: updateStart)
             existingController.window?.makeKeyAndOrderFront(NSApp)
             NSApp.activate(ignoringOtherApps: true)
@@ -337,7 +341,11 @@ final class MetalViewerLauncher: NSObject {
             )
             metalTimingLog("MetalViewerLauncher build full study", since: fullStudyStart)
             let updateStart = CFAbsoluteTimeGetCurrent()
-            controller.updateStudy(fullStudy, selectInitialSeries: forceDynamicInterpretation)
+            controller.updateStudy(
+                fullStudy,
+                selectInitialSeries: forceDynamicInterpretation,
+                revealSelectedSeriesInScout: true
+            )
             metalTimingLog("MetalViewerLauncher update full study", since: updateStart)
         }
     }
@@ -612,6 +620,9 @@ final class MetalViewerLauncher: NSObject {
 
         let browser = BrowserController.currentBrowser()
         let relatedStudies = databaseRelatedStudies(for: currentStudy, browser: browser)
+        let procedureEvents = browser?
+            .perform(NSSelectorFromString("surgicalProcedureEventsForStudy:"), with: currentStudy)?
+            .takeUnretainedValue() as? [SurgicalProcedureEvent] ?? []
 
         var uniqueStudies = relatedStudies
         if uniqueStudies.contains(where: { ($0.studyInstanceUID ?? "") == (currentStudy.studyInstanceUID ?? "") }) == false {
@@ -760,7 +771,12 @@ final class MetalViewerLauncher: NSObject {
             currentSeriesID = dynamicIdentifier
         }
 
-        return MetalViewerStudy(title: studyTitle, series: flattenedSeries, initialSeriesIdentifier: currentSeriesID)
+        return MetalViewerStudy(
+            title: studyTitle,
+            series: flattenedSeries,
+            initialSeriesIdentifier: currentSeriesID,
+            procedureEvents: procedureEvents
+        )
     }
 
     private class func databaseRelatedStudies(for currentStudy: DicomStudy, browser: BrowserController?) -> [DicomStudy] {

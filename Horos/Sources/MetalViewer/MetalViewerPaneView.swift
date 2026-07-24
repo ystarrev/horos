@@ -451,7 +451,6 @@ final class MetalViewerPaneView: NSView {
             }
 
             drawAnnotations(state: overlayState)
-            drawOverlaySeriesInfo(state: overlayState)
             if overlayState.showsGantryTiltCorrectionLabel {
                 drawGantryTiltCorrectionLabel()
             }
@@ -461,6 +460,7 @@ final class MetalViewerPaneView: NSView {
             let annotationsDictionary = state.pix.annotationsDictionary as? [String: Any] ?? [:]
             guard annotationsDictionary.isEmpty == false else {
                 drawDefaultAnnotations(state: state)
+                drawOverlayDateAtFallbackLocation(state: state)
                 drawMadeInHoros()
                 return
             }
@@ -536,6 +536,8 @@ final class MetalViewerPaneView: NSView {
                 }
             }
 
+            let overlayDate = overlayDateString(state: state)
+            var didDrawOverlayDate = false
             let orderedKeys = ["TopLeft", "TopMiddle", "TopRight", "MiddleLeft", "MiddleRight", "LowerLeft", "LowerMiddle", "LowerRight"]
             for key in orderedKeys {
                 let annotations = annotationsDictionary[key] as? [[Any]] ?? []
@@ -556,7 +558,20 @@ final class MetalViewerPaneView: NSView {
                         }
                         yRaster += increment
                     }
+
+                    // The acquisition date is conventionally the bottom-most
+                    // Lower Right annotation. Insert the registered study date
+                    // immediately above it and move the remaining lines upward.
+                    if key == "LowerRight", index == 0, let overlayDate {
+                        drawOverlayString(overlayDate, atX: xRaster, y: yRaster, align: lineAlign)
+                        yRaster += increment
+                        didDrawOverlayDate = true
+                    }
                 }
+            }
+
+            if didDrawOverlayDate == false, overlayDate != nil {
+                drawOverlayDateAtFallbackLocation(state: state)
             }
 
             drawMadeInHoros()
@@ -627,36 +642,23 @@ final class MetalViewerPaneView: NSView {
             }
         }
 
-        private func drawOverlaySeriesInfo(state: State) {
+        private func overlayDateString(state: State) -> String? {
             guard let overlaySeries = state.overlaySeries else {
-                return
+                return nil
             }
 
-            let yStart = topRightAnnotationBottomY(state: state) + 4
-            let xStart: CGFloat = bounds.maxX - 6
-            let formatter = Self.overlayDateFormatter
-            let dateString = overlaySeries.studyDate.map { formatter.string(from: $0) } ?? ""
-            let lines = [overlaySeries.title, dateString].filter { $0.isEmpty == false }
-
-            for (index, line) in lines.enumerated() {
-                drawOverlayString(line, atX: xStart, y: yStart + CGFloat(index) * Self.lineHeight, align: .right)
-            }
+            guard let studyDate = overlaySeries.studyDate else { return nil }
+            return Self.overlayDateFormatter.string(from: studyDate)
         }
 
-        private func topRightAnnotationBottomY(state: State) -> CGFloat {
-            let annotationsDictionary = state.pix.annotationsDictionary as? [String: Any] ?? [:]
-            let annotations = annotationsDictionary["TopRight"] as? [[Any]] ?? []
-            let orderedAnnotations = Array(annotations)
-            var yRaster = Self.lineHeight + 2
-
-            for (index, annotation) in orderedAnnotations.enumerated() {
-                let strings = resolve(annotation: annotation, key: "TopRight", index: index, state: state)
-                for string in strings where string.isEmpty == false {
-                    yRaster += Self.lineHeight
-                }
-            }
-
-            return max(yRaster, 32)
+        private func drawOverlayDateAtFallbackLocation(state: State) {
+            guard let overlayDate = overlayDateString(state: state) else { return }
+            drawOverlayString(
+                overlayDate,
+                atX: bounds.maxX - 2,
+                y: bounds.maxY - 2 - Self.lineHeight * 2,
+                align: .right
+            )
         }
 
         private func resolve(annotation: [Any], key: String, index: Int, state: State) -> [String] {

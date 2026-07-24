@@ -127,6 +127,14 @@ final class MetalViewerLauncher: NSObject {
     private static var pendingDatabaseRefresh: DispatchWorkItem?
     private static var pendingRefreshIdentifiers: RefreshIdentifiers?
     private static var pendingRefreshStartedAt: CFAbsoluteTime?
+    private static let patientBirthDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
 
     private enum DefaultsKey {
         static let incomingImportCoalescingDelay = "HorosIncomingImportCoalescingDelay"
@@ -514,20 +522,55 @@ final class MetalViewerLauncher: NSObject {
         MetalViewerScreenPlacement.applyPresentationFrame(to: window, display: true)
     }
 
-    private class func patientWindowTitle(patientName: String?, patientID: String?, fallbackTitle: String) -> String {
+    private class func patientWindowTitle(
+        patientName: String?,
+        patientID: String?,
+        dateOfBirth: Date?,
+        fallbackTitle: String
+    ) -> String {
         let name = patientName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let identifier = patientID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let patientTitle: String
 
         if name.isEmpty == false, identifier.isEmpty == false {
-            return "\(name) (\(identifier))"
+            patientTitle = "\(name) (\(identifier))"
+        } else if name.isEmpty == false {
+            patientTitle = name
+        } else if identifier.isEmpty == false {
+            patientTitle = identifier
+        } else {
+            patientTitle = fallbackTitle
         }
-        if name.isEmpty == false {
-            return name
+
+        guard let dateOfBirth else { return patientTitle }
+        var demographics = ["DOB \(patientBirthDateFormatter.string(from: dateOfBirth))"]
+        if let age = currentPatientAge(dateOfBirth: dateOfBirth) {
+            demographics.append("age \(age)")
         }
-        if identifier.isEmpty == false {
-            return identifier
+        return "\(patientTitle) [\(demographics.joined(separator: ", "))]"
+    }
+
+    private class func currentPatientAge(dateOfBirth: Date) -> String? {
+        let today = Date()
+        guard dateOfBirth <= today else { return nil }
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let components = calendar.dateComponents([.year, .month, .day], from: dateOfBirth, to: today)
+        let years = max(components.year ?? 0, 0)
+        let months = max(components.month ?? 0, 0)
+        let days = max(components.day ?? 0, 0)
+
+        if years >= 2 {
+            return "\(years) y"
         }
-        return fallbackTitle
+        if years == 1 {
+            return "1 y \(months) m"
+        }
+        if months >= 1 {
+            return "\(months) m"
+        }
+        return "\(days) d"
     }
 
     private class func seriesNumber(from seriesObject: NSManagedObject?) -> String {
@@ -571,10 +614,16 @@ final class MetalViewerLauncher: NSObject {
             ?? fallbackTitle
         let patientName = currentImageObject.value(forKeyPath: "series.study.name") as? String
         let patientID = currentImageObject.value(forKeyPath: "series.study.patientID") as? String
-        let studyTitle = patientWindowTitle(patientName: patientName, patientID: patientID, fallbackTitle: fallbackTitle)
+        let dateOfBirth = currentImageObject.value(forKeyPath: "series.study.dateOfBirth") as? Date
+        let studyDate = currentImageObject.value(forKeyPath: "series.study.date") as? Date
+        let studyTitle = patientWindowTitle(
+            patientName: patientName,
+            patientID: patientID,
+            dateOfBirth: dateOfBirth,
+            fallbackTitle: fallbackTitle
+        )
         let studyIdentifier = (currentImageObject.value(forKeyPath: "series.study.studyInstanceUID") as? String)
             ?? String(describing: currentImageObject.value(forKeyPath: "series.study") ?? UUID().uuidString)
-        let studyDate = currentImageObject.value(forKeyPath: "series.study.date") as? Date
         let series = MetalViewerSeries(
             identifier: currentSeriesID,
             title: seriesTitle,
@@ -644,7 +693,12 @@ final class MetalViewerLauncher: NSObject {
         let currentSeriesObject = currentImageObject.value(forKeyPath: "series") as? NSManagedObject
         var currentSeriesID = currentSeriesObject?.objectID.uriRepresentation().absoluteString
             ?? String(describing: currentImageObject.value(forKeyPath: "series.id") ?? "current-series")
-        let studyTitle = patientWindowTitle(patientName: currentStudy.name, patientID: currentStudy.patientID, fallbackTitle: fallbackTitle)
+        let studyTitle = patientWindowTitle(
+            patientName: currentStudy.name,
+            patientID: currentStudy.patientID,
+            dateOfBirth: currentStudy.dateOfBirth,
+            fallbackTitle: fallbackTitle
+        )
 
         var flattenedSeries: [MetalViewerSeries] = []
         var additionalScoutStudies: [DicomStudy] = []

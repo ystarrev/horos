@@ -105,6 +105,38 @@ struct MetalViewerMouseToolAssignments: Equatable {
     }
 }
 
+enum MetalViewerScoutPlacement: Int, CaseIterable {
+    case left = 0
+    case bottom = 1
+
+    static let defaultsKey = "HorosMetalViewerScoutPlacement"
+    static let didChangeNotification = Notification.Name("HorosMetalViewerScoutPlacementDidChange")
+    static let defaultPlacement: MetalViewerScoutPlacement = .left
+
+    static var saved: MetalViewerScoutPlacement {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: defaultsKey) != nil else {
+            return defaultPlacement
+        }
+        return MetalViewerScoutPlacement(rawValue: defaults.integer(forKey: defaultsKey)) ?? defaultPlacement
+    }
+
+    static func save(_ placement: MetalViewerScoutPlacement) {
+        guard placement != saved else { return }
+        UserDefaults.standard.set(placement.rawValue, forKey: defaultsKey)
+        NotificationCenter.default.post(name: didChangeNotification, object: placement)
+    }
+
+    var title: String {
+        switch self {
+        case .left:
+            return NSLocalizedString("Left", comment: "")
+        case .bottom:
+            return NSLocalizedString("Bottom", comment: "")
+        }
+    }
+}
+
 enum MetalViewerImageInterpolationMode: Int, CaseIterable {
     case nearest = 0
     case linear = 1

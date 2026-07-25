@@ -303,6 +303,7 @@ private struct MetalMPRRenderLayout {
 
 struct MetalMPRPreviewOverlayPane {
     let rect: CGRect
+    let borderColor: NSColor?
     let left: String
     let right: String
     let top: String
@@ -1393,7 +1394,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             }
             let previewPanes = zip(Self.mprPlanes, paneRects).map { pair in
                 let (plane, rect) = pair
-                return mprOverlayPane(for: plane, rect: rect.offsetBy(dx: bounds.minX, dy: bounds.minY))
+                return mprOverlayPane(
+                    for: plane,
+                    rect: rect.offsetBy(dx: bounds.minX, dy: bounds.minY),
+                    borderColor: mprAxisNSColor(for: plane)
+                )
             }
             return MetalMPRPreviewOverlayLayout(
                 mainRect: bounds,
@@ -1405,10 +1410,15 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    private func mprOverlayPane(for plane: MetalMPRPlane, rect: CGRect) -> MetalMPRPreviewOverlayPane {
+    private func mprOverlayPane(
+        for plane: MetalMPRPlane,
+        rect: CGRect,
+        borderColor: NSColor? = nil
+    ) -> MetalMPRPreviewOverlayPane {
         let labels = mprOverlayLabels(for: plane)
         return MetalMPRPreviewOverlayPane(
             rect: rect,
+            borderColor: borderColor,
             left: labels.left,
             right: labels.right,
             top: labels.top,
@@ -1472,6 +1482,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             SIMD4<Float>(0.9, 0.0, 1.0, 1.0),
             SIMD4<Float>(0.0, 0.82, 1.0, 1.0),
         ]
+    }
+
+    private func mprAxisNSColor(for plane: MetalMPRPlane) -> NSColor {
+        let color = mprAxisColor(for: plane)
+        return NSColor(
+            srgbRed: CGFloat(color.x),
+            green: CGFloat(color.y),
+            blue: CGFloat(color.z),
+            alpha: CGFloat(color.w)
+        )
     }
 
     func orientationOverlayState(in bounds: CGRect) -> MetalOrientationOverlayState? {
@@ -5813,15 +5833,17 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 }
             }
 
-            let borderVertices = makePlanarMPRPreviewBorderVertices(for: pane.plane, viewport: pane.viewport, unitScale: pane.unitScale)
-            guard borderVertices.isEmpty == false else {
-                continue
-            }
-            encoder.setRenderPipelineState(mprBorderPipelineState)
-            encoder.setDepthStencilState(mprDepthStencilState)
-            if setMPRVertexData(borderVertices, on: encoder) {
-                encoder.setVertexBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
-                encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: borderVertices.count)
+            if displayMode != .mpr3D {
+                let borderVertices = makePlanarMPRPreviewBorderVertices(for: pane.plane, viewport: pane.viewport, unitScale: pane.unitScale)
+                guard borderVertices.isEmpty == false else {
+                    continue
+                }
+                encoder.setRenderPipelineState(mprBorderPipelineState)
+                encoder.setDepthStencilState(mprDepthStencilState)
+                if setMPRVertexData(borderVertices, on: encoder) {
+                    encoder.setVertexBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
+                    encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: borderVertices.count)
+                }
             }
         }
     }

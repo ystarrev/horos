@@ -1874,7 +1874,7 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
     }
 
     private let titleLabel = NSTextField(labelWithString: "Viewers")
-    private let subtitleLabel = NSTextField(wrappingLabelWithString: "Viewer window placement is moving into the new Swift settings pane while keeping the existing stored preferences unchanged.")
+    private let subtitleLabel = NSTextField(wrappingLabelWithString: "Configure viewer window placement and Metal Planar display behavior.")
     private let screensCardView = HorosSettingsPaneContainerView(frame: .zero)
     private let screensTitleLabel = NSTextField(labelWithString: "Screens & Window size")
     private let screensPreviewView = ViewerScreensPreviewView(frame: .zero)
@@ -1884,7 +1884,16 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
     private let viewerLegendLabel = NSTextField(labelWithString: "Viewer windows")
     private let nonViewerLegendLabel = NSTextField(labelWithString: "Not used for viewers")
     private let menuBarLegendLabel = NSTextField(labelWithString: "Menu bar")
-    private let interpolationCardView = HorosSettingsPaneContainerView(frame: .zero)
+    private let metalPlanarCardView = HorosSettingsPaneContainerView(frame: .zero)
+    private let metalPlanarTitleLabel = NSTextField(labelWithString: "Metal Planar viewer")
+    private let scoutPlacementLabel = NSTextField(labelWithString: "Scout views")
+    private let scoutPlacementControl = NSSegmentedControl(
+        labels: MetalViewerScoutPlacement.allCases.map(\.title),
+        trackingMode: .selectOne,
+        target: nil,
+        action: nil
+    )
+    private let scoutPlacementDetailLabel = NSTextField(wrappingLabelWithString: "Choose whether series scout thumbnails appear along the left side or the bottom of the viewer window.")
     private let interpolationTitleLabel = NSTextField(labelWithString: "Planar image interpolation")
     private let interpolationPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let interpolationDetailLabel = NSTextField(wrappingLabelWithString: "")
@@ -1943,16 +1952,36 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
             screensCardView.addSubview(label)
         }
 
-        interpolationCardView.wantsLayer = true
-        interpolationCardView.layer?.backgroundColor = NSColor(calibratedWhite: 0.17, alpha: 1).cgColor
-        interpolationCardView.layer?.cornerRadius = 14
-        interpolationCardView.layer?.borderWidth = 1
-        interpolationCardView.layer?.borderColor = NSColor(calibratedWhite: 0.24, alpha: 1).cgColor
-        view.addSubview(interpolationCardView)
+        metalPlanarCardView.wantsLayer = true
+        metalPlanarCardView.layer?.backgroundColor = NSColor(calibratedWhite: 0.17, alpha: 1).cgColor
+        metalPlanarCardView.layer?.cornerRadius = 14
+        metalPlanarCardView.layer?.borderWidth = 1
+        metalPlanarCardView.layer?.borderColor = NSColor(calibratedWhite: 0.24, alpha: 1).cgColor
+        view.addSubview(metalPlanarCardView)
+
+        metalPlanarTitleLabel.font = .systemFont(ofSize: 18, weight: .medium)
+        metalPlanarTitleLabel.textColor = NSColor(calibratedWhite: 0.92, alpha: 1)
+        metalPlanarCardView.addSubview(metalPlanarTitleLabel)
+
+        scoutPlacementLabel.font = .systemFont(ofSize: 14, weight: .medium)
+        scoutPlacementLabel.textColor = NSColor(calibratedWhite: 0.88, alpha: 1)
+        metalPlanarCardView.addSubview(scoutPlacementLabel)
+
+        scoutPlacementControl.segmentStyle = .rounded
+        scoutPlacementControl.trackingMode = .selectOne
+        scoutPlacementControl.controlSize = .regular
+        scoutPlacementControl.target = self
+        scoutPlacementControl.action = #selector(scoutPlacementDidChange(_:))
+        scoutPlacementControl.selectedSegment = MetalViewerScoutPlacement.saved.rawValue
+        metalPlanarCardView.addSubview(scoutPlacementControl)
+
+        scoutPlacementDetailLabel.font = .systemFont(ofSize: 13)
+        scoutPlacementDetailLabel.textColor = NSColor(calibratedWhite: 0.70, alpha: 1)
+        metalPlanarCardView.addSubview(scoutPlacementDetailLabel)
 
         interpolationTitleLabel.font = .systemFont(ofSize: 18, weight: .medium)
         interpolationTitleLabel.textColor = NSColor(calibratedWhite: 0.92, alpha: 1)
-        interpolationCardView.addSubview(interpolationTitleLabel)
+        metalPlanarCardView.addSubview(interpolationTitleLabel)
 
         interpolationPopup.controlSize = .regular
         interpolationPopup.target = self
@@ -1963,11 +1992,11 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
             interpolationPopup.lastItem?.tag = mode.rawValue
         }
         interpolationPopup.selectItem(withTag: MetalViewerImageInterpolationMode.saved.rawValue)
-        interpolationCardView.addSubview(interpolationPopup)
+        metalPlanarCardView.addSubview(interpolationPopup)
 
         interpolationDetailLabel.font = .systemFont(ofSize: 13)
         interpolationDetailLabel.textColor = NSColor(calibratedWhite: 0.70, alpha: 1)
-        interpolationCardView.addSubview(interpolationDetailLabel)
+        metalPlanarCardView.addSubview(interpolationDetailLabel)
         updateInterpolationDetail()
     }
 
@@ -1978,9 +2007,9 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
         titleLabel.frame = NSRect(x: Layout.sideInset, y: 36, width: 320, height: 36)
         subtitleLabel.frame = NSRect(x: Layout.sideInset, y: 80, width: contentWidth, height: 42)
 
-        screensCardView.frame = NSRect(x: Layout.sideInset, y: 148, width: contentWidth, height: 360)
+        screensCardView.frame = NSRect(x: Layout.sideInset, y: 148, width: contentWidth, height: 310)
         screensTitleLabel.frame = NSRect(x: 22, y: 20, width: contentWidth - 44, height: 24)
-        screensPreviewView.frame = NSRect(x: 22, y: 58, width: contentWidth - 44, height: 238)
+        screensPreviewView.frame = NSRect(x: 22, y: 58, width: contentWidth - 44, height: 188)
 
         let legendY = screensPreviewView.frame.maxY + 20
         viewerSwatch.frame = NSRect(x: 24, y: legendY + 3, width: 24, height: 12)
@@ -1992,10 +2021,14 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
         menuBarSwatch.frame = NSRect(x: nonViewerLegendLabel.frame.maxX + 22, y: legendY + 6, width: 24, height: 5)
         menuBarLegendLabel.frame = NSRect(x: menuBarSwatch.frame.maxX + 8, y: legendY, width: 80, height: 18)
 
-        interpolationCardView.frame = NSRect(x: Layout.sideInset, y: screensCardView.frame.maxY + 24, width: contentWidth, height: 116)
-        interpolationTitleLabel.frame = NSRect(x: 22, y: 20, width: 260, height: 24)
-        interpolationPopup.frame = NSRect(x: contentWidth - 198, y: 17, width: 176, height: 28)
-        interpolationDetailLabel.frame = NSRect(x: 22, y: 56, width: contentWidth - 44, height: 42)
+        metalPlanarCardView.frame = NSRect(x: Layout.sideInset, y: screensCardView.frame.maxY + 24, width: contentWidth, height: 194)
+        metalPlanarTitleLabel.frame = NSRect(x: 22, y: 18, width: 260, height: 24)
+        scoutPlacementLabel.frame = NSRect(x: 22, y: 54, width: 220, height: 24)
+        scoutPlacementControl.frame = NSRect(x: contentWidth - 198, y: 50, width: 176, height: 28)
+        scoutPlacementDetailLabel.frame = NSRect(x: 22, y: 84, width: contentWidth - 44, height: 36)
+        interpolationTitleLabel.frame = NSRect(x: 22, y: 130, width: 260, height: 24)
+        interpolationPopup.frame = NSRect(x: contentWidth - 198, y: 126, width: 176, height: 28)
+        interpolationDetailLabel.frame = NSRect(x: 22, y: 160, width: contentWidth - 44, height: 24)
     }
 
     private func configureSwatch(_ swatch: NSView, color: NSColor) {
@@ -2011,6 +2044,12 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
         let mode = MetalViewerImageInterpolationMode(rawValue: rawValue) ?? MetalViewerImageInterpolationMode.defaultMode
         MetalViewerImageInterpolationMode.save(mode)
         updateInterpolationDetail()
+    }
+
+    @objc private func scoutPlacementDidChange(_ sender: NSSegmentedControl) {
+        let placement = MetalViewerScoutPlacement(rawValue: sender.selectedSegment)
+            ?? MetalViewerScoutPlacement.defaultPlacement
+        MetalViewerScoutPlacement.save(placement)
     }
 
     private func updateInterpolationDetail() {

@@ -36,6 +36,32 @@ private final class MetalMPRPreviewOverlayView: NSView {
         ]
 
         for pane in layout.previewPanes {
+            if let borderColor = pane.borderColor {
+                let backingScale = max(window?.backingScaleFactor ?? 1, 1)
+                let pixelWidth = 1 / backingScale
+                let outerBorderClearance: CGFloat = 4
+                var borderRect = pane.rect
+                if borderRect.minX <= bounds.minX {
+                    borderRect.origin.x += outerBorderClearance
+                    borderRect.size.width -= outerBorderClearance
+                }
+                if borderRect.maxX >= bounds.maxX {
+                    borderRect.size.width -= outerBorderClearance
+                }
+                if borderRect.minY <= bounds.minY {
+                    borderRect.origin.y += outerBorderClearance
+                    borderRect.size.height -= outerBorderClearance
+                }
+                if borderRect.maxY >= bounds.maxY {
+                    borderRect.size.height -= outerBorderClearance
+                }
+                borderRect = borderRect.insetBy(dx: pixelWidth * 0.5, dy: pixelWidth * 0.5)
+                let path = NSBezierPath(rect: borderRect)
+                path.lineWidth = pixelWidth
+                borderColor.setStroke()
+                path.stroke()
+            }
+
             drawLabel(pane.left, at: CGPoint(x: pane.rect.minX + 8, y: pane.rect.midY), alignment: .left, attributes: attributes)
             drawLabel(pane.right, at: CGPoint(x: pane.rect.maxX - 8, y: pane.rect.midY), alignment: .right, attributes: attributes)
             drawLabel(pane.top, at: CGPoint(x: pane.rect.midX, y: pane.rect.minY + 8), alignment: .center, attributes: attributes)

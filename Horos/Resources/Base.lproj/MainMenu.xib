@@ -315,6 +315,21 @@
                                     <action selector="viewXML:" target="898" id="14840"/>
                                 </connections>
                             </menuItem>
+                            <menuItem title="Reveal In Finder" id="cdx-file-reveal">
+                                <connections>
+                                    <action selector="revealInFinder:" target="898" id="cdx-file-reveal-action"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Lock Studies" id="cdx-file-lock">
+                                <connections>
+                                    <action selector="lockStudies:" target="898" id="cdx-file-lock-action"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Unlock Studies" id="cdx-file-unlock">
+                                <connections>
+                                    <action selector="unlockStudies:" target="898" id="cdx-file-unlock-action"/>
+                                </connections>
+                            </menuItem>
                             <menuItem isSeparatorItem="YES" id="12530">
                                 <modifierMask key="keyEquivalentModifierMask" command="YES"/>
                             </menuItem>
@@ -424,20 +439,6 @@
                                 <modifierMask key="keyEquivalentModifierMask" shift="YES" control="YES"/>
                                 <connections>
                                     <action selector="querySelectedStudy:" target="-1" id="13799"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem isSeparatorItem="YES" id="14650">
-                                <modifierMask key="keyEquivalentModifierMask" command="YES"/>
-                            </menuItem>
-                            <menuItem title="Auto Query / Retrieve Window..." tag="1" id="14646">
-                                <modifierMask key="keyEquivalentModifierMask"/>
-                                <connections>
-                                    <action selector="queryDICOM:" target="898" id="14647"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="Auto Query / Retrieve Refresh" tag="1" keyEquivalent="A" id="14648">
-                                <connections>
-                                    <action selector="autoQueryRefresh:" target="694" id="14649"/>
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="13804">

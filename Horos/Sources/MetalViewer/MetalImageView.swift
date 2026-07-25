@@ -720,8 +720,13 @@ final class MetalImageView: MTKView {
                     mprDragMode = .none
                 }
             case .scroll:
-                mprScrollAxisOverride = renderer.mprSlicePlaneAxis(at: dragAnchor, in: bounds)
-                mprDragMode = .none
+                if renderer.displayMode == .mpr3D,
+                   renderer.beginMPRPreviewPlaneDrag(at: dragAnchor, in: bounds) {
+                    mprDragMode = .previewPlane
+                } else {
+                    mprScrollAxisOverride = renderer.mprSlicePlaneAxis(at: dragAnchor, in: bounds)
+                    mprDragMode = .none
+                }
             case .zoom, .measure, .tumourSeed:
                 mprDragMode = .none
             }
@@ -770,8 +775,13 @@ final class MetalImageView: MTKView {
                         mprDragMode = .none
                     }
                 case .scroll:
-                    mprScrollAxisOverride = renderer.mprSlicePlaneAxis(at: currentPoint, in: bounds)
-                    mprDragMode = .none
+                    if renderer.displayMode == .mpr3D,
+                       renderer.beginMPRPreviewPlaneDrag(at: currentPoint, in: bounds) {
+                        mprDragMode = .previewPlane
+                    } else {
+                        mprScrollAxisOverride = renderer.mprSlicePlaneAxis(at: currentPoint, in: bounds)
+                        mprDragMode = .none
+                    }
                 case .zoom, .measure, .tumourSeed:
                     mprDragMode = .none
                 }
@@ -880,7 +890,11 @@ final class MetalImageView: MTKView {
         case .zoom:
             zoomFromDrag(deltaY: deltaY, currentPoint: currentPoint)
         case .scroll:
-            scrollOrScaleMPRFromDrag(to: currentPoint, deltaY: deltaY, event: event)
+            if mprDragMode == .previewPlane {
+                renderer.dragMPRPreviewPlane(to: currentPoint, in: bounds)
+            } else {
+                scrollOrScaleMPRFromDrag(to: currentPoint, deltaY: deltaY, event: event)
+            }
         case .windowLevel:
             updateWindowLevelFromDrag(deltaX: deltaX, deltaY: deltaY)
         case .rotate:

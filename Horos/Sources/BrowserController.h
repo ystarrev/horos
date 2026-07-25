@@ -98,8 +98,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     
     DCMPix                  *curPreviewPix;
     
-    NSTimer                 *refreshTimer;
-    //    NSTimer                 *timer, *refreshTimer, *databaseCleanerTimer, *deleteQueueTimer;
     long					loadPreviewIndex, previousNoOfFiles;
     NSManagedObject			*previousItem;
     NSCache                 *_samePatientStudyGroupCache;

@@ -7103,7 +7103,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             }
         }
         
-        [refreshTimer setFireDate: [NSDate dateWithTimeIntervalSinceNow:0.5]];
     }
     @catch (NSException* e)
     {
@@ -14582,9 +14581,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         if( [[NSUserDefaults standardUserDefaults] integerForKey:@"LISTENERCHECKINTERVAL"] < 1)
             [[NSUserDefaults standardUserDefaults] setInteger:1 forKey:@"LISTENERCHECKINTERVAL"];
         
-        if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"] == NO)
-            refreshTimer = [[NSTimer scheduledTimerWithTimeInterval: 5*60 target:self selector:@selector(refreshDatabase:) userInfo:self repeats:YES] retain];
-        
         [NSTimer scheduledTimerWithTimeInterval: 10 target:self selector:@selector(emptyDeleteQueue:) userInfo:self repeats:YES]; // 10
         [NSTimer scheduledTimerWithTimeInterval: 1 target:self selector:@selector(refreshComparativeStudiesIfNeeded:) userInfo:self repeats:YES];
         
@@ -14737,6 +14733,8 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     }
     
     [menu addItemWithTitle: NSLocalizedString(@"Display only this patient", nil) action: @selector(searchForCurrentPatient:) keyEquivalent:@""];
+    [menu addItemWithTitle: NSLocalizedString(@"Query Selected Patient from Q&R Window...", nil) action: @selector(querySelectedStudy:) keyEquivalent:@""];
+    [menu addItemWithTitle: NSLocalizedString(@"Export to DICOM File(s)", nil) action: @selector(exportDICOMFile:) keyEquivalent:@""];
     
     [menu addItem: [NSMenuItem separatorItem]];
     [menu addItemWithTitle: NSLocalizedString(@"Open Images", nil) action: @selector(viewerDICOM:) keyEquivalent:@""];
@@ -14760,7 +14758,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     [menu addItemWithTitle: NSLocalizedString(@"Export to Movie", nil) action: @selector(exportQuicktime:) keyEquivalent:@""];
     [menu addItemWithTitle: NSLocalizedString(@"Export to JPEG", nil) action: @selector(exportJPEG:) keyEquivalent:@""];
     [menu addItemWithTitle: NSLocalizedString(@"Export to TIFF", nil) action: @selector(exportTIFF:) keyEquivalent:@""];
-    [menu addItemWithTitle: NSLocalizedString(@"Export to DICOM File(s)", nil) action: @selector(exportDICOMFile:) keyEquivalent:@""];
     [menu addItemWithTitle: NSLocalizedString(@"Export to Email", nil)  action:@selector(sendMail:) keyEquivalent:@""];
     [menu addItemWithTitle: NSLocalizedString(@"Export ROI and Key Images as a DICOM Series", nil) action:@selector(exportROIAndKeyImagesAsDICOMSeries:) keyEquivalent:@""];
     
@@ -14776,13 +14773,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         [menu addItemWithTitle: NSLocalizedString(@"Unlock Studies", nil)  action:@selector(unlockStudies:) keyEquivalent:@""];
     }
     
-    if (isWritable) { // TODO: allow report access, read-only
-        [menu addItem: [NSMenuItem separatorItem]];
-        [menu addItemWithTitle: NSLocalizedString(@"Create/Open Report", nil) action: @selector(generateReport:) keyEquivalent:@""];
-        [menu addItemWithTitle: NSLocalizedString(@"Convert Report to PDF...", nil) action: @selector(convertReportToPDF:) keyEquivalent:@""];
-        [menu addItemWithTitle: NSLocalizedString(@"Convert Report to DICOM PDF", nil) action: @selector(convertReportToDICOMSR:) keyEquivalent:@""];
-    }
-    
     if (isWritable) {
         [menu addItem: [NSMenuItem separatorItem]];
         [menu addItemWithTitle: NSLocalizedString(@"Merge Selected Studies", nil) action: @selector(mergeStudies:) keyEquivalent:@""];
@@ -14796,7 +14786,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     
     if (isWritable) {
         [menu addItem: [NSMenuItem separatorItem]];
-        [menu addItemWithTitle: NSLocalizedString(@"Query Selected Patient from Q&R Window...", nil) action: @selector(querySelectedStudy:) keyEquivalent:@""];
         [menu addItemWithTitle: NSLocalizedString(@"Burn", nil) action: @selector(burnDICOM:) keyEquivalent:@""];
         [menu addItemWithTitle: NSLocalizedString(@"Anonymize", nil) action: @selector(anonymizeDICOM:) keyEquivalent:@""];
         [menu addItemWithTitle: NSLocalizedString(@"Rebuild Selected Thumbnails", nil)  action:@selector(rebuildThumbnails:) keyEquivalent:@""];
@@ -20763,18 +20752,28 @@ static volatile int numberOfThreadsForJPEG = 0;
     NSMutableArray *identityPredicates = [NSMutableArray array];
 
     NSString *patientID = [self samePatientMatchingStringValueForKey: @"patientID" item: study];
+    NSPredicate *patientIDPredicate = nil;
     if( patientID.length)
-        [identityPredicates addObject: [NSPredicate predicateWithFormat: @"patientID == %@", patientID]];
+    {
+        patientIDPredicate = [NSPredicate predicateWithFormat: @"patientID == %@", patientID];
+        [identityPredicates addObject: patientIDPredicate];
+    }
 
     NSDate *dateOfBirth = [self samePatientMatchingDateValueForKey: @"dateOfBirth" item: study];
+    NSPredicate *dateOfBirthPredicate = nil;
     if( dateOfBirth)
     {
         NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
         calendar.timeZone = [NSTimeZone localTimeZone];
         NSDate *birthDateStart = [calendar startOfDayForDate:dateOfBirth];
         NSDate *birthDateEnd = [calendar dateByAddingUnit:NSCalendarUnitDay value:1 toDate:birthDateStart options:0];
-        [identityPredicates addObject: [NSPredicate predicateWithFormat: @"(dateOfBirth >= %@) AND (dateOfBirth < %@)", birthDateStart, birthDateEnd]];
+        dateOfBirthPredicate = [NSPredicate predicateWithFormat: @"(dateOfBirth >= %@) AND (dateOfBirth < %@)", birthDateStart, birthDateEnd];
+        [identityPredicates addObject: dateOfBirthPredicate];
     }
+
+    // An exact Patient ID and birth date pair is stronger than a minor name variation.
+    if( patientIDPredicate && dateOfBirthPredicate)
+        [samePatientPredicates addObject: [NSCompoundPredicate andPredicateWithSubpredicates: [NSArray arrayWithObjects: patientIDPredicate, dateOfBirthPredicate, nil]]];
 
     if( patientNamePredicate && identityPredicates.count)
     {

@@ -358,6 +358,7 @@ extern "C"
 - (void)restoreSeriesSelectionPanelSettings;
 - (void)applySeriesFiltersAfterQueryRefreshWithAutoExpand:(BOOL)autoExpandSmallResults;
 - (void)refreshList:(NSArray*)l autoExpandSmallResults:(BOOL)autoExpandSmallResults;
+- (NSUInteger)visibleStudyCount;
 - (NSArray *)seriesSelectedByHighlight;
 - (NSArray *)seriesSelectedForRetrieve;
 - (NSArray *)seriesChildrenForStudyItem:(id)item;
@@ -6269,7 +6270,8 @@ extern "C"
     [self restoreSeriesSelectionPanelSettings];
     [self rebuildVisibleTopLevelQueryItems];
 
-    if( autoExpandSmallResults && [resultArray count] > 0 && [resultArray count] < 10)
+    NSUInteger studyCount = [self visibleStudyCount];
+    if( autoExpandSmallResults && studyCount > 0 && studyCount < 10)
         [self expandAllQueryStudies: self];
 
     [self rebuildHighlightedSeriesFromFilters];
@@ -6434,30 +6436,35 @@ extern "C"
     [retrieveSelectedSeriesButton setNeedsDisplay: YES];
 }
 
-- (void)updateNumberOfStudiesLabel
+- (NSUInteger)visibleStudyCount
 {
-    NSUInteger visibleStudyCount = 0;
+    NSUInteger count = 0;
 
     for( id item in resultArray)
     {
         if( [item isMemberOfClass: [DCMTKStudyQueryNode class]])
         {
             if( [self shouldDisplayQueryItem: item])
-                visibleStudyCount++;
+                count++;
         }
         else if( [item isMemberOfClass: [DCMTKRootQueryNode class]])
         {
             for( id child in [item children])
             {
                 if( [child isMemberOfClass: [DCMTKStudyQueryNode class]] && [self shouldDisplayQueryItem: child])
-                    visibleStudyCount++;
+                    count++;
             }
         }
         else if( [self shouldDisplayQueryItem: item])
-            visibleStudyCount++;
+            count++;
     }
 
-    [numberOfStudies setStringValue: N2LocalizedSingularPluralCount( visibleStudyCount, NSLocalizedString( @"study found", nil), NSLocalizedString( @"studies found", nil))];
+    return count;
+}
+
+- (void)updateNumberOfStudiesLabel
+{
+    [numberOfStudies setStringValue: N2LocalizedSingularPluralCount( [self visibleStudyCount], NSLocalizedString( @"study found", nil), NSLocalizedString( @"studies found", nil))];
 }
 
 - (void)refreshSeriesSelectionDisplay

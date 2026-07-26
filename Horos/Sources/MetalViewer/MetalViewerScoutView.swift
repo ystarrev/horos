@@ -181,7 +181,11 @@ final class MetalViewerScoutView: NSScrollView {
         procedureViews = []
         separatorViews = []
 
-        for (index, entry) in Self.timelineEntries(series: series, procedureEvents: procedureEvents).enumerated() {
+        let timelineEntries = Self.timelineEntries(series: series, procedureEvents: procedureEvents)
+        let arrangedEntries = scoutPlacement == .bottom
+            ? Array(timelineEntries.reversed())
+            : timelineEntries
+        for (index, entry) in arrangedEntries.enumerated() {
             if index > 0 {
                 let separator = MetalViewerScoutStudySeparatorView()
                 stackView.addArrangedSubview(separator)
@@ -258,8 +262,13 @@ final class MetalViewerScoutView: NSScrollView {
             }
         }
 
-        if let first = itemViews.first {
-            first.highlight = .singleSeries
+        let newestSeriesIdentifier = timelineEntries.compactMap { entry -> String? in
+            guard case .study(let studySeries) = entry else { return nil }
+            return studySeries.first?.identifier
+        }.first
+        if let newestSeriesIdentifier,
+           let newestItem = itemViews.first(where: { $0.series.identifier == newestSeriesIdentifier }) {
+            newestItem.highlight = .singleSeries
         }
 
         if loadThumbnailsImmediately == false {
@@ -434,7 +443,17 @@ final class MetalViewerScoutView: NSScrollView {
             return
         }
 
-        contentView.scroll(to: .zero)
+        switch scoutPlacement {
+        case .left:
+            contentView.scroll(to: .zero)
+        case .bottom:
+            var visibleBounds = contentView.bounds
+            visibleBounds.origin = CGPoint(
+                x: max(documentView.bounds.width - visibleBounds.width, 0),
+                y: 0
+            )
+            contentView.scroll(to: contentView.constrainBoundsRect(visibleBounds).origin)
+        }
         reflectScrolledClipView(contentView)
     }
 

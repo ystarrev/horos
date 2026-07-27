@@ -40,6 +40,7 @@ final class MetalViewerToolbarView: NSView {
     private let rightMouseButtonRadio = NSButton(radioButtonWithTitle: NSLocalizedString("Right Button", comment: ""), target: nil, action: nil)
     private var selectedMouseButton: MetalViewerMouseButton = .left
     private var mouseToolAssignments = MetalViewerMouseToolAssignments()
+    private var mouseModifierFlags: NSEvent.ModifierFlags = []
     private var mouseToolButtons: [MetalViewerMouseTool: NSButton] = [:]
     private var annotationButtons: [MetalViewerAnnotationLevel: NSButton] = [:]
     var viewerModeSelectionHandler: ((ViewerMode) -> Void)?
@@ -188,6 +189,13 @@ final class MetalViewerToolbarView: NSView {
     func selectMouseToolAssignments(_ assignments: MetalViewerMouseToolAssignments) {
         mouseToolAssignments = assignments
         updateMouseButtonRadioStates()
+        updateMouseToolHighlights()
+    }
+
+    func setMouseModifierFlags(_ flags: NSEvent.ModifierFlags) {
+        let relevantFlags = flags.intersection([.control, .command, .option, .shift])
+        guard relevantFlags != mouseModifierFlags else { return }
+        mouseModifierFlags = relevantFlags
         updateMouseToolHighlights()
     }
 
@@ -517,7 +525,14 @@ final class MetalViewerToolbarView: NSView {
         guard let tool = MetalViewerMouseTool(rawValue: sender.tag) else {
             return
         }
-        mouseToolAssignments.setTool(tool, for: selectedMouseButton)
+        let modifierFlags = NSApp.currentEvent?.modifierFlags ?? mouseModifierFlags
+        setMouseModifierFlags(modifierFlags)
+        mouseToolAssignments.setTool(
+            tool,
+            for: selectedMouseButton,
+            modifierFlags: modifierFlags
+        )
+        mouseToolAssignments.save()
         updateMouseToolHighlights()
         mouseToolSelectionHandler?(mouseToolAssignments)
     }
@@ -534,7 +549,10 @@ final class MetalViewerToolbarView: NSView {
     }
 
     private func updateMouseToolHighlights() {
-        let selectedTool = mouseToolAssignments.tool(for: selectedMouseButton)
+        let selectedTool = mouseToolAssignments.resolvedTool(
+            for: selectedMouseButton,
+            modifierFlags: mouseModifierFlags
+        )
         for (tool, button) in mouseToolButtons {
             let isSelected = tool == selectedTool
             button.state = isSelected ? .on : .off

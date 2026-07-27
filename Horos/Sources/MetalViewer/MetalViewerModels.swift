@@ -67,7 +67,7 @@ enum MetalTextureLimits {
     }
 }
 
-enum MetalViewerMouseButton: Int, Hashable {
+enum MetalViewerMouseButton: Int, CaseIterable, Hashable {
     case left = 0
     case right = 1
 }
@@ -82,26 +82,105 @@ enum MetalViewerMouseTool: Int, CaseIterable, Hashable {
     case tumourSeed = 6
 }
 
-struct MetalViewerMouseToolAssignments: Equatable {
-    var left: MetalViewerMouseTool = .windowLevel
-    var right: MetalViewerMouseTool = .zoom
+enum MetalViewerMouseModifier: String, CaseIterable, Hashable {
+    case none
+    case control
+    case command
+    case option
+    case shift
 
-    func tool(for button: MetalViewerMouseButton) -> MetalViewerMouseTool {
-        switch button {
-        case .left:
-            return left
-        case .right:
-            return right
+    init(modifierFlags: NSEvent.ModifierFlags) {
+        let flags = modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags.contains(.control) {
+            self = .control
+        } else if flags.contains(.command) {
+            self = .command
+        } else if flags.contains(.option) {
+            self = .option
+        } else if flags.contains(.shift) {
+            self = .shift
+        } else {
+            self = .none
+        }
+    }
+}
+
+struct MetalViewerMouseToolAssignments: Equatable {
+    private static let defaultsKey = "HorosMetalViewerMouseToolAssignments"
+
+    private struct Binding: Hashable {
+        let button: MetalViewerMouseButton
+        let modifier: MetalViewerMouseModifier
+
+        var defaultsKey: String {
+            "\(modifier.rawValue).\(button.rawValue)"
         }
     }
 
-    mutating func setTool(_ tool: MetalViewerMouseTool, for button: MetalViewerMouseButton) {
+    private var assignedTools: [Binding: MetalViewerMouseTool] = [:]
+
+    init(userDefaults: UserDefaults = .standard) {
+        guard let storedAssignments = userDefaults.dictionary(forKey: Self.defaultsKey) else {
+            return
+        }
+        for modifier in MetalViewerMouseModifier.allCases {
+            for button in MetalViewerMouseButton.allCases {
+                let binding = Binding(button: button, modifier: modifier)
+                guard let rawValue = (storedAssignments[binding.defaultsKey] as? NSNumber)?.intValue,
+                      let tool = MetalViewerMouseTool(rawValue: rawValue) else {
+                    continue
+                }
+                assignedTools[binding] = tool
+            }
+        }
+    }
+
+    func tool(for button: MetalViewerMouseButton) -> MetalViewerMouseTool {
+        tool(for: button, modifier: .none)
+    }
+
+    func tool(
+        for button: MetalViewerMouseButton,
+        modifier: MetalViewerMouseModifier
+    ) -> MetalViewerMouseTool {
+        if let assignedTool = assignedTools[Binding(button: button, modifier: modifier)] {
+            return assignedTool
+        }
+        if modifier == .shift {
+            return .pan
+        }
         switch button {
         case .left:
-            left = tool
+            return .windowLevel
         case .right:
-            right = tool
+            return .zoom
         }
+    }
+
+    func resolvedTool(
+        for button: MetalViewerMouseButton,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> MetalViewerMouseTool {
+        tool(
+            for: button,
+            modifier: MetalViewerMouseModifier(modifierFlags: modifierFlags)
+        )
+    }
+
+    mutating func setTool(
+        _ tool: MetalViewerMouseTool,
+        for button: MetalViewerMouseButton,
+        modifierFlags: NSEvent.ModifierFlags = []
+    ) {
+        let modifier = MetalViewerMouseModifier(modifierFlags: modifierFlags)
+        assignedTools[Binding(button: button, modifier: modifier)] = tool
+    }
+
+    func save(userDefaults: UserDefaults = .standard) {
+        let storedAssignments = assignedTools.reduce(into: [String: Int]()) { result, assignment in
+            result[assignment.key.defaultsKey] = assignment.value.rawValue
+        }
+        userDefaults.set(storedAssignments, forKey: Self.defaultsKey)
     }
 }
 

@@ -16,8 +16,12 @@ private final class MetalViewerSplitView: NSSplitView {
 private final class MetalViewerWindow: NSWindow {
     var tabKeyHandler: ((Bool) -> Bool)?
     var annotationLevelHandler: ((MetalViewerAnnotationLevel) -> Void)?
+    var modifierFlagsHandler: ((NSEvent.ModifierFlags) -> Void)?
 
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .flagsChanged {
+            modifierFlagsHandler?(event.modifierFlags)
+        }
         if event.type == .keyDown,
            event.keyCode == 48,
            shouldUseTabForPaneTraversal(event),
@@ -26,6 +30,11 @@ private final class MetalViewerWindow: NSWindow {
         }
 
         super.sendEvent(event)
+    }
+
+    override func resignKey() {
+        modifierFlagsHandler?([])
+        super.resignKey()
     }
 
     @objc func annotMenu(_ sender: Any?) {
@@ -190,6 +199,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
         window.annotationLevelHandler = { [weak self] level in
             self?.setAnnotationLevel(level)
+        }
+        window.modifierFlagsHandler = { [weak self] flags in
+            self?.toolbarView.setMouseModifierFlags(flags)
         }
         contentSplitView.delegate = self
         contentSplitView.dividerDragEnded = { [weak self] in

@@ -143,6 +143,7 @@ final class MetalImageView: MTKView {
     private var wlAnchor: Float = 0
     private var wwAnchor: Float = 0
     private var panAnchor = SIMD2<Float>(repeating: 0)
+    private var activeMPRPanAxis: Int?
     private var activeMouseButton: MetalViewerMouseButton = .left
     private var activeMouseTool: MetalViewerMouseTool = .windowLevel
     private var mprDragMode: MPRDragMode = .none
@@ -462,19 +463,17 @@ final class MetalImageView: MTKView {
     }
 
     private func mouseTool(for button: MetalViewerMouseButton, event: NSEvent) -> MetalViewerMouseTool {
-        let assignedTool = mouseToolAssignments.tool(for: button)
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if flags.contains(.control),
-           button == .right,
-           mouseToolAssignments.tool(for: .left) == .tumourSeed {
-            return .tumourSeed
-        }
-        if flags.contains(.shift),
-           assignedTool != .measure,
-           activeMouseTool != .measure {
-            return .pan
-        }
-        return assignedTool
+        mouseToolAssignments.resolvedTool(
+            for: button,
+            modifierFlags: event.modifierFlags
+        )
+    }
+
+    private func updatePanAnchor(at point: CGPoint) {
+        activeMPRPanAxis = renderer.displayMode == .mpr3D
+            ? renderer.mprSlicePlaneAxis(at: point, in: bounds)
+            : nil
+        panAnchor = renderer.panOffset(forMPRPlaneAxis: activeMPRPanAxis)
     }
 
     private static let preciseScrollPointsPerSlice: CGFloat = 18
@@ -573,6 +572,7 @@ final class MetalImageView: MTKView {
         wlAnchor = 0
         wwAnchor = 0
         panAnchor = .zero
+        activeMPRPanAxis = nil
         mprDragMode = .none
         mprScrollAxisOverride = nil
         isDraggingMPRPreviewDivider = false
@@ -708,7 +708,7 @@ final class MetalImageView: MTKView {
         dragAnchor = convert(event.locationInWindow, from: nil)
         wlAnchor = renderer.activeWindowLevel
         wwAnchor = renderer.activeWindowWidth
-        panAnchor = renderer.panOffset
+        updatePanAnchor(at: dragAnchor)
         activeMouseButton = button
         activeMouseTool = mouseTool(for: button, event: event)
         activeTumourSeedDeletion = activeMouseTool == .tumourSeed
@@ -779,7 +779,7 @@ final class MetalImageView: MTKView {
             dragAnchor = currentPoint
             wlAnchor = renderer.activeWindowLevel
             wwAnchor = renderer.activeWindowWidth
-            panAnchor = renderer.panOffset
+            updatePanAnchor(at: currentPoint)
             sliceDragAccumulator = 0
             mprScrollAxisOverride = nil
             if renderer.displayMode.isMPRLike {
@@ -850,6 +850,7 @@ final class MetalImageView: MTKView {
         renderer.endMPRPlaneDrag()
         mprDragMode = .none
         mprScrollAxisOverride = nil
+        activeMPRPanAxis = nil
         sliceDragAccumulator = 0
         let currentPoint = convert(event.locationInWindow, from: nil)
         if activeMouseTool == .measure {
@@ -912,7 +913,10 @@ final class MetalImageView: MTKView {
     ) {
         switch tool {
         case .pan:
-            renderer.setPanOffset(panAnchor + SIMD2<Float>(deltaX, deltaY))
+            renderer.setPanOffset(
+                panAnchor + SIMD2<Float>(deltaX, deltaY),
+                forMPRPlaneAxis: activeMPRPanAxis
+            )
         case .zoom:
             zoomFromDrag(deltaY: deltaY, currentPoint: currentPoint)
         case .scroll:
@@ -937,7 +941,10 @@ final class MetalImageView: MTKView {
                 renderer.rotateMPR(from: dragAnchor, to: currentPoint, in: bounds)
                 dragAnchor = currentPoint
             case .pan:
-                renderer.setPanOffset(panAnchor + SIMD2<Float>(deltaX, deltaY))
+                renderer.setPanOffset(
+                    panAnchor + SIMD2<Float>(deltaX, deltaY),
+                    forMPRPlaneAxis: activeMPRPanAxis
+                )
             case .none:
                 break
             }
@@ -962,7 +969,7 @@ final class MetalImageView: MTKView {
         let zoomFactor = min(max(Float(exp(Double(deltaY) * 0.01)), 0.05), 20)
         renderer.zoom(by: zoomFactor)
         dragAnchor = currentPoint
-        panAnchor = renderer.panOffset
+        panAnchor = renderer.panOffset(forMPRPlaneAxis: activeMPRPanAxis)
     }
 
     private func zoomFromScrollWheel(delta: CGFloat) {
@@ -1447,6 +1454,7 @@ final class MetalImageView: MTKView {
     }
 
     func setDisplayMode(_ mode: MetalViewerDisplayMode) {
+        activeMPRPanAxis = nil
         renderer.setDisplayMode(mode)
         mouseAnnotationState = nil
         annotationStateDidChange?()

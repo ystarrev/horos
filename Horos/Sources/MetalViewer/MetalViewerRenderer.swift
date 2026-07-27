@@ -417,6 +417,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private(set) var overlayTranslationPixels = SIMD2<Float>(repeating: 0)
     private(set) var zoomScale: Float = 1
     private(set) var panOffset = SIMD2<Float>(repeating: 0)
+    private var mpr3DPanOffsets: [MetalMPRPlane: SIMD2<Float>] = [:]
     private(set) var stackRotationRadians: Float = 0
     private(set) var displayMode: MetalViewerDisplayMode = .stack2D
     private var mprRotation = MetalViewerRenderer.initialMPRRotation
@@ -794,6 +795,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         zoomScale = 1
         panOffset = .zero
+        mpr3DPanOffsets.removeAll()
         stackRotationRadians = 0
         displayMode = .stack2D
         mprRotation = Self.initialMPRRotation
@@ -1666,6 +1668,30 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     func setPanOffset(_ value: SIMD2<Float>) {
         panOffset = value
+        stateDidChange?(stateDescription)
+    }
+
+    func panOffset(forMPRPlaneAxis axis: Int?) -> SIMD2<Float> {
+        guard displayMode == .mpr3D else {
+            return panOffset
+        }
+        guard let axis,
+              let plane = MetalMPRPlane(rawValue: axis) else {
+            return .zero
+        }
+        return mpr3DPanOffsets[plane] ?? .zero
+    }
+
+    func setPanOffset(_ value: SIMD2<Float>, forMPRPlaneAxis axis: Int?) {
+        guard displayMode == .mpr3D else {
+            setPanOffset(value)
+            return
+        }
+        guard let axis,
+              let plane = MetalMPRPlane(rawValue: axis) else {
+            return
+        }
+        mpr3DPanOffsets[plane] = value
         stateDidChange?(stateDescription)
     }
 
@@ -6136,19 +6162,28 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             corners: corners,
             halfWidth: halfWidth,
             halfHeight: halfHeight,
-            panOffset: planarMPRPreviewPanOffset(for: viewport, unitScale: unitScale)
+            panOffset: planarMPRPreviewPanOffset(
+                for: plane,
+                viewport: viewport,
+                unitScale: unitScale
+            )
         )
     }
 
-    private func planarMPRPreviewPanOffset(for viewport: MTLViewport, unitScale: CGFloat = 1) -> SIMD2<Float> {
+    private func planarMPRPreviewPanOffset(
+        for plane: MetalMPRPlane,
+        viewport: MTLViewport,
+        unitScale: CGFloat = 1
+    ) -> SIMD2<Float> {
         guard displayMode == .mpr3D else {
             return SIMD2<Float>(repeating: 0)
         }
 
+        let panePanOffset = mpr3DPanOffsets[plane] ?? .zero
         let scale = Float(max(unitScale, 0.0001))
         return SIMD2<Float>(
-            panOffset.x * scale * 2 / max(Float(viewport.width), 1),
-            panOffset.y * scale * 2 / max(Float(viewport.height), 1)
+            panePanOffset.x * scale * 2 / max(Float(viewport.width), 1),
+            panePanOffset.y * scale * 2 / max(Float(viewport.height), 1)
         )
     }
 

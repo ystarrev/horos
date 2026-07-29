@@ -45,8 +45,6 @@
 #ifndef OPTIONS_H_INCLUDED
 #define OPTIONS_H_INCLUDED
 
-//#define VTK_USE_SYSTEM_TIFF
-
 ////////////////////////////////////////////////////////////////////////////////
 #define WITH_IMPORTANT_NOTICE
 

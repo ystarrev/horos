@@ -1369,167 +1369,6 @@
                         </items>
                     </menu>
                 </menuItem>
-                <menuItem title="3D Viewer" id="1283">
-                    <menu key="submenu" title="3D Viewer" id="1281">
-                        <items>
-                            <menuItem title="3D MPR" image="MPR" tag="10" id="13753">
-                                <connections>
-                                    <action selector="mprViewer:" target="-1" id="13762"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="3D Curved-MPR" image="MPR" tag="1" id="13754">
-                                <connections>
-                                    <action selector="cprViewer:" target="-1" id="14189"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="2D Orthogonal MPR" image="orthogonalReslice" tag="8" id="13755">
-                                <connections>
-                                    <action selector="orthogonalMPRViewer:" target="-1" id="13764"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem isSeparatorItem="YES" id="13756">
-                                <modifierMask key="keyEquivalentModifierMask" command="YES"/>
-                            </menuItem>
-                            <menuItem title="3D MIP" image="MIP" tag="3" id="13757">
-                                <connections>
-                                    <action selector="VRViewer:" target="-1" id="13765"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="3D Volume Rendering" image="VolumeRendering" tag="4" id="13758">
-                                <connections>
-                                    <action selector="VRViewer:" target="-1" id="13766"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="3D Surface Rendering" image="Surface" tag="5" id="13759">
-                                <connections>
-                                    <action selector="SRViewer:" target="-1" id="13767"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="3D Endoscopy" image="Endoscopy" tag="9" id="13760">
-                                <connections>
-                                    <action selector="endoscopyViewer:" target="-1" id="13768"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem isSeparatorItem="YES" id="13761">
-                                <modifierMask key="keyEquivalentModifierMask" command="YES"/>
-                            </menuItem>
-                            <menuItem title="Reset to Initial View" keyEquivalent="r" id="11477">
-                                <connections>
-                                    <action selector="resetImage:" target="-1" id="11535"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="Revert Series" keyEquivalent="R" id="11536">
-                                <connections>
-                                    <action selector="revertSeries:" target="-1" id="11539"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem isSeparatorItem="YES" id="11562">
-                                <modifierMask key="keyEquivalentModifierMask" command="YES"/>
-                            </menuItem>
-                            <menuItem title="Coronal View" id="1282">
-                                <modifierMask key="keyEquivalentModifierMask"/>
-                                <connections>
-                                    <action selector="coView:" target="-1" id="1286"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="Left Sagittal View" id="1284">
-                                <modifierMask key="keyEquivalentModifierMask"/>
-                                <connections>
-                                    <action selector="saView:" target="-1" id="1287"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="Right Sagittal View" id="12341">
-                                <modifierMask key="keyEquivalentModifierMask"/>
-                                <connections>
-                                    <action selector="saViewOpposite:" target="-1" id="12343"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="Axial View" id="1285">
-                                <modifierMask key="keyEquivalentModifierMask"/>
-                                <connections>
-                                    <action selector="axView:" target="-1" id="1288"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem isSeparatorItem="YES" id="11751">
-                                <modifierMask key="keyEquivalentModifierMask" command="YES"/>
-                            </menuItem>
-                            <menuItem title="Add FlyThru Point" keyEquivalent="" id="11752">
-                                <connections>
-                                    <action selector="flyThruButtonMenu:" target="-1" id="11758"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="Remove FlyThru Point" tag="1" keyEquivalent="" id="11754">
-                                <connections>
-                                    <action selector="flyThruButtonMenu:" target="-1" id="11759"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="Reset FlyThru Path" tag="2" keyEquivalent="" id="11756">
-                                <connections>
-                                    <action selector="flyThruButtonMenu:" target="-1" id="11760"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem isSeparatorItem="YES" id="14463">
-                                <modifierMask key="keyEquivalentModifierMask" command="YES"/>
-                            </menuItem>
-                            <menuItem title="3D Curved Path" id="14464">
-                                <modifierMask key="keyEquivalentModifierMask"/>
-                                <menu key="submenu" title="3D Curved Path" id="14465">
-                                    <items>
-                                        <menuItem title="Load from file..." id="14467">
-                                            <modifierMask key="keyEquivalentModifierMask"/>
-                                            <connections>
-                                                <action selector="loadBezierPath:" target="-1" id="14468"/>
-                                            </connections>
-                                        </menuItem>
-                                        <menuItem title="Save to file..." id="14466">
-                                            <modifierMask key="keyEquivalentModifierMask"/>
-                                            <connections>
-                                                <action selector="saveBezierPath:" target="-1" id="14469"/>
-                                            </connections>
-                                        </menuItem>
-                                    </items>
-                                </menu>
-                            </menuItem>
-                            <menuItem isSeparatorItem="YES" id="12335">
-                                <modifierMask key="keyEquivalentModifierMask" command="YES"/>
-                            </menuItem>
-                            <menuItem title="Scissor Editing" id="12332">
-                                <menu key="submenu" title="Scissor Editing" id="12333">
-                                    <items>
-                                        <menuItem title="Save" id="12334">
-                                            <connections>
-                                                <action selector="scissorStateButtons:" target="-1" id="12338"/>
-                                            </connections>
-                                        </menuItem>
-                                        <menuItem title="Load" tag="1" id="12336">
-                                            <connections>
-                                                <action selector="scissorStateButtons:" target="-1" id="12339"/>
-                                            </connections>
-                                        </menuItem>
-                                        <menuItem title="Delete" tag="2" id="12337">
-                                            <connections>
-                                                <action selector="scissorStateButtons:" target="-1" id="12340"/>
-                                            </connections>
-                                        </menuItem>
-                                    </items>
-                                </menu>
-                            </menuItem>
-                            <menuItem isSeparatorItem="YES" id="12964">
-                                <modifierMask key="keyEquivalentModifierMask" command="YES"/>
-                            </menuItem>
-                            <menuItem title="Select 3D Preset..." id="12974">
-                                <connections>
-                                    <action selector="load3DSettings:" target="-1" id="12975"/>
-                                </connections>
-                            </menuItem>
-                            <menuItem title="Save Current State as 3D Preset..." id="12965">
-                                <connections>
-                                    <action selector="save3DSettings:" target="-1" id="12967"/>
-                                </connections>
-                            </menuItem>
-                        </items>
-                    </menu>
-                </menuItem>
                 <menuItem title="ROI" id="1401">
                     <menu key="submenu" title="ROI" id="1400">
                         <items>
@@ -1703,14 +1542,6 @@ CA
                             <menuItem title="ROI Volume" id="13007">
                                 <menu key="submenu" title="ROI Volume" id="13008">
                                     <items>
-                                        <menuItem title="Compute Volume..." id="13010">
-                                            <connections>
-                                                <action selector="roiVolume:" target="-1" id="13011"/>
-                                            </connections>
-                                        </menuItem>
-                                        <menuItem isSeparatorItem="YES" id="13027">
-                                            <modifierMask key="keyEquivalentModifierMask" command="YES"/>
-                                        </menuItem>
                                         <menuItem title="Generate Missing ROIs" tag="1" id="13012">
                                             <connections>
                                                 <action selector="roiVolume:" target="-1" id="13013"/>
@@ -1804,42 +1635,9 @@ CA
                                     <action selector="roiSetPixelsSetup:" target="-1" id="11233"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="Grow Region (2D/3D Segmentation)..." id="11234">
-                                <connections>
-                                    <action selector="segmentationTest:" target="-1" id="11235"/>
-                                </connections>
-                            </menuItem>
                             <menuItem title="Brush ROIs" id="12388">
                                 <menu key="submenu" title="Brush ROIs" id="12389">
                                     <items>
-                                        <menuItem title="Erosion" id="13002">
-                                            <connections>
-                                                <action selector="morphoSelectedBrushROI:" target="-1" id="13003"/>
-                                            </connections>
-                                        </menuItem>
-                                        <menuItem title="Dilatation" tag="1" id="12391">
-                                            <connections>
-                                                <action selector="morphoSelectedBrushROI:" target="-1" id="12902"/>
-                                            </connections>
-                                        </menuItem>
-                                        <menuItem title="Closing" tag="2" id="12403">
-                                            <connections>
-                                                <action selector="morphoSelectedBrushROI:" target="-1" id="12903"/>
-                                            </connections>
-                                        </menuItem>
-                                        <menuItem title="Opening" tag="3" id="12405">
-                                            <connections>
-                                                <action selector="morphoSelectedBrushROI:" target="-1" id="12904"/>
-                                            </connections>
-                                        </menuItem>
-                                        <menuItem isSeparatorItem="YES" id="13004">
-                                            <modifierMask key="keyEquivalentModifierMask" command="YES"/>
-                                        </menuItem>
-                                        <menuItem title="Convert Between Polygon / Brush ROIs" id="12390">
-                                            <connections>
-                                                <action selector="convertBrushPolygon:" target="-1" id="13005"/>
-                                            </connections>
-                                        </menuItem>
                                         <menuItem title="Merge Selected Brush ROIs" id="13547">
                                             <connections>
                                                 <action selector="mergeBrushROI:" target="-1" id="13548"/>
@@ -4363,16 +4161,10 @@ Gw
         </window>
     </objects>
     <resources>
-        <image name="Endoscopy" width="32" height="32"/>
         <image name="List" width="15" height="15"/>
-        <image name="MIP" width="32" height="32"/>
-        <image name="MPR" width="32" height="32"/>
         <image name="NSLockLockedTemplate" width="10" height="14"/>
         <image name="NSRemoveTemplate" width="11" height="11"/>
         <image name="StartupDisk" width="64" height="64"/>
-        <image name="Surface" width="32" height="32"/>
-        <image name="VolumeRendering" width="32" height="32"/>
         <image name="error" width="32" height="32"/>
-        <image name="orthogonalReslice" width="32" height="32"/>
     </resources>
 </document>

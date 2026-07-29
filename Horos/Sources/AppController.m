@@ -53,12 +53,11 @@
 #import "SplashScreen.h"
 #import "NSFont_OpenGL.h"
 #import "DicomFile.h"
+#import "DCMPix.h"
 #import "DCM.h"
 #import "DCMTKQueryRetrieveSCP.h"
 #import "AppControllerDCMTKCategory.h"
 #import "DefaultsOsiriX.h"
-#import "OrthogonalMPRViewer.h"
-#import "OrthogonalMPRPETCTViewer.h"
 #import "NavigatorView.h"
 #import "WindowLayoutManager.h"
 #import "QueryController.h"
@@ -70,10 +69,6 @@
 #import <objc/runtime.h>
 #import "NSPanel+N2.h"
 #import "BonjourPublisher.h"
-#ifndef MACAPPSTORE
-//#import <ILCrashReporter/ILCrashReporter.h>
-#import "VRView.h"
-#endif
 #import "OSIWindowController.h"
 #import "Notifications.h"
 #import "WaitRendering.h"
@@ -2491,7 +2486,6 @@ static BOOL firstCall = YES;
         
         [[NSAppleEventManager sharedAppleEventManager] setEventHandler:self andSelector:@selector(getUrl:withReplyEvent:) forEventClass:kInternetEventClass andEventID:kAEGetURL];
         
-        [VRView testGraphicBoard];
     }
     @catch (NSException * e)
     {

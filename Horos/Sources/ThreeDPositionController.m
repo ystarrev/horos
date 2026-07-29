@@ -41,7 +41,6 @@
 #import "AppController.h"
 #import "DCMPix.h"
 #import "DCMView.h"
-#import "OrthogonalMPRPETCTViewer.h"
 #import "Notifications.h"
 
 static ThreeDPositionController *nav = nil;
@@ -111,11 +110,6 @@ static ThreeDPositionController *nav = nil;
 	{
 		[[v imageView] sendSyncMessage: 0];
 		[v refresh];
-	}
-	for( NSWindow *w in [[NSApplication sharedApplication] windows])
-	{
-		if( [[w windowController] isKindOfClass: [OrthogonalMPRPETCTViewer class]])
-			[[w windowController] realignDataSet: self];
 	}
 }
 

@@ -48,12 +48,8 @@
 #import "MyOutlineView.h"
 #import "DCMPix.h"
 #import "DicomImage.h"
-#import "VRController.h"
-#import "VRControllerVPRO.h"
 #import "NSSplitViewSave.h"
-#import "SRController.h"
 #import "OsiriXToolbar.h"
-#import "MPR2DController.h"
 #import "NSFullScreenWindow.h"
 #import "ViewerController.h"
 #import "BrowserController.h"
@@ -71,29 +67,19 @@
 #import "DCMView.h"
 #import "StudyView.h"
 #import "ColorTransferView.h"
-#import "ThickSlabController.h"
 #import "Mailer.h"
-#import "ITKSegmentation3DController.h"
-#import "ITKSegmentation3D.h"
 #import "OSIWindow.h"
 #import "Photos.h"
-#import "CurvedMPR.h"
 #import "SeriesView.h"
 #import "DICOMExport.h"
-#import "ROIVolumeController.h"
-#import "OrthogonalMPRViewer.h"
-#import "OrthogonalMPRPETCTViewer.h"
-#import "OrthogonalMPRPETCTController.h"
-#import "EndoscopyViewer.h"
+#import "QuicktimeExport.h"
 #import "PaletteController.h"
 #import "ROIManagerController.h"
 #import "NSUserDefaultsController+OsiriX.h"
 #import "ThreadsManager.h"
 #import "NSThread+N2.h"
-#import "ITKBrushROIFilter.h"
 #import "DCMAbstractSyntaxUID.h"
 #import "printView.h"
-#import "ITKTransform.h"
 #import "NSManagedObject+N2.h"
 #import "DicomStudy.h"
 #import "KeyObjectController.h"
@@ -101,8 +87,6 @@
 #import "JPEGExif.h"
 #import "NSFont_OpenGL.h"
 #import "SRAnnotation.h"
-#import "EndoscopySegmentationController.h"
-#import "HornRegistration.h"
 #import "N2Stuff.h"
 #import "BonjourBrowser.h"
 #import "DCMObject.h"
@@ -112,8 +96,6 @@
 #import "ThumbnailCell.h"
 #import "DicomSeries.h"
 #import "DicomFile.h"
-#import "MPRController.h"
-#import "CPRController.h"
 #import "Notifications.h"
 #import "DicomDatabase.h"
 #import "N2Debug.h"
@@ -153,7 +135,7 @@ extern BOOL FULL32BITPIPELINE;
     static const CGFloat kWidthBoost = 8.0;
     static const CGFloat kHeightBoost = 4.0;
     static const CGFloat kVerticalOffset = -2.0;
-    
+
     _toolbarSize = NSMakeSize(ceil(size.width + kHorizontalPadding), ceil(size.height + kVerticalPadding));
     self = [super initWithFrame:NSMakeRect(0, 0, _toolbarSize.width, _toolbarSize.height)];
     if (self)
@@ -196,10 +178,10 @@ static NSView *HorosToolbarSizedView(NSView *view)
 {
     if (!view)
         return nil;
-    
+
     if ([[view superview] isKindOfClass:[HorosToolbarFixedWidthView class]])
         return [view superview];
-    
+
     NSSize size = [view frame].size;
     if (size.width < 1 || size.height < 1)
         size = [view fittingSize];
@@ -207,7 +189,7 @@ static NSView *HorosToolbarSizedView(NSView *view)
         size.width = 32;
     if (size.height < 1)
         size.height = 32;
-    
+
     return [[[HorosToolbarFixedWidthView alloc] initWithWrappedView:view size:size] autorelease];
 }
 
@@ -235,7 +217,6 @@ static NSString*	SerieToolbarItemIdentifier			= @"Series";
 static NSString*	PatientToolbarItemIdentifier		= @"Patient";
 static NSString*	SubtractionToolbarItemIdentifier	= @"Subtraction";
 static NSString*	Send2PACSToolbarItemIdentifier		= @"Send.icns";
-static NSString*	ReconstructionToolbarItemIdentifier = @"Reconstruction";
 static NSString*	RGBFactorToolbarItemIdentifier		= @"RGB";
 static NSString*	ExportToolbarItemIdentifier			= @"Export.icns";
 static NSString*	MailToolbarItemIdentifier			= @"Mail.icns";
@@ -247,13 +228,11 @@ static NSString*	RevertToolbarItemIdentifier			= @"Revert.tif";
 static NSString*	FlipDataToolbarItemIdentifier		= @"FlipData.tif";
 static NSString*	DatabaseWindowToolbarItemIdentifier = @"DatabaseWindow.icns";
 static NSString*	KeyImagesToolbarItemIdentifier		= @"keyImages";
-static NSString*	TileWindowsToolbarItemIdentifier	= @"windows.tif";
 static NSString*	SUVToolbarItemIdentifier			= @"SUV.tif";
 static NSString*	ROIManagerToolbarItemIdentifier		= @"ROIManager.pdf";
 static NSString*	ReportToolbarItemIdentifier			= @"Report.icns";
 static NSString*	FlipVerticalToolbarItemIdentifier	= @"FlipVertical.pdf";
 static NSString*	FlipHorizontalToolbarItemIdentifier	= @"FlipHorizontal.pdf";
-static NSString*	VRPanelToolbarItemIdentifier		= @"MIP.tif";
 static NSString*	ShutterToolbarItemIdentifier		= @"Shutter";
 static NSString*	PropagateSettingsToolbarItemIdentifier		= @"PropagateSettings";
 static NSString*	OrientationToolbarItemIdentifier	= @"Orientation";
@@ -266,7 +245,6 @@ static NSString*	NavigatorToolbarItemIdentifier		= @"Navigator";
 static NSString*	ThreeDPositionToolbarItemIdentifier	= @"3DPosition";
 static NSString*	CobbAngleToolbarItemIdentifier		= @"CobbAngle";
 static NSString*	SetPixelValueItemIdentifier			= @"SetPixelValue.pdf";
-static NSString*	GrowingRegionItemIdentifier			= @"GrowingRegion.png";
 
 static NSArray*		DefaultROINames = nil;
 
@@ -285,16 +263,6 @@ static BOOL DisplayUseInvertedPolarity = NO;
 
 BOOL SyncButtonBehaviorIsBetweenStudies = NO;
 
-// compares the names of 2 ROIs.
-// using the option NSNumericSearch => "Point 1" < "Point 5" < "Point 21".
-// use it with sortUsingFunction:context: to order an array of ROIs
-NSInteger sortROIByName(id roi1, id roi2, void *context)
-{
-    NSString *n1 = [roi1 name];
-    NSString *n2 = [roi2 name];
-    return [n1 compare:n2 options:NSNumericSearch];
-}
-
 @interface ViewerControllerOperation: NSOperation
 {
     ViewerController *ctrl;
@@ -310,10 +278,10 @@ NSInteger sortROIByName(id roi1, id roi2, void *context)
 - (id) initWithController:(ViewerController*) c dict: (NSDictionary*) d;
 {
     self = [super init];
-    
+
     ctrl = [c retain];
     dict = [d retain];
-    
+
     return self;
 }
 
@@ -348,20 +316,6 @@ NSInteger sortROIByName(id roi1, id roi2, void *context)
                                            restore:			[[dict objectForKey:@"revert"] boolValue]
                                           addition:			[[dict objectForKey:@"addition"] boolValue]];
         }
-        // ** Math Morphology
-        
-        if( [[dict valueForKey:@"action"] isEqualToString:@"close"])
-            [[dict objectForKey:@"filter"] close: [dict objectForKey:@"roi"] withStructuringElementRadius: [[dict objectForKey:@"radius"] intValue]];
-        
-        if( [[dict valueForKey:@"action"] isEqualToString:@"open"])
-            [[dict objectForKey:@"filter"] open: [dict objectForKey:@"roi"] withStructuringElementRadius: [[dict objectForKey:@"radius"] intValue]];
-        
-        if( [[dict valueForKey:@"action"] isEqualToString:@"dilate"])
-            [[dict objectForKey:@"filter"] dilate: [dict objectForKey:@"roi"] withStructuringElementRadius: [[dict objectForKey:@"radius"] intValue]];
-        
-        if( [[dict valueForKey:@"action"] isEqualToString:@"erode"])
-            [[dict objectForKey:@"filter"] erode: [dict objectForKey:@"roi"] withStructuringElementRadius: [[dict objectForKey:@"radius"] intValue]];
-        
     }
 }
 
@@ -412,16 +366,16 @@ enum
 - (NSString *)stringTruncatedToLength:(unsigned int)length direction:(unsigned)truncateFrom withEllipsisString:(NSString *)ellipsis{
     NSMutableString *result = [[[NSMutableString alloc] initWithString:self] autorelease];
     NSString *immutableResult;
-    
+
     if([result length] <= length) {
         return self; // no truncation, foolios
     }
-    
+
     unsigned int charactersEachSide = length / 2;
-    
+
     NSString *first;
     NSString *last;
-    
+
     switch(truncateFrom) {
         case NSTruncateStart:
             [result insertString:ellipsis atIndex:length - [ellipsis length]];
@@ -439,7 +393,7 @@ enum
             immutableResult  = [[result substringFromIndex:[result length] - length] copy];
             return [immutableResult autorelease];
     }
-    
+
     return @"";
 }
 
@@ -468,7 +422,7 @@ enum
 
 @synthesize currentOrientationTool, speedSlider, speedText, toolbarPanel;
 @synthesize timer, keyImageCheck, injectionDateTime, blendedWindow;
-@synthesize blendingTypeWindow, blendingTypeMultiply, blendingTypeSubtract, blendingTypeRGB, blendingResample;
+@synthesize blendingTypeWindow, blendingTypeMultiply, blendingTypeSubtract, blendingTypeRGB;
 @synthesize flagListPODComparatives, windowsStateName, titledGantry;
 @synthesize movieRateSlider = movieRateSlider, movieTextSlide = movieTextSlide;
 
@@ -765,7 +719,7 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
             [item setState: NSControlStateValueOn];
         else
             [item setState: [[NSUserDefaults standardUserDefaults] boolForKey: @"UseVOILUT"]];
-        
+
         if( imageView.curDCM.VOILUT_table)
             valid = YES;
     }
@@ -914,14 +868,6 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
                 break;
             }
         }
-    }
-    else if( [item action] == @selector(morphoSelectedBrushROI:))
-    {
-        if( [self selectedROI]) valid = YES;
-    }
-    else if( [item action] == @selector(convertBrushPolygon:))
-    {
-        if( [self selectedROI]) valid = YES;
     }
     else if( [item action] == @selector(mergeBrushROI:))
     {
@@ -1402,156 +1348,6 @@ static ViewerController *cachedFrontMostDisplayed2DViewer = nil;
 
 #pragma mark-
 #pragma mark 1. window and workplace
-
-+ (void) correctGangtryTilt: (ViewerController*) viewerController
-{
-    DCMPix *curPix;
-    BOOL OK = YES;
-    
-    NSArray *pixList = [viewerController pixList];
-    
-    curPix = [pixList objectAtIndex: pixList.count/2];   //pixList.count/2];
-    
-    long imageSize, size;
-    
-    
-    id w = [viewerController startWaitProgressWindow: NSLocalizedString( @"Gantry Tilt Correction", nil) :pixList.count];
-    
-    @try
-    {
-        imageSize = [curPix pwidth] * [curPix pheight];
-        size = sizeof(float) * [pixList count]/2 * imageSize;
-        
-        double orientation[ 9];
-        double origin[ 3];
-        double matrix[ 12];
-        
-        [curPix orientationDouble: orientation];
-        origin[ 0] = [curPix originX]; origin[ 1] = [curPix originY]; origin[ 2] = [curPix originZ];
-        
-        for( DCMPix *p in pixList)
-        {
-            double o[ 9];
-            double xyz[ 3];
-            
-            [p orientationDouble: o];
-            xyz[ 0] = [p originX]; xyz[ 1] = [p originY]; xyz[ 2] = [p originZ];
-            
-            BOOL equal = YES;
-            for( int i = 0 ; i < 6 ; i++)
-            {
-                if( o[ i] != orientation[ i])
-                    equal = NO;
-            }
-            
-            if( equal == NO)
-            {
-                HorosPresentInformationalAlert( NSLocalizedString(@"Error!", nil), NSLocalizedString(@"These slices have not the same orientation. Gantry Tilt Correction cannot be applied to this dataset.", nil), NSLocalizedString(@"OK", nil), 0L, 0L);
-                OK = NO;
-                break;
-            }
-        }
-        
-        if( OK)
-        {
-            for( DCMPix *p in pixList)
-            {
-                if( p != curPix)
-                {
-                    double o[ 9];
-                    double xyz[ 3];
-                    
-                    [p orientationDouble: o];
-                    xyz[ 0] = [p originX]; xyz[ 1] = [p originY]; xyz[ 2] = [p originZ];
-                    
-                    double vectorModel[ 9], vectorSensor[ 9];
-                    
-                    [p orientationDouble: vectorSensor];
-                    [curPix orientationDouble: vectorModel];
-                    
-                    double length;
-                    
-                    // --
-                    matrix[ 9] = xyz[ 0] - origin[ 0];
-                    matrix[ 10] = xyz[ 1] - origin[ 1];
-                    matrix[ 11] = xyz[ 2] - origin[ 2];
-                    // --
-                    
-                    matrix[ 0] = vectorSensor[ 0] * vectorModel[ 0] + vectorSensor[ 1] * vectorModel[ 1] + vectorSensor[ 2] * vectorModel[ 2];
-                    matrix[ 1] = vectorSensor[ 0] * vectorModel[ 3] + vectorSensor[ 1] * vectorModel[ 4] + vectorSensor[ 2] * vectorModel[ 5];
-                    matrix[ 2] = vectorSensor[ 0] * vectorModel[ 6] + vectorSensor[ 1] * vectorModel[ 7] + vectorSensor[ 2] * vectorModel[ 8];
-                    
-                    length = sqrt(matrix[0]*matrix[0] + matrix[1]*matrix[1] + matrix[2]*matrix[2]);
-                    
-                    matrix[0] = matrix[ 0] / length;
-                    matrix[1] = matrix[ 1] / length;
-                    matrix[2] = matrix[ 2] / length;
-                    
-                    // --
-                    
-                    matrix[ 3] = vectorSensor[ 3] * vectorModel[ 0] + vectorSensor[ 4] * vectorModel[ 1] + vectorSensor[ 5] * vectorModel[ 2];
-                    matrix[ 4] = vectorSensor[ 3] * vectorModel[ 3] + vectorSensor[ 4] * vectorModel[ 4] + vectorSensor[ 5] * vectorModel[ 5];
-                    matrix[ 5] = vectorSensor[ 3] * vectorModel[ 6] + vectorSensor[ 4] * vectorModel[ 7] + vectorSensor[ 5] * vectorModel[ 8];
-                    
-                    length = sqrt(matrix[3]*matrix[3] + matrix[4]*matrix[4] + matrix[5]*matrix[5]);
-                    
-                    matrix[3] = matrix[ 3] / length;
-                    matrix[4] = matrix[ 4] / length;
-                    matrix[5] = matrix[ 5] / length;
-                    
-                    // --
-                    
-                    matrix[6] = matrix[1]*matrix[5] - matrix[2]*matrix[4];
-                    matrix[7] = matrix[2]*matrix[3] - matrix[0]*matrix[5];
-                    matrix[8] = matrix[0]*matrix[4] - matrix[1]*matrix[3];
-                    
-                    length = sqrt(matrix[6]*matrix[6] + matrix[7]*matrix[7] + matrix[8]*matrix[8]);
-                    
-                    matrix[6] = matrix[ 6] / length;
-                    matrix[7] = matrix[ 7] / length;
-                    matrix[8] = matrix[ 8] / length;
-                    
-                    long size;
-                    
-                    float *resultBuff = [ITKTransform reorient2Dimage: matrix firstObject: curPix firstObjectOriginal: p length: &size];
-                    if( resultBuff)
-                    {
-                        memcpy( [p fImage] , resultBuff, size);
-                        free( resultBuff);
-                    }
-                    else
-                    {
-                        HorosPresentInformationalAlert( NSLocalizedString( @"Error!", nil), NSLocalizedString( @"Not Enough Memory", nil), NSLocalizedString(@"OK", nil), 0L, 0L);
-                        break;
-                    }
-                    
-                    // Project the 3D point on the plane : dot product of normal plane vector (vectorModel) and distance between point and plane origin (matrix9,10,11)
-                    double distance = matrix[ 9] * vectorModel[ 6] + matrix[ 10] * vectorModel[ 7] + matrix[ 11] * vectorModel[ 8];
-                    double outputOrigin[ 3];
-                    
-                    outputOrigin[0] = origin[ 0] + distance*vectorModel[ 6];
-                    outputOrigin[1] = origin[ 1] + distance*vectorModel[ 7];
-                    outputOrigin[2] = origin[ 2] + distance*vectorModel[ 8];
-                    
-                    [p setOriginDouble: outputOrigin];
-                }
-                
-                [viewerController waitIncrementBy:w :1];
-            }
-            
-            for( DCMPix *p in pixList)
-                [p setSliceInterval: 0];
-        }
-    }
-    @catch (NSException *exception) {
-        N2LogException( exception);
-    }
-    
-    [viewerController endWaitWindow: w];
-    
-    // We modified the view: OsiriX please update the display!
-    [viewerController needsDisplayUpdate];
-}
 
 - (void) refreshMenus
 {
@@ -5661,9 +5457,6 @@ static ViewerController *draggedController = nil;
     if( [[[vc pixList] objectAtIndex: 0] isRGB])
         [blendingTypeRGB setEnabled: NO];
     
-    if( [[self studyInstanceUID] isEqualToString: [vc studyInstanceUID]] == NO)
-        [blendingResample setEnabled: NO];
-    
     [blendedWindow release];
     blendedWindow = [vc retain];
     
@@ -6246,15 +6039,6 @@ static ViewerController *draggedController = nil;
         [toolbarItem setAction: @selector(generateReport:)];
     }
     
-    else if ([itemIdent isEqualToString: TileWindowsToolbarItemIdentifier]) {
-        
-        [toolbarItem setLabel: NSLocalizedString(@"Tile", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"Tile", nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"Tile Windows", nil)];
-        [toolbarItem setImage: [NSImage imageNamed: TileWindowsToolbarItemIdentifier]];
-        [toolbarItem setTarget: [AppController sharedAppController]];
-        [toolbarItem setAction: @selector(tileWindows:)];
-    }
     //	else if ([itemIdent isEqualToString: iChatBroadCastToolbarItemIdentifier]) {
     //
     //	[toolbarItem setLabel: NSLocalizedString(@"iChat", nil)];
@@ -6455,16 +6239,6 @@ static ViewerController *draggedController = nil;
         
         HorosSetToolbarItemSizedView(toolbarItem, propagateSettingsView);
     }
-    else if([itemIdent isEqualToString: ReconstructionToolbarItemIdentifier])
-    {
-        // Set up the standard properties
-        [toolbarItem setLabel: NSLocalizedString(@"2D/3D", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"2D/3D", nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"2D/3D Reconstruction Tools", nil)];
-        
-        // Use a custom view, a text field, for the search item
-        HorosSetToolbarItemSizedView(toolbarItem, ReconstructionView);
-    }
     else if([itemIdent isEqualToString: KeyImagesToolbarItemIdentifier])
     {
         // Set up the standard properties
@@ -6501,23 +6275,6 @@ static ViewerController *draggedController = nil;
         [toolbarItem setImage: [NSImage imageNamed: SetPixelValueItemIdentifier]];
         [toolbarItem setTarget: nil];
         [toolbarItem setAction: @selector(roiSetPixelsSetup:)];
-    }
-    else if ([itemIdent isEqualToString: GrowingRegionItemIdentifier]) {
-        
-        [toolbarItem setLabel: NSLocalizedString(@"Growing", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"Growing", nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"Growing Region", nil)];
-        [toolbarItem setImage: [NSImage imageNamed: GrowingRegionItemIdentifier]];
-        [toolbarItem setTarget: nil];
-        [toolbarItem setAction: @selector(segmentationTest:)];
-    }
-   	else if ([itemIdent isEqualToString: VRPanelToolbarItemIdentifier]) {
-        
-        [toolbarItem setLabel: NSLocalizedString(@"3D Panel", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"3D Panel", nil)];
-        [toolbarItem setImage: [NSImage imageNamed: VRPanelToolbarItemIdentifier]];
-        [toolbarItem setTarget: nil];
-        [toolbarItem setAction: @selector(Panel3D:)];
     }
     else if ([itemIdent isEqualToString: FlipHorizontalToolbarItemIdentifier]) {
         
@@ -6590,7 +6347,6 @@ static ViewerController *draggedController = nil;
             PatientToolbarItemIdentifier,
             ToolsToolbarItemIdentifier,
             WLWWToolbarItemIdentifier,
-            ReconstructionToolbarItemIdentifier,
             OrientationToolbarItemIdentifier,
             FusionToolbarItemIdentifier,
             NSToolbarFlexibleSpaceItemIdentifier,
@@ -6599,7 +6355,6 @@ static ViewerController *draggedController = nil;
             PropagateSettingsToolbarItemIdentifier,
             PlayToolbarItemIdentifier,
             SpeedToolbarItemIdentifier,
-            VRPanelToolbarItemIdentifier,
             XMLToolbarItemIdentifier,
             nil];
 }
@@ -6616,7 +6371,6 @@ static ViewerController *draggedController = nil;
                              PhotosToolbarItemIdentifier,
                              QTSaveToolbarItemIdentifier,
                              XMLToolbarItemIdentifier,
-                             ReconstructionToolbarItemIdentifier,
                              BlendingToolbarItemIdentifier,
                              SyncSeriesToolbarItemIdentifier,
                              PropagateSettingsToolbarItemIdentifier,
@@ -6626,7 +6380,6 @@ static ViewerController *draggedController = nil;
                              ROIManagerToolbarItemIdentifier,
                              FlipDataToolbarItemIdentifier,
                              DatabaseWindowToolbarItemIdentifier,
-                             TileWindowsToolbarItemIdentifier,
                              WindowsTilingToolbarItemIdentifier,
                              SeriesPopupToolbarItemIdentifier,
                              AnnotationsToolbarItemIdentifier,
@@ -6649,11 +6402,9 @@ static ViewerController *draggedController = nil;
                              ReportToolbarItemIdentifier,
                              FlipVerticalToolbarItemIdentifier,
                              FlipHorizontalToolbarItemIdentifier,
-                             VRPanelToolbarItemIdentifier,
                              NavigatorToolbarItemIdentifier,
                              ThreeDPositionToolbarItemIdentifier,
                              CobbAngleToolbarItemIdentifier,
-                             GrowingRegionItemIdentifier,
                              SetPixelValueItemIdentifier,
                              nil];
     
@@ -6716,11 +6467,6 @@ static ViewerController *draggedController = nil;
     if ([[toolbarItem itemIdentifier] isEqualToString: QTSaveToolbarItemIdentifier])
     {
         if([fileList[ curMovieIndex] count] == 1 && [[[fileList[ curMovieIndex] objectAtIndex:0] valueForKey:@"numberOfFrames"] intValue] <=  1 && maxMovieIndex == 1 && blendingController == nil) enable = NO;
-    }
-    
-    if ([[toolbarItem itemIdentifier] isEqualToString: ReconstructionToolbarItemIdentifier])
-    {
-        if([fileList[ curMovieIndex] count] == 1 && [[[fileList[ curMovieIndex] objectAtIndex:0] valueForKey:@"numberOfFrames"] intValue] <=  1) enable = NO;
     }
     
     //	if ([[toolbarItem itemIdentifier] isEqualToString: iChatBroadCastToolbarItemIdentifier])
@@ -7769,11 +7515,6 @@ static int avoidReentryRefreshDatabase = 0;
     [undoQueue removeAllObjects];
     [redoQueue removeAllObjects];
     
-    if( thickSlab)
-    {
-        [thickSlab release];
-        thickSlab = nil;
-    }
 }
 
 - (void) dealloc
@@ -10243,12 +9984,8 @@ static int avoidReentryRefreshDatabase = 0;
 {
     if( titledGantry)
     {
-        NSString *message = nil;
-        message = [NSString stringWithFormat: NSLocalizedString(@"These images were acquired with a gantry tilt: %0.2f\u00B0. This gantry tilt will produce a distortion in 3D post-processing. Should I convert these images to a real 3D dataset.", nil), titledGantryDegrees];
-        NSInteger r = HorosPresentInformationalAlert( NSLocalizedString(@"Warning!", nil), @"%@", NSLocalizedString(@"Yes", nil), NSLocalizedString(@"No", nil), nil, message);
-        
-        if( r == HorosAlertResponseFirstButton)
-            [ViewerController correctGangtryTilt: self];
+        NSString *message = [NSString stringWithFormat:NSLocalizedString(@"These images were acquired with a gantry tilt: %0.2f\u00B0. The Metal viewers correct gantry tilt when constructing their volume.", nil), titledGantryDegrees];
+        HorosPresentInformationalAlert(NSLocalizedString(@"Gantry Tilt", nil), @"%@", NSLocalizedString(@"OK", nil), nil, nil, message);
     }
 }
 
@@ -11636,11 +11373,6 @@ static float oldsetww, oldsetwl;
             }
             
             [imageView setCLUT: nil :nil :nil];
-            if( thickSlab)
-            {
-                [thickSlab setCLUT:nil :nil :nil];
-            }
-            
             [imageView setIndex:[imageView curImage]];
             
             if( str != curCLUTMenu)
@@ -11681,11 +11413,6 @@ static float oldsetww, oldsetwl;
                 for( i = 0; i < 256; i++)
                 {
                     blue[i] = [[array objectAtIndex: i] longValue];
-                }
-                
-                if( thickSlab)
-                {
-                    [thickSlab setCLUT:red :green :blue];
                 }
                 
                 int darkness = 256 * 3;
@@ -11858,8 +11585,6 @@ static float oldsetww, oldsetwl;
 {
     NSArray *array = [[note object] getPoints];
     
-    [thickSlab setOpacity: array];
-    
     NSData *table = nil;
     
     if( [array count] == 0)
@@ -11883,8 +11608,6 @@ static float oldsetww, oldsetwl;
     
     if( [str isEqualToString:NSLocalizedString(@"Linear Table", nil)])
     {
-        [thickSlab setOpacity:[NSArray array]];
-        
         if( curOpacityMenu != str)
         {
             [curOpacityMenu release];
@@ -11910,7 +11633,6 @@ static float oldsetww, oldsetwl;
         {
             array = [aOpacity objectForKey:@"Points"];
             
-            [thickSlab setOpacity:array];
             if( curOpacityMenu != str)
             {
                 [curOpacityMenu release];
@@ -12080,8 +11802,6 @@ static float oldsetww, oldsetwl;
 
 -(NSSlider*) sliderFusion { return sliderFusion;}
 
--(ThickSlabController*) thickSlabController { return thickSlab;}
-
 -(NSString *) thicknessInMm
 {
     float thickness = 0, location = 0;
@@ -12094,6 +11814,7 @@ static float oldsetww, oldsetwl;
 - (void) setFusionMode:(long) m
 {
     int i, x;
+    if( m == 4 || m == 5) m = 0;
     
     if( m != 0)
     {
@@ -12111,41 +11832,6 @@ static float oldsetww, oldsetwl;
             }
         }
     }
-    
-    // Thick Slab
-    if( m == 4 || m == 5)
-    {
-        BOOL	flip;
-        
-        //		[OpacityPopup setEnabled:YES];
-        
-        if( m == 4) flip = YES;
-        else flip = NO;
-        
-        if( thickSlab == nil)
-        {
-            unsigned char *r, *g, *b;
-            DCMPix  *pix = [pixList[ curMovieIndex] objectAtIndex:0];
-            
-            thickSlab = [[ThickSlabController alloc] init];
-            
-            [thickSlab setImageData :[pix pwidth] :[pix pheight] :100 :[pix pixelSpacingX] :[pix pixelSpacingY] :[pix sliceThickness] :flip];
-            
-            [imageView getCLUT: &r :&g :&b];
-            [thickSlab setCLUT:r :g :b];
-        }
-        
-        [thickSlab setFlip: flip];
-        
-        for ( x = 0; x < maxMovieIndex; x++)
-        {
-            for ( i = 0; i < [pixList[ x] count]; i ++)
-            {
-                [[pixList[ x] objectAtIndex:i] setThickSlabController: thickSlab];
-            }
-        }
-    }
-    //	else [OpacityPopup setEnabled:NO];
     
     [imageView setFusion:m :[sliderFusion intValue]];
     
@@ -12329,35 +12015,17 @@ static float oldsetww, oldsetwl;
             
             if( [DCMView angleBetweenVector: orientA+6 andVector:orientB+6] > [[NSUserDefaults standardUserDefaults] floatForKey: @"PARALLELPLANETOLERANCE"])  // Planes are not paralel!
             {
-                // FROM SAME STUDY
-                
-                if( [[[[self fileList] objectAtIndex:0] valueForKeyPath:@"series.study.studyInstanceUID"] isEqualToString: [[[blendingController fileList] objectAtIndex:0] valueForKeyPath:@"series.study.studyInstanceUID"]])
-                {
-                    int result = HorosPresentCriticalAlert(NSLocalizedString(@"2D Planes",nil),NSLocalizedString(@"These 2D planes are not parallel. If you continue the result will be distorted. You can instead 'Reorient' the series to have the same origin/orientation.",nil), NSLocalizedString(@"Reorient & Fusion",nil), NSLocalizedString(@"Cancel",nil), NSLocalizedString(@"Fusion",nil));
-                    
-                    switch( result)
-                    {
-                        case HorosAlertResponseSecondButton:
-                            proceed = NO;
-                            break;
-                            
-                        case HorosAlertResponseFirstButton:		// Resample
-                            blendingController = [self resampleSeries: blendingController rescale: NO];
-                            if( blendingController) proceed = YES;
-                            break;
-                            
-                        case HorosAlertResponseThirdButton:
-                            proceed = YES;
-                            break;
-                    }
-                }
-                else	// FROM DIFFERENT STUDY
+                if( [[[[self fileList] objectAtIndex:0] valueForKeyPath:@"series.study.studyInstanceUID"] isEqualToString: [[[blendingController fileList] objectAtIndex:0] valueForKeyPath:@"series.study.studyInstanceUID"]] == NO)
                 {
                     if( HorosPresentCriticalAlert(NSLocalizedString(@"2D Planes",nil),NSLocalizedString(@"These 2D planes are not parallel. If you continue the result will be distorted. You can instead perform a 'Point-based registration' to have correct alignment/orientation.",nil), NSLocalizedString(@"Continue",nil), NSLocalizedString(@"Cancel",nil), nil) != HorosAlertResponseFirstButton)
                     {
                         proceed = NO;
                     }
                     else proceed = YES;
+                }
+                else if( HorosPresentCriticalAlert(NSLocalizedString(@"2D Planes", nil), NSLocalizedString(@"These 2D planes are not parallel. Continuing will produce a distorted fusion.", nil), NSLocalizedString(@"Continue", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
+                {
+                    proceed = YES;
                 }
             }
             else
@@ -12618,35 +12286,9 @@ static float oldsetww, oldsetwl;
         }
             break;
             
-        case 7:		// 2D Registration
-            [self computeRegistrationWithMovingViewer: bc];
-            break;
-            
-        case 11:
-            [self resampleSeries: bc rescale: YES];
-            break;
-            
-        case 12:
-            [self resampleSeries: bc rescale: NO];
-            break;
-            
         case 8:		// 3D Registration
             
             break;
-            
-            //		case 9: // LL
-            //		{
-            //			[self checkEverythingLoaded];
-            //			[bc checkEverythingLoaded];
-            //			if([LLScoutViewer verifyRequiredConditions:[self pixList] :[bc pixList]])
-            //			{
-            //				LLScoutViewer *llScoutViewer;
-            //				llScoutViewer = [[LLScoutViewer alloc] initWithPixList: pixList[0] :fileList[0] :volumeData[0] :self :bc];
-            //				[llScoutViewer showWindow:self];
-            //			}
-            //		}
-            //		break;
-            //		#endif
             
         case 10:	// Copy ROIs
         {
@@ -13993,29 +13635,12 @@ static float oldsetww, oldsetwl;
     
     NSLog(@"Slice Interval : %f", interval);
     
-    if( [sender tag] == 0) // Compute Volume
-    {
-        if( interval == 0)
-        {
-            HorosPresentCriticalAlert(NSLocalizedString(@"ROIs Volume Error", nil), NSLocalizedString(@"Slice Locations not available to compute a volume.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
-            return;
-        }
-    }
-    
     [self addToUndoQueue: @"roi"];
     
     WaitRendering *splash = [[[WaitRendering alloc] init:NSLocalizedString(@"Preparing data...", nil)] autorelease];
     [splash showWindow:self];
     
-    // Show Volume Window
-    if( [sender tag] == 0)
-    {
-        ROIVolumeController	*viewer = [[ROIVolumeController alloc] initWithRoi:selectedRoi viewer:self];
-        
-        [viewer showWindow: self];
-        [[viewer window] center];
-    }
-    else if([sender tag] == 1)
+    if([sender tag] == 1)
     {
         [self computeVolume: selectedRoi points: nil generateMissingROIs: YES generatedROIs: nil computeData: nil error: nil];
         
@@ -15011,12 +14636,6 @@ static float oldsetww, oldsetwl;
         [a setPoints: [ROI resamplePoints: [a splinePoints] number: nof]];
         return a;
     }
-    else if( [a type] == tPlain)
-    {
-        a = [self convertBrushROItoPolygon: a numPoints: nof];
-        [a setPoints: [ROI resamplePoints: [a splinePoints] number: nof]];
-        return a;
-    }
     else return nil;
 }
 
@@ -15084,8 +14703,7 @@ static float oldsetww, oldsetwl;
     a.isAliased = NO;
     b.isAliased = NO;
     
-    // If the ROIs are brush ROIs, convert them into polygons, using a marching square isocontour
-    // Otherwise update the points so they both have maxPoints number of points
+    // Update both polygons so they have maxPoints number of points.
     a = [self isoContourROI: a numberOfPoints: maxPoints];
     b = [self isoContourROI: b numberOfPoints: maxPoints];
     
@@ -15419,105 +15037,6 @@ static float oldsetww, oldsetwl;
 
 - (NSRecursiveLock*) roiLock { return roiLock;}
 
-- (void) applyMorphology: (NSArray*) rois action:(NSString*) action	radius: (long) radius sendNotification: (BOOL) sendNotification
-{
-    NSLog( @"****** applyMorphology - START");
-    
-    
-    [roiLock lock];
-    
-    ITKBrushROIFilter *filter = nil;
-    
-    @try
-    {
-        filter = [[ITKBrushROIFilter alloc] init];
-        
-        NSOperationQueue *queue = [[[NSOperationQueue alloc] init] autorelease];
-        
-        for ( int i = 0; i < [rois count]; i++)
-        {
-            ViewerControllerOperation *op = [[[ViewerControllerOperation alloc] initWithController: self dict: [NSDictionary dictionaryWithObjectsAndKeys: [rois objectAtIndex:i], @"roi", action, @"action", filter, @"filter", [NSNumber numberWithInt: radius], @"radius", nil]] autorelease];
-            
-            [queue addOperation: op];
-        }
-        
-        [queue waitUntilAllOperationsAreFinished];
-    }
-    @catch (NSException * e)
-    {
-        N2LogExceptionWithStackTrace(e);
-    }
-    
-    [roiLock unlock];
-    
-    if( sendNotification)
-        for ( int i = 0; i < [rois count]; i++) [[NSNotificationCenter defaultCenter] postNotificationName: OsirixROIChangeNotification object:[rois objectAtIndex:i] userInfo: nil];
-    
-    [filter release];
-    
-    NSLog( @"****** applyMorphology - END");
-}
-
-- (IBAction) setStructuringElementRadius: (id) sender
-{
-    [structuringElementRadiusTextField setStringValue:[NSString stringWithFormat:@"%d",[structuringElementRadiusSlider intValue]]];
-}
-
-- (IBAction) morphoSelectedBrushROIWithRadius: (id) sender
-{
-    [brushROIFilterOptionsWindow orderOut: sender];
-    [NSApp endSheet: brushROIFilterOptionsWindow];
-    
-    if( [sender tag])
-    {
-        ROI *selectedROI = [self selectedROI];
-        
-        // do the morpho function...
-        ITKBrushROIFilter *filter = [[ITKBrushROIFilter alloc] init];
-        
-        WaitRendering	*wait = [[WaitRendering alloc] init: NSLocalizedString(@"Processing...",nil)];
-        [wait showWindow:self];
-        if ([brushROIFilterOptionsAllWithSameName state]==NSControlStateValueOff)
-        {
-            [self applyMorphology: [NSArray arrayWithObject:selectedROI] action:morphoFunction radius: [structuringElementRadiusSlider intValue] sendNotification:YES];
-        }
-        else
-        {
-            [self applyMorphology: [self roisWithName:[selectedROI name] in4D:YES] action:morphoFunction radius: [structuringElementRadiusSlider intValue] sendNotification:YES];
-        }
-        [filter release];
-        [wait close];
-        [wait autorelease];
-    }
-}
-
-- (IBAction) morphoSelectedBrushROI: (id) sender
-{
-    ROI *selectedROI = [self selectedROI];
-    
-    [morphoFunction release];
-    
-    switch( [sender tag])
-    {
-        case 0:		morphoFunction = [@"erode" retain];		break;
-        case 1:		morphoFunction = [@"dilate" retain];	break;
-        case 2:		morphoFunction = [@"close" retain];		break;
-        case 3:		morphoFunction = [@"open" retain];		break;
-    }
-    
-    if (selectedROI && [selectedROI type] == tPlain)
-    {
-        [self addToUndoQueue: @"roi"];
-        
-        HorosBeginSheet(brushROIFilterOptionsWindow, [self window], self, nil, nil);
-    }
-    else
-    {
-        HorosPresentCriticalAlert(NSLocalizedString(@"Brush ROI Error", nil), NSLocalizedString(@"Select a Brush ROI before to run the filter.", nil) , NSLocalizedString(@"OK", nil), nil, nil);
-        return;
-    }
-}
-
 - (ROI*) convertPolygonROItoBrush:(ROI*) selectedROI
 {
     ROI *theNewROI = nil;
@@ -15565,47 +15084,6 @@ static float oldsetww, oldsetwl;
     return [theNewROI autorelease];
 }
 
-
-- (ROI*) convertBrushROItoPolygon:(ROI*) selectedROI numPoints: (int) numPoints
-{
-    ROI* newROI = nil;
-    
-    if( [selectedROI type] == tPlain)
-    {
-        // Convert it to Brush
-        newROI = [self newROI: tCPolygon];
-        
-        NSArray	*points = [ITKSegmentation3D extractContour: [selectedROI textureBuffer] width: [selectedROI textureWidth] height: [selectedROI textureHeight] numPoints: numPoints];
-        
-        int		i;
-        NSMutableArray	*pts = [NSMutableArray array];
-        
-        for( i = 0 ; i < [points count] ; i++)
-        {
-            [[points objectAtIndex: i] move: [selectedROI textureUpLeftCornerX] :[selectedROI textureUpLeftCornerY]];
-        }
-        
-        for( i = 0 ; i < numPoints ; i++)
-        {
-            float x = (float) (i * [points count]) / (float) numPoints;
-            int xint = (int) x;
-            
-            MyPoint *a = [points objectAtIndex: xint];
-            
-            MyPoint *b;
-            if( xint+1 == [points count])  b = [points objectAtIndex: 0];
-            else b = [points objectAtIndex: xint+1];
-            
-            NSPoint c = [ROI pointBetweenPoint: [a point] and: [b point] ratio: x - (float) xint];
-            
-            [pts addObject: [MyPoint point: c]];
-        }
-        
-        [newROI setPoints: pts];
-    }
-    
-    return newROI;
-}
 
 -(int) imageIndexOfROI:(ROI*) c
 {
@@ -15658,77 +15136,6 @@ static float oldsetww, oldsetwl;
 - (IBAction) mergeBrushROI: (id) sender
 {
     return [self mergeBrushROI: sender ROIs: [self selectedROIs] ROIList: [roiList[ curMovieIndex] objectAtIndex: [imageView curImage]] ];
-}
-
-- (IBAction) convertBrushPolygon: (id) sender
-{
-    [self addToUndoQueue: @"roi"];
-    [imageView stopROIEditingForce: YES];
-    
-    for( int i = 0; i < maxMovieIndex; i++)
-        [self saveROI: i];
-    
-    NSArray *selectedROIs = [self roiApplyWindow: self];
-    
-    int tag;
-    
-    for( ROI *selectedROI in selectedROIs)
-    {
-        
-        NSInteger index = [self imageIndexOfROI: selectedROI];
-        
-        if( index >= 0)
-        {
-            ROI	*newROI = nil;
-            
-            if( [selectedROI type] == tPlain) tag = 1;
-            else tag = 0;
-            
-            switch( tag)
-            {
-                case 1:
-                {
-                    newROI = [self convertBrushROItoPolygon: selectedROI numPoints:100];
-                    
-                    if( newROI)
-                    {
-                        // Add the new ROI
-                        [[selectedROI curView] roiSet: newROI];
-                        [[roiList[curMovieIndex] objectAtIndex: index] addObject: newROI];
-                        [newROI setROIMode: ROI_selected];
-                        [newROI setName: [selectedROI name]];
-                        [newROI setComments: [selectedROI comments]];
-                    }
-                }
-                    break;
-                    
-                case 0:
-                {
-                    newROI = [self convertPolygonROItoBrush: selectedROI];
-                    
-                    if( newROI)
-                    {
-                        // Add the new ROI
-                        [[selectedROI curView] roiSet: newROI];
-                        [[roiList[curMovieIndex] objectAtIndex: index] addObject: newROI];
-                        [newROI setROIMode: ROI_selected];
-                        [newROI setName: [selectedROI name]];
-                        [newROI setComments: [selectedROI comments]];
-                    }
-                }
-                    break;
-            }
-            
-            // Remove the old ROI
-            if( newROI)
-            {
-                [[NSNotificationCenter defaultCenter] postNotificationName: OsirixRemoveROINotification object:selectedROI userInfo: nil];
-                [[roiList[curMovieIndex] objectAtIndex: index] removeObject: selectedROI];
-            }
-        }
-    }
-    
-    [imageView setIndex: [imageView curImage]];
 }
 
 #pragma mark SUV
@@ -16537,84 +15944,6 @@ static float oldsetww, oldsetwl;
         }
     }
     
-    //	// *** 3D MPR Viewers ***
-    //	viewersList = [[NSMutableArray alloc] initWithCapacity:0];
-    //
-    //	for( i = 0; i < [winList count]; i++)
-    //	{
-    //		if( [[[[winList objectAtIndex:i] windowController] windowNibName] isEqualToString:@"MPR"])
-    //		{
-    //			if( self != [[winList objectAtIndex:i] windowController]) [viewersList addObject: [[winList objectAtIndex:i] windowController]];
-    //		}
-    //	}
-    //
-    //	for( i = 0; i < [viewersList count]; i++)
-    //	{
-    //		MPRController	*vC = [viewersList objectAtIndex: i];
-    //
-    //		if( self == [vC blendingController])
-    //		{
-    //			[vC updateBlendingImage];
-    //		}
-    //	}
-    //	[viewersList release];
-    
-    //	// *** 3D MIP Viewers ***
-    //	viewersList = [[NSMutableArray alloc] initWithCapacity:0];
-    //
-    //	for( i = 0; i < [winList count]; i++)
-    //	{
-    //		if( [[[[winList objectAtIndex:i] windowController] windowNibName] isEqualToString:@"MIP"])
-    //		{
-    //			if( self != [[winList objectAtIndex:i] windowController]) [viewersList addObject: [[winList objectAtIndex:i] windowController]];
-    //		}
-    //	}
-    //
-    //	for( i = 0; i < [viewersList count]; i++)
-    //	{
-    //		MIPController	*vC = [viewersList objectAtIndex: i];
-    //
-    //		if( self == [vC blendingController])
-    //		{
-    //			[vC updateBlendingImage];
-    //		}
-    //	}
-    //	[viewersList release];
-    
-    //	// *** 2D MPR Viewers ***
-    //	viewersList = [NSMutableArray array];
-    //
-    //	for( NSWindow *win in winList)
-    //	{
-    //		if( [[[win windowController] windowNibName] isEqualToString:@"MPR2D"])
-    //		{
-    //			if( self != [win windowController]) [viewersList addObject: [win windowController]];
-    //		}
-    //	}
-    //
-    //	for( MPR2DController *vC in viewersList)
-    //	{
-    //		if( [vC blendingController])
-    //			[vC updateBlendingImage];
-    //	}
-    
-    // *** VR Viewers ***
-    viewersList = [NSMutableArray array];
-    
-    for( NSWindow *win in [NSApp windows])
-    {
-        if( [[[win windowController] windowNibName] isEqualToString:@"VR"] ||
-           [[[win windowController] windowNibName] isEqualToString:@"VRPanel"])
-        {
-            if( self != [win windowController]) [viewersList addObject: [win windowController]];
-        }
-    }
-    
-    for( VRController *vC in viewersList)
-    {
-        if( [vC blendingController])
-            [vC updateBlendingImage];
-    }
 }
 
 #pragma mark Registration
@@ -16628,441 +15957,6 @@ static float oldsetww, oldsetwl;
 {
     registeredViewer = viewer;
 }
-
-- (NSMutableArray*) point2DList
-{
-    NSMutableArray * points2D = [NSMutableArray array];
-    NSMutableArray * allROIs = [self roiList];
-    
-    ROI *curRoi;
-    int s,i;
-    
-    for(s=0; s<[allROIs count]; s++)
-    {
-        for(i=0; i<[[allROIs objectAtIndex:s] count]; i++)
-        {
-            curRoi = (ROI*)[[allROIs objectAtIndex:s] objectAtIndex:i];
-            [curRoi setPix: [[self pixList] objectAtIndex: s]];
-            if([curRoi type] == t2DPoint)
-            {
-                [points2D addObject:curRoi];
-            }
-        }
-    }
-    return points2D;
-}
-
-- (ViewerController*) resampleSeriesInNewOrientation
-{
-    return nil;
-}
-
-- (ViewerController*) resampleSeries:(ViewerController*) movingViewer
-{
-    return [self resampleSeries: movingViewer rescale: YES];
-}
-
-- (ViewerController*) resampleSeries:(ViewerController*) movingViewer rescale: (BOOL) rescale
-{
-    [movingViewer displayWarningIfGantryTitled];
-    [self displayWarningIfGantryTitled];
-    
-    ViewerController *newViewer = nil;
-    
-    BOOL volumicSelf = YES;
-    BOOL volumicMoving = YES;
-    
-    if( self.pixList.count > 1)
-    {
-        if( [self isDataVolumicIn4D: YES] == NO)
-            volumicSelf = NO;
-        
-        if( [self computeInterval] == 0)
-            volumicSelf = NO;
-    }
-    else
-    {
-        DCMPix *p = self.pixList.lastObject;
-        
-        double orientation[ 9];
-        [p orientationDouble: orientation];
-        
-        if( orientation[ 6] == 0 && orientation[ 7] == 0 && orientation[ 8] == 0)
-            volumicSelf = NO;
-    }
-    
-    if( movingViewer.pixList.count > 1)
-    {
-        if( [movingViewer isDataVolumicIn4D: YES] == NO)
-            volumicMoving = NO;
-        
-        if( [movingViewer computeInterval] == 0)
-            volumicMoving = NO;
-    }
-    else
-    {
-        DCMPix *p = movingViewer.pixList.lastObject;
-        
-        double orientation[ 9];
-        [p orientationDouble: orientation];
-        
-        if( orientation[ 6] == 0 && orientation[ 7] == 0 && orientation[ 8] == 0)
-            volumicMoving = NO;
-    }
-    
-    if( volumicSelf == NO || volumicMoving == NO)
-    {
-        HorosPresentCriticalAlert(NSLocalizedString(@"Resampling Error", nil),
-                                NSLocalizedString(@"3D Resampling requires volumic data.", nil),
-                                NSLocalizedString(@"OK", nil), nil, nil);
-        
-        return nil;
-    }
-    
-    if( [[self studyInstanceUID] isEqualToString: [movingViewer studyInstanceUID]])
-    {
-        float vectorModel[ 9], vectorSensor[ 9];
-        
-        [[[movingViewer pixList] objectAtIndex:0] orientation: vectorSensor];
-        [[[self pixList] objectAtIndex:0] orientation: vectorModel];
-        
-        double matrix[ 12], length;
-        
-        // No translation -> same origin, same study
-        matrix[ 9] = 0;
-        matrix[ 10] = 0;
-        matrix[ 11] = 0;
-        
-        // --
-        
-        matrix[ 0] = vectorSensor[ 0] * vectorModel[ 0] + vectorSensor[ 1] * vectorModel[ 1] + vectorSensor[ 2] * vectorModel[ 2];
-        matrix[ 1] = vectorSensor[ 0] * vectorModel[ 3] + vectorSensor[ 1] * vectorModel[ 4] + vectorSensor[ 2] * vectorModel[ 5];
-        matrix[ 2] = vectorSensor[ 0] * vectorModel[ 6] + vectorSensor[ 1] * vectorModel[ 7] + vectorSensor[ 2] * vectorModel[ 8];
-        
-        length = sqrt(matrix[0]*matrix[0] + matrix[1]*matrix[1] + matrix[2]*matrix[2]);
-        
-        matrix[0] = matrix[ 0] / length;
-        matrix[1] = matrix[ 1] / length;
-        matrix[2] = matrix[ 2] / length;
-        
-        // --
-        
-        matrix[ 3] = vectorSensor[ 3] * vectorModel[ 0] + vectorSensor[ 4] * vectorModel[ 1] + vectorSensor[ 5] * vectorModel[ 2];
-        matrix[ 4] = vectorSensor[ 3] * vectorModel[ 3] + vectorSensor[ 4] * vectorModel[ 4] + vectorSensor[ 5] * vectorModel[ 5];
-        matrix[ 5] = vectorSensor[ 3] * vectorModel[ 6] + vectorSensor[ 4] * vectorModel[ 7] + vectorSensor[ 5] * vectorModel[ 8];
-        
-        length = sqrt(matrix[3]*matrix[3] + matrix[4]*matrix[4] + matrix[5]*matrix[5]);
-        
-        matrix[3] = matrix[ 3] / length;
-        matrix[4] = matrix[ 4] / length;
-        matrix[5] = matrix[ 5] / length;
-        
-        // --
-        
-        matrix[6] = matrix[1]*matrix[5] - matrix[2]*matrix[4];
-        matrix[7] = matrix[2]*matrix[3] - matrix[0]*matrix[5];
-        matrix[8] = matrix[0]*matrix[4] - matrix[1]*matrix[3];
-        
-        length = sqrt(matrix[6]*matrix[6] + matrix[7]*matrix[7] + matrix[8]*matrix[8]);
-        
-        matrix[6] = matrix[ 6] / length;
-        matrix[7] = matrix[ 7] / length;
-        matrix[8] = matrix[ 8] / length;
-        
-        // --
-        
-        ITKTransform * transform = [[ITKTransform alloc] initWithViewer:movingViewer];
-        
-        newViewer = [transform computeAffineTransformWithParameters: matrix resampleOnViewer: self rescale: rescale];
-        
-        [imageView sendSyncMessage: 0];
-        [self adjustSlider];
-        
-        [transform release];
-    }
-    else
-    {
-        HorosPresentCriticalAlert(NSLocalizedString(@"Resampling Error", nil),
-                                NSLocalizedString(@"Resampling is only available for series in the SAME study.", nil),
-                                NSLocalizedString(@"OK", nil), nil, nil);
-    }
-    
-    return newViewer;
-}
-
-- (void) computeRegistrationWithMovingViewer:(ViewerController*) movingViewer
-{
-    BOOL volumicSelf = YES;
-    BOOL volumicMoving = YES;
-    
-    if( self.pixList.count > 1)
-    {
-        if( [self isDataVolumicIn4D: YES] == NO)
-            volumicSelf = NO;
-        
-        if( [self computeInterval] == 0)
-            volumicSelf = NO;
-    }
-    else
-    {
-        DCMPix *p = self.pixList.lastObject;
-        
-        double orientation[ 9];
-        [p orientationDouble: orientation];
-        
-        if( orientation[ 6] == 0 && orientation[ 7] == 0 && orientation[ 8] == 0)
-            volumicSelf = NO;
-    }
-    
-    if( movingViewer.pixList.count > 1)
-    {
-        if( [movingViewer isDataVolumicIn4D: YES] == NO)
-            volumicMoving = NO;
-        
-        if( [movingViewer computeInterval] == 0)
-            volumicMoving = NO;
-    }
-    else
-    {
-        DCMPix *p = movingViewer.pixList.lastObject;
-        
-        double orientation[ 9];
-        [p orientationDouble: orientation];
-        
-        if( orientation[ 6] == 0 && orientation[ 7] == 0 && orientation[ 8] == 0)
-            volumicMoving = NO;
-    }
-    
-    if( volumicSelf == NO || volumicMoving == NO)
-    {
-        HorosPresentCriticalAlert(NSLocalizedString(@"Registration Error", nil),
-                                NSLocalizedString(@"3D Resampling requires volumic data.", nil),
-                                NSLocalizedString(@"OK", nil), nil, nil);
-        return;
-    }
-    
-    
-    //	NSLog(@" ***** Points 2D ***** ");
-    // find all the Point ROIs on this viewer (fixed)
-    NSMutableArray * modelPointROIs = [self point2DList];
-    // find all the Point ROIs on the dragged viewer (moving)
-    NSMutableArray * sensorPointROIs = [movingViewer point2DList];
-    
-    // order the Points by name. Not necessary but useful for debugging.
-    [modelPointROIs sortUsingFunction:sortROIByName context:NULL];
-    [sensorPointROIs sortUsingFunction:sortROIByName context:NULL];
-    
-    int numberOfPoints = [modelPointROIs count];
-    // we need the same number of points
-    BOOL sameNumberOfPoints = ([sensorPointROIs count] == numberOfPoints);
-    // we need at least 3 points
-    BOOL enoughPoints = (numberOfPoints>=3);
-    // each point on the moving viewer needs a twin on the fixed viewer.
-    // two points are twin brothers if and only if they have the same name.
-    BOOL pointsNamesMatch2by2 = YES;
-    // triplets are illegal (since we don't know which point to map)
-    BOOL triplets = NO;
-    
-    NSMutableArray *previousNames = [[NSMutableArray alloc] initWithCapacity:0];
-    
-    NSString *modelName, *sensorName;
-    NSMutableString *errorString = [NSMutableString stringWithString:@""];
-    
-    BOOL foundAMatchingName;
-    
-    if (sameNumberOfPoints && enoughPoints)
-    {
-        HornRegistration *hr = [[HornRegistration alloc] init];
-        
-        float vectorModel[ 9], vectorSensor[ 9];
-        
-        [[[movingViewer pixList] objectAtIndex:0] orientation: vectorSensor];
-        [[[self pixList] objectAtIndex:0] orientation: vectorModel];
-        
-        int i,j; // 'for' indexes
-        for (i=0; i<[modelPointROIs count] && pointsNamesMatch2by2 && !triplets; i++)
-        {
-            ROI *curModelPoint2D = [modelPointROIs objectAtIndex:i];
-            modelName = [curModelPoint2D name];
-            foundAMatchingName = NO;
-            
-            for (j=0; j<[sensorPointROIs count] && !foundAMatchingName; j++)
-            {
-                ROI *curSensorPoint2D = [sensorPointROIs objectAtIndex:j];
-                sensorName = [curSensorPoint2D name];
-                
-                for (id loopItem2 in previousNames)
-                {
-                    triplets = triplets || [modelName isEqualToString:loopItem2]
-                    || [sensorName isEqualToString:loopItem2];
-                }
-                
-                pointsNamesMatch2by2 = [sensorName isEqualToString:modelName];
-                
-                if(pointsNamesMatch2by2)
-                {
-                    foundAMatchingName = YES; // stop the research
-                    [sensorPointROIs removeObjectAtIndex:j]; // to accelerate the research
-                    j--;
-                    
-                    [previousNames addObject:sensorName]; // to avoid triplets
-                    
-                    if(!triplets)
-                    {
-                        float modelLocation[3], sensorLocation[3];
-                        
-                        [[curModelPoint2D pix]	convertPixX:	[[[curModelPoint2D points] objectAtIndex:0] x]
-                                                      pixY:			[[[curModelPoint2D points] objectAtIndex:0] y]
-                                             toDICOMCoords:	modelLocation
-                                               pixelCenter: YES];
-                        
-                        [[curSensorPoint2D pix]	convertPixX:	[[[curSensorPoint2D points] objectAtIndex:0] x]
-                                                       pixY:			[[[curSensorPoint2D points] objectAtIndex:0] y]
-                                              toDICOMCoords:	sensorLocation
-                                                pixelCenter: YES];
-                        
-                        // Convert the point in 3D orientation of the model
-                        
-                        float modelLocationConverted[ 3];
-                        
-                        modelLocationConverted[ 0] = modelLocation[ 0];
-                        modelLocationConverted[ 1] = modelLocation[ 1];
-                        modelLocationConverted[ 2] = modelLocation[ 2];
-                        modelLocationConverted[ 0] = modelLocation[ 0] * vectorModel[ 0] + modelLocation[ 1] * vectorModel[ 1] + modelLocation[ 2] * vectorModel[ 2];
-                        modelLocationConverted[ 1] = modelLocation[ 0] * vectorModel[ 3] + modelLocation[ 1] * vectorModel[ 4] + modelLocation[ 2] * vectorModel[ 5];
-                        modelLocationConverted[ 2] = modelLocation[ 0] * vectorModel[ 6] + modelLocation[ 1] * vectorModel[ 7] + modelLocation[ 2] * vectorModel[ 8];
-                        
-                        float sensorLocationConverted[ 3];
-                        
-                        sensorLocationConverted[ 0] = sensorLocation[ 0];
-                        sensorLocationConverted[ 1] = sensorLocation[ 1];
-                        sensorLocationConverted[ 2] = sensorLocation[ 2];
-                        sensorLocationConverted[ 0] = sensorLocation[ 0] * vectorSensor[ 0] + sensorLocation[ 1] * vectorSensor[ 1] + sensorLocation[ 2] * vectorSensor[ 2];
-                        sensorLocationConverted[ 1] = sensorLocation[ 0] * vectorSensor[ 3] + sensorLocation[ 1] * vectorSensor[ 4] + sensorLocation[ 2] * vectorSensor[ 5];
-                        sensorLocationConverted[ 2] = sensorLocation[ 0] * vectorSensor[ 6] + sensorLocation[ 1] * vectorSensor[ 7] + sensorLocation[ 2] * vectorSensor[ 8];
-                        
-                        // add the points to the registration method
-                        [hr addModelPointX: modelLocationConverted[0] Y: modelLocationConverted[1] Z: modelLocationConverted[2]];
-                        [hr addSensorPointX: sensorLocationConverted[0] Y: sensorLocationConverted[1] Z: sensorLocationConverted[2]];
-                    }
-                }
-            }
-        }
-        
-        if(pointsNamesMatch2by2 && !triplets)
-        {
-            double matrix[ 16];
-            
-            [hr computeVTK :matrix];
-            
-            ITKTransform * transform = [[ITKTransform alloc] initWithViewer:movingViewer];
-            
-            /*ViewerController *newViewer =*/ [transform computeAffineTransformWithParameters: matrix resampleOnViewer: self];
-            
-            [imageView sendSyncMessage: 0];
-            [self adjustSlider];
-            
-            [transform release];
-        }
-        [hr release];
-    }
-    else
-    {
-        if(!sameNumberOfPoints)
-        {
-            // warn user to set the same number of points on both viewers
-            [errorString appendString:NSLocalizedString(@"Needs same number of points on both viewers.",nil)];
-        }
-        
-        if(!enoughPoints)
-        {
-            // warn user to set at least 3 points on both viewers
-            if([errorString length]!=0) [errorString appendString:@"\n"];
-            [errorString appendString:NSLocalizedString(@"Needs at least 3 points on both viewers.",nil)];
-        }
-    }
-    
-    if(!pointsNamesMatch2by2)
-    {
-        // warn user
-        if([errorString length]!=0) [errorString appendString:@"\n"];
-        [errorString appendString:NSLocalizedString(@"Points names must match 2 by 2.",nil)];
-    }
-    
-    if(triplets)
-    {
-        // warn user
-        if([errorString length]!=0) [errorString appendString:@"\n"];
-        [errorString appendString:NSLocalizedString(@"Max. 2 points with the same name.",nil)];
-    }
-    
-    if([errorString length]!=0)
-    {
-        HorosPresentCriticalAlert(NSLocalizedString(@"Point-Based Registration Error", nil),
-                                @"%@",
-                                NSLocalizedString(@"OK", nil), nil, nil, errorString);
-    }
-    
-    [previousNames release];
-}
-
-#pragma mark segmentation
-//
-//-(IBAction) startMSRGWithAutomaticBounding:(id) sender
-//{
-//	NSLog(@"startMSRGWithAutomaticBounding !");
-//}
-//-(IBAction) startMSRG:(id) sender
-//{
-//	NSLog(@"Start MSRG ....");
-//	// I - R√©cup√©ration des AUTRES ViewerController, nombre de crit√®res
-//	NSMutableArray		*viewersList = [ViewerController getDisplayed2DViewers];;
-//
-//	[viewersList removeObject: self];
-//
-//	for( ViewerController *vC in viewersList)
-//	{
-//	}
-//	/*
-//	 DCMPix	*curPix = [[self pixList] objectAtIndex: [imageView curImage]];
-//	 long height=[curPix pheight];
-//	 long width=[curPix pwidth];
-//	 long depth=[[self pixList] count];
-//	 int* aBuffer=(int*)malloc(width*height*depth*sizeof(int));
-//	 if (aBuffer)
-//	 {
-//		 // clear texture
-//		 for(l=0;l<width*height*depth;l++)
-//			 aBuffer[l]=0;
-//		 // region 1
-//
-//		 for(k=0;k<depth;k++)
-//			 for(j=50;j<70;j++)
-//				 for(i=60;i<70;i++)
-//					 aBuffer[i+j*width+k*width*height]=1;
-//		 // region 2
-//
-//		 for(k=0;k<5;k++)
-//			 for(j=0;j<10;j++)
-//				 for(i=0;i<10;i++)
-//					 aBuffer[i+j*width+k*width*height]=2;
-//
-//		 [self addRoiFromFullStackBuffer:aBuffer];
-//		 free(aBuffer);
-//	 }
-//	 */
-//	 MSRGWindowController *msrgController = [[MSRGWindowController alloc] initWithMarkerViewer:self andViewersList:viewersList];
-//	 if( msrgController)
-//		{
-//			[msrgController showWindow:self];
-//			[[msrgController window] makeKeyAndOrderFront:self];
-//		}
-///*
-//	MSRGSegmentation *msrgSeg=[[MSRGSegmentation alloc] initWithViewerList:viewersList currentViewer:self];
-//	[msrgSeg startMSRGSegmentation];
-//	*/
-//}
-
 
 #pragma mark-
 #pragma mark 4.4 Navigation
@@ -19989,8 +18883,6 @@ static float oldsetww, oldsetwl;
         
         location = x * sliceInterval;
         
-        // TODO : convert to NSOperation: ITKSegmentation3D extractContour is slow
-        
         for( int i = 0; i < [[roiList[curMovieIndex] objectAtIndex: x] count]; i++)
         {
             curROI = [[roiList[curMovieIndex] objectAtIndex: x] objectAtIndex: i];
@@ -20027,21 +18919,7 @@ static float oldsetww, oldsetwl;
                 if( pts)
                 {
                     [queue addOperationWithBlock:^{
-                        NSMutableArray	*points = nil;
-                        
-                        if( [curROI type] == tPlain)
-                        {
-                            points = [ITKSegmentation3D extractContour:[curROI textureBuffer] width:[curROI textureWidth] height:[curROI textureHeight] numPoints: 100 largestRegion: NO];
-                            
-                            float mx = [curROI textureUpLeftCornerX], my = [curROI textureUpLeftCornerY];
-                            
-                            for( int zz = 0; zz < [points count]; zz++)
-                            {
-                                MyPoint	*pt = [points objectAtIndex: zz];
-                                [pt move: mx :my];
-                            }
-                        }
-                        else points = [curROI splinePoints];
+                        NSMutableArray *points = [curROI splinePoints];
                         
                         for( int y = 0; y < [points count]; y++)
                         {
@@ -20487,34 +19365,6 @@ static float oldsetww, oldsetwl;
         }
     }
     
-    for( int i = 0; i < [ReconstructionRoi numberOfItems]; i++)
-    {
-        if( [[ReconstructionRoi itemAtIndex: i] image] == nil)
-        {
-            switch( [[ReconstructionRoi itemAtIndex: i] tag])
-            {
-                case 1:	[[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"MPR"]];				break;
-                case 2:	[[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"MPR3D"]];				break;
-                case 3: [[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"MIP"]];				break;
-                case 4: [[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"VolumeRendering"]];	break;
-                case 5: [[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"Surface"]];			break;
-                case 6: [[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"VolumeRendering"]];	break;
-                case 7:
-                    //				if( [VRPROController available] == NO)
-                {
-                    [ReconstructionRoi removeItemAtIndex: i];
-                    i--;
-                }
-                    //				else
-                    //					[[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"VolumeRendering"]];
-                    break;
-                case 8: [[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"orthogonalReslice"]];	break;
-                case 9: [[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"Endoscopy"]];	break;
-                case 10: [[ReconstructionRoi itemAtIndex: i] setImage: [NSImage imageNamed: @"MPR"]];	break;
-            }
-        }
-    }
-    
     [[self window] setInitialFirstResponder: imageView];
     
     NSNumber	*status = [[fileList[ curMovieIndex] objectAtIndex:[imageView curImage]] valueForKeyPath:@"series.study.stateText"];
@@ -20538,785 +19388,6 @@ static float oldsetww, oldsetwl;
     [orientationMatrix setEnabled: NO];
 }
 
-- (IBAction) Panel3D:(id) sender
-{
-    long i;
-    
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];
-    
-    if( [self isDataVolumicIn4D: YES] == NO)
-    {
-        HorosPresentAlert(NSLocalizedString(@"Volume Rendering", nil), NSLocalizedString(@"Volume Rendering requires volumic data.", nil), nil, nil, nil);
-        return;
-    }
-    
-    if( [self computeInterval] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
-    {
-        [self SetThicknessInterval:sender];
-    }
-    else
-    {
-        [self displayAWarningIfNonTrueVolumicData];
-        [self displayWarningIfGantryTitled];
-        
-        [self MovieStop: self];
-        
-        NSArray *viewers = [[AppController sharedAppController] FindRelatedViewers:pixList[0]];
-        
-        VRController *viewer = nil;
-        
-        for( NSWindowController *v in viewers)
-        {
-            if( [v.windowNibName isEqualToString: @"VR"])
-            {
-                VRController *vv = (VRController*) v;
-                
-                if( [vv.style isEqualToString: @"panel"])
-                    viewer = vv;
-            }
-        }
-        
-        if( viewer)
-        {
-            [[viewer window] makeKeyAndOrderFront:self];
-        }
-        else
-        {
-            viewer = [[VRController alloc] initWithPix:pixList[curMovieIndex] :fileList[0] :volumeData[ 0] :blendingController :self style:@"panel" mode:@"MIP"];
-            for( i = 1; i < maxMovieIndex; i++)
-            {
-                [viewer addMoviePixList:pixList[ i] :volumeData[ i]];
-            }
-            
-            if( [[pixList[0] objectAtIndex: 0] isRGB] == NO)
-            {
-                if( [[self modality] isEqualToString:@"PT"])
-                {
-                    if( [[imageView curDCM] SUVConverted] == YES)
-                    {
-                        [viewer setWLWW: 3 : 6];
-                    }
-                    else
-                    {
-                        [viewer setWLWW:[[pixList[0] objectAtIndex: 0] maxValueOfSeries]/4 : [[pixList[0] objectAtIndex: 0] maxValueOfSeries]/2];
-                    }
-                }
-            }
-            
-            [viewer load3DState];
-            
-            if( [[self modality] isEqualToString:@"PT"] && [[pixList[0] objectAtIndex: 0] isRGB] == NO)
-            {
-                if( [[[NSUserDefaults standardUserDefaults] stringForKey:@"PET Clut Mode"] isEqualToString: @"B/W Inverse"])
-                    [viewer ApplyCLUTString: @"B/W Inverse"];
-                else
-                    [viewer ApplyCLUTString: [[NSUserDefaults standardUserDefaults] stringForKey:@"PET Default CLUT"]];
-                
-                [viewer ApplyOpacityString: @"Logarithmic Table"];
-            }
-            else
-            {
-                float   iwl, iww;
-                [imageView getWLWW:&iwl :&iww];
-                [viewer setWLWW:iwl :iww];
-            }
-            
-            [[viewer window] setFrameOrigin: [[[self window] screen] visibleFrame].origin];
-            [viewer showWindow:self];
-            [[viewer window] makeKeyAndOrderFront:self];
-            [[viewer window] display];
-            [[viewer window] setTitle: [NSString stringWithFormat:@"%@: %@", [[viewer window] title], [[self window] title]]];
-        }
-    }
-}
-
--(IBAction) segmentationTest:(id) sender
-{
-    BOOL volumicData = [self isDataVolumicIn4D: NO];
-    
-    if( volumicData == NO)
-        // Force 2D mode
-        [[NSUserDefaults standardUserDefaults] setInteger: 0 forKey: @"growingRegionType"];
-    else
-        [self displayAWarningIfNonTrueVolumicData];
-    
-    [self clear8bitRepresentations];
-    
-    float ci = [self computeInterval];
-    
-    if( [pixList[ curMovieIndex] count] <= 1) ci = 1;
-    
-    if( ci == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
-    {
-        [self SetThicknessInterval:sender];
-    }
-    else
-    {
-        ITKSegmentation3DController *itk = [[ITKSegmentation3DController alloc] initWithViewer: self];
-        if( itk)
-        {
-            [itk showWindow:self];
-            [[itk window] makeKeyAndOrderFront:self];
-        }
-    }
-}
-
-- (VRController *)openVRViewerForMode:(NSString *)mode
-{
-
-    long i;
-    
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];	
-    [self MovieStop: self];
-    
-    NSArray *viewers = [[AppController sharedAppController] FindRelatedViewers:pixList[0]];
-    
-    VRController *viewer = nil;
-    
-    for( NSWindowController *v in viewers)
-    {
-        if( [v.windowNibName isEqualToString: @"VR"])
-        {
-            VRController *vv = (VRController*) v;
-            
-            if( [vv.style isEqualToString: @"standard"] && ([vv.renderingMode isEqualToString:@"VR"] || [vv.renderingMode isEqualToString:@"MIP"]))
-                viewer = vv;
-        }
-    }
-    
-    if( viewer)
-    {
-        return viewer;
-    }
-    else
-    {
-        viewer = [[VRController alloc] initWithPix:pixList[0] :fileList[0] :volumeData[ 0] :blendingController :self style:@"standard" mode: mode];
-        for( i = 1; i < maxMovieIndex; i++)
-        {
-            [viewer addMoviePixList:pixList[ i] :volumeData[ i]];
-        }
-        
-        if( [[self modality] isEqualToString:@"PT"] && [[pixList[0] objectAtIndex: 0] isRGB] == NO)
-        {
-            if( [[imageView curDCM] SUVConverted] == YES)
-            {
-                [viewer setWLWW: 2 : 6];
-            }
-            else
-            {
-                [viewer setWLWW:[[pixList[0] objectAtIndex: 0] maxValueOfSeries]/2 : [[pixList[0] objectAtIndex: 0] maxValueOfSeries]];
-            }
-            
-            if( [[[NSUserDefaults standardUserDefaults] stringForKey:@"PET Clut Mode"] isEqualToString: @"B/W Inverse"])
-                [viewer ApplyCLUTString: @"B/W Inverse"];
-            else
-                [viewer ApplyCLUTString: [[NSUserDefaults standardUserDefaults] stringForKey:@"PET Default CLUT"]];
-            
-            [viewer ApplyOpacityString: @"Logarithmic Table"];
-        }
-        else
-        {
-            float   iwl, iww;
-            [imageView getWLWW:&iwl :&iww];
-            [viewer setWLWW:iwl :iww];
-        }
-    }
-    return viewer;
-}
-
-- (NSScreen*) get3DViewerScreen: (ViewerController*) v
-{
-    if( [[NSUserDefaults standardUserDefaults] boolForKey:@"ThreeDViewerOnAnotherScreen"])
-    {
-        NSArray		*allScreens = [NSScreen screens];
-        
-        for( id loopItem in allScreens)
-        {
-            if( [[[v window] screen] frame].origin.x != [loopItem frame].origin.x || [[[v window] screen] frame].origin.y != [loopItem frame].origin.y)
-            {
-                return loopItem;
-            }
-        }
-        
-        return [[v window] screen];
-    }
-    else
-    {
-        return [[v window] screen];
-    }
-}
-
-- (void) place3DViewerWindow:(NSWindowController*) viewer
-{
-    [[viewer window] setFrame: [[self get3DViewerScreen: self] visibleFrame] display:NO];
-}
-
--(IBAction) VRViewer:(id) sender
-{
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];
-    
-    if( [self isDataVolumicIn4D: YES] == NO)
-    {
-        HorosPresentAlert(NSLocalizedString(@"Volume Rendering", nil), NSLocalizedString(@"Volume Rendering requires volumic data.", nil), nil, nil, nil);
-        return;
-    }
-    
-    if( [self computeInterval] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
-    {
-        [self SetThicknessInterval:sender];
-    }
-    else
-    {
-        [self displayAWarningIfNonTrueVolumicData];
-        
-        [self displayWarningIfGantryTitled];
-        
-        if( [curConvMenu isEqualToString:NSLocalizedString(@"No Filter", nil)] == NO)
-        {
-            if( HorosPresentInformationalAlert( NSLocalizedString(@"Convolution", nil), NSLocalizedString(@"Should I apply current convolution filter on raw data? 2D/3D post-processing viewers can only display raw data.", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
-                [self applyConvolutionOnSource: self];
-        }
-        
-        [self MovieStop: self];
-        
-        NSArray *viewers = [[AppController sharedAppController] FindRelatedViewers:pixList[0]];
-        
-        VRController *viewer = nil;
-        
-        for( NSWindowController *v in viewers)
-        {
-            if( [v.windowNibName isEqualToString: @"VR"])
-            {
-                VRController *vv = (VRController*) v;
-                
-                if( [vv.style isEqualToString: @"standard"])
-                    viewer = vv;
-            }
-        }
-        
-        if( viewer)
-        {
-            [[viewer window] makeKeyAndOrderFront:self];
-            if( [sender tag] == 3) 
-                [viewer setModeIndex: 1];
-            else
-                [viewer setModeIndex: 0];
-        }
-        else
-        {
-            NSString	*mode;
-            if( [sender tag] == 3) mode = @"MIP";
-            else mode = @"VR";
-            viewer = [self openVRViewerForMode:mode];
-            
-            NSString *c;
-            
-            if( backCurCLUTMenu) c = backCurCLUTMenu;
-            else c = curCLUTMenu;
-            
-            [viewer ApplyCLUTString: c];
-            float   iwl, iww;
-            [imageView getWLWW:&iwl :&iww];
-            [viewer setWLWW:iwl :iww];
-            [self place3DViewerWindow: viewer];
-            [viewer load3DState];
-            [viewer showWindow:self];			
-            [[viewer window] makeKeyAndOrderFront:self];
-            [[viewer window] display];
-            [[viewer window] setTitle: [NSString stringWithFormat:@"%@: %@", [[viewer window] title], [[self window] title]]];
-        }
-    }
-}
-
-- (SRController *)openSRViewer
-{
-    SRController *viewer;
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];
-    if ((viewer = [[AppController sharedAppController] FindViewer :@"SR" :pixList[0]]))
-        return viewer;
-    viewer = [[SRController alloc] initWithPix:pixList[curMovieIndex] :fileList[0] :volumeData[curMovieIndex] :blendingController :self];
-    return viewer;
-    
-}
-
--(IBAction) SRViewer:(id) sender
-{
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];
-    
-    if( [self isDataVolumicIn4D: YES] == NO)
-    {
-        HorosPresentAlert(NSLocalizedString(@"Surface Rendering", nil), NSLocalizedString(@"Surface Rendering requires volumic data.", nil), nil, nil, nil);
-        return;
-    }
-    
-    if( [self computeInterval] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
-    {
-        [self SetThicknessInterval:sender];
-    }
-    else
-    {
-        [self displayAWarningIfNonTrueVolumicData];
-        [self displayWarningIfGantryTitled];
-        
-        [self MovieStop: self];
-        
-        SRController *viewer = [[AppController sharedAppController] FindViewer :@"SR" :pixList[0]];
-        
-        if( viewer)
-        {
-            [[viewer window] makeKeyAndOrderFront:self];
-        }
-        else
-        {
-            viewer = [self openSRViewer];
-            [self place3DViewerWindow: viewer];
-            //			[[viewer window] performZoom:self];
-            [viewer showWindow:self];
-            [[viewer window] makeKeyAndOrderFront:self];
-            [viewer ChangeSettings:self];
-            [[viewer window] setTitle: [NSString stringWithFormat:@"%@: %@", [[viewer window] title], [[self window] title]]];
-        }
-    }
-}
-
-- (OrthogonalMPRViewer *)openOrthogonalMPRViewer
-{
-    OrthogonalMPRViewer *viewer;
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];
-    
-    if( blendingController)
-    {
-        viewer = [[AppController sharedAppController] FindViewer :@"PETCT" :pixList[0]];
-    }
-    else
-    {
-        viewer = [[AppController sharedAppController] FindViewer :@"OrthogonalMPR" :pixList[0]];
-    }
-    if (viewer)
-        return viewer;
-    
-    viewer = [[OrthogonalMPRViewer alloc] initWithPixList:pixList[0] :fileList[0] :volumeData[0] :self :nil];
-    
-    float sww = imageView.curWW;
-    float swl = imageView.curWL;
-    
-    NSString *c;
-    
-    if( backCurCLUTMenu) c = backCurCLUTMenu;
-    else c = curCLUTMenu;
-    
-    if( [[pixList[0] objectAtIndex: 0] isRGB] == NO)
-    {
-        if( [[self modality] isEqualToString:@"PT"] || ([[NSUserDefaults standardUserDefaults] boolForKey:@"clutNM"] == YES && [[self modality] isEqualToString:@"NM"]))
-        {
-            if( [[[NSUserDefaults standardUserDefaults] stringForKey:@"PET Clut Mode"] isEqualToString: @"B/W Inverse"])
-                [viewer ApplyCLUTString: @"B/W Inverse"];
-            else
-                [viewer ApplyCLUTString: [[NSUserDefaults standardUserDefaults] stringForKey:@"PET Default CLUT"]];
-        }
-        else [viewer ApplyCLUTString: c];
-    }
-    else [viewer ApplyCLUTString: c];
-    
-    [viewer ApplyOpacityString: curOpacityMenu];
-    
-    [viewer setWLWW: swl :sww];
-    
-    return viewer;
-}
-
-- (OrthogonalMPRPETCTViewer *)openOrthogonalMPRPETCTViewer
-{
-    OrthogonalMPRPETCTViewer  *viewer;
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];
-    
-    if ((viewer = [[AppController sharedAppController] FindViewer :@"PETCT" :pixList[0]]))
-        return viewer;
-    
-    if (blendingController)
-    {
-        float orientA[9], orientB[9];
-        
-        [[[self imageView] curDCM] orientation:orientA];
-        [[[blendingController imageView] curDCM] orientation:orientB];
-        
-        if( [DCMView angleBetweenVector: orientA+6 andVector:orientB+6] > [[NSUserDefaults standardUserDefaults] floatForKey: @"PARALLELPLANETOLERANCE"])  // Planes are not paralel!
-        {
-            HorosPresentCriticalAlert(NSLocalizedString(@"2D Planes",nil),NSLocalizedString(@"These 2D planes are not parallel, you cannot use the 2D Orthogonal MPR viewer. Instead, try the 3D MPR viewer.",nil), NSLocalizedString(@"OK",nil), nil, nil);
-        }
-        else
-        {
-            viewer = [[OrthogonalMPRPETCTViewer alloc] initWithPixList:pixList[0] :fileList[0] :volumeData[0] :self : blendingController];
-            [self place3DViewerWindow: viewer];
-            
-            NSString *c;
-            
-            if( backCurCLUTMenu) c = backCurCLUTMenu;
-            else c = curCLUTMenu;
-            
-            [[viewer CTController] ApplyCLUTString: c];
-            [[viewer PETController] ApplyCLUTString: [blendingController curCLUTMenu]];
-            [[viewer PETCTController] ApplyCLUTString: c];
-            
-            [[viewer CTController] ApplyOpacityString: curOpacityMenu];
-            [[viewer PETController] ApplyOpacityString:[blendingController curOpacityMenu]];
-            [[viewer PETCTController] ApplyOpacityString: curOpacityMenu];
-            
-            [(OrthogonalMPRPETCTView*)[[viewer PETCTController] originalView] setCurCLUTMenu: [blendingController curCLUTMenu]];
-            [(OrthogonalMPRPETCTView*)[[viewer PETCTController] xReslicedView] setCurCLUTMenu: [blendingController curCLUTMenu]];
-            [(OrthogonalMPRPETCTView*)[[viewer PETCTController] yReslicedView] setCurCLUTMenu: [blendingController curCLUTMenu]];
-            
-            [(OrthogonalMPRPETCTView*)[[viewer PETCTController] originalView] setCurOpacityMenu: [blendingController curOpacityMenu]];
-            [(OrthogonalMPRPETCTView*)[[viewer PETCTController] xReslicedView] setCurOpacityMenu: [blendingController curOpacityMenu]];
-            [(OrthogonalMPRPETCTView*)[[viewer PETCTController] yReslicedView] setCurOpacityMenu: [blendingController curOpacityMenu]];
-            
-            [viewer showWindow:self];
-            
-            float   iwl, iww;
-            [imageView getWLWW:&iwl :&iww];
-            [[viewer CTController] setWLWW:iwl :iww];
-            [[blendingController imageView] getWLWW:&iwl :&iww];
-            [[viewer PETController] setWLWW:iwl :iww];
-            
-            [viewer setBlendingMode: [[NSUserDefaults standardUserDefaults] integerForKey: @"DEFAULTPETFUSION"]];
-            
-            return viewer;
-        }
-    }
-    return nil;	
-}
-
--(IBAction) orthogonalMPRViewer:(id) sender
-{
-    
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];
-    
-    if( [self computeInterval] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
-    {
-        [self SetThicknessInterval:sender];
-    }
-    else
-    {
-        if( [self isDataVolumicIn4D: YES] == NO) // || [[imageView curDCM] isRGB] == YES)
-        {
-            HorosPresentAlert(NSLocalizedString(@"MPR", nil), NSLocalizedString(@"MPR requires volumic data.", nil), nil, nil, nil);
-            return;
-        }
-        
-        [self displayAWarningIfNonTrueVolumicData];
-        [self displayWarningIfGantryTitled];
-        
-        [blendingController displayAWarningIfNonTrueVolumicData];
-        [blendingController displayWarningIfGantryTitled];
-        
-        [self MovieStop: self];
-        
-        OrthogonalMPRViewer *viewer;
-        
-        if( blendingController)
-        {
-            viewer = [[AppController sharedAppController] FindViewer :@"PETCT" :pixList[0]];
-        }
-        else
-        {
-            viewer = [[AppController sharedAppController] FindViewer :@"OrthogonalMPR" :pixList[0]];
-        }
-        
-        if( viewer)
-        {
-            [[viewer window] makeKeyAndOrderFront:self];
-        }
-        else
-        {
-            if( blendingController)
-            {
-                OrthogonalMPRPETCTViewer *pcviewer = [self openOrthogonalMPRPETCTViewer];
-                NSDate *studyDate = [[fileList[curMovieIndex] objectAtIndex:0] valueForKeyPath:@"series.study.date"];
-                
-                [[pcviewer window] setTitle: [NSString stringWithFormat:@"%@: %@ - %@", [[pcviewer window] title], [[NSUserDefaults dateTimeFormatter] stringFromDate:studyDate], [[self window] title]]];
-            }
-            else
-            {
-                viewer = [self openOrthogonalMPRViewer];
-                
-                [self place3DViewerWindow: viewer];
-                [viewer showWindow:self];
-                
-                float   iwl, iww;
-                [imageView getWLWW:&iwl :&iww];
-                [viewer setWLWW:iwl :iww];
-                
-                [[viewer window] setTitle: [NSString stringWithFormat:@"%@: %@ - %@", [[viewer window] title], [NSUserDefaults formatDateTime: [[fileList[0] objectAtIndex:0]  valueForKeyPath:@"series.study.date"]], [[self window] title]]];
-            }
-        }
-    }
-}
-
-- (EndoscopyViewer *)openEndoscopyViewer
-{
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];
-    EndoscopyViewer *viewer;
-    
-    viewer = [[AppController sharedAppController] FindViewer :@"Endoscopy" :pixList[0]];
-    if (viewer)
-        return viewer;
-    
-    viewer = [[EndoscopyViewer alloc] initWithPixList:pixList[0] :fileList[0] :volumeData[0] :blendingController : self];
-    return viewer;
-}
-
-
--(IBAction) endoscopyViewer:(id) sender
-{
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];
-    
-    if( [self computeInterval] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
-    {
-        [self SetThicknessInterval:sender];
-    }
-    else
-    {
-        if( [self isDataVolumicIn4D: YES] == NO)
-        {
-            HorosPresentAlert(NSLocalizedString(@"Endoscopy", nil), NSLocalizedString(@"Endoscopy requires volumic data.", nil), nil, nil, nil);
-            return;
-        }
-        
-        [self displayAWarningIfNonTrueVolumicData];
-        [self displayWarningIfGantryTitled];
-        
-        [self MovieStop: self];
-        
-        EndoscopyViewer *viewer;
-        
-        viewer = [[AppController sharedAppController] FindViewer :@"Endoscopy" :pixList[0]];
-        
-        if( viewer)
-        {
-            [[viewer window] makeKeyAndOrderFront:self];
-        }
-        else
-        {
-            viewer = [self openEndoscopyViewer];
-            [self place3DViewerWindow: viewer];
-            [viewer showWindow:self];
-            [[viewer window] setTitle: [NSString stringWithFormat:@"%@: %@", [[viewer window] title], [[self window] title]]];
-        }
-    }
-}
-
-//-(IBAction) MIPViewer:(id) sender
-//{
-//	long i;
-//	
-//	[self checkEverythingLoaded];
-//	[self clear8bitRepresentations];
-//	
-//	if( [self computeInterval] == 0 ||
-//		[[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
-//		[[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-//		([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
-//	{
-//		[self SetThicknessInterval:sender];
-//	}
-//	else
-//	{
-//		MIPController *viewer = [[AppController sharedAppController] FindViewer :@"MIP" :pixList[0]];
-//		
-//		if( viewer)
-//		{
-//			[[viewer window] makeKeyAndOrderFront:self];
-//		}
-//		else
-//		{
-//			viewer = [[MIPController alloc] initWithPix :pixList[curMovieIndex] :fileList[0] :volumeData[curMovieIndex] :blendingController];
-//			for( i = 1; i < maxMovieIndex; i++)
-//			{
-//				[viewer addMoviePixList:pixList[ i] :volumeData[ i]];
-//			}
-//			
-//			[viewer ApplyCLUTString:curCLUTMenu];
-//			long   iwl, iww;
-//			[imageView getWLWW:&iwl :&iww];
-//			[viewer setWLWW:iwl :iww];
-//			[viewer load3DState];
-//			[viewer showWindow:self];
-//			[[viewer window] makeKeyAndOrderFront:self];
-//		}
-//	}
-//}
-
-- (MPRController *)openMPRViewer
-{
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];
-    
-    MPRController *viewer;
-    viewer = [[AppController sharedAppController] FindViewer:@"MPR" :pixList[0]];
-    if (viewer)
-        return viewer;
-    
-    viewer = [[MPRController alloc] initWithDCMPixList:pixList[0]
-                                             filesList:fileList[0]
-                                            volumeData:volumeData[0]
-                                      viewerController:self
-                                 fusedViewerController:blendingController];
-    for( int i = 1; i < maxMovieIndex; i++)
-    {
-        [viewer addMoviePixList:pixList[ i] :volumeData[ i]];
-    }
-    
-    return viewer;
-}
-
-
-- (IBAction) mprViewer:(id) sender
-{
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];
-    
-    if( [self computeInterval] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
-    {
-        [self SetThicknessInterval:sender];
-    }
-    else
-    {
-        if( [self isDataVolumicIn4D: YES] == NO) // || [[imageView curDCM] isRGB] == YES)
-        {
-            HorosPresentAlert(NSLocalizedString(@"MPR", nil), NSLocalizedString(@"MPR requires volumic data.", nil), nil, nil, nil);
-            return;
-        }
-        
-        [self displayAWarningIfNonTrueVolumicData];
-        [self displayWarningIfGantryTitled];
-        
-        [self MovieStop: self];
-        
-        MPRController *viewer;
-        
-        viewer = [[AppController sharedAppController] FindViewer :@"MPR" :pixList[0]];
-        
-        if( viewer)
-        {
-            [[viewer window] makeKeyAndOrderFront:self];
-        }
-        else
-        {
-            viewer = [self openMPRViewer];
-            [self place3DViewerWindow:viewer];
-            [viewer showWindow:self];
-            [[viewer window] setTitle: [NSString stringWithFormat:@"%@: %@", [[viewer window] title], [[self window] title]]];
-            dispatch_async(dispatch_get_main_queue(), ^(){
-                [viewer showWindow:self];
-                [viewer showWindow:self];
-            });
-
-        }
-    }
-}
-
-/** Action to open the CPRViewer */
-- (CPRController *)openCPRViewer
-{
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];
-    
-    CPRController *viewer;
-    viewer = [[AppController sharedAppController] FindViewer:@"CPR" :pixList[0]];
-    if (viewer)
-        return viewer;
-    
-    viewer = [[CPRController alloc] initWithDCMPixList:pixList[0] filesList:fileList[0] volumeData:volumeData[0] viewerController:self fusedViewerController:blendingController];
-    for( int i = 1; i < maxMovieIndex; i++)
-    {
-        [viewer addMoviePixList:pixList[ i] :volumeData[ i]];
-    }
-    
-    return viewer;
-}
-
-
-- (IBAction) cprViewer:(id) sender
-{
-    [self checkEverythingLoaded];
-    [self clear8bitRepresentations];
-    
-    if( [self computeInterval] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingX] == 0 ||
-       [[pixList[0] objectAtIndex:0] pixelSpacingY] == 0 ||
-       ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift))
-    {
-        [self SetThicknessInterval:sender];
-    }
-    else
-    {
-        if( [self isDataVolumicIn4D: YES] == NO || [[imageView curDCM] isRGB] == YES)
-        {
-            HorosPresentAlert(NSLocalizedString(@"CPR", nil), NSLocalizedString(@"CPR requires volumic data and BW images.", nil), nil, nil, nil);
-            return;
-        }
-        
-        [self displayAWarningIfNonTrueVolumicData];
-        [self displayWarningIfGantryTitled];
-        
-        [self MovieStop: self];
-        
-        CPRController *viewer;
-        
-        viewer = [[AppController sharedAppController] FindViewer :@"CPR" :pixList[0]];
-        
-        if( viewer)
-        {
-            [[viewer window] makeKeyAndOrderFront:self];
-        }
-        else
-        {
-            id waitWindow = [self startWaitWindow:NSLocalizedString(@"Loading...",nil)];
-            viewer = [self openCPRViewer];
-            [self place3DViewerWindow:viewer];
-            [viewer showWindow:self];
-            [[viewer window] setTitle: [NSString stringWithFormat:@"%@: %@", [[viewer window] title], [[self window] title]]];
-            dispatch_async(dispatch_get_main_queue(), ^(){
-                [viewer showWindow:self];
-                [viewer showWindow:self];
-                [self endWaitWindow:waitWindow];
-            });
-        }
-    }
-}
-
-
 #pragma mark-
 #pragma mark 4.5.4 Study navigation
 
@@ -21324,14 +19395,14 @@ static float oldsetww, oldsetwl;
 -(IBAction) loadPatient:(id) sender
 {
     if( windowWillClose) return;
-    
+
     if( delayedTileWindows)
     {
         delayedTileWindows = NO;
         [NSObject cancelPreviousPerformRequestsWithTarget:[AppController sharedAppController] selector:@selector(tileWindows:) object:nil];
         [[AppController sharedAppController] tileWindows: nil];
     }
-    
+
     [[BrowserController currentBrowser] loadNextPatient:[fileList[0] objectAtIndex:0] :[sender tag] :self :YES keyImagesOnly: displayOnlyKeyImages];
 }
 
@@ -21359,9 +19430,9 @@ static float oldsetww, oldsetwl;
         else curImage = 0;
     }
     [imageView setIndex: curImage];
-    
+
     [[BrowserController currentBrowser] loadNextSeries:[fileList[0] objectAtIndex:0] :dir :self :YES keyImagesOnly: displayOnlyKeyImages];
-    
+
     if( dir == -1)
     {
         if( [imageView flippedData]) curImage = 0;
@@ -21372,12 +19443,12 @@ static float oldsetww, oldsetwl;
         if( [imageView flippedData]) curImage = (long)[[imageView dcmPixList] count]-1;
         else curImage = 0;
     }
-    
+
     [imageView setIndex: curImage];
     [self adjustSlider];
     [imageView sendSyncMessage: 0];
     [imageView setNeedsDisplay: YES];
-    
+
     if( b)
         [[NSUserDefaults standardUserDefaults] setBool: b forKey:@"nextSeriesToAllViewers"];
 }
@@ -21385,14 +19456,14 @@ static float oldsetww, oldsetwl;
 -(void) loadSeriesUp
 {
     if( windowWillClose) return;
-    
+
     [self loadSeries: [NSNumber numberWithInt: 1]];
 }
 
 -(void) loadSeriesDown
 {
     if( windowWillClose) return;
-    
+
     [self loadSeries: [NSNumber numberWithInt: -1]];
 }
 
@@ -21410,7 +19481,7 @@ static float oldsetww, oldsetwl;
     if( [sender tag] == 3)
     {
         [[sender selectedItem] setImage:nil];
-        
+
         [[BrowserController currentBrowser] loadSeries :[[[sender selectedItem] representedObject] object] :self :YES keyImagesOnly: displayOnlyKeyImages];
     }
     else
@@ -22228,23 +20299,6 @@ static float oldsetww, oldsetwl;
     
     [self setImageRows: rows columns: columns];
 }
-
-//- (IBAction)centerline: (id)sender
-//{
-//	BOOL	found = NO;
-//	NSArray *winList = [NSApp windows];
-//	
-//	for( id loopItem in winList)
-//	{
-//		if( [[[loopItem windowController] windowNibName] isEqualToString:@"CenterlineSegmentation"]) found = YES;
-//	}
-//	
-//	if( !found)
-//	{
-//		EndoscopySegmentationController *endoscopySegmentationController = [[EndoscopySegmentationController alloc] initWithViewer:self];
-//		[endoscopySegmentationController showWindow:self];
-//	}
-//}
 
 #pragma mark-
 #pragma mark 12 Bit

@@ -42,7 +42,7 @@
 
 @class DicomDatabase;
 
-@class MPR2DController,NSCFDate, DicomStudy;
+@class NSCFDate, DicomStudy;
 @class ViewerController, DicomImage;
 @class BonjourBrowser;
 @class AnonymizerWindowController,QueryController;
@@ -425,8 +425,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (BOOL) displayStudy: (DicomStudy*) study object:(NSManagedObject*) element command:(NSString*) execute;
 - (IBAction) matrixPressed:(id)sender;
 - (void) loadDatabase:(NSString*) path __deprecated;
-- (void) viewerDICOMInt:(BOOL) movieViewer dcmFile:(NSArray *)selectedLines viewer:(ViewerController*) viewer;
-- (void) viewerDICOMInt:(BOOL) movieViewer dcmFile:(NSArray *)selectedLines viewer:(ViewerController*) viewer tileWindows: (BOOL) tileWindows;
 - (NSToolbarItem *) toolbar: (NSToolbar *)toolbar itemForItemIdentifier: (NSString *) itemIdent willBeInsertedIntoToolbar:(BOOL) willBeInserted;
 - (NSArray *)toolbarDefaultItemIdentifiers:(NSToolbar*)toolbar;
 - (NSArray *)toolbarAllowedItemIdentifiers:(NSToolbar*)toolbar;
@@ -450,9 +448,7 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (IBAction) switchSoundex: (id)sender;
 - (void) exportDICOMFile:(id) sender;
 - (void) viewerDICOM:(id) sender;
-- (void)newViewerDICOM:(id) sender;
 - (void) viewerDICOMKeyImages:(id) sender;
-- (void) viewerDICOMMergeSelection:(id) sender;
 - (NSPredicate*) patientsnamePredicate: (NSString*) s;
 - (NSPredicate*) patientsnamePredicate: (NSString*) s soundex:(BOOL) soundex;
 - (IBAction)addSmartAlbum: (id)sender;

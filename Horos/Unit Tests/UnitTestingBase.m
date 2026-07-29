@@ -144,52 +144,6 @@ This list of common macros is from the file:///System/Library/Frameworks/SenTest
 //===========================================================================================================================================================================================
 #pragma mark•
 
-- (void) testEndoscopyViewerInitialisation
-{
-	AppController *ac;
-	BrowserController *bc;
-
-// Check the app controller is valid.
-
-	ac=[AppController sharedAppController];
-	STAssertNotNil(ac, Nil);
-
-// Get the current browser and check it's valid.
-
-	bc=[BrowserController currentBrowser];
-	STAssertNotNil([BrowserController currentBrowser], Nil);
-
-// Open selected series.
-
-	[bc newViewerDICOM: Nil];
-	
-// Open the endoscopy viewer.
-
-	[self performSelector: @selector(openAViewer:) withObject: Nil afterDelay: 4];
-
-// Close all viewers.
-
-	[ac closeAllViewers: Nil];
-}
-
-//——————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-
-- (void) openAViewer: (id) i
-{
-	NSWindow *win;
-
-// Open the endoscopy viewer.
-
-	win=[NSApp mainWindow];
-	STAssertNotNil(win, Nil);
-//	[NSApp sendAction: @selector(MPR2DViewer:) to: [win windowController] from: self];
-	[NSApp sendAction: @selector(endoscopyViewer:) to: [win windowController] from: self];
-}
-
-
-//===========================================================================================================================================================================================
-#pragma mark•
-
 - (void) testCLUTMenuLoaded
 {
 	NSMenu *mainMenu, *viewerMenu, *clutMenu;

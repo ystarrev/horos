@@ -41,7 +41,6 @@
 #include "url.h"
 #import "DCMUIDs.h"
 
-#include "FVTiff.h"
 #import "MutableArrayCategory.h"
 #import "SRAnnotation.h"
 #import "StructuredReportSupport.h"
@@ -53,8 +52,6 @@
 #import "DICOMToNSString.h"
 #import "DefaultsOsiriX.h"
 
-#import <vtk_tiff.h>
-
 #import "DicomFileDCMTKCategory.h"
 #import "NSString+N2.h"
 #import "N2Debug.h"
@@ -63,6 +60,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <dlfcn.h>
 
+#include "Analyze.h"
 #include "nifti1.h"
 #include "nifti1_io.h"
 
@@ -665,52 +663,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     }
 }
 
-+ (BOOL) isTiffFile:(NSString *) file
-{
-    int success = NO;
-    
-#ifndef STATIC_DICOM_LIB
-    NSString *extension = [[file pathExtension] lowercaseString];
-    
-    if( [extension isEqualToString:@"tiff"] ||
-       [extension isEqualToString:@"stk"] ||
-       [extension isEqualToString:@"tif"])
-    {
-        TIFF* tif = TIFFOpen([file UTF8String], "r");
-        if(tif)
-        {
-            success = YES;
-            TIFFClose(tif);
-        }
-    }
-    
-#endif
-    return success;
-}
-
-+ (BOOL) isFVTiffFile:(NSString *) file
-{
-    int success = NO;
-    
-#ifndef STATIC_DICOM_LIB
-    NSString *extension = [[file pathExtension] lowercaseString];
-    
-    if( [extension isEqualToString:@"tiff"] ||
-       [extension isEqualToString:@"tif"])
-    {
-        short head_size = 0;
-        char* head_data = 0;
-        TIFF* tif = TIFFOpen([file UTF8String], "r");
-        if(tif)
-        {
-            success = TIFFGetField(tif, TIFFTAG_FV_MMHEADER, &head_size, &head_data);
-            TIFFClose(tif);
-        }
-    }
-#endif
-    return success;
-}
-
 + (BOOL) isNIfTIFile:(NSString *) file
 {
     // NIfTI support developed by Zack Mahdavi at the Center for Neurological Imaging, a division of Harvard Medical School
@@ -865,149 +817,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     return readable;
 }
 
--(short) getFVTiffFile
-{
-    int success = 0;
-    
-#ifndef STATIC_DICOM_LIB
-    NSString *extension = [[filePath pathExtension] lowercaseString];
-    
-    if( [extension isEqualToString:@"tiff"] ||
-       [extension isEqualToString:@"tif"])
-    {
-        TIFF* tif = TIFFOpen( [filePath UTF8String], "r");
-        
-        short head_size = 0;
-        char* head_data = 0;
-        
-        if(tif)
-            success = TIFFGetField(tif, TIFFTAG_FV_MMHEADER, &head_size, &head_data);
-        
-        if (success)
-        {
-            int i, j;
-            
-            
-            int w = 0, h = 0;
-            FV_MM_HEAD mm_head;
-            NSXMLDocument *xmlDocument;
-            xmlDocument = XML_from_FVTiff(filePath);
-            
-            FV_Read_MM_HEAD(head_data, &mm_head);
-            NoOfFrames = 1;
-            NoOfSeries = 1;
-            for(i = 0; i < FV_SPATIAL_DIMENSION; i++)
-            {
-                if (*(mm_head.DimInfo[i].Name) == 'Z')
-                    NoOfFrames = mm_head.DimInfo[i].Size;
-                else if (*(mm_head.DimInfo[i].Name) != 'X' && *(mm_head.DimInfo[i].Name) != 'Y')
-                    NoOfSeries *= mm_head.DimInfo[i].Size;
-            }
-            
-            TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &w);
-            TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &h);
-            
-            width = w;
-            height = h;
-            
-            name = [[NSString alloc] initWithString: [filePath lastPathComponent]];
-            //			name = [[NSString alloc] initWithCString:mm_head.Name encoding:NSWindowsCP1252StringEncoding];
-            patientID = [[NSString alloc] initWithString:name];
-            studyID = [[NSString alloc] initWithString:name];
-            self.serieID = name;
-            imageID = [[NSString alloc] initWithString:name];
-            study = [[NSString alloc] initWithString:name];
-            serie = [[NSString alloc] initWithString:name];
-            Modality = [[NSString alloc] initWithString:@"FV300"];
-            fileType = [@"FVTiff" retain];
-            
-            // set the comments and date fields
-            NSXMLElement* rootElement = [xmlDocument rootElement];
-            NSString* datetime_string = [NSString string];
-            for (i = 0; i < [rootElement childCount]; i++)
-            {
-                NSXMLNode* theNode = [rootElement childAtIndex:i];
-                if ([[theNode name] isEqualToString:@"Description"])
-                    [dicomElements setObject:[theNode stringValue] forKey:@"studyComments"];
-                
-                if ([[theNode name] isEqualToString:@"Acquisition Parameters"])
-                    for (j = 0; j < [theNode childCount]; j++)
-                    {
-                        NSXMLNode* theSubNode = [theNode childAtIndex:j];
-                        if ([[theSubNode name] isEqualToString:@"Date"])
-                            datetime_string = [NSString stringWithFormat:@"%@ %@", datetime_string, [theSubNode stringValue]];
-                        if ([[theSubNode name] isEqualToString:@"Time"])
-                            datetime_string = [NSString stringWithFormat:@"%@ %@", datetime_string, [theSubNode stringValue]];
-                    }
-            }
-            
-            
-            date = [DicomFileDateFromNaturalLanguageString(datetime_string) retain];
-            if (date == nil)
-                date = [[[[NSFileManager defaultManager] attributesOfItemAtPath:filePath error:NULL] valueForKey:NSFileCreationDate] retain];
-            if( date == nil) date = [[NSDate date] retain];
-            
-            [dicomElements setObject:studyID forKey:@"studyID"];
-            [dicomElements setObject:study forKey:@"studyDescription"];
-            
-            [dicomElements setObject:date forKey:@"studyDate"];
-            
-            [dicomElements setObject:Modality forKey:@"modality"];
-            [dicomElements setObject:patientID forKey:@"patientID"];
-            [dicomElements setObject:name forKey:@"patientName"];
-            [dicomElements setObject:[self patientUID] forKey:@"patientUID"];
-            [dicomElements setObject:fileType forKey:@"fileType"];
-            
-            for (i = 0; i < NoOfSeries; i++)
-            {
-                NSString* SeriesNum;
-                if (i)
-                    SeriesNum = [NSString stringWithFormat:@"%d",i];
-                else
-                    SeriesNum = @"";
-                
-                [dicomElements setObject:[SeriesNum stringByAppendingString: self.serieID] forKey:[@"seriesID" stringByAppendingString:SeriesNum]];
-                //				[dicomElements setObject:[SeriesNum stringByAppendingString:name] forKey:[@"seriesDescription" stringByAppendingString:SeriesNum]];
-                [dicomElements setObject:[NSNumber numberWithInt: i] forKey:[@"seriesNumber" stringByAppendingString:SeriesNum]];
-                [dicomElements setObject:[imageID stringByAppendingString:SeriesNum] forKey:[@"SOPUID" stringByAppendingString:SeriesNum]];
-                [dicomElements setObject:[NSNumber numberWithInt: i] forKey:[@"imageID" stringByAppendingString:SeriesNum]];
-                
-                // seriesDescription stuff
-                int pos = i;
-                NSString* seriesDesc = @"FV ";
-                int largestDimSize = 1;
-                int j;
-                for (j = 0; j < FV_SPATIAL_DIMENSION; j++)
-                    if (*(mm_head.DimInfo[j].Name) != 'X' && *(mm_head.DimInfo[j].Name) != 'Y' && *(mm_head.DimInfo[j].Name) != 'Z')
-                        largestDimSize *= mm_head.DimInfo[j].Size;
-                for (j = FV_SPATIAL_DIMENSION - 1; j >= 0; j--)
-                {
-                    if (mm_head.DimInfo[j].Size > 1 && *(mm_head.DimInfo[j].Name) != 'X' && *(mm_head.DimInfo[j].Name) != 'Y' && *(mm_head.DimInfo[j].Name) != 'Z')
-                    {
-                        if (![seriesDesc isEqualToString:@"FV "])
-                            seriesDesc = [seriesDesc stringByAppendingString:@", "];
-                        
-                        
-                        largestDimSize /= mm_head.DimInfo[j].Size;
-                        seriesDesc = [seriesDesc stringByAppendingFormat:@"%s %d", mm_head.DimInfo[j].Name, pos / largestDimSize];
-                        pos %= largestDimSize;
-                    }
-                }
-                [dicomElements setObject:seriesDesc forKey:[@"seriesDescription" stringByAppendingString:SeriesNum]];
-            }
-            [xmlDocument release];
-        }
-        if(tif) TIFFClose(tif);
-    }
-    
-#endif
-    
-    if (success)
-        return 0;
-    else
-        return -1;
-}
-
 // For testing purposes only. Can quickly generate very large database to test performances
 -(short) getRandom
 {
@@ -1054,10 +863,7 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     NoOfFrames = 1;
     
     
-    if( [extension isEqualToString:@"tiff"] ||
-       [extension isEqualToString:@"tif"] ||
-       [extension isEqualToString:@"stk"] ||
-       [extension isEqualToString:@"png"] ||
+    if( [extension isEqualToString:@"png"] ||
        [extension isEqualToString:@"jpg"] ||
        [extension isEqualToString:@"jpeg"] ||
        [extension isEqualToString:@"jp2"] ||
@@ -1066,60 +872,22 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
        [extension isEqualToString:@"gif"])
     {
         NSImage		*otherImage = [[NSImage alloc] initWithContentsOfFile:filePath];
-        if( otherImage || [extension isEqualToString:@"tiff"] || [extension isEqualToString:@"tif"])
+        if( otherImage)
         {
             // Try to identify a 2 digit number in the last part of the file.
             char				strNo[ 5];
             NSString			*tempString = [[filePath lastPathComponent] stringByDeletingPathExtension];
             
-#ifndef STATIC_DICOM_LIB
-            if( [extension isEqualToString:@"tiff"] ||
-               [extension isEqualToString:@"stk"] ||
-               [extension isEqualToString:@"tif"])
+            @autoreleasepool
             {
-                TIFF* tif = TIFFOpen([filePath UTF8String], "r");
-                if( tif)
-                {
-                    long count = 0;
-                    int w = 0, h = 0;
-                    
-                    width = 0;
-                    height = 0;
-                    
-                    count = 0;
-                    do
-                    {
-                        TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &w);
-                        TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &h);
-                        
-                        if( w > width) width = w;
-                        if( h > height) height = h;
-                        
-                        count++;
-                    }
-                    while (TIFFReadDirectory(tif));
-                    
-                    NoOfFrames = count;
-                    
-                    //						NSLog( @"TIFF NoOfFrames: %d", NoOfFrames);
-                    
-                    TIFFClose(tif);
-                }
-            }
-            else
-#endif
-            {
-                @autoreleasepool
-                {
-                    CGImageRef cgRef = [otherImage CGImageForProposedRect:NULL context:nil hints:nil];
-                    NSBitmapImageRep *r = [[[NSBitmapImageRep alloc] initWithCGImage:cgRef] autorelease];
-                    [r setSize: otherImage.size];
-                    
-                    NSBitmapImageRep *TIFFRep = [NSBitmapImageRep imageRepWithData: [r TIFFRepresentation]];
-                    
-                    width = TIFFRep.pixelsWide;
-                    height = TIFFRep.pixelsHigh;
-                }
+                CGImageRef cgRef = [otherImage CGImageForProposedRect:NULL context:nil hints:nil];
+                NSBitmapImageRep *r = [[[NSBitmapImageRep alloc] initWithCGImage:cgRef] autorelease];
+                [r setSize: otherImage.size];
+
+                NSBitmapImageRep *bitmapRep = [NSBitmapImageRep imageRepWithData: [r TIFFRepresentation]];
+
+                width = bitmapRep.pixelsWide;
+                height = bitmapRep.pixelsHigh;
             }
             
             if( [tempString length] >= 4) strNo[ 0] = [tempString characterAtIndex: [tempString length] -4];	else strNo[ 0]= 0;
@@ -1484,336 +1252,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     return -1;
 }
 
--(short) getLSM
-{
-    NSData		*file;
-    const char	*ptr;
-    long		i;
-    
-    NSString	*extension = [[filePath pathExtension] lowercaseString];
-    
-    if( [extension isEqualToString:@"lsm"])
-    {
-        file = [NSData dataWithContentsOfFile: filePath];
-        if( [file length] > 1)
-        {
-            fileType = [@"LSM" retain];
-            
-            ptr = (const char*)[file bytes];
-            
-            if( ptr[ 2] == 42)
-                NSLog(@"LSM File");
-            
-            name = [[NSString alloc] initWithString: [filePath lastPathComponent]];
-            patientID = [[NSString alloc] initWithString:name];
-            studyID = [[NSString alloc] initWithString:name];
-            self.serieID = name;
-            imageID = [[NSString alloc] initWithString:name];
-            study = [[NSString alloc] initWithString:name];
-            serie = [[NSString alloc] initWithString:name];
-            Modality = [[NSString alloc] initWithString:@"LSM"];
-            //////////////////////////////////////////////////////////////////////////////////////
-            
-            FILE *fp = fopen([ filePath UTF8String], "r");
-            int it = 0;
-            int nextoff=0;
-            int counter=0;
-            int pos=8, k;
-            short shortval;
-            
-            int	LENGTH1 = 0, TIF_BITSPERSAMPLE_CHANNEL1 = 0, TIF_BITSPERSAMPLE_CHANNEL2 = 0, TIF_BITSPERSAMPLE_CHANNEL3 = 0;
-            int	TIF_COMPRESSION = 0, TIF_PHOTOMETRICINTERPRETATION = 0, LENGTH2 = 0, TIF_STRIPOFFSETS = 0, TIF_SAMPLESPERPIXEL = 0, TIF_STRIPBYTECOUNTS = 0;
-            int	TIF_CZ_LSMINFO = 0, TIF_STRIPOFFSETS1 = 0, TIF_STRIPOFFSETS2 = 0, TIF_STRIPOFFSETS3 = 0;
-            int	TIF_STRIPBYTECOUNTS1 = 0, TIF_STRIPBYTECOUNTS2 = 0, TIF_STRIPBYTECOUNTS3 = 0;
-            
-            do
-            {
-                fseek(fp, 8, SEEK_SET);
-                fread(&shortval, 2, 1, fp);
-                it = EndianU16_LtoN( shortval);
-                for( k=0 ; k<it ; k++)
-                {
-                    unsigned char   tags2[ 12];
-                    fseek(fp, pos+2+12*k, SEEK_SET);
-                    fread( &tags2, 12, 1, fp);
-                    
-                    {
-                        int TAGTYPE = 0;
-                        int LENGTH = 0;
-                        int MASK = 0x00ff;
-                        int MASK2 = 0x000000ff;
-                        
-                        TAGTYPE = ((tags2[1] & MASK) << 8) | ((tags2[0] & MASK) <<0);
-                        LENGTH = ((tags2[7] & MASK2) << 24) | ((tags2[6] & MASK2) << 16) | ((tags2[5] & MASK2) << 8) | (tags2[4] & MASK2);
-                        
-                        switch (TAGTYPE)
-                        {
-                            case 254:
-                                //	lsm_fi.TIF_NEWSUBFILETYPE = ((tags2[11] & MASK2) << 24) | ((tags2[10] & MASK2) << 16) | ((tags2[9] & MASK2) << 8) | (tags2[8] & MASK2);
-                                break;
-                            case 256:
-                                width = ((tags2[11] & MASK2) << 24) | ((tags2[10] & MASK2) << 16) | ((tags2[9] & MASK2) << 8) | (tags2[8] & MASK2);
-                                break;
-                            case 257:
-                                height = ((tags2[11] & MASK2) << 24) | ((tags2[10] & MASK2) << 16) | ((tags2[9] & MASK2) << 8) | (tags2[8] & MASK2);
-                                break;
-                            case 258:
-                                LENGTH1 = ((tags2[7] & MASK2) << 24) | ((tags2[6] & MASK2) << 16) | ((tags2[5] & MASK2) << 8) | (tags2[4] & MASK2);
-                                TIF_BITSPERSAMPLE_CHANNEL1 = ((tags2[8] & MASK2) << 0);
-                                TIF_BITSPERSAMPLE_CHANNEL2 = ((tags2[9] & MASK2) << 0);
-                                TIF_BITSPERSAMPLE_CHANNEL3 = ((tags2[10] & MASK2) << 0);
-                                break;
-                            case 259:
-                                TIF_COMPRESSION = ((tags2[8] & MASK2) << 0);
-                                break;
-                            case 262:
-                                TIF_PHOTOMETRICINTERPRETATION = ((tags2[8] & MASK2) << 0);
-                                break;
-                            case 273:
-                                LENGTH2 = ((tags2[7] & MASK2) << 24) | ((tags2[6] & MASK2) << 16) | ((tags2[5] & MASK2) << 8) | (tags2[4] & MASK2);
-                                TIF_STRIPOFFSETS = ((tags2[11] & MASK2) << 24) | ((tags2[10] & MASK2) << 16) | ((tags2[9] & MASK2) << 8) | (tags2[8] & MASK2);
-                                break;
-                            case 277:
-                                TIF_SAMPLESPERPIXEL = ((tags2[8] & MASK2) << 0);
-                                break;
-                            case 279:
-                                TIF_STRIPBYTECOUNTS = ((tags2[11] & MASK2) << 24) | ((tags2[10] & MASK2) << 16) | ((tags2[9] & MASK2) << 8) | (tags2[8] & MASK2);
-                                break;
-                            case 34412:
-                                TIF_CZ_LSMINFO = ((tags2[11] & MASK2) << 24) | ((tags2[10] & MASK2) << 16) | ((tags2[9] & MASK2) << 8) | (tags2[8] & MASK2);
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                }
-                
-                fseek(fp, TIF_STRIPOFFSETS, SEEK_SET);
-                
-                fread( &TIF_STRIPOFFSETS1, 4, 1, fp);   TIF_STRIPOFFSETS1 = EndianU32_LtoN( TIF_STRIPOFFSETS1);
-                fread( &TIF_STRIPOFFSETS2, 4, 1, fp);   TIF_STRIPOFFSETS2 = EndianU32_LtoN( TIF_STRIPOFFSETS2);
-                fread( &TIF_STRIPOFFSETS3, 4, 1, fp);   TIF_STRIPOFFSETS3 = EndianU32_LtoN( TIF_STRIPOFFSETS3);
-                
-                fseek(fp, (int)pos + 2 + 12 * (int)it, SEEK_SET);
-                fread( &nextoff, 4, 1, fp);
-                pos = EndianU32_LtoN( nextoff);
-                counter++;
-                //	if (LENGTH2==1) STRIPOFF.add( new Long( lsm_fi.TIF_STRIPOFFSETS ));
-                //	else
-                //		STRIPOFF.add( new Long( lsm_fi.TIF_STRIPOFFSETS1 ));
-                
-                //	IMAGETYPE.add( new Long( lsm_fi.TIF_NEWSUBFILETYPE));
-                
-            } while( 0);	//while (nextoff!=0);
-            
-            /* Searches for the number of tags in the first image directory */
-            int iterator1;
-            fseek(fp, 8, SEEK_SET);
-            fread(&shortval, 2, 1, fp);
-            iterator1 = EndianU16_LtoN( shortval);
-            
-            /* Analyses each tag found */
-            for ( k=0 ; k<iterator1 ; k++)
-            {
-                unsigned char   TAG1[ 12];
-                fseek(fp, 10+12*k, SEEK_SET);
-                fread( &TAG1, 12, 1, fp);
-                
-                {
-                    int TAGTYPE = 0;
-                    int LENGTH = 0;
-                    int MASK = 0x00ff;
-                    int MASK2 = 0x000000ff;
-                    
-                    TAGTYPE = ((TAG1[1] & MASK) << 8) | ((TAG1[0] & MASK) <<0);
-                    LENGTH = ((TAG1[7] & MASK2) << 24) | ((TAG1[6] & MASK2) << 16) | ((TAG1[5] & MASK2) << 8) | (TAG1[4] & MASK2);
-                    
-                    switch (TAGTYPE)
-                    {
-                        case 254:
-                            //	lsm_fi.TIF_NEWSUBFILETYPE = ((TAG1[11] & MASK2) << 24) | ((TAG1[10] & MASK2) << 16) | ((TAG1[9] & MASK2) << 8) | (TAG1[8] & MASK2);
-                            break;
-                        case 256:
-                            width = ((TAG1[11] & MASK2) << 24) | ((TAG1[10] & MASK2) << 16) | ((TAG1[9] & MASK2) << 8) | (TAG1[8] & MASK2);
-                            break;
-                        case 257:
-                            height = ((TAG1[11] & MASK2) << 24) | ((TAG1[10] & MASK2) << 16) | ((TAG1[9] & MASK2) << 8) | (TAG1[8] & MASK2);
-                            break;
-                        case 258:
-                            LENGTH1 = ((TAG1[7] & MASK2) << 24) | ((TAG1[6] & MASK2) << 16) | ((TAG1[5] & MASK2) << 8) | (TAG1[4] & MASK2);
-                            TIF_BITSPERSAMPLE_CHANNEL1 = ((TAG1[8] & MASK2) << 0);
-                            TIF_BITSPERSAMPLE_CHANNEL2 = ((TAG1[9] & MASK2) << 0);
-                            TIF_BITSPERSAMPLE_CHANNEL3 = ((TAG1[10] & MASK2) << 0);
-                            break;
-                        case 259:
-                            TIF_COMPRESSION = ((TAG1[8] & MASK2) << 0);
-                            break;
-                        case 262:
-                            TIF_PHOTOMETRICINTERPRETATION = ((TAG1[8] & MASK2) << 0);
-                            break;
-                        case 273:
-                            LENGTH2 = ((TAG1[7] & MASK2) << 24) | ((TAG1[6] & MASK2) << 16) | ((TAG1[5] & MASK2) << 8) | (TAG1[4] & MASK2);
-                            TIF_STRIPOFFSETS = ((TAG1[11] & MASK2) << 24) | ((TAG1[10] & MASK2) << 16) | ((TAG1[9] & MASK2) << 8) | (TAG1[8] & MASK2);
-                            break;
-                        case 277:
-                            TIF_SAMPLESPERPIXEL = ((TAG1[8] & MASK2) << 0);
-                            break;
-                        case 279:
-                            TIF_STRIPBYTECOUNTS = ((TAG1[11] & MASK2) << 24) | ((TAG1[10] & MASK2) << 16) | ((TAG1[9] & MASK2) << 8) | (TAG1[8] & MASK2);
-                            break;
-                        case 34412:
-                            TIF_CZ_LSMINFO = ((TAG1[11] & MASK2) << 24) | ((TAG1[10] & MASK2) << 16) | ((TAG1[9] & MASK2) << 8) | (TAG1[8] & MASK2);
-                            break;
-                        default:
-                            break;
-                    }
-                }
-            } // end for
-            
-            fseek(fp, TIF_STRIPOFFSETS, SEEK_SET);
-            
-            fread( &TIF_STRIPOFFSETS1, 4, 1, fp);   TIF_STRIPOFFSETS1 = EndianU32_LtoN( TIF_STRIPOFFSETS1);
-            fread( &TIF_STRIPOFFSETS2, 4, 1, fp);   TIF_STRIPOFFSETS2 = EndianU32_LtoN( TIF_STRIPOFFSETS2);
-            fread( &TIF_STRIPOFFSETS3, 4, 1, fp);   TIF_STRIPOFFSETS3 = EndianU32_LtoN( TIF_STRIPOFFSETS3);
-            
-            fseek(fp, TIF_STRIPBYTECOUNTS, SEEK_SET);
-            
-            fread( &TIF_STRIPBYTECOUNTS1, 4, 1, fp);   TIF_STRIPBYTECOUNTS1 = EndianU32_LtoN( TIF_STRIPBYTECOUNTS1);
-            fread( &TIF_STRIPBYTECOUNTS2, 4, 1, fp);   TIF_STRIPBYTECOUNTS2 = EndianU32_LtoN( TIF_STRIPBYTECOUNTS2);
-            fread( &TIF_STRIPBYTECOUNTS3, 4, 1, fp);   TIF_STRIPBYTECOUNTS3 = EndianU32_LtoN( TIF_STRIPBYTECOUNTS3);
-            
-            if( TIF_CZ_LSMINFO)
-            {
-                fseek(fp, TIF_CZ_LSMINFO + 8, SEEK_SET);
-                
-                int		DIMENSION_X, DIMENSION_Y, DIMENSION_Z, NUMBER_OF_CHANNELS, TIMESTACKSIZE, DATATYPE, SCANTYPE;
-                
-                fread( &DIMENSION_X, 4, 1, fp);		DIMENSION_X = EndianS32_LtoN( DIMENSION_X);
-                fread( &DIMENSION_Y, 4, 1, fp);		DIMENSION_Y = EndianS32_LtoN( DIMENSION_Y);
-                fread( &DIMENSION_Z, 4, 1, fp);		DIMENSION_Z = EndianS32_LtoN( DIMENSION_Z);
-                
-                fread( &NUMBER_OF_CHANNELS, 4, 1, fp);		NUMBER_OF_CHANNELS = EndianS32_LtoN( NUMBER_OF_CHANNELS);
-                fread( &TIMESTACKSIZE, 4, 1, fp);			TIMESTACKSIZE = EndianS32_LtoN( TIMESTACKSIZE);
-                
-                fread( &DATATYPE, 4, 1, fp);			DATATYPE = EndianU32_LtoN( DATATYPE);
-                
-                fseek(fp, TIF_CZ_LSMINFO + 64, SEEK_SET);
-                fread( &SCANTYPE, 4, 1, fp);			SCANTYPE = EndianU32_LtoN( SCANTYPE);
-                
-                switch (SCANTYPE)
-                {
-                    case 3:
-                        NoOfFrames = TIMESTACKSIZE;
-                        NoOfSeries = NUMBER_OF_CHANNELS;
-                        break;
-                    case 4:
-                        NoOfFrames = TIMESTACKSIZE;
-                        NoOfSeries = NUMBER_OF_CHANNELS;
-                        break;
-                    case 6:
-                        NoOfFrames = DIMENSION_Z  * TIMESTACKSIZE;
-                        NoOfSeries = NUMBER_OF_CHANNELS;
-                        break;
-                    default:
-                        NoOfFrames = DIMENSION_Z  * TIMESTACKSIZE;
-                        NoOfSeries = NUMBER_OF_CHANNELS;
-                        break;
-                }
-                
-                
-                
-                //NSLog(@"getLSM opened an LSM file with %d series",NoOfSeries);
-                
-                //			stream.seek((int)position+90);
-                //			SPECTRALSCAN = swap(stream.readShort());
-                //
-                //			// second datatype , orignal scandata or calculated data or animation
-                //			stream.seek((int)position+92);
-                //			DATATYPE2 = swap(stream.readInt());
-                //
-                //			stream.seek((int)position+100);
-                //			OFFSET_INPUTLUT = swap(stream.readInt());
-                //
-                //			stream.seek((int)position+104);
-                //			OFFSET_OUTPUTLUT = swap(stream.readInt());
-                //
-                
-                //				fseek(fp, TIF_CZ_LSMINFO + 40, SEEK_SET);
-                //				fread( &VOXELSIZE_X, 8, 1, fp);
-                //				VOXELSIZE_X = EndianU32_LtoN( VOXELSIZE_X);
-                
-                //				fseek(fp, TIF_CZ_LSMINFO + 48, SEEK_SET);
-                //				stream.seek((int)position + 48);
-                //				VOXELSIZE_Y = swap(stream.readDouble());
-                //
-                //				fseek(fp, TIF_CZ_LSMINFO + 56, SEEK_SET);
-                //				stream.seek((int)position + 56);
-                //				VOXELSIZE_Z = swap(stream.readDouble());
-                
-                //
-                //			stream.seek((int)position + 108);
-                //			OFFSET_CHANNELSCOLORS = swap(stream.readInt());
-                //
-                //			stream.seek((int)position + 120);
-                //			OFFSET_CHANNELDATATYPES = swap(stream.readInt());
-                //
-                //			stream.seek((int)position+124);
-                //			OFFSET_SCANINFO = swap(stream.readInt());
-                //
-                //			stream.seek((int)position+132);
-                //			OFFSET_TIMESTAMPS = swap(stream.readInt());
-                //
-                //			stream.seek((int)position+204);
-                //			OFFSET_CHANNELWAVELENGTH = swap(stream.readInt());
-            }
-            
-            fclose( fp);
-            
-            
-            
-            
-            date = [[[[NSFileManager defaultManager] attributesOfItemAtPath: filePath error: nil] fileCreationDate] retain];
-            if( date == nil) date = [[NSDate date] retain];
-            
-            [dicomElements setObject:studyID forKey:@"studyID"];
-            [dicomElements setObject:study forKey:@"studyDescription"];
-            [dicomElements setObject:date forKey:@"studyDate"];
-            [dicomElements setObject:Modality forKey:@"modality"];
-            [dicomElements setObject:patientID forKey:@"patientID"];
-            [dicomElements setObject:name forKey:@"patientName"];
-            [dicomElements setObject:[self patientUID] forKey:@"patientUID"];
-            //			[dicomElements setObject:serieID forKey:@"seriesID"];
-            //			[dicomElements setObject:name forKey:@"seriesDescription"];
-            //			[dicomElements setObject:[NSNumber numberWithInt: 0] forKey:@"seriesNumber"];
-            //			[dicomElements setObject:imageID forKey:@"SOPUID"];
-            //			[dicomElements setObject:[NSNumber numberWithInt:[imageID intValue]] forKey:@"imageID"];
-            [dicomElements setObject:fileType forKey:@"fileType"];
-            
-            ////////////////
-            for (i = 0; i < NoOfSeries; i++)
-            {
-                NSString* SeriesNum;
-                if (i)
-                    SeriesNum = [NSString stringWithFormat:@"%ld",i];
-                else
-                    SeriesNum = @"";
-                
-                [dicomElements setObject:[SeriesNum stringByAppendingString: self.serieID] forKey:[@"seriesID" stringByAppendingString:SeriesNum]];
-                [dicomElements setObject:[SeriesNum stringByAppendingString:name] forKey:[@"seriesDescription" stringByAppendingString:SeriesNum]];
-                [dicomElements setObject:[NSNumber numberWithInt:(int)i] forKey:[@"seriesNumber" stringByAppendingString:SeriesNum]];
-                [dicomElements setObject:[imageID stringByAppendingString:SeriesNum] forKey:[@"SOPUID" stringByAppendingString:SeriesNum]];
-                [dicomElements setObject:[NSNumber numberWithInt:(int)i] forKey:[@"imageID" stringByAppendingString:SeriesNum]];
-            }
-            ////////////////
-            return 0;
-        }
-    }
-    
-    return -1;
-}
-
-#include "Analyze.h"
-
 -(short) getAnalyze
 {
     struct dsr  *Analyze;
@@ -2162,11 +1600,7 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
         }
         else
         {
-            if( [self getFVTiffFile] == 0) // this needs to happen before getImageFile, since a FVTiff is a legal tiff and getImageFile will try to read it
-            {
-                returnVal = self;
-            }
-            else if( [self getImageFile] == 0)
+            if( [self getImageFile] == 0)
             {
                 returnVal = self;
             }
@@ -2179,14 +1613,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
                 returnVal = self;
             }
             else if( [self getNIfTI] == 0)
-            {
-                returnVal = self;
-            }
-            else if( [self getLSM] == 0)
-            {
-                returnVal = self;
-            }
-            else if( [self getNRRDFile] == 0)
             {
                 returnVal = self;
             }

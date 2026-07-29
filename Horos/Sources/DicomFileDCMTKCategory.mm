@@ -46,10 +46,6 @@
 
 #include <dlfcn.h>
 
-#ifdef OSIRIX_VIEWER
-#include <NrrdIO.h> // part of ITK
-#endif
-
 #include <string.h>
 #include <array>
 #include <string>
@@ -297,18 +293,6 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     return NO;
 }
 
-+ (BOOL) isNRRDFile:(NSString *) file
-{
-    int success = NO;
-    NSString	*extension = [[file pathExtension] lowercaseString];
-    
-    if( [extension isEqualToString:@"nrrd"])
-    {
-        success = YES;
-    }
-    return success;
-}
-
 + (NSString*) getDicomField: (NSString*) field forFile: (NSString*) path
 {
     if( field.length <= 0)
@@ -322,125 +306,6 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
             return value;
     }
     return nil;
-}
-
--(short) getNRRDFile
-{
-#ifdef OSIRIX_VIEWER
-    int			success = 0;
-    NSString	*extension = [[filePath pathExtension] lowercaseString];
-    char		*err = nil;
-    
-    if( [extension isEqualToString:@"nrrd"])
-    {
-        Nrrd *nin;
-        
-        /* create a nrrd; at this point this is just an empty container */
-        nin = nrrdNew();
-        
-        /* read in the nrrd from file */
-        if (nrrdLoad(nin, [filePath UTF8String], NULL))
-        {
-            err = biffGetDone(NRRD);
-            fprintf(stderr, "trouble reading \"%s\":\n%s", [filePath UTF8String], err);
-            free(err);
-            return success;
-        }
-        
-        printf("\"%s\" is a %d-dimensional nrrd of type %d (%s)\n",
-               [filePath UTF8String], nin->dim, nin->type,
-               airEnumStr(nrrdType, nin->type));
-        
-        printf("the array contains %d elements, each %d bytes in size\n",
-               (int)nrrdElementNumber(nin), (int)nrrdElementSize(nin));
-        
-        if( nin->dim > 1)
-        {
-            height = 512;
-            width = 512;
-            
-            NoOfSeries = 1;
-            
-            imageID = [[NSString alloc] initWithString: [[NSDate date] description]];
-            self.serieID = [[NSDate date] description];
-            
-            unsigned int random = (unsigned int)time(NULL);
-            studyID = [[NSString alloc] initWithFormat:@"%d", random];
-            
-            name = [[NSString alloc] initWithString:[filePath lastPathComponent]];
-            patientID = [[NSString alloc] initWithString:name];
-            study = [[NSString alloc] initWithString:[filePath lastPathComponent]];
-            Modality = [[NSString alloc] initWithString:@"RD"];
-            date = [[NSDate date] retain];
-            serie = [[NSString alloc] initWithString:[filePath lastPathComponent]];
-            fileType = [@"IMAGE" retain];
-            
-            
-            NoOfFrames = 1;
-            
-            [dicomElements setObject:studyID forKey:@"studyID"];
-            [dicomElements setObject:study forKey:@"studyDescription"];
-            [dicomElements setObject:date forKey:@"studyDate"];
-            [dicomElements setObject:Modality forKey:@"modality"];
-            [dicomElements setObject:patientID forKey:@"patientID"];
-            [dicomElements setObject:name forKey:@"patientName"];
-            [dicomElements setObject:[self patientUID] forKey:@"patientUID"];
-            [dicomElements setObject:self.serieID forKey:@"seriesID"];
-            [dicomElements setObject:name forKey:@"seriesDescription"];
-            [dicomElements setObject:[NSNumber numberWithInt: 0] forKey:@"seriesNumber"];
-            [dicomElements setObject:imageID forKey:@"SOPUID"];
-            [dicomElements setObject:[NSNumber numberWithInt:[imageID intValue]] forKey:@"imageID"];
-            [dicomElements setObject:fileType forKey:@"fileType"];
-        }
-        
-        nrrdNuke(nin);
-        
-        // ********** Now, test the IO of ITK
-        
-        //		typedef itk::Image<char,4> TestImageType; // pixel type doesn't matter for current purpose
-        //		typedef itk::ImageFileReader<TestImageType> TestFileReaderType; // reader for testing a file
-        //		TestFileReaderType::Pointer onefileReader = TestFileReaderType::New();
-        //
-        //		onefileReader->SetFileName([filePath UTF8String]);
-        //
-        //		try
-        //		{
-        //			onefileReader->GenerateOutputInformation();
-        //		}
-        //		catch(itk::ExceptionObject &excp)
-        //		{
-        //			return -1;
-        //		}
-        //
-        //		// grab the ImageIO instance for the reader
-        //		itk::ImageIOBase *imageIO = onefileReader->GetImageIO();
-        //		unsigned int NumberOfDimensions =  imageIO->GetNumberOfDimensions();
-        //		//std::endl;
-        //		unsigned dims[32];   // almost always no more than 4 dims, but ...
-        //		unsigned origin[32];
-        //		double spacing[32];
-        //		std::vector<double> directions[32];
-        //		for(unsigned i = 0; i < NumberOfDimensions && i < 32; i++)
-        //		 {
-        //		 dims[i] = imageIO->GetDimensions(i);
-        //		 origin[i] = imageIO->GetOrigin(i);
-        //		 spacing[i] = imageIO->GetSpacing(i);
-        //		 directions[i] = imageIO->GetDirection(i);
-        //		 }
-        ////		// PixelType is SCALAR, RGB, RGBA, VECTOR, COVARIANTVECTOR, POINT,INDEX
-        ////		itk::ImageIOBase::PixelType pixelType = imageIO->GetPixelType();
-        ////		// IOComponentType is UCHAR, CHAR, USHORT, SHORT, UINT, INT, ULONG,LONG, FLOAT, DOUBLE
-        ////		itk::ImageIOBase::IOComponentType componentType = imageIO->GetIOComponentType();
-        ////		const std::type_info &typeinfo typeInfo = imageIO->GetComponentTypeInfo();
-        ////		// NumberOfComponents is usually one, but for non-scalar pixel types, it can be anything
-        //		unsigned int NumberOfComponents = imageIO->GetNumberOfComponents();
-    }
-    
-    if (success)
-        return 0;
-    else
-#endif
-        return -1;
 }
 
 -(short) getDicomFileDCMTK

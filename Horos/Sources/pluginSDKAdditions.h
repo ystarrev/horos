@@ -93,9 +93,9 @@
 
  See also:
  
- [DCMView viewToPixTransform] defined in DCMView(CPRAdditions) in CPRMPRDCMView.h
+ [DCMView viewToPixTransform] is declared by DCMView.
  
- [DCMView pixToSubDrawRectTransform] defined in DCMView(CPRAdditions) in CPRMPRDCMView.h
+ [DCMView pixToSubDrawRectTransform] is declared by DCMView.
 
  @return A transformation matrix that converts pixel coordinates in the receiver to coordinates in Patient Space (Dicom space in mm).
  */

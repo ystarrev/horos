@@ -342,7 +342,6 @@ static NSMutableDictionary *prefPanes = nil;
 	
 	name = NSLocalizedString(@"Display", @"Section in preferences window");
 	[self addPaneWithResourceNamed:@"OSIViewerPreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"Viewers", @"Panel in preferences window") image:[NSImage imageNamed:@"AxialSmall"] toGroupWithName:name];
-	[self addPaneWithResourceNamed:@"OSI3DPreferencePanePref" inBundle:bundle withTitle:NSLocalizedString(@"3D", @"Panel in preferences window") image:[NSImage imageNamed:@"VolumeRendering"] toGroupWithName:name];
 	[self addPaneWithResourceNamed:@"OSIPETPreferencePane" inBundle:bundle withTitle:NSLocalizedString(@"PET", @"Panel in preferences window") image:[NSImage imageNamed:@"SUV"] toGroupWithName:name];
     [self addPaneWithResourceNamed:@"AYDicomPrintPref" inBundle:bundle withTitle:NSLocalizedString(@"DICOM Print", @"Panel in preferences window") image:[NSImage imageNamed:@"Print"] toGroupWithName:name];
 	

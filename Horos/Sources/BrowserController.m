@@ -465,9 +465,7 @@ static NSString*	ExportROIAndKeyImagesToolbarItemIdentifier	= @"ExportROIAndKeyI
 static NSString*	AnonymizerToolbarItemIdentifier		= @"Anonymizer.pdf";
 static NSString*	QueryToolbarItemIdentifier			= @"QueryRetrieve.pdf";
 static NSString*	SendToolbarItemIdentifier			= @"Send.pdf";
-static NSString*	ViewerToolbarItemIdentifier			= @"Viewer.pdf";
 //static NSString*	CDRomToolbarItemIdentifier			= @"cd.icns";
-static NSString*	MovieToolbarItemIdentifier			= @"Movie.pdf";
 static NSString*	TrashToolbarItemIdentifier			= @"trash.icns";
 static NSString*	ReportToolbarItemIdentifier			= @"Report.icns";
 static NSString*	BurnerToolbarItemIdentifier			= @"Burner.icns";
@@ -481,7 +479,6 @@ static NSString*	Metal3DToolbarItemIdentifier			= @"Metal3DToolbarItem";
 static NSString*	OpenKeyImagesAndROIsToolbarItemIdentifier	= @"ROIsAndKeys.tif";
 static NSString*	OpenKeyImagesToolbarItemIdentifier	= @"Keys.tif";
 static NSString*	OpenROIsToolbarItemIdentifier	= @"ROIs.tif";
-static NSString*	ViewersToolbarItemIdentifier	= @"windows.tif";
 static NSString*    ResetSplitViewsItemIdentifier = @"Reset.pdf";
 static NSTimeInterval gLastActivity = 0;
 static BOOL dontShowOpenSubSeries = NO;
@@ -7551,396 +7548,10 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     return r;
 }
 
-- (void) databaseOpenStudy:(DicomStudy*) currentStudy withProtocol:(NSDictionary*) currentHangingProtocol
+- (void) databaseOpenStudy:(DicomStudy*)currentStudy withProtocol:(NSDictionary*)currentHangingProtocol
 {
-    BOOL restoreNOAutotiling = NO;
-    int WINDOWSIZEVIEWERCopy = 0;
-    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"AUTOTILING"] != YES)
-    {
-        restoreNOAutotiling = YES;
-        WINDOWSIZEVIEWERCopy = [[NSUserDefaults standardUserDefaults] integerForKey: @"WINDOWSIZEVIEWER"];
-        [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"AUTOTILING"];
-    }
-    
-    NSMutableArray *children = [NSMutableArray arrayWithArray: [self childrenArray: currentStudy]];
-    
-    //Remove the series that are already displayed
-    int alreadyDisplayed = 0;
-    for( DicomSeries *s in [ViewerController getDisplayedSeries])
-    {
-        for( int e = 0; e < [children count]; e++)
-        {
-            if( [[s valueForKey: @"seriesInstanceUID"] isEqualToString: [[children objectAtIndex: e] valueForKey: @"seriesInstanceUID"]])
-                alreadyDisplayed++;
-        }
-    }
-    
-    if( alreadyDisplayed == 0)
-    {
-        if( [currentHangingProtocol valueForKey: @"Sync"])
-        {
-            if( [[currentHangingProtocol valueForKey: @"Sync"] boolValue])
-                [DCMView setSyncro: syncroLOC];
-            else
-                [DCMView setSyncro: syncroOFF];
-        }
-        
-        if( [currentHangingProtocol valueForKey: @"Propagate"])
-        {
-            [[NSUserDefaults standardUserDefaults] setBool: [[currentHangingProtocol valueForKey: @"Propagate"] boolValue] forKey:@"COPYSETTINGS"];
-        }
-        
-        NSMutableArray *seriesArray = nil;
-        
-        if( [[currentStudy imageSeriesContainingPixels: YES] count])
-            seriesArray = [NSMutableArray arrayWithArray: [currentStudy imageSeriesContainingPixels: YES]];
-        else
-            seriesArray = [NSMutableArray arrayWithArray: [currentStudy imageSeries]];
-        
-        // Sort series according to SeriesOrder, if available
-        if( [currentHangingProtocol valueForKey: @"SeriesOrder"])
-        {
-            NSMutableArray *newSeriesArray = [NSMutableArray array];
-            
-            NSNumber* caseSensitivityValue = [currentHangingProtocol valueForKey: @"SeriesOrderIgnoreCase"];
-            BOOL ignoreCase = [caseSensitivityValue boolValue];
-            
-            for( NSString *term in [[currentHangingProtocol valueForKey: @"SeriesOrder"] componentsSeparatedByString: @","])
-            {
-                term = [term stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                
-                int index = -1;
-                for( int i = 0; i < seriesArray.count; i++)
-                {
-                    DicomSeries *s = [seriesArray objectAtIndex: i];
-                    
-                    if (ignoreCase)
-                    {
-                        NSRange rangeValue = [s.description rangeOfString:term options:NSCaseInsensitiveSearch];
-                        
-                        if (rangeValue.length > 0)
-                        {
-                            index = i;
-                        }
-                    }
-                    else
-                    {
-                        if( [s.description contains: term])
-                        {
-                            index = i;
-                        }
-                    }
-                }
-                
-                if( index != -1)
-                {
-                    [newSeriesArray addObject: [seriesArray objectAtIndex: index]];
-                    [seriesArray removeObjectAtIndex: index];
-                }
-            }
-            [newSeriesArray addObjectsFromArray: seriesArray];
-            
-            seriesArray = newSeriesArray;
-        }
-        
-        // Prepare the series to be displayed
-        NSMutableArray *comparatives = [NSMutableArray array];
-        if( [[currentHangingProtocol valueForKey: @"Comparative"] boolValue])
-        {
-            // Find the previous studies
-            int numberOfComparative = [[currentHangingProtocol valueForKey:@"NumberOfComparativeToDisplay"] intValue];
-            
-            //PreviousStudySameModality , PreviousStudySameDescription
-            
-            for( id s in [NSArray arrayWithArray: [self subSearchForComparativeStudies: currentStudy]])
-            {
-                id comparativeStudy = nil;
-                
-                if( [s isKindOfClass: [DCMTKStudyQueryNode class]])
-                {
-                    DCMTKStudyQueryNode *study = s;
-                    
-                    if( ![[study studyInstanceUID] isEqualToString: [currentStudy valueForKey: @"studyInstanceUID"]])
-                    {
-                        comparativeStudy = study;
-                        
-                        if( [[currentHangingProtocol valueForKey:@"PreviousStudySameModality"] boolValue])
-                        {
-                            if( [[study modality] isEqualToString: [currentStudy valueForKey: @"modality"]] == NO)
-                                comparativeStudy = nil;
-                        }
-                        
-                        if( [[currentHangingProtocol valueForKey:@"PreviousStudySameDescription"] boolValue])
-                        {
-                            if( [[currentHangingProtocol objectForKey: @"isDefaultProtocolForModality"] boolValue])
-                            {
-                                if( [[study studyName] isEqualToString: [currentStudy valueForKey: @"studyName"]] == NO)
-                                    comparativeStudy = nil;
-                            }
-                            else
-                            {
-                                NSRange searchRange = [[study studyName] rangeOfString: [currentHangingProtocol objectForKey: @"Study Description"] options: NSCaseInsensitiveSearch | NSLiteralSearch];
-                                if (searchRange.location == NSNotFound)
-                                    comparativeStudy = nil;
-                            }
-                        }
-                        
-                        if( comparativeStudy)
-                            [self retrieveComparativeStudy: comparativeStudy select: NO open: NO showGUI: NO];
-                    }
-                }
-                
-                if( [s isKindOfClass: [DicomStudy class]])
-                {
-                    DicomStudy *study = s;
-                    
-                    if( ![[study studyInstanceUID] isEqualToString: [currentStudy valueForKey: @"studyInstanceUID"]])
-                    {
-                        comparativeStudy = study;
-                        
-                        if( [[currentHangingProtocol valueForKey:@"PreviousStudySameModality"] boolValue])
-                        {
-                            if( [[study modality] isEqualToString: [currentStudy valueForKey: @"modality"]] == NO)
-                                comparativeStudy = nil;
-                        }
-                        
-                        if( [[currentHangingProtocol valueForKey:@"PreviousStudySameDescription"] boolValue])
-                        {
-                            if( [[currentHangingProtocol objectForKey: @"isDefaultProtocolForModality"] boolValue])
-                            {
-                                if( [[study studyName] isEqualToString: [currentStudy valueForKey: @"studyName"]] == NO)
-                                    comparativeStudy = nil;
-                            }
-                            else
-                            {
-                                NSRange searchRange = [[study studyName] rangeOfString: [currentHangingProtocol objectForKey: @"Study Description"] options: NSCaseInsensitiveSearch | NSLiteralSearch];
-                                if (searchRange.location == NSNotFound)
-                                    comparativeStudy = nil;
-                            }
-                        }
-                    }
-                }
-                
-                if( comparativeStudy)
-                    [comparatives addObject: comparativeStudy];
-                
-                if( comparatives.count >= numberOfComparative)
-                    break;
-            }
-            
-            // Wait until all distant studies are retrieved
-            WaitRendering *w = nil;
-            NSTimeInterval timeout = [NSDate timeIntervalSinceReferenceDate];
-            BOOL distantStudies = NO;
-            do
-            {
-                distantStudies = NO;
-                
-                int copy = [[NSUserDefaults standardUserDefaults] integerForKey: @"ListenerCompressionSettings"];
-                [[NSUserDefaults standardUserDefaults] setInteger: 0 forKey: @"ListenerCompressionSettings"]; //No time for decompression....
-                
-                for( int i = 0; i < comparatives.count; i++)
-                {
-                    if( [[comparatives objectAtIndex: i] isKindOfClass: [DCMTKStudyQueryNode class]])
-                    {
-                        //                        [NSThread sleepForTimeInterval: 0.3];
-                        //                        [[DicomDatabase activeLocalDatabase] initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
-                        
-                        [self.database importFilesFromIncomingDir];
-                        
-                        NSFetchRequest *r = [NSFetchRequest fetchRequestWithEntityName: @"Study"];
-                        [r setPredicate: [NSPredicate predicateWithFormat: @"(studyInstanceUID == %@)", [[comparatives objectAtIndex: i] studyInstanceUID]]];
-                        
-                        NSArray *studyArray = nil;
-                        @try
-                        {
-                            // We need to receive the 'messages' for the new db objects from the background thread
-                            [[NSRunLoop currentRunLoop] runUntilDate: [NSDate dateWithTimeIntervalSinceNow: 0.5]];
-                            
-                            studyArray = [self.database.managedObjectContext executeFetchRequest: r error: nil];
-                        }
-                        @catch (NSException *e) { N2LogExceptionWithStackTrace(e);}
-                        
-                        if( [[[studyArray lastObject] imageSeriesContainingPixels: YES] count]) // We want images !
-                            [comparatives replaceObjectAtIndex: i withObject: [studyArray lastObject]];
-                        else
-                            distantStudies = YES;
-                    }
-                }
-                
-                [[NSUserDefaults standardUserDefaults] setInteger: copy forKey: @"ListenerCompressionSettings"];
-                
-                if( distantStudies && w == nil)
-                {
-                    w = [[[WaitRendering alloc] init: NSLocalizedString(@"Retrieving...", nil)] autorelease];
-                    [w showWindow: self];
-                }
-            }
-#define TIMEOUT 30
-            while( distantStudies && [NSDate timeIntervalSinceReferenceDate] - timeout < TIMEOUT);
-            
-            [w close];
-            for( int i = 0; i < comparatives.count; i++)
-            {
-                if( [[comparatives objectAtIndex: i] isKindOfClass: [DicomStudy class]] == NO)
-                {
-                    [comparatives removeObjectAtIndex: i];
-                    i--;
-                }
-            }
-        }
-        
-        // Expand comparatives study according to NumberOfSeriesPerComparative
-        if( [[currentHangingProtocol valueForKey: @"NumberOfSeriesPerComparative"] integerValue] > 1)
-        {
-            int n = [[currentHangingProtocol valueForKey: @"NumberOfSeriesPerComparative"] integerValue];
-            
-            NSMutableArray *newComparatives = [NSMutableArray array];
-            for( DicomStudy *study in comparatives)
-            {
-                NSMutableArray *series = [NSMutableArray arrayWithArray: [study imageSeriesContainingPixels: YES]];
-                
-                // Sort series according to SeriesOrder, if available
-                if( [currentHangingProtocol valueForKey: @"SeriesOrder"])
-                {
-                    NSMutableArray *newSeriesArray = [NSMutableArray array];
-                    
-                    NSNumber* caseSensitivityValue = [currentHangingProtocol valueForKey: @"SeriesOrderIgnoreCase"];
-                    BOOL ignoreCase = [caseSensitivityValue boolValue];
-                    
-                    for( NSString *term in [[currentHangingProtocol valueForKey: @"SeriesOrder"] componentsSeparatedByString: @","])
-                    {
-                        term = [term stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                        
-                        int index = -1;
-                        for( int i = 0; i < series.count; i++)
-                        {
-                            DicomSeries *s = [series objectAtIndex: i];
-                            
-                            if (ignoreCase)
-                            {
-                                NSRange rangeValue = [s.description rangeOfString:term options:NSCaseInsensitiveSearch];
-                                
-                                if (rangeValue.length > 0)
-                                {
-                                    index = i;
-                                }
-                            }
-                            else
-                            {
-                                if( [s.description contains: term])
-                                {
-                                    index = i;
-                                }
-                            }
-                        }
-                        
-                        if( index != -1)
-                        {
-                            [newSeriesArray addObject: [series objectAtIndex: index]];
-                            [series removeObjectAtIndex: index];
-                        }
-                    }
-                    [newSeriesArray addObjectsFromArray: series];
-                    
-                    series = newSeriesArray;
-                }
-                
-                if( series.count > n)
-                    [newComparatives addObjectsFromArray: [series subarrayWithRange: NSMakeRange( 0, n)]];
-                else
-                    [newComparatives addObjectsFromArray: series];
-            }
-            
-            comparatives = newComparatives;
-        }
-        
-        // Prepare the series
-        int total = [WindowLayoutManager windowsRowsForHangingProtocol: currentHangingProtocol] * [WindowLayoutManager windowsColumnsForHangingProtocol: currentHangingProtocol] * [[[AppController sharedAppController] viewerScreens] count];
-        
-        if( seriesArray.count > total)
-            [seriesArray removeObjectsInRange: NSMakeRange( total, seriesArray.count-total)];
-        
-        if( seriesArray.count + comparatives.count > total)
-        {
-            while( seriesArray.count + comparatives.count > total && seriesArray.count > 1)
-                [seriesArray removeLastObject];
-            
-            while( seriesArray.count + comparatives.count > total && comparatives.count > 0)
-                [comparatives removeLastObject];
-        }
-        
-        if( [[currentHangingProtocol objectForKey: @"RepeatSeriesIfNotEnoughSeries"] boolValue])
-        {
-            if( seriesArray.count + comparatives.count < total)
-            {
-                int i = 0;
-                while( seriesArray.count + comparatives.count < total && seriesArray.count)
-                    [seriesArray addObject: [seriesArray objectAtIndex: i++]];
-            }
-        }
-        
-        [seriesArray addObjectsFromArray: comparatives];
-        
-        
-        // Go to the series level, if we are at study level (comparatives)
-        for( int i = 0; i < seriesArray.count; i++)
-        {
-            if( [[seriesArray objectAtIndex: i] isKindOfClass: [DicomStudy class]])
-            {
-                DicomStudy *s = [seriesArray objectAtIndex: i];
-                
-                if( [[s imageSeriesContainingPixels: YES] count])
-                {
-                    [seriesArray replaceObjectAtIndex: i withObject: [[s imageSeriesContainingPixels: YES] objectAtIndex: 0]];
-                }
-                else if( [[s imageSeries] count])
-                {
-                    [seriesArray replaceObjectAtIndex: i withObject: [[s imageSeries] objectAtIndex: 0]];
-                }
-                else
-                {
-                    NSLog( @"---- no imageSeries in this study?: %@", s);
-                }
-            }
-        }
-        
-        [self viewerDICOMInt: NO  dcmFile: seriesArray viewer: nil tileWindows: YES protocol: currentHangingProtocol];
-    }
-    else
-    {
-        for( ViewerController *v in [ViewerController getDisplayed2DViewers])
-            [[v window] makeKeyAndOrderFront: self];
-    }
-    
-    // Apply WL/WW
-    for( ViewerController *v in [ViewerController getDisplayed2DViewers])
-    {
-        NSDictionary *p = [WindowLayoutManager hangingProtocolForModality: v.modality description: v.currentStudy.studyName];
-        
-        if( p)
-        {
-            if( [[p valueForKey: @"WL"] intValue] == 0 && [[p valueForKey: @"WW"] intValue] == 0) // Default
-            {
-            }
-            
-            else if( [[p valueForKey: @"WL"] intValue] == 1 && [[p valueForKey: @"WW"] intValue] == 1) // Full
-            {
-                [v.imageView setWLWW: 0 : 0];
-            }
-            
-            else if( [p valueForKey: @"WL"] && [p valueForKey: @"WW"])
-            {
-                [v.imageView setWLWW: [[p valueForKey: @"WL"] floatValue] :[[p valueForKey: @"WW"] floatValue]];
-            }
-        }
-    }
-    
-    if( restoreNOAutotiling)
-    {
-        [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"AUTOTILING"];
-        [[NSUserDefaults standardUserDefaults] setInteger: WINDOWSIZEVIEWERCopy forKey: @"WINDOWSIZEVIEWER"];
-    }
+    (void)currentHangingProtocol;
+    [self openMetalViewerForDatabaseObject:currentStudy];
 }
 
 - (void) displayWaitWindowIfNecessary
@@ -7956,391 +7567,15 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     waitOpeningWindow = nil;
 }
 
-- (void) databaseOpenStudy: (NSManagedObject*) item
+- (void) databaseOpenStudy:(NSManagedObject*)item
 {
-    if( [item isKindOfClass: [DCMTKStudyQueryNode class]])
+    if( [item isKindOfClass:[DCMTKStudyQueryNode class]])
     {
-        // Check to see if already in retrieving mode, if not download it
-        [self retrieveComparativeStudy: (DCMTKStudyQueryNode*) item select: YES open: YES];
-        
+        [self retrieveComparativeStudy:(DCMTKStudyQueryNode*)item select:YES open:YES];
         return;
     }
-    
-    NSArray *cells = [oMatrix selectedCells];
-    if( [cells count] > 1)
-    {
-        for( NSCell *c in oMatrix.cells)
-            [c setHighlighted: NO];
-        
-        [oMatrix selectCell: [cells objectAtIndex: 0]];
-    }
-    
-    if ([[item valueForKey:@"type"] isEqualToString:@"Series"])
-    {
-        if( [self isUsingExternalViewer: item] == NO)
-        {
-            // DICOM & others
-            [self viewerDICOMInt :NO  dcmFile: [NSArray arrayWithObject:item] viewer:nil];
-            
-        }
-    }
-    else	// STUDY - Hanging Protocols - Windows State
-    {
-        DicomStudy *currentStudy = (DicomStudy*) item;
-        
-        [self checkIfLocalStudyHasMoreOrSameNumberOfImagesOfADistantStudy: [NSArray arrayWithObject: currentStudy]];
-        
-        [[AppController sharedAppController] addStudyToRecentStudiesMenu: [((NSManagedObject *) currentStudy) objectID]];
-        
-        BOOL windowsStateApplied = NO;
-        
-        if( [currentStudy valueForKey:@"windowsState"] && [[NSUserDefaults standardUserDefaults] boolForKey:@"automaticWorkspaceLoad"])
-        {
-            NSArray *viewers = [NSPropertyListSerialization propertyListWithData:[currentStudy valueForKey:@"windowsState"] options:NSPropertyListImmutable format:nil error:nil];
-            
-            // Check if this windowsState contains at least this study...
-            
-            BOOL studyUIDFound = NO;
-            for( NSDictionary *dict in viewers)
-            {
-                if( [currentStudy.studyInstanceUID isEqualToString: [dict valueForKey:@"studyInstanceUID"]])
-                    studyUIDFound = YES;
-            }
-            
-            if( studyUIDFound)
-            {
-                NSMutableArray *seriesToOpen =  [NSMutableArray array];
-                NSMutableArray *viewersToLoad = [NSMutableArray array];
-                
-                [ViewerController closeAllWindows];
-                
-                NSNumber *propagateSettings = nil;
-                NSNumber *syncSettings = nil;
-                NSNumber *SYNCSERIES = nil;
-                NSNumber *syncButtonBehaviorIsBetweenStudies = nil;
-                
-                if( [[NSUserDefaults standardUserDefaults] boolForKey: @"searchForComparativeStudiesOnDICOMNodes"])
-                {
-                    [self displayWaitWindowIfNecessary];
-                    
-                    // Check if all studies are available, available on PACS-On-Demand ?
-                    for( NSDictionary *dict in viewers)
-                    {
-                        NSString *studyUID = [dict valueForKey:@"studyInstanceUID"];
-                        
-                        NSFetchRequest *request = [NSFetchRequest fetchRequestWithEntityName: @"Study"];
-                        [request setPredicate: [NSPredicate predicateWithFormat:@"studyInstanceUID == %@", studyUID]];
-                        
-                        NSManagedObjectContext	*context = self.database.managedObjectContext;
-                        NSArray	*studiesArray = [context executeFetchRequest:request error: nil];
-                        
-                        if( [studiesArray count] == 0)
-                        {
-                            NSArray *servers = [BrowserController comparativeServers];
-                            
-                            DCMTKStudyQueryNode *distantStudy = [[QueryController queryStudiesForFilters: [NSDictionary dictionaryWithObject: studyUID forKey: @"StudyInstanceUID"] servers: servers showErrors: NO] lastObject];
-                            
-                            if( distantStudy)
-                            {
-                                int copy = [[NSUserDefaults standardUserDefaults] integerForKey: @"ListenerCompressionSettings"];
-                                [[NSUserDefaults standardUserDefaults] setInteger: 0 forKey: @"ListenerCompressionSettings"]; //No time for decompression....
-                                
-                                [QueryController retrieveStudies: [NSArray arrayWithObject: distantStudy] showErrors: NO checkForPreviousAutoRetrieve: YES];
-                                
-                                int lastNumberOfImages = 0, currentNumberOfImages = 0;
-                                NSTimeInterval dateStart = [NSDate timeIntervalSinceReferenceDate];
-                                
-                                do
-                                {
-                                    [NSThread sleepForTimeInterval: 0.1];
-                                    
-                                    lastNumberOfImages = [[[studiesArray lastObject] images] count];
-                                    
-                                    [[DicomDatabase activeLocalDatabase] importFilesFromIncomingDir];
-                                    
-                                    // And find the study locally
-                                    NSFetchRequest *r = [NSFetchRequest fetchRequestWithEntityName: @"Study"];
-                                    [r setPredicate: [NSPredicate predicateWithFormat:@"studyInstanceUID == %@", studyUID]];
-                                    
-                                    @try
-                                    {
-                                        studiesArray = [context executeFetchRequest: r error: nil];
-                                    }
-                                    @catch (NSException *e) { N2LogExceptionWithStackTrace(e);}
-                                    
-                                    currentNumberOfImages = [[[studiesArray lastObject] images] count];
-                                }
-                                while( ([studiesArray count] == 0 || lastNumberOfImages != currentNumberOfImages) && [NSDate timeIntervalSinceReferenceDate] - dateStart < 20);
-                                
-                                [[NSUserDefaults standardUserDefaults] setInteger: copy forKey: @"ListenerCompressionSettings"];
-                            }
-                        }
-                    }
-                    
-                    [self closeWaitWindowIfNecessary];
-                }
-                
-                for( NSDictionary *dict in viewers)
-                {
-                    NSString *studyUID = [dict valueForKey:@"studyInstanceUID"];
-                    NSString *seriesUID = [dict valueForKey:@"seriesInstanceUID"];
-                    NSString *seriesDICOMUID = [dict valueForKey:@"seriesDICOMUID"];
-                    
-                    propagateSettings = [dict valueForKey: @"propagateSettings"];
-                    syncSettings = [dict valueForKey: @"syncSettings"];
-                    SYNCSERIES = [dict valueForKey: @"SYNCSERIES"];
-                    syncButtonBehaviorIsBetweenStudies = [dict valueForKey: @"SyncButtonBehaviorIsBetweenStudies"];
-                    
-                    NSArray	 *series4D = [seriesUID componentsSeparatedByString:@"\\**\\"];
-                    // Find the corresponding study & 4D series
-                    
-                    @try
-                    {
-                        NSError *error = nil;
-                        NSManagedObjectContext *context = self.database.managedObjectContext;
-                        
-                        NSMutableArray *seriesForThisViewer =  nil;
-                        
-                        @try
-                        {
-                            for( NSString *curSeriesUID in series4D)
-                            {
-                                NSFetchRequest *request = [NSFetchRequest fetchRequestWithEntityName: @"Series"];
-                                [request setPredicate: [NSPredicate predicateWithFormat:@"study.studyInstanceUID == %@ AND seriesInstanceUID == %@", studyUID, curSeriesUID]];
-                                
-                                NSArray	*seriesArray = [context executeFetchRequest:request error:&error];
-                                
-                                //Try the DICOMSeriesUID
-                                if( seriesArray.count == 0 && seriesDICOMUID.length)
-                                {
-                                    request = [NSFetchRequest fetchRequestWithEntityName: @"Series"];
-                                    [request setPredicate: [NSPredicate predicateWithFormat:@"study.studyInstanceUID == %@ AND seriesDICOMUID == %@", studyUID, seriesDICOMUID]];
-                                    seriesArray = [context executeFetchRequest:request error:&error];
-                                }
-                                
-                                if( [seriesArray count] == 1)
-                                {
-                                    if( [[[seriesArray objectAtIndex: 0] valueForKeyPath:@"study.patientUID"] compare: [currentStudy valueForKey: @"patientUID"] options: NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch | NSWidthInsensitiveSearch] == NSOrderedSame)
-                                    {
-                                        if( seriesForThisViewer == nil)
-                                        {
-                                            seriesForThisViewer = [NSMutableArray array];
-                                            
-                                            [seriesToOpen addObject: seriesForThisViewer];
-                                            [viewersToLoad addObject: dict];
-                                        }
-                                        
-                                        [seriesForThisViewer addObject: [seriesArray objectAtIndex: 0]];
-                                    }
-                                    else
-                                        NSLog(@"%@ versus %@", [[seriesArray objectAtIndex: 0] valueForKeyPath:@"study.patientUID"], [currentStudy valueForKey: @"patientUID"]);
-                                }
-                                else if( [seriesArray count] > 1)
-                                    NSLog( @"****** number of series corresponding to these UID (%@) is not unique?: %d", curSeriesUID, (int) [seriesArray count]);
-                            }
-                        }
-                        @catch (NSException * e)
-                        {
-                            N2LogExceptionWithStackTrace(e);
-                        }
-                        
-                    }
-                    @catch (NSException *e)
-                    {
-                        N2LogExceptionWithStackTrace(e);
-                    }
-                }
-                
-                if( [seriesToOpen count] > 0 && [viewersToLoad count] == [seriesToOpen count])
-                {
-                    if( syncSettings)
-                    {
-                        if( [syncSettings boolValue])
-                            [DCMView setSyncro: syncroLOC];
-                        else
-                            [DCMView setSyncro: syncroOFF];
-                    }
-                    
-                    if( propagateSettings)
-                        [[NSUserDefaults standardUserDefaults] setBool: [propagateSettings boolValue] forKey:@"COPYSETTINGS"];
-                    
-                    [self displayWaitWindowIfNecessary];
-                    
-                    [AppController sharedAppController].checkAllWindowsAreVisibleIsOff = YES;
-                    
-                    for( int i = 0 ; i < [seriesToOpen count]; i++)
-                    {
-                        NSMutableArray * toOpenArray = [NSMutableArray array];
-                        
-                        NSDictionary *dict = [viewersToLoad objectAtIndex: i];
-                        
-                        for( NSManagedObject* curFile in [seriesToOpen objectAtIndex: i])
-                        {
-                            NSArray *loadList = [self childrenArray: curFile];
-                            if( loadList) [toOpenArray addObject: loadList];
-                        }
-                        
-                        if( [[dict valueForKey: @"4DData"] boolValue])
-                            [self processOpenViewerDICOMFromArray: toOpenArray movie: YES viewer: nil];
-                        else
-                            [self processOpenViewerDICOMFromArray: toOpenArray movie: NO viewer: nil];
-                    }
-                    
-                    NSArray	*displayedViewers = [ViewerController getDisplayed2DViewers];
-                    BOOL validWindowsPosition = YES;
-                    for( int i = 0 ; i < [viewersToLoad count]; i++)
-                    {
-                        NSDictionary *dict = [viewersToLoad objectAtIndex: i];
-                        
-                        if( i < [displayedViewers count])
-                        {
-                            ViewerController *v = [displayedViewers objectAtIndex: i];
-                            
-                            NSRect r;
-                            NSScanner* s = [NSScanner scannerWithString: [dict valueForKey:@"window position"]];
-                            
-                            float scaleRatio = 1, a;
-                            [s scanFloat: &a];	r.origin.x = a;		[s scanFloat: &a];	r.origin.y = a;
-                            [s scanFloat: &a];	r.size.width = a;	[s scanFloat: &a];	r.size.height = a;
-                            
-                            NSUInteger screenIndex = [[dict valueForKey:@"screenIndex"] unsignedIntegerValue];
-                            NSRect savedScreenRect = NSRectFromString( [dict valueForKey:@"screen"]);
-                            if( savedScreenRect.size.width > 0 && savedScreenRect.size.height > 0)
-                            {
-                                if( screenIndex < NSScreen.screens.count)
-                                {
-                                    float widthRatio = 1, heightRatio = 1;
-                                    NSRect curScreenVisibleRect = [AppController usefullRectForScreen: [[NSScreen screens] objectAtIndex: screenIndex]];
-                                    
-                                    widthRatio = curScreenVisibleRect.size.width / savedScreenRect.size.width;
-                                    heightRatio = curScreenVisibleRect.size.height / savedScreenRect.size.height;
-                                    
-                                    r.size.width *= widthRatio;
-                                    r.size.height *= heightRatio;
-                                    
-                                    r.origin.x = ((r.origin.x - savedScreenRect.origin.x) * widthRatio) + curScreenVisibleRect.origin.x;
-                                    r.origin.y = ((r.origin.y - savedScreenRect.origin.y) * heightRatio) + curScreenVisibleRect.origin.y;
-                                    
-                                    if( widthRatio < 1 || heightRatio < 1)
-                                        scaleRatio = widthRatio < heightRatio ? widthRatio : heightRatio;
-                                    
-                                    if( widthRatio > 1 || heightRatio > 1)
-                                        scaleRatio = widthRatio > heightRatio ? widthRatio : heightRatio;
-                                    
-                                    // Test if the window is completely contained in the screen, otherwise, we will TileWindows.
-                                    if( NSEqualRects(NSIntersectionRect( curScreenVisibleRect, r), r) == NO)
-                                    {
-                                        r = NSIntersectionRect( curScreenVisibleRect, r);
-                                        validWindowsPosition = NO;
-                                    }
-                                }
-                                else
-                                    validWindowsPosition = NO;
-                            }
-                            else
-                                validWindowsPosition = NO;
-                            
-                            int index = [[dict valueForKey:@"index"] intValue];
-                            int rows = [[dict valueForKey:@"rows"] intValue];
-                            int columns = [[dict valueForKey:@"columns"] intValue];
-                            float wl = [[dict valueForKey:@"wl"] floatValue];
-                            float ww = [[dict valueForKey:@"ww"] floatValue];
-                            float x = [[dict valueForKey:@"x"] floatValue];
-                            float y = [[dict valueForKey:@"y"] floatValue];
-                            float rotation = [[dict valueForKey:@"rotation"] floatValue];
-                            float scale = [[dict valueForKey:@"scale"] floatValue] * scaleRatio*scaleRatio;
-                            
-                            if (validWindowsPosition)
-                                [v setWindowFrame:r showWindow:NO];
 
-                            [v setImageRows: rows columns: columns];
-                            
-                            [v setImageIndex: index];
-                            
-                            if( [[[v imageView] curDCM] SUVConverted]) [v setWL: wl*[v factorPET2SUV] WW: ww*[v factorPET2SUV]];
-                            else [v setWL: wl WW: ww];
-                            
-                            [v setScaleValue: scale];
-                            [v setRotation: rotation];
-                            [v setOrigin: NSMakePoint( x, y)];
-                            
-                            if( [[dict valueForKey: @"SyncButtonBehaviorIsBetweenStudies"] boolValue])
-                            {
-                                v.imageView.syncRelativeDiff = [[dict valueForKey: @"syncRelativeDiff"] floatValue];
-                            }
-                            
-                            if( [dict valueForKey: @"LastWindowsTilingRowsColumns"])
-                                [[NSUserDefaults standardUserDefaults] setObject: [dict valueForKey: @"LastWindowsTilingRowsColumns"] forKey: @"LastWindowsTilingRowsColumns"];
-                        }
-                    }
-                    
-                    [AppController sharedAppController].checkAllWindowsAreVisibleIsOff = NO;
-                    [[AppController sharedAppController] checkAllWindowsAreVisible: self];
-                    
-                    if( validWindowsPosition)
-                    {
-                        for( int i = 0 ; i < [viewersToLoad count]; i++)
-                        {
-                            if( i < [displayedViewers count])
-                            {
-                                ViewerController *v = [displayedViewers objectAtIndex: i];
-                                
-                                if( v.window.screen == nil)
-                                    validWindowsPosition = NO;
-                                else
-                                    // Test if the window is completely contained in the screen, otherwise, we will TileWindows.
-                                    if( NSEqualRects(NSIntersectionRect( v.window.screen.visibleFrame, v.window.frame), v.window.frame) == NO)
-                                        validWindowsPosition = NO;
-                            }
-                        }
-                        
-                    }
-                    
-                    if( validWindowsPosition == NO)
-                    {
-                        NSDictionary *d = nil;
-                        NSString *rw = [[NSUserDefaults standardUserDefaults] stringForKey: @"LastWindowsTilingRowsColumns"];
-                        if( rw)
-                        {
-                            if( rw.length == 2)
-                            {
-                                d = [NSDictionary dictionaryWithObjectsAndKeys: [NSNumber numberWithInt: [[rw substringWithRange: NSMakeRange( 0, 1)] intValue]], @"rows", [NSNumber numberWithInt: [[rw substringWithRange: NSMakeRange( 1, 1)] intValue]], @"columns", nil];
-                            }
-                        }
-                        [[AppController sharedAppController] tileWindows: d];
-                    }
-                    if( [displayedViewers count] > 0)
-                        [[[displayedViewers objectAtIndex: 0] window] makeKeyAndOrderFront: self];
-                    
-                    [self closeWaitWindowIfNecessary];
-                    
-                    //windowsStateApplied = YES; // Hanging Protocol has to prevail over window state when opening studies
-                    
-                    for( ViewerController *v in [[displayedViewers reverseObjectEnumerator] allObjects])
-                    {
-                        [v buildMatrixPreview: YES];
-                    }
-                    
-                    if( [syncButtonBehaviorIsBetweenStudies boolValue] && [SYNCSERIES boolValue])
-                        [ViewerController activateSYNCSERIESBetweenStudies];
-                    
-                    [ToolbarPanelController checkForValidToolbar];
-                    
-                    [[displayedViewers lastObject] redrawToolbar];
-                }
-            }
-        }
-        
-        if( windowsStateApplied == NO)
-        {
-            [[WindowLayoutManager sharedWindowLayoutManager] setCurrentHangingProtocolForModality:[currentStudy valueForKey:@"modality"]
-                                                                                      description:[currentStudy valueForKey:@"studyName"]];
-            
-            NSDictionary *currentHangingProtocol = [[WindowLayoutManager sharedWindowLayoutManager] currentHangingProtocol];
-            
-            [self databaseOpenStudy:currentStudy withProtocol:currentHangingProtocol];
-        }
-    }
+    [self openMetalViewerForDatabaseObject:item];
 }
 
 - (IBAction) databasePressed:(id)sender
@@ -8915,7 +8150,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         
         //		NSManagedObject	*series =  [[self childrenArray:nextStudy] objectAtIndex:0];
         //
-        //		[self openViewerFromImages :[NSArray arrayWithObject: [self childrenArray: series]] movie: NO viewer :viewer keyImagesOnly:keyImages];
         //
         //		[self loadNextSeries:[[self childrenArray: series] objectAtIndex: 0] :0 :viewer :YES keyImagesOnly:keyImages];
     }
@@ -13509,179 +12743,8 @@ constrainSplitPosition:(CGFloat)proposedPosition
         [self openViewerFromImages :toOpenArray movie: movieViewer viewer :viewer keyImagesOnly:NO tryToFlipData: tryToFlipData];
 }
 
-- (void) viewerDICOMInt:(BOOL) movieViewer dcmFile:(NSArray *)selectedLines viewer:(ViewerController*) viewer
-{
-    return [self viewerDICOMInt:  movieViewer dcmFile: selectedLines viewer: viewer tileWindows: YES protocol: nil];
-}
 
-- (void) viewerDICOMInt:(BOOL) movieViewer dcmFile:(NSArray *)selectedLines viewer:(ViewerController*) viewer tileWindows: (BOOL) tileWindows
-{
-    return [self viewerDICOMInt:  movieViewer dcmFile: selectedLines viewer: viewer tileWindows: tileWindows protocol: nil];
-}
 
-- (void) viewerDICOMInt:(BOOL) movieViewer dcmFile:(NSArray *)selectedLines viewer:(ViewerController*) viewer tileWindows: (BOOL) tileWindows protocol: (NSDictionary*) protocol
-{
-    if( [selectedLines count] == 0) return;
-    
-    @try
-    {
-        NSManagedObject		*selectedLine = [selectedLines objectAtIndex: 0];
-        NSInteger			row, column;
-        NSMutableArray		*selectedFilesList;
-        NSArray				*loadList;
-        
-        NSArray				*cells = [oMatrix selectedCells];
-        
-        if( [cells count] == 0 && [[oMatrix cells] count] > 0)
-        {
-            cells = [NSArray arrayWithObject: [[oMatrix cells] objectAtIndex: 0]];
-        }
-        
-        if( [[selectedLine valueForKey:@"type"] isEqualToString: @"Series"])
-            [[AppController sharedAppController] addStudyToRecentStudiesMenu: [((NSManagedObject *) [selectedLine valueForKey: @"study"]) objectID]];
-        else
-            [[AppController sharedAppController] addStudyToRecentStudiesMenu: [((NSManagedObject *) selectedLine) objectID]];
-        
-        //////////////////////////////////////
-        // Open selected images only !!!
-        //////////////////////////////////////
-        
-        if( [cells count] > 1 && [[selectedLine valueForKey:@"type"] isEqualToString: @"Series"])
-        {
-            NSArray  *curList = [self childrenArray: selectedLine];
-            
-            selectedFilesList = [[NSMutableArray alloc] initWithCapacity:0];
-            
-            for( NSCell* c in cells)
-            {
-                if( [c tag] < curList.count)
-                {
-                    NSManagedObject*  curImage = [curList objectAtIndex: [c tag]];
-                    [selectedFilesList addObject: curImage];
-                }
-            }
-            
-            [self openViewerFromImages :[NSArray arrayWithObject: selectedFilesList] movie: movieViewer viewer :viewer keyImagesOnly:NO];
-            
-            [selectedFilesList release];
-        }
-        else
-        {
-            //////////////////////////////////////
-            // Open series !!!
-            //////////////////////////////////////
-            
-            //////////////////////////////////////
-            // Prepare an array that contains arrays of series
-            //////////////////////////////////////
-            
-            NSMutableArray	*toOpenArray = [NSMutableArray array];
-            
-            int x = 0;
-            if( [cells count] == 1 && [selectedLines count] > 1)	// Just one thumbnail is selected, but multiples lines are selected
-            {
-                for( NSManagedObject* curFile in selectedLines)
-                {
-                    x++;
-                    loadList = nil;
-                    
-                    if( [[curFile valueForKey:@"type"] isEqualToString: @"Study"])
-                    {
-                        // Find the first series of images! DONT TAKE A ROI SERIES !
-                        if( [[curFile valueForKey:@"imageSeries"] count])
-                        {
-                            curFile = [[curFile valueForKey:@"imageSeries"] objectAtIndex: 0];
-                            loadList = [self childrenArray: curFile];
-                        }
-                    }
-                    
-                    if( [[curFile valueForKey:@"type"] isEqualToString: @"Series"])
-                    {
-                        loadList = [self childrenArray: curFile];
-                    }
-                    
-                    if( loadList) [toOpenArray addObject: loadList];
-                }
-            }
-            else
-            {
-                for( NSButtonCell *cell in cells)
-                {
-                    x++;
-                    if( [oMatrix getRow: &row column: &column ofCell: cell] == NO)
-                    {
-                        row = 0;
-                        column = 0;
-                    }
-                    
-                    loadList = nil;
-                    
-                    if( matrixViewArray.count > [cell tag])
-                    {
-                        NSManagedObject*  curFile = [matrixViewArray objectAtIndex: [cell tag]];
-                        
-                        if( [[curFile valueForKey:@"type"] isEqualToString: @"Image"])
-                            loadList = [self childrenArray: selectedLine onlyImages: YES];
-                        
-                        if( [[curFile valueForKey:@"type"] isEqualToString: @"Series"])
-                            loadList = [self childrenArray: curFile onlyImages: YES];
-                        
-                        if( loadList) [toOpenArray addObject: loadList];
-                    }
-                }
-            }
-            
-            [self processOpenViewerDICOMFromArray: toOpenArray movie: movieViewer viewer: viewer];
-        }
-        
-        if( tileWindows)
-        {
-            NSArray *viewers = [ViewerController getDisplayed2DViewers];
-            
-            if( [[NSUserDefaults standardUserDefaults] boolForKey: @"AUTOTILING"])
-            {
-                [[AppController sharedAppController] tileWindows: protocol];
-                
-                if( [viewers count] > 1)
-                {
-                    ViewerController *kV = nil;
-                    
-                    for( ViewerController *v in viewers)
-                    {
-                        [[v imageView] scaleToFit];
-                        [[v imageView] setOriginX:0 Y:0];
-                        
-                        if( [[v window] isKeyWindow]) kV = v;
-                    }
-                    
-                    [kV propagateSettings];
-                }
-            }
-            else
-                [[AppController sharedAppController] checkAllWindowsAreVisible: self makeKey: YES];
-        }
-    }
-    @catch (NSException *e)
-    {
-        N2LogExceptionWithStackTrace(e);
-        HorosPresentAlert( NSLocalizedString(@"Opening Error", nil), NSLocalizedString(@"Opening Error : %@\r\r%@", nil) , nil, nil, nil, e, [AppController printStackTrace: e]);
-    }
-    
-}
-
-- (void) viewerSubSeriesDICOM: (id)sender
-{
-    openSubSeriesFlag = YES;
-    [self viewerDICOM: sender];
-    openSubSeriesFlag = NO;
-}
-
-- (void) viewerReparsedSeries: (id) sender
-{
-    openReparsedSeriesFlag = YES;
-    [self viewerDICOM: sender];
-    openReparsedSeriesFlag = NO;
-}
 
 - (BOOL)canOpenMetal3DForCurrentSelection
 {
@@ -13996,171 +13059,80 @@ constrainSplitPosition:(CGFloat)proposedPosition
 {
     NSMutableArray *loadList = [NSMutableArray array];
     NSString *itemType = [item valueForKey:@"type"];
+    NSManagedObject *study = nil;
 
     if( [itemType isEqualToString:@"Image"])
+    {
         [loadList addObject:item];
+        study = [item valueForKeyPath:@"series.study"];
+    }
     else if( [itemType isEqualToString:@"Series"])
+    {
         [loadList addObjectsFromArray:[self childrenArray:item onlyImages:YES]];
+        study = [item valueForKey:@"study"];
+    }
     else if( [itemType isEqualToString:@"Study"])
     {
+        study = item;
         for( NSManagedObject *series in [self childrenArray:item onlyImages:YES])
             [loadList addObjectsFromArray:[self childrenArray:series onlyImages:YES]];
     }
 
     if( [loadList count])
+    {
+        if( study)
+            [[AppController sharedAppController] addStudyToRecentStudiesMenu:[study objectID]];
         [self openMetalViewerForImages:loadList];
+    }
     else
         NSBeep();
 }
 
 - (void) viewerDICOM: (id)sender
 {
-    if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift)
-        [self viewerDICOMMergeSelection: sender];
-    else
-    {
-        if( [[self window] firstResponder] == databaseOutline)
-            [self newViewerDICOM: nil];
-        else
-            [self newViewerDICOM: sender];
-    }
+    [self openMetalViewer:sender];
 }
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
-- (void)newViewerDICOM: (id)sender
-{
-    NSManagedObject	*item = [databaseOutline itemAtRow: [databaseOutline selectedRow]];
-    
-    @try
-    {
-        if (sender == Nil &&
-            [[oMatrix selectedCells] count] == 1 &&
-            [[item valueForKey:@"type"] isEqualToString:@"Study"])
-        {
-            NSArray *array = [self databaseSelection];
-            
-            BOOL savedValue = [[NSUserDefaults standardUserDefaults] boolForKey:@"automaticWorkspaceLoad"];
-            
-            if( [array count] > 1 && savedValue == YES) [[NSUserDefaults standardUserDefaults] setBool: NO forKey:@"automaticWorkspaceLoad"];
-            
-            for( id obj in array)
-            {
-                [databaseOutline selectRowIndexes: [NSIndexSet indexSetWithIndex: [databaseOutline rowForItem: obj]] byExtendingSelection: NO];
-                [self databaseOpenStudy: obj];
-            }
-            
-            if( [array count] > 1 && savedValue == YES) [[NSUserDefaults standardUserDefaults] setBool: YES forKey:@"automaticWorkspaceLoad"];
-        }
-        else
-        {
-            if( [matrixViewArray count] > [[oMatrix selectedCell] tag] && [self isUsingExternalViewer: [matrixViewArray objectAtIndex: [[oMatrix selectedCell] tag]]] == NO)
-            {
-                //To avoid loading the dcmpix in previewSliderAction
-                dontUpdatePreviewPane = YES;
-                [self viewerDICOMInt: NO dcmFile: [self databaseSelection] viewer: nil];
-                dontUpdatePreviewPane = NO;
-                
-                [self previewSliderAction: nil];
-            }
-        }
-    }
-    @catch (NSException * e)
-    {
-        N2LogExceptionWithStackTrace(e);
-    }
-    
-    [[NSNotificationCenter defaultCenter] postNotificationName:OsirixDidLoadNewObjectNotification object:item userInfo:nil];
-    
-    [self closeWaitWindowIfNecessary];
-}
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-
-- (void)viewerDICOMMergeSelection: (id)sender
-{
-    NSMutableArray	*images = [NSMutableArray array];
-    
-    
-    if( ([sender isKindOfClass:[NSMenuItem class]] && [sender menu] == [oMatrix menu]) || [[self window] firstResponder] == oMatrix) [self filesForDatabaseMatrixSelection: images];
-    else [self filesForDatabaseOutlineSelection: images];
-    
-    [self openViewerFromImages :[NSArray arrayWithObject:images] movie: 0 viewer :nil keyImagesOnly:NO];
-    
-    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"AUTOTILING"])
-        [NSApp sendAction: @selector(tileWindows:) to:nil from: self];
-    else
-        [[AppController sharedAppController] checkAllWindowsAreVisible: self makeKey: YES];;
-}
 
 - (void) viewerDICOMROIsImages:(id) sender
 {
     NSArray *roisImagesArray = [self ROIImages: sender];
     
     if( [roisImagesArray count])
-    {
-        dontShowOpenSubSeries = YES;
-        [self openViewerFromImages :[NSArray arrayWithObject: roisImagesArray] movie: 0 viewer :nil keyImagesOnly:NO];
-        dontShowOpenSubSeries = NO;
-        
-        if(	[[NSUserDefaults standardUserDefaults] boolForKey: @"AUTOTILING"])
-            [NSApp sendAction: @selector(tileWindows:) to:nil from: self];
-        else
-            [[AppController sharedAppController] checkAllWindowsAreVisible: self makeKey: YES];
-    }
+        [self openMetalViewerForImages:roisImagesArray];
     else
-    {
         HorosPresentInformationalAlert(NSLocalizedString(@"ROIs Images", nil), NSLocalizedString(@"No images containing ROIs are found in this selection.", nil), NSLocalizedString(@"OK",nil), nil, nil);
-    }
-    
-    BOOL escKey = CGEventSourceKeyState( kCGEventSourceStateCombinedSessionState, 53);
-    
-    if( escKey) //Open the images, and export them
-    {
-        if( [[ViewerController getDisplayed2DViewers] count])
-        {
-            ViewerController *v = [[ViewerController getDisplayed2DViewers] objectAtIndex: 0];
-            
-            [v exportAllImages: @"ROIs images"];
-            
-            [[v window] close];
-        }
-    }
 }
 
 - (void) viewerDICOMKeyImages:(id) sender
 {
-    NSMutableArray	*selectedItems = [NSMutableArray array];
+    NSMutableArray *selectedItems = [NSMutableArray array];
     
     if( ([sender isKindOfClass:[NSMenuItem class]] && [sender menu] == [oMatrix menu]) || [[self window] firstResponder] == oMatrix)
-        [self filesForDatabaseMatrixSelection: selectedItems];
+        [self filesForDatabaseMatrixSelection:selectedItems onlyImages:YES];
     else
-        [self filesForDatabaseOutlineSelection: selectedItems];
-    
-    dontShowOpenSubSeries = YES;
-    [self openViewerFromImages :[NSArray arrayWithObject:selectedItems] movie: 0 viewer :nil keyImagesOnly:YES];
-    dontShowOpenSubSeries = NO;
-    
-    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"AUTOTILING"])
-        [NSApp sendAction: @selector(tileWindows:) to:nil from: self];
-    else
-        [[AppController sharedAppController] checkAllWindowsAreVisible: self makeKey: YES];
-    
-    BOOL escKey = CGEventSourceKeyState( kCGEventSourceStateCombinedSessionState, 53);
-    
-    if( escKey) //Open the images, and export them
+        [self filesForDatabaseOutlineSelection:selectedItems onlyImages:YES];
+
+    NSMutableArray *keyImages = [NSMutableArray array];
+    for( NSManagedObject *image in selectedItems)
     {
-        if( [[ViewerController getDisplayed2DViewers] count])
-        {
-            ViewerController *v = [[ViewerController getDisplayed2DViewers] objectAtIndex: 0];
-            
-            [v exportAllImages: @"Key images"];
-            
-            [[v window] close];
-        }
+        if( [[image valueForKey:@"isKeyImage"] boolValue])
+            [keyImages addObject:image];
     }
+
+    if( [keyImages count])
+        [self openMetalViewerForImages:keyImages];
+    else if( [selectedItems count] &&
+             HorosPresentInformationalAlert(NSLocalizedString(@"Key Images", nil), NSLocalizedString(@"No key images in these images.", nil), NSLocalizedString(@"All Images", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
+        [self openMetalViewerForImages:selectedItems];
+    else if( [selectedItems count] == 0)
+        NSBeep();
 }
 
 - (void) MovieViewerDICOM:(id) sender
@@ -15532,7 +14504,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
            [menuItem action] == @selector(searchForCurrentPatient:) ||
            [menuItem action] == @selector(viewerDICOM:) ||
            [menuItem action] == @selector(MovieViewerDICOM:) ||
-           [menuItem action] == @selector(viewerDICOMMergeSelection:) ||
            [menuItem action] == @selector(revealInFinder:) ||
            [menuItem action] == @selector(export2PACS:) ||
            [menuItem action] == @selector(exportQuicktime:) ||
@@ -15554,8 +14525,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
            [menuItem action] == @selector(applyRoutingRule:) ||
            [menuItem action] == @selector(regenerateAutoComments:) ||
            [menuItem action] == @selector(unifyStudies:) ||
-           [menuItem action] == @selector(viewerSubSeriesDICOM:) ||
-           [menuItem action] == @selector(viewerReparsedSeries:) ||
            [menuItem action] == @selector(copyToDBFolder:)
            )
             return NO;
@@ -19220,15 +18189,6 @@ static volatile int numberOfThreadsForJPEG = 0;
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(exportROIAndKeyImagesAsDICOMSeries:)];
     }
-    else if ([itemIdent isEqualToString: ViewersToolbarItemIdentifier])
-    {
-        [toolbarItem setLabel: NSLocalizedString(@"Viewers",nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"Viewers",nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"Bring Viewers windows to the front", nil)];
-        [toolbarItem setImage: [NSImage imageNamed: ViewersToolbarItemIdentifier]];
-        [toolbarItem setTarget: self];
-        [toolbarItem setAction: @selector(tileWindows:)];
-    } 
     else if ([itemIdent isEqualToString: AnonymizerToolbarItemIdentifier])
     {
         [toolbarItem setLabel: NSLocalizedString(@"Anonymize",nil)];
@@ -19259,16 +18219,6 @@ static volatile int numberOfThreadsForJPEG = 0;
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(export2PACS:)];
     }
-    else if ([itemIdent isEqualToString: ViewerToolbarItemIdentifier])
-    {
-        
-        [toolbarItem setLabel: NSLocalizedString(@"2D Viewer",nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"2D Viewer",nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"View selected study/series",nil)];
-        [toolbarItem setImage: [NSImage imageNamed: ViewerToolbarItemIdentifier]];
-        [toolbarItem setTarget: self];
-        [toolbarItem setAction: @selector(viewerDICOM:)];
-    } 
     //	else if ([itemIdent isEqualToString: CDRomToolbarItemIdentifier])
     //	{
     //        
@@ -19279,16 +18229,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     //		[toolbarItem setTarget: self];
     //		[toolbarItem setAction: @selector(ReadDicomCDRom:)];
     //    }
-    else if ([itemIdent isEqualToString: MovieToolbarItemIdentifier])
-    {
-        
-        [toolbarItem setLabel: NSLocalizedString(@"Dynamic Viewer",nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"Dynamic Viewer",nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"Open the selection as a dynamic series in the Metal viewer",nil)];
-        [toolbarItem setImage: [NSImage imageNamed: MovieToolbarItemIdentifier]];
-        [toolbarItem setTarget: self];
-        [toolbarItem setAction: @selector(MovieViewerDICOM:)];
-    } 
     else if ([itemIdent isEqualToString: TrashToolbarItemIdentifier])
     {
         
@@ -19516,10 +18456,7 @@ static volatile int numberOfThreadsForJPEG = 0;
             XMLToolbarItemIdentifier,
             TrashToolbarItemIdentifier,
             NSToolbarFlexibleSpaceItemIdentifier,
-            ViewersToolbarItemIdentifier,
-            ViewerToolbarItemIdentifier,
             OpenKeyImagesAndROIsToolbarItemIdentifier,
-            MovieToolbarItemIdentifier,
             ReportToolbarItemIdentifier,
             NSToolbarFlexibleSpaceItemIdentifier,
             TimeIntervalToolbarItemIdentifier,
@@ -19531,7 +18468,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 - (NSArray *)toolbarAllowedItemIdentifiers: (NSToolbar *)toolbar
 {	
     NSMutableArray *array = [NSMutableArray arrayWithObjects:
-                             ViewersToolbarItemIdentifier,
                              SearchToolbarItemIdentifier,
                              TimeIntervalToolbarItemIdentifier,
                              ModalityFilterToolbarItemIdentifier,
@@ -19547,9 +18483,7 @@ static volatile int numberOfThreadsForJPEG = 0;
                              ExportROIAndKeyImagesToolbarItemIdentifier,
                              AnonymizerToolbarItemIdentifier,
                              SendToolbarItemIdentifier,
-                             ViewerToolbarItemIdentifier,
                              OpenKeyImagesAndROIsToolbarItemIdentifier,
-                             MovieToolbarItemIdentifier,
                              BurnerToolbarItemIdentifier,
                              XMLToolbarItemIdentifier,
                              TrashToolbarItemIdentifier,
@@ -19691,122 +18625,13 @@ static volatile int numberOfThreadsForJPEG = 0;
     return [self ROIsAndKeyImages: sender sameSeries: nil];
 }
 
-- (IBAction) viewerKeyImagesAndROIsImages:(id) sender
+- (IBAction)viewerKeyImagesAndROIsImages:(id)sender
 {
-    BOOL sameSeries;
-    NSArray *roisImagesArray = [self ROIsAndKeyImages: sender sameSeries: &sameSeries];
-    
-    if( [roisImagesArray count])
-    {
-        
-        NSMutableArray *copySettings = [NSMutableArray array];
-        
-        if( sameSeries == NO)
-        {
-            for( DicomImage *im in roisImagesArray)
-            {
-                NSMutableDictionary *d = [NSMutableDictionary dictionary];
-                
-                [d setObject: im forKey:@"im"];
-                
-                if( [im valueForKeyPath: @"series.windowWidth"])
-                    [d setObject: [im valueForKeyPath: @"series.windowWidth"] forKey:@"windowWidth"];
-                
-                if( [im valueForKeyPath: @"series.windowLevel"])
-                    [d setObject: [im valueForKeyPath: @"series.windowLevel"] forKey:@"windowLevel"];
-                
-                if( [im valueForKeyPath: @"series.rotationAngle"])
-                    [d setObject: [im valueForKeyPath: @"series.rotationAngle"] forKey:@"rotationAngle"];
-                
-                if( [im valueForKeyPath: @"series.yFlipped"])
-                    [d setObject: [im valueForKeyPath: @"series.yFlipped"] forKey:@"yFlipped"];
-                
-                if( [im valueForKeyPath: @"series.xFlipped"])
-                    [d setObject: [im valueForKeyPath: @"series.xFlipped"] forKey:@"xFlipped"];
-                
-                if( [im valueForKeyPath: @"series.xOffset"])
-                    [d setObject: [im valueForKeyPath: @"series.xOffset"] forKey:@"xOffset"];
-                
-                if( [im valueForKeyPath: @"series.yOffset"])
-                    [d setObject: [im valueForKeyPath: @"series.yOffset"] forKey:@"yOffset"];
-                
-                if( [im valueForKeyPath: @"series.displayStyle"])
-                    [d setObject: [im valueForKeyPath: @"series.displayStyle"] forKey:@"displayStyle"];
-                
-                if( [im valueForKeyPath: @"series.scale"])
-                    [d setObject: [im valueForKeyPath: @"series.scale"] forKey:@"scale"];
-                
-                [copySettings addObject: d];
-            }
-        }
-        dontShowOpenSubSeries = YES;
-        ViewerController *v = [self openViewerFromImages: [NSArray arrayWithObject: roisImagesArray] movie: 0 viewer :nil keyImagesOnly:NO];
-        dontShowOpenSubSeries = NO;
-        
-        if( sameSeries == NO)
-        {
-            [[v imageView] setCOPYSETTINGSINSERIES: NO];
-            
-            for( NSDictionary *d in copySettings)
-            {
-                NSManagedObject *im = [d objectForKey: @"im"];
-                
-                if( [im valueForKey: @"windowWidth"])
-                    [im setValue: [d valueForKey: @"windowWidth"] forKey:@"windowWidth"];
-                
-                if( [im valueForKey: @"windowLevel"])
-                    [im setValue: [d valueForKey: @"windowLevel"] forKey:@"windowLevel"];
-                
-                if( [im valueForKey: @"rotationAngle"])
-                    [im setValue: [d valueForKey: @"rotationAngle"] forKey:@"rotationAngle"];
-                
-                if( [im valueForKey: @"yFlipped"])
-                    [im setValue: [d valueForKey: @"yFlipped"] forKey:@"yFlipped"];
-                
-                if( [im valueForKey: @"xFlipped"])
-                    [im setValue: [d valueForKey: @"xFlipped"] forKey:@"xFlipped"];
-                
-                if( [im valueForKey: @"xOffset"])
-                    [im setValue: [d valueForKey: @"xOffset"] forKey:@"xOffset"];
-                
-                if( [im valueForKey: @"yOffset"])
-                    [im setValue: [d valueForKey: @"yOffset"] forKey:@"yOffset"];
-                
-                if( [[d valueForKey: @"displayStyle"] intValue] == 3)
-                    [im setValue: [NSNumber numberWithFloat: [[im valueForKeyPath: @"series.scale"] floatValue] * sqrt( [[v imageView] frame].size.height * [[v imageView] frame].size.width)] forKey:@"scale"];
-                else if( [[d valueForKey: @"displayStyle"] intValue] == 2)
-                    [im setValue: [NSNumber numberWithFloat: [[im valueForKeyPath: @"series.scale"] floatValue] * [[v imageView] frame].size.width] forKey:@"scale"];
-                else
-                {
-                    if( [d valueForKey: @"scale"])
-                        [im setValue: [d valueForKey: @"scale"] forKey:@"scale"];
-                }
-            }
-        }
-        
-        if(	[[NSUserDefaults standardUserDefaults] boolForKey: @"AUTOTILING"])
-            [NSApp sendAction: @selector(tileWindows:) to:nil from: self];
-        else
-            [[AppController sharedAppController] checkAllWindowsAreVisible: self makeKey: YES];
-        
-        BOOL escKey = CGEventSourceKeyState( kCGEventSourceStateCombinedSessionState, 53);
-        
-        if( escKey) //Open the images, and export them
-        {
-            if( [[ViewerController getDisplayed2DViewers] count])
-            {
-                ViewerController *v = [[ViewerController getDisplayed2DViewers] objectAtIndex: 0];
-                
-                [v exportAllImages: @"Key And ROIs images"];
-                
-                [[v window] close];
-            }
-        }
-    }
+    NSArray *images = [self ROIsAndKeyImages:sender];
+    if( [images count])
+        [self openMetalViewerForImages:images];
     else
-    {
-        HorosPresentInformationalAlert(NSLocalizedString(@"ROIs Images", nil), NSLocalizedString(@"No images containing ROIs or Key Images are found in this selection.", nil), NSLocalizedString(@"OK",nil), nil, nil);
-    }
+        HorosPresentInformationalAlert(NSLocalizedString(@"ROIs Images", nil), NSLocalizedString(@"No images containing ROIs or Key Images are found in this selection.", nil), NSLocalizedString(@"OK", nil), nil, nil);
 }
 
 - (NSArray*) ROIImages: (id) sender sameSeries:(BOOL*) sameSeries
@@ -19970,10 +18795,7 @@ static volatile int numberOfThreadsForJPEG = 0;
         if(	[toolbarItem action] == @selector(rebuildThumbnails:) ||
            [toolbarItem action] == @selector(searchForCurrentPatient:) || 
            [toolbarItem action] == @selector(viewerDICOM:) || 
-           [toolbarItem action] == @selector(viewerSubSeriesDICOM:) || 
-           [toolbarItem action] == @selector(viewerReparsedSeries:) ||
            [toolbarItem action] == @selector(MovieViewerDICOM:) || 
-           [toolbarItem action] == @selector(viewerDICOMMergeSelection:) || 
 [toolbarItem action] == @selector(openMetalViewer:) || 
 [toolbarItem action] == @selector(openMetal3DViewer:) || 
            [toolbarItem action] == @selector(revealInFinder:) || 
@@ -19994,9 +18816,7 @@ static volatile int numberOfThreadsForJPEG = 0;
            [toolbarItem action] == @selector(burnDICOM:) || 
            [toolbarItem action] == @selector(viewXML:) || 
            [toolbarItem action] == @selector(anonymizeDICOM:) || 
-           [toolbarItem action] == @selector(applyRoutingRule:) ||
-           [toolbarItem action] == @selector(viewerSubSeriesDICOM:) ||
-           [toolbarItem action] == @selector(viewerReparsedSeries:)
+           [toolbarItem action] == @selector(applyRoutingRule:)
            )
             return NO;
     }
@@ -20025,12 +18845,6 @@ static volatile int numberOfThreadsForJPEG = 0;
             return NO;
         
         return ROIsAndKeyImagesButtonAvailable;
-    }
-    
-    if ([[toolbarItem itemIdentifier] isEqualToString: ViewersToolbarItemIdentifier])
-    {
-        if( [ViewerController numberOf2DViewer] >= 1) return YES;
-        else return NO;
     }
     
     return YES;

@@ -45,10 +45,8 @@
 #import "ROI.h"
 #import "DCMView.h"
 #import "DCMPix.h"
-#import "ITKSegmentation3D.h"
 #import "Notifications.h"
 #import "N2Debug.h"
-#import "ITKBrushROIFilter.h"
 
 #import "DCMUSRegion.h"   // mapping ultrason
 
@@ -1955,16 +1953,6 @@ int spline( NSPoint *Pt, int tot, NSPoint **newPt, long **correspondingSegmentPt
 			[tempArray addObject:tempPoint];
 			[tempPoint release];
 		}
-		
-		return tempArray;
-	}
-	
-	if( type == tPlain)
-	{
-		NSMutableArray  *tempArray = [ITKSegmentation3D extractContour:textureBuffer width:textureWidth height:textureHeight];
-		
-		for( MyPoint *pt in tempArray)
-			[pt move: textureUpLeftCornerX :textureUpLeftCornerY];
 		
 		return tempArray;
 	}

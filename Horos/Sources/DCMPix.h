@@ -62,7 +62,6 @@ extern "C"
 
 
 @class ROI;
-@class ThickSlabController;
 @class DCMObject;
 @class Point3D;
 @class DicomImage;
@@ -176,8 +175,6 @@ extern "C"
     //stack
     short				stack, stackMode, pixPos, stackDirection;
     //thickslab
-    BOOL				thickSlabVRActivated;
-    ThickSlabController *thickSlab;
     
     float				countstackMean;
     float				ww, wl;
@@ -480,7 +477,6 @@ extern "C"
 - (DicomSeries*) seriesObj;
 - (DicomStudy*) studyObj;
 
-- (BOOL) thickSlabVRActivated; /**< Activate Thick Slab VR */
 
 /** convert to Black and White.
  * @param mode values: 0 Use Red Channel, 1 use Green Channel 2 use Blue Channel  3 Merge and use RGB
@@ -673,10 +669,6 @@ extern "C"
 /** Releases the fImage and sets all values to nil. */
 - (void) revert;
 - (void) revert:(BOOL) reloadAnnotations;
-
-/** Sets the ThickSlabController */
-- (void) setThickSlabController:( ThickSlabController*) ts;
-
 
 /** Sets the fixed8bitsWLWW flag */
 - (void) setFixed8bitsWLWW:(BOOL) f;

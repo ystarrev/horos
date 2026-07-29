@@ -38,8 +38,6 @@
  Ê Ê PURPOSE.
  ============================================================================*/
 
-#include "FVTiff.h"
-
 #import "XMLController.h"
 #import "XMLControllerDCMTKCategory.h"
 #import "WaitRendering.h"
@@ -558,10 +556,6 @@ extern int delayedTileWindows;
         xmlDocument = [[dcmDocument xmlDocument] retain];
         
 		isDICOM = YES;
-	}
-	else if([DicomFile isFVTiffFile:srcFile])
-	{
-		xmlDocument = XML_from_FVTiff(srcFile);
 	}
 	else if([DicomFile isNIfTIFile:srcFile])
 	{

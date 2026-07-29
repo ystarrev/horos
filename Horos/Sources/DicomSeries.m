@@ -55,7 +55,6 @@
 #import "XMLControllerDCMTKCategory.h"
 #import "ThreadsManager.h"
 #import "NSThread+N2.h"
-#import "VRController.h"
 #endif
 
 @implementation DicomSeries
@@ -721,24 +720,6 @@
 -(NSString*) uniqueFilename	// Return a 'unique' filename that identify this series
 {
 	return [NSString stringWithFormat:@"%@ %ld", self.seriesInstanceUID, (long) [self.date timeIntervalSinceReferenceDate]];
-}
-
-- (BOOL)validateForDelete:(NSError **)error
-{
-    BOOL delete = [super validateForDelete: error];
-    
-    @synchronized (self)
-    {
-        if (delete)
-        {
-            NSString *vrFile = [VRController getUniqueFilenameScissorStateFor: self];
-            if( vrFile && [[NSFileManager defaultManager] fileExistsAtPath: vrFile])
-                [[NSFileManager defaultManager] removeItemAtPath: vrFile error:NULL];
-
-        }
-    }
-    
-    return delete;
 }
 
 - (NSComparisonResult)compareName:(DicomSeries*)series;

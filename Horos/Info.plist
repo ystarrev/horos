@@ -122,26 +122,6 @@
 		<dict>
 			<key>CFBundleTypeExtensions</key>
 			<array>
-				<string>lsm</string>
-			</array>
-			<key>CFBundleTypeIconFile</key>
-			<string>lsm.icns</string>
-			<key>CFBundleTypeMIMETypes</key>
-			<array>
-				<string>text/lsm</string>
-			</array>
-			<key>CFBundleTypeName</key>
-			<string>OsiriX LSM</string>
-			<key>CFBundleTypeOSTypes</key>
-			<array>
-				<string>lsm </string>
-			</array>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-		</dict>
-		<dict>
-			<key>CFBundleTypeExtensions</key>
-			<array>
 				<string>PIC</string>
 			</array>
 			<key>CFBundleTypeIconFile</key>

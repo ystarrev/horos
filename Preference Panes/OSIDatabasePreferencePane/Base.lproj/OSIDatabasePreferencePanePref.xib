@@ -134,7 +134,7 @@
                                 <button horizontalCompressionResistancePriority="1000" id="626">
                                     <rect key="frame" x="12" y="108" width="371" height="18"/>
                                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                    <buttonCell key="cell" type="check" title="Import DICOM file format only (ignore JPEG, TIFF, LSM, Analyze...)" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="small" scrollable="YES" lineBreakMode="clipping" inset="2" id="757">
+                                    <buttonCell key="cell" type="check" title="Import DICOM files only (ignore JPEG, PNG, PDF, Analyze...)" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="small" scrollable="YES" lineBreakMode="clipping" inset="2" id="757">
                                         <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
                                         <font key="font" metaFont="smallSystem"/>
                                     </buttonCell>

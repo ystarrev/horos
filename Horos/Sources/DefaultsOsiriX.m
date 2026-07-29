@@ -1600,20 +1600,6 @@ static NSHost *currentHost = nil;
 //	
 //	[defaultValues setObject:bodyRegions forKey:@"bodyRegions"];
 	
-	// ITK Segmentation Defaults
-	[defaultValues setObject:[NSNumber numberWithInt:0] forKey:@"growingRegionType"];
-	[defaultValues setObject:[NSNumber numberWithInt:0] forKey:@"growingRegionAlgorithm"];
-    [defaultValues setObject:[NSNumber numberWithBool:YES] forKey:@"previewGrowingRegion"];
-    [defaultValues setObject:[NSNumber numberWithBool:YES] forKey:@"preview3DGrowingRegion"];
-	[defaultValues setObject:[NSNumber numberWithInt:100] forKey:@"growingRegionInterval"];
-	[defaultValues setObject:[NSNumber numberWithInt:0] forKey:@"growingRegionLowerThreshold"];
-	[defaultValues setObject:[NSNumber numberWithInt:100] forKey:@"growingRegionUpperThreshold"];
-	[defaultValues setObject:[NSNumber numberWithInt:2] forKey:@"growingRegionRadius"];
-	[defaultValues setObject:[NSNumber numberWithFloat:2.5] forKey:@"growingRegionMultiplier"];
-	[defaultValues setObject:[NSNumber numberWithInt:5] forKey:@"growingRegionIterations"];
-	[defaultValues setObject:[NSNumber numberWithInt:0] forKey:@"growingRegionROIType"];
-	[defaultValues setObject:[NSNumber numberWithInt:20] forKey:@"growingRegionPointCount"];
-	[defaultValues setObject:NSLocalizedString(@"Growing Region", nil) forKey:@"growingRegionROIName"];
     [defaultValues setObject: @YES forKey: @"defaultShading"];
     [defaultValues setObject: @YES forKey: @"dontDeleteStudiesIfInAlbum"];
 		

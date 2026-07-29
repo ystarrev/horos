@@ -44,7 +44,7 @@
 *
 *  We extend out thanks to other in the open source community.
 *
-*  VTK, ITK, and DCMTK open source projects are extensively used in Horos.
+*  Horos builds on DCMTK and other open source projects.
 *
 *  The OsiriX team.
 */

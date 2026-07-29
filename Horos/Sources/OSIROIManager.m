@@ -44,7 +44,6 @@
 #import "Notifications.h"
 #import "pluginSDKAdditions.h"
 #import "DCMView.h"
-#import "CPRMPRDCMView.h"
 #import "ViewerController.h"
 #import "OSIVolumeWindow+Private.h"
 
@@ -607,7 +606,6 @@ NSString* const OSIROIAddedROIKey = @"OSIROIAddedROIKey";
 }
 
 @end
-
 
 
 

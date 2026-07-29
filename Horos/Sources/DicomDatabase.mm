@@ -3694,11 +3694,7 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                         
                         isDicomFile = [DicomFile isDICOMFile:srcPath compressed: &isJPEGCompressed image: &isImage];
                         
-                        if (isDicomFile == YES ||
-                            (([DicomFile isFVTiffFile:srcPath] ||
-                              [DicomFile isTiffFile:srcPath] ||
-                              [DicomFile isNRRDFile:srcPath])
-                             && [[NSFileManager defaultManager] fileExistsAtPath:dstPath] == NO))
+                        if (isDicomFile == YES)
                         {
                             if (isDicomFile && isImage)
                             {

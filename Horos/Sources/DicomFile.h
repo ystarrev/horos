@@ -70,8 +70,6 @@
 @property (retain) NSString *serieID;
 
 // file functions
-+ (BOOL) isTiffFile:(NSString *) file; /**< Test for TIFF file format */
-+ (BOOL) isFVTiffFile:(NSString *) file; /**< Test for FV TIFF file format */
 + (BOOL) isDICOMFile:(NSString *) file; /**< Test for DICOM file format */
 + (BOOL) isDICOMFile:(NSString *) file compressed:(BOOL*) compressed; /**< Test for DICOM file format, returns YES for compressed BOOL if Transfer syntax is compressed. */
 + (BOOL) isDICOMFile:(NSString *) file compressed:(BOOL*) compressed image:(BOOL*) image;
@@ -117,7 +115,7 @@
 - (NSMutableDictionary *)dicomElements;  
 - (id)elementForKey:(id)key;  /**< Returns the dicomElement for the key */
 /** Parses the fileName to get the Series/Study/Image numbers
-*  Used for files that don't have the information embedded such as TIFFs and jpegs
+*  Used for files that don't have the information embedded such as JPEGs
 *  In these cases the files are sorted based on the file name.
 *  Numbers at the end become the image number. The remainder of the file becomes the Series and Study ID 
 */

@@ -48,20 +48,11 @@
 @class MyPoint;
 @class ROI;
 @class DCMPix;
-@class ThickSlabController;
 @class StudyView;
 @class SeriesView;
 @class ImageView;
-//@class CurvedMPR;
 @class DICOMExport;
 @class KeyObjectPopupController;
-@class VRController;
-@class OrthogonalMPRViewer;
-@class OrthogonalMPRPETCTViewer;
-@class SRController;
-@class EndoscopyViewer;
-@class MPRController;
-@class CPRController;
 @class ViewerController;
 @class ToolbarPanelController;
 
@@ -125,7 +116,6 @@ enum
     IBOutlet NSView         *speedView;
     IBOutlet NSView         *toolsView;
     IBOutlet NSView         *WLWWView;
-    IBOutlet NSView         *ReconstructionView;
 	IBOutlet NSView         *ConvView;
 	IBOutlet NSView         *FusionView;
 	IBOutlet NSView			*BlendingView;
@@ -204,7 +194,6 @@ enum
 	IBOutlet NSWindow       *blendingTypeWindow;
 	IBOutlet NSButton		*blendingTypeMultiply, *blendingTypeSubtract;
 	IBOutlet NSSegmentedControl		*blendingTypeRGB;
-	IBOutlet NSButton		*blendingResample;
 	
 	IBOutlet NSWindow       *roiPropaWindow;
 	IBOutlet NSMatrix		*roiPropaMode, *roiPropaDim, *roiPropaCopy;
@@ -263,7 +252,7 @@ enum
 	IBOutlet NSTextField    *stacksFusion;
 	IBOutlet NSSlider       *sliderFusion;
 	IBOutlet NSButton		*activatedFusion;
-	IBOutlet NSPopUpButton  *popFusion, *popupRoi, *ReconstructionRoi;
+	IBOutlet NSPopUpButton  *popFusion, *popupRoi;
 	
 	IBOutlet NSMatrix		*buttonToolMatrix;
     
@@ -294,8 +283,6 @@ enum
 	
 	NSMutableArray			*ROINamesArray;
 	
-	ThickSlabController		*thickSlab;
-	
 	DICOMExport				*exportDCM;
 	
 	BOOL					windowWillClose;
@@ -304,14 +291,6 @@ enum
 	
 	NSRect					standardRect;
 	
-	// Brush ROI Filter
-	IBOutlet NSWindow		*brushROIFilterOptionsWindow;
-	IBOutlet NSSlider		*structuringElementRadiusSlider;
-	IBOutlet NSTextField	*structuringElementRadiusTextField;
-	IBOutlet NSButton		*brushROIFilterOptionsAllWithSameName;
-	IBOutlet NSButton		*brushROIFilterOptionsOKButton;
-	NSString				*morphoFunction;
-	BOOL					morphoFunctionPreviewApplied;
 	IBOutlet NSPopUpButton	*keyImagePopUpButton;
 	
 	BOOL					displayOnlyKeyImages;
@@ -382,7 +361,6 @@ enum
 @property(readonly) NSButton *blendingTypeMultiply;
 @property(readonly) NSButton *blendingTypeSubtract;
 @property(readonly) NSSegmentedControl *blendingTypeRGB;
-@property(readonly) NSButton *blendingResample;
 @property(readonly) BOOL titledGantry;
 @property(readonly) ToolbarPanelController *toolbarPanel;
 
@@ -563,8 +541,6 @@ enum
 
 + (ToolMode) getToolEquivalentToHotKey:(int) h;
 + (int) getHotKeyEquivalentToTool:(ToolMode) h;
-//- (IBAction) startMSRG:(id) sender;
-//- (IBAction) startMSRGWithAutomaticBounding:(id) sender;
 //arg: this function will automatically scan the buffer to create a textured ROI (tPlain) for all slices
 // param forValue: this param defines the region to extract in the stack buffer
 - (void)addRoiFromFullStackBuffer:(unsigned char*)buff forSpecificValue:(unsigned char)value withColor:(RGBColor)aColor;
@@ -595,8 +571,6 @@ enum
 - (BOOL) updateTilingViewsValue;
 - (void) setUpdateTilingViewsValue:(BOOL) v;
 - (IBAction) ConvertToBWMenu:(id) sender;
-- (NSScreen*) get3DViewerScreen: (ViewerController*) v;
-- (void) place3DViewerWindow:(NSWindowController*) viewer;
 - (IBAction) export2PACS:(id) sender;
 - (void) print:(id) sender;
 - (IBAction) roiDeleteWithName:(NSString*) name;
@@ -745,9 +719,6 @@ enum
 - (void) SetThicknessInterval:(id) constructionType;
 - (IBAction) blendWindows:(id) sender;
 
-/** Action to open the OrthogonalMPRViewer */
-- (IBAction) orthogonalMPRViewer:(id) sender;
-
 - (void) showCurrentThumbnail:(id) sender;
 
 /** ReSort the images displayed according to IMAGE Table field */
@@ -756,25 +727,14 @@ enum
 /** ReSort the images displayed according to this group/element */
 - (BOOL) sortSeriesByDICOMGroup: (int) gr element: (int) el;
 
-/** Action to open the EndoscopyViewer */
-- (IBAction) endoscopyViewer:(id) sender;
-
-/** Action to open VRViewer (Volume Rendering) */
-- (IBAction) VRViewer:(id) sender;
-
-/** Action to open SRViewer (Surface Rendering) */
-- (IBAction) SRViewer:(id) sender;
-
 /** Action to export as JPEG */
 - (void) exportJPEG:(id) sender;
 
 /** Notification to close all windows */
 - (NSMutableArray*) generateROINamesArray;
-- (ThickSlabController*) thickSlabController;
 - (IBAction) AddOpacity:(id) sender;
 - (IBAction) endOpacity:(id) sender;
 - (IBAction) updateImage:(id) sender;
-//- (IBAction) HuVRViewer:(id) sender;
 - (IBAction) clutAction:(id)sender;
 - (void) tileWindows;
 -(IBAction) export2iPhoto:(id) sender;
@@ -787,10 +747,6 @@ enum
 - (IBAction) setStatus:(id) sender;
 - (IBAction) endSetComments:(id) sender;
 - (void) setMovieIndex: (short) i;
-//- (void) setCurvedController: (CurvedMPR*) cmpr;
-//- (CurvedMPR*) curvedController;
-//- (IBAction) setCurvedMPRslider:(id) sender;
-//- (IBAction) endCurvedMPR:(id) sender;
 - (IBAction) resetImage:(id) sender;
 + (NSArray*) defaultROINames;
 + (void) setDefaultROINames: (NSArray*) names;
@@ -846,7 +802,6 @@ enum
 - (void) setFusionMode:(long) m;
 - (short) curMovieIndex;
 //- (id) findiChatButton;
-- (IBAction) Panel3D:(id) sender;
 - (void) convertPETtoSUV;
 - (IBAction) fullScreenMenu:(id) sender;
 - (int) imageIndexOfROI:(ROI*) c;
@@ -889,34 +844,8 @@ enum
 - (NSScrollView*) previewMatrixScrollView;
 - (NSView*) previewRootView;
 
-#pragma mark-
-#pragma mark Brush ROI Filters
-
-/** Applies the selected Brush ROI morpho filter
-* @param  rois  ROI array to filter
-* @param action The filter to apply: Possible values are: open, close, erode, dilate
-* @param radius structuringElementRadius for the filter
-* @param sendNotification Will post an OsirixROIChangeNotification notification if YES
-*/
-- (void) applyMorphology: (NSArray*) rois action:(NSString*) action	radius: (long) radius sendNotification: (BOOL) sendNotification;
-
-/** Set the structuring radius for the brush ROI morpho filter */
-- (IBAction) setStructuringElementRadius: (id) sender;
-
-
-/** Action to start filter for the selected brush ROI using the filter selected with
-- (IBAction) morphoSelectedBrushROI: (id) sender
-*  Filters are: erode, dilate, open, close 
-*/
-- (IBAction) morphoSelectedBrushROIWithRadius: (id) sender;
-
-/** Select filter for the selected brush ROI 
-*  Filters are: erode, dilate, open, close 
-*/
-- (IBAction) morphoSelectedBrushROI: (id) sender;
-
-/** Create a new ROI between two ROI
-* Converts both ROIs into polygons, after a marching square isocontour
+/** Create a new ROI between two polygon ROIs
+* Resamples both polygons to the same number of points
 * @param a First ROI
 * @param b Second ROI
 * @param ratio Weighting used to morph between the two
@@ -927,34 +856,6 @@ enum
 * @param selectedROI The ROI to convert
 */
 - (ROI*) convertPolygonROItoBrush:(ROI*) selectedROI;
-
-/** Convert Brush ROI to a Polygon ROI. Returns converted ROI
-* @param selectedROI The ROI to convert
-* @param numPoints Number of points for the polygon
-*/
-- (ROI*) convertBrushROItoPolygon:(ROI*) selectedROI numPoints: (int) numPoints;
-
-#pragma mark-
-#pragma mark Registration
-
-/** Returns an NSArray of all t2DPoint type ROI*/
-- (NSMutableArray*) point2DList;
-
-
-/** Computes registration between the current Viewer and another ViewerController
-*  A HornRegistatration is first performed
-*  ITKTransform is used for the transform.
-*  At least three t2DPoint type ROI to compute
-*  Each point on the moving viewer needs a twin on the fixed viewer.
-*  Two points are twin brothers if and only if they have the same name.
-*/
-- (void) computeRegistrationWithMovingViewer:(ViewerController*) movingViewer;
-
-/** Returns a new viewer with the current series resampled to match the Orientation of series in the other viewer
-*  Both series must be from the same study to insure matching imageOrientationPatient and imagePositionPatient
-*  @param movingViewer  The ViewerController to resample the series to match
-*/
-- (ViewerController*) resampleSeries:(ViewerController*) movingViewer;
 
 #pragma mark-
 #pragma mark Key Objects
@@ -1022,33 +923,6 @@ enum
 // Opening 3D Viewers
 #pragma mark-
 #pragma mark 3D Viewers
-/** Returns the OrthogonalMPRViewer for this ViewerController; creating one if necessary */
-- (OrthogonalMPRViewer *)openOrthogonalMPRViewer;
-
-
-/** Returns the VRController for this ViewerController; creating one if necessary
-* See VRController for modes
- */
-- (VRController *)openVRViewerForMode:(NSString *)mode;
-
-/** Returns the OrthogonalMPRPETCTViewer for this ViewerController; creating one if necessary */
-- (OrthogonalMPRPETCTViewer *)openOrthogonalMPRPETCTViewer;
-
-/** Returns the EndoscopyViewer for this ViewerController; creating one if necessary */
-- (EndoscopyViewer *)openEndoscopyViewer;
-
-/** Returns the SRController for this ViewerController; creating one if necessary */
-- (SRController *)openSRViewer;
-
-/** Returns the MPRController for this ViewerController; creating one if necessary */
-
-- (MPRController *)openMPRViewer;
-- (IBAction)mprViewer:(id)sender;
-
-/** Action to open the CPRViewer */
-- (id)openCPRViewer;
-- (IBAction)cprViewer:(id)sender;
-
 /** Current SeriesView */
 - (SeriesView *) seriesView;
 

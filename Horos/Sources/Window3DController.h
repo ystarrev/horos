@@ -46,10 +46,8 @@
 #import "OSIWindowController.h"
 
 
-@class ROIVolume;
 @class ViewerController;
 @class DCMPix;
-@class VTKView;
 
 
 /** \brief Base Window Controller for 3D viewers */
@@ -136,6 +134,4 @@
 - (void) load3DState;
 
 - (NSArray*) roiVolumes;
-- (void) hideROIVolume: (ROIVolume*) v;
-- (void) displayROIVolume: (ROIVolume*) v;
 @end

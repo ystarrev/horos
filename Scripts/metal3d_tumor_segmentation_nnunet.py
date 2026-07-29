@@ -26,7 +26,6 @@ def ensure_scientific_python() -> None:
         clean_environment["PYTHONPATH"] = ":".join([
             "/opt/homebrew/lib/python3.13/site-packages",
             "/Users/ystarrev/Development/ToolCursorbin/lib/python3.13/site-packages",
-            "/Users/ystarrev/Development/vtkbin/lib/python3.13/site-packages",
         ])
         clean_environment["HOROS_TUMOR_SEGMENTATION_BOOTSTRAPPED"] = "1"
         os.execve(str(preferred_python), [str(preferred_python)] + sys.argv, clean_environment)

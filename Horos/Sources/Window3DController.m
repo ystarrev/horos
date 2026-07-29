@@ -42,9 +42,7 @@
 #import "Mailer.h"
 #import <Accelerate/Accelerate.h>
 #import "DCMPix.h"
-#import "VRController.h"
 #import "printView.h"
-#import "VRView.h"
 #import "Notifications.h"
 #import "NSUserDefaultsController+OsiriX.h"
 #import "DicomDatabase.h"
@@ -56,35 +54,6 @@
 @end
 
 @implementation Window3DController
-
-- (void) mprViewer:(id) sender
-{
-	[[self viewer] mprViewer: sender];
-}
-
-- (void) cprViewer:(id) sender
-{
-	[[self viewer] cprViewer: sender];
-}
-
-- (void) endoscopyViewer:(id) sender
-{
-	[[self viewer] endoscopyViewer: sender];
-}
-
-- (void) VRViewer:(id) sender
-{
-	[[self viewer] VRViewer: sender];
-}
-
-- (void) SRViewer:(id) sender
-{
-	[[self viewer] SRViewer: sender];
-}
-- (void) orthogonalMPRViewer:(id) sender
-{
-	[[self viewer] orthogonalMPRViewer: sender];
-}
 
 - (ViewerController*) viewer
 {
@@ -200,7 +169,7 @@
 	[[NSFileManager defaultManager] createDirectoryAtPath:tmpFolder withIntermediateDirectories:YES attributes:nil error:NULL];
 
 	NSImage *im = ( [[self view] respondsToSelector: @selector(nsimageQuicktime:)] ) ?
-		[(VRView*) [self view] nsimageQuicktime] : nil;
+		[(id) [self view] nsimageQuicktime] : nil;
 	
 	NSData *imageData = [im  TIFFRepresentation];
 	NSBitmapImageRep *imageRep = [NSBitmapImageRep imageRepWithData:imageData];
@@ -291,18 +260,6 @@
 	[curOpacityMenu release];
 	
 	[super dealloc];
-}
-
-- (void) hideROIVolume: (ROIVolume*) v
-{
-// Override
-	NSLog(@"Error: inherited [Window3DController hideROIVolume] should not be called");
-}
-
-- (void) displayROIVolume: (ROIVolume*) v
-{
-// Override
-	NSLog(@"Error: inherited [Window3DController displayROIVolume] should not be called");
 }
 
 - (NSArray*) roiVolumes

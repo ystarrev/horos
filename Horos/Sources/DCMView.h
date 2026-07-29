@@ -114,7 +114,6 @@ typedef enum {DCMViewTextAlignLeft, DCMViewTextAlignCenter, DCMViewTextAlignRigh
 @class DCMPix;
 @class DCMView;
 @class ROI;
-@class OrthogonalMPRController;
 @class DICOMExport;
 @class DicomImage, DicomSeries, DicomStudy;
 @class DCMObject;
@@ -509,7 +508,6 @@ typedef enum {DCMViewTextAlignLeft, DCMViewTextAlignCenter, DCMViewTextAlignRigh
 - (ToolMode) getTool: (NSEvent*) event;
 - (void)resizeWindowToScale:(float)resizeScale;
 - (float) getBlendedSUV;
-- (OrthogonalMPRController*) controller;
 - (void) roiChange:(NSNotification*)note;
 - (void) roiSelected:(NSNotification*) note;
 - (void) magnifyWithEvent:(NSEvent *)anEvent;

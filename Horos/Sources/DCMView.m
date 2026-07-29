@@ -49,14 +49,8 @@
 #import "DICOMExport.h"
 #import "SeriesView.h"
 #import "ViewerController.h"
-#import "ThickSlabController.h"
 #import "BrowserController.h"
 #import "AppController.h"
-#import "MPR2DController.h"
-#import "MPR2DView.h"
-#import "OrthogonalMPRController.h"
-#import "OrthogonalMPRView.h"
-#import "OrthogonalMPRPETCTView.h"
 #import "ROIWindow.h"
 #import "ToolbarPanel.h"
 #import "ThumbnailsListPanel.h"
@@ -1231,11 +1225,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             [self setNeedsDisplay: YES];
         }
     }
-}
-
--(OrthogonalMPRController*) controller
-{
-    return nil;	// Only defined in herited classes
 }
 
 - (void) stopROIEditingForce:(BOOL) force
@@ -3350,7 +3339,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             {
                 if( [self is2DViewer] == YES)
                 {
-                    [[[self windowController] thickSlabController] setLowQuality: NO];
                     [self reapplyWindowLevel];
                     [self loadTextures];
                     [self setNeedsDisplay:YES];
@@ -3565,7 +3553,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 sy = 0;
             }
             
-            if (self.curDCM.isRGB == YES || [self.curDCM thickSlabVRActivated] == YES || self.curDCM.isLUT12Bit == YES || (colorTransfer == YES))
+            if (self.curDCM.isRGB == YES || self.curDCM.isLUT12Bit == YES || (colorTransfer == YES))
             {
                 for( int y = sy ; y < sy+ey ; y++)
                 {
@@ -5579,11 +5567,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     
     if( WWAdapter < 0.001 * self.curDCM.slope) WWAdapter = 0.001 * self.curDCM.slope;
     
-    if( [self is2DViewer] == YES)
-    {
-        [[[self windowController] thickSlabController] setLowQuality: YES];
-    }
-    
     if( [[[[blendingView dcmFilesList] objectAtIndex:0] valueForKey:@"modality"] isEqualToString:@"PT"] || ([[NSUserDefaults standardUserDefaults] boolForKey:@"mouseWindowingNM"] == YES && [[[[blendingView dcmFilesList] objectAtIndex:0] valueForKey:@"modality"] isEqualToString:@"NM"]))
     {
         float startlevel;
@@ -5652,11 +5635,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         float WWAdapter = startWW / 80.00;
         
         if( WWAdapter < 0.001 * self.curDCM.slope) WWAdapter = 0.001 * self.curDCM.slope;
-        
-        if( [self is2DViewer] == YES)
-        {
-            [[[self windowController] thickSlabController] setLowQuality: YES];
-        }
         
         if( [[[dcmFilesList objectAtIndex: curImage] valueForKey:@"modality"] isEqualToString:@"PT"] || ([[NSUserDefaults standardUserDefaults] boolForKey:@"mouseWindowingNM"] == YES && [[[dcmFilesList objectAtIndex: curImage] valueForKey:@"modality"] isEqualToString:@"NM"]))
         {
@@ -10410,10 +10388,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     if( isSigned) *isSigned = NO;
     if( offset) *offset = 0;
     
-    if(
-       [self class] == [OrthogonalMPRPETCTView class] ||
-       [self class] == [OrthogonalMPRView class]) allowSmartCropping = NO;	// <- MPR 2D, Ortho MPR
-    
     if( screenCapture)	// Pixels displayed in current window
     {
         for( ROI *r in curRoiList)	[r setROIMode: ROI_sleep];
@@ -10667,13 +10641,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             
             *width = dcm.pwidth;
             *height = dcm.pheight;
-            
-            if( [dcm thickSlabVRActivated])
-            {
-                force8bits = YES;
-                
-                if( dcm.stackMode == 4 || dcm.stackMode == 5) isRGB = YES;
-            }
             
             if( isRGB == YES)
             {
@@ -11781,12 +11748,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     if( [self.curDCM transferFunctionPtr])
         intFULL32BITPIPELINE = NO;
     
-    if( [self.curDCM stack] > 1)
-    {
-        if( self.curDCM.stackMode == 4 || self.curDCM.stackMode == 5)
-            intFULL32BITPIPELINE = NO;
-    }
-    
     if( self.curDCM.isLUT12Bit) isRGB = YES;
     
     if( isRGB)
@@ -11934,7 +11895,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
         if( modifiedSourceImage == YES)
             TextureComputed32bitPipeline = NO;
         
-        if( (isRGB == YES) || ([self.curDCM thickSlabVRActivated] == YES))
+        if( isRGB == YES)
         {
             src.rowBytes = self.curDCM.pwidth*4;
             src.data = self.curDCM.baseAddr;
@@ -11989,7 +11950,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             baseAddr = *rAddr;
             dst.data = baseAddr;
             
-            if( (localColorTransfer == YES) || (blending == YES) || (isRGB == YES) || ([self.curDCM thickSlabVRActivated] == YES))
+            if( (localColorTransfer == YES) || (blending == YES) || (isRGB == YES))
                 vImageScale_ARGB8888( &src, &dst, nil, QUALITY);	
             else
             {
@@ -12028,7 +11989,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
     }
     else
     {
-        if( isRGB == YES || [self.curDCM thickSlabVRActivated] == YES)
+        if( isRGB == YES)
         {
             *tW = self.curDCM.pwidth;
             rowBytes = self.curDCM.pwidth*4;
@@ -12083,7 +12044,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
             {
                 unsigned char *pBuffer;
                 
-                if( isRGB == YES || [self.curDCM thickSlabVRActivated] == YES)
+                if( isRGB == YES)
                 {
                     pBuffer =   (unsigned char*) baseAddr +
                     offsetY * rowBytes +
@@ -12130,7 +12091,6 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 
                 if (f_arb_texture_rectangle && f_ext_texture_rectangle)
                 {
-                    //					if( *tW >= 1024 && *tH >= 1024 || [self class] == [OrthogonalMPRPETCTView class] || [self class] == [OrthogonalMPRView class])
                     {
                         glTexParameteri (TEXTRECTMODE, GL_TEXTURE_STORAGE_HINT_APPLE, GL_STORAGE_CACHED_APPLE);		//<- this produce 'artefacts' when changing WL&WW for small matrix in RGB images... if	GL_UNPACK_CLIENT_STORAGE_APPLE is set to 1
                     }
@@ -12155,7 +12115,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                 {
                     if( intFULL32BITPIPELINE )
                     {					
-                        if( isRGB == YES || [self.curDCM thickSlabVRActivated] == YES) glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, currWidth, currHeight, 0, GL_BGRA_EXT, GL_UNSIGNED_INT_8_8_8_8, pBuffer);
+                        if( isRGB == YES) glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, currWidth, currHeight, 0, GL_BGRA_EXT, GL_UNSIGNED_INT_8_8_8_8, pBuffer);
                         else if( (localColorTransfer == YES) || (blending == YES)) glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, currWidth, currHeight, 0, GL_BGRA_EXT, GL_UNSIGNED_INT_8_8_8_8, pBuffer);
                         else
                         {
@@ -12180,7 +12140,7 @@ NSInteger studyCompare(ViewerController *v1, ViewerController *v2, void *context
                     }
                     else
                     {
-                        if( isRGB == YES || [self.curDCM thickSlabVRActivated] == YES) glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, currWidth, currHeight, 0, GL_BGRA_EXT, GL_UNSIGNED_INT_8_8_8_8, pBuffer);
+                        if( isRGB == YES) glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, currWidth, currHeight, 0, GL_BGRA_EXT, GL_UNSIGNED_INT_8_8_8_8, pBuffer);
                         else if( (localColorTransfer == YES) || (blending == YES)) glTexImage2D (TEXTRECTMODE, 0, GL_RGBA, currWidth, currHeight, 0, GL_BGRA_EXT, GL_UNSIGNED_INT_8_8_8_8, pBuffer);
                         else glTexImage2D (TEXTRECTMODE, 0, GL_INTENSITY8, currWidth, currHeight, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, pBuffer);
                     }

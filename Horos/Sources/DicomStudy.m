@@ -52,7 +52,6 @@
 #ifdef OSIRIX_VIEWER
 #import "DCMView.h"
 #import "DCMPix.h"
-#import "VRController.h"
 #import "BrowserController.h"
 #import "BonjourBrowser.h"
 #import "DicomFileDCMTKCategory.h"

@@ -1142,20 +1142,6 @@ static float deg2rad = M_PI / 180.0f;
 //						if( [seriesNumber intValue] == -1)
 //							seriesNumber = [dcmObject attributeValueWithName:@"SeriesNumber"];
 //					}
-//					else if ([DicomFile isFVTiffFile:dcmSourcePath])
-//					{
-//						DicomFile* FVfile = [[DicomFile alloc] init:dcmSourcePath];
-//
-//						patientName = [FVfile elementForKey:@"patientName"]; 
-//						patientID = [FVfile elementForKey:@"patientID"];
-//						studyDescription = @"DICOM from FV300";
-//						studyUID = [FVfile elementForKey:@"studyID"];
-//						studyID = [FVfile elementForKey:@"studyID"];
-//						studyDate = [DCMCalendarDate date];
-//						studyTime = [DCMCalendarDate date];
-//						
-//						[FVfile release];
-//					}
 //				}
 //				else
 //				{

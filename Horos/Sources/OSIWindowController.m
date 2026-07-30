@@ -37,9 +37,6 @@
 
 #import "OSIWindowController.h"
 #import "ToolbarPanel.h"
-#import "ThumbnailsListPanel.h"
-#import "NavigatorView.h"
-#import "NavigatorWindowController.h"
 #import "AppController.h"
 #import "ViewerController.h"
 #import "BrowserController.h"
@@ -191,7 +188,6 @@ static BOOL protectedReentryWindowDidResize = NO;
 				{
 					NSRect frame = [AppController usefullRectForScreen: [[self window] screen]];
                     
-					frame = [NavigatorView adjustIfScreenAreaIf4DNavigator: frame];
 					[rects addObject: [NSValue valueWithRect: frame]];
 				}
 				
@@ -242,15 +238,6 @@ static BOOL protectedReentryWindowDidResize = NO;
 				dontEnterMagneticFunctions = NO;
 			}
 			
-			if( [self isKindOfClass: [ViewerController class]])
-			{
-				if( [aNotification object] == [self window])
-				{
-                    ViewerController *vv = (ViewerController*) self;
-					[vv showCurrentThumbnail: self];
-				}
-			}
-			
 			if ([[NSApp currentEvent] modifierFlags] & NSEventModifierFlagShift)
 			{
 				// Apply the same size to all displayed windows
@@ -291,28 +278,13 @@ static BOOL protectedReentryWindowDidResize = NO;
 			if( dstFrame.size.width < [[self window] contentMinSize].width) dstFrame.size.width = [[self window] contentMinSize].width;
 			
 			
-			dstFrame = [NavigatorView adjustIfScreenAreaIf4DNavigator: dstFrame];
-			
 			if( NSEqualRects( dstFrame, [[self window] frame]) == NO)
 				[[self window] setFrame: dstFrame display:YES];
 		}
 		
-        if( [[NSUserDefaults standardUserDefaults] boolForKey: @"UseFloatingThumbnailsList"] == NO)
-        {
-            if( [self isKindOfClass: [ViewerController class]])
-                [(ViewerController*)self showCurrentThumbnail: self];
-        }
 	}
 	
 	protectedReentryWindowDidResize = NO;
-}
-
-- (void) autoHideMatrix
-{
-}
-
-- (void) syncThumbnails
-{
 }
 
 - (void) refreshToolbar
@@ -398,8 +370,6 @@ static BOOL protectedReentryWindowDidResize = NO;
 			{
 				NSRect frame = [AppController usefullRectForScreen: [[self window] screen]];
                 
-				frame = [NavigatorView adjustIfScreenAreaIf4DNavigator: frame];
-				
 				[rects addObject: [NSValue valueWithRect: frame]];
 			}
 			
@@ -460,7 +430,7 @@ static BOOL protectedReentryWindowDidResize = NO;
 			dontEnterMagneticFunctions = NO;
 			
 			if( [self isKindOfClass: [ViewerController class]])
-				[(ViewerController*) self updateNavigator];
+				[(ViewerController*) self updateThreeDPositionController];
 			
 			// Is the Origin identical? If yes, switch both windows
 			e = [[NSApp windows] objectEnumerator];

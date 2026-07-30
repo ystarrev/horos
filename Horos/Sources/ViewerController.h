@@ -40,7 +40,7 @@
 #import <Cocoa/Cocoa.h>
 #import <AppKit/AppKit.h>
 
-#import "DCMView.h" // added for ToolMode enum
+#import "HorosToolMode.h"
 
 @class DCMView;
 @class OpacityTransferView;
@@ -74,7 +74,7 @@ enum
 
 /** \brief Window Controller for 2D Viewer*/
 
-@interface ViewerController : OSIWindowController  <NSWindowDelegate, NSSplitViewDelegate, NSToolbarDelegate, NSMenuItemValidation, NSToolbarItemValidation>
+@interface ViewerController : OSIWindowController  <NSWindowDelegate, NSToolbarDelegate, NSMenuItemValidation, NSToolbarItemValidation>
 {
 	NSRecursiveLock	*roiLock;
 	NSConditionLock *flipDataThread, *convThread;
@@ -85,17 +85,9 @@ enum
 	IBOutlet StudyView		*studyView;
 			SeriesView		*seriesView;
 
-	IBOutlet NSMatrix		*previewMatrix;
-	IBOutlet NSScrollView	*previewMatrixScrollView;
-    IBOutlet NSView         *previewRootView;
-    
-	BOOL					matrixPreviewBuilt;
 	float					highLighted;
 	NSTimer					*highLightedTimer;
     
-    IBOutlet NSSplitView    *splitView;
-    BOOL                    splitViewAllocated;
-	
     IBOutlet NSWindow       *quicktimeWindow;
 	IBOutlet NSMatrix		*quicktimeMode;
 	IBOutlet NSSlider		*quicktimeInterval, *quicktimeFrom, *quicktimeTo;
@@ -256,8 +248,6 @@ enum
 	
 	IBOutlet NSMatrix		*buttonToolMatrix;
     
-    // Compatatives GUI
-    IBOutlet NSButton*      comparativesButton;
     NSNumber* flagListPODComparatives;
 	
 	NSMutableArray			*fileList[ MAX4D];
@@ -272,7 +262,7 @@ enum
 	
 	float					factorPET2SUV;
 	
-    BOOL                    FullScreenOn, SavedUseFloatingThumbnailsList;
+    BOOL                    FullScreenOn;
     NSWindow                *FullScreenWindow;
     NSWindow                *StartingWindow;
     NSView                  *contentView;
@@ -428,6 +418,9 @@ enum
 
 /** Refresh the current displayed image */
 - (void) needsDisplayUpdate;
+
+/** Legacy main-menu selector retained while WL/WW menus are routed to Metal viewers. */
+- (IBAction)ApplyWLWW:(id)sender;
 
 /** Return the memory pointer that contains the ENTIRE series (a unique memory block for all images)  */
 - (float*) volumePtr;
@@ -607,8 +600,6 @@ enum
 - (IBAction) reSyncOrigin:(id) sender;
 - (void) loadROI:(long) mIndex;
 - (void) saveROI:(long) mIndex;
-- (void) setMatrixVisible: (BOOL) visible;
-- (BOOL) matrixIsVisible;
 - (id) findPlayStopButton;
 - (IBAction)setKeyImage:(id)sender;
 - (IBAction) roiSelectDeselectAll:(id) sender;
@@ -654,8 +645,6 @@ enum
 - (void) setCurWLWWMenu:(NSString*)s ;
 - (float) highLighted;
 - (void) setHighLighted: (float) b;
-- (void) syncThumbnails;
-- (void) checkBuiltMatrixPreview;
 - (void)comparativeRefresh:(NSString*) patientUID;
 
 /** Used to determine in the Window Controller is a 2D Viewer.
@@ -719,8 +708,6 @@ enum
 - (void) SetThicknessInterval:(id) constructionType;
 - (IBAction) blendWindows:(id) sender;
 
-- (void) showCurrentThumbnail:(id) sender;
-
 /** ReSort the images displayed according to IMAGE Table field */
 - (BOOL) sortSeriesByValue: (NSString*) key ascending: (BOOL) ascending;
 
@@ -763,10 +750,6 @@ enum
 - (IBAction) endSaveWindowsStateAsDICOMSR:(id) sender;
 - (IBAction) loadWindowsState:(id) sender;
 - (IBAction) resetWindowsState:(id) sender;
-- (void) buildMatrixPreview;
-- (void) buildMatrixPreview: (BOOL) showSelected;
-- (void) matrixPreviewSelectCurrentSeries;
-- (void) autoHideMatrix;
 - (void) exportQuicktimeIn:(long) dimension :(long) from :(long) to :(long) interval;
 - (void) exportQuicktimeIn:(long) dimension :(long) from :(long) to :(long) interval :(BOOL) allViewers;
 - (void) exportQuicktimeIn:(long) dimension :(long) from :(long) to :(long) interval :(BOOL) allViewers mode:(NSString*) mode;
@@ -825,7 +808,6 @@ enum
 - (void) setWindowTitle:(id) sender;
 - (IBAction) printSlider:(id) sender;
 - (void) setConv:(float*) matrix :(short) size :(float) norm;
-- (BOOL) checkFrameSize;
 - (IBAction) vertFlipDataSet:(id) sender;
 - (IBAction) horzFlipDataSet:(id) sender;
 - (void) rotateDataSet:(int) constant;
@@ -841,8 +823,6 @@ enum
 - (void)deselectAllROIs;
 - (void) refreshToolbar;
 - (void) redrawToolbar;
-- (NSScrollView*) previewMatrixScrollView;
-- (NSView*) previewRootView;
 
 /** Create a new ROI between two polygon ROIs
 * Resamples both polygons to the same number of points
@@ -973,17 +953,8 @@ enum
 #pragma mark 12 Bit
 - (IBAction)enable12Bit:(id)sender;
 
-#pragma mark-
-#pragma mark Navigator
-- (IBAction)navigator:(id)sender;
-- (void)updateNavigator;
-
+- (void)updateThreeDPositionController;
 - (IBAction)threeDPanel:(id)sender;
-
-#pragma mark-
-
-- (IBAction)toggleComparativesVisibility:(id)sender;
-- (void) matrixPreviewPressed:(id) sender;
 
 @end
 

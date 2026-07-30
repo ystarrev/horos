@@ -57,7 +57,6 @@
 #import "ThreadsManager.h"
 #import "NSThread+N2.h"
 #import "PieChartImage.h"
-#import "OpenGLScreenReader.h"
 #import "Notifications.h"
 #import "NSUserDefaults+OsiriX.h"
 #import "N2Debug.h"

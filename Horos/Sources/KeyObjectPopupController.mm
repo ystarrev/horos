@@ -100,7 +100,6 @@
 		NSArray *references = [[_reports objectAtIndex:index] referencedObjects];
 
 		NSPredicate *predicate = [NSPredicate predicateWithValue:NO];
-		NSArray *imagesArray = nil;
 		NSEnumerator *enumerator = [references objectEnumerator];
 		id reference;
 		while (reference = [enumerator nextObject])
@@ -111,8 +110,9 @@
 		}
 		NSPredicate		*notNilPredicate = [NSPredicate predicateWithFormat:@"compressedSopInstanceUID != NIL"];
 		imageInSeries = [imageInSeries filteredArrayUsingPredicate: notNilPredicate];
-		imagesArray = [[imageInSeries filteredArrayUsingPredicate: predicate] retain];
-		[[BrowserController currentBrowser] openViewerFromImages:[NSArray arrayWithObject: imagesArray] movie:NO viewer :_viewerController keyImagesOnly:NO];
+		NSArray *imagesArray = [imageInSeries filteredArrayUsingPredicate: predicate];
+		[[BrowserController currentBrowser] openMetalViewerForImages:imagesArray];
+		[[_viewerController window] performClose:self];
 	}
 	
 }

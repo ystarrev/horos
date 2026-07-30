@@ -38,11 +38,8 @@
 #import "AYNSImageToDicom.h"
 #import "DICOMExport.h"
 #import "OSIWindow.h"
-#import "NSFont_OpenGL.h"
 #import "Notifications.h"
 #import "SeriesView.h"
-
-extern BOOL FULL32BITPIPELINE;
 
 @interface AYNSImageToDicom (private)
 - (NSString *) _createDicomImageWithViewer: (ViewerController *) viewer toDestinationPath: (NSString *) destPath asColorPrint: (BOOL) colorPrint withAnnotations: (BOOL) annotations;
@@ -250,10 +247,6 @@ extern BOOL FULL32BITPIPELINE;
 	if( previousRows != 1 || previousColumns != 1)
 		[currentViewer setImageRows: 1 columns: 1];
 	
-	BOOL copyFULL32BITPIPELINE = FULL32BITPIPELINE;
-	
-    FULL32BITPIPELINE = NO;
-    
 	for(NSNumber *imageIndex in fileList)
 	{
 		NSAutoreleasePool	*pool = [[NSAutoreleasePool alloc] init];
@@ -292,7 +285,6 @@ extern BOOL FULL32BITPIPELINE;
 		if( fontSizeCopy * inc * scaleFactor * 1.2 != [[NSUserDefaults standardUserDefaults] floatForKey: @"FONTSIZE"])
 		{
 			[[NSUserDefaults standardUserDefaults] setFloat: fontSizeCopy * inc * scaleFactor * 1.2 forKey: @"FONTSIZE"];
-			[NSFont resetFont: 0];
 			[[NSNotificationCenter defaultCenter] postNotificationName: OsirixGLFontChangeNotification object: currentViewer];
 		}
 		
@@ -304,8 +296,6 @@ extern BOOL FULL32BITPIPELINE;
 		[pool release];
 	}
 	
-	FULL32BITPIPELINE = copyFULL32BITPIPELINE;
-	
 	/////// ****************
 	
 	[[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"allowSmartCropping"];
@@ -313,7 +303,6 @@ extern BOOL FULL32BITPIPELINE;
 	if( fontSizeCopy != [[NSUserDefaults standardUserDefaults] floatForKey: @"FONTSIZE"])
 	{
 		[[NSUserDefaults standardUserDefaults] setFloat: fontSizeCopy forKey: @"FONTSIZE"];
-		[NSFont resetFont: 0];
 		[[NSNotificationCenter defaultCenter] postNotificationName:OsirixGLFontChangeNotification object: currentViewer];
 	}
 	

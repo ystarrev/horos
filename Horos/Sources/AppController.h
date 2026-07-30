@@ -99,7 +99,7 @@ extern "C"
 *
 */
 
-@class AppController, ToolbarPanelController, ThumbnailsListPanel, BonjourPublisher;
+@class AppController, ToolbarPanelController, BonjourPublisher;
 
 extern AppController* OsiriX;
 
@@ -150,7 +150,6 @@ extern AppController* OsiriX;
 #endif
 + (AppController*) sharedAppController; /**< Return the shared AppController instance */
 + (void) resizeWindowWithAnimation:(NSWindow*) window newSize: (NSRect) newWindowFrame;
-+ (ThumbnailsListPanel*)thumbnailsListPanelForScreen:(NSScreen*)screen;
 + (NSString*)printStackTrace:(NSException*)e __deprecated; // use -[NSException printStackTrace] from NSException+N2
 
 #pragma mark-
@@ -182,7 +181,7 @@ extern AppController* OsiriX;
 - (void) initTilingWindows;
 - (IBAction) tileWindows:(id)sender;  /**< Tile open window */
 - (IBAction) tile3DWindows:(id)sender; /**< Tile 3D open window */
-- (void) tileWindows:(id)sender windows: (NSMutableArray*) viewersList display2DViewerToolbar: (BOOL) display2DViewerToolbar displayThumbnailsList: (BOOL) displayThumbnailsList;
+- (void) tileWindows:(id)sender windows: (NSMutableArray*) viewersList display2DViewerToolbar: (BOOL) display2DViewerToolbar;
 - (void) scaleToFit:(id)sender;    /**< Scale opened windows */
 - (IBAction) closeAllViewers: (id) sender;  /**< Close All Viewers */
 - (void) checkAllWindowsAreVisible:(id) sender;

@@ -845,7 +845,6 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"0" forKey:@"CheckForMultipleVolumesInSeries"];
 	[defaultValues setObject:@"3000" forKey:@"MAXWindowSize"];
 	[defaultValues setObject:@"1" forKey:@"ScreenCaptureSmartCropping"];
-	[defaultValues setObject:@"1" forKey:@"magnifyingLens"];
 	[defaultValues setObject:@"12" forKey:@"LabelFONTSIZE"];
 	[defaultValues setObject:@"Geneva" forKey:@"LabelFONTNAME"];
 	[defaultValues setObject:@"1" forKey:@"EmptyNameForNewROIs"];
@@ -887,7 +886,6 @@ static NSHost *currentHost = nil;
 	// ** DELETEFILELISTENER
 	[defaultValues setObject:@"1" forKey:@"DELETEFILELISTENER"];
     
-    [defaultValues setObject:@"1" forKey:@"UseFloatingThumbnailsList"];
     [defaultValues setObject:@"0.2" forKey: @"MinimumTitledGantryTolerance"]; // in degrees
     
 //
@@ -935,7 +933,6 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"0" forKey:@"AUTOROUTINGACTIVATED"];
 	[defaultValues setObject:@"1" forKey:@"StrechWindows"];
 	[defaultValues setObject:@"0" forKey:@"ROUTINGACTIVATED"];
-	[defaultValues setObject: @"0" forKey: @"AUTOHIDEMATRIX"];
 	[defaultValues setObject: @"1" forKey: @"KeepStudiesOfSamePatientTogether"];
 	[defaultValues setObject: @"1" forKey: @"KeepStudiesOfSamePatientTogetherAndGrouped"];
 	[defaultValues setObject: @"1" forKey: @"USEPAPYRUSDCMPIX4"];
@@ -1036,7 +1033,6 @@ static NSHost *currentHost = nil;
     [defaultValues setObject:@"0" forKey: @"CFINDBodyPartExaminedSupport"];
 	[defaultValues setObject:@"2" forKey: @"preferredSyntaxForIncoming"]; // 2 = EXS_LittleEndianExplicit See dcmqrsrv.mm
 	[defaultValues setObject:@"ISO_IR 100" forKey: @"STRINGENCODING"];
-	[defaultValues setObject:@"1" forKey:@"syncPreviewList"];
 	[defaultValues setObject:@"1" forKey:@"openPDFwithPreview"];
 	[defaultValues setObject:@"1" forKey:@"ROIArrowThickness"];
 	[defaultValues setObject:@"1" forKey:@"loopScrollWheel"];
@@ -1059,7 +1055,6 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"1" forKey:@"ScanDiskIfDICOMDIRZero"];
     [defaultValues setObject:@"20" forKey:@"MaxNumberOfRetrieveForAutoQR"];
     [defaultValues setObject:@"1" forKey:@"DICOMQueryAllowFutureQuery"];
-    [defaultValues setObject:@"1" forKey:@"SeriesListVisible"];
     [defaultValues setObject:@"1" forKey:@"RescaleDuring3DResampling"];
     [defaultValues setObject:@"1" forKey:@"listPODComparativesIn2DViewer"];
     [defaultValues setObject:@"1" forKey:@"OVERFLOWLINES"];

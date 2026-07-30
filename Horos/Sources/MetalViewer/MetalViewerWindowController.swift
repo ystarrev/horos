@@ -4,15 +4,6 @@ private func metalWindowTimingLog(_ message: String, since start: CFAbsoluteTime
     MetalViewerDiagnostics.timingLog(message, since: start)
 }
 
-private final class MetalViewerSplitView: NSSplitView {
-    var dividerDragEnded: (() -> Void)?
-
-    override func mouseDown(with event: NSEvent) {
-        super.mouseDown(with: event)
-        dividerDragEnded?()
-    }
-}
-
 private final class MetalViewerWindow: NSWindow {
     var tabKeyHandler: ((Bool) -> Bool)?
     var annotationLevelHandler: ((MetalViewerAnnotationLevel) -> Void)?
@@ -82,7 +73,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private var scoutPlacement: MetalViewerScoutPlacement
     private let toolbarView = MetalViewerToolbarView(frame: .zero)
     private let scoutView: MetalViewerScoutView
-    private let contentSplitView = MetalViewerSplitView(frame: .zero)
+    private let contentSplitView = NSSplitView(frame: .zero)
     private let scoutContainer = NSView()
     private let paneContainer = NSView()
     private let paneStackView = NSStackView()
@@ -204,9 +195,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             self?.toolbarView.setMouseModifierFlags(flags)
         }
         contentSplitView.delegate = self
-        contentSplitView.dividerDragEnded = { [weak self] in
-            self?.saveSplitPosition()
-        }
         toolbarView.wlwwSelectionHandler = { [weak self] command in
             self?.applyWLWWCommand(command)
         }
@@ -345,6 +333,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     func splitViewDidResizeSubviews(_ notification: Notification) {
         guard notification.object as AnyObject? === contentSplitView else { return }
         activeScoutDimensionConstraint.constant = currentScoutDimension
+        saveSplitPosition()
     }
 
     func restoreSavedSplitPositionForPresentation() {

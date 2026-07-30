@@ -20,37 +20,38 @@ final class HorosNotificationService: NSObject, UNUserNotificationCenterDelegate
   class func configure() {
     let center = UNUserNotificationCenter.current()
     center.delegate = shared
-
-    guard UserDefaults.standard.bool(forKey: "displayNotifications") else { return }
-    center.getNotificationSettings { settings in
-      guard settings.authorizationStatus == .notDetermined else { return }
-      requestAuthorization()
-    }
   }
 
   @objc(postWithTitle:description:name:)
   class func post(title: String, description: String, name: String) {
     guard UserDefaults.standard.bool(forKey: "displayNotifications") else { return }
 
-    let content = UNMutableNotificationContent()
-    content.title = title
-    content.body = description
-    content.threadIdentifier = name
-    content.sound = .default
+    let center = UNUserNotificationCenter.current()
+    center.getNotificationSettings { settings in
+      guard settings.authorizationStatus == .authorized
+        || settings.authorizationStatus == .provisional
+      else { return }
 
-    let request = UNNotificationRequest(
-      identifier: UUID().uuidString,
-      content: content,
-      trigger: nil
-    )
-    UNUserNotificationCenter.current().add(request) { error in
-      if let error {
-        NSLog(
-          "User Notification failed for title=[%@] description=[%@] error=[%@]",
-          title,
-          description.replacingOccurrences(of: "\r", with: "\n"),
-          error.localizedDescription
-        )
+      let content = UNMutableNotificationContent()
+      content.title = title
+      content.body = description
+      content.threadIdentifier = name
+      content.sound = .default
+
+      let request = UNNotificationRequest(
+        identifier: UUID().uuidString,
+        content: content,
+        trigger: nil
+      )
+      center.add(request) { error in
+        if let error {
+          NSLog(
+            "User Notification failed for title=[%@] description=[%@] error=[%@]",
+            title,
+            description.replacingOccurrences(of: "\r", with: "\n"),
+            error.localizedDescription
+          )
+        }
       }
     }
   }

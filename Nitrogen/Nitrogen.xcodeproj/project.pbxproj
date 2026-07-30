@@ -78,8 +78,6 @@
 		B4F336771611A97900E46F7F /* N2MinMax.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F335BE1611A97800E46F7F /* N2MinMax.mm */; };
 		B4F336781611A97900E46F7F /* N2MutableUInteger.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F335BF1611A97800E46F7F /* N2MutableUInteger.h */; };
 		B4F336791611A97900E46F7F /* N2MutableUInteger.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F335C01611A97800E46F7F /* N2MutableUInteger.mm */; };
-		B4F3367A1611A97900E46F7F /* N2OpenGLViewWithSplitsWindow.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F335C11611A97800E46F7F /* N2OpenGLViewWithSplitsWindow.h */; };
-		B4F3367B1611A97900E46F7F /* N2OpenGLViewWithSplitsWindow.m in Sources */ = {isa = PBXBuildFile; fileRef = B4F335C21611A97800E46F7F /* N2OpenGLViewWithSplitsWindow.m */; };
 		B4F3367C1611A97900E46F7F /* N2Operators.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F335C31611A97800E46F7F /* N2Operators.h */; };
 		B4F3367D1611A97900E46F7F /* N2Operators.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F335C41611A97800E46F7F /* N2Operators.mm */; };
 		B4F3367E1611A97900E46F7F /* N2Pair.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F335C51611A97800E46F7F /* N2Pair.h */; };
@@ -253,8 +251,6 @@
 		B4F335BE1611A97800E46F7F /* N2MinMax.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2MinMax.mm; sourceTree = "<group>"; };
 		B4F335BF1611A97800E46F7F /* N2MutableUInteger.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2MutableUInteger.h; sourceTree = "<group>"; };
 		B4F335C01611A97800E46F7F /* N2MutableUInteger.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2MutableUInteger.mm; sourceTree = "<group>"; };
-		B4F335C11611A97800E46F7F /* N2OpenGLViewWithSplitsWindow.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2OpenGLViewWithSplitsWindow.h; sourceTree = "<group>"; };
-		B4F335C21611A97800E46F7F /* N2OpenGLViewWithSplitsWindow.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = N2OpenGLViewWithSplitsWindow.m; sourceTree = "<group>"; };
 		B4F335C31611A97800E46F7F /* N2Operators.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Operators.h; sourceTree = "<group>"; };
 		B4F335C41611A97800E46F7F /* N2Operators.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Operators.mm; sourceTree = "<group>"; };
 		B4F335C51611A97800E46F7F /* N2Pair.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Pair.h; sourceTree = "<group>"; };

@@ -43,22 +43,21 @@
 #include <ApplicationServices/ApplicationServices.h>
 
 #import "ToolbarPanel.h"
-#import "ThumbnailsListPanel.h"
 #import "AppController.h"
 #import "PreferencesWindowController.h"
 #import "BrowserController.h"
 #import "BrowserControllerDCMTKCategory.h"
+#import "DCMView.h"
+#import "ROI.h"
 #import "ViewerController.h"
 #import "XMLController.h"
 #import "SplashScreen.h"
-#import "NSFont_OpenGL.h"
 #import "DicomFile.h"
 #import "DCMPix.h"
 #import "DCM.h"
 #import "DCMTKQueryRetrieveSCP.h"
 #import "AppControllerDCMTKCategory.h"
 #import "DefaultsOsiriX.h"
-#import "NavigatorView.h"
 #import "WindowLayoutManager.h"
 #import "QueryController.h"
 #import "N2Shell.h"
@@ -91,7 +90,6 @@
 #import "DicomStudy.h"
 #import "SRAnnotation.h"
 #import "NSString+SymlinksAndAliases.h"
-#include <OpenGL/OpenGL.h>
 
 #include <execinfo.h>
 #include <stdio.h>
@@ -101,10 +99,7 @@
 #include <OpenJPEG/opj_config.h>
 #define BUILTIN_DCMTK YES
 
-#define MAXSCREENS 10
-
 //ToolbarPanelController *toolbarPanel[ MAXSCREENS] = {nil, nil, nil, nil, nil, nil, nil, nil, nil, nil};
-ThumbnailsListPanel *thumbnailsListPanel[ MAXSCREENS] = {nil, nil, nil, nil, nil, nil, nil, nil, nil, nil};
 
 static NSMenu *mainMenuCLUTMenu = nil, *mainMenuWLWWMenu = nil, *mainMenuConvMenu = nil, *mainOpacityMenu = nil;
 static NSDictionary *previousWLWWKeys = nil, *previousCLUTKeys = nil, *previousConvKeys = nil, *previousOpacityKeys = nil;
@@ -126,7 +121,7 @@ BOOL					accumulateAnimations = NO;
 
 AppController* OsiriX = nil;
 
-extern int delayedTileWindows;
+int delayedTileWindows = NO;
 extern NSString* getMacAddress(void);
 
 enum	{kSuccess = 0,
@@ -556,22 +551,7 @@ void exceptionHandler(NSException *exception)
     
     [[AppController sharedAppController] closeAllViewers:self];
 
-    [AppController resetThumbnailsList];
-    
     previousScreenParameters = screenParameters;
-}
-
-+ (void) resetThumbnailsList
-{
-	int numberOfScreens = [[NSScreen screens] count] + 1; //Just in case, we connect a second monitor when using Horos.
-	
-	for( int i = 0; i < MAXSCREENS; i++)
-    {
-		thumbnailsListPanel[ i] = nil;
-	}
-    
-	for( int i = 0; i < numberOfScreens; i++)
-		thumbnailsListPanel[ i] = [[ThumbnailsListPanel alloc] initForScreen: i];
 }
 
 + (void) resizeWindowWithAnimation:(NSWindow*) window newSize: (NSRect) newWindowFrame
@@ -627,20 +607,6 @@ void exceptionHandler(NSException *exception)
 //    
 //    return toolbarPanel[i];
 //}
-
-+ (ThumbnailsListPanel*)thumbnailsListPanelForScreen:(NSScreen*)screen
-{
-    NSArray* screens = [NSScreen screens];
-    NSUInteger i = [screens indexOfObject:screen];
-    
-    if( i == NSNotFound)
-        return nil;
-    
-    if( i>= MAXSCREENS)
-        return nil;
-    
-    return thumbnailsListPanel[i];
-}
 
 #ifdef WITH_IMPORTANT_NOTICE
 + (void) displayImportantNotice:(id) sender
@@ -1032,24 +998,6 @@ void exceptionHandler(NSException *exception)
 	if( [dictionaryRepresentation isEqualToDictionary: previousDefaults]) return;
 	
     @try {
-        if( [[previousDefaults valueForKey: @"SeriesListVisible"] intValue] != [defaults integerForKey: @"SeriesListVisible"])
-        {
-            if( [[NSUserDefaults standardUserDefaults] boolForKey: @"UseFloatingThumbnailsList"])
-            {
-                for( NSScreen *s in [NSScreen screens])
-                {
-                    ViewerController *v = [ViewerController frontMostDisplayed2DViewerForScreen: s];
-                    [v.window makeKeyAndOrderFront: self];
-                }
-                [[AppController sharedAppController] tileWindows: nil];
-            }
-            else
-            {
-                for( ViewerController *v in [ViewerController getDisplayed2DViewers])
-                    [v setMatrixVisible: [defaults integerForKey: @"SeriesListVisible"]];
-            }
-        }
-            
         if( [[previousDefaults valueForKey: @"DisplayDICOMOverlays"] intValue] != [defaults integerForKey: @"DisplayDICOMOverlays"])
             revertViewer = YES;
         if( [[previousDefaults valueForKey: @"ROITEXTNAMEONLY"] intValue] != [defaults integerForKey: @"ROITEXTNAMEONLY"])
@@ -1302,7 +1250,7 @@ void exceptionHandler(NSException *exception)
 	if( [self convMenu] == nil)
         NSLog( @"******* WARNING MENU MOVED / RENAMED ! convMenu");
     
-	if( [self clutMenu] == nil)
+    if( [self clutMenu] == nil)
         NSLog( @"******* WARNING MENU MOVED / RENAMED ! clutMenu");
     
     if( [self workspaceMenu] == nil)
@@ -1310,273 +1258,67 @@ void exceptionHandler(NSException *exception)
 	
 	if( [self exportMenu] == nil)
         NSLog( @"******* WARNING MENU MOVED / RENAMED ! exportMenu");
-
-    
-    if( [self viewerMenuTestLocalized: YES] == nil)
-        NSLog( @"******* WARNING MENU MOVED / RENAMED ! viewerMenu Localized");
-    
-	if( [self fileMenuTestLocalized: YES] == nil)
-        NSLog( @"******* WARNING MENU MOVED / RENAMED ! fileMenu Localized");
-	
-	if( [self wlwwMenuTestLocalized: YES] == nil)
-        NSLog( @"******* WARNING MENU MOVED / RENAMED ! wlwwMenu Localized");
-    
-	if( [self imageTilingMenuTestLocalized: YES] == nil)
-        NSLog( @"******* WARNING MENU MOVED / RENAMED ! imageTilingMenu Localized");
-    
-	if( [self orientationMenuTestLocalized: YES] == nil)
-        NSLog( @"******* WARNING MENU MOVED / RENAMED ! orientationMenu Localized");
-    
-	if( [self opacityMenuTestLocalized: YES] == nil)
-        NSLog( @"******* WARNING MENU MOVED / RENAMED ! opacityMenu Localized");
-    
-	if( [self convMenuTestLocalized: YES] == nil)
-        NSLog( @"******* WARNING MENU MOVED / RENAMED ! convMenu Localized");
-    
-	if( [self clutMenuTestLocalized: YES] == nil)
-        NSLog( @"******* WARNING MENU MOVED / RENAMED ! clutMenu Localized");
-    
-    if( [self workspaceMenuTestLocalized: YES] == nil)
-        NSLog( @"******* WARNING MENU MOVED / RENAMED ! workspaceMenu Localized");
-	
-	if( [self exportMenuTestLocalized: YES] == nil)
-        NSLog( @"******* WARNING MENU MOVED / RENAMED ! exportMenu Localized");
-
 #endif
-}
-
-- (NSMenu*) viewerMenuTestLocalized: (BOOL) testLocalized
-{
-    NSMenu *mainMenu = [NSApp mainMenu];
-    NSMenu *viewerMenu = [[mainMenu itemWithTitle:NSLocalizedString(@"2D Viewer", nil)] submenu];
-    if( testLocalized) viewerMenu = nil;
-    if( viewerMenu == nil)
-    {
-        viewerMenu = [[mainMenu itemAtIndex: 5]  submenu];
-        if( testLocalized)
-        {
-            if( [[viewerMenu title] isEqualToString: NSLocalizedString(@"2D Viewer", nil)] == NO)
-                return nil;
-        }
-    }
-    
-    return viewerMenu;
 }
 
 - (NSMenu*) viewerMenu
 {
-    return [self viewerMenuTestLocalized: NO];
-}
-
-- (NSMenu*) fileMenuTestLocalized: (BOOL) testLocalized
-{
     NSMenu *mainMenu = [NSApp mainMenu];
-    NSMenu *fileMenu = [[mainMenu itemWithTitle:NSLocalizedString(@"File", nil)] submenu];
-    if( testLocalized) fileMenu = nil;
-    if( fileMenu == nil)
-    {
-        fileMenu = [[mainMenu itemAtIndex: 1] submenu];
-        if( testLocalized)
-        {
-            if( [[fileMenu title] isEqualToString: NSLocalizedString(@"File", nil)] == NO)
-                return nil;
-        }
-    }
-    
-    return fileMenu;
+    return [[mainMenu itemWithTitle:NSLocalizedString(@"2D Viewer", nil)] submenu];
 }
 
 - (NSMenu*) fileMenu
 {
-    return [self fileMenuTestLocalized: NO];
-}
-
-- (NSMenu*) exportMenuTestLocalized: (BOOL) testLocalized
-{
-    NSMenu *fileMenu = [self fileMenu];
-    NSMenu *exportMenu = [[fileMenu itemWithTitle:NSLocalizedString(@"Export", nil)] submenu];
-    if( testLocalized) exportMenu = nil;
-    if( exportMenu == nil)
-    {
-        exportMenu = [[fileMenu itemAtIndex: 12] submenu];
-        if( testLocalized)
-        {
-            if( [[exportMenu title] isEqualToString: NSLocalizedString(@"Export", nil)] == NO)
-                return nil;
-        }
-    }
-    
-    return exportMenu;
+    NSMenu *mainMenu = [NSApp mainMenu];
+    return [[mainMenu itemWithTitle:NSLocalizedString(@"File", nil)] submenu];
 }
 
 - (NSMenu*) exportMenu
 {
-    return [self exportMenuTestLocalized: NO];
-}
-
-- (NSMenu*)imageTilingMenuTestLocalized: (BOOL) testLocalized
-{
-    NSMenu *viewerMenu = [self viewerMenu];
-    NSMenu *imageTilingMenu = [[viewerMenu itemWithTitle: NSLocalizedString(@"Image Tiling", nil)] submenu];
-    if( imageTilingMenu == nil)
-    {
-        imageTilingMenu = [[viewerMenu itemAtIndex: 48]  submenu];
-        if( testLocalized)
-        {
-            if( [[imageTilingMenu title] isEqualToString: NSLocalizedString(@"Image Tiling", nil)] == NO)
-                return nil;
-        }
-    }
-    
-    return imageTilingMenu;
+    NSMenu *fileMenu = [self fileMenu];
+    return [[fileMenu itemWithTitle:NSLocalizedString(@"Export", nil)] submenu];
 }
 
 - (NSMenu*)imageTilingMenu
 {
-    return [self imageTilingMenuTestLocalized: NO];
-}
-
-- (NSMenu*) orientationMenuTestLocalized: (BOOL) testLocalized
-{
     NSMenu *viewerMenu = [self viewerMenu];
-    NSMenu *orientationMenu = [[viewerMenu itemWithTitle: NSLocalizedString(@"Orientation", nil)] submenu];
-    if( testLocalized) orientationMenu = nil;
-    if( orientationMenu == nil)
-    {
-        orientationMenu = [[viewerMenu itemAtIndex: 12]  submenu];
-        if( testLocalized)
-        {
-            if( [[orientationMenu title] isEqualToString: NSLocalizedString(@"Orientation", nil)] == NO)
-                return nil;
-        }
-    }
-    
-    return orientationMenu;
+    return [[viewerMenu itemWithTitle:NSLocalizedString(@"Image Tiling", nil)] submenu];
 }
 
 - (NSMenu*) orientationMenu
 {
-    return [self orientationMenuTestLocalized: NO];
-}
-
-- (NSMenu*) opacityMenuTestLocalized: (BOOL) testLocalized
-{
     NSMenu *viewerMenu = [self viewerMenu];
-    NSMenu *opacityMenu = [[viewerMenu itemWithTitle: NSLocalizedString(@"Opacity", nil)] submenu];
-    if( testLocalized) opacityMenu = nil;
-    if( opacityMenu == nil)
-    {
-        opacityMenu = [[viewerMenu itemAtIndex: 44]  submenu];
-        if( testLocalized)
-        {
-            if( [[opacityMenu title] isEqualToString: NSLocalizedString(@"Opacity", nil)] == NO)
-                return nil;
-        }
-    }
-    
-    return opacityMenu;
+    return [[viewerMenu itemWithTitle:NSLocalizedString(@"Orientation", nil)] submenu];
 }
 
 - (NSMenu*) opacityMenu
 {
-    return [self opacityMenuTestLocalized: NO];
-}
-
-- (NSMenu*) wlwwMenuTestLocalized: (BOOL) testLocalized
-{
     NSMenu *viewerMenu = [self viewerMenu];
-    NSMenu *wlwwMenu = [[viewerMenu itemWithTitle:NSLocalizedString(@"Window Width & Level", nil)] submenu];
-    if( testLocalized) wlwwMenu = nil;
-    if( wlwwMenu == nil)
-    {
-        wlwwMenu = [[viewerMenu itemAtIndex: 41]  submenu];
-        if( testLocalized)
-        {
-            if( [[wlwwMenu title] isEqualToString: NSLocalizedString(@"Window Width & Level", nil)] == NO)
-                return nil;
-        }
-    }
-    
-    return wlwwMenu;
+    return [[viewerMenu itemWithTitle:NSLocalizedString(@"Opacity", nil)] submenu];
 }
 
 - (NSMenu*) wlwwMenu
 {
-    return [self wlwwMenuTestLocalized: NO];
-}
-
-- (NSMenu*) convMenuTestLocalized: (BOOL) testLocalized
-{
     NSMenu *viewerMenu = [self viewerMenu];
-    NSMenu *convMenu = [[viewerMenu itemWithTitle: NSLocalizedString(@"Convolution Filters", nil)] submenu];
-    if( testLocalized) convMenu = nil;
-    if( convMenu == nil)
-    {
-        convMenu = [[viewerMenu itemAtIndex: 45]  submenu];
-        if( testLocalized)
-        {
-            if( [[convMenu title] isEqualToString: NSLocalizedString(@"Convolution Filters", nil)] == NO)
-                return nil;
-        }
-    }
-    
-    return convMenu;
+    return [[viewerMenu itemWithTitle:NSLocalizedString(@"Window Width & Level", nil)] submenu];
 }
 
 - (NSMenu*) convMenu
 {
-    return [self convMenuTestLocalized: NO];
-}
-
-- (NSMenu*) clutMenuTestLocalized: (BOOL) testLocalized
-{
     NSMenu *viewerMenu = [self viewerMenu];
-    NSMenu *clutMenu = [[viewerMenu itemWithTitle:NSLocalizedString(@"Color Look Up Table", nil)] submenu];
-    if( testLocalized) clutMenu = nil;
-    if( clutMenu == nil)
-    {
-        clutMenu = [[viewerMenu itemAtIndex: 42]  submenu];
-        if( testLocalized)
-        {
-            if( [[clutMenu title] isEqualToString: NSLocalizedString(@"Color Look Up Table", nil)] == NO)
-                return nil;
-        }
-    }
-    
-    return clutMenu;
+    return [[viewerMenu itemWithTitle:NSLocalizedString(@"Convolution Filters", nil)] submenu];
 }
 
 - (NSMenu*) clutMenu
 {
-    return [self clutMenuTestLocalized: NO];
-}
-
-- (NSMenu*) workspaceMenuTestLocalized: (BOOL) testLocalized
-{
     NSMenu *viewerMenu = [self viewerMenu];
-    NSMenu *workspaceMenu = [[viewerMenu itemWithTitle:NSLocalizedString(@"Load Workspace State DICOM SR", nil)] submenu];
-    if( testLocalized) workspaceMenu = nil;
-    if( workspaceMenu == nil)
-    {
-        @try {
-            workspaceMenu = [[viewerMenu itemAtIndex: 55]  submenu];
-            if( testLocalized)
-            {
-                if( [[workspaceMenu title] isEqualToString: NSLocalizedString(@"Load Workspace State DICOM SR", nil)] == NO)
-                    return nil;
-            }
-        }
-        @catch (NSException *exception) {
-            N2LogException( exception);
-        }
-    }
-    
-    return workspaceMenu;
+    return [[viewerMenu itemWithTitle:NSLocalizedString(@"Color Look Up Table", nil)] submenu];
 }
 
 - (NSMenu*) workspaceMenu
 {
-    return [self workspaceMenuTestLocalized: NO];
+    NSMenu *viewerMenu = [self viewerMenu];
+    return [[viewerMenu itemWithTitle:NSLocalizedString(@"Load Workspace State DICOM SR", nil)] submenu];
 }
 
 // Build the Load Workspace DICOM SR menu
@@ -2619,7 +2361,6 @@ static BOOL initialized = NO;
 				[[NSUserDefaults standardUserDefaults] setInteger: [[NSUserDefaults standardUserDefaults] integerForKey: @"DEFAULT_DATABASELOCATION"] forKey: @"DATABASELOCATION"];
 				[[NSUserDefaults standardUserDefaults] setObject: [[NSUserDefaults standardUserDefaults] stringForKey: @"DEFAULT_DATABASELOCATIONURL"] forKey: @"DATABASELOCATIONURL"];
 				
-                [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"OSIEnvironmentActivated"];
 				[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"is12bitPluginAvailable"];
 //				[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"DONTCOPYWLWWSETTINGS"];
 				[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"ROITEXTNAMEONLY"];
@@ -3055,11 +2796,6 @@ static BOOL initialized = NO;
 		NSLog( @"----- %@", NSLocalizedString( @"DICOM Listener is multi-processes mode.", nil));
 	
     [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"USEALWAYSTOOLBARPANEL2"];
-    [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"syncPreviewList"];
-    [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"SeriesListVisible"];
-//    [[NSUserDefaults standardUserDefaults] setBool: NO  forKey: @"AUTOHIDEMATRIX"];
-    
-    
 	#ifndef MACAPPSTORE
     
     // If Horos crashed before...
@@ -3417,12 +3153,6 @@ static BOOL initialized = NO;
     ////////////////////////////
     
     [AppController cleanOsiriXSubProcesses];
-    
-    if( [NSDate timeIntervalSinceReferenceDate] - [[NSUserDefaults standardUserDefaults] doubleForKey: @"lastDate32bitPipelineCheck"] > 60L*60L*24L) // 1 days
-	{
-		[[NSUserDefaults standardUserDefaults] setDouble: [NSDate timeIntervalSinceReferenceDate] forKey: @"lastDate32bitPipelineCheck"];
-		[self verifyHardwareInterpolation];
-	}
     
 //    NSWindow.allowsAutomaticWindowTabbing = NO;
     
@@ -4038,19 +3768,13 @@ static BOOL initialized = NO;
 			{
 				last = loopItem;
 				[loopItem orderFront: self];
-				[[loopItem windowController] checkBuiltMatrixPreview];
 //				[[loopItem windowController] redrawToolbar];	// To avoid the drag & remove item bug - multiple windows
 			}
 		}
 	}
 	
 	if( makeKey)
-	{
 		[last makeKeyAndOrderFront: self];
-		
-		if( [[NSUserDefaults standardUserDefaults] boolForKey:@"syncPreviewList"])
-			[[last windowController] syncThumbnails];
-	}
 }
 
 - (void) checkAllWindowsAreVisible:(id) sender
@@ -4378,19 +4102,8 @@ static BOOL initialized = NO;
 {
     NSRect screenFrame = screen.visibleFrame;
     
-    if( showFloatingWindows)
-    {
-        if( [AppController USETOOLBARPANEL] || [[NSUserDefaults standardUserDefaults] boolForKey: @"USEALWAYSTOOLBARPANEL2"] == YES)
-            screenFrame.size.height -= 78;  //[[AppController toolbarForScreen: screen] exposedHeight];
-        
-        if( [[NSUserDefaults standardUserDefaults] boolForKey: @"UseFloatingThumbnailsList"] && [[NSUserDefaults standardUserDefaults] boolForKey: @"SeriesListVisible"])
-        {
-            screenFrame.origin.x += [ThumbnailsListPanel fixedWidth];
-            screenFrame.size.width -= [ThumbnailsListPanel fixedWidth];
-        }
-        
-        screenFrame = [NavigatorView adjustIfScreenAreaIf4DNavigator: screenFrame];
-    }
+    if( showFloatingWindows && ([AppController USETOOLBARPANEL] || [[NSUserDefaults standardUserDefaults] boolForKey: @"USEALWAYSTOOLBARPANEL2"] == YES))
+        screenFrame.size.height -= 78;  //[[AppController toolbarForScreen: screen] exposedHeight];
     
     return screenFrame;
 }
@@ -4421,7 +4134,7 @@ static BOOL initialized = NO;
         [win setAnimationBehavior: NSWindowAnimationBehaviorNone];
 	}
     
-    [self tileWindows: sender windows: viewersList display2DViewerToolbar: USETOOLBARPANEL displayThumbnailsList: [[NSUserDefaults standardUserDefaults] boolForKey: @"UseFloatingThumbnailsList"]];
+    [self tileWindows: sender windows: viewersList display2DViewerToolbar: USETOOLBARPANEL];
     
     [[BrowserController currentBrowser] closeWaitWindowIfNecessary];
 }
@@ -4447,13 +4160,13 @@ static BOOL initialized = NO;
 		}
 	}
     
-    [self tileWindows: sender windows: viewersList display2DViewerToolbar: NO displayThumbnailsList: NO];
+    [self tileWindows: sender windows: viewersList display2DViewerToolbar: NO];
     
     for( NSWindowController *win in viewersList)
         [[win window] makeKeyAndOrderFront: self];
 }
 
-- (void) tileWindows:(id)sender windows: (NSMutableArray*) viewersList display2DViewerToolbar: (BOOL) display2DViewerToolbar displayThumbnailsList: (BOOL) displayThumbnailsList
+- (void) tileWindows:(id)sender windows: (NSMutableArray*) viewersList display2DViewerToolbar: (BOOL) display2DViewerToolbar
 {
 	BOOL origCopySettings = [[NSUserDefaults standardUserDefaults] boolForKey: @"COPYSETTINGS"];
 	NSRect screenRect =  screenFrame();
@@ -5045,9 +4758,6 @@ static BOOL initialized = NO;
 	[AppController checkForPreferencesUpdate: YES];
 	
     
-    for( int i = 0; i < [[NSScreen screens] count]; i++)
-        [thumbnailsListPanel[ i] setThumbnailsView: nil viewer: nil];
-    
     if( keyWindow == nil)
         keyWindow = [ViewerController frontMostDisplayed2DViewerForScreen: nil];
     
@@ -5058,30 +4768,13 @@ static BOOL initialized = NO;
         [[keyWindow window] makeKeyAndOrderFront:self];
 		[keyWindow propagateSettings];
         
-		for( id v in [[viewersList reverseObjectEnumerator] allObjects])
-		{
-			if( [v isKindOfClass:[ViewerController class]])
-			{
-                if( v != keyWindow)
-                {
-                    [v buildMatrixPreview: [hiddenWindows containsObject: [v window]]];
-//                    [v redrawToolbar]; this is very slow if several windows are displayed : cannot reproduce the bug// To avoid the drag & remove item bug - multiple windows
-                }
-			}
-		}
-        
         [ToolbarPanelController checkForValidToolbar];
         
         if( [keyWindow isKindOfClass:[ViewerController class]])
         {
             [[keyWindow imageView] becomeMainWindow];
-            [keyWindow buildMatrixPreview: YES];
-            
             [keyWindow redrawToolbar];
 		}
-        
-		if( [[NSUserDefaults standardUserDefaults] boolForKey:@"syncPreviewList"])
-			[keyWindow syncThumbnails];
         
         [DCMView setDontListenToSyncMessage: NO];
 	}

@@ -35,11 +35,9 @@
      PURPOSE.
  ============================================================================*/
 
-#import <Foundation/Foundation.h>
+#import <Cocoa/Cocoa.h>
 #import "MyPoint.h"
-#import "DCMView.h" // included for ToolMode
-
-#import <OpenGL/CGLMacro.h>
+#import "HorosToolMode.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -60,7 +58,6 @@ enum
 
 @class DCMView;
 @class DCMPix;
-@class StringTexture;
 @class DCMObject;
 
 /** \brief Region of Interest
@@ -137,7 +134,6 @@ enum
 	
 	float			mousePosMeasure;
 	
-	StringTexture	*stringTex;
 	NSMutableDictionary	*stanStringAttrib;
 	NSCache         *stringTextureCache;
     
@@ -170,7 +166,6 @@ enum
     
     BOOL            hidden;
     
-	StringTexture *stringTexA, *stringTexB, *stringTexC;
 }
 
 @property NSPoint imageOrigin;
@@ -350,9 +345,6 @@ enum
 /** Set the associated view */
 - (void) setRoiView:(DCMView*) v __deprecated; // use setCurView:
 
-/** Draw a NSString in OpenGL */
-- (void) glStr: (NSString*) str :(float) x :(float) y :(float) line;
-
 /** Recompute */
 - (void) recompute;
 
@@ -390,7 +382,6 @@ enum
 - (NSPoint) ProjectionPointLine: (NSPoint) Point :(NSPoint) startPoint :(NSPoint) endPoint;
 
 /** Delete texture */
-- (void) deleteTexture:(NSOpenGLContext*) c;
 - (void) textureBufferHasChanged;
 
 /** Set cab resize layer */
@@ -399,7 +390,6 @@ enum
 @property(nonatomic, retain) NSImage *layerImage;
 @property float layerPixelSpacingX, layerPixelSpacingY;
 
-- (GLuint)loadLayerImageTexture;
 - (void)generateEncodedLayerImage;
 - (BOOL)isPoint:(NSPoint)point inRectDefinedByPointA:(NSPoint)pointA pointB:(NSPoint)pointB pointC:(NSPoint)pointC pointD:(NSPoint)pointD;
 - (NSPoint)rotatePoint:(NSPoint)point withAngle:(float)alpha aroundCenter:(NSPoint)center;

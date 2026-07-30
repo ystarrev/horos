@@ -39,7 +39,6 @@ The Horos Project was based originally upon the OsiriX Project which at the time
 #import "N3BezierPath.h"
 #import "N3BezierCoreAdditions.h"
 #import "CPRGeneratorRequest.h"
-#include <OpenGL/CGLMacro.h>
 #import "WaitRendering.h"
 #import "Notifications.h"
 
@@ -615,7 +614,6 @@ static CPRCurvedPathControlToken _controlTokenForElement(NSInteger element)
 }
 
 @end
-
 
 
 

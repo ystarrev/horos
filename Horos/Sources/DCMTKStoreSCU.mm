@@ -160,8 +160,6 @@ static BOOL HorosStoreSCUWriteFileInTransferSyntax(const char* inputPath, const 
 #import "DCMTransferSyntax.h"
 #import "SendController.h"
 
-#import "OpenGLScreenReader.h"
-
 #define OFFIS_CONSOLE_APPLICATION "storescu"
 
 //static char rcsid[] = "$dcmtk: " OFFIS_CONSOLE_APPLICATION " v"

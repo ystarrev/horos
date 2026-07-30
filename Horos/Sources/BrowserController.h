@@ -146,17 +146,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     IBOutlet NSView                 *matrixView;
     IBOutlet NSView                 *comparativeScrollView;
     
-    int								subFrom, subTo, subInterval, subMax;
-    
-    IBOutlet NSWindow				*subOpenWindow;
-    IBOutlet NSMatrix				*subOpenMatrix3D, *subOpenMatrix4D, *supOpenButtons;
-    
-    IBOutlet NSWindow				*subSeriesWindow;
-    IBOutlet NSButton				*subSeriesOKButton;
-    IBOutlet NSTextField			*memoryMessage;
-    IBOutlet NSImageView			*leftIcon, *rightIcon;
-    IBOutlet NSBox					*warningBox;
-    
     IBOutlet NSWindow				*bonjourPasswordWindow;
     IBOutlet NSTextField			*password;
     
@@ -225,7 +214,7 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     BOOL							rtstructProgressBar;
     float							rtstructProgressPercent;
     
-    BOOL							avoidRecursive, openSubSeriesFlag, openReparsedSeriesFlag;
+    BOOL							avoidRecursive;
     
     WaitRendering					*waitOpeningWindow;
     BOOL							waitCompressionAbort;
@@ -249,9 +238,7 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     
     NSTimeInterval _timeIntervalOfLastLoadIconsDisplayIcons;
     NSThread *matrixLoadIconsThread;
-    
-    BOOL subSeriesWindowIsOn;
-    
+
     NSRecursiveLock *searchForComparativeStudiesLock;
     NSString *comparativePatientUID; //Current patient history displayed
     NSMutableArray *comparativeStudySearchArray; //The queue of patient history to be searched
@@ -403,11 +390,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (long) saveDatabase: (NSString*)path context: (NSManagedObjectContext*) context __deprecated;
 - (void) addDICOMDIR:(NSString*) dicomdir :(NSMutableArray*) files;
 - (void) copyFilesIntoDatabaseIfNeeded: (NSMutableArray*)filesInput options: (NSDictionary*) options;
-- (ViewerController*) loadSeries :(NSManagedObject *)curFile :(ViewerController*) viewer :(BOOL) firstViewer keyImagesOnly:(BOOL) keyImages;
-- (void) loadNextPatient:(NSManagedObject *) curImage :(long) direction :(ViewerController*) viewer :(BOOL) firstViewer keyImagesOnly:(BOOL) keyImages;
-- (void) loadNextSeries:(NSManagedObject *) curImage :(long) direction :(ViewerController*) viewer :(BOOL) firstViewer keyImagesOnly:(BOOL) keyImages;
-- (ViewerController*) openViewerFromImages:(NSArray*) toOpenArray movie:(BOOL) movieViewer viewer:(ViewerController*) viewer keyImagesOnly:(BOOL) keyImages;
-- (ViewerController*) openViewerFromImages:(NSArray*) toOpenArray movie:(BOOL) movieViewer viewer:(ViewerController*) viewer keyImagesOnly:(BOOL) keyImages tryToFlipData:(BOOL) tryToFlipData;
 - (void)openMetalViewerForImages:(NSArray*)loadList;
 - (void)openMetalViewerForImages:(NSArray*)loadList forceDynamicInterpretation:(BOOL)forceDynamicInterpretation;
 - (void)markImagesAsOpened:(NSArray*)images;
@@ -431,7 +413,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (BOOL) validateToolbarItem: (NSToolbarItem *) toolbarItem;
 - (NSArray*) exportDICOMFileInt:(NSString*) location files:(NSMutableArray*) filesToExport objects:(NSMutableArray*) dicomFiles2Export;
 - (NSArray*) exportDICOMFileInt: (NSDictionary*) parameters;
-- (void) processOpenViewerDICOMFromArray:(NSArray*) toOpenArray movie:(BOOL) movieViewer viewer: (ViewerController*) viewer;
 - (void) setDatabaseValue:(id) object item:(id) item forKey:(NSString*) key;
 - (void) setupToolbar;
 - (float) fontSize: (NSString*) type;
@@ -443,8 +424,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (IBAction) copyToDBFolder: (id) sender;
 - (IBAction)customize:(id)sender;
 - (IBAction)showhide:(id)sender;
-- (IBAction) selectAll3DSeries:(id) sender;
-- (IBAction) selectAll4DSeries:(id) sender;
 - (IBAction) switchSoundex: (id)sender;
 - (void) exportDICOMFile:(id) sender;
 - (void) viewerDICOM:(id) sender;
@@ -492,8 +471,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 + (BOOL) unzipFile: (NSString*) file withPassword: (NSString*) pass destination: (NSString*) destination;
 + (BOOL) unzipFile: (NSString*) file withPassword: (NSString*) pass destination: (NSString*) destination showGUI: (BOOL) showGUI;
 - (int) askForZIPPassword: (NSString*) file destination: (NSString*) destination;
-- (IBAction) reparseIn3D:(id) sender;
-- (IBAction) reparseIn4D:(id) sender;
 - (void)selectStudyWithObjectID:(NSManagedObjectID*)oid;
 - (BOOL) selectThisStudy: (id)study;
 
@@ -529,8 +506,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (NSString*) askPassword;
 - (void) resetToLocalDatabase;
 - (void) switchToDefaultDBIfNeeded __deprecated;
-- (NSArray*) openSubSeries: (NSArray*) toOpenArray;
-- (IBAction) checkMemory:(id) sender;
 - (IBAction) buildAllThumbnails:(id) sender;
 
 // Finding Comparisons

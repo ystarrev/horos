@@ -3971,7 +3971,17 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         let transformedOverlayCenter = transformedOverlayVolumeCenterWorld(for: state)
         let centerDelta = transformedOverlayCenter - baseVolumeCenterWorld
-        let combinedNormal = baseSlabGeometry.normalWorld + overlaySlabGeometry.normalWorld
+        let rotatedOverlayNormal4 = rotationMatrix(for: state.rotationRadians)
+            * SIMD4<Float>(overlaySlabGeometry.normalWorld, 0)
+        var rotatedOverlayNormal = simd_normalize(SIMD3<Float>(
+            rotatedOverlayNormal4.x,
+            rotatedOverlayNormal4.y,
+            rotatedOverlayNormal4.z
+        ))
+        if simd_dot(baseSlabGeometry.normalWorld, rotatedOverlayNormal) < 0 {
+            rotatedOverlayNormal = -rotatedOverlayNormal
+        }
+        let combinedNormal = baseSlabGeometry.normalWorld + rotatedOverlayNormal
         let slabNormal = simd_length(combinedNormal) > 0.0001
             ? simd_normalize(combinedNormal)
             : baseSlabGeometry.normalWorld
@@ -3999,26 +4009,44 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return Array(zip(baseLevels, overlayLevels))
     }
 
+    private func dicomInitialGuess() -> RigidTransformState {
+        RigidTransformState(
+            translationWorld: .zero,
+            rotationRadians: .zero
+        )
+    }
+
+    private func physicalCenterInitialGuess() -> RigidTransformState {
+        RigidTransformState(
+            translationWorld: baseVolumeCenterWorld - overlayVolumeCenterWorld,
+            rotationRadians: .zero
+        )
+    }
+
     private func centerOfMassInitialGuess() -> RigidTransformState {
-        guard baseVolumeLevels.isEmpty == false,
-              overlayVolumeLevels.isEmpty == false else {
-            return RigidTransformState(
-                translationWorld: overlayTranslationWorld,
-                rotationRadians: overlayRotationRadians
-            )
+        RigidTransformState(
+            translationWorld: baseInformativeCenterWorld - overlayInformativeCenterWorld,
+            rotationRadians: .zero
+        )
+    }
+
+    private func automaticRegistrationInitialGuesses() -> [RigidTransformState] {
+        let candidates = [
+            physicalCenterInitialGuess(),
+            dicomInitialGuess(),
+            centerOfMassInitialGuess(),
+        ]
+        var distinctCandidates: [RigidTransformState] = []
+        for candidate in candidates {
+            let isDuplicate = distinctCandidates.contains { existing in
+                simd_length(existing.translationWorld - candidate.translationWorld) < 0.01
+                    && simd_length(existing.rotationRadians - candidate.rotationRadians) < 0.0001
+            }
+            if isDuplicate == false {
+                distinctCandidates.append(candidate)
+            }
         }
-
-        let currentState = RigidTransformState(
-            translationWorld: overlayTranslationWorld,
-            rotationRadians: overlayRotationRadians
-        )
-        let transformedOverlayCenter = transformedOverlayCenterWorld(for: currentState)
-        let delta = baseInformativeCenterWorld - transformedOverlayCenter
-
-        return RigidTransformState(
-            translationWorld: overlayTranslationWorld + delta,
-            rotationRadians: overlayRotationRadians
-        )
+        return distinctCandidates
     }
 
     private func runRegistration(startingAt initialState: RigidTransformState? = nil) {
@@ -4046,7 +4074,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         registrationNelderMeadTime = 0
         registrationSmoothDescentTime = 0
         registrationBatchedDescentTime = 0
-        let initialGuess = initialState ?? centerOfMassInitialGuess()
+        let initialGuesses = initialState.map { [$0] } ?? automaticRegistrationInitialGuesses()
+        guard let initialGuess = initialGuesses.first else { return }
         publishRegistrationUpdate(
             state: initialGuess,
             inProgress: true,
@@ -4064,7 +4093,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             self.registrationSamplingProbeTime += CFAbsoluteTimeGetCurrent() - samplingProbeStart
             let optimizeStart = CFAbsoluteTimeGetCurrent()
             let result = self.optimizeOverlayTransform(
-                startingAt: initialGuess,
+                startingAt: initialGuesses,
                 generation: generation,
                 levelPairs: levelPairs
             )
@@ -4222,7 +4251,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func optimizeOverlayTransform(
-        startingAt initialGuess: RigidTransformState,
+        startingAt initialGuesses: [RigidTransformState],
         generation: UInt,
         levelPairs: [(VolumeLevel, VolumeLevel)]
     ) -> (state: RigidTransformState, metric: Float) {
@@ -4269,9 +4298,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             ]
         }
 
-        guard levelPairs.isEmpty == false else { return (initialGuess, .greatestFiniteMagnitude) }
+        guard initialGuesses.isEmpty == false,
+              levelPairs.isEmpty == false else {
+            return (dicomInitialGuess(), .greatestFiniteMagnitude)
+        }
         let seeded = coarseSeedSearch(
-            startingAt: initialGuess,
+            startingAt: initialGuesses,
             level: levelPairs[0],
             totalLevels: levelPairs.count,
             ctToCTRegistration: ctToCTRegistration
@@ -4403,7 +4435,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func coarseSeedSearch(
-        startingAt initialState: RigidTransformState,
+        startingAt initialStates: [RigidTransformState],
         level: (VolumeLevel, VolumeLevel),
         totalLevels: Int,
         ctToCTRegistration: Bool
@@ -4436,11 +4468,27 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
         let rotationSeeds = coarseRotationSeeds(forCTToCTRegistration: ctToCTRegistration, slabAwareRegistration: slabAwareRegistration)
         let useBoneOnly = shouldUseBoneOnlyMetric(forLevelIndex: 0, totalLevels: totalLevels)
+        let initialMetrics = metricValues(
+            for: initialStates,
+            level: level,
+            levelIndex: 0,
+            totalLevels: totalLevels,
+            useBoneOnly: useBoneOnly
+        )
+        var bestCenterState = initialStates.first ?? dicomInitialGuess()
+        var bestCenterMetric = Float.greatestFiniteMagnitude
+        for (candidate, candidateMetric) in zip(initialStates, initialMetrics) {
+            if candidateMetric < bestCenterMetric {
+                bestCenterMetric = candidateMetric
+                bestCenterState = candidate
+            }
+        }
+
         var candidateStates: [RigidTransformState] = []
         candidateStates.reserveCapacity(translationSeeds.count * rotationSeeds.count)
         for translationSeed in translationSeeds {
             for rotationSeed in rotationSeeds {
-                var candidate = initialState
+                var candidate = bestCenterState
                 candidate.translationWorld += translationSeed
                 candidate.rotationRadians += rotationSeed
                 candidateStates.append(candidate)
@@ -4454,8 +4502,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             useBoneOnly: useBoneOnly
         )
 
-        var bestState = initialState
-        var bestMetric = Float.greatestFiniteMagnitude
+        var bestState = bestCenterState
+        var bestMetric = bestCenterMetric
         for (candidate, candidateMetric) in zip(candidateStates, candidateMetrics) {
             if candidateMetric < bestMetric {
                 bestMetric = candidateMetric
@@ -4466,8 +4514,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let elapsed = CFAbsoluteTimeGetCurrent() - seedStart
         registrationCoarseSeedSearchTime += elapsed
         MetalViewerDiagnostics.registrationTimingLog(
-            format: "MetalViewerRenderer registration coarseSeedSearch seeds=%d best=%.6f %.3f s",
+            format: "MetalViewerRenderer registration coarseSeedSearch centers=%d seeds=%d centerBest=%.6f best=%.6f %.3f s",
+            initialStates.count,
             candidateMetrics.count,
+            bestCenterMetric,
             bestMetric,
             elapsed
         )
@@ -4475,6 +4525,19 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func coarseRotationSeeds(forCTToCTRegistration ctToCTRegistration: Bool, slabAwareRegistration: Bool) -> [SIMD3<Float>] {
+        if slabAwareRegistration && ctToCTRegistration == false {
+            let angle = Float(6) * .pi / 180
+            return [
+                SIMD3<Float>(repeating: 0),
+                SIMD3<Float>(-angle, 0, 0),
+                SIMD3<Float>(angle, 0, 0),
+                SIMD3<Float>(0, -angle, 0),
+                SIMD3<Float>(0, angle, 0),
+                SIMD3<Float>(0, 0, -angle),
+                SIMD3<Float>(0, 0, angle),
+            ]
+        }
+
         guard ctToCTRegistration else {
             return [SIMD3<Float>(repeating: 0)]
         }
@@ -5308,14 +5371,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let mode = Int(options.x.rounded())
         let minimumUsefulOverlap: Double
         if mode == 1 {
+            minimumUsefulOverlap = slabAwareRegistration ? 0.08 : 0.003
+        } else if mode == 2 {
             minimumUsefulOverlap = slabAwareRegistration ? 0.015 : 0.003
         } else if mode == 3 {
-            minimumUsefulOverlap = slabAwareRegistration ? 0.02 : 0.006
+            minimumUsefulOverlap = slabAwareRegistration ? 0.10 : 0.006
         } else {
-            minimumUsefulOverlap = slabAwareRegistration ? 0.035 : 0.01
+            minimumUsefulOverlap = slabAwareRegistration ? 0.15 : 0.01
         }
         let overlapPenalty = overlapFraction < minimumUsefulOverlap
-            ? Float((minimumUsefulOverlap - overlapFraction) * (slabAwareRegistration ? 8.0 : 4.0))
+            ? Float((minimumUsefulOverlap - overlapFraction) * (slabAwareRegistration ? 12.0 : 4.0))
             : 0
         let slabPenalty = slabAwareRegistration ? slabOverlapPenalty(for: state) : 0
         return overlapPenalty + slabPenalty
@@ -5341,9 +5406,19 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return baseModality.contains("CT") && overlayModality.contains("CT")
     }
 
-    private func metricOptions(forLevelIndex _: Int, totalLevels _: Int, useBoneOnly _: Bool) -> SIMD4<Float> {
+    private func metricOptions(forLevelIndex levelIndex: Int, totalLevels: Int, useBoneOnly _: Bool) -> SIMD4<Float> {
         if isCTToCTRegistration() {
             return SIMD4<Float>(3, -700, 3000, 0)
+        }
+
+        let slabAwareRegistration = baseIsThinSlab || overlayIsThinSlab
+        let firstStructureLevel = max(totalLevels - 2, 1)
+        if slabAwareRegistration,
+           totalLevels > 1,
+           levelIndex >= firstStructureLevel {
+            let isFinalLevel = levelIndex == totalLevels - 1
+            let gradientThreshold: Float = isFinalLevel ? 0.035 : 0.02
+            return SIMD4<Float>(2, gradientThreshold, 0, 0)
         }
 
         return SIMD4<Float>.zero

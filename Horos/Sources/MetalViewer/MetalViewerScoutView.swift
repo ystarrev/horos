@@ -62,6 +62,7 @@ private enum MetalViewerScoutLayout {
     static let fallbackThumbnailWidth: CGFloat = 128
     static let thumbnailAspectRatio: CGFloat = 1.0
     static let thumbnailInset: CGFloat = 4
+    static let horizontalProcedureWidth: CGFloat = 52
     static let studySeparatorSpacing: CGFloat = 0
     static let studySeparatorThickness: CGFloat = 10
 }
@@ -256,7 +257,9 @@ final class MetalViewerScoutView: NSScrollView {
                         equalTo: stackView.heightAnchor,
                         constant: -(stackView.edgeInsets.top + stackView.edgeInsets.bottom)
                     ).isActive = true
-                    procedureView.widthAnchor.constraint(equalToConstant: 280).isActive = true
+                    procedureView.widthAnchor.constraint(
+                        equalToConstant: MetalViewerScoutLayout.horizontalProcedureWidth
+                    ).isActive = true
                 }
                 procedureViews.append(procedureView)
             }
@@ -613,6 +616,65 @@ private final class MetalViewerScoutStudyGroupView: NSView {
     }
 }
 
+private final class MetalViewerScoutVerticalProcedureTextView: NSView {
+    private let text: NSAttributedString
+
+    init(date: String, operation: String) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byTruncatingTail
+
+        let text = NSMutableAttributedString(
+            string: date,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                .foregroundColor: metalViewerScoutProcedureColor,
+                .paragraphStyle: paragraph,
+            ]
+        )
+        text.append(NSAttributedString(
+            string: "\n\(operation)",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: paragraph,
+            ]
+        ))
+        self.text = text
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+
+        context.saveGState()
+        context.translateBy(x: bounds.midX, y: bounds.midY)
+        context.rotate(by: .pi / 2)
+        let textRect = CGRect(
+            x: -bounds.height * 0.5 + 2,
+            y: -bounds.width * 0.5 + 2,
+            width: max(bounds.height - 4, 0),
+            height: max(bounds.width - 4, 0)
+        )
+        text.draw(
+            with: textRect,
+            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine]
+        )
+        context.restoreGState()
+    }
+}
+
 private final class MetalViewerScoutProcedureView: NSView {
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -665,37 +727,47 @@ private final class MetalViewerScoutProcedureView: NSView {
         heading.alignment = .centerY
         heading.spacing = 6
 
-        let content = NSStackView(views: [heading, operationLabel, diagnosisLabel])
-        content.translatesAutoresizingMaskIntoConstraints = false
+        let content: NSView
         switch placement {
         case .left:
-            content.orientation = .vertical
-            content.alignment = .width
-            content.spacing = 3
+            let stack = NSStackView(views: [heading, operationLabel, diagnosisLabel])
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            stack.orientation = .vertical
+            stack.alignment = .width
+            stack.spacing = 3
+            content = stack
         case .bottom:
-            content.orientation = .horizontal
-            content.alignment = .centerY
-            content.spacing = 8
+            content = MetalViewerScoutVerticalProcedureTextView(
+                date: Self.dateFormatter.string(from: event.date),
+                operation: event.operation.isEmpty
+                    ? NSLocalizedString("Surgical Procedure", comment: "")
+                    : event.operation
+            )
         }
         addSubview(content)
 
-        var constraints = [
-            iconView.widthAnchor.constraint(equalToConstant: 18),
-            iconView.heightAnchor.constraint(equalToConstant: 18),
-            dateLabel.trailingAnchor.constraint(lessThanOrEqualTo: heading.trailingAnchor),
-            content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 9),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -9),
-            content.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-        ]
-        if placement == .left {
-            constraints.append(heightAnchor.constraint(greaterThanOrEqualToConstant: 74))
+        switch placement {
+        case .left:
+            NSLayoutConstraint.activate([
+                iconView.widthAnchor.constraint(equalToConstant: 18),
+                iconView.heightAnchor.constraint(equalToConstant: 18),
+                dateLabel.trailingAnchor.constraint(lessThanOrEqualTo: heading.trailingAnchor),
+                content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 9),
+                content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -9),
+                content.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+                content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+                heightAnchor.constraint(greaterThanOrEqualToConstant: 74),
+            ])
+        case .bottom:
+            NSLayoutConstraint.activate([
+                content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+                content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+                content.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+                content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            ])
         }
-        NSLayoutConstraint.activate(constraints)
 
-        toolTip = [event.operation, event.diagnosis, event.results]
-            .filter { $0.isEmpty == false }
-            .joined(separator: "\n")
+        toolTip = Self.procedureToolTip(for: event)
     }
 
     @available(*, unavailable)
@@ -711,6 +783,22 @@ private final class MetalViewerScoutProcedureView: NSView {
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return label
+    }
+
+    private static func procedureToolTip(for event: SurgicalProcedureEvent) -> String {
+        [
+            ("Date", dateFormatter.string(from: event.date)),
+            ("Name", event.name),
+            ("ID", event.patientID),
+            ("Operation", event.operation),
+            ("Diagnosis", event.diagnosis),
+            ("Results", event.results),
+            ("Optics", event.optics),
+            ("Assistants", event.assistants),
+        ]
+        .filter { $0.1.isEmpty == false }
+        .map { "\($0.0): \($0.1)" }
+        .joined(separator: "\n")
     }
 }
 

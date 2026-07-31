@@ -496,9 +496,9 @@ final class MetalViewerPaneView: NSView {
                 "TopRight": size.origin.y + lineHeight + 2,
                 "MiddleLeft": size.origin.y + size.size.height / 2,
                 "MiddleRight": size.origin.y + size.size.height / 2,
-                "LowerLeft": size.origin.y + size.size.height - 2,
+                "LowerLeft": size.origin.y + size.size.height - 2 - lineHeight,
                 "LowerRight": size.origin.y + size.size.height - 2 - lineHeight,
-                "LowerMiddle": size.origin.y + size.size.height - 2,
+                "LowerMiddle": size.origin.y + size.size.height - 2 - lineHeight,
             ]
 
             let yRasterIncrement: [String: CGFloat] = [
@@ -537,6 +537,7 @@ final class MetalViewerPaneView: NSView {
             }
 
             let overlayDate = overlayDateString(state: state)
+            let acquisitionDate = acquisitionDateString(state: state)
             var didDrawOverlayDate = false
             let orderedKeys = ["TopLeft", "TopMiddle", "TopRight", "MiddleLeft", "MiddleRight", "LowerLeft", "LowerMiddle", "LowerRight"]
             for key in orderedKeys {
@@ -549,6 +550,19 @@ final class MetalViewerPaneView: NSView {
 
                 for (index, annotation) in orderedAnnotations.enumerated() {
                     let strings = resolve(annotation: annotation, key: key, index: index, state: state)
+                    let isAcquisitionDate = acquisitionDate.map { date in
+                        strings.contains { $0.contains(date) }
+                    } ?? false
+
+                    if didDrawOverlayDate == false,
+                       isAcquisitionDate,
+                       key.hasPrefix("Lower") == false,
+                       let overlayDate {
+                        drawOverlayString(overlayDate, atX: xRaster, y: yRaster, align: lineAlign)
+                        yRaster += increment
+                        didDrawOverlayDate = true
+                    }
+
                     for string in strings where string.isEmpty == false {
                         if isSeriesNumber(string, state: state),
                            let studySeriesNumber = studySeriesNumberString(state: state) {
@@ -559,10 +573,10 @@ final class MetalViewerPaneView: NSView {
                         yRaster += increment
                     }
 
-                    // The acquisition date is conventionally the bottom-most
-                    // Lower Right annotation. Insert the registered study date
-                    // immediately above it and move the remaining lines upward.
-                    if key == "LowerRight", index == 0, let overlayDate {
+                    if didDrawOverlayDate == false,
+                       isAcquisitionDate,
+                       key.hasPrefix("Lower"),
+                       let overlayDate {
                         drawOverlayString(overlayDate, atX: xRaster, y: yRaster, align: lineAlign)
                         yRaster += increment
                         didDrawOverlayDate = true
@@ -583,7 +597,7 @@ final class MetalViewerPaneView: NSView {
             let rightX = bounds.maxX - 2
             var topLeftY = bounds.minY + lineHeight + 2
             var topRightY = bounds.minY + lineHeight + 2
-            var lowerLeftY = bounds.maxY - 2
+            var lowerLeftY = bounds.maxY - 2 - lineHeight
             var lowerRightY = bounds.maxY - 2 - lineHeight
 
             func drawTopLeft(_ text: String) {
@@ -649,6 +663,14 @@ final class MetalViewerPaneView: NSView {
 
             guard let studyDate = overlaySeries.studyDate else { return nil }
             return Self.overlayDateFormatter.string(from: studyDate)
+        }
+
+        private func acquisitionDateString(state: State) -> String? {
+            guard let imageObject = state.pix.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSObject,
+                  let acquisitionDate = imageObject.value(forKey: "date") as? Date else {
+                return nil
+            }
+            return Self.acquisitionDateFormatter.string(from: acquisitionDate)
         }
 
         private func drawOverlayDateAtFallbackLocation(state: State) {
@@ -794,7 +816,12 @@ final class MetalViewerPaneView: NSView {
             }
 
             if bottom.isEmpty == false {
-                drawString(bottom, atX: rect.origin.x + rect.width / 2, y: rect.origin.y + rect.height - 4, align: .center)
+                drawString(
+                    bottom,
+                    atX: rect.origin.x + rect.width / 2,
+                    y: rect.maxY - Self.lineHeight - 2,
+                    align: .center
+                )
             }
         }
 
@@ -973,10 +1000,16 @@ final class MetalViewerPaneView: NSView {
             .font: mainFont,
             .foregroundColor: NSColor.systemRed,
         ]
-        private static let overlayDateFormatter: DateFormatter = {
+        private static let acquisitionDateFormatter: DateFormatter = {
             let formatter = DateFormatter()
             formatter.dateStyle = .short
-            formatter.timeStyle = .short
+            formatter.timeStyle = .medium
+            return formatter
+        }()
+        private static let overlayDateFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyy-MM-dd, HH:mm:ss"
             return formatter
         }()
     }

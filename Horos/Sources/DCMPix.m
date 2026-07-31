@@ -10179,23 +10179,39 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                                 
                                 if( [type isEqualToString:@"DICOM"])
                                 {
-                                    if([[field objectForKey:@"group"] intValue] == 0x0018 &&
-                                       [[field objectForKey:@"element"] intValue] == 0x0080 && repetitiontime != 0L)	// RepetitionTime
+                                    int group = [[field objectForKey:@"group"] intValue];
+                                    int element = [[field objectForKey:@"element"] intValue];
+                                    if( group == 0 && element == 0)
+                                    {
+                                        NSString *name = [field objectForKey:@"name"];
+                                        if( [name length] > 0)
+                                        {
+                                            DCMAttributeTag *tag = [DCMAttributeTag tagWithName:name];
+                                            if( tag)
+                                            {
+                                                group = (int) tag.group;
+                                                element = (int) tag.element;
+                                            }
+                                        }
+                                    }
+
+                                    if(group == 0x0018 &&
+                                       element == 0x0080 && repetitiontime != 0L)	// RepetitionTime
                                     {
                                         value = [NSString stringWithFormat:@"%.6g", [repetitiontime floatValue]];
                                     }
-                                    else if([[field objectForKey:@"group"] intValue] == 0x0018 &&
-                                            [[field objectForKey:@"element"] intValue] == 0x0081 && echotime != 0L)	// Echotime
+                                    else if(group == 0x0018 &&
+                                            element == 0x0081 && echotime != 0L)	// Echotime
                                     {
                                         value = [NSString stringWithFormat:@"%.6g", [echotime floatValue]];;
                                     }
                                     else
-                                        value = [self getDICOMFieldValueForGroup:[[field objectForKey:@"group"] intValue] element:[[field objectForKey:@"element"] intValue] DCMLink:dcmObject encodings:dcmObject == nil ? modernEncodings : NULL];
+                                        value = [self getDICOMFieldValueForGroup:group element:element DCMLink:dcmObject encodings:dcmObject == nil ? modernEncodings : NULL];
                                     
-                                    if( [[field objectForKey:@"group"] intValue] == 0x0010 && [[field objectForKey:@"element"] intValue] == 0x0010)
+                                    if( group == 0x0010 && element == 0x0010)
                                         value = @"PatientName";
                                     
-                                    if( [[field objectForKey:@"group"] intValue] == 0x0002 && [[field objectForKey:@"element"] intValue] == 0x0010)
+                                    if( group == 0x0002 && element == 0x0010)
                                         value = [BrowserController compressionString: value];
                                     
                                     if(value==nil || [value length] == 0) value = @"-";

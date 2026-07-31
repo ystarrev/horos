@@ -103,6 +103,29 @@ private struct HorosAnnotationItem {
     var title: String
     var content: [String]
 
+    private static let dicomFieldsByName: [String: DICOMFieldDescriptor] = {
+        guard let url = Bundle.main.url(forResource: "tagDictionary", withExtension: "plist"),
+              let dictionary = NSDictionary(contentsOf: url) as? [String: [String: Any]]
+        else {
+            return [:]
+        }
+
+        var fields: [String: DICOMFieldDescriptor] = [:]
+        for (tag, values) in dictionary {
+            let components = tag.split(separator: ",")
+            guard components.count == 2,
+                  let group = Int(components[0], radix: 16),
+                  let element = Int(components[1], radix: 16),
+                  let name = values["Description"] as? String,
+                  fields[name] == nil
+            else {
+                continue
+            }
+            fields[name] = DICOMFieldDescriptor(group: group, element: element, name: name)
+        }
+        return fields
+    }()
+
     var isOrientationWidget: Bool {
         title == "Orientation" && content == ["Special_Orientation"]
     }
@@ -135,14 +158,23 @@ private struct HorosAnnotationItem {
 
                     let suffix = String(token.dropFirst(6))
                     let components = suffix.split(separator: "_", omittingEmptySubsequences: false).map(String.init)
-                    if components.count >= 2,
-                       let group = UInt32(components[0], radix: 16),
-                       let element = UInt32(components[1], radix: 16) {
+                    let groupComponent = components.first?.replacingOccurrences(of: "0x", with: "", options: [.caseInsensitive])
+                    let elementComponent = components.count > 1
+                        ? components[1].replacingOccurrences(of: "0x", with: "", options: [.caseInsensitive])
+                        : nil
+                    if let groupComponent,
+                       let elementComponent,
+                       let group = UInt32(groupComponent, radix: 16),
+                       let element = UInt32(elementComponent, radix: 16) {
                         field["group"] = Int(group)
                         field["element"] = Int(element)
                         if components.count > 2 {
                             field["name"] = components.dropFirst(2).joined(separator: "_")
                         }
+                    } else if let descriptor = Self.dicomFieldsByName[suffix] {
+                        field["group"] = descriptor.group
+                        field["element"] = descriptor.element
+                        field["name"] = descriptor.name
                     } else {
                         field["name"] = suffix
                     }

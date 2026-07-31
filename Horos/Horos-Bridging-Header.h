@@ -5,7 +5,7 @@
 #import "DicomStudy.h"
 #import "DefaultsOsiriX.h"
 #import "../Preference Panes/OSIAutoroutingPreferencePane/OSIAutoroutingPreferencePanePref.h"
-#import "AYDicomPrintWindowController.h"
+#import "DICOMExport.h"
 #import "Sources/StructuredReportSupport.h"
 #import "Sources/MetalViewer/Metal3DSurfaceExtractor.h"
 #import "Sources/MetalViewer/MetalTumourSeedSRBridge.h"

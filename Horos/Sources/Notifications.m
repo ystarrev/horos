@@ -43,7 +43,6 @@ NSString* const OsirixROIChangeNotification = @"roiChange";
 NSString* const OsirixCloseViewerNotification = @"CloseViewerNotification";
 NSString* const OsirixUpdate2dCLUTMenuNotification = @"Update2DCLUTMenu";
 NSString* const OsirixUpdate2dWLWWMenuNotification = @"Update2DWLWWMenu";
-NSString* const OsirixROIVolumePropertiesChangedNotification = @"ROIVolumePropertiesChanged";
 NSString* const OsirixVRViewDidBecomeFirstResponderNotification = @"VRViewDidBecomeFirstResponder";
 NSString* const OsirixUpdateVolumeDataNotification = @"updateVolumeData";
 NSString* const OsirixRevertSeriesNotification = @"revertSeriesNotification";

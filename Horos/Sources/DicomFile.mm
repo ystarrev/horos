@@ -82,19 +82,6 @@ static NSDateFormatter *DicomFileDateFormatter(void)
     return formatter;
 }
 
-static NSDate *DicomFileDateFromNaturalLanguageString(NSString *value)
-{
-    if (value.length == 0)
-        return nil;
-
-    NSError *error = nil;
-    NSDataDetector *detector = [NSDataDetector dataDetectorWithTypes:NSTextCheckingTypeDate error:&error];
-    NSTextCheckingResult *match = [detector firstMatchInString:value options:0 range:NSMakeRange(0, value.length)];
-    if (error)
-        NSLog(@"Could not parse acquisition date %@: %@", value, error);
-    return match.date;
-}
-
 typedef int (*HorosModernDCMTKIsDICOMFileFn)(const char*);
 typedef char* (*HorosModernDCMTKCopyFieldFn)(const char*, const char*);
 typedef void (*HorosModernDCMTKFreeStringFn)(char*);

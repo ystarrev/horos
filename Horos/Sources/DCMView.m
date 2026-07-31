@@ -9,9 +9,6 @@
 #include <math.h>
 
 NSString * const HorosPasteboardType = @"com.opensource.horos";
-NSString * const pasteBoardOsiriX = @"OsiriX pasteboard";
-NSString * const pasteBoardHoros = @"Horos pasteboard";
-NSString * const HorosPboardUTI = @"com.opensource.horos.uti";
 
 int CLUTBARS = barHide;
 int ANNOTATIONS = annotBase;
@@ -227,7 +224,7 @@ XYZ ArbitraryRotate(XYZ point, double angle, XYZ axis)
 
 + (NSArray<NSString *> *)PasteboardTypes
 {
-    return @[HorosPasteboardType, pasteBoardHoros, pasteBoardOsiriX];
+    return @[HorosPasteboardType];
 }
 
 + (NSSize)sizeOfString:(NSString *)string forFont:(NSFont *)font
@@ -456,79 +453,6 @@ XYZ ArbitraryRotate(XYZ point, double angle, XYZ axis)
 - (NSImage *)nsimage:(BOOL)originalSize allViewers:(BOOL)allViewers
 {
     return [self nsimage:originalSize];
-}
-
-- (unsigned char *)getRawPixels:(long *)width
-                               :(long *)height
-                               :(long *)samplesPerPixel
-                               :(long *)bitsPerPixel
-                               :(BOOL)screenCapture
-                               :(BOOL)force8bits
-{
-    return [self getRawPixelsViewWidth:width
-                               height:height
-                                  spp:samplesPerPixel
-                                  bpp:bitsPerPixel
-                        screenCapture:screenCapture
-                           force8bits:force8bits
-                      removeGraphical:NO
-                         squarePixels:NO
-                   allowSmartCropping:NO
-                               origin:NULL
-                              spacing:NULL
-                               offset:NULL
-                             isSigned:NULL];
-}
-
-- (unsigned char *)getRawPixelsViewWidth:(long *)width
-                                  height:(long *)height
-                                     spp:(long *)samplesPerPixel
-                                     bpp:(long *)bitsPerPixel
-                           screenCapture:(BOOL)screenCapture
-                              force8bits:(BOOL)force8bits
-                         removeGraphical:(BOOL)removeGraphical
-                            squarePixels:(BOOL)squarePixels
-                      allowSmartCropping:(BOOL)allowSmartCropping
-                                  origin:(float *)imageOrigin
-                                 spacing:(float *)imageSpacing
-                                  offset:(int *)offset
-                                isSigned:(BOOL *)isSigned
-{
-    const NSInteger pixelWidth = MAX((NSInteger)NSWidth(self.bounds), 1);
-    const NSInteger pixelHeight = MAX((NSInteger)NSHeight(self.bounds), 1);
-    NSBitmapImageRep *representation = [[[NSBitmapImageRep alloc]
-        initWithBitmapDataPlanes:NULL
-                      pixelsWide:pixelWidth
-                      pixelsHigh:pixelHeight
-                   bitsPerSample:8
-                 samplesPerPixel:3
-                        hasAlpha:NO
-                        isPlanar:NO
-                  colorSpaceName:NSDeviceRGBColorSpace
-                     bytesPerRow:pixelWidth * 3
-                    bitsPerPixel:24] autorelease];
-
-    NSGraphicsContext *context = [NSGraphicsContext graphicsContextWithBitmapImageRep:representation];
-    [NSGraphicsContext saveGraphicsState];
-    [NSGraphicsContext setCurrentContext:context];
-    [self drawRect:self.bounds];
-    [context flushGraphics];
-    [NSGraphicsContext restoreGraphicsState];
-
-    const size_t byteCount = (size_t)pixelWidth * (size_t)pixelHeight * 3;
-    unsigned char *result = malloc(byteCount);
-    if (result)
-        memcpy(result, representation.bitmapData, byteCount);
-
-    if (width) *width = pixelWidth;
-    if (height) *height = pixelHeight;
-    if (samplesPerPixel) *samplesPerPixel = 3;
-    if (bitsPerPixel) *bitsPerPixel = 8;
-    if (offset) *offset = 0;
-    if (isSigned) *isSigned = NO;
-    if (imageOrigin) imageOrigin[0] = imageOrigin[1] = imageOrigin[2] = 0.0f;
-    if (imageSpacing) imageSpacing[0] = imageSpacing[1] = 1.0f;
-    return result;
 }
 
 - (void)setWLWW:(float)level :(float)width

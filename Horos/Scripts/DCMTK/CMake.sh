@@ -47,6 +47,11 @@ args=( "$source_dir" )
 cfs=( $OTHER_CFLAGS )
 cxxfs=( $OTHER_CPLUSPLUSFLAGS )
 
+# The bundled IJG sources intentionally use comma-separated increments.
+# Keep project warning policy from producing diagnostics inside the DCMTK
+# submodule without carrying local patches to third-party code.
+cfs+=( -Wno-comma )
+
 args+=(-Wno-dev)
 args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
 args+=(-DCMAKE_OSX_ARCHITECTURES="$archs")

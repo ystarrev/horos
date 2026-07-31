@@ -8,6 +8,7 @@ private final class MetalViewerWindow: NSWindow {
     var tabKeyHandler: ((Bool) -> Bool)?
     var annotationLevelHandler: ((MetalViewerAnnotationLevel) -> Void)?
     var modifierFlagsHandler: ((NSEvent.ModifierFlags) -> Void)?
+    var dicomPrintHandler: (() -> Void)?
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .flagsChanged {
@@ -34,6 +35,10 @@ private final class MetalViewerWindow: NSWindow {
             return
         }
         annotationLevelHandler?(level)
+    }
+
+    @objc func printDICOM(_ sender: Any?) {
+        dicomPrintHandler?()
     }
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -91,6 +96,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private var lastPaneScales: [ObjectIdentifier: Float] = [:]
     private var annotationDefaultsObserver: NSObjectProtocol?
     private var scoutPlacementObserver: NSObjectProtocol?
+    private var dicomPrintWindowController: DICOMPrintWindowController?
 
     init(study: MetalViewerStudy) {
         let initStart = CFAbsoluteTimeGetCurrent()
@@ -193,6 +199,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
         window.modifierFlagsHandler = { [weak self] flags in
             self?.toolbarView.setMouseModifierFlags(flags)
+        }
+        window.dicomPrintHandler = { [weak self] in
+            self?.presentDICOMPrint()
         }
         contentSplitView.delegate = self
         toolbarView.wlwwSelectionHandler = { [weak self] command in
@@ -1181,5 +1190,48 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
 
         activePaneView.setReferenceLine(nil)
+    }
+
+    private func presentDICOMPrint() {
+        guard dicomPrintWindowController == nil else {
+            dicomPrintWindowController?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        guard let pane = activePaneView ?? paneViews.first,
+              pane.dicomPrintSliceCount > 0 else {
+            NSSound.beep()
+            return
+        }
+        guard pane.supportsDICOMPrint else {
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.messageText = NSLocalizedString("DICOM Print", comment: "")
+            alert.informativeText = NSLocalizedString(
+                "Switch the active pane to the 2D stack before printing. MPR and 3D layouts are not film series.",
+                comment: ""
+            )
+            if let window {
+                alert.beginSheetModal(for: window)
+            } else {
+                alert.runModal()
+            }
+            return
+        }
+
+        let source = DICOMPrintSource(
+            title: pane.series.title,
+            sliceCount: pane.dicomPrintSliceCount,
+            currentSliceIndex: pane.dicomPrintCurrentSliceIndex,
+            frameProvider: { [weak pane] sliceIndex in
+                pane?.makeDICOMPrintFrame(at: sliceIndex)
+            }
+        )
+        let controller = DICOMPrintWindowController(source: source)
+        controller.didClose = { [weak self, weak controller] in
+            guard self?.dicomPrintWindowController === controller else { return }
+            self?.dicomPrintWindowController = nil
+        }
+        dicomPrintWindowController = controller
+        controller.present()
     }
 }

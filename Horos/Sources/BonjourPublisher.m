@@ -77,6 +77,11 @@ extern const char *GetPrivateIP(void);
 
 @implementation BonjourPublisher
 
+- (NSInteger)port
+{
+    return _listener ? _listener.port : 0;
+}
+
 + (BonjourPublisher*) currentPublisher // __deprecated
 {
     return [[AppController sharedAppController] bonjourPublisher];

@@ -1776,6 +1776,22 @@ final class MetalViewerPaneView: NSView {
         return metalView?.currentSliceGeometry
     }
 
+    var dicomPrintSliceCount: Int {
+        metalView?.renderer.pixList.count ?? 0
+    }
+
+    var supportsDICOMPrint: Bool {
+        metalView?.renderer.displayMode == .stack2D
+    }
+
+    var dicomPrintCurrentSliceIndex: Int {
+        metalView?.renderer.currentSliceIndex ?? 0
+    }
+
+    func makeDICOMPrintFrame(at sliceIndex: Int) -> MetalDICOMPrintFrame? {
+        metalView?.renderer.makeDICOMPrintFrame(at: sliceIndex)
+    }
+
     func setDisplayMode(_ mode: MetalViewerDisplayMode) {
         displayMode = mode
         metalView?.setDisplayMode(mode)

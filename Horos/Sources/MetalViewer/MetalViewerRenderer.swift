@@ -336,6 +336,13 @@ private enum MetalViewerWindowLevelTarget {
     case overlay
 }
 
+struct MetalDICOMPrintFrame {
+    let grayscalePixels: Data
+    let width: Int
+    let height: Int
+    let sourceFilePath: String?
+}
+
 final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private static let mprPlanes: [MetalMPRPlane] = [.axial, .coronal, .sagittal]
     private static let initialMPRRotation = simd_normalize(
@@ -982,6 +989,139 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         if displayMode.isMPRLike {
             resetMPRPlaneToCurrentSlice()
         }
+    }
+
+    func makeDICOMPrintFrame(at index: Int) -> MetalDICOMPrintFrame? {
+        guard pixList.indices.contains(index) else { return nil }
+
+        let previousSliceIndex = currentSliceIndex
+        if index != currentSliceIndex {
+            currentSliceIndex = index
+            loadSlice(at: index)
+        }
+        defer {
+            if previousSliceIndex != currentSliceIndex {
+                currentSliceIndex = previousSliceIndex
+                loadSlice(at: previousSliceIndex)
+            }
+        }
+
+        guard let currentPix, let baseTexture else { return nil }
+
+        let sourceWidth = max(Int(currentPix.widthWithoutLoading()), 1)
+        let sourceHeight = max(Int(currentPix.heightWithoutLoading()), 1)
+        let maximumDimension = 2_048
+        let reduction = max(
+            CGFloat(sourceWidth) / CGFloat(maximumDimension),
+            CGFloat(sourceHeight) / CGFloat(maximumDimension),
+            1
+        )
+        let width = max(Int((CGFloat(sourceWidth) / reduction).rounded()), 1)
+        let height = max(Int((CGFloat(sourceHeight) / reduction).rounded()), 1)
+
+        let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: width,
+            height: height,
+            mipmapped: false
+        )
+        textureDescriptor.storageMode = .shared
+        textureDescriptor.usage = [.renderTarget, .shaderRead]
+
+        guard let outputTexture = deviceRef.makeTexture(descriptor: textureDescriptor),
+              let commandBuffer = commandQueue.makeCommandBuffer() else {
+            return nil
+        }
+
+        let renderPassDescriptor = MTLRenderPassDescriptor()
+        renderPassDescriptor.colorAttachments[0].texture = outputTexture
+        renderPassDescriptor.colorAttachments[0].loadAction = .clear
+        renderPassDescriptor.colorAttachments[0].storeAction = .store
+        renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1)
+
+        let drawableAspect = max(Float(width) / Float(max(height, 1)), 0.0001)
+        let displayAspectRatio = max(imageAspectRatio, 0.0001)
+        var scale = SIMD2<Float>(repeating: 1)
+        if displayAspectRatio > drawableAspect {
+            scale.y = drawableAspect / displayAspectRatio
+        } else {
+            scale.x = displayAspectRatio / drawableAspect
+        }
+
+        var uniforms = MetalUniforms(
+            scale: scale,
+            offset: .zero,
+            rotationRadians: stackRotationRadians,
+            drawableAspect: drawableAspect,
+            baseWindowLevel: windowLevel,
+            baseWindowWidth: max(windowWidth, 1),
+            overlayWindowLevel: overlayWindowLevel,
+            overlayWindowWidth: max(overlayWindowWidth, 1),
+            overlayBlend: overlayBlend,
+            overlayTranslationWorld: overlayTranslationWorld,
+            movingRotationCenterWorld: movingRotationCenterWorld,
+            fixedVolumeSize: SIMD3<UInt32>(
+                UInt32(max(baseTexture.width, 1)),
+                UInt32(max(baseTexture.height, 1)),
+                1
+            ),
+            currentSliceIndex: Float(index),
+            movingInverseRotation: rotationMatrix(for: -overlayRotationRadians),
+            fixedVoxelToWorld: fixedVoxelToWorld,
+            movingWorldToVoxel: movingWorldToVoxel,
+            hasOverlay: overlayVolumeTexture == nil ? 0 : 1,
+            useBaseVolumeTexture: 0,
+            imageInterpolationMode: UInt32(imageInterpolationMode.rawValue),
+            baseHasCustomCLUT: baseHasCustomCLUT ? 1 : 0,
+            overlayHasCustomCLUT: overlayHasCustomCLUT ? 1 : 0
+        )
+
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+            return nil
+        }
+        encoder.setRenderPipelineState(pipelineState)
+        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalUniforms>.stride, index: 1)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<MetalUniforms>.stride, index: 0)
+        encoder.setFragmentTexture(baseTexture, index: 0)
+        encoder.setFragmentTexture(overlayVolumeTexture, index: 1)
+        encoder.setFragmentTexture(nil, index: 2)
+        setTransferTextures(on: encoder)
+        encoder.setFragmentSamplerState(samplerState, index: 0)
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
+
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        guard commandBuffer.status == .completed else { return nil }
+
+        let bytesPerRow = width * 4
+        var bgraPixels = [UInt8](repeating: 0, count: bytesPerRow * height)
+        bgraPixels.withUnsafeMutableBytes { bytes in
+            guard let baseAddress = bytes.baseAddress else { return }
+            outputTexture.getBytes(
+                baseAddress,
+                bytesPerRow: bytesPerRow,
+                from: MTLRegionMake2D(0, 0, width, height),
+                mipmapLevel: 0
+            )
+        }
+
+        var grayscalePixels = [UInt8](repeating: 0, count: width * height)
+        for pixelIndex in grayscalePixels.indices {
+            let byteIndex = pixelIndex * 4
+            let blue = UInt32(bgraPixels[byteIndex])
+            let green = UInt32(bgraPixels[byteIndex + 1])
+            let red = UInt32(bgraPixels[byteIndex + 2])
+            grayscalePixels[pixelIndex] = UInt8((54 * red + 183 * green + 19 * blue) >> 8)
+        }
+
+        return MetalDICOMPrintFrame(
+            grayscalePixels: Data(grayscalePixels),
+            width: width,
+            height: height,
+            sourceFilePath: currentPix.srcFile
+        )
     }
 
     func setPixList(_ newPixList: [DCMPix], preservingSliceIndex: Bool = true) {

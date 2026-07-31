@@ -42,6 +42,7 @@
 #import "DCMAbstractSyntaxUID.h"
 #import "Notifications.h"
 #import "BrowserController.h"
+#import "DicomDatabase.h"
 #import "DicomImage.h"
 #import "DicomStudy.h"
 #import "N2ManagedDatabase.h"
@@ -122,7 +123,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 {
     MetalPreviewImageView *_metalView;
     NSView *_annotationOverlay;
-    WebView *_reportWebView;
+    WKWebView *_reportWebView;
     NSMutableArray *_dcmPixList;
     NSArray *_dcmFilesList;
     NSString *_loadedReportPath;
@@ -178,7 +179,8 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     [_annotationOverlay setLayerContentsRedrawPolicy:NSViewLayerContentsRedrawDuringViewResize];
     [self addSubview:_annotationOverlay positioned:NSWindowAbove relativeTo:_metalView];
 
-    _reportWebView = [[WebView alloc] initWithFrame:self.bounds];
+    WKWebViewConfiguration *configuration = [[[WKWebViewConfiguration alloc] init] autorelease];
+    _reportWebView = [[WKWebView alloc] initWithFrame:self.bounds configuration:configuration];
     [_reportWebView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
     [_reportWebView setHidden:YES];
     [self addSubview:_reportWebView];
@@ -296,7 +298,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     {
         [_loadedReportPath release];
         _loadedReportPath = [cacheKey copy];
-        [[_reportWebView mainFrame] loadHTMLString:[procedure detailsHTML] baseURL:nil];
+        [_reportWebView loadHTMLString:[procedure detailsHTML] baseURL:nil];
     }
 }
 
@@ -583,7 +585,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         return @[];
 
     BrowserController *browser = [BrowserController currentBrowser];
-    NSManagedObjectContext *context = browser.managedObjectContext;
+    NSManagedObjectContext *context = browser.database.managedObjectContext;
     if (context == nil)
         return @[];
 
@@ -803,7 +805,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         {
             [_loadedReportPath release];
             _loadedReportPath = [reportCacheKey copy];
-            [[_reportWebView mainFrame] loadHTMLString:htmlString baseURL:nil];
+            [_reportWebView loadHTMLString:htmlString baseURL:nil];
         }
     }
     else if ([_loadedReportPath isEqualToString:htmlPath] == NO)
@@ -812,7 +814,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         _loadedReportPath = [htmlPath copy];
 
         NSURL *fileURL = [NSURL fileURLWithPath:htmlPath];
-        [[_reportWebView mainFrame] loadRequest:[NSURLRequest requestWithURL:fileURL]];
+        [_reportWebView loadRequest:[NSURLRequest requestWithURL:fileURL]];
     }
 }
 

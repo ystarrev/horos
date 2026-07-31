@@ -1856,7 +1856,7 @@ Gw
             <rect key="frame" x="0.0" y="0.0" width="712" height="259"/>
             <autoresizingMask key="autoresizingMask"/>
             <subviews>
-                <form verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" mode="track" allowsEmptySelection="NO" autosizesCells="NO" id="11410">
+                <matrix verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" mode="track" allowsEmptySelection="NO" autosizesCells="NO" id="11410">
                     <rect key="frame" x="531" y="139" width="161" height="19"/>
                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                     <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
@@ -1881,7 +1881,7 @@ Gw
                             </formCell>
                         </column>
                     </cells>
-                </form>
+                </matrix>
                 <matrix verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" allowsEmptySelection="NO" autorecalculatesCellSize="YES" id="11395">
                     <rect key="frame" x="20" y="26" width="262" height="118"/>
                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
@@ -1921,7 +1921,7 @@ Gw
                         </column>
                     </cells>
                 </matrix>
-                <form verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" mode="track" allowsEmptySelection="NO" id="11390">
+                <matrix verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" mode="track" allowsEmptySelection="NO" id="11390">
                     <rect key="frame" x="483" y="166" width="209" height="73"/>
                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                     <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
@@ -1968,8 +1968,8 @@ Gw
                             </formCell>
                         </column>
                     </cells>
-                </form>
-                <form verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" mode="track" allowsEmptySelection="NO" id="11384">
+                </matrix>
+                <matrix verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" mode="track" allowsEmptySelection="NO" id="11384">
                     <rect key="frame" x="267" y="166" width="197" height="73"/>
                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                     <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
@@ -2016,8 +2016,8 @@ Gw
                             </formCell>
                         </column>
                     </cells>
-                </form>
-                <form verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" mode="track" allowsEmptySelection="NO" id="11362">
+                </matrix>
+                <matrix verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" mode="track" allowsEmptySelection="NO" id="11362">
                     <rect key="frame" x="20" y="163" width="228" height="76"/>
                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                     <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
@@ -2043,7 +2043,7 @@ Gw
                             </formCell>
                         </column>
                     </cells>
-                </form>
+                </matrix>
             </subviews>
         </customView>
         <customView id="11581" userLabel="SearchView">

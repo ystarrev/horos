@@ -25,7 +25,7 @@ final class AYDicomPrintPref: NSPreferencePane {
 
   override func awakeFromNib() {
     super.awakeFromNib()
-    AYDicomPrintWindowController.updateAllPreferencesFormat()
+    DICOMPrintWindowController.updateAllPreferencesFormat()
 
     for (index, printer) in printers.enumerated()
     where printer["defaultPrinter"] as? String == "1" {

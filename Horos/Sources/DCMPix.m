@@ -79,8 +79,6 @@
 #include <Accelerate/Accelerate.h>
 #include "AppController.h"
 #include "NSFileManager+N2.h"
-#import "Point3D.h"
-
 #import "math.h"
 
 typedef int (*HorosDCMPixModernDCMTKCopyDecodedFrameFunction)(const char*, unsigned long, HorosModernDCMTKDecodedFrame*);
@@ -1493,7 +1491,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 @implementation DCMPix
 
 @synthesize countstackMean, stackDirection, needToCompute8bitRepresentation, subtractedfImage, modalityString;
-@synthesize full32bitPipeline;
 @synthesize frameNo, notAbleToLoadImage, shutterPolygonal, SOPClassUID, frameofReferenceUID;
 @synthesize minValueOfSeries, maxValueOfSeries, factorPET2SUV, slope, offset;
 @synthesize isRGB, pwidth = width, pheight = height, checking, shutterRect;

@@ -63,7 +63,6 @@ extern "C"
 
 @class ROI;
 @class DCMObject;
-@class Point3D;
 @class DicomImage;
 @class DicomSeries;
 @class DicomStudy;
@@ -205,7 +204,6 @@ extern "C"
     BOOL				isLUT12Bit;
     unsigned char		*LUT12baseAddr;
     
-    BOOL				full32bitPipeline;
     BOOL				needToCompute8bitRepresentation;
     
     /** Papyrus Loading variables */
@@ -338,7 +336,6 @@ extern "C"
 @property(retain) NSDate *radiopharmaceuticalStartTime;
 @property BOOL SUVConverted, needToCompute8bitRepresentation;
 
-@property BOOL full32bitPipeline;
 @property(readonly) BOOL hasSUV;
 @property float decayFactor;
 @property(retain) NSString *units, *decayCorrection;

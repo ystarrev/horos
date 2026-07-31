@@ -7365,6 +7365,11 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     return r;
 }
 
+// NSOutlineView's legacy file-promise callback still requires this deprecated
+// pasteboard type. Keep the suppression scoped to this compatibility path until
+// drag-out export is converted to NSFilePromiseProvider.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 - (BOOL)outlineView:(NSOutlineView *)olv writeItems:(NSArray *)pbItems toPasteboard:(NSPasteboard *)pboard
 {
     for( id item in pbItems)
@@ -7383,6 +7388,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     
     return YES;
 }
+#pragma clang diagnostic pop
 
 - (void)outlineViewItemWillCollapse:(NSNotification *)notification
 {
@@ -17872,7 +17878,10 @@ static volatile int numberOfThreadsForJPEG = 0;
         for( id patientStudy in patientStudies)
         {
             if( [patientStudy isKindOfClass:[NSManagedObject class]])
-                [_samePatientStudyGroupCache setObject:patientStudies forKey:[patientStudy objectID]];
+            {
+                NSManagedObject *managedPatientStudy = (NSManagedObject *)patientStudy;
+                [_samePatientStudyGroupCache setObject:patientStudies forKey:managedPatientStudy.objectID];
+            }
         }
     }
 
@@ -17909,10 +17918,11 @@ static volatile int numberOfThreadsForJPEG = 0;
     NSArray *patientStudies = [self resolvedSamePatientStudyGroupForStudy:referenceStudy];
     if( [study isKindOfClass:[NSManagedObject class]])
     {
-        NSManagedObjectID *studyID = [study objectID];
+        NSManagedObjectID *studyID = ((NSManagedObject *)study).objectID;
         for( id patientStudy in patientStudies)
         {
-            if( [patientStudy isKindOfClass:[NSManagedObject class]] && [[patientStudy objectID] isEqual:studyID])
+            if( [patientStudy isKindOfClass:[NSManagedObject class]] &&
+                [((NSManagedObject *)patientStudy).objectID isEqual:studyID])
                 return YES;
         }
         return NO;

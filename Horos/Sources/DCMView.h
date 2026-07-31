@@ -50,10 +50,6 @@
 #define IMAGE_DEPTH					32
 
 extern NSString * const HorosPasteboardType;
-// these older pasteboard keys are deprecated, but they still work
-extern NSString * const __deprecated pasteBoardOsiriX; // use HorosPasteboardType
-extern NSString * const __deprecated pasteBoardHoros; // use HorosPasteboardType
-extern NSString * const __deprecated HorosPboardUTI; // use HorosPasteboardType
 
 extern int CLUTBARS, ANNOTATIONS, SOFTWAREINTERPOLATION_MAX, DISPLAYCROSSREFERENCELINES;
 
@@ -75,7 +71,7 @@ enum { syncroOFF = 0, syncroABS = 1, syncroREL = 2, syncroLOC = 3, syncroRatio =
 
 /** \brief Image/Frame View for ViewerController */
 
-@interface DCMView: NSView <NSDraggingSource, NSPasteboardItemDataProvider, NSMenuItemValidation>
+@interface DCMView: NSView
 {
 	NSInteger		_imageRows;
 	NSInteger		_imageColumns;
@@ -276,7 +272,7 @@ enum { syncroOFF = 0, syncroABS = 1, syncroREL = 2, syncroLOC = 3, syncroRatio =
 @property(nonatomic) BOOL xFlipped, yFlipped;
 @property(retain) NSString *stringID;
 @property(nonatomic) ToolMode currentTool;
-@property(setter=setRightTool:) ToolMode currentToolRight;
+@property(nonatomic, setter=setRightTool:) ToolMode currentToolRight;
 @property(readonly) short curImage;
 @property(retain) NSMatrix *theMatrix;
 @property(readonly) BOOL suppressLabels;
@@ -297,6 +293,12 @@ enum { syncroOFF = 0, syncroABS = 1, syncroREL = 2, syncroLOC = 3, syncroRatio =
 @property (nonatomic) NSTimeInterval timeIntervalForDrag;
 @property(readonly) BOOL isKeyView, mouseDragging;
 @property int annotationType;
+
+@end
+
+/// Declarations retained only while non-rendering legacy source files are
+/// disentangled from the retired 2D viewer. New code must use the Metal viewer.
+@interface DCMView (LegacyCompatibilitySurface)
 
 + (void) setDontListenToSyncMessage: (BOOL) v;
 + (BOOL) noPropagateSettingsInSeriesForModality: (NSString*) m;
@@ -322,15 +324,6 @@ enum { syncroOFF = 0, syncroABS = 1, syncroREL = 2, syncroLOC = 3, syncroRatio =
 - (int) findPlaneAndPoint:(float*) pt :(float*) location;
 - (int) findPlaneForPoint:(float*) pt localPoint:(float*) location distanceWithPlane: (float*) distanceResult;
 - (int) findPlaneForPoint:(float*) pt preferParallelTo:(float*)parto localPoint:(float*) location distanceWithPlane: (float*) distanceResult;
-- (unsigned char*) getRawPixels:(long*) width :(long*) height :(long*) spp :(long*) bpp :(BOOL) screenCapture :(BOOL) force8bits;
-
-- (unsigned char*) getRawPixelsWidth:(long*) width height:(long*) height spp:(long*) spp bpp:(long*) bpp screenCapture:(BOOL) screenCapture force8bits:(BOOL) force8bits removeGraphical:(BOOL) removeGraphical squarePixels:(BOOL) squarePixels allTiles:(BOOL) allTiles allowSmartCropping:(BOOL) allowSmartCropping origin:(float*) imOrigin spacing:(float*) imSpacing;
-- (unsigned char*) getRawPixelsWidth:(long*) width height:(long*) height spp:(long*) spp bpp:(long*) bpp screenCapture:(BOOL) screenCapture force8bits:(BOOL) force8bits removeGraphical:(BOOL) removeGraphical squarePixels:(BOOL) squarePixels allTiles:(BOOL) allTiles allowSmartCropping:(BOOL) allowSmartCropping origin:(float*) imOrigin spacing:(float*) imSpacing offset:(int*) offset isSigned:(BOOL*) isSigned;
-- (unsigned char*) getRawPixelsWidth:(long*) width height:(long*) height spp:(long*) spp bpp:(long*) bpp screenCapture:(BOOL) screenCapture force8bits:(BOOL) force8bits removeGraphical:(BOOL) removeGraphical squarePixels:(BOOL) squarePixels allTiles:(BOOL) allTiles allowSmartCropping:(BOOL) allowSmartCropping origin:(float*) imOrigin spacing:(float*) imSpacing offset:(int*) offset isSigned:(BOOL*) isSigned views: (NSArray*) views viewsRect: (NSArray*) rects;
-
-- (unsigned char*) getRawPixelsViewWidth:(long*) width height:(long*) height spp:(long*) spp bpp:(long*) bpp screenCapture:(BOOL) screenCapture force8bits:(BOOL) force8bits removeGraphical:(BOOL) removeGraphical squarePixels:(BOOL) squarePixels allowSmartCropping:(BOOL) allowSmartCropping origin:(float*) imOrigin spacing:(float*) imSpacing;
-- (unsigned char*) getRawPixelsViewWidth:(long*) width height:(long*) height spp:(long*) spp bpp:(long*) bpp screenCapture:(BOOL) screenCapture force8bits:(BOOL) force8bits removeGraphical:(BOOL) removeGraphical squarePixels:(BOOL) squarePixels allowSmartCropping:(BOOL) allowSmartCropping origin:(float*) imOrigin spacing:(float*) imSpacing offset:(int*) offset isSigned:(BOOL*) isSigned;
-
 - (void) blendingPropagate;
 - (void) subtract:(DCMView*) bV;
 - (void) subtract:(DCMView*) bV absolute:(BOOL) abs;

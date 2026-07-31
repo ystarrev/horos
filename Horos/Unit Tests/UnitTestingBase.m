@@ -67,7 +67,6 @@ This list of common macros is from the file:///System/Library/Frameworks/SenTest
 
 #import "UnitTestingBase.h"
 
-#import "Point3D.h"
 #import "dicomData.h"
 #import "DicomStudy.h"
 #import "AppController.h"
@@ -84,24 +83,6 @@ This list of common macros is from the file:///System/Library/Frameworks/SenTest
 	STAssertEquals(a, 3, @"a3");
 	STAssertTrue(trueValue, @"trueValue should be true at this point");
 	
-	Point3D *a3DPoint;
-	
-	a3DPoint=[Point3D alloc];STAssertNotNil(a3DPoint,Nil);
-	
-	[a3DPoint initWithValues: 10.2 : 10.3 : 10.4];
-	STAssertEquals((float) 10.2, [a3DPoint x], @"3d x");
-	STAssertEquals((float) 10.3, [a3DPoint y], @"3d y");
-	STAssertEquals((float) 10.4, [a3DPoint z], @"3d z");
-	
-	[a3DPoint multiply: 201.5];
-	STAssertEquals((float) 2055.3, [a3DPoint x], @"3d x");
-	STAssertEquals((float) 2075.45, [a3DPoint y], @"3d y");
-	STAssertEqualsWithAccuracy((float) 2095.6, [a3DPoint z], 0.01, @"3d z");
-	
-	if (![[a3DPoint description] isEqualToString: @"Point3D ( 2055.300049, 2075.449951, 2095.599854 )"])
-		STFail([a3DPoint description]);
-	
-	[a3DPoint release];
 }
 
 

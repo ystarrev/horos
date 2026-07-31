@@ -1237,7 +1237,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     }
     else if ([type isEqualToString:HorosOsiriXDatabaseBonjourType])
     {
-        NSInteger localPort = [[[AppController sharedAppController] bonjourPublisher] port];
+        NSInteger localPort = [AppController sharedAppController].bonjourPublisher.port;
 
         if (localPort > 0 && localPort == port)
         {

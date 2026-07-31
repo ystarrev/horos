@@ -195,6 +195,21 @@ enum
 @property float min, max, mean;
 @property(assign) NSColor* NSColor;
 @property(assign) BOOL isSpline;
+@property(retain) NSString *layerReferenceFilePath;
+@property(nonatomic, retain) NSImage *layerImage;
+@property float layerPixelSpacingX, layerPixelSpacingY;
+@property(retain) NSString *textualBoxLine1, *textualBoxLine2, *textualBoxLine3, *textualBoxLine4, *textualBoxLine5, *textualBoxLine6;
+@property NSTimeInterval groupID;
+@property(nonatomic) BOOL isLayerOpacityConstant;
+@property(nonatomic) BOOL canColorizeLayer;
+@property BOOL displayTextualData;
+@property(readonly) NSPoint clickPoint;
+
+@end
+
+/// Source-compatibility declarations for retired legacy ROI editing code.
+/// Metal viewer ROI code does not use this surface.
+@interface ROI (LegacyCompatibilitySurface)
 
 - (void) setNSColor:(NSColor*)color globally:(BOOL)g;
 - (void) setColor:(RGBColor) a globally: (BOOL) g;
@@ -386,26 +401,14 @@ enum
 
 /** Set cab resize layer */
 - (void) setCanResizeLayer:(BOOL)boo;
-@property(retain) NSString *layerReferenceFilePath;
-@property(nonatomic, retain) NSImage *layerImage;
-@property float layerPixelSpacingX, layerPixelSpacingY;
 
 - (void)generateEncodedLayerImage;
 - (BOOL)isPoint:(NSPoint)point inRectDefinedByPointA:(NSPoint)pointA pointB:(NSPoint)pointB pointC:(NSPoint)pointC pointD:(NSPoint)pointD;
 - (NSPoint)rotatePoint:(NSPoint)point withAngle:(float)alpha aroundCenter:(NSPoint)center;
 - (void) displayPointUnderMouse:(NSPoint) pt :(float) offsetx :(float) offsety :(float) scale;
 
-@property(retain) NSString *textualBoxLine1, *textualBoxLine2, *textualBoxLine3, *textualBoxLine4, *textualBoxLine5, *textualBoxLine6;
-@property NSTimeInterval groupID;
-
-
 /** Lower right point of ROI */
 - (NSPoint) lowerRightPoint;
-
-@property(nonatomic) BOOL isLayerOpacityConstant;
-@property(nonatomic) BOOL canColorizeLayer;
-@property BOOL displayTextualData;
-@property(readonly) NSPoint clickPoint;
 
 -(NSMutableArray*) splinePoints;
 -(NSMutableArray*) splinePoints:(float) scale;

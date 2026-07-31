@@ -358,6 +358,12 @@ enum
 
 @property(retain) NSNumber* flagListPODComparatives;
 
+@end
+
+/// Declarations retained only while non-rendering legacy source files are
+/// disentangled from the retired 2D viewer. New code must use the Metal viewer.
+@interface ViewerController (LegacyCompatibilitySurface)
+
 /** Array of all 2D Viewers */
 + (NSMutableArray*) getDisplayed2DViewers;
 + (NSMutableArray*) get2DViewers;

@@ -53,6 +53,10 @@
 
 @end
 
+@protocol HorosLegacyCLUTRendering <NSObject>
+- (void)setCLUT:(unsigned char *)red :(unsigned char *)green :(unsigned char *)blue;
+@end
+
 @implementation Window3DController
 
 - (ViewerController*) viewer
@@ -104,11 +108,11 @@
 		if( [str isEqualToString: curWLWWMenu] || [[item title] isEqualToString: curWLWWMenu]) [item setState:NSControlStateValueOn];
 		else [item setState:NSControlStateValueOff];
 	}
-	else  if( [item action] == @selector(showCLUTOpacityPanel:))
+	else if( [item action] == NSSelectorFromString(@"showCLUTOpacityPanel:"))
 	{
 		if([[[self pixList] objectAtIndex:0] isRGB] == NO) valid = YES;
 	}
-	else if( [item action] == @selector(loadAdvancedCLUTOpacity:))
+	else if( [item action] == NSSelectorFromString(@"loadAdvancedCLUTOpacity:"))
 	{
 		if([[[self pixList] objectAtIndex:0] isRGB] == NO) valid = YES;
 	}
@@ -168,8 +172,10 @@
 	[[NSFileManager defaultManager] removeItemAtPath: tmpFolder error:NULL];
 	[[NSFileManager defaultManager] createDirectoryAtPath:tmpFolder withIntermediateDirectories:YES attributes:nil error:NULL];
 
-	NSImage *im = ( [[self view] respondsToSelector: @selector(nsimageQuicktime:)] ) ?
-		[(id) [self view] nsimageQuicktime] : nil;
+    id renderingView = [self view];
+    SEL imageSelector = NSSelectorFromString(@"nsimageQuicktime");
+	NSImage *im = [renderingView respondsToSelector:imageSelector] ?
+        [renderingView performSelector:imageSelector] : nil;
 	
 	NSData *imageData = [im  TIFFRepresentation];
 	NSBitmapImageRep *imageRep = [NSBitmapImageRep imageRepWithData:imageData];
@@ -610,7 +616,9 @@ static float oldsetww, oldsetwl;
 
 	
 	[[note object] ConvertCLUT: r : g : b];
-	[[self view] setCLUT: r : g : b];
+    id<HorosLegacyCLUTRendering> renderingView = (id<HorosLegacyCLUTRendering>)[self view];
+    if ([renderingView respondsToSelector:@selector(setCLUT:::)])
+        [renderingView setCLUT:r :g :b];
 }
 
 

@@ -197,7 +197,7 @@
     NSMenu* menu = [[[NSMenu alloc] initWithTitle:@""] autorelease];
     NSMenuItem* mi;
     
-    NSString *name = [record.screen displayName];
+    NSString *name = record.screen.localizedName;
     if (!name) name = NSLocalizedString(@"Untitled Display", nil);
     [menu addItemWithTitle:name action:nil keyEquivalent:@""];
     

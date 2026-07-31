@@ -43,7 +43,6 @@ extern NSString* const OsirixROIChangeNotification;
 extern NSString* const OsirixCloseViewerNotification;
 extern NSString* const OsirixUpdate2dCLUTMenuNotification;
 extern NSString* const OsirixUpdate2dWLWWMenuNotification;
-extern NSString* const OsirixROIVolumePropertiesChangedNotification;
 extern NSString* const OsirixVRViewDidBecomeFirstResponderNotification;
 extern NSString* const OsirixUpdateVolumeDataNotification;
 extern NSString* const OsirixRevertSeriesNotification;

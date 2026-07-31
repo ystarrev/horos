@@ -3021,133 +3021,6 @@ static BOOL initialized = NO;
     return GPUs;
 }
 
--(void)verifyHardwareInterpolation
-{
-	NSUInteger size = 32, size2 = size*size;
-	
-	NSWindow* win = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,size,size) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
-	
-	long annotCopy = [[NSUserDefaults standardUserDefaults] integerForKey:@"ANNOTATIONS"];
-	long clutBarsCopy = [[NSUserDefaults standardUserDefaults] integerForKey:@"CLUTBARS"];
-	BOOL noInterpolationCopy = [[NSUserDefaults standardUserDefaults] boolForKey:@"NOINTERPOLATION"];
-	BOOL highQInterpolationCopy = [[NSUserDefaults standardUserDefaults] boolForKey:@"SOFTWAREINTERPOLATION"];
-	
-	float pixData[] = {0,1,1,0};
-	DCMPix* dcmPix = [[DCMPix alloc] initWithData:pixData :32 :2 :2 :1 :1 :0 :0 :0];
-	
-	DCMView* dcmView;
-	unsigned char gray_2[size2];
-    unsigned char gray_1[size2];
-    
-	[[NSUserDefaults standardUserDefaults] setInteger:annotNone forKey:@"ANNOTATIONS"];
-	[[NSUserDefaults standardUserDefaults] setInteger:barHide forKey:@"CLUTBARS"];
-	
-	// pix 1: no interpolation
-    
-	[[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"NOINTERPOLATION"];
-	[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"SOFTWAREINTERPOLATION"];
-	[[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"FULL32BITPIPELINE"];
-	
-	dcmView = [[DCMView alloc] initWithFrame:NSMakeRect(0, 0, size,size)];
-	[dcmView setPixels:[NSMutableArray arrayWithObject:dcmPix] files:NULL rois:NULL firstImage:0 level:'i' reset:YES];
-	[dcmView setScaleValueCentered:size];
-	[win.contentView addSubview:dcmView];
-	[dcmView drawRect:NSMakeRect(0,0,size,size)];
-    
-    {
-        float imOrigin[ 3], imSpacing[ 2];
-        long width, height, spp, bpp;
-        
-        unsigned char *data = [dcmView getRawPixelsViewWidth: &width height: &height spp: &spp bpp: &bpp screenCapture: YES force8bits: YES removeGraphical: YES squarePixels: YES allowSmartCropping: NO origin: imOrigin spacing: imSpacing offset: nil isSigned: nil];
-        
-        assert( spp == 3);
-        
-        if( data)
-        {
-            for (int i = 0; i < size2; ++i)
-                gray_1[i] = (data[i*3]+data[i*3+1]+data[i*3+2])/3;
-            free( data);
-            
-//            planes[0] = gray_1;
-//            NSBitmapImageRep* representation = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:planes
-//                                                                                       pixelsWide:size pixelsHigh:size bitsPerSample:8
-//                                                                                  samplesPerPixel:1 hasAlpha:NO isPlanar:NO
-//                                                                                   colorSpaceName:NSCalibratedBlackColorSpace bytesPerRow:size
-//                                                                                     bitsPerPixel:8];
-//            [[representation TIFFRepresentation] writeToFile:@"/tmp/aaaaa1.tif" atomically:YES];
-//            [representation release];
-        }
-    }
-    
-	[dcmView removeFromSuperview];
-	
-	// pix 2: interpolation
-	
-	[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"NOINTERPOLATION"];
-	[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"SOFTWAREINTERPOLATION"];
-	[[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"FULL32BITPIPELINE"];
-	dcmView = [[DCMView alloc] initWithFrame: NSMakeRect(0, 0, size,size)];
-	[dcmView setPixels:[NSMutableArray arrayWithObject:dcmPix] files:NULL rois:NULL firstImage:0 level:'i' reset:YES];
-	[dcmView setScaleValueCentered:size];
-	[win.contentView addSubview:dcmView];
-	[dcmView drawRect:NSMakeRect(0,0,size,size)];
-	
-    {
-        float imOrigin[ 3], imSpacing[ 2];
-        long width, height, spp, bpp;
-        
-        unsigned char *data = [dcmView getRawPixelsViewWidth: &width height: &height spp: &spp bpp: &bpp screenCapture: YES force8bits: YES removeGraphical: YES squarePixels: YES allowSmartCropping: NO origin: imOrigin spacing: imSpacing offset: nil isSigned: nil];
-        
-        assert( spp == 3);
-        
-        if( data)
-        {
-            for (int i = 0; i < size2; ++i)
-                gray_1[i] = (data[i*3]+data[i*3+1]+data[i*3+2])/3;
-            free( data);
-            
-//            planes[0] = gray_1;
-//            NSBitmapImageRep* representation = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:planes
-//                                                                                       pixelsWide:size pixelsHigh:size bitsPerSample:8
-//                                                                                  samplesPerPixel:1 hasAlpha:NO isPlanar:NO
-//                                                                                   colorSpaceName:NSCalibratedBlackColorSpace bytesPerRow:size
-//                                                                                     bitsPerPixel:8];
-//            [[representation TIFFRepresentation] writeToFile:@"/tmp/aaaaa2.tif" atomically:YES];
-//            [representation release];
-        }
-    }
-	[dcmView removeFromSuperview];
-	
-	
-	[[NSUserDefaults standardUserDefaults] setInteger: annotCopy forKey:@"ANNOTATIONS"];
-	[[NSUserDefaults standardUserDefaults] setInteger: clutBarsCopy forKey:@"CLUTBARS"];
-	[[NSUserDefaults standardUserDefaults] setBool: noInterpolationCopy forKey:@"NOINTERPOLATION"];
-	[[NSUserDefaults standardUserDefaults] setBool: highQInterpolationCopy forKey:@"SOFTWAREINTERPOLATION"];
-	
-	[DCMView setCLUTBARS:clutBarsCopy ANNOTATIONS:annotCopy];
-	
-	// eval results
-	
-	CGFloat delta = 0;
-	for (int i = 0; i < size2; ++i)
-		delta += fabsf((float)gray_1[i]-(float)gray_2[i]);
-	BOOL has32bitPipeline = delta > 1000; // we may want to raise this..
-	
-	if (has32bitPipeline)
-	{
-		NSLog( @"-- 32bit pipeline available : delta = %f", delta);
-		[[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasFULL32BITPIPELINE"];
-        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"FULL32BITPIPELINE"];
-	}
-	else
-	{
-		NSLog( @"-- 32bit pipeline inactivated : delta = %f", delta);
-		[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"hasFULL32BITPIPELINE"];
-		[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"FULL32BITPIPELINE"];
-	}
-}
-
-
 - (void) applicationWillFinishLaunching: (NSNotification *) aNotification
 {
     ////////////////////////////
@@ -3294,12 +3167,14 @@ static BOOL initialized = NO;
 	
 	if (startCount == 0) // Replaces FIRSTTIME.
 	{
-		switch( HorosPresentInformationalAlert( NSLocalizedString(@"Horos Updates", nil), NSLocalizedString( @"Would you like to activate automatic checking for updates?", nil), NSLocalizedString( @"Yes", nil), NSLocalizedString( @"No", nil), nil))
-		{
-			case 0:
-				[[NSUserDefaults standardUserDefaults] setObject: @"NO" forKey: @"CheckHorosUpdates"];
-			break;
-		}
+        HorosAlertResponse response = HorosPresentInformationalAlert(
+            NSLocalizedString(@"Horos Updates", nil),
+            NSLocalizedString(@"Would you like to activate automatic checking for updates?", nil),
+            NSLocalizedString(@"Yes", nil),
+            NSLocalizedString(@"No", nil),
+            nil);
+        if (response == HorosAlertResponseSecondButton)
+            [[NSUserDefaults standardUserDefaults] setObject:@"NO" forKey:@"CheckHorosUpdates"];
 	}
 	else
 	{

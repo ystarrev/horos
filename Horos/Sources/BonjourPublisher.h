@@ -54,6 +54,8 @@
 	NSLock* dicomSendLock;
 }
 
+@property(nonatomic, readonly) NSInteger port;
+
 //@property(retain) NSString* serviceName;
 //@property(retain, readonly) NSNetService* netService;
 

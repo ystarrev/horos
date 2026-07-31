@@ -34,7 +34,7 @@ static NSString  *pasteBoardTypeCover = @"KeyImages";
 {
     if (self = [super initWithCoder:decoder])
 	{
-        [self registerForDraggedTypes:[NSArray arrayWithObjects:pasteBoardTypeCover, pasteBoardOsiriX, nil]];
+        [self registerForDraggedTypes:[NSArray arrayWithObjects:pasteBoardTypeCover, HorosPasteboardType, nil]];
     }
     return self;
 }
@@ -50,7 +50,7 @@ static NSString  *pasteBoardTypeCover = @"KeyImages";
 - (id)initWithFrame:(NSRect)frame {
     if (self = [super initWithFrame:frame])
 	{
-        [self registerForDraggedTypes:[NSArray arrayWithObjects:pasteBoardTypeCover, pasteBoardOsiriX, nil]];
+        [self registerForDraggedTypes:[NSArray arrayWithObjects:pasteBoardTypeCover, HorosPasteboardType, nil]];
     }
     return self;
 }
@@ -99,7 +99,7 @@ static NSString  *pasteBoardTypeCover = @"KeyImages";
         [nc postNotificationName:OsirixDragMatrixImageMovedNotification object:self userInfo:dict];
     }
 	
-	if ([types indexOfObject:pasteBoardOsiriX] != NSNotFound)
+	if ([types indexOfObject:HorosPasteboardType] != NSNotFound)
 	{
 		NSArray *array = nil;
 		 id image = [(DCMView *)[sender draggingSource] dicomImage];

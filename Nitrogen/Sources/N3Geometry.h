@@ -190,13 +190,6 @@ bool N3VectorMakeWithDictionaryRepresentation(CFDictionaryRef dict, N3Vector *ve
 bool N3LineMakeWithDictionaryRepresentation(CFDictionaryRef dict, N3Line *line);
 bool N3PlaneMakeWithDictionaryRepresentation(CFDictionaryRef dict, N3Plane *plane);
 
-// gets openGL matrix values out of a N3AffineTransform
-void N3AffineTransformGetOpenGLMatrixd(N3AffineTransform transform, double *d); // d better be 16 elements long
-void N3AffineTransformGetOpenGLMatrixf(N3AffineTransform transform, float *f); // f better be 16 elements long
-
-N3AffineTransform N3AffineTransformMakeFromOpenGLMatrixd(double *d); // d better be 16 elements long
-N3AffineTransform N3AffineTransformMakeFromOpenGLMatrixf(float *f); // f better be 16 elements long
-
 // returns the real numbered roots of ax+b
 CFIndex findRealLinearRoot(CGFloat a, CGFloat b, CGFloat *root); // returns the number of roots set
 // returns the real numbered roots of ax^2+bx+c
@@ -237,6 +230,5 @@ NSString *NSStringFromN3Plane(N3Plane plane);
 #endif /* __OBJC__ */
 
 #endif	/* _N3GEOMETRY_H_ */
-
 
 

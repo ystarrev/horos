@@ -532,7 +532,7 @@ enum
 /** Refreshed window width and window level */
 - (void) refresh;
 
-/** Action to sset up non DICOM printing */
+/** Action to set up standard printing */
 - (IBAction) setPagesToPrint:(id) sender;
 
 /** Action to start printing.  Called when print window is ordered out */

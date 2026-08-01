@@ -2136,7 +2136,6 @@ final class HorosSettingsWindowController: NSWindowController {
         .init(identifier: "viewers", title: "Viewers", imageName: "AxialSmall"),
         .init(identifier: "pet", title: "PET", imageName: "SUV"),
         .init(identifier: "annotations", title: "Annotations", imageName: "CustomImageAnnotations"),
-        .init(identifier: "dicomprint", title: "DICOM Print", imageName: "Print"),
         .init(identifier: "listener", title: "Listener", imageName: "Network"),
         .init(identifier: "locations", title: "Locations", imageName: "AccountPreferences"),
         .init(identifier: "routing", title: "Routing", imageName: "route"),

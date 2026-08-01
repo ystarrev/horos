@@ -16,7 +16,7 @@ openjpeg_lib="${openjpeg_install}/lib/libopenjp2.a"
 bridge_output="${copy_dir}/libHorosModernDCMTKBridge.dylib"
 cmake_cache="${cmake_dir}/CMakeCache.txt"
 
-desired_modules="ofstd;oflog;oficonv;dcmdata;dcmimgle;dcmimage;dcmjpeg;dcmjpls;dcmtls;dcmnet;dcmsr;dcmsign;dcmwlm;dcmqrdb;dcmpstat;dcmrt;dcmiod;dcmfg;dcmseg;dcmtract;dcmpmap;dcmect;dcmapps"
+desired_modules="ofstd;oflog;oficonv;dcmdata;dcmimgle;dcmimage;dcmjpeg;dcmjpls;dcmtls;dcmnet;dcmsr;dcmwlm;dcmqrdb;dcmrt;dcmiod;dcmfg;dcmseg;dcmtract;dcmpmap;dcmect;dcmapps"
 
 if [ "$ONLY_ACTIVE_ARCH" = "YES" ] && [ -n "$NATIVE_ARCH_ACTUAL" ] && [ "$NATIVE_ARCH_ACTUAL" != "undefined_arch" ]; then
     desired_archs="$NATIVE_ARCH_ACTUAL"
@@ -59,8 +59,6 @@ make "${args[@]}" install
 # Copy subset of applications to build directory
 #
 cp "${install_dir}/bin/dcmdump" "${copy_dir}"
-cp "${install_dir}/bin/dcmpsprt" "${copy_dir}"
-cp "${install_dir}/bin/dcmprscu" "${copy_dir}"
 cp "${install_dir}/bin/dsr2html" "${copy_dir}"
 cp "${install_dir}/bin/echoscu" "${copy_dir}"
 

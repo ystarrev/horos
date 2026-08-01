@@ -336,11 +336,42 @@ private enum MetalViewerWindowLevelTarget {
     case overlay
 }
 
-struct MetalDICOMPrintFrame {
-    let grayscalePixels: Data
+struct MetalPrintFrame {
+    let bgraPixels: Data
     let width: Int
     let height: Int
-    let sourceFilePath: String?
+
+    func makeImage() -> NSImage? {
+        guard width > 0,
+              height > 0,
+              bgraPixels.count >= width * height * 4,
+              let provider = CGDataProvider(data: bgraPixels as CFData)
+        else {
+            return nil
+        }
+
+        let alphaInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
+        let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(alphaInfo)
+        guard let image = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        ) else {
+            return nil
+        }
+        return NSImage(
+            cgImage: image,
+            size: NSSize(width: CGFloat(width), height: CGFloat(height))
+        )
+    }
 }
 
 final class MetalViewerRenderer: NSObject, MTKViewDelegate {
@@ -991,7 +1022,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    func makeDICOMPrintFrame(at index: Int) -> MetalDICOMPrintFrame? {
+    func makePrintFrame(at index: Int) -> MetalPrintFrame? {
         guard pixList.indices.contains(index) else { return nil }
 
         let previousSliceIndex = currentSliceIndex
@@ -1010,7 +1041,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         let sourceWidth = max(Int(currentPix.widthWithoutLoading()), 1)
         let sourceHeight = max(Int(currentPix.heightWithoutLoading()), 1)
-        let maximumDimension = 2_048
+        let maximumDimension = 4_096
         let reduction = max(
             CGFloat(sourceWidth) / CGFloat(maximumDimension),
             CGFloat(sourceHeight) / CGFloat(maximumDimension),
@@ -1107,20 +1138,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             )
         }
 
-        var grayscalePixels = [UInt8](repeating: 0, count: width * height)
-        for pixelIndex in grayscalePixels.indices {
-            let byteIndex = pixelIndex * 4
-            let blue = UInt32(bgraPixels[byteIndex])
-            let green = UInt32(bgraPixels[byteIndex + 1])
-            let red = UInt32(bgraPixels[byteIndex + 2])
-            grayscalePixels[pixelIndex] = UInt8((54 * red + 183 * green + 19 * blue) >> 8)
-        }
-
-        return MetalDICOMPrintFrame(
-            grayscalePixels: Data(grayscalePixels),
+        return MetalPrintFrame(
+            bgraPixels: Data(bgraPixels),
             width: width,
-            height: height,
-            sourceFilePath: currentPix.srcFile
+            height: height
         )
     }
 

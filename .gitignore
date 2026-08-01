@@ -15,10 +15,6 @@ xcuserdata
 __MACOSX
 /AGENTS.md
 
-DICOMPrint/xercesc
-DICOMPrint/libxerces-c.27.dylib
-DICOMPrint/libdcmprintscu.dylib
-
 Binaries/3DconnexionClient.framework/
 Binaries/DCMTK/
 Binaries/dciodvfy
@@ -36,7 +32,6 @@ Binaries/homephone.framework/
 Binaries/EmbeddedPlugins/HorosCloud.horosplugin
 
 *.xcscmblueprint
-DICOMPrint/DICOMPrint
 Horos.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
 *.pcm
 /.clang-module-cache

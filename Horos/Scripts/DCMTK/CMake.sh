@@ -62,10 +62,8 @@ args+=(-DCMAKE_INSTALL_PREFIX="$install_dir")
 
 args+=(-DCMAKE_IGNORE_PATH="/opt/local/include;/opt/local/lib;/opt/homebrew/include;/opt/homebrew/lib")
 
-# Horos needs a subset of DCMTK plus the dcmsign library (`dcmdsig`) that
-# dcmpstat links against. We still avoid building the standalone `dcmsign`
-# executable separately in the module CMake to keep this target lean.
-args+=(-DDCMTK_MODULES=ofstd\;oflog\;oficonv\;dcmdata\;dcmimgle\;dcmimage\;dcmjpeg\;dcmjpls\;dcmtls\;dcmnet\;dcmsr\;dcmsign\;dcmwlm\;dcmqrdb\;dcmpstat\;dcmrt\;dcmiod\;dcmfg\;dcmseg\;dcmtract\;dcmpmap\;dcmect\;dcmapps)
+# Build only the DCMTK modules used by Horos.
+args+=(-DDCMTK_MODULES=ofstd\;oflog\;oficonv\;dcmdata\;dcmimgle\;dcmimage\;dcmjpeg\;dcmjpls\;dcmtls\;dcmnet\;dcmsr\;dcmwlm\;dcmqrdb\;dcmrt\;dcmiod\;dcmfg\;dcmseg\;dcmtract\;dcmpmap\;dcmect\;dcmapps)
 
 export PKG_CONFIG_PATH="$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install/lib/pkgconfig"
 

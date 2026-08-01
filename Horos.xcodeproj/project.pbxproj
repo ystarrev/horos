@@ -280,8 +280,6 @@
 		5F200F8024292385003EC23E /* dciodvfy in Resources */ = {isa = PBXBuildFile; fileRef = 844003990E8CF99500A00EBD /* dciodvfy */; };
 		5FCC11EE2423CEB00039EE8F /* DICOMValidator in Resources */ = {isa = PBXBuildFile; fileRef = AB724FF60ADE6ECB00A212A0 /* DICOMValidator */; };
 		5FCC11EF2423D0220039EE8F /* dcmdump in Resources */ = {isa = PBXBuildFile; fileRef = ABBB639D0635874D00D9531F /* dcmdump */; };
-		5FCC11F02423D0220039EE8F /* dcmprscu in Resources */ = {isa = PBXBuildFile; fileRef = 5F92186123F455A8000B8754 /* dcmprscu */; };
-		5FCC11F12423D0220039EE8F /* dcmpsprt in Resources */ = {isa = PBXBuildFile; fileRef = 5F92185F23F45592000B8754 /* dcmpsprt */; };
 		5FCC11F22423D0220039EE8F /* dicom.dic in Resources */ = {isa = PBXBuildFile; fileRef = ABBB639E0635874D00D9531F /* dicom.dic */; };
 		5FCC11F32423D0220039EE8F /* dsr2html in Resources */ = {isa = PBXBuildFile; fileRef = 84B5EA4211A2BC0900193FDB /* dsr2html */; };
 		5FCC11F42423D0220039EE8F /* echoscu in Resources */ = {isa = PBXBuildFile; fileRef = CE9C73490B34946B0062FCCC /* echoscu */; };
@@ -702,7 +700,6 @@
 		AB7CB7B60A6E3922008DFCC9 /* smile.png in Resources */ = {isa = PBXBuildFile; fileRef = AB7CB7B30A6E3922008DFCC9 /* smile.png */; };
 		AB7D0BB50615F94D00890872 /* ROI.h in Headers */ = {isa = PBXBuildFile; fileRef = AB7D0BB30615F94D00890872 /* ROI.h */; };
 		AB7D0BB60615F94D00890872 /* ROI.m in Sources */ = {isa = PBXBuildFile; fileRef = AB7D0BB40615F94D00890872 /* ROI.m */; };
-		D1C0A0020000000000000001 /* DICOMPrintWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C0A0010000000000000001 /* DICOMPrintWindowController.swift */; };
 		AB85C65D0BFADA9500C4B52E /* FileIcon.tif in Resources */ = {isa = PBXBuildFile; fileRef = AB85C65B0BFADA9500C4B52E /* FileIcon.tif */; };
 		AB86603B066E40970015E1C4 /* ToolbarPanel.m in Sources */ = {isa = PBXBuildFile; fileRef = AB866037066E40970015E1C4 /* ToolbarPanel.m */; };
 		AB86603C066E40970015E1C4 /* ToolbarPanel.h in Headers */ = {isa = PBXBuildFile; fileRef = AB866038066E40970015E1C4 /* ToolbarPanel.h */; };
@@ -824,8 +821,6 @@
 		BF8E5AC109CA0D8200DE02FF /* DCMTKQueryRetrieveSCP.mm in Sources */ = {isa = PBXBuildFile; fileRef = BF8E5ABD09CA0D8200DE02FF /* DCMTKQueryRetrieveSCP.mm */; };
 		BF90552209EB4985009C30D1 /* MoveManager.h in Headers */ = {isa = PBXBuildFile; fileRef = BF90551C09EB4985009C30D1 /* MoveManager.h */; };
 		BF90552309EB4985009C30D1 /* MoveManager.m in Sources */ = {isa = PBXBuildFile; fileRef = BF90551D09EB4985009C30D1 /* MoveManager.m */; };
-		BF9999000A1E695800F50753 /* DCMTKPrintSCU.h in Headers */ = {isa = PBXBuildFile; fileRef = BF9998FE0A1E695800F50753 /* DCMTKPrintSCU.h */; };
-		BF9999010A1E695800F50753 /* DCMTKPrintSCU.mm in Sources */ = {isa = PBXBuildFile; fileRef = BF9998FF0A1E695800F50753 /* DCMTKPrintSCU.mm */; };
 		BFA7D2180A51D1460013F76E /* BrowserControllerDCMTKCategory.h in Headers */ = {isa = PBXBuildFile; fileRef = BFA7D2160A51D1460013F76E /* BrowserControllerDCMTKCategory.h */; };
 		BFA7D2190A51D1460013F76E /* BrowserControllerDCMTKCategory.mm in Sources */ = {isa = PBXBuildFile; fileRef = BFA7D2170A51D1460013F76E /* BrowserControllerDCMTKCategory.mm */; };
 		BFAEB3FA06BF3BD900C7EF1E /* DCMPixelDataAttributeJPEG8.h in Headers */ = {isa = PBXBuildFile; fileRef = BFAEB3F606BF3BD900C7EF1E /* DCMPixelDataAttributeJPEG8.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -1020,8 +1015,6 @@
 		CEB98C6C1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.h in Headers */ = {isa = PBXBuildFile; fileRef = CEB98C671335086B0083F3FD /* OSIAutoroutingPreferencePanePref.h */; };
 		CEB98C6D1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C681335086B0083F3FD /* OSIAutoroutingPreferencePanePref.m */; };
 		CEB98C6F1335086B0083F3FD /* RoutesTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C6A1335086B0083F3FD /* RoutesTableView.swift */; };
-		CEB98C841335088C0083F3FD /* AYDicomPrintPref.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB98C801335088C0083F3FD /* AYDicomPrintPref.swift */; };
-		CEB98C851335088C0083F3FD /* AYDicomPrintPref.xib in Resources */ = {isa = PBXBuildFile; fileRef = CEB98C811335088C0083F3FD /* AYDicomPrintPref.xib */; };
 		CEBA5FE011B244EA005F3A0E /* SpectroIcon.jpg in Resources */ = {isa = PBXBuildFile; fileRef = CEBA5FDF11B244EA005F3A0E /* SpectroIcon.jpg */; };
 		CEBA709D10C70039003A6186 /* GetPrimaryMACAddress.m in Sources */ = {isa = PBXBuildFile; fileRef = CEBA709C10C70039003A6186 /* GetPrimaryMACAddress.m */; };
 		CEBD8E5F0B675A75008FD772 /* Propagate.tif in Resources */ = {isa = PBXBuildFile; fileRef = CEBD8E5B0B675A75008FD772 /* Propagate.tif */; };
@@ -1311,6 +1304,13 @@
 			remoteInfo = OpenJPEG;
 		};
 		5F31DAC5241AE12300573589 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 29B97313FDCFA39411CA2CEA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5F1E2A682411AE7E00365A0C;
+			remoteInfo = DCMTK;
+		};
+		F4DC0A010000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 29B97313FDCFA39411CA2CEA /* Project object */;
 			proxyType = 1;
@@ -1649,8 +1649,6 @@
 		59F5F3F811F476030047A90D /* N2ImageButtonCell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = N2ImageButtonCell.mm; path = Nitrogen/Sources/N2ImageButtonCell.mm; sourceTree = SOURCE_ROOT; };
 		59F5F4EA11F485CC0047A90D /* BrowserController+Activity.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "BrowserController+Activity.h"; path = "Horos/Sources/BrowserController+Activity.h"; sourceTree = SOURCE_ROOT; };
 		59F5F4EB11F485CC0047A90D /* BrowserController+Activity.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "BrowserController+Activity.mm"; path = "Horos/Sources/BrowserController+Activity.mm"; sourceTree = SOURCE_ROOT; };
-		5F92185F23F45592000B8754 /* dcmpsprt */ = {isa = PBXFileReference; lastKnownFileType = text; name = dcmpsprt; path = DCMTK/dcmpsprt; sourceTree = BUILT_PRODUCTS_DIR; };
-		5F92186123F455A8000B8754 /* dcmprscu */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = dcmprscu; path = DCMTK/dcmprscu; sourceTree = BUILT_PRODUCTS_DIR; };
 		7128FD751487D54A00AB54A1 /* N2UnclickableSplitView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = N2UnclickableSplitView.h; path = Nitrogen/Sources/N2UnclickableSplitView.h; sourceTree = SOURCE_ROOT; };
 		7128FD761487D54A00AB54A1 /* N2UnclickableSplitView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = N2UnclickableSplitView.m; path = Nitrogen/Sources/N2UnclickableSplitView.m; sourceTree = SOURCE_ROOT; };
 		71353C4F1469260B00359CAB /* NSDate+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "NSDate+N2.h"; path = "Nitrogen/Sources/NSDate+N2.h"; sourceTree = SOURCE_ROOT; };
@@ -1831,7 +1829,6 @@
 		8CC299DE2F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSICDPreferencePanePref.xib; sourceTree = "<group>"; };
 		8CC299DF2F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/DiscMountedAskTheUserDialog.xib; sourceTree = "<group>"; };
 		8CC299E02F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/OSIAutoroutingPreferencePanePref.xib; sourceTree = "<group>"; };
-		8CC299E22F3158B600669578 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/AYDicomPrintPref.xib; sourceTree = "<group>"; };
 		9923358B2009A7ED000E10BA /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		994FABED1CEBF25800980A15 /* OnOffSwitchControl.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OnOffSwitchControl.h; sourceTree = "<group>"; };
 		994FABEE1CEBF25800980A15 /* OnOffSwitchControl.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OnOffSwitchControl.m; sourceTree = "<group>"; };
@@ -2087,7 +2084,6 @@
 		AB7CB7B30A6E3922008DFCC9 /* smile.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = smile.png; sourceTree = "<group>"; };
 		AB7D0BB30615F94D00890872 /* ROI.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ROI.h; sourceTree = "<group>"; };
 		AB7D0BB40615F94D00890872 /* ROI.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ROI.m; sourceTree = "<group>"; };
-		D1C0A0010000000000000001 /* DICOMPrintWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DICOMPrintWindowController.swift; sourceTree = "<group>"; };
 		AB85C65B0BFADA9500C4B52E /* FileIcon.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = FileIcon.tif; sourceTree = "<group>"; };
 		AB866037066E40970015E1C4 /* ToolbarPanel.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = ToolbarPanel.m; sourceTree = "<group>"; };
 		AB866038066E40970015E1C4 /* ToolbarPanel.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = ToolbarPanel.h; sourceTree = "<group>"; };
@@ -2223,8 +2219,6 @@
 		BF90551D09EB4985009C30D1 /* MoveManager.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = MoveManager.m; sourceTree = "<group>"; };
 		BF9201E80883667800A3D77B /* OsiriXSCPDataHandler.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = OsiriXSCPDataHandler.h; sourceTree = "<group>"; };
 		BF9201E90883667800A3D77B /* OsiriXSCPDataHandler.mm */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.objcpp; path = OsiriXSCPDataHandler.mm; sourceTree = "<group>"; };
-		BF9998FE0A1E695800F50753 /* DCMTKPrintSCU.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DCMTKPrintSCU.h; sourceTree = "<group>"; };
-		BF9998FF0A1E695800F50753 /* DCMTKPrintSCU.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = DCMTKPrintSCU.mm; sourceTree = "<group>"; };
 		BFA7D2160A51D1460013F76E /* BrowserControllerDCMTKCategory.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = BrowserControllerDCMTKCategory.h; sourceTree = "<group>"; };
 		BFA7D2170A51D1460013F76E /* BrowserControllerDCMTKCategory.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = BrowserControllerDCMTKCategory.mm; sourceTree = "<group>"; };
 		BFAEB3F606BF3BD900C7EF1E /* DCMPixelDataAttributeJPEG8.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DCMPixelDataAttributeJPEG8.h; sourceTree = "<group>"; };
@@ -2405,7 +2399,6 @@
 		CEB98C671335086B0083F3FD /* OSIAutoroutingPreferencePanePref.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OSIAutoroutingPreferencePanePref.h; sourceTree = "<group>"; };
 		CEB98C681335086B0083F3FD /* OSIAutoroutingPreferencePanePref.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OSIAutoroutingPreferencePanePref.m; sourceTree = "<group>"; };
 		CEB98C6A1335086B0083F3FD /* RoutesTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutesTableView.swift; sourceTree = "<group>"; };
-		CEB98C801335088C0083F3FD /* AYDicomPrintPref.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AYDicomPrintPref.swift; sourceTree = "<group>"; };
 		CEBA5FDF11B244EA005F3A0E /* SpectroIcon.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = SpectroIcon.jpg; sourceTree = "<group>"; };
 		CEBA709C10C70039003A6186 /* GetPrimaryMACAddress.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GetPrimaryMACAddress.m; sourceTree = "<group>"; };
 		CEBD8E5B0B675A75008FD772 /* Propagate.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Propagate.tif; sourceTree = "<group>"; };
@@ -3742,15 +3735,6 @@
 			path = DICOMValidator;
 			sourceTree = "<group>";
 		};
-		AB80EBA30AF1F5B600E7E934 /* DICOM Print */ = {
-			isa = PBXGroup;
-			children = (
-				D1C0A0010000000000000001 /* DICOMPrintWindowController.swift */,
-			);
-			name = "DICOM Print";
-			path = DICOMPrint;
-			sourceTree = SOURCE_ROOT;
-		};
 		AB87FA740C06BEB200CD2976 /* NIfTI_Library */ = {
 			isa = PBXGroup;
 			children = (
@@ -3921,8 +3905,6 @@
 			isa = PBXGroup;
 			children = (
 				ABBB639D0635874D00D9531F /* dcmdump */,
-				5F92186123F455A8000B8754 /* dcmprscu */,
-				5F92185F23F45592000B8754 /* dcmpsprt */,
 				ABBB639E0635874D00D9531F /* dicom.dic */,
 				84B5EA4211A2BC0900193FDB /* dsr2html */,
 				CE9C73490B34946B0062FCCC /* echoscu */,
@@ -4168,7 +4150,6 @@
 		ABD9E6D305B49DB70077115D /* 2D Viewer */ = {
 			isa = PBXGroup;
 			children = (
-				AB80EBA30AF1F5B600E7E934 /* DICOM Print */,
 				BF952BA206C9C7F40063B562 /* Single Window */,
 				CE6E2CAF06CAE45A00BC7907 /* PlotWindow.h */,
 				CE6E2CB006CAE45A00BC7907 /* PlotWindow.m */,
@@ -4223,8 +4204,6 @@
 				BF8E5ABC09CA0D8200DE02FF /* DCMTKQueryRetrieveSCP.h */,
 				BF8E5ABD09CA0D8200DE02FF /* DCMTKQueryRetrieveSCP.mm */,
 				F4CTXCL0000000000000002 /* ContextCleaner.mm */,
-				BF9998FE0A1E695800F50753 /* DCMTKPrintSCU.h */,
-				BF9998FF0A1E695800F50753 /* DCMTKPrintSCU.mm */,
 				A9C5496310FF2C9F0026EA70 /* DICOMTLS.h */,
 				A9C5496410FF2C9F0026EA70 /* DICOMTLS.m */,
 			);
@@ -4378,7 +4357,6 @@
 				CEB98CF513350D4E0083F3FD /* Database */,
 				CEB98CF713350D7F0083F3FD /* CD */,
 				CEB98CF813350D8C0083F3FD /* Autorouting */,
-				CEB98CFA13350DAB0083F3FD /* DicomPrint */,
 			);
 			name = "Built-in Panes";
 			path = "Preference Panes";
@@ -4506,16 +4484,6 @@
 			);
 			name = Autorouting;
 			path = OSIAutoroutingPreferencePane;
-			sourceTree = "<group>";
-		};
-		CEB98CFA13350DAB0083F3FD /* DicomPrint */ = {
-			isa = PBXGroup;
-			children = (
-				CEB98C801335088C0083F3FD /* AYDicomPrintPref.swift */,
-				CEB98C811335088C0083F3FD /* AYDicomPrintPref.xib */,
-			);
-			name = DicomPrint;
-			path = AYDicomPrintPreferencePane;
 			sourceTree = "<group>";
 		};
 		CEC171F70874839C0021C3FC /* BurnAnimation */ = {
@@ -4687,7 +4655,6 @@
 				BFBCD8A709E4C2E40078ABB6 /* DCMTKServiceClassUser.h in Headers */,
 				BF90552209EB4985009C30D1 /* MoveManager.h in Headers */,
 				BFF5D24009F93B3F0077E16B /* LogManager.h in Headers */,
-				BF9999000A1E695800F50753 /* DCMTKPrintSCU.h in Headers */,
 				AB6FF59B0A47D08000C501F0 /* DefaultsOsiriX.h in Headers */,
 				BFA7D2180A51D1460013F76E /* BrowserControllerDCMTKCategory.h in Headers */,
 				BF2425510A51D39500D3D76B /* DicomFileDCMTKCategory.h in Headers */,
@@ -4903,6 +4870,7 @@
 			dependencies = (
 				99C0EE1B202A101000D88E8D /* PBXTargetDependency */,
 				71A523192021D2400065793A /* PBXTargetDependency */,
+				F4DC0A010000000000000002 /* PBXTargetDependency */,
 			);
 			name = DCM;
 			productName = DCM;
@@ -5061,8 +5029,6 @@
 			files = (
 				5F200F8024292385003EC23E /* dciodvfy in Resources */,
 				5FCC11EF2423D0220039EE8F /* dcmdump in Resources */,
-				5FCC11F02423D0220039EE8F /* dcmprscu in Resources */,
-				5FCC11F12423D0220039EE8F /* dcmpsprt in Resources */,
 				5FCC11F22423D0220039EE8F /* dicom.dic in Resources */,
 				5FCC11F32423D0220039EE8F /* dsr2html in Resources */,
 				5FCC11F42423D0220039EE8F /* echoscu in Resources */,
@@ -5301,7 +5267,6 @@
 				71AD67521FC4248100A1E2F8 /* ired.plist in Resources */,
 				CEB98C5F1335085D0083F3FD /* OSICDPreferencePanePref.xib in Resources */,
 				CEB98C6B1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.xib in Resources */,
-				CEB98C851335088C0083F3FD /* AYDicomPrintPref.xib in Resources */,
 				59C447E21451705900D71580 /* Eject_gray.pdf in Resources */,
 				59C447E41451705900D71580 /* Eject_lightgray.pdf in Resources */,
 				848CE28F145AC9AE00BEB249 /* curvedPath.icns in Resources */,
@@ -5474,8 +5439,6 @@
 				"fi",
 				"",
 				"codesign --verbose=4 -f --prefix \"${prefix}\" --options runtime -s \"${identity}\" \"${copy_dir}/dcmdump\"",
-				"codesign --verbose=4 -f --prefix \"${prefix}\" --options runtime -s \"${identity}\" \"${copy_dir}/dcmpsprt\"",
-				"codesign --verbose=4 -f --prefix \"${prefix}\" --options runtime -s \"${identity}\" \"${copy_dir}/dcmprscu\"",
 				"codesign --verbose=4 -f --prefix \"${prefix}\" --options runtime -s \"${identity}\" \"${copy_dir}/dsr2html\"",
 				"codesign --verbose=4 -f --prefix \"${prefix}\" --options runtime -s \"${identity}\" \"${copy_dir}/echoscu\"",
 				"codesign --verbose=4 -f --prefix \"${prefix}\" --options runtime -s \"${identity}\" \"${copy_dir}/libHorosModernDCMTKBridge.dylib\"",
@@ -5506,8 +5469,6 @@
 			name = Make;
 			outputPaths = (
 				"$(BUILT_PRODUCTS_DIR)/DCMTK/dcmdump",
-				"$(BUILT_PRODUCTS_DIR)/DCMTK/dcmprscu",
-				"$(BUILT_PRODUCTS_DIR)/DCMTK/dcmpsprt",
 				"$(BUILT_PRODUCTS_DIR)/DCMTK/dicom.dic",
 				"$(BUILT_PRODUCTS_DIR)/DCMTK/dsr2html",
 				"$(BUILT_PRODUCTS_DIR)/DCMTK/echoscu",
@@ -6139,14 +6100,12 @@
 				BFBCD8A809E4C2E40078ABB6 /* DCMTKServiceClassUser.mm in Sources */,
 				BF90552309EB4985009C30D1 /* MoveManager.m in Sources */,
 				BFF5D24109F93B3F0077E16B /* LogManager.mm in Sources */,
-				BF9999010A1E695800F50753 /* DCMTKPrintSCU.mm in Sources */,
 				AB6FF59C0A47D08000C501F0 /* DefaultsOsiriX.m in Sources */,
 				BFA7D2190A51D1460013F76E /* BrowserControllerDCMTKCategory.mm in Sources */,
 				BF2425520A51D39500D3D76B /* DicomFileDCMTKCategory.mm in Sources */,
 				BF26843E0A5CBB1C004EB838 /* DicomImageDCMTKCategory.mm in Sources */,
 				A95B98A50A6E65B100E476D4 /* QTExportHTMLSummary.m in Sources */,
 				A95837B40AAF0DC80001D415 /* SRAnnotation.mm in Sources */,
-				D1C0A0020000000000000001 /* DICOMPrintWindowController.swift in Sources */,
 				CE6692DB0AF545F90073D923 /* printView.m in Sources */,
 				BF4108EB0B126C7800AAC648 /* DarkBox.m in Sources */,
 				BF09B1400B2E681D00AA97E2 /* OSIWindowController.m in Sources */,
@@ -6283,7 +6242,6 @@
 				CEB98C611335085D0083F3FD /* OSICDPreferencePanePref.m in Sources */,
 				CEB98C6D1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.m in Sources */,
 				CEB98C6F1335086B0083F3FD /* RoutesTableView.swift in Sources */,
-				CEB98C841335088C0083F3FD /* AYDicomPrintPref.swift in Sources */,
 				59B696651337C957009356ED /* N2DirectoryEnumerator.mm in Sources */,
 				4FC5E3F7138AB91E00CB635F /* CPRStretchedOperation.m in Sources */,
 				596D30B71439BA17004EE9EC /* DicomStudy+Report.mm in Sources */,
@@ -6467,6 +6425,11 @@
 			isa = PBXTargetDependency;
 			target = 5F1E2A682411AE7E00365A0C /* DCMTK */;
 			targetProxy = F4DECD000000000000000001 /* PBXContainerItemProxy */;
+		};
+		F4DC0A010000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5F1E2A682411AE7E00365A0C /* DCMTK */;
+			targetProxy = F4DC0A010000000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -6783,14 +6746,6 @@
 			name = OSIAutoroutingPreferencePanePref.xib;
 			sourceTree = "<group>";
 		};
-		CEB98C811335088C0083F3FD /* AYDicomPrintPref.xib */ = {
-			isa = PBXVariantGroup;
-			children = (
-				8CC299E22F3158B600669578 /* Base */,
-			);
-			name = AYDicomPrintPref.xib;
-			sourceTree = "<group>";
-		};
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
@@ -6891,7 +6846,6 @@
 					"$(PROJECT_DIR)/DCMTK/dcmjpeg/include",
 					"$(PROJECT_DIR)/DCMTK/dcmjpls/include",
 					"$(PROJECT_DIR)/DCMTK/dcmnet/include",
-					"$(PROJECT_DIR)/DCMTK/dcmpstat/include",
 					"$(PROJECT_DIR)/DCMTK/dcmqrdb/include",
 					"$(PROJECT_DIR)/DCMTK/dcmsr/include",
 					"$(PROJECT_DIR)/DCMTK/dcmtls/include",
@@ -6914,7 +6868,6 @@
 					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/wlib,
 					$CONFIGURATION_TEMP_DIR/Grok.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/lib,
-					"$(PROJECT_DIR)/DICOMPrint",
 				);
 				OTHER_CFLAGS = (
 					"$(inherited)",
@@ -6939,7 +6892,6 @@
 					"-ldcmnet",
 					"-ldcmtls",
 					"-ldcmsr",
-					"-ldcmpstat",
 					"-ldcmjpeg",
 					"-ldcmjpls",
 					"-ldcmimgle",
@@ -7419,7 +7371,6 @@
 					"$(PROJECT_DIR)/DCMTK/dcmjpeg/include",
 					"$(PROJECT_DIR)/DCMTK/dcmjpls/include",
 					"$(PROJECT_DIR)/DCMTK/dcmnet/include",
-					"$(PROJECT_DIR)/DCMTK/dcmpstat/include",
 					"$(PROJECT_DIR)/DCMTK/dcmqrdb/include",
 					"$(PROJECT_DIR)/DCMTK/dcmsr/include",
 					"$(PROJECT_DIR)/DCMTK/dcmtls/include",
@@ -7440,7 +7391,6 @@
 					$CONFIGURATION_TEMP_DIR/GDCM.build/Install/wlib,
 					$CONFIGURATION_TEMP_DIR/Grok.build/Install/lib,
 					$CONFIGURATION_TEMP_DIR/CharLS.build/Install/lib,
-					"$(PROJECT_DIR)/DICOMPrint",
 				);
 				OTHER_CFLAGS = (
 					"$(inherited)",
@@ -7465,7 +7415,6 @@
 					"-ldcmnet",
 					"-ldcmtls",
 					"-ldcmsr",
-					"-ldcmpstat",
 					"-ldcmjpeg",
 					"-ldcmjpls",
 					"-ldcmimgle",

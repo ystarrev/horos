@@ -4,11 +4,74 @@ private func metalWindowTimingLog(_ message: String, since start: CFAbsoluteTime
     MetalViewerDiagnostics.timingLog(message, since: start)
 }
 
+private final class MetalImagePrintView: NSView {
+    private let image: NSImage
+    private let printInfo: NSPrintInfo
+
+    init(image: NSImage, printInfo: NSPrintInfo) {
+        self.image = image
+        self.printInfo = printInfo
+        super.init(frame: NSRect(origin: .zero, size: printInfo.paperSize))
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func knowsPageRange(_ range: NSRangePointer) -> Bool {
+        setFrameSize(printInfo.paperSize)
+        range.pointee = NSRange(location: 1, length: 1)
+        return true
+    }
+
+    override func rectForPage(_ page: Int) -> NSRect {
+        setFrameSize(printInfo.paperSize)
+        return bounds
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.white.setFill()
+        bounds.fill()
+
+        let destinationBounds = printInfo.imageablePageBounds.insetBy(dx: 4, dy: 4)
+        guard destinationBounds.width > 0,
+              destinationBounds.height > 0,
+              image.size.width > 0,
+              image.size.height > 0
+        else {
+            return
+        }
+
+        let scale = min(
+            destinationBounds.width / image.size.width,
+            destinationBounds.height / image.size.height
+        )
+        let imageSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+        let destination = NSRect(
+            x: destinationBounds.midX - imageSize.width / 2,
+            y: destinationBounds.midY - imageSize.height / 2,
+            width: imageSize.width,
+            height: imageSize.height
+        )
+
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(
+            in: destination,
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1,
+            respectFlipped: false,
+            hints: nil
+        )
+    }
+}
+
 private final class MetalViewerWindow: NSWindow {
     var tabKeyHandler: ((Bool) -> Bool)?
     var annotationLevelHandler: ((MetalViewerAnnotationLevel) -> Void)?
     var modifierFlagsHandler: ((NSEvent.ModifierFlags) -> Void)?
-    var dicomPrintHandler: (() -> Void)?
+    var printImageHandler: (() -> Void)?
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .flagsChanged {
@@ -37,11 +100,14 @@ private final class MetalViewerWindow: NSWindow {
         annotationLevelHandler?(level)
     }
 
-    @objc func printDICOM(_ sender: Any?) {
-        dicomPrintHandler?()
+    override func printWindow(_ sender: Any?) {
+        printImageHandler?()
     }
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(printWindow(_:)) {
+            return printImageHandler != nil
+        }
         guard menuItem.action == #selector(annotMenu(_:)) else {
             return true
         }
@@ -96,7 +162,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private var lastPaneScales: [ObjectIdentifier: Float] = [:]
     private var annotationDefaultsObserver: NSObjectProtocol?
     private var scoutPlacementObserver: NSObjectProtocol?
-    private var dicomPrintWindowController: DICOMPrintWindowController?
 
     init(study: MetalViewerStudy) {
         let initStart = CFAbsoluteTimeGetCurrent()
@@ -200,8 +265,8 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         window.modifierFlagsHandler = { [weak self] flags in
             self?.toolbarView.setMouseModifierFlags(flags)
         }
-        window.dicomPrintHandler = { [weak self] in
-            self?.presentDICOMPrint()
+        window.printImageHandler = { [weak self] in
+            self?.printActiveImage()
         }
         contentSplitView.delegate = self
         toolbarView.wlwwSelectionHandler = { [weak self] command in
@@ -1192,46 +1257,53 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         activePaneView.setReferenceLine(nil)
     }
 
-    private func presentDICOMPrint() {
-        guard dicomPrintWindowController == nil else {
-            dicomPrintWindowController?.window?.makeKeyAndOrderFront(nil)
-            return
-        }
-        guard let pane = activePaneView ?? paneViews.first,
-              pane.dicomPrintSliceCount > 0 else {
+    private func printActiveImage() {
+        guard let pane = activePaneView ?? paneViews.first else {
             NSSound.beep()
             return
         }
-        guard pane.supportsDICOMPrint else {
-            let alert = NSAlert()
-            alert.alertStyle = .informational
-            alert.messageText = NSLocalizedString("DICOM Print", comment: "")
-            alert.informativeText = NSLocalizedString(
-                "Switch the active pane to the 2D stack before printing. MPR and 3D layouts are not film series.",
+        guard pane.supportsImagePrinting else {
+            presentPrintAlert(NSLocalizedString(
+                "Switch the active pane to the 2D stack before printing.",
                 comment: ""
-            )
-            if let window {
-                alert.beginSheetModal(for: window)
-            } else {
-                alert.runModal()
-            }
+            ))
+            return
+        }
+        guard let image = pane.makePrintFrame()?.makeImage() else {
+            presentPrintAlert(NSLocalizedString(
+                "Horos could not render the active image for printing.",
+                comment: ""
+            ))
             return
         }
 
-        let source = DICOMPrintSource(
-            title: pane.series.title,
-            sliceCount: pane.dicomPrintSliceCount,
-            currentSliceIndex: pane.dicomPrintCurrentSliceIndex,
-            frameProvider: { [weak pane] sliceIndex in
-                pane?.makeDICOMPrintFrame(at: sliceIndex)
-            }
-        )
-        let controller = DICOMPrintWindowController(source: source)
-        controller.didClose = { [weak self, weak controller] in
-            guard self?.dicomPrintWindowController === controller else { return }
-            self?.dicomPrintWindowController = nil
+        guard let printInfo = NSPrintInfo.shared.copy() as? NSPrintInfo else {
+            NSSound.beep()
+            return
         }
-        dicomPrintWindowController = controller
-        controller.present()
+        printInfo.horizontalPagination = .fit
+        printInfo.verticalPagination = .fit
+        printInfo.isHorizontallyCentered = true
+        printInfo.isVerticallyCentered = true
+
+        let printView = MetalImagePrintView(image: image, printInfo: printInfo)
+        let operation = NSPrintOperation(view: printView, printInfo: printInfo)
+        operation.jobTitle = pane.series.title
+        operation.showsPrintPanel = true
+        operation.showsProgressPanel = true
+        operation.canSpawnSeparateThread = true
+        _ = operation.run()
+    }
+
+    private func presentPrintAlert(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = NSLocalizedString("Print Image", comment: "")
+        alert.informativeText = message
+        if let window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
     }
 }

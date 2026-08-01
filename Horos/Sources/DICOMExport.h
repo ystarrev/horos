@@ -40,7 +40,6 @@
 #import <Cocoa/Cocoa.h>
 
 @class DCMObject;
-@class DCMExportPlugin;
 
 
 #ifdef __cplusplus
@@ -126,7 +125,6 @@ typedef char* DcmFileFormat;
 
 // Write the image data
 - (NSString*) writeDCMFile: (NSString*) dstPath;
-- (NSString*) writeDCMFile: (NSString*) dstPath withExportDCM:(DCMExportPlugin*) dcmExport;
 - (void) setModalityAsSource: (BOOL) v;
 - (NSString*) seriesDescription;
 - (void) setSeriesDescription: (NSString*) desc;

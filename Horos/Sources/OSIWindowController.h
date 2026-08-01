@@ -37,8 +37,7 @@
 
 /** \brief base class for Window Controllers in OsiriX
 *
-*Root class for the Viewer Window Controllers such as ViewerController
-*and Window3DController
+*Shared base class for legacy AppKit window controllers.
 */
 
 #import <Cocoa/Cocoa.h>
@@ -98,4 +97,3 @@ enum OsiriXBlendingTypes {BlendingPlugin = -1, BlendingFusion = 1, BlendingSubtr
 //#define id Id
 //#undef redefineID
 //#endif
-

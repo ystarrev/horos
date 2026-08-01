@@ -50,7 +50,6 @@
 #import "stringAdditions.h"
 
 #ifdef OSIRIX_VIEWER
-#import "DCMView.h"
 #import "DCMPix.h"
 #import "BrowserController.h"
 #import "BonjourBrowser.h"
@@ -2236,8 +2235,8 @@ static NSRecursiveLock *dbModifyLock = nil;
     for( DicomImage *image in images)
     {
         NSDictionary *d = [image imageAsDICOMScreenCapture: exporter];
-        
-        [producedFiles addObject: d];
+        if( d)
+            [producedFiles addObject: d];
     }
     
     if( [producedFiles count])

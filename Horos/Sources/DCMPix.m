@@ -65,8 +65,6 @@
 
 #import "DCMWaveform.h"
 
-#import "DCMView.h"
-
 #import "DicomFile.h"
 
 #import "url.h"
@@ -200,6 +198,35 @@ static NSConditionLock *purgeCacheLock = nil;
 static float deg2rad = M_PI / 180.0;
 
 static const int maxNumberOfOverlays = 16;
+
+XYZ ArbitraryRotate(XYZ point, double angle, XYZ axis)
+{
+    const double axisLength = sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
+    if (axisLength == 0.0)
+        return point;
+
+    axis.x /= axisLength;
+    axis.y /= axisLength;
+    axis.z /= axisLength;
+
+    const double cosine = cos(angle);
+    const double sine = sin(angle);
+    XYZ result = {0.0, 0.0, 0.0};
+
+    result.x += (cosine + (1.0 - cosine) * axis.x * axis.x) * point.x;
+    result.x += ((1.0 - cosine) * axis.x * axis.y - axis.z * sine) * point.y;
+    result.x += ((1.0 - cosine) * axis.x * axis.z + axis.y * sine) * point.z;
+
+    result.y += ((1.0 - cosine) * axis.x * axis.y + axis.z * sine) * point.x;
+    result.y += (cosine + (1.0 - cosine) * axis.y * axis.y) * point.y;
+    result.y += ((1.0 - cosine) * axis.y * axis.z - axis.x * sine) * point.z;
+
+    result.z += ((1.0 - cosine) * axis.x * axis.z - axis.y * sine) * point.x;
+    result.z += ((1.0 - cosine) * axis.y * axis.z + axis.x * sine) * point.y;
+    result.z += (cosine + (1.0 - cosine) * axis.z * axis.z) * point.z;
+
+    return result;
+}
 
 static BOOL HorosDecodeDICOMOverlayData(NSData *data, int rows, int columns, unsigned char **decodedData)
 {

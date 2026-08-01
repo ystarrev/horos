@@ -72,6 +72,9 @@ private final class MetalViewerWindow: NSWindow {
     var annotationLevelHandler: ((MetalViewerAnnotationLevel) -> Void)?
     var modifierFlagsHandler: ((NSEvent.ModifierFlags) -> Void)?
     var printImageHandler: (() -> Void)?
+    var wlwwMenuHandler: ((String) -> Void)?
+    var clutMenuHandler: ((String) -> Void)?
+    var opacityMenuHandler: ((String) -> Void)?
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .flagsChanged {
@@ -104,9 +107,36 @@ private final class MetalViewerWindow: NSWindow {
         printImageHandler?()
     }
 
+    @objc(ApplyWLWW:)
+    private func applyWLWWFromMenu(_ sender: Any?) {
+        guard let title = (sender as? NSMenuItem)?.title else { return }
+        wlwwMenuHandler?(title)
+    }
+
+    @objc(ApplyCLUT:)
+    private func applyCLUTFromMenu(_ sender: Any?) {
+        guard let title = (sender as? NSMenuItem)?.title else { return }
+        clutMenuHandler?(title)
+    }
+
+    @objc(ApplyOpacity:)
+    private func applyOpacityFromMenu(_ sender: Any?) {
+        guard let title = (sender as? NSMenuItem)?.title else { return }
+        opacityMenuHandler?(title)
+    }
+
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(printWindow(_:)) {
             return printImageHandler != nil
+        }
+        if menuItem.action == NSSelectorFromString("ApplyWLWW:") {
+            return wlwwMenuHandler != nil
+        }
+        if menuItem.action == NSSelectorFromString("ApplyCLUT:") {
+            return clutMenuHandler != nil
+        }
+        if menuItem.action == NSSelectorFromString("ApplyOpacity:") {
+            return opacityMenuHandler != nil
         }
         guard menuItem.action == #selector(annotMenu(_:)) else {
             return true
@@ -267,6 +297,15 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
         window.printImageHandler = { [weak self] in
             self?.printActiveImage()
+        }
+        window.wlwwMenuHandler = { [weak self] title in
+            self?.applyWLWWMenuTitle(title)
+        }
+        window.clutMenuHandler = { [weak self] title in
+            self?.applyCLUT(named: title)
+        }
+        window.opacityMenuHandler = { [weak self] title in
+            self?.applyOpacity(named: title)
         }
         contentSplitView.delegate = self
         toolbarView.wlwwSelectionHandler = { [weak self] command in
@@ -1078,6 +1117,34 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
 
         toolbarView.selectWLWWTitle(selectedWLWWTitle)
         updateToolbarStatus()
+    }
+
+    private func applyWLWWMenuTitle(_ title: String) {
+        let command: MetalViewerToolbarView.WLWWCommand
+        if title == NSLocalizedString("Other", comment: "") {
+            command = .other
+        } else if title == NSLocalizedString("Default WL & WW", comment: "") {
+            command = .defaultWindow
+        } else if title == NSLocalizedString("Auto", comment: "") {
+            command = .automatic
+        } else if title == NSLocalizedString("Full dynamic", comment: "") {
+            command = .fullDynamic
+        } else if title == NSLocalizedString("Add Current WL/WW", comment: "") {
+            command = .addCurrent
+        } else if title == NSLocalizedString("Set WL/WW manually", comment: "")
+                    || title == NSLocalizedString("Set WL/WW Manually", comment: "") {
+            command = .setManually
+        } else {
+            command = .preset(Self.wlwwPresetName(fromMenuTitle: title))
+        }
+        applyWLWWCommand(command)
+    }
+
+    private static func wlwwPresetName(fromMenuTitle title: String) -> String {
+        guard let separator = title.firstIndex(of: "-") else { return title }
+        let prefix = String(title[..<separator]).trimmingCharacters(in: .whitespaces)
+        guard prefix.isEmpty == false, prefix.allSatisfy(\.isNumber) else { return title }
+        return String(title[title.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
     }
 
     private func applyCLUT(named presetName: String) {

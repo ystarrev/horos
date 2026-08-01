@@ -136,6 +136,16 @@ final class MetalViewerLauncher: NSObject {
         return formatter
     }()
 
+    @objc(visibleWindows)
+    class func visibleWindows() -> [NSWindow] {
+        retainedControllers.compactMap { $0.window }.filter { $0.isVisible }
+    }
+
+    @objc(closeAllWindows)
+    class func closeAllWindows() {
+        retainedControllers.compactMap { $0.window }.forEach { $0.close() }
+    }
+
     private enum DefaultsKey {
         static let incomingImportCoalescingDelay = "HorosIncomingImportCoalescingDelay"
         static let databaseRefreshDelay = "HorosMetalViewerDatabaseRefreshDelay"

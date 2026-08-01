@@ -36,16 +36,12 @@
  ============================================================================*/
 
 /*
-The WindowLayoutManager class manages the various placement of the Viewers
-primarily by use of hanging proctols and Advanced hanging protocols
-and keeps track of the Viewer Related Window Controllers
+The WindowLayoutManager resolves stored hanging-protocol row and column settings.
 It is a shared class.
  */
 
 #import <Cocoa/Cocoa.h>
 
-@class OSIWindowController;
-//@class LayoutWindowController;
 @interface WindowLayoutManager : NSObject
 {
 	NSDictionary *_currentHangingProtocol;

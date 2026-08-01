@@ -40,7 +40,6 @@
 #import "PlotView.h"
 #import "ROI.h"
 #import "DCMPix.h"
-#import "DCMView.h"
 
 @implementation PlotView
 

@@ -46,7 +46,6 @@
 
 #include "options.h"
 
-#import "ToolbarPanel.h"
 #import "DicomDatabase.h"
 #import "DicomDatabase+Routing.h"
 #import "DicomDatabase+Clean.h"
@@ -58,7 +57,6 @@
 #import "SRAnnotation.h"
 #import <DiscRecording/DRDevice.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
-#import "DCMView.h"
 #import "MyOutlineView.h"
 #import "PreviewView.h"
 #import "StructuredReportSupport.h"
@@ -73,7 +71,6 @@
 #import "AppController.h"
 #import "DicomData.h"
 #import "BrowserController.h"
-#import "ViewerController.h"
 #import "DicomFile.h"
 #import "DicomFileDCMTKCategory.h"
 #import "NSSplitViewSave.h"
@@ -100,7 +97,6 @@
 #import "DCMTKStoreSCU.h"
 #import "BonjourPublisher.h"
 #import "BonjourBrowser.h"
-#import "WindowLayoutManager.h"
 #import "QTExportHTMLSummary.h"
 #import "BrowserControllerDCMTKCategory.h"
 #import "BrowserMatrix.h"
@@ -135,7 +131,6 @@
 #import "DICOMToNSString.h"
 #import "XMLControllerDCMTKCategory.h"
 #import "DicomDir.h"
-#import "CPRVolumeData.h"
 #import "ICloudDriveDetector.h"
 #import "NSException+N2.h"
 
@@ -233,7 +228,6 @@ static int DicomDirScanDepth = 0;
 static int DefaultFolderSizeForDB = 0;
 static NSString *smartAlbumDistantArraySync = @"smartAlbumDistantArraySync";
 
-extern int delayedTileWindows;
 extern BOOL NEEDTOREBUILD;//, COMPLETEREBUILD;
 
 static NSString *ReportFilenameForStudy(id study)
@@ -1844,8 +1838,6 @@ static NSConditionLock *threadLock = nil;
             [self.window display];
             
             [DCMPix purgeCachedDictionaries];
-            [DCMView purgeStringTextureCache];
-            
             [self resetLogWindowController];
             
             [[AppController sharedAppController] closeAllViewers: self];
@@ -5207,9 +5199,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         else
             [comparativeTable selectRowIndexes: [NSIndexSet indexSetWithIndex: 0] byExtendingSelection: NO];
         
-        for( ViewerController *v in [ViewerController getDisplayed2DViewers])
-            [v comparativeRefresh: self.comparativePatientUID];
-        
         [comparativeTable scrollRowToVisible: [comparativeTable selectedRow]];
     }
     else
@@ -5295,19 +5284,12 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                             [comparativeStudyWaited release];
                             comparativeStudyWaited = nil;
                             
-                            if( comparativeStudyWaitedToOpen && comparativeStudyWaitedViewer)
-                            {
-                                if( comparativeStudyWaitedViewer.window.isVisible)
-                                    [comparativeStudyWaitedViewer loadSelectedSeries: study rightClick: NO];
-                            }
-                            else if( comparativeStudyWaitedToOpen)
+                            if( comparativeStudyWaitedToOpen)
                                 [self databaseOpenStudy: study];
                             
                             if( [[self window] firstResponder] != searchField && [[self window] firstResponder] != searchField.currentEditor)
                                 [[self window] makeFirstResponder: databaseOutline];
                             
-                            [comparativeStudyWaitedViewer release];
-                            comparativeStudyWaitedViewer = nil;
                         }
                     }
                     else
@@ -5315,8 +5297,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                         [comparativeStudyWaited release];
                         comparativeStudyWaited = nil;
                         
-                        [comparativeStudyWaitedViewer release];
-                        comparativeStudyWaitedViewer = nil;
                     }
                 }
             }
@@ -5326,8 +5306,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             [comparativeStudyWaited release];
             comparativeStudyWaited = nil;
             
-            [comparativeStudyWaitedViewer release];
-            comparativeStudyWaitedViewer = nil;
         }
     }
 }
@@ -5781,8 +5759,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 
 - (IBAction) unifyStudies:(id) sender
 {
-    [ViewerController closeAllWindows];
-    
     DicomStudy *destStudy = [databaseOutline itemAtRow: [databaseOutline selectedRow]];
     if( [[destStudy valueForKey:@"type"] isEqualToString: @"Study"] == NO) destStudy = [destStudy valueForKey:@"study"];
     
@@ -5944,8 +5920,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 
 - (IBAction) mergeStudies:(id) sender
 {
-    [ViewerController closeAllWindows];
-    
     // Is it only series??
     NSIndexSet		*selectedRows = [databaseOutline selectedRowIndexes];
     BOOL	onlySeries = YES;
@@ -6164,12 +6138,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                         if( series)
                             [seriesSet addObject: series];
                         
-                        // Is a viewer containing this series opened? -> close it
-                        for( ViewerController *vc in [ViewerController getDisplayed2DViewers])
-                        {
-                            if( series == [[[vc fileList] objectAtIndex: 0] valueForKey:@"series"])
-                                [[vc window] close];
-                        }
                     }
                     
                     // ********* STUDY
@@ -7818,81 +7786,18 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     {
         if( [execute isEqualToString: @"Open"])
         {
-            NSMutableArray *viewersList = [ViewerController getDisplayed2DViewers];
-            BOOL found = NO;
-            
-            if( [[element valueForKey: @"type"] isEqualToString: @"Study"])
+            if( [[element valueForKey: @"type"] isEqualToString: @"Series"])
             {
-                // Is a viewer containing this study opened? -> select it
-                for( ViewerController *vc in viewersList)
-                {
-                    if(element == [[[vc fileList] objectAtIndex: 0] valueForKeyPath:@"series.study"])
-                    {
-                        [[vc window] makeKeyAndOrderFront: self];
-                        found = YES;
-                    }
-                }
-            }
-            else if( [[element valueForKey: @"type"] isEqualToString: @"Series"])
-            {
-                // Is a viewer containing this series opened? -> select it
-                for( ViewerController *vc in viewersList)
-                {
-                    if(element == [[[vc fileList] objectAtIndex: 0] valueForKeyPath:@"series"])
-                    {
-                        [[vc window] makeKeyAndOrderFront: self];
-                        found = YES;
-                    }
-                }
+                [self findAndSelectFile:nil image: [[element valueForKey: @"images"] anyObject] shouldExpand:NO];
+                [self databaseOpenStudy: element];
             }
             else if( [[element valueForKey: @"type"] isEqualToString: @"Image"])
             {
-                // Is a viewer containing this image opened? -> select it
-                for( ViewerController *vc in viewersList)
-                {
-                    for( NSManagedObject *im in [vc fileList])
-                    {
-                        if( element == im)
-                        {
-                            [[vc window] makeKeyAndOrderFront: self];
-                            found = YES;
-                            
-                            [vc setImage: im];
-                        }
-                    }
-                }
+                [self findAndSelectFile:nil image: (DicomImage*) element shouldExpand:NO];
+                [self databaseOpenStudy: [element valueForKey: @"series"]];
             }
-            
-            if( found == NO)
-            {
-                if( [[element valueForKey: @"type"] isEqualToString: @"Series"])
-                {
-                    [self findAndSelectFile:nil image: [[element valueForKey: @"images"] anyObject] shouldExpand:NO];
-                    [self databaseOpenStudy: element];
-                }
-                else if( [[element valueForKey: @"type"] isEqualToString: @"Image"])
-                {
-                    [self findAndSelectFile:nil image: (DicomImage*) element shouldExpand:NO];
-                    [self databaseOpenStudy: [element valueForKey: @"series"]];
-                    
-                    // Is a viewer containing this image opened? -> select it
-                    for( ViewerController *vc in [ViewerController getDisplayed2DViewers])
-                    {
-                        for( NSManagedObject *im in [vc fileList])
-                        {
-                            if( element == im)
-                            {
-                                [[vc window] makeKeyAndOrderFront: self];
-                                found = YES;
-                                
-                                [vc setImage: im];
-                            }
-                        }
-                    }
-                }
-                else [browserWindow databaseOpenStudy: element];
-                //				else [browserWindow viewerDICOM: self]; // Study
-            }
+            else
+                [browserWindow databaseOpenStudy: element];
         }
         
         return YES;
@@ -8351,96 +8256,6 @@ static BOOL withReset = NO;
     withReset = NO;
 }
 
-- (DCMPix*) getDCMPixFromViewerIfAvailable: (NSString*) pathToFind frameNumber: (int) frameNumber
-{
-    if( [NSThread isMainThread] == NO)
-        return nil;
-    
-    DCMPix *returnPix = nil;
-    
-    //Is this image already displayed on the front most 2D viewers? -> take the dcmpix from there
-    for( ViewerController *v in [ViewerController get2DViewers])
-    {
-        [v retain];
-        
-        if( ![v windowWillClose])
-        {
-            NSArray *vFileList = nil;
-            NSArray *vPixList = nil;
-            NSData *volumeData = nil;
-            
-            @try {
-                // We need to temporarly retain all these objects
-                vFileList = [[v fileList] copy];
-                vPixList = [[v pixList] copy];
-                volumeData = [[v volumeData] retain];
-            }
-            @catch (NSException * e) {
-                N2LogExceptionWithStackTrace(e);
-            }
-            
-            @try
-            {
-                NSUInteger i = NSNotFound;
-                
-                if( frameNumber == 0)
-                    i = [[vFileList valueForKey: @"completePath"] indexOfObject: pathToFind];
-                else
-                {
-                    for( int x = 0 ; x < vFileList.count; x++)
-                    {
-                        DicomImage *image = [vFileList objectAtIndex: x];
-                        
-                        if( [image.completePath isEqualToString: pathToFind] && [image.frameID intValue] == frameNumber)
-                        {
-                            i = x;
-                            break;
-                        }
-                    }
-                }
-                
-                if( i != NSNotFound)
-                {
-                    DCMPix *dcmPix = [vPixList objectAtIndex: i];
-                    
-                    [dcmPix.checking lock];
-                    
-                    [dcmPix CheckLoad];
-                    
-                    if( [dcmPix isLoaded])
-                    {
-                        DCMPix *dcmPixCopy = [[vPixList objectAtIndex: i] copy];
-                        
-                        float *fImage = (float*) malloc( dcmPix.pheight*dcmPix.pwidth*sizeof( float));
-                        if( fImage)
-                        {
-                            memcpy( fImage, dcmPix.fImage, dcmPix.pheight*dcmPix.pwidth*sizeof( float));
-                            [dcmPixCopy setfImage: fImage];
-                            [dcmPixCopy freefImageWhenDone: YES];
-                            
-                            returnPix = [dcmPixCopy autorelease];
-                        }
-                        else
-                            [dcmPixCopy release];
-                    }
-                    [dcmPix.checking unlock];
-                }
-            }
-            @catch (NSException * e)
-            {
-                N2LogExceptionWithStackTrace(e);
-            }
-            [volumeData release];
-            [vFileList release];
-            [vPixList release];
-        }
-        
-        [v release];
-    }
-    
-    return returnPix;
-}
-
 - (void) previewSliderAction:(id) sender
 {
     BOOL	animate = NO;
@@ -8464,9 +8279,6 @@ static BOOL withReset = NO;
                 animate = YES;
                 
                 DCMPix *dcmPix = nil;
-                
-                //Is this image already displayed on the front most 2D viewers? -> take the dcmpix from there
-                dcmPix = [[self getDCMPixFromViewerIfAvailable: [image valueForKey:@"completePath"] frameNumber: [animationSlider intValue]] retain];
                 
                 if( dcmPix == nil)
                     dcmPix = [[DCMPix alloc] initWithPath: [image valueForKey:@"completePath"] :[animationSlider intValue] :noOfImages :nil :[animationSlider intValue] :[[image valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj:image];
@@ -8521,8 +8333,6 @@ static BOOL withReset = NO;
 
                         DCMPix *dcmPix = nil;
 
-                        dcmPix = [[self getDCMPixFromViewerIfAvailable: [imageObj valueForKey:@"completePath"] frameNumber: [[imageObj valueForKey: @"frameID"] intValue]] retain];
-
                         if( dcmPix == nil)
                             dcmPix = [[DCMPix alloc] initWithPath: [imageObj valueForKey:@"completePath"] :[animationSlider intValue] :[images count] :nil :[[imageObj valueForKey: @"frameID"] intValue] :[[imageObj valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj: imageObj];
 
@@ -8566,8 +8376,6 @@ static BOOL withReset = NO;
                         animate = YES;
 
                         DCMPix *dcmPix = nil;
-
-                        dcmPix = [[self getDCMPixFromViewerIfAvailable: [[images objectAtIndex: 0] valueForKey:@"completePath"] frameNumber: [animationSlider intValue]] retain];
 
                         if( dcmPix == nil)
                             dcmPix = [[DCMPix alloc] initWithPath: [[images objectAtIndex: 0] valueForKey:@"completePath"] :[animationSlider intValue] :noOfImages :nil :[animationSlider intValue] :[[[images objectAtIndex: 0] valueForKeyPath:@"series.id"] intValue] isBonjour:![_database isLocal] imageObj:[images objectAtIndex: 0]];
@@ -9481,7 +9289,7 @@ static BOOL withReset = NO;
                     frame = image.numberOfFrames.intValue/2;
                 if (image.frameID) frame = image.frameID.intValue;
                 
-                DCMPix* dcmPix = [self getDCMPixFromViewerIfAvailable:image.completePath frameNumber: frame];
+                DCMPix* dcmPix = nil;
                 if (dcmPix == nil)
                     dcmPix = [[[DCMPix alloc] initWithPath:image.completePath :0 :1 :nil :frame :0 isBonjour:![idatabase isLocal] imageObj: image] autorelease];
                 
@@ -9656,67 +9464,10 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 - (void) windowDidChangeScreen:(NSNotification *)aNotification
 {
-        @try {
-            // Did the user change the window resolution?
-            
-            BOOL screenChanged = NO, dbScreenChanged = NO;
-            
-            float ratioX = 1, ratioY = 1;
-            
-            for( int i = 0 ; i < [[NSScreen screens] count] ; i++)
-            {
-                NSScreen *s = [[NSScreen screens] objectAtIndex: i];
-                
-                if( NSEqualRects( [s visibleFrame], visibleScreenRect[ i]) == NO)
-                {
-                    screenChanged = YES;
-                    
-                    if( [[self window] screen] == s)
-                    {
-                        NSLog( @"[[self window] frame]: %@", NSStringFromRect( [[self window] frame]));
-                        NSLog( @"visibleScreenRect[ i]: %@", NSStringFromRect( visibleScreenRect[ i]));
-                        
-                        dbScreenChanged = YES;
-                    }
-                    
-                    ratioX = visibleScreenRect[ i].size.width / [s visibleFrame].size.width;
-                    ratioY = visibleScreenRect[ i].size.height / [s visibleFrame].size.height;
-                    
-                    visibleScreenRect[ i] = [s visibleFrame];
-                }
-            }
-            
-            if( dbScreenChanged)
-            {
-                //[[self window] zoom: self];
-            }
-            
-            if( screenChanged)
-            {
-                for( ViewerController *v in [ViewerController getDisplayed2DViewers])
-                {
-                    NSRect r = [[v window] frame];
-                    
-                    r.origin.x /= ratioX;
-                    r.origin.y /= ratioY;
-                    
-                    r.size.width /= ratioX;
-                    r.size.height /= ratioY;
-                    
-                    [[v window] setFrame: r display: NO];
-                }
-                
-                if( delayedTileWindows)
-                    [NSObject cancelPreviousPerformRequestsWithTarget:[AppController sharedAppController] selector:@selector(tileWindows:) object:nil];
-                delayedTileWindows = YES;
-                [[AppController sharedAppController] performSelector: @selector(tileWindows:) withObject:nil afterDelay: 0.1];
-            }
-            
-        }
-        @catch (NSException *exception) {
-            N2LogException( exception);
-            [[AppController sharedAppController] closeAllViewers: self];
-        }
+    NSArray<NSScreen *> *screens = [NSScreen screens];
+    NSUInteger count = MIN(screens.count, 40);
+    for (NSUInteger index = 0; index < count; index++)
+        visibleScreenRect[index] = screens[index].visibleFrame;
 }
 
 -(void)previewMatrixScrollViewFrameDidChange:(NSNotification*)note
@@ -11025,11 +10776,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 - (void) retrieveComparativeStudy: (DCMTKStudyQueryNode*) study select: (BOOL) select open: (BOOL) open showGUI: (BOOL) showGUI
 {
-    [self retrieveComparativeStudy: study select: select open: open showGUI: showGUI viewer: nil];
-}
-
-- (void) retrieveComparativeStudy: (DCMTKStudyQueryNode*) study select: (BOOL) select open: (BOOL) open showGUI: (BOOL) showGUI viewer: (ViewerController*) viewer
-{
     BOOL retrieveStudy = YES;
     
     @synchronized( comparativeRetrieveQueue)
@@ -11065,9 +10811,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
         [comparativeStudyWaited release];
         comparativeStudyWaited = [study retain];
         comparativeStudyWaitedTime = [NSDate timeIntervalSinceReferenceDate];
-        
-        [comparativeStudyWaitedViewer release];
-        comparativeStudyWaitedViewer = [viewer retain];
     }
 }
 
@@ -12343,10 +12086,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     {
         [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithBool:YES] forKey:@"FIRST_TIME_EXECUTION_2_0"];
 
-        [[NSUserDefaults standardUserDefaults] setInteger:CPRInterpolationModeCubic
-                                                   forKey:@"selectedCPRInterpolationMode"];
-        
-        
         dispatch_async(dispatch_get_main_queue(), ^() {
             
             [self restoreWindowState:self];
@@ -12573,8 +12312,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             return NO;
         }
     }
-    
-    [ViewerController closeAllWindows];
     
     [_database save:NULL];
     
@@ -12822,7 +12559,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     }
     else if( menuItem.menu == imageTileMenu)
     {
-        return [[[NSApp mainWindow] windowController] isKindOfClass:[ViewerController class]];
+        return NO;
     }
     else if( [menuItem action] == @selector(unifyStudies:))
     {
@@ -15228,8 +14965,8 @@ static volatile int numberOfThreadsForJPEG = 0;
     for( DicomImage *image in images)
     {
         NSDictionary *d = [image imageAsDICOMScreenCapture: exporter];
-        
-        [producedFiles addObject: d];
+        if( d)
+            [producedFiles addObject: d];
     }
     
     if( [producedFiles count])
@@ -15774,8 +15511,7 @@ static volatile int numberOfThreadsForJPEG = 0;
 - (IBAction) viewXML:(id) sender
 {
     XMLController * xmlController = [[XMLController alloc] initWithImage: [self firstObjectForDatabaseMatrixSelection]
-                                                              windowName:[NSString stringWithFormat: NSLocalizedString( @"Meta-Data: %@", nil), [[self firstObjectForDatabaseMatrixSelection] valueForKey:@"completePath"]]
-                                                                  viewer: nil];
+                                                              windowName:[NSString stringWithFormat: NSLocalizedString( @"Meta-Data: %@", nil), [[self firstObjectForDatabaseMatrixSelection] valueForKey:@"completePath"]]];
     
     [xmlController showWindow:self];
 }
@@ -16954,17 +16690,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     lastKeyImagesSelectedFiles = [selectedItems retain];
     
     return keyImagesArray;
-}
-
-- (void) tileWindows: (id) sender
-{
-    if( delayedTileWindows)
-    {
-        delayedTileWindows = NO;
-        [NSObject cancelPreviousPerformRequestsWithTarget:[AppController sharedAppController] selector:@selector(tileWindows:) object:nil];
-    }
-    
-    [[AppController sharedAppController] tileWindows: nil];
 }
 
 - (BOOL)validateToolbarItem: (NSToolbarItem *)toolbarItem

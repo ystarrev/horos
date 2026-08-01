@@ -36,13 +36,13 @@
  ============================================================================*/
 
 #import "DicomImage.h"
+#import "HorosToolMode.h"
 #import "DicomSeries.h"
 #import "DicomStudy.h"
 #import "DicomFileDCMTKCategory.h"
 #import "DCM.h"
 #import "DCMAbstractSyntaxUID.h"
 #import "DCMObjectPixelDataImport.h"
-#import "DCMView.h"
 #import "MutableArrayCategory.h"
 #import "DicomFile.h"
 #import "DICOMToNSString.h"
@@ -55,12 +55,10 @@
 
 #ifdef OSIRIX_VIEWER
 #import "DCMPix.h"
-#import "SRAnnotation.h"
+#import "DICOMExport.h"
 #import "BrowserController.h"
 #import "BonjourBrowser.h"
 #import "ThreadsManager.h"
-#import "DCMView.h"
-#import "AppController.h"
 #endif
 
 #define ROIDATABASE @"/ROIs/"
@@ -1173,111 +1171,45 @@ NSString* sopInstanceUIDDecode( unsigned char *r, int length)
     return nil;
 }
 
--(NSImage*) imageAsScreenCapture:(NSRect)frame
-{
-    if( [NSThread isMainThread] == NO)
-    {
-        N2LogStackTrace( @"****** this function works only on MAIN thread");
-        return nil;
-    }
-    
-    NSImage *renderedImage = nil;
-    
-    #ifdef OSIRIX_VIEWER
-    @try
-    {
-        DCMPix* pix = [[DCMPix alloc] initWithPath: self.completePath :0 :0 :nil :self.frameID.intValue :self.series.id.intValue isBonjour:NO imageObj: self];
-        
-        [pix CheckLoad];
-        
-        NSWindow* win = [[NSWindow alloc] initWithContentRect:frame styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
-        
-        DicomImage* roisImage = [self.series.study roiForImage:self inArray:nil];
-        NSArray* rois = roisImage ? [SRAnnotation unarchiveROIsFromCompatibilityData:[SRAnnotation roiFromDICOM:[roisImage completePath]]] : nil;
-        
-        DCMView* view = [[DCMView alloc] initWithFrame:frame imageRows:self.height.intValue imageColumns:self.width.intValue];
-        [view setPixels:[NSMutableArray arrayWithObject:pix] files:[NSMutableArray arrayWithObject:self] rois:(rois? [NSMutableArray arrayWithObject:rois] : nil) firstImage:0 level:'i' reset:YES];
-        [win.contentView addSubview:view];
-        [view drawRect:frame];
-        
-        renderedImage = [view nsimage];
-        
-        [view removeFromSuperview];
-        [view release];
-        [win release];
-        [pix release];
-    }
-    @catch (NSException* e)
-    {
-        N2LogExceptionWithStackTrace(e);
-    }
-    #endif
-    
-    return renderedImage;
-}
 
 -(NSDictionary*) imageAsDICOMScreenCapture:(DICOMExport*) exporter
 {
     if( [NSThread isMainThread] == NO)
     {
-        N2LogStackTrace( @"****** this function works only on MAIN thread");
+        N2LogStackTrace(@"DICOM screen capture must run on the main thread");
         return nil;
     }
-    
-    NSDictionary *dicomImage = nil;
-    
+
 #ifdef OSIRIX_VIEWER
     @try
     {
-        DCMPix* pix = [[DCMPix alloc] initWithPath: self.completePath :0 :0 :nil :self.frameID.intValue :self.series.id.intValue isBonjour:NO imageObj: self];
-        
+        DCMPix *pix = [[[DCMPix alloc] initWithPath:self.completePath
+                                                   :0
+                                                   :0
+                                                   :nil
+                                                   :self.frameID.intValue
+                                                   :self.series.id.intValue
+                                            isBonjour:NO
+                                              imageObj:self] autorelease];
         [pix CheckLoad];
-        
-        if( pix.pwidth && pix.pheight)
-        {
-            NSRect frame = NSMakeRect( 0, 0, pix.pwidth, pix.pheight);
-            
-            // Not smaller than @"DicomImageScreenCapture" prefs
-            frame.size.height = MAX( frame.size.height, [[NSUserDefaults standardUserDefaults] integerForKey: @"DicomImageScreenCaptureHeight"]);
-            frame.size.width = MAX( frame.size.width, [[NSUserDefaults standardUserDefaults] integerForKey: @"DicomImageScreenCaptureWidth"]);
-            
-            // Not larger than a screen
-            NSRect viewerRect = [[[[AppController sharedAppController] viewerScreens] lastObject] frame];
-            frame.size.height = MIN( frame.size.height, viewerRect.size.height);
-            frame.size.width = MIN( frame.size.width, viewerRect.size.width);
-            
-            NSWindow* win = [[NSWindow alloc] initWithContentRect:frame styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
-            
-            DicomImage* roisImage = [self.series.study roiForImage:self inArray:nil];
-            NSArray* rois = roisImage ? [SRAnnotation unarchiveROIsFromCompatibilityData:[SRAnnotation roiFromDICOM:[roisImage completePath]]] : nil;
-            
-            DCMView* view = [[DCMView alloc] initWithFrame:frame imageRows:self.height.intValue imageColumns:self.width.intValue];
-            view.annotationType = annotGraphics;
-            [view setPixels:[NSMutableArray arrayWithObject:pix] files:[NSMutableArray arrayWithObject:self] rois:(rois? [NSMutableArray arrayWithObject:rois] : nil) firstImage:0 level:'i' reset:YES];
-            [win.contentView addSubview:view];
-            
-            [view setCOPYSETTINGSINSERIESdirectly: NO];
-            [view updatePresentationStateFromSeriesOnlyImageLevel: NO scale: YES offset: YES];
-            [view drawRect:frame];
-            
-            int size = frame.size.width > frame.size.height ? frame.size.width : frame.size.height;
-            
-            dicomImage = [view exportDCMCurrentImage: exporter size: size];
-            
-            [view removeFromSuperview];
-            [view release];
-            [win release];
-        }
-        
-        [pix release];
+        NSImage *image = [pix image];
+        if (image == nil)
+            return nil;
+
+        [exporter setSourceFile:self.completePath];
+        if ([exporter setPixelNSImage:image] != 0)
+            return nil;
+        [exporter setModalityAsSource:NO];
+
+        NSString *path = [exporter writeDCMFile:nil];
+        return path ? @{ @"file": path } : nil;
     }
     @catch (NSException* e)
     {
         N2LogExceptionWithStackTrace(e);
     }
 #endif
-    
-    return dicomImage;
+    return nil;
 }
 
 -(NSImage*)thumbnailIfAlreadyAvailable {

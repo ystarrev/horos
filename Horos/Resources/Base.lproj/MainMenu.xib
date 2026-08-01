@@ -661,31 +661,6 @@
                                     <action selector="revertSeries:" target="-1" id="13221"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="Scale" id="14455">
-                                <modifierMask key="keyEquivalentModifierMask"/>
-                                <menu key="submenu" title="Scale" id="14456">
-                                    <items>
-                                        <menuItem title="No Rescale Size (100%)" id="14459">
-                                            <modifierMask key="keyEquivalentModifierMask"/>
-                                            <connections>
-                                                <action selector="actualSize:" target="-1" id="14461"/>
-                                            </connections>
-                                        </menuItem>
-                                        <menuItem title="Actual Size" id="14458">
-                                            <modifierMask key="keyEquivalentModifierMask"/>
-                                            <connections>
-                                                <action selector="realSize:" target="-1" id="14462"/>
-                                            </connections>
-                                        </menuItem>
-                                        <menuItem title="Scale To Fit" id="14457">
-                                            <modifierMask key="keyEquivalentModifierMask"/>
-                                            <connections>
-                                                <action selector="scaleToFit:" target="-1" id="14460"/>
-                                            </connections>
-                                        </menuItem>
-                                    </items>
-                                </menu>
-                            </menuItem>
                             <menuItem title="Sort By" id="14118">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <menu key="submenu" title="Sort By" id="14119">
@@ -1687,7 +1662,7 @@ CA
                                     </items>
                                 </menu>
                             </menuItem>
-                            <menuItem title="Tile 2D Viewer Windows" keyEquivalent="t" id="14587">
+                            <menuItem title="Tile Planar Viewer Windows" keyEquivalent="t" id="14587">
                                 <connections>
                                     <action selector="tileWindows:" target="694" id="14589"/>
                                 </connections>

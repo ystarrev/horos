@@ -52,7 +52,6 @@
 #import "DicomFileDCMTKCategory.h"
 #import "ThreadsManager.h"
 #import "AppController.h"
-#import "ViewerController.h"
 #import "NSDictionary+N2.h"
 #import "BrowserControllerDCMTKCategory.h"
 #import "NSThread+N2.h"
@@ -4005,9 +4004,6 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
         [self performSelectorOnMainThread: @selector(initiateImportFilesFromIncomingDirUnlessAlreadyImporting) withObject: nil waitUntilDone: NO];
         return;
     }
-    
-    if( [ViewerController areLoadingViewers]) //Don't try to do everything at the same time... we are not in a hurry for checking the incoming dir, preserve the user experience !
-        return;
     
     if ([_importFilesFromIncomingDirLock tryLock])
     {

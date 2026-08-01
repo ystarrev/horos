@@ -38,7 +38,7 @@
 #import "PreviewView.h"
 #import "StructuredReportSupport.h"
 #import "DCMPix.h"
-#import "DCMView.h"
+#import "HorosToolMode.h"
 #import "DCMAbstractSyntaxUID.h"
 #import "Notifications.h"
 #import "BrowserController.h"
@@ -837,9 +837,9 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         return;
 
     NSInteger annotationLevel = [[NSUserDefaults standardUserDefaults] integerForKey:@"ANNOTATIONS"];
-    if (annotationLevel <= annotGraphics)
+    if (annotationLevel <= HorosAnnotationLevelGraphics)
         return;
-    BOOL fullText = (annotationLevel >= annotFull);
+    BOOL fullText = (annotationLevel >= HorosAnnotationLevelFull);
 
     NSDictionary *annotationsDictionary = pix.annotationsDictionary ?: @{};
     if (annotationsDictionary.count == 0)

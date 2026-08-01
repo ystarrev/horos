@@ -41,15 +41,13 @@
 #import "SystemConfiguration/SCDynamicStoreCopySpecific.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <ApplicationServices/ApplicationServices.h>
+#include <math.h>
 
-#import "ToolbarPanel.h"
 #import "AppController.h"
 #import "PreferencesWindowController.h"
 #import "BrowserController.h"
 #import "BrowserControllerDCMTKCategory.h"
-#import "DCMView.h"
 #import "ROI.h"
-#import "ViewerController.h"
 #import "XMLController.h"
 #import "SplashScreen.h"
 #import "DicomFile.h"
@@ -58,7 +56,6 @@
 #import "DCMTKQueryRetrieveSCP.h"
 #import "AppControllerDCMTKCategory.h"
 #import "DefaultsOsiriX.h"
-#import "WindowLayoutManager.h"
 #import "QueryController.h"
 #import "N2Shell.h"
 #import "NSSplitViewSave.h"
@@ -75,7 +72,6 @@
 #import "ThreadsManager.h"
 #import "NSThread+N2.h"
 #import "DicomDatabase.h"
-#import "Window3DController.h"
 #import <MetalKit/MetalKit.h>
 #import <PreferencePanes/PreferencePanes.h>
 #import <UserNotifications/UserNotifications.h>
@@ -99,8 +95,6 @@
 #include <OpenJPEG/opj_config.h>
 #define BUILTIN_DCMTK YES
 
-//ToolbarPanelController *toolbarPanel[ MAXSCREENS] = {nil, nil, nil, nil, nil, nil, nil, nil, nil, nil};
-
 static NSMenu *mainMenuCLUTMenu = nil, *mainMenuWLWWMenu = nil, *mainMenuConvMenu = nil, *mainOpacityMenu = nil;
 static NSDictionary *previousWLWWKeys = nil, *previousCLUTKeys = nil, *previousConvKeys = nil, *previousOpacityKeys = nil;
 static BOOL checkForPreferencesUpdate = YES;
@@ -111,18 +105,29 @@ static NSInvocation *fill12BitBufferInvocation = nil;
 
 BOOL					NEEDTOREBUILD = NO;
 BOOL					COMPLETEREBUILD = NO;
-BOOL					USETOOLBARPANEL = NO;
 AppController			*appController = nil;
 DCMTKQueryRetrieveSCP   *dcmtkQRSCP = nil, *dcmtkQRSCPTLS = nil;
 NSRecursiveLock			*PapyrusLock = nil, *STORESCP = nil, *STORESCPTLS = nil;			// Papyrus is NOT thread-safe
-NSMutableArray			*accumulateAnimationsArray = nil, *recentStudies = nil;
+NSMutableArray			*recentStudies = nil;
 NSMutableDictionary     *recentStudiesAlbums = nil;
-BOOL					accumulateAnimations = NO;
 
 AppController* OsiriX = nil;
 
-int delayedTileWindows = NO;
 extern NSString* getMacAddress(void);
+
+static NSArray<NSWindow *> *HorosVisibleViewerWindows(void)
+{
+    NSMutableArray<NSWindow *> *windows = [NSMutableArray array];
+    [windows addObjectsFromArray:[HorosMetalViewerLauncher visibleWindows]];
+    [windows addObjectsFromArray:[HorosMetal3DViewerLauncher visibleWindows]];
+    return windows;
+}
+
+static void HorosCloseAllViewerWindows(void)
+{
+    [HorosMetalViewerLauncher closeAllWindows];
+    [HorosMetal3DViewerLauncher closeAllWindows];
+}
 
 enum	{kSuccess = 0,
         kCouldNotFindRequestedProcess = -1, 
@@ -154,7 +159,7 @@ const char *GetPrivateIP(void)
 		if ((h=gethostbyname(hostname)) == NULL)
 		{
 			NSLog( @"**** Cannot GetPrivateIP -> will use hostname");
-			
+
 			privateIPstring = (char*) malloc( 100);
 			strcpy( privateIPstring, hostname);
 		}
@@ -373,7 +378,7 @@ int GetAllPIDsForProcessName(const char* ProcessName,
         
             //adding the value to the array.
             ArrayOfReturnedPIDs[*NumberOfMatchesFound] = CurrentExaminedProcessPID;
-            
+
             //incrementing our number of matches found.
             *NumberOfMatchesFound = *NumberOfMatchesFound + 1;
         }
@@ -440,69 +445,6 @@ int dictSort(id num1, id num2, void *context)
 
 //———————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
-NSRect screenFrame(void)
-{
-	int i = 0;
-	float height = 0.0;
-	float width = 0.0;
-	float singleWidth = 0.0;
-	int screenCount = [[NSScreen screens] count];
-	NSRect frame;
-	NSRect screenRect;
-	switch ([[NSUserDefaults standardUserDefaults] integerForKey: @"MULTIPLESCREENS"])
-	{
-		case 0:		// use main screen only
-			screenRect    = [[[NSScreen screens] objectAtIndex:0] visibleFrame];
-		break;
-		
-		case 1:		// use second screen only
-			if (screenCount == 2)
-			{
-				screenRect = [[[NSScreen screens] objectAtIndex: 1] visibleFrame];
-			}
-			else if ( screenCount > 2)
-			{
-				//multiple monitors. Need to span at least two monitors for viewing if they are the same size.
-				height = [[[NSScreen screens] objectAtIndex:1] frame].size.height;
-				singleWidth = width = [[[NSScreen screens] objectAtIndex:1] frame].size.width;
-				for (i = 2; i < screenCount; i ++)
-				{
-					frame = [[[NSScreen screens] objectAtIndex:i] frame];
-					if (frame.size.height == height && frame.size.width == singleWidth)
-						width = frame.size.width;
-				}	
-				screenRect = NSMakeRect([[[NSScreen screens] objectAtIndex:1] frame].origin.x, 
-										[[[NSScreen screens] objectAtIndex:1] frame].origin.y,
-										width,
-										height);	
-			}
-			else //only one screen
-			{
-				screenRect    = [[[NSScreen screens] objectAtIndex:0] visibleFrame];
-			}
-		break;
-		
-		case 2:		// use all screens
-			height = [[[NSScreen screens] objectAtIndex:0] frame].size.height;
-			singleWidth = width = [[[NSScreen screens] objectAtIndex:0] frame].size.width;
-			for (i = 1; i < screenCount; i ++)
-			{
-				frame = [[[NSScreen screens] objectAtIndex:i] frame];
-				if (frame.size.height == height && frame.size.width == singleWidth)
-					width = frame.size.width;
-			}
-			screenRect = NSMakeRect([[[NSScreen screens] objectAtIndex:0] frame].origin.x, 
-										[[[NSScreen screens] objectAtIndex:0] frame].origin.y,
-										width,
-										height);
-			//screenRect    = [[[NSScreen screens] objectAtIndex:0] visibleFrame];
-			
-			
-		break;
-	}
-	return screenRect;
-}
-
 void exceptionHandler(NSException *exception)
 {
     N2LogExceptionWithStackTrace(exception);
@@ -513,7 +455,6 @@ void exceptionHandler(NSException *exception)
 
 @interface AppController (Dummy)
 
-- (void)AddCurrentWLWW:(id)dummy;
 - (void)ApplyConv:(id)dummy;
 - (void)AddConv:(id)dummy;
 - (void)addPreferencesFromURL:(id)dummy;
@@ -565,23 +506,15 @@ void exceptionHandler(NSException *exception)
                                           [NSValue valueWithRect: newWindowFrame],
                                           NSViewAnimationEndFrameKey,
                                           nil];
-			
-			if( accumulateAnimations)
-			{
-				if( accumulateAnimationsArray == nil) accumulateAnimationsArray = [NSMutableArray array];
-				[accumulateAnimationsArray addObject: windowResize];
-			}
-			else
-			{
-				[OSIWindowController setDontEnterWindowDidChangeScreen: YES];
-				
-				NSViewAnimation * animation = [[NSViewAnimation alloc] initWithViewAnimations: [NSArray arrayWithObjects: windowResize, nil]];
-				[animation setAnimationBlockingMode: NSAnimationBlocking];
-				[animation setDuration: 0.15];
-				[animation startAnimation];
-                
-				[OSIWindowController setDontEnterWindowDidChangeScreen: NO];
-			}
+
+			[OSIWindowController setDontEnterWindowDidChangeScreen: YES];
+
+			NSViewAnimation * animation = [[NSViewAnimation alloc] initWithViewAnimations: [NSArray arrayWithObjects: windowResize, nil]];
+			[animation setAnimationBlockingMode: NSAnimationBlocking];
+			[animation setDuration: 0.15];
+			[animation startAnimation];
+
+			[OSIWindowController setDontEnterWindowDidChangeScreen: NO];
 		}
 		@catch( NSException *e)
 		{
@@ -593,20 +526,6 @@ void exceptionHandler(NSException *exception)
 		[window setFrame: newWindowFrame display: YES];
 	}
 }
-
-//+(ToolbarPanelController*)toolbarForScreen:(NSScreen*)screen
-//{
-//    NSArray* screens = [NSScreen screens];
-//    NSUInteger i = [screens indexOfObject:screen];
-//    
-//    if( i == NSNotFound)
-//        return nil;
-//    
-//    if( i>= MAXSCREENS)
-//        return nil;
-//    
-//    return toolbarPanel[i];
-//}
 
 #ifdef WITH_IMPORTANT_NOTICE
 + (void) displayImportantNotice:(id) sender
@@ -696,16 +615,6 @@ void exceptionHandler(NSException *exception)
         cachedUID = [[parts componentsJoinedByString: @"|"] copy];
         return cachedUID;
     }
-}
-
-+ (void) setUSETOOLBARPANEL: (BOOL) b
-{
-	USETOOLBARPANEL = b;
-}
-
-+ (BOOL) USETOOLBARPANEL
-{
-	return USETOOLBARPANEL;
 }
 
 - (NSArray*)dnsSDTXTArgumentsForDictionary:(NSDictionary*)txtrec
@@ -985,9 +894,6 @@ void exceptionHandler(NSException *exception)
 	BOOL restartListener = NO;
 	BOOL refreshDatabase = NO;
 	BOOL refreshColumns = NO;
-	BOOL recomputePETBlending = NO;
-	BOOL refreshViewer = NO;
-	BOOL revertViewer = NO;
 	
 	NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 	
@@ -998,20 +904,6 @@ void exceptionHandler(NSException *exception)
 	if( [dictionaryRepresentation isEqualToDictionary: previousDefaults]) return;
 	
     @try {
-        if( [[previousDefaults valueForKey: @"DisplayDICOMOverlays"] intValue] != [defaults integerForKey: @"DisplayDICOMOverlays"])
-            revertViewer = YES;
-        if( [[previousDefaults valueForKey: @"ROITEXTNAMEONLY"] intValue] != [defaults integerForKey: @"ROITEXTNAMEONLY"])
-            refreshViewer = YES;
-        if( [[previousDefaults valueForKey: @"ROITEXTIFSELECTED"] intValue] != [defaults integerForKey: @"ROITEXTIFSELECTED"])
-            refreshViewer = YES;
-        if( [[previousDefaults valueForKey: @"PET Blending CLUT"] isKindOfClass: [NSString class]])
-        {
-            if ([[previousDefaults valueForKey: @"PET Blending CLUT"] isEqualToString: [defaults stringForKey: @"PET Blending CLUT"]] == NO) 
-                recomputePETBlending = YES;
-        }
-        else NSLog( @"*** isKindOfClass NSString");
-        if( [[previousDefaults valueForKey: @"COPYSETTINGS"] intValue] != [defaults integerForKey: @"COPYSETTINGS"])
-            refreshViewer = YES;
         if( [[previousDefaults valueForKey: @"DBDateFormat2"] isKindOfClass:[NSString class]])
         {
             if( [[previousDefaults valueForKey: @"DBDateFormat2"] isEqualToString: [defaults stringForKey: @"DBDateFormat2"]] == NO)
@@ -1075,10 +967,6 @@ void exceptionHandler(NSException *exception)
             refreshDatabase = YES;
         if ([[previousDefaults valueForKey: @"KeepStudiesOfSamePatientTogether"] intValue] != [defaults integerForKey: @"KeepStudiesOfSamePatientTogether"])
             refreshDatabase = YES;
-        if ([[previousDefaults valueForKey: @"NOINTERPOLATION"] intValue] != [defaults integerForKey: @"NOINTERPOLATION"])
-            refreshViewer = YES;
-        if ([[previousDefaults valueForKey: @"SOFTWAREINTERPOLATION"] intValue] != [defaults integerForKey: @"SOFTWAREINTERPOLATION"])
-            refreshViewer = YES;
         if ([[previousDefaults valueForKey: @"publishDICOMBonjour"] intValue] != [defaults integerForKey: @"publishDICOMBonjour"])
             restartListener = YES;
         if ([[previousDefaults valueForKey: @"STORESCPTLS"] intValue] != [defaults integerForKey: @"STORESCPTLS"])
@@ -1111,28 +999,7 @@ void exceptionHandler(NSException *exception)
         if (refreshColumns)	
             [[BrowserController currentBrowser] refreshColumns];
         
-        if( recomputePETBlending)
-            [DCMView computePETBlendingCLUT];
-        
         [DCMPix checkUserDefaults: YES];
-        
-        if( refreshViewer || revertViewer)
-        {
-            NSArray *windows = [ViewerController getDisplayed2DViewers];
-            
-            for(ViewerController *v in windows)
-            {
-                [v needsDisplayUpdate];
-                if( revertViewer)
-                    [v displayDICOMOverlays: self];
-            }
-            
-            for(ViewerController *v in windows)
-            {
-                if([[v window] isMainWindow])
-                    [v copySettingsToOthers: self];
-            }
-        }
         
         @try
         {
@@ -1194,7 +1061,6 @@ void exceptionHandler(NSException *exception)
         [[BrowserController currentBrowser] setNetworkLogs];
         [DicomFile resetDefaults];
         
-        [DCMView setDefaults];
         [ROI loadDefaultSettings];
         
         if( restartListener)
@@ -1331,15 +1197,6 @@ void exceptionHandler(NSException *exception)
     if( [BrowserController.currentBrowser.window isKeyWindow] && BrowserController.currentBrowser.selectedStudy)
         [studies addObject: BrowserController.currentBrowser.selectedStudy];
     
-    if( studies.count == 0)
-    {
-        for( ViewerController *v in [ViewerController getDisplayed2DViewers])
-        {
-            if( [studies containsObject: v.currentStudy] == NO)
-                [studies addObject: v.currentStudy];
-        }
-    }
-    
     if( studies.count)
     {
         int index = 1;
@@ -1428,13 +1285,12 @@ void exceptionHandler(NSException *exception)
 		
         [mainOpacityMenu removeAllItems];
 		
-		[mainOpacityMenu addItemWithTitle:NSLocalizedString(@"Linear Table", nil) action:@selector (ApplyOpacity:) keyEquivalent:@""];
+		SEL applyOpacity = NSSelectorFromString(@"ApplyOpacity:");
+        [mainOpacityMenu addItemWithTitle:NSLocalizedString(@"Linear Table", nil) action:applyOpacity keyEquivalent:@""];
 		for( i = 0; i < [sortedKeys count]; i++)
 		{
-			[mainOpacityMenu addItemWithTitle:[sortedKeys objectAtIndex:i] action:@selector (ApplyOpacity:) keyEquivalent:@""];
+			[mainOpacityMenu addItemWithTitle:[sortedKeys objectAtIndex:i] action:applyOpacity keyEquivalent:@""];
 		}
-		[mainOpacityMenu addItem: [NSMenuItem separatorItem]];
-		[mainOpacityMenu addItemWithTitle:NSLocalizedString(@"Add an Opacity Table", nil) action:@selector (AddOpacity:) keyEquivalent:@""];
 	}
 }
 
@@ -1457,19 +1313,21 @@ void exceptionHandler(NSException *exception)
 		
         [mainMenuWLWWMenu removeAllItems];
 		
-		[mainMenuWLWWMenu addItemWithTitle:NSLocalizedString(@"Default WL & WW", nil) action:@selector (ApplyWLWW:) keyEquivalent:@"l"];
-		[mainMenuWLWWMenu addItemWithTitle:NSLocalizedString(@"Other", nil) action:@selector (ApplyWLWW:) keyEquivalent:@""];
-		[mainMenuWLWWMenu addItemWithTitle:NSLocalizedString(@"Full dynamic", nil) action:@selector (ApplyWLWW:) keyEquivalent:@"y"];
+		SEL applyWLWW = NSSelectorFromString(@"ApplyWLWW:");
+        [mainMenuWLWWMenu addItemWithTitle:NSLocalizedString(@"Default WL & WW", nil) action:applyWLWW keyEquivalent:@"l"];
+		[mainMenuWLWWMenu addItemWithTitle:NSLocalizedString(@"Other", nil) action:applyWLWW keyEquivalent:@""];
+		[mainMenuWLWWMenu addItemWithTitle:NSLocalizedString(@"Auto", nil) action:applyWLWW keyEquivalent:@""];
+		[mainMenuWLWWMenu addItemWithTitle:NSLocalizedString(@"Full dynamic", nil) action:applyWLWW keyEquivalent:@"y"];
 		
 		[mainMenuWLWWMenu addItem: [NSMenuItem separatorItem]];
 		
 		for( i = 0; i < [sortedKeys count]; i++)
 		{
-			[mainMenuWLWWMenu addItemWithTitle:[NSString stringWithFormat:@"%d - %@", i+1, [sortedKeys objectAtIndex:i]] action:@selector (ApplyWLWW:) keyEquivalent:@""];
+			[mainMenuWLWWMenu addItemWithTitle:[NSString stringWithFormat:@"%d - %@", i+1, [sortedKeys objectAtIndex:i]] action:applyWLWW keyEquivalent:@""];
 		}
 		[mainMenuWLWWMenu addItem: [NSMenuItem separatorItem]];
-		[mainMenuWLWWMenu addItemWithTitle:NSLocalizedString(@"Add Current WL/WW", nil) action:@selector (AddCurrentWLWW:) keyEquivalent:@""];
-		[mainMenuWLWWMenu addItemWithTitle:NSLocalizedString(@"Set WL/WW manually", nil) action:@selector (AddCurrentWLWW:) keyEquivalent:@""];
+		[mainMenuWLWWMenu addItemWithTitle:NSLocalizedString(@"Add Current WL/WW", nil) action:applyWLWW keyEquivalent:@""];
+		[mainMenuWLWWMenu addItemWithTitle:NSLocalizedString(@"Set WL/WW manually", nil) action:applyWLWW keyEquivalent:@""];
 	}
 }
 
@@ -1524,16 +1382,15 @@ void exceptionHandler(NSException *exception)
 		
         [mainMenuCLUTMenu removeAllItems];
 		
-		[mainMenuCLUTMenu addItemWithTitle:NSLocalizedString(@"No CLUT", nil) action:@selector (ApplyCLUT:) keyEquivalent:@""];
+		SEL applyCLUT = NSSelectorFromString(@"ApplyCLUT:");
+        [mainMenuCLUTMenu addItemWithTitle:NSLocalizedString(@"No CLUT", nil) action:applyCLUT keyEquivalent:@""];
 		
 		[mainMenuCLUTMenu addItem: [NSMenuItem separatorItem]];
 		
 		for( i = 0; i < [sortedKeys count]; i++)
 		{
-			[mainMenuCLUTMenu addItemWithTitle:[sortedKeys objectAtIndex:i] action:@selector (ApplyCLUT:) keyEquivalent:@""];
+			[mainMenuCLUTMenu addItemWithTitle:[sortedKeys objectAtIndex:i] action:applyCLUT keyEquivalent:@""];
 		}
-		[mainMenuCLUTMenu addItem: [NSMenuItem separatorItem]];
-		[mainMenuCLUTMenu addItemWithTitle:NSLocalizedString(@"Add a CLUT", nil) action:@selector (AddCLUT:) keyEquivalent:@""];
 	}
 }
 
@@ -1975,19 +1832,6 @@ void exceptionHandler(NSException *exception)
 
 - (void)application:(NSApplication *)sender openFiles:(NSArray *)filenames
 {
-	if([filenames count] == 1)
-	{
-		for( ViewerController *v in [ViewerController getDisplayed2DViewers])
-		{
-			for( id im in [v fileList])
-				if([[im path] isEqualToString:[filenames objectAtIndex: 0]])
-				{
-					[[v window] makeKeyWindow];
-					return;
-				}
-		}
-	}
-
     NSDictionary *importOptions = [NSDictionary dictionaryWithObjectsAndKeys:
                                    [NSNumber numberWithBool: YES], @"COPYDATABASE",
                                    [NSNumber numberWithInteger: always], @"COPYDATABASEMODE",
@@ -2019,12 +1863,8 @@ static BOOL firstCall = YES;
 	{
 		if( [[[BrowserController currentBrowser] window] isMiniaturized] == YES || [[[BrowserController currentBrowser] window] isVisible] == NO)
 		{
-			NSArray *winList = [NSApp windows];
-            
-			for( id loopItem in winList)
-			{
-				if( [[loopItem windowController] isKindOfClass:[ViewerController class]]) return;
-			}
+			if( [HorosVisibleViewerWindows() count] > 0)
+                return;
 			
 			[[[BrowserController currentBrowser] window] makeKeyAndOrderFront: self];
 		}
@@ -2038,7 +1878,7 @@ static BOOL firstCall = YES;
 
 	NSWindow *window = theApplication.keyWindow ?: theApplication.mainWindow;
 	if( window == nil)
-		window = [[ViewerController frontMostDisplayed2DViewer] window];
+		window = [HorosVisibleViewerWindows() lastObject];
 	if( window == nil)
 		window = [[BrowserController currentBrowser] window];
 
@@ -2795,7 +2635,6 @@ static BOOL initialized = NO;
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SingleProcessMultiThreadedListener"] == NO)
 		NSLog( @"----- %@", NSLocalizedString( @"DICOM Listener is multi-processes mode.", nil));
 	
-    [[NSUserDefaults standardUserDefaults] setBool: YES forKey: @"USEALWAYSTOOLBARPANEL2"];
 	#ifndef MACAPPSTORE
     
     // If Horos crashed before...
@@ -3158,8 +2997,6 @@ static BOOL initialized = NO;
     
     [self updateScreenParameters];
 	
-//	if( USETOOLBARPANEL) [[toolbarPanel window] makeKeyAndOrderFront:self];
-	
 // Increment the startup counter.
 	
 	long startCount = [[NSUserDefaults standardUserDefaults] integerForKey: @"STARTCOUNT"];
@@ -3272,15 +3109,8 @@ static BOOL initialized = NO;
 
 - (IBAction) updateViews:(id) sender
 {
-	NSArray *winList = [NSApp windows];
-	
-	for( id loopItem in winList)
-	{
-		if( [[loopItem windowController] isKindOfClass:[ViewerController class]])
-		{
-			[[loopItem windowController] needsDisplayUpdate];
-		}
-	}	
+	for( NSWindow *window in HorosVisibleViewerWindows())
+        [window.contentView setNeedsDisplay:YES];
 }
 
 	// CONVERT OLD LUT FILES TO XML - PLEASE DONT DELETE THESE LINES!!! THANKS!!!!!
@@ -3562,38 +3392,6 @@ static BOOL initialized = NO;
 
 //———————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
-- (id) FindViewer:(NSString*) nib :(NSArray*) pixList
-{
-	for( id loopItem in [NSApp windows])
-	{
-		if( [[[loopItem windowController] windowNibName] isEqualToString: nib])
-		{
-			if( [[loopItem windowController] pixList] == pixList)
-				return [loopItem windowController];
-		}
-	}
-	
-	return nil;
-}
-
-- (NSArray*) FindRelatedViewers:(NSArray*) pixList
-{
-	NSMutableArray *viewersList = [NSMutableArray array];
-	
-	for( id loopItem in [NSApp windows])
-	{
-		if( [[loopItem windowController] respondsToSelector:@selector(pixList)])
-		{
-			if( [[loopItem windowController] pixList] == pixList)
-			{
-				[viewersList addObject: [loopItem windowController]];
-			}
-		}
-	}
-	
-	return viewersList;
-}
-
 //———————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
 - (NSScreen *)dbScreen
@@ -3632,20 +3430,12 @@ static BOOL initialized = NO;
 {
 	if( checkAllWindowsAreVisibleIsOff) return;
 
-	NSArray *winList = [NSApp windows];
 	NSWindow *last = nil;
 	
-	for( NSWindow *loopItem in winList)
+	for( NSWindow *loopItem in HorosVisibleViewerWindows())
 	{
-		if( [[loopItem windowController] isKindOfClass:[ViewerController class]])
-		{
-			if( [[loopItem windowController] windowWillClose] == NO)
-			{
-				last = loopItem;
-				[loopItem orderFront: self];
-//				[[loopItem windowController] redrawToolbar];	// To avoid the drag & remove item bug - multiple windows
-			}
-		}
+		last = loopItem;
+		[loopItem orderFront:self];
 	}
 	
 	if( makeKey)
@@ -3655,144 +3445,6 @@ static BOOL initialized = NO;
 - (void) checkAllWindowsAreVisible:(id) sender
 {
 	[self checkAllWindowsAreVisible: sender makeKey: NO];
-}
-
-- (void) displayViewers: (NSArray*) viewers monitorIndex: (int) monitorIndex screens: (NSArray*) screens numberOfMonitors:(int) numberOfMonitors rowsPerScreen:(int) rowsPerScreen columnsPerScreen:(int) columnsPerScreen
-{
-	BOOL strechWindows = [[NSUserDefaults standardUserDefaults] boolForKey: @"StrechWindows"];
-	BOOL lastScreen = NO;
-	
-    if( columnsPerScreen <= 0)
-        columnsPerScreen = 1;
-    
-    if( rowsPerScreen <= 0)
-        rowsPerScreen = 1;
-    
-	int OcolumnsPerScreen = columnsPerScreen;
-	int OrowsPerScreen = rowsPerScreen;
-	
-	for( int i = 0; i < [viewers count]; i++)
-	{
-		if( monitorIndex == numberOfMonitors-1 && strechWindows == YES && lastScreen == NO)
-		{
-			int remaining = [viewers count] - i;
-            
-            if( remaining < 0)
-                remaining = 0;
-            
-			lastScreen = YES;
-		
-			while( rowsPerScreen*columnsPerScreen > remaining && rowsPerScreen >= 0 && columnsPerScreen >= 0)
-			{
-				rowsPerScreen--;
-				
-				if( rowsPerScreen*columnsPerScreen > remaining)
-					columnsPerScreen--;
-			}
-		
-            if( columnsPerScreen > 0)
-                while( rowsPerScreen*columnsPerScreen < remaining)
-                    rowsPerScreen++;
-		}
-		
-        if( columnsPerScreen == 0)
-            columnsPerScreen = 1;
-        
-		int posInScreen = i % (OcolumnsPerScreen*OrowsPerScreen);
-		int row = posInScreen / columnsPerScreen;
-		int column = posInScreen % columnsPerScreen;
-		
-		NSRect frame = [AppController usefullRectForScreen: [screens objectAtIndex: monitorIndex]];
-        
-		int temp;
-
-		temp = frame.size.width / columnsPerScreen;
-		frame.size.width = temp * columnsPerScreen;
-
-		temp = frame.size.height / rowsPerScreen;
-		frame.size.height = temp * rowsPerScreen;
-
-		NSRect visibleFrame = frame;
-		frame.size.width /= columnsPerScreen;
-		frame.origin.x += (frame.size.width * column);
-
-		frame.size.height /= rowsPerScreen;
-		frame.origin.y += frame.size.height * ((rowsPerScreen - 1) - row);
-
-		if( lastScreen)
-		{
-			if( i + columnsPerScreen >= [viewers count] && strechWindows == YES)
-			{
-				frame.size.height += frame.origin.y - visibleFrame.origin.y;
-				frame.origin.y = visibleFrame.origin.y;
-			}
-		}
-
-		[[viewers objectAtIndex:i] setWindowFrame:frame showWindow:YES animate: YES];
-	}
-}
-
-- (NSArray*) orderedScreens
-{
-	NSMutableArray *srcScreens = [NSMutableArray arrayWithArray: [NSScreen screens]];
-	NSMutableArray *dstScreens = [NSMutableArray array];
-	
-	while( [srcScreens count])
-	{
-		float minY = 1000000, minX = 1000000;
-		
-		NSScreen *screen = nil;
-		for( NSScreen *s in srcScreens)
-		{
-			if( [s visibleFrame].origin.y <= minY)
-			{
-				if( [s visibleFrame].origin.x < minX)
-				{
-					minY = [s visibleFrame].origin.y;
-					minX = [s visibleFrame].origin.x;
-					screen = s;
-				}
-			}
-		}
-		
-		if( screen)
-		{
-			[dstScreens addObject: screen];
-			[srcScreens removeObject: screen];
-		}
-	}
-    
-	return dstScreens;
-}
-
-- (int) currentRowForViewer: (ViewerController*) v
-{
-	NSUInteger i = [[self orderedScreens] indexOfObject: [[v window] screen]];
-	if( i == NSNotFound) i = 0;
-	i++;
-	
-	i *= 3000;
-	
-	return i - ([[v window] frame].origin.y + (3*[[v window] frame].size.height)/4 - [[[v window] screen] visibleFrame].origin.y);
-}
-
-- (void) scaleToFit:(id)sender
-{
-	NSArray *array = [ViewerController getDisplayed2DViewers];
-	
-	for( ViewerController *v in array)
-		[[v imageView] scaleToFit];
-}
-
-- (NSPoint) windowCenter: (NSWindow*) w
-{
-	NSUInteger i = [[self orderedScreens] indexOfObject: [w screen]];
-	if( i == NSNotFound) i = 0;
-	i++;
-	
-	i *= 3000;
-	
-	return NSMakePoint( i + [w frame].origin.x + [w frame].size.width/2, i + [w frame].origin.y + [w frame].size.height/2);
 }
 
 #pragma mark-
@@ -3825,7 +3477,7 @@ static BOOL initialized = NO;
 
 - (void) loadRecentStudy: (NSMenuItem*) item
 {
-    [ViewerController closeAllWindows];
+    HorosCloseAllViewerWindows();
     
     DicomDatabase *db = [[BrowserController currentBrowser] database];
     DicomStudy *study = [db objectWithID: item.representedObject];
@@ -3928,10 +3580,7 @@ static BOOL initialized = NO;
             {
                 [item setEnabled: YES];
                 
-                if( [[[[ViewerController getDisplayed2DViewers] valueForKey: @"currentStudy"] valueForKey: @"objectID"] containsObject: item.representedObject])
-                    [item setState: NSControlStateValueOn];
-                else
-                    [item setState: NSControlStateValueOff];
+                [item setState: NSControlStateValueOff];
             }
         }
         return YES;
@@ -3940,7 +3589,7 @@ static BOOL initialized = NO;
 	{
 		if( [item action] == @selector(setFixedTilingColumns:))
 		{
-		   if( [item tag] == lastColumns && [item tag] <= [[ViewerController getDisplayed2DViewers] count])
+		   if( [item tag] == lastColumns && [item tag] <= [HorosVisibleViewerWindows() count])
 				[item setState: NSControlStateValueOn];
 			else
 				[item setState: NSControlStateValueOff];
@@ -3956,13 +3605,13 @@ static BOOL initialized = NO;
 		
 		if( [item action] == @selector(setFixedTilingRows:))
 		{
-			if( [item tag] == lastRows && [item tag] <= [[ViewerController getDisplayed2DViewers] count])
+			if( [item tag] == lastRows && [item tag] <= [HorosVisibleViewerWindows() count])
 				[item setState: NSControlStateValueOn];
 			else
 			   [item setState: NSControlStateValueOff];
 		}
 		
-		if( [item tag] > [[ViewerController getDisplayed2DViewers] count])
+		if( [item tag] > [HorosVisibleViewerWindows() count])
 			return NO;
     }
     return YES;
@@ -3970,707 +3619,99 @@ static BOOL initialized = NO;
 
 + (NSRect) usefullRectForScreen: (NSScreen*) screen
 {
-    return [AppController usefullRectForScreen: screen showFloatingWindows: YES];
+    return screen.visibleFrame;
 }
 
-+ (NSRect) usefullRectForScreen: (NSScreen*) screen showFloatingWindows: (BOOL) showFloatingWindows
+- (void) tileViewerWindows:(NSArray<NSWindow *> *)windows sender:(id)sender
 {
-    NSRect screenFrame = screen.visibleFrame;
-    
-    if( showFloatingWindows && ([AppController USETOOLBARPANEL] || [[NSUserDefaults standardUserDefaults] boolForKey: @"USEALWAYSTOOLBARPANEL2"] == YES))
-        screenFrame.size.height -= 78;  //[[AppController toolbarForScreen: screen] exposedHeight];
-    
-    return screenFrame;
+    if( windows.count == 0)
+        return;
+
+    NSArray<NSScreen *> *screens = [self viewerScreens];
+    if( screens.count == 0)
+        screens = [NSScreen screens];
+    if( screens.count == 0)
+        return;
+
+    NSDictionary *options = [sender isKindOfClass:[NSDictionary class]] ? sender : nil;
+    NSInteger requestedRows = [[options objectForKey:@"rows"] integerValue];
+    NSInteger requestedColumns = [[options objectForKey:@"columns"] integerValue];
+    if( requestedRows == 0)
+        requestedRows = [[options objectForKey:@"Rows"] integerValue];
+    if( requestedColumns == 0)
+        requestedColumns = [[options objectForKey:@"Columns"] integerValue];
+
+    NSUInteger screenCount = MIN(screens.count, windows.count);
+    NSUInteger baseCount = windows.count / screenCount;
+    NSUInteger extraCount = windows.count % screenCount;
+    NSUInteger windowIndex = 0;
+
+    for( NSUInteger screenIndex = 0; screenIndex < screenCount; screenIndex++)
+    {
+        NSUInteger count = baseCount + (screenIndex < extraCount ? 1 : 0);
+        NSInteger rows = requestedRows;
+        NSInteger columns = requestedColumns;
+
+        if( rows > 0 && columns <= 0)
+            columns = (NSInteger)ceil((double)count / (double)rows);
+        else if( columns > 0 && rows <= 0)
+            rows = (NSInteger)ceil((double)count / (double)columns);
+        else if( rows <= 0 || columns <= 0)
+        {
+            columns = (NSInteger)ceil(sqrt((double)count));
+            rows = (NSInteger)ceil((double)count / (double)columns);
+        }
+
+        while( rows * columns < (NSInteger)count)
+            rows++;
+
+        lastRows = (int)rows;
+        lastColumns = (int)columns;
+
+        NSRect availableFrame = [AppController usefullRectForScreen:screens[screenIndex]];
+        CGFloat tileWidth = floor(NSWidth(availableFrame) / columns);
+        CGFloat tileHeight = floor(NSHeight(availableFrame) / rows);
+
+        for( NSUInteger position = 0; position < count; position++, windowIndex++)
+        {
+            NSInteger row = (NSInteger)position / columns;
+            NSInteger column = (NSInteger)position % columns;
+            CGFloat tileY = row == rows - 1 ? NSMinY(availableFrame) : NSMaxY(availableFrame) - (row + 1) * tileHeight;
+            NSRect frame = NSMakeRect(NSMinX(availableFrame) + column * tileWidth,
+                                      tileY,
+                                      column == columns - 1 ? NSMaxX(availableFrame) - (NSMinX(availableFrame) + column * tileWidth) : tileWidth,
+                                      row == rows - 1 ? NSMaxY(availableFrame) - row * tileHeight - NSMinY(availableFrame) : tileHeight);
+            NSWindow *window = windows[windowIndex];
+            [window setFrame:NSIntegralRect(frame) display:YES animate:YES];
+            [window orderFront:self];
+        }
+    }
 }
 
 - (IBAction) tileWindows:(id)sender
 {
-    NSMutableArray *viewersList = [NSMutableArray array];
-    
-    //get 2D viewer windows
-	for( NSWindow *win in [NSApp orderedWindows])
-	{
-		if( [[win windowController] isKindOfClass:[OSIWindowController class]] == YES)
-		{
-			if( [[win windowController] magnetic])
-			{
-				if( [[win windowController] windowWillClose] == NO && [win isMiniaturized] == NO)
-					[viewersList addObject: [win windowController]];
-                
-				else if( [[win windowController] windowWillClose])
-				{
-				}
-                
-				if( [[viewersList lastObject] FullScreenON])
-                    return;
-			}
-		}
-        
-        [win setAnimationBehavior: NSWindowAnimationBehaviorNone];
-	}
-    
-    [self tileWindows: sender windows: viewersList display2DViewerToolbar: USETOOLBARPANEL];
-    
+    [self tileViewerWindows:[HorosMetalViewerLauncher visibleWindows] sender:sender];
     [[BrowserController currentBrowser] closeWaitWindowIfNecessary];
 }
 
 - (IBAction) tile3DWindows:(id)sender
 {
-    NSMutableArray *viewersList = [NSMutableArray array];
-    
-    //get 2D viewer windows
-	for( NSWindow *win in [NSApp orderedWindows])
-	{
-		if( [[win windowController] isKindOfClass:[Window3DController class]] == YES)
-		{
-            if( [[win windowController] windowWillClose] == NO && [win isMiniaturized] == NO && [win isVisible] == YES)
-                [viewersList addObject: [win windowController]];
-            
-            else if( [[win windowController] windowWillClose])
-            {
-            }
-            
-            if( [[viewersList lastObject] FullScreenON])
-                return;
-		}
-	}
-    
-    [self tileWindows: sender windows: viewersList display2DViewerToolbar: NO];
-    
-    for( NSWindowController *win in viewersList)
-        [[win window] makeKeyAndOrderFront: self];
+    [self tileViewerWindows:[HorosMetal3DViewerLauncher visibleWindows] sender:sender];
 }
-
-- (void) tileWindows:(id)sender windows: (NSMutableArray*) viewersList display2DViewerToolbar: (BOOL) display2DViewerToolbar
-{
-	BOOL origCopySettings = [[NSUserDefaults standardUserDefaults] boolForKey: @"COPYSETTINGS"];
-	NSRect screenRect =  screenFrame();
-	BOOL keepSameStudyOnSameScreen = [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesTogetherOnSameScreen"];
-	NSMutableArray *studyList = [NSMutableArray array];
-	ViewerController *keyWindow = nil;
-    
-	delayedTileWindows = NO;
-	
-	[AppController checkForPreferencesUpdate: NO];
-	[[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"COPYSETTINGS"];
-	[AppController checkForPreferencesUpdate: YES];
-	
-	//order windows from left-top to right-bottom, per screen if necessary
-	NSMutableArray	*cWindows = [NSMutableArray arrayWithArray: viewersList];
-	
-	// Only the visible windows
-	for( int i = (long) [cWindows count]-1; i >= 0; i--)
-	{
-		if( [[[cWindows objectAtIndex: i] window] isVisible] == NO) [cWindows removeObjectAtIndex: i];
-	}
-	
-	NSMutableArray* screens = [[self viewerScreens] mutableCopy];
-    
-    if (viewersList.count < screens.count && [[NSUserDefaults standardUserDefaults] boolForKey: @"UseDBScreenAtLast"])
-    {
-        NSScreen* dbscreen = [dbWindow screen];
-        [screens removeObjectIdenticalTo:dbscreen];
-    }
-    
-    if( screens.count <= 0)
-        screens = [[self viewerScreens] mutableCopy];
-    
-    int numberOfMonitors = [screens count];
-
-	NSMutableArray *cResult = [NSMutableArray array];
-    
-	@try
-	{
-		int count = [cWindows count];
-		while( count > 0)
-		{
-			int index = 0;
-			int row = [self currentRowForViewer: [cWindows objectAtIndex: index]];
-			
-			for( int x = 0; x < [cWindows count]; x++)
-			{
-				if( [self currentRowForViewer: [cWindows objectAtIndex: x]] < row)
-				{
-					row = [self currentRowForViewer: [cWindows objectAtIndex: x]];
-					index = x;
-				}
-			}
-			
-			float minX = [self windowCenter: [[cWindows objectAtIndex: index] window]].x;
-			
-			for( int x = 0; x < [cWindows count]; x++)
-			{
-				if( [self windowCenter: [[cWindows objectAtIndex: x] window]].x < minX && [self currentRowForViewer: [cWindows objectAtIndex: x]] <= row)
-				{
-					minX = [self windowCenter: [[cWindows objectAtIndex: x] window]].x;
-					index = x;
-				}
-			}
-			
-			[cResult addObject: [cWindows objectAtIndex: index]];
-			[cWindows removeObjectAtIndex: index];
-			count--;
-		}
-	}
-	@catch ( NSException *e)
-	{
-		NSLog( @"***** 1: %@", e);
-	}
-	
-	NSMutableArray *hiddenWindows = [NSMutableArray array];
-	
-	// Add the hidden windows
-	for( ViewerController *v in viewersList)
-	{
-		if( [[v window] isVisible] == NO)
-		{
-			[hiddenWindows addObject: v];
-			[cResult addObject: v];
-            
-            keyWindow = v;
-		}
-	}
-	
-	viewersList = cResult;
-	
-    if( keyWindow == nil)
-    {
-        for( ViewerController *v in viewersList)
-        {
-            if( [[v window] isKeyWindow])
-                keyWindow = v;
-        }
-    }
-	
-	BOOL identical = YES;
-	
-    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"tileWindowsOrderByStudyDate"])
-    {
-        if( [hiddenWindows count])
-            [hiddenWindows removeAllObjects];
-        
-        [viewersList sortUsingComparator: ^NSComparisonResult(id obj1, id obj2)
-        {
-            NSDate *date1 = [[obj1 currentStudy] date];
-            NSDate *date2 = [[obj2 currentStudy] date];
-            
-            if( [[NSUserDefaults standardUserDefaults] boolForKey: @"reversedTileWindowsOrderByStudyDate"])
-                return [date1 compare: date2];
-            else
-                return [date2 compare: date1];
-        }];
-    }
-    
-	if( keepSameStudyOnSameScreen)
-	{
-		// Are there different studies
-		if( [viewersList count])
-		{
-			NSString	*studyUID = [[[[viewersList objectAtIndex: 0] fileList] objectAtIndex: 0] valueForKeyPath:@"series.study.studyInstanceUID"];
-			
-			//get 2D viewer study arrays
-			for( int i = 0; i < [viewersList count]; i++)
-			{
-				if( [[[[[viewersList objectAtIndex: i] fileList] objectAtIndex: 0] valueForKeyPath:@"series.study.studyInstanceUID"] isEqualToString: studyUID] == NO)
-					identical = NO;
-			}
-		}
-	}
-	
-	@try
-	{
-		if( keepSameStudyOnSameScreen == YES && identical == NO)
-		{
-			//get 2D viewer study arrays
-			for( int i = 0; i < [viewersList count]; i++)
-			{
-				NSString	*studyUID = [[[[viewersList objectAtIndex: i] fileList] objectAtIndex: 0] valueForKeyPath:@"series.study.studyInstanceUID"];
-				
-				BOOL found = NO;
-				// loop through and add to correct array if present
-				for( int x = 0; x < [studyList count]; x++)
-				{
-					if( [[[[[[studyList objectAtIndex: x] objectAtIndex: 0] fileList] objectAtIndex: 0] valueForKeyPath:@"series.study.studyInstanceUID"] isEqualToString: studyUID])
-					{
-						[[studyList objectAtIndex: x] addObject: [viewersList objectAtIndex: i]];
-						found = YES;
-					}
-				}
-				// create new array for current UID
-				if( found == NO)
-				{
-					[studyList addObject: [NSMutableArray array]];
-					[[studyList lastObject] addObject: [viewersList objectAtIndex: i]];
-				}
-			}
-		}
-		else keepSameStudyOnSameScreen = NO;
-	}
-	@catch ( NSException *e)
-	{
-		NSLog( @"***** 2: %@", e);
-	}
-	
-	int viewerCount = [viewersList count];
-	
-	screenRect = [[screens objectAtIndex:0] visibleFrame];
-	
-	BOOL landscape = (screenRect.size.width/screenRect.size.height > 1) ? YES : NO;
-	
-    float landscapeRatio = 1.5;
-    
-    if( screenRect.size.width/screenRect.size.height > 1.7) // 16/9 screen or more
-        landscapeRatio = 2.0;
-    
-    float portraitRatio = 0.9;
-    
-    if( screenRect.size.height/screenRect.size.width > 1.7) // 16/9 screen or more
-        portraitRatio = 0.49;
-    
-	int rows = [[WindowLayoutManager sharedWindowLayoutManager] windowsRows];
-	int columns = [[WindowLayoutManager sharedWindowLayoutManager] windowsColumns];
-	
-	if( [sender isKindOfClass: [NSDictionary class]])
-	{
-        if( [[sender objectForKey: @"rows"] intValue] && [[sender objectForKey: @"columns"] intValue])
-        {
-            rows = [[sender objectForKey: @"rows"] intValue];
-            columns = [[sender objectForKey: @"columns"] intValue];
-        }
-		else if( [[sender objectForKey: @"rows"] intValue])
-		{
-			rows = [[sender objectForKey: @"rows"] intValue];
-			columns = floor( (float) viewerCount / (float) rows);
-		}
-		else if( [[sender objectForKey: @"columns"] intValue])
-		{
-			columns = [[sender objectForKey: @"columns"] intValue];
-			rows = floor( (float) viewerCount / (float) columns);
-		}
-        
-        if( [[sender objectForKey: @"Rows"] intValue] && [[sender objectForKey: @"Columns"] intValue])
-        {
-            rows = [[sender objectForKey: @"Rows"] intValue];
-            columns = [[sender objectForKey: @"Columns"] intValue];
-        }
-		else if( [[sender objectForKey: @"Rows"] intValue])
-		{
-			rows = [[sender objectForKey: @"Rows"] intValue];
-			columns = floor( (float) viewerCount / (float) rows);
-		}
-		else if( [[sender objectForKey: @"Columns"] intValue])
-		{
-			columns = [[sender objectForKey: @"Columns"] intValue];
-			rows = floor( (float) viewerCount / (float) columns);
-		}
-	}
-	else if( ![[WindowLayoutManager sharedWindowLayoutManager] currentHangingProtocol] || viewerCount < rows * columns)
-	{
-		if (landscape)
-		{
-			columns = 2 * numberOfMonitors;
-			rows = 1;
-		}
-		else
-		{
-			columns = numberOfMonitors;
-			rows = 2;
-		}
-	}
-	
-    if( rows <= 0)
-        rows = 1;
-    
-    if( columns <= 0)
-        columns = 1;
-    
-	//excess viewers. Need to add spaces to accept
-	if( viewerCount > (rows * columns))
-	{
-		float ratioValue;
-		
-		if( landscape) ratioValue = landscapeRatio;
-		else ratioValue = portraitRatio;
-		
-		float viewerCountPerScreen = (float) viewerCount / (float) numberOfMonitors;
-		int columnsPerScreen = ceil( (float) columns / (float) numberOfMonitors);
-        
-        BOOL fixedRows = NO, fixedColumns = NO;
-        
-        if( [sender isKindOfClass: [NSDictionary class]] && [sender objectForKey: @"rows"])
-            fixedRows = YES;
-        
-        if( [sender isKindOfClass: [NSDictionary class]] && [sender objectForKey: @"columns"])
-            fixedColumns = YES;
-        
-		while (viewerCountPerScreen > (rows * columnsPerScreen))
-		{
-			if( fixedRows)
-				columnsPerScreen++;
-			else if( fixedColumns)
-				rows++;
-			else
-			{
-				float ratio = (float) columnsPerScreen / (float) rows;
-			
-				if (ratio > ratioValue)
-					rows ++;
-				else 
-					columnsPerScreen ++;
-			}
-		}
-        
-        int intViewerCountPerScreen = ceilf( viewerCountPerScreen);
-        
-        if( rows * columnsPerScreen > intViewerCountPerScreen && rows*(columnsPerScreen-1) == intViewerCountPerScreen)
-            columnsPerScreen --;
-
-        if( rows * columnsPerScreen > intViewerCountPerScreen && columnsPerScreen*(rows-1) == intViewerCountPerScreen)
-            rows --;
-        
-        columns = columnsPerScreen * numberOfMonitors;
-	}
-	
-	// Smart arrangement if one window was added or removed
-	if( numberOfMonitors == 1)
-	{
-		@try 
-		{
-			if( lastColumns != columns)
-			{
-				if( lastCount == (long) [viewersList count] -1)	// One window was added
-				{
-					if( columns < [viewersList count])
-					{
-						[viewersList insertObject: [viewersList lastObject] atIndex: lastColumns];
-						[viewersList removeObjectAtIndex: (long) [viewersList count]-1];
-					}
-						
-				}
-				
-//				if( lastCount == [viewersList count] +1)	// One window was removed
-//				{
-//					if( viewersAddresses)
-//					{
-//						// Try to find the missing Viewer
-//						
-//						for( int i = 0 ; i < [viewersAddresses count]; i++)
-//						{
-//							if( [viewersList containsObject: [[viewersAddresses objectAtIndex: i] nonretainedObjectValue]] == NO)
-//							{
-//								// We found the missing viewer
-//								[viewersList insertObject: [viewersList lastObject] atIndex: i];
-//								[viewersList removeObjectAtIndex: [viewersList count]-1];
-//								break;
-//							}
-//						}
-//					}
-//				}
-			}
-		}
-		@catch (NSException * e) 
-		{
-            N2LogExceptionWithStackTrace(e);
-		}
-		
-	}
-	
-	lastColumns = columns;
-	lastRows = rows;
-	lastCount = [viewersList count];
-	
-//	if( viewersAddresses == nil)
-//		viewersAddresses = [[NSMutableArray array] retain];
-//	
-//	[viewersAddresses removeAllObjects];
-//	for( id v in viewersList)
-//		[viewersAddresses addObject: [NSValue valueWithNonretainedObject: v]];
-	
-	accumulateAnimations = YES;
-	
-	if( keepSameStudyOnSameScreen && numberOfMonitors > 1)
-	{
-        int columnsForThisScreen = columns;
-		int rowsForThisScreen = rows;
-		
-		columnsForThisScreen = ceil(((float) columns / (float) numberOfMonitors));
-        
-		@try
-		{
-			NSLog(@"Tile Windows with keepSameStudyOnSameScreen == YES");
-			
-			for( int i = 0; i < numberOfMonitors && i < [studyList count]; i++)
-			{
-				NSMutableArray	*viewersForThisScreen = [studyList objectAtIndex:i];
-				
-				if( i == numberOfMonitors -1 || i == (long) [studyList count]-1)
-				{
-					// Take all remaining studies
-					
-					for( int x = i+1; x < [studyList count]; x++)
-					{
-						[viewersForThisScreen addObjectsFromArray: [studyList objectAtIndex: x]];
-					}
-				}
-				
-                if( viewersForThisScreen.count > (rowsForThisScreen * columnsForThisScreen))
-                {
-                    {
-                        float ratioValue;
-                        
-                        if( landscape) ratioValue = landscapeRatio;
-                        else ratioValue = portraitRatio;
-                        
-                        BOOL fixedRows = NO, fixedColumns = NO;
-                        
-                        if( [sender isKindOfClass: [NSDictionary class]] && [sender objectForKey: @"rows"])
-                            fixedRows = YES;
-                        
-                        if( [sender isKindOfClass: [NSDictionary class]] && [sender objectForKey: @"columns"])
-                            fixedColumns = YES;
-                        
-                        while (viewersForThisScreen.count > (rowsForThisScreen * columnsForThisScreen))
-                        {
-                            if( fixedRows)
-                                columnsForThisScreen++;
-                            else if( fixedColumns)
-                                rowsForThisScreen++;
-                            else
-                            {
-                                float ratio = (float) columnsForThisScreen / (float) rowsForThisScreen;
-                                
-                                if (ratio > ratioValue)
-                                    rowsForThisScreen ++;
-                                else 
-                                    columnsForThisScreen ++;
-                            }
-                        }
-                        
-                        int intViewerCountPerScreen = ceilf( viewersForThisScreen.count);
-                        
-                        if( rowsForThisScreen * columnsForThisScreen > intViewerCountPerScreen && rowsForThisScreen*(columnsForThisScreen-1) == intViewerCountPerScreen)
-                            columnsForThisScreen --;
-                        
-                        if( rowsForThisScreen * columnsForThisScreen > intViewerCountPerScreen && columnsForThisScreen*(rowsForThisScreen-1) == intViewerCountPerScreen)
-                            rowsForThisScreen --;
-                        
-                        columns = columnsForThisScreen * numberOfMonitors;
-                    }
-                }
-                
-				[self displayViewers: viewersForThisScreen monitorIndex: i screens: screens numberOfMonitors: i+1 rowsPerScreen: rowsForThisScreen columnsPerScreen: columnsForThisScreen];
-			}
-			
-		}
-		@catch ( NSException *e)
-		{
-			NSLog( @"***** 3: %@", e);
-		}
-	}
-	
-	// if monitor count is greater than or equal to viewers. One viewer per window
-	
-	else if (viewerCount <= numberOfMonitors)
-	{
-		int count = [viewersList count];
-		
-		for( int i = 0; i < count; i++)
-		{
-			NSRect frame = [AppController usefullRectForScreen: [screens objectAtIndex:i] showFloatingWindows: display2DViewerToolbar];
-			
-			[[viewersList objectAtIndex:i] setWindowFrame: frame showWindow:YES animate: YES];			
-		}
-		
-        lastRows = 1;
-		lastColumns = numberOfMonitors;
-	}
-	
-	/* Will have columns but no rows. 
-	 There are more columns than monitors. 
-	  Need to separate columns among the window evenly  */
-	
-	else if((viewerCount <= columns) &&  (viewerCount % numberOfMonitors == 0))
-	{
-		int viewersPerScreen = viewerCount / numberOfMonitors;
-		for( int i = 0; i < viewerCount; i++)
-		{
-			int index = (int) i/viewersPerScreen;
-			int viewerPosition = i % viewersPerScreen;
-			NSRect frame = [AppController usefullRectForScreen: [screens objectAtIndex:index] showFloatingWindows: display2DViewerToolbar];
-			
-			frame.size.width /= viewersPerScreen;
-			frame.origin.x += (frame.size.width * viewerPosition);
-			
-			[[viewersList objectAtIndex:i] setWindowFrame: frame showWindow:YES animate: YES];
-		}
-		
-		lastRows = 1;
-		lastColumns = viewerCount;
-	} 
-	//have different number of columns in each window
-	else if( viewerCount <= columns) 
-	{
-		int columnsPerScreen = ceil(((float) columns / numberOfMonitors));
-		int extraViewers = viewerCount % numberOfMonitors;
-		
-		for( int i = 0; i < viewerCount; i++)
-		{
-			int monitorIndex = (int) i /columnsPerScreen;
-			int viewerPosition = i % columnsPerScreen;
-			NSScreen *screen = [screens objectAtIndex: monitorIndex];
-			NSRect frame = [AppController usefullRectForScreen: screen showFloatingWindows: display2DViewerToolbar];
-			
-			if (monitorIndex < extraViewers) 
-				frame.size.width /= columnsPerScreen;
-			else
-				frame.size.width /= (columnsPerScreen - 1);
-				
-			frame.origin.x += (frame.size.width * viewerPosition);
-			
-			if( [hiddenWindows count])	// We have new viewers to insert !
-			{
-				if( [[[viewersList objectAtIndex:i] window] screen] != screen)
-				{
-					[viewersList removeObject: [hiddenWindows objectAtIndex: 0]];
-					[viewersList insertObject: [hiddenWindows objectAtIndex: 0] atIndex: i];
-					
-					[hiddenWindows removeObject: [hiddenWindows objectAtIndex: 0]];
-				}
-			}
-			
-			[[viewersList objectAtIndex:i] setWindowFrame:frame showWindow:YES animate: YES];
-            
-            [hiddenWindows removeObject: [viewersList objectAtIndex:i]];
-		}
-		
-		lastRows = 1;
-		lastColumns = viewerCount;
-	}
-	//adjust for actual number of rows needed
-	else if (viewerCount <=  columns * rows)  
-	{
-		int columnsPerScreen = columns;
-		int rowsPerScreen = rows;
-		
-		columnsPerScreen = ceil(((float) columns / (float) numberOfMonitors));
-		
-		
-		NSMutableArray *viewersForThisScreen = [NSMutableArray array];
-		
-		int previousIndex = 0;
-		int monitorIndex;
-		
-		if( viewerCount)
-		{
-			for( int i = 0; i < viewerCount; i++)
-			{
-				monitorIndex =  i / (columnsPerScreen*rowsPerScreen);
-				
-				if( monitorIndex == numberOfMonitors) monitorIndex = numberOfMonitors-1;
-				
-				NSScreen *screen = [screens objectAtIndex: monitorIndex];
-				
-				if( monitorIndex != previousIndex)
-				{
-					[self displayViewers: viewersForThisScreen monitorIndex: previousIndex screens: screens numberOfMonitors: numberOfMonitors rowsPerScreen: rowsPerScreen columnsPerScreen: columnsPerScreen];
-					[viewersForThisScreen removeAllObjects];
-					
-					previousIndex = monitorIndex;
-				}
-				
-				if( [hiddenWindows count])	// We have new viewers to insert !
-				{
-					if( [[[viewersList objectAtIndex:i] window] screen] != screen)
-					{
-						[viewersList removeObject: [hiddenWindows objectAtIndex: 0]];
-						[viewersList insertObject: [hiddenWindows objectAtIndex: 0] atIndex: i];
-						
-						[hiddenWindows removeObject: [hiddenWindows objectAtIndex: 0]];
-					}
-				}
-				
-				[viewersForThisScreen addObject: [viewersList objectAtIndex:i]];
-                
-                [hiddenWindows removeObject: [viewersList objectAtIndex:i]];
-			}
-			
-			if( [viewersForThisScreen count])
-				[self displayViewers: viewersForThisScreen monitorIndex: monitorIndex screens: screens numberOfMonitors: numberOfMonitors rowsPerScreen: rowsPerScreen columnsPerScreen: columnsPerScreen];
-		}
-	}
-	else
-		NSLog(@"NO tiling");
-	
-    int p = lastColumns / [[[AppController sharedAppController] viewerScreens] count];
-    if( p < 1)
-        p = 1;
-    
-    [[NSUserDefaults standardUserDefaults] setObject: [NSString stringWithFormat: @"%d%d", lastRows, p] forKey: @"LastWindowsTilingRowsColumns"];
-    
-	accumulateAnimations = NO;
-	if( [accumulateAnimationsArray count])
-	{
-		[OSIWindowController setDontEnterMagneticFunctions: YES];
-		[OSIWindowController setDontEnterWindowDidChangeScreen: YES];
-		
-		NSViewAnimation * animation = [[NSViewAnimation alloc]  initWithViewAnimations: accumulateAnimationsArray];
-		[animation setAnimationBlockingMode: NSAnimationBlocking];
-		
-		if( [accumulateAnimationsArray count] == 1)
-			[animation setDuration: 0.20];
-		else
-			[animation setDuration: 0.40];
-		[animation startAnimation];
-		
-		accumulateAnimationsArray = nil;
-		
-		[OSIWindowController setDontEnterMagneticFunctions: NO];
-		[OSIWindowController setDontEnterWindowDidChangeScreen: NO];
-	}
-	
-	[AppController checkForPreferencesUpdate: NO];
-	[[NSUserDefaults standardUserDefaults] setBool: origCopySettings forKey: @"COPYSETTINGS"];
-	[AppController checkForPreferencesUpdate: YES];
-	
-    
-    if( keyWindow == nil)
-        keyWindow = [ViewerController frontMostDisplayed2DViewerForScreen: nil];
-    
-	if( [viewersList count] > 0 && keyWindow != nil)
-	{
-        [DCMView setDontListenToSyncMessage: YES];
-        
-        [[keyWindow window] makeKeyAndOrderFront:self];
-		[keyWindow propagateSettings];
-        
-        [ToolbarPanelController checkForValidToolbar];
-        
-        if( [keyWindow isKindOfClass:[ViewerController class]])
-        {
-            [[keyWindow imageView] becomeMainWindow];
-            [keyWindow redrawToolbar];
-		}
-        
-        [DCMView setDontListenToSyncMessage: NO];
-	}
-}
-
-
-//———————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
 - (IBAction) closeAllViewers: (id) sender
 {
-    // Is there a full screen window displayed?
-    for( id window in [NSApp orderedWindows])
+    // Closing every viewer during a native full-screen transition is disruptive.
+    for( NSWindow *window in [NSApp orderedWindows])
     {
-        if( [window isKindOfClass: [NSFullScreenWindow class]])
+        if( (window.styleMask & NSWindowStyleMaskFullScreen) != 0)
         {
             NSBeep();
             return;
         }
     }
     
-	[ViewerController closeAllWindows];
+	HorosCloseAllViewerWindows();
 }
 
 //———————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————

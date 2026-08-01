@@ -5,6 +5,16 @@ import CoreData
 final class Metal3DViewerLauncher: NSObject {
     private static var retainedControllers: [Metal3DViewerWindowController] = []
 
+    @objc(visibleWindows)
+    class func visibleWindows() -> [NSWindow] {
+        retainedControllers.compactMap { $0.window }.filter { $0.isVisible }
+    }
+
+    @objc(closeAllWindows)
+    class func closeAllWindows() {
+        retainedControllers.compactMap { $0.window }.forEach { $0.close() }
+    }
+
     @objc(launchWithContext:)
     class func launch(withContext context: NSDictionary) {
         let pixList = (context["pixList"] as? [DCMPix]) ?? ((context["pixList"] as? NSArray)?.compactMap { $0 as? DCMPix } ?? [])

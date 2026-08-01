@@ -38,7 +38,6 @@
 
 #import "AppController.h"
 #import "SRAnnotation.h"
-#import "DCMView.h"
 #import "DCMPix.h"
 #import "BrowserController.h"
 #import "DicomFile.h"

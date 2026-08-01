@@ -56,7 +56,6 @@ enum
 	ROI_selectedModify = 3
 };
 
-@class DCMView;
 @class DCMPix;
 @class DCMObject;
 
@@ -126,7 +125,7 @@ enum
 	long			selectedModifyPoint;
 	NSPoint			clickPoint, previousPoint, originAnchor;
 	
-	DCMView			*curView;
+	NSView			*curView;
 	DCMPix			*pix;
 	
 	float			rmean, rmax, rmin, rdev, rtotal, rskewness, rkurtosis;
@@ -185,7 +184,7 @@ enum
 @property BOOL clickInTextBox;
 @property(setter=setROIRect:) NSRect rect; // To create a Rectangular ROI (tROI) or an Oval ROI (tOval) or a 2DPoint
 @property(nonatomic, retain) DCMPix *pix; // The DCMPix associated to this ROI
-@property(assign, nonatomic) DCMView *curView;  // The DCMView associated to this ROI
+@property(assign, nonatomic) NSView *curView;
 @property float mousePosMeasure;
 @property(readonly) NSData *data;
 @property(nonatomic, setter=setColor:) RGBColor rgbcolor;
@@ -358,7 +357,7 @@ enum
 - (NSMutableDictionary*) dataString;
 
 /** Set the associated view */
-- (void) setRoiView:(DCMView*) v __deprecated; // use setCurView:
+- (void) setRoiView:(NSView*) v __deprecated; // use setCurView:
 
 /** Recompute */
 - (void) recompute;

@@ -41,7 +41,6 @@
 #import <Cocoa/Cocoa.h>
 #import "OSIWindowController.h"
 
-@class ViewerController;
 @class DCMObject;
 
 /** \brief Window Controller for XML parsing */
@@ -62,8 +61,6 @@
 	DicomImage                  *imObj;
 	NSMutableArray				*dictionaryArray;
 	
-	ViewerController			*viewer;
-	
 	BOOL						isDICOM, dontClose;
 	BOOL						editingActivated;
 	BOOL						allowSelectionChange;
@@ -77,16 +74,13 @@
 	IBOutlet NSWindow			*validatorWindow;
 	IBOutlet NSTextView			*validatorText;
 	
-	BOOL						dontListenToIndexChange;
     NSMutableArray              *modificationsToApplyArray, *modifiedFields, *modifiedValues;
 }
 
 - (BOOL) modificationsToApply;
 
-+ (XMLController*) windowForViewer: (ViewerController*) v;
-
 - (void) changeImageObject:(DicomImage*) image;
-- (id) initWithImage:(DicomImage*) image windowName:(NSString*) name viewer:(ViewerController*) v;
+- (id) initWithImage:(DicomImage*) image windowName:(NSString*) name;
 - (void) setupToolbar;
 
 - (IBAction) addDICOMField:(id) sender;
@@ -110,6 +104,5 @@
 - (void) traverse: (NSXMLNode*) node string:(NSMutableString*) string;
 
 @property(readonly) NSManagedObject *imObj;
-@property(readonly) ViewerController *viewer;
 @property(nonatomic) BOOL editingActivated;
 @end

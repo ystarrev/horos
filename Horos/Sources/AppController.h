@@ -83,7 +83,6 @@ enum
 extern "C"
 {
 #endif
-    NSRect screenFrame(void);
 	NSString * documentsDirectoryFor( int mode, NSString *url) __deprecated;
     NSString * documentsDirectory(void) __deprecated;
 #ifdef __cplusplus
@@ -99,7 +98,7 @@ extern "C"
 *
 */
 
-@class AppController, ToolbarPanelController, BonjourPublisher;
+@class AppController, BonjourPublisher;
 
 extern AppController* OsiriX;
 
@@ -127,7 +126,7 @@ extern AppController* OsiriX;
 
 	BOOL							checkAllWindowsAreVisibleIsOff, isSessionInactive;
 	
-	int								lastColumns, lastRows, lastCount;
+	int								lastColumns, lastRows;
     
     BonjourPublisher* _bonjourPublisher;
 }
@@ -181,8 +180,6 @@ extern AppController* OsiriX;
 - (void) initTilingWindows;
 - (IBAction) tileWindows:(id)sender;  /**< Tile open window */
 - (IBAction) tile3DWindows:(id)sender; /**< Tile 3D open window */
-- (void) tileWindows:(id)sender windows: (NSMutableArray*) viewersList display2DViewerToolbar: (BOOL) display2DViewerToolbar;
-- (void) scaleToFit:(id)sender;    /**< Scale opened windows */
 - (IBAction) closeAllViewers: (id) sender;  /**< Close All Viewers */
 - (void) checkAllWindowsAreVisible:(id) sender;
 - (void) checkAllWindowsAreVisible:(id) sender makeKey: (BOOL) makeKey;
@@ -209,23 +206,12 @@ extern AppController* OsiriX;
 - (NSScreen *)dbScreen;  /**< Return monitor with DB */
 - (NSArray *)viewerScreens; /**< Return array of monitors for displaying viewers */
 
- /** 
- * Find the WindowController with the named nib and using the pixList
- * This is commonly used to find the 3D Viewer associated with a ViewerController.
- * Conversely this could be used to find the ViewerController that created a 3D Viewer
- * Each 3D Viewer has its own distinctly named nib as does the ViewerController.
- * The pixList is the Array of DCMPix that the viewer uses.  It should uniquely identify related viewers
-*/
-- (id) FindViewer:(NSString*) nib :(NSArray*) pixList;
-- (NSArray*) FindRelatedViewers:(NSArray*) pixList; /**< Return an array of all WindowControllers using the pixList */
 - (IBAction) cancelModal: (id) sender;
 - (IBAction) okModal: (id) sender;
 - (NSString*) privateIP;
 - (void) killDICOMListenerWait:(BOOL) w;
 - (void) runPreferencesUpdateCheck:(NSTimer*) timer;
 + (void) checkForPreferencesUpdate: (BOOL) b;
-+ (BOOL) USETOOLBARPANEL;
-+ (void) setUSETOOLBARPANEL: (BOOL) b;
 + (NSRect) usefullRectForScreen: (NSScreen*) screen;
 
 - (void) addStudyToRecentStudiesMenu: (NSManagedObjectID*) studyID;

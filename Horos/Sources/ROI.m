@@ -925,7 +925,7 @@ int spline(NSPoint *sourcePoints,
     offsetTextBox_y = offset.y;
 }
 
-- (void)setRoiView:(DCMView *)view
+- (void)setRoiView:(NSView *)view
 {
     curView = view;
 }

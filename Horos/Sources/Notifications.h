@@ -40,9 +40,6 @@
 extern NSString* const OsirixUpdateWLWWMenuNotification;
 extern NSString* const OsirixChangeWLWWNotification;
 extern NSString* const OsirixROIChangeNotification;
-extern NSString* const OsirixCloseViewerNotification;
-extern NSString* const OsirixUpdate2dCLUTMenuNotification;
-extern NSString* const OsirixUpdate2dWLWWMenuNotification;
 extern NSString* const OsirixVRViewDidBecomeFirstResponderNotification;
 extern NSString* const OsirixUpdateVolumeDataNotification;
 extern NSString* const OsirixRevertSeriesNotification;
@@ -87,7 +84,6 @@ extern NSString* const OsirixNotification;
 extern NSString* const OsiriXFileReceivedNotification;
 extern NSString* const OsirixDCMSendStatusNotification;
 extern NSString* const OsirixDCMUpdateCurrentImageNotification;
-extern NSString* const OsirixDCMViewIndexChangedNotification;
 extern NSString* const OsirixRightMouseUpNotification;
 extern NSString* const OsirixMouseDownNotification;
 extern NSString* const OsirixVRCameraDidChangeNotification;
@@ -98,30 +94,9 @@ extern NSString* const OsirixRightMouseDraggedNotification;
 extern NSString* const OsirixLabelGLFontChangeNotification;
 extern NSString* const OsirixDrawTextInfoNotification;
 extern NSString* const OsirixDrawObjectsNotification;
-extern NSString* const OsirixDCMViewDidBecomeFirstResponderNotification;
-extern NSString* const OsirixViewerWillChangeNotification;
-extern NSString* const OsirixViewerDidChangeNotification;
 extern NSString* const OsirixUpdateViewNotification;
-extern NSString* const OsirixViewerControllerDidLoadImagesNotification;
-extern NSString* const OsirixViewerControllerWillFreeVolumeDataNotification; // userinfo dict will contain an NSData with @"volumeData" key and a NSNumber with @"movieIndex" key
-extern NSString* const OsirixViewerControllerDidAllocateVolumeDataNotification; // userinfo dict will contain an NSData with @"volumeData" key and a NSNumber with @"movieIndex" key
 extern NSString* const KFSplitViewDidCollapseSubviewNotification;
 extern NSString* const KFSplitViewDidExpandSubviewNotification;
 extern NSString* const OsiriXLogEvent;
 
 extern NSString* const OsirixActiveLocalDatabaseDidChangeNotification;
-
-extern NSString* const OsirixNodeRemovedFromCurvePathNotification;
-extern NSString* const OsirixUpdateCurvedPathCostNotification;
-extern NSString* const OsirixDeletedCurvedPathNotification;
-
-/**
- * OsirixPopulatedContextualMenuNotification
- * object: NSMenu*
- * userInfo:
- *  - key [ViewerController className]
- *		the ViewerController the rightclick occurred in
- *	- key [ROI className], optional
- *		the rightclicked ROI
- **/
-extern NSString* const OsirixPopulatedContextualMenuNotification;

@@ -53,7 +53,6 @@
 #import "DicomFile.h"
 #import "NSManagedObject+N2.h"
 #import "DCMTKStoreSCU.h"
-#import "ViewerController.h"
 #import "DataNodeIdentifier.h"
 
 @interface RemoteDicomDatabase ()
@@ -452,9 +451,6 @@
     
     @try
     {
-        for (ViewerController* vc in [ViewerController getDisplayed2DViewers])
-            [vc.window orderOut:self];
-        
         [_sqlFileName release];
         _sqlFileName = [[path lastPathComponent] retain];
         /*NSString* oldSqlFilePath =*/ [_sqlFilePath autorelease];
@@ -528,9 +524,6 @@
 
 -(NSThread*)initiateUpdate {
 //	if( DatabaseIsEdited) return;
-	
-	if ([[ViewerController getDisplayed2DViewers] count])
-		return nil;
 	
 	if ([_updateLock tryLock])
 		@try {

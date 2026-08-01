@@ -48,6 +48,40 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    @objc(ApplyWLWW:)
+    private func applyWLWWFromMenu(_ sender: Any?) {
+        guard let title = (sender as? NSMenuItem)?.title,
+              let actualSelection = volumeView.applyWLPreset(named: Self.wlwwPresetName(fromMenuTitle: title)) else {
+            return
+        }
+        toolbarController.selectWLPreset(named: actualSelection)
+    }
+
+    @objc(ApplyCLUT:)
+    private func applyCLUTFromMenu(_ sender: Any?) {
+        guard let title = (sender as? NSMenuItem)?.title,
+              let actualSelection = volumeView.applyCLUT(named: title) else {
+            return
+        }
+        toolbarController.selectCLUT(named: actualSelection)
+    }
+
+    @objc(ApplyOpacity:)
+    private func applyOpacityFromMenu(_ sender: Any?) {
+        guard let title = (sender as? NSMenuItem)?.title,
+              let actualSelection = volumeView.applyOpacity(named: title) else {
+            return
+        }
+        toolbarController.selectOpacity(named: actualSelection)
+    }
+
+    private static func wlwwPresetName(fromMenuTitle title: String) -> String {
+        guard let separator = title.firstIndex(of: "-") else { return title }
+        let prefix = String(title[..<separator]).trimmingCharacters(in: .whitespaces)
+        guard prefix.isEmpty == false, prefix.allSatisfy(\.isNumber) else { return title }
+        return String(title[title.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
+    }
+
     private func configureWindow() {
         guard let window else { return }
         window.delegate = self

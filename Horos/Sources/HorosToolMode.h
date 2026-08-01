@@ -48,4 +48,13 @@ typedef NS_ENUM(short, ToolMode)
     tTAGT
 };
 
+/* Stable annotation levels shared by the database preview and Metal viewer. */
+typedef NS_ENUM(NSInteger, HorosAnnotationLevel)
+{
+    HorosAnnotationLevelNone = 0,
+    HorosAnnotationLevelGraphics,
+    HorosAnnotationLevelBase,
+    HorosAnnotationLevelFull
+};
+
 #endif

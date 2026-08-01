@@ -45,7 +45,6 @@
 #import "AppController.h"
 #import "BrowserController.h"
 #import "DicomFile.h"
-#import "DCMView.h"
 #import <Foundation/NSObjCRuntime.h>
 #include <algorithm>
 

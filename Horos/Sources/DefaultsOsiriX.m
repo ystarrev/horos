@@ -38,7 +38,6 @@
 #import "DefaultsOsiriX.h"
 #import "NSUserDefaults+OsiriX.h"
 #import "DCMAbstractSyntaxUID.h"
-#import "DCMView.h"
 #import <AVFoundation/AVFoundation.h>
 #import <Metal/Metal.h>
 #include <limits.h>
@@ -836,7 +835,6 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"1" forKey: @"STORESCP"];
 	[defaultValues setObject:@"3" forKey: @"LISTENERCHECKINTERVAL"];
 	[defaultValues setObject:@"1" forKey: @"AUTOTILING"];
-	[defaultValues setObject:@"1" forKey: @"USEALWAYSTOOLBARPANEL2"];
 	[defaultValues setObject:@"Softw Tissue CT" forKey: @"LAST_3D_PRESET"];
 	[defaultValues setObject:@"0" forKey:@"HIDEPATIENTNAME"];
 	[defaultValues setObject:@"1" forKey:@"onlyDICOM"];
@@ -860,7 +858,7 @@ static NSHost *currentHost = nil;
     [defaultValues setObject:@"4" forKey:@"MAXNUMBEROF32BITVIEWERS"];
     [defaultValues setObject:@"1" forKey:@"CFINDCommentsAndStatusSupport"];
     [defaultValues setObject:@"comment" forKey:@"commentFieldForAutoFill"];
-    [defaultValues setObject:[NSString stringWithFormat:@"%d", syncroRatio] forKey:@"DefaultModeForNonVolumicSeries"];
+    [defaultValues setObject:@"4" forKey:@"DefaultModeForNonVolumicSeries"];
 	[defaultValues setObject:@"2" forKey:@"drawerState"]; // NSDrawerOpenState
     /*
     if( [[NSProcessInfo processInfo] processorCount] >= 4)

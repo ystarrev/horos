@@ -40,9 +40,6 @@
 NSString* const OsirixUpdateWLWWMenuNotification = @"UpdateWLWWMenu";
 NSString* const OsirixChangeWLWWNotification = @"changeWLWW";
 NSString* const OsirixROIChangeNotification = @"roiChange";
-NSString* const OsirixCloseViewerNotification = @"CloseViewerNotification";
-NSString* const OsirixUpdate2dCLUTMenuNotification = @"Update2DCLUTMenu";
-NSString* const OsirixUpdate2dWLWWMenuNotification = @"Update2DWLWWMenu";
 NSString* const OsirixVRViewDidBecomeFirstResponderNotification = @"VRViewDidBecomeFirstResponder";
 NSString* const OsirixUpdateVolumeDataNotification = @"updateVolumeData";
 NSString* const OsirixRevertSeriesNotification = @"revertSeriesNotification";
@@ -88,7 +85,6 @@ NSString* const OsirixNotification = @"VRCameraDidChange";
 NSString* const OsiriXFileReceivedNotification = @"OsiriXFileReceivedNotification";
 NSString* const OsirixDCMSendStatusNotification = @"DCMSendStatus";
 NSString* const OsirixDCMUpdateCurrentImageNotification = @"DCMUpdateCurrentImage";
-NSString* const OsirixDCMViewIndexChangedNotification = @"DCMViewIndexChanged";
 NSString* const OsirixRightMouseUpNotification = @"PLUGINrightMouseUp";
 NSString* const OsirixMouseDownNotification = @"mouseDown";
 NSString* const OsirixVRCameraDidChangeNotification = @"VRCameraDidChange";
@@ -99,21 +95,10 @@ NSString* const OsirixRightMouseDraggedNotification = @"PLUGINrightMouseDragged"
 NSString* const OsirixLabelGLFontChangeNotification = @"changeLabelGLFontNotification";
 NSString* const OsirixDrawTextInfoNotification = @"PLUGINdrawTextInfo";
 NSString* const OsirixDrawObjectsNotification = @"PLUGINdrawObjects";
-NSString* const OsirixDCMViewDidBecomeFirstResponderNotification = @"DCMViewDidBecomeFirstResponder";
-NSString* const OsirixViewerWillChangeNotification = @"ViewerWillChangeNotification";
-NSString* const OsirixViewerDidChangeNotification = @"ViewerDidChangeNotification";
 NSString* const OsirixUpdateViewNotification = @"updateView";
-NSString* const OsirixViewerControllerDidLoadImagesNotification = @"OsirixViewerControllerDidLoadImagesNotification";
-NSString* const OsirixViewerControllerWillFreeVolumeDataNotification = @"OsirixViewerControllerWillFreeVolumeDataNotification"; // userinfo dict will contain an NSData with @"volumeData" key and a NSNumber with @"movieIndex" key
-NSString* const OsirixViewerControllerDidAllocateVolumeDataNotification = @"OsirixViewerControllerDidAllocateVolumeDataNotification"; // userinfo dict will contain an NSData with @"volumeData" key and a NSNumber with @"movieIndex" key
 NSString* const KFSplitViewDidCollapseSubviewNotification = @"KFSplitViewDidCollapseSubviewNotification";
 NSString* const KFSplitViewDidExpandSubviewNotification = @"KFSplitViewDidExpandSubviewNotification";
 
 NSString* const OsirixActiveLocalDatabaseDidChangeNotification = @"OsirixActiveLocalDatabaseDidChangeNotification";
 
-NSString* const OsirixPopulatedContextualMenuNotification = @"OsirixPopulatedContextualMenuNotification";
 NSString* const OsiriXLogEvent = @"OsiriXLogEvent";
-
-NSString* const OsirixNodeRemovedFromCurvePathNotification = @"OsirixNodeRemovedFromCurvePath";
-NSString* const OsirixUpdateCurvedPathCostNotification = @"OsirixUpdateCurvedPathCost";
-NSString* const OsirixDeletedCurvedPathNotification = @"OsirixDeletedCurvedPath";

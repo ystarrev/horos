@@ -113,7 +113,6 @@ void* sopInstanceUIDEncode( NSString *sopuid);
 - (DCMSequenceAttribute*) graphicAnnotationSequence;
 - (NSImage*) image;
 - (NSImage*) thumbnail;
-- (NSImage*) imageAsScreenCapture:(NSRect)frame;
 - (NSDictionary*) imageAsDICOMScreenCapture:(DICOMExport*) exporter;
 - (NSImage*) thumbnailIfAlreadyAvailable;
 - (void) setThumbnail:(NSImage*)image;
@@ -136,4 +135,3 @@ void* sopInstanceUIDEncode( NSString *sopuid);
 + (NSMutableArray*) dicomImagesInObjects:(NSArray*)objects;
 
 @end
-

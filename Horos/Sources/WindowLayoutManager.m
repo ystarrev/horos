@@ -36,12 +36,6 @@
  ============================================================================*/
 
 #import "WindowLayoutManager.h"
-#import "ViewerController.h"
-#import "AppController.h"
-#import "OSIWindowController.h"
-#import "Window3DController.h"
-#import "BrowserController.h"
-#import "PlaceholderWindowController.h"
 #import "N2Debug.h"
 
 static WindowLayoutManager *sharedLayoutManager = nil;
@@ -75,7 +69,7 @@ static WindowLayoutManager *sharedLayoutManager = nil;
             return 1000; // All windows
         
         if (tag < 16)
-            return (tag / 4) + 1; // See SetImageTiling ViewerController.m
+            return (tag / 4) + 1;
     }
     
 	if( [[protocol objectForKey: @"Rows"] intValue] > 0)
@@ -94,7 +88,7 @@ static WindowLayoutManager *sharedLayoutManager = nil;
             return 1000;  // All windows
         
         if (tag < 16)
-            return (tag %  4) + 1; // See SetImageTiling ViewerController.m
+            return (tag %  4) + 1;
     }
     
 	if( [[protocol objectForKey: @"Columns"] intValue] > 0)
@@ -120,7 +114,7 @@ static WindowLayoutManager *sharedLayoutManager = nil;
         int tag = [[protocol objectForKey: @"ImageTiling"] intValue];
         
         if (tag < 16)
-            return (tag / 4) + 1; // See SetImageTiling ViewerController.m
+            return (tag / 4) + 1;
     }
     
 	if( [[protocol objectForKey: @"Image Rows"] intValue] > 0)
@@ -136,7 +130,7 @@ static WindowLayoutManager *sharedLayoutManager = nil;
         int tag = [[protocol objectForKey: @"ImageTiling"] intValue];
         
         if (tag < 16)
-            return (tag %  4) + 1; // See SetImageTiling ViewerController.m
+            return (tag %  4) + 1;
     }
     
 	if( [[protocol objectForKey: @"Image Columns"] intValue] > 0)

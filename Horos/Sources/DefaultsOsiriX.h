@@ -38,7 +38,7 @@
 #import <Cocoa/Cocoa.h>
 #import "options.h"
 
-// WARNING: If you add or modify this list, check ViewerController.m, DCMView.h and HotKey Pref Pane
+// WARNING: These identifiers are persisted in user defaults and ROI archives.
 
 enum HotKeyActions {DefaultWWWLHotKeyAction = 0, FullDynamicWWWLHotKeyAction, 
 	Preset1WWWLHotKeyAction, Preset2WWWLHotKeyAction, Preset3WWWLHotKeyAction, 

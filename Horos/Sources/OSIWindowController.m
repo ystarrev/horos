@@ -36,9 +36,7 @@
  ============================================================================*/
 
 #import "OSIWindowController.h"
-#import "ToolbarPanel.h"
 #import "AppController.h"
-#import "ViewerController.h"
 #import "BrowserController.h"
 #import "Notifications.h"
 #import "DCMPix.h"
@@ -50,10 +48,6 @@
 
 static	BOOL dontEnterMagneticFunctions = NO;
 static	BOOL dontWindowDidChangeScreen = NO;
-extern  BOOL USETOOLBARPANEL;
-extern  ToolbarPanelController  *toolbarPanel[10];
-extern int delayedTileWindows;
-
 static BOOL protectedReentryWindowDidResize = NO;
 
 @implementation OSIWindowController
@@ -242,13 +236,12 @@ static BOOL protectedReentryWindowDidResize = NO;
 			{
 				// Apply the same size to all displayed windows
 				
-				NSArray	*viewers = [ViewerController getDisplayed2DViewers];
-				
-				for( id loopItem in viewers)
+				for( NSWindow *peerWindow in [NSApp windows])
 				{
-					if( loopItem != self)
+					id loopItem = peerWindow.windowController;
+					if( loopItem != self && [loopItem isKindOfClass:[OSIWindowController class]])
 					{
-						NSWindow *theWindow = [loopItem window];
+						NSWindow *theWindow = peerWindow;
 						
 						NSRect dstFrame = [theWindow frame];
 						
@@ -429,9 +422,6 @@ static BOOL protectedReentryWindowDidResize = NO;
 			[AppController resizeWindowWithAnimation: theWindow newSize: myFrame];
 			dontEnterMagneticFunctions = NO;
 			
-			if( [self isKindOfClass: [ViewerController class]])
-				[(ViewerController*) self updateThreeDPositionController];
-			
 			// Is the Origin identical? If yes, switch both windows
 			e = [[NSApp windows] objectEnumerator];
 			while (window = [e nextObject])
@@ -455,9 +445,6 @@ static BOOL protectedReentryWindowDidResize = NO;
 							
 							dontEnterMagneticFunctions = NO;
 							
-                            if( [self isKindOfClass: [ViewerController class]])
-                                [theWindow.windowController windowDidChangeScreen:[NSNotification notificationWithName:NSWindowDidChangeScreenNotification object:theWindow]];
-                            
 		//					[window makeKeyAndOrderFront: self];
 		//					[theWindow makeKeyAndOrderFront: self];
                             
@@ -483,17 +470,6 @@ static BOOL protectedReentryWindowDidResize = NO;
 	[super dealloc];
 }
 
-- (void) windowWillCloseNotification: (NSNotification*) notification
-{
-	if( [notification object] == [self window] && [[NSUserDefaults standardUserDefaults] boolForKey: @"AUTOTILING"] == YES && magneticWindowActivated == YES)
-	{
-		if( delayedTileWindows)
-			[NSObject cancelPreviousPerformRequestsWithTarget: [AppController sharedAppController] selector:@selector(tileWindows:) object:nil];
-		delayedTileWindows = YES;
-		[[AppController sharedAppController] performSelector: @selector(tileWindows:) withObject:nil afterDelay: 0.3];
-	}
-}
-
 #pragma mark-
 #pragma mark Misc
 
@@ -512,11 +488,6 @@ static BOOL protectedReentryWindowDidResize = NO;
 
 }
 
-- (ViewerController*) registeredViewer
-{
-	return nil;
-}
-
 - (IBAction)querySelectedStudy: (id)sender
 {
 	[[BrowserController currentBrowser] querySelectedStudy: self];
@@ -526,7 +497,6 @@ static BOOL protectedReentryWindowDidResize = NO;
 {
 	if (self = [super initWithWindowNibName:(NSString *)windowNibName])
 	{
-        [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(windowWillCloseNotification:) name: NSWindowWillCloseNotification object: nil];
 	}
 
     // Keep compact toolbar metrics to match legacy Horos appearance.

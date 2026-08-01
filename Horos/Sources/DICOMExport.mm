@@ -39,7 +39,6 @@
 #import "DCM.h"
 #import "BrowserController.h"
 #import "DicomFile.h"
-#import "DCMView.h"
 #import "DCMPix.h"
 #import "DICOMToNSString.h"
 #import "DicomDatabase+DCMTK.h"
@@ -345,47 +344,53 @@ static float deg2rad = M_PI / 180.0f;
 	if( image != iimage)
 	{
 		[image release];
-		image = nil;
-		
-		[imageRepresentation release];
-		imageRepresentation = nil;
-		
-		if( freeImageData) free( imageData);
-		freeImageData = NO;
-		imageData = nil;
-		
 		image = [iimage retain];
 	}
 
+	[imageRepresentation release];
+	imageRepresentation = nil;
+	if( freeImageData)
+		free( imageData);
+	freeImageData = NO;
+	imageData = nil;
+
 	if( image)
 	{
-		NSData				*tiffRep = [image TIFFRepresentation];
-		NSSize				imageSize;
-		long				w, h, i;
+		NSData *tiffRep = [image TIFFRepresentation];
 		
 		if( tiffRep)
 		{
 			imageRepresentation = [[NSBitmapImageRep alloc] initWithData:tiffRep];
-			imageSize = [imageRepresentation size];
+			if( imageRepresentation == nil || imageRepresentation.isPlanar)
+				return -1;
+
+			long w = imageRepresentation.pixelsWide;
+			long h = imageRepresentation.pixelsHigh;
+			NSInteger samplesPerPixel = imageRepresentation.samplesPerPixel;
+			if( w <= 0 || h <= 0 || samplesPerPixel <= 0 || imageRepresentation.bitsPerPixel <= 0)
+				return -1;
+			NSInteger bitsPerSample = imageRepresentation.bitsPerPixel / samplesPerPixel;
+			NSInteger packedBytesPerRow = (w * imageRepresentation.bitsPerPixel + 7) / 8;
 			
-			w = imageSize.width;
-			h = imageSize.height;
-			
-			if( [imageRepresentation bytesPerRow] != w)
+			if( imageRepresentation.bytesPerRow != packedBytesPerRow)
 			{
-				imageData = (unsigned char*) malloc( h * w * [imageRepresentation samplesPerPixel]);
+				imageData = (unsigned char*) malloc( h * packedBytesPerRow);
+				if( imageData == nil)
+					return -1;
 				freeImageData = YES;
 				
-				for( i = 0; i < height; i++)
+				for( long row = 0; row < h; row++)
 				{
-					memcpy( imageData + i * width * [imageRepresentation samplesPerPixel], [imageRepresentation bitmapData] + i * [imageRepresentation bytesPerRow], width * [imageRepresentation samplesPerPixel]);
+					memcpy( imageData + row * packedBytesPerRow,
+					        imageRepresentation.bitmapData + row * imageRepresentation.bytesPerRow,
+					        packedBytesPerRow);
 				}
 			}
 			else imageData = [imageRepresentation bitmapData];
 			
 			return [self setPixelData:		imageData
-						samplesPerPixel:	[imageRepresentation samplesPerPixel]
-						bitsPerSample:		[imageRepresentation bitsPerPixel] / [imageRepresentation samplesPerPixel]
+						samplesPerPixel:	(int)samplesPerPixel
+						bitsPerSample:		(int)bitsPerSample
 						width:				w
 						height:				h];
 		}
@@ -516,11 +521,6 @@ static float deg2rad = M_PI / 180.0f;
 	return result.good();
 }
 
-- (NSString*) writeDCMFile: (NSString*) dstPath
-{
-	return [self writeDCMFile: dstPath withExportDCM: nil];
-}
-
 - (void) removeAllFieldsOfGroup: (Uint16) groupNumber dataset: (DcmItem *) dset
 {
 	DcmStack stack;
@@ -541,7 +541,7 @@ static float deg2rad = M_PI / 180.0f;
 	}
 }
 
-- (NSString*) writeDCMFile: (NSString*) dstPath withExportDCM:(DCMExportPlugin*) dcmExport
+- (NSString*) writeDCMFile: (NSString*) dstPath
 {
     
 	if( spp != 1 && spp != 3)
@@ -1413,9 +1413,6 @@ static float deg2rad = M_PI / 180.0f;
 //												decodeData:NO] autorelease];
 //				[attr addFrame:imageNSData];
 //				[dcmDst setAttribute:attr];
-//				
-//				if (dcmExport)
-//					[dcmExport finalize: dcmDst withSourceObject: dcmObject];
 //				
 //				// Add to the current DB
 //				if( dstPath == nil)

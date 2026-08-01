@@ -45,7 +45,6 @@
 #import "SRAnnotation.h"
 #import "StructuredReportSupport.h"
 #import "DicomFile.h"
-#import "ViewerController.h"
 #import "DCMCalendarDate.h"
 #import "DCMAbstractSyntaxUID.h"
 #import "DCMSequenceAttribute.h"

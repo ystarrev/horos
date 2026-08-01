@@ -44,7 +44,6 @@
 #import "DicomFile.h"
 #import "DicomFileDCMTKCategory.h"
 #import "BrowserController.h"
-#import "ViewerController.h"
 #import "AppController.h"
 #import "DCMPix.h"
 #import "MutableArrayCategory.h"
@@ -66,18 +65,13 @@ static NSString*	ExpandAllItemsToolbarItemIdentifier		= @"add-large";
 static NSString*	CollapseAllItemsToolbarItemIdentifier	= @"minus-large";
 static NSString*	SearchToolbarItemIdentifier				= @"Search";
 static NSString*	EditingToolbarItemIdentifier			= @"Editing";
-static NSString*	SortSeriesToolbarItemIdentifier			= @"SortSeries";
 static NSString*	VerifyToolbarItemIdentifier				= @"Validator";
 
 static BOOL showWarning = YES;
 
-extern int delayedTileWindows;
-
-
 @implementation XMLController
 
 @synthesize imObj, editingActivated;
-@synthesize viewer;
 
 // To be 'compatible' with TileWindows in AppController
 /////////////////////////////////////////////////
@@ -447,14 +441,8 @@ extern int delayedTileWindows;
 	table.needsDisplay = YES;
 	[[self window] makeFirstResponder: table];
 	
-	[viewer checkEverythingLoaded];
-	
 	int fileSize = [[[[NSFileManager defaultManager] attributesOfItemAtPath: srcFile error: nil] valueForKey: NSFileSize] longLongValue] / 1024L;
-	
-	if( viewer)
-		[[self window] setTitle: [NSString stringWithFormat: NSLocalizedString( @"Meta-Data: %@ (%d KB)", nil), [[viewer window] title], fileSize]];
-	else
-		[[self window] setTitle: [NSString stringWithFormat: NSLocalizedString( @"Meta-Data: %@ (%d KB)", nil), srcFile, fileSize]];
+	[[self window] setTitle: [NSString stringWithFormat: NSLocalizedString( @"Meta-Data: %@ (%d KB)", nil), srcFile, fileSize]];
 		
 	dontClose = NO;
 }
@@ -491,24 +479,6 @@ extern int delayedTileWindows;
         
         [[dcmDocument description] writeToFile:panel.URL.path atomically:NO encoding:NSUTF8StringEncoding error:NULL];
     }];
-}
-
-+ (XMLController*) windowForViewer: (ViewerController*) v
-{
-	// Check if we have already a window displaying this ManagedObject
-	
-	NSArray				*winList = [NSApp windows];
-	
-	for( NSWindow *w in winList)
-	{
-		if( [[w windowController] isKindOfClass:[XMLController class]])
-		{
-			if( [[w windowController] viewer] == v)
-				return [w windowController];
-		}
-	}
-	
-	return nil;
 }
 
 - (void) changeImageObject:(DicomImage*) image
@@ -593,17 +563,7 @@ extern int delayedTileWindows;
 	}
 }
 
-- (void)refresh:(NSNotification*) notif;
-{
-	DCMView *view = [notif object];
-	
-	if( dontListenToIndexChange) return;
-	
-	if( [view is2DViewer] && [view windowController] == viewer)
-		[self changeImageObject: [viewer currentImage]];
-}
-
--(id) initWithImage:(DicomImage*) image windowName:(NSString*) name viewer:(ViewerController*) v
+-(id) initWithImage:(DicomImage*) image windowName:(NSString*) name
 {
     if( image == nil)
         return nil;
@@ -615,16 +575,11 @@ extern int delayedTileWindows;
 		allowSelectionChange = YES;
 		editingLevel = [[NSUserDefaults standardUserDefaults] integerForKey: @"editingLevel"];
 		
-		viewer = [v retain];
-		
 		[self changeImageObject: image];
 		
 		int fileSize = [[[[NSFileManager defaultManager] attributesOfItemAtPath: srcFile error: nil] valueForKey: NSFileSize] longLongValue] / 1024L;
 		
-		if( viewer)
-			[[self window] setTitle: [NSString stringWithFormat: NSLocalizedString( @"Meta-Data: %@ (%d KB)", nil), [[viewer window] title], fileSize]];
-		else
-			[[self window] setTitle: [NSString stringWithFormat: NSLocalizedString( @"Meta-Data: %@ (%d KB)", nil), srcFile, fileSize]];
+		[[self window] setTitle: [NSString stringWithFormat: NSLocalizedString( @"Meta-Data: %@ (%d KB)", nil), srcFile, fileSize]];
 		
 		[[self window] setFrameAutosaveName:@"XMLWindow"];
 		[[self window] setDelegate:self];
@@ -642,23 +597,9 @@ extern int delayedTileWindows;
 		dicomFieldsCombo.delegate = self;
 		dicomFieldsCombo.dataSource = self;
 		
-		[[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(CloseViewerNotification:) name: OsirixCloseViewerNotification object: nil];
-		[[NSNotificationCenter defaultCenter] addObserver:self selector: @selector(refresh:) name:OsirixDCMViewIndexChangedNotification object:nil];
-        
         [self setupToolbar];
 	}
 	return self;
-}
-
--(void) CloseViewerNotification:(NSNotification*) note
-{
-	if( dontClose) return;
-	
-	if( [note object] == viewer)
-	{
-		[viewer release];
-        viewer = nil;
-	}
 }
 
 - (void) dealloc
@@ -667,7 +608,6 @@ extern int delayedTileWindows;
     
 	[[NSNotificationCenter defaultCenter] removeObserver: self];
 
-	[viewer release];
 	[dictionaryArray release];
 	[imObj release];
 	[srcFile release];
@@ -1323,51 +1263,6 @@ extern int delayedTileWindows;
 	[theTask release];
 }
 
-- (IBAction) sortSeries: (id) sender
-{
-	NSIndexSet* selectedRowIndexes = [table selectedRowIndexes];
-	
-	if( [selectedRowIndexes count] != 1)
-	{
-		HorosPresentAlert( NSLocalizedString( @"Sort Series Images", nil) , NSLocalizedString( @"Select an element to use to sort the images of the series.", nil), NSLocalizedString( @"OK", nil), nil, nil);
-		return;
-	}
-	
-	int index = [selectedRowIndexes firstIndex];
-	id item = [table itemAtRow: index];
-	
-	if( index > 0 && item && [[item attributeForName:@"group"] objectValue] && [[item attributeForName:@"element"] objectValue])
-	{
-		if( HorosPresentInformationalAlert( NSLocalizedString( @"Sort Series Images", nil), NSLocalizedString(@"Are you sure you want to re-sort the series images according to this field?", nil), NSLocalizedString(@"OK", nil), NSLocalizedString(@"Cancel", nil), nil) == HorosAlertResponseFirstButton)
-		{
-			unsigned gr = 0, el = 0;
-			
-			dontListenToIndexChange = YES;
-			
-			@try
-			{		
-				[[NSScanner scannerWithString: [[item attributeForName:@"group"] objectValue]] scanHexInt:&gr];
-				[[NSScanner scannerWithString: [[item attributeForName:@"element"] objectValue]] scanHexInt:&el];
-				
-				if( gr > 0)
-				{
-					NSLog( @"Sort by 0x%04X / 0x%04X", gr, el);
-					[viewer sortSeriesByDICOMGroup: gr element: el];
-				}
-			}
-			
-			@catch( NSException *e)
-			{
-				NSLog( @"%@", e);
-				HorosPresentAlert( NSLocalizedString( @"Sort Series Images", nil) , NSLocalizedString( @"Select an element to use to sort the images of the series.", nil), NSLocalizedString( @"OK", nil), nil, nil);
-			}
-			
-			dontListenToIndexChange = NO;
-		}
-	}
-	else HorosPresentAlert( NSLocalizedString( @"Sort Series Images", nil) , NSLocalizedString( @"Select an element to use to sort the images of the series.", nil), NSLocalizedString( @"OK", nil), nil, nil);
-}
-
 - (void)keyDown:(NSEvent *)event
 {
 	if( [[event characters] length] == 0) return;
@@ -1576,14 +1471,6 @@ extern int delayedTileWindows;
 		[toolbarItem setTarget: self];
 		[toolbarItem setAction: @selector(deepCollapseAllItems:)];
     }
-	else if ([itemIdent isEqualToString: SortSeriesToolbarItemIdentifier]) {
-		[toolbarItem setLabel: NSLocalizedString(@"Sort Images", nil)];
-		[toolbarItem setPaletteLabel: NSLocalizedString(@"Sort Images", nil)];
-		[toolbarItem setToolTip: NSLocalizedString(@"Sort Series Images by selected element", nil)];
-		[toolbarItem setImage: [NSImage imageNamed: @"Revert.tif"]];
-		[toolbarItem setTarget: self];
-		[toolbarItem setAction: @selector(sortSeries:)];
-    }
 	else if ([itemIdent isEqualToString: VerifyToolbarItemIdentifier])
 	{
 		[toolbarItem setLabel: NSLocalizedString(@"Validator", nil)];
@@ -1611,7 +1498,6 @@ extern int delayedTileWindows;
 										CollapseAllItemsToolbarItemIdentifier,
 										NSToolbarFlexibleSpaceItemIdentifier,
 										EditingToolbarItemIdentifier,
-										SortSeriesToolbarItemIdentifier,
 										VerifyToolbarItemIdentifier,
 										NSToolbarFlexibleSpaceItemIdentifier,
 										SearchToolbarItemIdentifier,
@@ -1630,27 +1516,11 @@ extern int delayedTileWindows;
 										ExpandAllItemsToolbarItemIdentifier,
 										CollapseAllItemsToolbarItemIdentifier,
 										EditingToolbarItemIdentifier,
-										SortSeriesToolbarItemIdentifier,
 										VerifyToolbarItemIdentifier,
 										SearchToolbarItemIdentifier,
 										nil];
     
     return array;
-}
-
-- (BOOL) validateToolbarItem: (NSToolbarItem *) toolbarItem
-{
-    // Optional method:  This message is sent to us since we are the target of some toolbar item actions 
-    // (for example:  of the save items action)
-	
-    BOOL enable = YES;
-	
-	if ([[toolbarItem itemIdentifier] isEqualToString: SortSeriesToolbarItemIdentifier])
-	{
-		if( viewer)	enable = YES;
-	}	
-    
-	return enable;
 }
 
 - (void) expandAllItems: (id) sender

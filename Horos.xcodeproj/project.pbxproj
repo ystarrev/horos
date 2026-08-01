@@ -637,8 +637,6 @@
 		AB28B48C05B7998B00A9906C /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 29B97325FDCFA39411CA2CEA /* Foundation.framework */; };
 		AB28B8D005B79D1000A9906C /* MyOutlineView.h in Headers */ = {isa = PBXBuildFile; fileRef = AB0813D6057C698900A72813 /* MyOutlineView.h */; };
 		AB28B8D605B79D1500A9906C /* XMLController.m in Sources */ = {isa = PBXBuildFile; fileRef = AB4A6DF4056EC14E009E6C6E /* XMLController.m */; };
-		AB28B8D805B79D1600A9906C /* NSFullScreenWindow.m in Sources */ = {isa = PBXBuildFile; fileRef = ABAA284C058A4F7F00F0601D /* NSFullScreenWindow.m */; };
-		AB28B8E005B79D1D00A9906C /* NSFullScreenWindow.h in Headers */ = {isa = PBXBuildFile; fileRef = ABAA284B058A4F7F00F0601D /* NSFullScreenWindow.h */; };
 		AB28B8E105B79D1E00A9906C /* XMLController.h in Headers */ = {isa = PBXBuildFile; fileRef = AB4A6DF3056EC14E009E6C6E /* XMLController.h */; };
 		AB28B8E205B79D1F00A9906C /* Wait.m in Sources */ = {isa = PBXBuildFile; fileRef = AB6F34FC0574081F00CDCA47 /* Wait.m */; };
 		AB28B8E305B79D1F00A9906C /* AppController.m in Sources */ = {isa = PBXBuildFile; fileRef = AB142DFD05600D76008461A0 /* AppController.m */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
@@ -733,10 +731,6 @@
 		ABD559FE0AEE146900108895 /* SagSmall.tif in Resources */ = {isa = PBXBuildFile; fileRef = ABD559F50AEE146900108895 /* SagSmall.tif */; };
 		ABD559FF0AEE146900108895 /* CorSmall.tif in Resources */ = {isa = PBXBuildFile; fileRef = ABD559F60AEE146900108895 /* CorSmall.tif */; };
 		ABD55A000AEE146900108895 /* AxialSmall.tif in Resources */ = {isa = PBXBuildFile; fileRef = ABD559F70AEE146900108895 /* AxialSmall.tif */; };
-		ABD578ED0623179E00616F39 /* HistogramWindow.m in Sources */ = {isa = PBXBuildFile; fileRef = ABD578E90623179E00616F39 /* HistogramWindow.m */; };
-		ABD578EE0623179E00616F39 /* HistogramWindow.h in Headers */ = {isa = PBXBuildFile; fileRef = ABD578EA0623179E00616F39 /* HistogramWindow.h */; };
-		ABD5790A06231FEF00616F39 /* HistoView.h in Headers */ = {isa = PBXBuildFile; fileRef = ABD5790806231FEF00616F39 /* HistoView.h */; };
-		ABD5790B06231FEF00616F39 /* HistoView.m in Sources */ = {isa = PBXBuildFile; fileRef = ABD5790906231FEF00616F39 /* HistoView.m */; };
 		ABDEBD6C063D693F005B99B4 /* add.tif in Resources */ = {isa = PBXBuildFile; fileRef = ABDEBD51063D6938005B99B4 /* add.tif */; };
 		ABDEBD6D063D693F005B99B4 /* minus.tif in Resources */ = {isa = PBXBuildFile; fileRef = ABDEBD52063D6938005B99B4 /* minus.tif */; };
 		ABDF5A1D0A1B641F002A353A /* small_sharedSmartAlbum.tif in Resources */ = {isa = PBXBuildFile; fileRef = A9B411C10890496400913770 /* small_sharedSmartAlbum.tif */; };
@@ -843,9 +837,7 @@
 		CE3F99500C84724B00CB38F1 /* Splash.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F98FC0C84724B00CB38F1 /* Splash.xib */; };
 		CE3F99540C84724B00CB38F1 /* Send.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99040C84724B00CB38F1 /* Send.xib */; };
 		CE3F995B0C84724B00CB38F1 /* Query.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99120C84724B00CB38F1 /* Query.xib */; };
-		CE3F995C0C84724B00CB38F1 /* Histogram.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99140C84724B00CB38F1 /* Histogram.xib */; };
 		CE3F995F0C84724B00CB38F1 /* WaitRendering.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F991A0C84724B00CB38F1 /* WaitRendering.xib */; };
-		CE3F99600C84724B00CB38F1 /* Plot.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F991C0C84724B00CB38F1 /* Plot.xib */; };
 		CE3F99680C84724B00CB38F1 /* BurnViewer.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F992C0C84724B00CB38F1 /* BurnViewer.xib */; };
 		CE3F996B0C84724B00CB38F1 /* QuicktimeExport.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99320C84724B00CB38F1 /* QuicktimeExport.xib */; };
 		CE3F996E0C84724B00CB38F1 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = CE3F99380C84724B00CB38F1 /* MainMenu.xib */; };
@@ -875,10 +867,6 @@
 		CE5D33B609E1C26400CC6884 /* minus-large.tif in Resources */ = {isa = PBXBuildFile; fileRef = CE5D33B409E1C26400CC6884 /* minus-large.tif */; };
 		CE6C77ED09739B3100F951C2 /* Rotate3DCursor.tif in Resources */ = {isa = PBXBuildFile; fileRef = CE6C77EB09739B3100F951C2 /* Rotate3DCursor.tif */; };
 		CE6C77EE09739B3100F951C2 /* Rotate3DCameraCursor.tif in Resources */ = {isa = PBXBuildFile; fileRef = CE6C77EC09739B3100F951C2 /* Rotate3DCameraCursor.tif */; };
-		CE6E2CB606CAE45A00BC7907 /* PlotView.h in Headers */ = {isa = PBXBuildFile; fileRef = CE6E2CAE06CAE45A00BC7907 /* PlotView.h */; };
-		CE6E2CB706CAE45A00BC7907 /* PlotWindow.h in Headers */ = {isa = PBXBuildFile; fileRef = CE6E2CAF06CAE45A00BC7907 /* PlotWindow.h */; };
-		CE6E2CB806CAE45A00BC7907 /* PlotWindow.m in Sources */ = {isa = PBXBuildFile; fileRef = CE6E2CB006CAE45A00BC7907 /* PlotWindow.m */; };
-		CE6E2CB906CAE45A00BC7907 /* PlotView.m in Sources */ = {isa = PBXBuildFile; fileRef = CE6E2CB106CAE45A00BC7907 /* PlotView.m */; };
 		CE72D7C31263702500874EF6 /* Pause.pdf in Resources */ = {isa = PBXBuildFile; fileRef = CE72D7C21263702500874EF6 /* Pause.pdf */; };
 		CE74824206C9701200FFA74C /* trash.icns in Resources */ = {isa = PBXBuildFile; fileRef = CE74824006C9701200FFA74C /* trash.icns */; };
 		CE74DEB008CCE0C1005D12A7 /* SagOpposite.tif in Resources */ = {isa = PBXBuildFile; fileRef = CE74DEAF08CCE0C1005D12A7 /* SagOpposite.tif */; };
@@ -2011,8 +1999,6 @@
 		AB9693BF0E823E3A00F09EEA /* ROIsAndKeys.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = ROIsAndKeys.tif; sourceTree = "<group>"; };
 		AB9E05460B30107A00661F7E /* key.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = key.png; sourceTree = "<group>"; };
 		ABA71D3F06726B1800335A62 /* Horos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Horos.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		ABAA284B058A4F7F00F0601D /* NSFullScreenWindow.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NSFullScreenWindow.h; sourceTree = "<group>"; };
-		ABAA284C058A4F7F00F0601D /* NSFullScreenWindow.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = NSFullScreenWindow.m; sourceTree = "<group>"; };
 		ABB218B705CF1E9300D8B619 /* WaitRendering.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = WaitRendering.h; sourceTree = "<group>"; };
 		ABB218B805CF1E9300D8B619 /* WaitRendering.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = WaitRendering.m; sourceTree = "<group>"; };
 		ABB230B90C2F95DD00B38596 /* JPEGExif.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = JPEGExif.h; sourceTree = "<group>"; };
@@ -2055,10 +2041,6 @@
 		ABD559F50AEE146900108895 /* SagSmall.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = SagSmall.tif; sourceTree = "<group>"; };
 		ABD559F60AEE146900108895 /* CorSmall.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = CorSmall.tif; sourceTree = "<group>"; };
 		ABD559F70AEE146900108895 /* AxialSmall.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = AxialSmall.tif; sourceTree = "<group>"; };
-		ABD578E90623179E00616F39 /* HistogramWindow.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = HistogramWindow.m; sourceTree = "<group>"; };
-		ABD578EA0623179E00616F39 /* HistogramWindow.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = HistogramWindow.h; sourceTree = "<group>"; };
-		ABD5790806231FEF00616F39 /* HistoView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = HistoView.h; sourceTree = "<group>"; };
-		ABD5790906231FEF00616F39 /* HistoView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = HistoView.m; sourceTree = "<group>"; };
 		ABD64CE7064D93F500EE3393 /* PMDICOMStoreSCU.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = PMDICOMStoreSCU.h; sourceTree = "<group>"; };
 		ABDEBD51063D6938005B99B4 /* add.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = add.tif; sourceTree = "<group>"; };
 		ABDEBD52063D6938005B99B4 /* minus.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = minus.tif; sourceTree = "<group>"; };
@@ -2170,9 +2152,7 @@
 		CE3F98FD0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Splash.xib; sourceTree = "<group>"; };
 		CE3F99050C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Send.xib; sourceTree = "<group>"; };
 		CE3F99130C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Query.xib; sourceTree = "<group>"; };
-		CE3F99150C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Histogram.xib; sourceTree = "<group>"; };
 		CE3F991B0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/WaitRendering.xib; sourceTree = "<group>"; };
-		CE3F991D0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/Plot.xib; sourceTree = "<group>"; };
 		CE3F992D0C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/BurnViewer.xib; sourceTree = "<group>"; };
 		CE3F99330C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/QuicktimeExport.xib; sourceTree = "<group>"; };
 		CE3F99390C84724B00CB38F1 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
@@ -2202,10 +2182,6 @@
 		CE5D33B409E1C26400CC6884 /* minus-large.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = "minus-large.tif"; sourceTree = "<group>"; };
 		CE6C77EB09739B3100F951C2 /* Rotate3DCursor.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; name = Rotate3DCursor.tif; path = Cursors/Rotate3DCursor.tif; sourceTree = "<group>"; };
 		CE6C77EC09739B3100F951C2 /* Rotate3DCameraCursor.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; name = Rotate3DCameraCursor.tif; path = Cursors/Rotate3DCameraCursor.tif; sourceTree = "<group>"; };
-		CE6E2CAE06CAE45A00BC7907 /* PlotView.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = PlotView.h; sourceTree = "<group>"; };
-		CE6E2CAF06CAE45A00BC7907 /* PlotWindow.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = PlotWindow.h; sourceTree = "<group>"; };
-		CE6E2CB006CAE45A00BC7907 /* PlotWindow.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = PlotWindow.m; sourceTree = "<group>"; };
-		CE6E2CB106CAE45A00BC7907 /* PlotView.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = PlotView.m; sourceTree = "<group>"; };
 		CE72D7C21263702500874EF6 /* Pause.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Pause.pdf; sourceTree = "<group>"; };
 		CE74824006C9701200FFA74C /* trash.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = trash.icns; sourceTree = "<group>"; };
 		CE74DEAF08CCE0C1005D12A7 /* SagOpposite.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = SagOpposite.tif; sourceTree = "<group>"; };
@@ -2913,11 +2889,9 @@
 				5997897911B7B423002DB107 /* AnonymizationView.xib */,
 				CE3F992C0C84724B00CB38F1 /* BurnViewer.xib */,
 				848327A915ED08F3003BAEEB /* CustomIntervalPanel.xib */,
-				CE3F99140C84724B00CB38F1 /* Histogram.xib */,
 				9952F26C2020C1010020CCD4 /* ICloudDriveDetector.xib */,
 				CE3F98EA0C84724B00CB38F1 /* LogWindow.xib */,
 				CE3F99380C84724B00CB38F1 /* MainMenu.xib */,
-				CE3F991C0C84724B00CB38F1 /* Plot.xib */,
 				59BDF104117EE61E007F1F2C /* PreferencesWindow.xib */,
 				CE3F99120C84724B00CB38F1 /* Query.xib */,
 				CE3F99320C84724B00CB38F1 /* QuicktimeExport.xib */,
@@ -3667,8 +3641,6 @@
 				AB785FB7061A3C0700EC48D3 /* MyNSTextView.m */,
 				AB0813D6057C698900A72813 /* MyOutlineView.h */,
 				AB0813D7057C698900A72813 /* MyOutlineView.m */,
-				ABAA284B058A4F7F00F0601D /* NSFullScreenWindow.h */,
-				ABAA284C058A4F7F00F0601D /* NSFullScreenWindow.m */,
 				AB08564B059211F9009962D7 /* NSSplitViewSave.h */,
 				AB08564C059211F9009962D7 /* NSSplitViewSave.m */,
 				ABCA5BA20625FC1100637E73 /* OpacityTransferView.h */,
@@ -3992,14 +3964,6 @@
 			isa = PBXGroup;
 			children = (
 				BF952BA206C9C7F40063B562 /* Single Window */,
-				CE6E2CAF06CAE45A00BC7907 /* PlotWindow.h */,
-				CE6E2CB006CAE45A00BC7907 /* PlotWindow.m */,
-				CE6E2CAE06CAE45A00BC7907 /* PlotView.h */,
-				CE6E2CB106CAE45A00BC7907 /* PlotView.m */,
-				ABD5790806231FEF00616F39 /* HistoView.h */,
-				ABD5790906231FEF00616F39 /* HistoView.m */,
-				ABD578EA0623179E00616F39 /* HistogramWindow.h */,
-				ABD578E90623179E00616F39 /* HistogramWindow.m */,
 				AB1CB35A0618A37E00CD966B /* MyPoint.h */,
 				AB1CB35B0618A37E00CD966B /* MyPoint.m */,
 				AB7D0BB30615F94D00890872 /* ROI.h */,
@@ -4368,7 +4332,6 @@
 			isa = PBXHeadersBuildPhase;
 			files = (
 				AB28B8D005B79D1000A9906C /* MyOutlineView.h in Headers */,
-				AB28B8E005B79D1D00A9906C /* NSFullScreenWindow.h in Headers */,
 				AB28B8E105B79D1E00A9906C /* XMLController.h in Headers */,
 				AB28B8E605B79D2100A9906C /* DicomData.h in Headers */,
 				AB28B8E805B79D2300A9906C /* AppController.h in Headers */,
@@ -4384,8 +4347,6 @@
 				AB7D0BB50615F94D00890872 /* ROI.h in Headers */,
 				AB1CB35C0618A37E00CD966B /* MyPoint.h in Headers */,
 				AB785FBA061A3C0700EC48D3 /* MyNSTextView.h in Headers */,
-				ABD578EE0623179E00616F39 /* HistogramWindow.h in Headers */,
-				ABD5790A06231FEF00616F39 /* HistoView.h in Headers */,
 				ABCA5BA40625FC1100637E73 /* OpacityTransferView.h in Headers */,
 				AB94E72606343D91003E4C48 /* MutableArrayCategory.h in Headers */,
 				AB0128640635991400A74AA1 /* QuicktimeExport.h in Headers */,
@@ -4397,8 +4358,6 @@
 				BF76A5A706ACC70C00FABE42 /* ButtonAndTextCell.h in Headers */,
 				CEF0E60306AEF326001FF9E5 /* Mailer.h in Headers */,
 				CE39BFA306BC5DAE006D6824 /* Scripting_Additions.h in Headers */,
-				CE6E2CB606CAE45A00BC7907 /* PlotView.h in Headers */,
-				CE6E2CB706CAE45A00BC7907 /* PlotWindow.h in Headers */,
 				BF00C95C06F3F43900715191 /* DCMCursor.h in Headers */,
 				7ECB4B41072EF9F800C2CFC4 /* DCMCalendarScript.h in Headers */,
 				CEA20537073A810100F0DAB7 /* Photos.h in Headers */,
@@ -4945,9 +4904,7 @@
 				71AD67541FC4248100A1E2F8 /* NIH.plist in Resources */,
 				CE3F99540C84724B00CB38F1 /* Send.xib in Resources */,
 				CE3F995B0C84724B00CB38F1 /* Query.xib in Resources */,
-				CE3F995C0C84724B00CB38F1 /* Histogram.xib in Resources */,
 				CE3F995F0C84724B00CB38F1 /* WaitRendering.xib in Resources */,
-				CE3F99600C84724B00CB38F1 /* Plot.xib in Resources */,
 				CE3F99680C84724B00CB38F1 /* BurnViewer.xib in Resources */,
 				71AD67661FC4256E00A1E2F8 /* Tiling1x3.pdf in Resources */,
 				71AD67511FC4248100A1E2F8 /* Hue2.plist in Resources */,
@@ -5773,7 +5730,6 @@
 				F4A100000001000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm in Sources */,
 				F4A100000001000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm in Sources */,
 				AB28B8D605B79D1500A9906C /* XMLController.m in Sources */,
-				AB28B8D805B79D1600A9906C /* NSFullScreenWindow.m in Sources */,
 				AB28B8E205B79D1F00A9906C /* Wait.m in Sources */,
 				AB28B8E305B79D1F00A9906C /* AppController.m in Sources */,
 				AB28B8E505B79D2100A9906C /* QueryController.mm in Sources */,
@@ -5789,8 +5745,6 @@
 				AB7D0BB60615F94D00890872 /* ROI.m in Sources */,
 				AB1CB35D0618A37E00CD966B /* MyPoint.m in Sources */,
 				AB785FBB061A3C0700EC48D3 /* MyNSTextView.m in Sources */,
-				ABD578ED0623179E00616F39 /* HistogramWindow.m in Sources */,
-				ABD5790B06231FEF00616F39 /* HistoView.m in Sources */,
 				ABCA5BA50625FC1100637E73 /* OpacityTransferView.m in Sources */,
 				AB94E72506343D91003E4C48 /* MutableArrayCategory.m in Sources */,
 				AB0128650635991400A74AA1 /* QuicktimeExport.m in Sources */,
@@ -5802,8 +5756,6 @@
 				BF76A5A806ACC70C00FABE42 /* ButtonAndTextCell.m in Sources */,
 				CEF0E60406AEF326001FF9E5 /* Mailer.m in Sources */,
 				CE39BFA406BC5DAE006D6824 /* Scripting_Additions.m in Sources */,
-				CE6E2CB806CAE45A00BC7907 /* PlotWindow.m in Sources */,
-				CE6E2CB906CAE45A00BC7907 /* PlotView.m in Sources */,
 				BF00C95D06F3F43A00715191 /* DCMCursor.m in Sources */,
 				7ECB4B42072EF9F800C2CFC4 /* DCMCalendarScript.m in Sources */,
 				CEA20538073A810100F0DAB7 /* Photos.m in Sources */,
@@ -6276,28 +6228,12 @@
 			name = Query.xib;
 			sourceTree = "<group>";
 		};
-		CE3F99140C84724B00CB38F1 /* Histogram.xib */ = {
-			isa = PBXVariantGroup;
-			children = (
-				CE3F99150C84724B00CB38F1 /* Base */,
-			);
-			name = Histogram.xib;
-			sourceTree = "<group>";
-		};
 		CE3F991A0C84724B00CB38F1 /* WaitRendering.xib */ = {
 			isa = PBXVariantGroup;
 			children = (
 				CE3F991B0C84724B00CB38F1 /* Base */,
 			);
 			name = WaitRendering.xib;
-			sourceTree = "<group>";
-		};
-		CE3F991C0C84724B00CB38F1 /* Plot.xib */ = {
-			isa = PBXVariantGroup;
-			children = (
-				CE3F991D0C84724B00CB38F1 /* Base */,
-			);
-			name = Plot.xib;
 			sourceTree = "<group>";
 		};
 		CE3F992C0C84724B00CB38F1 /* BurnViewer.xib */ = {

@@ -125,7 +125,6 @@
 #import "ComparativeCell.h"
 #import "N2Stuff.h"
 #import "NSNotificationCenter+N2.h"
-#import "NSFullScreenWindow.h"
 #import "CustomIntervalPanel.h"
 #import "QuicktimeExport.h"
 #import "DICOMToNSString.h"
@@ -12303,10 +12302,10 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 
 - (BOOL)shouldTerminate: (id)sender
 {
-    // Is there a full screen window displayed?
-    for( id window in [NSApp orderedWindows])
+    // Do not terminate while a window is using native full-screen mode.
+    for( NSWindow *window in [NSApp orderedWindows])
     {
-        if( [window isKindOfClass: [NSFullScreenWindow class]])
+        if( (window.styleMask & NSWindowStyleMaskFullScreen) != 0)
         {
             NSBeep();
             return NO;

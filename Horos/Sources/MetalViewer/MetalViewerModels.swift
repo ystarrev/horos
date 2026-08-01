@@ -547,15 +547,21 @@ struct MetalViewerWindowLevel: Equatable {
 
 enum MetalViewerAutomaticWindowLevel {
     static func window(for pix: DCMPix) -> MetalViewerWindowLevel? {
+        guard let storedPixels = MetalStoredInt16PixelData(pix: pix) else { return nil }
+        return window(for: storedPixels, modality: pix.modalityString)
+    }
+
+    static func window(
+        for storedPixels: MetalStoredInt16PixelData,
+        modality modalityString: String?
+    ) -> MetalViewerWindowLevel? {
         var samples: [Float] = []
         samples.reserveCapacity(5_000)
 
-        pix.checkLoad()
-        guard let pixels = pix.fImage else { return nil }
-        let modality = pix.modalityString?.uppercased() ?? ""
+        let modality = modalityString?.uppercased() ?? ""
 
-        let pixelWidth = max(Int(pix.pwidth), 0)
-        let pixelHeight = max(Int(pix.pheight), 0)
+        let pixelWidth = storedPixels.width
+        let pixelHeight = storedPixels.height
         let pixelCount = pixelWidth * pixelHeight
         guard pixelCount > 0 else { return nil }
 
@@ -566,14 +572,17 @@ enum MetalViewerAutomaticWindowLevel {
             max(pixelCount - 1, 0),
         ]
         let cornerValues = cornerIndexes
-            .map { pixels[$0] }
+            .compactMap { storedPixels.rescaledValue(at: $0) }
             .filter { $0.isFinite }
         let backgroundValue = repeatedCornerValue(in: cornerValues)
 
         let pixelStep = max(1, pixelCount / 5_000)
         var index = 0
         while index < pixelCount {
-            let value = pixels[index]
+            guard let value = storedPixels.rescaledValue(at: index) else {
+                index += pixelStep
+                continue
+            }
             let isBackground = backgroundValue.map {
                 abs(value - $0) <= max(abs($0) * 0.00001, 0.0001)
             } ?? false
@@ -643,20 +652,6 @@ struct MetalViewerTransferFunctionState {
     var opacityName = NSLocalizedString("Linear Table", comment: "")
 }
 
-enum MetalSeriesTextureStorageMode: Equatable {
-    case rescaledFloat
-    case storedInt16
-
-    var keyComponent: String {
-        switch self {
-        case .rescaledFloat:
-            return "float"
-        case .storedInt16:
-            return "stored-int16"
-        }
-    }
-}
-
 enum MetalSeriesTextureKind: UInt32 {
     case rescaledFloat = 1
     case storedInt16Signed = 2
@@ -695,6 +690,11 @@ struct MetalStoredInt16PixelData {
             return defaultWindow
         }
 
+        return storedRangeWindow
+    }
+
+    var storedRangeWindow: MetalViewerWindowLevel {
+
         let bits = min(max(bitsStored, 1), 30)
         let storedMinimum: Float
         let storedMaximum: Float
@@ -715,10 +715,38 @@ struct MetalStoredInt16PixelData {
         return MetalViewerWindowLevel(level: low + width * 0.5, width: width)
     }
 
+    func rescaledValue(at index: Int) -> Float? {
+        guard index >= 0, index < width * height else { return nil }
+
+        let byteOffset = index * MemoryLayout<UInt16>.stride
+        guard byteOffset + 1 < data.count else { return nil }
+
+        let raw = UInt16(data[byteOffset]) | (UInt16(data[byteOffset + 1]) << 8)
+        let storedValue = isSigned
+            ? Float(Int16(bitPattern: raw))
+            : Float(raw)
+        return storedValue * rescaleSlope + rescaleIntercept
+    }
+
+    func rescaledValue(x: Int, y: Int) -> Float? {
+        guard x >= 0, x < width, y >= 0, y < height else { return nil }
+        return rescaledValue(at: y * width + x)
+    }
+
     init?(pix: DCMPix) {
-        guard let info = pix.decodedStoredPixelData16ForMetalTexture() else {
+        if let info = pix.decodedStoredPixelData16ForMetalTexture() {
+            self.init(info: info)
+            return
+        }
+
+        guard let decoder = MetalEnhancedMRStoredPixelDecoder(pixList: [pix]),
+              let decoded = decoder.decode(pix: pix) else {
             return nil
         }
+        self = decoded
+    }
+
+    fileprivate init?(info: [AnyHashable: Any]) {
 
         let dataObject = info["data"]
         let data: Data
@@ -753,12 +781,34 @@ struct MetalStoredInt16PixelData {
         self.rescaleIntercept = inverse ? -intercept : intercept
         self.isSigned = isSigned
         self.pixelSpacing = SIMD2<Float>(
-            max((info["pixelSpacingX"] as? NSNumber)?.floatValue ?? 1, 1),
-            max((info["pixelSpacingY"] as? NSNumber)?.floatValue ?? 1, 1)
+            max((info["pixelSpacingX"] as? NSNumber)?.floatValue ?? 1, 0.0001),
+            max((info["pixelSpacingY"] as? NSNumber)?.floatValue ?? 1, 0.0001)
         )
         self.defaultWindow = windowWidth > 0
             ? MetalViewerWindowLevel(level: inverse ? -windowLevel : windowLevel, width: windowWidth)
             : nil
+    }
+
+    fileprivate init(
+        data: Data,
+        width: Int,
+        height: Int,
+        bitsStored: Int,
+        rescaleSlope: Float,
+        rescaleIntercept: Float,
+        isSigned: Bool,
+        pixelSpacing: SIMD2<Float>,
+        defaultWindow: MetalViewerWindowLevel?
+    ) {
+        self.data = data
+        self.width = width
+        self.height = height
+        self.bitsStored = bitsStored
+        self.rescaleSlope = rescaleSlope
+        self.rescaleIntercept = rescaleIntercept
+        self.isSigned = isSigned
+        self.pixelSpacing = pixelSpacing
+        self.defaultWindow = defaultWindow
     }
 
     func matchesVolumeEncoding(of firstSlice: MetalStoredInt16PixelData) -> Bool {
@@ -773,10 +823,252 @@ struct MetalStoredInt16PixelData {
     }
 }
 
+private final class MetalEnhancedMRStoredPixelDecoder {
+    private let object: DCMObject
+    private let sourcePath: String
+    private let sharedFunctionalGroup: DCMObject?
+    private let perFrameFunctionalGroups: [DCMObject]
+
+    init?(pixList: [DCMPix]) {
+        guard let firstPix = pixList.first,
+              let path = Self.nonEmpty(firstPix.srcFile),
+              pixList.allSatisfy({ Self.nonEmpty($0.srcFile) == path }),
+              let object = DCMObject.object(withContentsOfFile: path, decodingPixelData: false) as? DCMObject else {
+            return nil
+        }
+
+        let sharedGroups = Self.sequenceItems(in: object, named: "SharedFunctionalGroupsSequence")
+        let perFrameGroups = Self.sequenceItems(in: object, named: "Per-frameFunctionalGroupsSequence")
+        guard sharedGroups.isEmpty == false || perFrameGroups.isEmpty == false else {
+            return nil
+        }
+
+        self.object = object
+        self.sourcePath = path
+        self.sharedFunctionalGroup = sharedGroups.first
+        self.perFrameFunctionalGroups = perFrameGroups
+    }
+
+    func decode(pix: DCMPix) -> MetalStoredInt16PixelData? {
+        guard Self.nonEmpty(pix.srcFile) == sourcePath else { return nil }
+
+        let frameIndex = max(Int(pix.frameNo), 0)
+        let perFrameGroup = perFrameFunctionalGroups.element(at: frameIndex)
+        let width = Self.intValue(in: object, named: "Columns") ?? 0
+        let height = Self.intValue(in: object, named: "Rows") ?? 0
+        guard width > 0, height > 0 else { return nil }
+
+        // DCM Framework's historical tag dictionary spells the DICOM keyword
+        // "SamplesperPixel" (lowercase "p"). Keep the standard spelling as a
+        // fallback in case that dictionary is corrected later.
+        let samplesPerPixel = Self.intValue(in: object, named: "SamplesperPixel")
+            ?? Self.intValue(in: object, named: "SamplesPerPixel")
+            ?? 1
+        guard samplesPerPixel == 1 else { return nil }
+
+        let modality = Self.stringValue(in: object, named: "Modality")?.uppercased() ?? ""
+        guard modality == "MR" else { return nil }
+
+        let photometricInterpretation = Self.stringValue(
+            in: object,
+            named: "PhotometricInterpretation"
+        )?.uppercased() ?? ""
+        guard photometricInterpretation.contains("RGB") == false,
+              photometricInterpretation.contains("YBR") == false,
+              photometricInterpretation.contains("PALETTE") == false else {
+            return nil
+        }
+
+        let bitsAllocated = Self.intValue(in: object, named: "BitsAllocated") ?? 0
+        let declaredBitsStored = Self.intValue(in: object, named: "BitsStored") ?? bitsAllocated
+        let bitsStored = min(max(declaredBitsStored, 1), bitsAllocated)
+        let highBit = Self.intValue(in: object, named: "HighBit") ?? max(bitsStored - 1, 0)
+        guard bitsAllocated == 8 || bitsAllocated == 16 else { return nil }
+
+        let isSigned = (Self.intValue(in: object, named: "PixelRepresentation") ?? 0) != 0
+        let transformation = Self.firstSequenceItem(
+            in: perFrameGroup,
+            named: "PixelValueTransformationSequence"
+        ) ?? Self.firstSequenceItem(
+            in: sharedFunctionalGroup,
+            named: "PixelValueTransformationSequence"
+        )
+        let rawSlope = Self.floatValue(in: transformation, named: "RescaleSlope")
+            ?? Self.floatValue(in: object, named: "RescaleSlope")
+            ?? 1
+        let rawIntercept = Self.floatValue(in: transformation, named: "RescaleIntercept")
+            ?? Self.floatValue(in: object, named: "RescaleIntercept")
+            ?? 0
+        let slope = rawSlope == 0 ? 1 : rawSlope
+
+        let pixelMeasures = Self.firstSequenceItem(in: perFrameGroup, named: "PixelMeasuresSequence")
+            ?? Self.firstSequenceItem(in: sharedFunctionalGroup, named: "PixelMeasuresSequence")
+        let spacingValues = Self.numberArray(in: pixelMeasures, named: "PixelSpacing")
+            ?? Self.numberArray(in: object, named: "PixelSpacing")
+            ?? Self.numberArray(in: object, named: "ImagerPixelSpacing")
+            ?? []
+        let spacingY = max(Float(spacingValues.first ?? 1), 0.0001)
+        let spacingX = max(Float(spacingValues.dropFirst().first ?? spacingValues.first ?? 1), 0.0001)
+
+        let frameVOILUT = Self.firstSequenceItem(in: perFrameGroup, named: "FrameVOILUTSequence")
+            ?? Self.firstSequenceItem(in: sharedFunctionalGroup, named: "FrameVOILUTSequence")
+        let windowLevel = Self.floatValue(in: frameVOILUT, named: "WindowCenter")
+            ?? Self.floatValue(in: object, named: "WindowCenter")
+        let windowWidth = abs(
+            Self.floatValue(in: frameVOILUT, named: "WindowWidth")
+                ?? Self.floatValue(in: object, named: "WindowWidth")
+                ?? 0
+        )
+
+        guard let pixelAttribute = object.attribute(withName: "PixelData") as? DCMPixelDataAttribute,
+              let decodedFrameObject = pixelAttribute.decodeFrame(at: Int32(frameIndex)) else {
+            return nil
+        }
+        let decodedFrame = decodedFrameObject as Data
+        guard let storedData = Self.normalizedStoredData(
+                decodedFrame,
+                pixelCount: width * height,
+                bitsAllocated: bitsAllocated,
+                bitsStored: bitsStored,
+                highBit: highBit,
+                isSigned: isSigned
+              ) else {
+            return nil
+        }
+
+        let inverse = photometricInterpretation.contains("MONOCHROME1")
+        let rescaleSlope = inverse ? -slope : slope
+        let rescaleIntercept = inverse ? -rawIntercept : rawIntercept
+        let defaultWindow = windowWidth > 0
+            ? MetalViewerWindowLevel(
+                level: inverse ? -(windowLevel ?? 0) : (windowLevel ?? 0),
+                width: windowWidth
+            )
+            : nil
+
+        return MetalStoredInt16PixelData(
+            data: storedData,
+            width: width,
+            height: height,
+            bitsStored: bitsStored,
+            rescaleSlope: rescaleSlope,
+            rescaleIntercept: rescaleIntercept,
+            isSigned: isSigned,
+            pixelSpacing: SIMD2<Float>(spacingX, spacingY),
+            defaultWindow: defaultWindow
+        )
+    }
+
+    private static func normalizedStoredData(
+        _ sourceData: Data,
+        pixelCount: Int,
+        bitsAllocated: Int,
+        bitsStored: Int,
+        highBit: Int,
+        isSigned: Bool
+    ) -> Data? {
+        guard pixelCount > 0 else { return nil }
+        let bytesPerSample = bitsAllocated / 8
+        guard sourceData.count >= pixelCount * bytesPerSample else { return nil }
+
+        let lowBit = max(highBit - bitsStored + 1, 0)
+        let mask = bitsStored == 16 ? UInt16.max : UInt16((1 << bitsStored) - 1)
+        let signBit = UInt16(1 << max(bitsStored - 1, 0))
+        var output = [UInt16](repeating: 0, count: pixelCount)
+
+        sourceData.withUnsafeBytes { rawBuffer in
+            guard let bytes = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+            for index in 0..<pixelCount {
+                let rawValue: UInt16
+                if bitsAllocated == 16 {
+                    rawValue = rawBuffer.loadUnaligned(fromByteOffset: index * 2, as: UInt16.self)
+                } else {
+                    rawValue = UInt16(bytes[index])
+                }
+
+                let storedValue = (rawValue >> UInt16(lowBit)) & mask
+                if isSigned, storedValue & signBit != 0 {
+                    output[index] = storedValue | ~mask
+                } else {
+                    output[index] = storedValue
+                }
+            }
+        }
+
+        return output.withUnsafeBytes { Data($0) }
+    }
+
+    private static func sequenceItems(in object: DCMObject?, named name: String) -> [DCMObject] {
+        guard let object,
+              let sequence = object.attribute(withName: name) as? DCMSequenceAttribute else {
+            return []
+        }
+        return sequence.sequence.compactMap { $0 as? DCMObject }
+    }
+
+    private static func firstSequenceItem(in object: DCMObject?, named name: String) -> DCMObject? {
+        sequenceItems(in: object, named: name).first
+    }
+
+    private static func stringValue(in object: DCMObject?, named name: String) -> String? {
+        guard let rawValue = object?.attributeValue(withName: name) else { return nil }
+        if let string = rawValue as? String {
+            return nonEmpty(string.components(separatedBy: "\\").first)
+        }
+        if let number = rawValue as? NSNumber {
+            return number.stringValue
+        }
+        return nil
+    }
+
+    private static func intValue(in object: DCMObject?, named name: String) -> Int? {
+        guard let value = floatValue(in: object, named: name), value.isFinite else { return nil }
+        return Int(value.rounded())
+    }
+
+    private static func floatValue(in object: DCMObject?, named name: String) -> Float? {
+        guard let rawValue = object?.attributeValue(withName: name) else { return nil }
+        if let number = rawValue as? NSNumber {
+            return number.floatValue
+        }
+        if let string = rawValue as? String {
+            return Float(string.components(separatedBy: "\\").first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+        }
+        return nil
+    }
+
+    private static func numberArray(in object: DCMObject?, named name: String) -> [Double]? {
+        guard let object else { return nil }
+        if let numbers = object.attributeArray(withName: name) as? [NSNumber] {
+            return numbers.map(\.doubleValue)
+        }
+        if let strings = object.attributeArray(withName: name) as? [String] {
+            return strings.compactMap(Double.init)
+        }
+        return stringValue(in: object, named: name)?
+            .components(separatedBy: "\\")
+            .compactMap(Double.init)
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              trimmed.isEmpty == false else {
+            return nil
+        }
+        return trimmed
+    }
+}
+
 final class MetalSeriesTextureCache {
     private struct SliceDimensions {
         let width: Int
         let height: Int
+    }
+
+    struct DecodedSliceSeed {
+        let pix: DCMPix
+        let index: Int
+        let pixels: MetalStoredInt16PixelData
     }
 
     final class Entry {
@@ -784,28 +1076,31 @@ final class MetalSeriesTextureCache {
         let texture: MTLTexture
         let dimensions: SIMD3<Int>
         let byteCount: Int
-        let storageMode: MetalSeriesTextureStorageMode
         let textureKind: MetalSeriesTextureKind
         let rescaleSlope: Float
         let rescaleIntercept: Float
+        let defaultWindow: MetalViewerWindowLevel
+        let fullDynamicWindow: MetalViewerWindowLevel
 
         init(
             key: String,
             texture: MTLTexture,
             dimensions: SIMD3<Int>,
-            storageMode: MetalSeriesTextureStorageMode,
             textureKind: MetalSeriesTextureKind,
             bytesPerVoxel: Int,
             rescaleSlope: Float = 1,
-            rescaleIntercept: Float = 0
+            rescaleIntercept: Float = 0,
+            defaultWindow: MetalViewerWindowLevel = MetalViewerWindowLevel(level: 0, width: 1),
+            fullDynamicWindow: MetalViewerWindowLevel = MetalViewerWindowLevel(level: 0, width: 1)
         ) {
             self.key = key
             self.texture = texture
             self.dimensions = dimensions
-            self.storageMode = storageMode
             self.textureKind = textureKind
             self.rescaleSlope = rescaleSlope
             self.rescaleIntercept = rescaleIntercept
+            self.defaultWindow = defaultWindow
+            self.fullDynamicWindow = fullDynamicWindow
             self.byteCount = max(dimensions.x, 1) * max(dimensions.y, 1) * max(dimensions.z, 1) * max(bytesPerVoxel, 1)
         }
     }
@@ -834,8 +1129,7 @@ final class MetalSeriesTextureCache {
 
     func key(
         for pixList: [DCMPix],
-        device: MTLDevice,
-        storageMode: MetalSeriesTextureStorageMode = .rescaledFloat
+        device: MTLDevice
     ) -> String? {
         guard pixList.isEmpty == false,
               let dimensions = pixList.compactMap({ dimensionsWithoutLoading(for: $0) }).first else {
@@ -854,7 +1148,7 @@ final class MetalSeriesTextureCache {
         }
         var components: [String] = [
             "device=\(deviceKey)",
-            "storage=\(storageMode.keyComponent)",
+            "storage=stored-int16",
             "size=\(width)x\(height)x\(pixList.count)"
         ]
         components.reserveCapacity(pixList.count + 2)
@@ -872,10 +1166,9 @@ final class MetalSeriesTextureCache {
 
     func cachedEntry(
         for pixList: [DCMPix],
-        device: MTLDevice,
-        storageMode: MetalSeriesTextureStorageMode = .rescaledFloat
+        device: MTLDevice
     ) -> Entry? {
-        guard let key = key(for: pixList, device: device, storageMode: storageMode) else { return nil }
+        guard let key = key(for: pixList, device: device) else { return nil }
 
         lock.lock()
         defer { lock.unlock() }
@@ -887,11 +1180,9 @@ final class MetalSeriesTextureCache {
 
     func isEntryKnownUnavailable(
         for pixList: [DCMPix],
-        device: MTLDevice,
-        storageMode: MetalSeriesTextureStorageMode
+        device: MTLDevice
     ) -> Bool {
-        guard storageMode == .storedInt16,
-              let key = key(for: pixList, device: device, storageMode: storageMode) else {
+        guard let key = key(for: pixList, device: device) else {
             return false
         }
 
@@ -903,10 +1194,10 @@ final class MetalSeriesTextureCache {
     func requestEntry(
         for pixList: [DCMPix],
         device: MTLDevice,
-        storageMode: MetalSeriesTextureStorageMode = .rescaledFloat,
+        decodedSliceSeed: DecodedSliceSeed? = nil,
         completion: @escaping (Entry?) -> Void
     ) {
-        guard let key = key(for: pixList, device: device, storageMode: storageMode) else {
+        guard let key = key(for: pixList, device: device) else {
             DispatchQueue.main.async {
                 completion(nil)
             }
@@ -914,7 +1205,7 @@ final class MetalSeriesTextureCache {
         }
 
         lock.lock()
-        if storageMode == .storedInt16, unavailableStoredInt16Keys.contains(key) {
+        if unavailableStoredInt16Keys.contains(key) {
             lock.unlock()
             DispatchQueue.main.async {
                 completion(nil)
@@ -944,9 +1235,14 @@ final class MetalSeriesTextureCache {
         buildQueue.addOperation { [weak self] in
             guard let self else { return }
             let entry = autoreleasepool {
-                self.buildEntry(key: key, pixList: buildPixList, device: device, storageMode: storageMode)
+                self.buildEntry(
+                    key: key,
+                    pixList: buildPixList,
+                    device: device,
+                    decodedSliceSeed: decodedSliceSeed
+                )
             }
-            self.finishRequest(key: key, storageMode: storageMode, entry: entry)
+            self.finishRequest(key: key, entry: entry)
         }
     }
 
@@ -954,87 +1250,43 @@ final class MetalSeriesTextureCache {
         key: String,
         pixList: [DCMPix],
         device: MTLDevice,
-        storageMode: MetalSeriesTextureStorageMode
+        decodedSliceSeed: DecodedSliceSeed?
     ) -> Entry? {
-        if storageMode == .storedInt16 {
-            return buildStoredInt16Entry(key: key, pixList: pixList, device: device)
-        }
-
-        guard pixList.isEmpty == false, let firstPix = pixList.first else { return nil }
-
-        let start = CFAbsoluteTimeGetCurrent()
-        guard let firstDimensions = dimensionsWithoutLoading(for: firstPix) else { return nil }
-
-        let width = max(firstDimensions.width, 1)
-        let height = max(firstDimensions.height, 1)
-        let depth = max(pixList.count, 1)
-        guard canCreateVolumeTexture(
-            width: width,
-            height: height,
-            depth: depth,
-            bytesPerVoxel: MemoryLayout<Float>.stride,
-            storageMode: .rescaledFloat
-        ) else {
-            return nil
-        }
-        let dimensions = SIMD3<Int>(width, height, depth)
-
-        let descriptor = MTLTextureDescriptor()
-        descriptor.textureType = .type3D
-        descriptor.pixelFormat = .r32Float
-        descriptor.width = width
-        descriptor.height = height
-        descriptor.depth = depth
-        descriptor.mipmapLevelCount = 1
-        descriptor.usage = [.shaderRead]
-        descriptor.storageMode = .shared
-
-        guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
-
-        let pixelCount = width * height
-        let bytesPerRow = width * MemoryLayout<Float>.stride
-        let bytesPerImage = max(pixelCount, 1) * MemoryLayout<Float>.stride
-
-        for (sliceIndex, pix) in pixList.enumerated() {
-            guard let sliceDimensions = dimensionsWithoutLoading(for: pix),
-                  max(sliceDimensions.width, 1) == width,
-                  max(sliceDimensions.height, 1) == height,
-                  uploadSlice(
-                    pix,
-                    sliceIndex: sliceIndex,
-                    sliceCount: depth,
-                    width: width,
-                    height: height,
-                    texture: texture,
-                    bytesPerRow: bytesPerRow,
-                    bytesPerImage: bytesPerImage
-                  ) else {
-                return nil
-            }
-        }
-
-        MetalViewerDiagnostics.timingLog(
-            format: "MetalSeriesTextureCache build %dx%dx%d %.3f s",
-            width,
-            height,
-            depth,
-            CFAbsoluteTimeGetCurrent() - start
-        )
-        return Entry(
+        buildStoredInt16Entry(
             key: key,
-            texture: texture,
-            dimensions: dimensions,
-            storageMode: .rescaledFloat,
-            textureKind: .rescaledFloat,
-            bytesPerVoxel: MemoryLayout<Float>.stride
+            pixList: pixList,
+            device: device,
+            decodedSliceSeed: decodedSliceSeed
         )
     }
 
-    private func buildStoredInt16Entry(key: String, pixList: [DCMPix], device: MTLDevice) -> Entry? {
+    private func buildStoredInt16Entry(
+        key: String,
+        pixList: [DCMPix],
+        device: MTLDevice,
+        decodedSliceSeed: DecodedSliceSeed?
+    ) -> Entry? {
+        let enhancedDecoder = MetalEnhancedMRStoredPixelDecoder(pixList: pixList)
+        let decodedSliceSeed = decodedSliceSeed.flatMap { seed -> DecodedSliceSeed? in
+            guard pixList.indices.contains(seed.index),
+                  pixList[seed.index] === seed.pix else {
+                return nil
+            }
+            return seed
+        }
+
+        func decodedPixels(at index: Int) -> MetalStoredInt16PixelData? {
+            if decodedSliceSeed?.index == index {
+                return decodedSliceSeed?.pixels
+            }
+            return enhancedDecoder?.decode(pix: pixList[index])
+                ?? MetalStoredInt16PixelData(pix: pixList[index])
+        }
+
         guard pixList.isEmpty == false,
               let firstPix = pixList.first,
               let firstDimensions = dimensionsWithoutLoading(for: firstPix),
-              let firstSlice = MetalStoredInt16PixelData(pix: firstPix) else {
+              let firstSlice = decodedPixels(at: 0) else {
             return nil
         }
 
@@ -1047,13 +1299,13 @@ final class MetalSeriesTextureCache {
             width: width,
             height: height,
             depth: depth,
-            bytesPerVoxel: MemoryLayout<UInt16>.stride,
-            storageMode: .storedInt16
+            bytesPerVoxel: MemoryLayout<UInt16>.stride
         ) else {
             return nil
         }
 
         let dimensions = SIMD3<Int>(width, height, depth)
+        _ = MetalViewerSliceGeometry(pix: firstPix)
         let descriptor = MTLTextureDescriptor()
         descriptor.textureType = .type3D
         descriptor.pixelFormat = firstSlice.pixelFormat
@@ -1082,10 +1334,11 @@ final class MetalSeriesTextureCache {
         }
 
         for sliceIndex in 1..<pixList.count {
+            _ = MetalViewerSliceGeometry(pix: pixList[sliceIndex])
             guard let sliceDimensions = dimensionsWithoutLoading(for: pixList[sliceIndex]),
                   max(sliceDimensions.width, 1) == width,
                   max(sliceDimensions.height, 1) == height,
-                  let slice = MetalStoredInt16PixelData(pix: pixList[sliceIndex]),
+                  let slice = decodedPixels(at: sliceIndex),
                   slice.width == width,
                   slice.height == height,
                   slice.matchesVolumeEncoding(of: firstSlice),
@@ -1113,11 +1366,12 @@ final class MetalSeriesTextureCache {
             key: key,
             texture: texture,
             dimensions: dimensions,
-            storageMode: .storedInt16,
             textureKind: firstSlice.textureKind,
             bytesPerVoxel: MemoryLayout<UInt16>.stride,
             rescaleSlope: firstSlice.rescaleSlope,
-            rescaleIntercept: firstSlice.rescaleIntercept
+            rescaleIntercept: firstSlice.rescaleIntercept,
+            defaultWindow: firstSlice.inferredWindow,
+            fullDynamicWindow: firstSlice.storedRangeWindow
         )
     }
 
@@ -1125,17 +1379,16 @@ final class MetalSeriesTextureCache {
         width: Int,
         height: Int,
         depth: Int,
-        bytesPerVoxel: Int,
-        storageMode: MetalSeriesTextureStorageMode
+        bytesPerVoxel: Int
     ) -> Bool {
         guard MetalTextureLimits.supports3DTexture(width: width, height: height, depth: depth) else {
-            NSLog("%@", "MetalSeriesTextureCache: skipping \(storageMode.keyComponent) \(width)x\(height)x\(depth) volume; Metal limits 3D texture dimensions to \(MetalTextureLimits.maximum3DTextureDimension)")
+            NSLog("%@", "MetalSeriesTextureCache: skipping stored-int16 \(width)x\(height)x\(depth) volume; Metal limits 3D texture dimensions to \(MetalTextureLimits.maximum3DTextureDimension)")
             return false
         }
 
         let byteCount = width * height * depth * bytesPerVoxel
         guard byteCount <= maximumCachedBytes else {
-            NSLog("%@", "MetalSeriesTextureCache: skipping \(storageMode.keyComponent) \(width)x\(height)x\(depth) volume; \(byteCount) bytes exceeds the volume texture cache limit")
+            NSLog("%@", "MetalSeriesTextureCache: skipping stored-int16 \(width)x\(height)x\(depth) volume; \(byteCount) bytes exceeds the volume texture cache limit")
             return false
         }
 
@@ -1174,159 +1427,15 @@ final class MetalSeriesTextureCache {
         return true
     }
 
-    private func uploadSlice(
-        _ pix: DCMPix,
-        sliceIndex: Int,
-        sliceCount: Int,
-        width: Int,
-        height: Int,
-        texture: MTLTexture,
-        bytesPerRow: Int,
-        bytesPerImage: Int
-    ) -> Bool {
-        if pix.isLoaded() {
-            return uploadLoadedSlice(
-                pix,
-                sliceIndex: sliceIndex,
-                width: width,
-                height: height,
-                texture: texture,
-                bytesPerRow: bytesPerRow,
-                bytesPerImage: bytesPerImage
-            )
-        }
-
-        if uploadTemporaryDecodedSlice(
-            pix,
-            sliceIndex: sliceIndex,
-            sliceCount: sliceCount,
-            width: width,
-            height: height,
-            texture: texture,
-            bytesPerRow: bytesPerRow,
-            bytesPerImage: bytesPerImage
-        ) {
-            return true
-        }
-
-        pix.checkLoad()
-        defer { pix.revert(false) }
-        return uploadLoadedSlice(
-            pix,
-            sliceIndex: sliceIndex,
-            width: width,
-            height: height,
-            texture: texture,
-            bytesPerRow: bytesPerRow,
-            bytesPerImage: bytesPerImage
-        )
-    }
-
-    private func uploadTemporaryDecodedSlice(
-        _ sourcePix: DCMPix,
-        sliceIndex: Int,
-        sliceCount: Int,
-        width: Int,
-        height: Int,
-        texture: MTLTexture,
-        bytesPerRow: Int,
-        bytesPerImage: Int
-    ) -> Bool {
-        guard let sourcePath = nonEmptyString(sourcePix.srcFile) else { return false }
-
-        let pixelCount = max(width * height, 1)
-        let scratchPixels = UnsafeMutablePointer<Float>.allocate(capacity: pixelCount)
-        defer { scratchPixels.deallocate() }
-
-        let frameNumber = (sourcePix.value(forKey: "frameNo") as? NSNumber)?.intValue ?? 0
-        guard let decodedPix = DCMPix(
-            path: sourcePath,
-            sliceIndex,
-            sliceCount,
-            scratchPixels,
-            frameNumber,
-            0,
-            isBonjour: false,
-            imageObj: nil
-        ) else {
-            return false
-        }
-
-        decodedPix.setWidthWithoutLoading(width, heightWithoutLoading: height)
-        decodedPix.checkLoad()
-
-        return uploadLoadedSlice(
-            decodedPix,
-            sliceIndex: sliceIndex,
-            width: width,
-            height: height,
-            texture: texture,
-            bytesPerRow: bytesPerRow,
-            bytesPerImage: bytesPerImage
-        )
-    }
-
-    private func uploadLoadedSlice(
-        _ pix: DCMPix,
-        sliceIndex: Int,
-        width: Int,
-        height: Int,
-        texture: MTLTexture,
-        bytesPerRow: Int,
-        bytesPerImage: Int
-    ) -> Bool {
-        guard max(Int(pix.widthWithoutLoading()), 1) == width,
-              max(Int(pix.heightWithoutLoading()), 1) == height else {
-            return false
-        }
-
-        let pixelCount = width * height
-        if pix.isRGB, let rgbSource = rgbSourcePointer(for: pix) {
-            var pixels = [Float](repeating: 0, count: pixelCount)
-            let bytes = UnsafeRawPointer(rgbSource).assumingMemoryBound(to: UInt8.self)
-            for index in 0..<pixelCount {
-                let r = Float(bytes[index * 4 + 1])
-                let g = Float(bytes[index * 4 + 2])
-                let b = Float(bytes[index * 4 + 3])
-                pixels[index] = 0.299 * r + 0.587 * g + 0.114 * b
-            }
-            pixels.withUnsafeBytes { buffer in
-                guard let baseAddress = buffer.baseAddress else { return }
-                texture.replace(
-                    region: MTLRegionMake3D(0, 0, sliceIndex, width, height, 1),
-                    mipmapLevel: 0,
-                    slice: 0,
-                    withBytes: baseAddress,
-                    bytesPerRow: bytesPerRow,
-                    bytesPerImage: bytesPerImage
-                )
-            }
-            return true
-        }
-
-        guard let fImage = pix.fImage else { return false }
-        texture.replace(
-            region: MTLRegionMake3D(0, 0, sliceIndex, width, height, 1),
-            mipmapLevel: 0,
-            slice: 0,
-            withBytes: fImage,
-            bytesPerRow: bytesPerRow,
-            bytesPerImage: bytesPerImage
-        )
-        return true
-    }
-
-    private func finishRequest(key: String, storageMode: MetalSeriesTextureStorageMode, entry: Entry?) {
+    private func finishRequest(key: String, entry: Entry?) {
         lock.lock()
         if let entry {
             entries[key] = entry
             cachedByteCount += entry.byteCount
-            if storageMode == .storedInt16 {
-                clearStoredInt16UnavailableLocked(key)
-            }
+            clearStoredInt16UnavailableLocked(key)
             markAccessedLocked(key)
             trimLocked(keeping: key)
-        } else if storageMode == .storedInt16 {
+        } else {
             markStoredInt16UnavailableLocked(key)
         }
         let completions = inFlightCompletions.removeValue(forKey: key) ?? []
@@ -1381,17 +1490,6 @@ final class MetalSeriesTextureCache {
         return trimmed
     }
 
-    private func rgbSourcePointer(for pix: DCMPix) -> UnsafeMutableRawPointer? {
-        if let baseAddr = pix.baseAddr {
-            return UnsafeMutableRawPointer(baseAddr)
-        }
-
-        if let fImage = pix.fImage {
-            return UnsafeMutableRawPointer(fImage)
-        }
-
-        return nil
-    }
 }
 
 enum MetalDynamicDetectionConfidence: Int {
@@ -2308,8 +2406,234 @@ final class MetalViewerStudy {
     }
 }
 
+private struct MetalDICOMFrameGeometryMetadata {
+    let origin: SIMD3<Double>
+    let row: SIMD3<Double>
+    let column: SIMD3<Double>
+    let normal: SIMD3<Double>
+    let spacingX: Double
+    let spacingY: Double
+    let sliceThickness: Double
+    let spacingBetweenSlices: Double
+    let sliceLocation: Double
+}
+
+private final class MetalDICOMFrameGeometryCache {
+    static let shared = MetalDICOMFrameGeometryCache()
+
+    private let lock = NSLock()
+    private let maximumEntryCount = 4_096
+    private var entries: [String: MetalDICOMFrameGeometryMetadata] = [:]
+    private var insertionOrder: [String] = []
+    private var unavailableKeys = Set<String>()
+
+    private init() {}
+
+    func metadata(for pix: DCMPix) -> MetalDICOMFrameGeometryMetadata? {
+        guard let path = nonEmpty(pix.srcFile) else { return nil }
+        let frameIndex = max(Int(pix.frameNo), 0)
+        let key = "\(path)|frame=\(frameIndex)"
+
+        lock.lock()
+        if let entry = entries[key] {
+            lock.unlock()
+            return entry
+        }
+        if unavailableKeys.contains(key) {
+            lock.unlock()
+            return nil
+        }
+        lock.unlock()
+
+        guard let object = DCMObject.object(
+            withContentsOfFile: path,
+            decodingPixelData: false
+        ) as? DCMObject,
+        let metadata = Self.metadata(
+            forFrame: frameIndex,
+            object: object,
+            width: max(Int(pix.widthWithoutLoading()), 1),
+            height: max(Int(pix.heightWithoutLoading()), 1)
+        ) else {
+            lock.lock()
+            unavailableKeys.insert(key)
+            lock.unlock()
+            return nil
+        }
+
+        lock.lock()
+        let isNewEntry = entries[key] == nil
+        entries[key] = metadata
+        if isNewEntry {
+            insertionOrder.append(key)
+        }
+        if entries.count > maximumEntryCount, insertionOrder.isEmpty == false {
+            let expiredKey = insertionOrder.removeFirst()
+            entries.removeValue(forKey: expiredKey)
+        }
+        lock.unlock()
+        return metadata
+    }
+
+    private static func metadata(
+        forFrame frameIndex: Int,
+        object: DCMObject,
+        width: Int,
+        height: Int
+    ) -> MetalDICOMFrameGeometryMetadata? {
+        let sharedGroup = sequenceItems(in: object, named: "SharedFunctionalGroupsSequence").first
+        let perFrameGroup = sequenceItems(
+            in: object,
+            named: "Per-frameFunctionalGroupsSequence"
+        ).element(at: frameIndex)
+
+        let planeOrientation = firstSequenceItem(in: perFrameGroup, named: "PlaneOrientationSequence")
+            ?? firstSequenceItem(in: perFrameGroup, named: "PlaneOrientationVolumeSequence")
+            ?? firstSequenceItem(in: sharedGroup, named: "PlaneOrientationSequence")
+            ?? firstSequenceItem(in: sharedGroup, named: "PlaneOrientationVolumeSequence")
+        let orientationValues = numberArray(
+            in: planeOrientation ?? object,
+            named: "ImageOrientationPatient"
+        ) ?? numberArray(
+            in: planeOrientation ?? object,
+            named: "ImageOrientationVolume"
+        )
+
+        var row = SIMD3<Double>(1, 0, 0)
+        var column = SIMD3<Double>(0, 1, 0)
+        if let orientationValues, orientationValues.count >= 6 {
+            let candidateRow = SIMD3<Double>(
+                orientationValues[0],
+                orientationValues[1],
+                orientationValues[2]
+            )
+            let candidateColumn = SIMD3<Double>(
+                orientationValues[3],
+                orientationValues[4],
+                orientationValues[5]
+            )
+            if simd_length(candidateRow) > 0.000001,
+               simd_length(candidateColumn) > 0.000001 {
+                row = simd_normalize(candidateRow)
+                column = simd_normalize(candidateColumn)
+            }
+        }
+        let normalCandidate = simd_cross(row, column)
+        guard simd_length(normalCandidate) > 0.000001 else { return nil }
+        let normal = simd_normalize(normalCandidate)
+
+        let planePosition = firstSequenceItem(in: perFrameGroup, named: "PlanePositionSequence")
+            ?? firstSequenceItem(in: perFrameGroup, named: "PlanePositionVolumeSequence")
+            ?? firstSequenceItem(in: sharedGroup, named: "PlanePositionSequence")
+            ?? firstSequenceItem(in: sharedGroup, named: "PlanePositionVolumeSequence")
+        let positionValues = numberArray(
+            in: planePosition ?? object,
+            named: "ImagePositionPatient"
+        ) ?? numberArray(
+            in: planePosition ?? object,
+            named: "ImagePositionVolume"
+        )
+        let origin = positionValues.flatMap { values -> SIMD3<Double>? in
+            guard values.count >= 3 else { return nil }
+            return SIMD3<Double>(values[0], values[1], values[2])
+        } ?? .zero
+
+        let pixelMeasures = firstSequenceItem(in: perFrameGroup, named: "PixelMeasuresSequence")
+            ?? firstSequenceItem(in: sharedGroup, named: "PixelMeasuresSequence")
+        let spacingValues = numberArray(in: pixelMeasures, named: "PixelSpacing")
+            ?? numberArray(in: object, named: "PixelSpacing")
+            ?? numberArray(in: object, named: "ImagerPixelSpacing")
+            ?? []
+        let spacingY = max(spacingValues.first ?? 1, 0.000001)
+        let spacingX = max(spacingValues.dropFirst().first ?? spacingValues.first ?? 1, 0.000001)
+        let sliceThickness = abs(
+            doubleValue(in: pixelMeasures, named: "SliceThickness")
+                ?? doubleValue(in: object, named: "SliceThickness")
+                ?? 0
+        )
+        let spacingBetweenSlices = abs(
+            doubleValue(in: pixelMeasures, named: "SpacingBetweenSlices")
+                ?? doubleValue(in: object, named: "SpacingBetweenSlices")
+                ?? 0
+        )
+
+        let center = origin
+            + row * ((Double(width) * 0.5 - 0.5) * spacingX)
+            + column * ((Double(height) * 0.5 - 0.5) * spacingY)
+        let absoluteNormal = SIMD3<Double>(abs(normal.x), abs(normal.y), abs(normal.z))
+        let sliceLocation: Double
+        if absoluteNormal.x >= absoluteNormal.y, absoluteNormal.x >= absoluteNormal.z {
+            sliceLocation = center.x
+        } else if absoluteNormal.y >= absoluteNormal.z {
+            sliceLocation = center.y
+        } else {
+            sliceLocation = center.z
+        }
+
+        return MetalDICOMFrameGeometryMetadata(
+            origin: origin,
+            row: row,
+            column: column,
+            normal: normal,
+            spacingX: spacingX,
+            spacingY: spacingY,
+            sliceThickness: sliceThickness,
+            spacingBetweenSlices: spacingBetweenSlices,
+            sliceLocation: sliceLocation
+        )
+    }
+
+    private static func sequenceItems(in object: DCMObject?, named name: String) -> [DCMObject] {
+        guard let sequence = object?.attribute(withName: name) as? DCMSequenceAttribute else {
+            return []
+        }
+        return sequence.sequence.compactMap { $0 as? DCMObject }
+    }
+
+    private static func firstSequenceItem(in object: DCMObject?, named name: String) -> DCMObject? {
+        sequenceItems(in: object, named: name).first
+    }
+
+    private static func doubleValue(in object: DCMObject?, named name: String) -> Double? {
+        guard let rawValue = object?.attributeValue(withName: name) else { return nil }
+        if let number = rawValue as? NSNumber {
+            return number.doubleValue
+        }
+        if let string = rawValue as? String {
+            return Double(
+                string.components(separatedBy: "\\").first?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            )
+        }
+        return nil
+    }
+
+    private static func numberArray(in object: DCMObject?, named name: String) -> [Double]? {
+        guard let object else { return nil }
+        if let numbers = object.attributeArray(withName: name) as? [NSNumber] {
+            return numbers.map(\.doubleValue)
+        }
+        if let strings = object.attributeArray(withName: name) as? [String] {
+            return strings.compactMap(Double.init)
+        }
+        if let string = object.attributeValue(withName: name) as? String {
+            return string.components(separatedBy: "\\").compactMap {
+                Double($0.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+        return nil
+    }
+
+    private func nonEmpty(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              trimmed.isEmpty == false else {
+            return nil
+        }
+        return trimmed
+    }
+}
+
 struct MetalViewerSliceGeometry {
-    let pix: DCMPix
     let origin: SIMD3<Double>
     let row: SIMD3<Double>
     let column: SIMD3<Double>
@@ -2318,29 +2642,26 @@ struct MetalViewerSliceGeometry {
     let height: Double
     let spacingX: Double
     let spacingY: Double
+    let sliceThickness: Double
+    let spacingBetweenSlices: Double
+    let sliceLocation: Double
 
     init?(pix: DCMPix) {
-        self.pix = pix
-        let rowColumnNormal = Self.orientationVector(for: pix)
-        let row = SIMD3<Double>(Double(rowColumnNormal[0]), Double(rowColumnNormal[1]), Double(rowColumnNormal[2]))
-        let column = SIMD3<Double>(Double(rowColumnNormal[3]), Double(rowColumnNormal[4]), Double(rowColumnNormal[5]))
-        let normal = SIMD3<Double>(Double(rowColumnNormal[6]), Double(rowColumnNormal[7]), Double(rowColumnNormal[8]))
-
-        let rowLength = simd_length(row)
-        let columnLength = simd_length(column)
-        let normalLength = simd_length(normal)
-        guard rowLength > 0.000001, columnLength > 0.000001, normalLength > 0.000001 else {
+        guard let metadata = MetalDICOMFrameGeometryCache.shared.metadata(for: pix) else {
             return nil
         }
 
-        self.row = row / rowLength
-        self.column = column / columnLength
-        self.normal = normal / normalLength
-        self.spacingX = max(Double(pix.pixelSpacingX), 0.000001)
-        self.spacingY = max(Double(pix.pixelSpacingY), 0.000001)
-        self.width = max(Double(pix.pwidth), 1)
-        self.height = max(Double(pix.pheight), 1)
-        self.origin = SIMD3<Double>(pix.originX, pix.originY, pix.originZ)
+        self.row = metadata.row
+        self.column = metadata.column
+        self.normal = metadata.normal
+        self.spacingX = metadata.spacingX
+        self.spacingY = metadata.spacingY
+        self.width = max(Double(pix.widthWithoutLoading()), 1)
+        self.height = max(Double(pix.heightWithoutLoading()), 1)
+        self.origin = metadata.origin
+        self.sliceThickness = metadata.sliceThickness
+        self.spacingBetweenSlices = metadata.spacingBetweenSlices
+        self.sliceLocation = metadata.sliceLocation
     }
 
     func slicePoint(from worldPoint: SIMD3<Double>) -> CGPoint {
@@ -2350,14 +2671,10 @@ struct MetalViewerSliceGeometry {
         return CGPoint(x: x, y: y)
     }
 
-    private static func orientationVector(for pix: DCMPix) -> [Float] {
-        var vector = Array(repeating: Float(0), count: 9)
-        let selector = NSSelectorFromString("orientation:")
-        typealias OrientationIMP = @convention(c) (AnyObject, Selector, UnsafeMutablePointer<Float>?) -> Void
-        let implementation = pix.method(for: selector)
-        let function = unsafeBitCast(implementation, to: OrientationIMP.self)
-        function(pix, selector, &vector)
-        return vector
+    func dicomPoint(pixelX: Double, pixelY: Double, pixelCenter: Bool = true) -> SIMD3<Double> {
+        let x = pixelCenter ? pixelX - 0.5 : pixelX
+        let y = pixelCenter ? pixelY - 0.5 : pixelY
+        return origin + row * (x * spacingX) + column * (y * spacingY)
     }
 }
 
@@ -2538,20 +2855,24 @@ enum MetalViewerGantryTiltGeometryBuilder {
         let fallbackNormal = simd_normalize(simd_cross(row, column))
 
         let sliceStep: SIMD3<Float>
-        if pixList.count > 1, let lastPix = pixList.last {
+        if pixList.count > 1,
+           let lastPix = pixList.last,
+           let lastGeometry = MetalViewerSliceGeometry(pix: lastPix) {
             let delta = SIMD3<Float>(
-                Float(lastPix.originX - firstPix.originX),
-                Float(lastPix.originY - firstPix.originY),
-                Float(lastPix.originZ - firstPix.originZ)
+                Float(lastGeometry.origin.x - geometry.origin.x),
+                Float(lastGeometry.origin.y - geometry.origin.y),
+                Float(lastGeometry.origin.z - geometry.origin.z)
             ) / Float(max(pixList.count - 1, 1))
-            sliceStep = simd_length(delta) > 0.0001 ? delta : fallbackNormal * sliceSpacing(for: firstPix, fallback: fallbackSliceSpacing)
+            sliceStep = simd_length(delta) > 0.0001
+                ? delta
+                : fallbackNormal * sliceSpacing(for: geometry, fallback: fallbackSliceSpacing)
         } else {
-            sliceStep = fallbackNormal * sliceSpacing(for: firstPix, fallback: fallbackSliceSpacing)
+            sliceStep = fallbackNormal * sliceSpacing(for: geometry, fallback: fallbackSliceSpacing)
         }
 
-        let rowStep = row * Float(max(firstPix.pixelSpacingX, 0.000001))
-        let columnStep = column * Float(max(firstPix.pixelSpacingY, 0.000001))
-        let origin = SIMD3<Float>(Float(firstPix.originX), Float(firstPix.originY), Float(firstPix.originZ))
+        let rowStep = row * Float(geometry.spacingX)
+        let columnStep = column * Float(geometry.spacingY)
+        let origin = SIMD3<Float>(Float(geometry.origin.x), Float(geometry.origin.y), Float(geometry.origin.z))
 
         return simd_float4x4(
             SIMD4<Float>(rowStep.x, rowStep.y, rowStep.z, 0),
@@ -2575,23 +2896,25 @@ enum MetalViewerGantryTiltGeometryBuilder {
         let normal = simd_normalize(simd_cross(row, column))
 
         let sliceStep: SIMD3<Float>
-        if pixList.count > 1, let lastPix = pixList.last {
+        if pixList.count > 1,
+           let lastPix = pixList.last,
+           let lastGeometry = MetalViewerSliceGeometry(pix: lastPix) {
             let delta = SIMD3<Float>(
-                Float(lastPix.originX - firstPix.originX),
-                Float(lastPix.originY - firstPix.originY),
-                Float(lastPix.originZ - firstPix.originZ)
+                Float(lastGeometry.origin.x - geometry.origin.x),
+                Float(lastGeometry.origin.y - geometry.origin.y),
+                Float(lastGeometry.origin.z - geometry.origin.z)
             ) / Float(max(pixList.count - 1, 1))
             let normalSpacing = simd_dot(delta, normal)
             sliceStep = abs(normalSpacing) > 0.0001
                 ? normal * normalSpacing
-                : normal * sliceSpacing(for: firstPix, fallback: fallbackSliceSpacing)
+                : normal * sliceSpacing(for: geometry, fallback: fallbackSliceSpacing)
         } else {
-            sliceStep = normal * sliceSpacing(for: firstPix, fallback: fallbackSliceSpacing)
+            sliceStep = normal * sliceSpacing(for: geometry, fallback: fallbackSliceSpacing)
         }
 
-        let rowStep = row * Float(max(firstPix.pixelSpacingX, 0.000001))
-        let columnStep = column * Float(max(firstPix.pixelSpacingY, 0.000001))
-        let origin = SIMD3<Float>(Float(firstPix.originX), Float(firstPix.originY), Float(firstPix.originZ))
+        let rowStep = row * Float(geometry.spacingX)
+        let columnStep = column * Float(geometry.spacingY)
+        let origin = SIMD3<Float>(Float(geometry.origin.x), Float(geometry.origin.y), Float(geometry.origin.z))
 
         return simd_float4x4(
             SIMD4<Float>(rowStep.x, rowStep.y, rowStep.z, 0),
@@ -2601,12 +2924,12 @@ enum MetalViewerGantryTiltGeometryBuilder {
         )
     }
 
-    private static func sliceSpacing(for pix: DCMPix, fallback: Float?) -> Float {
+    private static func sliceSpacing(for geometry: MetalViewerSliceGeometry, fallback: Float?) -> Float {
         if let fallback, fallback > 0.000001 {
             return fallback
         }
 
-        let candidates = [pix.sliceInterval, pix.spacingBetweenSlices, pix.sliceThickness]
+        let candidates = [geometry.spacingBetweenSlices, geometry.sliceThickness]
         let spacing = candidates.first(where: { abs($0) > 0.000001 }) ?? 1.0
         return Float(abs(spacing))
     }
@@ -2622,107 +2945,660 @@ enum MetalViewerGantryTiltGeometryBuilder {
     }
 }
 
-enum MetalViewerGantryTiltCPUResampler {
-    static func resample(
-        sourceSlices: [UnsafeMutablePointer<Float>?],
-        sourceDimensions: SIMD3<Int>,
+struct MetalPreparedVolumeLevel {
+    let texture: MTLTexture
+    let dimensions: SIMD3<Int>
+    let voxelToWorld: simd_float4x4
+}
+
+final class MetalPreparedVolumeCache {
+    final class Entry {
+        let key: String
+        let sourceKey: String
+        let texture: MTLTexture
+        let dimensions: SIMD3<Int>
+        let voxelToWorld: simd_float4x4
+        let isGantryTiltCorrected: Bool
+        let levels: [MetalPreparedVolumeLevel]
+        let hasRegistrationPyramid: Bool
+        let defaultWindow: MetalViewerWindowLevel
+        let fullDynamicWindow: MetalViewerWindowLevel
+        let byteCount: Int
+
+        fileprivate init(
+            key: String,
+            sourceKey: String,
+            texture: MTLTexture,
+            dimensions: SIMD3<Int>,
+            voxelToWorld: simd_float4x4,
+            isGantryTiltCorrected: Bool,
+            levels: [MetalPreparedVolumeLevel],
+            hasRegistrationPyramid: Bool,
+            defaultWindow: MetalViewerWindowLevel,
+            fullDynamicWindow: MetalViewerWindowLevel
+        ) {
+            self.key = key
+            self.sourceKey = sourceKey
+            self.texture = texture
+            self.dimensions = dimensions
+            self.voxelToWorld = voxelToWorld
+            self.isGantryTiltCorrected = isGantryTiltCorrected
+            self.levels = levels
+            self.hasRegistrationPyramid = hasRegistrationPyramid
+            self.defaultWindow = defaultWindow
+            self.fullDynamicWindow = fullDynamicWindow
+            self.byteCount = levels.reduce(0) { partial, level in
+                partial + max(level.dimensions.x, 1)
+                    * max(level.dimensions.y, 1)
+                    * max(level.dimensions.z, 1)
+                    * MemoryLayout<Float>.stride
+            }
+        }
+    }
+
+    static let shared = MetalPreparedVolumeCache()
+
+    private struct StoredConversionUniforms {
+        var sourceSize: SIMD4<UInt32>
+        var rescale: SIMD4<Float>
+    }
+
+    private struct ResampleUniforms {
+        var outputSize: SIMD4<UInt32>
+        var outputVoxelToWorld: simd_float4x4
+        var sourceWorldToVoxel: simd_float4x4
+        var backgroundValue: SIMD4<Float>
+    }
+
+    private struct BlurUniforms {
+        var sourceSize: SIMD3<UInt32>
+        var axis: UInt32
+        var radius: UInt32
+    }
+
+    private struct DownsampleUniforms {
+        var sourceSize: SIMD3<UInt32>
+        var factor: UInt32
+    }
+
+    private final class Pipelines {
+        let commandQueue: MTLCommandQueue
+        let convertSigned: MTLComputePipelineState
+        let convertUnsigned: MTLComputePipelineState
+        let resample: MTLComputePipelineState
+        let gaussianBlur: MTLComputePipelineState
+        let downsample: MTLComputePipelineState
+
+        init?(device: MTLDevice) {
+            guard let commandQueue = device.makeCommandQueue(),
+                  let library = device.makeDefaultLibrary(),
+                  let convertSignedFunction = library.makeFunction(name: "metalViewerConvertStoredSigned3D"),
+                  let convertUnsignedFunction = library.makeFunction(name: "metalViewerConvertStoredUnsigned3D"),
+                  let resampleFunction = library.makeFunction(name: "metalViewerGantryTiltResample3D"),
+                  let gaussianBlurFunction = library.makeFunction(name: "metalViewerGaussianBlur3D"),
+                  let downsampleFunction = library.makeFunction(name: "metalViewerDownsample3D") else {
+                return nil
+            }
+
+            do {
+                self.commandQueue = commandQueue
+                self.convertSigned = try device.makeComputePipelineState(function: convertSignedFunction)
+                self.convertUnsigned = try device.makeComputePipelineState(function: convertUnsignedFunction)
+                self.resample = try device.makeComputePipelineState(function: resampleFunction)
+                self.gaussianBlur = try device.makeComputePipelineState(function: gaussianBlurFunction)
+                self.downsample = try device.makeComputePipelineState(function: downsampleFunction)
+            } catch {
+                return nil
+            }
+        }
+    }
+
+    private let lock = NSLock()
+    private let preparationQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "org.horos.metalviewer.prepared-volume-cache"
+        queue.qualityOfService = .userInitiated
+        queue.maxConcurrentOperationCount = 1
+        return queue
+    }()
+    private let maximumEntryCount = 3
+    private let maximumCachedBytes = 1_500_000_000
+    private var pipelinesByDevice: [UInt64: Pipelines] = [:]
+    private var entries: [String: Entry] = [:]
+    private var accessOrder: [String] = []
+    private var cachedByteCount = 0
+    private var inFlightCompletions: [String: [(Entry?) -> Void]] = [:]
+
+    private init() {}
+
+    func key(
+        for sourceEntry: MetalSeriesTextureCache.Entry,
+        correctGantryTilt: Bool
+    ) -> String {
+        "prepared-v1|gantry=\(correctGantryTilt ? 1 : 0)|\(sourceEntry.key)"
+    }
+
+    func cachedEntry(
+        for sourceEntry: MetalSeriesTextureCache.Entry,
+        correctGantryTilt: Bool,
+        requiringRegistrationPyramid: Bool
+    ) -> Entry? {
+        let key = key(for: sourceEntry, correctGantryTilt: correctGantryTilt)
+        lock.lock()
+        defer { lock.unlock() }
+        guard let entry = entries[key],
+              requiringRegistrationPyramid == false || entry.hasRegistrationPyramid else {
+            return nil
+        }
+        markAccessedLocked(key)
+        return entry
+    }
+
+    func requestEntry(
+        for pixList: [DCMPix],
+        sourceEntry: MetalSeriesTextureCache.Entry,
+        device: MTLDevice,
+        correctGantryTilt: Bool,
+        includeRegistrationPyramid: Bool,
+        completion: @escaping (Entry?) -> Void
+    ) {
+        let key = key(for: sourceEntry, correctGantryTilt: correctGantryTilt)
+        let requestKey = "\(key)|pyramid=\(includeRegistrationPyramid ? 1 : 0)"
+
+        lock.lock()
+        if let entry = entries[key],
+           includeRegistrationPyramid == false || entry.hasRegistrationPyramid {
+            markAccessedLocked(key)
+            lock.unlock()
+            DispatchQueue.main.async {
+                completion(entry)
+            }
+            return
+        }
+        if inFlightCompletions[requestKey] != nil {
+            inFlightCompletions[requestKey]?.append(completion)
+            lock.unlock()
+            return
+        }
+        inFlightCompletions[requestKey] = [completion]
+        let existingEntry = entries[key]
+        lock.unlock()
+
+        let requestedPixList = pixList
+        preparationQueue.addOperation { [weak self] in
+            guard let self else { return }
+            self.encodeEntry(
+                key: key,
+                requestKey: requestKey,
+                pixList: requestedPixList,
+                sourceEntry: sourceEntry,
+                existingEntry: existingEntry,
+                device: device,
+                correctGantryTilt: correctGantryTilt,
+                includeRegistrationPyramid: includeRegistrationPyramid
+            )
+        }
+    }
+
+    private func encodeEntry(
+        key: String,
+        requestKey: String,
+        pixList: [DCMPix],
+        sourceEntry: MetalSeriesTextureCache.Entry,
+        existingEntry: Entry?,
+        device: MTLDevice,
+        correctGantryTilt: Bool,
+        includeRegistrationPyramid: Bool
+    ) {
+        guard let pipelines = pipelines(for: device),
+              sourceEntry.textureKind == .storedInt16Signed || sourceEntry.textureKind == .storedInt16Unsigned,
+              pixList.isEmpty == false else {
+            finish(requestKey: requestKey, key: key, entry: nil)
+            return
+        }
+
+        let start = CFAbsoluteTimeGetCurrent()
+        let sourceDimensions = sourceEntry.dimensions
+        let geometry = MetalViewerGantryTiltGeometryBuilder.geometry(
+            for: pixList,
+            sourceDimensions: sourceDimensions
+        )
+        let appliesGantryCorrection = correctGantryTilt && geometry.requiresCorrection()
+        let outputDimensions = appliesGantryCorrection ? geometry.dimensions : sourceDimensions
+        let outputVoxelToWorld = appliesGantryCorrection
+            ? geometry.correctedVoxelToPatientMatrix
+            : geometry.sourceVoxelToPatientMatrix
+
+        guard let commandBuffer = pipelines.commandQueue.makeCommandBuffer() else {
+            finish(requestKey: requestKey, key: key, entry: nil)
+            return
+        }
+
+        let primaryTexture: MTLTexture
+        if let existingEntry,
+           existingEntry.dimensions == outputDimensions,
+           Self.matricesMatch(existingEntry.voxelToWorld, outputVoxelToWorld) {
+            primaryTexture = existingEntry.texture
+        } else {
+            guard let convertedTexture = makeWritableFloatTexture(
+                device: device,
+                dimensions: sourceDimensions
+            ), encodeStoredConversion(
+                sourceEntry: sourceEntry,
+                destination: convertedTexture,
+                pipelines: pipelines,
+                commandBuffer: commandBuffer
+            ) else {
+                finish(requestKey: requestKey, key: key, entry: nil)
+                return
+            }
+
+            if appliesGantryCorrection {
+                guard let correctedTexture = makeWritableFloatTexture(
+                    device: device,
+                    dimensions: outputDimensions
+                ), encodeResample(
+                    source: convertedTexture,
+                    destination: correctedTexture,
+                    outputDimensions: outputDimensions,
+                    outputVoxelToWorld: outputVoxelToWorld,
+                    sourceVoxelToWorld: geometry.sourceVoxelToPatientMatrix,
+                    backgroundValue: Self.isCTVolume(pixList) ? -1024 : 0,
+                    pipelines: pipelines,
+                    commandBuffer: commandBuffer
+                ) else {
+                    finish(requestKey: requestKey, key: key, entry: nil)
+                    return
+                }
+                primaryTexture = correctedTexture
+            } else {
+                primaryTexture = convertedTexture
+            }
+        }
+
+        var levels = [MetalPreparedVolumeLevel(
+            texture: primaryTexture,
+            dimensions: outputDimensions,
+            voxelToWorld: outputVoxelToWorld
+        )]
+        if includeRegistrationPyramid {
+            guard let pyramidLevels = encodeRegistrationPyramid(
+                source: primaryTexture,
+                dimensions: outputDimensions,
+                voxelToWorld: outputVoxelToWorld,
+                device: device,
+                pipelines: pipelines,
+                commandBuffer: commandBuffer
+            ) else {
+                finish(requestKey: requestKey, key: key, entry: nil)
+                return
+            }
+            levels = pyramidLevels
+        }
+
+        let entry = Entry(
+            key: key,
+            sourceKey: sourceEntry.key,
+            texture: primaryTexture,
+            dimensions: outputDimensions,
+            voxelToWorld: outputVoxelToWorld,
+            isGantryTiltCorrected: appliesGantryCorrection,
+            levels: levels,
+            hasRegistrationPyramid: includeRegistrationPyramid,
+            defaultWindow: sourceEntry.defaultWindow,
+            fullDynamicWindow: sourceEntry.fullDynamicWindow
+        )
+
+        commandBuffer.addCompletedHandler { [weak self] completedBuffer in
+            guard let self else { return }
+            guard completedBuffer.status == .completed else {
+                self.finish(requestKey: requestKey, key: key, entry: nil)
+                return
+            }
+            MetalViewerDiagnostics.registrationTimingLog(
+                format: "MetalPreparedVolumeCache prepare %dx%dx%d pyramid=%d gantry=%d %.3f s",
+                outputDimensions.x,
+                outputDimensions.y,
+                outputDimensions.z,
+                includeRegistrationPyramid ? 1 : 0,
+                appliesGantryCorrection ? 1 : 0,
+                CFAbsoluteTimeGetCurrent() - start
+            )
+            self.finish(requestKey: requestKey, key: key, entry: entry)
+        }
+        commandBuffer.commit()
+    }
+
+    private func encodeStoredConversion(
+        sourceEntry: MetalSeriesTextureCache.Entry,
+        destination: MTLTexture,
+        pipelines: Pipelines,
+        commandBuffer: MTLCommandBuffer
+    ) -> Bool {
+        guard let encoder = commandBuffer.makeComputeCommandEncoder() else { return false }
+        var uniforms = StoredConversionUniforms(
+            sourceSize: SIMD4<UInt32>(
+                UInt32(max(sourceEntry.dimensions.x, 1)),
+                UInt32(max(sourceEntry.dimensions.y, 1)),
+                UInt32(max(sourceEntry.dimensions.z, 1)),
+                0
+            ),
+            rescale: SIMD4<Float>(sourceEntry.rescaleSlope, sourceEntry.rescaleIntercept, 0, 0)
+        )
+        encoder.setComputePipelineState(
+            sourceEntry.textureKind == .storedInt16Signed
+                ? pipelines.convertSigned
+                : pipelines.convertUnsigned
+        )
+        encoder.setTexture(sourceEntry.texture, index: 0)
+        encoder.setTexture(destination, index: 1)
+        encoder.setBytes(&uniforms, length: MemoryLayout<StoredConversionUniforms>.stride, index: 0)
+        Self.dispatch3D(encoder: encoder, dimensions: sourceEntry.dimensions)
+        encoder.endEncoding()
+        return true
+    }
+
+    private func encodeResample(
+        source: MTLTexture,
+        destination: MTLTexture,
         outputDimensions: SIMD3<Int>,
-        outputVoxelToPatientMatrix: simd_float4x4,
-        sourceVoxelToPatientMatrix: simd_float4x4,
-        backgroundValue: Float
-    ) -> [Float] {
-        let width = max(outputDimensions.x, 1)
-        let height = max(outputDimensions.y, 1)
-        let depth = max(outputDimensions.z, 1)
-        let outputPlaneSize = max(width * height, 1)
-        let sourceWidth = max(sourceDimensions.x, 1)
-        let sourceHeight = max(sourceDimensions.y, 1)
-        let sourceDepth = max(sourceDimensions.z, 1)
-        let outputVoxelToSourceVoxelMatrix = simd_inverse(sourceVoxelToPatientMatrix) * outputVoxelToPatientMatrix
-        let xStep = SIMD3<Float>(
-            outputVoxelToSourceVoxelMatrix.columns.0.x,
-            outputVoxelToSourceVoxelMatrix.columns.0.y,
-            outputVoxelToSourceVoxelMatrix.columns.0.z
+        outputVoxelToWorld: simd_float4x4,
+        sourceVoxelToWorld: simd_float4x4,
+        backgroundValue: Float,
+        pipelines: Pipelines,
+        commandBuffer: MTLCommandBuffer
+    ) -> Bool {
+        guard let encoder = commandBuffer.makeComputeCommandEncoder() else { return false }
+        var uniforms = ResampleUniforms(
+            outputSize: SIMD4<UInt32>(
+                UInt32(max(outputDimensions.x, 1)),
+                UInt32(max(outputDimensions.y, 1)),
+                UInt32(max(outputDimensions.z, 1)),
+                0
+            ),
+            outputVoxelToWorld: outputVoxelToWorld,
+            sourceWorldToVoxel: simd_inverse(sourceVoxelToWorld),
+            backgroundValue: SIMD4<Float>(backgroundValue, 0, 0, 0)
         )
-        let yStep = SIMD3<Float>(
-            outputVoxelToSourceVoxelMatrix.columns.1.x,
-            outputVoxelToSourceVoxelMatrix.columns.1.y,
-            outputVoxelToSourceVoxelMatrix.columns.1.z
-        )
-        let zStep = SIMD3<Float>(
-            outputVoxelToSourceVoxelMatrix.columns.2.x,
-            outputVoxelToSourceVoxelMatrix.columns.2.y,
-            outputVoxelToSourceVoxelMatrix.columns.2.z
-        )
-        let origin = SIMD3<Float>(
-            outputVoxelToSourceVoxelMatrix.columns.3.x,
-            outputVoxelToSourceVoxelMatrix.columns.3.y,
-            outputVoxelToSourceVoxelMatrix.columns.3.z
-        )
-        var output = [Float](repeating: backgroundValue, count: outputPlaneSize * depth)
+        encoder.setComputePipelineState(pipelines.resample)
+        encoder.setTexture(source, index: 0)
+        encoder.setTexture(destination, index: 1)
+        encoder.setBytes(&uniforms, length: MemoryLayout<ResampleUniforms>.stride, index: 0)
+        Self.dispatch3D(encoder: encoder, dimensions: outputDimensions)
+        encoder.endEncoding()
+        return true
+    }
 
-        func sample(_ x: Float, _ y: Float, _ z: Float) -> Float {
-            guard x >= 0, y >= 0, z >= 0,
-                  x <= Float(sourceWidth - 1),
-                  y <= Float(sourceHeight - 1),
-                  z <= Float(sourceDepth - 1) else {
-                return backgroundValue
+    private func encodeRegistrationPyramid(
+        source: MTLTexture,
+        dimensions: SIMD3<Int>,
+        voxelToWorld: simd_float4x4,
+        device: MTLDevice,
+        pipelines: Pipelines,
+        commandBuffer: MTLCommandBuffer
+    ) -> [MetalPreparedVolumeLevel]? {
+        var fineToCoarse = [MetalPreparedVolumeLevel(
+            texture: source,
+            dimensions: dimensions,
+            voxelToWorld: voxelToWorld
+        )]
+        var currentTexture = source
+        var currentDimensions = dimensions
+        var factor = 1
+
+        for _ in 0..<3 {
+            let spacing = MetalViewerGantryTiltGeometry.voxelSpacing(
+                from: voxelToWorld * Self.scaleMatrix(factor: factor)
+            )
+            guard let downsampled = encodeGaussianDownsample(
+                source: currentTexture,
+                dimensions: currentDimensions,
+                voxelSpacing: spacing,
+                device: device,
+                pipelines: pipelines,
+                commandBuffer: commandBuffer
+            ) else {
+                return nil
             }
-
-            let x0 = min(max(Int(floor(x)), 0), sourceWidth - 1)
-            let y0 = min(max(Int(floor(y)), 0), sourceHeight - 1)
-            let z0 = min(max(Int(floor(z)), 0), sourceDepth - 1)
-            let x1 = min(x0 + 1, sourceWidth - 1)
-            let y1 = min(y0 + 1, sourceHeight - 1)
-            let z1 = min(z0 + 1, sourceDepth - 1)
-            let tx = x - Float(x0)
-            let ty = y - Float(y0)
-            let tz = z - Float(z0)
-
-            func sampleSlice(_ sx: Int, _ sy: Int, _ sz: Int) -> Float {
-                guard sz >= 0,
-                      sz < sourceSlices.count,
-                      let pixels = sourceSlices[sz] else {
-                    return backgroundValue
-                }
-                return pixels[sy * sourceWidth + sx]
-            }
-
-            let c000 = sampleSlice(x0, y0, z0)
-            let c100 = sampleSlice(x1, y0, z0)
-            let c010 = sampleSlice(x0, y1, z0)
-            let c110 = sampleSlice(x1, y1, z0)
-            let c001 = sampleSlice(x0, y0, z1)
-            let c101 = sampleSlice(x1, y0, z1)
-            let c011 = sampleSlice(x0, y1, z1)
-            let c111 = sampleSlice(x1, y1, z1)
-
-            let c00 = c000 * (1 - tx) + c100 * tx
-            let c10 = c010 * (1 - tx) + c110 * tx
-            let c01 = c001 * (1 - tx) + c101 * tx
-            let c11 = c011 * (1 - tx) + c111 * tx
-            let c0 = c00 * (1 - ty) + c10 * ty
-            let c1 = c01 * (1 - ty) + c11 * ty
-            return c0 * (1 - tz) + c1 * tz
+            factor *= 2
+            currentDimensions = SIMD3<Int>(
+                max((currentDimensions.x + 1) / 2, 1),
+                max((currentDimensions.y + 1) / 2, 1),
+                max((currentDimensions.z + 1) / 2, 1)
+            )
+            currentTexture = downsampled
+            fineToCoarse.append(MetalPreparedVolumeLevel(
+                texture: downsampled,
+                dimensions: currentDimensions,
+                voxelToWorld: voxelToWorld * Self.scaleMatrix(factor: factor)
+            ))
         }
 
-        output.withUnsafeMutableBufferPointer { outputBuffer in
-            guard let outputBase = outputBuffer.baseAddress else { return }
-            DispatchQueue.concurrentPerform(iterations: depth) { z in
-                let zBase = origin + zStep * Float(z)
-                let outputZOffset = z * outputPlaneSize
-                for y in 0..<height {
-                    var sourceVoxel = zBase + yStep * Float(y)
-                    var outputIndex = outputZOffset + y * width
-                    for _ in 0..<width {
-                        outputBase[outputIndex] = sample(sourceVoxel.x, sourceVoxel.y, sourceVoxel.z)
-                        sourceVoxel += xStep
-                        outputIndex += 1
-                    }
-                }
-            }
+        return Array(fineToCoarse.reversed())
+    }
+
+    private func encodeGaussianDownsample(
+        source: MTLTexture,
+        dimensions: SIMD3<Int>,
+        voxelSpacing: SIMD3<Float>,
+        device: MTLDevice,
+        pipelines: Pipelines,
+        commandBuffer: MTLCommandBuffer
+    ) -> MTLTexture? {
+        let sigmaMM: Float = 1
+        let sigma = SIMD3<Float>(
+            sigmaMM / max(voxelSpacing.x, 0.0001),
+            sigmaMM / max(voxelSpacing.y, 0.0001),
+            sigmaMM / max(voxelSpacing.z, 0.0001)
+        )
+        guard let xKernel = makeKernelBuffer(device: device, sigma: sigma.x),
+              let yKernel = makeKernelBuffer(device: device, sigma: sigma.y),
+              let zKernel = makeKernelBuffer(device: device, sigma: sigma.z),
+              let blurX = makeWritableFloatTexture(device: device, dimensions: dimensions),
+              let blurY = makeWritableFloatTexture(device: device, dimensions: dimensions),
+              let blurZ = makeWritableFloatTexture(device: device, dimensions: dimensions),
+              encodeBlur(source: source, destination: blurX, dimensions: dimensions, axis: 0, kernel: xKernel, pipelines: pipelines, commandBuffer: commandBuffer),
+              encodeBlur(source: blurX, destination: blurY, dimensions: dimensions, axis: 1, kernel: yKernel, pipelines: pipelines, commandBuffer: commandBuffer),
+              encodeBlur(source: blurY, destination: blurZ, dimensions: dimensions, axis: 2, kernel: zKernel, pipelines: pipelines, commandBuffer: commandBuffer) else {
+            return nil
         }
+
+        let outputDimensions = SIMD3<Int>(
+            max((dimensions.x + 1) / 2, 1),
+            max((dimensions.y + 1) / 2, 1),
+            max((dimensions.z + 1) / 2, 1)
+        )
+        guard let output = makeWritableFloatTexture(device: device, dimensions: outputDimensions),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            return nil
+        }
+        var uniforms = DownsampleUniforms(
+            sourceSize: SIMD3<UInt32>(
+                UInt32(max(dimensions.x, 1)),
+                UInt32(max(dimensions.y, 1)),
+                UInt32(max(dimensions.z, 1))
+            ),
+            factor: 2
+        )
+        encoder.setComputePipelineState(pipelines.downsample)
+        encoder.setTexture(blurZ, index: 0)
+        encoder.setTexture(output, index: 1)
+        encoder.setBytes(&uniforms, length: MemoryLayout<DownsampleUniforms>.stride, index: 0)
+        Self.dispatch3D(encoder: encoder, dimensions: outputDimensions)
+        encoder.endEncoding()
         return output
+    }
+
+    private func encodeBlur(
+        source: MTLTexture,
+        destination: MTLTexture,
+        dimensions: SIMD3<Int>,
+        axis: UInt32,
+        kernel: MTLBuffer,
+        pipelines: Pipelines,
+        commandBuffer: MTLCommandBuffer
+    ) -> Bool {
+        guard let encoder = commandBuffer.makeComputeCommandEncoder() else { return false }
+        var uniforms = BlurUniforms(
+            sourceSize: SIMD3<UInt32>(
+                UInt32(max(dimensions.x, 1)),
+                UInt32(max(dimensions.y, 1)),
+                UInt32(max(dimensions.z, 1))
+            ),
+            axis: axis,
+            radius: UInt32(max((kernel.length / MemoryLayout<Float>.stride - 1) / 2, 0))
+        )
+        encoder.setComputePipelineState(pipelines.gaussianBlur)
+        encoder.setTexture(source, index: 0)
+        encoder.setTexture(destination, index: 1)
+        encoder.setBytes(&uniforms, length: MemoryLayout<BlurUniforms>.stride, index: 0)
+        encoder.setBuffer(kernel, offset: 0, index: 1)
+        Self.dispatch3D(encoder: encoder, dimensions: dimensions)
+        encoder.endEncoding()
+        return true
+    }
+
+    private func makeKernelBuffer(device: MTLDevice, sigma: Float) -> MTLBuffer? {
+        let clampedSigma = max(sigma, 0.001)
+        let radius = max(Int(ceil(clampedSigma * 2.5)), 1)
+        var kernel = [Float]()
+        kernel.reserveCapacity(radius * 2 + 1)
+        var sum: Float = 0
+        for offset in -radius...radius {
+            let x = Float(offset)
+            let value = exp(-(x * x) / (2 * clampedSigma * clampedSigma))
+            kernel.append(value)
+            sum += value
+        }
+        guard sum > 0 else { return nil }
+        kernel = kernel.map { $0 / sum }
+        return device.makeBuffer(
+            bytes: kernel,
+            length: kernel.count * MemoryLayout<Float>.stride,
+            options: .storageModeShared
+        )
+    }
+
+    private func makeWritableFloatTexture(
+        device: MTLDevice,
+        dimensions: SIMD3<Int>
+    ) -> MTLTexture? {
+        guard MetalTextureLimits.supports3DTexture(
+            width: dimensions.x,
+            height: dimensions.y,
+            depth: dimensions.z
+        ) else {
+            return nil
+        }
+        let descriptor = MTLTextureDescriptor()
+        descriptor.textureType = .type3D
+        descriptor.pixelFormat = .r32Float
+        descriptor.width = max(dimensions.x, 1)
+        descriptor.height = max(dimensions.y, 1)
+        descriptor.depth = max(dimensions.z, 1)
+        descriptor.mipmapLevelCount = 1
+        descriptor.usage = [.shaderRead, .shaderWrite]
+        descriptor.storageMode = .private
+        return device.makeTexture(descriptor: descriptor)
+    }
+
+    private func pipelines(for device: MTLDevice) -> Pipelines? {
+        let deviceKey = device.registryID
+        lock.lock()
+        if let pipelines = pipelinesByDevice[deviceKey] {
+            lock.unlock()
+            return pipelines
+        }
+        lock.unlock()
+
+        guard let pipelines = Pipelines(device: device) else { return nil }
+        lock.lock()
+        let resolved = pipelinesByDevice[deviceKey] ?? pipelines
+        pipelinesByDevice[deviceKey] = resolved
+        lock.unlock()
+        return resolved
+    }
+
+    private func finish(requestKey: String, key: String, entry: Entry?) {
+        lock.lock()
+        var resolvedEntry = entry
+        if let entry {
+            if let current = entries[key],
+               current.hasRegistrationPyramid,
+               entry.hasRegistrationPyramid == false {
+                resolvedEntry = current
+                markAccessedLocked(key)
+            } else {
+                if let previous = entries.updateValue(entry, forKey: key) {
+                    cachedByteCount -= previous.byteCount
+                }
+                cachedByteCount += entry.byteCount
+                markAccessedLocked(key)
+                trimLocked(keeping: key)
+            }
+        }
+        let completions = inFlightCompletions.removeValue(forKey: requestKey) ?? []
+        let deliveredEntry = resolvedEntry
+        lock.unlock()
+
+        DispatchQueue.main.async {
+            for completion in completions {
+                completion(deliveredEntry)
+            }
+        }
+    }
+
+    private func markAccessedLocked(_ key: String) {
+        accessOrder.removeAll { $0 == key }
+        accessOrder.append(key)
+    }
+
+    private func trimLocked(keeping newestKey: String) {
+        while accessOrder.count > maximumEntryCount || (cachedByteCount > maximumCachedBytes && accessOrder.count > 1) {
+            guard let key = accessOrder.first else { return }
+            if key == newestKey, accessOrder.count == 1 { return }
+            accessOrder.removeFirst()
+            if let removed = entries.removeValue(forKey: key) {
+                cachedByteCount -= removed.byteCount
+            }
+        }
+    }
+
+    private static func dispatch3D(
+        encoder: MTLComputeCommandEncoder,
+        dimensions: SIMD3<Int>
+    ) {
+        let threads = MTLSize(width: 4, height: 4, depth: 4)
+        let groups = MTLSize(
+            width: (max(dimensions.x, 1) + threads.width - 1) / threads.width,
+            height: (max(dimensions.y, 1) + threads.height - 1) / threads.height,
+            depth: (max(dimensions.z, 1) + threads.depth - 1) / threads.depth
+        )
+        encoder.dispatchThreadgroups(groups, threadsPerThreadgroup: threads)
+    }
+
+    private static func scaleMatrix(factor: Int) -> simd_float4x4 {
+        simd_float4x4(
+            SIMD4<Float>(Float(factor), 0, 0, 0),
+            SIMD4<Float>(0, Float(factor), 0, 0),
+            SIMD4<Float>(0, 0, Float(factor), 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
+    }
+
+    private static func matricesMatch(_ lhs: simd_float4x4, _ rhs: simd_float4x4) -> Bool {
+        let difference = lhs - rhs
+        return simd_length(difference.columns.0) < 0.0001
+            && simd_length(difference.columns.1) < 0.0001
+            && simd_length(difference.columns.2) < 0.0001
+            && simd_length(difference.columns.3) < 0.0001
+    }
+
+    private static func isCTVolume(_ pixList: [DCMPix]) -> Bool {
+        guard let firstPix = pixList.first else { return false }
+        let modality = firstPix.modalityString?.uppercased() ?? ""
+        let rescale = firstPix.rescaleType?.uppercased() ?? ""
+        return modality.contains("CT") || rescale == "HU"
     }
 }
 
@@ -3082,12 +3958,12 @@ enum MetalViewerReferenceLineCalculator {
             return nil
         }
 
-        let activePlanePoint = dicomPoint(for: active.pix, x: 0, y: 0)
+        let activePlanePoint = active.dicomPoint(pixelX: 0, pixelY: 0)
         let targetCorners = [
-            dicomPoint(for: target.pix, x: 0, y: 0),
-            dicomPoint(for: target.pix, x: target.width, y: 0),
-            dicomPoint(for: target.pix, x: target.width, y: target.height),
-            dicomPoint(for: target.pix, x: 0, y: target.height),
+            target.dicomPoint(pixelX: 0, pixelY: 0),
+            target.dicomPoint(pixelX: target.width, pixelY: 0),
+            target.dicomPoint(pixelX: target.width, pixelY: target.height),
+            target.dicomPoint(pixelX: 0, pixelY: target.height),
         ]
 
         let edges = [
@@ -3150,7 +4026,7 @@ enum MetalViewerReferenceLineCalculator {
     }
 
     private static func thicknessOffset(active: MetalViewerSliceGeometry, target: MetalViewerSliceGeometry) -> CGVector? {
-        let thickness = Double(active.pix.sliceThickness)
+        let thickness = active.sliceThickness
         guard thickness.isFinite, thickness > 0 else {
             return nil
         }
@@ -3180,12 +4056,6 @@ enum MetalViewerReferenceLineCalculator {
     }
 
     private static let minimumReferenceAngleSin = 0.17364817766693033
-
-    private static func dicomPoint(for pix: DCMPix, x: Double, y: Double) -> SIMD3<Double> {
-        var point = [Double](repeating: 0, count: 3)
-        pix.convertDoubleX(x, pixY: y, toDICOMCoords: &point, pixelCenter: true)
-        return SIMD3<Double>(point[0], point[1], point[2])
-    }
 
     private static func intersectSegment(_ start: SIMD3<Double>, _ end: SIMD3<Double>, planeNormal: SIMD3<Double>, planePoint: SIMD3<Double>) -> SIMD3<Double>? {
         let direction = end - start

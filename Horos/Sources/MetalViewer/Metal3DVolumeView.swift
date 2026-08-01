@@ -85,6 +85,7 @@ final class Metal3DVolumeView: NSView {
     private var tumourSeedPixList: [DCMPix] = []
     private var tumourSeedObserver: NSObjectProtocol?
     var wlwwInteractionHandler: ((String) -> Void)?
+    var volumeDidBecomeReady: (() -> Void)?
 
     private var cropApplied = false
 
@@ -398,9 +399,16 @@ final class Metal3DVolumeView: NSView {
         metalView.setNeedsDisplay(metalView.bounds)
     }
 
-    func configure(pixList: [DCMPix], volumeData: Data) {
+    func configure(pixList: [DCMPix]) {
         guard let device = metalView.device else { return }
-        let renderer = Metal3DVolumeRenderer(device: device, pixList: pixList, volumeData: volumeData)
+        let renderer = Metal3DVolumeRenderer(device: device, pixList: pixList)
+        renderer.contentDidChange = { [weak self] in
+            guard let self else { return }
+            self.metalView.setNeedsDisplay(self.metalView.bounds)
+            self.refreshCropHandles()
+            self.refreshOrientationOverlay()
+            self.volumeDidBecomeReady?()
+        }
         tumourSeedScope = MetalViewerTumourSeedStore.scope(forPixList: pixList)
         tumourSeedPixList = pixList
         renderer.setCropEnabled(cropApplied || cropEnabled)

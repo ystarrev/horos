@@ -18,9 +18,8 @@ final class Metal3DViewerLauncher: NSObject {
     @objc(launchWithContext:)
     class func launch(withContext context: NSDictionary) {
         let pixList = (context["pixList"] as? [DCMPix]) ?? ((context["pixList"] as? NSArray)?.compactMap { $0 as? DCMPix } ?? [])
-        let volumeData = (context["volumeData"] as? Data) ?? ((context["volumeData"] as? NSData) as Data?)
 
-        guard pixList.isEmpty == false, let volumeData else {
+        guard pixList.isEmpty == false else {
             NSSound.beep()
             return
         }
@@ -29,7 +28,6 @@ final class Metal3DViewerLauncher: NSObject {
         presentWindowController(
             Metal3DViewerWindowController(
                 pixList: pixList,
-                volumeData: volumeData,
                 title: title
             )
         )

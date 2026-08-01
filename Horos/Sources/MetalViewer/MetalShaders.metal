@@ -28,10 +28,13 @@ struct MetalUniforms {
     float4x4 fixedVoxelToWorld;
     float4x4 movingWorldToVoxel;
     uint hasOverlay;
-    uint useBaseVolumeTexture;
     uint imageInterpolationMode;
     uint baseHasCustomCLUT;
     uint overlayHasCustomCLUT;
+    uint baseVolumeTextureKind;
+    float baseVolumeRescaleSlope;
+    float baseVolumeRescaleIntercept;
+    uint baseVolumePadding;
 };
 
 struct MetalMPRVertex {
@@ -101,6 +104,18 @@ struct GantryTiltResampleUniforms {
     float4x4 outputVoxelToWorld;
     float4x4 sourceWorldToVoxel;
     float4 backgroundValue;
+};
+
+struct StoredVolumeConversionUniforms {
+    uint4 sourceSize;
+    float4 rescale;
+};
+
+struct Metal3DHistogramUniforms {
+    uint4 sourceSize;
+    float2 domain;
+    uint binCount;
+    uint padding;
 };
 
 struct RasterizerData {
@@ -1276,24 +1291,6 @@ fragment float4 metal3DOverlayFragment(
     return float4(color, in.color.a * uniforms.color.a);
 }
 
-static float metalViewerTexelSample2DClamped(texture2d<float> imageTexture, sampler imageSampler, int2 pixel) {
-    const int width = int(imageTexture.get_width());
-    const int height = int(imageTexture.get_height());
-    const int2 clampedPixel = int2(
-        clamp(pixel.x, 0, max(width - 1, 0)),
-        clamp(pixel.y, 0, max(height - 1, 0))
-    );
-    const float2 textureSize = float2(float(imageTexture.get_width()), float(imageTexture.get_height()));
-    const float2 texCoord = (float2(float(clampedPixel.x), float(clampedPixel.y)) + 0.5) / textureSize;
-    return imageTexture.sample(imageSampler, texCoord).r;
-}
-
-static float metalViewerNearestSample2D(texture2d<float> imageTexture, sampler imageSampler, float2 texCoord) {
-    const float2 textureSize = float2(float(imageTexture.get_width()), float(imageTexture.get_height()));
-    const float2 pixel = clamp(texCoord, 0.0, 1.0) * textureSize - 0.5;
-    return metalViewerTexelSample2DClamped(imageTexture, imageSampler, int2(round(pixel)));
-}
-
 static float metalViewerSinc(float x) {
     x = abs(x);
     if (x < 1.0e-5) {
@@ -1309,57 +1306,6 @@ static float metalViewerLanczosWeight(float x) {
         return 0.0;
     }
     return metalViewerSinc(x) * metalViewerSinc(x / 3.0);
-}
-
-static float metalViewerLanczosSample2D(texture2d<float> imageTexture, sampler imageSampler, float2 texCoord) {
-    const float2 textureSize = float2(float(imageTexture.get_width()), float(imageTexture.get_height()));
-    const float2 pixel = clamp(texCoord, 0.0, 1.0) * textureSize - 0.5;
-    const int2 basePixel = int2(floor(pixel));
-    float weightedValue = 0.0;
-    float totalWeight = 0.0;
-    float minimumSample = 3.402823466e+38F;
-    float maximumSample = -3.402823466e+38F;
-
-    for (int yOffset = -2; yOffset <= 3; ++yOffset) {
-        const int sampleY = basePixel.y + yOffset;
-        const float yWeight = metalViewerLanczosWeight(pixel.y - float(sampleY));
-        for (int xOffset = -2; xOffset <= 3; ++xOffset) {
-            const int sampleX = basePixel.x + xOffset;
-            const float xWeight = metalViewerLanczosWeight(pixel.x - float(sampleX));
-            const float weight = xWeight * yWeight;
-            const float sampleValue = metalViewerTexelSample2DClamped(imageTexture, imageSampler, int2(sampleX, sampleY));
-            weightedValue += sampleValue * weight;
-            totalWeight += weight;
-            minimumSample = min(minimumSample, sampleValue);
-            maximumSample = max(maximumSample, sampleValue);
-        }
-    }
-
-    if (abs(totalWeight) < 1.0e-5) {
-        return metalViewerNearestSample2D(imageTexture, imageSampler, texCoord);
-    }
-
-    return clamp(weightedValue / totalWeight, minimumSample, maximumSample);
-}
-
-static float metalViewerImageSample2D(
-    texture2d<float> imageTexture,
-    sampler imageSampler,
-    float2 texCoord,
-    uint interpolationMode
-) {
-    if (interpolationMode == kMetalViewerInterpolationNearest) {
-        return metalViewerNearestSample2D(imageTexture, imageSampler, texCoord);
-    }
-
-    if (interpolationMode == kMetalViewerInterpolationLanczos) {
-        const float2 sourceFootprint = fwidth(texCoord) * float2(float(imageTexture.get_width()), float(imageTexture.get_height()));
-        if (max(sourceFootprint.x, sourceFootprint.y) <= 1.0) {
-            return metalViewerLanczosSample2D(imageTexture, imageSampler, texCoord);
-        }
-    }
-
-    return imageTexture.sample(imageSampler, texCoord).r;
 }
 
 static float metalViewerApplyOpacity(
@@ -1390,33 +1336,201 @@ static float3 metalViewerFusionColor(
     return isOverlay ? float3(mappedValue, 0.0, 0.0) : float3(0.0, mappedValue, 0.0);
 }
 
+static inline float metalViewerRescaleStoredVolumeValue(
+    float storedValue,
+    constant MetalUniforms &uniforms
+) {
+    return storedValue * uniforms.baseVolumeRescaleSlope + uniforms.baseVolumeRescaleIntercept;
+}
+
+static inline float metalViewerReadStoredVolumeSigned(
+    texture3d<int, access::read> storedTexture,
+    uint x,
+    uint y,
+    uint z,
+    constant MetalUniforms &uniforms
+) {
+    return metalViewerRescaleStoredVolumeValue(float(storedTexture.read(uint3(x, y, z)).r), uniforms);
+}
+
+static inline float metalViewerReadStoredVolumeUnsigned(
+    texture3d<uint, access::read> storedTexture,
+    uint x,
+    uint y,
+    uint z,
+    constant MetalUniforms &uniforms
+) {
+    return metalViewerRescaleStoredVolumeValue(float(storedTexture.read(uint3(x, y, z)).r), uniforms);
+}
+
+static inline float metalViewerSampleStoredVolumeSigned(
+    texture3d<int, access::read> storedTexture,
+    float2 texCoord,
+    float sliceIndex,
+    uint interpolationMode,
+    constant MetalUniforms &uniforms
+) {
+    const uint width = max(storedTexture.get_width(), 1u);
+    const uint height = max(storedTexture.get_height(), 1u);
+    const uint depth = max(storedTexture.get_depth(), 1u);
+    const float2 maximumPosition = float2(float(width - 1u), float(height - 1u));
+    const float2 position = clamp(texCoord * float2(float(width), float(height)) - 0.5, float2(0.0), maximumPosition);
+    const uint z = uint(clamp(sliceIndex, 0.0, float(depth - 1u)));
+    if (interpolationMode == kMetalViewerInterpolationLanczos) {
+        const float2 sourceFootprint = fwidth(texCoord) * float2(float(width), float(height));
+        if (max(sourceFootprint.x, sourceFootprint.y) <= 1.0) {
+            const int2 basePixel = int2(floor(position));
+            float weightedValue = 0.0;
+            float totalWeight = 0.0;
+            float minimumSample = 3.402823466e+38F;
+            float maximumSample = -3.402823466e+38F;
+
+            for (int yOffset = -2; yOffset <= 3; ++yOffset) {
+                const int sampleY = basePixel.y + yOffset;
+                const float yWeight = metalViewerLanczosWeight(position.y - float(sampleY));
+                const uint clampedY = uint(clamp(sampleY, 0, int(height) - 1));
+                for (int xOffset = -2; xOffset <= 3; ++xOffset) {
+                    const int sampleX = basePixel.x + xOffset;
+                    const float xWeight = metalViewerLanczosWeight(position.x - float(sampleX));
+                    const float weight = xWeight * yWeight;
+                    const uint clampedX = uint(clamp(sampleX, 0, int(width) - 1));
+                    const float sampleValue = metalViewerReadStoredVolumeSigned(
+                        storedTexture,
+                        clampedX,
+                        clampedY,
+                        z,
+                        uniforms
+                    );
+                    weightedValue += sampleValue * weight;
+                    totalWeight += weight;
+                    minimumSample = min(minimumSample, sampleValue);
+                    maximumSample = max(maximumSample, sampleValue);
+                }
+            }
+
+            if (abs(totalWeight) >= 1.0e-5) {
+                return clamp(weightedValue / totalWeight, minimumSample, maximumSample);
+            }
+        }
+    }
+    if (interpolationMode == kMetalViewerInterpolationNearest) {
+        const uint2 nearest = uint2(round(position));
+        return metalViewerReadStoredVolumeSigned(storedTexture, nearest.x, nearest.y, z, uniforms);
+    }
+    const uint2 base = uint2(floor(position));
+    const uint2 next = min(base + uint2(1u), uint2(width - 1u, height - 1u));
+    const float2 fraction = position - float2(base);
+    const float v00 = metalViewerReadStoredVolumeSigned(storedTexture, base.x, base.y, z, uniforms);
+    const float v10 = metalViewerReadStoredVolumeSigned(storedTexture, next.x, base.y, z, uniforms);
+    const float v01 = metalViewerReadStoredVolumeSigned(storedTexture, base.x, next.y, z, uniforms);
+    const float v11 = metalViewerReadStoredVolumeSigned(storedTexture, next.x, next.y, z, uniforms);
+    return mix(mix(v00, v10, fraction.x), mix(v01, v11, fraction.x), fraction.y);
+}
+
+static inline float metalViewerSampleStoredVolumeUnsigned(
+    texture3d<uint, access::read> storedTexture,
+    float2 texCoord,
+    float sliceIndex,
+    uint interpolationMode,
+    constant MetalUniforms &uniforms
+) {
+    const uint width = max(storedTexture.get_width(), 1u);
+    const uint height = max(storedTexture.get_height(), 1u);
+    const uint depth = max(storedTexture.get_depth(), 1u);
+    const float2 maximumPosition = float2(float(width - 1u), float(height - 1u));
+    const float2 position = clamp(texCoord * float2(float(width), float(height)) - 0.5, float2(0.0), maximumPosition);
+    const uint z = uint(clamp(sliceIndex, 0.0, float(depth - 1u)));
+    if (interpolationMode == kMetalViewerInterpolationLanczos) {
+        const float2 sourceFootprint = fwidth(texCoord) * float2(float(width), float(height));
+        if (max(sourceFootprint.x, sourceFootprint.y) <= 1.0) {
+            const int2 basePixel = int2(floor(position));
+            float weightedValue = 0.0;
+            float totalWeight = 0.0;
+            float minimumSample = 3.402823466e+38F;
+            float maximumSample = -3.402823466e+38F;
+
+            for (int yOffset = -2; yOffset <= 3; ++yOffset) {
+                const int sampleY = basePixel.y + yOffset;
+                const float yWeight = metalViewerLanczosWeight(position.y - float(sampleY));
+                const uint clampedY = uint(clamp(sampleY, 0, int(height) - 1));
+                for (int xOffset = -2; xOffset <= 3; ++xOffset) {
+                    const int sampleX = basePixel.x + xOffset;
+                    const float xWeight = metalViewerLanczosWeight(position.x - float(sampleX));
+                    const float weight = xWeight * yWeight;
+                    const uint clampedX = uint(clamp(sampleX, 0, int(width) - 1));
+                    const float sampleValue = metalViewerReadStoredVolumeUnsigned(
+                        storedTexture,
+                        clampedX,
+                        clampedY,
+                        z,
+                        uniforms
+                    );
+                    weightedValue += sampleValue * weight;
+                    totalWeight += weight;
+                    minimumSample = min(minimumSample, sampleValue);
+                    maximumSample = max(maximumSample, sampleValue);
+                }
+            }
+
+            if (abs(totalWeight) >= 1.0e-5) {
+                return clamp(weightedValue / totalWeight, minimumSample, maximumSample);
+            }
+        }
+    }
+    if (interpolationMode == kMetalViewerInterpolationNearest) {
+        const uint2 nearest = uint2(round(position));
+        return metalViewerReadStoredVolumeUnsigned(storedTexture, nearest.x, nearest.y, z, uniforms);
+    }
+    const uint2 base = uint2(floor(position));
+    const uint2 next = min(base + uint2(1u), uint2(width - 1u, height - 1u));
+    const float2 fraction = position - float2(base);
+    const float v00 = metalViewerReadStoredVolumeUnsigned(storedTexture, base.x, base.y, z, uniforms);
+    const float v10 = metalViewerReadStoredVolumeUnsigned(storedTexture, next.x, base.y, z, uniforms);
+    const float v01 = metalViewerReadStoredVolumeUnsigned(storedTexture, base.x, next.y, z, uniforms);
+    const float v11 = metalViewerReadStoredVolumeUnsigned(storedTexture, next.x, next.y, z, uniforms);
+    return mix(mix(v00, v10, fraction.x), mix(v01, v11, fraction.x), fraction.y);
+}
+
 fragment float4 metalViewerFragment(
     RasterizerData in [[stage_in]],
     constant MetalUniforms &uniforms [[buffer(0)]],
-    texture2d<float> baseTexture [[texture(0)]],
     texture3d<float> overlayTexture [[texture(1)]],
     texture3d<float> baseVolumeTexture [[texture(2)]],
     texture2d<float> baseCLUTTexture [[texture(3)]],
     texture2d<float> baseOpacityTexture [[texture(4)]],
     texture2d<float> overlayCLUTTexture [[texture(5)]],
     texture2d<float> overlayOpacityTexture [[texture(6)]],
+    texture3d<int, access::read> signedBaseVolumeTexture [[texture(7)]],
+    texture3d<uint, access::read> unsignedBaseVolumeTexture [[texture(8)]],
     sampler imageSampler [[sampler(0)]]
 ) {
     const float x = in.texCoord.x * max(float(uniforms.fixedVolumeSize.x) - 1.0, 0.0);
     const float y = in.texCoord.y * max(float(uniforms.fixedVolumeSize.y) - 1.0, 0.0);
     const float z = uniforms.currentSliceIndex;
     const float3 fixedVoxelCoordinate = float3(x, y, z);
-    const float basePixelValue = uniforms.useBaseVolumeTexture == 0
-        ? metalViewerImageSample2D(
-            baseTexture,
-            imageSampler,
+    float basePixelValue = 0.0;
+    if (uniforms.baseVolumeTextureKind == 2u) {
+        basePixelValue = metalViewerSampleStoredVolumeSigned(
+            signedBaseVolumeTexture,
             in.texCoord,
-            uniforms.imageInterpolationMode
-        )
-        : baseVolumeTexture.sample(
+            uniforms.currentSliceIndex,
+            uniforms.imageInterpolationMode,
+            uniforms
+        );
+    } else if (uniforms.baseVolumeTextureKind == 3u) {
+        basePixelValue = metalViewerSampleStoredVolumeUnsigned(
+            unsignedBaseVolumeTexture,
+            in.texCoord,
+            uniforms.currentSliceIndex,
+            uniforms.imageInterpolationMode,
+            uniforms
+        );
+    } else {
+        basePixelValue = baseVolumeTexture.sample(
             imageSampler,
             (fixedVoxelCoordinate + 0.5) / max(float3(baseVolumeTexture.get_width(), baseVolumeTexture.get_height(), baseVolumeTexture.get_depth()), float3(1.0))
         ).r;
+    }
     const float baseMinValue = uniforms.baseWindowLevel - uniforms.baseWindowWidth * 0.5;
     const float baseNormalized = clamp((basePixelValue - baseMinValue) / uniforms.baseWindowWidth, 0.0, 1.0);
     const float baseMapped = metalViewerApplyOpacity(baseNormalized, baseOpacityTexture, imageSampler);
@@ -1722,30 +1836,18 @@ static inline float metalPreviewSampleStoredUnsigned2D(
 fragment float4 metalPreviewFragment(
     RasterizerData in [[stage_in]],
     constant MetalPreviewUniforms &uniforms [[buffer(0)]],
-    texture2d<float> imageTexture [[texture(0)]],
-    texture3d<float> volumeTexture [[texture(1)]],
     texture3d<int, access::read> signedVolumeTexture [[texture(2)]],
     texture3d<uint, access::read> unsignedVolumeTexture [[texture(3)]],
     texture2d<int, access::read> signedImageTexture [[texture(4)]],
-    texture2d<uint, access::read> unsignedImageTexture [[texture(5)]],
-    sampler imageSampler [[sampler(0)]]
+    texture2d<uint, access::read> unsignedImageTexture [[texture(5)]]
 ) {
     float pixelValue = 0.0;
     if (uniforms.useVolumeTexture == 0) {
-        if (uniforms.volumeTextureKind == 1u) {
-            pixelValue = imageTexture.sample(imageSampler, in.texCoord).r;
-        } else if (uniforms.volumeTextureKind == 2u) {
+        if (uniforms.volumeTextureKind == 2u) {
             pixelValue = metalPreviewSampleStoredSigned2D(signedImageTexture, in.texCoord, uniforms);
         } else if (uniforms.volumeTextureKind == 3u) {
             pixelValue = metalPreviewSampleStoredUnsigned2D(unsignedImageTexture, in.texCoord, uniforms);
         }
-    } else if (uniforms.volumeTextureKind == 1u) {
-        const float3 textureSize = max(
-            float3(volumeTexture.get_width(), volumeTexture.get_height(), volumeTexture.get_depth()),
-            float3(1.0)
-        );
-        const float z = clamp(uniforms.currentSliceIndex + 0.5, 0.5, textureSize.z - 0.5) / textureSize.z;
-        pixelValue = volumeTexture.sample(imageSampler, float3(in.texCoord, z)).r;
     } else if (uniforms.volumeTextureKind == 2u) {
         pixelValue = metalPreviewSampleStoredSigned(signedVolumeTexture, in.texCoord, uniforms.currentSliceIndex, uniforms);
     } else if (uniforms.volumeTextureKind == 3u) {
@@ -1985,6 +2087,53 @@ kernel void metalViewerRegistrationSamplingProbe(
         const uint index = (threadgroupPosition.z * threadgroupsPerGrid.y + threadgroupPosition.y) * threadgroupsPerGrid.x + threadgroupPosition.x;
         threadgroupCounts[index] = atomic_load_explicit(&localCount, memory_order_relaxed);
     }
+}
+
+kernel void metalViewerConvertStoredSigned3D(
+    texture3d<int, access::read> sourceTexture [[texture(0)]],
+    texture3d<float, access::write> destinationTexture [[texture(1)]],
+    constant StoredVolumeConversionUniforms &uniforms [[buffer(0)]],
+    uint3 gid [[thread_position_in_grid]]
+) {
+    if (any(gid >= uniforms.sourceSize.xyz)) {
+        return;
+    }
+    const float value = float(sourceTexture.read(gid).r) * uniforms.rescale.x + uniforms.rescale.y;
+    destinationTexture.write(float4(value), gid);
+}
+
+kernel void metalViewerConvertStoredUnsigned3D(
+    texture3d<uint, access::read> sourceTexture [[texture(0)]],
+    texture3d<float, access::write> destinationTexture [[texture(1)]],
+    constant StoredVolumeConversionUniforms &uniforms [[buffer(0)]],
+    uint3 gid [[thread_position_in_grid]]
+) {
+    if (any(gid >= uniforms.sourceSize.xyz)) {
+        return;
+    }
+    const float value = float(sourceTexture.read(gid).r) * uniforms.rescale.x + uniforms.rescale.y;
+    destinationTexture.write(float4(value), gid);
+}
+
+kernel void metal3DHistogram(
+    texture3d<float, access::read> sourceTexture [[texture(0)]],
+    device atomic_uint *histogram [[buffer(0)]],
+    constant Metal3DHistogramUniforms &uniforms [[buffer(1)]],
+    uint3 gid [[thread_position_in_grid]]
+) {
+    if (any(gid >= uniforms.sourceSize.xyz) || uniforms.binCount == 0u) {
+        return;
+    }
+
+    const float value = sourceTexture.read(gid).r;
+    if (!isfinite(value)) {
+        return;
+    }
+
+    const float span = max(uniforms.domain.y - uniforms.domain.x, 1.0e-5f);
+    const float normalized = clamp((value - uniforms.domain.x) / span, 0.0f, 1.0f);
+    const uint bin = min(uint(normalized * float(uniforms.binCount - 1u)), uniforms.binCount - 1u);
+    atomic_fetch_add_explicit(&histogram[bin], 1u, memory_order_relaxed);
 }
 
 kernel void metalViewerGaussianBlur3D(

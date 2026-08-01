@@ -20,30 +20,10 @@ private struct MetalPreviewUniforms {
     var padding: Float
 }
 
-private extension MetalStoredInt16PixelData {
-    func rescaledValue(x: Int, y: Int) -> Float? {
-        guard x >= 0, x < width, y >= 0, y < height else { return nil }
-
-        let byteOffset = (y * width + x) * MemoryLayout<UInt16>.stride
-        guard byteOffset + 1 < data.count else { return nil }
-
-        let raw = UInt16(data[byteOffset]) | (UInt16(data[byteOffset + 1]) << 8)
-        let storedValue: Float
-        if isSigned {
-            storedValue = Float(Int16(bitPattern: raw))
-        } else {
-            storedValue = Float(raw)
-        }
-
-        return storedValue * rescaleSlope + rescaleIntercept
-    }
-}
-
 private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
     private let deviceRef: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let pipelineState: MTLRenderPipelineState
-    private let samplerState: MTLSamplerState
     private let vertexBuffer: MTLBuffer
 
     private(set) var pixList: [DCMPix] = []
@@ -108,15 +88,6 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
             fatalError("Could not create Metal preview pipeline: \(error)")
         }
 
-        let samplerDescriptor = MTLSamplerDescriptor()
-        samplerDescriptor.minFilter = .linear
-        samplerDescriptor.magFilter = .linear
-        samplerDescriptor.sAddressMode = .clampToEdge
-        samplerDescriptor.tAddressMode = .clampToEdge
-        guard let samplerState = device.makeSamplerState(descriptor: samplerDescriptor) else {
-            fatalError("Could not create Metal preview sampler state.")
-        }
-        self.samplerState = samplerState
     }
 
     func updatePixList(_ pixList: [DCMPix], firstImage: Int, resetWindowLevel: Bool) {
@@ -202,57 +173,40 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
         let width = max(Int(pix.widthWithoutLoading()), 1)
         let height = max(Int(pix.heightWithoutLoading()), 1)
         if usingVolumeTexture == false {
-            imageTexture = makeTexture(for: pix)
+            if let texture = makeTexture(for: pix) {
+                imageTexture = texture
+            } else {
+                resetImageTextureState()
+            }
         }
-        let spacingX: Float
-        let spacingY: Float
-        if pix.isLoaded() {
-            spacingX = Float(max(pix.pixelSpacingX, 1))
-            spacingY = Float(max(pix.pixelSpacingY, 1))
-        } else {
-            spacingX = max(imagePixelSpacing.x, 1)
-            spacingY = max(imagePixelSpacing.y, 1)
-        }
+        let spacingX = max(imagePixelSpacing.x, 0.0001)
+        let spacingY = max(imagePixelSpacing.y, 0.0001)
         imageAspectRatio = Float(width) * spacingX / max(Float(height) * spacingY, 1)
 
         if resetWindowLevel {
-            if pix.isLoaded() {
-                let savedWW = pix.savedWW > 0 ? pix.savedWW : (pix.ww > 0 ? pix.ww : pix.fullww)
-                let savedWL = pix.savedWW > 0 ? pix.savedWL : (pix.wl != 0 ? pix.wl : pix.fullwl)
-                windowWidth = max(savedWW, 1)
-                windowLevel = savedWL
-            } else if let defaultWindowWidth = imageDefaultWindowWidth,
-                      let defaultWindowLevel = imageDefaultWindowLevel {
+            if let defaultWindowWidth = imageDefaultWindowWidth,
+               let defaultWindowLevel = imageDefaultWindowLevel {
                 windowWidth = max(defaultWindowWidth, 1)
                 windowLevel = defaultWindowLevel
             } else {
-                pix.checkLoad()
-                let savedWW = pix.savedWW > 0 ? pix.savedWW : (pix.ww > 0 ? pix.ww : pix.fullww)
-                let savedWL = pix.savedWW > 0 ? pix.savedWL : (pix.wl != 0 ? pix.wl : pix.fullwl)
-                windowWidth = max(savedWW, 1)
-                windowLevel = savedWL
+                let fallback = MetalStoredInt16PixelData(pix: pix)?.inferredWindow
+                windowWidth = max(fallback?.width ?? 1, 1)
+                windowLevel = fallback?.level ?? 0
             }
         }
     }
 
-    private func requestVolumeTexture(
-        for pixList: [DCMPix],
-        storageMode: MetalSeriesTextureStorageMode = .storedInt16
-    ) {
-        guard pixList.count > 1,
-              let key = MetalSeriesTextureCache.shared.key(for: pixList, device: deviceRef, storageMode: storageMode) else {
+    private func requestVolumeTexture(for pixList: [DCMPix]) {
+        guard let key = MetalSeriesTextureCache.shared.key(for: pixList, device: deviceRef) else {
             requestedVolumeKey = nil
             volumeEntry = nil
             return
         }
 
-        if storageMode == .storedInt16,
-           MetalSeriesTextureCache.shared.isEntryKnownUnavailable(
+        if MetalSeriesTextureCache.shared.isEntryKnownUnavailable(
                 for: pixList,
-                device: deviceRef,
-                storageMode: storageMode
+                device: deviceRef
            ) {
-            requestVolumeTexture(for: pixList, storageMode: .rescaledFloat)
             return
         }
 
@@ -262,24 +216,19 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
         }
         requestedVolumeKey = key
 
-        if let entry = MetalSeriesTextureCache.shared.cachedEntry(for: pixList, device: deviceRef, storageMode: storageMode) {
+        if let entry = MetalSeriesTextureCache.shared.cachedEntry(for: pixList, device: deviceRef) {
             volumeEntry = entry
             contentDidChange?()
             return
         }
 
-        MetalSeriesTextureCache.shared.requestEntry(for: pixList, device: deviceRef, storageMode: storageMode) { [weak self] entry in
+        MetalSeriesTextureCache.shared.requestEntry(for: pixList, device: deviceRef) { [weak self] entry in
             guard let self,
                   self.requestedVolumeKey == key else {
                 return
             }
 
-            guard let entry else {
-                if storageMode == .storedInt16 {
-                    self.requestVolumeTexture(for: pixList, storageMode: .rescaledFloat)
-                }
-                return
-            }
+            guard let entry else { return }
 
             self.volumeEntry = entry
             self.contentDidChange?()
@@ -320,11 +269,7 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
     private func makeTexture(for pix: DCMPix) -> MTLTexture? {
         let width = max(Int(pix.widthWithoutLoading()), 1)
         let height = max(Int(pix.heightWithoutLoading()), 1)
-        if let storedTexture = makeStoredInt16Texture(for: pix, width: width, height: height) {
-            return storedTexture
-        }
-
-        return makeFloatTexture(for: pix, width: width, height: height)
+        return makeStoredInt16Texture(for: pix, width: width, height: height)
     }
 
     private func texture(width: Int, height: Int, pixelFormat: MTLPixelFormat, kind: MetalSeriesTextureKind) -> MTLTexture? {
@@ -387,60 +332,6 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
         return texture
     }
 
-    private func makeFloatTexture(for pix: DCMPix, width: Int, height: Int) -> MTLTexture? {
-        guard let texture = texture(width: width, height: height, pixelFormat: .r32Float, kind: .rescaledFloat) else {
-            return nil
-        }
-        imageRescaleSlope = 1
-        imageRescaleIntercept = 0
-        imagePixelSpacing = SIMD2<Float>(
-            Float(max(pix.pixelSpacingX, 1)),
-            Float(max(pix.pixelSpacingY, 1))
-        )
-        imageDefaultWindowLevel = nil
-        imageDefaultWindowWidth = nil
-
-        let pixelCount = width * height
-        let bytesPerRow = MemoryLayout<Float>.stride * width
-
-        let primaryRGBSource: UnsafeMutableRawPointer?
-        if let baseAddr = pix.baseAddr {
-            primaryRGBSource = UnsafeMutableRawPointer(baseAddr)
-        } else {
-            primaryRGBSource = nil
-        }
-
-        let fallbackRGBSource: UnsafeMutableRawPointer?
-        if let fImage = pix.fImage {
-            fallbackRGBSource = UnsafeMutableRawPointer(fImage)
-        } else {
-            fallbackRGBSource = nil
-        }
-
-        if pix.isRGB, let rgbSource = primaryRGBSource ?? fallbackRGBSource {
-            var pixels = [Float](repeating: 0, count: pixelCount)
-            let bytes = UnsafeRawPointer(rgbSource).assumingMemoryBound(to: UInt8.self)
-            for index in 0..<pixelCount {
-                let r = Float(bytes[index * 4 + 1])
-                let g = Float(bytes[index * 4 + 2])
-                let b = Float(bytes[index * 4 + 3])
-                pixels[index] = 0.299 * r + 0.587 * g + 0.114 * b
-            }
-
-            let region = MTLRegionMake2D(0, 0, width, height)
-            pixels.withUnsafeBytes { bytes in
-                guard let baseAddress = bytes.baseAddress else { return }
-                texture.replace(region: region, mipmapLevel: 0, withBytes: baseAddress, bytesPerRow: bytesPerRow)
-            }
-        } else if let fImage = pix.fImage {
-            let region = MTLRegionMake2D(0, 0, width, height)
-            texture.replace(region: region, mipmapLevel: 0, withBytes: fImage, bytesPerRow: bytesPerRow)
-        } else {
-            return nil
-        }
-        return texture
-    }
-
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
@@ -455,10 +346,8 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
         let sampledTextureKind = sampledVolumeEntry?.textureKind.rawValue ?? imageTextureKind.rawValue
         let sampledRescaleSlope = sampledVolumeEntry?.rescaleSlope ?? imageRescaleSlope
         let sampledRescaleIntercept = sampledVolumeEntry?.rescaleIntercept ?? imageRescaleIntercept
-        let floatImageTexture = imageTextureKind == .rescaledFloat ? imageTexture : nil
         let signedImageTexture = imageTextureKind == .storedInt16Signed ? imageTexture : nil
         let unsignedImageTexture = imageTextureKind == .storedInt16Unsigned ? imageTexture : nil
-        let floatVolumeTexture = sampledVolumeEntry?.textureKind == .rescaledFloat ? sampledVolumeEntry?.texture : nil
         let signedVolumeTexture = sampledVolumeEntry?.textureKind == .storedInt16Signed ? sampledVolumeEntry?.texture : nil
         let unsignedVolumeTexture = sampledVolumeEntry?.textureKind == .storedInt16Unsigned ? sampledVolumeEntry?.texture : nil
         guard imageTexture != nil || sampledVolumeEntry != nil else {
@@ -506,13 +395,10 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
         encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalPreviewUniforms>.stride, index: 1)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<MetalPreviewUniforms>.stride, index: 0)
-        encoder.setFragmentTexture(floatImageTexture, index: 0)
-        encoder.setFragmentTexture(floatVolumeTexture, index: 1)
         encoder.setFragmentTexture(signedVolumeTexture, index: 2)
         encoder.setFragmentTexture(unsignedVolumeTexture, index: 3)
         encoder.setFragmentTexture(signedImageTexture, index: 4)
         encoder.setFragmentTexture(unsignedImageTexture, index: 5)
-        encoder.setFragmentSamplerState(samplerState, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
 
@@ -735,26 +621,22 @@ final class MetalPreviewImageView: MTKView {
         let sampleX = min(max(Int(pixelX), 0), width - 1)
         let sampleY = min(max(Int(pixelY), 0), height - 1)
 
-        var dicomCoords = [Float](repeating: 0, count: 3)
-        if pix.isLoaded() {
-            pix.convertX(Float(pixelX), pixY: Float(pixelY), toDICOMCoords: &dicomCoords, pixelCenter: true)
-        }
+        let dicomPoint = MetalViewerSliceGeometry(pix: pix)?.dicomPoint(
+            pixelX: Double(pixelX),
+            pixelY: Double(pixelY)
+        ) ?? .zero
 
         mouseOnImage = true
         mousePixelX = sampleX
         mousePixelY = sampleY
-        mousePixelValue = pixelValue(for: pix, x: sampleX, y: sampleY, width: width)
-        mouseDicomX = dicomCoords[0]
-        mouseDicomY = dicomCoords[1]
-        mouseDicomZ = dicomCoords[2]
+        mousePixelValue = pixelValue(for: pix, x: sampleX, y: sampleY)
+        mouseDicomX = Float(dicomPoint.x)
+        mouseDicomY = Float(dicomPoint.y)
+        mouseDicomZ = Float(dicomPoint.z)
         markOverlayDirty()
     }
 
-    private func pixelValue(for pix: DCMPix, x: Int, y: Int, width: Int) -> Float {
-        if pix.isLoaded(), let fImage = pix.fImage {
-            return fImage[y * width + x]
-        }
-
+    private func pixelValue(for pix: DCMPix, x: Int, y: Int) -> Float {
         if mouseSamplePix !== pix {
             mouseSamplePix = pix
             mouseSampleStoredPixels = nil
@@ -764,12 +646,7 @@ final class MetalPreviewImageView: MTKView {
             mouseSampleStoredPixels = MetalStoredInt16PixelData(pix: pix)
         }
 
-        if let storedValue = mouseSampleStoredPixels?.rescaledValue(x: x, y: y) {
-            return storedValue
-        }
-
-        pix.checkLoad()
-        return pix.fImage?[y * width + x] ?? 0
+        return mouseSampleStoredPixels?.rescaledValue(x: x, y: y) ?? 0
     }
 
     private var displayedImageRect: CGRect {

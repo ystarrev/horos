@@ -216,6 +216,20 @@ private struct Metal3DVolumeUniforms {
     var viewProjectionMatrix: simd_float4x4
 }
 
+private struct Metal3DResampleUniforms {
+    var outputSize: SIMD4<UInt32>
+    var outputVoxelToWorld: simd_float4x4
+    var sourceWorldToVoxel: simd_float4x4
+    var backgroundValue: SIMD4<Float>
+}
+
+private struct Metal3DHistogramUniforms {
+    var sourceSize: SIMD4<UInt32>
+    var domain: SIMD2<Float>
+    var binCount: UInt32
+    var padding: UInt32 = 0
+}
+
 private struct Metal3DOverlayVertex {
     var position: SIMD3<Float>
     var normal: SIMD3<Float>
@@ -244,7 +258,6 @@ private struct Metal3DSurgicalTrajectory {
 }
 
 private enum Metal3DDefaults {
-    static let maxDynamicValue: Float = 32000
     static let noCLUT = NSLocalizedString("No CLUT", comment: "")
     static let linearOpacity = NSLocalizedString("Linear Table", comment: "")
     static let defaultWLWW = NSLocalizedString("Default WL & WW", comment: "")
@@ -259,6 +272,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private let commandQueue: MTLCommandQueue
     private let pipelineState: MTLRenderPipelineState
     private let overlayPipelineState: MTLRenderPipelineState
+    private let resampleVolumePipelineState: MTLComputePipelineState
+    private let histogramPipelineState: MTLComputePipelineState
     private let samplerState: MTLSamplerState
     private let maskSamplerState: MTLSamplerState
     private let vertexBuffer: MTLBuffer
@@ -266,7 +281,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private let pixList: [DCMPix]
     private let cropHandleColor = SIMD4<Float>(0.16, 0.98, 0.32, 1.0)
     private let cropHandleHighlightColor = SIMD4<Float>(1.0, 0.18, 0.82, 1.0)
-    private let fullSourceDimensions: SIMD3<Int>
     private let sourceCropBounds: Metal3DVolumeCropBounds
     private let sourceDimensions: SIMD3<Int>
     private let sourceVoxelSpacing: SIMD3<Float>
@@ -282,8 +296,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var cropBoxMin = SIMD3<Float>(repeating: -0.28)
     private var cropBoxMax = SIMD3<Float>(repeating: 0.28)
     private let superSampling: Float
-    private let valueFactor: Float
-    private let offset16: Float
     private let transferTextureWidth = 4096
     private let preIntegratedTransferTextureWidth = 256
     private let preIntegratedTransferSamples = 8
@@ -319,8 +331,11 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var suppressProjectedTrajectoryOutline = false
     private lazy var emptySkinMaskTexture: MTLTexture? = makeEmptySkinMaskTexture()
     private var drawableSize = CGSize(width: 1, height: 1)
-    private var rawVolume = [Float]()
+    private var cachedCPUVolumeData: Data?
+    private var histogramModel: Metal3DHistogramModel?
     private var customOpacityControlPoints = [SIMD2<Float>]()
+
+    var contentDidChange: (() -> Void)?
 
     private(set) var selectedWLPresetName = Metal3DDefaults.defaultWLWW
     private(set) var selectedCLUTName = Metal3DDefaults.noCLUT
@@ -334,6 +349,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
     private var windowLevel: Float = 0
     private var windowWidth: Float = 1
+    private var preparedDefaultWindow: MetalViewerWindowLevel?
+    private var preparedFullDynamicWindow: MetalViewerWindowLevel?
     private var currentCLUTPixels = [SIMD4<UInt8>]()
     private var currentOpacityPoints = [String]()
     private var cameraRotation: simd_quatf
@@ -348,7 +365,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var skinMaskExtractionAttempted = false
     private var skinSurfaceExtractionAttempted = false
 
-    init(device: MTLDevice, pixList: [DCMPix], volumeData: Data) {
+    init(device: MTLDevice, pixList: [DCMPix]) {
         self.deviceRef = device
         self.pixList = pixList
         self.currentSkinClipDepthMM = Self.initialSkinClipDepthMM(for: pixList)
@@ -357,14 +374,10 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             fatalError("3D Metal viewer requires at least one DCMPix slice.")
         }
 
-        firstPix.checkLoad()
-        firstPix.computePixMinPixMax()
-
-        let width = max(Int(firstPix.pwidth), 1)
-        let height = max(Int(firstPix.pheight), 1)
+        let width = max(Int(firstPix.widthWithoutLoading()), 1)
+        let height = max(Int(firstPix.heightWithoutLoading()), 1)
         let depth = max(pixList.count, 1)
         let fullSourceDimensions = SIMD3<Int>(width, height, depth)
-        self.fullSourceDimensions = fullSourceDimensions
 
         let sourceSpacing = Self.voxelSpacing(for: pixList)
         if let sliceGeometry = MetalViewerSliceGeometry(pix: firstPix) {
@@ -376,8 +389,19 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             self.patientColumnDirection = SIMD3<Float>(0, 1, 0)
             self.patientSliceDirection = SIMD3<Float>(0, 0, 1)
         }
-        let cropBounds = Self.volumeCropBounds(for: pixList, dimensions: fullSourceDimensions, spacing: sourceSpacing)
+        let cropBounds = Metal3DVolumeCropBounds(
+            minX: 0,
+            maxX: max(fullSourceDimensions.x - 1, 0),
+            minY: 0,
+            maxY: max(fullSourceDimensions.y - 1, 0),
+            minZ: 0,
+            maxZ: max(fullSourceDimensions.z - 1, 0)
+        )
         self.sourceCropBounds = cropBounds
+        let originalSourceVoxelToPatientMatrix = MetalViewerGantryTiltGeometryBuilder.sourceVoxelToPatientMatrix(
+            for: pixList,
+            fallbackSliceSpacing: sourceSpacing.z
+        )
         let gantryTiltGeometry = MetalViewerGantryTiltGeometryBuilder.geometry(
             for: pixList,
             sourceDimensions: fullSourceDimensions,
@@ -400,7 +424,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         self.volumeDimensions = textureGeometry.dimensions
         self.voxelSpacing = textureGeometry.spacing
         let sourceVoxelToPatientMatrix = gantryTiltCorrection?.correctedVoxelToPatientMatrix
-            ?? MetalViewerGantryTiltGeometryBuilder.sourceVoxelToPatientMatrix(for: pixList, fallbackSliceSpacing: correctedSourceSpacing.z)
+            ?? originalSourceVoxelToPatientMatrix
         let referenceCropBounds = gantryTiltCorrection == nil
             ? cropBounds
             : Metal3DVolumeCropBounds(
@@ -424,11 +448,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         self.cameraRotation = simd_normalize(yaw * pitch)
         self.orbitRadius = max(simd_length(self.boxMax - self.boxMin) * 1.8, 1.8)
         self.superSampling = max(UserDefaults.standard.float(forKey: "superSampling"), 1.0)
-        let scalarMapping = Self.scalarMapping(for: pixList)
-        self.valueFactor = scalarMapping.valueFactor
-        self.offset16 = scalarMapping.offset16
-        _ = volumeData
-
         guard let commandQueue = device.makeCommandQueue() else {
             fatalError("Could not create a Metal command queue for the 3D viewer.")
         }
@@ -454,7 +473,9 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
               let vertexFunction = library.makeFunction(name: "metal3DVolumeVertex"),
               let fragmentFunction = library.makeFunction(name: "metal3DVolumeFragment"),
               let overlayVertexFunction = library.makeFunction(name: "metal3DOverlayVertexMain"),
-              let overlayFragmentFunction = library.makeFunction(name: "metal3DOverlayFragment") else {
+              let overlayFragmentFunction = library.makeFunction(name: "metal3DOverlayFragment"),
+              let resampleVolumeFunction = library.makeFunction(name: "metalViewerGantryTiltResample3D"),
+              let histogramFunction = library.makeFunction(name: "metal3DHistogram") else {
             fatalError("Could not load Metal 3D volume shader functions.")
         }
 
@@ -485,8 +506,10 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
         do {
             overlayPipelineState = try device.makeRenderPipelineState(descriptor: overlayPipelineDescriptor)
+            resampleVolumePipelineState = try device.makeComputePipelineState(function: resampleVolumeFunction)
+            histogramPipelineState = try device.makeComputePipelineState(function: histogramFunction)
         } catch {
-            fatalError("Could not create the 3D Metal overlay pipeline: \(error)")
+            fatalError("Could not create a 3D Metal pipeline: \(error)")
         }
 
         let samplerDescriptor = MTLSamplerDescriptor()
@@ -523,12 +546,10 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
         super.init()
 
-        self.rawVolume = makeRawVolume()
-
-        volumeTexture = makeVolumeTexture()
         applyWLPreset(named: Metal3DDefaults.defaultWLWW)
         applyCLUT(named: defaultCLUTName())
         applyOpacity(named: defaultOpacityName())
+        requestVolumeTexture()
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
@@ -611,17 +632,25 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let name = sanitizeWLPresetName(presetName)
         selectedWLPresetName = name
 
-        guard let firstPix = pixList.first else { return }
+        guard pixList.isEmpty == false else { return }
         switch name {
         case Metal3DDefaults.defaultWLWW:
-            let savedWW = firstPix.savedWW > 0 ? firstPix.savedWW : firstPix.fullww
-            let savedWL = firstPix.savedWW > 0 ? firstPix.savedWL : firstPix.fullwl
-            windowLevel = savedWL
-            windowWidth = max(savedWW, 1)
+            if let preparedDefaultWindow {
+                windowLevel = preparedDefaultWindow.level
+                windowWidth = max(preparedDefaultWindow.width, 1)
+            } else {
+                windowLevel = 0
+                windowWidth = 1
+            }
 
         case Metal3DDefaults.fullDynamic:
-            windowLevel = firstPix.fullwl
-            windowWidth = max(firstPix.fullww, 1)
+            if let preparedFullDynamicWindow {
+                windowLevel = preparedFullDynamicWindow.level
+                windowWidth = max(preparedFullDynamicWindow.width, 1)
+            } else {
+                windowLevel = 0
+                windowWidth = 1
+            }
 
         case Metal3DDefaults.otherWLWW:
             break
@@ -1354,10 +1383,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         rebuildTumourSeedSphereVertexBuffer()
     }
 
-    func segmentationInput() -> Metal3DSegmentationInput {
-        let data = rawVolume.withUnsafeBufferPointer { buffer in
-            Data(buffer: buffer)
-        }
+    func segmentationInput() -> Metal3DSegmentationInput? {
+        guard let data = cpuVolumeData() else { return nil }
         return Metal3DSegmentationInput(
             dimensions: volumeDimensions,
             spacing: voxelSpacing,
@@ -1367,6 +1394,45 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             sourceVoxelToVolumeVoxelMatrix: sourceVoxelToVolumeVoxelMatrix(),
             float32VolumeData: data
         )
+    }
+
+    private func cpuVolumeData() -> Data? {
+        if let cachedCPUVolumeData {
+            return cachedCPUVolumeData
+        }
+
+        guard let volumeTexture else { return nil }
+        let width = max(volumeDimensions.x, 1)
+        let height = max(volumeDimensions.y, 1)
+        let depth = max(volumeDimensions.z, 1)
+        let bytesPerRow = width * MemoryLayout<Float>.stride
+        let bytesPerImage = width * height * MemoryLayout<Float>.stride
+        let byteCount = bytesPerImage * depth
+        guard let buffer = deviceRef.makeBuffer(length: byteCount, options: .storageModeShared),
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeBlitCommandEncoder() else {
+            return nil
+        }
+
+        encoder.copy(
+            from: volumeTexture,
+            sourceSlice: 0,
+            sourceLevel: 0,
+            sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+            sourceSize: MTLSize(width: width, height: height, depth: depth),
+            to: buffer,
+            destinationOffset: 0,
+            destinationBytesPerRow: bytesPerRow,
+            destinationBytesPerImage: bytesPerImage
+        )
+        encoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        guard commandBuffer.status == .completed else { return nil }
+
+        let data = Data(bytes: buffer.contents(), count: byteCount)
+        cachedCPUVolumeData = data
+        return data
     }
 
     private func sourceVoxelToVolumeVoxelMatrix() -> simd_float4x4? {
@@ -2135,8 +2201,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     func makeHistogramModel() -> Metal3DHistogramModel? {
-        guard rawVolume.isEmpty == false else { return nil }
-        return Metal3DHistogramModel(voxels: rawVolume)
+        histogramModel
     }
 
     func opacityControlPoints() -> [SIMD2<Float>] {
@@ -2154,47 +2219,216 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         rebuildTransferTextures()
     }
 
-    private func makeVolumeTexture() -> MTLTexture? {
+    private func makeWritableFloatTexture(dimensions: SIMD3<Int>) -> MTLTexture? {
         guard MetalTextureLimits.supports3DTexture(
-            width: volumeDimensions.x,
-            height: volumeDimensions.y,
-            depth: volumeDimensions.z
-        ) else {
-            return nil
-        }
-
+            width: dimensions.x,
+            height: dimensions.y,
+            depth: dimensions.z
+        ) else { return nil }
         let descriptor = MTLTextureDescriptor()
         descriptor.textureType = .type3D
         descriptor.pixelFormat = .r32Float
-        descriptor.width = max(volumeDimensions.x, 1)
-        descriptor.height = max(volumeDimensions.y, 1)
-        descriptor.depth = max(volumeDimensions.z, 1)
+        descriptor.width = max(dimensions.x, 1)
+        descriptor.height = max(dimensions.y, 1)
+        descriptor.depth = max(dimensions.z, 1)
         descriptor.mipmapLevelCount = 1
-        descriptor.usage = [.shaderRead]
-        descriptor.storageMode = .shared
+        descriptor.usage = [.shaderRead, .shaderWrite]
+        descriptor.storageMode = .private
+        return deviceRef.makeTexture(descriptor: descriptor)
+    }
 
-        guard let texture = deviceRef.makeTexture(descriptor: descriptor) else {
-            return nil
+    private func requestVolumeTexture() {
+        guard MetalSeriesTextureCache.shared.key(for: pixList, device: deviceRef) != nil else {
+            NSLog("%@", "3D Metal viewer could not identify the selected volume")
+            return
         }
 
-        let convertedVolume = rawVolume
-        let expectedBytes = max(volumeDimensions.x * volumeDimensions.y * volumeDimensions.z, 1) * MemoryLayout<Float>.stride
-        convertedVolume.withUnsafeBytes { bytes in
-            guard let baseAddress = bytes.baseAddress else { return }
-            texture.replace(
-                region: MTLRegionMake3D(0, 0, 0, max(volumeDimensions.x, 1), max(volumeDimensions.y, 1), max(volumeDimensions.z, 1)),
-                mipmapLevel: 0,
-                slice: 0,
-                withBytes: baseAddress,
-                bytesPerRow: max(volumeDimensions.x, 1) * MemoryLayout<Float>.stride,
-                bytesPerImage: max(volumeDimensions.x * volumeDimensions.y, 1) * MemoryLayout<Float>.stride
+        if MetalSeriesTextureCache.shared.isEntryKnownUnavailable(for: pixList, device: deviceRef) {
+            NSLog(
+                "%@",
+                "3D Metal viewer does not support the stored-pixel encoding for \(pixList.first?.srcFile ?? "unknown source")"
             )
-            if bytes.count < expectedBytes {
-                NSLog("3D Metal viewer converted volume shorter than expected: %ld < %d", bytes.count, expectedBytes)
+            return
+        }
+
+        if let sourceEntry = MetalSeriesTextureCache.shared.cachedEntry(
+            for: pixList,
+            device: deviceRef
+        ) {
+            requestPreparedVolume(from: sourceEntry)
+            return
+        }
+
+        MetalSeriesTextureCache.shared.requestEntry(
+            for: pixList,
+            device: deviceRef
+        ) { [weak self] sourceEntry in
+            guard let self else { return }
+            guard let sourceEntry else {
+                NSLog(
+                    "%@",
+                    "3D Metal viewer compact volume decode failed for \(self.pixList.first?.srcFile ?? "unknown source")"
+                )
+                return
+            }
+            self.requestPreparedVolume(from: sourceEntry)
+        }
+    }
+
+    private func requestPreparedVolume(from sourceEntry: MetalSeriesTextureCache.Entry) {
+        let correctGantryTilt = Self.isCTVolume(pixList)
+        if let entry = MetalPreparedVolumeCache.shared.cachedEntry(
+            for: sourceEntry,
+            correctGantryTilt: correctGantryTilt,
+            requiringRegistrationPyramid: false
+        ) {
+            prepareVolumeTexture(from: entry)
+            return
+        }
+
+        MetalPreparedVolumeCache.shared.requestEntry(
+            for: pixList,
+            sourceEntry: sourceEntry,
+            device: deviceRef,
+            correctGantryTilt: correctGantryTilt,
+            includeRegistrationPyramid: false
+        ) { [weak self] entry in
+            guard let self else { return }
+            guard let entry else {
+                NSLog("%@", "3D Metal viewer could not prepare the selected volume")
+                return
+            }
+            self.prepareVolumeTexture(from: entry)
+        }
+    }
+
+    private func prepareVolumeTexture(from entry: MetalPreparedVolumeCache.Entry) {
+        guard entry.dimensions == sourceDimensions,
+              let commandBuffer = commandQueue.makeCommandBuffer() else {
+            NSLog("%@", "3D Metal viewer received incompatible prepared-volume geometry")
+            return
+        }
+
+        let start = CFAbsoluteTimeGetCurrent()
+        let threadsPerGroup = MTLSize(width: 4, height: 4, depth: 4)
+        let preparedTexture: MTLTexture
+        if volumeDimensions != entry.dimensions {
+            guard let resampledTexture = makeWritableFloatTexture(dimensions: volumeDimensions),
+                  let resampleEncoder = commandBuffer.makeComputeCommandEncoder() else {
+                return
+            }
+            var resampleUniforms = Metal3DResampleUniforms(
+                outputSize: SIMD4<UInt32>(
+                    UInt32(max(volumeDimensions.x, 1)),
+                    UInt32(max(volumeDimensions.y, 1)),
+                    UInt32(max(volumeDimensions.z, 1)),
+                    0
+                ),
+                outputVoxelToWorld: referenceVoxelToPatientMatrix,
+                sourceWorldToVoxel: simd_inverse(entry.voxelToWorld),
+                backgroundValue: SIMD4<Float>(Self.isCTVolume(pixList) ? -1024 : 0, 0, 0, 0)
+            )
+            resampleEncoder.setComputePipelineState(resampleVolumePipelineState)
+            resampleEncoder.setTexture(entry.texture, index: 0)
+            resampleEncoder.setTexture(resampledTexture, index: 1)
+            resampleEncoder.setBytes(
+                &resampleUniforms,
+                length: MemoryLayout<Metal3DResampleUniforms>.stride,
+                index: 0
+            )
+            resampleEncoder.dispatchThreadgroups(
+                Self.threadgroups(for: volumeDimensions, threadsPerGroup: threadsPerGroup),
+                threadsPerThreadgroup: threadsPerGroup
+            )
+            resampleEncoder.endEncoding()
+            preparedTexture = resampledTexture
+        } else {
+            preparedTexture = entry.texture
+        }
+
+        let histogramBinCount = 512
+        let histogramByteCount = histogramBinCount * MemoryLayout<UInt32>.stride
+        guard let histogramBuffer = deviceRef.makeBuffer(length: histogramByteCount, options: .storageModeShared),
+              let histogramEncoder = commandBuffer.makeComputeCommandEncoder() else {
+            return
+        }
+        _ = histogramBuffer.contents().initializeMemory(
+            as: UInt32.self,
+            repeating: 0,
+            count: histogramBinCount
+        )
+        var histogramUniforms = Metal3DHistogramUniforms(
+            sourceSize: SIMD4<UInt32>(
+                UInt32(max(volumeDimensions.x, 1)),
+                UInt32(max(volumeDimensions.y, 1)),
+                UInt32(max(volumeDimensions.z, 1)),
+                0
+            ),
+            domain: SIMD2<Float>(histogramDomainMin, histogramDomainMax),
+            binCount: UInt32(histogramBinCount)
+        )
+        histogramEncoder.setComputePipelineState(histogramPipelineState)
+        histogramEncoder.setTexture(preparedTexture, index: 0)
+        histogramEncoder.setBuffer(histogramBuffer, offset: 0, index: 0)
+        histogramEncoder.setBytes(
+            &histogramUniforms,
+            length: MemoryLayout<Metal3DHistogramUniforms>.stride,
+            index: 1
+        )
+        histogramEncoder.dispatchThreadgroups(
+            Self.threadgroups(for: volumeDimensions, threadsPerGroup: threadsPerGroup),
+            threadsPerThreadgroup: threadsPerGroup
+        )
+        histogramEncoder.endEncoding()
+
+        commandBuffer.addCompletedHandler { [weak self] completedBuffer in
+            guard let self, completedBuffer.status == .completed else { return }
+            let countsPointer = histogramBuffer.contents().bindMemory(
+                to: UInt32.self,
+                capacity: histogramBinCount
+            )
+            let counts = (0..<histogramBinCount).map { Int(countsPointer[$0]) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.volumeTexture = preparedTexture
+                self.preparedDefaultWindow = entry.defaultWindow
+                self.preparedFullDynamicWindow = entry.fullDynamicWindow
+                if self.selectedWLPresetName == Metal3DDefaults.defaultWLWW
+                    || self.selectedWLPresetName == Metal3DDefaults.fullDynamic {
+                    self.applyWLPreset(named: self.selectedWLPresetName)
+                }
+                self.histogramModel = Metal3DHistogramModel(
+                    counts: counts,
+                    minimumHU: Int(self.histogramDomainMin),
+                    maximumHU: Int(self.histogramDomainMax)
+                )
+                self.cachedCPUVolumeData = nil
+                if self.showSkin == false || self.showSkinSurface {
+                    self.ensureSkinMaskTexture(includeSurface: self.showSkinSurface)
+                }
+                if MetalViewerDiagnostics.isTimingLogEnabled {
+                    NSLog(
+                        "HOROS_METAL_TIMING Metal3DVolumeRenderer sharedPreparedVolume %ldx%ldx%ld %.3f s",
+                        self.volumeDimensions.x,
+                        self.volumeDimensions.y,
+                        self.volumeDimensions.z,
+                        CFAbsoluteTimeGetCurrent() - start
+                    )
+                }
+                self.contentDidChange?()
             }
         }
-
-        return texture
+        commandBuffer.commit()
+    }
+    private static func threadgroups(
+        for dimensions: SIMD3<Int>,
+        threadsPerGroup: MTLSize
+    ) -> MTLSize {
+        MTLSize(
+            width: (max(dimensions.x, 1) + threadsPerGroup.width - 1) / threadsPerGroup.width,
+            height: (max(dimensions.y, 1) + threadsPerGroup.height - 1) / threadsPerGroup.height,
+            depth: (max(dimensions.z, 1) + threadsPerGroup.depth - 1) / threadsPerGroup.depth
+        )
     }
 
     private struct SkinShellExtractionResult {
@@ -2216,6 +2450,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func ensureSkinMaskTexture(includeSurface: Bool = false, includeSurfacePoints: Bool = false) {
+        guard volumeTexture != nil else { return }
         let hasSurface = skinSurfaceVertexBuffer != nil &&
             skinSurfaceVertexCount > 0 &&
             skinSurfaceVertexFloatData != nil
@@ -2297,14 +2532,30 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func makeSkinShellMask(includeSurface: Bool) -> SkinShellExtractionResult? {
-        let voxelCount = rawVolume.count
+        guard let volumeData = cpuVolumeData() else { return nil }
+        return volumeData.withUnsafeBytes { rawBuffer -> SkinShellExtractionResult? in
+            let values = rawBuffer.bindMemory(to: Float.self)
+            return makeSkinShellMask(
+                values: values,
+                volumeData: volumeData,
+                includeSurface: includeSurface
+            )
+        }
+    }
+
+    private func makeSkinShellMask(
+        values: UnsafeBufferPointer<Float>,
+        volumeData: Data,
+        includeSurface: Bool
+    ) -> SkinShellExtractionResult? {
+        let voxelCount = values.count
         guard voxelCount > 0 else { return nil }
 
         let thresholdResult = skinForegroundThreshold()
         var foreground = [UInt8](repeating: 0, count: voxelCount)
         var foregroundVoxelCount = 0
-        for index in rawVolume.indices {
-            let value = rawVolume[index]
+        for index in values.indices {
+            let value = values[index]
             guard value.isFinite, value >= thresholdResult.threshold else { continue }
             foreground[index] = 1
             foregroundVoxelCount += 1
@@ -2324,7 +2575,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let shellThicknessMM = skinShellThicknessMM()
         let envelopeForeground = Self.skinEnvelopeForegroundMask(
             foreground: foreground,
-            values: rawVolume,
+            values: values,
             rejectHighDensity: isCT
         )
         guard envelopeForeground.count > 0 else {
@@ -2390,26 +2641,17 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         if includeSurface {
             // Contour the actual image intensities, then let the rotating visibility pass remove
             // internal cut-surface clutter without flattening reachable facial detail.
-            let rawVolumeByteCount = rawVolume.count * MemoryLayout<Float>.stride
-            let extractedSurfaceResult = rawVolume.withUnsafeBufferPointer { buffer -> Metal3DSurfaceExtractionResult? in
-                guard let baseAddress = buffer.baseAddress else { return nil }
-                let volumeData = Data(
-                    bytesNoCopy: UnsafeMutableRawPointer(mutating: UnsafeRawPointer(baseAddress)),
-                    count: rawVolumeByteCount,
-                    deallocator: .none
-                )
-                return Metal3DSurfaceExtractor.extractSkinSurface(
-                    fromVolume: volumeData,
-                    width: volumeDimensions.x,
-                    height: volumeDimensions.y,
-                    depth: volumeDimensions.z,
-                    spacingX: voxelSpacing.x,
-                    spacingY: voxelSpacing.y,
-                    spacingZ: voxelSpacing.z,
-                    threshold: thresholdResult.threshold,
-                    openMinimumZCap: true
-                )
-            }
+            let extractedSurfaceResult = Metal3DSurfaceExtractor.extractSkinSurface(
+                fromVolume: volumeData,
+                width: volumeDimensions.x,
+                height: volumeDimensions.y,
+                depth: volumeDimensions.z,
+                spacingX: voxelSpacing.x,
+                spacingY: voxelSpacing.y,
+                spacingZ: voxelSpacing.z,
+                threshold: thresholdResult.threshold,
+                openMinimumZCap: true
+            )
             guard let extractedSurface = extractedSurfaceResult else {
                 NSLog(
                     "Metal3DVolumeRenderer skinExtraction produced no outer surface threshold %.3f",
@@ -2975,7 +3217,10 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return (-500, "ctHU")
         }
 
-        return (Self.otsuThreshold(values: rawVolume), "otsu")
+        guard let histogramModel else {
+            return (windowLevel - windowWidth * 0.25, "windowFallback")
+        }
+        return (Self.otsuThreshold(histogram: histogramModel), "gpuOtsu")
     }
 
     private func skinShellThicknessMM() -> Float {
@@ -2989,47 +3234,20 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return isCTVolume(pixList) ? 6.0 : 10.0
     }
 
-    private static func otsuThreshold(values: [Float]) -> Float {
-        let sampleLimit = 2_000_000
-        let sampleStride = max(values.count / sampleLimit, 1)
-        var minimum = Float.greatestFiniteMagnitude
-        var maximum = -Float.greatestFiniteMagnitude
-
-        var index = 0
-        while index < values.count {
-            let value = values[index]
-            if value.isFinite {
-                minimum = min(minimum, value)
-                maximum = max(maximum, value)
-            }
-            index += sampleStride
+    private static func otsuThreshold(histogram: Metal3DHistogramModel) -> Float {
+        let counts = histogram.counts
+        guard let firstBin = counts.firstIndex(where: { $0 > 0 }),
+              let lastBin = counts.lastIndex(where: { $0 > 0 }),
+              lastBin > firstBin else {
+            return Float(histogram.minimumHU)
         }
 
-        guard minimum.isFinite, maximum.isFinite, maximum > minimum + 0.0001 else {
-            return minimum.isFinite ? minimum : 0
-        }
-
-        let binCount = 1024
-        let span = maximum - minimum
-        var histogram = [Int](repeating: 0, count: binCount)
-
-        index = 0
-        while index < values.count {
-            let value = values[index]
-            if value.isFinite {
-                let fraction = min(max((value - minimum) / span, 0), 1)
-                let bin = min(max(Int((fraction * Float(binCount - 1)).rounded()), 0), binCount - 1)
-                histogram[bin] += 1
-            }
-            index += sampleStride
-        }
-
-        let total = histogram.reduce(0, +)
-        guard total > 0 else { return minimum }
+        let total = counts[firstBin...lastBin].reduce(0, +)
+        guard total > 0 else { return Float(histogram.minimumHU) }
 
         var totalSum = 0.0
-        for bin in 0..<binCount {
-            totalSum += Double(bin * histogram[bin])
+        for bin in firstBin...lastBin {
+            totalSum += Double(bin * counts[bin])
         }
 
         var backgroundWeight = 0
@@ -3037,14 +3255,14 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         var bestVariance = -Double.greatestFiniteMagnitude
         var thresholdBin = 0
 
-        for bin in 0..<binCount {
-            backgroundWeight += histogram[bin]
+        for bin in firstBin...lastBin {
+            backgroundWeight += counts[bin]
             if backgroundWeight == 0 { continue }
 
             let foregroundWeight = total - backgroundWeight
             if foregroundWeight == 0 { break }
 
-            backgroundSum += Double(bin * histogram[bin])
+            backgroundSum += Double(bin * counts[bin])
             let backgroundMean = backgroundSum / Double(backgroundWeight)
             let foregroundMean = (totalSum - backgroundSum) / Double(foregroundWeight)
             let delta = backgroundMean - foregroundMean
@@ -3055,14 +3273,16 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             }
         }
 
-        let threshold = minimum + (Float(thresholdBin) + 0.5) * span / Float(binCount)
-        let noiseFloor = minimum + span * 0.03
+        let threshold = Float(histogram.huValue(forBin: thresholdBin))
+        let minimum = Float(histogram.huValue(forBin: firstBin))
+        let maximum = Float(histogram.huValue(forBin: lastBin))
+        let noiseFloor = minimum + (maximum - minimum) * 0.03
         return max(threshold, noiseFloor)
     }
 
     private static func skinEnvelopeForegroundMask(
         foreground: [UInt8],
-        values: [Float],
+        values: UnsafeBufferPointer<Float>,
         rejectHighDensity: Bool
     ) -> (mask: [UInt8], count: Int, method: String) {
         var foregroundCount = 0
@@ -3896,21 +4116,22 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private static func voxelSpacing(for pixList: [DCMPix]) -> SIMD3<Float> {
-        guard let firstPix = pixList.first else {
+        guard let firstPix = pixList.first,
+              let firstGeometry = MetalViewerSliceGeometry(pix: firstPix) else {
             return SIMD3<Float>(repeating: 1)
         }
 
-        let rowSpacing = Float(max(firstPix.pixelSpacingX, 0.0001))
-        let columnSpacing = Float(max(firstPix.pixelSpacingY, 0.0001))
+        let rowSpacing = Float(firstGeometry.spacingX)
+        let columnSpacing = Float(firstGeometry.spacingY)
         let sliceSpacing: Float
-        let storedSliceSpacing = Float(max(abs(firstPix.spacingBetweenSlices), 0.0))
-        let fallbackSliceSpacing = Float(max(max(max(abs(firstPix.spacingBetweenSlices), abs(firstPix.sliceInterval)), abs(firstPix.sliceThickness)), 0.0001))
-        if pixList.count > 1 {
-            let nextPix = pixList[1]
+        let storedSliceSpacing = Float(max(firstGeometry.spacingBetweenSlices, 0))
+        let fallbackSliceSpacing = Float(max(max(firstGeometry.spacingBetweenSlices, firstGeometry.sliceThickness), 0.0001))
+        if pixList.count > 1,
+           let nextGeometry = MetalViewerSliceGeometry(pix: pixList[1]) {
             let delta = SIMD3<Float>(
-                Float(nextPix.originX - firstPix.originX),
-                Float(nextPix.originY - firstPix.originY),
-                Float(nextPix.originZ - firstPix.originZ)
+                Float(nextGeometry.origin.x - firstGeometry.origin.x),
+                Float(nextGeometry.origin.y - firstGeometry.origin.y),
+                Float(nextGeometry.origin.z - firstGeometry.origin.z)
             )
             let distance = simd_length(delta)
             if distance > 0.0001 {
@@ -3968,114 +4189,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         ]
     }
 
-    private static func volumeCropBounds(
-        for pixList: [DCMPix],
-        dimensions: SIMD3<Int>,
-        spacing: SIMD3<Float>
-    ) -> Metal3DVolumeCropBounds {
-        let fullBounds = Metal3DVolumeCropBounds(
-            minX: 0,
-            maxX: max(dimensions.x - 1, 0),
-            minY: 0,
-            maxY: max(dimensions.y - 1, 0),
-            minZ: 0,
-            maxZ: max(dimensions.z - 1, 0)
-        )
-
-        guard let firstPix = pixList.first, shouldCropAir(for: firstPix) else {
-            return fullBounds
-        }
-
-        let start = CFAbsoluteTimeGetCurrent()
-        let threshold: Float = -900
-        let fullWidth = max(dimensions.x, 1)
-        let fullHeight = max(dimensions.y, 1)
-        let fullDepth = min(max(dimensions.z, 1), pixList.count)
-        let fullSliceElementCount = fullWidth * fullHeight
-        var minX = fullWidth
-        var maxX = -1
-        var minY = fullHeight
-        var maxY = -1
-        var minZ = fullDepth
-        var maxZ = -1
-
-        for sliceIndex in 0..<fullDepth {
-            let pix = pixList[sliceIndex]
-            pix.checkLoad()
-            guard let source = pix.fImage else { continue }
-
-            var sliceHasContent = false
-            for y in 0..<fullHeight {
-                let rowOffset = y * fullWidth
-                for x in 0..<fullWidth {
-                    let index = rowOffset + x
-                    guard index < fullSliceElementCount, source[index] > threshold else { continue }
-
-                    minX = min(minX, x)
-                    maxX = max(maxX, x)
-                    minY = min(minY, y)
-                    maxY = max(maxY, y)
-                    sliceHasContent = true
-                }
-            }
-
-            if sliceHasContent {
-                minZ = min(minZ, sliceIndex)
-                maxZ = max(maxZ, sliceIndex)
-            }
-        }
-
-        guard maxX >= minX, maxY >= minY, maxZ >= minZ else {
-            return fullBounds
-        }
-
-        let marginX = max(Int((12.0 / Double(max(spacing.x, 0.0001))).rounded()), 4)
-        let marginY = max(Int((12.0 / Double(max(spacing.y, 0.0001))).rounded()), 4)
-        let marginZ = max(Int((8.0 / Double(max(spacing.z, 0.0001))).rounded()), 1)
-        let cropBounds = Metal3DVolumeCropBounds(
-            minX: max(minX - marginX, 0),
-            maxX: min(maxX + marginX, fullWidth - 1),
-            minY: max(minY - marginY, 0),
-            maxY: min(maxY + marginY, fullHeight - 1),
-            minZ: max(minZ - marginZ, 0),
-            maxZ: min(maxZ + marginZ, fullDepth - 1)
-        )
-
-        let cropDimensions = cropBounds.dimensions
-        if cropDimensions.x >= fullWidth, cropDimensions.y >= fullHeight, cropDimensions.z >= fullDepth {
-            return fullBounds
-        }
-
-        if MetalViewerDiagnostics.isTimingLogEnabled {
-            NSLog(
-                "HOROS_METAL_TIMING Metal3DVolumeRenderer airCrop source=%ldx%ldx%ld crop=(%ld:%ld,%ld:%ld,%ld:%ld) output=%ldx%ldx%ld %.3f s",
-                dimensions.x,
-                dimensions.y,
-                dimensions.z,
-                cropBounds.minX,
-                cropBounds.maxX,
-                cropBounds.minY,
-                cropBounds.maxY,
-                cropBounds.minZ,
-                cropBounds.maxZ,
-                cropDimensions.x,
-                cropDimensions.y,
-                cropDimensions.z,
-                CFAbsoluteTimeGetCurrent() - start
-            )
-        }
-
-        return cropBounds
-    }
-
-    private static func shouldCropAir(for firstPix: DCMPix) -> Bool {
-        let modality = firstPix.modalityString?.uppercased() ?? ""
-        let rescale = firstPix.rescaleType?.uppercased() ?? ""
-        let seriesMinimum = Float(firstPix.minValueOfSeries)
-        let seriesMaximum = Float(firstPix.maxValueOfSeries)
-        return modality.contains("CT") || rescale == "HU" || (seriesMinimum < -500 && seriesMaximum > 300)
-    }
-
     private static func isCTVolume(_ pixList: [DCMPix]) -> Bool {
         guard let firstPix = pixList.first else { return false }
         let modality = firstPix.modalityString?.uppercased() ?? ""
@@ -4116,175 +4229,4 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return (SIMD3<Int>(sourceDimensions.x, sourceDimensions.y, outputDepth), outputSpacing)
     }
 
-    private static func scalarMapping(for pixList: [DCMPix]) -> (valueFactor: Float, offset16: Float) {
-        guard let firstPix = pixList.first else {
-            return (1, 0)
-        }
-
-        if firstPix.suvConverted {
-            let maximum = max(Float(firstPix.maxValueOfSeries), 1)
-            return (Metal3DDefaults.maxDynamicValue / maximum, 0)
-        }
-
-        var minimum = Float(firstPix.minValueOfSeries)
-        var maximum = Float(firstPix.maxValueOfSeries)
-        for pix in pixList {
-            minimum = min(minimum, Float(pix.minValueOfSeries))
-            maximum = max(maximum, Float(pix.maxValueOfSeries))
-        }
-
-        let range = max(maximum - minimum, 1)
-        if range > Metal3DDefaults.maxDynamicValue || range < 50 {
-            return (Metal3DDefaults.maxDynamicValue / range, -minimum)
-        }
-
-        return (1, -minimum)
-    }
-
-    private func makeRawVolume() -> [Float] {
-        if let gantryTiltCorrection {
-            return makeGantryTiltCorrectedRawVolume(gantryTiltCorrection)
-        }
-
-        let sliceElementCount = max(sourceDimensions.x * sourceDimensions.y, 1)
-        var converted = [Float](repeating: 0, count: sliceElementCount * max(sourceDimensions.z, 1))
-        let fullWidth = max(fullSourceDimensions.x, 1)
-        let cropWidth = max(sourceDimensions.x, 1)
-        let cropHeight = max(sourceDimensions.y, 1)
-
-        for sourceZ in sourceCropBounds.minZ...sourceCropBounds.maxZ {
-            guard sourceZ >= 0, sourceZ < pixList.count else { continue }
-            let croppedZ = sourceZ - sourceCropBounds.minZ
-            guard croppedZ >= 0, croppedZ < sourceDimensions.z else { continue }
-            let pix = pixList[sourceZ]
-            pix.checkLoad()
-            pix.computePixMinPixMax()
-            guard let source = pix.fImage else { continue }
-
-            let destinationOffset = croppedZ * sliceElementCount
-            for croppedY in 0..<cropHeight {
-                let sourceY = sourceCropBounds.minY + croppedY
-                let sourceOffset = sourceY * fullWidth + sourceCropBounds.minX
-                let rowDestinationOffset = destinationOffset + croppedY * cropWidth
-                for croppedX in 0..<cropWidth {
-                    converted[rowDestinationOffset + croppedX] = source[sourceOffset + croppedX]
-                }
-            }
-        }
-
-        if sourceDimensions.x == volumeDimensions.x,
-           sourceDimensions.y == volumeDimensions.y,
-           sourceDimensions.z == volumeDimensions.z {
-            return converted
-        }
-
-        return resampleVolumeAlongZ(converted)
-    }
-
-    private func makeGantryTiltCorrectedRawVolume(_ correction: MetalViewerGantryTiltGeometry) -> [Float] {
-        let backgroundValue: Float = -1024
-        for pix in pixList {
-            pix.checkLoad()
-            pix.computePixMinPixMax()
-        }
-        let sourceSlices: [UnsafeMutablePointer<Float>?] = pixList.map { $0.fImage }
-        let converted = MetalViewerGantryTiltCPUResampler.resample(
-            sourceSlices: sourceSlices,
-            sourceDimensions: fullSourceDimensions,
-            outputDimensions: sourceDimensions,
-            outputVoxelToPatientMatrix: correction.correctedVoxelToPatientMatrix,
-            sourceVoxelToPatientMatrix: correction.sourceVoxelToPatientMatrix,
-            backgroundValue: backgroundValue
-        )
-
-        if sourceDimensions.x == volumeDimensions.x,
-           sourceDimensions.y == volumeDimensions.y,
-           sourceDimensions.z == volumeDimensions.z {
-            return converted
-        }
-
-        return resampleVolumeAlongZ(converted)
-    }
-
-    private func resampleVolumeAlongZ(_ sourceVolume: [Float]) -> [Float] {
-        let start = CFAbsoluteTimeGetCurrent()
-        let width = max(sourceDimensions.x, 1)
-        let height = max(sourceDimensions.y, 1)
-        let sourceDepth = max(sourceDimensions.z, 1)
-        let outputDepth = max(volumeDimensions.z, 1)
-        let sliceElementCount = max(width * height, 1)
-        var output = [Float](repeating: 0, count: sliceElementCount * outputDepth)
-
-        guard sourceDepth > 1, outputDepth > 1 else {
-            return sourceVolume
-        }
-
-        output.withUnsafeMutableBufferPointer { outputBuffer in
-            guard let outputBase = outputBuffer.baseAddress else { return }
-            DispatchQueue.concurrentPerform(iterations: outputDepth) { outputZ in
-                let physicalZ = Float(outputZ) * voxelSpacing.z
-                let sourceZ = min(max(physicalZ / max(sourceVoxelSpacing.z, 0.0001), 0), Float(sourceDepth - 1))
-                let baseZ = min(max(Int(floor(sourceZ)), 0), sourceDepth - 1)
-                let fraction = sourceZ - Float(baseZ)
-                let z0 = min(max(baseZ - 1, 0), sourceDepth - 1)
-                let z1 = baseZ
-                let z2 = min(baseZ + 1, sourceDepth - 1)
-                let z3 = min(baseZ + 2, sourceDepth - 1)
-                let offset0 = z0 * sliceElementCount
-                let offset1 = z1 * sliceElementCount
-                let offset2 = z2 * sliceElementCount
-                let offset3 = z3 * sliceElementCount
-                let outputOffset = outputZ * sliceElementCount
-
-                if fraction <= 0.0001 {
-                    for index in 0..<sliceElementCount {
-                        outputBase[outputOffset + index] = sourceVolume[offset1 + index]
-                    }
-                } else {
-                    for index in 0..<sliceElementCount {
-                        let sample0 = sourceVolume[offset0 + index]
-                        let sample1 = sourceVolume[offset1 + index]
-                        let sample2 = sourceVolume[offset2 + index]
-                        let sample3 = sourceVolume[offset3 + index]
-                        let interpolated = Self.catmullRom(sample0, sample1, sample2, sample3, fraction)
-                        let minimum = min(min(sample0, sample1), min(sample2, sample3))
-                        let maximum = max(max(sample0, sample1), max(sample2, sample3))
-                        outputBase[outputOffset + index] = min(max(interpolated, minimum), maximum)
-                    }
-                }
-            }
-        }
-
-        if MetalViewerDiagnostics.isTimingLogEnabled {
-            NSLog(
-                "HOROS_METAL_TIMING Metal3DVolumeRenderer isotropicZResampleCubic source=%ldx%ldx%ld spacing=%.3fx%.3fx%.3f output=%ldx%ldx%ld spacing=%.3fx%.3fx%.3f %.3f s",
-                sourceDimensions.x,
-                sourceDimensions.y,
-                sourceDimensions.z,
-                Double(sourceVoxelSpacing.x),
-                Double(sourceVoxelSpacing.y),
-                Double(sourceVoxelSpacing.z),
-                volumeDimensions.x,
-                volumeDimensions.y,
-                volumeDimensions.z,
-                Double(voxelSpacing.x),
-                Double(voxelSpacing.y),
-                Double(voxelSpacing.z),
-                CFAbsoluteTimeGetCurrent() - start
-            )
-        }
-
-        return output
-    }
-
-    private static func catmullRom(_ p0: Float, _ p1: Float, _ p2: Float, _ p3: Float, _ t: Float) -> Float {
-        let t2 = t * t
-        let t3 = t2 * t
-        return 0.5 * (
-            (2.0 * p1) +
-            (-p0 + p2) * t +
-            (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 +
-            (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3
-        )
-    }
 }

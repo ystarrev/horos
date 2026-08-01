@@ -492,6 +492,8 @@ final class MetalImageView: MTKView {
     var measurementsDidChange: (([MetalViewerMeasurementOverlay]) -> Void)?
     var mouseToolAssignments = MetalViewerMouseToolAssignments()
     private(set) var mouseAnnotationState: MouseAnnotationState?
+    private weak var mouseSamplePix: DCMPix?
+    private var mouseSampleStoredPixels: MetalStoredInt16PixelData?
 
     init(
         frame frameRect: NSRect,
@@ -586,6 +588,8 @@ final class MetalImageView: MTKView {
         activeTumourSeedDeletion = false
         measurements.removeAll()
         mouseAnnotationState = nil
+        mouseSamplePix = nil
+        mouseSampleStoredPixels = nil
         resetMPRLineCursor()
 
         renderer.replaceSeries(
@@ -1421,6 +1425,8 @@ final class MetalImageView: MTKView {
             mouseAnnotationState = nil
             annotationStateDidChange?()
         }
+        mouseSamplePix = nil
+        mouseSampleStoredPixels = nil
     }
 
     override func keyDown(with event: NSEvent) {
@@ -1564,31 +1570,37 @@ final class MetalImageView: MTKView {
     }
 
     private func mouseAnnotationState(for pix: DCMPix, normalizedImagePoint: CGPoint) -> MouseAnnotationState? {
-        pix.checking.lock()
-        defer { pix.checking.unlock() }
+        if mouseSamplePix !== pix {
+            mouseSamplePix = pix
+            mouseSampleStoredPixels = MetalStoredInt16PixelData(pix: pix)
+        }
 
-        pix.checkLoad()
-        let width = Int(pix.pwidth)
-        let height = Int(pix.pheight)
-        guard width > 0,
-              height > 0,
-              let imagePointer = pix.fImage else {
+        guard let storedPixels = mouseSampleStoredPixels else {
             return nil
         }
+
+        let width = storedPixels.width
+        let height = storedPixels.height
 
         let pixelX = max(0, min(CGFloat(width - 1), normalizedImagePoint.x * CGFloat(width)))
         let pixelY = max(0, min(CGFloat(height - 1), normalizedImagePoint.y * CGFloat(height)))
         let sampleX = min(max(Int(pixelX), 0), width - 1)
         let sampleY = min(max(Int(pixelY), 0), height - 1)
-        let pixelValue = imagePointer[sampleY * width + sampleX]
+        guard let pixelValue = storedPixels.rescaledValue(x: sampleX, y: sampleY) else {
+            return nil
+        }
 
-        var dicomCoords = [Float](repeating: 0, count: 3)
-        pix.convertX(Float(pixelX), pixY: Float(pixelY), toDICOMCoords: &dicomCoords, pixelCenter: true)
+        guard let dicomPoint = MetalViewerSliceGeometry(pix: pix)?.dicomPoint(
+            pixelX: Double(pixelX),
+            pixelY: Double(pixelY)
+        ) else {
+            return nil
+        }
 
         return MouseAnnotationState(
             pixelPoint: CGPoint(x: pixelX, y: pixelY),
             pixelValue: pixelValue,
-            dicomPoint: SIMD3<Float>(dicomCoords[0], dicomCoords[1], dicomCoords[2])
+            dicomPoint: SIMD3<Float>(Float(dicomPoint.x), Float(dicomPoint.y), Float(dicomPoint.z))
         )
     }
 }

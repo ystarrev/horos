@@ -3422,7 +3422,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             return nil;
 
         // Enhanced multi-frame objects can carry frame-specific rescale in functional groups.
-        // Keep those on the existing float decode path until the direct path handles that metadata.
+        // The Swift enhanced-MR decoder handles those frames separately.
         if( [dcmObject attributeWithName: @"SharedFunctionalGroupsSequence"] ||
             [dcmObject attributeWithName: @"Per-frameFunctionalGroupsSequence"])
             return nil;

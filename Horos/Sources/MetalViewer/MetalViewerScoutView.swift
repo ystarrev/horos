@@ -1221,21 +1221,19 @@ private final class MetalViewerScoutItemView: NSView {
             return (Self.structuredReportIconThumbnail(size: Self.thumbnailSize), true)
         }
 
-        guard let pix = series.middlePreviewPix() else { return (nil, false) }
+        guard let pix = series.middlePreviewPix(),
+              let storedPixels = MetalStoredInt16PixelData(pix: pix) else {
+            return (nil, false)
+        }
 
-        pix.checkLoad()
-        pix.computePixMinPixMax()
-
-        let width = max(Int(pix.pwidth), 1)
-        let height = max(Int(pix.pheight), 1)
-        guard let imagePointer = pix.fImage else { return (nil, false) }
-
-        let defaultWindow = MetalViewerWindowLevel(
-            level: Float(pix.wl != 0 ? pix.wl : pix.fullwl),
-            width: max(Float(pix.ww > 0 ? pix.ww : pix.fullww), 1)
-        )
+        let width = storedPixels.width
+        let height = storedPixels.height
+        let defaultWindow = storedPixels.inferredWindow
         let displayWindow = series.isMagneticResonance
-            ? (MetalViewerAutomaticWindowLevel.window(for: pix) ?? defaultWindow)
+            ? (MetalViewerAutomaticWindowLevel.window(
+                for: storedPixels,
+                modality: pix.modalityString
+            ) ?? defaultWindow)
             : defaultWindow
         let windowWidth = displayWindow.width
         let windowLevel = displayWindow.level
@@ -1245,7 +1243,7 @@ private final class MetalViewerScoutItemView: NSView {
 
         var grayscale = [UInt8](repeating: 0, count: count)
         for index in 0..<count {
-            let sample = imagePointer[index]
+            guard let sample = storedPixels.rescaledValue(at: index) else { continue }
             let normalized = max(0, min(1, (sample - low) / max(high - low, 1)))
             grayscale[index] = UInt8((normalized * 255).rounded())
         }

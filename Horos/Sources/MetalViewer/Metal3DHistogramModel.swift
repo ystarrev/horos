@@ -7,25 +7,15 @@ struct Metal3DHistogramModel {
     let counts: [Int]
     let maxCount: Int
 
-    init(voxels: [Float], minimumHU: Int = -1200, maximumHU: Int = 3200, binCount: Int = 512) {
-        let clampedBinCount = max(binCount, 32)
+    init(counts: [Int], minimumHU: Int = -1200, maximumHU: Int = 3200) {
         let lower = min(minimumHU, maximumHU)
         let upper = max(minimumHU, maximumHU)
-        let span = max(upper - lower, 1)
-        var histogram = [Int](repeating: 0, count: clampedBinCount)
-
-        for voxel in voxels {
-            let clampedValue = min(max(voxel, Float(lower)), Float(upper))
-            let normalized = (clampedValue - Float(lower)) / Float(span)
-            let bin = min(max(Int(normalized * Float(clampedBinCount - 1)), 0), clampedBinCount - 1)
-            histogram[bin] += 1
-        }
-
+        let resolvedCounts = counts.isEmpty ? [0] : counts
         self.minimumHU = lower
         self.maximumHU = upper
-        self.binCount = clampedBinCount
-        self.counts = histogram
-        self.maxCount = histogram.max() ?? 0
+        self.binCount = resolvedCounts.count
+        self.counts = resolvedCounts
+        self.maxCount = resolvedCounts.max() ?? 0
     }
 
     func huValue(forBin index: Int) -> Double {

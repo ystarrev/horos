@@ -392,6 +392,7 @@ final class MetalViewerPaneView: NSView {
             let series: MetalViewerSeries
             let overlaySeries: MetalViewerSeries?
             let pix: DCMPix
+            let sliceGeometry: MetalViewerSliceGeometry?
             let sliceIndex: Int
             let sliceCount: Int
             let zoomScale: Float
@@ -639,11 +640,11 @@ final class MetalViewerPaneView: NSView {
             drawTopRight("WL: \(Self.formattedStateValue(state.windowLevel)) WW: \(Self.formattedStateValue(state.windowWidth))")
             drawTopRight("Im: \(state.sliceIndex + 1)/\(state.sliceCount)")
 
-            if state.pix.sliceThickness != 0 {
-                drawLowerRight(String(format: "Thickness: %0.2f mm", state.pix.sliceThickness))
+            if let thickness = state.sliceGeometry?.sliceThickness, thickness != 0 {
+                drawLowerRight(String(format: "Thickness: %0.2f mm", thickness))
             }
-            if state.pix.sliceLocation != 0 {
-                drawLowerRight(String(format: "Location: %0.2f mm", state.pix.sliceLocation))
+            if let location = state.sliceGeometry?.sliceLocation, location != 0 {
+                drawLowerRight(String(format: "Location: %0.2f mm", location))
             }
 
             drawLowerLeft(String(format: "Zoom: %.0f%%", state.zoomScale * 100.0))
@@ -724,15 +725,17 @@ final class MetalViewerPaneView: NSView {
                         primary += "WL: \(Self.formattedStateValue(wl)) WW: \(Self.formattedStateValue(ww))"
                     }
                 case "Thickness / Location / Position":
-                    if state.pix.sliceThickness != 0, state.pix.sliceLocation != 0 {
-                        if state.pix.sliceThickness < 1.0, state.pix.sliceThickness != 0 {
-                            if abs(state.pix.sliceLocation) < 1.0, state.pix.sliceLocation != 0 {
-                                primary += String(format: "Thickness: %0.2f \u{00B5}m Location: %0.2f \u{00B5}m", state.pix.sliceThickness * 1000.0, state.pix.sliceLocation * 1000.0)
+                    if let geometry = state.sliceGeometry,
+                       geometry.sliceThickness != 0,
+                       geometry.sliceLocation != 0 {
+                        if geometry.sliceThickness < 1.0 {
+                            if abs(geometry.sliceLocation) < 1.0 {
+                                primary += String(format: "Thickness: %0.2f \u{00B5}m Location: %0.2f \u{00B5}m", geometry.sliceThickness * 1000.0, geometry.sliceLocation * 1000.0)
                             } else {
-                                primary += String(format: "Thickness: %0.2f \u{00B5}m Location: %0.2f mm", state.pix.sliceThickness * 1000.0, state.pix.sliceLocation)
+                                primary += String(format: "Thickness: %0.2f \u{00B5}m Location: %0.2f mm", geometry.sliceThickness * 1000.0, geometry.sliceLocation)
                             }
                         } else {
-                            primary += String(format: "Thickness: %0.2f mm Location: %0.2f mm", state.pix.sliceThickness, state.pix.sliceLocation)
+                            primary += String(format: "Thickness: %0.2f mm Location: %0.2f mm", geometry.sliceThickness, geometry.sliceLocation)
                         }
                     } else if let viewPosition = state.pix.viewPosition, let patientPosition = state.pix.patientPosition {
                         primary += "Position: \(viewPosition) \(patientPosition)"
@@ -1642,7 +1645,10 @@ final class MetalViewerPaneView: NSView {
         let index = (requestedIndex % dynamicSequence.count + dynamicSequence.count) % dynamicSequence.count
         let pixList = dynamicSequence.timePoints[index]
         guard pixList.count > 1 else { return }
-        MetalSeriesTextureCache.shared.requestEntry(for: pixList, device: device) { _ in }
+        MetalSeriesTextureCache.shared.requestEntry(
+            for: pixList,
+            device: device
+        ) { _ in }
     }
 
     private func updateCurrentStateDescription(rendererState: String) {
@@ -1939,6 +1945,7 @@ final class MetalViewerPaneView: NSView {
             series: series,
             overlaySeries: overlaySeries,
             pix: pix,
+            sliceGeometry: MetalViewerSliceGeometry(pix: pix),
             sliceIndex: metalView.renderer.currentSliceIndex,
             sliceCount: metalView.renderer.pixList.count,
             zoomScale: metalView.renderer.zoomScale,

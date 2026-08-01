@@ -1,5 +1,6 @@
 #import "DCMPix.h"
 #import "DCMObject.h"
+#import "DCMPixelDataAttribute.h"
 #import "DCMSequenceAttribute.h"
 #import "BrowserController.h"
 #import "DicomStudy.h"

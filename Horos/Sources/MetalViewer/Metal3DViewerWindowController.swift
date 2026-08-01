@@ -7,16 +7,14 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
     private let toolbarController = Metal3DViewerToolbarController()
     private let histogramPanelController = Metal3DHistogramPanelController()
     private let pixList: [DCMPix]
-    private let volumeData: Data
     private var tumorSegmentationTask: Metal3DLocalTumorSegmentationTask?
     private var tumorInputPreviewTask: Metal3DTumorInputPreviewTask?
     private var tumorInputReviewController: Metal3DTumorInputReviewWindowController?
     private var latestTumorSegmentationSummary: String?
     private var latestTumorSeriesFetchSummary: String?
 
-    init(pixList: [DCMPix], volumeData: Data, title: String) {
+    init(pixList: [DCMPix], title: String) {
         self.pixList = pixList
-        self.volumeData = volumeData
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
@@ -241,7 +239,14 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
             volumeView.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
         ])
 
-        volumeView.configure(pixList: pixList, volumeData: volumeData)
+        volumeView.volumeDidBecomeReady = { [weak self] in
+            guard let self else { return }
+            self.histogramPanelController.update(
+                histogram: self.volumeView.makeHistogramModel(),
+                opacityPoints: self.volumeView.opacityControlPoints()
+            )
+        }
+        volumeView.configure(pixList: pixList)
         if let selectedWLPresetName = volumeView.selectedWLPresetName {
             toolbarController.selectWLPreset(named: selectedWLPresetName)
         }

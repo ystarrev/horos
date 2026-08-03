@@ -724,7 +724,7 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
     
     DicomDatabase* idatabase = [self _stackIndependentDatabase];
     
-    NSArray *objects = [idatabase addFilesAtPaths: savedFiles postNotifications: YES dicomOnly: NO rereadExistingItems: YES generatedByOsiriX:(_mode == SENDG)];
+    NSArray *objects = [idatabase addFilesAtPaths: savedFiles postNotifications: YES dicomOnly: YES rereadExistingItems: YES generatedByOsiriX:(_mode == SENDG)];
     
     NSMutableData* representationToSend = [NSMutableData data];
     N2PerformManagedObjectContextBlockAndWait(idatabase.managedObjectContext, ^{

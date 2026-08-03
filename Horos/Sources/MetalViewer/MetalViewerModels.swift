@@ -734,58 +734,28 @@ struct MetalStoredInt16PixelData {
     }
 
     init?(pix: DCMPix) {
-        if let info = pix.decodedStoredPixelData16ForMetalTexture() {
-            self.init(info: info)
-            return
-        }
-
-        guard let decoder = MetalEnhancedMRStoredPixelDecoder(pixList: [pix]),
-              let decoded = decoder.decode(pix: pix) else {
+        guard let path = pix.srcFile?.trimmingCharacters(in: .whitespacesAndNewlines),
+              path.isEmpty == false,
+              let frame = SwiftDICOMReader.storedPixelFrame(
+                contentsOfFile: path,
+                frameIndex: max(Int(pix.frameNo), 0)
+              ) else {
             return nil
         }
-        self = decoded
+        self.init(dicomFrame: frame)
     }
 
-    fileprivate init?(info: [AnyHashable: Any]) {
-
-        let dataObject = info["data"]
-        let data: Data
-        if let swiftData = dataObject as? Data {
-            data = swiftData
-        } else if let nsData = dataObject as? NSData {
-            data = nsData as Data
-        } else {
-            return nil
-        }
-
-        guard let width = (info["width"] as? NSNumber)?.intValue,
-              let height = (info["height"] as? NSNumber)?.intValue,
-              width > 0,
-              height > 0,
-              data.count >= max(width * height, 1) * MemoryLayout<UInt16>.stride,
-              let slope = (info["slope"] as? NSNumber)?.floatValue,
-              let intercept = (info["offset"] as? NSNumber)?.floatValue,
-              let isSigned = (info["isSigned"] as? NSNumber)?.boolValue else {
-            return nil
-        }
-
-        let inverse = (info["inverse"] as? NSNumber)?.boolValue ?? false
-        let windowWidth = abs((info["windowWidth"] as? NSNumber)?.floatValue ?? 0)
-        let windowLevel = (info["windowLevel"] as? NSNumber)?.floatValue ?? 0
-
-        self.data = data
-        self.width = width
-        self.height = height
-        self.bitsStored = max((info["bitsStored"] as? NSNumber)?.intValue ?? 16, 1)
-        self.rescaleSlope = inverse ? -slope : slope
-        self.rescaleIntercept = inverse ? -intercept : intercept
-        self.isSigned = isSigned
-        self.pixelSpacing = SIMD2<Float>(
-            max((info["pixelSpacingX"] as? NSNumber)?.floatValue ?? 1, 0.0001),
-            max((info["pixelSpacingY"] as? NSNumber)?.floatValue ?? 1, 0.0001)
-        )
-        self.defaultWindow = windowWidth > 0
-            ? MetalViewerWindowLevel(level: inverse ? -windowLevel : windowLevel, width: windowWidth)
+    fileprivate init(dicomFrame frame: SwiftDICOMStoredPixelFrame) {
+        data = frame.data
+        width = frame.width
+        height = frame.height
+        bitsStored = frame.bitsStored
+        rescaleSlope = frame.rescaleSlope
+        rescaleIntercept = frame.rescaleIntercept
+        isSigned = frame.isSigned
+        pixelSpacing = SIMD2<Float>(frame.pixelSpacingX, frame.pixelSpacingY)
+        defaultWindow = (frame.windowWidth ?? 0) > 0
+            ? MetalViewerWindowLevel(level: frame.windowLevel ?? 0, width: frame.windowWidth ?? 1)
             : nil
     }
 
@@ -823,239 +793,30 @@ struct MetalStoredInt16PixelData {
     }
 }
 
-private final class MetalEnhancedMRStoredPixelDecoder {
-    private let object: DCMObject
+private final class MetalSwiftDICOMSeriesPixelDecoder {
+    private let reader: SwiftDICOMReader
     private let sourcePath: String
-    private let sharedFunctionalGroup: DCMObject?
-    private let perFrameFunctionalGroups: [DCMObject]
 
     init?(pixList: [DCMPix]) {
         guard let firstPix = pixList.first,
-              let path = Self.nonEmpty(firstPix.srcFile),
-              pixList.allSatisfy({ Self.nonEmpty($0.srcFile) == path }),
-              let object = DCMObject.object(withContentsOfFile: path, decodingPixelData: false) as? DCMObject else {
+              pixList.count > 1,
+              let path = firstPix.srcFile?.trimmingCharacters(in: .whitespacesAndNewlines),
+              path.isEmpty == false,
+              pixList.allSatisfy({ $0.srcFile?.trimmingCharacters(in: .whitespacesAndNewlines) == path }),
+              let reader = try? SwiftDICOMReader.cached(contentsOfFile: path),
+              reader.numberOfFrames > 1 else {
             return nil
         }
-
-        let sharedGroups = Self.sequenceItems(in: object, named: "SharedFunctionalGroupsSequence")
-        let perFrameGroups = Self.sequenceItems(in: object, named: "Per-frameFunctionalGroupsSequence")
-        guard sharedGroups.isEmpty == false || perFrameGroups.isEmpty == false else {
-            return nil
-        }
-
-        self.object = object
+        self.reader = reader
         self.sourcePath = path
-        self.sharedFunctionalGroup = sharedGroups.first
-        self.perFrameFunctionalGroups = perFrameGroups
     }
 
     func decode(pix: DCMPix) -> MetalStoredInt16PixelData? {
-        guard Self.nonEmpty(pix.srcFile) == sourcePath else { return nil }
-
-        let frameIndex = max(Int(pix.frameNo), 0)
-        let perFrameGroup = perFrameFunctionalGroups.element(at: frameIndex)
-        let width = Self.intValue(in: object, named: "Columns") ?? 0
-        let height = Self.intValue(in: object, named: "Rows") ?? 0
-        guard width > 0, height > 0 else { return nil }
-
-        // DCM Framework's historical tag dictionary spells the DICOM keyword
-        // "SamplesperPixel" (lowercase "p"). Keep the standard spelling as a
-        // fallback in case that dictionary is corrected later.
-        let samplesPerPixel = Self.intValue(in: object, named: "SamplesperPixel")
-            ?? Self.intValue(in: object, named: "SamplesPerPixel")
-            ?? 1
-        guard samplesPerPixel == 1 else { return nil }
-
-        let modality = Self.stringValue(in: object, named: "Modality")?.uppercased() ?? ""
-        guard modality == "MR" else { return nil }
-
-        let photometricInterpretation = Self.stringValue(
-            in: object,
-            named: "PhotometricInterpretation"
-        )?.uppercased() ?? ""
-        guard photometricInterpretation.contains("RGB") == false,
-              photometricInterpretation.contains("YBR") == false,
-              photometricInterpretation.contains("PALETTE") == false else {
+        guard pix.srcFile?.trimmingCharacters(in: .whitespacesAndNewlines) == sourcePath,
+              let frame = try? reader.storedPixelFrame(at: max(Int(pix.frameNo), 0)) else {
             return nil
         }
-
-        let bitsAllocated = Self.intValue(in: object, named: "BitsAllocated") ?? 0
-        let declaredBitsStored = Self.intValue(in: object, named: "BitsStored") ?? bitsAllocated
-        let bitsStored = min(max(declaredBitsStored, 1), bitsAllocated)
-        let highBit = Self.intValue(in: object, named: "HighBit") ?? max(bitsStored - 1, 0)
-        guard bitsAllocated == 8 || bitsAllocated == 16 else { return nil }
-
-        let isSigned = (Self.intValue(in: object, named: "PixelRepresentation") ?? 0) != 0
-        let transformation = Self.firstSequenceItem(
-            in: perFrameGroup,
-            named: "PixelValueTransformationSequence"
-        ) ?? Self.firstSequenceItem(
-            in: sharedFunctionalGroup,
-            named: "PixelValueTransformationSequence"
-        )
-        let rawSlope = Self.floatValue(in: transformation, named: "RescaleSlope")
-            ?? Self.floatValue(in: object, named: "RescaleSlope")
-            ?? 1
-        let rawIntercept = Self.floatValue(in: transformation, named: "RescaleIntercept")
-            ?? Self.floatValue(in: object, named: "RescaleIntercept")
-            ?? 0
-        let slope = rawSlope == 0 ? 1 : rawSlope
-
-        let pixelMeasures = Self.firstSequenceItem(in: perFrameGroup, named: "PixelMeasuresSequence")
-            ?? Self.firstSequenceItem(in: sharedFunctionalGroup, named: "PixelMeasuresSequence")
-        let spacingValues = Self.numberArray(in: pixelMeasures, named: "PixelSpacing")
-            ?? Self.numberArray(in: object, named: "PixelSpacing")
-            ?? Self.numberArray(in: object, named: "ImagerPixelSpacing")
-            ?? []
-        let spacingY = max(Float(spacingValues.first ?? 1), 0.0001)
-        let spacingX = max(Float(spacingValues.dropFirst().first ?? spacingValues.first ?? 1), 0.0001)
-
-        let frameVOILUT = Self.firstSequenceItem(in: perFrameGroup, named: "FrameVOILUTSequence")
-            ?? Self.firstSequenceItem(in: sharedFunctionalGroup, named: "FrameVOILUTSequence")
-        let windowLevel = Self.floatValue(in: frameVOILUT, named: "WindowCenter")
-            ?? Self.floatValue(in: object, named: "WindowCenter")
-        let windowWidth = abs(
-            Self.floatValue(in: frameVOILUT, named: "WindowWidth")
-                ?? Self.floatValue(in: object, named: "WindowWidth")
-                ?? 0
-        )
-
-        guard let pixelAttribute = object.attribute(withName: "PixelData") as? DCMPixelDataAttribute,
-              let decodedFrameObject = pixelAttribute.decodeFrame(at: Int32(frameIndex)) else {
-            return nil
-        }
-        let decodedFrame = decodedFrameObject as Data
-        guard let storedData = Self.normalizedStoredData(
-                decodedFrame,
-                pixelCount: width * height,
-                bitsAllocated: bitsAllocated,
-                bitsStored: bitsStored,
-                highBit: highBit,
-                isSigned: isSigned
-              ) else {
-            return nil
-        }
-
-        let inverse = photometricInterpretation.contains("MONOCHROME1")
-        let rescaleSlope = inverse ? -slope : slope
-        let rescaleIntercept = inverse ? -rawIntercept : rawIntercept
-        let defaultWindow = windowWidth > 0
-            ? MetalViewerWindowLevel(
-                level: inverse ? -(windowLevel ?? 0) : (windowLevel ?? 0),
-                width: windowWidth
-            )
-            : nil
-
-        return MetalStoredInt16PixelData(
-            data: storedData,
-            width: width,
-            height: height,
-            bitsStored: bitsStored,
-            rescaleSlope: rescaleSlope,
-            rescaleIntercept: rescaleIntercept,
-            isSigned: isSigned,
-            pixelSpacing: SIMD2<Float>(spacingX, spacingY),
-            defaultWindow: defaultWindow
-        )
-    }
-
-    private static func normalizedStoredData(
-        _ sourceData: Data,
-        pixelCount: Int,
-        bitsAllocated: Int,
-        bitsStored: Int,
-        highBit: Int,
-        isSigned: Bool
-    ) -> Data? {
-        guard pixelCount > 0 else { return nil }
-        let bytesPerSample = bitsAllocated / 8
-        guard sourceData.count >= pixelCount * bytesPerSample else { return nil }
-
-        let lowBit = max(highBit - bitsStored + 1, 0)
-        let mask = bitsStored == 16 ? UInt16.max : UInt16((1 << bitsStored) - 1)
-        let signBit = UInt16(1 << max(bitsStored - 1, 0))
-        var output = [UInt16](repeating: 0, count: pixelCount)
-
-        sourceData.withUnsafeBytes { rawBuffer in
-            guard let bytes = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-            for index in 0..<pixelCount {
-                let rawValue: UInt16
-                if bitsAllocated == 16 {
-                    rawValue = rawBuffer.loadUnaligned(fromByteOffset: index * 2, as: UInt16.self)
-                } else {
-                    rawValue = UInt16(bytes[index])
-                }
-
-                let storedValue = (rawValue >> UInt16(lowBit)) & mask
-                if isSigned, storedValue & signBit != 0 {
-                    output[index] = storedValue | ~mask
-                } else {
-                    output[index] = storedValue
-                }
-            }
-        }
-
-        return output.withUnsafeBytes { Data($0) }
-    }
-
-    private static func sequenceItems(in object: DCMObject?, named name: String) -> [DCMObject] {
-        guard let object,
-              let sequence = object.attribute(withName: name) as? DCMSequenceAttribute else {
-            return []
-        }
-        return sequence.sequence.compactMap { $0 as? DCMObject }
-    }
-
-    private static func firstSequenceItem(in object: DCMObject?, named name: String) -> DCMObject? {
-        sequenceItems(in: object, named: name).first
-    }
-
-    private static func stringValue(in object: DCMObject?, named name: String) -> String? {
-        guard let rawValue = object?.attributeValue(withName: name) else { return nil }
-        if let string = rawValue as? String {
-            return nonEmpty(string.components(separatedBy: "\\").first)
-        }
-        if let number = rawValue as? NSNumber {
-            return number.stringValue
-        }
-        return nil
-    }
-
-    private static func intValue(in object: DCMObject?, named name: String) -> Int? {
-        guard let value = floatValue(in: object, named: name), value.isFinite else { return nil }
-        return Int(value.rounded())
-    }
-
-    private static func floatValue(in object: DCMObject?, named name: String) -> Float? {
-        guard let rawValue = object?.attributeValue(withName: name) else { return nil }
-        if let number = rawValue as? NSNumber {
-            return number.floatValue
-        }
-        if let string = rawValue as? String {
-            return Float(string.components(separatedBy: "\\").first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
-        }
-        return nil
-    }
-
-    private static func numberArray(in object: DCMObject?, named name: String) -> [Double]? {
-        guard let object else { return nil }
-        if let numbers = object.attributeArray(withName: name) as? [NSNumber] {
-            return numbers.map(\.doubleValue)
-        }
-        if let strings = object.attributeArray(withName: name) as? [String] {
-            return strings.compactMap(Double.init)
-        }
-        return stringValue(in: object, named: name)?
-            .components(separatedBy: "\\")
-            .compactMap(Double.init)
-    }
-
-    private static func nonEmpty(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-              trimmed.isEmpty == false else {
-            return nil
-        }
-        return trimmed
+        return MetalStoredInt16PixelData(dicomFrame: frame)
     }
 }
 
@@ -1063,6 +824,31 @@ final class MetalSeriesTextureCache {
     private struct SliceDimensions {
         let width: Int
         let height: Int
+    }
+
+    private final class ParallelSliceBuildState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var failedSliceIndexes = Set<Int>()
+
+        var failures: [Int] {
+            lock.lock()
+            defer { lock.unlock() }
+            return failedSliceIndexes.sorted()
+        }
+
+        func fail(sliceIndex: Int) {
+            lock.lock()
+            failedSliceIndexes.insert(sliceIndex)
+            lock.unlock()
+        }
+
+        func upload(sliceIndex: Int, _ body: () -> Bool) {
+            lock.lock()
+            defer { lock.unlock() }
+            if body() == false {
+                failedSliceIndexes.insert(sliceIndex)
+            }
+        }
     }
 
     struct DecodedSliceSeed {
@@ -1266,7 +1052,7 @@ final class MetalSeriesTextureCache {
         device: MTLDevice,
         decodedSliceSeed: DecodedSliceSeed?
     ) -> Entry? {
-        let enhancedDecoder = MetalEnhancedMRStoredPixelDecoder(pixList: pixList)
+        let seriesDecoder = MetalSwiftDICOMSeriesPixelDecoder(pixList: pixList)
         let decodedSliceSeed = decodedSliceSeed.flatMap { seed -> DecodedSliceSeed? in
             guard pixList.indices.contains(seed.index),
                   pixList[seed.index] === seed.pix else {
@@ -1275,18 +1061,15 @@ final class MetalSeriesTextureCache {
             return seed
         }
 
-        func decodedPixels(at index: Int) -> MetalStoredInt16PixelData? {
-            if decodedSliceSeed?.index == index {
-                return decodedSliceSeed?.pixels
-            }
-            return enhancedDecoder?.decode(pix: pixList[index])
-                ?? MetalStoredInt16PixelData(pix: pixList[index])
-        }
-
         guard pixList.isEmpty == false,
               let firstPix = pixList.first,
               let firstDimensions = dimensionsWithoutLoading(for: firstPix),
-              let firstSlice = decodedPixels(at: 0) else {
+              let firstSlice = decodedStoredInt16Slice(
+                at: 0,
+                in: pixList,
+                seriesDecoder: seriesDecoder,
+                decodedSliceSeed: decodedSliceSeed
+              ) else {
             return nil
         }
 
@@ -1333,27 +1116,32 @@ final class MetalSeriesTextureCache {
             return nil
         }
 
-        for sliceIndex in 1..<pixList.count {
-            _ = MetalViewerSliceGeometry(pix: pixList[sliceIndex])
-            guard let sliceDimensions = dimensionsWithoutLoading(for: pixList[sliceIndex]),
-                  max(sliceDimensions.width, 1) == width,
-                  max(sliceDimensions.height, 1) == height,
-                  let slice = decodedPixels(at: sliceIndex),
-                  slice.width == width,
-                  slice.height == height,
-                  slice.matchesVolumeEncoding(of: firstSlice),
-                  uploadStoredInt16Slice(
-                    slice,
-                    sliceIndex: sliceIndex,
-                    width: width,
-                    height: height,
-                    texture: texture,
-                    bytesPerRow: bytesPerRow,
-                    bytesPerImage: bytesPerImage
-                  ) else {
-                return nil
-            }
+        let remainingSlicesLoaded: Bool
+        if seriesDecoder == nil, pixList.count > 2 {
+            remainingSlicesLoaded = loadStoredInt16SlicesConcurrently(
+                pixList: pixList,
+                decodedSliceSeed: decodedSliceSeed,
+                firstSlice: firstSlice,
+                texture: texture,
+                width: width,
+                height: height,
+                bytesPerRow: bytesPerRow,
+                bytesPerImage: bytesPerImage
+            )
+        } else {
+            remainingSlicesLoaded = loadStoredInt16SlicesSerially(
+                pixList: pixList,
+                seriesDecoder: seriesDecoder,
+                decodedSliceSeed: decodedSliceSeed,
+                firstSlice: firstSlice,
+                texture: texture,
+                width: width,
+                height: height,
+                bytesPerRow: bytesPerRow,
+                bytesPerImage: bytesPerImage
+            )
         }
+        guard remainingSlicesLoaded else { return nil }
 
         MetalViewerDiagnostics.timingLog(
             format: "MetalSeriesTextureCache buildStoredInt16 %dx%dx%d %.3f s",
@@ -1373,6 +1161,252 @@ final class MetalSeriesTextureCache {
             defaultWindow: firstSlice.inferredWindow,
             fullDynamicWindow: firstSlice.storedRangeWindow
         )
+    }
+
+    private func loadStoredInt16SlicesSerially(
+        pixList: [DCMPix],
+        seriesDecoder: MetalSwiftDICOMSeriesPixelDecoder?,
+        decodedSliceSeed: DecodedSliceSeed?,
+        firstSlice: MetalStoredInt16PixelData,
+        texture: MTLTexture,
+        width: Int,
+        height: Int,
+        bytesPerRow: Int,
+        bytesPerImage: Int
+    ) -> Bool {
+        for sliceIndex in 1..<pixList.count {
+            let pix = pixList[sliceIndex]
+            guard let sliceDimensions = dimensionsWithoutLoading(for: pix),
+                  max(sliceDimensions.width, 1) == width,
+                  max(sliceDimensions.height, 1) == height,
+                  let slice = decodedStoredInt16Slice(
+                    at: sliceIndex,
+                    in: pixList,
+                    seriesDecoder: seriesDecoder,
+                    decodedSliceSeed: decodedSliceSeed
+                  ),
+                  slice.width == width,
+                  slice.height == height,
+                  slice.matchesVolumeEncoding(of: firstSlice),
+                  uploadStoredInt16Slice(
+                    slice,
+                    sliceIndex: sliceIndex,
+                    width: width,
+                    height: height,
+                    texture: texture,
+                    bytesPerRow: bytesPerRow,
+                    bytesPerImage: bytesPerImage
+                  ) else {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func loadStoredInt16SlicesConcurrently(
+        pixList: [DCMPix],
+        decodedSliceSeed: DecodedSliceSeed?,
+        firstSlice: MetalStoredInt16PixelData,
+        texture: MTLTexture,
+        width: Int,
+        height: Int,
+        bytesPerRow: Int,
+        bytesPerImage: Int
+    ) -> Bool {
+        let sliceCount = pixList.count - 1
+        let workerCount = min(
+            min(max(ProcessInfo.processInfo.activeProcessorCount - 1, 1), 4),
+            sliceCount
+        )
+        guard workerCount > 1 else {
+            return loadStoredInt16SlicesSerially(
+                pixList: pixList,
+                seriesDecoder: nil,
+                decodedSliceSeed: decodedSliceSeed,
+                firstSlice: firstSlice,
+                texture: texture,
+                width: width,
+                height: height,
+                bytesPerRow: bytesPerRow,
+                bytesPerImage: bytesPerImage
+            )
+        }
+
+        let state = ParallelSliceBuildState()
+        let queue = OperationQueue()
+        queue.name = "org.horos.metalviewer.stored-volume-loader"
+        queue.qualityOfService = .userInitiated
+        queue.maxConcurrentOperationCount = workerCount
+
+        for sliceIndex in 1..<pixList.count {
+            let pix = pixList[sliceIndex]
+            queue.addOperation { [weak self] in
+                autoreleasepool {
+                    guard let self else { return }
+                    guard let sliceDimensions = self.dimensionsWithoutLoading(for: pix),
+                          max(sliceDimensions.width, 1) == width,
+                          max(sliceDimensions.height, 1) == height,
+                          let slice = self.decodedStoredInt16Slice(
+                            at: sliceIndex,
+                            in: pixList,
+                            seriesDecoder: nil,
+                            decodedSliceSeed: decodedSliceSeed
+                          ),
+                          slice.width == width,
+                          slice.height == height,
+                          slice.matchesVolumeEncoding(of: firstSlice) else {
+                        state.fail(sliceIndex: sliceIndex)
+                        return
+                    }
+
+                    state.upload(sliceIndex: sliceIndex) {
+                        self.uploadStoredInt16Slice(
+                            slice,
+                            sliceIndex: sliceIndex,
+                            width: width,
+                            height: height,
+                            texture: texture,
+                            bytesPerRow: bytesPerRow,
+                            bytesPerImage: bytesPerImage
+                        )
+                    }
+                }
+            }
+        }
+
+        queue.waitUntilAllOperationsAreFinished()
+        let failedSliceIndexes = state.failures
+        guard failedSliceIndexes.isEmpty == false else { return true }
+
+        // Retry only failed file reads serially before deciding that a source
+        // slice is genuinely missing or malformed.
+        NSLog(
+            "%@",
+            "MetalSeriesTextureCache: retrying \(failedSliceIndexes.count) DICOM slice(s) serially"
+        )
+        var missingSliceIndexes = [Int]()
+        for sliceIndex in failedSliceIndexes {
+            let pix = pixList[sliceIndex]
+            let sliceDimensions = dimensionsWithoutLoading(for: pix)
+            let slice = decodedStoredInt16Slice(
+                at: sliceIndex,
+                in: pixList,
+                seriesDecoder: nil,
+                decodedSliceSeed: decodedSliceSeed
+            )
+            let dimensionsMatch = sliceDimensions.map {
+                max($0.width, 1) == width && max($0.height, 1) == height
+            } ?? false
+            let recovered: Bool
+            if dimensionsMatch,
+               let slice,
+               slice.width == width,
+               slice.height == height,
+               slice.matchesVolumeEncoding(of: firstSlice) {
+                recovered = uploadStoredInt16Slice(
+                    slice,
+                    sliceIndex: sliceIndex,
+                    width: width,
+                    height: height,
+                    texture: texture,
+                    bytesPerRow: bytesPerRow,
+                    bytesPerImage: bytesPerImage
+                )
+            } else {
+                recovered = false
+            }
+            if recovered == false {
+                NSLog(
+                    "%@",
+                    "MetalSeriesTextureCache: DICOM slice \(sliceIndex) could not be decoded from \(pix.srcFile ?? "unknown source")"
+                )
+                missingSliceIndexes.append(sliceIndex)
+            }
+        }
+
+        guard missingSliceIndexes.isEmpty == false else { return true }
+        let maximumRecoverableMissingSliceCount = max(pixList.count / 100, 1)
+        guard missingSliceIndexes.count <= maximumRecoverableMissingSliceCount else {
+            NSLog(
+                "%@",
+                "MetalSeriesTextureCache: refusing to substitute \(missingSliceIndexes.count) missing slices in a \(pixList.count)-slice volume"
+            )
+            return false
+        }
+
+        let missingSliceSet = Set(missingSliceIndexes)
+        for missingSliceIndex in missingSliceIndexes {
+            guard let replacement = nearestDecodableStoredInt16Slice(
+                    to: missingSliceIndex,
+                    in: pixList,
+                    excluding: missingSliceSet,
+                    decodedSliceSeed: decodedSliceSeed,
+                    matching: firstSlice,
+                    width: width,
+                    height: height
+                  ),
+                  uploadStoredInt16Slice(
+                    replacement.slice,
+                    sliceIndex: missingSliceIndex,
+                    width: width,
+                    height: height,
+                    texture: texture,
+                    bytesPerRow: bytesPerRow,
+                    bytesPerImage: bytesPerImage
+                  ) else {
+                return false
+            }
+            NSLog(
+                "%@",
+                "MetalSeriesTextureCache: substituted source slice \(replacement.index) for missing registration slice \(missingSliceIndex)"
+            )
+        }
+        return true
+    }
+
+    private func nearestDecodableStoredInt16Slice(
+        to missingIndex: Int,
+        in pixList: [DCMPix],
+        excluding missingIndexes: Set<Int>,
+        decodedSliceSeed: DecodedSliceSeed?,
+        matching firstSlice: MetalStoredInt16PixelData,
+        width: Int,
+        height: Int
+    ) -> (slice: MetalStoredInt16PixelData, index: Int)? {
+        guard pixList.isEmpty == false else { return nil }
+
+        for distance in 1..<pixList.count {
+            let candidateIndexes = [missingIndex - distance, missingIndex + distance]
+            for candidateIndex in candidateIndexes where pixList.indices.contains(candidateIndex) {
+                guard missingIndexes.contains(candidateIndex) == false,
+                      let slice = decodedStoredInt16Slice(
+                        at: candidateIndex,
+                        in: pixList,
+                        seriesDecoder: nil,
+                        decodedSliceSeed: decodedSliceSeed
+                      ),
+                      slice.width == width,
+                      slice.height == height,
+                      slice.matchesVolumeEncoding(of: firstSlice) else {
+                    continue
+                }
+                return (slice, candidateIndex)
+            }
+        }
+        return nil
+    }
+
+    private func decodedStoredInt16Slice(
+        at index: Int,
+        in pixList: [DCMPix],
+        seriesDecoder: MetalSwiftDICOMSeriesPixelDecoder?,
+        decodedSliceSeed: DecodedSliceSeed?
+    ) -> MetalStoredInt16PixelData? {
+        if decodedSliceSeed?.index == index {
+            return decodedSliceSeed?.pixels
+        }
+        return seriesDecoder?.decode(pix: pixList[index])
+            ?? MetalStoredInt16PixelData(pix: pixList[index])
     }
 
     private func canCreateVolumeTexture(
@@ -1603,97 +1637,52 @@ private enum MetalDynamicSeriesDetector {
 
     private static func readMetadata(for pixList: [DCMPix]) -> [MetalDynamicFrameMetadata] {
         var cachedPath: String?
-        var cachedObject: DCMObject?
+        var cachedReader: SwiftDICOMReader?
         var result: [MetalDynamicFrameMetadata] = []
         result.reserveCapacity(pixList.count)
 
         for (index, pix) in pixList.enumerated() {
             guard let path = nonEmpty(pix.srcFile) else { continue }
-            let object: DCMObject
-            if path == cachedPath, let cached = cachedObject {
-                object = cached
+            let reader: SwiftDICOMReader
+            if path == cachedPath, let cached = cachedReader {
+                reader = cached
             } else {
-                guard let parsed = DCMObject.object(withContentsOfFile: path, decodingPixelData: false) as? DCMObject else {
+                guard let parsed = try? SwiftDICOMReader.cached(contentsOfFile: path) else {
                     continue
                 }
                 cachedPath = path
-                cachedObject = parsed
-                object = parsed
+                cachedReader = parsed
+                reader = parsed
             }
 
-            result.append(metadata(for: pix, sourceIndex: index, object: object))
+            guard let attributes = reader.dynamicFrameAttributes(at: max(Int(pix.frameNo), 0)) else {
+                continue
+            }
+            result.append(metadata(for: pix, sourceIndex: index, attributes: attributes))
         }
         return result
     }
 
-    private static func metadata(for pix: DCMPix, sourceIndex: Int, object: DCMObject) -> MetalDynamicFrameMetadata {
-        let frameNumber = max(Int(pix.frameNo), 0)
-        let perFrameItem = sequenceItems(in: object, named: "Per-frameFunctionalGroupsSequence").element(at: frameNumber)
-        let frameContent = perFrameItem.flatMap { firstSequenceItem(in: $0, named: "FrameContentSequence") }
-        let planePosition = perFrameItem.flatMap {
-            firstSequenceItem(in: $0, named: "PlanePositionSequence")
-                ?? firstSequenceItem(in: $0, named: "PlanePositionVolumeSequence")
-        }
-        let cardiac = perFrameItem.flatMap { firstSequenceItem(in: $0, named: "CardiacSynchronizationSequence") }
-        let temporalPosition = perFrameItem.flatMap { firstSequenceItem(in: $0, named: "TemporalPositionSequence") }
-        let mrEcho = perFrameItem.flatMap { firstSequenceItem(in: $0, named: "MREchoSequence") }
-        let mrDiffusion = perFrameItem.flatMap { firstSequenceItem(in: $0, named: "MRDiffusionSequence") }
-
-        let dimensionOrganizationType = stringValue(in: object, named: "DimensionOrganizationType")?.uppercased()
-        let isExplicit3DTemporal = dimensionOrganizationType == "3D_TEMPORAL"
-        let dimensionValues = frameContent.flatMap { numberArray(in: $0, named: "DimensionIndexValues") } ?? []
-        let nuclearMedicineTemporalIndex = numberArray(in: object, named: "TimeSliceVector")?.element(at: frameNumber)
-            ?? numberArray(in: object, named: "TimeSlotVector")?.element(at: frameNumber)
-        let temporalIndex = intValue(in: frameContent, named: "TemporalPositionIndex")
-            ?? intValue(in: object, named: "TemporalPositionIdentifier")
-            ?? (isExplicit3DTemporal ? dimensionValues.first.map { Int($0.rounded()) } : nil)
-            ?? nuclearMedicineTemporalIndex.map { Int($0.rounded()) }
-        let numberOfTemporalPositions = intValue(in: object, tag: "0020,0105") ?? 0
-
-        let nuclearMedicineSliceIndex = numberArray(in: object, named: "SliceVector")?.element(at: frameNumber)
-        let inStackPosition = intValue(in: frameContent, named: "InStackPositionNumber")
-            ?? nuclearMedicineSliceIndex.map { Int($0.rounded()) }
-        let positionValues = numberArray(in: planePosition ?? object, named: "ImagePositionPatient")
-            ?? numberArray(in: planePosition ?? object, named: "ImagePositionVolume")
-        let position: SIMD3<Double>? = positionValues.flatMap {
-            guard $0.count >= 3 else { return nil }
-            return SIMD3<Double>($0[0], $0[1], $0[2])
-        }
-
-        let triggerMilliseconds = doubleValue(in: cardiac, named: "CardiacTriggerDelayTime")
-            ?? doubleValue(in: cardiac, named: "NominalPercentageOfCardiacPhase")
-            ?? doubleValue(in: temporalPosition, named: "TemporalPositionTimeOffset")
-            ?? doubleValue(in: object, named: "TriggerTime")
-        let echoMilliseconds = doubleValue(in: mrEcho, named: "EffectiveEchoTime")
-            ?? doubleValue(in: mrEcho, named: "EchoTime")
-            ?? doubleValue(in: object, named: "EchoTime")
-        let acquisitionSeconds = dicomTimeSeconds(
-            attributeValue(in: frameContent, tag: "0018,9074")
-                ?? attributeValue(in: object, tag: "0008,002A")
-                ?? attributeValue(in: object, tag: "0008,0032")
-                ?? attributeValue(in: object, tag: "0008,0033")
-        )
-
-        let imageType = (stringArray(in: object, named: "ImageType") ?? [])
-            .map { $0.uppercased() }
+    private static func metadata(
+        for pix: DCMPix,
+        sourceIndex: Int,
+        attributes: SwiftDICOMDynamicFrameAttributes
+    ) -> MetalDynamicFrameMetadata {
+        let imageType = attributes.imageType.map { $0.uppercased() }
         let hasDynamicImageType = imageType.contains(where: {
             $0 == "DYNAMIC" || $0 == "GATED" || $0.contains("PERFUSION") || $0.contains("CINE")
         })
-        let excludesTimingHeuristic = mrDiffusion != nil
+        let excludesTimingHeuristic = attributes.hasMRDiffusionSequence
             || imageType.contains(where: {
                 $0.contains("DIFFUSION") || $0 == "ADC" || $0.contains("TRACEW")
                     || $0.contains("MIP") || $0.contains("SUBTRACTION")
                     || $0 == "PHASE" || $0.contains("MAGNITUDE") || $0.contains("ENERGY")
             })
 
-        let recommendedRate = doubleValue(in: object, named: "RecommendedDisplayFrameRate")
-            ?? doubleValue(in: object, named: "CineRate")
-        let frameTimeMilliseconds = doubleValue(in: object, named: "FrameTime")
-            ?? numberArray(in: object, named: "FrameTimeVector")?.first
         let preferredFrameDuration: TimeInterval?
-        if let recommendedRate, recommendedRate > 0 {
+        if let recommendedRate = attributes.recommendedDisplayFrameRate, recommendedRate > 0 {
             preferredFrameDuration = 1 / recommendedRate
-        } else if let frameTimeMilliseconds, frameTimeMilliseconds > 0 {
+        } else if let frameTimeMilliseconds = attributes.frameTimeMilliseconds, frameTimeMilliseconds > 0 {
             preferredFrameDuration = frameTimeMilliseconds / 1_000
         } else {
             preferredFrameDuration = nil
@@ -1702,13 +1691,15 @@ private enum MetalDynamicSeriesDetector {
         return MetalDynamicFrameMetadata(
             sourceIndex: sourceIndex,
             pix: pix,
-            temporalIndex: temporalIndex,
-            inStackPosition: inStackPosition,
-            position: position,
-            acquisitionSeconds: acquisitionSeconds,
-            triggerMilliseconds: triggerMilliseconds,
-            echoMilliseconds: echoMilliseconds,
-            hasExplicitTemporalDimension: isExplicit3DTemporal || numberOfTemporalPositions > 1 || temporalIndex != nil,
+            temporalIndex: attributes.temporalIndex,
+            inStackPosition: attributes.inStackPosition,
+            position: attributes.position,
+            acquisitionSeconds: dicomTimeSeconds(attributes.acquisitionTime),
+            triggerMilliseconds: attributes.triggerMilliseconds,
+            echoMilliseconds: attributes.echoMilliseconds,
+            hasExplicitTemporalDimension: attributes.hasExplicit3DTemporalDimension
+                || attributes.numberOfTemporalPositions > 1
+                || attributes.temporalIndex != nil,
             hasCineTiming: preferredFrameDuration != nil,
             hasDynamicImageType: hasDynamicImageType,
             excludesTimingHeuristic: excludesTimingHeuristic,
@@ -1868,82 +1859,6 @@ private enum MetalDynamicSeriesDetector {
         }.sorted()
         guard differences.isEmpty == false else { return nil }
         return differences[differences.count / 2]
-    }
-
-    private static func sequenceItems(in object: DCMObject, named name: String) -> [DCMObject] {
-        guard let sequence = object.attribute(withName: name) as? DCMSequenceAttribute else { return [] }
-        return sequence.sequence.compactMap { $0 as? DCMObject }
-    }
-
-    private static func firstSequenceItem(in object: DCMObject, named name: String) -> DCMObject? {
-        sequenceItems(in: object, named: name).first
-    }
-
-    private static func stringValue(in object: DCMObject?, named name: String) -> String? {
-        guard let object else { return nil }
-        if let value = object.attributeValue(withName: name) as? String {
-            return nonEmpty(value)
-        }
-        if let value = object.attributeValue(withName: name) as? NSNumber {
-            return value.stringValue
-        }
-        return nil
-    }
-
-    private static func attributeValue(in object: DCMObject?, tag: String) -> Any? {
-        object?.attributeValue(forKey: tag)
-    }
-
-    private static func intValue(in object: DCMObject?, named name: String) -> Int? {
-        guard let value = stringValue(in: object, named: name), let number = Double(value), number.isFinite else {
-            return nil
-        }
-        return Int(number.rounded())
-    }
-
-    private static func intValue(in object: DCMObject?, tag: String) -> Int? {
-        guard let object else { return nil }
-        let value: Double?
-        if let number = object.attributeValue(forKey: tag) as? NSNumber {
-            value = number.doubleValue
-        } else if let string = object.attributeValue(forKey: tag) as? String {
-            value = Double(string.trimmingCharacters(in: .whitespacesAndNewlines))
-        } else {
-            value = nil
-        }
-        guard let value, value.isFinite else { return nil }
-        return Int(value.rounded())
-    }
-
-    private static func doubleValue(in object: DCMObject?, named name: String) -> Double? {
-        guard let object else { return nil }
-        if let value = object.attributeValue(withName: name) as? NSNumber {
-            return value.doubleValue
-        }
-        guard let value = stringValue(in: object, named: name) else { return nil }
-        return Double(value.components(separatedBy: "\\").first ?? value)
-    }
-
-    private static func numberArray(in object: DCMObject?, named name: String) -> [Double]? {
-        guard let object else { return nil }
-        if let values = object.attributeArray(withName: name) as? [NSNumber] {
-            return values.map(\.doubleValue)
-        }
-        if let values = object.attributeArray(withName: name) as? [String] {
-            return values.compactMap(Double.init)
-        }
-        if let string = stringValue(in: object, named: name) {
-            return string.components(separatedBy: "\\").compactMap(Double.init)
-        }
-        return nil
-    }
-
-    private static func stringArray(in object: DCMObject?, named name: String) -> [String]? {
-        guard let object else { return nil }
-        if let values = object.attributeArray(withName: name) as? [String], values.isEmpty == false {
-            return values
-        }
-        return stringValue(in: object, named: name)?.components(separatedBy: "\\")
     }
 
     private static func dicomTimeSeconds(_ rawValue: Any?) -> Double? {
@@ -2445,13 +2360,10 @@ private final class MetalDICOMFrameGeometryCache {
         }
         lock.unlock()
 
-        guard let object = DCMObject.object(
-            withContentsOfFile: path,
-            decodingPixelData: false
-        ) as? DCMObject,
-        let metadata = Self.metadata(
-            forFrame: frameIndex,
-            object: object,
+        guard let reader = try? SwiftDICOMReader.cached(contentsOfFile: path),
+              let attributes = reader.frameGeometryAttributes(at: frameIndex),
+              let metadata = Self.metadata(
+            attributes: attributes,
             width: max(Int(pix.widthWithoutLoading()), 1),
             height: max(Int(pix.heightWithoutLoading()), 1)
         ) else {
@@ -2476,90 +2388,26 @@ private final class MetalDICOMFrameGeometryCache {
     }
 
     private static func metadata(
-        forFrame frameIndex: Int,
-        object: DCMObject,
+        attributes: SwiftDICOMFrameGeometryAttributes,
         width: Int,
         height: Int
     ) -> MetalDICOMFrameGeometryMetadata? {
-        let sharedGroup = sequenceItems(in: object, named: "SharedFunctionalGroupsSequence").first
-        let perFrameGroup = sequenceItems(
-            in: object,
-            named: "Per-frameFunctionalGroupsSequence"
-        ).element(at: frameIndex)
-
-        let planeOrientation = firstSequenceItem(in: perFrameGroup, named: "PlaneOrientationSequence")
-            ?? firstSequenceItem(in: perFrameGroup, named: "PlaneOrientationVolumeSequence")
-            ?? firstSequenceItem(in: sharedGroup, named: "PlaneOrientationSequence")
-            ?? firstSequenceItem(in: sharedGroup, named: "PlaneOrientationVolumeSequence")
-        let orientationValues = numberArray(
-            in: planeOrientation ?? object,
-            named: "ImageOrientationPatient"
-        ) ?? numberArray(
-            in: planeOrientation ?? object,
-            named: "ImageOrientationVolume"
-        )
-
-        var row = SIMD3<Double>(1, 0, 0)
-        var column = SIMD3<Double>(0, 1, 0)
-        if let orientationValues, orientationValues.count >= 6 {
-            let candidateRow = SIMD3<Double>(
-                orientationValues[0],
-                orientationValues[1],
-                orientationValues[2]
-            )
-            let candidateColumn = SIMD3<Double>(
-                orientationValues[3],
-                orientationValues[4],
-                orientationValues[5]
-            )
-            if simd_length(candidateRow) > 0.000001,
-               simd_length(candidateColumn) > 0.000001 {
-                row = simd_normalize(candidateRow)
-                column = simd_normalize(candidateColumn)
-            }
+        var row = attributes.row
+        var column = attributes.column
+        if simd_length(row) > 0.000001, simd_length(column) > 0.000001 {
+            row = simd_normalize(row)
+            column = simd_normalize(column)
+        } else {
+            row = SIMD3<Double>(1, 0, 0)
+            column = SIMD3<Double>(0, 1, 0)
         }
         let normalCandidate = simd_cross(row, column)
         guard simd_length(normalCandidate) > 0.000001 else { return nil }
         let normal = simd_normalize(normalCandidate)
 
-        let planePosition = firstSequenceItem(in: perFrameGroup, named: "PlanePositionSequence")
-            ?? firstSequenceItem(in: perFrameGroup, named: "PlanePositionVolumeSequence")
-            ?? firstSequenceItem(in: sharedGroup, named: "PlanePositionSequence")
-            ?? firstSequenceItem(in: sharedGroup, named: "PlanePositionVolumeSequence")
-        let positionValues = numberArray(
-            in: planePosition ?? object,
-            named: "ImagePositionPatient"
-        ) ?? numberArray(
-            in: planePosition ?? object,
-            named: "ImagePositionVolume"
-        )
-        let origin = positionValues.flatMap { values -> SIMD3<Double>? in
-            guard values.count >= 3 else { return nil }
-            return SIMD3<Double>(values[0], values[1], values[2])
-        } ?? .zero
-
-        let pixelMeasures = firstSequenceItem(in: perFrameGroup, named: "PixelMeasuresSequence")
-            ?? firstSequenceItem(in: sharedGroup, named: "PixelMeasuresSequence")
-        let spacingValues = numberArray(in: pixelMeasures, named: "PixelSpacing")
-            ?? numberArray(in: object, named: "PixelSpacing")
-            ?? numberArray(in: object, named: "ImagerPixelSpacing")
-            ?? []
-        let spacingY = max(spacingValues.first ?? 1, 0.000001)
-        let spacingX = max(spacingValues.dropFirst().first ?? spacingValues.first ?? 1, 0.000001)
-        let sliceThickness = abs(
-            doubleValue(in: pixelMeasures, named: "SliceThickness")
-                ?? doubleValue(in: object, named: "SliceThickness")
-                ?? 0
-        )
-        let spacingBetweenSlices = abs(
-            doubleValue(in: pixelMeasures, named: "SpacingBetweenSlices")
-                ?? doubleValue(in: object, named: "SpacingBetweenSlices")
-                ?? 0
-        )
-
-        let center = origin
-            + row * ((Double(width) * 0.5 - 0.5) * spacingX)
-            + column * ((Double(height) * 0.5 - 0.5) * spacingY)
+        let center = attributes.origin
+            + row * ((Double(width) * 0.5 - 0.5) * attributes.spacingX)
+            + column * ((Double(height) * 0.5 - 0.5) * attributes.spacingY)
         let absoluteNormal = SIMD3<Double>(abs(normal.x), abs(normal.y), abs(normal.z))
         let sliceLocation: Double
         if absoluteNormal.x >= absoluteNormal.y, absoluteNormal.x >= absoluteNormal.z {
@@ -2571,57 +2419,16 @@ private final class MetalDICOMFrameGeometryCache {
         }
 
         return MetalDICOMFrameGeometryMetadata(
-            origin: origin,
+            origin: attributes.origin,
             row: row,
             column: column,
             normal: normal,
-            spacingX: spacingX,
-            spacingY: spacingY,
-            sliceThickness: sliceThickness,
-            spacingBetweenSlices: spacingBetweenSlices,
+            spacingX: attributes.spacingX,
+            spacingY: attributes.spacingY,
+            sliceThickness: attributes.sliceThickness,
+            spacingBetweenSlices: attributes.spacingBetweenSlices,
             sliceLocation: sliceLocation
         )
-    }
-
-    private static func sequenceItems(in object: DCMObject?, named name: String) -> [DCMObject] {
-        guard let sequence = object?.attribute(withName: name) as? DCMSequenceAttribute else {
-            return []
-        }
-        return sequence.sequence.compactMap { $0 as? DCMObject }
-    }
-
-    private static func firstSequenceItem(in object: DCMObject?, named name: String) -> DCMObject? {
-        sequenceItems(in: object, named: name).first
-    }
-
-    private static func doubleValue(in object: DCMObject?, named name: String) -> Double? {
-        guard let rawValue = object?.attributeValue(withName: name) else { return nil }
-        if let number = rawValue as? NSNumber {
-            return number.doubleValue
-        }
-        if let string = rawValue as? String {
-            return Double(
-                string.components(separatedBy: "\\").first?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            )
-        }
-        return nil
-    }
-
-    private static func numberArray(in object: DCMObject?, named name: String) -> [Double]? {
-        guard let object else { return nil }
-        if let numbers = object.attributeArray(withName: name) as? [NSNumber] {
-            return numbers.map(\.doubleValue)
-        }
-        if let strings = object.attributeArray(withName: name) as? [String] {
-            return strings.compactMap(Double.init)
-        }
-        if let string = object.attributeValue(withName: name) as? String {
-            return string.components(separatedBy: "\\").compactMap {
-                Double($0.trimmingCharacters(in: .whitespacesAndNewlines))
-            }
-        }
-        return nil
     }
 
     private func nonEmpty(_ value: String?) -> String? {
@@ -3121,7 +2928,6 @@ final class MetalPreparedVolumeCache {
             return
         }
         inFlightCompletions[requestKey] = [completion]
-        let existingEntry = entries[key]
         lock.unlock()
 
         let requestedPixList = pixList
@@ -3132,12 +2938,18 @@ final class MetalPreparedVolumeCache {
                 requestKey: requestKey,
                 pixList: requestedPixList,
                 sourceEntry: sourceEntry,
-                existingEntry: existingEntry,
+                existingEntry: self.existingPreparedEntry(forKey: key),
                 device: device,
                 correctGantryTilt: correctGantryTilt,
                 includeRegistrationPyramid: includeRegistrationPyramid
             )
         }
+    }
+
+    private func existingPreparedEntry(forKey key: String) -> Entry? {
+        lock.lock()
+        defer { lock.unlock() }
+        return entries[key]
     }
 
     private func encodeEntry(
@@ -3249,24 +3061,22 @@ final class MetalPreparedVolumeCache {
             fullDynamicWindow: sourceEntry.fullDynamicWindow
         )
 
-        commandBuffer.addCompletedHandler { [weak self] completedBuffer in
-            guard let self else { return }
-            guard completedBuffer.status == .completed else {
-                self.finish(requestKey: requestKey, key: key, entry: nil)
-                return
-            }
-            MetalViewerDiagnostics.registrationTimingLog(
-                format: "MetalPreparedVolumeCache prepare %dx%dx%d pyramid=%d gantry=%d %.3f s",
-                outputDimensions.x,
-                outputDimensions.y,
-                outputDimensions.z,
-                includeRegistrationPyramid ? 1 : 0,
-                appliesGantryCorrection ? 1 : 0,
-                CFAbsoluteTimeGetCurrent() - start
-            )
-            self.finish(requestKey: requestKey, key: key, entry: entry)
-        }
         commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        guard commandBuffer.status == .completed else {
+            finish(requestKey: requestKey, key: key, entry: nil)
+            return
+        }
+        MetalViewerDiagnostics.registrationTimingLog(
+            format: "MetalPreparedVolumeCache prepare %dx%dx%d pyramid=%d gantry=%d %.3f s",
+            outputDimensions.x,
+            outputDimensions.y,
+            outputDimensions.z,
+            includeRegistrationPyramid ? 1 : 0,
+            appliesGantryCorrection ? 1 : 0,
+            CFAbsoluteTimeGetCurrent() - start
+        )
+        finish(requestKey: requestKey, key: key, entry: entry)
     }
 
     private func encodeStoredConversion(

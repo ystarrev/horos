@@ -408,6 +408,8 @@
 		7ECB4B42072EF9F800C2CFC4 /* DCMCalendarScript.m in Sources */ = {isa = PBXBuildFile; fileRef = 7ECB4B40072EF9F800C2CFC4 /* DCMCalendarScript.m */; };
 		7ECBB8230683A68D00FF3FF4 /* DCMPixelDataAttribute.h in Headers */ = {isa = PBXBuildFile; fileRef = 7ECBB8210683A68D00FF3FF4 /* DCMPixelDataAttribute.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		7ECBB8240683A68D00FF3FF4 /* DCMPixelDataAttribute.mm in Sources */ = {isa = PBXBuildFile; fileRef = 7ECBB8220683A68D00FF3FF4 /* DCMPixelDataAttribute.mm */; };
+		F4D1C0DE0001000000000002 /* DCMJPEGCodecBridge.h in Headers */ = {isa = PBXBuildFile; fileRef = F4D1C0DE0002000000000002 /* DCMJPEGCodecBridge.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		F4D1C0DE0001000000000003 /* DCMJPEGCodecBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4D1C0DE0002000000000003 /* DCMJPEGCodecBridge.mm */; };
 		7EE0DC02067A48A3003E745F /* DCMCharacterSet.h in Headers */ = {isa = PBXBuildFile; fileRef = 7EE0DC00067A48A3003E745F /* DCMCharacterSet.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		7EE0DC03067A48A3003E745F /* DCMCharacterSet.m in Sources */ = {isa = PBXBuildFile; fileRef = 7EE0DC01067A48A3003E745F /* DCMCharacterSet.m */; };
 		7EE0DC3E067A5138003E745F /* DCMSequenceAttribute.h in Headers */ = {isa = PBXBuildFile; fileRef = 7EE0DC3C067A5138003E745F /* DCMSequenceAttribute.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -982,6 +984,9 @@
 		F4A100000001000000000006 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000006 /* Metal.framework */; };
 		F4A100000001000000000007 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000007 /* MetalKit.framework */; };
 		F4A100000001000000000008 /* Horos/Sources/MetalViewer/MetalViewerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000008 /* Horos/Sources/MetalViewer/MetalViewerModels.swift */; };
+		F4D1C0DE0001000000000001 /* Horos/Sources/MetalViewer/SwiftDICOMReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D1C0DE0002000000000001 /* Horos/Sources/MetalViewer/SwiftDICOMReader.swift */; };
+		F4D1C0DE0011000000000001 /* DICOMImportMetadataParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D1C0DE0012000000000001 /* DICOMImportMetadataParser.swift */; };
+		F4D1C0DE0011000000000002 /* SwiftDICOMImportMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D1C0DE0012000000000002 /* SwiftDICOMImportMetadata.swift */; };
 		F4A100000001000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift */; };
 		F4A10000000100000000000A /* Horos/Sources/MetalViewer/MetalViewerToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000A /* Horos/Sources/MetalViewer/MetalViewerToolbarView.swift */; };
 		F4A10000000100000000000B /* Horos/Sources/MetalViewer/MetalViewerScoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000B /* Horos/Sources/MetalViewer/MetalViewerScoutView.swift */; };
@@ -1696,6 +1701,8 @@
 		7ECB4B40072EF9F800C2CFC4 /* DCMCalendarScript.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = DCMCalendarScript.m; path = Horos/Sources/DCMCalendarScript.m; sourceTree = SOURCE_ROOT; };
 		7ECBB8210683A68D00FF3FF4 /* DCMPixelDataAttribute.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = DCMPixelDataAttribute.h; path = "DCM Framework/DCMPixelDataAttribute.h"; sourceTree = SOURCE_ROOT; };
 		7ECBB8220683A68D00FF3FF4 /* DCMPixelDataAttribute.mm */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.objcpp; lineEnding = 0; name = DCMPixelDataAttribute.mm; path = "DCM Framework/DCMPixelDataAttribute.mm"; sourceTree = SOURCE_ROOT; xcLanguageSpecificationIdentifier = xcode.lang.objcpp; };
+		F4D1C0DE0002000000000002 /* DCMJPEGCodecBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DCMJPEGCodecBridge.h; path = "DCM Framework/DCMJPEGCodecBridge.h"; sourceTree = SOURCE_ROOT; };
+		F4D1C0DE0002000000000003 /* DCMJPEGCodecBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = DCMJPEGCodecBridge.mm; path = "DCM Framework/DCMJPEGCodecBridge.mm"; sourceTree = SOURCE_ROOT; };
 		7EE0DC00067A48A3003E745F /* DCMCharacterSet.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DCMCharacterSet.h; path = "DCM Framework/DCMCharacterSet.h"; sourceTree = SOURCE_ROOT; };
 		7EE0DC01067A48A3003E745F /* DCMCharacterSet.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = DCMCharacterSet.m; path = "DCM Framework/DCMCharacterSet.m"; sourceTree = SOURCE_ROOT; };
 		7EE0DC3C067A5138003E745F /* DCMSequenceAttribute.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DCMSequenceAttribute.h; path = "DCM Framework/DCMSequenceAttribute.h"; sourceTree = SOURCE_ROOT; };
@@ -2291,6 +2298,9 @@
 		F4A100000002000000000006 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		F4A100000002000000000008 /* Horos/Sources/MetalViewer/MetalViewerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerModels.swift; sourceTree = SOURCE_ROOT; };
+		F4D1C0DE0002000000000001 /* Horos/Sources/MetalViewer/SwiftDICOMReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/SwiftDICOMReader.swift; sourceTree = SOURCE_ROOT; };
+		F4D1C0DE0012000000000001 /* DICOMImportMetadataParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/DICOMImportMetadataParser.swift; sourceTree = SOURCE_ROOT; };
+		F4D1C0DE0012000000000002 /* SwiftDICOMImportMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/SwiftDICOMImportMetadata.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerPaneView.swift; sourceTree = SOURCE_ROOT; };
 		F4A10000000200000000000A /* Horos/Sources/MetalViewer/MetalViewerToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerToolbarView.swift; sourceTree = SOURCE_ROOT; };
 		F4A10000000200000000000B /* Horos/Sources/MetalViewer/MetalViewerScoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerScoutView.swift; sourceTree = SOURCE_ROOT; };
@@ -3008,6 +3018,8 @@
 				7E0B3A13067526A600908593 /* DCM.h */,
 				7ECBB8210683A68D00FF3FF4 /* DCMPixelDataAttribute.h */,
 				7ECBB8220683A68D00FF3FF4 /* DCMPixelDataAttribute.mm */,
+				F4D1C0DE0002000000000002 /* DCMJPEGCodecBridge.h */,
+				F4D1C0DE0002000000000003 /* DCMJPEGCodecBridge.mm */,
 				BFAEB3F606BF3BD900C7EF1E /* DCMPixelDataAttributeJPEG8.h */,
 				BFAEB3F706BF3BD900C7EF1E /* DCMPixelDataAttributeJPEG8.m */,
 				BFAEB40606BF3BEE00C7EF1E /* DCMPixelDataAttributeJPEG12.h */,
@@ -4070,6 +4082,8 @@
 		CE9DD29A086B35740058DD2A /* CoreData */ = {
 			isa = PBXGroup;
 			children = (
+				F4D1C0DE0012000000000001 /* DICOMImportMetadataParser.swift */,
+				F4D1C0DE0012000000000002 /* SwiftDICOMImportMetadata.swift */,
 				59E52B3512C109B80094E668 /* DicomDatabase.h */,
 				59E52B3612C109B80094E668 /* DicomDatabase.mm */,
 				59C447C814516FF500D71580 /* DicomDatabase+Clean.h */,
@@ -4272,6 +4286,7 @@
 				F4A10000000200000000000E /* Horos/Sources/MetalViewer/Metal3DViewerToolbarController.swift */,
 				F4A10000000200000000000D /* Horos/Sources/MetalViewer/Metal3DViewerWindowController.swift */,
 				F4A100000002000000000008 /* Horos/Sources/MetalViewer/MetalViewerModels.swift */,
+				F4D1C0DE0002000000000001 /* Horos/Sources/MetalViewer/SwiftDICOMReader.swift */,
 				F4A100000002000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift */,
 				F4A10000000200000000000B /* Horos/Sources/MetalViewer/MetalViewerScoutView.swift */,
 				F4A10000000200000000000A /* Horos/Sources/MetalViewer/MetalViewerToolbarView.swift */,
@@ -4316,6 +4331,7 @@
 				7EE0DC02067A48A3003E745F /* DCMCharacterSet.h in Headers */,
 				7EE0DC3E067A5138003E745F /* DCMSequenceAttribute.h in Headers */,
 				7ECBB8230683A68D00FF3FF4 /* DCMPixelDataAttribute.h in Headers */,
+				F4D1C0DE0001000000000002 /* DCMJPEGCodecBridge.h in Headers */,
 				BF61E58E06A5BB9E001C0B29 /* DCMCalendarDate.h in Headers */,
 				BFAEB3FA06BF3BD900C7EF1E /* DCMPixelDataAttributeJPEG8.h in Headers */,
 				BFAEB40A06BF3BEE00C7EF1E /* DCMPixelDataAttributeJPEG12.h in Headers */,
@@ -5493,6 +5509,7 @@
 				7EE0DC03067A48A3003E745F /* DCMCharacterSet.m in Sources */,
 				7EE0DC3F067A5138003E745F /* DCMSequenceAttribute.m in Sources */,
 				7ECBB8240683A68D00FF3FF4 /* DCMPixelDataAttribute.mm in Sources */,
+				F4D1C0DE0001000000000003 /* DCMJPEGCodecBridge.mm in Sources */,
 				BF61E58F06A5BB9E001C0B29 /* DCMCalendarDate.m in Sources */,
 				BFAEB3FB06BF3BD900C7EF1E /* DCMPixelDataAttributeJPEG8.m in Sources */,
 				BFAEB40B06BF3BEE00C7EF1E /* DCMPixelDataAttributeJPEG12.m in Sources */,
@@ -5703,6 +5720,8 @@
 		AB28B42C05B7921E00A9906C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
+				F4D1C0DE0011000000000001 /* DICOMImportMetadataParser.swift in Sources */,
+				F4D1C0DE0011000000000002 /* SwiftDICOMImportMetadata.swift in Sources */,
 				F4A100000001000000000015 /* Horos/Sources/HorosSettingsWindowController.swift in Sources */,
 				F4CDA0010000000000000001 /* HorosDataModels.swift in Sources */,
 				F4CDA0010000000000000002 /* HorosDataStore.swift in Sources */,
@@ -5719,6 +5738,7 @@
 				F4A10000000100000000000E /* Horos/Sources/MetalViewer/Metal3DViewerToolbarController.swift in Sources */,
 				F4A10000000100000000000D /* Horos/Sources/MetalViewer/Metal3DViewerWindowController.swift in Sources */,
 				F4A100000001000000000008 /* Horos/Sources/MetalViewer/MetalViewerModels.swift in Sources */,
+				F4D1C0DE0001000000000001 /* Horos/Sources/MetalViewer/SwiftDICOMReader.swift in Sources */,
 				F4A100000001000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift in Sources */,
 				F4A10000000100000000000B /* Horos/Sources/MetalViewer/MetalViewerScoutView.swift in Sources */,
 				F4A10000000100000000000A /* Horos/Sources/MetalViewer/MetalViewerToolbarView.swift in Sources */,

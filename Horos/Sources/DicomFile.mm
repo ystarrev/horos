@@ -103,10 +103,7 @@ static NSString* HorosDicomFileBridgeString(char* value)
     return string;
 }
 
-extern NSRecursiveLock *PapyrusLock;
-
 static BOOL DEFAULTSSET = NO;
-static int TOOLKITPARSER = 1, PREFERPAPYRUSFORCD = 1;
 static BOOL COMMENTSAUTOFILL = NO, COMMENTSFROMDICOMFILES = NO;
 static BOOL splitMultiEchoMR = NO;
 static BOOL useSeriesDescription = NO;
@@ -120,8 +117,6 @@ static BOOL gUsePatientIDForUID = YES, gUsePatientBirthDateForUID = YES, gUsePat
 static BOOL SEPARATECARDIAC4D = NO;
 //static BOOL SeparateCardiacMR = NO;
 //static int SeparateCardiacMRMode = 0;
-static BOOL filesAreFromCDMedia = NO;
-
 #define QUICKTIMETIMEFRAMELIMIT 1200
 
 char* replaceBadCharacter (char* str, NSStringEncoding encoding)
@@ -224,11 +219,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
         }
     }
     return NO;
-}
-
-+ (void) setFilesAreFromCDMedia: (BOOL) f;
-{
-    filesAreFromCDMedia = f;
 }
 
 -(long) NoOfSeries {return NoOfSeries;}
@@ -557,11 +547,16 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
 
 + (void) resetDefaults
 {
-    DEFAULTSSET = NO;
+    @synchronized(self)
+    {
+        DEFAULTSSET = NO;
+    }
 }
 
 + (void) setDefaults
 {
+    @synchronized(self)
+    {
     if( DEFAULTSSET == NO)
     {
         if( [[NSUserDefaults standardUserDefaults] objectForKey: @"TOOLKITPARSER4"])
@@ -569,10 +564,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
             NSUserDefaults *sd = [NSUserDefaults standardUserDefaults];
             
             DEFAULTSSET = YES;
-            
-            PREFERPAPYRUSFORCD = (int)[sd integerForKey: @"PREFERPAPYRUSFORCD"];
-            TOOLKITPARSER = 2; // Always and only DCMTK. Papyrus has been removed from the project.
-            
             
             COMMENTSFROMDICOMFILES = [sd boolForKey: @"CommentsFromDICOMFiles"];
             COMMENTSAUTOFILL = [sd boolForKey: @"COMMENTSAUTOFILL"];
@@ -610,11 +601,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
             
             DEFAULTSSET = YES;
             
-            PREFERPAPYRUSFORCD = [[dict objectForKey: @"PREFERPAPYRUSFORCD"] intValue];
-            TOOLKITPARSER = [[dict objectForKey: @"TOOLKITPARSER4"] intValue];
-            if( TOOLKITPARSER == 0)
-                TOOLKITPARSER = 2;
-            
             COMMENTSFROMDICOMFILES = [[dict objectForKey: @"CommentsFromDICOMFiles"] intValue];
             COMMENTSAUTOFILL = [[dict objectForKey: @"COMMENTSAUTOFILL"] intValue];
             SEPARATECARDIAC4D = [[dict objectForKey: @"SEPARATECARDIAC4D"] intValue];
@@ -646,6 +632,7 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
             
             //			CHECKFORLAVIM = NO;
         }
+    }
     }
 }
 
@@ -1492,25 +1479,31 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     return nil;
 }
 
--(short) getDicomFilePapyrus :(BOOL) forceConverted
-{
-    return -1;
-}
-
 -(short) getDicomFile
 {
-    BOOL isCD = NO;
-    
-    if( PREFERPAPYRUSFORCD)
-        isCD = filesAreFromCDMedia;
-    
-    if( TOOLKITPARSER == 1 || isCD == YES) return [self getDicomFilePapyrus: NO];
-    
-    if( TOOLKITPARSER == 0) return [self getDicomFilePapyrus: NO];
-    
-    if( TOOLKITPARSER == 2) return [self getDicomFileDCMTK];
-    
     return [self getDicomFileDCMTK];
+}
+
++ (NSMutableDictionary *)metadataDictionaryForFileAtPath:(NSString *)path dicomOnly:(BOOL)dicomOnly
+{
+    if (path.length == 0)
+        return nil;
+
+    @try
+    {
+        DicomFile *file = [[DicomFile alloc] init:path DICOMOnly:dicomOnly];
+        if (file == nil)
+            return nil;
+
+        NSMutableDictionary *metadata = [[file dicomElements] retain];
+        [file release];
+        return [metadata autorelease];
+    }
+    @catch (NSException *exception)
+    {
+        N2LogExceptionWithStackTrace(exception);
+        return nil;
+    }
 }
 
 - (id) initRandom

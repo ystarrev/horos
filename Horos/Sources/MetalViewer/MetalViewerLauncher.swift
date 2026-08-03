@@ -1071,7 +1071,7 @@ final class MetalViewerLauncher: NSObject {
     ) -> CrossSeriesMetadata? {
         guard let firstImage = imageGroup.imageObjects.first else { return nil }
         guard let path = resolvedPath(for: firstImage) else { return nil }
-        guard let object = DCMObject.object(withContentsOfFile: path, decodingPixelData: false) as? DCMObject else { return nil }
+        guard let object = try? SwiftDICOMReader.cached(contentsOfFile: path) else { return nil }
 
         let modality = normalizedMetadataString(
             attributeString(in: object, tag: "0008,0060")
@@ -1082,7 +1082,7 @@ final class MetalViewerLauncher: NSObject {
         let standardTemporalPositionCount = attributeInt(in: object, tag: "0020,0105") ?? 0
         let acquisitionNumber = attributeInt(in: object, tag: "0020,0012")
         let seriesNumber = attributeInt(in: object, tag: "0020,0011")
-        let acquisitionSeconds = dicomClockSeconds(object.attributeValue(forKey: "0008,0032"))
+        let acquisitionSeconds = dicomClockSeconds(attributeString(in: object, tag: "0008,0032"))
         let frameOfReferenceUID = normalizedMetadataString(attributeString(in: object, tag: "0020,0052"))
         guard let acquisitionNumber,
               let acquisitionSeconds,
@@ -1156,7 +1156,7 @@ final class MetalViewerLauncher: NSObject {
         )
         let slicePartition = crossSeriesSlicePartitionMetadata(
             for: imageGroup,
-            firstObject: object,
+            firstReader: object,
             identity: identity,
             temporalPositionCount: temporalPositionCount,
             seriesDescription: seriesDescription,
@@ -1169,7 +1169,7 @@ final class MetalViewerLauncher: NSObject {
 
     private class func crossSeriesSlicePartitionMetadata(
         for imageGroup: SeriesImageGroup,
-        firstObject: DCMObject,
+        firstReader: SwiftDICOMReader,
         identity: CrossSeriesIdentityKey,
         temporalPositionCount: Int,
         seriesDescription: String,
@@ -1198,19 +1198,19 @@ final class MetalViewerLauncher: NSObject {
         spatialPositions.reserveCapacity(timePointCount)
 
         for (index, imageObject) in imageGroup.imageObjects.enumerated() {
-            let object: DCMObject
+            let object: SwiftDICOMReader
             if index == 0 {
-                object = firstObject
+                object = firstReader
             } else {
                 guard let path = resolvedPath(for: imageObject),
-                      let parsed = DCMObject.object(withContentsOfFile: path, decodingPixelData: false) as? DCMObject else {
+                      let parsed = try? SwiftDICOMReader.cached(contentsOfFile: path) else {
                     return nil
                 }
                 object = parsed
             }
 
             guard let acquisitionNumber = attributeInt(in: object, tag: "0020,0012"),
-                  let seconds = dicomClockSeconds(object.attributeValue(forKey: "0008,0032")) else {
+                  let seconds = dicomClockSeconds(attributeString(in: object, tag: "0008,0032")) else {
                 return nil
             }
             let position = metadataSignature(attributeNumbers(in: object, tag: "0020,0032"), precision: 3)
@@ -1273,39 +1273,20 @@ final class MetalViewerLauncher: NSObject {
         return sopClassUID != "1.2.840.10008.5.1.4.1.1.88.59"
     }
 
-    private class func attributeString(in object: DCMObject, tag: String) -> String? {
-        if let value = object.attributeValue(forKey: tag) as? String {
-            return value.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        if let value = object.attributeValue(forKey: tag) as? NSNumber {
-            return value.stringValue
-        }
-        return nil
+    private class func attributeString(in object: SwiftDICOMReader, tag: String) -> String? {
+        object.stringValue(forTag: tag)?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private class func attributeDouble(in object: DCMObject, tag: String) -> Double? {
-        if let value = object.attributeValue(forKey: tag) as? NSNumber {
-            return value.doubleValue
-        }
-        guard let value = attributeString(in: object, tag: tag) else { return nil }
-        return Double(value.components(separatedBy: "\\").first ?? value)
+    private class func attributeDouble(in object: SwiftDICOMReader, tag: String) -> Double? {
+        object.numberValue(forTag: tag)
     }
 
-    private class func attributeInt(in object: DCMObject, tag: String) -> Int? {
-        guard let value = attributeDouble(in: object, tag: tag), value.isFinite else { return nil }
-        return Int(value.rounded())
+    private class func attributeInt(in object: SwiftDICOMReader, tag: String) -> Int? {
+        object.integerValue(forTag: tag)
     }
 
-    private class func attributeNumbers(in object: DCMObject, tag: String) -> [Double] {
-        if let values = object.attributeArray(forKey: tag) as? [NSNumber] {
-            return values.map(\.doubleValue)
-        }
-        if let values = object.attributeArray(forKey: tag) as? [String] {
-            return values.compactMap(Double.init)
-        }
-        return attributeString(in: object, tag: tag)?
-            .components(separatedBy: "\\")
-            .compactMap(Double.init) ?? []
+    private class func attributeNumbers(in object: SwiftDICOMReader, tag: String) -> [Double] {
+        object.numberValues(forTag: tag)
     }
 
     private class func normalizedMetadataString(_ value: String?) -> String {

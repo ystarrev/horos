@@ -682,7 +682,7 @@ static NSString* _dcmElementKey(DcmElement* element) {
                 }
             }
             
-            dicomImages = [dicomImages arrayByAddingObjectsFromArray: [self objectsWithIDs:[self addFilesAtPaths:dicomFilePaths postNotifications:NO dicomOnly:NO rereadExistingItems:NO generatedByOsiriX:NO importedFiles:YES returnArray:YES]]];
+            dicomImages = [dicomImages arrayByAddingObjectsFromArray: [self objectsWithIDs:[self addFilesAtPaths:dicomFilePaths postNotifications:NO dicomOnly:YES rereadExistingItems:NO generatedByOsiriX:NO importedFiles:YES returnArray:YES]]];
         }
         
         if (!dicomImages.count)

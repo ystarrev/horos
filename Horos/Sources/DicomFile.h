@@ -75,9 +75,11 @@
 + (BOOL) isDICOMFile:(NSString *) file compressed:(BOOL*) compressed image:(BOOL*) image;
 + (BOOL) isXMLDescriptedFile:(NSString *) file; /**< Test for XML descripted  file format */
 + (BOOL) isXMLDescriptorFile:(NSString *) file; /**< Test for XML descriptor file format. Fake DICOM for other files with XML descriptor*/
-+ (void) setFilesAreFromCDMedia: (BOOL) f; /**< Set flag for filesAreFromCDMedia */
 + (void) setDefaults;  /**< Set DEFAULTSSET flag to NO */
 + (void) resetDefaults; /**< Resets to user defaults */
++ (NSMutableDictionary *)metadataDictionaryForFileAtPath:(NSString *)path
+                                                        dicomOnly:(BOOL)dicomOnly
+    NS_SWIFT_NAME(metadataDictionary(fileAtPath:dicomOnly:));
 /**  Return string with invalid characters replaced
 * replaces @"^" with @" "
 * replaces @"/" with @"-"

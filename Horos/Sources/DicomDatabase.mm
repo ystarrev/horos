@@ -50,6 +50,7 @@
 #import "DicomSeries.h"
 #import "DicomFile.h"
 #import "DicomFileDCMTKCategory.h"
+#import "HorosSwiftInterop.h"
 #import "ThreadsManager.h"
 #import "AppController.h"
 #import "NSDictionary+N2.h"
@@ -1775,99 +1776,71 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
         if (chunkRange.length == 0)
             break;
         
-        BOOL isCDMedia = [BrowserController isItCD:[paths objectAtIndex:chunkRange.location]];
-        [DicomFile setFilesAreFromCDMedia:isCDMedia];
-        
-        NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
-        NSTimeInterval parseStart = start;
-        
-        for (NSUInteger i = chunkRange.location; i < chunkRange.location+chunkRange.length; ++i)
-        {
-            if( [NSDate timeIntervalSinceReferenceDate] - start > 0.5 || i == chunkRange.location+chunkRange.length-1) {
-                thread.progress = 1.0*i/paths.count;
-                start = [NSDate timeIntervalSinceReferenceDate];
-            }
-            
-        
-            NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
-            @try {
-                NSString* newFile = [paths objectAtIndex:i];
-                DicomFile *curFile = nil;
-                NSMutableDictionary	*curDict = nil;
-                
-                @try {
-#ifdef RANDOMFILES
-                    curFile = [[DicomFile alloc] initRandom];
-#else
-                    curFile = [[DicomFile alloc] init:newFile];
-#endif
-                } @catch (NSException* e)
-                {
-                    N2LogExceptionWithStackTrace(e);
-                }
-                
-                if (curFile)
-                {
-                    curDict = [curFile dicomElements];
-                    if (dicomOnly)
-                    {
-                        if ([[curDict objectForKey: @"fileType"] hasPrefix:@"DICOM"] == NO)
-                            curDict = nil;
-                    }
-                    
-                    if (curDict)
-                    {
-                        [dicomFilesArray addObject: curDict];
-                    }
-                    else
-                    {
-                        // This file was not readable -> If it is located in the DATABASE folder, we have to delete it or to move it to the 'NOT READABLE' folder
-                        if (dataDirPath && [newFile hasPrefix: dataDirPath])
-                        {
-                            NSLog(@"**** Unreadable file: %@", newFile);
-                            
-                            if ( DELETEFILELISTENER)
-                            {
-                                [[NSFileManager defaultManager] removeItemAtPath: newFile error:NULL];
-                            }
-                            else
-                            {
-                                NSLog(@"**** This file in the DATABASE folder: move it to the unreadable folder");
-                                
-                                if ([[NSFileManager defaultManager] moveItemAtPath:newFile toPath:[errorsDirPath stringByAppendingPathComponent:[newFile lastPathComponent]] error:NULL] == NO)
-                                    [[NSFileManager defaultManager] removeItemAtPath: newFile error:NULL];
-                            }
-                        }
-                    }
-                    
-                    [curFile release];
-                }
-            }
-            @catch (NSException* e)
-            {
-                N2LogExceptionWithStackTrace(e);
-            }
-            @finally
-            {
-                [pool release];
-            }
-            
+        NSTimeInterval parseStart = [NSDate timeIntervalSinceReferenceDate];
+        NSArray *chunkPaths = [paths subarrayWithRange:chunkRange];
+        NSArray *callingQueueOperations = [[[NSOperationQueue currentQueue] operations] copy];
+        BOOL (^isImportCancelled)(void) = [[^BOOL {
             if (thread.isCancelled)
+                return YES;
+
+            for (NSOperation *operation in callingQueueOperations)
+                if (operation.isCancelled)
+                    return YES;
+
+            return NO;
+        } copy] autorelease];
+
+        __block NSTimeInterval lastProgressUpdate = parseStart;
+        NSArray<HorosDICOMImportMetadataResult *> *parseResults =
+            [HorosDICOMImportMetadataParser parsePaths:chunkPaths
+                                             dicomOnly:dicomOnly
+                                           isCancelled:isImportCancelled
+                                                progress:^(NSInteger completedCount) {
+                NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+                if (now - lastProgressUpdate > 0.5 || completedCount == (NSInteger)chunkRange.length)
+                {
+                    thread.progress = (double)(chunkRange.location + completedCount) / (double)paths.count;
+                    lastProgressUpdate = now;
+                }
+            }];
+
+        BOOL parseWasCancelled = isImportCancelled();
+        [callingQueueOperations release];
+
+        if (parseWasCancelled)
+        {
+            [pool2 release];
+            break;
+        }
+
+        for (HorosDICOMImportMetadataResult *result in parseResults)
+        {
+            NSString *newFile = result.path;
+            NSMutableDictionary *curDict = result.metadata;
+
+            if (curDict)
             {
-                [dicomFilesArray removeAllObjects];
-                break;
+                [dicomFilesArray addObject:curDict];
             }
-            
-            BOOL cancelled = NO;
-            for( NSOperation *o in [[NSOperationQueue currentQueue] operations])
+            else if (dataDirPath && [newFile hasPrefix:dataDirPath])
             {
-                if( o.isCancelled)
-                    cancelled = YES;
-            }
-            if( cancelled)
-            {
-                [dicomFilesArray removeAllObjects];
-                break;
+                // A copied database file that cannot be parsed must not be
+                // left in the live data directory without an index entry.
+                NSLog(@"**** Unreadable file: %@", newFile);
+
+                if (DELETEFILELISTENER)
+                {
+                    [[NSFileManager defaultManager] removeItemAtPath:newFile error:NULL];
+                }
+                else
+                {
+                    NSLog(@"**** This file in the DATABASE folder: move it to the unreadable folder");
+
+                    if ([[NSFileManager defaultManager] moveItemAtPath:newFile
+                                                               toPath:[errorsDirPath stringByAppendingPathComponent:[newFile lastPathComponent]]
+                                                                error:NULL] == NO)
+                        [[NSFileManager defaultManager] removeItemAtPath:newFile error:NULL];
+                }
             }
         }
 
@@ -1889,8 +1862,6 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
                                                        returnArray: returnArray];
         
         [thread exitOperation];
-        
-        [DicomFile setFilesAreFromCDMedia: NO];
         
         //	[[NSFileManager defaultManager] removeItemAtPath: @"/tmp/dicomsr_osirix" error:NULL]; // nooooooo because other threads may be using it
         
@@ -3229,29 +3200,15 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                         {
                             if( [[NSFileManager defaultManager] fileExistsAtPath: srcPath])
                             {
-                                if( mountedVolume)
+                                if( mountedVolume == NO)
                                 {
-                                    @try
-                                    {
-                                        if( [[[DicomFile alloc] init: srcPath] autorelease]) // Pre-load for CD/DVD in cache
-                                        {
-                                            [copiedFiles addObject: srcPath];
-                                        }
-                                        else NSLog( @"**** DicomFile *curFile = nil");
-                                    }
-                                    @catch (NSException * e) {
-                                        N2LogExceptionWithStackTrace(e);
-                                    }
-                                }
-                                else
-                                {
-                                    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"validateFilesBeforeImporting"] && mountedVolume == NO) // mountedVolume : it's too slow to test the files now from a CD
+                                    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"validateFilesBeforeImporting"]) // mountedVolume : it's too slow to test the files now from a CD
                                     {
                                         // Pre-load for faster validating
                                         /*NSData *d =*/ [NSData dataWithContentsOfFile: srcPath];
                                     }
-                                    [copiedFiles addObject: srcPath];
                                 }
+                                [copiedFiles addObject: srcPath];
                             }
                         }
                         

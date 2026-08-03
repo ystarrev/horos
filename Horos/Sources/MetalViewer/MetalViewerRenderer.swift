@@ -879,6 +879,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         overlayTransferFunctionState = transferFunctionState
         overlayTransferFunctionStateDidChange = transferFunctionStateDidChange
         rebuildOverlayTransferTextures()
+        publishRegistrationPreparationUpdate(
+            message: "Loading registration volumes",
+            progress: 0.05
+        )
         prepareBaseVolumeIfNeeded()
         requestOverlayVolumeTexture()
         MetalViewerDiagnostics.registrationTimingLog("MetalViewerRenderer registration setOverlayPixList queued", since: overlayStart)
@@ -2651,14 +2655,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
               ) else {
             requestedStackVolumeKey = nil
             stackVolumeTextureEntry = nil
+            registrationPreparationDidFail("Could not read the base registration volume")
             return
         }
 
         if MetalSeriesTextureCache.shared.isEntryKnownUnavailable(
                for: pixList,
                device: deviceRef
-           ) {
+        ) {
             NSLog("%@", "Metal Viewer: unsupported stored-pixel encoding for volume \(key)")
+            registrationPreparationDidFail("Unsupported base registration volume")
             return
         }
 
@@ -2700,10 +2706,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             }
 
             guard let entry else {
+                self.requestedStackVolumeKey = nil
                 NSLog(
                     "%@",
                     "Metal Viewer: compact volume decode failed for \(requestedPixList.first?.srcFile ?? "unknown source")"
                 )
+                self.registrationPreparationDidFail("Could not decode the base registration volume")
                 return
             }
 
@@ -2714,6 +2722,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func stackVolumeTextureDidBecomeAvailable() {
         if displayMode.isMPRLike || overlayPixList.isEmpty == false {
+            publishRegistrationPreparationUpdate(
+                message: "Preparing base registration volume",
+                progress: 0.25
+            )
             prepareBaseVolumeIfNeeded()
         }
         stateDidChange?(stateDescription)
@@ -2727,6 +2739,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
               ) else {
             requestedOverlayVolumeKey = nil
             overlaySourceTextureEntry = nil
+            registrationPreparationDidFail("Could not read the overlay registration volume")
             return
         }
 
@@ -2736,6 +2749,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             device: deviceRef
         ) {
             overlaySourceTextureEntry = entry
+            publishRegistrationPreparationUpdate(
+                message: "Preparing overlay registration volume",
+                progress: 0.5
+            )
             prepareOverlayVolumeIfNeeded()
             return
         }
@@ -2755,14 +2772,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             }
 
             guard let entry else {
+                self.requestedOverlayVolumeKey = nil
                 NSLog(
                     "%@",
                     "Metal Viewer: compact overlay volume decode failed for \(requestedPixList.first?.srcFile ?? "unknown source")"
                 )
+                self.registrationPreparationDidFail("Could not decode the overlay registration volume")
                 return
             }
 
             self.overlaySourceTextureEntry = entry
+            self.publishRegistrationPreparationUpdate(
+                message: "Preparing overlay registration volume",
+                progress: 0.5
+            )
             self.prepareOverlayVolumeIfNeeded()
         }
     }
@@ -3025,11 +3048,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                   }) else {
                 return
             }
+            self.requestedBasePreparedVolumeKey = nil
             guard let entry else {
                 NSLog("%@", "Metal Viewer: GPU preparation failed for the base volume")
+                self.registrationPreparationDidFail("Could not prepare the base registration volume")
                 return
             }
-            self.requestedBasePreparedVolumeKey = nil
             self.installBasePreparedVolume(entry)
         }
     }
@@ -3065,11 +3089,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                   }) else {
                 return
             }
+            self.requestedOverlayPreparedVolumeKey = nil
             guard let entry else {
                 NSLog("%@", "Metal Viewer: GPU preparation failed for the overlay volume")
+                self.registrationPreparationDidFail("Could not prepare the overlay registration volume")
                 return
             }
-            self.requestedOverlayPreparedVolumeKey = nil
             self.installOverlayPreparedVolume(entry)
         }
     }
@@ -3145,6 +3170,23 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             return
         }
         runRegistration()
+    }
+
+    private func publishRegistrationPreparationUpdate(message: String, progress: Float) {
+        guard overlayPixList.isEmpty == false else { return }
+        registrationProgress = max(registrationProgress, min(max(progress, 0), 0.95))
+        registrationStatusMessage = message
+        registrationDidChange?(true, message, registrationProgress)
+    }
+
+    private func registrationPreparationDidFail(_ message: String) {
+        guard overlayPixList.isEmpty == false else { return }
+        registrationGeneration += 1
+        registrationInProgress = false
+        registrationProgress = 0
+        registrationStatusMessage = message
+        stateDidChange?(stateDescription)
+        registrationDidChange?(false, message, 0)
     }
 
     private func voxelSpacing(from voxelToWorld: simd_float4x4) -> SIMD3<Float> {

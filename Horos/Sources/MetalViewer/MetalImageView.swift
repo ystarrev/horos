@@ -1444,7 +1444,8 @@ final class MetalImageView: MTKView {
         case 125: // down arrow
             renderer.zoom(by: 1.0 / 1.1)
         case 15: // r
-            renderer.rerunRegistration()
+            let modifierFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            renderer.rerunRegistration(usingReferenceSampling: modifierFlags.contains(.option))
         default:
             super.keyDown(with: event)
         }

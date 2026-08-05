@@ -6,8 +6,16 @@ import MetalKit
 import simd
 
 private let registrationHistogramBins = 64
+// A small tile retains enough parallel work while amortizing the fixed-volume
+// sample and mask decision across nearby transform candidates.
+private let registrationCandidateTileSize = 4
 private let maximumMPRPlaneTiltRadians = Float.pi / 4
 private let maximumInlineMetalVertexBytes = 4 * 1024
+
+private enum RegistrationSamplingMode: String {
+    case fast
+    case reference
+}
 
 private enum MetalMPRPreviewLayoutDefaults {
     static let widthFractionDefaultsKey = "HorosMetalViewerMPRPreviewWidthFraction"
@@ -85,12 +93,9 @@ private struct RegistrationUniforms {
     var overlayWindowLevel: Float
     var overlayWindowWidth: Float
     var metricOptions: SIMD4<Float>
-    var overlayTranslationWorld: SIMD3<Float>
-    var movingRotationCenterWorld: SIMD3<Float>
     var baseTextureSize: SIMD3<UInt32>
-    var movingInverseRotation: simd_float4x4
-    var fixedVoxelToWorld: simd_float4x4
-    var movingWorldToVoxel: simd_float4x4
+    var fixedVoxelToMovingTexture: simd_float4x4
+    var samplingOptions: SIMD4<UInt32>
 }
 
 private struct RigidTransformState {
@@ -464,13 +469,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var registrationMetricTotalTime: CFTimeInterval = 0
     private var registrationMetricSetupTime: CFTimeInterval = 0
     private var registrationMetricGPUTime: CFTimeInterval = 0
+    private var registrationMetricGPUExecutionTime: CFTimeInterval = 0
     private var registrationMetricCPUTime: CFTimeInterval = 0
+    private var registrationMetricNominalVoxelCandidateCount: UInt64 = 0
+    private var registrationMetricVoxelCandidateCount: UInt64 = 0
+    private var registrationMetricAcceptedSampleCount: UInt64 = 0
     private var registrationSamplingProbeTime: CFTimeInterval = 0
     private var registrationOptimizeTime: CFTimeInterval = 0
     private var registrationCoarseSeedSearchTime: CFTimeInterval = 0
     private var registrationNelderMeadTime: CFTimeInterval = 0
     private var registrationSmoothDescentTime: CFTimeInterval = 0
     private var registrationBatchedDescentTime: CFTimeInterval = 0
+    private var registrationProfileStartTime: CFTimeInterval?
 
     var stateDidChange: ((String) -> Void)?
     var registrationDidChange: ((Bool, String, Float) -> Void)?
@@ -822,13 +832,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         registrationMetricTotalTime = 0
         registrationMetricSetupTime = 0
         registrationMetricGPUTime = 0
+        registrationMetricGPUExecutionTime = 0
         registrationMetricCPUTime = 0
+        registrationMetricNominalVoxelCandidateCount = 0
+        registrationMetricVoxelCandidateCount = 0
+        registrationMetricAcceptedSampleCount = 0
         registrationSamplingProbeTime = 0
         registrationOptimizeTime = 0
         registrationCoarseSeedSearchTime = 0
         registrationNelderMeadTime = 0
         registrationSmoothDescentTime = 0
         registrationBatchedDescentTime = 0
+        registrationProfileStartTime = nil
 
         loadSlice(at: currentSliceIndex)
         requestStackVolumeTexture()
@@ -854,6 +869,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         transferFunctionStateDidChange: ((MetalViewerTransferFunctionState) -> Void)? = nil
     ) {
         let overlayStart = CFAbsoluteTimeGetCurrent()
+        registrationProfileStartTime = overlayStart
         MetalViewerDiagnostics.registrationTimingLog(
             format: "MetalViewerRenderer registration setOverlayPixList begin baseSlices=%d overlaySlices=%d baseModality=%@ overlayModality=%@",
             pixList.count,
@@ -893,6 +909,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         registrationInProgress = false
         registrationProgress = 0
         registrationStatusMessage = nil
+        registrationProfileStartTime = nil
         overlayPixList = []
         overlaySourceTextureEntry = nil
         requestedOverlayVolumeKey = nil
@@ -1812,9 +1829,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         stateDidChange?(stateDescription)
     }
 
-    func rerunRegistration() {
+    func rerunRegistration(usingReferenceSampling: Bool = false) {
+        let samplingMode: RegistrationSamplingMode = usingReferenceSampling ? .reference : .fast
         MetalViewerDiagnostics.registrationTimingLog(
-            format: "MetalViewerRenderer registration rerunRegistration requested baseLevels=%d overlayLevels=%d hasOverlayTexture=%d",
+            format: "MetalViewerRenderer registration rerunRegistration requested mode=%@ baseLevels=%d overlayLevels=%d hasOverlayTexture=%d",
+            samplingMode.rawValue as NSString,
             baseVolumeLevels.count,
             overlayVolumeLevels.count,
             overlayVolumeTexture == nil ? 0 : 1
@@ -1823,7 +1842,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             startingAt: RigidTransformState(
                 translationWorld: overlayTranslationWorld,
                 rotationRadians: overlayRotationRadians
-            )
+            ),
+            samplingMode: samplingMode
         )
     }
 
@@ -3169,7 +3189,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
               overlayVolumeLevels.count > 1 else {
             return
         }
-        runRegistration()
+        runRegistration(samplingMode: .fast)
     }
 
     private func publishRegistrationPreparationUpdate(message: String, progress: Float) {
@@ -3182,6 +3202,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private func registrationPreparationDidFail(_ message: String) {
         guard overlayPixList.isEmpty == false else { return }
         registrationGeneration += 1
+        registrationProfileStartTime = nil
         registrationInProgress = false
         registrationProgress = 0
         registrationStatusMessage = message
@@ -3277,6 +3298,45 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         )
 
         return rz * ry * rx
+    }
+
+    private func registrationTextureCoordinateMatrix(
+        for state: RigidTransformState,
+        fixedVoxelToWorld: simd_float4x4,
+        movingWorldToVoxel: simd_float4x4,
+        movingTextureSize: SIMD3<Int>
+    ) -> simd_float4x4 {
+        var translateToRotationCenter = matrix_identity_float4x4
+        translateToRotationCenter.columns.3 = SIMD4<Float>(
+            -state.translationWorld.x - movingRotationCenterWorld.x,
+            -state.translationWorld.y - movingRotationCenterWorld.y,
+            -state.translationWorld.z - movingRotationCenterWorld.z,
+            1
+        )
+
+        var translateFromRotationCenter = matrix_identity_float4x4
+        translateFromRotationCenter.columns.3 = SIMD4<Float>(movingRotationCenterWorld, 1)
+
+        let inverseWidth = 1 / Float(max(movingTextureSize.x, 1))
+        let inverseHeight = 1 / Float(max(movingTextureSize.y, 1))
+        let inverseDepth = 1 / Float(max(movingTextureSize.z, 1))
+        var movingVoxelToTexture = matrix_identity_float4x4
+        movingVoxelToTexture.columns.0.x = inverseWidth
+        movingVoxelToTexture.columns.1.y = inverseHeight
+        movingVoxelToTexture.columns.2.z = inverseDepth
+        movingVoxelToTexture.columns.3 = SIMD4<Float>(
+            0.5 * inverseWidth,
+            0.5 * inverseHeight,
+            0.5 * inverseDepth,
+            1
+        )
+
+        return movingVoxelToTexture
+            * movingWorldToVoxel
+            * translateFromRotationCenter
+            * rotationMatrix(for: -state.rotationRadians)
+            * translateToRotationCenter
+            * fixedVoxelToWorld
     }
 
     private func transformedOverlayPointWorld(_ pointWorld: SIMD3<Float>, for state: RigidTransformState) -> SIMD3<Float> {
@@ -3388,11 +3448,24 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return distinctCandidates
     }
 
-    private func runRegistration(startingAt initialState: RigidTransformState? = nil) {
+    private func runRegistration(
+        startingAt initialState: RigidTransformState? = nil,
+        samplingMode requestedSamplingMode: RegistrationSamplingMode
+    ) {
         let levelPairs = currentRegistrationLevelPairs()
         guard levelPairs.isEmpty == false else { return }
 
+        let samplingMode: RegistrationSamplingMode = requestedSamplingMode == .fast
+            && isCTToCTRegistration()
+            && baseIsThinSlab == false
+            && overlayIsThinSlab == false
+            ? .fast
+            : .reference
+
         let registrationStart = CFAbsoluteTimeGetCurrent()
+        let profileStart = registrationProfileStartTime ?? registrationStart
+        registrationProfileStartTime = nil
+        let preparationTime = max(registrationStart - profileStart, 0)
         registrationGeneration += 1
         let generation = registrationGeneration
         registrationMetricCallCount = 0
@@ -3400,7 +3473,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         registrationMetricTotalTime = 0
         registrationMetricSetupTime = 0
         registrationMetricGPUTime = 0
+        registrationMetricGPUExecutionTime = 0
         registrationMetricCPUTime = 0
+        registrationMetricNominalVoxelCandidateCount = 0
+        registrationMetricVoxelCandidateCount = 0
+        registrationMetricAcceptedSampleCount = 0
         registrationSamplingProbeTime = 0
         registrationOptimizeTime = 0
         registrationCoarseSeedSearchTime = 0
@@ -3413,7 +3490,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             state: initialGuess,
             inProgress: true,
             progress: 0,
-            message: "Registering 3D",
+            message: samplingMode == .fast ? "Registering 3D Fast" : "Registering 3D Reference",
             residualError: nil,
             generation: generation
         )
@@ -3428,7 +3505,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             let result = self.optimizeOverlayTransform(
                 startingAt: initialGuesses,
                 generation: generation,
-                levelPairs: levelPairs
+                levelPairs: levelPairs,
+                samplingMode: samplingMode
             )
             self.registrationOptimizeTime += CFAbsoluteTimeGetCurrent() - optimizeStart
             let metricCount = self.registrationMetricCallCount
@@ -3436,17 +3514,82 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             let metricTotal = self.registrationMetricTotalTime
             let metricSetup = self.registrationMetricSetupTime
             let metricGPU = self.registrationMetricGPUTime
+            let metricGPUExecution = self.registrationMetricGPUExecutionTime
             let metricCPU = self.registrationMetricCPUTime
+            let metricNominalVoxelCandidateCount = self.registrationMetricNominalVoxelCandidateCount
+            let metricVoxelCandidateCount = self.registrationMetricVoxelCandidateCount
+            let metricAcceptedSampleCount = self.registrationMetricAcceptedSampleCount
             let samplingProbeTime = self.registrationSamplingProbeTime
             let optimizeTime = self.registrationOptimizeTime
             let coarseSeedSearchTime = self.registrationCoarseSeedSearchTime
             let nelderMeadTime = self.registrationNelderMeadTime
             let smoothDescentTime = self.registrationSmoothDescentTime
             let batchedDescentTime = self.registrationBatchedDescentTime
-            let totalTime = CFAbsoluteTimeGetCurrent() - registrationStart
+            let profileEnd = CFAbsoluteTimeGetCurrent()
+            let totalTime = profileEnd - registrationStart
+            let profileTotalTime = profileEnd - profileStart
 
             DispatchQueue.main.async {
                 guard generation == self.registrationGeneration else { return }
+                let optimizerCPUTime = max(optimizeTime - metricTotal, 0)
+                let measuredCPUTime = metricSetup + metricCPU + optimizerCPUTime
+                let cpuPercent = optimizeTime > 0 ? measuredCPUTime / optimizeTime * 100 : 0
+                let gpuWaitPercent = optimizeTime > 0 ? metricGPU / optimizeTime * 100 : 0
+                let gpuExecutionPercent = optimizeTime > 0 ? metricGPUExecution / optimizeTime * 100 : 0
+                let gpuQueueEfficiency = metricGPU > 0 ? metricGPUExecution / metricGPU * 100 : 0
+                let nominalVoxelCandidatesMillions = Double(metricNominalVoxelCandidateCount) / 1_000_000
+                let voxelCandidatesMillions = Double(metricVoxelCandidateCount) / 1_000_000
+                let samplingPercent = metricNominalVoxelCandidateCount > 0
+                    ? Double(metricVoxelCandidateCount) / Double(metricNominalVoxelCandidateCount) * 100
+                    : 0
+                let acceptedSamplesMillions = Double(metricAcceptedSampleCount) / 1_000_000
+                let acceptedSamplePercent = metricVoxelCandidateCount > 0
+                    ? Double(metricAcceptedSampleCount) / Double(metricVoxelCandidateCount) * 100
+                    : 0
+                let gpuThroughput = metricGPUExecution > 0
+                    ? voxelCandidatesMillions / metricGPUExecution
+                    : 0
+                let candidatesPerDispatch = metricDispatchCount > 0
+                    ? Double(metricCount) / Double(metricDispatchCount)
+                    : 0
+                MetalViewerDiagnostics.registrationProfileLog(
+                    format: "mode=%@ total=%.3f s preparation=%.3f s registration=%.3f s optimize=%.3f s coarse=%.3f s nelderMead=%.3f s smoothDescent=%.3f s batchedDescent=%.3f s optimizeCPUActive=%.3f s (%.1f%%) gpuWait=%.3f s (%.1f%%) gpuExecute=%.3f s (%.1f%%) gpuQueueEfficiency=%.1f%% metricSetup=%.3f s nmiCPU=%.3f s optimizerCPU=%.3f s candidates=%d dispatches=%d candidatesPerDispatch=%.2f nominalVoxelCandidates=%.1f M voxelCandidates=%.1f M (%.1f%%) acceptedSamples=%.1f M (%.1f%%) gpuThroughput=%.1f Mvox/s resultT=(%.3f,%.3f,%.3f)mm resultR=(%.3f,%.3f,%.3f)deg score=%.6f",
+                    samplingMode.rawValue as NSString,
+                    profileTotalTime,
+                    preparationTime,
+                    totalTime,
+                    optimizeTime,
+                    coarseSeedSearchTime,
+                    nelderMeadTime,
+                    smoothDescentTime,
+                    batchedDescentTime,
+                    measuredCPUTime,
+                    cpuPercent,
+                    metricGPU,
+                    gpuWaitPercent,
+                    metricGPUExecution,
+                    gpuExecutionPercent,
+                    gpuQueueEfficiency,
+                    metricSetup,
+                    metricCPU,
+                    optimizerCPUTime,
+                    metricCount,
+                    metricDispatchCount,
+                    candidatesPerDispatch,
+                    nominalVoxelCandidatesMillions,
+                    voxelCandidatesMillions,
+                    samplingPercent,
+                    acceptedSamplesMillions,
+                    acceptedSamplePercent,
+                    gpuThroughput,
+                    result.state.translationWorld.x,
+                    result.state.translationWorld.y,
+                    result.state.translationWorld.z,
+                    result.state.rotationRadians.x * 180 / .pi,
+                    result.state.rotationRadians.y * 180 / .pi,
+                    result.state.rotationRadians.z * 180 / .pi,
+                    -result.metric
+                )
                 MetalViewerDiagnostics.registrationTimingLog(
                     format: "MetalViewerRenderer registration summary total=%.3f s initialSetup=%.3f s samplingProbe=%.3f s optimize=%.3f s coarseSeed=%.3f s nelderMead=%.3f s smoothDescent=%.3f s batchedDescent=%.3f s",
                     totalTime,
@@ -3459,13 +3602,15 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     batchedDescentTime
                 )
                 MetalViewerDiagnostics.registrationTimingLog(
-                    format: "MetalViewerRenderer registration metrics candidates=%d dispatches=%d total=%.3f s setup=%.3f s gpuWait=%.3f s cpuReadbackNMI=%.3f s avgCandidate=%.5f s avgDispatch=%.5f s",
+                    format: "MetalViewerRenderer registration metrics candidates=%d dispatches=%d total=%.3f s setup=%.3f s gpuWait=%.3f s gpuExecute=%.3f s cpuReadbackNMI=%.3f s voxelCandidates=%.1f M avgCandidate=%.5f s avgDispatch=%.5f s",
                     metricCount,
                     metricDispatchCount,
                     metricTotal,
                     metricSetup,
                     metricGPU,
+                    metricGPUExecution,
                     metricCPU,
+                    voxelCandidatesMillions,
                     metricCount > 0 ? metricTotal / Double(metricCount) : 0,
                     metricDispatchCount > 0 ? metricTotal / Double(metricDispatchCount) : 0
                 )
@@ -3506,22 +3651,30 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             memset(countBuffer.contents(), 0, countBufferLength)
 
             let useBoneOnly = shouldUseBoneOnlyMetric(forLevelIndex: levelIndex, totalLevels: levelPairs.count)
+            let movingWorldToVoxel = simd_inverse(levelPair.1.voxelToWorld)
+            let movingTextureSize = SIMD3<Int>(
+                overlayVolumeTexture.width,
+                overlayVolumeTexture.height,
+                overlayVolumeTexture.depth
+            )
             var uniforms = RegistrationUniforms(
                 baseWindowLevel: baseRegistrationWindowLevel,
                 baseWindowWidth: max(baseRegistrationWindowWidth, 1),
                 overlayWindowLevel: overlayRegistrationWindowLevel,
                 overlayWindowWidth: max(overlayRegistrationWindowWidth, 1),
                 metricOptions: metricOptions(forLevelIndex: levelIndex, totalLevels: levelPairs.count, useBoneOnly: useBoneOnly),
-                overlayTranslationWorld: state.translationWorld,
-                movingRotationCenterWorld: movingRotationCenterWorld,
                 baseTextureSize: SIMD3<UInt32>(
                     UInt32(baseVolumeTexture.width),
                     UInt32(baseVolumeTexture.height),
                     UInt32(baseVolumeTexture.depth)
                 ),
-                movingInverseRotation: rotationMatrix(for: -state.rotationRadians),
-                fixedVoxelToWorld: levelPair.0.voxelToWorld,
-                movingWorldToVoxel: simd_inverse(levelPair.1.voxelToWorld)
+                fixedVoxelToMovingTexture: registrationTextureCoordinateMatrix(
+                    for: state,
+                    fixedVoxelToWorld: levelPair.0.voxelToWorld,
+                    movingWorldToVoxel: movingWorldToVoxel,
+                    movingTextureSize: movingTextureSize
+                ),
+                samplingOptions: SIMD4<UInt32>(1, 0, 0, 0)
             )
 
             guard let commandBuffer = commandQueue.makeCommandBuffer(),
@@ -3558,7 +3711,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private func optimizeOverlayTransform(
         startingAt initialGuesses: [RigidTransformState],
         generation: UInt,
-        levelPairs: [(VolumeLevel, VolumeLevel)]
+        levelPairs: [(VolumeLevel, VolumeLevel)],
+        samplingMode: RegistrationSamplingMode
     ) -> (state: RigidTransformState, metric: Float) {
         let optimizeStart = CFAbsoluteTimeGetCurrent()
         struct RigidStep {
@@ -3570,6 +3724,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         let slabAwareRegistration = baseIsThinSlab || overlayIsThinSlab
         let ctToCTRegistration = isCTToCTRegistration()
+        let searchSamplingStride = samplingMode == .fast ? 2 : 1
         let rigidSteps: [RigidStep]
         if ctToCTRegistration && slabAwareRegistration {
             rigidSteps = [
@@ -3611,7 +3766,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             startingAt: initialGuesses,
             level: levelPairs[0],
             totalLevels: levelPairs.count,
-            ctToCTRegistration: ctToCTRegistration
+            ctToCTRegistration: ctToCTRegistration,
+            samplingStride: searchSamplingStride
         )
         var best = seeded.state
         var bestMetric = seeded.metric
@@ -3620,10 +3776,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             let useBoneOnly = shouldUseBoneOnlyMetric(forLevelIndex: levelIndex, totalLevels: levelPairs.count)
             let levelMetricOptions = metricOptions(forLevelIndex: levelIndex, totalLevels: levelPairs.count, useBoneOnly: useBoneOnly)
             MetalViewerDiagnostics.registrationTimingLog(
-                format: "MetalViewerRenderer registration level=%d/%d metricMode=%@ options=(%.3f, %.3f, %.3f, %.3f)",
+                format: "MetalViewerRenderer registration level=%d/%d metricMode=%@ searchSamplingStride=%d options=(%.3f, %.3f, %.3f, %.3f)",
                 levelIndex + 1,
                 levelPairs.count,
                 metricModeName(levelMetricOptions) as NSString,
+                searchSamplingStride,
                 levelMetricOptions.x,
                 levelMetricOptions.y,
                 levelMetricOptions.z,
@@ -3647,7 +3804,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     maxIterations: step.maxIterations,
                     generation: generation,
                     stepIndex: stepIndex,
-                    totalSteps: stepsForLevel.count
+                    totalSteps: stepsForLevel.count,
+                    samplingStride: searchSamplingStride,
+                    speculativelyBatchCandidates: ctToCTRegistration == false
                 )
                 best = result.state
                 bestMetric = result.metric
@@ -3681,6 +3840,25 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             }
 
             if ctToCTRegistration {
+                let refinementSamplingStride = samplingMode == .fast && isFinalFullResolutionLevel
+                    ? 1
+                    : searchSamplingStride
+                if refinementSamplingStride != searchSamplingStride {
+                    bestMetric = metricValue(
+                        for: best,
+                        level: levelPair,
+                        levelIndex: levelIndex,
+                        totalLevels: levelPairs.count,
+                        useBoneOnly: useBoneOnly,
+                        samplingStride: refinementSamplingStride
+                    )
+                    MetalViewerDiagnostics.registrationTimingLog(
+                        format: "MetalViewerRenderer registration level=%d/%d switchedToExactRefinement metric=%.6f",
+                        levelIndex + 1,
+                        levelPairs.count,
+                        bestMetric
+                    )
+                }
                 let refinement = batchedDescentRefinement(
                     startingAt: best,
                     startingMetric: bestMetric,
@@ -3688,7 +3866,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     levelIndex: levelIndex,
                     totalLevels: levelPairs.count,
                     useBoneOnly: useBoneOnly,
-                    generation: generation
+                    generation: generation,
+                    samplingStride: refinementSamplingStride
                 )
                 best = refinement.state
                 bestMetric = refinement.metric
@@ -3714,7 +3893,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     levelIndex: levelIndex,
                     totalLevels: levelPairs.count,
                     useBoneOnly: useBoneOnly,
-                    generation: generation
+                    generation: generation,
+                    samplingStride: searchSamplingStride
                 )
                 best = refinement.state
                 bestMetric = refinement.metric
@@ -3743,7 +3923,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         startingAt initialStates: [RigidTransformState],
         level: (VolumeLevel, VolumeLevel),
         totalLevels: Int,
-        ctToCTRegistration: Bool
+        ctToCTRegistration: Bool,
+        samplingStride: Int
     ) -> (state: RigidTransformState, metric: Float) {
         let seedStart = CFAbsoluteTimeGetCurrent()
         let slabAwareRegistration = baseIsThinSlab || overlayIsThinSlab
@@ -3778,7 +3959,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             level: level,
             levelIndex: 0,
             totalLevels: totalLevels,
-            useBoneOnly: useBoneOnly
+            useBoneOnly: useBoneOnly,
+            samplingStride: samplingStride
         )
         var bestCenterState = initialStates.first ?? dicomInitialGuess()
         var bestCenterMetric = Float.greatestFiniteMagnitude
@@ -3804,7 +3986,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             level: level,
             levelIndex: 0,
             totalLevels: totalLevels,
-            useBoneOnly: useBoneOnly
+            useBoneOnly: useBoneOnly,
+            samplingStride: samplingStride
         )
 
         var bestState = bestCenterState
@@ -3871,7 +4054,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         maxIterations: Int,
         generation: UInt,
         stepIndex: Int,
-        totalSteps: Int
+        totalSteps: Int,
+        samplingStride: Int,
+        speculativelyBatchCandidates: Bool
     ) -> (state: RigidTransformState, metric: Float) {
         let levelStart = CFAbsoluteTimeGetCurrent()
         let startingMetricCount = registrationMetricCallCount
@@ -3916,7 +4101,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 level: level,
                 levelIndex: levelIndex,
                 totalLevels: totalLevels,
-                useBoneOnly: useBoneOnly
+                useBoneOnly: useBoneOnly,
+                samplingStride: samplingStride
             )
             return uniqueIndexByCandidate.map { uniqueMetrics[$0] }
         }
@@ -3958,11 +4144,31 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             centroid = centroid / 6
 
             let reflected = centroid + alpha * (centroid - worstVertex.parameters)
-            let reflectedMetric = metricValue(for: state(for: reflected), level: level, levelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)
+            let expanded = centroid + gamma * (reflected - centroid)
+            let outsideContracted = centroid + rho * (reflected - centroid)
+            let insideContracted = centroid + rho * (worstVertex.parameters - centroid)
+            let speculativeMetrics = speculativelyBatchCandidates
+                ? metrics(for: [reflected, expanded, outsideContracted, insideContracted])
+                : []
+
+            func evaluatedMetric(for parameters: ParameterVector, speculativeIndex: Int) -> Float {
+                if speculativeMetrics.indices.contains(speculativeIndex) {
+                    return speculativeMetrics[speculativeIndex]
+                }
+                return metricValue(
+                    for: state(for: parameters),
+                    level: level,
+                    levelIndex: levelIndex,
+                    totalLevels: totalLevels,
+                    useBoneOnly: useBoneOnly,
+                    samplingStride: samplingStride
+                )
+            }
+
+            let reflectedMetric = evaluatedMetric(for: reflected, speculativeIndex: 0)
 
             if reflectedMetric < bestVertex.metric {
-                let expanded = centroid + gamma * (reflected - centroid)
-                let expandedMetric = metricValue(for: state(for: expanded), level: level, levelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)
+                let expandedMetric = evaluatedMetric(for: expanded, speculativeIndex: 1)
                 simplex[6] = expandedMetric < reflectedMetric
                     ? Vertex(parameters: expanded, metric: expandedMetric)
                     : Vertex(parameters: reflected, metric: reflectedMetric)
@@ -3970,9 +4176,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 simplex[6] = Vertex(parameters: reflected, metric: reflectedMetric)
             } else {
                 let shouldOutsideContract = reflectedMetric < worstVertex.metric
-                let contractionTarget = shouldOutsideContract ? reflected : worstVertex.parameters
-                let contracted = centroid + rho * (contractionTarget - centroid)
-                let contractedMetric = metricValue(for: state(for: contracted), level: level, levelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)
+                let contracted = shouldOutsideContract ? outsideContracted : insideContracted
+                let contractedMetric = evaluatedMetric(
+                    for: contracted,
+                    speculativeIndex: shouldOutsideContract ? 2 : 3
+                )
 
                 let contractionAccepted = shouldOutsideContract
                     ? contractedMetric <= reflectedMetric
@@ -4050,7 +4258,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         levelIndex: Int,
         totalLevels: Int,
         useBoneOnly: Bool,
-        generation: UInt
+        generation: UInt,
+        samplingStride: Int
     ) -> (state: RigidTransformState, metric: Float) {
         let descentStart = CFAbsoluteTimeGetCurrent()
         let startingMetricCount = registrationMetricCallCount
@@ -4097,18 +4306,21 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
                 var bestCandidateParameters = bestParameters
                 var bestCandidateMetric = bestMetric
-
-                for direction in [Float(-1), Float(1)] {
+                let candidateParameters = [Float(-1), Float(1)].map { direction -> ParameterVector in
                     var candidate = bestParameters
                     candidate[dimension] += direction * step
-                    let candidateState = state(for: candidate)
-                    let candidateMetric = metricValue(
-                        for: candidateState,
-                        level: level,
-                        levelIndex: levelIndex,
-                        totalLevels: totalLevels,
-                        useBoneOnly: useBoneOnly
-                    )
+                    return candidate
+                }
+                let candidateMetrics = metricValues(
+                    for: candidateParameters.map { state(for: $0) },
+                    level: level,
+                    levelIndex: levelIndex,
+                    totalLevels: totalLevels,
+                    useBoneOnly: useBoneOnly,
+                    samplingStride: samplingStride
+                )
+
+                for (candidate, candidateMetric) in zip(candidateParameters, candidateMetrics) {
                     if candidateMetric < bestCandidateMetric {
                         bestCandidateMetric = candidateMetric
                         bestCandidateParameters = candidate
@@ -4165,7 +4377,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         levelIndex: Int,
         totalLevels: Int,
         useBoneOnly: Bool,
-        generation: UInt
+        generation: UInt,
+        samplingStride: Int
     ) -> (state: RigidTransformState, metric: Float) {
         let descentStart = CFAbsoluteTimeGetCurrent()
         let startingMetricCount = registrationMetricCallCount
@@ -4247,7 +4460,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 level: level,
                 levelIndex: levelIndex,
                 totalLevels: totalLevels,
-                useBoneOnly: useBoneOnly
+                useBoneOnly: useBoneOnly,
+                samplingStride: samplingStride
             )
 
             var bestCandidateState = bestState
@@ -4346,17 +4560,36 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
+    private func registrationSampleGridSize(
+        for texture: MTLTexture,
+        samplingStride requestedSamplingStride: Int
+    ) -> SIMD3<Int> {
+        let samplingStride = max(requestedSamplingStride, 1)
+        return SIMD3<Int>(
+            (texture.width + samplingStride - 1) / samplingStride,
+            (texture.height + samplingStride - 1) / samplingStride,
+            (texture.depth + samplingStride - 1) / samplingStride
+        )
+    }
+
+    private func registrationVoxelCount(_ dimensions: SIMD3<Int>) -> Int {
+        dimensions.x * dimensions.y * dimensions.z
+    }
+
     private func metricValue(
         for state: RigidTransformState,
         level: (VolumeLevel, VolumeLevel),
         levelIndex: Int,
         totalLevels: Int,
-        useBoneOnly: Bool
+        useBoneOnly: Bool,
+        samplingStride requestedSamplingStride: Int
     ) -> Float {
         let metricStart = CFAbsoluteTimeGetCurrent()
         var setupElapsed: CFTimeInterval = 0
         var gpuElapsed: CFTimeInterval = 0
+        var gpuExecutionElapsed: CFTimeInterval = 0
         var cpuElapsed: CFTimeInterval = 0
+        var voxelCandidateCount: UInt64 = 0
         defer {
             let totalElapsed = CFAbsoluteTimeGetCurrent() - metricStart
             let classifiedSetupElapsed = setupElapsed > 0
@@ -4366,19 +4599,30 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             registrationMetricDispatchCount += 1
             registrationMetricSetupTime += classifiedSetupElapsed
             registrationMetricGPUTime += gpuElapsed
+            registrationMetricGPUExecutionTime += gpuExecutionElapsed
             registrationMetricCPUTime += cpuElapsed
+            registrationMetricVoxelCandidateCount += voxelCandidateCount
             registrationMetricTotalTime += totalElapsed
         }
 
         let baseVolumeTexture = level.0.texture
         let overlayVolumeTexture = level.1.texture
-        let threadsPerGroup = MTLSize(width: 8, height: 8, depth: 4)
-        let threadgroups = MTLSize(
-            width: (baseVolumeTexture.width + threadsPerGroup.width - 1) / threadsPerGroup.width,
-            height: (baseVolumeTexture.height + threadsPerGroup.height - 1) / threadsPerGroup.height,
-            depth: (baseVolumeTexture.depth + threadsPerGroup.depth - 1) / threadsPerGroup.depth
+        let samplingStride = max(requestedSamplingStride, 1)
+        let baseSampleGridSize = registrationSampleGridSize(
+            for: baseVolumeTexture,
+            samplingStride: samplingStride
+        )
+        let overlaySampleGridSize = registrationSampleGridSize(
+            for: overlayVolumeTexture,
+            samplingStride: samplingStride
         )
         let options = metricOptions(forLevelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)
+        let movingWorldToVoxel = simd_inverse(level.1.voxelToWorld)
+        let movingTextureSize = SIMD3<Int>(
+            overlayVolumeTexture.width,
+            overlayVolumeTexture.height,
+            overlayVolumeTexture.depth
+        )
 
         var uniforms = RegistrationUniforms(
             baseWindowLevel: baseRegistrationWindowLevel,
@@ -4386,16 +4630,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             overlayWindowLevel: overlayRegistrationWindowLevel,
             overlayWindowWidth: max(overlayRegistrationWindowWidth, 1),
             metricOptions: options,
-            overlayTranslationWorld: state.translationWorld,
-            movingRotationCenterWorld: movingRotationCenterWorld,
             baseTextureSize: SIMD3<UInt32>(
                 UInt32(baseVolumeTexture.width),
                 UInt32(baseVolumeTexture.height),
                 UInt32(baseVolumeTexture.depth)
             ),
-            movingInverseRotation: rotationMatrix(for: -state.rotationRadians),
-            fixedVoxelToWorld: level.0.voxelToWorld,
-            movingWorldToVoxel: simd_inverse(level.1.voxelToWorld)
+            fixedVoxelToMovingTexture: registrationTextureCoordinateMatrix(
+                for: state,
+                fixedVoxelToWorld: level.0.voxelToWorld,
+                movingWorldToVoxel: movingWorldToVoxel,
+                movingTextureSize: movingTextureSize
+            ),
+            samplingOptions: SIMD4<UInt32>(UInt32(samplingStride), 0, 0, 0)
         )
 
         let histogramEntryCount = registrationHistogramBins * registrationHistogramBins
@@ -4411,6 +4657,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             return .greatestFiniteMagnitude
         }
 
+        let threadsPerGroup = MTLSize(width: 8, height: 8, depth: 4)
+        let threadgroups = MTLSize(
+            width: (baseSampleGridSize.x + threadsPerGroup.width - 1) / threadsPerGroup.width,
+            height: (baseSampleGridSize.y + threadsPerGroup.height - 1) / threadsPerGroup.height,
+            depth: (baseSampleGridSize.z + threadsPerGroup.depth - 1) / threadsPerGroup.depth
+        )
         encoder.setComputePipelineState(registrationPipelineState)
         encoder.setTexture(baseVolumeTexture, index: 0)
         encoder.setTexture(overlayVolumeTexture, index: 1)
@@ -4424,6 +4676,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         gpuElapsed = CFAbsoluteTimeGetCurrent() - gpuStart
+        if commandBuffer.gpuEndTime > commandBuffer.gpuStartTime {
+            gpuExecutionElapsed = commandBuffer.gpuEndTime - commandBuffer.gpuStartTime
+        }
+        registrationMetricNominalVoxelCandidateCount += UInt64(baseVolumeTexture.width)
+            * UInt64(baseVolumeTexture.height)
+            * UInt64(baseVolumeTexture.depth)
+        voxelCandidateCount = UInt64(baseSampleGridSize.x)
+            * UInt64(baseSampleGridSize.y)
+            * UInt64(baseSampleGridSize.z)
+        guard commandBuffer.status == .completed else {
+            return .greatestFiniteMagnitude
+        }
         let cpuStart = CFAbsoluteTimeGetCurrent()
 
         let histogram = histogramBuffer.contents().bindMemory(to: UInt32.self, capacity: histogramEntryCount)
@@ -4431,6 +4695,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         for index in 0..<histogramEntryCount {
             overlapCount += Int(histogram[index])
         }
+        registrationMetricAcceptedSampleCount += UInt64(overlapCount)
         guard overlapCount > 0 else {
             return .greatestFiniteMagnitude
         }
@@ -4441,8 +4706,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
         let overlapPenalty = registrationOverlapPenalty(
             overlapTotal: overlapTotal,
-            fixedVoxelCount: baseVolumeTexture.width * baseVolumeTexture.height * baseVolumeTexture.depth,
-            movingVoxelCount: overlayVolumeTexture.width * overlayVolumeTexture.height * overlayVolumeTexture.depth,
+            fixedVoxelCount: registrationVoxelCount(baseSampleGridSize),
+            movingVoxelCount: registrationVoxelCount(overlaySampleGridSize),
             options: options,
             state: state
         )
@@ -4457,7 +4722,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         level: (VolumeLevel, VolumeLevel),
         levelIndex: Int,
         totalLevels: Int,
-        useBoneOnly: Bool
+        useBoneOnly: Bool,
+        samplingStride: Int
     ) -> [Float] {
         guard states.isEmpty == false else { return [] }
         guard states.count > 1 else {
@@ -4467,7 +4733,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     level: level,
                     levelIndex: levelIndex,
                     totalLevels: totalLevels,
-                    useBoneOnly: useBoneOnly
+                    useBoneOnly: useBoneOnly,
+                    samplingStride: samplingStride
                 )
             }
         }
@@ -4475,7 +4742,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let metricStart = CFAbsoluteTimeGetCurrent()
         var setupElapsed: CFTimeInterval = 0
         var gpuElapsed: CFTimeInterval = 0
+        var gpuExecutionElapsed: CFTimeInterval = 0
         var cpuElapsed: CFTimeInterval = 0
+        var voxelCandidateCount: UInt64 = 0
         defer {
             let totalElapsed = CFAbsoluteTimeGetCurrent() - metricStart
             let classifiedSetupElapsed = setupElapsed > 0
@@ -4485,13 +4754,30 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             registrationMetricDispatchCount += 1
             registrationMetricSetupTime += classifiedSetupElapsed
             registrationMetricGPUTime += gpuElapsed
+            registrationMetricGPUExecutionTime += gpuExecutionElapsed
             registrationMetricCPUTime += cpuElapsed
+            registrationMetricVoxelCandidateCount += voxelCandidateCount
             registrationMetricTotalTime += totalElapsed
         }
 
         let baseVolumeTexture = level.0.texture
         let overlayVolumeTexture = level.1.texture
+        let effectiveSamplingStride = max(samplingStride, 1)
+        let baseSampleGridSize = registrationSampleGridSize(
+            for: baseVolumeTexture,
+            samplingStride: effectiveSamplingStride
+        )
+        let overlaySampleGridSize = registrationSampleGridSize(
+            for: overlayVolumeTexture,
+            samplingStride: effectiveSamplingStride
+        )
         let options = metricOptions(forLevelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)
+        let movingWorldToVoxel = simd_inverse(level.1.voxelToWorld)
+        let movingTextureSize = SIMD3<Int>(
+            overlayVolumeTexture.width,
+            overlayVolumeTexture.height,
+            overlayVolumeTexture.depth
+        )
         let uniforms = states.map { state in
             RegistrationUniforms(
                 baseWindowLevel: baseRegistrationWindowLevel,
@@ -4499,16 +4785,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 overlayWindowLevel: overlayRegistrationWindowLevel,
                 overlayWindowWidth: max(overlayRegistrationWindowWidth, 1),
                 metricOptions: options,
-                overlayTranslationWorld: state.translationWorld,
-                movingRotationCenterWorld: movingRotationCenterWorld,
                 baseTextureSize: SIMD3<UInt32>(
                     UInt32(baseVolumeTexture.width),
                     UInt32(baseVolumeTexture.height),
                     UInt32(baseVolumeTexture.depth)
                 ),
-                movingInverseRotation: rotationMatrix(for: -state.rotationRadians),
-                fixedVoxelToWorld: level.0.voxelToWorld,
-                movingWorldToVoxel: simd_inverse(level.1.voxelToWorld)
+                fixedVoxelToMovingTexture: registrationTextureCoordinateMatrix(
+                    for: state,
+                    fixedVoxelToWorld: level.0.voxelToWorld,
+                    movingWorldToVoxel: movingWorldToVoxel,
+                    movingTextureSize: movingTextureSize
+                ),
+                samplingOptions: SIMD4<UInt32>(UInt32(effectiveSamplingStride), 0, 0, 0)
             )
         }
 
@@ -4533,13 +4821,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         var candidateCount = UInt32(states.count)
+        let candidateTileCount = (states.count + registrationCandidateTileSize - 1) / registrationCandidateTileSize
         let threadsPerGroup = MTLSize(width: 8, height: 8, depth: 4)
         let threadgroups = MTLSize(
-            width: (baseVolumeTexture.width + threadsPerGroup.width - 1) / threadsPerGroup.width,
-            height: (baseVolumeTexture.height + threadsPerGroup.height - 1) / threadsPerGroup.height,
-            depth: (baseVolumeTexture.depth * states.count + threadsPerGroup.depth - 1) / threadsPerGroup.depth
+            width: (baseSampleGridSize.x + threadsPerGroup.width - 1) / threadsPerGroup.width,
+            height: (baseSampleGridSize.y + threadsPerGroup.height - 1) / threadsPerGroup.height,
+            depth: (baseSampleGridSize.z * candidateTileCount + threadsPerGroup.depth - 1) / threadsPerGroup.depth
         )
-
         encoder.setComputePipelineState(registrationBatchPipelineState)
         encoder.setTexture(baseVolumeTexture, index: 0)
         encoder.setTexture(overlayVolumeTexture, index: 1)
@@ -4554,6 +4842,17 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         gpuElapsed = CFAbsoluteTimeGetCurrent() - gpuStart
+        if commandBuffer.gpuEndTime > commandBuffer.gpuStartTime {
+            gpuExecutionElapsed = commandBuffer.gpuEndTime - commandBuffer.gpuStartTime
+        }
+        registrationMetricNominalVoxelCandidateCount += UInt64(baseVolumeTexture.width)
+            * UInt64(baseVolumeTexture.height)
+            * UInt64(baseVolumeTexture.depth)
+            * UInt64(states.count)
+        voxelCandidateCount = UInt64(baseSampleGridSize.x)
+            * UInt64(baseSampleGridSize.y)
+            * UInt64(baseSampleGridSize.z)
+            * UInt64(states.count)
         guard commandBuffer.status == .completed else {
             return Array(repeating: .greatestFiniteMagnitude, count: states.count)
         }
@@ -4563,12 +4862,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             to: UInt32.self,
             capacity: histogramEntryCount * states.count
         )
+        var acceptedSampleCount = 0
         let metrics = states.enumerated().map { candidateIndex, state -> Float in
             let candidateHistogram = histogram.advanced(by: candidateIndex * histogramEntryCount)
             var overlapCount = 0
             for index in 0..<histogramEntryCount {
                 overlapCount += Int(candidateHistogram[index])
             }
+            acceptedSampleCount += overlapCount
             guard overlapCount > 0 else {
                 return .greatestFiniteMagnitude
             }
@@ -4579,13 +4880,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             }
             let overlapPenalty = registrationOverlapPenalty(
                 overlapTotal: overlapTotal,
-                fixedVoxelCount: baseVolumeTexture.width * baseVolumeTexture.height * baseVolumeTexture.depth,
-                movingVoxelCount: overlayVolumeTexture.width * overlayVolumeTexture.height * overlayVolumeTexture.depth,
+                fixedVoxelCount: registrationVoxelCount(baseSampleGridSize),
+                movingVoxelCount: registrationVoxelCount(overlaySampleGridSize),
                 options: options,
                 state: state
             )
             return Float(-nmi) + overlapPenalty
         }
+        registrationMetricAcceptedSampleCount += UInt64(acceptedSampleCount)
         cpuElapsed = CFAbsoluteTimeGetCurrent() - cpuStart
         return metrics
     }
@@ -4691,35 +4993,37 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         switch Int(options.x.rounded()) {
         case 1: return "boneNMI"
         case 2: return "structureNMI"
-        case 3: return "ctBodyNMI"
+        case 3: return "fixedCTBodyNMI"
         default: return "NMI"
         }
     }
 
     private func isCTToCTRegistration() -> Bool {
-        guard let basePix = pixList.first,
-              let overlayPix = overlayPixList.first else {
-            return false
-        }
+        isCTRegistrationVolume(pixList) && isCTRegistrationVolume(overlayPixList)
+    }
 
-        let baseModality = basePix.modalityString?.uppercased() ?? ""
-        let overlayModality = overlayPix.modalityString?.uppercased() ?? ""
-        return baseModality.contains("CT") && overlayModality.contains("CT")
+    private func isCTRegistrationVolume(_ volumePixList: [DCMPix]) -> Bool {
+        guard let firstPix = volumePixList.first else { return false }
+        let modality = firstPix.modalityString?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased() ?? ""
+        let rescale = firstPix.rescaleType?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased() ?? ""
+        return modality == "CT" || rescale == "HU"
     }
 
     private func shouldCorrectGantryTilt(for pixList: [DCMPix]) -> Bool {
-        guard let firstPix = pixList.first else { return false }
-        let modality = firstPix.modalityString?.uppercased() ?? ""
-        let rescale = firstPix.rescaleType?.uppercased() ?? ""
-        return modality.contains("CT") || rescale == "HU"
+        isCTRegistrationVolume(pixList)
     }
 
     private func metricOptions(forLevelIndex levelIndex: Int, totalLevels: Int, useBoneOnly _: Bool) -> SIMD4<Float> {
-        if isCTToCTRegistration() {
+        let slabAwareRegistration = baseIsThinSlab || overlayIsThinSlab
+        let fixedVolumeIsCT = isCTRegistrationVolume(pixList)
+        if fixedVolumeIsCT && (slabAwareRegistration == false || isCTRegistrationVolume(overlayPixList)) {
             return SIMD4<Float>(3, -700, 3000, 0)
         }
 
-        let slabAwareRegistration = baseIsThinSlab || overlayIsThinSlab
         let firstStructureLevel = max(totalLevels - 2, 1)
         if slabAwareRegistration,
            totalLevels > 1,

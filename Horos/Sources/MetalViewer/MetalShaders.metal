@@ -2,6 +2,8 @@
 using namespace metal;
 
 constant uint kRegistrationHistogramBins = 64;
+// Keep this synchronized with registrationCandidateTileSize in the renderer.
+constant uint kRegistrationCandidateTileSize = 4;
 constant uint kMetalViewerInterpolationNearest = 0;
 constant uint kMetalViewerInterpolationLanczos = 2;
 
@@ -80,12 +82,9 @@ struct RegistrationUniforms {
     float overlayWindowLevel;
     float overlayWindowWidth;
     float4 metricOptions;
-    float3 overlayTranslationWorld;
-    float3 movingRotationCenterWorld;
     uint3 baseTextureSize;
-    float4x4 movingInverseRotation;
-    float4x4 fixedVoxelToWorld;
-    float4x4 movingWorldToVoxel;
+    float4x4 fixedVoxelToMovingTexture;
+    uint4 samplingOptions;
 };
 
 struct GaussianBlurUniforms {
@@ -1858,6 +1857,31 @@ fragment float4 metalPreviewFragment(
     return float4(normalized, normalized, normalized, 1.0);
 }
 
+static inline uint metalViewerRegistrationSamplingStride(
+    uint4 samplingOptions
+) {
+    return max(samplingOptions.x, 1u);
+}
+
+static inline uint3 metalViewerRegistrationSampleGridSize(
+    uint3 textureSize,
+    uint samplingStride
+) {
+    return (textureSize + samplingStride - 1u) / samplingStride;
+}
+
+static inline uint3 metalViewerRegistrationFixedCoordinate(
+    uint3 sampleCoordinate,
+    uint3 textureSize,
+    uint samplingStride
+) {
+    const uint sampleOffset = samplingStride / 2u;
+    return min(
+        sampleCoordinate * samplingStride + sampleOffset,
+        textureSize - 1u
+    );
+}
+
 kernel void metalViewerRegistrationJointHistogram(
     texture3d<float, access::sample> baseTexture [[texture(0)]],
     texture3d<float, access::sample> overlayTexture [[texture(1)]],
@@ -1865,63 +1889,68 @@ kernel void metalViewerRegistrationJointHistogram(
     device atomic_uint *jointHistogram [[buffer(1)]],
     uint3 gid [[thread_position_in_grid]]
 ) {
-    if (gid.x < uniforms.baseTextureSize.x && gid.y < uniforms.baseTextureSize.y && gid.z < uniforms.baseTextureSize.z) {
-        constexpr sampler metricSampler(coord::normalized, address::clamp_to_zero, filter::linear);
+    const uint samplingStride = metalViewerRegistrationSamplingStride(uniforms.samplingOptions);
+    const uint3 sampleGridSize = metalViewerRegistrationSampleGridSize(
+        uniforms.baseTextureSize,
+        samplingStride
+    );
+    if (any(gid >= sampleGridSize)) {
+        return;
+    }
 
-        const float3 baseSize = float3(uniforms.baseTextureSize);
-        const float3 baseCoord = (float3(gid) + 0.5) / baseSize;
-        const float4 fixedVoxel = float4(float3(gid), 1.0);
-        const float4 worldPoint = uniforms.fixedVoxelToWorld * fixedVoxel;
-        const float3 translatedWorldPoint = worldPoint.xyz - uniforms.overlayTranslationWorld;
-        const float3 centeredWorldPoint = translatedWorldPoint - uniforms.movingRotationCenterWorld;
-        const float4 rotatedWorldPoint = uniforms.movingInverseRotation * float4(centeredWorldPoint, 1.0);
-        const float4 movingVoxel = uniforms.movingWorldToVoxel * float4(rotatedWorldPoint.xyz + uniforms.movingRotationCenterWorld, 1.0);
-        const float3 overlaySize = float3(overlayTexture.get_width(), overlayTexture.get_height(), overlayTexture.get_depth());
-        const float3 overlayCoord = (movingVoxel.xyz + 0.5) / overlaySize;
+    constexpr sampler metricSampler(coord::normalized, address::clamp_to_zero, filter::linear);
+    const float metricMode = uniforms.metricOptions.x;
+    const bool usesBoneMask = metricMode > 0.5 && metricMode < 1.5;
+    const bool usesStructureMetric = metricMode > 1.5 && metricMode < 2.5;
+    const bool usesBodyMask = metricMode > 2.5 && metricMode < 3.5;
+    const float3 baseSize = float3(uniforms.baseTextureSize);
+    const uint3 fixedCoordinate = metalViewerRegistrationFixedCoordinate(
+        gid,
+        uniforms.baseTextureSize,
+        samplingStride
+    );
+    const float3 baseCoord = (float3(fixedCoordinate) + 0.5) / baseSize;
+    const float basePixelValue = baseTexture.sample(metricSampler, baseCoord).r;
 
-        if (overlayCoord.x >= 0.0 && overlayCoord.x <= 1.0 &&
-            overlayCoord.y >= 0.0 && overlayCoord.y <= 1.0 &&
-            overlayCoord.z >= 0.0 && overlayCoord.z <= 1.0) {
-            const float basePixelValue = baseTexture.sample(metricSampler, baseCoord).r;
-            const float overlayPixelValue = overlayTexture.sample(metricSampler, overlayCoord).r;
+    if (usesBoneMask &&
+        (basePixelValue < uniforms.metricOptions.y || basePixelValue > uniforms.metricOptions.z)) {
+        return;
+    }
+    if (usesBodyMask &&
+        (basePixelValue < uniforms.metricOptions.y || basePixelValue > uniforms.metricOptions.z)) {
+        return;
+    }
 
-            if (uniforms.metricOptions.x > 0.5 && uniforms.metricOptions.x < 1.5) {
-                const float boneLower = uniforms.metricOptions.y;
-                const float boneUpper = uniforms.metricOptions.z;
-                const bool baseIsBone = basePixelValue >= boneLower && basePixelValue <= boneUpper;
-                const bool overlayIsBone = overlayPixelValue >= boneLower && overlayPixelValue <= boneUpper;
-                if (!(baseIsBone && overlayIsBone)) {
-                    return;
-                }
-            }
+    const float4 fixedVoxel = float4(float3(fixedCoordinate), 1.0);
+    const float3 overlayCoord = (uniforms.fixedVoxelToMovingTexture * fixedVoxel).xyz;
+    if (overlayCoord.x < 0.0 || overlayCoord.x > 1.0 ||
+        overlayCoord.y < 0.0 || overlayCoord.y > 1.0 ||
+        overlayCoord.z < 0.0 || overlayCoord.z > 1.0) {
+        return;
+    }
 
-            if (uniforms.metricOptions.x > 2.5 && uniforms.metricOptions.x < 3.5) {
-                const float bodyLower = uniforms.metricOptions.y;
-                const float bodyUpper = uniforms.metricOptions.z;
-                const bool baseIsBody = basePixelValue >= bodyLower && basePixelValue <= bodyUpper;
-                if (!baseIsBody) {
-                    return;
-                }
-            }
+    const float overlayPixelValue = overlayTexture.sample(metricSampler, overlayCoord).r;
+    if (usesBoneMask &&
+        (overlayPixelValue < uniforms.metricOptions.y || overlayPixelValue > uniforms.metricOptions.z)) {
+        return;
+    }
 
-            const float baseNormalized = metalViewerNormalizedValue(basePixelValue, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
-            const float overlayNormalized = metalViewerNormalizedValue(overlayPixelValue, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
+    const float baseNormalized = metalViewerNormalizedValue(basePixelValue, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
+    const float overlayNormalized = metalViewerNormalizedValue(overlayPixelValue, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
 
-            if (uniforms.metricOptions.x > 1.5 && uniforms.metricOptions.x < 2.5) {
-                const float gradientThreshold = uniforms.metricOptions.y;
-                const float baseGradient = metalViewerGradientMagnitudeNormalized(baseTexture, metricSampler, baseCoord, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
-                const float overlayGradient = metalViewerGradientMagnitudeNormalized(overlayTexture, metricSampler, overlayCoord, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
-                if (max(baseGradient, overlayGradient) < gradientThreshold) {
-                    return;
-                }
-            }
-
-            const uint baseBin = min(uint(baseNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
-            const uint overlayBin = min(uint(overlayNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
-            const uint histogramIndex = overlayBin * kRegistrationHistogramBins + baseBin;
-            atomic_fetch_add_explicit(&jointHistogram[histogramIndex], 1, memory_order_relaxed);
+    if (usesStructureMetric) {
+        const float gradientThreshold = uniforms.metricOptions.y;
+        const float baseGradient = metalViewerGradientMagnitudeNormalized(baseTexture, metricSampler, baseCoord, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
+        const float overlayGradient = metalViewerGradientMagnitudeNormalized(overlayTexture, metricSampler, overlayCoord, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
+        if (max(baseGradient, overlayGradient) < gradientThreshold) {
+            return;
         }
     }
+
+    const uint baseBin = min(uint(baseNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
+    const uint overlayBin = min(uint(overlayNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
+    const uint histogramIndex = overlayBin * kRegistrationHistogramBins + baseBin;
+    atomic_fetch_add_explicit(&jointHistogram[histogramIndex], 1, memory_order_relaxed);
 }
 
 kernel void metalViewerRegistrationJointHistogramsBatch(
@@ -1937,77 +1966,94 @@ kernel void metalViewerRegistrationJointHistogramsBatch(
     }
 
     constexpr sampler metricSampler(coord::normalized, address::clamp_to_zero, filter::linear);
-    const uint baseDepth = max(candidateUniforms[0].baseTextureSize.z, 1u);
-    const uint candidateIndex = gid.z / baseDepth;
-    if (candidateIndex >= candidateCount) {
+    const RegistrationUniforms sharedUniforms = candidateUniforms[0];
+    const uint samplingStride = metalViewerRegistrationSamplingStride(sharedUniforms.samplingOptions);
+    const uint3 sampleGridSize = metalViewerRegistrationSampleGridSize(
+        sharedUniforms.baseTextureSize,
+        samplingStride
+    );
+    const uint sampleDepth = max(sampleGridSize.z, 1u);
+    const uint candidateTileIndex = gid.z / sampleDepth;
+    const uint firstCandidateIndex = candidateTileIndex * kRegistrationCandidateTileSize;
+    if (firstCandidateIndex >= candidateCount) {
         return;
     }
 
-    const RegistrationUniforms uniforms = candidateUniforms[candidateIndex];
-    const uint fixedZ = gid.z - candidateIndex * baseDepth;
-    if (gid.x >= uniforms.baseTextureSize.x ||
-        gid.y >= uniforms.baseTextureSize.y ||
-        fixedZ >= uniforms.baseTextureSize.z) {
+    const uint sampleZ = gid.z - candidateTileIndex * sampleDepth;
+    if (gid.x >= sampleGridSize.x ||
+        gid.y >= sampleGridSize.y ||
+        sampleZ >= sampleGridSize.z) {
         return;
     }
 
-    const float3 baseSize = float3(uniforms.baseTextureSize);
-    const float3 fixedVoxel3 = float3(float(gid.x), float(gid.y), float(fixedZ));
+    const float metricMode = sharedUniforms.metricOptions.x;
+    const bool usesBoneMask = metricMode > 0.5 && metricMode < 1.5;
+    const bool usesStructureMetric = metricMode > 1.5 && metricMode < 2.5;
+    const bool usesBodyMask = metricMode > 2.5 && metricMode < 3.5;
+    const float3 baseSize = float3(sharedUniforms.baseTextureSize);
+    const uint3 fixedCoordinate = metalViewerRegistrationFixedCoordinate(
+        uint3(gid.x, gid.y, sampleZ),
+        sharedUniforms.baseTextureSize,
+        samplingStride
+    );
+    const float3 fixedVoxel3 = float3(fixedCoordinate);
     const float3 baseCoord = (fixedVoxel3 + 0.5) / baseSize;
-    const float4 fixedVoxel = float4(fixedVoxel3, 1.0);
-    const float4 worldPoint = uniforms.fixedVoxelToWorld * fixedVoxel;
-    const float3 translatedWorldPoint = worldPoint.xyz - uniforms.overlayTranslationWorld;
-    const float3 centeredWorldPoint = translatedWorldPoint - uniforms.movingRotationCenterWorld;
-    const float4 rotatedWorldPoint = uniforms.movingInverseRotation * float4(centeredWorldPoint, 1.0);
-    const float4 movingVoxel = uniforms.movingWorldToVoxel * float4(rotatedWorldPoint.xyz + uniforms.movingRotationCenterWorld, 1.0);
-    const float3 overlaySize = float3(overlayTexture.get_width(), overlayTexture.get_height(), overlayTexture.get_depth());
-    const float3 overlayCoord = (movingVoxel.xyz + 0.5) / overlaySize;
-
-    if (overlayCoord.x < 0.0 || overlayCoord.x > 1.0 ||
-        overlayCoord.y < 0.0 || overlayCoord.y > 1.0 ||
-        overlayCoord.z < 0.0 || overlayCoord.z > 1.0) {
+    const float basePixelValue = baseTexture.sample(metricSampler, baseCoord).r;
+    if (usesBoneMask &&
+        (basePixelValue < sharedUniforms.metricOptions.y || basePixelValue > sharedUniforms.metricOptions.z)) {
+        return;
+    }
+    if (usesBodyMask &&
+        (basePixelValue < sharedUniforms.metricOptions.y || basePixelValue > sharedUniforms.metricOptions.z)) {
         return;
     }
 
-    const float basePixelValue = baseTexture.sample(metricSampler, baseCoord).r;
-    const float overlayPixelValue = overlayTexture.sample(metricSampler, overlayCoord).r;
-
-    if (uniforms.metricOptions.x > 0.5 && uniforms.metricOptions.x < 1.5) {
-        const float boneLower = uniforms.metricOptions.y;
-        const float boneUpper = uniforms.metricOptions.z;
-        const bool baseIsBone = basePixelValue >= boneLower && basePixelValue <= boneUpper;
-        const bool overlayIsBone = overlayPixelValue >= boneLower && overlayPixelValue <= boneUpper;
-        if (!(baseIsBone && overlayIsBone)) {
-            return;
-        }
-    }
-
-    if (uniforms.metricOptions.x > 2.5 && uniforms.metricOptions.x < 3.5) {
-        const float bodyLower = uniforms.metricOptions.y;
-        const float bodyUpper = uniforms.metricOptions.z;
-        const bool baseIsBody = basePixelValue >= bodyLower && basePixelValue <= bodyUpper;
-        if (!baseIsBody) {
-            return;
-        }
-    }
-
-    const float baseNormalized = metalViewerNormalizedValue(basePixelValue, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
-    const float overlayNormalized = metalViewerNormalizedValue(overlayPixelValue, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
-
-    if (uniforms.metricOptions.x > 1.5 && uniforms.metricOptions.x < 2.5) {
-        const float gradientThreshold = uniforms.metricOptions.y;
-        const float baseGradient = metalViewerGradientMagnitudeNormalized(baseTexture, metricSampler, baseCoord, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
-        const float overlayGradient = metalViewerGradientMagnitudeNormalized(overlayTexture, metricSampler, overlayCoord, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
-        if (max(baseGradient, overlayGradient) < gradientThreshold) {
-            return;
-        }
-    }
-
+    const float baseNormalized = metalViewerNormalizedValue(basePixelValue, sharedUniforms.baseWindowLevel, sharedUniforms.baseWindowWidth);
     const uint baseBin = min(uint(baseNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
-    const uint overlayBin = min(uint(overlayNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
-    const uint histogramIndex = overlayBin * kRegistrationHistogramBins + baseBin;
-    const uint histogramOffset = candidateIndex * kRegistrationHistogramBins * kRegistrationHistogramBins;
-    atomic_fetch_add_explicit(&jointHistograms[histogramOffset + histogramIndex], 1, memory_order_relaxed);
+    const float baseGradient = usesStructureMetric
+        ? metalViewerGradientMagnitudeNormalized(baseTexture, metricSampler, baseCoord, sharedUniforms.baseWindowLevel, sharedUniforms.baseWindowWidth)
+        : 0.0;
+    const float4 fixedVoxel = float4(fixedVoxel3, 1.0);
+    const uint candidateEnd = min(firstCandidateIndex + kRegistrationCandidateTileSize, candidateCount);
+
+    for (uint candidateIndex = firstCandidateIndex; candidateIndex < candidateEnd; ++candidateIndex) {
+        const RegistrationUniforms uniforms = candidateUniforms[candidateIndex];
+        const float3 overlayCoord = (uniforms.fixedVoxelToMovingTexture * fixedVoxel).xyz;
+        if (overlayCoord.x < 0.0 || overlayCoord.x > 1.0 ||
+            overlayCoord.y < 0.0 || overlayCoord.y > 1.0 ||
+            overlayCoord.z < 0.0 || overlayCoord.z > 1.0) {
+            continue;
+        }
+
+        const float overlayPixelValue = overlayTexture.sample(metricSampler, overlayCoord).r;
+        if (usesBoneMask &&
+            (overlayPixelValue < sharedUniforms.metricOptions.y || overlayPixelValue > sharedUniforms.metricOptions.z)) {
+            continue;
+        }
+
+        const float overlayNormalized = metalViewerNormalizedValue(
+            overlayPixelValue,
+            sharedUniforms.overlayWindowLevel,
+            sharedUniforms.overlayWindowWidth
+        );
+        if (usesStructureMetric) {
+            const float overlayGradient = metalViewerGradientMagnitudeNormalized(
+                overlayTexture,
+                metricSampler,
+                overlayCoord,
+                sharedUniforms.overlayWindowLevel,
+                sharedUniforms.overlayWindowWidth
+            );
+            if (max(baseGradient, overlayGradient) < sharedUniforms.metricOptions.y) {
+                continue;
+            }
+        }
+
+        const uint overlayBin = min(uint(overlayNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
+        const uint histogramIndex = overlayBin * kRegistrationHistogramBins + baseBin;
+        const uint histogramOffset = candidateIndex * kRegistrationHistogramBins * kRegistrationHistogramBins;
+        atomic_fetch_add_explicit(&jointHistograms[histogramOffset + histogramIndex], 1, memory_order_relaxed);
+    }
 }
 
 kernel void metalViewerRegistrationSamplingProbe(
@@ -2033,13 +2079,7 @@ kernel void metalViewerRegistrationSamplingProbe(
         const float3 baseSize = float3(uniforms.baseTextureSize);
         const float3 baseCoord = (float3(gid) + 0.5) / baseSize;
         const float4 fixedVoxel = float4(float3(gid), 1.0);
-        const float4 worldPoint = uniforms.fixedVoxelToWorld * fixedVoxel;
-        const float3 translatedWorldPoint = worldPoint.xyz - uniforms.overlayTranslationWorld;
-        const float3 centeredWorldPoint = translatedWorldPoint - uniforms.movingRotationCenterWorld;
-        const float4 rotatedWorldPoint = uniforms.movingInverseRotation * float4(centeredWorldPoint, 1.0);
-        const float4 movingVoxel = uniforms.movingWorldToVoxel * float4(rotatedWorldPoint.xyz + uniforms.movingRotationCenterWorld, 1.0);
-        const float3 overlaySize = float3(overlayTexture.get_width(), overlayTexture.get_height(), overlayTexture.get_depth());
-        const float3 overlayCoord = (movingVoxel.xyz + 0.5) / overlaySize;
+        const float3 overlayCoord = (uniforms.fixedVoxelToMovingTexture * fixedVoxel).xyz;
 
         if (overlayCoord.x >= 0.0 && overlayCoord.x <= 1.0 &&
             overlayCoord.y >= 0.0 && overlayCoord.y <= 1.0 &&

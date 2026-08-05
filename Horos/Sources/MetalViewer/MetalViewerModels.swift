@@ -46,6 +46,12 @@ enum MetalViewerDiagnostics {
         emit(String(format: "HOROS_METAL_REGISTRATION_TIMING " + format, arguments: arguments))
     }
 
+    /// One concise profile is emitted for every completed registration so a
+    /// performance run does not depend on a hidden diagnostics preference.
+    static func registrationProfileLog(format: String, _ arguments: CVarArg...) {
+        emit(String(format: "HOROS_METAL_REGISTRATION_PROFILE " + format, arguments: arguments))
+    }
+
     private static func emit(_ message: String) {
         NSLog("%@", message)
     }

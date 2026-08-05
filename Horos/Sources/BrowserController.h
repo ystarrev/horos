@@ -57,8 +57,6 @@ enum simpleSearchType {PatientNameSearch, PatientIDSearch};
 enum queueStatus{QueueHasData, QueueEmpty};
 enum dbObjectSelection {oAny,oMiddle,oFirstForFirst};
 
-extern NSString * const __deprecated O2AlbumDragType; // was used to mark dragging pasteboards destinated to the Sources list in the Database window, we now make the list accept O2PasteboardTypeDatabaseObjectXIDs instead
-extern NSString * const __deprecated O2DatabaseXIDsDragType; // the original UTI used for XID drags, use O2PasteboardTypeDatabaseObjectXIDs instead
 extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 
 @interface NSString (BrowserController)
@@ -276,7 +274,7 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 @property(readonly) BOOL is2DViewer, isCurrentDatabaseBonjour;
 @property(readonly) MyOutlineView *databaseOutline;
 @property(readonly) NSTableView *albumTable;
-@property(readonly) NSString *currentDatabasePath __deprecated, *localDatabasePath __deprecated, *documentsDirectory __deprecated, *fixedDocumentsDirectory __deprecated;
+@property(readonly) NSString *currentDatabasePath __deprecated, *localDatabasePath __deprecated, *fixedDocumentsDirectory __deprecated;
 
 @property(readonly) NSBox *bonjourSourcesBox;
 @property(readonly) BonjourBrowser *bonjourBrowser;
@@ -345,8 +343,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (void) emptyDeleteQueue:(id) sender;
 - (BOOL)isUsingExternalViewer: (NSManagedObject*) item;
 - (void) addFileToDeleteQueue:(NSString*) file;
-- (NSString*) getNewFileDatabasePath: (NSString*) extension __deprecated;
-- (NSString*) getNewFileDatabasePath: (NSString*) extension dbFolder: (NSString*) dbFolder __deprecated;
 - (NSManagedObjectModel *) managedObjectModel __deprecated;
 
 - (NSManagedObject*) findStudyUID: (NSString*) uid;
@@ -375,7 +371,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (BOOL) isNetworkLogsActive;
 - (void) computeTimeInterval;
 - (void) ReadDicomCDRom:(id) sender __deprecated;
-- (NSString*) INCOMINGPATH __deprecated;
 - (NSString*) TEMPPATH __deprecated;
 - (IBAction) matrixDoublePressed:(id)sender;
 - (void) addURLToDatabaseEnd:(id) sender;
@@ -442,7 +437,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (IBAction) ReBuildDatabaseSheet: (id)sender;
 - (IBAction) previewSliderAction:(id) sender;
 - (void) addHelpMenu;
-+ (NSString*) _findFirstDicomdirOnCDMedia: (NSString*)startDirectory __deprecated;
 + (BOOL)isItCD:(NSString*) path;
 - (void)storeSCPComplete:(id)sender;
 - (NSMutableArray *) filesForDatabaseOutlineSelection :(NSMutableArray*) correspondingDicomFile;
@@ -504,7 +498,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (void) displayBonjourServices;
 - (NSString*) askPassword;
 - (void) resetToLocalDatabase;
-- (void) switchToDefaultDBIfNeeded __deprecated;
 - (IBAction) buildAllThumbnails:(id) sender;
 
 // Finding Comparisons
@@ -518,11 +511,8 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (NSDictionary *)surgicalProcedureImportDatabasePaths;
 
 + (NSString*) defaultDocumentsDirectory  __deprecated;
-- (NSString *)documentsDirectoryFor:(int) mode url:(NSString*) url  __deprecated;
 - (IBAction)showLogWindow: (id)sender;
 - (void) resetLogWindowController;
-
-- (NSString *)folderPathResolvingAliasAndSymLink:(NSString *)path __deprecated;
 
 - (void)setFilterPredicate:(NSPredicate *)predicate description:(NSString*) desc;
 - (NSPredicate *)createFilterPredicate;
@@ -543,9 +533,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 
 - (IBAction) paste: (id)sender;
 - (IBAction) pasteImageForSourceFile: (NSString*) sourceFile;
-- (void) decompressDICOMJPEG: (NSArray*) array __deprecated;
-- (void) compressDICOMJPEG:(NSArray*) array __deprecated;
-- (void) decompressArrayOfFiles: (NSArray*) array work:(NSNumber*) work __deprecated;
 - (IBAction) compressSelectedFiles:(id) sender;
 - (IBAction) decompressSelectedFiles:(id) sender;
 - (void) importReport:(NSString*) path UID: (NSString*) uid;

@@ -2089,32 +2089,6 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
     }
 }
 
-private final class PlaceholderSettingsPaneViewController: HorosSettingsPaneViewController {
-    init(title: String) {
-        super.init(paneTitle: title)
-    }
-
-    override func loadView() {
-        let rootView = HorosSettingsPaneContainerView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
-        rootView.wantsLayer = true
-        rootView.layer?.backgroundColor = NSColor(calibratedWhite: 0.14, alpha: 1).cgColor
-
-        let titleLabel = NSTextField(labelWithString: paneTitle)
-        titleLabel.font = .systemFont(ofSize: 28, weight: .semibold)
-        titleLabel.textColor = NSColor(calibratedWhite: 0.95, alpha: 1)
-        titleLabel.frame = NSRect(x: 42, y: 36, width: 320, height: 36)
-        rootView.addSubview(titleLabel)
-
-        let subtitle = NSTextField(wrappingLabelWithString: "\(paneTitle) will move into this new settings system in a later step.")
-        subtitle.font = .systemFont(ofSize: 15)
-        subtitle.textColor = NSColor(calibratedWhite: 0.72, alpha: 1)
-        subtitle.frame = NSRect(x: 42, y: 84, width: 700, height: 24)
-        rootView.addSubview(subtitle)
-
-        self.view = rootView
-    }
-}
-
 @objc(HorosModernSettingsWindowController)
 final class HorosSettingsWindowController: NSWindowController {
     private enum Layout {
@@ -2130,16 +2104,9 @@ final class HorosSettingsWindowController: NSWindowController {
     private static let panes: [HorosSettingsPaneDescriptor] = [
         .init(identifier: "general", title: "General", imageName: "GeneralPreferences"),
         .init(identifier: "database", title: "Database", imageName: "DatabaseIcon"),
-        .init(identifier: "cddvd", title: "CD/DVD", imageName: "CD"),
-        .init(identifier: "protocols", title: "Protocols", imageName: "ZoomToFit"),
-        .init(identifier: "hotkeys", title: "Hot Keys", imageName: "key"),
         .init(identifier: "viewers", title: "Viewers", imageName: "AxialSmall"),
-        .init(identifier: "pet", title: "PET", imageName: "SUV"),
         .init(identifier: "annotations", title: "Annotations", imageName: "CustomImageAnnotations"),
-        .init(identifier: "listener", title: "Listener", imageName: "Network"),
-        .init(identifier: "locations", title: "Locations", imageName: "AccountPreferences"),
-        .init(identifier: "routing", title: "Routing", imageName: "route"),
-        .init(identifier: "ondemand", title: "On-Demand", imageName: "Cloud"),
+        .init(identifier: "network", title: "Network", imageName: "Network"),
     ]
 
     private var toolbarButtons: [NSButton] = []
@@ -2292,11 +2259,11 @@ final class HorosSettingsWindowController: NSWindowController {
                 : NSColor.clear.cgColor
         }
 
-        displayPane(withIdentifier: identifier, title: selectedButton.title)
+        displayPane(withIdentifier: identifier)
     }
 
-    private func displayPane(withIdentifier identifier: String, title: String) {
-        let controller = paneController(for: identifier, title: title)
+    private func displayPane(withIdentifier identifier: String) {
+        let controller = paneController(for: identifier)
 
         if activePaneViewController === controller {
             return
@@ -2311,7 +2278,7 @@ final class HorosSettingsWindowController: NSWindowController {
         contentContainer.addSubview(paneView)
     }
 
-    private func paneController(for identifier: String, title: String) -> NSViewController {
+    private func paneController(for identifier: String) -> NSViewController {
         if let existing = paneControllers[identifier] {
             return existing
         }
@@ -2320,12 +2287,16 @@ final class HorosSettingsWindowController: NSWindowController {
         switch identifier {
         case "general":
             controller = GeneralSettingsPaneViewController()
+        case "database":
+            controller = DatabaseSettingsPaneViewController()
         case "viewers":
             controller = ViewersSettingsPaneViewController()
         case "annotations":
             controller = AnnotationsSettingsPaneViewController()
+        case "network":
+            controller = NetworkSettingsPaneViewController()
         default:
-            controller = PlaceholderSettingsPaneViewController(title: title)
+            preconditionFailure("Unknown settings pane: \(identifier)")
         }
 
         paneControllers[identifier] = controller

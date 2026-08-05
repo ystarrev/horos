@@ -1,3 +1,4 @@
+#import "HorosSheetPresenter.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -81,12 +82,12 @@
 
 -(IBAction)actionOk:(NSView*)sender {
 	end = AnonymizationPanelOk;
-	[NSApp endSheet:self.window];
+	HorosEndSheet(self.window);
 }
 
 -(IBAction)actionCancel:(NSView*)sender {
 	end = AnonymizationPanelCancel;
-	[NSApp endSheet:self.window returnCode:NSModalResponseAbort];
+	HorosEndSheetWithReturnCode(self.window, NSModalResponseAbort);
 }
 
 @end

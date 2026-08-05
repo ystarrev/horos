@@ -457,7 +457,7 @@ static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys(void)
 - (IBAction) endSelectServer:(id) sender
 {	
 	[[self window] orderOut:sender];
-	[NSApp endSheet: [self window] returnCode:[sender tag]];
+	HorosEndSheetWithReturnCode([self window], [sender tag]);
 	NSArray *objectsToSend = _files;
 	
 	if( [sender tag])   //User clicks OK Button

@@ -70,7 +70,15 @@
 }
 
 +(void)_sheetButtonAction:(NSButton*)button {
-	[NSApp endSheet:[button window] returnCode:[button tag]];
+	NSWindow *sheet = [button window];
+	NSWindow *parentWindow = [sheet sheetParent];
+	if (parentWindow)
+		[parentWindow endSheet:sheet returnCode:[button tag]];
+	else {
+		if ([NSApp modalWindow] == sheet)
+			[NSApp stopModalWithCode:[button tag]];
+		[sheet orderOut:nil];
+	}
 }
 
 @end

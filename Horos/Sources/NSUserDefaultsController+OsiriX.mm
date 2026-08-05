@@ -45,9 +45,6 @@
 
 @implementation NSUserDefaultsController (Deprecated)
 
-NSString* const OsirixBonjourSharingActiveFlagDefaultsKey = OsirixBonjourSharingIsActiveDefaultsKey;
-NSString* const OsirixBonjourSharingPasswordFlagDefaultsKey = OsirixBonjourSharingIsPasswordProtectedDefaultsKey;
-
 +(BOOL)IsBonjourSharingActive {
 	return NSUserDefaults.bonjourSharingIsActive;
 }

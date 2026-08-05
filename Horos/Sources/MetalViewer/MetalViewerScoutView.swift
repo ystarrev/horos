@@ -1080,30 +1080,28 @@ private final class MetalViewerScoutItemView: NSView {
     }
 
     private static func placeholderThumbnail(size: NSSize) -> NSImage {
-        let image = NSImage(size: size)
-        image.lockFocus()
-        NSColor(calibratedWhite: 0.09, alpha: 1).setFill()
-        NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
+        NSImage(size: size, flipped: false) { _ in
+            NSColor(calibratedWhite: 0.09, alpha: 1).setFill()
+            NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
 
-        NSColor(calibratedWhite: 0.24, alpha: 1).setStroke()
-        let border = NSBezierPath(rect: NSRect(x: 0.5, y: 0.5, width: size.width - 1, height: size.height - 1))
-        border.lineWidth = 1
-        border.stroke()
+            NSColor(calibratedWhite: 0.24, alpha: 1).setStroke()
+            let border = NSBezierPath(rect: NSRect(x: 0.5, y: 0.5, width: size.width - 1, height: size.height - 1))
+            border.lineWidth = 1
+            border.stroke()
 
-        NSColor(calibratedWhite: 0.36, alpha: 1).setStroke()
-        let centerY = size.height * 0.5
-        let waveform = NSBezierPath()
-        waveform.move(to: NSPoint(x: 32, y: centerY))
-        waveform.curve(
-            to: NSPoint(x: size.width - 32, y: centerY),
-            controlPoint1: NSPoint(x: 70, y: centerY + 18),
-            controlPoint2: NSPoint(x: size.width - 70, y: centerY - 18)
-        )
-        waveform.lineWidth = 2
-        waveform.stroke()
-
-        image.unlockFocus()
-        return image
+            NSColor(calibratedWhite: 0.36, alpha: 1).setStroke()
+            let centerY = size.height * 0.5
+            let waveform = NSBezierPath()
+            waveform.move(to: NSPoint(x: 32, y: centerY))
+            waveform.curve(
+                to: NSPoint(x: size.width - 32, y: centerY),
+                controlPoint1: NSPoint(x: 70, y: centerY + 18),
+                controlPoint2: NSPoint(x: size.width - 70, y: centerY - 18)
+            )
+            waveform.lineWidth = 2
+            waveform.stroke()
+            return true
+        }
     }
 
     private static let thumbnailSize = NSSize(
@@ -1113,9 +1111,11 @@ private final class MetalViewerScoutItemView: NSView {
 
     private func bitmapImage() -> NSImage {
         let image = NSImage(size: bounds.size)
-        image.lockFocus()
-        draw(bounds)
-        image.unlockFocus()
+        guard let representation = bitmapImageRepForCachingDisplay(in: bounds) else {
+            return image
+        }
+        cacheDisplay(in: bounds, to: representation)
+        image.addRepresentation(representation)
         return image
     }
 
@@ -1273,84 +1273,82 @@ private final class MetalViewerScoutItemView: NSView {
     }
 
     private static func structuredReportIconThumbnail(size: NSSize) -> NSImage {
-        let image = NSImage(size: size)
-        image.lockFocus()
+        NSImage(size: size, flipped: false) { _ in
+            NSColor(calibratedWhite: 0.10, alpha: 1).setFill()
+            NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
 
-        NSColor(calibratedWhite: 0.10, alpha: 1).setFill()
-        NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
+            let pageWidth = size.width * 0.52
+            let pageHeight = size.height * 0.66
+            let pageRect = NSRect(
+                x: (size.width - pageWidth) * 0.5,
+                y: size.height * 0.12,
+                width: pageWidth,
+                height: pageHeight
+            )
+            let pagePath = NSBezierPath(rect: pageRect)
+            NSColor(calibratedWhite: 0.94, alpha: 1).setFill()
+            pagePath.fill()
 
-        let pageWidth = size.width * 0.52
-        let pageHeight = size.height * 0.66
-        let pageRect = NSRect(
-            x: (size.width - pageWidth) * 0.5,
-            y: size.height * 0.12,
-            width: pageWidth,
-            height: pageHeight
-        )
-        let pagePath = NSBezierPath(rect: pageRect)
-        NSColor(calibratedWhite: 0.94, alpha: 1).setFill()
-        pagePath.fill()
+            NSColor(calibratedWhite: 0.64, alpha: 1).setStroke()
+            pagePath.lineWidth = 1
+            pagePath.stroke()
 
-        NSColor(calibratedWhite: 0.64, alpha: 1).setStroke()
-        pagePath.lineWidth = 1
-        pagePath.stroke()
+            let foldSize = min(pageRect.width, pageRect.height) * 0.22
+            let foldPath = NSBezierPath()
+            foldPath.move(to: NSPoint(x: pageRect.maxX - foldSize, y: pageRect.maxY))
+            foldPath.line(to: NSPoint(x: pageRect.maxX, y: pageRect.maxY - foldSize))
+            foldPath.line(to: NSPoint(x: pageRect.maxX - foldSize, y: pageRect.maxY - foldSize))
+            foldPath.close()
+            NSColor(calibratedWhite: 0.82, alpha: 1).setFill()
+            foldPath.fill()
+            NSColor(calibratedWhite: 0.68, alpha: 1).setStroke()
+            foldPath.lineWidth = 1
+            foldPath.stroke()
 
-        let foldSize = min(pageRect.width, pageRect.height) * 0.22
-        let foldPath = NSBezierPath()
-        foldPath.move(to: NSPoint(x: pageRect.maxX - foldSize, y: pageRect.maxY))
-        foldPath.line(to: NSPoint(x: pageRect.maxX, y: pageRect.maxY - foldSize))
-        foldPath.line(to: NSPoint(x: pageRect.maxX - foldSize, y: pageRect.maxY - foldSize))
-        foldPath.close()
-        NSColor(calibratedWhite: 0.82, alpha: 1).setFill()
-        foldPath.fill()
-        NSColor(calibratedWhite: 0.68, alpha: 1).setStroke()
-        foldPath.lineWidth = 1
-        foldPath.stroke()
+            let badgeSize = min(pageRect.width, pageRect.height) * 0.24
+            let badgeRect = NSRect(
+                x: pageRect.midX - badgeSize * 0.5,
+                y: pageRect.maxY - foldSize - badgeSize - 6,
+                width: badgeSize,
+                height: badgeSize
+            )
+            NSColor(calibratedRed: 0.03, green: 0.46, blue: 0.78, alpha: 1).setFill()
+            NSBezierPath(ovalIn: badgeRect).fill()
 
-        let badgeSize = min(pageRect.width, pageRect.height) * 0.24
-        let badgeRect = NSRect(
-            x: pageRect.midX - badgeSize * 0.5,
-            y: pageRect.maxY - foldSize - badgeSize - 6,
-            width: badgeSize,
-            height: badgeSize
-        )
-        NSColor(calibratedRed: 0.03, green: 0.46, blue: 0.78, alpha: 1).setFill()
-        NSBezierPath(ovalIn: badgeRect).fill()
+            NSColor.white.setStroke()
+            let pulsePath = NSBezierPath()
+            pulsePath.lineWidth = 1.3
+            pulsePath.move(to: NSPoint(x: badgeRect.minX + badgeSize * 0.20, y: badgeRect.midY))
+            pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.36, y: badgeRect.midY))
+            pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.44, y: badgeRect.midY + badgeSize * 0.20))
+            pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.58, y: badgeRect.midY - badgeSize * 0.24))
+            pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.68, y: badgeRect.midY))
+            pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.82, y: badgeRect.midY))
+            pulsePath.stroke()
 
-        NSColor.white.setStroke()
-        let pulsePath = NSBezierPath()
-        pulsePath.lineWidth = 1.3
-        pulsePath.move(to: NSPoint(x: badgeRect.minX + badgeSize * 0.20, y: badgeRect.midY))
-        pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.36, y: badgeRect.midY))
-        pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.44, y: badgeRect.midY + badgeSize * 0.20))
-        pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.58, y: badgeRect.midY - badgeSize * 0.24))
-        pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.68, y: badgeRect.midY))
-        pulsePath.line(to: NSPoint(x: badgeRect.minX + badgeSize * 0.82, y: badgeRect.midY))
-        pulsePath.stroke()
+            let title = NSLocalizedString("Diagnostic\nImaging\nReport", comment: "")
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.alignment = .center
+            paragraphStyle.lineBreakMode = .byWordWrapping
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 8, weight: .semibold),
+                .foregroundColor: NSColor(calibratedWhite: 0.18, alpha: 1),
+                .paragraphStyle: paragraphStyle
+            ]
+            let titleRect = NSRect(
+                x: pageRect.minX + 5,
+                y: pageRect.minY + 12,
+                width: pageRect.width - 10,
+                height: max(28, badgeRect.minY - pageRect.minY - 14)
+            )
+            title.draw(in: titleRect, withAttributes: attributes)
 
-        let title = NSLocalizedString("Diagnostic\nImaging\nReport", comment: "")
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .center
-        paragraphStyle.lineBreakMode = .byWordWrapping
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 8, weight: .semibold),
-            .foregroundColor: NSColor(calibratedWhite: 0.18, alpha: 1),
-            .paragraphStyle: paragraphStyle
-        ]
-        let titleRect = NSRect(
-            x: pageRect.minX + 5,
-            y: pageRect.minY + 12,
-            width: pageRect.width - 10,
-            height: max(28, badgeRect.minY - pageRect.minY - 14)
-        )
-        title.draw(in: titleRect, withAttributes: attributes)
-
-        NSColor(calibratedWhite: 0.78, alpha: 1).setStroke()
-        let border = NSBezierPath(rect: NSRect(x: 0.5, y: 0.5, width: size.width - 1, height: size.height - 1))
-        border.lineWidth = 1
-        border.stroke()
-        image.unlockFocus()
-        return image
+            NSColor(calibratedWhite: 0.78, alpha: 1).setStroke()
+            let border = NSBezierPath(rect: NSRect(x: 0.5, y: 0.5, width: size.width - 1, height: size.height - 1))
+            border.lineWidth = 1
+            border.stroke()
+            return true
+        }
     }
 
     private static let studyDateFormatter: DateFormatter = {

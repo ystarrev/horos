@@ -1857,15 +1857,15 @@ fragment float4 metalPreviewFragment(
     return float4(normalized, normalized, normalized, 1.0);
 }
 
-static inline uint metalViewerRegistrationSamplingStride(
+static inline uint3 metalViewerRegistrationSamplingStride(
     uint4 samplingOptions
 ) {
-    return max(samplingOptions.x, 1u);
+    return max(samplingOptions.xyz, uint3(1u));
 }
 
 static inline uint3 metalViewerRegistrationSampleGridSize(
     uint3 textureSize,
-    uint samplingStride
+    uint3 samplingStride
 ) {
     return (textureSize + samplingStride - 1u) / samplingStride;
 }
@@ -1873,9 +1873,9 @@ static inline uint3 metalViewerRegistrationSampleGridSize(
 static inline uint3 metalViewerRegistrationFixedCoordinate(
     uint3 sampleCoordinate,
     uint3 textureSize,
-    uint samplingStride
+    uint3 samplingStride
 ) {
-    const uint sampleOffset = samplingStride / 2u;
+    const uint3 sampleOffset = samplingStride / 2u;
     return min(
         sampleCoordinate * samplingStride + sampleOffset,
         textureSize - 1u
@@ -1889,7 +1889,7 @@ kernel void metalViewerRegistrationJointHistogram(
     device atomic_uint *jointHistogram [[buffer(1)]],
     uint3 gid [[thread_position_in_grid]]
 ) {
-    const uint samplingStride = metalViewerRegistrationSamplingStride(uniforms.samplingOptions);
+    const uint3 samplingStride = metalViewerRegistrationSamplingStride(uniforms.samplingOptions);
     const uint3 sampleGridSize = metalViewerRegistrationSampleGridSize(
         uniforms.baseTextureSize,
         samplingStride
@@ -1937,6 +1937,8 @@ kernel void metalViewerRegistrationJointHistogram(
 
     const float baseNormalized = metalViewerNormalizedValue(basePixelValue, uniforms.baseWindowLevel, uniforms.baseWindowWidth);
     const float overlayNormalized = metalViewerNormalizedValue(overlayPixelValue, uniforms.overlayWindowLevel, uniforms.overlayWindowWidth);
+    float baseMetricValue = baseNormalized;
+    float overlayMetricValue = overlayNormalized;
 
     if (usesStructureMetric) {
         const float gradientThreshold = uniforms.metricOptions.y;
@@ -1945,10 +1947,12 @@ kernel void metalViewerRegistrationJointHistogram(
         if (max(baseGradient, overlayGradient) < gradientThreshold) {
             return;
         }
+        baseMetricValue = clamp(baseGradient, 0.0, 1.0);
+        overlayMetricValue = clamp(overlayGradient, 0.0, 1.0);
     }
 
-    const uint baseBin = min(uint(baseNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
-    const uint overlayBin = min(uint(overlayNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
+    const uint baseBin = min(uint(baseMetricValue * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
+    const uint overlayBin = min(uint(overlayMetricValue * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
     const uint histogramIndex = overlayBin * kRegistrationHistogramBins + baseBin;
     atomic_fetch_add_explicit(&jointHistogram[histogramIndex], 1, memory_order_relaxed);
 }
@@ -1967,7 +1971,7 @@ kernel void metalViewerRegistrationJointHistogramsBatch(
 
     constexpr sampler metricSampler(coord::normalized, address::clamp_to_zero, filter::linear);
     const RegistrationUniforms sharedUniforms = candidateUniforms[0];
-    const uint samplingStride = metalViewerRegistrationSamplingStride(sharedUniforms.samplingOptions);
+    const uint3 samplingStride = metalViewerRegistrationSamplingStride(sharedUniforms.samplingOptions);
     const uint3 sampleGridSize = metalViewerRegistrationSampleGridSize(
         sharedUniforms.baseTextureSize,
         samplingStride
@@ -2009,10 +2013,13 @@ kernel void metalViewerRegistrationJointHistogramsBatch(
     }
 
     const float baseNormalized = metalViewerNormalizedValue(basePixelValue, sharedUniforms.baseWindowLevel, sharedUniforms.baseWindowWidth);
-    const uint baseBin = min(uint(baseNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
     const float baseGradient = usesStructureMetric
         ? metalViewerGradientMagnitudeNormalized(baseTexture, metricSampler, baseCoord, sharedUniforms.baseWindowLevel, sharedUniforms.baseWindowWidth)
         : 0.0;
+    const float baseMetricValue = usesStructureMetric
+        ? clamp(baseGradient, 0.0, 1.0)
+        : baseNormalized;
+    const uint baseBin = min(uint(baseMetricValue * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
     const float4 fixedVoxel = float4(fixedVoxel3, 1.0);
     const uint candidateEnd = min(firstCandidateIndex + kRegistrationCandidateTileSize, candidateCount);
 
@@ -2036,6 +2043,7 @@ kernel void metalViewerRegistrationJointHistogramsBatch(
             sharedUniforms.overlayWindowLevel,
             sharedUniforms.overlayWindowWidth
         );
+        float overlayMetricValue = overlayNormalized;
         if (usesStructureMetric) {
             const float overlayGradient = metalViewerGradientMagnitudeNormalized(
                 overlayTexture,
@@ -2047,9 +2055,10 @@ kernel void metalViewerRegistrationJointHistogramsBatch(
             if (max(baseGradient, overlayGradient) < sharedUniforms.metricOptions.y) {
                 continue;
             }
+            overlayMetricValue = clamp(overlayGradient, 0.0, 1.0);
         }
 
-        const uint overlayBin = min(uint(overlayNormalized * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
+        const uint overlayBin = min(uint(overlayMetricValue * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
         const uint histogramIndex = overlayBin * kRegistrationHistogramBins + baseBin;
         const uint histogramOffset = candidateIndex * kRegistrationHistogramBins * kRegistrationHistogramBins;
         atomic_fetch_add_explicit(&jointHistograms[histogramOffset + histogramIndex], 1, memory_order_relaxed);

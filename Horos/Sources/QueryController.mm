@@ -1081,7 +1081,7 @@ extern "C"
 	
 	[autoRetrieveWindow orderOut: self];
 	
-	[NSApp endSheet: autoRetrieveWindow];
+	HorosEndSheet(autoRetrieveWindow);
 	
 	if( result != NSModalResponseStop) // Cancel
 	{
@@ -1171,7 +1171,7 @@ extern "C"
 		}
         
         [addAutoQRInstanceWindow orderOut: sender];
-        [NSApp endSheet: addAutoQRInstanceWindow returnCode: [sender tag]];
+        HorosEndSheetWithReturnCode(addAutoQRInstanceWindow, [sender tag]);
         
         [self willChangeValueForKey: @"instancesMenuList"];
         
@@ -1197,7 +1197,7 @@ extern "C"
 	else
     {
         [addAutoQRInstanceWindow orderOut: sender];
-        [NSApp endSheet: addAutoQRInstanceWindow returnCode: [sender tag]];
+        HorosEndSheetWithReturnCode(addAutoQRInstanceWindow, [sender tag]);
     }
 }
 
@@ -1387,7 +1387,7 @@ extern "C"
 	}
 	
 	[presetWindow orderOut:sender];
-    [NSApp endSheet:presetWindow returnCode:[sender tag]];
+    HorosEndSheetWithReturnCode(presetWindow, [sender tag]);
 }
 
 - (void) addPreset:(id) sender

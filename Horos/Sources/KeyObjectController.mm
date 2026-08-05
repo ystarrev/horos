@@ -1,3 +1,4 @@
+#import "HorosSheetPresenter.h"
 /*=========================================================================
   Program:   OsiriX
 
@@ -66,7 +67,7 @@
 		NSString *path;
 
 		//Save to INCOMING		
-		NSString *rootFolder = [[BrowserController currentBrowser] documentsDirectory];
+		NSString *rootFolder = [BrowserController currentBrowser].database.baseDirPath;
 		//path = [[rootFolder stringByAppendingPathComponent:@"REPORTS"] stringByAppendingPathComponent:studyInstanceUID];
 		path = [rootFolder stringByAppendingPathComponent:@"INCOMING.noindex"];
 
@@ -85,7 +86,7 @@
 			NSLog(@"Close Window exception: %@", [localException description]);
 		NS_ENDHANDLER
 	}
-	[NSApp endSheet:[self window] returnCode:0];
+	HorosEndSheetWithReturnCode([self window], 0);
 	[[self window] close];
 	
 }

@@ -345,11 +345,10 @@
                     
                     NSImage* thumbAv = [image thumbnailIfAlreadyAvailable];
                     if (thumbAv) {
-                        NSImage* thumbnail = [[[NSImage alloc] initWithSize: NSMakeSize(THUMBNAILSIZE, THUMBNAILSIZE)] autorelease];
-                        
-                        [thumbnail lockFocus];
-                        [thumbAv drawInRect:NSMakeRect(0,0,THUMBNAILSIZE,THUMBNAILSIZE) fromRect:[thumbAv alignmentRect] operation:NSCompositingOperationCopy fraction:1.0];
-                        [thumbnail unlockFocus];
+                        NSImage* thumbnail = [NSImage imageWithSize:NSMakeSize(THUMBNAILSIZE, THUMBNAILSIZE) flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
+                            [thumbAv drawInRect:destinationRect fromRect:[thumbAv alignmentRect] operation:NSCompositingOperationCopy fraction:1.0];
+                            return YES;
+                        }];
                         
                         thumbnailData = [[thumbnail TIFFRepresentation] retain]; // autoreleased when returning
                     }
@@ -385,11 +384,10 @@
                         {
                             NSImage *icon = [[NSWorkspace sharedWorkspace] iconForContentType:UTTypePlainText];
                             
-                            thumbnail = [[[NSImage alloc] initWithSize: NSMakeSize( THUMBNAILSIZE, THUMBNAILSIZE)] autorelease];
-                            
-                            [thumbnail lockFocus];
-                            [icon drawInRect: NSMakeRect( 0, 0, THUMBNAILSIZE, THUMBNAILSIZE) fromRect: [icon alignmentRect] operation: NSCompositingOperationCopy fraction: 1.0];
-                            [thumbnail unlockFocus];
+                            thumbnail = [NSImage imageWithSize:NSMakeSize(THUMBNAILSIZE, THUMBNAILSIZE) flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
+                                [icon drawInRect:destinationRect fromRect:[icon alignmentRect] operation:NSCompositingOperationCopy fraction:1.0];
+                                return YES;
+                            }];
                             
                             thumbnailData = [[thumbnail TIFFRepresentation] retain]; // autoreleased when returning
                         }

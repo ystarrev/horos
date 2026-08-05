@@ -49,7 +49,6 @@
 - (NSTableColumn *)initialColumnWithIdentifier:(id)identifier;
 - (BOOL)isColumnWithIdentifierVisible:(id)identifier;
 - (void)setColumnWithIdentifier:(id)identifier visible:(BOOL)visible;
-- (void)setInitialState __deprecated;
 - (void)restoreColumnState:(NSObject *)columnState;
 - (NSObject<NSCoding>*)columnState;
 - (NSArray*) allColumns __deprecated; // just use tableColumns

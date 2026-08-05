@@ -356,12 +356,12 @@ final class MetalImageView: MTKView {
         }
     }
 
-    private static func makeCursor(draw: (CGSize) -> Void) -> NSCursor {
+    private static func makeCursor(draw: @escaping (CGSize) -> Void) -> NSCursor {
         let size = CGSize(width: 32, height: 32)
-        let image = NSImage(size: size)
-        image.lockFocus()
-        draw(size)
-        image.unlockFocus()
+        let image = NSImage(size: size, flipped: false) { _ in
+            draw(size)
+            return true
+        }
         return NSCursor(image: image, hotSpot: CGPoint(x: size.width * 0.5, y: size.height * 0.5))
     }
 

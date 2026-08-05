@@ -40,7 +40,7 @@
 #import "DicomSeries.h"
 #import "DicomStudy.h"
 
-#import <AVFoundation/AVFoundation.h>
+#import "HorosAVAssetLoading.h"
 #import "DCM.h"
 #import "DCMAbstractSyntaxUID.h"
 #import "BrowserController.h"
@@ -1786,24 +1786,15 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                     imageRect = NSMakeRect(0.0, 0.0, (int) ([currentImage size].width/ratio), (int) ([currentImage size].height/ratio));
                 }
                 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-                [currentImage setScalesWhenResized:YES];
-#pragma clang diagnostic pop
-                
-                NSImage *compositingImage = [[NSImage alloc] initWithSize: imageRect.size];
-                
-                if( [compositingImage size].width > 0 && [compositingImage size].height > 0)
-                {
-                    [compositingImage lockFocus];
+                NSImage *compositingImage = [NSImage imageWithSize:imageRect.size flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
                     //		[[NSGraphicsContext currentContext] setImageInterpolation: NSImageInterpolationDefault];
-                    [currentImage drawInRect: imageRect fromRect: sourceRect operation: NSCompositingOperationCopy fraction: 1.0];
-                    [compositingImage unlockFocus];
-                }
+                    [currentImage drawInRect:destinationRect fromRect:sourceRect operation:NSCompositingOperationCopy fraction:1.0];
+                    return YES;
+                }];
                 
                 //				NSLog( @"New Size: %f %f", [compositingImage size].width, [compositingImage size].height);
                 
-                return [compositingImage autorelease];
+                return compositingImage;
             }
         }
         @catch (NSException * e)
@@ -6446,7 +6437,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 }
 
 
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 - (void) CheckLoadIn
 {
     if( fImage == nil)
@@ -7238,14 +7228,17 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
                 if( [extension isEqualToString:@"pdf"])
                 {
-                    id tempID = [otherImage bestRepresentationForDevice:nil];
-                    
-                    if( [tempID isKindOfClass: [NSPDFImageRep class]])
+                    NSPDFImageRep *pdfRepresentation = nil;
+                    for (NSImageRep *representation in [otherImage representations])
                     {
-                        NSPDFImageRep *pdfRepresentation = tempID;
-                        
-                        [pdfRepresentation setCurrentPage:frameNo];
+                        if ([representation isKindOfClass:[NSPDFImageRep class]])
+                        {
+                            pdfRepresentation = (NSPDFImageRep *)representation;
+                            break;
+                        }
                     }
+                    if (pdfRepresentation)
+                        [pdfRepresentation setCurrentPage:frameNo];
                 }
                 
                 [self getDataFromNSImage: otherImage];
@@ -7262,7 +7255,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                     AVAsset *asset = [AVAsset assetWithURL: [NSURL fileURLWithPath: self.srcFile]];
                     AVAssetReader *asset_reader = [[[AVAssetReader alloc] initWithAsset: asset error: &error] autorelease];
                     
-                    NSArray* video_tracks = [asset tracksWithMediaType: AVMediaTypeVideo];
+                    NSArray* video_tracks = HorosLoadAssetTracks(asset, AVMediaTypeVideo, &error);
                     if( video_tracks.count)
                     {
                         AVAssetTrack* video_track = [video_tracks objectAtIndex:0];
@@ -7370,8 +7363,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         }
     }
 }
-#pragma GCC diagnostic warning "-Wdeprecated-declarations"
-
 -(void) CheckLoadFromThread:(NSThread*) loadingThread
 {
     @autoreleasepool

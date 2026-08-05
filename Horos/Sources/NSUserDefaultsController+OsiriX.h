@@ -44,9 +44,6 @@
 
 @interface NSUserDefaultsController (Deprecated)
 
-extern NSString* const OsirixBonjourSharingActiveFlagDefaultsKey __deprecated;
-extern NSString* const OsirixBonjourSharingPasswordFlagDefaultsKey __deprecated;
-
 +(BOOL)IsBonjourSharingActive __deprecated;
 +(BOOL)IsBonjourSharingPasswordProtected __deprecated;
 +(NSString*)BonjourSharingPassword __deprecated;

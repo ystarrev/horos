@@ -4,6 +4,7 @@
 #import "HorosFilePanelContentTypes.h"
 #import "HorosAlertCompatibility.h"
 #import "HorosKeyedArchive.h"
+#import "HorosAVAssetLoading.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -217,8 +218,6 @@ static NSInteger HorosRunDeleteImagesConfirmationAlert(NSString *level)
 #include <IOKit/storage/IODVDMedia.h>
 
 static BrowserController *browserWindow = nil;
-NSString * const O2AlbumDragType = @"Osirix Album drag";
-NSString * const O2DatabaseXIDsDragType = @"BrowserController.database.context.XIDs";
 NSString * const O2PasteboardTypeDatabaseObjectXIDs = @"com.opensource.osirix.database.xids";
 static BOOL loadingIsOver = NO;//, isAutoCleanDatabaseRunning = NO;
 static NSMenu *contextual = nil;
@@ -297,6 +296,7 @@ NSString* asciiString(NSString* str)
 -(NSArray*)surgicalProcedureEventsForVisibleStudies:(NSArray*)items;
 
 -(void)saveLoadAlbumsSortDescriptors;
+-(void)saveDatabaseOutlineViewState;
 -(void)saveDatabaseWindowFramePreference;
 
 @end
@@ -845,16 +845,6 @@ static NSConditionLock *threadLock = nil;
 
 #pragma mark-
 #pragma mark Add DICOM Database functions
-
-- (NSString*)getNewFileDatabasePath:(NSString*)extension // __deprecated
-{
-    return [_database uniquePathForNewDataFileWithExtension:extension];
-}
-
-- (NSString*)getNewFileDatabasePath:(NSString*)extension dbFolder:(NSString*)dbFolder // __deprecated
-{
-    return [[DicomDatabase databaseAtPath:dbFolder] uniquePathForNewDataFileWithExtension:extension];
-}
 
 #pragma deprecated (addFilesToDatabase:)
 -(NSArray*)addFilesToDatabase:(NSArray*)newFilesArray // __deprecated
@@ -1589,13 +1579,13 @@ static NSConditionLock *threadLock = nil;
         else
         {
             [urlWindow orderOut:sender];
-            [NSApp endSheet: urlWindow returnCode:[sender tag]];
+            HorosEndSheetWithReturnCode(urlWindow, [sender tag]);
         }
     }
     else
     {
         [urlWindow orderOut:sender];
-        [NSApp endSheet: urlWindow returnCode:[sender tag]];
+        HorosEndSheetWithReturnCode(urlWindow, [sender tag]);
     }
 }
 
@@ -2017,7 +2007,9 @@ static NSConditionLock *threadLock = nil;
             
             if( [[path pathExtension] isEqualToString:@"sql"] == NO) NSLog( @"**** No SQL extension ???");
             
-            NSString	*db = [NSString stringWithContentsOfFile: [[path stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"DBFOLDER_LOCATION"]];
+            NSString *db = [NSString stringWithContentsOfFile:[[path stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"DBFOLDER_LOCATION"]
+                                                     encoding:NSUTF8StringEncoding
+                                                        error:NULL];
             
             if( db == nil)
             {
@@ -2029,7 +2021,7 @@ static NSConditionLock *threadLock = nil;
                 }
                 else
                 {
-                    db = [self.documentsDirectory stringByDeletingLastPathComponent];
+                    db = [_database.baseDirPath stringByDeletingLastPathComponent];
                 }
             }
             
@@ -2492,7 +2484,7 @@ static NSConditionLock *threadLock = nil;
 
 - (IBAction)endReBuildDatabase:(id)sender
 {
-    [NSApp endSheet: rebuildWindow];
+    HorosEndSheet(rebuildWindow);
     [rebuildWindow orderOut: self];
     
     if ([sender tag])
@@ -2584,7 +2576,6 @@ static NSConditionLock *threadLock = nil;
 
 -(void)_rebuildSqlSheetDidEnd:(NSWindow*)sheet returnCode:(NSInteger)returnCode contextInfo:(void*)contextInfo
 {
-    [NSApp endSheet:sheet];
     [sheet orderOut:self];
     if (returnCode == HorosAlertResponseFirstButton)
         [self initiateRebuildSql];
@@ -7079,6 +7070,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 
 - (void)outlineView:(NSOutlineView *)outlineView sortDescriptorsDidChange:(NSArray *)oldDescriptors
 {
+    if( outlineView == databaseOutline)
+        [self saveDatabaseOutlineViewState];
+
     [self outlineViewRefresh];
     
     if( [[databaseOutline sortDescriptors] count] > 0 && [[[[databaseOutline sortDescriptors] objectAtIndex: 0] key] isEqualToString:@"name"] == NO)
@@ -9351,11 +9345,10 @@ static BOOL withReset = NO;
                     {
                         NSImage *icon = [[NSWorkspace sharedWorkspace] iconForContentType:UTTypePlainText];
                         
-                        NSImage *thumbnail = [[[NSImage alloc] initWithSize: NSMakeSize( THUMBNAILSIZE, THUMBNAILSIZE)] autorelease];
-                        
-                        [thumbnail lockFocus];
-                        [icon drawInRect: NSMakeRect( 0, 0, THUMBNAILSIZE, THUMBNAILSIZE) fromRect: [icon alignmentRect] operation: NSCompositingOperationCopy fraction: 1.0];
-                        [thumbnail unlockFocus];
+                        NSImage *thumbnail = [NSImage imageWithSize:NSMakeSize(THUMBNAILSIZE, THUMBNAILSIZE) flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
+                            [icon drawInRect:destinationRect fromRect:[icon alignmentRect] operation:NSCompositingOperationCopy fraction:1.0];
+                            return YES;
+                        }];
                         
                         [tempPreviewPixThumbnails replaceObjectAtIndex: i withObject: thumbnail];
                         [tempPreviewPix addObject: dcmPix];
@@ -10159,7 +10152,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     int result = [NSApp runModalForWindow: newAlbum];
     [newAlbum makeFirstResponder: nil];
     
-    [NSApp endSheet: newAlbum];
+    HorosEndSheet(newAlbum);
     [newAlbum orderOut: self];
     
     if( result == NSModalResponseStop)
@@ -10284,7 +10277,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
             int result = [NSApp runModalForWindow: newAlbum];
             [newAlbum makeFirstResponder: nil];
             
-            [NSApp endSheet: newAlbum];
+            HorosEndSheet(newAlbum);
             [newAlbum orderOut: self];
             
             if( result == NSModalResponseStop)
@@ -10545,12 +10538,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
 }
 
 + (NSArray<NSString *> *)DatabaseObjectXIDsPasteboardTypes {
-    return @[O2PasteboardTypeDatabaseObjectXIDs,
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-             O2DatabaseXIDsDragType
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-             ];
+    return @[O2PasteboardTypeDatabaseObjectXIDs];
 }
 
 - (BOOL)tableView:(NSTableView *)tableView acceptDrop:(id <NSDraggingInfo>)info row:(NSInteger)row dropOperation:(NSTableViewDropOperation)operation
@@ -10659,6 +10647,34 @@ constrainSplitPosition:(CGFloat)proposedPosition
         [plist setObject:[NSArray arrayWithObjects:HorosArchiveKeyedObject(albumSortDescriptors, nil), cols, nil] forKey:key];
         
         [plist writeToFile:self.databaseAlbumSortDescriptorsPlistPath atomically:YES];
+    }
+}
+
+-(void)saveDatabaseOutlineViewState
+{
+    if( databaseOutline == nil)
+        return;
+
+    NSArray *sortDescriptors = [databaseOutline sortDescriptors];
+    if( [sortDescriptors count] > 0)
+    {
+        NSSortDescriptor *sortDescriptor = [sortDescriptors objectAtIndex: 0];
+        NSDictionary *sort = [NSDictionary dictionaryWithObjectsAndKeys:
+                              [NSNumber numberWithBool: [sortDescriptor ascending]], @"order",
+                              [sortDescriptor key], @"key",
+                              nil];
+        [[NSUserDefaults standardUserDefaults] setObject: sort forKey: @"databaseSortDescriptor"];
+    }
+
+    [[NSUserDefaults standardUserDefaults] setObject: [databaseOutline columnState]
+                                              forKey: @"databaseColumns2"];
+
+    if( _database)
+    {
+        NSArray *albums = self.albumArray;
+        NSInteger selectedRow = [albumTable selectedRow];
+        if( selectedRow >= 0 && selectedRow < (NSInteger)[albums count])
+            [self saveSortDescriptors: [albums objectAtIndex: selectedRow]];
     }
 }
 
@@ -10942,7 +10958,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     @catch (NSException *e)
     {
         NSLog( @"tableViewSelectionDidChange exception: %@", e);
-        [AppController printStackTrace: e];
+        [e printStackTrace];
     }
 }
 
@@ -11859,12 +11875,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             [cell setEditable:YES];
             [[albumTable tableColumnWithIdentifier:@"Source"] setDataCell:cell];
             [albumTable setDelegate:self];
-            [albumTable registerForDraggedTypes:[BrowserController.DatabaseObjectXIDsPasteboardTypes arrayByAddingObjectsFromArray:@[
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-                                                  O2AlbumDragType // we still support the original, non-UTI type, in case some plugin uses this (very unlikely)
-#pragma clang diagnostic pop
-                                                  ]]];
+            [albumTable registerForDraggedTypes:BrowserController.DatabaseObjectXIDsPasteboardTypes];
 
             //		[customStart setDateValue: [NSDate n2_dateWithYear:[[NSCalendarDate date] yearOfCommonEra] month:[[NSCalendarDate date] monthOfYear] day:[[NSCalendarDate date] dayOfMonth] hour:0 minute:0 second:0 timeZone: nil]];
             //		[customStart2 setDateValue: [NSDate n2_dateWithYear:[[NSCalendarDate date] yearOfCommonEra] month:[[NSCalendarDate date] monthOfYear] day:[[NSCalendarDate date] dayOfMonth] hour:0 minute:0 second:0 timeZone: nil]];
@@ -11889,9 +11900,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             [buttonCell setBordered: NO];
             [buttonCell addItemsWithTitles: statesArray];
             [tableColumn setDataCell:buttonCell];
-            
-            [databaseOutline setInitialState];
-            
             
             if( [[NSUserDefaults standardUserDefaults] objectForKey: @"databaseColumns2"])
                 [databaseOutline restoreColumnState: [[NSUserDefaults standardUserDefaults] objectForKey: @"databaseColumns2"]];
@@ -11934,7 +11942,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             bonjourBrowser = [[BonjourBrowser alloc] initWithBrowserController:self];
             [self displayBonjourServices];
             
-            [[NSUserDefaultsController sharedUserDefaultsController] addObserver:self forValuesKey:OsirixBonjourSharingActiveFlagDefaultsKey options:NSKeyValueObservingOptionInitial context:bonjourBrowser];
+            [[NSUserDefaultsController sharedUserDefaultsController] addObserver:self forValuesKey:OsirixBonjourSharingIsActiveDefaultsKey options:NSKeyValueObservingOptionInitial context:bonjourBrowser];
             
             [splitDrawer restoreDefault: @"SplitDrawer"];
             [splitAlbums restoreDefault: @"SplitAlbums"];
@@ -11976,9 +11984,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             
             [self initContextualMenus];
             
-            // opens a port for interapplication communication
-            [[NSConnection defaultConnection] registerName:@"OsiriX"];
-            [[NSConnection defaultConnection] setRootObject:self];
             //start timer for monitoring incoming logs on main thread
             [LogManager currentLogManager];
             
@@ -11991,7 +11996,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             N2LogExceptionWithStackTrace(ne);
             [@"" writeToFile:_database.loadingFilePath atomically:NO encoding:NSUTF8StringEncoding error:NULL];
             
-            NSString *message = [NSString stringWithFormat: NSLocalizedString(@"A problem occured during start-up of Horos:\r\r%@\r\r%@",nil), [ne description], [AppController printStackTrace: ne]];
+            NSString *message = [NSString stringWithFormat:NSLocalizedString(@"A problem occured during start-up of Horos:\r\r%@\r\r%@", nil), [ne description], [ne printStackTrace]];
             
             HorosPresentCriticalAlert(NSLocalizedString(@"Error",nil), @"%@", NSLocalizedString( @"OK",nil), nil, nil, message);
             
@@ -12139,7 +12144,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     [self invalidateSmartAlbumFetch];
     [self invalidateSamePatientStudyGroupCache];
     [self deallocActivity];
-    [[NSUserDefaultsController sharedUserDefaultsController] removeObserver:self forValuesKey:OsirixBonjourSharingActiveFlagDefaultsKey];
+    [[NSUserDefaultsController sharedUserDefaultsController] removeObserver:self forValuesKey:OsirixBonjourSharingIsActiveDefaultsKey];
     [self deallocSources];
     [super dealloc];
 }
@@ -12149,9 +12154,13 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     if (object == [NSUserDefaultsController sharedUserDefaultsController])
     {
         keyPath = [keyPath substringFromIndex:7];
-        if ([keyPath isEqual:OsirixBonjourSharingActiveFlagDefaultsKey])
+        if ([keyPath isEqual:OsirixBonjourSharingIsActiveDefaultsKey])
         {
-            [self switchToDefaultDBIfNeeded];
+            NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+            NSString *defaultPath = [DicomDatabase baseDirPathForMode:[defaults integerForKey:@"DEFAULT_DATABASELOCATION"]
+                                                                  path:[defaults stringForKey:@"DEFAULT_DATABASELOCATIONURL"]];
+            if (![_database.baseDirPath isEqualToString:defaultPath])
+                [self resetToLocalDatabase];
             return;
         }
     }
@@ -12785,7 +12794,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 {
     NSMenu *mainMenu = [[NSApplication sharedApplication] mainMenu];
     NSMenuItem *helpItem = [mainMenu addItemWithTitle:NSLocalizedString(@"Help", nil) action:nil keyEquivalent:@""];
-    NSMenu *helpMenu = [[NSMenu allocWithZone: [NSMenu menuZone]] initWithTitle: NSLocalizedString(@"Help", nil)];
+    NSMenu *helpMenu = [[NSMenu alloc] initWithTitle:NSLocalizedString(@"Help", nil)];
     [helpItem setSubmenu:helpMenu];
     
     //[helpMenu addItemWithTitle: NSLocalizedString(@"TBD", nil) action: @selector(help:) keyEquivalent: @""];
@@ -12817,21 +12826,21 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     
     if( copyArray.count)
     {
-        if( [[NSFileManager defaultManager] fileExistsAtPath: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"]])
+        if ([[NSFileManager defaultManager] fileExistsAtPath:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"]])
         {
-            NSArray *oldQueue = [NSArray arrayWithContentsOfFile: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"]];
+            NSArray *oldQueue = [NSArray arrayWithContentsOfFile:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"]];
             
             copyArray = [copyArray arrayByAddingObjectsFromArray: oldQueue];
             
             NSLog( @"---- old Delete Queue List found (%d files) add it to current queue.", (int) [oldQueue count]);
             
-            [[NSFileManager defaultManager] removeItemAtPath: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"] error: nil];
+            [[NSFileManager defaultManager] removeItemAtPath:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"] error:nil];
         }
         
         NSLog( @"---- save delete queue: %d objects", (int) [copyArray count]);
         
-        [[NSFileManager defaultManager] removeItemAtPath: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"] error: nil];
-        [copyArray writeToFile: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"] atomically: YES];
+        [[NSFileManager defaultManager] removeItemAtPath:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"] error:nil];
+        [copyArray writeToFile:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"] atomically:YES];
     }
     [deleteQueue unlock];
 }
@@ -12845,15 +12854,15 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     NSArray	*copyArray = [NSArray arrayWithArray: deleteQueueArray];
     [deleteQueueArray removeAllObjects];
     
-    if( [[NSFileManager defaultManager] fileExistsAtPath: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"]])
+    if ([[NSFileManager defaultManager] fileExistsAtPath:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"]])
     {
-        NSArray *oldQueue = [NSArray arrayWithContentsOfFile: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"]];
+        NSArray *oldQueue = [NSArray arrayWithContentsOfFile:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"]];
         
         copyArray = [copyArray arrayByAddingObjectsFromArray: oldQueue];
         
         NSLog( @"---- old Delete Queue List found (%d files) add it to current queue.", (int) [oldQueue count]);
         
-        [[NSFileManager defaultManager] removeItemAtPath: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"] error: nil];
+        [[NSFileManager defaultManager] removeItemAtPath:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"] error:nil];
     }
     
     if( copyArray.count)
@@ -12862,8 +12871,8 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         
         NSLog( @"delete Queue start: %d objects", (int) [copyArray count]);
         
-        [[NSFileManager defaultManager] removeItemAtPath: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"] error: nil];
-        [copyArray writeToFile: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"] atomically: YES];
+        [[NSFileManager defaultManager] removeItemAtPath:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"] error:nil];
+        [copyArray writeToFile:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"] atomically:YES];
         
         [deleteQueue unlock];
         
@@ -12877,7 +12886,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             NSString *parentFolder = [file stringByDeletingLastPathComponent];
             if( [lastFolder isEqualToString: parentFolder] == NO)
             {
-                if( [folders containsString: parentFolder] == NO)
+                if (![folders containsObject:parentFolder])
                     [folders addObject: parentFolder];
                 
                 [lastFolder release];
@@ -12901,7 +12910,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         [lastFolder release];
         
         if( [NSThread currentThread].isCancelled == NO)
-            [[NSFileManager defaultManager] removeItemAtPath: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"] error: nil];
+            [[NSFileManager defaultManager] removeItemAtPath:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"] error:nil];
         
         [deleteInProgress unlock];
         
@@ -12912,7 +12921,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         {
             for( NSString *f in folders)
             {
-                NSDictionary *fileAttributes = [[NSFileManager defaultManager] fileAttributesAtPath: f traverseLink: NO];
+                NSDictionary *fileAttributes = [[NSFileManager defaultManager] attributesOfItemAtPath:f error:NULL];
                 
                 if( [[fileAttributes objectForKey: NSFileType] isEqualToString: NSFileTypeDirectory])
                 {
@@ -12970,7 +12979,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     
     // Check for the errors generated by the Q&R DICOM functions -- see dcmqrsrv.mm
     
-    NSString *str = [NSString stringWithContentsOfFile: @"/tmp/error_message"];
+    NSString *str = [NSString stringWithContentsOfFile:@"/tmp/error_message" encoding:NSUTF8StringEncoding error:NULL];
     if( str)
     {
         [[NSFileManager defaultManager] removeItemAtPath: @"/tmp/error_message" error:NULL];
@@ -12999,12 +13008,12 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     
     if( [deleteInProgress tryLock])
     {
-        if( [[NSFileManager defaultManager] fileExistsAtPath: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"]])
+        if ([[NSFileManager defaultManager] fileExistsAtPath:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"]])
         {
-            NSArray *oldQueue = [NSArray arrayWithContentsOfFile: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"]];
+            NSArray *oldQueue = [NSArray arrayWithContentsOfFile:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"]];
             
             NSLog( @"---- old Delete Queue List found (%d files) add it to current queue.", (int) [oldQueue count]);
-            [[NSFileManager defaultManager] removeItemAtPath: [[self documentsDirectory] stringByAppendingPathComponent: @"DeleteQueueFile.plist"] error: nil];
+            [[NSFileManager defaultManager] removeItemAtPath:[_database.baseDirPath stringByAppendingPathComponent:@"DeleteQueueFile.plist"] error:nil];
             
             [deleteQueue lock];
             
@@ -13054,18 +13063,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     if( file)
         [deleteQueueArray addObject: file];
     [deleteQueue unlock];
-}
-
-+ (NSString*)_findFirstDicomdirOnCDMedia: (NSString*)startDirectory // __deprecated
-{
-    @try {
-        return [DicomDatabase _findDicomdirIn:[startDirectory stringsByAppendingPaths:[[[NSFileManager defaultManager] enumeratorAtPath:startDirectory filesOnly:YES] allObjects]]];
-    }
-    @catch (NSException *e) {
-        N2LogException( e);
-    }
-    
-    return nil;
 }
 
 + (BOOL) unzipFile: (NSString*) file withPassword: (NSString*) pass destination: (NSString*) destination
@@ -13183,7 +13180,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             result = [NSApp runModalForWindow: CDpasswordWindow];
             [CDpasswordWindow makeFirstResponder: nil];
             
-            [NSApp endSheet: CDpasswordWindow];
+            HorosEndSheet(CDpasswordWindow);
             [CDpasswordWindow orderOut: self];
         }
         while( result == NSModalResponseStop && [BrowserController unzipFile: file withPassword: self.CDpassword destination: destination] == NO);
@@ -13244,7 +13241,8 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
                             aPath = [NSString stringWithFormat:@"/Volumes/Untitled"];
                         
                         DicomDirScanDepth = 0;
-                        aPath = [BrowserController _findFirstDicomdirOnCDMedia: aPath];
+                        NSArray *mediaFiles = [[[NSFileManager defaultManager] enumeratorAtPath:aPath filesOnly:YES] allObjects];
+                        aPath = [DicomDatabase _findDicomdirIn:[aPath stringsByAppendingPaths:mediaFiles]];
                         
                         if( [[NSFileManager defaultManager] fileExistsAtPath:aPath])
                             hasDICOMDIR = YES;
@@ -13284,62 +13282,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 //	}
 //#endif
 //}
-
-#pragma deprecated (pathResolved:)
-- (NSString*) pathResolved:(NSString*) inPath
-{
-    return [[NSFileManager defaultManager] destinationOfAliasAtPath:inPath];
-}
-
-#pragma deprecated (isAliasPath:)
-- (BOOL) isAliasPath:(NSString *)inPath
-{
-    return [[NSFileManager defaultManager] destinationOfAliasAtPath:inPath] != nil;
-}
-
-#pragma deprecated (resolveAliasPath:)
-- (NSString*) resolveAliasPath:(NSString*)inPath
-{
-    NSString* resolved = [[NSFileManager defaultManager] destinationOfAliasAtPath:inPath];
-    return resolved ? resolved : inPath;
-}
-
-- (NSString *)folderPathResolvingAliasAndSymLink:(NSString *)path // __deprecated
-{
-    NSString *folder = path;
-    
-    if (![[NSFileManager defaultManager] fileExistsAtPath:path])
-    {
-        NSString* temp = [self pathResolved:path];
-        if (!temp)
-            [[NSFileManager defaultManager] createDirectoryAtPath:path withIntermediateDirectories:YES attributes:nil error:NULL];
-        else
-        {
-            folder = temp;
-        }
-    }
-    /*
-     if it exists see if it is a file or symbolic link
-     if it is a file, create a folder else leave it
-     */
-    else
-    {
-        NSDictionary *attrs = [[NSFileManager defaultManager] fileAttributesAtPath:path traverseLink:YES];
-        
-        if (![[attrs objectForKey:NSFileType] isEqualToString:NSFileTypeDirectory])
-            [[NSFileManager defaultManager] createDirectoryAtPath:path withIntermediateDirectories:YES attributes:nil error:NULL];
-        
-        attrs = [[NSFileManager defaultManager] fileAttributesAtPath:path traverseLink:NO];
-        
-        //get absolute path if link
-        if( [[attrs objectForKey:NSFileType] isEqualToString:NSFileTypeSymbolicLink])
-            folder = [[NSFileManager defaultManager] pathContentOfSymbolicLinkAtPath:path];
-        
-        if( [self pathResolved: path])
-            folder = [self pathResolved: path];
-    }
-    return folder;
-}
 
 - (IBAction)revealInFinder: (id)sender
 {
@@ -13434,46 +13376,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     return [[[array objectAtIndex: 0] valueForKey: @"compression"] intValue];
 }
 
-
-#pragma deprecated(decompressDICOMJPEGinINCOMING:)
-- (void)decompressDICOMJPEGinINCOMING:(NSArray*)array // __deprecated
-{
-    [self decompressDICOMList:array to:_database.incomingDirPath];
-}
-
-- (void)decompressDICOMJPEG:(NSArray*)array // __deprecated
-{
-    [self decompressDICOMList:array to:nil];
-}
-
-- (void)compressDICOMJPEGinINCOMING:(NSArray*)array // __deprecated
-{
-    [self compressDICOMWithJPEG:array to:_database.incomingDirPath];
-}
-
-- (void)compressDICOMJPEG:(NSArray*)array // __deprecated
-{
-    [self compressDICOMWithJPEG:array];
-}
-
-- (void)decompressArrayOfFiles:(NSArray*)array work:(NSNumber*)work // __deprecated
-{
-    switch ([work charValue])
-    {
-        case 'C':
-            [_database processFilesAtPaths: array intoDirAtPath: nil mode: Compress];
-            break;
-        case 'X':
-            [_database processFilesAtPaths: array intoDirAtPath: [_database incomingDirPath] mode: Compress];
-            break;
-        case 'D':
-            [_database processFilesAtPaths: array intoDirAtPath: nil mode: Decompress];
-            break;
-        case 'I':
-            [_database processFilesAtPaths: array intoDirAtPath: [_database incomingDirPath] mode: Decompress];
-            break;
-    }
-}
 
 - (IBAction) compressSelectedFiles: (id)sender
 {
@@ -13618,7 +13520,7 @@ static volatile int numberOfThreadsForJPEG = 0;
             else
                 N2LogStackTrace( @"********** bitsPerSecond == 0");
             
-            [writer finishWriting];
+            HorosFinishAssetWriter(writer);
         }
     }
     @catch( NSException *e)
@@ -13764,12 +13666,19 @@ static volatile int numberOfThreadsForJPEG = 0;
                 
                 if( [imagesArray count])
                 {
-                    id tempID = [[imagesArray lastObject] bestRepresentationForDevice:nil];
-                    
-                    if( [tempID isKindOfClass: [NSPDFImageRep class]])
+                    NSPDFImageRep *pdfRepresentation = nil;
+                    for (NSImageRep *representation in [[imagesArray lastObject] representations])
+                    {
+                        if ([representation isKindOfClass:[NSPDFImageRep class]])
+                        {
+                            pdfRepresentation = (NSPDFImageRep *)representation;
+                            break;
+                        }
+                    }
+                    if (pdfRepresentation)
                     {
                         NSString* fullPath = [previousPath stringByAppendingPathExtension: @"pdf"];
-                        [[tempID PDFRepresentation] writeToFile:fullPath atomically: YES];
+                        [[pdfRepresentation PDFRepresentation] writeToFile:fullPath atomically:YES];
                         [BrowserController setPath:fullPath relativeTo:path forSeriesId:previousSeries kind:@"pdf" toSeriesPaths:seriesPaths];
                         [imagesArray removeAllObjects];
                         [imagesArrayObjects removeAllObjects];
@@ -13969,12 +13878,19 @@ static volatile int numberOfThreadsForJPEG = 0;
         
         if( [imagesArray count])
         {
-            id tempID = [[imagesArray lastObject] bestRepresentationForDevice:nil];
-            
-            if( [tempID isKindOfClass: [NSPDFImageRep class]])
+            NSPDFImageRep *pdfRepresentation = nil;
+            for (NSImageRep *representation in [[imagesArray lastObject] representations])
+            {
+                if ([representation isKindOfClass:[NSPDFImageRep class]])
+                {
+                    pdfRepresentation = (NSPDFImageRep *)representation;
+                    break;
+                }
+            }
+            if (pdfRepresentation)
             {
                 NSString* fullPath = [previousPath stringByAppendingPathExtension: @"pdf"];
-                [[tempID PDFRepresentation] writeToFile:fullPath atomically: YES];
+                [[pdfRepresentation PDFRepresentation] writeToFile:fullPath atomically:YES];
                 [BrowserController setPath:fullPath relativeTo:path forSeriesId:previousSeries kind:@"pdf" toSeriesPaths:seriesPaths];
                 [imagesArray removeAllObjects];
                 [imagesArrayObjects removeAllObjects];
@@ -14066,9 +13982,9 @@ static volatile int numberOfThreadsForJPEG = 0;
     
     [sPanel setAccessoryView:exportQuicktimeView];
     
-    if ([sPanel runModalForDirectory:nil file:nil types:nil] == NSModalResponseOK)
+    if ([sPanel runModal] == NSModalResponseOK)
     {
-        [self exportQuicktimeInt: dicomFiles2Export :[[sPanel filenames] objectAtIndex:0] :[exportHTMLButton state]];
+        [self exportQuicktimeInt:dicomFiles2Export :sPanel.URL.path :[exportHTMLButton state]];
     }
 }
 
@@ -14096,9 +14012,9 @@ static volatile int numberOfThreadsForJPEG = 0;
     [sPanel setTitle: NSLocalizedString(@"Export",nil)];
     [sPanel setCanCreateDirectories:YES];
     
-    if ([sPanel runModalForDirectory:nil file:nil types:nil] == NSModalResponseOK)
+    if ([sPanel runModal] == NSModalResponseOK)
     {
-        NSString *dest, *path = [[sPanel filenames] objectAtIndex:0];
+        NSString *dest, *path = sPanel.URL.path;
         Wait *splash = [[Wait alloc] initWithString:NSLocalizedString(@"Export...", nil) :YES];
         
         [splash setCancel:YES];
@@ -14285,7 +14201,7 @@ static volatile int numberOfThreadsForJPEG = 0;
                     reportURL = [NSString stringWithFormat: @"%@/%@", [self.database reportsDirPath], ReportFilenameForStudy(s)];
                 
                 [[NSFileManager defaultManager] removeItemAtPath: reportURL error:NULL];
-                [[NSFileManager defaultManager] copyPath: path toPath: reportURL handler: nil];
+                [[NSFileManager defaultManager] copyItemAtPath:path toPath:reportURL error:NULL];
                 [s setValue: reportURL forKey: @"reportURL"];
             }
             }
@@ -14624,7 +14540,7 @@ static volatile int numberOfThreadsForJPEG = 0;
                 
                 if( [extension isEqualToString:@"hdr"])		// ANALYZE -> COPY IMG
                 {
-                    [[NSFileManager defaultManager] copyPath:[[[filesToExport objectAtIndex:i] stringByDeletingPathExtension] stringByAppendingPathExtension:@"img"] toPath:[[dest stringByDeletingPathExtension] stringByAppendingPathExtension:@"img"] handler:nil];
+                    [[NSFileManager defaultManager] copyItemAtPath:[[[filesToExport objectAtIndex:i] stringByDeletingPathExtension] stringByAppendingPathExtension:@"img"] toPath:[[dest stringByDeletingPathExtension] stringByAppendingPathExtension:@"img"] error:NULL];
                 }
                 
                 [splash incrementBy:1];
@@ -14675,11 +14591,11 @@ static volatile int numberOfThreadsForJPEG = 0;
             switch(compressionMatrixSelectedTag)
             {
                 case 1:
-                    [self decompressArrayOfFiles: files2Compress work: [NSNumber numberWithChar: 'C']];
+                    [_database processFilesAtPaths:files2Compress intoDirAtPath:nil mode:Compress];
                     break;
                     
                 case 2:
-                    [self decompressArrayOfFiles: files2Compress work: [NSNumber numberWithChar: 'D']];
+                    [_database processFilesAtPaths:files2Compress intoDirAtPath:nil mode:Decompress];
                     break;
             }
             
@@ -15001,7 +14917,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     
     [compressionMatrix selectCellWithTag: [[NSUserDefaults standardUserDefaults] integerForKey: @"Compression Mode for Export"]];
     
-    if ([sPanel runModalForDirectory: nil file: nil types: nil] == NSModalResponseOK)
+    if ([sPanel runModal] == NSModalResponseOK)
     {
         [sPanel makeFirstResponder: nil];
         
@@ -15048,7 +14964,7 @@ static volatile int numberOfThreadsForJPEG = 0;
         [wait close];
         [wait autorelease];
         
-        NSMutableDictionary *d = [NSMutableDictionary dictionaryWithObjectsAndKeys: [[sPanel filenames] objectAtIndex:0], @"location", filesToExport, @"filesToExport", [dicomFiles2Export valueForKey: @"objectID"], @"dicomFiles2Export", nil];
+        NSMutableDictionary *d = [NSMutableDictionary dictionaryWithObjectsAndKeys:sPanel.URL.path, @"location", filesToExport, @"filesToExport", [dicomFiles2Export valueForKey:@"objectID"], @"dicomFiles2Export", nil];
         
         NSThread* t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(exportDICOMFileInt:) object:d] autorelease];
         t.name = NSLocalizedString( @"Exporting...", nil);
@@ -15323,9 +15239,9 @@ static volatile int numberOfThreadsForJPEG = 0;
     
     [openPanel setMessage:NSLocalizedString(@"Choose file containing raw data:", nil)];
     
-    if ([openPanel runModalForTypes:nil] == NSModalResponseOK)
+    if ([openPanel runModal] == NSModalResponseOK)
     {
-        NSData *data = [NSData dataWithContentsOfFile:[openPanel filename]];
+        NSData *data = [NSData dataWithContentsOfFile:openPanel.URL.path];
         if (data)
         {
             NSString *patientName = [[rdPatientForm cellWithTag:0] stringValue];
@@ -15495,7 +15411,7 @@ static volatile int numberOfThreadsForJPEG = 0;
                     [attr addFrame:subdata];
                     [dcmObject setAttribute:attr];
                     
-                    NSString *tempFilename = [[self INCOMINGPATH] stringByAppendingPathComponent: [NSString stringWithFormat:@"%d.dcm", (int) i]];
+                    NSString *tempFilename = [_database.incomingDirPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%d.dcm", (int)i]];
                     [dcmObject writeToFile:tempFilename withTransferSyntax:[DCMTransferSyntax ImplicitVRLittleEndianTransferSyntax] quality:DCMLosslessQuality atomically:YES];
                 } 
             }
@@ -15607,7 +15523,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     {
         @try 
         {
-            NSString *filename = [self getNewFileDatabasePath: @"dcm"];
+            NSString *filename = [_database uniquePathForNewDataFileWithExtension:@"dcm"];
             
             [study saveReportAsDicomAtPath: filename];
             
@@ -15616,7 +15532,7 @@ static volatile int numberOfThreadsForJPEG = 0;
         @catch (NSException * e) 
         {
             NSLog( @"***** exception in %s: %@", __PRETTY_FUNCTION__, e);
-            [AppController printStackTrace: e];
+            [e printStackTrace];
         }
         
         [_database addFilesAtPaths: newDICOMPDFReports
@@ -15652,19 +15568,21 @@ static volatile int numberOfThreadsForJPEG = 0;
             NSSavePanel *panel = [NSSavePanel savePanel];
             
             [panel setCanSelectHiddenExtension:YES];
-            [panel setRequiredFileType: @"pdf"];
+            panel.allowedContentTypes = @[UTTypePDF];
             
             NSString *filename = [NSString stringWithFormat: NSLocalizedString( @"%@-Report.pdf", nil), studySelected.name];
             
-            if( [panel runModalForDirectory: nil file: filename] == NSModalResponseOK)
+            panel.nameFieldStringValue = filename;
+
+            if ([panel runModal] == NSModalResponseOK)
             {
-                [studySelected saveReportAsPdfAtPath: [panel filename]];
+                [studySelected saveReportAsPdfAtPath:panel.URL.path];
             }
         }
         @catch (NSException * e)
         {
             NSLog( @"***** exception in %s: %@", __PRETTY_FUNCTION__, e);
-            [AppController printStackTrace: e];
+            [e printStackTrace];
         }
         
         //		[checkBonjourUpToDateThreadLock unlock]; // TODO: merge
@@ -15798,7 +15716,8 @@ static volatile int numberOfThreadsForJPEG = 0;
 
                 if( [[NSFileManager defaultManager] fileExistsAtPath: localReportFile])
                 {
-                    NSDictionary *fattrs = [[NSFileManager defaultManager] fileAttributesAtPath:localReportFile traverseLink:YES];
+                    NSString *resolvedReportPath = [[[NSURL fileURLWithPath:localReportFile] URLByResolvingSymlinksInPath] path];
+                    NSDictionary *fattrs = [[NSFileManager defaultManager] attributesOfItemAtPath:resolvedReportPath error:NULL];
                     NSMutableDictionary *d = [NSMutableDictionary dictionaryWithObjectsAndKeys: studySelected, @"study", [fattrs objectForKey:NSFileModificationDate], @"date", nil];
 
                     [reportFilesToCheck setObject: d forKey: [localReportFile lastPathComponent]];
@@ -16064,7 +15983,7 @@ static volatile int numberOfThreadsForJPEG = 0;
                 NSBitmapImageRep *bits = [[[NSBitmapImageRep alloc] initWithData:[im TIFFRepresentation]] autorelease];
                 
                 NSString *path = [NSString stringWithFormat: @"/tmp/sc/%@.png", [[[[item label] stringByReplacingOccurrencesOfString: @"&" withString:@"And"] stringByReplacingOccurrencesOfString: @" " withString:@""] stringByReplacingOccurrencesOfString: @"/" withString:@"-"]];
-                [[bits representationUsingType: NSPNGFileType properties: nil] writeToFile:path  atomically: NO];
+                [[bits representationUsingType:NSBitmapImageFileTypePNG properties:nil] writeToFile:path atomically:NO];
             }
         }
         @catch (NSException * e)
@@ -16818,7 +16737,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     int result = [NSApp runModalForWindow:bonjourPasswordWindow];
     [bonjourPasswordWindow makeFirstResponder: nil];
     
-    [NSApp endSheet: bonjourPasswordWindow];
+    HorosEndSheet(bonjourPasswordWindow);
     [bonjourPasswordWindow orderOut: self];
     
     if( result == NSModalResponseStop)
@@ -16838,14 +16757,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 - (void)displayBonjourServices
 {
     [_sourcesTableView reloadData];
-}
-
-- (void) switchToDefaultDBIfNeeded // __deprecated
-{
-    NSString *defaultPath = [self documentsDirectoryFor: [[NSUserDefaults standardUserDefaults] integerForKey: @"DEFAULT_DATABASELOCATION"] url: [[NSUserDefaults standardUserDefaults] stringForKey: @"DEFAULT_DATABASELOCATIONURL"]];
-    
-    if( [[self documentsDirectory] isEqualToString: defaultPath] == NO)
-        [self resetToLocalDatabase];
 }
 
 - (void)openDatabasePath: (NSString*)path
@@ -16954,11 +16865,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 - (const char *) cfixedIncomingNoIndexDirectory // __deprecated
 { return [[DicomDatabase activeLocalDatabase] incomingDirPathC]; }
 
-- (NSString*)INCOMINGPATH // __deprecated
-{
-    return [_database incomingDirPath];
-}
-
 + (NSString *) defaultDocumentsDirectory // __deprecated
 {
     //	NSString *dir = documentsDirectory();
@@ -16968,17 +16874,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 - (NSString*) TEMPPATH // __deprecated
 {
     return [_database tempDirPath];
-}
-
-- (NSString*)documentsDirectory // __deprecated
-{
-    return [_database baseDirPath];
-}
-
-- (NSString *) documentsDirectoryFor:(int) mode url:(NSString*) url
-{
-    NSString *dir = documentsDirectoryFor( mode, url);
-    return dir;
 }
 
 - (IBAction)showLogWindow: (id)sender

@@ -257,8 +257,8 @@ NSString *pasteBoardTypeCover = @"KeyImages";
  *
  * Private function.  We use this to start the drag operation.
 *****************************************************************************/
-- (void)startDrag:(NSEvent *)event { 
-    NSPasteboard *pb = [NSPasteboard pasteboardWithName: NSDragPboard]; 
+- (void)startDrag:(NSEvent *)event {
+    NSPasteboard *pb = [NSPasteboard pasteboardWithName:NSPasteboardNameDrag];
     NSImage *scaledImage, *dragImage;
     NSSize size; 
     NSPoint dragPoint, pt; 
@@ -284,14 +284,13 @@ NSString *pasteBoardTypeCover = @"KeyImages";
 
     // we want to make the image a little bit transparent so the user can see where
     // they're dragging to
-    dragImage = [[[NSImage alloc] initWithSize: [scaledImage size]] autorelease];
-	
-	if( [dragImage size].width > 0 && [dragImage size].height > 0)
-	{
-		[dragImage lockFocus]; 
-		[scaledImage dissolveToPoint: NSMakePoint(0,0) fraction: .5]; 
-		[dragImage unlockFocus]; 
-	}
+    dragImage = [NSImage imageWithSize:[scaledImage size] flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
+        [scaledImage drawInRect:destinationRect
+                      fromRect:NSZeroRect
+                     operation:NSCompositingOperationSourceOver
+                      fraction:0.5];
+        return YES;
+    }];
 	
     [self dragImage: dragImage 
                  at: dragPoint 

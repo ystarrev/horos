@@ -622,38 +622,36 @@ final class MetalViewerToolbarView: NSView {
 
     private func tumourSeedTargetImage() -> NSImage {
         let size = NSSize(width: 24, height: 24)
-        let image = NSImage(size: size)
-        image.lockFocus()
+        let image = NSImage(size: size, flipped: false) { _ in
+            NSColor.clear.setFill()
+            NSRect(origin: .zero, size: size).fill()
 
-        NSColor.clear.setFill()
-        NSRect(origin: .zero, size: size).fill()
+            let center = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
+            let outerRect = NSRect(x: 3, y: 3, width: 18, height: 18)
+            let middleRect = outerRect.insetBy(dx: 4, dy: 4)
+            let innerRect = outerRect.insetBy(dx: 7, dy: 7)
 
-        let center = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
-        let outerRect = NSRect(x: 3, y: 3, width: 18, height: 18)
-        let middleRect = outerRect.insetBy(dx: 4, dy: 4)
-        let innerRect = outerRect.insetBy(dx: 7, dy: 7)
+            NSColor.systemRed.setFill()
+            NSBezierPath(ovalIn: outerRect).fill()
+            NSColor.white.setFill()
+            NSBezierPath(ovalIn: middleRect).fill()
+            NSColor.systemRed.setFill()
+            NSBezierPath(ovalIn: innerRect).fill()
 
-        NSColor.systemRed.setFill()
-        NSBezierPath(ovalIn: outerRect).fill()
-        NSColor.white.setFill()
-        NSBezierPath(ovalIn: middleRect).fill()
-        NSColor.systemRed.setFill()
-        NSBezierPath(ovalIn: innerRect).fill()
-
-        let crosshair = NSBezierPath()
-        crosshair.lineWidth = 1.4
-        crosshair.move(to: CGPoint(x: center.x, y: 1.5))
-        crosshair.line(to: CGPoint(x: center.x, y: 6))
-        crosshair.move(to: CGPoint(x: center.x, y: 18))
-        crosshair.line(to: CGPoint(x: center.x, y: 22.5))
-        crosshair.move(to: CGPoint(x: 1.5, y: center.y))
-        crosshair.line(to: CGPoint(x: 6, y: center.y))
-        crosshair.move(to: CGPoint(x: 18, y: center.y))
-        crosshair.line(to: CGPoint(x: 22.5, y: center.y))
-        NSColor.white.setStroke()
-        crosshair.stroke()
-
-        image.unlockFocus()
+            let crosshair = NSBezierPath()
+            crosshair.lineWidth = 1.4
+            crosshair.move(to: CGPoint(x: center.x, y: 1.5))
+            crosshair.line(to: CGPoint(x: center.x, y: 6))
+            crosshair.move(to: CGPoint(x: center.x, y: 18))
+            crosshair.line(to: CGPoint(x: center.x, y: 22.5))
+            crosshair.move(to: CGPoint(x: 1.5, y: center.y))
+            crosshair.line(to: CGPoint(x: 6, y: center.y))
+            crosshair.move(to: CGPoint(x: 18, y: center.y))
+            crosshair.line(to: CGPoint(x: 22.5, y: center.y))
+            NSColor.white.setStroke()
+            crosshair.stroke()
+            return true
+        }
         image.isTemplate = false
         return image
     }

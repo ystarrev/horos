@@ -47,8 +47,6 @@
 	NSImage* highlightedImage = NULL;
 	
 	NSUInteger w = image.size.width, h = image.size.height;
-	highlightedImage = [[NSImage alloc] initWithSize:image.size];
-	[highlightedImage lockFocus];
 	NSBitmapImageRep* bitmap = [[NSBitmapImageRep alloc] initWithData:[image TIFFRepresentation]];
 	
 	for (NSUInteger y = 0; y < h; ++y)
@@ -58,9 +56,10 @@
 			[bitmap setColor:c atX:x y:y];
 		}
 	
-	[bitmap draw];
+	[bitmap setSize:image.size];
+	highlightedImage = [[NSImage alloc] initWithSize:image.size];
+	[highlightedImage addRepresentation:bitmap];
 	[bitmap release];
-	[highlightedImage unlockFocus];
 	
 	return [highlightedImage autorelease];	
 }

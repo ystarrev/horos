@@ -50,16 +50,7 @@
 + (NSImage*) pieChartImageWithPercentage:(float)percentage borderColor:(NSColor*)borderColor insideColor:(NSColor*)insideColor fullColor:(NSColor*)fullColor;
 {
 	NSRect pieRect = NSMakeRect(0,0,14.0,14.0);
-	NSImage* pieImage = [[self alloc] initWithSize:pieRect.size];
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    [pieImage setScalesWhenResized:YES];
-#pragma clang diagnostic pop
-
-	if( [pieImage size].width > 0 && [pieImage size].height > 0)
-	{
-		[pieImage lockFocus];
-		
+	NSImage* pieImage = [NSImage imageWithSize:pieRect.size flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
 		[[NSGraphicsContext currentContext] saveGraphicsState];
 		NSRect targetRect = NSInsetRect(pieRect, 2.0, 2.0);
 
@@ -104,13 +95,13 @@
 			// Fill the pie
 			[insideColor set];
 			[pie fill];
-			[[NSGraphicsContext currentContext] restoreGraphicsState];
 		}
-		
-		[pieImage unlockFocus];
-	}
-	
-	return [pieImage autorelease];
+
+		[[NSGraphicsContext currentContext] restoreGraphicsState];
+		return YES;
+	}];
+
+	return pieImage;
 }
 
 @end

@@ -27,3 +27,23 @@ NS_INLINE void HorosBeginSheet(NSWindow *sheet,
         completion(response);
     }
 }
+
+NS_INLINE void HorosEndSheetWithReturnCode(NSWindow *sheet, NSModalResponse returnCode)
+{
+    if (sheet == nil)
+        return;
+
+    NSWindow *parentWindow = sheet.sheetParent;
+    if (parentWindow)
+        [parentWindow endSheet:sheet returnCode:returnCode];
+    else {
+        if (NSApp.modalWindow == sheet)
+            [NSApp stopModalWithCode:returnCode];
+        [sheet orderOut:nil];
+    }
+}
+
+NS_INLINE void HorosEndSheet(NSWindow *sheet)
+{
+    HorosEndSheetWithReturnCode(sheet, NSModalResponseStop);
+}

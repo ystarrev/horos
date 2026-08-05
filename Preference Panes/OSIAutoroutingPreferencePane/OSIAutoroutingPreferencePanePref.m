@@ -1,3 +1,4 @@
+#import "HorosSheetPresenter.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -186,7 +187,7 @@ static BOOL newRouteMode = NO;
     
     [routesTable reloadData];
     [newRoute orderOut:sender];
-    [NSApp endSheet: newRoute returnCode:[sender tag]];
+    HorosEndSheetWithReturnCode(newRoute, [sender tag]);
 }
 
 - (IBAction) selectPrevious:(id) sender

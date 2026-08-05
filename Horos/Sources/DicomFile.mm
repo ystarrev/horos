@@ -56,7 +56,7 @@
 #import "N2Debug.h"
 #include "NSFileManager+N2.h"
 
-#import <AVFoundation/AVFoundation.h>
+#import "HorosAVAssetLoading.h"
 #import <dlfcn.h>
 
 #include "Analyze.h"
@@ -828,7 +828,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     return 0;
 }
 
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 -(short) getImageFile
 {
     NSString	*extension = [[filePath pathExtension] lowercaseString];
@@ -990,7 +989,7 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
         AVAsset *asset = [AVAsset assetWithURL: [NSURL fileURLWithPath: filePath]];
         AVAssetReader *asset_reader = [[[AVAssetReader alloc] initWithAsset: asset error: &error] autorelease];
         
-        NSArray* video_tracks = [asset tracksWithMediaType: AVMediaTypeVideo];
+        NSArray* video_tracks = HorosLoadAssetTracks(asset, AVMediaTypeVideo, &error);
         if( video_tracks.count)
         {
             AVAssetTrack* video_track = [video_tracks objectAtIndex:0];
@@ -1050,9 +1049,6 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     
     return -1;
 }
-#pragma GCC diagnostic warning "-Wdeprecated-declarations"
-
-
 //-(short) getSIGNA5
 //{
 //	NSData		*file;

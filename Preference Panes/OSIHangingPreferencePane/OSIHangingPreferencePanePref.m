@@ -1,3 +1,4 @@
+#import "HorosSheetPresenter.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -210,7 +211,7 @@
     
     [addWLWWWindow orderOut:sender];
     
-    [NSApp endSheet:addWLWWWindow returnCode:[sender tag]];
+    HorosEndSheetWithReturnCode(addWLWWWindow, [sender tag]);
     
     [currentWLWWProtocol release];
     currentWLWWProtocol = nil;

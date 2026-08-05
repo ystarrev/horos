@@ -1,3 +1,4 @@
+#import "HorosSheetPresenter.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -74,11 +75,11 @@
 }
 
 -(IBAction)okButtonAction:(id)sender {
-	[NSApp endSheet:self.window];
+	HorosEndSheet(self.window);
 }
 
 -(IBAction)cancelButtonAction:(id)sender {
-	[NSApp endSheet:self.window returnCode:NSModalResponseAbort];
+	HorosEndSheetWithReturnCode(self.window, NSModalResponseAbort);
 }
 
 @end

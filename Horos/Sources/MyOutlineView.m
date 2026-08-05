@@ -159,11 +159,6 @@
 	return [self tableColumns];
 }
 
-- (void)setInitialState // __deprecated
-{
-    //allColumns = [[NSArray arrayWithArray:[self tableColumns]] retain];
-}
-
 - (NSDragOperation)draggingEntered:(id <NSDraggingInfo>)sender
 {
 	if ([[sender draggingSource] isEqual:self]) {

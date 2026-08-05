@@ -1,3 +1,4 @@
+#import "HorosSheetPresenter.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -121,7 +122,6 @@ static NSString* ThreadModalForWindowControllerObservationContext = @"ThreadModa
 -(void)sheetDidEndOnMainThread:(NSWindow*)sheet
 {
 	[sheet orderOut:self];
-//	[NSApp endSheet:sheet];
 	[self autorelease];
 }
 
@@ -317,8 +317,10 @@ static NSString* ThreadModalForWindowControllerObservationContext = @"ThreadModa
         _isValid = NO;
         
         if ([NSThread isMainThread])
-            [NSApp endSheet:self.window];
-        else [NSApp performSelectorOnMainThread:@selector(endSheet:) withObject:self.window waitUntilDone:NO];
+            HorosEndSheet(self.window);
+        else dispatch_async(dispatch_get_main_queue(), ^{
+            HorosEndSheet(self.window);
+        });
         //    if (![self.window isSheet]) {
         //        if ([NSThread isMainThread])
         //            [self.window orderOut:self];

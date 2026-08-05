@@ -341,7 +341,7 @@ static BOOL showWarning = YES;
 		}
 	}
 	
-	[NSApp endSheet: addWindow returnCode:[sender tag]];
+	HorosEndSheetWithReturnCode(addWindow, [sender tag]);
 	[addWindow orderOut:sender];
 
 }

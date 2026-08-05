@@ -297,8 +297,6 @@ static NSString* purgedDatabasePath = nil;
             return;
         }
         
-        [NSApp endSheet: [alert window]];
-        
         dispatch_async(dispatch_get_main_queue(), ^(void)
         {
             
@@ -435,5 +433,4 @@ static NSString* purgedDatabasePath = nil;
 }
 
 @end
-
 

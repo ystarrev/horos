@@ -1,3 +1,4 @@
+#import "HorosSheetPresenter.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -262,7 +263,7 @@
 	int result = [NSApp runModalForWindow: TLSSettingsWindow];
 	[TLSSettingsWindow makeFirstResponder: nil];
 	
-	[NSApp endSheet: TLSSettingsWindow];
+	HorosEndSheet(TLSSettingsWindow);
 	[TLSSettingsWindow orderOut: self];
 	
 	if( result == NSModalResponseStop)

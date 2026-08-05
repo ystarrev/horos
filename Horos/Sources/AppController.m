@@ -87,7 +87,6 @@
 #import "SRAnnotation.h"
 #import "NSString+SymlinksAndAliases.h"
 
-#include <execinfo.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -398,14 +397,6 @@ int GetAllPIDsForProcessName(const char* ProcessName,
     }
 }
 
-NSString* documentsDirectoryFor(int mode, NSString *url) { // __deprecated
-	return [DicomDatabase baseDirPathForMode:mode path:url];
-}
-
-NSString* documentsDirectory(void) { // __deprecated
-	return [DicomDatabase defaultBaseDirPath];
-}
-
 static volatile BOOL converting = NO;
 
 NSString* filenameWithDate( NSString *inputfile)
@@ -702,47 +693,6 @@ void exceptionHandler(NSException *exception)
 	}
 	
 	NSLog( @"end DNSResolve");
-}
-
-+ (NSString*) printStackTrace: (NSException*) e
-{
-	NSMutableString *r = [NSMutableString string];
-	
-	@try 
-	{
-		NSArray * addresses = [e callStackReturnAddresses];
-		if( [addresses count])
-		{
-			void * backtrace_frames[[addresses count]];
-			int i = 0;
-			for (NSNumber * address in addresses)
-			{
-				backtrace_frames[i] = (void *)[address unsignedLongValue];
-				i++;
-			}
-			
-			char **frameStrings = backtrace_symbols(&backtrace_frames[0], [addresses count]);
-			
-			if(frameStrings != NULL)
-			{
-				int x;
-				for(x = 0; x < [addresses count]; x++)
-				{
-					NSString *frame_description = [NSString stringWithUTF8String:frameStrings[ x]];
-					NSLog( @"------- %@", frame_description);
-					[r appendFormat: @"%@\r", frame_description];
-				}
-				free( frameStrings);
-				frameStrings = nil;
-			}
-		}
-	}
-	@catch (NSException * e) 
-	{
-		N2LogExceptionWithStackTrace(e);
-	}
-	
-	return r;
 }
 
 - (NSString *)computerName

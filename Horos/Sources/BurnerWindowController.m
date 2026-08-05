@@ -365,7 +365,7 @@
                         result = [NSApp runModalForWindow: passwordWindow];
                         [passwordWindow makeFirstResponder: nil];
                         
-                        [NSApp endSheet: passwordWindow];
+                        HorosEndSheet(passwordWindow);
                         [passwordWindow orderOut: self];
                     }
                     while( [self.password length] < 8 && result == NSModalResponseStop);

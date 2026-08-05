@@ -145,29 +145,22 @@
 			width += MARGIN;
 		}
 		
-		NSImage *thumbnail = [[[NSImage alloc] initWithSize: NSMakeSize( width, 70+6)] autorelease];
-		
-		if( [thumbnail size].width > 0 && [thumbnail size].height > 0)
-		{
-			[thumbnail lockFocus];
-			
+		NSImage *thumbnail = [NSImage imageWithSize:NSMakeSize(width, 70+6) flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
 			[[NSColor grayColor] set];
-			NSRectFill(NSMakeRect(0,0,width, 70+6));
+			NSRectFill(destinationRect);
 			
-			width = 0;
-			width += MARGIN;
-			for( i = 0; i < [subArray count]; i++)
+			CGFloat drawX = MARGIN;
+			for(NSUInteger drawIndex = 0; drawIndex < [subArray count]; drawIndex++)
 			{
-				NSRectFill( NSMakeRect( width, 0, [firstCell size].width, [firstCell size].height));
+				NSRectFill(NSMakeRect(drawX, 0, [firstCell size].width, [firstCell size].height));
 				
-				NSImage	*im = [[subArray objectAtIndex: i] image];
-				[im drawAtPoint: NSMakePoint(width, 3) fromRect:NSMakeRect(0,0,[im size].width, [im size].height) operation: NSCompositingOperationCopy fraction: 0.8];
+				NSImage	*im = [[subArray objectAtIndex:drawIndex] image];
+				[im drawAtPoint:NSMakePoint(drawX, 3) fromRect:NSMakeRect(0,0,[im size].width,[im size].height) operation:NSCompositingOperationCopy fraction:0.8];
 			
-				width += [im size].width;
-				width += MARGIN;
+				drawX += [im size].width + MARGIN;
 			}
-			[thumbnail unlockFocus];
-		}
+			return YES;
+		}];
 		
         NSPasteboardItem* pbi = [[[NSPasteboardItem alloc] init] autorelease];
         [pbi setDataProvider:self forTypes:@[NSPasteboardTypeString, (NSString *)kPasteboardTypeFileURLPromise]];
@@ -294,15 +287,13 @@
 		@try {
             NSImage *image = [selectedButtonCell image];
             int	thumbnailWidth = [image size].width + 6;
-            NSImage *thumbnail = [[[NSImage alloc] initWithSize: NSMakeSize( thumbnailWidth, 70+6)] autorelease];
-            if ([thumbnail size].width > 0 && [thumbnail size].height > 0) {
-                [thumbnail lockFocus];		
+            NSImage *thumbnail = [NSImage imageWithSize:NSMakeSize(thumbnailWidth, 70+6) flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
                 [[NSColor grayColor] set];
-                NSRectFill(NSMakeRect(0,0,thumbnailWidth, 70+6));		
-                NSRectFill( NSMakeRect( 3, 0, [image size].width, [image size].height));
-                [image drawAtPoint: NSMakePoint(3, 3) fromRect:NSMakeRect(0,0,[image size].width, [image size].height) operation: NSCompositingOperationCopy fraction: 0.8];
-                [thumbnail unlockFocus];
-            }
+                NSRectFill(destinationRect);
+                NSRectFill(NSMakeRect(3, 0, [image size].width, [image size].height));
+                [image drawAtPoint:NSMakePoint(3, 3) fromRect:NSMakeRect(0,0,[image size].width,[image size].height) operation:NSCompositingOperationCopy fraction:0.8];
+                return YES;
+            }];
 		
             NSPasteboardItem* pbi = [[[NSPasteboardItem alloc] init] autorelease];
             [pbi setDataProvider:self forTypes:@[NSPasteboardTypeString, (NSString *)kPasteboardTypeFileURLPromise]];

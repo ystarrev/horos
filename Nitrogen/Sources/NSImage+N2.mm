@@ -76,10 +76,7 @@
 
 -(void)setSize:(NSSize)size {
 	NSSize oldSize = [self size];
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    if (![self scalesWhenResized])
-#pragma clang diagnostic pop
+	if (oldSize.width > 0 && oldSize.height > 0)
 		_inchSize = NSMakeSize(_inchSize.width/oldSize.width*size.width, _inchSize.height/oldSize.height*size.height);
 	[super setSize:size];
 }
@@ -92,10 +89,12 @@
 	portion.origin = _portion.origin+_portion.size*(cropRect.origin/size);//, _portion.origin.y+_portion.size.height*(cropRect.origin.y/size.height));
 	
 	N2Image* croppedImage = [[N2Image alloc] initWithSize:cropRect.size inches:NSMakeSize(_inchSize.width/size.width*cropRect.size.width, _inchSize.height/size.height*cropRect.size.height) portion:portion];
-	
-	[croppedImage lockFocus];
-    [self drawAtPoint:NSZeroPoint fromRect:cropRect operation:NSCompositingOperationSourceOver fraction:0];
-    [croppedImage unlockFocus];
+	NSImage *contents = [NSImage imageWithSize:cropRect.size flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
+        [self drawInRect:destinationRect fromRect:cropRect operation:NSCompositingOperationSourceOver fraction:1.0];
+        return YES;
+    }];
+	for (NSImageRep *representation in [contents representations])
+		[croppedImage addRepresentation:representation];
 	
 	return [croppedImage autorelease];
 }
@@ -112,17 +111,16 @@
 
 -(NSImage*)shadowImage
 {
-	NSImage* dark = [[NSImage alloc] initWithSize:[self size]];
-	[dark lockFocus];
-	[self drawInRect: NSMakeRect( 0, 0, self.size.width, self.size.height) fromRect: NSMakeRect( 0, 0, self.size.width, self.size.height) operation: NSCompositingOperationSourceOver fraction: 1.0];
-    [[NSColor colorWithCalibratedWhite: 0 alpha: 0.5] set];
-    NSRectFillUsingOperation( NSMakeRect( 0, 0, self.size.width, self.size.height), NSCompositingOperationSourceAtop);
-	[dark unlockFocus];
-    
-	return [dark autorelease];
+	return [NSImage imageWithSize:[self size] flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
+		[self drawInRect:destinationRect fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1.0];
+        [[NSColor colorWithCalibratedWhite:0 alpha:0.5] set];
+        NSRectFillUsingOperation(destinationRect, NSCompositingOperationSourceAtop);
+		return YES;
+	}];
 }
 
 - (void)flipImageHorizontally {
+	NSSize imageSize = [self size];
 	// bitmap init
 	NSBitmapImageRep* bitmap = [[NSBitmapImageRep alloc] initWithData:[self TIFFRepresentation]];
 	// flip
@@ -132,10 +130,13 @@
 	src.rowBytes = dest.rowBytes = [bitmap bytesPerRow];
 	src.data = dest.data = [bitmap bitmapData];
 	vImageHorizontalReflect_ARGB8888(&src, &dest, 0L);
-	// draw
-	[self lockFocus];
-	[bitmap draw];
-	[self unlockFocus];
+	[bitmap setSize:imageSize];
+	NSArray *oldRepresentations = [[self representations] copy];
+	for (NSImageRep *representation in oldRepresentations)
+		[self removeRepresentation:representation];
+	[oldRepresentations release];
+	[self addRepresentation:bitmap];
+	[self setSize:imageSize];
 	// release
 	[bitmap release];
 }
@@ -284,14 +285,8 @@ end_size_y:
 - (NSImage*)imageByScalingProportionallyToSizeUsingNSImage:(NSSize)targetSize
 {
     @try {
-        NSImage *newImage = [[[NSImage alloc] initWithSize: targetSize] autorelease];
-
-        if( [newImage size].width > 0 && [newImage size].height > 0)
+        if (targetSize.width > 0 && targetSize.height > 0)
         {
-            [newImage lockFocus];
-
-            [[NSGraphicsContext currentContext] setImageInterpolation: NSImageInterpolationHigh];
-            
             NSPoint thumbnailPoint = NSZeroPoint;
             
             NSSize imageSize = [self size];
@@ -329,14 +324,14 @@ end_size_y:
             thumbnailRect.size.width = scaledWidth;
             thumbnailRect.size.height = scaledHeight;
 
-            [self drawInRect: thumbnailRect
-                           fromRect: NSZeroRect
-                          operation: NSCompositingOperationCopy
-                           fraction: 1.0];
-
-            [newImage unlockFocus];
-            
-            return newImage;
+			return [NSImage imageWithSize:targetSize flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
+				[[NSGraphicsContext currentContext] setImageInterpolation:NSImageInterpolationHigh];
+				[self drawInRect:thumbnailRect
+						 fromRect:NSZeroRect
+						operation:NSCompositingOperationCopy
+						 fraction:1.0];
+				return YES;
+			}];
         }
     }
     @catch (NSException *exception) {
@@ -423,56 +418,23 @@ end_size_y:
 				}
 				else
 				{
-					newImage = [[[NSImage alloc] initWithSize: targetSize] autorelease];
-					
-					if( [newImage size].width > 0 && [newImage size].height > 0)
-					{
-						[newImage lockFocus];
-						
-						[[NSGraphicsContext currentContext] setImageInterpolation: NSImageInterpolationHigh];
-						
-						NSRect thumbnailRect;
-						thumbnailRect.origin = thumbnailPoint;
-						thumbnailRect.size.width = extent.size.width;
-						thumbnailRect.size.height = extent.size.height;
-						
-						[outputCIImage drawInRect: thumbnailRect
-										 fromRect: NSMakeRect( extent.origin.x , extent.origin.y, extent.size.width, extent.size.height)
-										operation: NSCompositingOperationCopy
-										 fraction: 1.0];
-						
-						[newImage unlockFocus];
-					}
+					NSRect thumbnailRect;
+					thumbnailRect.origin = thumbnailPoint;
+					thumbnailRect.size.width = extent.size.width;
+					thumbnailRect.size.height = extent.size.height;
+					newImage = [NSImage imageWithSize:targetSize flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
+						[[NSGraphicsContext currentContext] setImageInterpolation:NSImageInterpolationHigh];
+						[outputCIImage drawInRect:thumbnailRect
+										 fromRect:NSMakeRect(extent.origin.x, extent.origin.y, extent.size.width, extent.size.height)
+										operation:NSCompositingOperationCopy
+										 fraction:1.0];
+						return YES;
+					}];
 				}
 				
 				[rep release];
 				[bitmap release];
 			}
-			//		else
-			//
-			////		***** NSImage
-			//		{
-			//			newImage = [[[NSImage alloc] initWithSize: targetSize] autorelease];
-			//			
-			//			if( [newImage size].width > 0 && [newImage size].height > 0)
-			//			{
-			//				[newImage lockFocus];
-			//				
-			//				[[NSGraphicsContext currentContext] setImageInterpolation: NSImageInterpolationHigh];
-			//				
-			//				NSRect thumbnailRect;
-			//				thumbnailRect.origin = thumbnailPoint;
-			//				thumbnailRect.size.width = scaledWidth;
-			//				thumbnailRect.size.height = scaledHeight;
-			//				
-			//				[sourceImage drawInRect: thumbnailRect
-			//							   fromRect: NSZeroRect
-			//							  operation: NSCompositingOperationCopy
-			//							   fraction: 1.0];
-			//				
-			//				[newImage unlockFocus];
-			//			}
-			//		}
 		}
 	}
 	

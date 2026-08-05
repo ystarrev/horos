@@ -1,3 +1,4 @@
+#import "HorosSheetPresenter.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -391,7 +392,7 @@ static NSMatrix *gDateMatrix = nil;
 	}
 	
 	[smartAlbumsEditWindow orderOut:sender];
-	[NSApp endSheet: smartAlbumsEditWindow returnCode:[sender tag]];
+	HorosEndSheetWithReturnCode(smartAlbumsEditWindow, [sender tag]);
 }
 
 - (IBAction) editSmartAlbumFilter:(id) sender

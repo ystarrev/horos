@@ -1,3 +1,4 @@
+#import "HorosSheetPresenter.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -73,18 +74,18 @@
         
         self.outputDir = [panel.URL path];
         
-        [NSApp endSheet:self.window];
+        HorosEndSheet(self.window);
     }];
 }
 
 -(IBAction)actionAdd:(NSView*)sender {
 	end = AnonymizationSavePanelAdd;
-	[NSApp endSheet:self.window];
+	HorosEndSheet(self.window);
 }
 
 -(IBAction)actionReplace:(NSView*)sender {
 	end = AnonymizationSavePanelReplace;
-	[NSApp endSheet:self.window];
+	HorosEndSheet(self.window);
 }
 
 @end

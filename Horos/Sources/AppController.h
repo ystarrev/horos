@@ -83,8 +83,6 @@ enum
 extern "C"
 {
 #endif
-	NSString * documentsDirectoryFor( int mode, NSString *url) __deprecated;
-    NSString * documentsDirectory(void) __deprecated;
 #ifdef __cplusplus
 }
 #endif
@@ -149,7 +147,6 @@ extern AppController* OsiriX;
 #endif
 + (AppController*) sharedAppController; /**< Return the shared AppController instance */
 + (void) resizeWindowWithAnimation:(NSWindow*) window newSize: (NSRect) newWindowFrame;
-+ (NSString*)printStackTrace:(NSException*)e __deprecated; // use -[NSException printStackTrace] from NSException+N2
 
 #pragma mark-
 #pragma mark HTML Templates

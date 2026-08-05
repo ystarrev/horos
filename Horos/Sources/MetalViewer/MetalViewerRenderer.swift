@@ -4139,6 +4139,97 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             }
         }
 
+        if slabAwareRegistration,
+           ctToCTRegistration == false,
+           let finalLevel = levelPairs.last {
+            // Repeating registration from the displayed transform used to
+            // improve some limited-coverage MR pairs because it restarted the
+            // local optimizer after the first pass exhausted its iteration
+            // budget. Continue that same local search automatically at full
+            // resolution, without reopening the wide seed search.
+            let finalLevelIndex = levelPairs.count - 1
+            let useBoneOnly = shouldUseBoneOnlyMetric(
+                forLevelIndex: finalLevelIndex,
+                totalLevels: levelPairs.count
+            )
+            let exactSamplingStride = SIMD3<Int>(repeating: 1)
+            let maximumContinuationPasses = 2
+
+            for continuationIndex in 0..<maximumContinuationPasses {
+                let startingState = best
+                let startingMetric = bestMetric
+                let simplexResult = optimizeLevelWithNelderMead(
+                    startingAt: best,
+                    level: finalLevel,
+                    levelIndex: finalLevelIndex,
+                    totalLevels: levelPairs.count,
+                    useBoneOnly: useBoneOnly,
+                    translationMM: 1,
+                    rotationRadians: 0.25 * .pi / 180,
+                    allowsRotation: true,
+                    maxIterations: 18,
+                    generation: generation,
+                    stepIndex: continuationIndex,
+                    totalSteps: maximumContinuationPasses,
+                    samplingStride: exactSamplingStride,
+                    speculativelyBatchCandidates: true
+                )
+                if simplexResult.metric.isFinite,
+                   simplexResult.metric < bestMetric {
+                    best = simplexResult.state
+                    bestMetric = simplexResult.metric
+                }
+
+                let descentResult = smoothDescentRefinement(
+                    startingAt: best,
+                    startingMetric: bestMetric,
+                    level: finalLevel,
+                    levelIndex: finalLevelIndex,
+                    totalLevels: levelPairs.count,
+                    useBoneOnly: useBoneOnly,
+                    generation: generation,
+                    samplingStride: exactSamplingStride
+                )
+                if descentResult.metric.isFinite,
+                   descentResult.metric < bestMetric {
+                    best = descentResult.state
+                    bestMetric = descentResult.metric
+                }
+
+                let metricImprovement = max(startingMetric - bestMetric, 0)
+                let translationChange = simd_length(
+                    best.translationWorld - startingState.translationWorld
+                )
+                let rotationChangeDegrees = simd_length(
+                    best.rotationRadians - startingState.rotationRadians
+                ) * 180 / .pi
+                MetalViewerDiagnostics.registrationTimingLog(
+                    format: "MetalViewerRenderer registration continuation=%d/%d improvement=%.7f transformDelta=(%.4fmm,%.4fdeg)",
+                    continuationIndex + 1,
+                    maximumContinuationPasses,
+                    metricImprovement,
+                    translationChange,
+                    rotationChangeDegrees
+                )
+                publishRegistrationUpdate(
+                    state: best,
+                    inProgress: true,
+                    progress: 0.98 + 0.01 * Float(continuationIndex + 1),
+                    message: "Registering 3D final polish",
+                    residualError: bestMetric,
+                    generation: generation
+                )
+
+                let meaningfulMetricImprovement = metricImprovement >= 0.00005
+                let meaningfulTransformChange = translationChange >= 0.05
+                    || rotationChangeDegrees >= 0.02
+                if meaningfulMetricImprovement == false
+                    || meaningfulTransformChange == false {
+                    break
+                }
+            }
+        }
+
         MetalViewerDiagnostics.registrationTimingLog("MetalViewerRenderer optimizeOverlayTransform total", since: optimizeStart)
         return (best, bestMetric)
     }

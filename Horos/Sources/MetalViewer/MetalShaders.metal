@@ -2,6 +2,12 @@
 using namespace metal;
 
 constant uint kRegistrationHistogramBins = 64;
+// Keep the MIND accumulator layout synchronized with MetalViewerRenderer.swift.
+constant float kRegistrationMINDAgreementScale = 65535.0;
+constant uint kRegistrationMINDAgreementLowIndex = 0;
+constant uint kRegistrationMINDAgreementHighIndex = 1;
+constant uint kRegistrationMINDValidDescriptorCountIndex = 2;
+constant uint kRegistrationMINDOverlapCountIndex = 3;
 // Keep this synchronized with registrationCandidateTileSize in the renderer.
 constant uint kRegistrationCandidateTileSize = 4;
 constant uint kMetalViewerInterpolationNearest = 0;
@@ -85,6 +91,21 @@ struct RegistrationUniforms {
     uint3 baseTextureSize;
     float4x4 fixedVoxelToMovingTexture;
     uint4 samplingOptions;
+};
+
+struct BlockMatchingUniforms {
+    float4 windows;
+    uint4 baseTextureSize;
+    uint4 movingTextureSize;
+    uint4 blockStrideAndFlags;
+    uint4 blockRadius;
+    uint4 searchRadius;
+    float4x4 fixedVoxelToMovingTexture;
+};
+
+struct BlockMatchResult {
+    float4 displacementAndScore;
+    float4 quality;
 };
 
 struct GaussianBlurUniforms {
@@ -829,7 +850,7 @@ static inline float metalViewerNormalizedValue(float value, float level, float w
     return clamp((value - minValue) / max(width, 1e-5), 0.0, 1.0);
 }
 
-static inline float metalViewerGradientMagnitudeNormalized(
+static inline float3 metalViewerGradientNormalized(
     texture3d<float, access::sample> texture,
     sampler metricSampler,
     float3 coord,
@@ -843,7 +864,126 @@ static inline float metalViewerGradientMagnitudeNormalized(
     const float sampleY0 = metalViewerNormalizedValue(texture.sample(metricSampler, clamp(coord - float3(0.0, delta.y, 0.0), 0.0, 1.0)).r, level, width);
     const float sampleZ1 = metalViewerNormalizedValue(texture.sample(metricSampler, clamp(coord + float3(0.0, 0.0, delta.z), 0.0, 1.0)).r, level, width);
     const float sampleZ0 = metalViewerNormalizedValue(texture.sample(metricSampler, clamp(coord - float3(0.0, 0.0, delta.z), 0.0, 1.0)).r, level, width);
-    return length(float3(sampleX1 - sampleX0, sampleY1 - sampleY0, sampleZ1 - sampleZ0));
+    return float3(sampleX1 - sampleX0, sampleY1 - sampleY0, sampleZ1 - sampleZ0);
+}
+
+static inline float metalViewerGradientMagnitudeNormalized(
+    texture3d<float, access::sample> texture,
+    sampler metricSampler,
+    float3 coord,
+    float level,
+    float width
+) {
+    return length(metalViewerGradientNormalized(texture, metricSampler, coord, level, width));
+}
+
+struct MetalViewerMINDDescriptor {
+    float4 values;
+    float variance;
+};
+
+static inline void metalViewerAtomicAddUInt64(
+    device atomic_uint *lowWord,
+    device atomic_uint *highWord,
+    uint value
+) {
+    const uint previousLowWord = atomic_fetch_add_explicit(
+        lowWord,
+        value,
+        memory_order_relaxed
+    );
+    if (previousLowWord > 0xffffffffu - value) {
+        atomic_fetch_add_explicit(highWord, 1u, memory_order_relaxed);
+    }
+}
+
+static inline MetalViewerMINDDescriptor metalViewerMINDDescriptor(
+    texture3d<float, access::sample> texture,
+    sampler metricSampler,
+    float3 coord,
+    float3 deltaX,
+    float3 deltaY,
+    float level,
+    float width
+) {
+    const float inverseWidth = 1.0 / max(width, 1e-5);
+    const float center = (texture.sample(metricSampler, coord).r - level) * inverseWidth;
+    const float4 neighbors = float4(
+        (texture.sample(metricSampler, clamp(coord + deltaX, 0.0, 1.0)).r - level) * inverseWidth,
+        (texture.sample(metricSampler, clamp(coord - deltaX, 0.0, 1.0)).r - level) * inverseWidth,
+        (texture.sample(metricSampler, clamp(coord + deltaY, 0.0, 1.0)).r - level) * inverseWidth,
+        (texture.sample(metricSampler, clamp(coord - deltaY, 0.0, 1.0)).r - level) * inverseWidth
+    );
+    const float4 differences = neighbors - center;
+    const float4 squaredDifferences = differences * differences;
+    const float variance = dot(squaredDifferences, float4(0.25));
+    MetalViewerMINDDescriptor descriptor;
+    descriptor.variance = variance;
+    descriptor.values = variance > 1e-5
+        ? exp(-squaredDifferences / max(variance, 1e-5))
+        : float4(0.0);
+    return descriptor;
+}
+
+static inline float2 metalViewerMINDAgreement(
+    MetalViewerMINDDescriptor baseDescriptor,
+    texture3d<float, access::sample> overlayTexture,
+    sampler metricSampler,
+    float3 overlayCoord,
+    float4x4 fixedVoxelToMovingTexture,
+    float4 windows
+) {
+    if (baseDescriptor.variance <= 1e-5) {
+        return float2(0.0);
+    }
+    const MetalViewerMINDDescriptor movingDescriptor = metalViewerMINDDescriptor(
+        overlayTexture,
+        metricSampler,
+        overlayCoord,
+        fixedVoxelToMovingTexture[0].xyz,
+        fixedVoxelToMovingTexture[1].xyz,
+        windows.z,
+        windows.w
+    );
+    if (movingDescriptor.variance <= 1e-5) {
+        return float2(0.0);
+    }
+    const float4 descriptorDifference = baseDescriptor.values - movingDescriptor.values;
+    const float meanSquaredDifference = dot(descriptorDifference, descriptorDifference) * 0.25;
+    return float2(exp(-4.0 * meanSquaredDifference), 1.0);
+}
+
+static inline float2 metalViewerMINDAgreement(
+    texture3d<float, access::sample> baseTexture,
+    texture3d<float, access::sample> overlayTexture,
+    sampler metricSampler,
+    float3 baseCoord,
+    float3 overlayCoord,
+    float4x4 fixedVoxelToMovingTexture,
+    float4 windows
+) {
+    const float3 baseSize = float3(
+        baseTexture.get_width(),
+        baseTexture.get_height(),
+        baseTexture.get_depth()
+    );
+    const MetalViewerMINDDescriptor baseDescriptor = metalViewerMINDDescriptor(
+        baseTexture,
+        metricSampler,
+        baseCoord,
+        float3(1.0 / max(baseSize.x, 1.0), 0.0, 0.0),
+        float3(0.0, 1.0 / max(baseSize.y, 1.0), 0.0),
+        windows.x,
+        windows.y
+    );
+    return metalViewerMINDAgreement(
+        baseDescriptor,
+        overlayTexture,
+        metricSampler,
+        overlayCoord,
+        fixedVoxelToMovingTexture,
+        windows
+    );
 }
 
 vertex RasterizerData metalViewerVertex(
@@ -1882,6 +2022,167 @@ static inline uint3 metalViewerRegistrationFixedCoordinate(
     );
 }
 
+kernel void metalViewerRegistrationBlockMatching(
+    texture3d<float, access::sample> baseTexture [[texture(0)]],
+    texture3d<float, access::sample> overlayTexture [[texture(1)]],
+    constant BlockMatchingUniforms &uniforms [[buffer(0)]],
+    device BlockMatchResult *results [[buffer(1)]],
+    uint3 gid [[thread_position_in_grid]]
+) {
+    const uint3 baseSize = max(uniforms.baseTextureSize.xyz, uint3(1u));
+    const uint3 movingSize = max(uniforms.movingTextureSize.xyz, uint3(1u));
+    const uint3 blockStride = max(uniforms.blockStrideAndFlags.xyz, uint3(1u));
+    const uint3 blockGridSize = (baseSize + blockStride - 1u) / blockStride;
+    if (any(gid >= blockGridSize)) {
+        return;
+    }
+
+    const uint resultIndex = (gid.z * blockGridSize.y + gid.y) * blockGridSize.x + gid.x;
+    const uint3 fixedCenter = min(gid * blockStride + blockStride / 2u, baseSize - 1u);
+    const int3 blockRadius = int3(uniforms.blockRadius.xyz);
+    const int3 searchRadius = int3(uniforms.searchRadius.xyz);
+    const uint matchingMode = uniforms.blockStrideAndFlags.w;
+    const bool usesGradientMagnitude = matchingMode == 1u;
+    const bool usesMIND = matchingMode == 2u;
+    constexpr sampler blockSampler(coord::normalized, address::clamp_to_zero, filter::linear);
+
+    float bestScore = -2.0;
+    float secondBestScore = -2.0;
+    int3 bestDisplacement = int3(0);
+    uint bestSampleCount = 0u;
+
+    for (int searchZ = -searchRadius.z; searchZ <= searchRadius.z; ++searchZ) {
+        for (int searchY = -searchRadius.y; searchY <= searchRadius.y; ++searchY) {
+            for (int searchX = -searchRadius.x; searchX <= searchRadius.x; ++searchX) {
+                const float3 displacementTexture = float3(searchX, searchY, searchZ) / float3(movingSize);
+                float baseSum = 0.0;
+                float movingSum = 0.0;
+                float baseSquaredSum = 0.0;
+                float movingSquaredSum = 0.0;
+                float productSum = 0.0;
+                uint sampleCount = 0u;
+
+                for (int blockZ = -blockRadius.z; blockZ <= blockRadius.z; ++blockZ) {
+                    for (int blockY = -blockRadius.y; blockY <= blockRadius.y; ++blockY) {
+                        for (int blockX = -blockRadius.x; blockX <= blockRadius.x; ++blockX) {
+                            const int3 fixedSample = int3(fixedCenter) + int3(blockX, blockY, blockZ);
+                            if (any(fixedSample < int3(0)) || any(fixedSample >= int3(baseSize))) {
+                                continue;
+                            }
+
+                            const float3 baseCoord = (float3(fixedSample) + 0.5) / float3(baseSize);
+                            const float3 movingCoord = (
+                                uniforms.fixedVoxelToMovingTexture * float4(float3(fixedSample), 1.0)
+                            ).xyz + displacementTexture;
+                            if (any(movingCoord < float3(0.0)) || any(movingCoord > float3(1.0))) {
+                                continue;
+                            }
+
+                            if (usesMIND) {
+                                const float2 agreement = metalViewerMINDAgreement(
+                                    baseTexture,
+                                    overlayTexture,
+                                    blockSampler,
+                                    baseCoord,
+                                    movingCoord,
+                                    uniforms.fixedVoxelToMovingTexture,
+                                    uniforms.windows
+                                );
+                                if (agreement.y <= 0.0) {
+                                    continue;
+                                }
+                                productSum += agreement.x;
+                                baseSum += agreement.y;
+                                sampleCount += 1u;
+                                continue;
+                            }
+
+                            float baseValue;
+                            float movingValue;
+                            if (usesGradientMagnitude) {
+                                baseValue = metalViewerGradientMagnitudeNormalized(
+                                    baseTexture,
+                                    blockSampler,
+                                    baseCoord,
+                                    uniforms.windows.x,
+                                    uniforms.windows.y
+                                );
+                                movingValue = metalViewerGradientMagnitudeNormalized(
+                                    overlayTexture,
+                                    blockSampler,
+                                    movingCoord,
+                                    uniforms.windows.z,
+                                    uniforms.windows.w
+                                );
+                            } else {
+                                baseValue = metalViewerNormalizedValue(
+                                    baseTexture.sample(blockSampler, baseCoord).r,
+                                    uniforms.windows.x,
+                                    uniforms.windows.y
+                                );
+                                movingValue = metalViewerNormalizedValue(
+                                    overlayTexture.sample(blockSampler, movingCoord).r,
+                                    uniforms.windows.z,
+                                    uniforms.windows.w
+                                );
+                            }
+
+                            baseSum += baseValue;
+                            movingSum += movingValue;
+                            baseSquaredSum += baseValue * baseValue;
+                            movingSquaredSum += movingValue * movingValue;
+                            productSum += baseValue * movingValue;
+                            sampleCount += 1u;
+                        }
+                    }
+                }
+
+                const uint fullBlockSampleCount = uint(
+                    (2 * blockRadius.x + 1)
+                    * (2 * blockRadius.y + 1)
+                    * (2 * blockRadius.z + 1)
+                );
+                float score;
+                if (usesMIND) {
+                    if (sampleCount < max(fullBlockSampleCount / 12u, 6u) || baseSum <= 1e-5) {
+                        continue;
+                    }
+                    score = productSum / baseSum;
+                } else {
+                    if (sampleCount < max(fullBlockSampleCount / 2u, 8u)) {
+                        continue;
+                    }
+                    const float count = float(sampleCount);
+                    const float covariance = productSum - baseSum * movingSum / count;
+                    const float baseVariance = baseSquaredSum - baseSum * baseSum / count;
+                    const float movingVariance = movingSquaredSum - movingSum * movingSum / count;
+                    const float varianceProduct = baseVariance * movingVariance;
+                    if (varianceProduct <= 1e-7) {
+                        continue;
+                    }
+                    score = covariance * rsqrt(varianceProduct);
+                }
+                if (score > bestScore) {
+                    secondBestScore = bestScore;
+                    bestScore = score;
+                    bestDisplacement = int3(searchX, searchY, searchZ);
+                    bestSampleCount = sampleCount;
+                } else if (score > secondBestScore) {
+                    secondBestScore = score;
+                }
+            }
+        }
+    }
+
+    results[resultIndex].displacementAndScore = float4(float3(bestDisplacement), bestScore);
+    results[resultIndex].quality = float4(
+        secondBestScore,
+        max(bestScore - secondBestScore, 0.0),
+        float(bestSampleCount),
+        bestScore > -1.5 ? 1.0 : 0.0
+    );
+}
+
 kernel void metalViewerRegistrationJointHistogram(
     texture3d<float, access::sample> baseTexture [[texture(0)]],
     texture3d<float, access::sample> overlayTexture [[texture(1)]],
@@ -1903,6 +2204,7 @@ kernel void metalViewerRegistrationJointHistogram(
     const bool usesBoneMask = metricMode > 0.5 && metricMode < 1.5;
     const bool usesStructureMetric = metricMode > 1.5 && metricMode < 2.5;
     const bool usesBodyMask = metricMode > 2.5 && metricMode < 3.5;
+    const bool usesMIND = metricMode > 3.5 && metricMode < 4.5;
     const float3 baseSize = float3(uniforms.baseTextureSize);
     const uint3 fixedCoordinate = metalViewerRegistrationFixedCoordinate(
         gid,
@@ -1932,6 +2234,41 @@ kernel void metalViewerRegistrationJointHistogram(
     const float overlayPixelValue = overlayTexture.sample(metricSampler, overlayCoord).r;
     if (usesBoneMask &&
         (overlayPixelValue < uniforms.metricOptions.y || overlayPixelValue > uniforms.metricOptions.z)) {
+        return;
+    }
+
+    if (usesMIND) {
+        atomic_fetch_add_explicit(
+            &jointHistogram[kRegistrationMINDOverlapCountIndex],
+            1u,
+            memory_order_relaxed
+        );
+        const float2 agreement = metalViewerMINDAgreement(
+            baseTexture,
+            overlayTexture,
+            metricSampler,
+            baseCoord,
+            overlayCoord,
+            uniforms.fixedVoxelToMovingTexture,
+            float4(
+                uniforms.baseWindowLevel,
+                uniforms.baseWindowWidth,
+                uniforms.overlayWindowLevel,
+                uniforms.overlayWindowWidth
+            )
+        );
+        if (agreement.y > 0.0) {
+            metalViewerAtomicAddUInt64(
+                &jointHistogram[kRegistrationMINDAgreementLowIndex],
+                &jointHistogram[kRegistrationMINDAgreementHighIndex],
+                uint(round(agreement.x * kRegistrationMINDAgreementScale))
+            );
+            atomic_fetch_add_explicit(
+                &jointHistogram[kRegistrationMINDValidDescriptorCountIndex],
+                1u,
+                memory_order_relaxed
+            );
+        }
         return;
     }
 
@@ -1994,6 +2331,7 @@ kernel void metalViewerRegistrationJointHistogramsBatch(
     const bool usesBoneMask = metricMode > 0.5 && metricMode < 1.5;
     const bool usesStructureMetric = metricMode > 1.5 && metricMode < 2.5;
     const bool usesBodyMask = metricMode > 2.5 && metricMode < 3.5;
+    const bool usesMIND = metricMode > 3.5 && metricMode < 4.5;
     const float3 baseSize = float3(sharedUniforms.baseTextureSize);
     const uint3 fixedCoordinate = metalViewerRegistrationFixedCoordinate(
         uint3(gid.x, gid.y, sampleZ),
@@ -2022,6 +2360,20 @@ kernel void metalViewerRegistrationJointHistogramsBatch(
     const uint baseBin = min(uint(baseMetricValue * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
     const float4 fixedVoxel = float4(fixedVoxel3, 1.0);
     const uint candidateEnd = min(firstCandidateIndex + kRegistrationCandidateTileSize, candidateCount);
+    MetalViewerMINDDescriptor fixedMINDDescriptor;
+    fixedMINDDescriptor.values = float4(0.0);
+    fixedMINDDescriptor.variance = 0.0;
+    if (usesMIND) {
+        fixedMINDDescriptor = metalViewerMINDDescriptor(
+            baseTexture,
+            metricSampler,
+            baseCoord,
+            float3(1.0 / max(baseSize.x, 1.0), 0.0, 0.0),
+            float3(0.0, 1.0 / max(baseSize.y, 1.0), 0.0),
+            sharedUniforms.baseWindowLevel,
+            sharedUniforms.baseWindowWidth
+        );
+    }
 
     for (uint candidateIndex = firstCandidateIndex; candidateIndex < candidateEnd; ++candidateIndex) {
         const RegistrationUniforms uniforms = candidateUniforms[candidateIndex];
@@ -2035,6 +2387,41 @@ kernel void metalViewerRegistrationJointHistogramsBatch(
         const float overlayPixelValue = overlayTexture.sample(metricSampler, overlayCoord).r;
         if (usesBoneMask &&
             (overlayPixelValue < sharedUniforms.metricOptions.y || overlayPixelValue > sharedUniforms.metricOptions.z)) {
+            continue;
+        }
+
+        const uint histogramOffset = candidateIndex * kRegistrationHistogramBins * kRegistrationHistogramBins;
+        if (usesMIND) {
+            atomic_fetch_add_explicit(
+                &jointHistograms[histogramOffset + kRegistrationMINDOverlapCountIndex],
+                1u,
+                memory_order_relaxed
+            );
+            const float2 agreement = metalViewerMINDAgreement(
+                fixedMINDDescriptor,
+                overlayTexture,
+                metricSampler,
+                overlayCoord,
+                uniforms.fixedVoxelToMovingTexture,
+                float4(
+                    sharedUniforms.baseWindowLevel,
+                    sharedUniforms.baseWindowWidth,
+                    sharedUniforms.overlayWindowLevel,
+                    sharedUniforms.overlayWindowWidth
+                )
+            );
+            if (agreement.y > 0.0) {
+                metalViewerAtomicAddUInt64(
+                    &jointHistograms[histogramOffset + kRegistrationMINDAgreementLowIndex],
+                    &jointHistograms[histogramOffset + kRegistrationMINDAgreementHighIndex],
+                    uint(round(agreement.x * kRegistrationMINDAgreementScale))
+                );
+                atomic_fetch_add_explicit(
+                    &jointHistograms[histogramOffset + kRegistrationMINDValidDescriptorCountIndex],
+                    1u,
+                    memory_order_relaxed
+                );
+            }
             continue;
         }
 
@@ -2060,7 +2447,6 @@ kernel void metalViewerRegistrationJointHistogramsBatch(
 
         const uint overlayBin = min(uint(overlayMetricValue * float(kRegistrationHistogramBins - 1)), kRegistrationHistogramBins - 1);
         const uint histogramIndex = overlayBin * kRegistrationHistogramBins + baseBin;
-        const uint histogramOffset = candidateIndex * kRegistrationHistogramBins * kRegistrationHistogramBins;
         atomic_fetch_add_explicit(&jointHistograms[histogramOffset + histogramIndex], 1, memory_order_relaxed);
     }
 }

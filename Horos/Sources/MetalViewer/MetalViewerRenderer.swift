@@ -6,6 +6,12 @@ import MetalKit
 import simd
 
 private let registrationHistogramBins = 64
+// Keep the MIND accumulator layout synchronized with MetalShaders.metal.
+private let registrationMINDAgreementScale = 65_535.0
+private let registrationMINDAgreementLowIndex = 0
+private let registrationMINDAgreementHighIndex = 1
+private let registrationMINDValidDescriptorCountIndex = 2
+private let registrationMINDOverlapCountIndex = 3
 // A small tile retains enough parallel work while amortizing the fixed-volume
 // sample and mask decision across nearby transform candidates.
 private let registrationCandidateTileSize = 4
@@ -15,6 +21,50 @@ private let maximumInlineMetalVertexBytes = 4 * 1024
 private enum RegistrationSamplingMode: String {
     case fast
     case reference
+}
+
+private final class RegistrationProfile {
+    var metricCallCount = 0
+    var metricDispatchCount = 0
+    var metricTotalTime: CFTimeInterval = 0
+    var metricSetupTime: CFTimeInterval = 0
+    var metricGPUTime: CFTimeInterval = 0
+    var metricGPUExecutionTime: CFTimeInterval = 0
+    var metricCPUTime: CFTimeInterval = 0
+    var metricNominalVoxelCandidateCount: UInt64 = 0
+    var metricVoxelCandidateCount: UInt64 = 0
+    var metricAcceptedSampleCount: UInt64 = 0
+    var samplingProbeTime: CFTimeInterval = 0
+    var optimizeTime: CFTimeInterval = 0
+    var blockMatchingTime: CFTimeInterval = 0
+    var coarseSeedSearchTime: CFTimeInterval = 0
+    var nelderMeadTime: CFTimeInterval = 0
+    var smoothDescentTime: CFTimeInterval = 0
+    var batchedDescentTime: CFTimeInterval = 0
+}
+
+private final class RegistrationJob: @unchecked Sendable {
+    let generation: UInt
+    let profile = RegistrationProfile()
+
+    private let cancellationLock = NSLock()
+    private var cancelled = false
+
+    init(generation: UInt) {
+        self.generation = generation
+    }
+
+    var isCancelled: Bool {
+        cancellationLock.lock()
+        defer { cancellationLock.unlock() }
+        return cancelled
+    }
+
+    func cancel() {
+        cancellationLock.lock()
+        cancelled = true
+        cancellationLock.unlock()
+    }
 }
 
 private enum MetalMPRPreviewLayoutDefaults {
@@ -96,6 +146,65 @@ private struct RegistrationUniforms {
     var baseTextureSize: SIMD3<UInt32>
     var fixedVoxelToMovingTexture: simd_float4x4
     var samplingOptions: SIMD4<UInt32>
+}
+
+private struct BlockMatchingUniforms {
+    var windows: SIMD4<Float>
+    var baseTextureSize: SIMD4<UInt32>
+    var movingTextureSize: SIMD4<UInt32>
+    var blockStrideAndFlags: SIMD4<UInt32>
+    var blockRadius: SIMD4<UInt32>
+    var searchRadius: SIMD4<UInt32>
+    var fixedVoxelToMovingTexture: simd_float4x4
+}
+
+private struct BlockMatchResult {
+    var displacementAndScore: SIMD4<Float>
+    var quality: SIMD4<Float>
+}
+
+private struct BlockCorrespondence {
+    let movingWorld: SIMD3<Float>
+    let fixedWorld: SIMD3<Float>
+    let score: Float
+    let distinctiveness: Float
+}
+
+private enum BlockMatchingMetric: UInt32 {
+    case intensityNCC = 0
+    case gradientMagnitudeNCC = 1
+    case mindSelfSimilarity = 2
+
+    var diagnosticName: NSString {
+        switch self {
+        case .intensityNCC: return "intensityNCC"
+        case .gradientMagnitudeNCC: return "gradientMagnitudeNCC"
+        case .mindSelfSimilarity: return "MIND"
+        }
+    }
+}
+
+private struct MRSequenceSignature {
+    let scanningSequences: Set<String>
+    let scanOptions: Set<String>
+
+    var isSpinEcho: Bool {
+        scanningSequences.contains("SE")
+    }
+
+    var isGradientEcho: Bool {
+        scanningSequences.contains("GR")
+    }
+
+    var usesFatSuppression: Bool {
+        scanOptions.contains { option in
+            option == "FS"
+                || option.hasPrefix("FS_")
+                || option.hasPrefix("FSA")
+                || option.contains("FATSAT")
+                || option.contains("FAT_SUP")
+        }
+    }
 }
 
 private struct RigidTransformState {
@@ -370,6 +479,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private let registrationPipelineState: MTLComputePipelineState
     private let registrationBatchPipelineState: MTLComputePipelineState
     private let registrationSamplingProbePipelineState: MTLComputePipelineState
+    private let registrationBlockMatchingPipelineState: MTLComputePipelineState
     private let samplerState: MTLSamplerState
     private let vertexBuffer: MTLBuffer
 
@@ -412,6 +522,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var overlayIsThinSlab = false
     private var baseSlabGeometry: SlabGeometry?
     private var overlaySlabGeometry: SlabGeometry?
+    private var contrastInvariantMRSlabMatchingCache: Bool?
 
     private(set) var currentSliceIndex = 0
     private(set) var windowLevel: Float = 0
@@ -461,25 +572,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var mprPlaneTiltDragState: MetalMPRPlaneTiltDragState?
     private var mprPreviewLineDragContext: MetalMPRPreviewLineDragContext?
     private var registrationGeneration: UInt = 0
+    private var activeRegistrationJob: RegistrationJob?
     private var registrationInProgress = false
     private var registrationProgress: Float = 0
     private var registrationStatusMessage: String?
-    private var registrationMetricCallCount = 0
-    private var registrationMetricDispatchCount = 0
-    private var registrationMetricTotalTime: CFTimeInterval = 0
-    private var registrationMetricSetupTime: CFTimeInterval = 0
-    private var registrationMetricGPUTime: CFTimeInterval = 0
-    private var registrationMetricGPUExecutionTime: CFTimeInterval = 0
-    private var registrationMetricCPUTime: CFTimeInterval = 0
-    private var registrationMetricNominalVoxelCandidateCount: UInt64 = 0
-    private var registrationMetricVoxelCandidateCount: UInt64 = 0
-    private var registrationMetricAcceptedSampleCount: UInt64 = 0
-    private var registrationSamplingProbeTime: CFTimeInterval = 0
-    private var registrationOptimizeTime: CFTimeInterval = 0
-    private var registrationCoarseSeedSearchTime: CFTimeInterval = 0
-    private var registrationNelderMeadTime: CFTimeInterval = 0
-    private var registrationSmoothDescentTime: CFTimeInterval = 0
-    private var registrationBatchedDescentTime: CFTimeInterval = 0
     private var registrationProfileStartTime: CFTimeInterval?
 
     var stateDidChange: ((String) -> Void)?
@@ -631,7 +727,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
               let mprIntersectionFragmentFunction = library.makeFunction(name: "metalViewerMPRIntersectionFragment"),
               let registrationFunction = library.makeFunction(name: "metalViewerRegistrationJointHistogram"),
               let registrationBatchFunction = library.makeFunction(name: "metalViewerRegistrationJointHistogramsBatch"),
-              let registrationSamplingProbeFunction = library.makeFunction(name: "metalViewerRegistrationSamplingProbe") else {
+              let registrationSamplingProbeFunction = library.makeFunction(name: "metalViewerRegistrationSamplingProbe"),
+              let registrationBlockMatchingFunction = library.makeFunction(name: "metalViewerRegistrationBlockMatching") else {
             fatalError("Could not load Metal shader functions.")
         }
 
@@ -677,6 +774,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             registrationPipelineState = try device.makeComputePipelineState(function: registrationFunction)
             registrationBatchPipelineState = try device.makeComputePipelineState(function: registrationBatchFunction)
             registrationSamplingProbePipelineState = try device.makeComputePipelineState(function: registrationSamplingProbeFunction)
+            registrationBlockMatchingPipelineState = try device.makeComputePipelineState(function: registrationBlockMatchingFunction)
         } catch {
             fatalError("Could not create Metal pipeline: \(error)")
         }
@@ -714,6 +812,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     deinit {
+        activeRegistrationJob?.cancel()
         if let defaultsObserver {
             NotificationCenter.default.removeObserver(defaultsObserver)
         }
@@ -741,12 +840,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         guard newPixList.isEmpty == false else { return }
 
         // Reset all series-owned state while retaining the expensive immutable Metal resources.
-        registrationGeneration += 1
+        invalidateActiveRegistrationJob()
         registrationInProgress = false
         registrationProgress = 0
         registrationStatusMessage = nil
 
         pixList = newPixList
+        contrastInvariantMRSlabMatchingCache = nil
         currentSliceIndex = Self.initialSliceIndex(for: newPixList)
         baseVolumeTexture = nil
         stackVolumeTextureEntry = nil
@@ -827,22 +927,6 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         mprPreviewLineDragContext = nil
         tumourSeeds = []
 
-        registrationMetricCallCount = 0
-        registrationMetricDispatchCount = 0
-        registrationMetricTotalTime = 0
-        registrationMetricSetupTime = 0
-        registrationMetricGPUTime = 0
-        registrationMetricGPUExecutionTime = 0
-        registrationMetricCPUTime = 0
-        registrationMetricNominalVoxelCandidateCount = 0
-        registrationMetricVoxelCandidateCount = 0
-        registrationMetricAcceptedSampleCount = 0
-        registrationSamplingProbeTime = 0
-        registrationOptimizeTime = 0
-        registrationCoarseSeedSearchTime = 0
-        registrationNelderMeadTime = 0
-        registrationSmoothDescentTime = 0
-        registrationBatchedDescentTime = 0
         registrationProfileStartTime = nil
         loadSlice(at: currentSliceIndex)
         requestStackVolumeTexture()
@@ -876,8 +960,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             (pixList.first?.modalityString ?? "") as NSString,
             (overlayPixList.first?.modalityString ?? "") as NSString
         )
+        invalidateActiveRegistrationJob()
         self.overlayPixList = overlayPixList
-        registrationGeneration += 1
+        contrastInvariantMRSlabMatchingCache = nil
         registrationInProgress = false
         registrationProgress = 0
         registrationStatusMessage = nil
@@ -904,12 +989,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     func clearOverlayPixList() {
-        registrationGeneration += 1
+        invalidateActiveRegistrationJob()
         registrationInProgress = false
         registrationProgress = 0
         registrationStatusMessage = nil
         registrationProfileStartTime = nil
         overlayPixList = []
+        contrastInvariantMRSlabMatchingCache = nil
         overlaySourceTextureEntry = nil
         requestedOverlayVolumeKey = nil
         requestedOverlayPreparedVolumeKey = nil
@@ -1097,12 +1183,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         guard newPixList.isEmpty == false else { return }
 
         let previousSliceIndex = currentSliceIndex
-        registrationGeneration += 1
+        invalidateActiveRegistrationJob()
         registrationInProgress = false
         registrationProgress = 0
         registrationStatusMessage = nil
 
         pixList = newPixList
+        contrastInvariantMRSlabMatchingCache = nil
         currentSliceIndex = preservingSliceIndex
             ? min(max(previousSliceIndex, 0), newPixList.count - 1)
             : Self.initialSliceIndex(for: newPixList)
@@ -3191,6 +3278,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         runRegistration(samplingMode: .fast)
     }
 
+    private func invalidateActiveRegistrationJob() {
+        activeRegistrationJob?.cancel()
+        activeRegistrationJob = nil
+        registrationGeneration &+= 1
+    }
+
     private func publishRegistrationPreparationUpdate(message: String, progress: Float) {
         guard overlayPixList.isEmpty == false else { return }
         registrationProgress = max(registrationProgress, min(max(progress, 0), 0.95))
@@ -3200,7 +3293,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func registrationPreparationDidFail(_ message: String) {
         guard overlayPixList.isEmpty == false else { return }
-        registrationGeneration += 1
+        invalidateActiveRegistrationJob()
         registrationProfileStartTime = nil
         registrationInProgress = false
         registrationProgress = 0
@@ -3292,6 +3385,57 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func isUnequalCoverageThinSlabRegistration() -> Bool {
         baseIsThinSlab != overlayIsThinSlab
+    }
+
+    private func mrSequenceSignature(for volumePixList: [DCMPix]) -> MRSequenceSignature? {
+        guard let firstPix = volumePixList.first,
+              firstPix.modalityString?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .uppercased() == "MR",
+              let path = firstPix.srcFile?.trimmingCharacters(in: .whitespacesAndNewlines),
+              path.isEmpty == false,
+              let reader = try? SwiftDICOMReader.cached(contentsOfFile: path) else {
+            return nil
+        }
+
+        func codeValues(forTag tag: String) -> Set<String> {
+            guard let value = reader.stringValue(forTag: tag) else { return [] }
+            return Set(value
+                .components(separatedBy: "\\")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
+                .filter { $0.isEmpty == false })
+        }
+
+        let scanningSequences = codeValues(forTag: "0018,0020")
+        let scanOptions = codeValues(forTag: "0018,0022")
+        guard scanningSequences.isEmpty == false || scanOptions.isEmpty == false else {
+            return nil
+        }
+        return MRSequenceSignature(
+            scanningSequences: scanningSequences,
+            scanOptions: scanOptions
+        )
+    }
+
+    private func usesContrastInvariantMRSlabMatching() -> Bool {
+        if let cached = contrastInvariantMRSlabMatchingCache {
+            return cached
+        }
+        guard isUnequalCoverageThinSlabRegistration(),
+              let baseSignature = mrSequenceSignature(for: pixList),
+              let overlaySignature = mrSequenceSignature(for: overlayPixList) else {
+            contrastInvariantMRSlabMatchingCache = false
+            return false
+        }
+
+        let crossesSpinAndGradientEcho =
+            (baseSignature.isSpinEcho && overlaySignature.isGradientEcho)
+            || (baseSignature.isGradientEcho && overlaySignature.isSpinEcho)
+        let changesFatSuppression =
+            baseSignature.usesFatSuppression != overlaySignature.usesFatSuppression
+        let usesContrastInvariantMatching = crossesSpinAndGradientEcho || changesFatSuppression
+        contrastInvariantMRSlabMatchingCache = usesContrastInvariantMatching
+        return usesContrastInvariantMatching
     }
 
     private func usesStructureOnlyCrossPlaneMetric() -> Bool {
@@ -3657,6 +3801,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let profileMode: String
         if samplingMode == .fast && supportsFastSlabRegistration {
             profileMode = "slab-fast"
+        } else if usesContrastInvariantMRSlabMatching() {
+            profileMode = "partial-mind-reference"
+        } else if isUnequalCoverageThinSlabRegistration(),
+                  isCTRegistrationVolume(pixList) == false,
+                  isCTRegistrationVolume(overlayPixList) == false {
+            profileMode = "partial-reference"
         } else if (baseIsThinSlab || overlayIsThinSlab),
                   isCTRegistrationVolume(pixList) == false,
                   isCTRegistrationVolume(overlayPixList) == false {
@@ -3669,72 +3819,63 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let profileStart = registrationProfileStartTime ?? registrationStart
         registrationProfileStartTime = nil
         let preparationTime = max(registrationStart - profileStart, 0)
-        registrationGeneration += 1
-        let generation = registrationGeneration
-        registrationMetricCallCount = 0
-        registrationMetricDispatchCount = 0
-        registrationMetricTotalTime = 0
-        registrationMetricSetupTime = 0
-        registrationMetricGPUTime = 0
-        registrationMetricGPUExecutionTime = 0
-        registrationMetricCPUTime = 0
-        registrationMetricNominalVoxelCandidateCount = 0
-        registrationMetricVoxelCandidateCount = 0
-        registrationMetricAcceptedSampleCount = 0
-        registrationSamplingProbeTime = 0
-        registrationOptimizeTime = 0
-        registrationCoarseSeedSearchTime = 0
-        registrationNelderMeadTime = 0
-        registrationSmoothDescentTime = 0
-        registrationBatchedDescentTime = 0
         let initialGuesses = initialState.map { [$0] } ?? automaticRegistrationInitialGuesses()
         guard let initialGuess = initialGuesses.first else { return }
+        invalidateActiveRegistrationJob()
+        let job = RegistrationJob(generation: registrationGeneration)
+        activeRegistrationJob = job
         publishRegistrationUpdate(
             state: initialGuess,
             inProgress: true,
             progress: 0,
             message: samplingMode == .fast ? "Registering 3D Fast" : "Registering 3D Reference",
             residualError: nil,
-            generation: generation
+            generation: job.generation
         )
         let initialSetupTime = CFAbsoluteTimeGetCurrent() - registrationStart
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
+            guard let self, job.isCancelled == false else { return }
             let samplingProbeStart = CFAbsoluteTimeGetCurrent()
-            self.logRegistrationSamplingProbe(for: initialGuess, levelPairs: levelPairs)
-            self.registrationSamplingProbeTime += CFAbsoluteTimeGetCurrent() - samplingProbeStart
+            self.logRegistrationSamplingProbe(for: initialGuess, levelPairs: levelPairs, job: job)
+            job.profile.samplingProbeTime += CFAbsoluteTimeGetCurrent() - samplingProbeStart
+            guard job.isCancelled == false else { return }
             let optimizeStart = CFAbsoluteTimeGetCurrent()
             let result = self.optimizeOverlayTransform(
                 startingAt: initialGuesses,
-                generation: generation,
+                job: job,
                 levelPairs: levelPairs,
                 samplingMode: samplingMode
             )
-            self.registrationOptimizeTime += CFAbsoluteTimeGetCurrent() - optimizeStart
-            let metricCount = self.registrationMetricCallCount
-            let metricDispatchCount = self.registrationMetricDispatchCount
-            let metricTotal = self.registrationMetricTotalTime
-            let metricSetup = self.registrationMetricSetupTime
-            let metricGPU = self.registrationMetricGPUTime
-            let metricGPUExecution = self.registrationMetricGPUExecutionTime
-            let metricCPU = self.registrationMetricCPUTime
-            let metricNominalVoxelCandidateCount = self.registrationMetricNominalVoxelCandidateCount
-            let metricVoxelCandidateCount = self.registrationMetricVoxelCandidateCount
-            let metricAcceptedSampleCount = self.registrationMetricAcceptedSampleCount
-            let samplingProbeTime = self.registrationSamplingProbeTime
-            let optimizeTime = self.registrationOptimizeTime
-            let coarseSeedSearchTime = self.registrationCoarseSeedSearchTime
-            let nelderMeadTime = self.registrationNelderMeadTime
-            let smoothDescentTime = self.registrationSmoothDescentTime
-            let batchedDescentTime = self.registrationBatchedDescentTime
+            job.profile.optimizeTime += CFAbsoluteTimeGetCurrent() - optimizeStart
+            guard job.isCancelled == false else { return }
+            let metricCount = job.profile.metricCallCount
+            let metricDispatchCount = job.profile.metricDispatchCount
+            let metricTotal = job.profile.metricTotalTime
+            let metricSetup = job.profile.metricSetupTime
+            let metricGPU = job.profile.metricGPUTime
+            let metricGPUExecution = job.profile.metricGPUExecutionTime
+            let metricCPU = job.profile.metricCPUTime
+            let metricNominalVoxelCandidateCount = job.profile.metricNominalVoxelCandidateCount
+            let metricVoxelCandidateCount = job.profile.metricVoxelCandidateCount
+            let metricAcceptedSampleCount = job.profile.metricAcceptedSampleCount
+            let samplingProbeTime = job.profile.samplingProbeTime
+            let optimizeTime = job.profile.optimizeTime
+            let blockMatchingTime = job.profile.blockMatchingTime
+            let coarseSeedSearchTime = job.profile.coarseSeedSearchTime
+            let nelderMeadTime = job.profile.nelderMeadTime
+            let smoothDescentTime = job.profile.smoothDescentTime
+            let batchedDescentTime = job.profile.batchedDescentTime
             let profileEnd = CFAbsoluteTimeGetCurrent()
             let totalTime = profileEnd - registrationStart
             let profileTotalTime = profileEnd - profileStart
 
             DispatchQueue.main.async {
-                guard generation == self.registrationGeneration else { return }
-                let optimizerCPUTime = max(optimizeTime - metricTotal, 0)
+                guard job.isCancelled == false,
+                      job.generation == self.registrationGeneration,
+                      self.activeRegistrationJob === job else { return }
+                self.activeRegistrationJob = nil
+                let optimizerCPUTime = max(optimizeTime - metricTotal - blockMatchingTime, 0)
                 let measuredCPUTime = metricSetup + metricCPU + optimizerCPUTime
                 let cpuPercent = optimizeTime > 0 ? measuredCPUTime / optimizeTime * 100 : 0
                 let gpuWaitPercent = optimizeTime > 0 ? metricGPU / optimizeTime * 100 : 0
@@ -3756,12 +3897,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     ? Double(metricCount) / Double(metricDispatchCount)
                     : 0
                 MetalViewerDiagnostics.registrationProfileLog(
-                    format: "mode=%@ total=%.3f s preparation=%.3f s registration=%.3f s optimize=%.3f s coarse=%.3f s nelderMead=%.3f s smoothDescent=%.3f s batchedDescent=%.3f s optimizeCPUActive=%.3f s (%.1f%%) gpuWait=%.3f s (%.1f%%) gpuExecute=%.3f s (%.1f%%) gpuQueueEfficiency=%.1f%% metricSetup=%.3f s nmiCPU=%.3f s optimizerCPU=%.3f s candidates=%d dispatches=%d candidatesPerDispatch=%.2f nominalVoxelCandidates=%.1f M voxelCandidates=%.1f M (%.1f%%) acceptedSamples=%.1f M (%.1f%%) gpuThroughput=%.1f Mvox/s resultT=(%.3f,%.3f,%.3f)mm resultR=(%.3f,%.3f,%.3f)deg score=%.6f",
+                    format: "mode=%@ total=%.3f s preparation=%.3f s registration=%.3f s optimize=%.3f s blockMatch=%.3f s coarse=%.3f s nelderMead=%.3f s smoothDescent=%.3f s batchedDescent=%.3f s optimizeCPUActive=%.3f s (%.1f%%) gpuWait=%.3f s (%.1f%%) gpuExecute=%.3f s (%.1f%%) gpuQueueEfficiency=%.1f%% metricSetup=%.3f s nmiCPU=%.3f s optimizerCPU=%.3f s candidates=%d dispatches=%d candidatesPerDispatch=%.2f nominalVoxelCandidates=%.1f M voxelCandidates=%.1f M (%.1f%%) acceptedSamples=%.1f M (%.1f%%) gpuThroughput=%.1f Mvox/s resultT=(%.3f,%.3f,%.3f)mm resultR=(%.3f,%.3f,%.3f)deg score=%.6f",
                     profileMode as NSString,
                     profileTotalTime,
                     preparationTime,
                     totalTime,
                     optimizeTime,
+                    blockMatchingTime,
                     coarseSeedSearchTime,
                     nelderMeadTime,
                     smoothDescentTime,
@@ -3794,11 +3936,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     -result.metric
                 )
                 MetalViewerDiagnostics.registrationTimingLog(
-                    format: "MetalViewerRenderer registration summary total=%.3f s initialSetup=%.3f s samplingProbe=%.3f s optimize=%.3f s coarseSeed=%.3f s nelderMead=%.3f s smoothDescent=%.3f s batchedDescent=%.3f s",
+                    format: "MetalViewerRenderer registration summary total=%.3f s initialSetup=%.3f s samplingProbe=%.3f s optimize=%.3f s blockMatch=%.3f s coarseSeed=%.3f s nelderMead=%.3f s smoothDescent=%.3f s batchedDescent=%.3f s",
                     totalTime,
                     initialSetupTime,
                     samplingProbeTime,
                     optimizeTime,
+                    blockMatchingTime,
                     coarseSeedSearchTime,
                     nelderMeadTime,
                     smoothDescentTime,
@@ -3823,7 +3966,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     progress: 1,
                     message: "Registered 3D",
                     residualError: result.metric,
-                    generation: generation
+                    generation: job.generation
                 )
                 MetalViewerDiagnostics.registrationTimingLog("MetalViewerRenderer registration total", since: registrationStart)
             }
@@ -3832,12 +3975,15 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func logRegistrationSamplingProbe(
         for state: RigidTransformState,
-        levelPairs: [(VolumeLevel, VolumeLevel)]
+        levelPairs: [(VolumeLevel, VolumeLevel)],
+        job: RegistrationJob
     ) {
         guard MetalViewerDiagnostics.isRegistrationTimingLogEnabled,
-              levelPairs.isEmpty == false else { return }
+              levelPairs.isEmpty == false,
+              job.isCancelled == false else { return }
 
         for (levelIndex, levelPair) in levelPairs.enumerated() {
+            guard job.isCancelled == false else { return }
             let probeStart = CFAbsoluteTimeGetCurrent()
             let baseVolumeTexture = levelPair.0.texture
             let overlayVolumeTexture = levelPair.1.texture
@@ -3892,8 +4038,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             encoder.setBuffer(countBuffer, offset: 0, index: 1)
             encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerGroup)
             encoder.endEncoding()
+            guard job.isCancelled == false else { return }
             commandBuffer.commit()
             commandBuffer.waitUntilCompleted()
+            guard job.isCancelled == false else { return }
 
             let counts = countBuffer.contents().bindMemory(to: UInt32.self, capacity: countBufferLength / MemoryLayout<UInt32>.stride)
             var acceptedSamples = 0
@@ -3911,9 +4059,397 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
+    private func blockMatchingInitialGuess(
+        startingAt initialState: RigidTransformState,
+        level: (VolumeLevel, VolumeLevel),
+        metric: BlockMatchingMetric,
+        job: RegistrationJob
+    ) -> RigidTransformState? {
+        guard job.isCancelled == false else { return nil }
+        let start = CFAbsoluteTimeGetCurrent()
+        defer {
+            job.profile.blockMatchingTime += CFAbsoluteTimeGetCurrent() - start
+        }
+        let baseLevel = level.0
+        let movingLevel = level.1
+        let baseSpacing = voxelSpacing(from: baseLevel.voxelToWorld)
+        let movingSpacing = voxelSpacing(from: movingLevel.voxelToWorld)
+
+        func sparseStride(spacing: Float) -> UInt32 {
+            UInt32(min(max(Int(ceil(18 / max(spacing, 0.0001))), 2), 10))
+        }
+        func blockRadius(spacing: Float) -> UInt32 {
+            let maximumRadius = metric == .gradientMagnitudeNCC ? 1 : 2
+            return UInt32(min(max(Int(ceil(5 / max(spacing, 0.0001))), 1), maximumRadius))
+        }
+        func searchRadius(spacing: Float) -> UInt32 {
+            UInt32(min(max(Int(ceil(18 / max(spacing, 0.0001))), 1), 5))
+        }
+
+        let blockStride = SIMD3<UInt32>(
+            sparseStride(spacing: baseSpacing.x),
+            sparseStride(spacing: baseSpacing.y),
+            sparseStride(spacing: baseSpacing.z)
+        )
+        let blockRadii = SIMD3<UInt32>(
+            blockRadius(spacing: baseSpacing.x),
+            blockRadius(spacing: baseSpacing.y),
+            blockRadius(spacing: baseSpacing.z)
+        )
+        let searchRadii = SIMD3<UInt32>(
+            searchRadius(spacing: movingSpacing.x),
+            searchRadius(spacing: movingSpacing.y),
+            searchRadius(spacing: movingSpacing.z)
+        )
+        let baseDimensions = baseLevel.dimensions
+        let blockGrid = SIMD3<Int>(
+            (baseDimensions.x + Int(blockStride.x) - 1) / Int(blockStride.x),
+            (baseDimensions.y + Int(blockStride.y) - 1) / Int(blockStride.y),
+            (baseDimensions.z + Int(blockStride.z) - 1) / Int(blockStride.z)
+        )
+        let resultCount = blockGrid.x * blockGrid.y * blockGrid.z
+        guard resultCount >= 8,
+              let resultBuffer = deviceRef.makeBuffer(
+                length: resultCount * MemoryLayout<BlockMatchResult>.stride,
+                options: .storageModeShared
+              ) else {
+            return nil
+        }
+        memset(resultBuffer.contents(), 0, resultBuffer.length)
+
+        let fixedToMovingTexture = registrationTextureCoordinateMatrix(
+            for: initialState,
+            fixedVoxelToWorld: baseLevel.voxelToWorld,
+            movingWorldToVoxel: simd_inverse(movingLevel.voxelToWorld),
+            movingTextureSize: movingLevel.dimensions
+        )
+        var uniforms = BlockMatchingUniforms(
+            windows: SIMD4<Float>(
+                baseRegistrationWindowLevel,
+                max(baseRegistrationWindowWidth, 1),
+                overlayRegistrationWindowLevel,
+                max(overlayRegistrationWindowWidth, 1)
+            ),
+            baseTextureSize: SIMD4<UInt32>(
+                UInt32(max(baseDimensions.x, 1)),
+                UInt32(max(baseDimensions.y, 1)),
+                UInt32(max(baseDimensions.z, 1)),
+                0
+            ),
+            movingTextureSize: SIMD4<UInt32>(
+                UInt32(max(movingLevel.dimensions.x, 1)),
+                UInt32(max(movingLevel.dimensions.y, 1)),
+                UInt32(max(movingLevel.dimensions.z, 1)),
+                0
+            ),
+            blockStrideAndFlags: SIMD4<UInt32>(
+                blockStride.x,
+                blockStride.y,
+                blockStride.z,
+                metric.rawValue
+            ),
+            blockRadius: SIMD4<UInt32>(blockRadii.x, blockRadii.y, blockRadii.z, 0),
+            searchRadius: SIMD4<UInt32>(searchRadii.x, searchRadii.y, searchRadii.z, 0),
+            fixedVoxelToMovingTexture: fixedToMovingTexture
+        )
+
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            return nil
+        }
+        encoder.setComputePipelineState(registrationBlockMatchingPipelineState)
+        encoder.setTexture(baseLevel.texture, index: 0)
+        encoder.setTexture(movingLevel.texture, index: 1)
+        encoder.setBytes(&uniforms, length: MemoryLayout<BlockMatchingUniforms>.stride, index: 0)
+        encoder.setBuffer(resultBuffer, offset: 0, index: 1)
+        encoder.dispatchThreads(
+            MTLSize(width: blockGrid.x, height: blockGrid.y, depth: blockGrid.z),
+            threadsPerThreadgroup: MTLSize(width: 4, height: 4, depth: 2)
+        )
+        encoder.endEncoding()
+        guard job.isCancelled == false else { return nil }
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        guard job.isCancelled == false,
+              commandBuffer.status == .completed else { return nil }
+
+        let results = resultBuffer.contents().bindMemory(
+            to: BlockMatchResult.self,
+            capacity: resultCount
+        )
+        let minimumScore: Float
+        switch metric {
+        case .intensityNCC:
+            minimumScore = 0.25
+        case .gradientMagnitudeNCC:
+            minimumScore = 0.12
+        case .mindSelfSimilarity:
+            minimumScore = 0.35
+        }
+        var correspondences: [BlockCorrespondence] = []
+        correspondences.reserveCapacity(min(resultCount, 512))
+        let movingDimensions = SIMD3<Float>(
+            Float(max(movingLevel.dimensions.x, 1)),
+            Float(max(movingLevel.dimensions.y, 1)),
+            Float(max(movingLevel.dimensions.z, 1))
+        )
+
+        for z in 0..<blockGrid.z {
+            guard job.isCancelled == false else { return nil }
+            for y in 0..<blockGrid.y {
+                for x in 0..<blockGrid.x {
+                    let index = (z * blockGrid.y + y) * blockGrid.x + x
+                    let result = results[index]
+                    let score = result.displacementAndScore.w
+                    guard result.quality.w > 0,
+                          score.isFinite,
+                          score >= minimumScore else {
+                        continue
+                    }
+
+                    let fixedVoxel = SIMD3<Float>(
+                        Float(min(x * Int(blockStride.x) + Int(blockStride.x) / 2, baseDimensions.x - 1)),
+                        Float(min(y * Int(blockStride.y) + Int(blockStride.y) / 2, baseDimensions.y - 1)),
+                        Float(min(z * Int(blockStride.z) + Int(blockStride.z) / 2, baseDimensions.z - 1))
+                    )
+                    let predictedMovingTexture = fixedToMovingTexture * SIMD4<Float>(fixedVoxel, 1)
+                    let movingVoxel = SIMD3<Float>(
+                        predictedMovingTexture.x * movingDimensions.x - 0.5 + result.displacementAndScore.x,
+                        predictedMovingTexture.y * movingDimensions.y - 0.5 + result.displacementAndScore.y,
+                        predictedMovingTexture.z * movingDimensions.z - 0.5 + result.displacementAndScore.z
+                    )
+                    guard movingVoxel.x >= 0,
+                          movingVoxel.x < movingDimensions.x,
+                          movingVoxel.y >= 0,
+                          movingVoxel.y < movingDimensions.y,
+                          movingVoxel.z >= 0,
+                          movingVoxel.z < movingDimensions.z else {
+                        continue
+                    }
+
+                    let fixedWorld4 = baseLevel.voxelToWorld * SIMD4<Float>(fixedVoxel, 1)
+                    let movingWorld4 = movingLevel.voxelToWorld * SIMD4<Float>(movingVoxel, 1)
+                    correspondences.append(BlockCorrespondence(
+                        movingWorld: SIMD3<Float>(movingWorld4.x, movingWorld4.y, movingWorld4.z),
+                        fixedWorld: SIMD3<Float>(fixedWorld4.x, fixedWorld4.y, fixedWorld4.z),
+                        score: score,
+                        distinctiveness: max(result.quality.y, 0)
+                    ))
+                }
+            }
+        }
+
+        if correspondences.count > 512 {
+            correspondences.sort {
+                ($0.score + min($0.distinctiveness, 0.1))
+                    > ($1.score + min($1.distinctiveness, 0.1))
+            }
+            correspondences.removeSubrange(512..<correspondences.count)
+        }
+        guard let refinedState = robustRigidState(
+            from: correspondences,
+            startingAt: initialState,
+            job: job
+        ) else {
+            MetalViewerDiagnostics.registrationTimingLog(
+                format: "MetalViewerRenderer registration blockMatching metric=%@ rejected matches=%d %.3f s",
+                metric.diagnosticName,
+                correspondences.count,
+                CFAbsoluteTimeGetCurrent() - start
+            )
+            return nil
+        }
+        MetalViewerDiagnostics.registrationTimingLog(
+            format: "MetalViewerRenderer registration blockMatching metric=%@ matches=%d grid=(%d,%d,%d) search=(%d,%d,%d) %.3f s",
+            metric.diagnosticName,
+            correspondences.count,
+            blockGrid.x,
+            blockGrid.y,
+            blockGrid.z,
+            searchRadii.x,
+            searchRadii.y,
+            searchRadii.z,
+            CFAbsoluteTimeGetCurrent() - start
+        )
+        return refinedState
+    }
+
+    private func robustRigidState(
+        from correspondences: [BlockCorrespondence],
+        startingAt initialState: RigidTransformState,
+        job: RegistrationJob
+    ) -> RigidTransformState? {
+        guard correspondences.count >= 8,
+              job.isCancelled == false else { return nil }
+
+        func median(_ values: [Float]) -> Float {
+            guard values.isEmpty == false else { return .greatestFiniteMagnitude }
+            let sorted = values.sorted()
+            let middle = sorted.count / 2
+            if sorted.count.isMultiple(of: 2) {
+                return 0.5 * (sorted[middle - 1] + sorted[middle])
+            }
+            return sorted[middle]
+        }
+
+        func residualDistances(for state: RigidTransformState) -> [Float] {
+            correspondences.map {
+                simd_length($0.fixedWorld - transformedOverlayPointWorld($0.movingWorld, for: state))
+            }
+        }
+
+        var state = initialState
+        let initialMedianResidual = median(residualDistances(for: state))
+        let rotationDerivativeStep: Float = 0.001
+
+        for _ in 0..<5 {
+            guard job.isCancelled == false else { return nil }
+            let transformedPoints = correspondences.map {
+                transformedOverlayPointWorld($0.movingWorld, for: state)
+            }
+            let distances = zip(correspondences, transformedPoints).map {
+                simd_length($0.0.fixedWorld - $0.1)
+            }
+            let medianResidual = median(distances)
+            let medianAbsoluteDeviation = median(distances.map { abs($0 - medianResidual) })
+            let robustScale = max(1.4826 * medianAbsoluteDeviation, 0.75)
+            let trimIndex = min(
+                max(Int(Float(distances.count - 1) * 0.8), 0),
+                distances.count - 1
+            )
+            let trimmedCutoff = distances.sorted()[trimIndex]
+            let tukeyCutoff = max(4.685 * robustScale, 2)
+            let residualCutoff = min(max(trimmedCutoff, 2), tukeyCutoff)
+
+            var normal = Array(repeating: Array(repeating: Double(0), count: 6), count: 6)
+            var rightHandSide = Array(repeating: Double(0), count: 6)
+            var contributingMatches = 0
+
+            for (index, correspondence) in correspondences.enumerated() {
+                guard job.isCancelled == false else { return nil }
+                let distance = distances[index]
+                guard distance <= residualCutoff else { continue }
+                let normalizedResidual = distance / max(tukeyCutoff, 0.0001)
+                let tukeyBase = max(1 - normalizedResidual * normalizedResidual, 0)
+                let tukeyWeight = tukeyBase * tukeyBase
+                let scoreWeight = max(correspondence.score, 0.05)
+                    * (0.5 + min(correspondence.distinctiveness * 5, 0.5))
+                let weight = Double(tukeyWeight * scoreWeight)
+                guard weight > 0 else { continue }
+
+                let transformed = transformedPoints[index]
+                let residual = correspondence.fixedWorld - transformed
+                var rotationDerivatives = [SIMD3<Float>]()
+                rotationDerivatives.reserveCapacity(3)
+                for axis in 0..<3 {
+                    var perturbedState = state
+                    perturbedState.rotationRadians[axis] += rotationDerivativeStep
+                    let perturbed = transformedOverlayPointWorld(
+                        correspondence.movingWorld,
+                        for: perturbedState
+                    )
+                    rotationDerivatives.append((perturbed - transformed) / rotationDerivativeStep)
+                }
+
+                for component in 0..<3 {
+                    let jacobian = [
+                        component == 0 ? Float(1) : Float(0),
+                        component == 1 ? Float(1) : Float(0),
+                        component == 2 ? Float(1) : Float(0),
+                        rotationDerivatives[0][component],
+                        rotationDerivatives[1][component],
+                        rotationDerivatives[2][component],
+                    ]
+                    for row in 0..<6 {
+                        rightHandSide[row] += weight * Double(jacobian[row] * residual[component])
+                        for column in row..<6 {
+                            normal[row][column] += weight * Double(jacobian[row] * jacobian[column])
+                        }
+                    }
+                }
+                contributingMatches += 1
+            }
+            guard contributingMatches >= 6 else { return nil }
+            for row in 0..<6 {
+                for column in 0..<row {
+                    normal[row][column] = normal[column][row]
+                }
+                normal[row][row] += row < 3 ? 1e-5 : 1e-3
+            }
+            guard var delta = solveSixBySix(normal, rightHandSide) else { return nil }
+
+            let translationDelta = SIMD3<Float>(Float(delta[0]), Float(delta[1]), Float(delta[2]))
+            let translationLength = simd_length(translationDelta)
+            if translationLength > 8 {
+                let scale = Double(8 / translationLength)
+                for index in 0..<3 { delta[index] *= scale }
+            }
+            let rotationDelta = SIMD3<Float>(Float(delta[3]), Float(delta[4]), Float(delta[5]))
+            let rotationLength = simd_length(rotationDelta)
+            let maximumRotationStep = Float(3) * .pi / 180
+            if rotationLength > maximumRotationStep {
+                let scale = Double(maximumRotationStep / rotationLength)
+                for index in 3..<6 { delta[index] *= scale }
+            }
+
+            state.translationWorld += SIMD3<Float>(Float(delta[0]), Float(delta[1]), Float(delta[2]))
+            state.rotationRadians += SIMD3<Float>(Float(delta[3]), Float(delta[4]), Float(delta[5]))
+            if simd_length(SIMD3<Float>(Float(delta[0]), Float(delta[1]), Float(delta[2]))) < 0.05,
+               simd_length(SIMD3<Float>(Float(delta[3]), Float(delta[4]), Float(delta[5]))) < 0.02 * .pi / 180 {
+                break
+            }
+        }
+
+        let finalMedianResidual = median(residualDistances(for: state))
+        guard finalMedianResidual.isFinite,
+              finalMedianResidual < initialMedianResidual,
+              finalMedianResidual <= max(initialMedianResidual * 0.9, 1.5) else {
+            return nil
+        }
+        return state
+    }
+
+    private func solveSixBySix(
+        _ matrix: [[Double]],
+        _ rightHandSide: [Double]
+    ) -> [Double]? {
+        guard matrix.count == 6,
+              matrix.allSatisfy({ $0.count == 6 }),
+              rightHandSide.count == 6 else {
+            return nil
+        }
+        var augmented = matrix.enumerated().map { row, values in
+            values + [rightHandSide[row]]
+        }
+        for pivotColumn in 0..<6 {
+            guard let pivotRow = (pivotColumn..<6).max(by: {
+                abs(augmented[$0][pivotColumn]) < abs(augmented[$1][pivotColumn])
+            }),
+                  abs(augmented[pivotRow][pivotColumn]) > 1e-10 else {
+                return nil
+            }
+            if pivotRow != pivotColumn {
+                augmented.swapAt(pivotRow, pivotColumn)
+            }
+            let pivot = augmented[pivotColumn][pivotColumn]
+            for column in pivotColumn...6 {
+                augmented[pivotColumn][column] /= pivot
+            }
+            for row in 0..<6 where row != pivotColumn {
+                let factor = augmented[row][pivotColumn]
+                guard factor != 0 else { continue }
+                for column in pivotColumn...6 {
+                    augmented[row][column] -= factor * augmented[pivotColumn][column]
+                }
+            }
+        }
+        let solution = augmented.map { $0[6] }
+        return solution.allSatisfy(\.isFinite) ? solution : nil
+    }
+
     private func optimizeOverlayTransform(
         startingAt initialGuesses: [RigidTransformState],
-        generation: UInt,
+        job: RegistrationJob,
         levelPairs: [(VolumeLevel, VolumeLevel)],
         samplingMode: RegistrationSamplingMode
     ) -> (state: RigidTransformState, metric: Float) {
@@ -3961,24 +4497,63 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         guard initialGuesses.isEmpty == false,
-              levelPairs.isEmpty == false else {
+              levelPairs.isEmpty == false,
+              job.isCancelled == false else {
             return (dicomInitialGuess(), .greatestFiniteMagnitude)
         }
+        var coarseInitialGuesses = initialGuesses
+        if slabAwareRegistration {
+            let defaultBlockMetric: BlockMatchingMetric =
+                isCTRegistrationVolume(pixList) != isCTRegistrationVolume(overlayPixList)
+                    || isCrossPlaneThinSlabRegistration()
+                ? .gradientMagnitudeNCC
+                : .intensityNCC
+            var blockMetrics = [defaultBlockMetric]
+            if usesContrastInvariantMRSlabMatching(),
+               blockMetrics.contains(.mindSelfSimilarity) == false {
+                blockMetrics.append(.mindSelfSimilarity)
+                MetalViewerDiagnostics.registrationTimingLog(
+                    "MetalViewerRenderer registration using contrast-invariant MR slab initialization"
+                )
+            }
+            for initialGuess in initialGuesses.prefix(2) {
+                for blockMetric in blockMetrics {
+                    guard let blockMatchedGuess = blockMatchingInitialGuess(
+                        startingAt: initialGuess,
+                        level: levelPairs[0],
+                        metric: blockMetric,
+                        job: job
+                    ) else {
+                        continue
+                    }
+                    let isDuplicate = coarseInitialGuesses.contains { existing in
+                        simd_length(existing.translationWorld - blockMatchedGuess.translationWorld) < 0.1
+                            && simd_length(existing.rotationRadians - blockMatchedGuess.rotationRadians) < 0.02 * .pi / 180
+                    }
+                    if isDuplicate == false {
+                        coarseInitialGuesses.append(blockMatchedGuess)
+                    }
+                }
+            }
+        }
+
         let coarseSamplingStride = registrationSamplingStride(
             for: levelPairs[0],
             samplingMode: samplingMode
         )
         let seeded = coarseSeedSearch(
-            startingAt: initialGuesses,
+            startingAt: coarseInitialGuesses,
             level: levelPairs[0],
             totalLevels: levelPairs.count,
             ctToCTRegistration: ctToCTRegistration,
-            samplingStride: coarseSamplingStride
+            samplingStride: coarseSamplingStride,
+            job: job
         )
         var best = seeded.state
         var bestMetric = seeded.metric
 
         for (levelIndex, levelPair) in levelPairs.enumerated() {
+            guard job.isCancelled == false else { return (best, bestMetric) }
             let useBoneOnly = shouldUseBoneOnlyMetric(forLevelIndex: levelIndex, totalLevels: levelPairs.count)
             let levelMetricOptions = metricOptions(forLevelIndex: levelIndex, totalLevels: levelPairs.count, useBoneOnly: useBoneOnly)
             let searchSamplingStride = registrationSamplingStride(
@@ -4014,6 +4589,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 : rigidSteps
 
             for (stepIndex, step) in stepsForLevel.enumerated() {
+                guard job.isCancelled == false else { return (best, bestMetric) }
                 let result = optimizeLevelWithNelderMead(
                     startingAt: best,
                     level: levelPair,
@@ -4024,7 +4600,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     rotationRadians: step.rotationRadians,
                     allowsRotation: step.allowsRotation,
                     maxIterations: step.maxIterations,
-                    generation: generation,
+                    job: job,
                     stepIndex: stepIndex,
                     totalSteps: stepsForLevel.count,
                     samplingStride: searchSamplingStride,
@@ -4057,7 +4633,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     progress: progress,
                     message: "Registering 3D L\(levelIndex + 1)/\(levelPairs.count)",
                     residualError: bestMetric,
-                    generation: generation
+                    generation: job.generation
                 )
             }
 
@@ -4073,7 +4649,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                         levelIndex: levelIndex,
                         totalLevels: levelPairs.count,
                         useBoneOnly: useBoneOnly,
-                        samplingStride: refinementSamplingStride
+                        samplingStride: refinementSamplingStride,
+                        job: job
                     )
                     MetalViewerDiagnostics.registrationTimingLog(
                         format: "MetalViewerRenderer registration level=%d/%d switchedToExactRefinement metric=%.6f",
@@ -4089,7 +4666,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     levelIndex: levelIndex,
                     totalLevels: levelPairs.count,
                     useBoneOnly: useBoneOnly,
-                    generation: generation,
+                    job: job,
                     samplingStride: refinementSamplingStride,
                     includeCombinedRotationCandidates: ctToCTRegistration
                 )
@@ -4107,7 +4684,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     progress: Float(levelIndex + 1) / Float(max(levelPairs.count, 1)),
                     message: "Registering 3D L\(levelIndex + 1)/\(levelPairs.count) polish",
                     residualError: bestMetric,
-                    generation: generation
+                    generation: job.generation
                 )
             } else {
                 let refinement = smoothDescentRefinement(
@@ -4117,7 +4694,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     levelIndex: levelIndex,
                     totalLevels: levelPairs.count,
                     useBoneOnly: useBoneOnly,
-                    generation: generation,
+                    job: job,
                     samplingStride: searchSamplingStride
                 )
                 best = refinement.state
@@ -4134,7 +4711,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     progress: Float(levelIndex + 1) / Float(max(levelPairs.count, 1)),
                     message: "Registering 3D L\(levelIndex + 1)/\(levelPairs.count) refine",
                     residualError: bestMetric,
-                    generation: generation
+                    generation: job.generation
                 )
             }
         }
@@ -4156,6 +4733,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             let maximumContinuationPasses = 2
 
             for continuationIndex in 0..<maximumContinuationPasses {
+                guard job.isCancelled == false else { return (best, bestMetric) }
                 let startingState = best
                 let startingMetric = bestMetric
                 let simplexResult = optimizeLevelWithNelderMead(
@@ -4168,7 +4746,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     rotationRadians: 0.25 * .pi / 180,
                     allowsRotation: true,
                     maxIterations: 18,
-                    generation: generation,
+                    job: job,
                     stepIndex: continuationIndex,
                     totalSteps: maximumContinuationPasses,
                     samplingStride: exactSamplingStride,
@@ -4187,7 +4765,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     levelIndex: finalLevelIndex,
                     totalLevels: levelPairs.count,
                     useBoneOnly: useBoneOnly,
-                    generation: generation,
+                    job: job,
                     samplingStride: exactSamplingStride
                 )
                 if descentResult.metric.isFinite,
@@ -4217,7 +4795,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     progress: 0.98 + 0.01 * Float(continuationIndex + 1),
                     message: "Registering 3D final polish",
                     residualError: bestMetric,
-                    generation: generation
+                    generation: job.generation
                 )
 
                 let meaningfulMetricImprovement = metricImprovement >= 0.00005
@@ -4239,8 +4817,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         level: (VolumeLevel, VolumeLevel),
         totalLevels: Int,
         ctToCTRegistration: Bool,
-        samplingStride: SIMD3<Int>
+        samplingStride: SIMD3<Int>,
+        job: RegistrationJob
     ) -> (state: RigidTransformState, metric: Float) {
+        guard job.isCancelled == false else {
+            return (initialStates.first ?? dicomInitialGuess(), .greatestFiniteMagnitude)
+        }
         let seedStart = CFAbsoluteTimeGetCurrent()
         let slabAwareRegistration = baseIsThinSlab || overlayIsThinSlab
         let seedDistance: Float = slabAwareRegistration ? 24 : 60
@@ -4275,7 +4857,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             levelIndex: 0,
             totalLevels: totalLevels,
             useBoneOnly: useBoneOnly,
-            samplingStride: samplingStride
+            samplingStride: samplingStride,
+            job: job
         )
         var bestCenterState = initialStates.first ?? dicomInitialGuess()
         var bestCenterMetric = Float.greatestFiniteMagnitude
@@ -4294,6 +4877,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         // reversed. Search every distinct DICOM/physical/informative center and
         // let the same full metric choose among their neighborhoods.
         for initialState in initialStates {
+            guard job.isCancelled == false else { return (bestCenterState, bestCenterMetric) }
             for translationSeed in translationSeeds {
                 for rotationSeed in rotationSeeds {
                     var candidate = initialState
@@ -4309,7 +4893,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             levelIndex: 0,
             totalLevels: totalLevels,
             useBoneOnly: useBoneOnly,
-            samplingStride: samplingStride
+            samplingStride: samplingStride,
+            job: job
         )
 
         var bestState = bestCenterState
@@ -4322,7 +4907,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         let elapsed = CFAbsoluteTimeGetCurrent() - seedStart
-        registrationCoarseSeedSearchTime += elapsed
+        job.profile.coarseSeedSearchTime += elapsed
         MetalViewerDiagnostics.registrationTimingLog(
             format: "MetalViewerRenderer registration coarseSeedSearch centers=%d seeds=%d centerBest=%.6f best=%.6f %.3f s",
             initialStates.count,
@@ -4374,14 +4959,15 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         rotationRadians: Float,
         allowsRotation: Bool,
         maxIterations: Int,
-        generation: UInt,
+        job: RegistrationJob,
         stepIndex: Int,
         totalSteps: Int,
         samplingStride: SIMD3<Int>,
         speculativelyBatchCandidates: Bool
     ) -> (state: RigidTransformState, metric: Float) {
+        guard job.isCancelled == false else { return (initialState, .greatestFiniteMagnitude) }
         let levelStart = CFAbsoluteTimeGetCurrent()
-        let startingMetricCount = registrationMetricCallCount
+        let startingMetricCount = job.profile.metricCallCount
         struct Vertex {
             var parameters: ParameterVector
             var metric: Float
@@ -4403,6 +4989,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         func metrics(for candidateParameters: [ParameterVector]) -> [Float] {
             guard candidateParameters.isEmpty == false else { return [] }
+            guard job.isCancelled == false else {
+                return Array(repeating: .greatestFiniteMagnitude, count: candidateParameters.count)
+            }
 
             var uniqueParameters: [ParameterVector] = []
             var uniqueIndexByCandidate: [Int] = []
@@ -4424,7 +5013,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 levelIndex: levelIndex,
                 totalLevels: totalLevels,
                 useBoneOnly: useBoneOnly,
-                samplingStride: samplingStride
+                samplingStride: samplingStride,
+                job: job
             )
             return uniqueIndexByCandidate.map { uniqueMetrics[$0] }
         }
@@ -4451,6 +5041,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         var bestState = state(for: simplex[0].parameters)
 
         for iteration in 0..<maxIterations {
+            guard job.isCancelled == false else { return (bestState, bestMetric) }
             sortSimplex()
             bestMetric = simplex[0].metric
             bestState = state(for: simplex[0].parameters)
@@ -4483,7 +5074,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     levelIndex: levelIndex,
                     totalLevels: totalLevels,
                     useBoneOnly: useBoneOnly,
-                    samplingStride: samplingStride
+                    samplingStride: samplingStride,
+                    job: job
                 )
             }
 
@@ -4548,7 +5140,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 progress: progress,
                 message: "Registering 3D L\(levelIndex + 1)/\(totalLevels) iter \(iteration + 1)/\(maxIterations)",
                 residualError: bestMetric,
-                generation: generation
+                generation: job.generation
             )
 
             if parameterSpan < Swift.max(translationMM * 0.25, rotationRadians * 0.25) && metricSpan < 0.0001 {
@@ -4557,9 +5149,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         sortSimplex()
-        let metricCalls = registrationMetricCallCount - startingMetricCount
+        let metricCalls = job.profile.metricCallCount - startingMetricCount
         let elapsed = CFAbsoluteTimeGetCurrent() - levelStart
-        registrationNelderMeadTime += elapsed
+        job.profile.nelderMeadTime += elapsed
         MetalViewerDiagnostics.registrationTimingLog(
             format: "MetalViewerRenderer optimizeLevelWithNelderMead level=%d/%d step=%d/%d calls=%d best=%.6f %.3f s",
             levelIndex + 1,
@@ -4580,11 +5172,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         levelIndex: Int,
         totalLevels: Int,
         useBoneOnly: Bool,
-        generation: UInt,
+        job: RegistrationJob,
         samplingStride: SIMD3<Int>
     ) -> (state: RigidTransformState, metric: Float) {
+        guard job.isCancelled == false else { return (initialState, initialMetric) }
         let descentStart = CFAbsoluteTimeGetCurrent()
-        let startingMetricCount = registrationMetricCallCount
+        let startingMetricCount = job.profile.metricCallCount
         let isFinalLevel = levelIndex == totalLevels - 1
         let slabAwareRegistration = baseIsThinSlab || overlayIsThinSlab
         var translationStep: Float
@@ -4614,10 +5207,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         while pass < maxPasses,
               translationStep >= minTranslationStep || rotationStep >= minRotationStep {
+            guard job.isCancelled == false else { return (bestState, bestMetric) }
             pass += 1
             var improvedThisPass = false
 
             for dimension in 0..<6 {
+                guard job.isCancelled == false else { return (bestState, bestMetric) }
                 let step: Float
                 if dimension < 3 {
                     step = translationStep >= minTranslationStep ? translationStep : 0
@@ -4639,7 +5234,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     levelIndex: levelIndex,
                     totalLevels: totalLevels,
                     useBoneOnly: useBoneOnly,
-                    samplingStride: samplingStride
+                    samplingStride: samplingStride,
+                    job: job
                 )
 
                 for (candidate, candidateMetric) in zip(candidateParameters, candidateMetrics) {
@@ -4671,13 +5267,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 progress: (Float(levelIndex) + 0.9 + 0.1 * Float(pass) / Float(max(maxPasses, 1))) / Float(max(totalLevels, 1)),
                 message: "Registering 3D L\(levelIndex + 1)/\(totalLevels) smooth",
                 residualError: bestMetric,
-                generation: generation
+                generation: job.generation
             )
         }
 
-        let metricCalls = registrationMetricCallCount - startingMetricCount
+        let metricCalls = job.profile.metricCallCount - startingMetricCount
         let elapsed = CFAbsoluteTimeGetCurrent() - descentStart
-        registrationSmoothDescentTime += elapsed
+        job.profile.smoothDescentTime += elapsed
         MetalViewerDiagnostics.registrationTimingLog(
             format: "MetalViewerRenderer smoothDescentRefinement level=%d/%d passes=%d calls=%d best=%.6f finalStep=(%.3fmm, %.4fdeg) %.3f s",
             levelIndex + 1,
@@ -4699,12 +5295,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         levelIndex: Int,
         totalLevels: Int,
         useBoneOnly: Bool,
-        generation: UInt,
+        job: RegistrationJob,
         samplingStride: SIMD3<Int>,
         includeCombinedRotationCandidates: Bool = true
     ) -> (state: RigidTransformState, metric: Float) {
+        guard job.isCancelled == false else { return (initialState, initialMetric) }
         let descentStart = CFAbsoluteTimeGetCurrent()
-        let startingMetricCount = registrationMetricCallCount
+        let startingMetricCount = job.profile.metricCallCount
         let isFinalLevel = levelIndex == totalLevels - 1
         let slabAwareRegistration = baseIsThinSlab || overlayIsThinSlab
         var translationStep: Float = slabAwareRegistration ? (isFinalLevel ? 0.5 : 1.5) : (isFinalLevel ? 0.8 : 2.0)
@@ -4719,6 +5316,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         while pass < maxPasses,
               translationStep >= minTranslationStep || rotationStep >= minRotationStep {
+            guard job.isCancelled == false else { return (bestState, bestMetric) }
             pass += 1
             var candidateStates: [RigidTransformState] = []
             candidateStates.reserveCapacity(includeCombinedRotationCandidates ? 38 : 12)
@@ -4785,7 +5383,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 levelIndex: levelIndex,
                 totalLevels: totalLevels,
                 useBoneOnly: useBoneOnly,
-                samplingStride: samplingStride
+                samplingStride: samplingStride,
+                job: job
             )
 
             var bestCandidateState = bestState
@@ -4813,13 +5412,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 progress: (Float(levelIndex) + 0.9 + 0.1 * Float(pass) / Float(max(maxPasses, 1))) / Float(max(totalLevels, 1)),
                 message: "Registering 3D L\(levelIndex + 1)/\(totalLevels) polish",
                 residualError: bestMetric,
-                generation: generation
+                generation: job.generation
             )
         }
 
-        let metricCalls = registrationMetricCallCount - startingMetricCount
+        let metricCalls = job.profile.metricCallCount - startingMetricCount
         let elapsed = CFAbsoluteTimeGetCurrent() - descentStart
-        registrationBatchedDescentTime += elapsed
+        job.profile.batchedDescentTime += elapsed
         MetalViewerDiagnostics.registrationTimingLog(
             format: "MetalViewerRenderer batchedDescentRefinement level=%d/%d passes=%d calls=%d best=%.6f finalStep=(%.3fmm, %.4fdeg) %.3f s",
             levelIndex + 1,
@@ -4874,7 +5473,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             let statusMessage: String
             let displayMessage: String
             if let residualError {
-                let scoreMessage = "NMI Score: \(String(format: "%.6f", -residualError))"
+                let metricName = self.usesContrastInvariantMRSlabMatching() ? "MIND" : "NMI"
+                let scoreMessage = "\(metricName) Score: \(String(format: "%.6f", -residualError))"
                 statusMessage = "\(baseMessage)  \(scoreMessage)"
                 displayMessage = "\(baseMessage)\n\(scoreMessage)"
             } else {
@@ -4924,14 +5524,42 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         dimensions.x * dimensions.y * dimensions.z
     }
 
+    private func mindMetricComponents(
+        histogram: UnsafePointer<UInt32>
+    ) -> (similarity: Double, overlapCount: Int, validDescriptorCount: Int)? {
+        let overlapCount = Int(histogram[registrationMINDOverlapCountIndex])
+        let validDescriptorCount = Int(histogram[registrationMINDValidDescriptorCountIndex])
+        guard overlapCount > 0,
+              validDescriptorCount > 0 else { return nil }
+
+        // Geometric overlap alone is insufficient for a descriptor metric: a
+        // mostly featureless intersection can otherwise win from a handful of
+        // informative voxels. Keep this deliberately conservative so small,
+        // targeted slabs remain valid at coarse pyramid levels.
+        let fractionalMinimum = Int(ceil(Double(overlapCount) * 0.01))
+        let minimumValidDescriptorCount = min(overlapCount, max(32, fractionalMinimum))
+        guard validDescriptorCount >= minimumValidDescriptorCount else { return nil }
+
+        let agreementSum = UInt64(histogram[registrationMINDAgreementLowIndex])
+            | (UInt64(histogram[registrationMINDAgreementHighIndex]) << 32)
+        let denominator = Double(validDescriptorCount) * registrationMINDAgreementScale
+        return (
+            similarity: Double(agreementSum) / denominator,
+            overlapCount: overlapCount,
+            validDescriptorCount: validDescriptorCount
+        )
+    }
+
     private func directionalMetricValue(
         for state: RigidTransformState,
         level: (VolumeLevel, VolumeLevel),
         levelIndex: Int,
         totalLevels: Int,
         useBoneOnly: Bool,
-        samplingStride requestedSamplingStride: SIMD3<Int>
+        samplingStride requestedSamplingStride: SIMD3<Int>,
+        job: RegistrationJob
     ) -> Float {
+        guard job.isCancelled == false else { return .greatestFiniteMagnitude }
         let metricStart = CFAbsoluteTimeGetCurrent()
         var setupElapsed: CFTimeInterval = 0
         var gpuElapsed: CFTimeInterval = 0
@@ -4943,14 +5571,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             let classifiedSetupElapsed = setupElapsed > 0
                 ? setupElapsed
                 : max(totalElapsed - gpuElapsed - cpuElapsed, 0)
-            registrationMetricCallCount += 1
-            registrationMetricDispatchCount += 1
-            registrationMetricSetupTime += classifiedSetupElapsed
-            registrationMetricGPUTime += gpuElapsed
-            registrationMetricGPUExecutionTime += gpuExecutionElapsed
-            registrationMetricCPUTime += cpuElapsed
-            registrationMetricVoxelCandidateCount += voxelCandidateCount
-            registrationMetricTotalTime += totalElapsed
+            job.profile.metricCallCount += 1
+            job.profile.metricDispatchCount += 1
+            job.profile.metricSetupTime += classifiedSetupElapsed
+            job.profile.metricGPUTime += gpuElapsed
+            job.profile.metricGPUExecutionTime += gpuExecutionElapsed
+            job.profile.metricCPUTime += cpuElapsed
+            job.profile.metricVoxelCandidateCount += voxelCandidateCount
+            job.profile.metricTotalTime += totalElapsed
         }
 
         let baseVolumeTexture = level.0.texture
@@ -5020,6 +5648,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
 
         setupElapsed = CFAbsoluteTimeGetCurrent() - metricStart
+        guard job.isCancelled == false else { return .greatestFiniteMagnitude }
         let gpuStart = CFAbsoluteTimeGetCurrent()
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
@@ -5027,7 +5656,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         if commandBuffer.gpuEndTime > commandBuffer.gpuStartTime {
             gpuExecutionElapsed = commandBuffer.gpuEndTime - commandBuffer.gpuStartTime
         }
-        registrationMetricNominalVoxelCandidateCount += UInt64(baseVolumeTexture.width)
+        guard job.isCancelled == false else { return .greatestFiniteMagnitude }
+        job.profile.metricNominalVoxelCandidateCount += UInt64(baseVolumeTexture.width)
             * UInt64(baseVolumeTexture.height)
             * UInt64(baseVolumeTexture.depth)
         voxelCandidateCount = UInt64(baseSampleGridSize.x)
@@ -5039,19 +5669,38 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let cpuStart = CFAbsoluteTimeGetCurrent()
 
         let histogram = histogramBuffer.contents().bindMemory(to: UInt32.self, capacity: histogramEntryCount)
-        var overlapCount = 0
-        for index in 0..<histogramEntryCount {
-            overlapCount += Int(histogram[index])
+        let metricMode = Int(options.x.rounded())
+        let overlapCount: Int
+        let acceptedSampleCount: Int
+        let similarity: Double
+        if metricMode == 4 {
+            guard let components = mindMetricComponents(histogram: histogram) else {
+                return .greatestFiniteMagnitude
+            }
+            overlapCount = components.overlapCount
+            acceptedSampleCount = components.validDescriptorCount
+            similarity = components.similarity
+        } else {
+            var histogramTotal = 0
+            for index in 0..<histogramEntryCount {
+                histogramTotal += Int(histogram[index])
+            }
+            overlapCount = histogramTotal
+            guard let nmi = smoothedNormalizedMutualInformation(
+                histogram: histogram,
+                bins: registrationHistogramBins
+            ) else {
+                return .greatestFiniteMagnitude
+            }
+            similarity = nmi
+            acceptedSampleCount = overlapCount
         }
-        registrationMetricAcceptedSampleCount += UInt64(overlapCount)
+        job.profile.metricAcceptedSampleCount += UInt64(acceptedSampleCount)
         guard overlapCount > 0 else {
             return .greatestFiniteMagnitude
         }
 
         let overlapTotal = Double(overlapCount)
-        guard let nmi = smoothedNormalizedMutualInformation(histogram: histogram, bins: registrationHistogramBins) else {
-            return .greatestFiniteMagnitude
-        }
         let overlapPenalty = registrationOverlapPenalty(
             overlapTotal: overlapTotal,
             fixedVoxelCount: registrationVoxelCount(baseSampleGridSize),
@@ -5060,7 +5709,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             state: state
         )
 
-        let metric = Float(-nmi) + overlapPenalty
+        let metric = Float(-similarity) + overlapPenalty
         cpuElapsed = CFAbsoluteTimeGetCurrent() - cpuStart
         return metric
     }
@@ -5070,12 +5719,23 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return (baseIsThinSlab || overlayIsThinSlab)
             && isCTRegistrationVolume(pixList) == false
             && isCTRegistrationVolume(overlayPixList) == false
-            && (metricMode == 0 || metricMode == 2)
+            && (metricMode == 0 || metricMode == 2 || metricMode == 4)
     }
 
     private func bidirectionalMetricWeights(
         for level: (VolumeLevel, VolumeLevel)
     ) -> (forward: Float, reverse: Float) {
+        if isUnequalCoverageThinSlabRegistration() {
+            // Partial-to-full registration is not a symmetric problem. Always
+            // evaluate the smaller, targeted slab as the fixed domain so an
+            // arbitrary section of the larger volume cannot dominate merely
+            // by contributing many more samples. This remains independent of
+            // the order in which the user selected the two series.
+            return baseIsThinSlab
+                ? (forward: 1, reverse: 0)
+                : (forward: 0, reverse: 1)
+        }
+
         func physicalCoverage(of volumeLevel: VolumeLevel) -> Float {
             let spacing = voxelSpacing(from: volumeLevel.voxelToWorld)
             let size = SIMD3<Float>(
@@ -5103,7 +5763,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         levelIndex: Int,
         totalLevels: Int,
         useBoneOnly: Bool,
-        samplingStride: SIMD3<Int>
+        samplingStride: SIMD3<Int>,
+        job: RegistrationJob
     ) -> Float {
         let options = metricOptions(
             forLevelIndex: levelIndex,
@@ -5117,7 +5778,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 levelIndex: levelIndex,
                 totalLevels: totalLevels,
                 useBoneOnly: useBoneOnly,
-                samplingStride: samplingStride
+                samplingStride: samplingStride,
+                job: job
             ).first ?? .greatestFiniteMagnitude
         }
         return directionalMetricValue(
@@ -5126,7 +5788,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             levelIndex: levelIndex,
             totalLevels: totalLevels,
             useBoneOnly: useBoneOnly,
-            samplingStride: samplingStride
+            samplingStride: samplingStride,
+            job: job
         )
     }
 
@@ -5136,14 +5799,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         levelIndex: Int,
         totalLevels: Int,
         useBoneOnly: Bool,
-        samplingStride: SIMD3<Int>
+        samplingStride: SIMD3<Int>,
+        job: RegistrationJob
     ) -> [Float] {
         guard states.isEmpty == false else { return [] }
+        guard job.isCancelled == false else {
+            return Array(repeating: .greatestFiniteMagnitude, count: states.count)
+        }
         let options = metricOptions(forLevelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)
         let usesBidirectionalMetric = usesBidirectionalSlabMetric(options: options)
         let metricWeights = usesBidirectionalMetric
             ? bidirectionalMetricWeights(for: level)
             : (forward: Float(1), reverse: Float(0))
+        let evaluatesForwardDirection = metricWeights.forward > 0
+        let evaluatesReverseDirection = usesBidirectionalMetric && metricWeights.reverse > 0
         guard states.count > 1 || usesBidirectionalMetric else {
             return states.map {
                 directionalMetricValue(
@@ -5152,7 +5821,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     levelIndex: levelIndex,
                     totalLevels: totalLevels,
                     useBoneOnly: useBoneOnly,
-                    samplingStride: samplingStride
+                    samplingStride: samplingStride,
+                    job: job
                 )
             }
         }
@@ -5168,14 +5838,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             let classifiedSetupElapsed = setupElapsed > 0
                 ? setupElapsed
                 : max(totalElapsed - gpuElapsed - cpuElapsed, 0)
-            registrationMetricCallCount += states.count
-            registrationMetricDispatchCount += 1
-            registrationMetricSetupTime += classifiedSetupElapsed
-            registrationMetricGPUTime += gpuElapsed
-            registrationMetricGPUExecutionTime += gpuExecutionElapsed
-            registrationMetricCPUTime += cpuElapsed
-            registrationMetricVoxelCandidateCount += voxelCandidateCount
-            registrationMetricTotalTime += totalElapsed
+            job.profile.metricCallCount += states.count
+            job.profile.metricDispatchCount += 1
+            job.profile.metricSetupTime += classifiedSetupElapsed
+            job.profile.metricGPUTime += gpuElapsed
+            job.profile.metricGPUExecutionTime += gpuExecutionElapsed
+            job.profile.metricCPUTime += cpuElapsed
+            job.profile.metricVoxelCandidateCount += voxelCandidateCount
+            job.profile.metricTotalTime += totalElapsed
         }
 
         let baseVolumeTexture = level.0.texture
@@ -5284,14 +5954,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             depth: (baseSampleGridSize.z * candidateTileCount + threadsPerGroup.depth - 1) / threadsPerGroup.depth
         )
         encoder.setComputePipelineState(registrationBatchPipelineState)
-        encoder.setTexture(baseVolumeTexture, index: 0)
-        encoder.setTexture(overlayVolumeTexture, index: 1)
-        encoder.setBuffer(uniformBuffer, offset: 0, index: 0)
-        encoder.setBuffer(histogramBuffer, offset: 0, index: 1)
         encoder.setBytes(&candidateCount, length: MemoryLayout<UInt32>.stride, index: 2)
-        encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerGroup)
+        if evaluatesForwardDirection {
+            encoder.setTexture(baseVolumeTexture, index: 0)
+            encoder.setTexture(overlayVolumeTexture, index: 1)
+            encoder.setBuffer(uniformBuffer, offset: 0, index: 0)
+            encoder.setBuffer(histogramBuffer, offset: 0, index: 1)
+            encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerGroup)
+        }
 
-        if usesBidirectionalMetric {
+        if evaluatesReverseDirection {
             let reverseThreadgroups = MTLSize(
                 width: (overlaySampleGridSize.x + threadsPerGroup.width - 1) / threadsPerGroup.width,
                 height: (overlaySampleGridSize.y + threadsPerGroup.height - 1) / threadsPerGroup.height,
@@ -5306,6 +5978,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
 
         setupElapsed = CFAbsoluteTimeGetCurrent() - metricStart
+        guard job.isCancelled == false else {
+            return Array(repeating: .greatestFiniteMagnitude, count: states.count)
+        }
         let gpuStart = CFAbsoluteTimeGetCurrent()
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
@@ -5313,27 +5988,35 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         if commandBuffer.gpuEndTime > commandBuffer.gpuStartTime {
             gpuExecutionElapsed = commandBuffer.gpuEndTime - commandBuffer.gpuStartTime
         }
-        registrationMetricNominalVoxelCandidateCount += UInt64(baseVolumeTexture.width)
-            * UInt64(baseVolumeTexture.height)
-            * UInt64(baseVolumeTexture.depth)
-            * UInt64(states.count)
-        if usesBidirectionalMetric {
-            registrationMetricNominalVoxelCandidateCount += UInt64(overlayVolumeTexture.width)
+        guard job.isCancelled == false else {
+            return Array(repeating: .greatestFiniteMagnitude, count: states.count)
+        }
+        if evaluatesForwardDirection {
+            job.profile.metricNominalVoxelCandidateCount += UInt64(baseVolumeTexture.width)
+                * UInt64(baseVolumeTexture.height)
+                * UInt64(baseVolumeTexture.depth)
+                * UInt64(states.count)
+        }
+        if evaluatesReverseDirection {
+            job.profile.metricNominalVoxelCandidateCount += UInt64(overlayVolumeTexture.width)
                 * UInt64(overlayVolumeTexture.height)
                 * UInt64(overlayVolumeTexture.depth)
                 * UInt64(states.count)
         }
-        voxelCandidateCount = UInt64(baseSampleGridSize.x)
-            * UInt64(baseSampleGridSize.y)
-            * UInt64(baseSampleGridSize.z)
-            * UInt64(states.count)
-        if usesBidirectionalMetric {
+        if evaluatesForwardDirection {
+            voxelCandidateCount = UInt64(baseSampleGridSize.x)
+                * UInt64(baseSampleGridSize.y)
+                * UInt64(baseSampleGridSize.z)
+                * UInt64(states.count)
+        }
+        if evaluatesReverseDirection {
             voxelCandidateCount += UInt64(overlaySampleGridSize.x)
                 * UInt64(overlaySampleGridSize.y)
                 * UInt64(overlaySampleGridSize.z)
                 * UInt64(states.count)
         }
-        guard commandBuffer.status == .completed else {
+        guard job.isCancelled == false,
+              commandBuffer.status == .completed else {
             return Array(repeating: .greatestFiniteMagnitude, count: states.count)
         }
 
@@ -5349,16 +6032,34 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 fixedGridSize: SIMD3<Int>,
                 movingGridSize: SIMD3<Int>
             ) -> Float? {
-                var overlapCount = 0
-                for index in 0..<histogramEntryCount {
-                    overlapCount += Int(candidateHistogram[index])
-                }
-                acceptedSampleCount += overlapCount
-                guard overlapCount > 0,
-                      let nmi = smoothedNormalizedMutualInformation(
+                let metricMode = Int(options.x.rounded())
+                let overlapCount: Int
+                let metricAcceptedSampleCount: Int
+                let similarity: Double
+                if metricMode == 4 {
+                    guard let components = mindMetricComponents(histogram: candidateHistogram) else {
+                        return nil
+                    }
+                    overlapCount = components.overlapCount
+                    metricAcceptedSampleCount = components.validDescriptorCount
+                    similarity = components.similarity
+                } else {
+                    var histogramTotal = 0
+                    for index in 0..<histogramEntryCount {
+                        histogramTotal += Int(candidateHistogram[index])
+                    }
+                    overlapCount = histogramTotal
+                    guard let nmi = smoothedNormalizedMutualInformation(
                         histogram: candidateHistogram,
                         bins: registrationHistogramBins
-                      ) else {
+                    ) else {
+                        return nil
+                    }
+                    similarity = nmi
+                    metricAcceptedSampleCount = overlapCount
+                }
+                acceptedSampleCount += metricAcceptedSampleCount
+                guard overlapCount > 0 else {
                     return nil
                 }
 
@@ -5369,40 +6070,46 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     options: options,
                     state: state
                 )
-                return Float(-nmi) + overlapPenalty
+                return Float(-similarity) + overlapPenalty
             }
 
-            let forwardHistogram = UnsafePointer(
-                histogram.advanced(by: candidateIndex * histogramEntryCount)
-            )
-            guard let forwardMetric = directionalMetric(
-                histogram: forwardHistogram,
-                fixedGridSize: baseSampleGridSize,
-                movingGridSize: overlaySampleGridSize
-            ) else {
-                return .greatestFiniteMagnitude
+            var weightedMetric: Float = 0
+            if metricWeights.forward > 0 {
+                let forwardHistogram = UnsafePointer(
+                    histogram.advanced(by: candidateIndex * histogramEntryCount)
+                )
+                guard let forwardMetric = directionalMetric(
+                    histogram: forwardHistogram,
+                    fixedGridSize: baseSampleGridSize,
+                    movingGridSize: overlaySampleGridSize
+                ) else {
+                    return .greatestFiniteMagnitude
+                }
+                weightedMetric += metricWeights.forward * forwardMetric
             }
 
             guard usesBidirectionalMetric else {
-                return forwardMetric
+                return weightedMetric
             }
 
-            let reverseHistogramOffset = histogramEntryCount * states.count
-                + candidateIndex * histogramEntryCount
-            let reverseHistogram = UnsafePointer(
-                histogram.advanced(by: reverseHistogramOffset)
-            )
-            guard let reverseMetric = directionalMetric(
-                histogram: reverseHistogram,
-                fixedGridSize: overlaySampleGridSize,
-                movingGridSize: baseSampleGridSize
-            ) else {
-                return .greatestFiniteMagnitude
+            if metricWeights.reverse > 0 {
+                let reverseHistogramOffset = histogramEntryCount * states.count
+                    + candidateIndex * histogramEntryCount
+                let reverseHistogram = UnsafePointer(
+                    histogram.advanced(by: reverseHistogramOffset)
+                )
+                guard let reverseMetric = directionalMetric(
+                    histogram: reverseHistogram,
+                    fixedGridSize: overlaySampleGridSize,
+                    movingGridSize: baseSampleGridSize
+                ) else {
+                    return .greatestFiniteMagnitude
+                }
+                weightedMetric += metricWeights.reverse * reverseMetric
             }
-            return metricWeights.forward * forwardMetric
-                + metricWeights.reverse * reverseMetric
+            return weightedMetric
         }
-        registrationMetricAcceptedSampleCount += UInt64(acceptedSampleCount)
+        job.profile.metricAcceptedSampleCount += UInt64(acceptedSampleCount)
         cpuElapsed = CFAbsoluteTimeGetCurrent() - cpuStart
         return metrics
     }
@@ -5487,6 +6194,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let overlapFraction = overlapTotal / max(overlapDenominator, 1)
         let slabAwareRegistration = baseIsThinSlab || overlayIsThinSlab
         let mode = Int(options.x.rounded())
+        let usesContrastInvariantSlabMetric = mode == 4
         var residualRotationPenalty: Float = 0
 
         if slabAwareRegistration,
@@ -5497,7 +6205,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             // Euler angles therefore represent patient repositioning only.
             // Large residual rotations in limited-coverage head MR are false
             // cross-plane intersections, not plausible rigid registrations.
-            let maximumResidualRotation = Float(15) * .pi / 180
+            let maximumResidualRotation = (usesContrastInvariantSlabMetric ? Float(12) : Float(15))
+                * .pi / 180
             let largestRotation = max(
                 abs(state.rotationRadians.x),
                 max(abs(state.rotationRadians.y), abs(state.rotationRadians.z))
@@ -5505,7 +6214,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             guard largestRotation <= maximumResidualRotation else {
                 return .greatestFiniteMagnitude
             }
-            let unpenalizedRotation = (isCrossPlaneThinSlabRegistration() ? Float(8) : Float(10))
+            let unpenalizedRotation = (
+                usesContrastInvariantSlabMetric
+                    ? Float(6)
+                    : (isCrossPlaneThinSlabRegistration() ? Float(8) : Float(10))
+            )
                 * .pi / 180
             if largestRotation > unpenalizedRotation {
                 let excessFraction = (largestRotation - unpenalizedRotation)
@@ -5527,6 +6240,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             guard overlapFraction >= minimumReliableOverlap else {
                 return .greatestFiniteMagnitude
             }
+        } else if mode == 4 {
+            // A small targeted orbit slab should be almost entirely contained
+            // by the larger 3D head acquisition. A descriptor computed from a
+            // thin accidental intersection can otherwise look deceptively strong.
+            guard overlapFraction >= 0.5 else {
+                return .greatestFiniteMagnitude
+            }
         }
 
         let minimumUsefulOverlap: Double
@@ -5538,6 +6258,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 : (slabAwareRegistration ? 0.015 : 0.003)
         } else if mode == 3 {
             minimumUsefulOverlap = slabAwareRegistration ? 0.10 : 0.006
+        } else if mode == 4 {
+            minimumUsefulOverlap = slabAwareRegistration ? 0.20 : 0.08
         } else {
             minimumUsefulOverlap = slabAwareRegistration ? 0.15 : 0.08
         }
@@ -5553,6 +6275,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         case 1: return "boneNMI"
         case 2: return "structureNMI"
         case 3: return "fixedCTBodyNMI"
+        case 4: return "MIND"
         default: return "NMI"
         }
     }
@@ -5581,6 +6304,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let fixedVolumeIsCT = isCTRegistrationVolume(pixList)
         if fixedVolumeIsCT && (slabAwareRegistration == false || isCTRegistrationVolume(overlayPixList)) {
             return SIMD4<Float>(3, -700, 3000, 0)
+        }
+
+        if usesContrastInvariantMRSlabMatching() {
+            // Partial fat-suppressed SE and non-fat-suppressed GRE volumes do
+            // not have a stable intensity relationship. Optimize a local
+            // modality-independent self-similarity descriptor throughout this
+            // path instead of allowing a false raw-NMI overlap to dominate.
+            return SIMD4<Float>(4, 0, 0, 0)
         }
 
         if usesStructureOnlyCrossPlaneMetric() {

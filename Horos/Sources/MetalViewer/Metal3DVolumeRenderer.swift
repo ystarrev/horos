@@ -4,6 +4,9 @@ import Metal
 import MetalKit
 import simd
 
+private let metal3DBrickSize = 8
+private let metal3DOpacityRangeSize = 256
+
 enum Metal3DCropPlane: CaseIterable {
     case minX
     case maxX
@@ -213,6 +216,12 @@ private struct Metal3DVolumeUniforms {
     var specularPower: Float
     var hasCLUT: UInt32
     var skinMaskEnabled: UInt32
+    var brickGridDimensions: SIMD3<UInt32>
+    var brickSize: UInt32
+    var opacityRangeSize: UInt32
+    var opacityAtMinimum: UInt32
+    var opacityAtMaximum: UInt32
+    var emptySpaceSkippingEnabled: UInt32
     var viewProjectionMatrix: simd_float4x4
 }
 
@@ -228,6 +237,10 @@ private struct Metal3DHistogramUniforms {
     var domain: SIMD2<Float>
     var binCount: UInt32
     var padding: UInt32 = 0
+}
+
+private struct Metal3DGradientUniforms {
+    var voxelSpacing: SIMD4<Float>
 }
 
 private struct Metal3DOverlayVertex {
@@ -274,6 +287,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private let overlayPipelineState: MTLRenderPipelineState
     private let resampleVolumePipelineState: MTLComputePipelineState
     private let histogramPipelineState: MTLComputePipelineState
+    private let gradientPipelineState: MTLComputePipelineState
+    private let brickMinMaxPipelineState: MTLComputePipelineState
     private let samplerState: MTLSamplerState
     private let maskSamplerState: MTLSamplerState
     private let vertexBuffer: MTLBuffer
@@ -312,8 +327,11 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private static let skinClipDepthPreferenceKey = "Metal3DSkinShellThicknessMM"
 
     private var volumeTexture: MTLTexture?
+    private var gradientTexture: MTLTexture?
+    private var brickMinMaxTexture: MTLTexture?
     private var clutTexture: MTLTexture?
     private var opacityTexture: MTLTexture?
+    private var opacityRangeTexture: MTLTexture?
     private var preIntegratedTransferTexture: MTLTexture?
     private var skinMaskTexture: MTLTexture?
     private var skinSurfaceVertexBuffer: MTLBuffer?
@@ -353,6 +371,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var preparedFullDynamicWindow: MetalViewerWindowLevel?
     private var currentCLUTPixels = [SIMD4<UInt8>]()
     private var currentOpacityPoints = [String]()
+    private var currentOpacityValues = [Float]()
     private var cameraRotation: simd_quatf
     private var orbitRadius: Float
     private var orthographicZoomScale: Float = 1.0
@@ -364,6 +383,11 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private(set) var currentSkinClipDepthMM: Float = 6.0
     private var skinMaskExtractionAttempted = false
     private var skinSurfaceExtractionAttempted = false
+    private let frameSchedulingLock = NSLock()
+    private let singleFrameRayMarchPixelThreshold = 4_000_000
+    private var inFlightFrameCount = 0
+    private var pendingFrameRequest = false
+    private var pendingFrameConcurrencyLimit = 1
 
     init(device: MTLDevice, pixList: [DCMPix]) {
         self.deviceRef = device
@@ -475,7 +499,9 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
               let overlayVertexFunction = library.makeFunction(name: "metal3DOverlayVertexMain"),
               let overlayFragmentFunction = library.makeFunction(name: "metal3DOverlayFragment"),
               let resampleVolumeFunction = library.makeFunction(name: "metalViewerGantryTiltResample3D"),
-              let histogramFunction = library.makeFunction(name: "metal3DHistogram") else {
+              let histogramFunction = library.makeFunction(name: "metal3DHistogram"),
+              let gradientFunction = library.makeFunction(name: "metal3DGradientVolume"),
+              let brickMinMaxFunction = library.makeFunction(name: "metal3DBrickMinMax") else {
             fatalError("Could not load Metal 3D volume shader functions.")
         }
 
@@ -508,6 +534,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             overlayPipelineState = try device.makeRenderPipelineState(descriptor: overlayPipelineDescriptor)
             resampleVolumePipelineState = try device.makeComputePipelineState(function: resampleVolumeFunction)
             histogramPipelineState = try device.makeComputePipelineState(function: histogramFunction)
+            gradientPipelineState = try device.makeComputePipelineState(function: gradientFunction)
+            brickMinMaxPipelineState = try device.makeComputePipelineState(function: brickMinMaxFunction)
         } catch {
             fatalError("Could not create a 3D Metal pipeline: \(error)")
         }
@@ -568,23 +596,51 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     func draw(in view: MTKView) {
+        let requestedDrawableSize = view.drawableSize
+        let camera = currentCameraState(for: requestedDrawableSize)
+        let requestedRenderTargetSize = CGSize(
+            width: max(CGFloat(requestedDrawableSize.width), 1),
+            height: max(CGFloat(requestedDrawableSize.height), 1)
+        )
+        let requestedScissorRect = volumeScissorRect(
+            for: requestedRenderTargetSize,
+            camera: camera
+        )
+        let requestedRayMarchPixelCount =
+            (requestedScissorRect?.width ?? 0) * (requestedScissorRect?.height ?? 0)
+        let frameConcurrencyLimit = requestedRayMarchPixelCount >= singleFrameRayMarchPixelThreshold
+            ? 1
+            : 2
+        guard beginScheduledFrame(concurrencyLimit: frameConcurrencyLimit) else {
+            return
+        }
+
+        var frameWasCommitted = false
+        defer {
+            if frameWasCommitted == false {
+                completeScheduledFrame(in: view)
+            }
+        }
+
         guard let renderPassDescriptor = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable,
               let commandBuffer = commandQueue.makeCommandBuffer(),
               let volumeTexture,
+              let gradientTexture,
+              let brickMinMaxTexture,
               let clutTexture,
-              let opacityTexture else {
+              let opacityTexture,
+              let opacityRangeTexture else {
             return
         }
 
         renderPassDescriptor.depthAttachment.loadAction = .clear
-        renderPassDescriptor.depthAttachment.storeAction = .store
+        renderPassDescriptor.depthAttachment.storeAction = .dontCare
         renderPassDescriptor.depthAttachment.clearDepth = 1.0
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
             return
         }
 
-        let camera = currentCameraState(for: view.drawableSize)
         var uniforms = makeUniforms(for: view.drawableSize, camera: camera)
 
         encoder.setRenderPipelineState(pipelineState)
@@ -596,9 +652,28 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         encoder.setFragmentTexture(opacityTexture, index: 2)
         encoder.setFragmentTexture(preIntegratedTransferTexture ?? clutTexture, index: 3)
         encoder.setFragmentTexture(skinMaskTexture ?? emptySkinMaskTexture, index: 4)
+        encoder.setFragmentTexture(gradientTexture, index: 5)
+        encoder.setFragmentTexture(brickMinMaxTexture, index: 6)
+        encoder.setFragmentTexture(opacityRangeTexture, index: 7)
         encoder.setFragmentSamplerState(samplerState, index: 0)
         encoder.setFragmentSamplerState(maskSamplerState, index: 1)
-        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        let renderTargetSize = CGSize(
+            width: CGFloat(drawable.texture.width),
+            height: CGFloat(drawable.texture.height)
+        )
+        let rayMarchScissorRect = volumeScissorRect(for: renderTargetSize, camera: camera)
+        if let volumeScissorRect = rayMarchScissorRect {
+            encoder.setScissorRect(volumeScissorRect)
+            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            encoder.setScissorRect(
+                MTLScissorRect(
+                    x: 0,
+                    y: 0,
+                    width: drawable.texture.width,
+                    height: drawable.texture.height
+                )
+            )
+        }
 
         if showSkinSurface {
             drawSkinSurfaceOverlay(with: encoder, camera: camera)
@@ -615,7 +690,50 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
 
         commandBuffer.present(drawable)
+        commandBuffer.addCompletedHandler { [weak self, weak view] _ in
+            guard let self else { return }
+            self.completeScheduledFrame(in: view)
+        }
         commandBuffer.commit()
+        frameWasCommitted = true
+    }
+
+    private func beginScheduledFrame(concurrencyLimit: Int) -> Bool {
+        frameSchedulingLock.lock()
+        defer { frameSchedulingLock.unlock() }
+
+        let concurrencyLimit = max(concurrencyLimit, 1)
+        guard inFlightFrameCount < concurrencyLimit else {
+            pendingFrameRequest = true
+            pendingFrameConcurrencyLimit = concurrencyLimit
+            return false
+        }
+
+        // This frame represents the newest renderer state, so it supersedes any
+        // older redraw request that was waiting for capacity.
+        pendingFrameRequest = false
+        pendingFrameConcurrencyLimit = concurrencyLimit
+        inFlightFrameCount += 1
+        return true
+    }
+
+    private func completeScheduledFrame(in view: MTKView?) {
+        var shouldRequestLatestFrame = false
+
+        frameSchedulingLock.lock()
+        inFlightFrameCount = max(inFlightFrameCount - 1, 0)
+        if pendingFrameRequest,
+           inFlightFrameCount < max(pendingFrameConcurrencyLimit, 1) {
+            pendingFrameRequest = false
+            shouldRequestLatestFrame = true
+        }
+        frameSchedulingLock.unlock()
+
+        guard shouldRequestLatestFrame, let view else { return }
+        DispatchQueue.main.async { [weak view] in
+            guard let view else { return }
+            view.setNeedsDisplay(view.bounds)
+        }
     }
 
     private func patientVector(forVolumeVector vector: SIMD3<Float>) -> SIMD3<Float> {
@@ -626,6 +744,60 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return vector
         }
         return simd_normalize(patientVector)
+    }
+
+    private func volumeScissorRect(for drawableSize: CGSize, camera: CameraState) -> MTLScissorRect? {
+        let width = max(Int(drawableSize.width.rounded(.up)), 1)
+        let height = max(Int(drawableSize.height.rounded(.up)), 1)
+        let minimum = cropEnabled ? simd_max(boxMin, cropBoxMin) : boxMin
+        let maximum = cropEnabled ? simd_min(boxMax, cropBoxMax) : boxMax
+        guard minimum.x < maximum.x,
+              minimum.y < maximum.y,
+              minimum.z < maximum.z else { return nil }
+
+        let corners = [
+            SIMD3<Float>(minimum.x, minimum.y, minimum.z),
+            SIMD3<Float>(maximum.x, minimum.y, minimum.z),
+            SIMD3<Float>(minimum.x, maximum.y, minimum.z),
+            SIMD3<Float>(maximum.x, maximum.y, minimum.z),
+            SIMD3<Float>(minimum.x, minimum.y, maximum.z),
+            SIMD3<Float>(maximum.x, minimum.y, maximum.z),
+            SIMD3<Float>(minimum.x, maximum.y, maximum.z),
+            SIMD3<Float>(maximum.x, maximum.y, maximum.z),
+        ]
+
+        var minimumX = Float.greatestFiniteMagnitude
+        var minimumY = Float.greatestFiniteMagnitude
+        var maximumX = -Float.greatestFiniteMagnitude
+        var maximumY = -Float.greatestFiniteMagnitude
+        for corner in corners {
+            let clip = camera.viewProjectionMatrix * SIMD4<Float>(corner.x, corner.y, corner.z, 1)
+            guard abs(clip.w) > 0.000001 else { continue }
+            let ndc = SIMD2<Float>(clip.x, clip.y) / clip.w
+            let x = (ndc.x * 0.5 + 0.5) * Float(width)
+            let y = (ndc.y * 0.5 + 0.5) * Float(height)
+            minimumX = min(minimumX, x)
+            minimumY = min(minimumY, y)
+            maximumX = max(maximumX, x)
+            maximumY = max(maximumY, y)
+        }
+        guard minimumX.isFinite, minimumY.isFinite, maximumX.isFinite, maximumY.isFinite else {
+            return nil
+        }
+
+        let padding = 2
+        let left = max(Int(floor(minimumX)) - padding, 0)
+        let right = min(Int(ceil(maximumX)) + padding, width)
+        let bottom = max(Int(floor(minimumY)) - padding, 0)
+        let top = min(Int(ceil(maximumY)) + padding, height)
+        guard right > left, top > bottom else { return nil }
+
+        return MTLScissorRect(
+            x: left,
+            y: max(height - top, 0),
+            width: right - left,
+            height: top - bottom
+        )
     }
 
     func applyWLPreset(named presetName: String) {
@@ -990,8 +1162,12 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         if currentCLUTPixels.isEmpty {
             currentCLUTPixels = Self.grayscalePixels()
         }
+        let previousOpacityValues = currentOpacityValues
         clutTexture = makeColorTransferTexture()
         opacityTexture = makeOpacityTransferTexture()
+        if opacityRangeTexture == nil || currentOpacityValues != previousOpacityValues {
+            opacityRangeTexture = makeOpacityRangeTexture(values: currentOpacityValues)
+        }
         preIntegratedTransferTexture = preIntegrationEnabled ? makePreIntegratedTransferTexture() : nil
     }
 
@@ -1039,6 +1215,16 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             specularPower: shadingSpecularPower,
             hasCLUT: clutTexture == nil ? 0 : 1,
             skinMaskEnabled: (showSkin == false && skinMaskTexture != nil) ? 1 : 0,
+            brickGridDimensions: SIMD3<UInt32>(
+                UInt32(brickMinMaxTexture?.width ?? 1),
+                UInt32(brickMinMaxTexture?.height ?? 1),
+                UInt32(brickMinMaxTexture?.depth ?? 1)
+            ),
+            brickSize: UInt32(metal3DBrickSize),
+            opacityRangeSize: UInt32(metal3DOpacityRangeSize),
+            opacityAtMinimum: (currentOpacityValues.first ?? 0) > 0 ? 1 : 0,
+            opacityAtMaximum: (currentOpacityValues.last ?? 0) > 0 ? 1 : 0,
+            emptySpaceSkippingEnabled: brickMinMaxTexture != nil && opacityRangeTexture != nil ? 1 : 0,
             viewProjectionMatrix: camera.viewProjectionMatrix
         )
     }
@@ -2215,6 +2401,41 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return deviceRef.makeTexture(descriptor: descriptor)
     }
 
+    private func makeGradientTexture(dimensions: SIMD3<Int>) -> MTLTexture? {
+        let descriptor = MTLTextureDescriptor()
+        descriptor.textureType = .type3D
+        descriptor.pixelFormat = .rg8Snorm
+        descriptor.width = max(dimensions.x, 1)
+        descriptor.height = max(dimensions.y, 1)
+        descriptor.depth = max(dimensions.z, 1)
+        descriptor.mipmapLevelCount = 1
+        descriptor.usage = [.shaderRead, .shaderWrite]
+        descriptor.storageMode = .private
+        return deviceRef.makeTexture(descriptor: descriptor)
+    }
+
+    private func brickGridDimensions(for dimensions: SIMD3<Int>) -> SIMD3<Int> {
+        SIMD3<Int>(
+            (max(dimensions.x, 1) + metal3DBrickSize - 1) / metal3DBrickSize,
+            (max(dimensions.y, 1) + metal3DBrickSize - 1) / metal3DBrickSize,
+            (max(dimensions.z, 1) + metal3DBrickSize - 1) / metal3DBrickSize
+        )
+    }
+
+    private func makeBrickMinMaxTexture(dimensions: SIMD3<Int>) -> MTLTexture? {
+        let gridDimensions = brickGridDimensions(for: dimensions)
+        let descriptor = MTLTextureDescriptor()
+        descriptor.textureType = .type3D
+        descriptor.pixelFormat = .rg32Float
+        descriptor.width = gridDimensions.x
+        descriptor.height = gridDimensions.y
+        descriptor.depth = gridDimensions.z
+        descriptor.mipmapLevelCount = 1
+        descriptor.usage = [.shaderRead, .shaderWrite]
+        descriptor.storageMode = .private
+        return deviceRef.makeTexture(descriptor: descriptor)
+    }
+
     private func requestVolumeTexture() {
         guard MetalSeriesTextureCache.shared.key(for: pixList, device: deviceRef) != nil else {
             NSLog("%@", "3D Metal viewer could not identify the selected volume")
@@ -2323,6 +2544,39 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             preparedTexture = entry.texture
         }
 
+        guard let preparedGradientTexture = makeGradientTexture(dimensions: volumeDimensions),
+              let preparedBrickMinMaxTexture = makeBrickMinMaxTexture(dimensions: volumeDimensions),
+              let gradientEncoder = commandBuffer.makeComputeCommandEncoder() else {
+            return
+        }
+        var gradientUniforms = Metal3DGradientUniforms(
+            voxelSpacing: SIMD4<Float>(voxelSpacing.x, voxelSpacing.y, voxelSpacing.z, 0)
+        )
+        gradientEncoder.setComputePipelineState(gradientPipelineState)
+        gradientEncoder.setTexture(preparedTexture, index: 0)
+        gradientEncoder.setTexture(preparedGradientTexture, index: 1)
+        gradientEncoder.setBytes(
+            &gradientUniforms,
+            length: MemoryLayout<Metal3DGradientUniforms>.stride,
+            index: 0
+        )
+        gradientEncoder.dispatchThreadgroups(
+            Self.threadgroups(for: volumeDimensions, threadsPerGroup: threadsPerGroup),
+            threadsPerThreadgroup: threadsPerGroup
+        )
+        gradientEncoder.endEncoding()
+
+        guard let brickEncoder = commandBuffer.makeComputeCommandEncoder() else { return }
+        let brickDimensions = brickGridDimensions(for: volumeDimensions)
+        brickEncoder.setComputePipelineState(brickMinMaxPipelineState)
+        brickEncoder.setTexture(preparedTexture, index: 0)
+        brickEncoder.setTexture(preparedBrickMinMaxTexture, index: 1)
+        brickEncoder.dispatchThreadgroups(
+            Self.threadgroups(for: brickDimensions, threadsPerGroup: threadsPerGroup),
+            threadsPerThreadgroup: threadsPerGroup
+        )
+        brickEncoder.endEncoding()
+
         let histogramBinCount = 512
         let histogramByteCount = histogramBinCount * MemoryLayout<UInt32>.stride
         guard let histogramBuffer = deviceRef.makeBuffer(length: histogramByteCount, options: .storageModeShared),
@@ -2368,6 +2622,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.volumeTexture = preparedTexture
+                self.gradientTexture = preparedGradientTexture
+                self.brickMinMaxTexture = preparedBrickMinMaxTexture
                 self.preparedDefaultWindow = entry.defaultWindow
                 self.preparedFullDynamicWindow = entry.fullDynamicWindow
                 if self.selectedWLPresetName == Metal3DDefaults.defaultWLWW
@@ -3693,10 +3949,51 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             }
         }
         applyCompositeOpacityCorrection(to: &values)
+        currentOpacityValues = values
         let data = values.withUnsafeBufferPointer { buffer in
             Data(buffer: buffer)
         }
         return makeFloat1DTexture(data: data, width: values.count)
+    }
+
+    private func makeOpacityRangeTexture(values: [Float]) -> MTLTexture? {
+        guard values.isEmpty == false else { return nil }
+        let size = metal3DOpacityRangeSize
+        var occupiedBuckets = [UInt8](repeating: 0, count: size)
+        let denominator = max(values.count - 1, 1)
+        for (index, opacity) in values.enumerated() where opacity > 0 {
+            let bucket = min(index * (size - 1) / denominator, size - 1)
+            occupiedBuckets[bucket] = 1
+        }
+
+        var intervalOccupancy = [UInt8](repeating: 0, count: size * size)
+        for lowerBucket in 0..<size {
+            var occupied: UInt8 = 0
+            for upperBucket in lowerBucket..<size {
+                occupied = max(occupied, occupiedBuckets[upperBucket])
+                intervalOccupancy[upperBucket * size + lowerBucket] = occupied
+            }
+        }
+
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .r8Uint,
+            width: size,
+            height: size,
+            mipmapped: false
+        )
+        descriptor.usage = [.shaderRead]
+        descriptor.storageMode = .shared
+        guard let texture = deviceRef.makeTexture(descriptor: descriptor) else { return nil }
+        intervalOccupancy.withUnsafeBytes { bytes in
+            guard let baseAddress = bytes.baseAddress else { return }
+            texture.replace(
+                region: MTLRegionMake2D(0, 0, size, size),
+                mipmapLevel: 0,
+                withBytes: baseAddress,
+                bytesPerRow: size
+            )
+        }
+        return texture
     }
 
     private func makePreIntegratedTransferTexture() -> MTLTexture? {

@@ -157,10 +157,10 @@ final class Metal3DVolumeView: NSView {
         layer?.backgroundColor = NSColor.black.cgColor
 
         metalView.translatesAutoresizingMaskIntoConstraints = false
-        metalView.framebufferOnly = false
+        metalView.framebufferOnly = true
         metalView.enableSetNeedsDisplay = true
         metalView.isPaused = true
-        metalView.clearColor = MTLClearColor(red: 0.01, green: 0.01, blue: 0.015, alpha: 1.0)
+        metalView.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         metalView.colorPixelFormat = .bgra8Unorm
         metalView.depthStencilPixelFormat = .depth32Float
         addSubview(metalView)

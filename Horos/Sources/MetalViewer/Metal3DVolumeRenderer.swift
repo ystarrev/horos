@@ -6,8 +6,10 @@ import simd
 
 private let metal3DBrickSize = 8
 private let metal3DOpacityRangeSize = 256
+private let metal3DRenderingFlagSkinMask: UInt32 = 1 << 0
+private let metal3DRenderingFlagHideMetal: UInt32 = 1 << 1
 
-enum Metal3DCropPlane: CaseIterable {
+enum Metal3DCropPlane: CaseIterable, Equatable {
     case minX
     case maxX
     case minY
@@ -215,7 +217,7 @@ private struct Metal3DVolumeUniforms {
     var specular: Float
     var specularPower: Float
     var hasCLUT: UInt32
-    var skinMaskEnabled: UInt32
+    var renderingFlags: UInt32
     var brickGridDimensions: SIMD3<UInt32>
     var brickSize: UInt32
     var opacityRangeSize: UInt32
@@ -241,6 +243,32 @@ private struct Metal3DHistogramUniforms {
 
 private struct Metal3DGradientUniforms {
     var voxelSpacing: SIMD4<Float>
+}
+
+private struct Metal3DSurfaceCursorPickUniforms {
+    var ndcPosition: SIMD2<Float>
+    var padding: SIMD2<Float> = .zero
+}
+
+private struct Metal3DSurfaceCursorPickResult: Sendable {
+    var positionAndHit: SIMD4<Float> = .zero
+    var normal: SIMD4<Float> = .zero
+}
+
+private struct Metal3DSurfaceCursorHit: Sendable {
+    let position: SIMD3<Float>
+    let normal: SIMD3<Float>
+    let normalizedDepth: Float
+}
+
+struct Metal3DSurfaceCursorProjection: Equatable {
+    let center: CGPoint
+    let firstArmStart: CGPoint
+    let firstArmEnd: CGPoint
+    let secondArmStart: CGPoint
+    let secondArmEnd: CGPoint
+    let normalizedDepth: CGFloat
+    let depthScale: CGFloat
 }
 
 private struct Metal3DOverlayVertex {
@@ -289,6 +317,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private let histogramPipelineState: MTLComputePipelineState
     private let gradientPipelineState: MTLComputePipelineState
     private let brickMinMaxPipelineState: MTLComputePipelineState
+    private let surfaceCursorPickPipelineState: MTLComputePipelineState
     private let samplerState: MTLSamplerState
     private let maskSamplerState: MTLSamplerState
     private let vertexBuffer: MTLBuffer
@@ -378,6 +407,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var preIntegrationEnabled = false
     private var showSkin = true
     private var showSkinSurface = false
+    private var showMetal = true
     private var showTumorSegmentation = true
     private var tumorLabelFilter: Set<UInt8>?
     private(set) var currentSkinClipDepthMM: Float = 6.0
@@ -388,6 +418,11 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var inFlightFrameCount = 0
     private var pendingFrameRequest = false
     private var pendingFrameConcurrencyLimit = 1
+    private var surfaceCursorHit: Metal3DSurfaceCursorHit?
+    private var pendingSurfaceCursorPick: (point: CGPoint, bounds: CGRect, generation: UInt64)?
+    private var surfaceCursorPickInFlight = false
+    private var surfaceCursorPickGeneration: UInt64 = 0
+    var surfaceCursorDidChange: (() -> Void)?
 
     init(device: MTLDevice, pixList: [DCMPix]) {
         self.deviceRef = device
@@ -501,7 +536,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
               let resampleVolumeFunction = library.makeFunction(name: "metalViewerGantryTiltResample3D"),
               let histogramFunction = library.makeFunction(name: "metal3DHistogram"),
               let gradientFunction = library.makeFunction(name: "metal3DGradientVolume"),
-              let brickMinMaxFunction = library.makeFunction(name: "metal3DBrickMinMax") else {
+              let brickMinMaxFunction = library.makeFunction(name: "metal3DBrickMinMax"),
+              let surfaceCursorPickFunction = library.makeFunction(name: "metal3DSurfaceCursorPick") else {
             fatalError("Could not load Metal 3D volume shader functions.")
         }
 
@@ -536,6 +572,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             histogramPipelineState = try device.makeComputePipelineState(function: histogramFunction)
             gradientPipelineState = try device.makeComputePipelineState(function: gradientFunction)
             brickMinMaxPipelineState = try device.makeComputePipelineState(function: brickMinMaxFunction)
+            surfaceCursorPickPipelineState = try device.makeComputePipelineState(function: surfaceCursorPickFunction)
         } catch {
             fatalError("Could not create a 3D Metal pipeline: \(error)")
         }
@@ -682,7 +719,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         drawTumorSurfaceOverlays(with: encoder, camera: camera)
         drawTumourSeedSpheres(with: encoder, camera: camera)
         drawSurgicalTrajectoryOverlay(with: encoder, camera: camera)
-
         if cropOverlayVisible {
             drawCropOverlay(with: encoder, camera: camera)
         }
@@ -918,8 +954,11 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         cropOverlayVisible = visible
     }
 
-    func setHoveredCropPlane(_ plane: Metal3DCropPlane?) {
+    @discardableResult
+    func setHoveredCropPlane(_ plane: Metal3DCropPlane?) -> Bool {
+        guard hoveredCropPlane != plane else { return false }
         hoveredCropPlane = plane
+        return true
     }
 
     func setActiveCropPlane(_ plane: Metal3DCropPlane?) {
@@ -1047,10 +1086,12 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         )
     }
 
-    func setTrajectoryHandleHovered(_ isHovered: Bool) {
-        guard trajectoryHandleHovered != isHovered else { return }
+    @discardableResult
+    func setTrajectoryHandleHovered(_ isHovered: Bool) -> Bool {
+        guard trajectoryHandleHovered != isHovered else { return false }
         trajectoryHandleHovered = isHovered
         rebuildSurgicalTrajectoryForCurrentHandleState()
+        return true
     }
 
     func dragTrajectoryHandle(screenDelta: CGVector, in bounds: CGRect) {
@@ -1176,6 +1217,10 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let stepSize = rayMarchStepSize()
         let density: Float = 1.0
         let alphaFloor: Float = 0.0
+        let skinMaskFlag: UInt32 = showSkin == false && skinMaskTexture != nil
+            ? metal3DRenderingFlagSkinMask
+            : 0
+        let hideMetalFlag: UInt32 = showMetal ? 0 : metal3DRenderingFlagHideMetal
         let rayLength = simd_length((cropEnabled ? cropBoxMax - cropBoxMin : boxMax - boxMin))
         let maxSteps = UInt32(min(max(Int(ceil(rayLength / max(stepSize, 0.0001))) + 8, 256), 8192))
 
@@ -1214,7 +1259,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             specular: shadingSpecular,
             specularPower: shadingSpecularPower,
             hasCLUT: clutTexture == nil ? 0 : 1,
-            skinMaskEnabled: (showSkin == false && skinMaskTexture != nil) ? 1 : 0,
+            renderingFlags: skinMaskFlag | hideMetalFlag,
             brickGridDimensions: SIMD3<UInt32>(
                 UInt32(brickMinMaxTexture?.width ?? 1),
                 UInt32(brickMinMaxTexture?.height ?? 1),
@@ -1497,6 +1542,64 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return false
     }
 
+    func surfaceCursorProjection(
+        in bounds: CGRect,
+        centeredAt cursorLocation: CGPoint? = nil
+    ) -> Metal3DSurfaceCursorProjection? {
+        guard bounds.width > 0,
+              bounds.height > 0,
+              let surfaceCursorHit else {
+            return nil
+        }
+
+        let camera = currentCameraState(for: bounds.size)
+        var normal = surfaceCursorHit.normal
+        guard simd_length_squared(normal) > 0.000001 else { return nil }
+        normal = simd_normalize(normal)
+        if simd_dot(normal, -camera.forward) < 0 {
+            normal = -normal
+        }
+
+        var tangentX = camera.right - normal * simd_dot(camera.right, normal)
+        if simd_length_squared(tangentX) < 0.000001 {
+            tangentX = camera.up - normal * simd_dot(camera.up, normal)
+        }
+        guard simd_length_squared(tangentX) > 0.000001 else { return nil }
+        tangentX = simd_normalize(tangentX)
+        var tangentY = simd_normalize(simd_cross(normal, tangentX))
+        if simd_dot(tangentY, camera.up) < 0 {
+            tangentY = -tangentY
+        }
+
+        let worldUnitsPerPoint = 2.0 * camera.tanHalfFovY / max(Float(bounds.height), 1)
+        let halfLength = worldUnitsPerPoint * 10.0
+        let center = surfaceCursorHit.position
+        guard let projectedCenter = project(point: center, camera: camera, in: bounds),
+              let projectedFirstArmStart = project(point: center - tangentX * halfLength, camera: camera, in: bounds),
+              let projectedFirstArmEnd = project(point: center + tangentX * halfLength, camera: camera, in: bounds),
+              let projectedSecondArmStart = project(point: center - tangentY * halfLength, camera: camera, in: bounds),
+              let projectedSecondArmEnd = project(point: center + tangentY * halfLength, camera: camera, in: bounds) else {
+            return nil
+        }
+
+        let displayCenter = cursorLocation ?? projectedCenter
+        let offsetX = displayCenter.x - projectedCenter.x
+        let offsetY = displayCenter.y - projectedCenter.y
+        func offset(_ point: CGPoint) -> CGPoint {
+            CGPoint(x: point.x + offsetX, y: point.y + offsetY)
+        }
+
+        return Metal3DSurfaceCursorProjection(
+            center: displayCenter,
+            firstArmStart: offset(projectedFirstArmStart),
+            firstArmEnd: offset(projectedFirstArmEnd),
+            secondArmStart: offset(projectedSecondArmStart),
+            secondArmEnd: offset(projectedSecondArmEnd),
+            normalizedDepth: CGFloat(min(max(surfaceCursorHit.normalizedDepth, 0), 1)),
+            depthScale: CGFloat(1.25 - 0.5 * min(max(surfaceCursorHit.normalizedDepth, 0), 1))
+        )
+    }
+
     private func project(point: SIMD3<Float>, camera: CameraState, in bounds: CGRect) -> CGPoint? {
         let relative = point - camera.position
         let depth = simd_dot(relative, camera.forward)
@@ -1532,6 +1635,122 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         if showSkinSurface {
             ensureSkinMaskTexture(includeSurface: true)
         }
+    }
+
+    func setShowMetal(_ showMetal: Bool) {
+        self.showMetal = showMetal
+    }
+
+    func updateSurfaceCursor(at point: CGPoint, in bounds: CGRect) {
+        guard bounds.width > 0, bounds.height > 0, bounds.contains(point) else {
+            clearSurfaceCursor()
+            return
+        }
+
+        surfaceCursorPickGeneration &+= 1
+        pendingSurfaceCursorPick = (point, bounds, surfaceCursorPickGeneration)
+        startNextSurfaceCursorPickIfNeeded()
+    }
+
+    func clearSurfaceCursor() {
+        surfaceCursorPickGeneration &+= 1
+        pendingSurfaceCursorPick = nil
+        guard surfaceCursorHit != nil else { return }
+        surfaceCursorHit = nil
+        surfaceCursorDidChange?()
+    }
+
+    private func startNextSurfaceCursorPickIfNeeded() {
+        guard surfaceCursorPickInFlight == false,
+              let request = pendingSurfaceCursorPick,
+              let volumeTexture,
+              let opacityTexture,
+              let gradientTexture,
+              let skinMaskTexture = skinMaskTexture ?? emptySkinMaskTexture else {
+            return
+        }
+
+        pendingSurfaceCursorPick = nil
+        surfaceCursorPickInFlight = true
+
+        let camera = currentCameraState(for: request.bounds.size)
+        var volumeUniforms = makeUniforms(for: request.bounds.size, camera: camera)
+        var pickUniforms = Metal3DSurfaceCursorPickUniforms(
+            ndcPosition: SIMD2<Float>(
+                Float((request.point.x - request.bounds.minX) / request.bounds.width) * 2.0 - 1.0,
+                Float((request.point.y - request.bounds.minY) / request.bounds.height) * 2.0 - 1.0
+            )
+        )
+        var initialResult = Metal3DSurfaceCursorPickResult()
+        guard let resultBuffer = deviceRef.makeBuffer(
+            bytes: &initialResult,
+            length: MemoryLayout<Metal3DSurfaceCursorPickResult>.stride,
+            options: .storageModeShared
+        ), let commandBuffer = commandQueue.makeCommandBuffer(),
+           let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            surfaceCursorPickInFlight = false
+            if request.generation == surfaceCursorPickGeneration, surfaceCursorHit != nil {
+                surfaceCursorHit = nil
+                surfaceCursorDidChange?()
+            }
+            return
+        }
+
+        encoder.setComputePipelineState(surfaceCursorPickPipelineState)
+        encoder.setBytes(&volumeUniforms, length: MemoryLayout<Metal3DVolumeUniforms>.stride, index: 0)
+        encoder.setBytes(&pickUniforms, length: MemoryLayout<Metal3DSurfaceCursorPickUniforms>.stride, index: 1)
+        encoder.setBuffer(resultBuffer, offset: 0, index: 2)
+        encoder.setTexture(volumeTexture, index: 0)
+        encoder.setTexture(opacityTexture, index: 2)
+        encoder.setTexture(preIntegratedTransferTexture ?? clutTexture, index: 3)
+        encoder.setTexture(skinMaskTexture, index: 4)
+        encoder.setTexture(gradientTexture, index: 5)
+        encoder.setSamplerState(samplerState, index: 0)
+        encoder.setSamplerState(maskSamplerState, index: 1)
+        encoder.dispatchThreads(
+            MTLSize(width: 1, height: 1, depth: 1),
+            threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1)
+        )
+        encoder.endEncoding()
+
+        let requestGeneration = request.generation
+        commandBuffer.addCompletedHandler { [weak self] completedBuffer in
+            let result = resultBuffer.contents().load(as: Metal3DSurfaceCursorPickResult.self)
+            let completedSuccessfully = completedBuffer.status == .completed
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.surfaceCursorPickInFlight = false
+                if requestGeneration == self.surfaceCursorPickGeneration,
+                   completedSuccessfully,
+                   result.positionAndHit.w > 0.5 {
+                    let position = SIMD3<Float>(
+                        result.positionAndHit.x,
+                        result.positionAndHit.y,
+                        result.positionAndHit.z
+                    )
+                    let normal = SIMD3<Float>(result.normal.x, result.normal.y, result.normal.z)
+                    let normalizedDepth = result.normal.w
+                    if position.x.isFinite, position.y.isFinite, position.z.isFinite,
+                       normal.x.isFinite, normal.y.isFinite, normal.z.isFinite,
+                       normalizedDepth.isFinite,
+                       simd_length_squared(normal) > 0.000001 {
+                        self.surfaceCursorHit = Metal3DSurfaceCursorHit(
+                            position: position,
+                            normal: simd_normalize(normal),
+                            normalizedDepth: min(max(normalizedDepth, 0), 1)
+                        )
+                    } else {
+                        self.surfaceCursorHit = nil
+                    }
+                    self.surfaceCursorDidChange?()
+                } else if requestGeneration == self.surfaceCursorPickGeneration {
+                    self.surfaceCursorHit = nil
+                    self.surfaceCursorDidChange?()
+                }
+                self.startNextSurfaceCursorPickIfNeeded()
+            }
+        }
+        commandBuffer.commit()
     }
 
     func setSkinClipDepthMM(_ depthMM: Float) {
@@ -2639,6 +2858,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 if self.showSkin == false || self.showSkinSurface {
                     self.ensureSkinMaskTexture(includeSurface: self.showSkinSurface)
                 }
+                self.startNextSurfaceCursorPickIfNeeded()
                 self.contentDidChange?()
             }
         }

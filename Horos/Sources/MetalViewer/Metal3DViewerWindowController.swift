@@ -7,6 +7,7 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
     private let toolbarController = Metal3DViewerToolbarController()
     private let histogramPanelController = Metal3DHistogramPanelController()
     private let pixList: [DCMPix]
+    private let contentCapabilities: Metal3DViewerContentCapabilities
     private var tumorSegmentationTask: Metal3DLocalTumorSegmentationTask?
     private var tumorInputPreviewTask: Metal3DTumorInputPreviewTask?
     private var tumorInputReviewController: Metal3DTumorInputReviewWindowController?
@@ -15,6 +16,7 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
 
     init(pixList: [DCMPix], title: String) {
         self.pixList = pixList
+        self.contentCapabilities = Metal3DViewerContentCapabilities(pixList: pixList)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
@@ -102,7 +104,13 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
             .filter { $0 != NSLocalizedString("Linear Table", comment: "") }
             .sorted()
 
-        toolbarController.configure(wlwwPresetNames: wlwwNames, clutNames: clutNames, opacityNames: opacityNames)
+        toolbarController.configure(
+            contentCapabilities: contentCapabilities,
+            activeModality: contentCapabilities.activeModality,
+            wlwwPresetNames: wlwwNames,
+            clutNames: clutNames,
+            opacityNames: opacityNames
+        )
         toolbarController.cropHandler = { [weak self] isEnabled in
             self?.volumeView.cropEnabled = isEnabled
         }
@@ -114,6 +122,9 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
         }
         toolbarController.skinSurfaceHandler = { [weak self] isEnabled in
             self?.volumeView.showSkinSurface = isEnabled
+        }
+        toolbarController.metalVisibilityHandler = { [weak self] isVisible in
+            self?.volumeView.showMetal = isVisible
         }
         toolbarController.skinClipDepthHandler = { [weak self] depthMM in
             self?.volumeView.skinClipDepthMM = depthMM
@@ -169,57 +180,15 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
             self?.toolbarController.selectWLPreset(named: selectedTitle)
         }
 
-        let toolbar = NSToolbar(identifier: NSToolbar.Identifier("HorosMetal3DToolbar"))
+        let toolbarIdentifier = NSToolbar.Identifier(
+            "HorosMetal3DToolbar.v2.\(contentCapabilities.toolbarConfigurationSuffix)"
+        )
+        let toolbar = NSToolbar(identifier: toolbarIdentifier)
         toolbar.delegate = toolbarController
         toolbar.displayMode = .iconAndLabel
         toolbar.allowsUserCustomization = true
         toolbar.autosavesConfiguration = true
         window?.toolbar = toolbar
-
-        let skinIdentifier = Metal3DViewerToolbarController.ItemIdentifier.skin
-        if toolbar.items.contains(where: { $0.itemIdentifier == skinIdentifier }) == false {
-            toolbar.insertItem(withItemIdentifier: skinIdentifier, at: min(2, toolbar.items.count))
-        }
-        let skinSurfaceIdentifier = Metal3DViewerToolbarController.ItemIdentifier.skinSurface
-        if toolbar.items.contains(where: { $0.itemIdentifier == skinSurfaceIdentifier }) == false {
-            let skinIndex = toolbar.items.firstIndex { $0.itemIdentifier == skinIdentifier }
-            toolbar.insertItem(withItemIdentifier: skinSurfaceIdentifier, at: min((skinIndex ?? 2) + 1, toolbar.items.count))
-        }
-        let skinDepthIdentifier = Metal3DViewerToolbarController.ItemIdentifier.skinDepth
-        if toolbar.items.contains(where: { $0.itemIdentifier == skinDepthIdentifier }) == false {
-            let skinSurfaceIndex = toolbar.items.firstIndex { $0.itemIdentifier == skinSurfaceIdentifier }
-            toolbar.insertItem(withItemIdentifier: skinDepthIdentifier, at: min((skinSurfaceIndex ?? 3) + 1, toolbar.items.count))
-        }
-        let tumorIdentifier = Metal3DViewerToolbarController.ItemIdentifier.tumorSegmentation
-        if toolbar.items.contains(where: { $0.itemIdentifier == tumorIdentifier }) == false {
-            let skinDepthIndex = toolbar.items.firstIndex { $0.itemIdentifier == skinDepthIdentifier }
-            toolbar.insertItem(withItemIdentifier: tumorIdentifier, at: min((skinDepthIndex ?? 4) + 1, toolbar.items.count))
-        }
-        let tumorVisibilityIdentifier = Metal3DViewerToolbarController.ItemIdentifier.tumorVisibility
-        if toolbar.items.contains(where: { $0.itemIdentifier == tumorVisibilityIdentifier }) == false {
-            let tumorIndex = toolbar.items.firstIndex { $0.itemIdentifier == tumorIdentifier }
-            toolbar.insertItem(withItemIdentifier: tumorVisibilityIdentifier, at: min((tumorIndex ?? 5) + 1, toolbar.items.count))
-        }
-        let tumorLabelIdentifier = Metal3DViewerToolbarController.ItemIdentifier.tumorLabel
-        if toolbar.items.contains(where: { $0.itemIdentifier == tumorLabelIdentifier }) == false {
-            let tumorVisibilityIndex = toolbar.items.firstIndex { $0.itemIdentifier == tumorVisibilityIdentifier }
-            toolbar.insertItem(withItemIdentifier: tumorLabelIdentifier, at: min((tumorVisibilityIndex ?? 6) + 1, toolbar.items.count))
-        }
-        let tumorInfoIdentifier = Metal3DViewerToolbarController.ItemIdentifier.tumorInfo
-        if toolbar.items.contains(where: { $0.itemIdentifier == tumorInfoIdentifier }) == false {
-            let tumorLabelIndex = toolbar.items.firstIndex { $0.itemIdentifier == tumorLabelIdentifier }
-            toolbar.insertItem(withItemIdentifier: tumorInfoIdentifier, at: min((tumorLabelIndex ?? 7) + 1, toolbar.items.count))
-        }
-        let tumorClearIdentifier = Metal3DViewerToolbarController.ItemIdentifier.tumorClear
-        if toolbar.items.contains(where: { $0.itemIdentifier == tumorClearIdentifier }) == false {
-            let tumorInfoIndex = toolbar.items.firstIndex { $0.itemIdentifier == tumorInfoIdentifier }
-            toolbar.insertItem(withItemIdentifier: tumorClearIdentifier, at: min((tumorInfoIndex ?? 8) + 1, toolbar.items.count))
-        }
-        let surgicalTrajectoryIdentifier = Metal3DViewerToolbarController.ItemIdentifier.surgicalTrajectory
-        if toolbar.items.contains(where: { $0.itemIdentifier == surgicalTrajectoryIdentifier }) == false {
-            let tumorClearIndex = toolbar.items.firstIndex { $0.itemIdentifier == tumorClearIdentifier }
-            toolbar.insertItem(withItemIdentifier: surgicalTrajectoryIdentifier, at: min((tumorClearIndex ?? 9) + 1, toolbar.items.count))
-        }
     }
 
     private func configureContent() {
@@ -246,6 +215,7 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
                 opacityPoints: self.volumeView.opacityControlPoints()
             )
         }
+        volumeView.showMetal = contentCapabilities.containsCT == false
         volumeView.configure(pixList: pixList)
         if let selectedWLPresetName = volumeView.selectedWLPresetName {
             toolbarController.selectWLPreset(named: selectedWLPresetName)

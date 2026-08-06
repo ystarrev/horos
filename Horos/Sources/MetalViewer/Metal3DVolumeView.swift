@@ -1,5 +1,6 @@
 import AppKit
 import MetalKit
+import QuartzCore
 
 final class Metal3DVolumeView: NSView {
     private let cropHandleHitPadding: CGFloat = 11
@@ -69,7 +70,119 @@ final class Metal3DVolumeView: NSView {
         }
     }
 
+    private final class SurfaceCursorOverlayView: NSView {
+        private let cursorLayer = CAShapeLayer()
+        private var displayedNormalizedDepth: CGFloat?
+        private var displayedDepthScale: CGFloat?
+        private let depthNoiseThreshold: CGFloat = 0.025
+        private let depthJumpThreshold: CGFloat = 0.08
+        private let depthTransitionDuration: CFTimeInterval = 0.11
+
+        var projection: Metal3DSurfaceCursorProjection? {
+            didSet {
+                guard projection != oldValue else { return }
+                updateCursorPath(from: oldValue)
+            }
+        }
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            wantsLayer = true
+            cursorLayer.fillColor = nil
+            cursorLayer.strokeColor = NSColor(calibratedRed: 1.0, green: 0.02, blue: 0.02, alpha: 1.0).cgColor
+            cursorLayer.lineWidth = 2.5
+            cursorLayer.lineCap = .round
+            cursorLayer.lineJoin = .round
+            cursorLayer.bounds = CGRect(x: -16, y: -16, width: 32, height: 32)
+            layer?.addSublayer(cursorLayer)
+            isHidden = true
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func layout() {
+            super.layout()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            cursorLayer.contentsScale = window?.backingScaleFactor ?? 2.0
+            CATransaction.commit()
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            nil
+        }
+
+        private func updateCursorPath(from oldProjection: Metal3DSurfaceCursorProjection?) {
+            guard let projection else {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                cursorLayer.path = nil
+                CATransaction.commit()
+                cursorLayer.removeAnimation(forKey: "surfaceDepthScale")
+                displayedNormalizedDepth = nil
+                displayedDepthScale = nil
+                isHidden = true
+                return
+            }
+
+            let previousDepth = displayedNormalizedDepth ?? oldProjection?.normalizedDepth
+            let previousScale = displayedDepthScale ?? oldProjection?.depthScale ?? projection.depthScale
+            let depthDelta = previousDepth.map { abs(projection.normalizedDepth - $0) } ?? 0
+            let targetScale: CGFloat
+            if previousDepth != nil, depthDelta < depthNoiseThreshold {
+                targetScale = previousScale
+            } else {
+                displayedNormalizedDepth = projection.normalizedDepth
+                displayedDepthScale = projection.depthScale
+                targetScale = projection.depthScale
+            }
+
+            let targetPath = cursorPath(for: projection)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            cursorLayer.position = projection.center
+            cursorLayer.path = targetPath
+            cursorLayer.setAffineTransform(
+                CGAffineTransform(scaleX: targetScale, y: targetScale)
+            )
+            CATransaction.commit()
+
+            if previousDepth != nil, depthDelta >= depthJumpThreshold {
+                cursorLayer.removeAnimation(forKey: "surfaceDepthScale")
+                let animation = CABasicAnimation(keyPath: "transform.scale")
+                animation.fromValue = previousScale
+                animation.toValue = targetScale
+                animation.duration = depthTransitionDuration
+                animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                cursorLayer.add(animation, forKey: "surfaceDepthScale")
+            } else if depthDelta >= depthNoiseThreshold {
+                cursorLayer.removeAnimation(forKey: "surfaceDepthScale")
+            }
+            isHidden = false
+        }
+
+        private func cursorPath(for projection: Metal3DSurfaceCursorProjection) -> CGPath {
+            func local(_ point: CGPoint) -> CGPoint {
+                CGPoint(
+                    x: point.x - projection.center.x,
+                    y: point.y - projection.center.y
+                )
+            }
+
+            let path = CGMutablePath()
+            path.move(to: local(projection.firstArmStart))
+            path.addLine(to: local(projection.firstArmEnd))
+            path.move(to: local(projection.secondArmStart))
+            path.addLine(to: local(projection.secondArmEnd))
+            return path
+        }
+    }
+
     private let metalView: MTKView
+    private let surfaceCursorOverlayView = SurfaceCursorOverlayView(frame: .zero)
     private let cropOverlayView = CropOverlayView(frame: .zero)
     private let orientationOverlayView = MetalOrientationOverlayView(frame: .zero)
     private let gantryTiltCorrectionLabel = PassthroughLabel(labelWithString: NSLocalizedString("Gantry Tilt Corrected", comment: ""))
@@ -80,12 +193,18 @@ final class Metal3DVolumeView: NSView {
     private var cropHandleProjections = [Metal3DCropPlane: Metal3DCropHandleProjection]()
     private var cropHandleViews = [Metal3DCropPlane: CropHandleView]()
     private var trackingAreaRef: NSTrackingArea?
+    private var lastSurfaceCursorLocation: CGPoint?
     private var isWindowLevelInteractionActive = false
     private var tumourSeedScope: MetalViewerTumourSeedScope?
     private var tumourSeedPixList: [DCMPix] = []
     private var tumourSeedObserver: NSObjectProtocol?
     var wlwwInteractionHandler: ((String) -> Void)?
     var volumeDidBecomeReady: (() -> Void)?
+
+    private lazy var transparentSurfaceCursor: NSCursor = {
+        let image = NSImage(size: NSSize(width: 1, height: 1), flipped: false) { _ in true }
+        return NSCursor(image: image, hotSpot: .zero)
+    }()
 
     private var cropApplied = false
 
@@ -102,6 +221,7 @@ final class Metal3DVolumeView: NSView {
             renderer?.setCropOverlayVisible(cropEnabled)
             updateAppearance()
             refreshCropHandles()
+            refreshSurfaceCursor()
         }
     }
 
@@ -115,6 +235,7 @@ final class Metal3DVolumeView: NSView {
     var preIntegrationEnabled = true {
         didSet {
             renderer?.setPreIntegrationEnabled(preIntegrationEnabled)
+            refreshSurfaceCursor()
             metalView.setNeedsDisplay(metalView.bounds)
         }
     }
@@ -122,6 +243,7 @@ final class Metal3DVolumeView: NSView {
     var showSkin = true {
         didSet {
             renderer?.setShowSkin(showSkin)
+            refreshSurfaceCursor()
             metalView.setNeedsDisplay(metalView.bounds)
         }
     }
@@ -129,6 +251,15 @@ final class Metal3DVolumeView: NSView {
     var showSkinSurface = false {
         didSet {
             renderer?.setShowSkinSurface(showSkinSurface)
+            refreshSurfaceCursor()
+            metalView.setNeedsDisplay(metalView.bounds)
+        }
+    }
+
+    var showMetal = true {
+        didSet {
+            renderer?.setShowMetal(showMetal)
+            refreshSurfaceCursor()
             metalView.setNeedsDisplay(metalView.bounds)
         }
     }
@@ -137,6 +268,7 @@ final class Metal3DVolumeView: NSView {
         didSet {
             skinClipDepthMM = min(max(skinClipDepthMM, 0), 20)
             renderer?.setSkinClipDepthMM(skinClipDepthMM)
+            refreshSurfaceCursor()
             metalView.setNeedsDisplay(metalView.bounds)
         }
     }
@@ -165,6 +297,9 @@ final class Metal3DVolumeView: NSView {
         metalView.depthStencilPixelFormat = .depth32Float
         addSubview(metalView)
 
+        surfaceCursorOverlayView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(surfaceCursorOverlayView)
+
         cropOverlayView.translatesAutoresizingMaskIntoConstraints = false
         cropOverlayView.wantsLayer = false
         cropOverlayView.isHidden = true
@@ -191,6 +326,10 @@ final class Metal3DVolumeView: NSView {
             metalView.trailingAnchor.constraint(equalTo: trailingAnchor),
             metalView.topAnchor.constraint(equalTo: topAnchor),
             metalView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            surfaceCursorOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            surfaceCursorOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            surfaceCursorOverlayView.topAnchor.constraint(equalTo: topAnchor),
+            surfaceCursorOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor),
             cropOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
             cropOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
             cropOverlayView.topAnchor.constraint(equalTo: topAnchor),
@@ -251,10 +390,20 @@ final class Metal3DVolumeView: NSView {
         self.trackingAreaRef = trackingAreaRef
     }
 
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: NSCursor.arrow)
+    }
+
     override func layout() {
         super.layout()
         refreshCropHandles()
         refreshOrientationOverlay()
+        refreshSurfaceCursor()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        updateSurfaceCursor(at: convert(event.locationInWindow, from: nil))
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -263,6 +412,7 @@ final class Metal3DVolumeView: NSView {
         metalView.setNeedsDisplay(metalView.bounds)
         refreshCropHandles()
         refreshOrientationOverlay()
+        updateSurfaceCursor(at: convert(event.locationInWindow, from: nil))
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -281,6 +431,7 @@ final class Metal3DVolumeView: NSView {
             activeCropPlane = hitPlane
             renderer?.setActiveCropPlane(hitPlane)
             lastDragLocation = location
+            updateSurfaceCursor(at: location)
             metalView.setNeedsDisplay(metalView.bounds)
             return
         }
@@ -317,6 +468,7 @@ final class Metal3DVolumeView: NSView {
                 metalView.setNeedsDisplay(metalView.bounds)
                 refreshCropHandles()
             }
+            updateSurfaceCursor(at: location)
             self.lastDragLocation = location
             return
         }
@@ -337,6 +489,7 @@ final class Metal3DVolumeView: NSView {
         metalView.setNeedsDisplay(metalView.bounds)
         refreshCropHandles()
         refreshOrientationOverlay()
+        updateSurfaceCursor(at: location)
         self.lastDragLocation = location
     }
 
@@ -360,10 +513,12 @@ final class Metal3DVolumeView: NSView {
         metalView.setNeedsDisplay(metalView.bounds)
         refreshCropHandles()
         refreshOrientationOverlay()
+        updateSurfaceCursor(at: location)
         self.lastDragLocation = location
     }
 
     override func rightMouseUp(with event: NSEvent) {
+        updateSurfaceCursor(at: convert(event.locationInWindow, from: nil))
         lastDragLocation = nil
     }
 
@@ -381,12 +536,14 @@ final class Metal3DVolumeView: NSView {
         if cropEnabled {
             updateHoveredCropPlane(at: location)
         }
+        updateSurfaceCursor(at: location)
         lastDragLocation = nil
         metalView.setNeedsDisplay(metalView.bounds)
     }
 
     override func mouseMoved(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
+        updateSurfaceCursor(at: location)
         updateHoveredTrajectoryHandle(at: location)
         if cropEnabled {
             updateHoveredCropPlane(at: location)
@@ -394,9 +551,15 @@ final class Metal3DVolumeView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
-        renderer?.setTrajectoryHandleHovered(false)
-        renderer?.setHoveredCropPlane(nil)
-        metalView.setNeedsDisplay(metalView.bounds)
+        lastSurfaceCursorLocation = nil
+        surfaceCursorOverlayView.projection = nil
+        renderer?.clearSurfaceCursor()
+        NSCursor.arrow.set()
+        let trajectoryHoverChanged = renderer?.setTrajectoryHandleHovered(false) == true
+        let cropHoverChanged = renderer?.setHoveredCropPlane(nil) == true
+        if trajectoryHoverChanged || cropHoverChanged {
+            metalView.setNeedsDisplay(metalView.bounds)
+        }
     }
 
     func configure(pixList: [DCMPix]) {
@@ -409,6 +572,10 @@ final class Metal3DVolumeView: NSView {
             self.refreshOrientationOverlay()
             self.volumeDidBecomeReady?()
         }
+        renderer.surfaceCursorDidChange = { [weak self] in
+            guard let self else { return }
+            self.refreshSurfaceCursorOverlay()
+        }
         tumourSeedScope = MetalViewerTumourSeedStore.scope(forPixList: pixList)
         tumourSeedPixList = pixList
         renderer.setCropEnabled(cropApplied || cropEnabled)
@@ -420,9 +587,11 @@ final class Metal3DVolumeView: NSView {
         skinClipDepthMM = renderer.currentSkinClipDepthMM
         renderer.setShowSkin(showSkin)
         renderer.setShowSkinSurface(showSkinSurface)
+        renderer.setShowMetal(showMetal)
         renderer.setShowTumorSegmentation(showTumorSegmentation)
         reloadTumourSeeds()
         metalView.delegate = renderer
+        refreshSurfaceCursor()
         metalView.setNeedsDisplay(metalView.bounds)
         refreshCropHandles()
         refreshOrientationOverlay()
@@ -443,6 +612,7 @@ final class Metal3DVolumeView: NSView {
     @discardableResult
     func applyWLPreset(named presetName: String) -> String? {
         renderer?.applyWLPreset(named: presetName)
+        refreshSurfaceCursor()
         metalView.setNeedsDisplay(metalView.bounds)
         return renderer?.selectedWLPresetName
     }
@@ -457,6 +627,7 @@ final class Metal3DVolumeView: NSView {
     @discardableResult
     func applyOpacity(named presetName: String) -> String? {
         renderer?.applyOpacity(named: presetName)
+        refreshSurfaceCursor()
         metalView.setNeedsDisplay(metalView.bounds)
         return renderer?.selectedOpacityName
     }
@@ -520,6 +691,7 @@ final class Metal3DVolumeView: NSView {
 
     func setOpacityControlPoints(_ points: [SIMD2<Float>]) {
         renderer?.setOpacityControlPoints(points)
+        refreshSurfaceCursor()
         metalView.setNeedsDisplay(metalView.bounds)
     }
 
@@ -594,13 +766,83 @@ final class Metal3DVolumeView: NSView {
 
     private func updateHoveredCropPlane(at location: CGPoint) {
         let hoveredPlane = cropPlane(at: location)
-        renderer?.setHoveredCropPlane(hoveredPlane)
-        metalView.setNeedsDisplay(metalView.bounds)
+        if renderer?.setHoveredCropPlane(hoveredPlane) == true {
+            metalView.setNeedsDisplay(metalView.bounds)
+        }
     }
 
     private func updateHoveredTrajectoryHandle(at location: CGPoint) {
-        renderer?.setTrajectoryHandleHovered(trajectoryHandle(at: location) != nil)
-        metalView.setNeedsDisplay(metalView.bounds)
+        if renderer?.setTrajectoryHandleHovered(trajectoryHandle(at: location) != nil) == true {
+            metalView.setNeedsDisplay(metalView.bounds)
+        }
+    }
+
+    private func updateSurfaceCursor(at location: CGPoint) {
+        lastSurfaceCursorLocation = location
+        if cropCursorIsActive(at: location) {
+            surfaceCursorOverlayView.projection = nil
+            renderer?.clearSurfaceCursor()
+            updateSystemCursor(surfaceProjection: nil, at: location)
+            return
+        }
+        refreshSurfaceCursorOverlay()
+        renderer?.updateSurfaceCursor(at: location, in: bounds)
+    }
+
+    private func refreshSurfaceCursor() {
+        refreshSurfaceCursorOverlay()
+        guard let lastSurfaceCursorLocation else { return }
+        if cropCursorIsActive(at: lastSurfaceCursorLocation) {
+            renderer?.clearSurfaceCursor()
+            return
+        }
+        renderer?.updateSurfaceCursor(at: lastSurfaceCursorLocation, in: bounds)
+    }
+
+    private func refreshSurfaceCursorOverlay() {
+        guard let lastSurfaceCursorLocation,
+              bounds.contains(lastSurfaceCursorLocation) else {
+            surfaceCursorOverlayView.projection = nil
+            NSCursor.arrow.set()
+            return
+        }
+
+        if cropCursorIsActive(at: lastSurfaceCursorLocation) {
+            surfaceCursorOverlayView.projection = nil
+            updateSystemCursor(surfaceProjection: nil, at: lastSurfaceCursorLocation)
+            return
+        }
+
+        let projection = renderer?.surfaceCursorProjection(
+            in: bounds,
+            centeredAt: lastSurfaceCursorLocation
+        )
+        surfaceCursorOverlayView.projection = projection
+        updateSystemCursor(surfaceProjection: projection, at: lastSurfaceCursorLocation)
+    }
+
+    private func cropCursorIsActive(at location: CGPoint) -> Bool {
+        activeCropPlane != nil || (cropEnabled && cropPlane(at: location) != nil)
+    }
+
+    private func updateSystemCursor(
+        surfaceProjection: Metal3DSurfaceCursorProjection?,
+        at location: CGPoint
+    ) {
+        guard bounds.contains(location) else {
+            NSCursor.arrow.set()
+            return
+        }
+
+        if activeCropPlane != nil {
+            NSCursor.closedHand.set()
+        } else if cropEnabled, cropPlane(at: location) != nil {
+            NSCursor.openHand.set()
+        } else if surfaceProjection != nil {
+            transparentSurfaceCursor.set()
+        } else {
+            NSCursor.arrow.set()
+        }
     }
 
     private func tumourSeedsDidChange(_ notification: Notification) {

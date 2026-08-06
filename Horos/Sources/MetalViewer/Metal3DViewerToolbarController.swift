@@ -1,18 +1,61 @@
 import AppKit
 
+struct Metal3DViewerContentCapabilities {
+    let modalities: Set<String>
+    let activeModality: String
+
+    init(pixList: [DCMPix]) {
+        let orderedModalities = pixList.compactMap { pix -> String? in
+            guard let modality = pix.modalityString?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .uppercased(),
+                  modality.isEmpty == false else {
+                return nil
+            }
+            return modality
+        }
+        var modalities = Set<String>(orderedModalities)
+        if pixList.contains(where: { $0.rescaleType?.uppercased() == "HU" }) {
+            modalities.insert("CT")
+        }
+        self.modalities = modalities
+        self.activeModality = orderedModalities.first
+            ?? (modalities.contains("CT") ? "CT" : modalities.sorted().first ?? "OT")
+    }
+
+    var containsCT: Bool {
+        modalities.contains("CT")
+    }
+
+    var containsMRI: Bool {
+        modalities.contains("MR") || modalities.contains("MRI")
+    }
+
+    var hasVisibilityOptions: Bool {
+        containsCT || containsMRI
+    }
+
+    var toolbarConfigurationSuffix: String {
+        switch (containsCT, containsMRI) {
+        case (true, true):
+            return "CTMR"
+        case (true, false):
+            return "CT"
+        case (false, true):
+            return "MR"
+        default:
+            return "Other"
+        }
+    }
+}
+
 final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
     enum ItemIdentifier {
         static let crop = NSToolbarItem.Identifier("com.horos.metal3d.crop")
         static let shading = NSToolbarItem.Identifier("com.horos.metal3d.shading")
-        static let skin = NSToolbarItem.Identifier("com.horos.metal3d.skin")
-        static let skinSurface = NSToolbarItem.Identifier("com.horos.metal3d.skinSurface")
-        static let skinDepth = NSToolbarItem.Identifier("com.horos.metal3d.skinDepth")
-        static let tumorSegmentation = NSToolbarItem.Identifier("com.horos.metal3d.tumorSegmentation")
-        static let tumorVisibility = NSToolbarItem.Identifier("com.horos.metal3d.tumorVisibility")
+        static let visibility = NSToolbarItem.Identifier("com.horos.metal3d.visibility")
+        static let tumorActions = NSToolbarItem.Identifier("com.horos.metal3d.tumorActions")
         static let tumorLabel = NSToolbarItem.Identifier("com.horos.metal3d.tumorLabel")
-        static let tumorInfo = NSToolbarItem.Identifier("com.horos.metal3d.tumorInfo")
-        static let tumorClear = NSToolbarItem.Identifier("com.horos.metal3d.tumorClear")
-        static let surgicalTrajectory = NSToolbarItem.Identifier("com.horos.metal3d.surgicalTrajectory")
         static let histogram = NSToolbarItem.Identifier("com.horos.metal3d.histogram")
         static let wlww = NSToolbarItem.Identifier("com.horos.metal3d.wlww")
         static let clut = NSToolbarItem.Identifier("com.horos.metal3d.clut")
@@ -23,6 +66,7 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
     var shadingHandler: ((Bool) -> Void)?
     var skinHandler: ((Bool) -> Void)?
     var skinSurfaceHandler: ((Bool) -> Void)?
+    var metalVisibilityHandler: ((Bool) -> Void)?
     var skinClipDepthHandler: ((Float) -> Void)?
     var tumorSegmentationHandler: (() -> Void)?
     var tumorVisibilityHandler: ((Bool) -> Void)?
@@ -39,19 +83,20 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
     private let clutPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let opacityPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let tumorLabelPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let skinCheckbox = NSButton(checkboxWithTitle: NSLocalizedString("Show Skin", comment: ""), target: nil, action: nil)
-    private let skinSurfaceCheckbox = NSButton(checkboxWithTitle: NSLocalizedString("Surface", comment: ""), target: nil, action: nil)
-    private let skinDepthSlider = NSSlider(value: 6.0, minValue: 0.0, maxValue: 20.0, target: nil, action: nil)
-    private let skinDepthValueLabel = NSTextField(labelWithString: "")
-    private let tumorVisibilityCheckbox = NSButton(checkboxWithTitle: NSLocalizedString("Show Tumour", comment: ""), target: nil, action: nil)
+    private let visibilityMenu = NSMenu(title: NSLocalizedString("Visibility", comment: ""))
+    private let tumorActionsMenu = NSMenu(title: NSLocalizedString("Tumour", comment: ""))
+    private var contentCapabilities = Metal3DViewerContentCapabilities(pixList: [])
+    private var activeModality = "OT"
+    private var wlwwPresetNames = [String]()
     private var cropEnabled = false
     private var shadingEnabled = true
     private var skinEnabled = true
     private var skinSurfaceEnabled = false
+    private var metalVisible = true
     private var skinClipDepthMM: Float = 6.0
     private var tumorVisible = true
     private var surgicalTrajectoryAvailable = false
-    private weak var surgicalTrajectoryItem: NSToolbarItem?
+    private weak var surgicalTrajectoryMenuItem: NSMenuItem?
 
     override init() {
         super.init()
@@ -59,46 +104,34 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
         configurePopUp(clutPopup)
         configurePopUp(opacityPopup)
         configureTumorLabelPopup()
-        skinCheckbox.controlSize = .small
-        skinCheckbox.font = NSFont.systemFont(ofSize: 12)
-        skinCheckbox.state = .on
-        skinCheckbox.target = self
-        skinCheckbox.action = #selector(toggleSkin(_:))
-        skinSurfaceCheckbox.controlSize = .small
-        skinSurfaceCheckbox.font = NSFont.systemFont(ofSize: 12)
-        skinSurfaceCheckbox.state = .off
-        skinSurfaceCheckbox.target = self
-        skinSurfaceCheckbox.action = #selector(toggleSkinSurface(_:))
-        skinDepthSlider.controlSize = .small
-        skinDepthSlider.numberOfTickMarks = 6
-        skinDepthSlider.allowsTickMarkValuesOnly = false
-        skinDepthSlider.isContinuous = false
-        skinDepthSlider.target = self
-        skinDepthSlider.action = #selector(skinDepthDidChange(_:))
-        skinDepthValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        skinDepthValueLabel.textColor = NSColor.secondaryLabelColor
-        skinDepthValueLabel.alignment = .right
-        tumorVisibilityCheckbox.controlSize = .small
-        tumorVisibilityCheckbox.font = NSFont.systemFont(ofSize: 12)
-        tumorVisibilityCheckbox.state = .on
-        tumorVisibilityCheckbox.target = self
-        tumorVisibilityCheckbox.action = #selector(toggleTumorVisibility(_:))
-        setSkinClipDepthMM(skinClipDepthMM)
     }
 
-    func configure(wlwwPresetNames: [String], clutNames: [String], opacityNames: [String]) {
-        let wlwwItems = [
-            NSLocalizedString("Other", comment: ""),
-            NSLocalizedString("Default WL & WW", comment: ""),
-            NSLocalizedString("Full dynamic", comment: ""),
-        ] + wlwwPresetNames.map { "- \($0)" }
-        reload(popUp: wlwwPopup, items: wlwwItems)
+    func configure(
+        contentCapabilities: Metal3DViewerContentCapabilities,
+        activeModality: String,
+        wlwwPresetNames: [String],
+        clutNames: [String],
+        opacityNames: [String]
+    ) {
+        self.contentCapabilities = contentCapabilities
+        self.activeModality = activeModality.uppercased()
+        self.wlwwPresetNames = wlwwPresetNames
+        metalVisible = contentCapabilities.containsCT == false
+
+        reloadWLPresetMenu()
 
         let clutItems = [NSLocalizedString("No CLUT", comment: "")] + clutNames
         reload(popUp: clutPopup, items: clutItems)
 
         let opacityItems = [NSLocalizedString("Linear Table", comment: "")] + opacityNames
         reload(popUp: opacityPopup, items: opacityItems)
+        rebuildVisibilityMenu()
+        rebuildTumorActionsMenu()
+    }
+
+    func setActiveModality(_ modality: String) {
+        activeModality = modality.uppercased()
+        reloadWLPresetMenu()
     }
 
     func selectWLPreset(named name: String) {
@@ -115,8 +148,7 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
 
     func setSkinClipDepthMM(_ depth: Float) {
         skinClipDepthMM = min(max(depth, 0), 20)
-        skinDepthSlider.floatValue = skinClipDepthMM
-        skinDepthValueLabel.stringValue = String(format: "%.1f mm", skinClipDepthMM)
+        rebuildVisibilityMenu()
     }
 
     func selectAllTumorLabels() {
@@ -125,49 +157,54 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
 
     func setSurgicalTrajectoryAvailable(_ isAvailable: Bool) {
         surgicalTrajectoryAvailable = isAvailable
-        surgicalTrajectoryItem?.isEnabled = isAvailable
+        surgicalTrajectoryMenuItem?.isEnabled = isAvailable
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [
+        var identifiers: [NSToolbarItem.Identifier] = [
             ItemIdentifier.crop,
             ItemIdentifier.shading,
-            ItemIdentifier.skin,
-            ItemIdentifier.skinSurface,
-            ItemIdentifier.skinDepth,
-            ItemIdentifier.tumorSegmentation,
-            ItemIdentifier.tumorVisibility,
-            ItemIdentifier.tumorLabel,
-            ItemIdentifier.tumorInfo,
-            ItemIdentifier.tumorClear,
-            ItemIdentifier.surgicalTrajectory,
-            ItemIdentifier.histogram,
+        ]
+        if contentCapabilities.hasVisibilityOptions {
+            identifiers.append(ItemIdentifier.visibility)
+        }
+        if contentCapabilities.containsMRI {
+            identifiers.append(ItemIdentifier.tumorActions)
+            identifiers.append(ItemIdentifier.tumorLabel)
+        }
+        if contentCapabilities.containsCT {
+            identifiers.append(ItemIdentifier.histogram)
+        }
+        identifiers += [
+            .flexibleSpace,
             ItemIdentifier.wlww,
             ItemIdentifier.clut,
             ItemIdentifier.opacity,
         ]
+        return identifiers
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [
+        var identifiers: [NSToolbarItem.Identifier] = [
             ItemIdentifier.crop,
             ItemIdentifier.shading,
-            ItemIdentifier.skin,
-            ItemIdentifier.skinSurface,
-            ItemIdentifier.skinDepth,
-            ItemIdentifier.tumorSegmentation,
-            ItemIdentifier.tumorVisibility,
-            ItemIdentifier.tumorLabel,
-            ItemIdentifier.tumorInfo,
-            ItemIdentifier.tumorClear,
-            ItemIdentifier.surgicalTrajectory,
-            ItemIdentifier.histogram,
             ItemIdentifier.wlww,
             ItemIdentifier.clut,
             ItemIdentifier.opacity,
             .flexibleSpace,
             .space,
         ]
+        if contentCapabilities.hasVisibilityOptions {
+            identifiers.insert(ItemIdentifier.visibility, at: 2)
+        }
+        if contentCapabilities.containsMRI {
+            identifiers.insert(ItemIdentifier.tumorActions, at: 3)
+            identifiers.insert(ItemIdentifier.tumorLabel, at: 4)
+        }
+        if contentCapabilities.containsCT {
+            identifiers.insert(ItemIdentifier.histogram, at: min(identifiers.count, 5))
+        }
+        return identifiers
     }
 
     func toolbar(
@@ -196,92 +233,41 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
             item.image = NSImage(systemSymbolName: shadingEnabled ? "lightbulb.max.fill" : "lightbulb.slash", accessibilityDescription: item.label)
             return item
 
-        case ItemIdentifier.skin:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = NSLocalizedString("Skin", comment: "")
-            item.paletteLabel = NSLocalizedString("Show Skin", comment: "")
-            item.toolTip = NSLocalizedString("Show or hide the extracted outer skin shell", comment: "")
-            skinCheckbox.state = skinEnabled ? .on : .off
-            item.view = skinCheckbox
-            return item
-
-        case ItemIdentifier.skinSurface:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = NSLocalizedString("Surface", comment: "")
-            item.paletteLabel = NSLocalizedString("Show Skin Surface", comment: "")
-            item.toolTip = NSLocalizedString("Show or hide the red extracted skin boundary surface", comment: "")
-            skinSurfaceCheckbox.state = skinSurfaceEnabled ? .on : .off
-            item.view = skinSurfaceCheckbox
-            return item
-
-        case ItemIdentifier.skinDepth:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = NSLocalizedString("Clip", comment: "")
-            item.paletteLabel = NSLocalizedString("Skin Clip Depth", comment: "")
-            item.toolTip = NSLocalizedString("Adjust how many millimeters inward from the extracted skin boundary are clipped", comment: "")
-            item.view = makeSkinDepthSlider(width: 170)
-            return item
-
-        case ItemIdentifier.tumorSegmentation:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = NSLocalizedString("Run Tumour", comment: "")
-            item.paletteLabel = NSLocalizedString("Run Tumour Segmentation", comment: "")
-            item.toolTip = NSLocalizedString("Run a local tumour segmentation helper and show the returned labelmap", comment: "")
+        case ItemIdentifier.visibility:
+            guard contentCapabilities.hasVisibilityOptions else { return nil }
+            let item = NSMenuToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = NSLocalizedString("Visibility", comment: "")
+            item.paletteLabel = item.label
+            item.toolTip = NSLocalizedString("Choose which structures from the loaded modalities are visible", comment: "")
+            item.image = NSImage(systemSymbolName: "eye", accessibilityDescription: item.label)
+            item.menu = visibilityMenu
             item.target = self
-            item.action = #selector(runTumorSegmentation(_:))
-            item.image = NSImage(systemSymbolName: "cross.case", accessibilityDescription: item.label)
+            item.action = #selector(showVisibilityMenu(_:))
             return item
 
-        case ItemIdentifier.tumorVisibility:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        case ItemIdentifier.tumorActions:
+            guard contentCapabilities.containsMRI else { return nil }
+            let item = NSMenuToolbarItem(itemIdentifier: itemIdentifier)
             item.label = NSLocalizedString("Tumour", comment: "")
-            item.paletteLabel = NSLocalizedString("Show Tumour Segmentation", comment: "")
-            item.toolTip = NSLocalizedString("Show or hide the loaded tumour segmentation surfaces", comment: "")
-            tumorVisibilityCheckbox.state = tumorVisible ? .on : .off
-            item.view = tumorVisibilityCheckbox
+            item.paletteLabel = NSLocalizedString("Tumour Tools", comment: "")
+            item.toolTip = NSLocalizedString("Tumour segmentation and surgical planning tools", comment: "")
+            item.image = NSImage(systemSymbolName: "cross.case", accessibilityDescription: item.label)
+            item.menu = tumorActionsMenu
+            item.target = self
+            item.action = #selector(showTumorActionsMenu(_:))
             return item
 
         case ItemIdentifier.tumorLabel:
+            guard contentCapabilities.containsMRI else { return nil }
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
             item.label = NSLocalizedString("Label", comment: "")
             item.paletteLabel = NSLocalizedString("Tumour Label Filter", comment: "")
             item.toolTip = NSLocalizedString("Choose which tumour segmentation label surface is shown", comment: "")
-            item.view = makeLabeledPopup(title: item.label, popup: tumorLabelPopup, width: 150)
-            return item
-
-        case ItemIdentifier.tumorInfo:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = NSLocalizedString("Info", comment: "")
-            item.paletteLabel = NSLocalizedString("Tumour Segmentation Info", comment: "")
-            item.toolTip = NSLocalizedString("Show statistics and metadata for the current tumour segmentation", comment: "")
-            item.target = self
-            item.action = #selector(showTumorInfo(_:))
-            item.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: item.label)
-            return item
-
-        case ItemIdentifier.tumorClear:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = NSLocalizedString("Clear", comment: "")
-            item.paletteLabel = NSLocalizedString("Clear Tumour Segmentation", comment: "")
-            item.toolTip = NSLocalizedString("Remove the currently loaded tumour segmentation surfaces", comment: "")
-            item.target = self
-            item.action = #selector(clearTumorSegmentation(_:))
-            item.image = NSImage(systemSymbolName: "trash", accessibilityDescription: item.label)
-            return item
-
-        case ItemIdentifier.surgicalTrajectory:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = NSLocalizedString("Trajectory", comment: "")
-            item.paletteLabel = NSLocalizedString("Surgical Trajectory", comment: "")
-            item.toolTip = NSLocalizedString("Show the initial tumour-centre to skin-surface surgical trajectory", comment: "")
-            item.target = self
-            item.action = #selector(showSurgicalTrajectory(_:))
-            item.image = NSImage(systemSymbolName: "arrow.up.forward", accessibilityDescription: item.label)
-            item.isEnabled = surgicalTrajectoryAvailable
-            surgicalTrajectoryItem = item
+            item.view = makeToolbarPopup(tumorLabelPopup, width: 150)
             return item
 
         case ItemIdentifier.histogram:
+            guard contentCapabilities.containsCT else { return nil }
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
             item.label = NSLocalizedString("Histogram", comment: "")
             item.paletteLabel = item.label
@@ -296,7 +282,7 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
             item.label = NSLocalizedString("WL/WW", comment: "")
             item.paletteLabel = item.label
             item.toolTip = NSLocalizedString("Window level and width presets", comment: "")
-            item.view = makeLabeledPopup(title: item.label, popup: wlwwPopup, width: 220)
+            item.view = makeToolbarPopup(wlwwPopup, width: 190)
             return item
 
         case ItemIdentifier.clut:
@@ -304,7 +290,7 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
             item.label = NSLocalizedString("CLUT", comment: "")
             item.paletteLabel = item.label
             item.toolTip = NSLocalizedString("Pseudo color lookup table presets", comment: "")
-            item.view = makeLabeledPopup(title: item.label, popup: clutPopup, width: 220)
+            item.view = makeToolbarPopup(clutPopup, width: 180)
             return item
 
         case ItemIdentifier.opacity:
@@ -312,7 +298,7 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
             item.label = NSLocalizedString("Opacity", comment: "")
             item.paletteLabel = item.label
             item.toolTip = NSLocalizedString("Opacity presets", comment: "")
-            item.view = makeLabeledPopup(title: item.label, popup: opacityPopup, width: 220)
+            item.view = makeToolbarPopup(opacityPopup, width: 200)
             return item
 
         default:
@@ -339,21 +325,41 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
     }
 
     @objc
-    private func toggleSkin(_ sender: NSButton) {
-        skinEnabled = sender.state == .on
+    private func showVisibilityMenu(_ sender: Any?) {
+        visibilityMenu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    @objc
+    private func showTumorActionsMenu(_ sender: Any?) {
+        tumorActionsMenu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    @objc
+    private func toggleSkin(_ sender: NSMenuItem) {
+        skinEnabled.toggle()
+        sender.state = skinEnabled ? .on : .off
         skinHandler?(skinEnabled)
     }
 
     @objc
-    private func toggleSkinSurface(_ sender: NSButton) {
-        skinSurfaceEnabled = sender.state == .on
+    private func toggleSkinSurface(_ sender: NSMenuItem) {
+        skinSurfaceEnabled.toggle()
+        sender.state = skinSurfaceEnabled ? .on : .off
         skinSurfaceHandler?(skinSurfaceEnabled)
     }
 
     @objc
-    private func skinDepthDidChange(_ sender: NSSlider) {
-        setSkinClipDepthMM(sender.floatValue)
+    private func skinDepthDidChange(_ sender: NSMenuItem) {
+        guard let number = sender.representedObject as? NSNumber else { return }
+        setSkinClipDepthMM(number.floatValue)
         skinClipDepthHandler?(skinClipDepthMM)
+    }
+
+    @objc
+    private func toggleMetalVisibility(_ sender: NSMenuItem) {
+        metalVisible = sender.state != .on
+        sender.state = metalVisible ? .on : .off
+        metalVisibilityHandler?(metalVisible)
     }
 
     @objc
@@ -367,8 +373,9 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
     }
 
     @objc
-    private func toggleTumorVisibility(_ sender: NSButton) {
-        tumorVisible = sender.state == .on
+    private func toggleTumorVisibility(_ sender: NSMenuItem) {
+        tumorVisible.toggle()
+        sender.state = tumorVisible ? .on : .off
         tumorVisibilityHandler?(tumorVisible)
     }
 
@@ -425,9 +432,154 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
         opacitySelectionHandler?(title)
     }
 
+    private func rebuildVisibilityMenu() {
+        visibilityMenu.autoenablesItems = false
+        visibilityMenu.removeAllItems()
+
+        if contentCapabilities.containsMRI {
+            visibilityMenu.addItem(
+                checkableMenuItem(
+                    title: NSLocalizedString("Show Skin", comment: ""),
+                    action: #selector(toggleSkin(_:)),
+                    isOn: skinEnabled
+                )
+            )
+            visibilityMenu.addItem(
+                checkableMenuItem(
+                    title: NSLocalizedString("Show Surface", comment: ""),
+                    action: #selector(toggleSkinSurface(_:)),
+                    isOn: skinSurfaceEnabled
+                )
+            )
+            visibilityMenu.addItem(
+                checkableMenuItem(
+                    title: NSLocalizedString("Show Tumour", comment: ""),
+                    action: #selector(toggleTumorVisibility(_:)),
+                    isOn: tumorVisible
+                )
+            )
+
+            let depthItem = NSMenuItem(
+                title: NSLocalizedString("Skin Clip Depth", comment: ""),
+                action: nil,
+                keyEquivalent: ""
+            )
+            let depthMenu = NSMenu(title: depthItem.title)
+            var depthValues: [Float] = [0, 2, 4, 6, 8, 10, 12, 15, 20]
+            if depthValues.contains(where: { abs($0 - skinClipDepthMM) < 0.01 }) == false {
+                depthValues.append(skinClipDepthMM)
+                depthValues.sort()
+            }
+            for depth in depthValues {
+                let item = NSMenuItem(
+                    title: String(format: "%.1f mm", depth),
+                    action: #selector(skinDepthDidChange(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = NSNumber(value: depth)
+                item.state = abs(depth - skinClipDepthMM) < 0.01 ? .on : .off
+                depthMenu.addItem(item)
+            }
+            depthItem.submenu = depthMenu
+            visibilityMenu.addItem(.separator())
+            visibilityMenu.addItem(depthItem)
+        }
+
+        if contentCapabilities.containsCT {
+            if visibilityMenu.items.isEmpty == false {
+                visibilityMenu.addItem(.separator())
+            }
+            visibilityMenu.addItem(
+                checkableMenuItem(
+                    title: NSLocalizedString("Show Metal", comment: ""),
+                    action: #selector(toggleMetalVisibility(_:)),
+                    isOn: metalVisible
+                )
+            )
+        }
+    }
+
+    private func rebuildTumorActionsMenu() {
+        tumorActionsMenu.autoenablesItems = false
+        tumorActionsMenu.removeAllItems()
+        surgicalTrajectoryMenuItem = nil
+        guard contentCapabilities.containsMRI else { return }
+
+        tumorActionsMenu.addItem(
+            actionMenuItem(
+                title: NSLocalizedString("Run Tumour Segmentation", comment: ""),
+                action: #selector(runTumorSegmentation(_:))
+            )
+        )
+        tumorActionsMenu.addItem(
+            actionMenuItem(
+                title: NSLocalizedString("Segmentation Information", comment: ""),
+                action: #selector(showTumorInfo(_:))
+            )
+        )
+        tumorActionsMenu.addItem(
+            actionMenuItem(
+                title: NSLocalizedString("Clear Tumour Segmentation", comment: ""),
+                action: #selector(clearTumorSegmentation(_:))
+            )
+        )
+        tumorActionsMenu.addItem(.separator())
+        let trajectoryItem = actionMenuItem(
+            title: NSLocalizedString("Show Initial Surgical Trajectory", comment: ""),
+            action: #selector(showSurgicalTrajectory(_:))
+        )
+        trajectoryItem.isEnabled = surgicalTrajectoryAvailable
+        tumorActionsMenu.addItem(trajectoryItem)
+        surgicalTrajectoryMenuItem = trajectoryItem
+    }
+
+    private func checkableMenuItem(title: String, action: Selector, isOn: Bool) -> NSMenuItem {
+        let item = actionMenuItem(title: title, action: action)
+        item.state = isOn ? .on : .off
+        return item
+    }
+
+    private func actionMenuItem(title: String, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    private func reloadWLPresetMenu() {
+        let items = [
+            NSLocalizedString("Other", comment: ""),
+            NSLocalizedString("Default WL & WW", comment: ""),
+            NSLocalizedString("Full dynamic", comment: ""),
+        ] + wlwwPresetNames
+            .filter { shouldShowWLPreset(named: $0, modality: activeModality) }
+            .map { "- \($0)" }
+        reload(popUp: wlwwPopup, items: items)
+    }
+
+    private func shouldShowWLPreset(named name: String, modality: String) -> Bool {
+        let uppercasedName = name.uppercased()
+        let knownPrefixes = ["CT", "MR", "MRI", "PT", "PET", "NM", "US", "XA", "RF", "CR", "DX", "MG"]
+        let matchingPrefixes = knownPrefixes.filter {
+            uppercasedName == $0
+                || uppercasedName.hasPrefix("\($0) ")
+                || uppercasedName.hasPrefix("\($0)-")
+        }
+
+        guard matchingPrefixes.isEmpty == false else { return true }
+        if modality == "MR" || modality == "MRI" {
+            return matchingPrefixes.contains("MR") || matchingPrefixes.contains("MRI")
+        }
+        if modality == "PT" {
+            return matchingPrefixes.contains("PT") || matchingPrefixes.contains("PET")
+        }
+        return matchingPrefixes.contains(modality)
+    }
+
     private func configurePopUp(_ popup: NSPopUpButton) {
         popup.translatesAutoresizingMaskIntoConstraints = false
         popup.controlSize = .small
+        popup.bezelStyle = .regularSquare
         popup.setContentHuggingPriority(.defaultHigh, for: .horizontal)
     }
 
@@ -476,66 +628,21 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
         }
     }
 
-    private func makeLabeledPopup(title: String, popup: NSPopUpButton, width: CGFloat) -> NSView {
-        let label = NSTextField(labelWithString: title)
-        label.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        label.textColor = NSColor.secondaryLabelColor
-
-        let stack = NSStackView(views: [label, popup])
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 4
-
+    private func makeToolbarPopup(_ popup: NSPopUpButton, width: CGFloat) -> NSView {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(stack)
+        container.addSubview(popup)
 
         NSLayoutConstraint.activate([
             container.widthAnchor.constraint(equalToConstant: width),
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: container.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            container.heightAnchor.constraint(equalToConstant: 30),
+            popup.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            popup.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            popup.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            popup.heightAnchor.constraint(equalToConstant: 26),
         ])
 
         return container
     }
 
-    private func makeSkinDepthSlider(width: CGFloat) -> NSView {
-        let label = NSTextField(labelWithString: NSLocalizedString("Clip", comment: ""))
-        label.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        label.textColor = NSColor.secondaryLabelColor
-
-        let header = NSStackView(views: [label, skinDepthValueLabel])
-        header.translatesAutoresizingMaskIntoConstraints = false
-        header.orientation = .horizontal
-        header.alignment = .centerY
-        header.spacing = 6
-        skinDepthValueLabel.setContentHuggingPriority(.required, for: .horizontal)
-
-        skinDepthSlider.translatesAutoresizingMaskIntoConstraints = false
-
-        let stack = NSStackView(views: [header, skinDepthSlider])
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 3
-
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(equalToConstant: width),
-            header.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            skinDepthSlider.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: container.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-
-        return container
-    }
 }

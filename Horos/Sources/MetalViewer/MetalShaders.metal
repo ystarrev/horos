@@ -14,6 +14,12 @@ constant uint kMetalViewerInterpolationNearest = 0;
 constant uint kMetalViewerInterpolationLanczos = 2;
 // Keep this synchronized with metal3DBrickSize in Metal3DVolumeRenderer.swift.
 constant uint kMetal3DBrickSize = 8;
+constant uint kMetal3DRenderingFlagSkinMask = 1u << 0;
+constant uint kMetal3DRenderingFlagHideMetal = 1u << 1;
+// Metal implants are frequently clipped or blurred below the nominal 2500–3000 HU
+// range. 2000 HU removes those voxels while retaining most of the cortical-bone
+// range used by the default CT transfer function.
+constant float kMetal3DMetalThresholdHU = 2000.0f;
 
 struct MetalVertex {
     float2 position;
@@ -144,6 +150,16 @@ struct Metal3DGradientUniforms {
     float4 voxelSpacing;
 };
 
+struct Metal3DSurfaceCursorPickUniforms {
+    float2 ndcPosition;
+    float2 padding;
+};
+
+struct Metal3DSurfaceCursorPickResult {
+    float4 positionAndHit;
+    float4 normal;
+};
+
 struct RasterizerData {
     float4 position [[position]];
     float2 texCoord;
@@ -200,7 +216,7 @@ struct Metal3DVolumeUniforms {
     float specular;
     float specularPower;
     uint hasCLUT;
-    uint skinMaskEnabled;
+    uint renderingFlags;
     uint3 brickGridDimensions;
     uint brickSize;
     uint opacityRangeSize;
@@ -1147,15 +1163,23 @@ static inline Metal3DBrickTraversal metal3DBrickTraversal(
 ) {
     const float3 voxelMaximum = max(float3(uniforms.volumeDimensions - uint3(1)), float3(1.0f));
     const float3 voxelPosition = clamp(texCoord, 0.0f, 1.0f) * voxelMaximum;
-    const float3 forwardProbe = voxelPosition + sign(voxelDirection) * 1.0e-4f;
+    const bool3 movingAxis = abs(voxelDirection) > 1.0e-6f;
+    const float3 effectiveDirection = select(float3(0.0f), voxelDirection, movingAxis);
+    const float3 forwardProbe = voxelPosition + sign(effectiveDirection) * 1.0e-4f;
     const int3 candidate = int3(floor(forwardProbe / float(max(uniforms.brickSize, 1u))));
     const uint3 brickIndex = uint3(clamp(candidate, int3(0), int3(uniforms.brickGridDimensions) - int3(1)));
     const float brickSize = float(max(uniforms.brickSize, 1u));
     const float3 lowerBoundary = float3(brickIndex) * brickSize;
     const float3 upperBoundary = float3(brickIndex + uint3(1)) * brickSize;
-    const float3 nextBoundary = select(lowerBoundary, upperBoundary, voxelDirection > 0.0f);
-    const float3 rawDistance = (nextBoundary - voxelPosition) / select(float3(1.0f), voxelDirection, abs(voxelDirection) > 1.0e-8f);
-    const float3 positiveDistance = select(float3(INFINITY), rawDistance, rawDistance > 1.0e-6f);
+    const float3 nextBoundary = select(lowerBoundary, upperBoundary, effectiveDirection > 0.0f);
+    const float3 distanceToBoundary = abs(nextBoundary - voxelPosition);
+    const float3 rawDistance = distanceToBoundary / max(abs(effectiveDirection), float3(1.0e-6f));
+    const bool3 validDistance = select(
+        bool3(false),
+        distanceToBoundary > 1.0e-5f,
+        movingAxis
+    );
+    const float3 positiveDistance = select(float3(INFINITY), rawDistance, validDistance);
     Metal3DBrickTraversal traversal;
     traversal.index = brickIndex;
     traversal.distance = min(positiveDistance.x, min(positiveDistance.y, positiveDistance.z));
@@ -1285,6 +1309,110 @@ static inline float metal3DSpecularPower15(float value) {
     return eighth * fourth * squared * value;
 }
 
+kernel void metal3DSurfaceCursorPick(
+    constant Metal3DVolumeUniforms &uniforms [[buffer(0)]],
+    constant Metal3DSurfaceCursorPickUniforms &cursor [[buffer(1)]],
+    device Metal3DSurfaceCursorPickResult &result [[buffer(2)]],
+    texture3d<float> volumeTexture [[texture(0)]],
+    texture2d<float> opacityTexture [[texture(2)]],
+    texture2d<float> preIntegratedTransferTexture [[texture(3)]],
+    texture3d<float> skinMaskTexture [[texture(4)]],
+    texture3d<float> gradientTexture [[texture(5)]],
+    sampler textureSampler [[sampler(0)]],
+    sampler maskSampler [[sampler(1)]]
+) {
+    result.positionAndHit = float4(0.0f);
+    result.normal = float4(0.0f);
+
+    const float3 rayOrigin = uniforms.cameraPosition
+        + cursor.ndcPosition.x * uniforms.aspectRatio * uniforms.tanHalfFovY * uniforms.cameraRight
+        + cursor.ndcPosition.y * uniforms.tanHalfFovY * uniforms.cameraUp;
+    const float3 rayDirection = uniforms.cameraForward;
+    const float3 marchingBoxMin = uniforms.cropEnabled != 0
+        ? max(uniforms.boxMin, uniforms.cropBoxMin)
+        : uniforms.boxMin;
+    const float3 marchingBoxMax = uniforms.cropEnabled != 0
+        ? min(uniforms.boxMax, uniforms.cropBoxMax)
+        : uniforms.boxMax;
+
+    float tMin = 0.0f;
+    float tMax = 0.0f;
+    if (!metal3DIntersectBox(rayOrigin, rayDirection, marchingBoxMin, marchingBoxMax, tMin, tMax)) {
+        return;
+    }
+
+    const float3 inverseBoxExtent = 1.0f / max(uniforms.boxMax - uniforms.boxMin, float3(1.0e-6f));
+    const float3 textureRayOrigin = (rayOrigin - uniforms.boxMin) * inverseBoxExtent;
+    const float3 textureRayDirection = rayDirection * inverseBoxExtent;
+    float accumulatedAlpha = 0.0f;
+    float t = max(tMin, 0.0f);
+    float previousScalar = 0.0f;
+    bool havePreviousScalar = false;
+
+    for (uint stepIndex = 0; stepIndex < uniforms.maxSteps && t <= tMax; ++stepIndex, t += uniforms.stepSize) {
+        const float3 texCoord = textureRayOrigin + textureRayDirection * t;
+        if (any(texCoord < 0.0f) || any(texCoord > 1.0f)) {
+            continue;
+        }
+        if ((uniforms.renderingFlags & kMetal3DRenderingFlagSkinMask) != 0u
+            && skinMaskTexture.sample(maskSampler, texCoord).r > 0.5f) {
+            havePreviousScalar = false;
+            continue;
+        }
+
+        const float scalar = volumeTexture.sample(textureSampler, texCoord).r;
+        if ((uniforms.renderingFlags & kMetal3DRenderingFlagHideMetal) != 0u
+            && scalar >= kMetal3DMetalThresholdHU) {
+            havePreviousScalar = false;
+            continue;
+        }
+
+        const float opacity = uniforms.usePreIntegratedTransfer != 0
+            ? metal3DPreIntegratedTransferAt(
+                havePreviousScalar ? previousScalar : scalar,
+                scalar,
+                uniforms.windowLevel,
+                uniforms.windowWidth,
+                uniforms.opacityDomainMin,
+                uniforms.opacityDomainMax,
+                uniforms.useRawOpacityCurve,
+                preIntegratedTransferTexture,
+                textureSampler
+            ).a
+            : metal3DOpacityAt(
+                scalar,
+                uniforms.windowLevel,
+                uniforms.windowWidth,
+                opacityTexture,
+                textureSampler
+            );
+        previousScalar = scalar;
+        havePreviousScalar = true;
+        const float sampleAlpha = clamp(opacity, 0.0f, 1.0f);
+        if (sampleAlpha <= 0.0f) {
+            continue;
+        }
+        accumulatedAlpha += (1.0f - accumulatedAlpha) * sampleAlpha;
+        if (accumulatedAlpha < 0.02f) {
+            continue;
+        }
+
+        float3 normal = metal3DGradient(texCoord, gradientTexture, textureSampler);
+        if (dot(normal, normal) <= 1.0e-10f) {
+            normal = -rayDirection;
+        } else {
+            normal = normalize(normal);
+            if (dot(normal, -rayDirection) < 0.0f) {
+                normal = -normal;
+            }
+        }
+        result.positionAndHit = float4(rayOrigin + rayDirection * t, 1.0f);
+        const float normalizedDepth = clamp((t - tMin) / max(tMax - tMin, 1.0e-6f), 0.0f, 1.0f);
+        result.normal = float4(normal, normalizedDepth);
+        return;
+    }
+}
+
 fragment Metal3DFragmentOutput metal3DVolumeFragment(
     Metal3DRasterizerData in [[stage_in]],
     constant Metal3DVolumeUniforms &uniforms [[buffer(0)]],
@@ -1356,23 +1484,33 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
                 opacityRangeTexture
             );
             const float brickDistance = traversal.distance;
-            activeBrickExitT = isfinite(brickDistance) ? t + brickDistance : tMax + uniforms.stepSize;
+            activeBrickExitT = isfinite(brickDistance)
+                ? min(t + max(brickDistance, uniforms.stepSize), tMax + uniforms.stepSize)
+                : tMax + uniforms.stepSize;
         }
         if (!activeBrickCanContribute) {
-            const float remainingBrickDistance = max(activeBrickExitT - t, 0.0f);
+            const float remainingBrickDistance = min(
+                max(activeBrickExitT - t, 0.0f),
+                max(tMax - t, 0.0f)
+            );
             t += max(remainingBrickDistance - uniforms.stepSize, 0.0f);
             previousT = t;
             havePreviousScalar = false;
             continue;
         }
 
-        if (uniforms.skinMaskEnabled != 0 && skinMaskTexture.sample(maskSampler, texCoord).r > 0.5) {
+        if ((uniforms.renderingFlags & kMetal3DRenderingFlagSkinMask) != 0u && skinMaskTexture.sample(maskSampler, texCoord).r > 0.5) {
             previousT = t;
             havePreviousScalar = false;
             continue;
         }
 
         float scalar = volumeTexture.sample(textureSampler, texCoord).r;
+        if ((uniforms.renderingFlags & kMetal3DRenderingFlagHideMetal) != 0u && scalar >= kMetal3DMetalThresholdHU) {
+            previousT = t;
+            havePreviousScalar = false;
+            continue;
+        }
         float opacity = 0.0;
         float3 color = float3(0.0);
         if (uniforms.boneRenderingOptions.x > 0.5) {

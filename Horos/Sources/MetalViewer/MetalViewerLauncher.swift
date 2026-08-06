@@ -1,13 +1,5 @@
 import AppKit
 
-private func metalTimingLog(_ message: String, since start: CFAbsoluteTime? = nil) {
-    if let start {
-        MetalViewerDiagnostics.timingLog(message, since: start)
-    } else {
-        MetalViewerDiagnostics.timingLog(message)
-    }
-}
-
 enum MetalViewerScreenPlacement {
     private enum DefaultsKey {
         static let nonViewerScreens = "NonViewerScreens"
@@ -261,7 +253,6 @@ final class MetalViewerLauncher: NSObject {
 
     @objc(launchWithContext:)
     class func launch(withContext context: NSDictionary) {
-        let launchStart = CFAbsoluteTimeGetCurrent()
         guard let pixList = context["pixList"] as? NSArray,
               let frames = pixList as? [DCMPix],
               let title = context["title"] as? String,
@@ -282,37 +273,28 @@ final class MetalViewerLauncher: NSObject {
             )
             ensureDatabaseAddObserver()
 
-            let fullStudyStart = CFAbsoluteTimeGetCurrent()
             let fullStudy = buildStudy(
                 from: frames,
                 fallbackTitle: title,
                 forceDynamicInterpretation: forceDynamicInterpretation,
                 markScoutStudiesOpened: true
             )
-            metalTimingLog("MetalViewerLauncher build reused study", since: fullStudyStart)
-            let updateStart = CFAbsoluteTimeGetCurrent()
             existingController.updateStudy(
                 fullStudy,
                 selectInitialSeries: true,
                 revealSelectedSeriesInScout: true
             )
-            metalTimingLog("MetalViewerLauncher update reused window", since: updateStart)
             existingController.window?.makeKeyAndOrderFront(NSApp)
             NSApp.activate(ignoringOtherApps: true)
-            metalTimingLog("MetalViewerLauncher reused existing window total", since: launchStart)
             return
         }
 
-        let initialStudyStart = CFAbsoluteTimeGetCurrent()
         let study = buildInitialStudy(
             from: frames,
             fallbackTitle: title,
             forceDynamicInterpretation: forceDynamicInterpretation
         )
-        metalTimingLog("MetalViewerLauncher buildInitialStudy", since: initialStudyStart)
-        let controllerStart = CFAbsoluteTimeGetCurrent()
         let controller = MetalViewerWindowController(study: study)
-        metalTimingLog("MetalViewerLauncher create window controller", since: controllerStart)
         retainedControllers.append(controller)
         let controllerIdentifier = ObjectIdentifier(controller)
         refreshContexts[controllerIdentifier] = ViewerRefreshContext(
@@ -333,38 +315,25 @@ final class MetalViewerLauncher: NSObject {
             refreshContexts.removeValue(forKey: ObjectIdentifier(controller))
         }
 
-        let presentationStart = CFAbsoluteTimeGetCurrent()
         applyFastPresentationFrame(to: controller.window)
         controller.restoreSavedSplitPositionForPresentation()
-        metalTimingLog("MetalViewerLauncher prepare presentation frame", since: presentationStart)
 
-        let showStart = CFAbsoluteTimeGetCurrent()
-        let orderStart = CFAbsoluteTimeGetCurrent()
         controller.window?.makeKeyAndOrderFront(NSApp)
-        metalTimingLog("MetalViewerLauncher order window", since: orderStart)
 
-        let activateStart = CFAbsoluteTimeGetCurrent()
         NSApp.activate(ignoringOtherApps: true)
-        metalTimingLog("MetalViewerLauncher activate app", since: activateStart)
-        metalTimingLog("MetalViewerLauncher show/order window", since: showStart)
-        metalTimingLog("MetalViewerLauncher synchronous launch total", since: launchStart)
 
         DispatchQueue.main.async {
-            let fullStudyStart = CFAbsoluteTimeGetCurrent()
             let fullStudy = buildStudy(
                 from: frames,
                 fallbackTitle: title,
                 forceDynamicInterpretation: forceDynamicInterpretation,
                 markScoutStudiesOpened: true
             )
-            metalTimingLog("MetalViewerLauncher build full study", since: fullStudyStart)
-            let updateStart = CFAbsoluteTimeGetCurrent()
             controller.updateStudy(
                 fullStudy,
                 selectInitialSeries: forceDynamicInterpretation,
                 revealSelectedSeriesInScout: true
             )
-            metalTimingLog("MetalViewerLauncher update full study", since: updateStart)
         }
     }
 
@@ -469,17 +438,13 @@ final class MetalViewerLauncher: NSObject {
                 }
             }
 
-            let refreshStart = CFAbsoluteTimeGetCurrent()
             let updatedStudy = buildStudy(
                 from: context.frames,
                 fallbackTitle: context.fallbackTitle,
                 forceDynamicInterpretation: context.forceDynamicInterpretation,
                 markScoutStudiesOpened: false
             )
-            let changedPaneCount = controller.updateStudy(updatedStudy)
-            if changedPaneCount > 0 {
-                metalTimingLog("MetalViewerLauncher refreshed open viewer panes=\(changedPaneCount)", since: refreshStart)
-            }
+            controller.updateStudy(updatedStudy)
         }
     }
 

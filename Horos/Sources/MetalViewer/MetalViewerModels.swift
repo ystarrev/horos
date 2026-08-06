@@ -4,64 +4,6 @@ import Foundation
 import Metal
 import simd
 
-enum MetalViewerDiagnostics {
-    private static let timingLogDefaultsKey = "HorosMetalViewerTimingLogEnabled"
-    private static let registrationTimingLogDefaultsKey = "HorosMetalViewerRegistrationTimingLogEnabled"
-
-    static var isTimingLogEnabled: Bool {
-        bool(forKey: timingLogDefaultsKey, defaultValue: false)
-    }
-
-    static var isRegistrationTimingLogEnabled: Bool {
-        isTimingLogEnabled || bool(forKey: registrationTimingLogDefaultsKey, defaultValue: false)
-    }
-
-    static func timingLog(_ message: String) {
-        guard isTimingLogEnabled else { return }
-        emit("HOROS_METAL_TIMING \(message)")
-    }
-
-    static func timingLog(_ message: String, since start: CFAbsoluteTime) {
-        guard isTimingLogEnabled else { return }
-        emit(String(format: "HOROS_METAL_TIMING %@ %.3f s", message, CFAbsoluteTimeGetCurrent() - start))
-    }
-
-    static func timingLog(format: String, _ arguments: CVarArg...) {
-        guard isTimingLogEnabled else { return }
-        emit(String(format: "HOROS_METAL_TIMING " + format, arguments: arguments))
-    }
-
-    static func registrationTimingLog(_ message: String) {
-        guard isRegistrationTimingLogEnabled else { return }
-        emit("HOROS_METAL_REGISTRATION_TIMING \(message)")
-    }
-
-    static func registrationTimingLog(_ message: String, since start: CFAbsoluteTime) {
-        guard isRegistrationTimingLogEnabled else { return }
-        emit(String(format: "HOROS_METAL_REGISTRATION_TIMING %@ %.3f s", message, CFAbsoluteTimeGetCurrent() - start))
-    }
-
-    static func registrationTimingLog(format: String, _ arguments: CVarArg...) {
-        guard isRegistrationTimingLogEnabled else { return }
-        emit(String(format: "HOROS_METAL_REGISTRATION_TIMING " + format, arguments: arguments))
-    }
-
-    /// One concise profile is emitted for every completed registration so a
-    /// performance run does not depend on a hidden diagnostics preference.
-    static func registrationProfileLog(format: String, _ arguments: CVarArg...) {
-        emit(String(format: "HOROS_METAL_REGISTRATION_PROFILE " + format, arguments: arguments))
-    }
-
-    private static func emit(_ message: String) {
-        NSLog("%@", message)
-    }
-
-    private static func bool(forKey key: String, defaultValue: Bool) -> Bool {
-        guard UserDefaults.standard.object(forKey: key) != nil else { return defaultValue }
-        return UserDefaults.standard.bool(forKey: key)
-    }
-}
-
 enum MetalTextureLimits {
     static let maximum3DTextureDimension = 2_048
 
@@ -1079,7 +1021,6 @@ final class MetalSeriesTextureCache {
             return nil
         }
 
-        let start = CFAbsoluteTimeGetCurrent()
         let width = max(firstDimensions.width, 1)
         let height = max(firstDimensions.height, 1)
         let depth = max(pixList.count, 1)
@@ -1149,13 +1090,6 @@ final class MetalSeriesTextureCache {
         }
         guard remainingSlicesLoaded else { return nil }
 
-        MetalViewerDiagnostics.timingLog(
-            format: "MetalSeriesTextureCache buildStoredInt16 %dx%dx%d %.3f s",
-            width,
-            height,
-            depth,
-            CFAbsoluteTimeGetCurrent() - start
-        )
         return Entry(
             key: key,
             texture: texture,
@@ -2975,7 +2909,6 @@ final class MetalPreparedVolumeCache {
             return
         }
 
-        let start = CFAbsoluteTimeGetCurrent()
         let sourceDimensions = sourceEntry.dimensions
         let geometry = MetalViewerGantryTiltGeometryBuilder.geometry(
             for: pixList,
@@ -3073,15 +3006,6 @@ final class MetalPreparedVolumeCache {
             finish(requestKey: requestKey, key: key, entry: nil)
             return
         }
-        MetalViewerDiagnostics.registrationTimingLog(
-            format: "MetalPreparedVolumeCache prepare %dx%dx%d pyramid=%d gantry=%d %.3f s",
-            outputDimensions.x,
-            outputDimensions.y,
-            outputDimensions.z,
-            includeRegistrationPyramid ? 1 : 0,
-            appliesGantryCorrection ? 1 : 0,
-            CFAbsoluteTimeGetCurrent() - start
-        )
         finish(requestKey: requestKey, key: key, entry: entry)
     }
 

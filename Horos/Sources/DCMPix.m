@@ -122,13 +122,6 @@ static void* HorosDCMPixModernDCMTKBridgeHandle(void)
         if (resolvedPath)
         {
             handle = dlopen(resolvedPath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-            if (handle == NULL && [[NSUserDefaults standardUserDefaults] boolForKey:@"HorosMetalViewerTimingLogEnabled"])
-                NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK bridge failed to load at %@: %s", resolvedPath, dlerror());
-        }
-        else
-        {
-            if ([[NSUserDefaults standardUserDefaults] boolForKey:@"HorosMetalViewerTimingLogEnabled"])
-                NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK bridge not found in bundle search paths.");
         }
     });
 
@@ -141,25 +134,6 @@ static void* HorosDCMPixModernDCMTKSymbol(const char* name)
     if (handle == NULL)
         return NULL;
     void *symbol = dlsym(handle, name);
-    if (symbol == NULL)
-    {
-        static NSMutableSet *missingSymbols = nil;
-        static dispatch_once_t onceToken;
-        dispatch_once(&onceToken, ^{
-            missingSymbols = [[NSMutableSet alloc] init];
-        });
-
-        NSString *symbolName = [NSString stringWithUTF8String:name] ?: @"<unknown>";
-        @synchronized(missingSymbols)
-        {
-            if ([missingSymbols containsObject:symbolName] == NO)
-            {
-                [missingSymbols addObject:symbolName];
-                if ([[NSUserDefaults standardUserDefaults] boolForKey:@"HorosMetalViewerTimingLogEnabled"])
-                    NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK bridge missing symbol %@: %s", symbolName, dlerror());
-            }
-        }
-    }
     return symbol;
 }
 #import "DICOMToNSString.h"
@@ -278,13 +252,12 @@ static NSManagedObject *HorosDCMPixExistingImageOnContextQueue(NSManagedObjectCo
     }
     @catch (NSException *exception)
     {
+        (void)exception;
         // A DCMPix can outlive an import context, and temporary decoder pix objects
         // intentionally have no Core Data object.  Resolving either kind of ID in an
         // independent context raises an Objective-C exception rather than returning
         // an NSError.  Pixel decoding must still succeed; the database size update is
         // only a cache correction and can safely be skipped.
-        if ([[NSUserDefaults standardUserDefaults] boolForKey:@"HorosMetalViewerTimingLogEnabled"])
-            NSLog(@"HOROS_METAL_TIMING DCMPix skipped unavailable image object %@: %@", objectID, exception.reason);
         return nil;
     }
 }
@@ -5041,7 +5014,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
 - (BOOL)loadDICOMModernDCMTK
 {
-    CFAbsoluteTime startTime = CFAbsoluteTimeGetCurrent();
     HorosDCMPixModernDCMTKCopyDecodedFrameFunction copyDecodedFrame =
         (HorosDCMPixModernDCMTKCopyDecodedFrameFunction)HorosDCMPixModernDCMTKSymbol("HorosModernDCMTKCopyDecodedFrame");
     HorosDCMPixModernDCMTKFreeDecodedFrameFunction freeDecodedFrame =
@@ -5056,9 +5028,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     const unsigned long requestedFrame = frameNo < 0 ? 0 : (unsigned long)frameNo;
     if (copyDecodedFrame([self.srcFile fileSystemRepresentation], requestedFrame, &decodedFrame) == 0)
     {
-        NSString *failureReason = decodedFrame.failureReason != NULL ? [NSString stringWithUTF8String:decodedFrame.failureReason] : @"unknown";
-        if ([[NSUserDefaults standardUserDefaults] boolForKey:@"HorosMetalViewerTimingLogEnabled"])
-            NSLog(@"HOROS_METAL_TIMING DCMPix modern DCMTK decode unsupported/fail frame=%lu path=%@ reason=\"%@\" in %.3f s", requestedFrame, [self.srcFile lastPathComponent], failureReason, CFAbsoluteTimeGetCurrent() - startTime);
         freeDecodedFrame(&decodedFrame);
         return NO;
     }
@@ -5149,7 +5118,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
 - (BOOL)loadDICOMDCMFramework
 {
-    CFAbsoluteTime startTime = CFAbsoluteTimeGetCurrent();
     // Memory test: DCMFramework requires a lot of memory...
     unsigned long long fileSize = [[[NSFileManager defaultManager] attributesOfItemAtPath:self.srcFile error:NULL] fileSize];
     fileSize *= 1.5;
@@ -6220,8 +6188,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     [purgeCacheLock unlockWithCondition: [purgeCacheLock condition]-1];
     [pool release];
     
-    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"HorosMetalViewerTimingLogEnabled"])
-        NSLog(@"HOROS_METAL_TIMING DCMPix legacy DCMFramework decode %@ path=%@ in %.3f s", returnValue ? @"success" : @"fail", [self.srcFile lastPathComponent], CFAbsoluteTimeGetCurrent() - startTime);
     return returnValue;
 }
 

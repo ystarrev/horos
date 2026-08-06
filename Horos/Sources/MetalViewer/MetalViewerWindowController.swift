@@ -1,9 +1,5 @@
 import AppKit
 
-private func metalWindowTimingLog(_ message: String, since start: CFAbsoluteTime) {
-    MetalViewerDiagnostics.timingLog(message, since: start)
-}
-
 private final class MetalImagePrintView: NSView {
     private let image: NSImage
     private let printInfo: NSPrintInfo
@@ -194,19 +190,15 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private var scoutPlacementObserver: NSObjectProtocol?
 
     init(study: MetalViewerStudy) {
-        let initStart = CFAbsoluteTimeGetCurrent()
         self.study = study
         let initialScoutPlacement = MetalViewerScoutPlacement.saved
         self.scoutPlacement = initialScoutPlacement
 
-        let firstSeriesStart = CFAbsoluteTimeGetCurrent()
         let firstSeries = study.series.first { $0.identifier == study.initialSeriesIdentifier } ?? study.series[0]
         let firstPix = firstSeries.firstPreviewPix() ?? firstSeries.loadedPixList()[0]
         let imageWidth = max(CGFloat(firstPix.pwidth), 512)
         let imageHeight = max(CGFloat(firstPix.pheight), 512)
         let aspectRatio = imageWidth / max(imageHeight, 1)
-        metalWindowTimingLog("MetalViewerWindowController first series/pix sizing", since: firstSeriesStart)
-
         let contentWidth = min(max(imageWidth, 900), 1600)
         let contentHeight = min(max(contentWidth / aspectRatio, 700), 1200)
         let contentRect = NSRect(x: 0, y: 0, width: contentWidth, height: contentHeight)
@@ -218,13 +210,11 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             defer: false
         )
 
-        let scoutStart = CFAbsoluteTimeGetCurrent()
         self.scoutView = MetalViewerScoutView(
             series: study.series,
             procedureEvents: study.procedureEvents,
             placement: initialScoutPlacement
         )
-        metalWindowTimingLog("MetalViewerWindowController scout init", since: scoutStart)
         self.scoutWidthConstraint = scoutContainer.widthAnchor.constraint(
             equalToConstant: Self.savedScoutDimension(for: .left, splitLength: contentRect.width)
         )
@@ -376,9 +366,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         constraints.append(initialScoutPlacement == .left ? scoutWidthConstraint : scoutHeightConstraint)
         NSLayoutConstraint.activate(constraints)
 
-        let firstPaneStart = CFAbsoluteTimeGetCurrent()
         addPane(for: firstSeries, makeActive: true)
-        metalWindowTimingLog("MetalViewerWindowController first pane init", since: firstPaneStart)
 
         scoutView.selectionHandler = { [weak self] series in
             guard let self else { return }
@@ -408,7 +396,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             self.assignSeries(withIdentifier: series.identifier, to: targetPane, overlay: true)
         }
 
-        metalWindowTimingLog("MetalViewerWindowController init total", since: initStart)
     }
 
     deinit {
@@ -626,7 +613,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     }
 
     private func addPane(for series: MetalViewerSeries, makeActive: Bool) {
-        let addPaneStart = CFAbsoluteTimeGetCurrent()
         guard paneViews.count < Layout.maximumPaneCount else {
             NSSound.beep()
             return
@@ -679,7 +665,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
 
         updateReferenceLines()
-        metalWindowTimingLog("MetalViewerWindowController addPane \(series.title)", since: addPaneStart)
     }
 
     private func setActivePane(_ pane: MetalViewerPaneView) {
@@ -808,7 +793,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         selectInitialSeries: Bool = false,
         revealSelectedSeriesInScout: Bool = false
     ) -> Int {
-        let updateStart = CFAbsoluteTimeGetCurrent()
         for series in study.series {
             let previousSeries = self.study.series.first(where: { $0.identifier == series.identifier })
                 ?? self.study.series.first(where: { $0.sharesSourceSeries(with: series) })
@@ -875,7 +859,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         updateToolbarStatus()
         updateReferenceLines()
         recalibrateScoutLayoutAfterPresentation()
-        metalWindowTimingLog("MetalViewerWindowController updateStudy", since: updateStart)
         return refreshedPaneCount
     }
 

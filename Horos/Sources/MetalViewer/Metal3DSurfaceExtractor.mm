@@ -413,7 +413,6 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
     std::memset(depthBuffer.contents, 0, (NSUInteger)totalDepthCount64 * sizeof(uint32_t));
     std::memset(visibleBuffer.contents, 0, sourceTriangleCount * sizeof(uint32_t));
 
-    const CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
     id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
     if (commandBuffer == nil) {
         return nil;
@@ -471,16 +470,6 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
     for (NSUInteger triangleIndex = 0; triangleIndex < sourceTriangleCount; triangleIndex++) {
         visibleTriangleCount += visibleFlags[triangleIndex] != 0 ? 1 : 0;
     }
-    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"HorosMetalViewerTimingLogEnabled"]) {
-        NSLog(@"HOROS_METAL_TIMING Metal3DVolumeRenderer rotatingVisibilityMetal views=%u triangles=%lu visible=%lu grid=%ux%u %.3f s",
-              viewCount,
-              (unsigned long)sourceTriangleCount,
-              (unsigned long)visibleTriangleCount,
-              gridWidth,
-              gridHeight,
-              CFAbsoluteTimeGetCurrent() - start);
-    }
-
     if (visibleTriangleCount < std::max<NSUInteger>(128, sourceTriangleCount / 20)) {
         return vertexFloatData;
     }

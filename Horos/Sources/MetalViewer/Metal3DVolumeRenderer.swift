@@ -1542,16 +1542,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         tumorSurfaces = surfaces
         showTumorSegmentation = true
         tumorLabelFilter = nil
-        if MetalViewerDiagnostics.isTimingLogEnabled {
-            NSLog(
-                "HOROS_METAL_TIMING Metal3DVolumeRenderer tumourSegmentation labels=%@ surfaces=%ld volume=%ldx%ldx%ld",
-                labels.map { String($0) }.joined(separator: ",") as NSString,
-                surfaces.count,
-                volumeDimensions.x,
-                volumeDimensions.y,
-                volumeDimensions.z
-            )
-        }
         return Metal3DTumorSegmentationStatistics(
             surfaceCount: surfaces.count,
             voxelVolumeML: voxelVolumeML(),
@@ -1590,18 +1580,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         surgicalTrajectory = trajectory
         trajectoryHandleHovered = false
         suppressProjectedTrajectoryOutline = false
-        if MetalViewerDiagnostics.isTimingLogEnabled {
-            NSLog(
-                "HOROS_METAL_TIMING Metal3DVolumeRenderer surgicalTrajectory center=(%.4f,%.4f,%.4f) skin=(%.4f,%.4f,%.4f) length=%.4f",
-                Double(tumorCentroidWorldPosition.x),
-                Double(tumorCentroidWorldPosition.y),
-                Double(tumorCentroidWorldPosition.z),
-                Double(skinPoint.x),
-                Double(skinPoint.y),
-                Double(skinPoint.z),
-                Double(simd_length(skinPoint - tumorCentroidWorldPosition))
-            )
-        }
         return nil
     }
 
@@ -2309,7 +2287,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return
         }
 
-        let start = CFAbsoluteTimeGetCurrent()
         let threadsPerGroup = MTLSize(width: 4, height: 4, depth: 4)
         let preparedTexture: MTLTexture
         if volumeDimensions != entry.dimensions {
@@ -2406,15 +2383,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 if self.showSkin == false || self.showSkinSurface {
                     self.ensureSkinMaskTexture(includeSurface: self.showSkinSurface)
                 }
-                if MetalViewerDiagnostics.isTimingLogEnabled {
-                    NSLog(
-                        "HOROS_METAL_TIMING Metal3DVolumeRenderer sharedPreparedVolume %ldx%ldx%ld %.3f s",
-                        self.volumeDimensions.x,
-                        self.volumeDimensions.y,
-                        self.volumeDimensions.z,
-                        CFAbsoluteTimeGetCurrent() - start
-                    )
-                }
                 self.contentDidChange?()
             }
         }
@@ -2433,20 +2401,9 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
     private struct SkinShellExtractionResult {
         let mask: [UInt8]
-        let threshold: Float
-        let method: String
-        let shellThicknessMM: Float
-        let foregroundVoxelCount: Int
-        let filledObjectVoxelCount: Int
-        let surfaceVoxelCount: Int
-        let outsideVoxelCount: Int
-        let shellVoxelCount: Int
-        let maskedVoxelCount: Int
         let surfaceVertexFloatData: Data?
         let surfaceVertexBuffer: MTLBuffer?
         let surfaceVertexCount: Int
-        let surfacePointCount: Int
-        let surfaceTriangleCount: Int
     }
 
     private func ensureSkinMaskTexture(includeSurface: Bool = false, includeSurfacePoints: Bool = false) {
@@ -2465,15 +2422,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
            needsMask == false,
            needsSurfacePoints,
            let vertexFloatData = skinSurfaceVertexFloatData {
-            let start = CFAbsoluteTimeGetCurrent()
             skinSurfaceWorldPoints = worldPositions(fromSurfaceVertexFloatData: vertexFloatData)
-            if MetalViewerDiagnostics.isTimingLogEnabled {
-                NSLog(
-                    "HOROS_METAL_TIMING Metal3DVolumeRenderer skinSurfaceWorldPoints points=%ld %.3f s",
-                    skinSurfaceWorldPoints.count,
-                    CFAbsoluteTimeGetCurrent() - start
-                )
-            }
             return
         }
 
@@ -2484,14 +2433,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             skinSurfaceExtractionAttempted = true
         }
 
-        let start = CFAbsoluteTimeGetCurrent()
         guard let result = makeSkinShellMask(includeSurface: buildSurface) else {
-            if MetalViewerDiagnostics.isTimingLogEnabled {
-                NSLog(
-                    "HOROS_METAL_TIMING Metal3DVolumeRenderer skinExtraction unavailable %.3f s",
-                    CFAbsoluteTimeGetCurrent() - start
-                )
-            }
             return
         }
 
@@ -2507,27 +2449,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
            skinSurfaceWorldPoints.isEmpty,
            let vertexFloatData = skinSurfaceVertexFloatData {
             skinSurfaceWorldPoints = worldPositions(fromSurfaceVertexFloatData: vertexFloatData)
-        }
-        if MetalViewerDiagnostics.isTimingLogEnabled {
-            NSLog(
-                "HOROS_METAL_TIMING Metal3DVolumeRenderer skinExtraction method=%@ threshold=%.3f shell=%.1fmm foreground=%ld filled=%ld surfaceVoxels=%ld surfacePoints=%ld surfaceTriangles=%ld surfaceVertices=%ld outside=%ld shell=%ld masked=%ld volume=%ldx%ldx%ld %.3f s",
-                result.method as NSString,
-                Double(result.threshold),
-                Double(result.shellThicknessMM),
-                result.foregroundVoxelCount,
-                result.filledObjectVoxelCount,
-                result.surfaceVoxelCount,
-                result.surfacePointCount,
-                result.surfaceTriangleCount,
-                result.surfaceVertexCount,
-                result.outsideVoxelCount,
-                result.shellVoxelCount,
-                result.maskedVoxelCount,
-                volumeDimensions.x,
-                volumeDimensions.y,
-                volumeDimensions.z,
-                CFAbsoluteTimeGetCurrent() - start
-            )
         }
     }
 
@@ -2593,7 +2514,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             spacing: voxelSpacing,
             radiusMM: envelopeRadiusMM
         )
-        var envelopeMethod = String(format: "externalAirProbe%.1fmm", Double(envelopeRadiusMM))
         if envelope.count == 0 {
             let fallbackEnvelope = Self.axialClosedEnvelopeMask(
                 foreground: envelopeForeground.mask,
@@ -2604,9 +2524,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 count: fallbackEnvelope.count,
                 exteriorAir: Self.invertedMask(fallbackEnvelope.mask)
             )
-            envelopeMethod = "axialClosedEnvelopeFallback"
         }
-        envelopeMethod += "+openBoundaryAir"
         let envelopeFraction = Float(envelope.count) / Float(max(voxelCount, 1))
         guard envelopeFraction > 0.01, envelopeFraction < 0.995 else {
             NSLog(
@@ -2630,10 +2548,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             uncappedExteriorSurface,
             dimensions: volumeDimensions
         )
-        var extractionMethod = "\(thresholdResult.method)+\(envelopeForeground.method)+\(envelopeMethod)+maskOnly"
-        var surfaceVoxelCount = exteriorSurface.reduce(0) { $0 + ($1 == 0 ? 0 : 1) }
-        var surfacePointCount = 0
-        var surfaceTriangleCount = 0
         var surfaceVertexBuffer: MTLBuffer?
         var surfaceVertexCount = 0
         var surfaceVertexFloatData: Data?
@@ -2669,15 +2583,13 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 return nil
             }
 
-            var filteredSurfaceVertexCount = 0
-            var filteredSurfaceTriangleCount = 0
             guard let filteredSurfaceData = Metal3DSurfaceExtractor.filterSurfaceVertexFloatData(
                 byRotatingVisibility: extractedSurface.vertexFloatData,
                 spacingX: voxelSpacing.x,
                 spacingY: voxelSpacing.y,
                 spacingZ: voxelSpacing.z,
-                vertexCount: &filteredSurfaceVertexCount,
-                triangleCount: &filteredSurfaceTriangleCount
+                vertexCount: nil,
+                triangleCount: nil
             ) else {
                 NSLog("Metal3DVolumeRenderer skinExtraction Metal visibility filter unavailable")
                 return nil
@@ -2687,14 +2599,9 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             surfaceVertexBuffer = overlaySurfaceVertexBuffer?.buffer
             surfaceVertexCount = overlaySurfaceVertexBuffer?.count ?? 0
             surfaceVertexFloatData = filteredSurfaceData
-            surfaceVoxelCount = extractedSurface.surfaceVoxelCount
-            surfacePointCount = filteredSurfaceVertexCount
-            surfaceTriangleCount = filteredSurfaceTriangleCount
-            extractionMethod = "\(thresholdResult.method)+rawScalar+\(envelopeForeground.method)+\(envelopeMethod)+\(extractedSurface.extractionMethod)+openZCropCaps+rotatingVisibilityMetal"
         }
 
         var mask = Self.invertedMask(envelope.mask)
-        let outsideCount = max(voxelCount - envelope.count, 0)
 
         Self.markObjectWithinPhysicalDistance(
             object: envelope.mask,
@@ -2705,28 +2612,11 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             maximumDistanceMM: shellThicknessMM
         )
 
-        var maskedVoxelCount = 0
-        for value in mask where value != 0 {
-            maskedVoxelCount += 1
-        }
-        let shellVoxelCount = max(maskedVoxelCount - outsideCount, 0)
-
         return SkinShellExtractionResult(
             mask: mask,
-            threshold: thresholdResult.threshold,
-            method: extractionMethod,
-            shellThicknessMM: shellThicknessMM,
-            foregroundVoxelCount: foregroundVoxelCount,
-            filledObjectVoxelCount: envelope.count,
-            surfaceVoxelCount: surfaceVoxelCount,
-            outsideVoxelCount: outsideCount,
-            shellVoxelCount: shellVoxelCount,
-            maskedVoxelCount: maskedVoxelCount,
             surfaceVertexFloatData: surfaceVertexFloatData,
             surfaceVertexBuffer: surfaceVertexBuffer,
-            surfaceVertexCount: surfaceVertexCount,
-            surfacePointCount: surfacePointCount,
-            surfaceTriangleCount: surfaceTriangleCount
+            surfaceVertexCount: surfaceVertexCount
         )
     }
 

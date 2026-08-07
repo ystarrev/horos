@@ -153,6 +153,11 @@ private final class MetalViewerWindow: NSWindow {
 }
 
 final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate {
+    private struct RegistrationFramePair: Hashable {
+        let movingFrameUID: String
+        let fixedFrameUID: String
+    }
+
     private enum Layout {
         static let defaultScoutDimension: CGFloat = 172
         static let minimumScoutDimension: CGFloat = 86
@@ -188,6 +193,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private var lastPaneScales: [ObjectIdentifier: Float] = [:]
     private var annotationDefaultsObserver: NSObjectProtocol?
     private var scoutPlacementObserver: NSObjectProtocol?
+    private var registrationTransformsByFramePair: [
+        RegistrationFramePair: MetalViewerRegistrationWorldTransform
+    ] = [:]
 
     init(study: MetalViewerStudy) {
         self.study = study
@@ -642,6 +650,25 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             guard let self, let pane, self.activePaneView === pane else { return }
             self.updateScoutHighlights(for: pane)
         }
+        pane.registrationInitialTransformProvider = { [weak self] baseSeries, overlaySeries in
+            self?.registrationTransform(
+                forBaseSeries: baseSeries,
+                overlaySeries: overlaySeries
+            )
+        }
+        pane.registrationSupportSelectionProvider = { [weak self] baseSeries, overlaySeries in
+            self?.registrationSupportSelection(
+                forBaseSeries: baseSeries,
+                overlaySeries: overlaySeries
+            )
+        }
+        pane.registrationTransformDidComplete = { [weak self] baseSeries, overlaySeries, transform in
+            self?.storeRegistrationTransform(
+                transform,
+                forBaseSeries: baseSeries,
+                overlaySeries: overlaySeries
+            )
+        }
         pane.closeHandler = { [weak self, weak pane] in
             guard let self, let pane else { return }
             self.removePane(pane)
@@ -785,6 +812,179 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             updateToolbarStatus()
         }
         updateReferenceLines()
+    }
+
+    private func registrationTransform(
+        forBaseSeries baseSeries: MetalViewerSeries,
+        overlaySeries: MetalViewerSeries
+    ) -> MetalViewerRegistrationWorldTransform? {
+        guard let fixedFrameUID = baseSeries.frameOfReferenceUID,
+              let movingFrameUID = overlaySeries.frameOfReferenceUID,
+              fixedFrameUID != movingFrameUID else {
+            return nil
+        }
+
+        let directKey = RegistrationFramePair(
+            movingFrameUID: movingFrameUID,
+            fixedFrameUID: fixedFrameUID
+        )
+        if let directTransform = registrationTransformsByFramePair[directKey] {
+            return directTransform
+        }
+
+        let reverseKey = RegistrationFramePair(
+            movingFrameUID: fixedFrameUID,
+            fixedFrameUID: movingFrameUID
+        )
+        return registrationTransformsByFramePair[reverseKey]?.inverted
+    }
+
+    private func storeRegistrationTransform(
+        _ transform: MetalViewerRegistrationWorldTransform,
+        forBaseSeries baseSeries: MetalViewerSeries,
+        overlaySeries: MetalViewerSeries
+    ) {
+        guard let fixedFrameUID = baseSeries.frameOfReferenceUID,
+              let movingFrameUID = overlaySeries.frameOfReferenceUID,
+              fixedFrameUID != movingFrameUID else {
+            return
+        }
+        let key = RegistrationFramePair(
+            movingFrameUID: movingFrameUID,
+            fixedFrameUID: fixedFrameUID
+        )
+        registrationTransformsByFramePair[key] = transform
+    }
+
+    private func registrationSupportSelection(
+        forBaseSeries baseSeries: MetalViewerSeries,
+        overlaySeries: MetalViewerSeries
+    ) -> MetalViewerRegistrationSupportSelection? {
+        let baseModality = baseSeries.modality.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let overlayModality = overlaySeries.modality.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let mrSeries: MetalViewerSeries
+        let sharesBaseFrame: Bool
+        if baseModality == "MR", overlayModality == "CT" {
+            mrSeries = baseSeries
+            sharesBaseFrame = true
+        } else if baseModality == "CT", overlayModality == "MR" {
+            mrSeries = overlaySeries
+            sharesBaseFrame = false
+        } else {
+            return nil
+        }
+
+        guard let frameUID = mrSeries.frameOfReferenceUID,
+              let primaryMetadata = mrSeries.registrationMetadata else {
+            return nil
+        }
+
+        let supportCandidates = study.series.filter { candidate in
+            guard candidate !== mrSeries,
+                  candidate.studyIdentifier == mrSeries.studyIdentifier,
+                  candidate.isMagneticResonance,
+                  candidate.frameOfReferenceUID == frameUID,
+                  candidate.sharesSourceSeries(with: mrSeries) == false,
+                  let metadata = candidate.registrationMetadata,
+                  metadata.isEligibleSupportSeries else {
+                return false
+            }
+            return true
+        }
+
+        var selectedSeries = [mrSeries]
+        var orientationCounts: [MetalViewerRegistrationOrientationGroup: Int] = [
+            primaryMetadata.orientation: 1,
+        ]
+        var representedContrasts = Set([
+            "\(primaryMetadata.orientation.rawValue)|\(primaryMetadata.contrast.rawValue)",
+        ])
+        let contrastPriority: [MetalViewerRegistrationContrastGroup: Int] = [
+            .t1PostContrast: 0,
+            .t1: 1,
+            .t2: 2,
+            .flair: 3,
+            .other: 4,
+        ]
+        let sortedCandidates = supportCandidates.sorted { lhs, rhs in
+            guard let lhsMetadata = lhs.registrationMetadata,
+                  let rhsMetadata = rhs.registrationMetadata else {
+                return lhs.imageCount > rhs.imageCount
+            }
+            let lhsIsOrthogonal = lhsMetadata.orientation != primaryMetadata.orientation
+            let rhsIsOrthogonal = rhsMetadata.orientation != primaryMetadata.orientation
+            if lhsIsOrthogonal != rhsIsOrthogonal {
+                return lhsIsOrthogonal
+            }
+            let lhsPriority = contrastPriority[lhsMetadata.contrast] ?? Int.max
+            let rhsPriority = contrastPriority[rhsMetadata.contrast] ?? Int.max
+            if lhsPriority != rhsPriority {
+                return lhsPriority < rhsPriority
+            }
+            if lhs.imageCount != rhs.imageCount {
+                return lhs.imageCount > rhs.imageCount
+            }
+            return lhs.identifier < rhs.identifier
+        }
+
+        var repeatedContrastCandidates = [MetalViewerSeries]()
+        for candidate in sortedCandidates {
+            guard selectedSeries.count < 6 else { break }
+            guard let metadata = candidate.registrationMetadata else { continue }
+            let key = "\(metadata.orientation.rawValue)|\(metadata.contrast.rawValue)"
+            guard (orientationCounts[metadata.orientation] ?? 0) < 3,
+                  selectedSeries.allSatisfy({ $0.sharesSourceSeries(with: candidate) == false }) else {
+                continue
+            }
+            guard representedContrasts.contains(key) == false else {
+                repeatedContrastCandidates.append(candidate)
+                continue
+            }
+            representedContrasts.insert(key)
+            orientationCounts[metadata.orientation, default: 0] += 1
+            selectedSeries.append(candidate)
+        }
+
+        // Some scanners copy ContrastBolusAgent to every series in an exam,
+        // making pre- and post-contrast T1 series look identical in metadata.
+        // Prefer contrast diversity first, then fill remaining orientation
+        // slots so those useful companion acquisitions are not discarded.
+        for candidate in repeatedContrastCandidates {
+            guard selectedSeries.count < 6 else { break }
+            guard let metadata = candidate.registrationMetadata,
+                  (orientationCounts[metadata.orientation] ?? 0) < 3,
+                  selectedSeries.allSatisfy({ $0.sharesSourceSeries(with: candidate) == false }) else {
+                continue
+            }
+            orientationCounts[metadata.orientation, default: 0] += 1
+            selectedSeries.append(candidate)
+        }
+
+        guard selectedSeries.count > 1 else { return nil }
+        let groupedByOrientation = Dictionary(grouping: selectedSeries) {
+            $0.registrationMetadata?.orientation ?? .oblique
+        }
+        let orientationWeight = 1 / Float(max(groupedByOrientation.count, 1))
+        var weightsByIdentifier: [String: Float] = [:]
+        for seriesGroup in groupedByOrientation.values {
+            let seriesWeight = orientationWeight / Float(max(seriesGroup.count, 1))
+            for series in seriesGroup {
+                weightsByIdentifier[series.identifier] = seriesWeight
+            }
+        }
+
+        let primaryWeight = weightsByIdentifier[mrSeries.identifier] ?? 1
+        let items = selectedSeries.dropFirst().map { series in
+            MetalViewerRegistrationSupportSelection.Item(
+                series: series,
+                sharesBaseFrame: sharesBaseFrame,
+                weight: weightsByIdentifier[series.identifier] ?? 0
+            )
+        }
+        return MetalViewerRegistrationSupportSelection(
+            primaryWeight: primaryWeight,
+            items: items
+        )
     }
 
     @discardableResult

@@ -1251,6 +1251,9 @@ final class MetalViewerPaneView: NSView {
     var displayedSeriesDidChange: (() -> Void)?
     var windowLevelInteractionHandler: (() -> Void)?
     var windowLevelTargetDidChange: ((MetalViewerSeries) -> Void)?
+    var registrationInitialTransformProvider: ((MetalViewerSeries, MetalViewerSeries) -> MetalViewerRegistrationWorldTransform?)?
+    var registrationSupportSelectionProvider: ((MetalViewerSeries, MetalViewerSeries) -> MetalViewerRegistrationSupportSelection?)?
+    var registrationTransformDidComplete: ((MetalViewerSeries, MetalViewerSeries, MetalViewerRegistrationWorldTransform) -> Void)?
     var canClose: Bool = true {
         didSet { updateCloseButtonVisibility() }
     }
@@ -1551,6 +1554,10 @@ final class MetalViewerPaneView: NSView {
             self?.registrationStatusView.update(isRunning: isRunning, message: message, progress: progress)
             self?.dismissRegistrationStatusOnMouseMove = !isRunning && message.isEmpty == false
         }
+        metalView.renderer.registrationTransformDidComplete = { [weak self] transform in
+            guard let self, let overlaySeries = self.overlaySeries else { return }
+            self.registrationTransformDidComplete?(self.series, overlaySeries, transform)
+        }
         updateCurrentStateDescription(rendererState: metalView.renderer.stateDescription)
         updateAnnotationOverlay()
         updateReferenceLineOverlay()
@@ -1668,10 +1675,25 @@ final class MetalViewerPaneView: NSView {
         displayedSeriesDidChange?()
         registrationStatusView.update(isRunning: true, message: "Preparing registration...", progress: 0)
         window?.displayIfNeeded()
+        let suggestedTransform = registrationInitialTransformProvider?(self.series, series)
+        let supportSelection = registrationSupportSelectionProvider?(self.series, series)
+        let supportInputs = supportSelection?.items.compactMap { item -> MetalViewerRegistrationSupportInput? in
+            let pixList = item.series.loadedPixList()
+            guard pixList.isEmpty == false else { return nil }
+            return MetalViewerRegistrationSupportInput(
+                identifier: item.series.identifier,
+                pixList: pixList,
+                sharesBaseFrame: item.sharesBaseFrame,
+                weight: item.weight
+            )
+        } ?? []
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
             guard let self else { return }
             self.metalView?.renderer.setOverlayPixList(
                 series.loadedPixList(),
+                suggestedRegistrationWorldTransform: suggestedTransform,
+                registrationPrimaryWeight: supportSelection?.primaryWeight ?? 1,
+                registrationSupportInputs: supportInputs,
                 windowLevelState: series.windowLevelState,
                 windowLevelStateDidChange: { state in
                     series.windowLevelState = state

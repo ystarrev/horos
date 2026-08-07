@@ -1851,6 +1851,38 @@ private extension Array {
     }
 }
 
+enum MetalViewerRegistrationOrientationGroup: String, Hashable {
+    case axial
+    case coronal
+    case sagittal
+    case oblique
+}
+
+enum MetalViewerRegistrationContrastGroup: String, Hashable {
+    case t1
+    case t1PostContrast
+    case t2
+    case flair
+    case other
+}
+
+struct MetalViewerRegistrationSeriesMetadata {
+    let orientation: MetalViewerRegistrationOrientationGroup
+    let contrast: MetalViewerRegistrationContrastGroup
+    let isEligibleSupportSeries: Bool
+}
+
+struct MetalViewerRegistrationSupportSelection {
+    struct Item {
+        let series: MetalViewerSeries
+        let sharesBaseFrame: Bool
+        let weight: Float
+    }
+
+    let primaryWeight: Float
+    let items: [Item]
+}
+
 final class MetalViewerSeries {
     private static let dynamicDetectionQueue = DispatchQueue(
         label: "org.horosproject.horos.metalviewer.dynamic-detection",
@@ -1876,6 +1908,10 @@ final class MetalViewerSeries {
     private var cachedPixList: [DCMPix]?
     private var cachedStructuredReportHTML: String?
     private var cachedDynamicSequence: MetalDynamicSequence?
+    private var cachedFrameOfReferenceUID: String?
+    private var hasResolvedFrameOfReferenceUID = false
+    private var cachedRegistrationMetadata: MetalViewerRegistrationSeriesMetadata?
+    private var hasResolvedRegistrationMetadata = false
     private var hasCompletedDynamicDetection = false
     private var dynamicDetectionInProgress = false
     private var dynamicDetectionCompletions: [(MetalDynamicSequence?) -> Void] = []
@@ -1885,6 +1921,109 @@ final class MetalViewerSeries {
 
     var isMagneticResonance: Bool {
         modality.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare("MR") == .orderedSame
+    }
+
+    var frameOfReferenceUID: String? {
+        if hasResolvedFrameOfReferenceUID {
+            return cachedFrameOfReferenceUID
+        }
+        hasResolvedFrameOfReferenceUID = true
+        guard let path = firstPreviewPix()?.srcFile,
+              let reader = try? SwiftDICOMReader.cached(contentsOfFile: path) else {
+            return nil
+        }
+        cachedFrameOfReferenceUID = Self.nonEmpty(
+            reader.stringValue(forTag: "0020,0052")
+        )
+        return cachedFrameOfReferenceUID
+    }
+
+    var registrationMetadata: MetalViewerRegistrationSeriesMetadata? {
+        if hasResolvedRegistrationMetadata {
+            return cachedRegistrationMetadata
+        }
+        hasResolvedRegistrationMetadata = true
+        guard let path = firstPreviewPix()?.srcFile,
+              let reader = try? SwiftDICOMReader.cached(contentsOfFile: path) else {
+            return nil
+        }
+
+        let orientationValues = reader.numberValues(forTag: "0020,0037")
+        guard orientationValues.count >= 6 else { return nil }
+        let row = SIMD3<Double>(orientationValues[0], orientationValues[1], orientationValues[2])
+        let column = SIMD3<Double>(orientationValues[3], orientationValues[4], orientationValues[5])
+        let normal = simd_cross(row, column)
+        let normalLength = simd_length(normal)
+        guard normalLength > 0.5 else { return nil }
+        let absoluteNormal = simd_abs(normal / normalLength)
+        let orientation: MetalViewerRegistrationOrientationGroup
+        let dominantComponent = max(absoluteNormal.x, max(absoluteNormal.y, absoluteNormal.z))
+        if dominantComponent < 0.8 {
+            orientation = .oblique
+        } else if absoluteNormal.x >= absoluteNormal.y, absoluteNormal.x >= absoluteNormal.z {
+            orientation = .sagittal
+        } else if absoluteNormal.y >= absoluteNormal.z {
+            orientation = .coronal
+        } else {
+            orientation = .axial
+        }
+
+        let metadataText = [
+            title,
+            reader.stringValue(forTag: "0008,103E"),
+            reader.stringValue(forTag: "0018,1030"),
+            reader.stringValue(forTag: "0018,0024"),
+        ]
+            .compactMap { $0 }
+            .joined(separator: " ")
+            .uppercased()
+        let tokens = Set(metadataText
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.isEmpty == false })
+        let hasContrastAgent = Self.nonEmpty(reader.stringValue(forTag: "0018,0010")) != nil
+        let postContrastTokens: Set<String> = [
+            "GAD", "GADOL", "GADAVIST", "DOTAREM", "PROHANCE", "MULTIHANCE",
+            "MAGNEVIST", "OMNISCAN", "POST", "POSTCONTRAST", "POSTGAD",
+            "ENH", "ENHANCED", "GD", "PG", "T1C",
+        ]
+        let identifiesPostContrast = hasContrastAgent
+            || tokens.isDisjoint(with: postContrastTokens) == false
+        let identifiesT1 = tokens.contains("T1")
+            || tokens.contains("T1C")
+            || tokens.contains(where: { $0.hasPrefix("T1W") })
+            || tokens.contains("MPRAGE")
+            || tokens.contains("SPGR")
+            || tokens.contains("BRAVO")
+        let identifiesT2 = tokens.contains("T2")
+            || tokens.contains(where: { $0.hasPrefix("T2W") })
+        let contrast: MetalViewerRegistrationContrastGroup
+        if tokens.contains("FLAIR") {
+            contrast = .flair
+        } else if identifiesT2 {
+            contrast = .t2
+        } else if identifiesT1 {
+            contrast = identifiesPostContrast ? .t1PostContrast : .t1
+        } else {
+            contrast = .other
+        }
+
+        let excludedTokens: Set<String> = [
+            "LOCALIZER", "LOC", "SCOUT", "SURVEY", "MPR", "RFMT", "REFORMAT",
+            "REFORMATTED", "DYNAMIC", "DYN", "PERFUSION", "ADC", "DWI", "TRACE",
+        ]
+        let isEligible = isMagneticResonance
+            && imageCount >= 6
+            && forcesDynamicInterpretation == false
+            && (dynamicTimePointCountHint ?? 1) <= 1
+            && contrast != .other
+            && tokens.isDisjoint(with: excludedTokens)
+        let metadata = MetalViewerRegistrationSeriesMetadata(
+            orientation: orientation,
+            contrast: contrast,
+            isEligibleSupportSeries: isEligible
+        )
+        cachedRegistrationMetadata = metadata
+        return metadata
     }
 
     init(

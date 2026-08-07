@@ -23,14 +23,46 @@ private enum RegistrationSamplingMode: String {
     case reference
 }
 
+private enum RegistrationSearchMode {
+    case full
+    case refinement
+}
+
+struct MetalViewerRegistrationWorldTransform {
+    let movingToFixedWorld: simd_float4x4
+
+    var inverted: MetalViewerRegistrationWorldTransform {
+        MetalViewerRegistrationWorldTransform(
+            movingToFixedWorld: simd_inverse(movingToFixedWorld)
+        )
+    }
+}
+
+struct MetalViewerRegistrationSupportInput {
+    let identifier: String
+    let pixList: [DCMPix]
+    let sharesBaseFrame: Bool
+    let weight: Float
+}
+
 private final class RegistrationJob: @unchecked Sendable {
     let generation: UInt
+    private let refinementTranslationAnchor: SIMD3<Float>?
+    private let refinementRotationAnchor: SIMD3<Float>?
+    private let maximumRefinementTranslationMM: Float = 6
+    private let maximumRefinementRotationRadians: Float = 2 * .pi / 180
 
     private let cancellationLock = NSLock()
     private var cancelled = false
 
-    init(generation: UInt) {
+    init(
+        generation: UInt,
+        refinementTranslationAnchor: SIMD3<Float>? = nil,
+        refinementRotationAnchor: SIMD3<Float>? = nil
+    ) {
         self.generation = generation
+        self.refinementTranslationAnchor = refinementTranslationAnchor
+        self.refinementRotationAnchor = refinementRotationAnchor
     }
 
     var isCancelled: Bool {
@@ -43,6 +75,20 @@ private final class RegistrationJob: @unchecked Sendable {
         cancellationLock.lock()
         cancelled = true
         cancellationLock.unlock()
+    }
+
+    func permits(
+        translationWorld: SIMD3<Float>,
+        rotationRadians: SIMD3<Float>
+    ) -> Bool {
+        guard let refinementTranslationAnchor,
+              let refinementRotationAnchor else {
+            return true
+        }
+        return simd_length(translationWorld - refinementTranslationAnchor)
+                <= maximumRefinementTranslationMM
+            && simd_length(rotationRadians - refinementRotationAnchor)
+                <= maximumRefinementRotationRadians
     }
 }
 
@@ -248,6 +294,34 @@ private typealias VolumeLevel = MetalPreparedVolumeLevel
 private struct SlabGeometry {
     let normalWorld: SIMD3<Float>
     let thicknessMM: Float
+}
+
+private struct PreparedRegistrationSupportVolume {
+    let input: MetalViewerRegistrationSupportInput
+    let entry: MetalPreparedVolumeCache.Entry
+}
+
+private struct RegistrationSupportMetricPair {
+    let identifier: String
+    let fixedLevel: VolumeLevel
+    let movingLevel: VolumeLevel
+    let fixedWindow: MetalViewerWindowLevel
+    let movingWindow: MetalViewerWindowLevel
+    let usesReverseTransform: Bool
+    let weight: Float
+}
+
+private struct RegistrationBlockMatchingPair {
+    let identifier: String
+    let fixedLevel: VolumeLevel
+    let movingLevel: VolumeLevel
+    let fixedWindow: MetalViewerWindowLevel
+    let movingWindow: MetalViewerWindowLevel
+}
+
+private struct RegistrationSupportMetricContext {
+    let primaryWeight: Float
+    let pairs: [RegistrationSupportMetricPair]
 }
 
 private struct MetalVertex {
@@ -489,6 +563,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var baseSlabGeometry: SlabGeometry?
     private var overlaySlabGeometry: SlabGeometry?
     private var contrastInvariantMRSlabMatchingCache: Bool?
+    private var minimumCranialCoverageFractionCache: Float?
+    private var registrationPrimaryWeight: Float = 1
+    private var registrationSupportInputs: [MetalViewerRegistrationSupportInput] = []
+    private var preparedRegistrationSupportVolumes: [PreparedRegistrationSupportVolume] = []
+    private let registrationSupportLock = NSLock()
+    private var pendingRegistrationSupportIdentifiers = Set<String>()
+    private var registrationSupportPreparationStarted = false
+    private var registrationSupportGeneration: UInt = 0
 
     private(set) var currentSliceIndex = 0
     private(set) var windowLevel: Float = 0
@@ -542,9 +624,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var registrationInProgress = false
     private var registrationProgress: Float = 0
     private var registrationStatusMessage: String?
+    private var suggestedRegistrationWorldTransform: MetalViewerRegistrationWorldTransform?
 
     var stateDidChange: ((String) -> Void)?
     var registrationDidChange: ((Bool, String, Float) -> Void)?
+    var registrationTransformDidComplete: ((MetalViewerRegistrationWorldTransform) -> Void)?
     var windowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)?
     var overlayWindowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)?
     var transferFunctionStateDidChange: ((MetalViewerTransferFunctionState) -> Void)?
@@ -810,6 +894,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         pixList = newPixList
         contrastInvariantMRSlabMatchingCache = nil
+        minimumCranialCoverageFractionCache = nil
+        suggestedRegistrationWorldTransform = nil
+        resetRegistrationSupportVolumes()
         currentSliceIndex = Self.initialSliceIndex(for: newPixList)
         baseVolumeTexture = nil
         stackVolumeTextureEntry = nil
@@ -907,6 +994,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     func setOverlayPixList(
         _ overlayPixList: [DCMPix],
+        suggestedRegistrationWorldTransform: MetalViewerRegistrationWorldTransform? = nil,
+        registrationPrimaryWeight: Float = 1,
+        registrationSupportInputs: [MetalViewerRegistrationSupportInput] = [],
         windowLevelState: MetalViewerWindowLevelState = MetalViewerWindowLevelState(),
         windowLevelStateDidChange: ((MetalViewerWindowLevelState) -> Void)? = nil,
         usesAutomaticWindowLevel: Bool = false,
@@ -916,6 +1006,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         invalidateActiveRegistrationJob()
         self.overlayPixList = overlayPixList
         contrastInvariantMRSlabMatchingCache = nil
+        minimumCranialCoverageFractionCache = nil
+        self.suggestedRegistrationWorldTransform = suggestedRegistrationWorldTransform
+        resetRegistrationSupportVolumes(
+            primaryWeight: registrationPrimaryWeight,
+            inputs: registrationSupportInputs
+        )
         registrationInProgress = false
         registrationProgress = 0
         registrationStatusMessage = nil
@@ -947,6 +1043,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         registrationStatusMessage = nil
         overlayPixList = []
         contrastInvariantMRSlabMatchingCache = nil
+        minimumCranialCoverageFractionCache = nil
+        suggestedRegistrationWorldTransform = nil
+        resetRegistrationSupportVolumes()
         overlaySourceTextureEntry = nil
         requestedOverlayVolumeKey = nil
         requestedOverlayPreparedVolumeKey = nil
@@ -1141,6 +1240,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         pixList = newPixList
         contrastInvariantMRSlabMatchingCache = nil
+        minimumCranialCoverageFractionCache = nil
+        suggestedRegistrationWorldTransform = nil
+        resetRegistrationSupportVolumes()
         currentSliceIndex = preservingSliceIndex
             ? min(max(previousSliceIndex, 0), newPixList.count - 1)
             : Self.initialSliceIndex(for: newPixList)
@@ -1873,7 +1975,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 translationWorld: overlayTranslationWorld,
                 rotationRadians: overlayRotationRadians
             ),
-            samplingMode: samplingMode
+            samplingMode: samplingMode,
+            searchMode: .refinement
         )
     }
 
@@ -3062,6 +3165,119 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         encoder.setFragmentTexture(overlayOpacityTexture, index: 6)
     }
 
+    private func resetRegistrationSupportVolumes(
+        primaryWeight: Float = 1,
+        inputs: [MetalViewerRegistrationSupportInput] = []
+    ) {
+        registrationSupportGeneration &+= 1
+        var identifiers = Set<String>()
+        let filteredInputs = inputs.filter { input in
+            input.pixList.isEmpty == false
+                && input.weight > 0
+                && identifiers.insert(input.identifier).inserted
+        }
+        registrationSupportLock.lock()
+        registrationPrimaryWeight = max(primaryWeight, 0.0001)
+        registrationSupportInputs = filteredInputs
+        preparedRegistrationSupportVolumes = []
+        registrationSupportLock.unlock()
+        pendingRegistrationSupportIdentifiers = []
+        registrationSupportPreparationStarted = false
+    }
+
+    private func prepareRegistrationSupportVolumesIfNeeded() {
+        guard registrationSupportPreparationStarted == false,
+              registrationSupportInputs.isEmpty == false else {
+            return
+        }
+
+        registrationSupportPreparationStarted = true
+        let generation = registrationSupportGeneration
+        let inputs = registrationSupportInputs
+        pendingRegistrationSupportIdentifiers = Set(inputs.map(\.identifier))
+        publishRegistrationPreparationUpdate(
+            message: "Preparing registration series 0/\(inputs.count)",
+            progress: 0.55
+        )
+
+        for input in inputs {
+            MetalSeriesTextureCache.shared.requestEntry(
+                for: input.pixList,
+                device: deviceRef
+            ) { [weak self] sourceEntry in
+                guard let self,
+                      generation == self.registrationSupportGeneration,
+                      self.pendingRegistrationSupportIdentifiers.contains(input.identifier) else {
+                    return
+                }
+                guard let sourceEntry else {
+                    NSLog("%@", "Metal Viewer: could not decode registration support series \(input.identifier)")
+                    self.completeRegistrationSupportPreparation(
+                        input: input,
+                        entry: nil,
+                        generation: generation
+                    )
+                    return
+                }
+
+                let correctGantryTilt = self.shouldCorrectGantryTilt(for: input.pixList)
+                MetalPreparedVolumeCache.shared.requestEntry(
+                    for: input.pixList,
+                    sourceEntry: sourceEntry,
+                    device: self.deviceRef,
+                    correctGantryTilt: correctGantryTilt,
+                    includeRegistrationPyramid: true
+                ) { [weak self] entry in
+                    guard let self,
+                          generation == self.registrationSupportGeneration,
+                          self.pendingRegistrationSupportIdentifiers.contains(input.identifier) else {
+                        return
+                    }
+                    if entry == nil {
+                        NSLog("%@", "Metal Viewer: could not prepare registration support series \(input.identifier)")
+                    }
+                    self.completeRegistrationSupportPreparation(
+                        input: input,
+                        entry: entry,
+                        generation: generation
+                    )
+                }
+            }
+        }
+    }
+
+    private func completeRegistrationSupportPreparation(
+        input: MetalViewerRegistrationSupportInput,
+        entry: MetalPreparedVolumeCache.Entry?,
+        generation: UInt
+    ) {
+        guard generation == registrationSupportGeneration,
+              pendingRegistrationSupportIdentifiers.remove(input.identifier) != nil else {
+            return
+        }
+
+        if let entry {
+            registrationSupportLock.lock()
+            preparedRegistrationSupportVolumes.removeAll {
+                $0.input.identifier == input.identifier
+            }
+            preparedRegistrationSupportVolumes.append(
+                PreparedRegistrationSupportVolume(input: input, entry: entry)
+            )
+            registrationSupportLock.unlock()
+        }
+
+        let totalCount = registrationSupportInputs.count
+        let completedCount = totalCount - pendingRegistrationSupportIdentifiers.count
+        publishRegistrationPreparationUpdate(
+            message: "Preparing registration series \(completedCount)/\(totalCount)",
+            progress: 0.55 + 0.35 * Float(completedCount) / Float(max(totalCount, 1))
+        )
+        if pendingRegistrationSupportIdentifiers.isEmpty {
+            startRegistrationIfReady()
+        }
+    }
+
     private func prepareBaseVolumeIfNeeded() {
         let needsRegistrationPyramid = overlayPixList.isEmpty == false
         if baseVolumeTexture != nil,
@@ -3219,7 +3435,26 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
               overlayVolumeLevels.count > 1 else {
             return
         }
-        runRegistration(samplingMode: .fast)
+        if registrationSupportInputs.isEmpty == false {
+            if registrationSupportPreparationStarted == false {
+                prepareRegistrationSupportVolumesIfNeeded()
+                return
+            }
+            guard pendingRegistrationSupportIdentifiers.isEmpty else {
+                return
+            }
+        }
+        let additionalInitialStates: [RigidTransformState]
+        if let suggestedRegistrationWorldTransform,
+           let suggestedState = registrationState(for: suggestedRegistrationWorldTransform) {
+            additionalInitialStates = [suggestedState]
+        } else {
+            additionalInitialStates = []
+        }
+        runRegistration(
+            additionalInitialStates: additionalInitialStates,
+            samplingMode: .fast
+        )
     }
 
     private func invalidateActiveRegistrationJob() {
@@ -3328,6 +3563,50 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func isUnequalCoverageThinSlabRegistration() -> Bool {
         baseIsThinSlab != overlayIsThinSlab
+    }
+
+    private func isCrossModalityUnequalCoverageRegistration() -> Bool {
+        guard isUnequalCoverageThinSlabRegistration() else { return false }
+        return isCTRegistrationVolume(pixList) != isCTRegistrationVolume(overlayPixList)
+    }
+
+    private func minimumCranialCoverageFraction() -> Float {
+        if let cached = minimumCranialCoverageFractionCache {
+            return cached
+        }
+        guard isCrossModalityUnequalCoverageRegistration() else {
+            minimumCranialCoverageFractionCache = 0
+            return 0
+        }
+
+        let thinPixList = baseIsThinSlab ? pixList : overlayPixList
+        guard let path = thinPixList.first?.srcFile?.trimmingCharacters(in: .whitespacesAndNewlines),
+              path.isEmpty == false,
+              let reader = try? SwiftDICOMReader.cached(contentsOfFile: path) else {
+            minimumCranialCoverageFractionCache = 0
+            return 0
+        }
+
+        let metadataTags = ["0008,1030", "0008,103E", "0018,0015", "0018,1030"]
+        let metadata = metadataTags.compactMap { reader.stringValue(forTag: $0) }.joined(separator: " ")
+        let tokens = Set(metadata
+            .uppercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.isEmpty == false })
+        let cranialTokens: Set<String> = [
+            "BRAIN", "HEAD", "ORBIT", "ORBITS", "SINUS", "SINUSES", "SKULL",
+        ]
+
+        let minimumFraction: Float
+        if tokens.contains("SELLA") || tokens.contains("PITUITARY") {
+            minimumFraction = 0.55
+        } else if tokens.isDisjoint(with: cranialTokens) == false {
+            minimumFraction = 0.50
+        } else {
+            minimumFraction = 0
+        }
+        minimumCranialCoverageFractionCache = minimumFraction
+        return minimumFraction
     }
 
     private func mrSequenceSignature(for volumePixList: [DCMPix]) -> MRSequenceSignature? {
@@ -3457,6 +3736,71 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         rotationMatrix(for: radians).transpose
     }
 
+    private func registrationWorldTransform(
+        for state: RigidTransformState
+    ) -> MetalViewerRegistrationWorldTransform {
+        var transform = rotationMatrix(for: state.rotationRadians)
+        let rotatedCenter = transform * SIMD4<Float>(movingRotationCenterWorld, 1)
+        let worldOffset = movingRotationCenterWorld
+            + state.translationWorld
+            - SIMD3<Float>(rotatedCenter.x, rotatedCenter.y, rotatedCenter.z)
+        transform.columns.3 = SIMD4<Float>(worldOffset, 1)
+        return MetalViewerRegistrationWorldTransform(movingToFixedWorld: transform)
+    }
+
+    private func registrationState(
+        for worldTransform: MetalViewerRegistrationWorldTransform
+    ) -> RigidTransformState? {
+        let transform = worldTransform.movingToFixedWorld
+        let xAxis = SIMD3<Float>(transform.columns.0.x, transform.columns.0.y, transform.columns.0.z)
+        let yAxis = SIMD3<Float>(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z)
+        let zAxis = SIMD3<Float>(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z)
+        let axes = [xAxis, yAxis, zAxis]
+        guard axes.allSatisfy({ axis in
+            axis.x.isFinite && axis.y.isFinite && axis.z.isFinite
+                && abs(simd_length(axis) - 1) < 0.02
+        }),
+              abs(simd_dot(xAxis, yAxis)) < 0.02,
+              abs(simd_dot(xAxis, zAxis)) < 0.02,
+              abs(simd_dot(yAxis, zAxis)) < 0.02,
+              simd_dot(simd_cross(xAxis, yAxis), zAxis) > 0.98 else {
+            return nil
+        }
+
+        // rotationMatrix(for:) uses Rz * Ry * Rx. Registrations are limited to
+        // small patient-position differences, so the nonsingular ZYX solution
+        // is the expected path; reject a gimbal-lock matrix rather than making
+        // an arbitrary Euler choice for a shared-frame seed.
+        // This renderer's Y rotation matrix stores +sin(y) in row 2,
+        // column 0, so preserve that convention when reconstructing Euler
+        // angles from the reusable world transform.
+        let sinY = min(max(transform.columns.0.z, -1), 1)
+        let rotationY = asin(sinY)
+        guard abs(cos(rotationY)) > 0.0001 else { return nil }
+        let rotationX = atan2(transform.columns.1.z, transform.columns.2.z)
+        let rotationZ = atan2(transform.columns.0.y, transform.columns.0.x)
+        let rotation = SIMD3<Float>(rotationX, rotationY, rotationZ)
+
+        let rotatedCenter = transform * SIMD4<Float>(movingRotationCenterWorld, 0)
+        let worldOffset = SIMD3<Float>(
+            transform.columns.3.x,
+            transform.columns.3.y,
+            transform.columns.3.z
+        )
+        let translation = worldOffset
+            - movingRotationCenterWorld
+            + SIMD3<Float>(rotatedCenter.x, rotatedCenter.y, rotatedCenter.z)
+        guard translation.x.isFinite,
+              translation.y.isFinite,
+              translation.z.isFinite else {
+            return nil
+        }
+        return RigidTransformState(
+            translationWorld: translation,
+            rotationRadians: rotation
+        )
+    }
+
     private func registrationTextureCoordinateMatrix(
         for state: RigidTransformState,
         fixedVoxelToWorld: simd_float4x4,
@@ -3547,6 +3891,98 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func transformedOverlayVolumeCenterWorld(for state: RigidTransformState) -> SIMD3<Float> {
         transformedOverlayPointWorld(overlayVolumeCenterWorld, for: state)
+    }
+
+    private func inverseTransformedBasePointWorld(_ pointWorld: SIMD3<Float>, for state: RigidTransformState) -> SIMD3<Float> {
+        let translatedPoint = pointWorld - movingRotationCenterWorld - state.translationWorld
+        let unrotated = inverseRotationMatrix(for: state.rotationRadians) * SIMD4<Float>(translatedPoint, 1)
+        return SIMD3<Float>(unrotated.x, unrotated.y, unrotated.z) + movingRotationCenterWorld
+    }
+
+    private func projectedVolumeBounds(
+        dimensions: SIMD3<Int>,
+        voxelToWorld: simd_float4x4,
+        direction: SIMD3<Float>
+    ) -> (minimum: Float, maximum: Float) {
+        let origin = SIMD3<Float>(
+            voxelToWorld.columns.3.x,
+            voxelToWorld.columns.3.y,
+            voxelToWorld.columns.3.z
+        )
+        let columns = [
+            SIMD3<Float>(voxelToWorld.columns.0.x, voxelToWorld.columns.0.y, voxelToWorld.columns.0.z),
+            SIMD3<Float>(voxelToWorld.columns.1.x, voxelToWorld.columns.1.y, voxelToWorld.columns.1.z),
+            SIMD3<Float>(voxelToWorld.columns.2.x, voxelToWorld.columns.2.y, voxelToWorld.columns.2.z),
+        ]
+        let counts = [
+            Float(max(dimensions.x - 1, 0)),
+            Float(max(dimensions.y - 1, 0)),
+            Float(max(dimensions.z - 1, 0)),
+        ]
+        var minimum = simd_dot(origin, direction)
+        var maximum = minimum
+        for (column, count) in zip(columns, counts) {
+            let projectedEdge = simd_dot(column * count, direction)
+            if projectedEdge >= 0 {
+                maximum += projectedEdge
+            } else {
+                minimum += projectedEdge
+            }
+        }
+        return (minimum, maximum)
+    }
+
+    private func cranialCoverageFraction(for state: RigidTransformState) -> Float? {
+        guard minimumCranialCoverageFraction() > 0 else { return nil }
+        let baseVoxelToWorld = fixedVoxelToWorld
+        let overlayVoxelToWorld = simd_inverse(movingWorldToVoxel)
+        let thinDimensions = baseIsThinSlab ? baseVolumeDimensions : overlayVolumeDimensions
+        let thinVoxelToWorld = baseIsThinSlab ? baseVoxelToWorld : overlayVoxelToWorld
+        let fullDimensions = baseIsThinSlab ? overlayVolumeDimensions : baseVolumeDimensions
+        let fullVoxelToWorld = baseIsThinSlab ? overlayVoxelToWorld : baseVoxelToWorld
+        let thinCenterWorld = baseIsThinSlab
+            ? baseVolumeCenterWorld
+            : overlayVolumeCenterWorld
+        return cranialCoverageFraction(
+            for: state,
+            thinCenterWorld: thinCenterWorld,
+            thinDimensions: thinDimensions,
+            thinVoxelToWorld: thinVoxelToWorld,
+            fullDimensions: fullDimensions,
+            fullVoxelToWorld: fullVoxelToWorld,
+            thinSharesBaseFrame: baseIsThinSlab
+        )
+    }
+
+    private func cranialCoverageFraction(
+        for state: RigidTransformState,
+        thinCenterWorld: SIMD3<Float>,
+        thinDimensions: SIMD3<Int>,
+        thinVoxelToWorld: simd_float4x4,
+        fullDimensions: SIMD3<Int>,
+        fullVoxelToWorld: simd_float4x4,
+        thinSharesBaseFrame: Bool
+    ) -> Float? {
+        let superiorDirection = SIMD3<Float>(0, 0, 1)
+        let thinBounds = projectedVolumeBounds(
+            dimensions: thinDimensions,
+            voxelToWorld: thinVoxelToWorld,
+            direction: superiorDirection
+        )
+        let fullBounds = projectedVolumeBounds(
+            dimensions: fullDimensions,
+            voxelToWorld: fullVoxelToWorld,
+            direction: superiorDirection
+        )
+        let thinExtent = thinBounds.maximum - thinBounds.minimum
+        let fullExtent = fullBounds.maximum - fullBounds.minimum
+        guard fullExtent / max(thinExtent, 0.0001) >= 1.5 else { return nil }
+
+        let thinCenterInFullWorld = thinSharesBaseFrame
+            ? inverseTransformedBasePointWorld(thinCenterWorld, for: state)
+            : transformedOverlayPointWorld(thinCenterWorld, for: state)
+        let superiorPosition = simd_dot(thinCenterInFullWorld, superiorDirection)
+        return (superiorPosition - fullBounds.minimum) / max(fullExtent, 0.0001)
     }
 
     private func focusStackOnRegisteredOverlayIfNeeded(for state: RigidTransformState) {
@@ -3645,6 +4081,163 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return Array(zip(baseLevels, overlayLevels))
     }
 
+    private func registrationSupportMetricContext(
+        for level: (VolumeLevel, VolumeLevel),
+        levelIndex: Int,
+        totalLevels: Int
+    ) -> RegistrationSupportMetricContext {
+        // The additional series stabilize the broad search. The finest level
+        // deliberately returns to the displayed pair for its independent
+        // verification and local refinement.
+        guard totalLevels > 1,
+              levelIndex < totalLevels - 1 else {
+            return RegistrationSupportMetricContext(primaryWeight: 1, pairs: [])
+        }
+
+        registrationSupportLock.lock()
+        let primaryWeight = registrationPrimaryWeight
+        let supportInputs = registrationSupportInputs
+        let preparedVolumes = preparedRegistrationSupportVolumes
+        registrationSupportLock.unlock()
+        guard preparedVolumes.isEmpty == false else {
+            return RegistrationSupportMetricContext(primaryWeight: 1, pairs: [])
+        }
+
+        let preparedByIdentifier: [String: PreparedRegistrationSupportVolume] = Dictionary(
+            uniqueKeysWithValues: preparedVolumes.map {
+                ($0.input.identifier, $0)
+            }
+        )
+        let baseWindow = MetalViewerWindowLevel(
+            level: baseRegistrationWindowLevel,
+            width: max(baseRegistrationWindowWidth, 1)
+        )
+        let overlayWindow = MetalViewerWindowLevel(
+            level: overlayRegistrationWindowLevel,
+            width: max(overlayRegistrationWindowWidth, 1)
+        )
+
+        let pairs: [RegistrationSupportMetricPair] = supportInputs.compactMap {
+            input -> RegistrationSupportMetricPair? in
+            guard let prepared = preparedByIdentifier[input.identifier],
+                  prepared.entry.levels.isEmpty == false else {
+                return nil
+            }
+            let supportLevelIndex = min(
+                max(levelIndex + prepared.entry.levels.count - totalLevels, 0),
+                prepared.entry.levels.count - 1
+            )
+            let supportLevel = prepared.entry.levels[supportLevelIndex]
+            if input.sharesBaseFrame {
+                return RegistrationSupportMetricPair(
+                    identifier: input.identifier,
+                    fixedLevel: supportLevel,
+                    movingLevel: level.1,
+                    fixedWindow: prepared.entry.defaultWindow,
+                    movingWindow: overlayWindow,
+                    usesReverseTransform: false,
+                    weight: input.weight
+                )
+            }
+            return RegistrationSupportMetricPair(
+                identifier: input.identifier,
+                fixedLevel: supportLevel,
+                movingLevel: level.0,
+                fixedWindow: prepared.entry.defaultWindow,
+                movingWindow: baseWindow,
+                usesReverseTransform: true,
+                weight: input.weight
+            )
+        }
+        return RegistrationSupportMetricContext(
+            primaryWeight: primaryWeight,
+            pairs: pairs
+        )
+    }
+
+    private func registrationSupportBlockMatchingPairs(
+        for level: (VolumeLevel, VolumeLevel),
+        levelIndex: Int,
+        totalLevels: Int
+    ) -> [RegistrationBlockMatchingPair] {
+        registrationSupportLock.lock()
+        let supportInputs = registrationSupportInputs
+        let preparedVolumes = preparedRegistrationSupportVolumes
+        registrationSupportLock.unlock()
+        guard supportInputs.isEmpty == false,
+              preparedVolumes.isEmpty == false else {
+            return []
+        }
+
+        let preparedByIdentifier: [String: PreparedRegistrationSupportVolume] = Dictionary(
+            uniqueKeysWithValues: preparedVolumes.map {
+                ($0.input.identifier, $0)
+            }
+        )
+        let baseWindow = MetalViewerWindowLevel(
+            level: baseRegistrationWindowLevel,
+            width: max(baseRegistrationWindowWidth, 1)
+        )
+        let overlayWindow = MetalViewerWindowLevel(
+            level: overlayRegistrationWindowLevel,
+            width: max(overlayRegistrationWindowWidth, 1)
+        )
+        var representedNormals = [SIMD3<Float>]()
+        if let primaryNormal = baseIsThinSlab
+            ? baseSlabGeometry?.normalWorld
+            : overlaySlabGeometry?.normalWorld {
+            representedNormals.append(primaryNormal)
+        }
+
+        var pairs = [RegistrationBlockMatchingPair]()
+        for input in supportInputs {
+            guard pairs.count < 2,
+                  let prepared = preparedByIdentifier[input.identifier],
+                  prepared.entry.levels.isEmpty == false else {
+                continue
+            }
+            let supportLevelIndex = min(
+                max(levelIndex + prepared.entry.levels.count - totalLevels, 0),
+                prepared.entry.levels.count - 1
+            )
+            let supportLevel = prepared.entry.levels[supportLevelIndex]
+            if isThinSlab(
+                dimensions: supportLevel.dimensions,
+                voxelToWorld: supportLevel.voxelToWorld
+            ) {
+                let supportNormal = slabGeometry(
+                    dimensions: supportLevel.dimensions,
+                    voxelToWorld: supportLevel.voxelToWorld
+                ).normalWorld
+                guard representedNormals.allSatisfy({
+                    abs(simd_dot($0, supportNormal)) < 0.9
+                }) else {
+                    continue
+                }
+                representedNormals.append(supportNormal)
+            }
+
+            if input.sharesBaseFrame {
+                pairs.append(RegistrationBlockMatchingPair(
+                    identifier: input.identifier,
+                    fixedLevel: supportLevel,
+                    movingLevel: level.1,
+                    fixedWindow: prepared.entry.defaultWindow,
+                    movingWindow: overlayWindow
+                ))
+            } else {
+                pairs.append(RegistrationBlockMatchingPair(
+                    identifier: input.identifier,
+                    fixedLevel: level.0,
+                    movingLevel: supportLevel,
+                    fixedWindow: baseWindow,
+                    movingWindow: prepared.entry.defaultWindow
+                ))
+            }
+        }
+        return pairs
+    }
+
     private func dicomInitialGuess() -> RigidTransformState {
         RigidTransformState(
             translationWorld: .zero,
@@ -3668,26 +4261,249 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             )
         }
 
+        let baseVoxelToWorld = fixedVoxelToWorld
+        let overlayVoxelToWorld = simd_inverse(movingWorldToVoxel)
+        let thinDimensions = baseIsThinSlab ? baseVolumeDimensions : overlayVolumeDimensions
+        let thinVoxelToWorld = baseIsThinSlab ? baseVoxelToWorld : overlayVoxelToWorld
+        let fullDimensions = baseIsThinSlab ? overlayVolumeDimensions : baseVolumeDimensions
+        let fullVoxelToWorld = baseIsThinSlab ? overlayVoxelToWorld : baseVoxelToWorld
+        return coverageAwareCenterInitialGuess(
+            thinDimensions: thinDimensions,
+            thinVoxelToWorld: thinVoxelToWorld,
+            fullDimensions: fullDimensions,
+            fullVoxelToWorld: fullVoxelToWorld,
+            thinSharesBaseFrame: baseIsThinSlab
+        )
+    }
+
+    private func coverageAwareCenterInitialGuess(
+        thinDimensions: SIMD3<Int>,
+        thinVoxelToWorld: simd_float4x4,
+        fullDimensions: SIMD3<Int>,
+        fullVoxelToWorld: simd_float4x4,
+        thinSharesBaseFrame: Bool
+    ) -> RigidTransformState {
+        let thinCenterWorld = volumeCenterWorld(
+            dimensions: thinDimensions,
+            voxelToWorld: thinVoxelToWorld
+        )
+        let fullCenterWorld = volumeCenterWorld(
+            dimensions: fullDimensions,
+            voxelToWorld: fullVoxelToWorld
+        )
+        let centerDelta = thinSharesBaseFrame
+            ? thinCenterWorld - fullCenterWorld
+            : fullCenterWorld - thinCenterWorld
+
         // A targeted slab occupies only one anatomical portion of a larger
         // acquisition. Aligning their volume centers through-plane moves the
         // slab to the middle of the larger volume, which is generally the
         // wrong anatomy. Preserve the DICOM through-plane placement and use
         // center alignment only within the slab plane.
-        let thinSlabNormal: SIMD3<Float>?
-        if baseIsThinSlab {
-            thinSlabNormal = baseSlabGeometry?.normalWorld
-        } else {
-            thinSlabNormal = overlaySlabGeometry?.normalWorld
-        }
-        guard let thinSlabNormal else {
-            return dicomInitialGuess()
-        }
+        let thinSlabNormal = slabGeometry(
+            dimensions: thinDimensions,
+            voxelToWorld: thinVoxelToWorld
+        ).normalWorld
         let inPlaneCenterDelta = centerDelta
             - simd_dot(centerDelta, thinSlabNormal) * thinSlabNormal
         return RigidTransformState(
             translationWorld: inPlaneCenterDelta,
             rotationRadians: .zero
         )
+    }
+
+    private func crossModalityCoverageSweepInitialGuesses() -> [RigidTransformState] {
+        guard isCrossModalityUnequalCoverageRegistration() else { return [] }
+
+        let baseVoxelToWorld = fixedVoxelToWorld
+        let overlayVoxelToWorld = simd_inverse(movingWorldToVoxel)
+        let thinDimensions = baseIsThinSlab ? baseVolumeDimensions : overlayVolumeDimensions
+        let thinVoxelToWorld = baseIsThinSlab ? baseVoxelToWorld : overlayVoxelToWorld
+        let fullDimensions = baseIsThinSlab ? overlayVolumeDimensions : baseVolumeDimensions
+        let fullVoxelToWorld = baseIsThinSlab ? overlayVoxelToWorld : baseVoxelToWorld
+        return coverageSweepInitialGuesses(
+            thinDimensions: thinDimensions,
+            thinVoxelToWorld: thinVoxelToWorld,
+            fullDimensions: fullDimensions,
+            fullVoxelToWorld: fullVoxelToWorld,
+            thinSharesBaseFrame: baseIsThinSlab,
+            minimumCranialFraction: minimumCranialCoverageFraction()
+        )
+    }
+
+    private func coverageSweepInitialGuesses(
+        thinDimensions: SIMD3<Int>,
+        thinVoxelToWorld: simd_float4x4,
+        fullDimensions: SIMD3<Int>,
+        fullVoxelToWorld: simd_float4x4,
+        thinSharesBaseFrame: Bool,
+        minimumCranialFraction: Float
+    ) -> [RigidTransformState] {
+
+        func physicalAxes(
+            dimensions: SIMD3<Int>,
+            voxelToWorld: simd_float4x4
+        ) -> [(direction: SIMD3<Float>, extent: Float, edge: SIMD3<Float>)] {
+            let columns = [
+                SIMD3<Float>(voxelToWorld.columns.0.x, voxelToWorld.columns.0.y, voxelToWorld.columns.0.z),
+                SIMD3<Float>(voxelToWorld.columns.1.x, voxelToWorld.columns.1.y, voxelToWorld.columns.1.z),
+                SIMD3<Float>(voxelToWorld.columns.2.x, voxelToWorld.columns.2.y, voxelToWorld.columns.2.z),
+            ]
+            let counts = [
+                Float(max(dimensions.x - 1, 0)),
+                Float(max(dimensions.y - 1, 0)),
+                Float(max(dimensions.z - 1, 0)),
+            ]
+            return zip(columns, counts).map { column, count in
+                let spacing = simd_length(column)
+                let direction = spacing > 0.0001 ? column / spacing : SIMD3<Float>(repeating: 0)
+                let edge = column * count
+                return (direction, simd_length(edge), edge)
+            }
+        }
+
+        let thinAxes = physicalAxes(dimensions: thinDimensions, voxelToWorld: thinVoxelToWorld)
+        let fullAxes = physicalAxes(dimensions: fullDimensions, voxelToWorld: fullVoxelToWorld)
+        guard let thinAxis = thinAxes.enumerated().min(by: { $0.element.extent < $1.element.extent })?.offset else {
+            return []
+        }
+
+        var sweepDirection = SIMD3<Float>(repeating: 0)
+        var availableCenterTravel: Float = 0
+        for (axisIndex, thinAxisGeometry) in thinAxes.enumerated() where axisIndex != thinAxis {
+            guard simd_length(thinAxisGeometry.direction) > 0.5 else { continue }
+            let fullProjectedExtent = fullAxes.reduce(Float(0)) { partial, fullAxisGeometry in
+                partial + abs(simd_dot(fullAxisGeometry.edge, thinAxisGeometry.direction))
+            }
+            let coverageRatio = fullProjectedExtent / max(thinAxisGeometry.extent, 0.0001)
+            guard coverageRatio >= 1.5 else { continue }
+            let centerTravel = max((fullProjectedExtent - thinAxisGeometry.extent) * 0.5, 0)
+            if centerTravel > availableCenterTravel {
+                availableCenterTravel = centerTravel
+                sweepDirection = thinAxisGeometry.direction
+            }
+        }
+
+        // The ordinary coarse search covers 24 mm around each seed. Space
+        // these coverage seeds no more than 48 mm apart so a targeted slab can
+        // find anatomy anywhere along the larger acquisition without turning
+        // every unequal-coverage registration into a full 3D grid search.
+        let localSearchReach: Float = 24
+        guard availableCenterTravel > localSearchReach,
+              simd_length(sweepDirection) > 0.5 else {
+            return []
+        }
+        let segmentCount = min(
+            max(Int(ceil((2 * availableCenterTravel) / (2 * localSearchReach))), 2),
+            6
+        )
+        let centerState = coverageAwareCenterInitialGuess(
+            thinDimensions: thinDimensions,
+            thinVoxelToWorld: thinVoxelToWorld,
+            fullDimensions: fullDimensions,
+            fullVoxelToWorld: fullVoxelToWorld,
+            thinSharesBaseFrame: thinSharesBaseFrame
+        )
+        let thinCenterWorld = volumeCenterWorld(
+            dimensions: thinDimensions,
+            voxelToWorld: thinVoxelToWorld
+        )
+        let movingOffsetSign: Float = thinSharesBaseFrame ? -1 : 1
+        return (0...segmentCount).compactMap { index in
+            let fraction = Float(index) / Float(segmentCount)
+            let offset = -availableCenterTravel + 2 * availableCenterTravel * fraction
+            var state = centerState
+            state.translationWorld += movingOffsetSign * offset * sweepDirection
+            if minimumCranialFraction > 0,
+               let coverageFraction = cranialCoverageFraction(
+                   for: state,
+                   thinCenterWorld: thinCenterWorld,
+                   thinDimensions: thinDimensions,
+                   thinVoxelToWorld: thinVoxelToWorld,
+                   fullDimensions: fullDimensions,
+                   fullVoxelToWorld: fullVoxelToWorld,
+                   thinSharesBaseFrame: thinSharesBaseFrame
+               ),
+               coverageFraction < minimumCranialFraction {
+                return nil
+            }
+            return state
+        }
+    }
+
+    private func registrationSupportCoverageSweepInitialGuesses() -> [RigidTransformState] {
+        guard isCrossModalityUnequalCoverageRegistration() else { return [] }
+
+        registrationSupportLock.lock()
+        let supportInputs = registrationSupportInputs
+        let preparedVolumes = preparedRegistrationSupportVolumes
+        registrationSupportLock.unlock()
+        guard supportInputs.isEmpty == false,
+              preparedVolumes.isEmpty == false else {
+            return []
+        }
+
+        let preparedByIdentifier: [String: PreparedRegistrationSupportVolume] = Dictionary(
+            uniqueKeysWithValues: preparedVolumes.map {
+                ($0.input.identifier, $0)
+            }
+        )
+        var representedNormals = [SIMD3<Float>]()
+        if let primaryNormal = baseIsThinSlab
+            ? baseSlabGeometry?.normalWorld
+            : overlaySlabGeometry?.normalWorld {
+            representedNormals.append(primaryNormal)
+        }
+
+        let minimumCranialFraction = minimumCranialCoverageFraction()
+        var candidates = [RigidTransformState]()
+        for input in supportInputs {
+            guard let prepared = preparedByIdentifier[input.identifier] else { continue }
+            let thinDimensions = prepared.entry.dimensions
+            let thinVoxelToWorld = prepared.entry.voxelToWorld
+            guard isThinSlab(
+                dimensions: thinDimensions,
+                voxelToWorld: thinVoxelToWorld
+            ) else {
+                continue
+            }
+
+            let supportNormal = slabGeometry(
+                dimensions: thinDimensions,
+                voxelToWorld: thinVoxelToWorld
+            ).normalWorld
+            guard representedNormals.allSatisfy({
+                abs(simd_dot($0, supportNormal)) < 0.9
+            }) else {
+                continue
+            }
+
+            let fullDimensions = input.sharesBaseFrame
+                ? overlayVolumeDimensions
+                : baseVolumeDimensions
+            let fullVoxelToWorld = input.sharesBaseFrame
+                ? simd_inverse(movingWorldToVoxel)
+                : fixedVoxelToWorld
+            guard isThinSlab(
+                dimensions: fullDimensions,
+                voxelToWorld: fullVoxelToWorld
+            ) == false else {
+                continue
+            }
+
+            let supportCandidates = coverageSweepInitialGuesses(
+                thinDimensions: thinDimensions,
+                thinVoxelToWorld: thinVoxelToWorld,
+                fullDimensions: fullDimensions,
+                fullVoxelToWorld: fullVoxelToWorld,
+                thinSharesBaseFrame: input.sharesBaseFrame,
+                minimumCranialFraction: minimumCranialFraction
+            )
+            guard supportCandidates.isEmpty == false else { continue }
+            representedNormals.append(supportNormal)
+            candidates.append(contentsOf: supportCandidates)
+        }
+        return candidates
     }
 
     private func centerOfMassInitialGuess() -> RigidTransformState {
@@ -3698,12 +4514,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func automaticRegistrationInitialGuesses() -> [RigidTransformState] {
-        let candidates: [RigidTransformState]
+        var candidates: [RigidTransformState]
         if isUnequalCoverageThinSlabRegistration() {
-            candidates = [
-                dicomInitialGuess(),
-                coverageAwareCenterInitialGuess(),
-            ]
+            candidates = [dicomInitialGuess()]
+            let coverageSweepCandidates = crossModalityCoverageSweepInitialGuesses()
+            if coverageSweepCandidates.isEmpty {
+                candidates.append(coverageAwareCenterInitialGuess())
+            } else {
+                candidates.append(contentsOf: coverageSweepCandidates)
+            }
+            candidates.append(contentsOf: registrationSupportCoverageSweepInitialGuesses())
         } else {
             candidates = [
                 physicalCenterInitialGuess(),
@@ -3726,7 +4546,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func runRegistration(
         startingAt initialState: RigidTransformState? = nil,
-        samplingMode requestedSamplingMode: RegistrationSamplingMode
+        additionalInitialStates: [RigidTransformState] = [],
+        samplingMode requestedSamplingMode: RegistrationSamplingMode,
+        searchMode: RegistrationSearchMode = .full
     ) {
         let levelPairs = currentRegistrationLevelPairs()
         guard levelPairs.isEmpty == false else { return }
@@ -3742,15 +4564,38 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             ? .fast
             : .reference
         let initialGuesses = initialState.map { [$0] } ?? automaticRegistrationInitialGuesses()
+        var supplementalInitialGuesses: [RigidTransformState] = []
+        if initialState == nil {
+            for candidate in additionalInitialStates {
+                let existingCandidates = initialGuesses + supplementalInitialGuesses
+                let isDuplicate = existingCandidates.contains { existing in
+                    simd_length(existing.translationWorld - candidate.translationWorld) < 0.01
+                        && simd_length(existing.rotationRadians - candidate.rotationRadians) < 0.0001
+                }
+                if isDuplicate == false {
+                    supplementalInitialGuesses.append(candidate)
+                }
+            }
+        }
         guard let initialGuess = initialGuesses.first else { return }
         invalidateActiveRegistrationJob()
-        let job = RegistrationJob(generation: registrationGeneration)
+        let job = RegistrationJob(
+            generation: registrationGeneration,
+            refinementTranslationAnchor: searchMode == .refinement
+                ? initialGuess.translationWorld
+                : nil,
+            refinementRotationAnchor: searchMode == .refinement
+                ? initialGuess.rotationRadians
+                : nil
+        )
         activeRegistrationJob = job
         publishRegistrationUpdate(
             state: initialGuess,
             inProgress: true,
             progress: 0,
-            message: samplingMode == .fast ? "Registering 3D Fast" : "Registering 3D Reference",
+            message: searchMode == .refinement
+                ? "Refining 3D"
+                : (samplingMode == .fast ? "Registering 3D Fast" : "Registering 3D Reference"),
             residualError: nil,
             generation: job.generation
         )
@@ -3758,9 +4603,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             guard let self, job.isCancelled == false else { return }
             let result = self.optimizeOverlayTransform(
                 startingAt: initialGuesses,
+                supplementalInitialGuesses: supplementalInitialGuesses,
                 job: job,
                 levelPairs: levelPairs,
-                samplingMode: samplingMode
+                samplingMode: samplingMode,
+                searchMode: searchMode
             )
             guard job.isCancelled == false else { return }
 
@@ -3773,7 +4620,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     state: result.state,
                     inProgress: false,
                     progress: 1,
-                    message: "Registered 3D",
+                    message: searchMode == .refinement ? "Refined 3D" : "Registered 3D",
                     residualError: result.metric,
                     generation: job.generation
                 )
@@ -3787,10 +4634,34 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         metric: BlockMatchingMetric,
         job: RegistrationJob
     ) -> RigidTransformState? {
+        blockMatchingInitialGuess(
+            startingAt: initialState,
+            fixedLevel: level.0,
+            movingLevel: level.1,
+            fixedWindow: MetalViewerWindowLevel(
+                level: baseRegistrationWindowLevel,
+                width: max(baseRegistrationWindowWidth, 1)
+            ),
+            movingWindow: MetalViewerWindowLevel(
+                level: overlayRegistrationWindowLevel,
+                width: max(overlayRegistrationWindowWidth, 1)
+            ),
+            metric: metric,
+            job: job
+        )
+    }
+
+    private func blockMatchingInitialGuess(
+        startingAt initialState: RigidTransformState,
+        fixedLevel: VolumeLevel,
+        movingLevel: VolumeLevel,
+        fixedWindow: MetalViewerWindowLevel,
+        movingWindow: MetalViewerWindowLevel,
+        metric: BlockMatchingMetric,
+        job: RegistrationJob
+    ) -> RigidTransformState? {
         guard job.isCancelled == false else { return nil }
-        let baseLevel = level.0
-        let movingLevel = level.1
-        let baseSpacing = voxelSpacing(from: baseLevel.voxelToWorld)
+        let fixedSpacing = voxelSpacing(from: fixedLevel.voxelToWorld)
         let movingSpacing = voxelSpacing(from: movingLevel.voxelToWorld)
 
         func sparseStride(spacing: Float) -> UInt32 {
@@ -3805,25 +4676,25 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         let blockStride = SIMD3<UInt32>(
-            sparseStride(spacing: baseSpacing.x),
-            sparseStride(spacing: baseSpacing.y),
-            sparseStride(spacing: baseSpacing.z)
+            sparseStride(spacing: fixedSpacing.x),
+            sparseStride(spacing: fixedSpacing.y),
+            sparseStride(spacing: fixedSpacing.z)
         )
         let blockRadii = SIMD3<UInt32>(
-            blockRadius(spacing: baseSpacing.x),
-            blockRadius(spacing: baseSpacing.y),
-            blockRadius(spacing: baseSpacing.z)
+            blockRadius(spacing: fixedSpacing.x),
+            blockRadius(spacing: fixedSpacing.y),
+            blockRadius(spacing: fixedSpacing.z)
         )
         let searchRadii = SIMD3<UInt32>(
             searchRadius(spacing: movingSpacing.x),
             searchRadius(spacing: movingSpacing.y),
             searchRadius(spacing: movingSpacing.z)
         )
-        let baseDimensions = baseLevel.dimensions
+        let fixedDimensions = fixedLevel.dimensions
         let blockGrid = SIMD3<Int>(
-            (baseDimensions.x + Int(blockStride.x) - 1) / Int(blockStride.x),
-            (baseDimensions.y + Int(blockStride.y) - 1) / Int(blockStride.y),
-            (baseDimensions.z + Int(blockStride.z) - 1) / Int(blockStride.z)
+            (fixedDimensions.x + Int(blockStride.x) - 1) / Int(blockStride.x),
+            (fixedDimensions.y + Int(blockStride.y) - 1) / Int(blockStride.y),
+            (fixedDimensions.z + Int(blockStride.z) - 1) / Int(blockStride.z)
         )
         let resultCount = blockGrid.x * blockGrid.y * blockGrid.z
         guard resultCount >= 8,
@@ -3837,21 +4708,21 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         let fixedToMovingTexture = registrationTextureCoordinateMatrix(
             for: initialState,
-            fixedVoxelToWorld: baseLevel.voxelToWorld,
+            fixedVoxelToWorld: fixedLevel.voxelToWorld,
             movingWorldToVoxel: simd_inverse(movingLevel.voxelToWorld),
             movingTextureSize: movingLevel.dimensions
         )
         var uniforms = BlockMatchingUniforms(
             windows: SIMD4<Float>(
-                baseRegistrationWindowLevel,
-                max(baseRegistrationWindowWidth, 1),
-                overlayRegistrationWindowLevel,
-                max(overlayRegistrationWindowWidth, 1)
+                fixedWindow.level,
+                max(fixedWindow.width, 1),
+                movingWindow.level,
+                max(movingWindow.width, 1)
             ),
             baseTextureSize: SIMD4<UInt32>(
-                UInt32(max(baseDimensions.x, 1)),
-                UInt32(max(baseDimensions.y, 1)),
-                UInt32(max(baseDimensions.z, 1)),
+                UInt32(max(fixedDimensions.x, 1)),
+                UInt32(max(fixedDimensions.y, 1)),
+                UInt32(max(fixedDimensions.z, 1)),
                 0
             ),
             movingTextureSize: SIMD4<UInt32>(
@@ -3876,7 +4747,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             return nil
         }
         encoder.setComputePipelineState(registrationBlockMatchingPipelineState)
-        encoder.setTexture(baseLevel.texture, index: 0)
+        encoder.setTexture(fixedLevel.texture, index: 0)
         encoder.setTexture(movingLevel.texture, index: 1)
         encoder.setBytes(&uniforms, length: MemoryLayout<BlockMatchingUniforms>.stride, index: 0)
         encoder.setBuffer(resultBuffer, offset: 0, index: 1)
@@ -3926,9 +4797,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     }
 
                     let fixedVoxel = SIMD3<Float>(
-                        Float(min(x * Int(blockStride.x) + Int(blockStride.x) / 2, baseDimensions.x - 1)),
-                        Float(min(y * Int(blockStride.y) + Int(blockStride.y) / 2, baseDimensions.y - 1)),
-                        Float(min(z * Int(blockStride.z) + Int(blockStride.z) / 2, baseDimensions.z - 1))
+                        Float(min(x * Int(blockStride.x) + Int(blockStride.x) / 2, fixedDimensions.x - 1)),
+                        Float(min(y * Int(blockStride.y) + Int(blockStride.y) / 2, fixedDimensions.y - 1)),
+                        Float(min(z * Int(blockStride.z) + Int(blockStride.z) / 2, fixedDimensions.z - 1))
                     )
                     let predictedMovingTexture = fixedToMovingTexture * SIMD4<Float>(fixedVoxel, 1)
                     let movingVoxel = SIMD3<Float>(
@@ -3945,7 +4816,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                         continue
                     }
 
-                    let fixedWorld4 = baseLevel.voxelToWorld * SIMD4<Float>(fixedVoxel, 1)
+                    let fixedWorld4 = fixedLevel.voxelToWorld * SIMD4<Float>(fixedVoxel, 1)
                     let movingWorld4 = movingLevel.voxelToWorld * SIMD4<Float>(movingVoxel, 1)
                     correspondences.append(BlockCorrespondence(
                         movingWorld: SIMD3<Float>(movingWorld4.x, movingWorld4.y, movingWorld4.z),
@@ -4149,9 +5020,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func optimizeOverlayTransform(
         startingAt initialGuesses: [RigidTransformState],
+        supplementalInitialGuesses: [RigidTransformState],
         job: RegistrationJob,
         levelPairs: [(VolumeLevel, VolumeLevel)],
-        samplingMode: RegistrationSamplingMode
+        samplingMode: RegistrationSamplingMode,
+        searchMode: RegistrationSearchMode
     ) -> (state: RigidTransformState, metric: Float) {
         struct RigidStep {
             let translationMM: Float
@@ -4200,8 +5073,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
               job.isCancelled == false else {
             return (dicomInitialGuess(), .greatestFiniteMagnitude)
         }
+        let coarseSamplingStride = registrationSamplingStride(
+            for: levelPairs[0],
+            samplingMode: samplingMode
+        )
         var coarseInitialGuesses = initialGuesses
-        if slabAwareRegistration {
+        if searchMode == .full, slabAwareRegistration {
             let defaultBlockMetric: BlockMatchingMetric =
                 isCTRegistrationVolume(pixList) != isCTRegistrationVolume(overlayPixList)
                     || isCrossPlaneThinSlabRegistration()
@@ -4231,34 +5108,159 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     }
                 }
             }
+
+            let supportContext = registrationSupportMetricContext(
+                for: levelPairs[0],
+                levelIndex: 0,
+                totalLevels: levelPairs.count
+            )
+            let supportBlockPairs = registrationSupportBlockMatchingPairs(
+                for: levelPairs[0],
+                levelIndex: 0,
+                totalLevels: levelPairs.count
+            )
+            if supportContext.pairs.isEmpty == false,
+               supportBlockPairs.isEmpty == false,
+               job.isCancelled == false {
+                let supportMetrics = registrationSupportMetricValues(
+                    for: initialGuesses,
+                    pairs: supportContext.pairs,
+                    levelIndex: 0,
+                    totalLevels: levelPairs.count,
+                    useBoneOnly: shouldUseBoneOnlyMetric(
+                        forLevelIndex: 0,
+                        totalLevels: levelPairs.count
+                    ),
+                    samplingStride: coarseSamplingStride,
+                    job: job
+                )
+                for blockPair in supportBlockPairs {
+                    guard let metricIndex = supportContext.pairs.firstIndex(where: {
+                        $0.identifier == blockPair.identifier
+                    }),
+                          metricIndex < supportMetrics.count else {
+                        continue
+                    }
+
+                    var rankedSeeds = [(state: RigidTransformState, metric: Float)]()
+                    for (stateIndex, state) in initialGuesses.enumerated() {
+                        guard stateIndex < supportMetrics[metricIndex].count,
+                              let metric = supportMetrics[metricIndex][stateIndex],
+                              metric.isFinite,
+                              metric < Float.greatestFiniteMagnitude / 2 else {
+                            continue
+                        }
+                        rankedSeeds.append((state: state, metric: metric))
+                    }
+                    rankedSeeds.sort { $0.metric < $1.metric }
+
+                    for rankedSeed in rankedSeeds.prefix(2) {
+                        for blockMetric in blockMetrics {
+                            guard let blockMatchedGuess = blockMatchingInitialGuess(
+                                startingAt: rankedSeed.state,
+                                fixedLevel: blockPair.fixedLevel,
+                                movingLevel: blockPair.movingLevel,
+                                fixedWindow: blockPair.fixedWindow,
+                                movingWindow: blockPair.movingWindow,
+                                metric: blockMetric,
+                                job: job
+                            ) else {
+                                continue
+                            }
+                            let isDuplicate = coarseInitialGuesses.contains { existing in
+                                simd_length(
+                                    existing.translationWorld - blockMatchedGuess.translationWorld
+                                ) < 0.1
+                                    && simd_length(
+                                        existing.rotationRadians - blockMatchedGuess.rotationRadians
+                                    ) < 0.02 * .pi / 180
+                            }
+                            if isDuplicate == false {
+                                coarseInitialGuesses.append(blockMatchedGuess)
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        let coarseSamplingStride = registrationSamplingStride(
-            for: levelPairs[0],
-            samplingMode: samplingMode
-        )
-        let seeded = coarseSeedSearch(
-            startingAt: coarseInitialGuesses,
-            level: levelPairs[0],
-            totalLevels: levelPairs.count,
-            ctToCTRegistration: ctToCTRegistration,
-            samplingStride: coarseSamplingStride,
-            job: job
-        )
+        let levelIndices: [Int]
+        if searchMode == .refinement {
+            levelIndices = Array(max(levelPairs.count - 2, 0)..<levelPairs.count)
+        } else {
+            levelIndices = Array(levelPairs.indices)
+        }
+        guard let firstLevelIndex = levelIndices.first else {
+            return (initialGuesses[0], .greatestFiniteMagnitude)
+        }
+
+        let seeded: (state: RigidTransformState, metric: Float)
+        if searchMode == .full {
+            seeded = coarseSeedSearch(
+                startingAt: coarseInitialGuesses,
+                supplementalStates: supplementalInitialGuesses,
+                level: levelPairs[0],
+                totalLevels: levelPairs.count,
+                ctToCTRegistration: ctToCTRegistration,
+                samplingStride: coarseSamplingStride,
+                job: job
+            )
+        } else {
+            let firstLevel = levelPairs[firstLevelIndex]
+            let firstLevelSamplingStride = registrationSamplingStride(
+                for: firstLevel,
+                samplingMode: samplingMode
+            )
+            let initialState = initialGuesses[0]
+            seeded = (
+                state: initialState,
+                metric: metricValue(
+                    for: initialState,
+                    level: firstLevel,
+                    levelIndex: firstLevelIndex,
+                    totalLevels: levelPairs.count,
+                    useBoneOnly: shouldUseBoneOnlyMetric(
+                        forLevelIndex: firstLevelIndex,
+                        totalLevels: levelPairs.count
+                    ),
+                    samplingStride: firstLevelSamplingStride,
+                    job: job
+                )
+            )
+        }
         var best = seeded.state
         var bestMetric = seeded.metric
 
-        for (levelIndex, levelPair) in levelPairs.enumerated() {
+        for (levelOrdinal, levelIndex) in levelIndices.enumerated() {
             guard job.isCancelled == false else { return (best, bestMetric) }
+            let levelPair = levelPairs[levelIndex]
             let useBoneOnly = shouldUseBoneOnlyMetric(forLevelIndex: levelIndex, totalLevels: levelPairs.count)
             let searchSamplingStride = registrationSamplingStride(
                 for: levelPair,
                 samplingMode: samplingMode
             )
             let isFinalFullResolutionLevel = levelIndex == levelPairs.count - 1
-            let stepsForLevel = isFinalFullResolutionLevel && rigidSteps.count > 3
-                ? Array(rigidSteps.suffix(3))
-                : rigidSteps
+            let stepsForLevel: [RigidStep]
+            if searchMode == .refinement {
+                stepsForLevel = [
+                    RigidStep(
+                        translationMM: 2,
+                        rotationRadians: 0.5 * .pi / 180,
+                        maxIterations: 12,
+                        allowsRotation: true
+                    ),
+                    RigidStep(
+                        translationMM: 1,
+                        rotationRadians: 0.25 * .pi / 180,
+                        maxIterations: 14,
+                        allowsRotation: true
+                    ),
+                ]
+            } else {
+                stepsForLevel = isFinalFullResolutionLevel && rigidSteps.count > 3
+                    ? Array(rigidSteps.suffix(3))
+                    : rigidSteps
+            }
 
             for (stepIndex, step) in stepsForLevel.enumerated() {
                 guard job.isCancelled == false else { return (best, bestMetric) }
@@ -4281,13 +5283,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 best = result.state
                 bestMetric = result.metric
 
-                let totalStageCount = levelPairs.enumerated().reduce(0) { partial, item in
-                    let itemIsFinalFullResolutionLevel = item.offset == levelPairs.count - 1
-                    return partial + (itemIsFinalFullResolutionLevel && rigidSteps.count > 3 ? 3 : rigidSteps.count)
-                }
-                let completedStagesBeforeLevel = levelPairs.prefix(levelIndex).enumerated().reduce(0) { partial, item in
-                    let itemIsFinalFullResolutionLevel = item.offset == levelPairs.count - 1
-                    return partial + (itemIsFinalFullResolutionLevel && rigidSteps.count > 3 ? 3 : rigidSteps.count)
+                let totalStageCount: Int
+                let completedStagesBeforeLevel: Int
+                if searchMode == .refinement {
+                    totalStageCount = levelIndices.count * stepsForLevel.count
+                    completedStagesBeforeLevel = levelOrdinal * stepsForLevel.count
+                } else {
+                    totalStageCount = levelPairs.enumerated().reduce(0) { partial, item in
+                        let itemIsFinalFullResolutionLevel = item.offset == levelPairs.count - 1
+                        return partial + (itemIsFinalFullResolutionLevel && rigidSteps.count > 3 ? 3 : rigidSteps.count)
+                    }
+                    completedStagesBeforeLevel = levelPairs.prefix(levelIndex).enumerated().reduce(0) { partial, item in
+                        let itemIsFinalFullResolutionLevel = item.offset == levelPairs.count - 1
+                        return partial + (itemIsFinalFullResolutionLevel && rigidSteps.count > 3 ? 3 : rigidSteps.count)
+                    }
                 }
                 let completedStages = Float(completedStagesBeforeLevel + stepIndex + 1)
                 let progress = completedStages / Float(max(totalStageCount, 1))
@@ -4451,6 +5460,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func coarseSeedSearch(
         startingAt initialStates: [RigidTransformState],
+        supplementalStates: [RigidTransformState],
         level: (VolumeLevel, VolumeLevel),
         totalLevels: Int,
         ctToCTRegistration: Bool,
@@ -4487,8 +5497,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
         let rotationSeeds = coarseRotationSeeds(forCTToCTRegistration: ctToCTRegistration, slabAwareRegistration: slabAwareRegistration)
         let useBoneOnly = shouldUseBoneOnlyMetric(forLevelIndex: 0, totalLevels: totalLevels)
+        let centerStates = initialStates + supplementalStates
         let initialMetrics = metricValues(
-            for: initialStates,
+            for: centerStates,
             level: level,
             levelIndex: 0,
             totalLevels: totalLevels,
@@ -4498,7 +5509,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         )
         var bestCenterState = initialStates.first ?? dicomInitialGuess()
         var bestCenterMetric = Float.greatestFiniteMagnitude
-        for (candidate, candidateMetric) in zip(initialStates, initialMetrics) {
+        for (candidate, candidateMetric) in zip(centerStates, initialMetrics) {
             if candidateMetric < bestCenterMetric {
                 bestCenterMetric = candidateMetric
                 bestCenterState = candidate
@@ -4507,11 +5518,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         var candidateStates: [RigidTransformState] = []
         candidateStates.reserveCapacity(initialStates.count * translationSeeds.count * rotationSeeds.count)
-        // Do not select a single center before the wide search. With partial
-        // coverage, an initially attractive center can be the wrong anatomical
-        // basin, and which one wins can change when fixed and moving are
-        // reversed. Search every distinct DICOM/physical/informative center and
-        // let the same full metric choose among their neighborhoods.
+        // Search every current-series DICOM/physical/informative center rather
+        // than committing to one basin early. A transform learned from another
+        // series is evaluated above, but it does not create another wide search
+        // neighborhood; the current series must support that transform as-is
+        // before the ordinary multiresolution refinement can select it.
         for initialState in initialStates {
             guard job.isCancelled == false else { return (bestCenterState, bestCenterMetric) }
             for translationSeed in translationSeeds {
@@ -5063,6 +6074,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             self.registrationStatusMessage = statusMessage
             self.stateDidChange?(self.stateDescription)
             self.registrationDidChange?(inProgress, displayMessage, self.registrationProgress)
+            if inProgress == false,
+               let residualError,
+               residualError.isFinite,
+               residualError < Float.greatestFiniteMagnitude * 0.5 {
+                self.registrationTransformDidComplete?(
+                    self.registrationWorldTransform(for: state)
+                )
+            }
         }
     }
 
@@ -5256,8 +6275,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func usesBidirectionalSlabMetric(options: SIMD4<Float>) -> Bool {
         let metricMode = Int(options.x.rounded())
-        return (baseIsThinSlab || overlayIsThinSlab)
-            && isCTRegistrationVolume(pixList) == false
+        guard baseIsThinSlab || overlayIsThinSlab else { return false }
+        if isCrossModalityUnequalCoverageRegistration() {
+            return metricMode == 0 || metricMode == 2
+        }
+        return isCTRegistrationVolume(pixList) == false
             && isCTRegistrationVolume(overlayPixList) == false
             && (metricMode == 0 || metricMode == 2 || metricMode == 4)
     }
@@ -5306,24 +6328,37 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         samplingStride: SIMD3<Int>,
         job: RegistrationJob
     ) -> Float {
-        let options = metricOptions(
-            forLevelIndex: levelIndex,
+        metricValues(
+            for: [state],
+            level: level,
+            levelIndex: levelIndex,
             totalLevels: totalLevels,
-            useBoneOnly: useBoneOnly
-        )
-        if usesBidirectionalSlabMetric(options: options) {
-            return metricValues(
-                for: [state],
-                level: level,
-                levelIndex: levelIndex,
-                totalLevels: totalLevels,
-                useBoneOnly: useBoneOnly,
-                samplingStride: samplingStride,
-                job: job
-            ).first ?? .greatestFiniteMagnitude
+            useBoneOnly: useBoneOnly,
+            samplingStride: samplingStride,
+            job: job
+        ).first ?? .greatestFiniteMagnitude
+    }
+
+    private func metricValues(
+        for states: [RigidTransformState],
+        level: (VolumeLevel, VolumeLevel),
+        levelIndex: Int,
+        totalLevels: Int,
+        useBoneOnly: Bool,
+        samplingStride: SIMD3<Int>,
+        job: RegistrationJob
+    ) -> [Float] {
+        func applyingJobLimits(to metrics: [Float]) -> [Float] {
+            zip(states, metrics).map { state, metric in
+                job.permits(
+                    translationWorld: state.translationWorld,
+                    rotationRadians: state.rotationRadians
+                ) ? metric : .greatestFiniteMagnitude
+            }
         }
-        return directionalMetricValue(
-            for: state,
+
+        let primaryMetrics = primaryMetricValues(
+            for: states,
             level: level,
             levelIndex: levelIndex,
             totalLevels: totalLevels,
@@ -5331,9 +6366,59 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             samplingStride: samplingStride,
             job: job
         )
+        let supportContext = registrationSupportMetricContext(
+            for: level,
+            levelIndex: levelIndex,
+            totalLevels: totalLevels
+        )
+        let supportPairs = supportContext.pairs
+        guard supportPairs.isEmpty == false,
+              job.isCancelled == false else {
+            return applyingJobLimits(to: primaryMetrics)
+        }
+
+        let supportMetrics = registrationSupportMetricValues(
+            for: states,
+            pairs: supportPairs,
+            levelIndex: levelIndex,
+            totalLevels: totalLevels,
+            useBoneOnly: useBoneOnly,
+            samplingStride: samplingStride,
+            job: job
+        )
+        guard supportMetrics.count == supportPairs.count,
+              supportMetrics.allSatisfy({ $0.count == primaryMetrics.count }) else {
+            return applyingJobLimits(to: primaryMetrics)
+        }
+
+        let combinedMetrics = primaryMetrics.enumerated().map { candidateIndex, primaryMetric in
+            guard primaryMetric.isFinite,
+                  primaryMetric < Float.greatestFiniteMagnitude / 2 else {
+                return Float.greatestFiniteMagnitude
+            }
+
+            var weightedMetric = supportContext.primaryWeight * primaryMetric
+            var totalWeight = supportContext.primaryWeight
+            for (pairIndex, pair) in supportPairs.enumerated() {
+                let supportMetric = supportMetrics[pairIndex][candidateIndex]
+                // A candidate that misses one support slab should lose that
+                // channel's vote, not make the entire multi-series search
+                // undefined. Valid NMI scores are negative, so zero is a
+                // deliberately poor contribution.
+                let contribution = supportMetric.flatMap { metric in
+                    metric.isFinite && metric < Float.greatestFiniteMagnitude / 2
+                        ? metric
+                        : nil
+                } ?? 0
+                weightedMetric += pair.weight * contribution
+                totalWeight += pair.weight
+            }
+            return weightedMetric / max(totalWeight, 0.0001)
+        }
+        return applyingJobLimits(to: combinedMetrics)
     }
 
-    private func metricValues(
+    private func primaryMetricValues(
         for states: [RigidTransformState],
         level: (VolumeLevel, VolumeLevel),
         levelIndex: Int,
@@ -5595,6 +6680,202 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return metrics
     }
 
+    private func registrationSupportMetricValues(
+        for states: [RigidTransformState],
+        pairs: [RegistrationSupportMetricPair],
+        levelIndex: Int,
+        totalLevels: Int,
+        useBoneOnly: Bool,
+        samplingStride: SIMD3<Int>,
+        job: RegistrationJob
+    ) -> [[Float?]] {
+        guard states.isEmpty == false,
+              pairs.isEmpty == false,
+              job.isCancelled == false else {
+            return pairs.map { _ in Array(repeating: nil, count: states.count) }
+        }
+
+        let options = metricOptions(
+            forLevelIndex: levelIndex,
+            totalLevels: totalLevels,
+            useBoneOnly: useBoneOnly
+        )
+        let effectiveSamplingStride = normalizedRegistrationSamplingStride(samplingStride)
+        let histogramEntryCount = registrationHistogramBins * registrationHistogramBins
+        let histogramPassEntryCount = histogramEntryCount * states.count
+        let histogramBufferLength = histogramPassEntryCount
+            * pairs.count
+            * MemoryLayout<UInt32>.stride
+
+        var uniformBuffers = [MTLBuffer]()
+        var fixedSampleGridSizes = [SIMD3<Int>]()
+        var movingSampleGridSizes = [SIMD3<Int>]()
+        uniformBuffers.reserveCapacity(pairs.count)
+        fixedSampleGridSizes.reserveCapacity(pairs.count)
+        movingSampleGridSizes.reserveCapacity(pairs.count)
+
+        for pair in pairs {
+            let fixedTexture = pair.fixedLevel.texture
+            let movingTexture = pair.movingLevel.texture
+            let movingWorldToVoxel = simd_inverse(pair.movingLevel.voxelToWorld)
+            let movingTextureSize = SIMD3<Int>(
+                movingTexture.width,
+                movingTexture.height,
+                movingTexture.depth
+            )
+            let uniforms = states.map { state in
+                let fixedVoxelToMovingTexture = pair.usesReverseTransform
+                    ? reverseRegistrationTextureCoordinateMatrix(
+                        for: state,
+                        fixedVoxelToWorld: pair.fixedLevel.voxelToWorld,
+                        movingWorldToVoxel: movingWorldToVoxel,
+                        movingTextureSize: movingTextureSize
+                    )
+                    : registrationTextureCoordinateMatrix(
+                        for: state,
+                        fixedVoxelToWorld: pair.fixedLevel.voxelToWorld,
+                        movingWorldToVoxel: movingWorldToVoxel,
+                        movingTextureSize: movingTextureSize
+                    )
+                return RegistrationUniforms(
+                    baseWindowLevel: pair.fixedWindow.level,
+                    baseWindowWidth: max(pair.fixedWindow.width, 1),
+                    overlayWindowLevel: pair.movingWindow.level,
+                    overlayWindowWidth: max(pair.movingWindow.width, 1),
+                    metricOptions: options,
+                    baseTextureSize: SIMD3<UInt32>(
+                        UInt32(fixedTexture.width),
+                        UInt32(fixedTexture.height),
+                        UInt32(fixedTexture.depth)
+                    ),
+                    fixedVoxelToMovingTexture: fixedVoxelToMovingTexture,
+                    samplingOptions: registrationSamplingOptions(effectiveSamplingStride)
+                )
+            }
+            guard let uniformBuffer = uniforms.withUnsafeBytes({ bytes -> MTLBuffer? in
+                guard let baseAddress = bytes.baseAddress else { return nil }
+                return deviceRef.makeBuffer(
+                    bytes: baseAddress,
+                    length: bytes.count,
+                    options: .storageModeShared
+                )
+            }) else {
+                return pairs.map { _ in Array(repeating: nil, count: states.count) }
+            }
+            uniformBuffers.append(uniformBuffer)
+            fixedSampleGridSizes.append(
+                registrationSampleGridSize(
+                    for: fixedTexture,
+                    samplingStride: effectiveSamplingStride
+                )
+            )
+            movingSampleGridSizes.append(
+                registrationSampleGridSize(
+                    for: movingTexture,
+                    samplingStride: effectiveSamplingStride
+                )
+            )
+        }
+
+        guard let histogramBuffer = deviceRef.makeBuffer(
+            length: histogramBufferLength,
+            options: .storageModeShared
+        ),
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            return pairs.map { _ in Array(repeating: nil, count: states.count) }
+        }
+        memset(histogramBuffer.contents(), 0, histogramBufferLength)
+
+        var candidateCount = UInt32(states.count)
+        let candidateTileCount = (states.count + registrationCandidateTileSize - 1)
+            / registrationCandidateTileSize
+        let threadsPerGroup = MTLSize(width: 8, height: 8, depth: 4)
+        encoder.setComputePipelineState(registrationBatchPipelineState)
+        encoder.setBytes(&candidateCount, length: MemoryLayout<UInt32>.stride, index: 2)
+
+        for (pairIndex, pair) in pairs.enumerated() {
+            let fixedGridSize = fixedSampleGridSizes[pairIndex]
+            let threadgroups = MTLSize(
+                width: (fixedGridSize.x + threadsPerGroup.width - 1) / threadsPerGroup.width,
+                height: (fixedGridSize.y + threadsPerGroup.height - 1) / threadsPerGroup.height,
+                depth: (fixedGridSize.z * candidateTileCount + threadsPerGroup.depth - 1)
+                    / threadsPerGroup.depth
+            )
+            encoder.setTexture(pair.fixedLevel.texture, index: 0)
+            encoder.setTexture(pair.movingLevel.texture, index: 1)
+            encoder.setBuffer(uniformBuffers[pairIndex], offset: 0, index: 0)
+            encoder.setBuffer(
+                histogramBuffer,
+                offset: pairIndex * histogramPassEntryCount * MemoryLayout<UInt32>.stride,
+                index: 1
+            )
+            encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerGroup)
+        }
+        encoder.endEncoding()
+
+        guard job.isCancelled == false else {
+            return pairs.map { _ in Array(repeating: nil, count: states.count) }
+        }
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        guard job.isCancelled == false,
+              commandBuffer.status == .completed else {
+            return pairs.map { _ in Array(repeating: nil, count: states.count) }
+        }
+
+        let histogram = histogramBuffer.contents().bindMemory(
+            to: UInt32.self,
+            capacity: histogramPassEntryCount * pairs.count
+        )
+        let metricMode = Int(options.x.rounded())
+        return pairs.indices.map { pairIndex in
+            states.indices.map { candidateIndex -> Float? in
+                let candidateHistogram = UnsafePointer(
+                    histogram.advanced(
+                        by: pairIndex * histogramPassEntryCount
+                            + candidateIndex * histogramEntryCount
+                    )
+                )
+                let overlapCount: Int
+                let similarity: Double
+                if metricMode == 4 {
+                    guard let components = mindMetricComponents(
+                        histogram: candidateHistogram
+                    ) else {
+                        return nil
+                    }
+                    overlapCount = components.overlapCount
+                    similarity = components.similarity
+                } else {
+                    var histogramTotal = 0
+                    for index in 0..<histogramEntryCount {
+                        histogramTotal += Int(candidateHistogram[index])
+                    }
+                    overlapCount = histogramTotal
+                    guard let nmi = smoothedNormalizedMutualInformation(
+                        histogram: candidateHistogram,
+                        bins: registrationHistogramBins
+                    ) else {
+                        return nil
+                    }
+                    similarity = nmi
+                }
+
+                let overlapDenominator = min(
+                    registrationVoxelCount(fixedSampleGridSizes[pairIndex]),
+                    registrationVoxelCount(movingSampleGridSizes[pairIndex])
+                )
+                let overlapFraction = Double(overlapCount)
+                    / Double(max(overlapDenominator, 1))
+                guard overlapFraction >= 0.35 else {
+                    return nil
+                }
+                return Float(-similarity)
+            }
+        }
+    }
+
     private func smoothedNormalizedMutualInformation(histogram: UnsafePointer<UInt32>, bins: Int) -> Double? {
         let entryCount = bins * bins
         var smoothedHistogram = [Double](repeating: 0, count: entryCount)
@@ -5678,6 +6959,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let usesContrastInvariantSlabMetric = mode == 4
         var residualRotationPenalty: Float = 0
 
+        let minimumCranialFraction = minimumCranialCoverageFraction()
+        if minimumCranialFraction > 0,
+           let coverageFraction = cranialCoverageFraction(for: state),
+           coverageFraction < minimumCranialFraction {
+            return .greatestFiniteMagnitude
+        }
+
         if slabAwareRegistration,
            isCTRegistrationVolume(pixList) == false,
            isCTRegistrationVolume(overlayPixList) == false {
@@ -5716,8 +7004,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         // pull the optimizer completely away from the DICOM-aligned anatomy.
         // Such a transform is not a usable registration, so reject it instead
         // of trying to repair its score with a small linear penalty.
-        if mode == 0 {
-            let minimumReliableOverlap: Double = slabAwareRegistration ? 0.03 : 0.02
+        if mode == 0 || (mode == 2 && isCrossModalityUnequalCoverageRegistration()) {
+            let minimumReliableOverlap: Double
+            if isCrossModalityUnequalCoverageRegistration() {
+                minimumReliableOverlap = 0.35
+            } else {
+                minimumReliableOverlap = slabAwareRegistration ? 0.03 : 0.02
+            }
             guard overlapFraction >= minimumReliableOverlap else {
                 return .greatestFiniteMagnitude
             }
@@ -5775,6 +7068,21 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let fixedVolumeIsCT = isCTRegistrationVolume(pixList)
         if fixedVolumeIsCT && (slabAwareRegistration == false || isCTRegistrationVolume(overlayPixList)) {
             return SIMD4<Float>(3, -700, 3000, 0)
+        }
+
+        if isCrossModalityUnequalCoverageRegistration() {
+            // Raw NMI is the more reliable objective for locating a small MR
+            // slab within a much larger CT acquisition. Once that broad search
+            // has reached the correct cranial basin, use shared image edges for
+            // the last local stages so CT/MR signal differences cannot leave a
+            // sagittal slab displaced within the head.
+            let firstStructureLevel = max(totalLevels - 2, 1)
+            if totalLevels > 1, levelIndex >= firstStructureLevel {
+                let isFinalLevel = levelIndex == totalLevels - 1
+                let gradientThreshold: Float = isFinalLevel ? 0.03 : 0.015
+                return SIMD4<Float>(2, gradientThreshold, 0, 0)
+            }
+            return SIMD4<Float>.zero
         }
 
         if usesContrastInvariantMRSlabMatching() {

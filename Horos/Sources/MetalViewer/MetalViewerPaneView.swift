@@ -1679,10 +1679,17 @@ final class MetalViewerPaneView: NSView {
         let supportSelection = registrationSupportSelectionProvider?(self.series, series)
         let supportInputs = supportSelection?.items.compactMap { item -> MetalViewerRegistrationSupportInput? in
             let pixList = item.series.loadedPixList()
-            guard pixList.isEmpty == false else { return nil }
+            let pairedPixList = item.pairedSeries?.loadedPixList()
+            guard pixList.isEmpty == false,
+                  item.pairedSeries == nil || pairedPixList?.isEmpty == false else {
+                return nil
+            }
             return MetalViewerRegistrationSupportInput(
-                identifier: item.series.identifier,
+                identifier: [item.series.identifier, item.pairedSeries?.identifier]
+                    .compactMap { $0 }
+                    .joined(separator: "|"),
                 pixList: pixList,
+                pairedPixList: pairedPixList,
                 sharesBaseFrame: item.sharesBaseFrame,
                 weight: item.weight
             )

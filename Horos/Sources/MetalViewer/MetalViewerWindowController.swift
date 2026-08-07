@@ -862,6 +862,13 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     ) -> MetalViewerRegistrationSupportSelection? {
         let baseModality = baseSeries.modality.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         let overlayModality = overlaySeries.modality.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if baseModality == "MR", overlayModality == "MR" {
+            return longitudinalMRRegistrationSupportSelection(
+                forBaseSeries: baseSeries,
+                overlaySeries: overlaySeries
+            )
+        }
+
         let mrSeries: MetalViewerSeries
         let sharesBaseFrame: Bool
         if baseModality == "MR", overlayModality == "CT" {
@@ -979,6 +986,145 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
                 series: series,
                 sharesBaseFrame: sharesBaseFrame,
                 weight: weightsByIdentifier[series.identifier] ?? 0
+            )
+        }
+        return MetalViewerRegistrationSupportSelection(
+            primaryWeight: primaryWeight,
+            items: items
+        )
+    }
+
+    private func longitudinalMRRegistrationSupportSelection(
+        forBaseSeries baseSeries: MetalViewerSeries,
+        overlaySeries: MetalViewerSeries
+    ) -> MetalViewerRegistrationSupportSelection? {
+        guard baseSeries.studyIdentifier != overlaySeries.studyIdentifier,
+              let baseFrameUID = baseSeries.frameOfReferenceUID,
+              let overlayFrameUID = overlaySeries.frameOfReferenceUID,
+              let baseMetadata = baseSeries.registrationMetadata,
+              let overlayMetadata = overlaySeries.registrationMetadata,
+              baseMetadata.orientation == overlayMetadata.orientation else {
+            return nil
+        }
+
+        func supportCandidates(
+            for primarySeries: MetalViewerSeries,
+            frameUID: String
+        ) -> [MetalViewerSeries] {
+            study.series.filter { candidate in
+                guard candidate !== primarySeries,
+                      candidate.studyIdentifier == primarySeries.studyIdentifier,
+                      candidate.isMagneticResonance,
+                      candidate.frameOfReferenceUID == frameUID,
+                      candidate.sharesSourceSeries(with: primarySeries) == false,
+                      let metadata = candidate.registrationMetadata,
+                      metadata.isEligibleSupportSeries else {
+                    return false
+                }
+                return true
+            }
+        }
+
+        func contrastsAreCompatible(
+            _ lhs: MetalViewerRegistrationContrastGroup,
+            _ rhs: MetalViewerRegistrationContrastGroup
+        ) -> Bool {
+            lhs == rhs
+                || (lhs == .t1 && rhs == .t1PostContrast)
+                || (lhs == .t1PostContrast && rhs == .t1)
+        }
+
+        typealias CandidatePair = (
+            base: MetalViewerSeries,
+            overlay: MetalViewerSeries,
+            metadata: MetalViewerRegistrationSeriesMetadata,
+            orthogonalPenalty: Int,
+            contrastPenalty: Int,
+            imageCountDifference: Int
+        )
+        let baseCandidates = supportCandidates(for: baseSeries, frameUID: baseFrameUID)
+        let overlayCandidates = supportCandidates(for: overlaySeries, frameUID: overlayFrameUID)
+        var candidatePairs = [CandidatePair]()
+        for baseCandidate in baseCandidates {
+            guard let baseCandidateMetadata = baseCandidate.registrationMetadata else { continue }
+            for overlayCandidate in overlayCandidates {
+                guard let overlayCandidateMetadata = overlayCandidate.registrationMetadata,
+                      baseCandidateMetadata.orientation == overlayCandidateMetadata.orientation,
+                      baseCandidateMetadata.reconstruction == overlayCandidateMetadata.reconstruction,
+                      contrastsAreCompatible(
+                          baseCandidateMetadata.contrast,
+                          overlayCandidateMetadata.contrast
+                      ) else {
+                    continue
+                }
+                candidatePairs.append((
+                    base: baseCandidate,
+                    overlay: overlayCandidate,
+                    metadata: baseCandidateMetadata,
+                    orthogonalPenalty: baseCandidateMetadata.orientation == baseMetadata.orientation ? 1 : 0,
+                    contrastPenalty: baseCandidateMetadata.contrast == overlayCandidateMetadata.contrast ? 0 : 1,
+                    imageCountDifference: abs(baseCandidate.imageCount - overlayCandidate.imageCount)
+                ))
+            }
+        }
+
+        candidatePairs.sort { lhs, rhs in
+            if lhs.orthogonalPenalty != rhs.orthogonalPenalty {
+                return lhs.orthogonalPenalty < rhs.orthogonalPenalty
+            }
+            if lhs.contrastPenalty != rhs.contrastPenalty {
+                return lhs.contrastPenalty < rhs.contrastPenalty
+            }
+            if lhs.imageCountDifference != rhs.imageCountDifference {
+                return lhs.imageCountDifference < rhs.imageCountDifference
+            }
+            if lhs.base.imageCount != rhs.base.imageCount {
+                return lhs.base.imageCount > rhs.base.imageCount
+            }
+            if lhs.base.identifier != rhs.base.identifier {
+                return lhs.base.identifier < rhs.base.identifier
+            }
+            return lhs.overlay.identifier < rhs.overlay.identifier
+        }
+
+        var selectedPairs = [CandidatePair]()
+        var usedBaseIdentifiers = Set<String>()
+        var usedOverlayIdentifiers = Set<String>()
+        var representedChannels = Set<String>()
+        for pair in candidatePairs {
+            guard selectedPairs.count < 3,
+                  usedBaseIdentifiers.contains(pair.base.identifier) == false,
+                  usedOverlayIdentifiers.contains(pair.overlay.identifier) == false else {
+                continue
+            }
+            let channel = [
+                pair.metadata.orientation.rawValue,
+                pair.metadata.contrast.rawValue,
+                pair.metadata.reconstruction.rawValue,
+            ].joined(separator: "|")
+            guard representedChannels.insert(channel).inserted else { continue }
+            usedBaseIdentifiers.insert(pair.base.identifier)
+            usedOverlayIdentifiers.insert(pair.overlay.identifier)
+            selectedPairs.append(pair)
+        }
+        guard selectedPairs.isEmpty == false else { return nil }
+
+        var channelCountByOrientation: [MetalViewerRegistrationOrientationGroup: Int] = [
+            baseMetadata.orientation: 1,
+        ]
+        for pair in selectedPairs {
+            channelCountByOrientation[pair.metadata.orientation, default: 0] += 1
+        }
+        let orientationWeight = 1 / Float(max(channelCountByOrientation.count, 1))
+        let primaryWeight = orientationWeight
+            / Float(max(channelCountByOrientation[baseMetadata.orientation] ?? 1, 1))
+        let items = selectedPairs.map { pair in
+            MetalViewerRegistrationSupportSelection.Item(
+                series: pair.base,
+                pairedSeries: pair.overlay,
+                sharesBaseFrame: true,
+                weight: orientationWeight
+                    / Float(max(channelCountByOrientation[pair.metadata.orientation] ?? 1, 1))
             )
         }
         return MetalViewerRegistrationSupportSelection(

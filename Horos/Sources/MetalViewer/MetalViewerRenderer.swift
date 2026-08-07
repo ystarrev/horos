@@ -41,6 +41,7 @@ struct MetalViewerRegistrationWorldTransform {
 struct MetalViewerRegistrationSupportInput {
     let identifier: String
     let pixList: [DCMPix]
+    let pairedPixList: [DCMPix]?
     let sharesBaseFrame: Bool
     let weight: Float
 }
@@ -200,6 +201,7 @@ private enum BlockMatchingMetric: UInt32 {
 private struct MRSequenceSignature {
     let scanningSequences: Set<String>
     let scanOptions: Set<String>
+    let imageTypes: Set<String>
 
     var isSpinEcho: Bool {
         scanningSequences.contains("SE")
@@ -210,13 +212,17 @@ private struct MRSequenceSignature {
     }
 
     var usesFatSuppression: Bool {
-        scanOptions.contains { option in
+        imageTypes.contains("WATER") || scanOptions.contains { option in
             option == "FS"
                 || option.hasPrefix("FS_")
                 || option.hasPrefix("FSA")
                 || option.contains("FATSAT")
                 || option.contains("FAT_SUP")
         }
+    }
+
+    var dixonContrastComponents: Set<String> {
+        imageTypes.intersection(["WATER", "FAT", "IN_PHASE", "OPP_PHASE"])
     }
 }
 
@@ -299,6 +305,7 @@ private struct SlabGeometry {
 private struct PreparedRegistrationSupportVolume {
     let input: MetalViewerRegistrationSupportInput
     let entry: MetalPreparedVolumeCache.Entry
+    let pairedEntry: MetalPreparedVolumeCache.Entry?
 }
 
 private struct RegistrationSupportMetricPair {
@@ -421,6 +428,28 @@ private struct MetalMPRPreviewPane {
     let viewport: MTLViewport
     let scissor: MTLScissorRect
     let unitScale: CGFloat
+}
+
+private struct MetalMPRPreviewOrientation {
+    let horizontalUsesFirstCoordinate: Bool
+    let horizontalIsForward: Bool
+    let verticalIsForward: Bool
+
+    func screenFractions(first: Float, second: Float) -> SIMD2<Float> {
+        var horizontal = horizontalUsesFirstCoordinate ? first : second
+        var vertical = horizontalUsesFirstCoordinate ? second : first
+        if horizontalIsForward == false { horizontal = 1 - horizontal }
+        if verticalIsForward == false { vertical = 1 - vertical }
+        return SIMD2<Float>(horizontal, vertical)
+    }
+
+    func planeFractions(horizontal: Float, vertical: Float) -> SIMD2<Float> {
+        let resolvedHorizontal = horizontalIsForward ? horizontal : 1 - horizontal
+        let resolvedVertical = verticalIsForward ? vertical : 1 - vertical
+        return horizontalUsesFirstCoordinate
+            ? SIMD2<Float>(resolvedHorizontal, resolvedVertical)
+            : SIMD2<Float>(resolvedVertical, resolvedHorizontal)
+    }
 }
 
 private struct MetalMPRRenderLayout {
@@ -1620,6 +1649,90 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         setMPRPreviewWidthFraction(previewWidth / bounds.width)
     }
 
+    private var mprPlanesInAnatomicalOrder: [MetalMPRPlane] {
+        let permutations: [[MetalMPRPlane]] = [
+            [.axial, .coronal, .sagittal],
+            [.axial, .sagittal, .coronal],
+            [.coronal, .axial, .sagittal],
+            [.coronal, .sagittal, .axial],
+            [.sagittal, .axial, .coronal],
+            [.sagittal, .coronal, .axial],
+        ]
+        let anatomicalNormals = [
+            SIMD3<Float>(0, 0, 1),
+            SIMD3<Float>(0, 1, 0),
+            SIMD3<Float>(1, 0, 0),
+        ]
+        return permutations.max { lhs, rhs in
+            let lhsScore = zip(lhs, anatomicalNormals).reduce(Float(0)) {
+                $0 + abs(simd_dot(mprStoragePlaneNormalWorld(for: $1.0), $1.1))
+            }
+            let rhsScore = zip(rhs, anatomicalNormals).reduce(Float(0)) {
+                $0 + abs(simd_dot(mprStoragePlaneNormalWorld(for: $1.0), $1.1))
+            }
+            return lhsScore < rhsScore
+        } ?? Self.mprPlanes
+    }
+
+    private func mprStoragePlaneNormalWorld(for plane: MetalMPRPlane) -> SIMD3<Float> {
+        let column: SIMD4<Float>
+        switch plane {
+        case .sagittal:
+            column = fixedVoxelToWorld.columns.0
+        case .coronal:
+            column = fixedVoxelToWorld.columns.1
+        case .axial:
+            column = fixedVoxelToWorld.columns.2
+        }
+        let normal = SIMD3<Float>(column.x, column.y, column.z)
+        return simd_length_squared(normal) > 0.000001
+            ? simd_normalize(normal)
+            : SIMD3<Float>(0, 0, 1)
+    }
+
+    private func mprAnatomicalScreenAxes(for plane: MetalMPRPlane) -> (
+        right: SIMD3<Float>,
+        up: SIMD3<Float>
+    ) {
+        switch mprPlanesInAnatomicalOrder.firstIndex(of: plane) ?? 0 {
+        case 1:
+            return (right: SIMD3<Float>(1, 0, 0), up: SIMD3<Float>(0, 0, 1))
+        case 2:
+            return (right: SIMD3<Float>(0, 1, 0), up: SIMD3<Float>(0, 0, 1))
+        default:
+            return (right: SIMD3<Float>(1, 0, 0), up: SIMD3<Float>(0, -1, 0))
+        }
+    }
+
+    private func mprPreviewOrientation(
+        for plane: MetalMPRPlane,
+        corners: [SIMD3<Float>]
+    ) -> MetalMPRPreviewOrientation? {
+        guard corners.count == 4 else { return nil }
+        let worldCorners = corners.map { mprDisplayWorldPosition(for: $0) }
+        let first = worldCorners[1] - worldCorners[0]
+        let second = worldCorners[3] - worldCorners[0]
+        guard simd_length_squared(first) > 0.000001,
+              simd_length_squared(second) > 0.000001 else {
+            return nil
+        }
+        let firstDirection = simd_normalize(first)
+        let secondDirection = simd_normalize(second)
+        let axes = mprAnatomicalScreenAxes(for: plane)
+        let directScore = abs(simd_dot(firstDirection, axes.right))
+            + abs(simd_dot(secondDirection, axes.up))
+        let swappedScore = abs(simd_dot(secondDirection, axes.right))
+            + abs(simd_dot(firstDirection, axes.up))
+        let horizontalUsesFirstCoordinate = directScore >= swappedScore
+        let horizontalDirection = horizontalUsesFirstCoordinate ? firstDirection : secondDirection
+        let verticalDirection = horizontalUsesFirstCoordinate ? secondDirection : firstDirection
+        return MetalMPRPreviewOrientation(
+            horizontalUsesFirstCoordinate: horizontalUsesFirstCoordinate,
+            horizontalIsForward: simd_dot(horizontalDirection, axes.right) >= 0,
+            verticalIsForward: simd_dot(verticalDirection, axes.up) >= 0
+        )
+    }
+
     func mprPreviewOverlayLayout(in bounds: CGRect) -> MetalMPRPreviewOverlayLayout? {
         switch displayMode {
         case .mpr:
@@ -1629,7 +1742,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
             let mainRect = CGRect(x: bounds.minX, y: bounds.minY, width: metrics.mainWidth, height: metrics.totalHeight)
             let dividerRect = CGRect(x: mainRect.maxX, y: bounds.minY, width: metrics.gap, height: metrics.totalHeight)
-            let previewPanes = zip(Self.mprPlanes, metrics.previewPaneRects).map { pair in
+            let previewPanes = zip(mprPlanesInAnatomicalOrder, metrics.previewPaneRects).map { pair in
                 let (plane, rect) = pair
                 return mprOverlayPane(for: plane, rect: rect.offsetBy(dx: bounds.minX, dy: bounds.minY))
             }
@@ -1642,7 +1755,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             guard let paneRects = mpr3DPaneRects(totalWidth: bounds.width, totalHeight: bounds.height, unitScale: 1) else {
                 return nil
             }
-            let previewPanes = zip(Self.mprPlanes, paneRects).map { pair in
+            let previewPanes = zip(mprPlanesInAnatomicalOrder, paneRects).map { pair in
                 let (plane, rect) = pair
                 return mprOverlayPane(
                     for: plane,
@@ -1679,14 +1792,41 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private func mprOverlayLabels(
         for plane: MetalMPRPlane
     ) -> (left: String, right: String, top: String, bottom: String) {
-        switch plane {
-        case .axial:
-            return (left: "R", right: "L", top: "A", bottom: "P")
-        case .coronal:
-            return (left: "R", right: "L", top: "S", bottom: "I")
-        case .sagittal:
-            return (left: "A", right: "P", top: "S", bottom: "I")
+        let corners = mprPlaneCorners(for: plane)
+        guard let orientation = mprPreviewOrientation(for: plane, corners: corners) else {
+            return (left: "", right: "", top: "", bottom: "")
         }
+        let worldCorners = corners.map { mprDisplayWorldPosition(for: $0) }
+        let firstDirection = simd_normalize(worldCorners[1] - worldCorners[0])
+        let secondDirection = simd_normalize(worldCorners[3] - worldCorners[0])
+        var rightDirection = orientation.horizontalUsesFirstCoordinate
+            ? firstDirection
+            : secondDirection
+        var upDirection = orientation.horizontalUsesFirstCoordinate
+            ? secondDirection
+            : firstDirection
+        if orientation.horizontalIsForward == false { rightDirection = -rightDirection }
+        if orientation.verticalIsForward == false { upDirection = -upDirection }
+        return (
+            left: mprPatientOrientationText(for: -rightDirection),
+            right: mprPatientOrientationText(for: rightDirection),
+            top: mprPatientOrientationText(for: upDirection),
+            bottom: mprPatientOrientationText(for: -upDirection)
+        )
+    }
+
+    private func mprPatientOrientationText(for vector: SIMD3<Float>) -> String {
+        guard simd_length_squared(vector) > 0.000001 else { return "" }
+        let direction = simd_normalize(vector)
+        return [
+            (abs(direction.x), direction.x < 0 ? "R" : "L"),
+            (abs(direction.y), direction.y < 0 ? "A" : "P"),
+            (abs(direction.z), direction.z < 0 ? "I" : "S"),
+        ]
+            .filter { $0.0 > 0.2 }
+            .sorted { $0.0 > $1.0 }
+            .map { $0.1 }
+            .joined()
     }
 
     private func mprAxisColor(for plane: MetalMPRPlane, alpha: Float? = nil) -> SIMD4<Float> {
@@ -1704,15 +1844,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             color.x == 0 && color.y == 0 && color.z == 0 && color.w == 0
         }
         let colors = allUnset ? mprDefaultAxisColors() : rawColors
-        let color: SIMD4<Float>
-        switch plane {
-        case .axial:
-            color = colors[0]
-        case .coronal:
-            color = colors[1]
-        case .sagittal:
-            color = colors[2]
-        }
+        let anatomicalIndex = mprPlanesInAnatomicalOrder.firstIndex(of: plane)
+            ?? Self.mprPlanes.firstIndex(of: plane)
+            ?? 0
+        let color = colors[min(max(anatomicalIndex, 0), colors.count - 1)]
         return mprBrightReferenceColor(color, alpha: alpha)
     }
 
@@ -2365,10 +2500,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             return nil
         }
 
-        for (index, pane) in layout.previewPanes.enumerated() where index < Self.mprPlanes.count {
+        let planes = mprPlanesInAnatomicalOrder
+        for (index, pane) in layout.previewPanes.enumerated() where index < planes.count {
             let rect = mprPreviewInteractionRect(for: pane.rect, in: bounds)
             if rect.contains(point) {
-                return (Self.mprPlanes[index], rect)
+                return (planes[index], rect)
             }
         }
 
@@ -2380,8 +2516,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             return nil
         }
 
-        for (index, pane) in layout.previewPanes.enumerated() where index < Self.mprPlanes.count {
-            if Self.mprPlanes[index] == plane {
+        let planes = mprPlanesInAnatomicalOrder
+        for (index, pane) in layout.previewPanes.enumerated() where index < planes.count {
+            if planes[index] == plane {
                 return mprPreviewInteractionRect(for: pane.rect, in: bounds)
             }
         }
@@ -2414,18 +2551,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             return nil
         }
 
-        let uFraction = planarMPRPreviewUFraction(
-            forXPosition: positionX,
-            halfWidth: geometry.halfWidth,
-            plane: plane
+        let screenFractions = SIMD2<Float>(
+            (positionX + geometry.halfWidth) / (geometry.halfWidth * 2),
+            (positionY + geometry.halfHeight) / (geometry.halfHeight * 2)
         )
-        let vFraction: Float
-        switch plane {
-        case .axial:
-            vFraction = (geometry.halfHeight - positionY) / (geometry.halfHeight * 2)
-        case .coronal, .sagittal:
-            vFraction = (positionY + geometry.halfHeight) / (geometry.halfHeight * 2)
-        }
+        let planeFractions = geometry.orientation.planeFractions(
+            horizontal: screenFractions.x,
+            vertical: screenFractions.y
+        )
 
         let cornerLocals = geometry.corners.map { mprPlaneLocalCoordinates(for: plane, baseVoxel: $0) }
         let minU = cornerLocals.map { $0.x }.min() ?? 0
@@ -2436,8 +2569,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
               maxV - minV > 0.0001 else {
             return nil
         }
-        let first = minU + uFraction * (maxU - minU)
-        let second = minV + vFraction * (maxV - minV)
+        let first = minU + planeFractions.x * (maxU - minU)
+        let second = minV + planeFractions.y * (maxV - minV)
         return MetalMPRPreviewHit(
             plane: plane,
             baseVoxel: mprPlaneVoxel(for: plane, first: first, second: second)
@@ -3172,9 +3305,15 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         registrationSupportGeneration &+= 1
         var identifiers = Set<String>()
         let filteredInputs = inputs.filter { input in
-            input.pixList.isEmpty == false
-                && input.weight > 0
-                && identifiers.insert(input.identifier).inserted
+            guard input.pixList.isEmpty == false,
+                  input.weight > 0,
+                  identifiers.insert(input.identifier).inserted else {
+                return false
+            }
+            if let pairedPixList = input.pairedPixList {
+                return pairedPixList.isEmpty == false
+            }
+            return true
         }
         registrationSupportLock.lock()
         registrationPrimaryWeight = max(primaryWeight, 0.0001)
@@ -3201,44 +3340,33 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         )
 
         for input in inputs {
-            MetalSeriesTextureCache.shared.requestEntry(
+            prepareRegistrationSupportEntry(
                 for: input.pixList,
-                device: deviceRef
-            ) { [weak self] sourceEntry in
-                guard let self,
-                      generation == self.registrationSupportGeneration,
-                      self.pendingRegistrationSupportIdentifiers.contains(input.identifier) else {
-                    return
-                }
-                guard let sourceEntry else {
-                    NSLog("%@", "Metal Viewer: could not decode registration support series \(input.identifier)")
+                identifier: input.identifier,
+                generation: generation
+            ) { [weak self] entry in
+                guard let self else { return }
+                guard let entry,
+                      let pairedPixList = input.pairedPixList else {
                     self.completeRegistrationSupportPreparation(
                         input: input,
-                        entry: nil,
+                        entry: entry,
+                        pairedEntry: nil,
                         generation: generation
                     )
                     return
                 }
 
-                let correctGantryTilt = self.shouldCorrectGantryTilt(for: input.pixList)
-                MetalPreparedVolumeCache.shared.requestEntry(
-                    for: input.pixList,
-                    sourceEntry: sourceEntry,
-                    device: self.deviceRef,
-                    correctGantryTilt: correctGantryTilt,
-                    includeRegistrationPyramid: true
-                ) { [weak self] entry in
-                    guard let self,
-                          generation == self.registrationSupportGeneration,
-                          self.pendingRegistrationSupportIdentifiers.contains(input.identifier) else {
-                        return
-                    }
-                    if entry == nil {
-                        NSLog("%@", "Metal Viewer: could not prepare registration support series \(input.identifier)")
-                    }
-                    self.completeRegistrationSupportPreparation(
+                self.prepareRegistrationSupportEntry(
+                    for: pairedPixList,
+                    identifier: "\(input.identifier) paired",
+                    pendingIdentifier: input.identifier,
+                    generation: generation
+                ) { [weak self] pairedEntry in
+                    self?.completeRegistrationSupportPreparation(
                         input: input,
                         entry: entry,
+                        pairedEntry: pairedEntry,
                         generation: generation
                     )
                 }
@@ -3246,9 +3374,54 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
+    private func prepareRegistrationSupportEntry(
+        for pixList: [DCMPix],
+        identifier: String,
+        pendingIdentifier: String? = nil,
+        generation: UInt,
+        completion: @escaping (MetalPreparedVolumeCache.Entry?) -> Void
+    ) {
+        let pendingIdentifier = pendingIdentifier ?? identifier
+        MetalSeriesTextureCache.shared.requestEntry(
+            for: pixList,
+            device: deviceRef
+        ) { [weak self] sourceEntry in
+            guard let self,
+                  generation == self.registrationSupportGeneration,
+                  self.pendingRegistrationSupportIdentifiers.contains(pendingIdentifier) else {
+                return
+            }
+            guard let sourceEntry else {
+                NSLog("%@", "Metal Viewer: could not decode registration support series \(identifier)")
+                completion(nil)
+                return
+            }
+
+            let correctGantryTilt = self.shouldCorrectGantryTilt(for: pixList)
+            MetalPreparedVolumeCache.shared.requestEntry(
+                for: pixList,
+                sourceEntry: sourceEntry,
+                device: self.deviceRef,
+                correctGantryTilt: correctGantryTilt,
+                includeRegistrationPyramid: true
+            ) { [weak self] entry in
+                guard let self,
+                      generation == self.registrationSupportGeneration,
+                      self.pendingRegistrationSupportIdentifiers.contains(pendingIdentifier) else {
+                    return
+                }
+                if entry == nil {
+                    NSLog("%@", "Metal Viewer: could not prepare registration support series \(identifier)")
+                }
+                completion(entry)
+            }
+        }
+    }
+
     private func completeRegistrationSupportPreparation(
         input: MetalViewerRegistrationSupportInput,
         entry: MetalPreparedVolumeCache.Entry?,
+        pairedEntry: MetalPreparedVolumeCache.Entry?,
         generation: UInt
     ) {
         guard generation == registrationSupportGeneration,
@@ -3256,13 +3429,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             return
         }
 
-        if let entry {
+        if let entry,
+           input.pairedPixList == nil || pairedEntry != nil {
             registrationSupportLock.lock()
             preparedRegistrationSupportVolumes.removeAll {
                 $0.input.identifier == input.identifier
             }
             preparedRegistrationSupportVolumes.append(
-                PreparedRegistrationSupportVolume(input: input, entry: entry)
+                PreparedRegistrationSupportVolume(
+                    input: input,
+                    entry: entry,
+                    pairedEntry: pairedEntry
+                )
             )
             registrationSupportLock.unlock()
         }
@@ -3630,12 +3808,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         let scanningSequences = codeValues(forTag: "0018,0020")
         let scanOptions = codeValues(forTag: "0018,0022")
-        guard scanningSequences.isEmpty == false || scanOptions.isEmpty == false else {
+        let imageTypes = codeValues(forTag: "0008,0008")
+        guard scanningSequences.isEmpty == false
+                || scanOptions.isEmpty == false
+                || imageTypes.isEmpty == false else {
             return nil
         }
         return MRSequenceSignature(
             scanningSequences: scanningSequences,
-            scanOptions: scanOptions
+            scanOptions: scanOptions,
+            imageTypes: imageTypes
         )
     }
 
@@ -3643,7 +3825,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         if let cached = contrastInvariantMRSlabMatchingCache {
             return cached
         }
-        guard isUnequalCoverageThinSlabRegistration(),
+        guard baseIsThinSlab || overlayIsThinSlab,
               let baseSignature = mrSequenceSignature(for: pixList),
               let overlaySignature = mrSequenceSignature(for: overlayPixList) else {
             contrastInvariantMRSlabMatchingCache = false
@@ -3655,7 +3837,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             || (baseSignature.isGradientEcho && overlaySignature.isSpinEcho)
         let changesFatSuppression =
             baseSignature.usesFatSuppression != overlaySignature.usesFatSuppression
-        let usesContrastInvariantMatching = crossesSpinAndGradientEcho || changesFatSuppression
+        let changesDixonReconstruction =
+            baseSignature.dixonContrastComponents != overlaySignature.dixonContrastComponents
+            && (baseSignature.dixonContrastComponents.isEmpty == false
+                || overlaySignature.dixonContrastComponents.isEmpty == false)
+        let usesContrastInvariantMatching = crossesSpinAndGradientEcho
+            || changesFatSuppression
+            || changesDixonReconstruction
         contrastInvariantMRSlabMatchingCache = usesContrastInvariantMatching
         return usesContrastInvariantMatching
     }
@@ -4128,6 +4316,22 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 prepared.entry.levels.count - 1
             )
             let supportLevel = prepared.entry.levels[supportLevelIndex]
+            if let pairedEntry = prepared.pairedEntry {
+                guard pairedEntry.levels.isEmpty == false else { return nil }
+                let pairedLevelIndex = min(
+                    max(levelIndex + pairedEntry.levels.count - totalLevels, 0),
+                    pairedEntry.levels.count - 1
+                )
+                return RegistrationSupportMetricPair(
+                    identifier: input.identifier,
+                    fixedLevel: supportLevel,
+                    movingLevel: pairedEntry.levels[pairedLevelIndex],
+                    fixedWindow: prepared.entry.defaultWindow,
+                    movingWindow: pairedEntry.defaultWindow,
+                    usesReverseTransform: false,
+                    weight: input.weight
+                )
+            }
             if input.sharesBaseFrame {
                 return RegistrationSupportMetricPair(
                     identifier: input.identifier,
@@ -4217,7 +4421,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 representedNormals.append(supportNormal)
             }
 
-            if input.sharesBaseFrame {
+            if let pairedEntry = prepared.pairedEntry,
+               pairedEntry.levels.isEmpty == false {
+                let pairedLevelIndex = min(
+                    max(levelIndex + pairedEntry.levels.count - totalLevels, 0),
+                    pairedEntry.levels.count - 1
+                )
+                pairs.append(RegistrationBlockMatchingPair(
+                    identifier: input.identifier,
+                    fixedLevel: supportLevel,
+                    movingLevel: pairedEntry.levels[pairedLevelIndex],
+                    fixedWindow: prepared.entry.defaultWindow,
+                    movingWindow: pairedEntry.defaultWindow
+                ))
+            } else if input.sharesBaseFrame {
                 pairs.append(RegistrationBlockMatchingPair(
                     identifier: input.identifier,
                     fixedLevel: supportLevel,
@@ -6974,8 +7191,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             // Euler angles therefore represent patient repositioning only.
             // Large residual rotations in limited-coverage head MR are false
             // cross-plane intersections, not plausible rigid registrations.
-            let maximumResidualRotation = (usesContrastInvariantSlabMetric ? Float(12) : Float(15))
-                * .pi / 180
+            let maximumResidualRotationDegrees: Float
+            if usesContrastInvariantSlabMetric && isUnequalCoverageThinSlabRegistration() {
+                maximumResidualRotationDegrees = 12
+            } else {
+                maximumResidualRotationDegrees = 15
+            }
+            let maximumResidualRotation = maximumResidualRotationDegrees * .pi / 180
             let largestRotation = max(
                 abs(state.rotationRadians.x),
                 max(abs(state.rotationRadians.y), abs(state.rotationRadians.z))
@@ -6983,11 +7205,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             guard largestRotation <= maximumResidualRotation else {
                 return .greatestFiniteMagnitude
             }
-            let unpenalizedRotation = (
-                usesContrastInvariantSlabMetric
-                    ? Float(6)
-                    : (isCrossPlaneThinSlabRegistration() ? Float(8) : Float(10))
-            )
+            let unpenalizedRotationDegrees: Float
+            if usesContrastInvariantSlabMetric {
+                unpenalizedRotationDegrees = isUnequalCoverageThinSlabRegistration() ? 6 : 8
+            } else {
+                unpenalizedRotationDegrees = isCrossPlaneThinSlabRegistration() ? 8 : 10
+            }
+            let unpenalizedRotation = unpenalizedRotationDegrees
                 * .pi / 180
             if largestRotation > unpenalizedRotation {
                 let excessFraction = (largestRotation - unpenalizedRotation)
@@ -7015,10 +7239,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 return .greatestFiniteMagnitude
             }
         } else if mode == 4 {
-            // A small targeted orbit slab should be almost entirely contained
-            // by the larger 3D head acquisition. A descriptor computed from a
-            // thin accidental intersection can otherwise look deceptively strong.
-            guard overlapFraction >= 0.5 else {
+            // A small targeted slab should be almost entirely contained by a
+            // larger 3D acquisition. Two similarly sized oblique slabs can
+            // have much less reciprocal voxel overlap even when their anatomy
+            // is correctly aligned, especially at the coarsest pyramid level.
+            let minimumReliableOverlap = isUnequalCoverageThinSlabRegistration()
+                ? 0.5
+                : 0.25
+            guard overlapFraction >= minimumReliableOverlap else {
                 return .greatestFiniteMagnitude
             }
         }
@@ -7086,10 +7314,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         if usesContrastInvariantMRSlabMatching() {
-            // Partial fat-suppressed SE and non-fat-suppressed GRE volumes do
-            // not have a stable intensity relationship. Optimize a local
-            // modality-independent self-similarity descriptor throughout this
-            // path instead of allowing a false raw-NMI overlap to dominate.
+            // Limited-coverage MR volumes with different sequence or Dixon
+            // reconstruction contrast do not have a stable intensity
+            // relationship. Optimize a local modality-independent
+            // self-similarity descriptor throughout this path instead of
+            // allowing a false raw-NMI overlap to dominate.
             return SIMD4<Float>(4, 0, 0, 0)
         }
 
@@ -7599,7 +7828,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         renderHeight: Int,
         unitScale: CGFloat
     ) -> [MetalMPRPreviewPane]? {
-        let panes = Array(zip(Self.mprPlanes, paneRects)).compactMap { pair -> MetalMPRPreviewPane? in
+        let orderedPlanes = mprPlanesInAnatomicalOrder
+        let panes = Array(zip(orderedPlanes, paneRects)).compactMap { pair -> MetalMPRPreviewPane? in
             let (plane, rect) = pair
             let x = min(max(Int(rect.minX.rounded(.down)), 0), max(renderWidth - 1, 0))
             let maxX = min(max(Int(rect.maxX.rounded(.down)), x + 1), renderWidth)
@@ -7622,7 +7852,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             return MetalMPRPreviewPane(plane: plane, viewport: viewport, scissor: scissor, unitScale: unitScale)
         }
 
-        guard panes.count == Self.mprPlanes.count else {
+        guard panes.count == orderedPlanes.count else {
             return nil
         }
         return panes
@@ -8028,24 +8258,22 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             return []
         }
 
-        let u0 = planarMPRPreviewXPosition(forUFraction: 0, halfWidth: geometry.halfWidth, plane: plane)
-        let u1 = planarMPRPreviewXPosition(forUFraction: 1, halfWidth: geometry.halfWidth, plane: plane)
-        let positions: [SIMD3<Float>]
-        switch plane {
-        case .axial:
-            positions = [
-                SIMD3<Float>(u0 + geometry.panOffset.x, geometry.halfHeight + geometry.panOffset.y, 0),
-                SIMD3<Float>(u1 + geometry.panOffset.x, geometry.halfHeight + geometry.panOffset.y, 0),
-                SIMD3<Float>(u1 + geometry.panOffset.x, -geometry.halfHeight + geometry.panOffset.y, 0),
-                SIMD3<Float>(u0 + geometry.panOffset.x, -geometry.halfHeight + geometry.panOffset.y, 0),
-            ]
-        case .coronal, .sagittal:
-            positions = [
-                SIMD3<Float>(u0 + geometry.panOffset.x, -geometry.halfHeight + geometry.panOffset.y, 0),
-                SIMD3<Float>(u1 + geometry.panOffset.x, -geometry.halfHeight + geometry.panOffset.y, 0),
-                SIMD3<Float>(u1 + geometry.panOffset.x, geometry.halfHeight + geometry.panOffset.y, 0),
-                SIMD3<Float>(u0 + geometry.panOffset.x, geometry.halfHeight + geometry.panOffset.y, 0),
-            ]
+        let planeFractions = [
+            SIMD2<Float>(0, 0),
+            SIMD2<Float>(1, 0),
+            SIMD2<Float>(1, 1),
+            SIMD2<Float>(0, 1),
+        ]
+        let positions = planeFractions.map { fraction -> SIMD3<Float> in
+            let screen = geometry.orientation.screenFractions(
+                first: fraction.x,
+                second: fraction.y
+            )
+            return SIMD3<Float>(
+                -geometry.halfWidth + screen.x * geometry.halfWidth * 2 + geometry.panOffset.x,
+                -geometry.halfHeight + screen.y * geometry.halfHeight * 2 + geometry.panOffset.y,
+                0
+            )
         }
 
         return [
@@ -8062,17 +8290,30 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         for plane: MetalMPRPlane,
         viewport: MTLViewport,
         unitScale: CGFloat = 1
-    ) -> (corners: [SIMD3<Float>], halfWidth: Float, halfHeight: Float, panOffset: SIMD2<Float>)? {
+    ) -> (
+        corners: [SIMD3<Float>],
+        halfWidth: Float,
+        halfHeight: Float,
+        panOffset: SIMD2<Float>,
+        orientation: MetalMPRPreviewOrientation
+    )? {
         let corners = mprPlaneCorners(for: plane)
         guard corners.count == 4,
+              let orientation = mprPreviewOrientation(for: plane, corners: corners),
               viewport.width > 1,
               viewport.height > 1 else {
             return nil
         }
 
         let worldCorners = corners.map { mprDisplayWorldPosition(for: $0) }
-        let horizontalLength = simd_length(worldCorners[1] - worldCorners[0])
-        let verticalLength = simd_length(worldCorners[3] - worldCorners[0])
+        let firstLength = simd_length(worldCorners[1] - worldCorners[0])
+        let secondLength = simd_length(worldCorners[3] - worldCorners[0])
+        let horizontalLength = orientation.horizontalUsesFirstCoordinate
+            ? firstLength
+            : secondLength
+        let verticalLength = orientation.horizontalUsesFirstCoordinate
+            ? secondLength
+            : firstLength
         let planeAspect = horizontalLength / max(verticalLength, 0.0001)
         let viewportAspect = Float(viewport.width / max(viewport.height, 1))
         let padding: Float = 0.92
@@ -8095,7 +8336,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 for: plane,
                 viewport: viewport,
                 unitScale: unitScale
-            )
+            ),
+            orientation: orientation
         )
     }
 
@@ -8139,37 +8381,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         let uFraction = (local.x - minU) / (maxU - minU)
         let vFraction = (local.y - minV) / (maxV - minV)
-        let x = planarMPRPreviewXPosition(
-            forUFraction: uFraction,
-            halfWidth: geometry.halfWidth,
-            plane: plane
+        let screen = geometry.orientation.screenFractions(
+            first: uFraction,
+            second: vFraction
         )
-        let y: Float
-        switch plane {
-        case .axial:
-            y = geometry.halfHeight - vFraction * geometry.halfHeight * 2
-        case .coronal, .sagittal:
-            y = -geometry.halfHeight + vFraction * geometry.halfHeight * 2
-        }
+        let x = -geometry.halfWidth + screen.x * geometry.halfWidth * 2
+        let y = -geometry.halfHeight + screen.y * geometry.halfHeight * 2
 
         return SIMD3<Float>(x + geometry.panOffset.x, y + geometry.panOffset.y, 0)
-    }
-
-    private func planarMPRPreviewXPosition(
-        forUFraction uFraction: Float,
-        halfWidth: Float,
-        plane _: MetalMPRPlane
-    ) -> Float {
-        let x = -halfWidth + uFraction * halfWidth * 2
-        return x
-    }
-
-    private func planarMPRPreviewUFraction(
-        forXPosition xPosition: Float,
-        halfWidth: Float,
-        plane _: MetalMPRPlane
-    ) -> Float {
-        return (xPosition + halfWidth) / (halfWidth * 2)
     }
 
     private func makeMPRTumourSeedSphereVertices() -> [MetalMPRVertex] {

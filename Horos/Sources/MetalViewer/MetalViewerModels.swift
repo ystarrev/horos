@@ -1866,17 +1866,39 @@ enum MetalViewerRegistrationContrastGroup: String, Hashable {
     case other
 }
 
+enum MetalViewerRegistrationReconstructionGroup: String, Hashable {
+    case conventional
+    case dixonWater
+    case dixonFat
+    case dixonInPhase
+    case dixonOpposedPhase
+}
+
 struct MetalViewerRegistrationSeriesMetadata {
     let orientation: MetalViewerRegistrationOrientationGroup
     let contrast: MetalViewerRegistrationContrastGroup
+    let reconstruction: MetalViewerRegistrationReconstructionGroup
     let isEligibleSupportSeries: Bool
 }
 
 struct MetalViewerRegistrationSupportSelection {
     struct Item {
         let series: MetalViewerSeries
+        let pairedSeries: MetalViewerSeries?
         let sharesBaseFrame: Bool
         let weight: Float
+
+        init(
+            series: MetalViewerSeries,
+            pairedSeries: MetalViewerSeries? = nil,
+            sharesBaseFrame: Bool,
+            weight: Float
+        ) {
+            self.series = series
+            self.pairedSeries = pairedSeries
+            self.sharesBaseFrame = sharesBaseFrame
+            self.weight = weight
+        }
     }
 
     let primaryWeight: Float
@@ -1980,6 +2002,24 @@ final class MetalViewerSeries {
         let tokens = Set(metadataText
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { $0.isEmpty == false })
+        let imageTypes = Set(
+            (reader.stringValue(forTag: "0008,0008") ?? "")
+                .components(separatedBy: "\\")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
+                .filter { $0.isEmpty == false }
+        )
+        let reconstruction: MetalViewerRegistrationReconstructionGroup
+        if imageTypes.contains("WATER") {
+            reconstruction = .dixonWater
+        } else if imageTypes.contains("FAT") {
+            reconstruction = .dixonFat
+        } else if imageTypes.contains("IN_PHASE") {
+            reconstruction = .dixonInPhase
+        } else if imageTypes.contains("OPP_PHASE") {
+            reconstruction = .dixonOpposedPhase
+        } else {
+            reconstruction = .conventional
+        }
         let hasContrastAgent = Self.nonEmpty(reader.stringValue(forTag: "0018,0010")) != nil
         let postContrastTokens: Set<String> = [
             "GAD", "GADOL", "GADAVIST", "DOTAREM", "PROHANCE", "MULTIHANCE",
@@ -2020,6 +2060,7 @@ final class MetalViewerSeries {
         let metadata = MetalViewerRegistrationSeriesMetadata(
             orientation: orientation,
             contrast: contrast,
+            reconstruction: reconstruction,
             isEligibleSupportSeries: isEligible
         )
         cachedRegistrationMetadata = metadata

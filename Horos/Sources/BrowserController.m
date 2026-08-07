@@ -3522,10 +3522,10 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     }
     else sortDescriptors = [databaseOutline sortDescriptors];
     
-    // A series-aware search or Smart Album must remain an exact result set.
+    // Album and series-aware search results must remain exact result sets.
     // Adding every other study for each matching patient would make unrelated
-    // studies appear to belong to the saved cohort.
-    if( filtered == YES && smartAlbumName == nil && [self searchIncludesSeriesDescriptions] == NO && [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesOfSamePatientTogether"] && outlineViewArray.count > 0 && outlineViewArray.count < 500)
+    // studies appear to belong to the selected album or saved cohort.
+    if( filtered == YES && albumTable.selectedRow <= 0 && smartAlbumName == nil && [self searchIncludesSeriesDescriptions] == NO && [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesOfSamePatientTogether"] && outlineViewArray.count > 0 && outlineViewArray.count < 500)
     {
         @try
         {
@@ -10181,6 +10181,17 @@ constrainSplitPosition:(CGFloat)proposedPosition
             [album setValue:name forKey:@"name"];
             
             [_database save];
+
+            @synchronized (self)
+            {
+                [_cachedAlbums release];
+                _cachedAlbums = nil;
+                [_cachedAlbumsIDs release];
+                _cachedAlbumsIDs = nil;
+                _cachedAlbumsContext = nil;
+            }
+
+            [albumTable reloadData];
             
             [self refreshAlbums];
         }

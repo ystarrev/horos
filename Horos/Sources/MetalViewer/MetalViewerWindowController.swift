@@ -650,6 +650,10 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             guard let self, let pane, self.activePaneView === pane else { return }
             self.updateScoutHighlights(for: pane)
         }
+        pane.overlayBlendDidChange = { [weak self, weak pane] value in
+            guard let self, let pane else { return }
+            self.synchronizeOverlayBlend(value, from: pane)
+        }
         pane.registrationInitialTransformProvider = { [weak self] baseSeries, overlaySeries in
             self?.registrationTransform(
                 forBaseSeries: baseSeries,
@@ -800,6 +804,8 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
 
         if overlay {
             pane.overlay(series: series)
+            assignMatchingCompanionOverlays(for: pane, overlaySeries: series)
+            synchronizeOverlayBlend(0.5, from: pane)
         } else {
             let syncedScale = synchronizedScaleValue(excluding: pane) ?? pane.currentScale
             pane.display(series: series)
@@ -812,6 +818,106 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             updateToolbarStatus()
         }
         updateReferenceLines()
+    }
+
+    private func assignMatchingCompanionOverlays(
+        for sourcePane: MetalViewerPaneView,
+        overlaySeries: MetalViewerSeries
+    ) {
+        let baseStudyIdentifier = sourcePane.series.studyIdentifier
+        let overlayStudyIdentifier = overlaySeries.studyIdentifier
+        guard baseStudyIdentifier != overlayStudyIdentifier else { return }
+
+        var usedOverlaySeries = [overlaySeries]
+        for pane in paneViews where pane !== sourcePane {
+            guard pane.series.studyIdentifier == baseStudyIdentifier else { continue }
+
+            if let existingOverlay = pane.overlaySeries {
+                if existingOverlay.studyIdentifier == overlayStudyIdentifier {
+                    usedOverlaySeries.append(existingOverlay)
+                    continue
+                }
+            }
+
+            guard let matchingSeries = matchingCompanionSeries(
+                for: pane.series,
+                inStudy: overlayStudyIdentifier,
+                excluding: usedOverlaySeries
+            ) else {
+                continue
+            }
+            usedOverlaySeries.append(matchingSeries)
+            pane.overlay(series: matchingSeries)
+        }
+    }
+
+    private func matchingCompanionSeries(
+        for baseSeries: MetalViewerSeries,
+        inStudy studyIdentifier: String,
+        excluding excludedSeries: [MetalViewerSeries]
+    ) -> MetalViewerSeries? {
+        guard let baseMetadata = baseSeries.registrationMetadata else { return nil }
+        let baseModality = baseSeries.modality.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+
+        let candidates = study.series.filter { candidate in
+            guard candidate.studyIdentifier == studyIdentifier,
+                  candidate.modality.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == baseModality,
+                  excludedSeries.allSatisfy({ $0.sharesSourceSeries(with: candidate) == false }),
+                  let metadata = candidate.registrationMetadata,
+                  metadata.orientation == baseMetadata.orientation,
+                  registrationContrastsAreCompatible(metadata.contrast, baseMetadata.contrast) else {
+                return false
+            }
+            return baseMetadata.isEligibleSupportSeries == false || metadata.isEligibleSupportSeries
+        }
+
+        return candidates.sorted { lhs, rhs in
+            guard let lhsMetadata = lhs.registrationMetadata,
+                  let rhsMetadata = rhs.registrationMetadata else {
+                return lhs.identifier < rhs.identifier
+            }
+            let lhsContrastPenalty = lhsMetadata.contrast == baseMetadata.contrast ? 0 : 1
+            let rhsContrastPenalty = rhsMetadata.contrast == baseMetadata.contrast ? 0 : 1
+            if lhsContrastPenalty != rhsContrastPenalty {
+                return lhsContrastPenalty < rhsContrastPenalty
+            }
+            let lhsReconstructionPenalty = lhsMetadata.reconstruction == baseMetadata.reconstruction ? 0 : 1
+            let rhsReconstructionPenalty = rhsMetadata.reconstruction == baseMetadata.reconstruction ? 0 : 1
+            if lhsReconstructionPenalty != rhsReconstructionPenalty {
+                return lhsReconstructionPenalty < rhsReconstructionPenalty
+            }
+            let lhsImageCountDifference = abs(lhs.imageCount - baseSeries.imageCount)
+            let rhsImageCountDifference = abs(rhs.imageCount - baseSeries.imageCount)
+            if lhsImageCountDifference != rhsImageCountDifference {
+                return lhsImageCountDifference < rhsImageCountDifference
+            }
+            if lhs.imageCount != rhs.imageCount {
+                return lhs.imageCount > rhs.imageCount
+            }
+            return lhs.identifier < rhs.identifier
+        }.first
+    }
+
+    private func registrationContrastsAreCompatible(
+        _ lhs: MetalViewerRegistrationContrastGroup,
+        _ rhs: MetalViewerRegistrationContrastGroup
+    ) -> Bool {
+        lhs == rhs
+            || (lhs == .t1 && rhs == .t1PostContrast)
+            || (lhs == .t1PostContrast && rhs == .t1)
+    }
+
+    private func synchronizeOverlayBlend(_ value: Double, from sourcePane: MetalViewerPaneView) {
+        guard let sourceOverlaySeries = sourcePane.overlaySeries else { return }
+        let baseStudyIdentifier = sourcePane.series.studyIdentifier
+        let overlayStudyIdentifier = sourceOverlaySeries.studyIdentifier
+        for pane in paneViews where pane !== sourcePane {
+            guard pane.series.studyIdentifier == baseStudyIdentifier,
+                  pane.overlaySeries?.studyIdentifier == overlayStudyIdentifier else {
+                continue
+            }
+            pane.setOverlayBlend(value)
+        }
     }
 
     private func registrationTransform(
@@ -1025,15 +1131,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             }
         }
 
-        func contrastsAreCompatible(
-            _ lhs: MetalViewerRegistrationContrastGroup,
-            _ rhs: MetalViewerRegistrationContrastGroup
-        ) -> Bool {
-            lhs == rhs
-                || (lhs == .t1 && rhs == .t1PostContrast)
-                || (lhs == .t1PostContrast && rhs == .t1)
-        }
-
         typealias CandidatePair = (
             base: MetalViewerSeries,
             overlay: MetalViewerSeries,
@@ -1051,7 +1148,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
                 guard let overlayCandidateMetadata = overlayCandidate.registrationMetadata,
                       baseCandidateMetadata.orientation == overlayCandidateMetadata.orientation,
                       baseCandidateMetadata.reconstruction == overlayCandidateMetadata.reconstruction,
-                      contrastsAreCompatible(
+                      registrationContrastsAreCompatible(
                           baseCandidateMetadata.contrast,
                           overlayCandidateMetadata.contrast
                       ) else {

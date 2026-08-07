@@ -1249,6 +1249,7 @@ final class MetalViewerPaneView: NSView {
     var closeHandler: (() -> Void)?
     var seriesDropHandler: ((String, Bool) -> Void)?
     var displayedSeriesDidChange: (() -> Void)?
+    var overlayBlendDidChange: ((Double) -> Void)?
     var windowLevelInteractionHandler: (() -> Void)?
     var windowLevelTargetDidChange: ((MetalViewerSeries) -> Void)?
     var registrationInitialTransformProvider: ((MetalViewerSeries, MetalViewerSeries) -> MetalViewerRegistrationWorldTransform?)?
@@ -1295,6 +1296,7 @@ final class MetalViewerPaneView: NSView {
         overlayBlendSlider.translatesAutoresizingMaskIntoConstraints = false
         overlayBlendSlider.target = self
         overlayBlendSlider.action = #selector(overlayBlendSliderChanged(_:))
+        overlayBlendSlider.isContinuous = true
         overlayBlendSlider.trackingStateDidChange = { [weak self] isTracking in
             self?.isAdjustingOverlayBlend = isTracking
         }
@@ -1804,12 +1806,14 @@ final class MetalViewerPaneView: NSView {
     @objc private func overlayBlendSliderChanged(_ sender: NSSlider) {
         dismissRegistrationStatusIfNeeded()
         setOverlayBlend(sender.doubleValue)
+        overlayBlendDidChange?(sender.doubleValue)
     }
 
-    private func setOverlayBlend(_ value: Double) {
+    func setOverlayBlend(_ value: Double) {
         let previousWindowLevelSeries = activeWindowLevelSeries
-        overlayBlendSlider.doubleValue = value
-        metalView?.renderer.setOverlayBlend(Float(value))
+        let clampedValue = min(max(value, 0), 1)
+        overlayBlendSlider.doubleValue = clampedValue
+        metalView?.renderer.setOverlayBlend(Float(clampedValue))
         let currentWindowLevelSeries = activeWindowLevelSeries
         if previousWindowLevelSeries !== currentWindowLevelSeries {
             windowLevelTargetDidChange?(currentWindowLevelSeries)

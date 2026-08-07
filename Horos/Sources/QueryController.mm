@@ -6684,22 +6684,9 @@ extern "C"
     if( [item isMemberOfClass: [DCMTKSeriesQueryNode class]])
     {
         DCMTKSeriesQueryNode *series = item;
-        NSString *bodyPartExamined = [series bodyPartExamined];
-
-        if( [bodyPartExamined length] > 0)
-        {
-            if( [self textLooksLikeHeadRegion: [self normalizedSearchTextForStrings: [NSArray arrayWithObject: bodyPartExamined]]])
-                return YES;
-
-            NSString *studyDescription = [[series study] studyName];
-            if( studyDescription == nil)
-                studyDescription = @"";
-            NSString *descriptionText = [self normalizedSearchTextForStrings: [NSArray arrayWithObject: studyDescription]];
-            NSArray *headAndNeckPhrases = [NSArray arrayWithObjects: @" head and neck ", @" head neck ", nil];
-            return [self seriesText: descriptionText containsAnyPhrase: headAndNeckPhrases];
-        }
-
         NSMutableArray *fallbackDescriptions = [NSMutableArray array];
+        if( [[series bodyPartExamined] length] > 0)
+            [fallbackDescriptions addObject: [series bodyPartExamined]];
         if( [[series theDescription] length] > 0)
             [fallbackDescriptions addObject: [series theDescription]];
         if( [[[series study] studyName] length] > 0)

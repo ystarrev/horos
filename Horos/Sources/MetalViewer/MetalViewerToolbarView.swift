@@ -30,11 +30,25 @@ final class MetalViewerToolbarView: NSView {
         case setManually
     }
 
+    enum ROICommand {
+        case select(UUID)
+        case newSphere
+        case addAnchor
+        case deleteAnchor
+        case refineFromImage
+        case finishEditing
+        case rename
+        case delete
+        case undo
+        case redo
+    }
+
     private let contentStack = NSStackView()
     private let viewerModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let wlwwPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let clutPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let opacityPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let roiPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let syncScaleButton = NSButton(frame: .zero)
     private let leftMouseButtonRadio = NSButton(radioButtonWithTitle: NSLocalizedString("Left Button", comment: ""), target: nil, action: nil)
     private let rightMouseButtonRadio = NSButton(radioButtonWithTitle: NSLocalizedString("Right Button", comment: ""), target: nil, action: nil)
@@ -50,6 +64,7 @@ final class MetalViewerToolbarView: NSView {
     var mouseToolSelectionHandler: ((MetalViewerMouseToolAssignments) -> Void)?
     var syncScaleSelectionHandler: ((Bool) -> Void)?
     var annotationLevelSelectionHandler: ((MetalViewerAnnotationLevel) -> Void)?
+    var roiCommandHandler: ((ROICommand) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -68,9 +83,9 @@ final class MetalViewerToolbarView: NSView {
         let items: [(String, NSView)] = [
             ("Annotations", makeAnnotationsContent()),
             ("Mouse button function", makeMouseToolsContent()),
+            ("ROI", makeROIContent()),
             ("WL/WW & CLUT", makeWLWWContent()),
             ("Sync Scale", makeSyncScaleContent()),
-            ("Propagate", makeIconButtonContent(imageName: "Propagate", alternateImageName: "PropagateOn")),
             ("View", makeViewerModeContent()),
         ]
 
@@ -186,10 +201,98 @@ final class MetalViewerToolbarView: NSView {
         viewerModePopup.selectItem(withTag: mode.rawValue)
     }
 
+    func reloadROIMenu(store: MetalStudyROIStore, editingMode: MetalStudyROIEditingMode) {
+        roiPopup.removeAllItems()
+
+        func addItem(
+            _ title: String,
+            command: ROICommand,
+            enabled: Bool = true,
+            state: NSControl.StateValue = .off,
+            keyEquivalent: String = "",
+            modifierMask: NSEvent.ModifierFlags = []
+        ) {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(roiSelectionDidChange(_:)),
+                keyEquivalent: keyEquivalent
+            )
+            item.target = self
+            item.representedObject = command
+            item.isEnabled = enabled
+            item.state = state
+            item.keyEquivalentModifierMask = modifierMask
+            roiPopup.menu?.addItem(item)
+        }
+
+        if store.rois.isEmpty {
+            let empty = NSMenuItem(title: NSLocalizedString("No ROIs", comment: ""), action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            roiPopup.menu?.addItem(empty)
+        } else {
+            for roi in store.rois {
+                let title = String(format: NSLocalizedString("%@ — %.3f mL", comment: ""), roi.name, roi.volumeML)
+                addItem(
+                    title,
+                    command: .select(roi.id),
+                    state: store.selectedROIIdentifier == roi.id ? .on : .off
+                )
+            }
+        }
+
+        roiPopup.menu?.addItem(.separator())
+        addItem(NSLocalizedString("New Spherical ROI…", comment: ""), command: .newSphere)
+        let selectedMouseTool = mouseToolAssignments.resolvedTool(
+            for: selectedMouseButton,
+            modifierFlags: mouseModifierFlags
+        )
+        addItem(
+            NSLocalizedString("Add or Move Surface Anchor", comment: ""),
+            command: .addAnchor,
+            enabled: store.selectedROI != nil,
+            state: selectedMouseTool == .roiAnchor ? .on : .off
+        )
+        addItem(
+            NSLocalizedString("Delete Surface Anchor", comment: ""),
+            command: .deleteAnchor,
+            enabled: store.selectedROI?.anchors.isEmpty == false,
+            state: selectedMouseTool == .deleteROIAnchor ? .on : .off
+        )
+        addItem(
+            NSLocalizedString("Refine ROI from Image", comment: ""),
+            command: .refineFromImage,
+            enabled: store.selectedROI != nil,
+            keyEquivalent: "r",
+            modifierMask: [.command, .option]
+        )
+        addItem(
+            NSLocalizedString("Cancel New ROI", comment: ""),
+            command: .finishEditing,
+            enabled: editingMode != .inactive
+        )
+        roiPopup.menu?.addItem(.separator())
+        addItem(NSLocalizedString("Rename ROI…", comment: ""), command: .rename, enabled: store.selectedROI != nil)
+        addItem(NSLocalizedString("Delete ROI", comment: ""), command: .delete, enabled: store.selectedROI != nil)
+        roiPopup.menu?.addItem(.separator())
+        addItem(NSLocalizedString("Undo ROI Edit", comment: ""), command: .undo, enabled: store.canUndo)
+        addItem(NSLocalizedString("Redo ROI Edit", comment: ""), command: .redo, enabled: store.canRedo)
+
+        if let selected = store.selectedROI {
+            let selectedTitle = String(format: NSLocalizedString("%@ — %.3f mL", comment: ""), selected.name, selected.volumeML)
+            roiPopup.selectItem(withTitle: selectedTitle)
+        } else {
+            roiPopup.selectItem(at: 0)
+        }
+    }
+
     func selectMouseToolAssignments(_ assignments: MetalViewerMouseToolAssignments) {
         mouseToolAssignments = assignments
         updateMouseButtonRadioStates()
         updateMouseToolHighlights()
+    }
+
+    func assignMouseToolToSelectedButton(_ tool: MetalViewerMouseTool) {
+        setSelectedMouseTool(tool, modifierFlags: mouseModifierFlags)
     }
 
     func setMouseModifierFlags(_ flags: NSEvent.ModifierFlags) {
@@ -345,7 +448,7 @@ final class MetalViewerToolbarView: NSView {
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(vertical)
         NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(equalToConstant: 260),
+            container.widthAnchor.constraint(equalToConstant: 294),
             container.heightAnchor.constraint(equalToConstant: 42),
 
             vertical.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 2),
@@ -353,6 +456,23 @@ final class MetalViewerToolbarView: NSView {
         ])
         updateMouseButtonRadioStates()
         updateMouseToolHighlights()
+        return container
+    }
+
+    private func makeROIContent() -> NSView {
+        roiPopup.translatesAutoresizingMaskIntoConstraints = false
+        roiPopup.controlSize = .mini
+        roiPopup.toolTip = NSLocalizedString("Create and edit study-level 3D segmentations in the 3D MPR view.", comment: "")
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(roiPopup)
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(equalToConstant: 152),
+            container.heightAnchor.constraint(equalToConstant: 42),
+            roiPopup.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            roiPopup.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            roiPopup.widthAnchor.constraint(equalToConstant: 148),
+        ])
         return container
     }
 
@@ -496,6 +616,12 @@ final class MetalViewerToolbarView: NSView {
         viewerModeSelectionHandler?(mode)
     }
 
+    @objc
+    private func roiSelectionDidChange(_ sender: NSMenuItem) {
+        guard let command = sender.representedObject as? ROICommand else { return }
+        roiCommandHandler?(command)
+    }
+
     private func configureMouseButtonRadio(_ radio: NSButton, buttonChoice: MetalViewerMouseButton) {
         radio.font = NSFont.systemFont(ofSize: 10)
         radio.setButtonType(.radio)
@@ -527,6 +653,13 @@ final class MetalViewerToolbarView: NSView {
         }
         let modifierFlags = NSApp.currentEvent?.modifierFlags ?? mouseModifierFlags
         setMouseModifierFlags(modifierFlags)
+        setSelectedMouseTool(tool, modifierFlags: modifierFlags)
+    }
+
+    private func setSelectedMouseTool(
+        _ tool: MetalViewerMouseTool,
+        modifierFlags: NSEvent.ModifierFlags
+    ) {
         mouseToolAssignments.setTool(
             tool,
             for: selectedMouseButton,
@@ -559,7 +692,8 @@ final class MetalViewerToolbarView: NSView {
             button.layer?.backgroundColor = isSelected ? NSColor.controlAccentColor.withAlphaComponent(0.25).cgColor : NSColor.clear.cgColor
             button.layer?.borderColor = isSelected ? NSColor.controlAccentColor.cgColor : NSColor.clear.cgColor
             button.layer?.borderWidth = isSelected ? 1 : 0
-            button.contentTintColor = tool == .tumourSeed ? nil : (isSelected ? NSColor.controlAccentColor : .white)
+            let usesFixedColor = tool == .tumourSeed || tool == .roiAnchor || tool == .deleteROIAnchor
+            button.contentTintColor = usesFixedColor ? nil : (isSelected ? NSColor.controlAccentColor : .white)
         }
     }
 
@@ -579,6 +713,10 @@ final class MetalViewerToolbarView: NSView {
             return toolbarImage(named: "Length")
         case .tumourSeed:
             return tumourSeedTargetImage()
+        case .roiAnchor:
+            return roiAnchorImage(deleting: false)
+        case .deleteROIAnchor:
+            return roiAnchorImage(deleting: true)
         }
     }
 
@@ -598,6 +736,10 @@ final class MetalViewerToolbarView: NSView {
             return NSLocalizedString("Measure", comment: "")
         case .tumourSeed:
             return NSLocalizedString("Tumour Seed", comment: "")
+        case .roiAnchor:
+            return NSLocalizedString("Add or Move ROI Anchor", comment: "")
+        case .deleteROIAnchor:
+            return NSLocalizedString("Delete ROI Anchor", comment: "")
         }
     }
 
@@ -617,7 +759,43 @@ final class MetalViewerToolbarView: NSView {
             return NSLocalizedString("Measure: drag to place a length measurement. Hold Shift to constrain horizontally, vertically, or diagonally.", comment: "")
         case .tumourSeed:
             return NSLocalizedString("Tumour Seed: click a tumour focus to place a seed point used by segmentation.", comment: "")
+        case .roiAnchor:
+            return NSLocalizedString("ROI Anchor: click to add an anchor to the selected 3D ROI, or drag an existing anchor to reposition it.", comment: "")
+        case .deleteROIAnchor:
+            return NSLocalizedString("Delete ROI Anchor: click an existing anchor to remove it from the selected 3D ROI.", comment: "")
         }
+    }
+
+    private func roiAnchorImage(deleting: Bool) -> NSImage {
+        let size = NSSize(width: 24, height: 24)
+        let image = NSImage(size: size, flipped: false) { _ in
+            NSColor.clear.setFill()
+            NSRect(origin: .zero, size: size).fill()
+
+            let color = deleting ? NSColor.systemRed : NSColor.systemGreen
+            let markerRect = NSRect(x: 5, y: 5, width: 14, height: 14)
+            color.setFill()
+            NSBezierPath(ovalIn: markerRect).fill()
+            NSColor.black.withAlphaComponent(0.65).setStroke()
+            let outline = NSBezierPath(ovalIn: markerRect)
+            outline.lineWidth = 1
+            outline.stroke()
+
+            let glyph = NSBezierPath()
+            glyph.lineWidth = 2
+            glyph.lineCapStyle = .round
+            glyph.move(to: CGPoint(x: 8.5, y: 12))
+            glyph.line(to: CGPoint(x: 15.5, y: 12))
+            if deleting == false {
+                glyph.move(to: CGPoint(x: 12, y: 8.5))
+                glyph.line(to: CGPoint(x: 12, y: 15.5))
+            }
+            NSColor.white.setStroke()
+            glyph.stroke()
+            return true
+        }
+        image.isTemplate = false
+        return image
     }
 
     private func tumourSeedTargetImage() -> NSImage {
@@ -685,31 +863,6 @@ final class MetalViewerToolbarView: NSView {
 
     private func updateSyncScaleButtonImage() {
         syncScaleButton.image = toolbarImage(named: syncScaleButton.state == .on ? "SyncLock.pdf" : "Sync.pdf")
-    }
-
-    private func makeIconButtonContent(imageName: String, alternateImageName: String? = nil) -> NSView {
-        let button = NSButton(image: toolbarImage(named: imageName), target: nil, action: nil)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.isBordered = true
-        button.bezelStyle = .texturedRounded
-        button.imageScaling = .scaleProportionallyDown
-        if let alternateImageName {
-            button.alternateImage = toolbarImage(named: alternateImageName)
-        }
-
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(button)
-        NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(equalToConstant: 46),
-            container.heightAnchor.constraint(equalToConstant: 42),
-
-            button.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            button.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            button.widthAnchor.constraint(equalToConstant: 34),
-            button.heightAnchor.constraint(equalToConstant: 34),
-        ])
-        return container
     }
 
     private func toolbarImage(named name: String) -> NSImage {

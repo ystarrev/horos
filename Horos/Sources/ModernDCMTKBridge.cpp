@@ -13,6 +13,14 @@
 #include <dcmtk/dcmdata/dcuid.h>
 #include <dcmtk/dcmsr/dsrdoc.h>
 #include <dcmtk/dcmsr/dsrtypes.h>
+#include <dcmtk/dcmseg/segdoc.h>
+#include <dcmtk/dcmseg/segment.h>
+#include <dcmtk/dcmiod/cielabutil.h>
+#include <dcmtk/dcmfg/fgderimg.h>
+#include <dcmtk/dcmfg/fgfracon.h>
+#include <dcmtk/dcmfg/fgplanor.h>
+#include <dcmtk/dcmfg/fgplanpo.h>
+#include <dcmtk/dcmfg/fgpixmsr.h>
 #include <dcmtk/dcmjpeg/djdecode.h>
 #include <dcmtk/dcmjpeg/djencode.h>
 #include <dcmtk/dcmjpeg/djrplol.h>
@@ -48,6 +56,7 @@
 #endif
 
 #include <cstdio>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
@@ -57,6 +66,18 @@
 #include <vector>
 
 static bool HorosModernDCMTKLoadStructuredReport(const char* path, DcmFileFormat& fileformat, DSRDocument& document);
+
+static int HorosModernDCMTKSegmentationFailure(char** failureReason, const std::string& message)
+{
+    if (failureReason != nullptr)
+    {
+        std::free(*failureReason);
+        *failureReason = static_cast<char*>(std::malloc(message.size() + 1));
+        if (*failureReason != nullptr)
+            std::memcpy(*failureReason, message.c_str(), message.size() + 1);
+    }
+    return 0;
+}
 
 static void HorosModernDCMTKClearDecodedFrame(HorosModernDCMTKDecodedFrame* frame)
 {
@@ -2711,6 +2732,240 @@ int HorosModernDCMTKWriteStructuredReportFromXML(const char* xmlPath, const char
 
     status = fileformat.saveFile(dicomPath, EXS_LittleEndianExplicit);
     return status.good() ? 1 : 0;
+}
+
+int HorosModernDCMTKWriteBinarySegmentation(const char* outputPath,
+                                             const char* segmentLabel,
+                                             const char* trackingUID,
+                                             const char* authoringJSON,
+                                             double colorRed,
+                                             double colorGreen,
+                                             double colorBlue,
+                                             const char* const* sourceImagePaths,
+                                             const unsigned char* const* frameMasks,
+                                             int frameCount,
+                                             unsigned short rows,
+                                             unsigned short columns,
+                                             char** failureReason)
+{
+    if (failureReason != nullptr)
+        *failureReason = nullptr;
+    if (outputPath == nullptr || outputPath[0] == '\0')
+        return HorosModernDCMTKSegmentationFailure(failureReason, "The DICOM SEG output path is empty.");
+    if (sourceImagePaths == nullptr || frameMasks == nullptr || frameCount <= 0 || rows == 0 || columns == 0)
+        return HorosModernDCMTKSegmentationFailure(failureReason, "The DICOM SEG source geometry is incomplete.");
+
+    DcmFileFormat sourceFile;
+    OFCondition status = sourceFile.loadFile(sourceImagePaths[0]);
+    if (status.bad() || sourceFile.getDataset() == nullptr)
+        return HorosModernDCMTKSegmentationFailure(failureReason, std::string("Cannot read the first source image: ") + status.text());
+
+    IODGeneralEquipmentModule::EquipmentInfo equipment("Horos Project", "Horos Metal ROI", "HOROS", "1");
+    ContentIdentificationMacro content("1", "HOROSROI", "Horos manual 3D segmentation", "Horos");
+    DcmSegmentation* rawSegmentation = nullptr;
+    status = DcmSegmentation::createBinarySegmentation(rawSegmentation, rows, columns, equipment, content);
+    std::unique_ptr<DcmSegmentation> segmentation(rawSegmentation);
+    if (status.bad() || segmentation == nullptr)
+        return HorosModernDCMTKSegmentationFailure(failureReason, std::string("Cannot create the DICOM SEG object: ") + status.text());
+
+    status = segmentation->importFromSourceImage(*sourceFile.getDataset());
+    if (status.bad())
+        return HorosModernDCMTKSegmentationFailure(failureReason, std::string("Cannot import patient and study identity into DICOM SEG: ") + status.text());
+
+    DcmSegment* segment = nullptr;
+    const OFString resolvedLabel = segmentLabel != nullptr && segmentLabel[0] != '\0' ? segmentLabel : "ROI";
+    OFString seriesDescription = "SEG ";
+    seriesDescription += resolvedLabel;
+    if (seriesDescription.length() > 64)
+        seriesDescription.resize(64);
+    segmentation->getSeries().setSeriesDescription(seriesDescription);
+    segmentation->getSeries().setSeriesNumber("9001");
+
+    CodeSequenceMacro category("85756007", "SCT", "Tissue");
+    CodeSequenceMacro propertyType("85756007", "SCT", "Tissue");
+    status = DcmSegment::create(segment, resolvedLabel, category, propertyType, DcmSegTypes::SAT_MANUAL);
+    if (status.bad() || segment == nullptr)
+        return HorosModernDCMTKSegmentationFailure(failureReason, std::string("Cannot describe the DICOM segment: ") + status.text());
+    segment->setTrackingID(resolvedLabel);
+    if (trackingUID != nullptr && trackingUID[0] != '\0')
+        segment->setTrackingUID(trackingUID);
+    double displayL = 0;
+    double displayA = 0;
+    double displayB = 0;
+    IODCIELabUtil::rgb2DicomLab(
+        displayL,
+        displayA,
+        displayB,
+        std::max(0.0, std::min(colorRed, 1.0)),
+        std::max(0.0, std::min(colorGreen, 1.0)),
+        std::max(0.0, std::min(colorBlue, 1.0))
+    );
+    segment->setRecommendedDisplayCIELabValue(
+        static_cast<Uint16>(std::lround(std::max(0.0, std::min(displayL, 65535.0)))),
+        static_cast<Uint16>(std::lround(std::max(0.0, std::min(displayA, 65535.0)))),
+        static_cast<Uint16>(std::lround(std::max(0.0, std::min(displayB, 65535.0))))
+    );
+    Uint16 segmentNumber = 0;
+    status = segmentation->addSegment(segment, segmentNumber);
+    if (status.bad())
+    {
+        delete segment;
+        return HorosModernDCMTKSegmentationFailure(failureReason, std::string("Cannot add the segment to DICOM SEG: ") + status.text());
+    }
+
+    OFString pixelSpacing;
+    OFString sliceThickness;
+    OFString spacingBetweenSlices;
+    sourceFile.getDataset()->findAndGetOFStringArray(DCM_PixelSpacing, pixelSpacing);
+    sourceFile.getDataset()->findAndGetOFStringArray(DCM_SliceThickness, sliceThickness);
+    sourceFile.getDataset()->findAndGetOFStringArray(DCM_SpacingBetweenSlices, spacingBetweenSlices);
+    if (pixelSpacing.empty())
+        pixelSpacing = "1\\1";
+    if (sliceThickness.empty())
+        sliceThickness = "1";
+    if (spacingBetweenSlices.empty())
+        spacingBetweenSlices = sliceThickness;
+
+    FGPixelMeasures pixelMeasures;
+    pixelMeasures.setPixelSpacing(pixelSpacing);
+    pixelMeasures.setSliceThickness(sliceThickness);
+    pixelMeasures.setSpacingBetweenSlices(spacingBetweenSlices);
+    status = segmentation->addForAllFrames(pixelMeasures);
+    if (status.bad())
+        return HorosModernDCMTKSegmentationFailure(failureReason, std::string("Cannot add pixel geometry to DICOM SEG: ") + status.text());
+
+    int writtenFrameCount = 0;
+    const size_t pixelsPerFrame = static_cast<size_t>(rows) * static_cast<size_t>(columns);
+    for (int frameIndex = 0; frameIndex < frameCount; ++frameIndex)
+    {
+        const unsigned char* mask = frameMasks[frameIndex];
+        const char* sourcePath = sourceImagePaths[frameIndex];
+        if (mask == nullptr || sourcePath == nullptr || sourcePath[0] == '\0')
+            continue;
+        if (std::all_of(mask, mask + pixelsPerFrame, [](unsigned char value) { return value == 0; }))
+            continue;
+
+        DcmFileFormat frameSource;
+        status = frameSource.loadFile(sourcePath);
+        if (status.bad() || frameSource.getDataset() == nullptr)
+            return HorosModernDCMTKSegmentationFailure(failureReason, std::string("Cannot read a referenced source image: ") + status.text());
+
+        OFString position[3];
+        for (unsigned long component = 0; component < 3; ++component)
+        {
+            status = frameSource.getDataset()->findAndGetOFString(
+                DCM_ImagePositionPatient,
+                position[component],
+                component
+            );
+            if (status.bad() || position[component].empty())
+                return HorosModernDCMTKSegmentationFailure(failureReason, "A source image has no Image Position (Patient).");
+        }
+        OFString orientation[6];
+        for (unsigned long component = 0; component < 6; ++component)
+        {
+            status = frameSource.getDataset()->findAndGetOFString(
+                DCM_ImageOrientationPatient,
+                orientation[component],
+                component
+            );
+            if (status.bad() || orientation[component].empty())
+                return HorosModernDCMTKSegmentationFailure(failureReason, "A source image has no Image Orientation (Patient).");
+        }
+
+        FGPlanePosPatient planePosition;
+        FGPlaneOrientationPatient planeOrientation;
+        FGFrameContent frameContent;
+        FGDerivationImage derivation;
+        status = planePosition.setImagePositionPatient(position[0], position[1], position[2]);
+        if (status.bad())
+            return HorosModernDCMTKSegmentationFailure(failureReason, std::string("Cannot encode source image position in DICOM SEG: ") + status.text());
+        status = planeOrientation.setImageOrientationPatient(
+            orientation[0],
+            orientation[1],
+            orientation[2],
+            orientation[3],
+            orientation[4],
+            orientation[5]
+        );
+        if (status.bad())
+            return HorosModernDCMTKSegmentationFailure(failureReason, std::string("Cannot encode source image orientation in DICOM SEG: ") + status.text());
+        frameContent.setStackID("1");
+        frameContent.setInStackPositionNumber(static_cast<Uint32>(frameIndex + 1));
+        frameContent.setDimensionIndexValues(1, 0);
+        frameContent.setDimensionIndexValues(static_cast<Uint32>(frameIndex + 1), 1);
+
+        DerivationImageItem* derivationItem = nullptr;
+        status = derivation.addDerivationImageItem(
+            CodeSequenceMacro("113076", "DCM", "Segmentation"),
+            "Manual three-dimensional segmentation in Horos",
+            derivationItem
+        );
+        if (status.good() && derivationItem != nullptr)
+        {
+            SourceImageItem* sourceItem = nullptr;
+            status = derivationItem->addSourceImageItem(
+                frameSource.getDataset(),
+                CodeSequenceMacro("121322", "DCM", "Source image for image processing operation"),
+                sourceItem
+            );
+            if (status.good() && sourceItem != nullptr)
+                sourceItem->setSpatialLocationsPreserved("YES", OFTrue);
+        }
+        if (status.bad())
+            return HorosModernDCMTKSegmentationFailure(failureReason, std::string("Cannot reference a source image from DICOM SEG: ") + status.text());
+
+        OFVector<FGBase*> perFrameGroups;
+        perFrameGroups.push_back(&planePosition);
+        perFrameGroups.push_back(&planeOrientation);
+        perFrameGroups.push_back(&frameContent);
+        perFrameGroups.push_back(&derivation);
+        status = segmentation->addFrame(const_cast<Uint8*>(mask), segmentNumber, perFrameGroups);
+        if (status.bad())
+            return HorosModernDCMTKSegmentationFailure(failureReason, std::string("Cannot add a binary mask frame to DICOM SEG: ") + status.text());
+        ++writtenFrameCount;
+    }
+
+    if (writtenFrameCount == 0)
+        return HorosModernDCMTKSegmentationFailure(failureReason, "The ROI does not intersect any source image frames.");
+
+    char dimensionUID[100];
+    dcmGenerateUniqueIdentifier(dimensionUID, SITE_INSTANCE_UID_ROOT);
+    IODMultiframeDimensionModule& dimensions = segmentation->getDimensions();
+    dimensions.addDimensionIndex(DCM_StackID, dimensionUID, DCM_FrameContentSequence, "ROI_STACK");
+    dimensions.addDimensionIndex(DCM_InStackPositionNumber, dimensionUID, DCM_FrameContentSequence, "ROI_STACK");
+    IODMultiframeDimensionModule::DimensionOrganizationItem* organization =
+        new IODMultiframeDimensionModule::DimensionOrganizationItem;
+    organization->setDimensionOrganizationUID(dimensionUID);
+    dimensions.getDimensionOrganizationSequence().push_back(organization);
+
+    segmentation->getFunctionalGroups().setCheckOnWrite(OFTrue);
+    segmentation->setCheckDimensionsOnWrite(OFTrue);
+    DcmFileFormat output;
+    status = segmentation->writeDataset(*output.getDataset());
+    if (status.bad())
+        return HorosModernDCMTKSegmentationFailure(failureReason, std::string("Cannot serialize DICOM SEG: ") + status.text());
+
+    if (trackingUID != nullptr && trackingUID[0] != '\0')
+    {
+        const std::string stableSOPInstanceUID = std::string(trackingUID) + ".1";
+        const std::string stableSeriesInstanceUID = std::string(trackingUID) + ".2";
+        output.getDataset()->putAndInsertString(DCM_SOPInstanceUID, stableSOPInstanceUID.c_str(), OFTrue);
+        output.getDataset()->putAndInsertString(DCM_SeriesInstanceUID, stableSeriesInstanceUID.c_str(), OFTrue);
+    }
+
+    DcmTag creatorTag(DcmTagKey(0x7777, 0x0010), EVR_LO);
+    output.getDataset()->putAndInsertString(creatorTag, "HOROS_METAL_ROI", OFTrue);
+    if (authoringJSON != nullptr && authoringJSON[0] != '\0')
+    {
+        DcmTag authoringTag(DcmTagKey(0x7777, 0x1001), EVR_UT);
+        output.getDataset()->putAndInsertString(authoringTag, authoringJSON, OFTrue);
+    }
+
+    status = output.saveFile(outputPath, EXS_LittleEndianExplicit);
+    if (status.bad())
+        return HorosModernDCMTKSegmentationFailure(failureReason, std::string("Cannot save DICOM SEG: ") + status.text());
+    return 1;
 }
 
 void HorosModernDCMTKFreeBasicMetadata(HorosModernDCMTKBasicMetadata* metadata)

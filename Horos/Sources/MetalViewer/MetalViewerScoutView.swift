@@ -1,5 +1,7 @@
 import AppKit
 import CoreGraphics
+import MetalKit
+import simd
 
 private let metalViewerScoutTextColor = NSColor(calibratedRed: 0.18, green: 1.0, blue: 0.28, alpha: 1.0)
 private let metalViewerScoutStudySeparatorColor = NSColor.systemRed
@@ -97,15 +99,18 @@ final class MetalViewerScoutView: NSScrollView {
     private var viewportConstraint: NSLayoutConstraint?
     private var currentSeries: [MetalViewerSeries]
     private var currentProcedureEvents: [SurgicalProcedureEvent]
+    private var currentROIs: [MetalStudyROI] = []
     private var itemViews: [MetalViewerScoutItemView] = []
     private var groupViews: [MetalViewerScoutStudyGroupView] = []
     private var procedureViews: [MetalViewerScoutProcedureView] = []
     private var separatorViews: [MetalViewerScoutStudySeparatorView] = []
+    private var roiViews: [MetalViewerScoutROIItemView] = []
     private var pendingThumbnailRefresh: DispatchWorkItem?
 
     var selectionHandler: ((MetalViewerSeries) -> Void)?
     var openSeriesHandler: ((MetalViewerSeries) -> Void)?
     var overlaySeriesHandler: ((MetalViewerSeries) -> Void)?
+    var roiSelectionHandler: ((UUID) -> Void)?
 
     init(
         series: [MetalViewerSeries],
@@ -181,6 +186,7 @@ final class MetalViewerScoutView: NSScrollView {
         groupViews = []
         procedureViews = []
         separatorViews = []
+        roiViews = []
 
         let timelineEntries = Self.timelineEntries(series: series, procedureEvents: procedureEvents)
         let arrangedEntries = scoutPlacement == .bottom
@@ -243,6 +249,16 @@ final class MetalViewerScoutView: NSScrollView {
                     itemViews.append(item)
                 }
 
+                let studyIdentifier = studySeries.first?.studyIdentifier
+                for roi in currentROIs where roi.studyInstanceUID == studyIdentifier {
+                    let item = MetalViewerScoutROIItemView(roi: roi, placement: scoutPlacement)
+                    item.onSelect = { [weak self] identifier in
+                        self?.roiSelectionHandler?(identifier)
+                    }
+                    groupView.addItem(item)
+                    roiViews.append(item)
+                }
+
             case .procedure(let event):
                 let procedureView = MetalViewerScoutProcedureView(event: event, placement: scoutPlacement)
                 stackView.addArrangedSubview(procedureView)
@@ -281,6 +297,24 @@ final class MetalViewerScoutView: NSScrollView {
         DispatchQueue.main.async { [weak self] in
             self?.scrollToStart()
             self?.scheduleVisibleThumbnailLoad()
+        }
+    }
+
+    func setROIs(_ rois: [MetalStudyROI], selectedIdentifier: UUID?) {
+        currentROIs = rois
+        let existingIdentifiers = Set(roiViews.map(\.roiIdentifier))
+        let newIdentifiers = Set(rois.map(\.id))
+        guard existingIdentifiers == newIdentifiers else {
+            reload(series: currentSeries, procedureEvents: currentProcedureEvents, loadThumbnailsImmediately: false)
+            roiViews.forEach { $0.setSelected($0.roiIdentifier == selectedIdentifier) }
+            return
+        }
+        let roisByIdentifier = Dictionary(uniqueKeysWithValues: rois.map { ($0.id, $0) })
+        for view in roiViews {
+            if let roi = roisByIdentifier[view.roiIdentifier] {
+                view.update(roi: roi)
+            }
+            view.setSelected(view.roiIdentifier == selectedIdentifier)
         }
     }
 
@@ -515,7 +549,7 @@ final class MetalViewerScoutView: NSScrollView {
 
     private static func groupedByStudy(_ series: [MetalViewerSeries]) -> [[MetalViewerSeries]] {
         var groups: [[MetalViewerSeries]] = []
-        for item in series {
+        for item in series where item.isDICOMSegmentation == false {
             if let last = groups.last,
                last.first?.studyIdentifier == item.studyIdentifier {
                 groups[groups.count - 1].append(item)
@@ -599,7 +633,7 @@ private final class MetalViewerScoutStudyGroupView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func addItem(_ item: MetalViewerScoutItemView) {
+    func addItem(_ item: NSView) {
         stackView.addArrangedSubview(item)
         switch scoutPlacement {
         case .left:
@@ -612,6 +646,424 @@ private final class MetalViewerScoutStudyGroupView: NSView {
                 equalTo: stackView.heightAnchor,
                 constant: -(stackView.edgeInsets.top + stackView.edgeInsets.bottom)
             ).isActive = true
+        }
+    }
+}
+
+private struct MetalViewerScoutROIVertex {
+    var position: SIMD3<Float>
+    var normal: SIMD3<Float>
+}
+
+private struct MetalViewerScoutROIUniforms {
+    var rotation = matrix_identity_float4x4
+    var color = SIMD4<Float>(1, 1, 0, 1)
+}
+
+private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
+    private let device: MTLDevice
+    private let commandQueue: MTLCommandQueue
+    private let pipelineState: MTLRenderPipelineState
+    private let depthStencilState: MTLDepthStencilState
+    private let stateLock = NSLock()
+    private var vertexBuffer: MTLBuffer?
+    private var vertexCount = 0
+    private var yaw: Float = 0.58
+    private var pitch: Float = -0.34
+    private var color = SIMD4<Float>(1, 1, 0, 1)
+
+    init?(view: MTKView) {
+        guard let device = view.device,
+              let commandQueue = device.makeCommandQueue(),
+              let library = device.makeDefaultLibrary(),
+              let vertexFunction = library.makeFunction(name: "metalViewerScoutROIVertex"),
+              let fragmentFunction = library.makeFunction(name: "metalViewerScoutROIFragment") else {
+            return nil
+        }
+
+        let pipelineDescriptor = MTLRenderPipelineDescriptor()
+        pipelineDescriptor.label = "Metal Planar ROI scout preview"
+        pipelineDescriptor.vertexFunction = vertexFunction
+        pipelineDescriptor.fragmentFunction = fragmentFunction
+        pipelineDescriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
+        pipelineDescriptor.depthAttachmentPixelFormat = view.depthStencilPixelFormat
+        guard let pipelineState = try? device.makeRenderPipelineState(descriptor: pipelineDescriptor) else {
+            return nil
+        }
+
+        let depthDescriptor = MTLDepthStencilDescriptor()
+        depthDescriptor.depthCompareFunction = .less
+        depthDescriptor.isDepthWriteEnabled = true
+        guard let depthStencilState = device.makeDepthStencilState(descriptor: depthDescriptor) else {
+            return nil
+        }
+
+        self.device = device
+        self.commandQueue = commandQueue
+        self.pipelineState = pipelineState
+        self.depthStencilState = depthStencilState
+        super.init()
+    }
+
+    func update(roi: MetalStudyROI) {
+        let vertices = Self.makeSurfaceVertices(for: roi)
+        let buffer = vertices.isEmpty
+            ? nil
+            : device.makeBuffer(
+                bytes: vertices,
+                length: MemoryLayout<MetalViewerScoutROIVertex>.stride * vertices.count,
+                options: .storageModeShared
+            )
+        stateLock.lock()
+        vertexBuffer = buffer
+        vertexCount = buffer == nil ? 0 : vertices.count
+        color = SIMD4<Float>(Float(roi.colorRed), Float(roi.colorGreen), Float(roi.colorBlue), 1)
+        stateLock.unlock()
+    }
+
+    func rotation() -> (yaw: Float, pitch: Float) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return (yaw, pitch)
+    }
+
+    func setRotation(yaw: Float, pitch: Float) {
+        stateLock.lock()
+        self.yaw = yaw
+        self.pitch = min(max(pitch, -.pi * 0.48), .pi * 0.48)
+        stateLock.unlock()
+    }
+
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+
+    func draw(in view: MTKView) {
+        stateLock.lock()
+        let vertexBuffer = self.vertexBuffer
+        let vertexCount = self.vertexCount
+        var uniforms = MetalViewerScoutROIUniforms(
+            rotation: Self.rotationMatrix(yaw: yaw, pitch: pitch),
+            color: color
+        )
+        stateLock.unlock()
+
+        guard let vertexBuffer,
+              vertexCount > 0,
+              let renderPassDescriptor = view.currentRenderPassDescriptor,
+              let drawable = view.currentDrawable,
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+            return
+        }
+
+        encoder.label = "Metal Planar ROI scout preview"
+        encoder.setRenderPipelineState(pipelineState)
+        encoder.setDepthStencilState(depthStencilState)
+        encoder.setFrontFacing(.counterClockwise)
+        encoder.setCullMode(.back)
+        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
+        encoder.setVertexBytes(
+            &uniforms,
+            length: MemoryLayout<MetalViewerScoutROIUniforms>.stride,
+            index: 1
+        )
+        encoder.setFragmentBytes(
+            &uniforms,
+            length: MemoryLayout<MetalViewerScoutROIUniforms>.stride,
+            index: 1
+        )
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertexCount)
+        encoder.endEncoding()
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+    }
+
+    private static func makeSurfaceVertices(for roi: MetalStudyROI) -> [MetalViewerScoutROIVertex] {
+        let latitudeSegments = 18
+        let longitudeSegments = 28
+        let normalization = Float(0.86 / max(roi.conservativeBoundingRadiusMM, 0.5))
+        var grid: [MetalViewerScoutROIVertex] = []
+        grid.reserveCapacity((latitudeSegments + 1) * (longitudeSegments + 1))
+        var vertices: [MetalViewerScoutROIVertex] = []
+        vertices.reserveCapacity(latitudeSegments * longitudeSegments * 6)
+
+        for latitude in 0...latitudeSegments {
+            let theta = Double.pi * Double(latitude) / Double(latitudeSegments)
+            for longitude in 0...longitudeSegments {
+                let phi = 2 * Double.pi * Double(longitude) / Double(longitudeSegments)
+                let direction = SIMD3<Double>(
+                    sin(theta) * cos(phi),
+                    cos(theta),
+                    sin(theta) * sin(phi)
+                )
+                let radius = roi.surfaceRadius(along: direction)
+                let floatDirection = SIMD3<Float>(
+                    Float(direction.x),
+                    Float(direction.y),
+                    Float(direction.z)
+                )
+                grid.append(MetalViewerScoutROIVertex(
+                    position: floatDirection * Float(radius) * normalization,
+                    normal: simd_normalize(floatDirection)
+                ))
+            }
+        }
+
+        let rowLength = longitudeSegments + 1
+        if latitudeSegments > 1 {
+            for latitude in 1..<latitudeSegments {
+                for longitude in 0...longitudeSegments {
+                    let wrappedLongitude = longitude == longitudeSegments ? 0 : longitude
+                    let previousLongitude = (wrappedLongitude + longitudeSegments - 1) % longitudeSegments
+                    let nextLongitude = (wrappedLongitude + 1) % longitudeSegments
+                    let centerIndex = latitude * rowLength + longitude
+                    let longitudeTangent = grid[latitude * rowLength + nextLongitude].position
+                        - grid[latitude * rowLength + previousLongitude].position
+                    let latitudeTangent = grid[(latitude + 1) * rowLength + wrappedLongitude].position
+                        - grid[(latitude - 1) * rowLength + wrappedLongitude].position
+                    var normal = simd_cross(longitudeTangent, latitudeTangent)
+                    if simd_length_squared(normal) > 0.000_001 {
+                        normal = simd_normalize(normal)
+                        if simd_dot(normal, grid[centerIndex].position) < 0 {
+                            normal = -normal
+                        }
+                        grid[centerIndex].normal = normal
+                    }
+                }
+            }
+        }
+
+        for latitude in 0..<latitudeSegments {
+            for longitude in 0..<longitudeSegments {
+                let upperLeft = grid[latitude * rowLength + longitude]
+                let upperRight = grid[latitude * rowLength + longitude + 1]
+                let lowerLeft = grid[(latitude + 1) * rowLength + longitude]
+                let lowerRight = grid[(latitude + 1) * rowLength + longitude + 1]
+                vertices.append(contentsOf: [upperLeft, upperRight, lowerLeft])
+                vertices.append(contentsOf: [upperRight, lowerRight, lowerLeft])
+            }
+        }
+        return vertices
+    }
+
+    private static func rotationMatrix(yaw: Float, pitch: Float) -> simd_float4x4 {
+        let yawCosine = cos(yaw)
+        let yawSine = sin(yaw)
+        let pitchCosine = cos(pitch)
+        let pitchSine = sin(pitch)
+        let yawMatrix = simd_float4x4(columns: (
+            SIMD4<Float>(yawCosine, 0, -yawSine, 0),
+            SIMD4<Float>(0, 1, 0, 0),
+            SIMD4<Float>(yawSine, 0, yawCosine, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        ))
+        let pitchMatrix = simd_float4x4(columns: (
+            SIMD4<Float>(1, 0, 0, 0),
+            SIMD4<Float>(0, pitchCosine, pitchSine, 0),
+            SIMD4<Float>(0, -pitchSine, pitchCosine, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        ))
+        return yawMatrix * pitchMatrix
+    }
+}
+
+private final class MetalViewerScoutROIPreviewView: MTKView {
+    private var roiRenderer: MetalViewerScoutROIRenderer?
+    private var mouseDownLocation = NSPoint.zero
+    private var mouseDownRotation: (yaw: Float, pitch: Float) = (0, 0)
+    private var isRotating = false
+    var onSelect: (() -> Void)?
+
+    init() {
+        super.init(frame: .zero, device: MTLCreateSystemDefaultDevice())
+        translatesAutoresizingMaskIntoConstraints = true
+        autoresizingMask = []
+        colorPixelFormat = .bgra8Unorm
+        depthStencilPixelFormat = .depth32Float
+        clearColor = MTLClearColor(red: 0.055, green: 0.055, blue: 0.065, alpha: 1)
+        isPaused = true
+        enableSetNeedsDisplay = true
+        preferredFramesPerSecond = 30
+        wantsLayer = true
+        layer?.cornerRadius = 7
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor.white.withAlphaComponent(0.10).cgColor
+        layer?.masksToBounds = true
+        roiRenderer = MetalViewerScoutROIRenderer(view: self)
+        delegate = roiRenderer
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(roi: MetalStudyROI) {
+        roiRenderer?.update(roi: roi)
+        needsDisplay = true
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: isRotating ? .closedHand : .openHand)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onSelect?()
+        mouseDownLocation = convert(event.locationInWindow, from: nil)
+        mouseDownRotation = roiRenderer?.rotation() ?? (0, 0)
+        isRotating = true
+        window?.invalidateCursorRects(for: self)
+        NSCursor.closedHand.set()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isRotating else { return }
+        let location = convert(event.locationInWindow, from: nil)
+        let sensitivity: Float = 0.012
+        roiRenderer?.setRotation(
+            yaw: mouseDownRotation.yaw + Float(location.x - mouseDownLocation.x) * sensitivity,
+            pitch: mouseDownRotation.pitch - Float(location.y - mouseDownLocation.y) * sensitivity
+        )
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        isRotating = false
+        window?.invalidateCursorRects(for: self)
+        NSCursor.openHand.set()
+    }
+}
+
+private final class MetalViewerScoutROIItemView: NSView {
+    private let nameLabel = NSTextField(labelWithString: "")
+    private let volumeLabel = NSTextField(labelWithString: "")
+    private let typeLabel = NSTextField(labelWithString: NSLocalizedString("DICOM SEG", comment: ""))
+    private let previewView = MetalViewerScoutROIPreviewView()
+    private var roiColor = NSColor.systemYellow
+    private var renderedROI: MetalStudyROI?
+
+    private(set) var roiIdentifier: UUID
+    var onSelect: ((UUID) -> Void)?
+
+    init(roi: MetalStudyROI, placement: MetalViewerScoutPlacement) {
+        roiIdentifier = roi.id
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        layer?.borderWidth = 2
+        layer?.backgroundColor = NSColor(calibratedWhite: 0.12, alpha: 1).cgColor
+
+        nameLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        volumeLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        typeLabel.font = .systemFont(ofSize: 10, weight: .medium)
+        typeLabel.textColor = .secondaryLabelColor
+        [nameLabel, volumeLabel, typeLabel].forEach {
+            $0.alignment = .center
+            $0.lineBreakMode = .byTruncatingTail
+            $0.maximumNumberOfLines = 1
+        }
+        previewView.onSelect = { [weak self] in
+            guard let self else { return }
+            onSelect?(roiIdentifier)
+        }
+        addSubview(previewView)
+        addSubview(nameLabel)
+        addSubview(volumeLabel)
+        addSubview(typeLabel)
+        switch placement {
+        case .left:
+            heightAnchor.constraint(equalTo: widthAnchor).isActive = true
+        case .bottom:
+            widthAnchor.constraint(equalTo: heightAnchor).isActive = true
+        }
+        update(roi: roi)
+        setSelected(false)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(roi: MetalStudyROI) {
+        roiIdentifier = roi.id
+        roiColor = roi.color
+        nameLabel.stringValue = roi.name
+        nameLabel.textColor = roiColor
+        volumeLabel.stringValue = String(format: NSLocalizedString("%.3f mL", comment: ""), roi.volumeML)
+        volumeLabel.textColor = roiColor
+        if renderedROI?.center != roi.center
+            || renderedROI?.radiusMM != roi.radiusMM
+            || renderedROI?.anchors != roi.anchors
+            || renderedROI?.anchorKinds != roi.anchorKinds
+            || renderedROI?.colorRed != roi.colorRed
+            || renderedROI?.colorGreen != roi.colorGreen
+            || renderedROI?.colorBlue != roi.colorBlue {
+            previewView.update(roi: roi)
+        }
+        renderedROI = roi
+        toolTip = String(
+            format: NSLocalizedString(
+                "%@\nVolume: %.3f mL\n%d manual anchors, %d automatic anchors\nStored as DICOM SEG\nDrag the 3D preview to rotate",
+                comment: ""
+            ),
+            roi.name,
+            roi.volumeML,
+            roi.manualAnchorCount,
+            roi.automaticAnchorCount
+        )
+    }
+
+    func setSelected(_ selected: Bool) {
+        layer?.borderColor = (selected ? metalViewerActiveSelectionBlue : roiColor.withAlphaComponent(0.8)).cgColor
+        layer?.backgroundColor = (selected
+            ? NSColor(calibratedRed: 0.12, green: 0.22, blue: 0.34, alpha: 1)
+            : NSColor(calibratedWhite: 0.12, alpha: 1)).cgColor
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onSelect?(roiIdentifier)
+    }
+
+    override func layout() {
+        super.layout()
+        let padding: CGFloat = 7
+        let spacing: CGFloat = 3
+        let availableWidth = max(bounds.width - padding * 2, 1)
+        let showsType = bounds.height >= 128
+        let showsVolume = bounds.height >= 104
+        typeLabel.isHidden = showsType == false
+        volumeLabel.isHidden = showsVolume == false
+
+        let nameHeight: CGFloat = 17
+        let volumeHeight: CGFloat = showsVolume ? 16 : 0
+        let typeHeight: CGFloat = showsType ? 14 : 0
+        let visibleLabelCount = 1 + (showsVolume ? 1 : 0) + (showsType ? 1 : 0)
+        let labelsHeight = nameHeight + volumeHeight + typeHeight
+            + CGFloat(max(visibleLabelCount - 1, 0)) * spacing
+        let previewLength = max(
+            min(availableWidth, bounds.height - padding * 2 - labelsHeight - spacing * 2),
+            24
+        )
+        var y = bounds.height - padding - previewLength
+        previewView.frame = NSRect(
+            x: (bounds.width - previewLength) * 0.5,
+            y: y,
+            width: previewLength,
+            height: previewLength
+        )
+        previewView.needsDisplay = true
+        y -= spacing + nameHeight
+        nameLabel.frame = NSRect(x: padding, y: y, width: availableWidth, height: nameHeight)
+        if showsVolume {
+            y -= spacing + volumeHeight
+            volumeLabel.frame = NSRect(x: padding, y: y, width: availableWidth, height: volumeHeight)
+        }
+        if showsType {
+            y -= spacing + typeHeight
+            typeLabel.frame = NSRect(x: padding, y: y, width: availableWidth, height: typeHeight)
         }
     }
 }

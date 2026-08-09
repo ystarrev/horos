@@ -67,6 +67,8 @@ private final class MetalMPRPreviewOverlayView: NSView {
             drawLabel(pane.top, at: CGPoint(x: pane.rect.midX, y: pane.rect.minY + 8), alignment: .center, attributes: attributes)
             drawLabel(pane.bottom, at: CGPoint(x: pane.rect.midX, y: pane.rect.maxY - 8), alignment: .center, attributes: attributes)
         }
+
+        owner.drawStudyROIOverlay()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -160,6 +162,32 @@ final class MetalImageView: MTKView {
     private var selectedMeasurementIdentifier: String?
     private var activeMeasurementDragMode: MeasurementDragMode?
     private var activeTumourSeedDeletion = false
+    private var studyROIStore: MetalStudyROIStore?
+    private var studyROIEditingMode: MetalStudyROIEditingMode = .inactive
+    private var studyROISourceSeriesIdentifier = ""
+    private var studyROISourceStudyIdentifier = ""
+    private var studyROIFrameOfReferenceUID = ""
+    private var studyROICurrentToCanonicalTransform = matrix_identity_float4x4
+    private var studyROIProjectionAvailable = true
+    private var activeStudyROIGesture: StudyROIGesture = .none
+    private var studyROIContourCache: StudyROIContourCache?
+
+    private enum StudyROIGesture {
+        case none
+        case sphere(identifier: UUID, center: SIMD3<Double>)
+        case pendingAnchorPlacement(identifier: UUID)
+        case movingAnchor(identifier: UUID, anchorIndex: Int, hasMoved: Bool)
+        case deletingAnchor(identifier: UUID, anchorIndex: Int)
+    }
+
+    private struct StudyROIContourCache {
+        let storeRevision: Int
+        let rendererState: String
+        let bounds: CGRect
+        let roiIdentifier: UUID
+        let slices: [MetalMPRROISliceGeometry]
+        let segments: [MetalStudyROIContourSegment]
+    }
 
     private enum MeasurementHitComponent {
         case startHandle
@@ -489,6 +517,7 @@ final class MetalImageView: MTKView {
     var windowLevelInteractionAllowedHandler: (() -> Bool)?
     var tumourSeedPlacementHandler: ((MetalViewerTumourSeedPlacement) -> Void)?
     var tumourSeedDeletionHandler: ((String) -> Void)?
+    var studyROIEditingModeDidChange: ((MetalStudyROIEditingMode) -> Void)?
     var measurementsDidChange: (([MetalViewerMeasurementOverlay]) -> Void)?
     var mouseToolAssignments = MetalViewerMouseToolAssignments()
     private(set) var mouseAnnotationState: MouseAnnotationState?
@@ -532,6 +561,7 @@ final class MetalImageView: MTKView {
         addSubview(mprPreviewOverlayView)
 
         renderer.stateDidChange = { [weak self] state in
+            self?.studyROIContourCache = nil
             self?.titleDidChange?(state)
             self?.needsDisplay = true
             self?.mprPreviewOverlayView.needsDisplay = true
@@ -609,9 +639,40 @@ final class MetalImageView: MTKView {
 
     override func layout() {
         super.layout()
+        studyROIContourCache = nil
         mprPreviewOverlayView.needsDisplay = true
         mprPreviewOverlayView.window?.invalidateCursorRects(for: mprPreviewOverlayView)
         publishMeasurementOverlays()
+    }
+
+    func configureStudyROI(
+        store: MetalStudyROIStore?,
+        sourceSeriesIdentifier: String,
+        sourceStudyIdentifier: String,
+        frameOfReferenceUID: String,
+        currentToCanonicalTransform: simd_float4x4? = matrix_identity_float4x4
+    ) {
+        studyROIStore = store
+        studyROISourceSeriesIdentifier = sourceSeriesIdentifier
+        studyROISourceStudyIdentifier = sourceStudyIdentifier
+        studyROIFrameOfReferenceUID = frameOfReferenceUID
+        studyROIProjectionAvailable = currentToCanonicalTransform != nil
+        studyROICurrentToCanonicalTransform = currentToCanonicalTransform ?? matrix_identity_float4x4
+        studyROIContourCache = nil
+        mprPreviewOverlayView.needsDisplay = true
+    }
+
+    func setStudyROIEditingMode(_ mode: MetalStudyROIEditingMode) {
+        guard studyROIEditingMode != mode else { return }
+        studyROIEditingMode = mode
+        activeStudyROIGesture = .none
+        studyROIEditingModeDidChange?(mode)
+        mprPreviewOverlayView.needsDisplay = true
+    }
+
+    func refreshStudyROIOverlay() {
+        studyROIContourCache = nil
+        mprPreviewOverlayView.needsDisplay = true
     }
 
     override func updateTrackingAreas() {
@@ -710,11 +771,19 @@ final class MetalImageView: MTKView {
         activateHandler?()
         window?.makeFirstResponder(self)
         dragAnchor = convert(event.locationInWindow, from: nil)
+        activeMouseButton = button
+        activeMouseTool = mouseTool(for: button, event: event)
+        if beginStudyROIInteraction(
+            at: dragAnchor,
+            tool: activeMouseTool,
+            permitsSphereCreation: button == .left
+        ) {
+            updateMouseAnnotationState(from: dragAnchor)
+            return
+        }
         wlAnchor = renderer.activeWindowLevel
         wwAnchor = renderer.activeWindowWidth
         updatePanAnchor(at: dragAnchor)
-        activeMouseButton = button
-        activeMouseTool = mouseTool(for: button, event: event)
         activeTumourSeedDeletion = activeMouseTool == .tumourSeed
             && event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.control)
         didChangeWindowLevelDuringDrag = false
@@ -757,7 +826,7 @@ final class MetalImageView: MTKView {
                     mprScrollAxisOverride = renderer.mprSlicePlaneAxis(at: dragAnchor, in: bounds)
                     mprDragMode = .none
                 }
-            case .zoom, .measure, .tumourSeed:
+            case .zoom, .measure, .tumourSeed, .roiAnchor, .deleteROIAnchor:
                 mprDragMode = .none
             }
         } else {
@@ -772,6 +841,10 @@ final class MetalImageView: MTKView {
         }
         interactionEventHandler?()
         let currentPoint = convert(event.locationInWindow, from: nil)
+        if dragStudyROIInteraction(to: currentPoint) {
+            updateMouseAnnotationState(from: currentPoint)
+            return
+        }
         let currentMouseTool = mouseTool(for: activeMouseButton, event: event)
 
         if activeMouseTool != .measure,
@@ -812,7 +885,7 @@ final class MetalImageView: MTKView {
                         mprScrollAxisOverride = renderer.mprSlicePlaneAxis(at: currentPoint, in: bounds)
                         mprDragMode = .none
                     }
-                case .zoom, .measure, .tumourSeed:
+                case .zoom, .measure, .tumourSeed, .roiAnchor, .deleteROIAnchor:
                     mprDragMode = .none
                 }
             }
@@ -851,6 +924,11 @@ final class MetalImageView: MTKView {
             return
         }
         interactionEventHandler?()
+        let studyROIPoint = convert(event.locationInWindow, from: nil)
+        if endStudyROIInteraction(at: studyROIPoint) {
+            updateMouseAnnotationState(from: studyROIPoint)
+            return
+        }
         renderer.endMPRPlaneDrag()
         mprDragMode = .none
         mprScrollAxisOverride = nil
@@ -903,7 +981,7 @@ final class MetalImageView: MTKView {
             dragAnchor = currentPoint
         case .measure:
             dragMeasurementInteraction(to: currentPoint, event: event)
-        case .tumourSeed:
+        case .tumourSeed, .roiAnchor, .deleteROIAnchor:
             break
         }
     }
@@ -954,7 +1032,7 @@ final class MetalImageView: MTKView {
             }
         case .measure:
             dragMeasurementInteraction(to: currentPoint, event: event)
-        case .tumourSeed:
+        case .tumourSeed, .roiAnchor, .deleteROIAnchor:
             break
         }
     }
@@ -1414,6 +1492,31 @@ final class MetalImageView: MTKView {
         interactionEventHandler?()
         let point = convert(event.locationInWindow, from: nil)
         updateMouseAnnotationState(from: point)
+        if renderer.displayMode == .mpr3D, studyROIProjectionAvailable {
+            if studyROIEditingMode == .createSphere,
+               renderer.mprROIWorldPoint(at: point, in: bounds) != nil {
+                NSCursor.crosshair.set()
+                return
+            }
+            switch mouseTool(for: .left, event: event) {
+            case .roiAnchor:
+                if studyROIAnchorHit(at: point) != nil {
+                    NSCursor.openHand.set()
+                    return
+                }
+                if renderer.mprROIWorldPoint(at: point, in: bounds) != nil {
+                    NSCursor.crosshair.set()
+                    return
+                }
+            case .deleteROIAnchor:
+                if studyROIAnchorHit(at: point) != nil {
+                    NSCursor.pointingHand.set()
+                    return
+                }
+            default:
+                break
+            }
+        }
         updateMPRLineCursor(at: point, event: event)
     }
 
@@ -1430,6 +1533,31 @@ final class MetalImageView: MTKView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            switch activeStudyROIGesture {
+            case .sphere:
+                studyROIStore?.cancelProvisionalSphere()
+                activeStudyROIGesture = .none
+                setStudyROIEditingMode(.inactive)
+                refreshStudyROIOverlay()
+                return
+            case .movingAnchor:
+                studyROIStore?.cancelMovingAnchor()
+                activeStudyROIGesture = .none
+                refreshStudyROIOverlay()
+                return
+            case .pendingAnchorPlacement, .deletingAnchor:
+                activeStudyROIGesture = .none
+                refreshStudyROIOverlay()
+                return
+            case .none:
+                if studyROIEditingMode != .inactive {
+                    studyROIStore?.cancelProvisionalSphere()
+                    setStudyROIEditingMode(.inactive)
+                    return
+                }
+            }
+        }
         if (event.keyCode == 51 || event.keyCode == 117), deleteSelectedMeasurement() {
             return
         }
@@ -1468,9 +1596,275 @@ final class MetalImageView: MTKView {
         publishMeasurementOverlays()
     }
 
+    private func beginStudyROIInteraction(
+        at point: CGPoint,
+        tool: MetalViewerMouseTool,
+        permitsSphereCreation: Bool
+    ) -> Bool {
+        guard renderer.displayMode == .mpr3D,
+              studyROIProjectionAvailable,
+              let store = studyROIStore else { return false }
+
+        if studyROIEditingMode == .createSphere {
+            guard permitsSphereCreation else { return false }
+            guard let worldPoint = studyROICanonicalWorldPoint(at: point) else { return true }
+            let palette: [NSColor] = [.systemYellow, .systemPink, .systemTeal, .systemOrange, .systemPurple]
+            let identifier = store.beginSphere(
+                center: worldPoint,
+                name: String(
+                    format: NSLocalizedString("ROI %d", comment: ""),
+                    store.rois.filter { $0.studyInstanceUID == studyROISourceStudyIdentifier }.count + 1
+                ),
+                studyInstanceUID: studyROISourceStudyIdentifier,
+                frameOfReferenceUID: studyROIFrameOfReferenceUID,
+                sourceSeriesIdentifier: studyROISourceSeriesIdentifier,
+                color: palette[store.rois.count % palette.count]
+            )
+            activeStudyROIGesture = .sphere(identifier: identifier, center: worldPoint)
+            refreshStudyROIOverlay()
+            return true
+        }
+
+        switch tool {
+        case .roiAnchor:
+            guard let identifier = store.selectedROIIdentifier else {
+                NSSound.beep()
+                return true
+            }
+            if let hit = studyROIAnchorHit(at: point),
+               store.beginMovingAnchor(at: hit.anchorIndex, in: identifier) {
+                activeStudyROIGesture = .movingAnchor(
+                    identifier: identifier,
+                    anchorIndex: hit.anchorIndex,
+                    hasMoved: false
+                )
+                NSCursor.closedHand.set()
+            } else if studyROICanonicalWorldPoint(at: point) != nil {
+                activeStudyROIGesture = .pendingAnchorPlacement(identifier: identifier)
+            }
+            return true
+        case .deleteROIAnchor:
+            guard let identifier = store.selectedROIIdentifier else {
+                NSSound.beep()
+                return true
+            }
+            if let hit = studyROIAnchorHit(at: point) {
+                activeStudyROIGesture = .deletingAnchor(identifier: identifier, anchorIndex: hit.anchorIndex)
+            }
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func dragStudyROIInteraction(to point: CGPoint) -> Bool {
+        switch activeStudyROIGesture {
+        case .none:
+            return false
+        case let .sphere(identifier, center):
+            guard let edge = studyROICanonicalWorldPoint(at: point) else { return true }
+            studyROIStore?.updateSphere(identifier: identifier, center: center, edge: edge)
+            refreshStudyROIOverlay()
+            return true
+        case let .movingAnchor(identifier, anchorIndex, hasMoved):
+            guard hasMoved || hypot(point.x - dragAnchor.x, point.y - dragAnchor.y) > 2 else { return true }
+            guard let anchor = studyROICanonicalWorldPoint(at: point) else { return true }
+            studyROIStore?.moveAnchor(at: anchorIndex, to: anchor, in: identifier)
+            activeStudyROIGesture = .movingAnchor(
+                identifier: identifier,
+                anchorIndex: anchorIndex,
+                hasMoved: true
+            )
+            refreshStudyROIOverlay()
+            return true
+        case .pendingAnchorPlacement, .deletingAnchor:
+            return true
+        }
+    }
+
+    private func endStudyROIInteraction(at point: CGPoint) -> Bool {
+        switch activeStudyROIGesture {
+        case .none:
+            return false
+        case let .sphere(identifier, center):
+            if let edge = studyROICanonicalWorldPoint(at: point) {
+                studyROIStore?.updateSphere(identifier: identifier, center: center, edge: edge)
+            }
+            studyROIStore?.finishSphere(identifier: identifier)
+            activeStudyROIGesture = .none
+            setStudyROIEditingMode(.inactive)
+            refreshStudyROIOverlay()
+            return true
+        case let .pendingAnchorPlacement(identifier):
+            if let anchor = studyROICanonicalWorldPoint(at: point) {
+                studyROIStore?.addAnchor(anchor, to: identifier)
+            }
+            activeStudyROIGesture = .none
+            refreshStudyROIOverlay()
+            return true
+        case let .movingAnchor(identifier, anchorIndex, hasMoved):
+            if hasMoved, let anchor = studyROICanonicalWorldPoint(at: point) {
+                studyROIStore?.moveAnchor(at: anchorIndex, to: anchor, in: identifier)
+            }
+            studyROIStore?.finishMovingAnchor(in: identifier)
+            activeStudyROIGesture = .none
+            refreshStudyROIOverlay()
+            return true
+        case let .deletingAnchor(identifier, anchorIndex):
+            if studyROIAnchorHit(at: point)?.anchorIndex == anchorIndex {
+                studyROIStore?.removeAnchor(at: anchorIndex, from: identifier)
+            }
+            activeStudyROIGesture = .none
+            refreshStudyROIOverlay()
+            return true
+        }
+    }
+
+    private func studyROICanonicalWorldPoint(at point: CGPoint) -> SIMD3<Double>? {
+        guard let displayed = renderer.mprROIWorldPoint(at: point, in: bounds) else { return nil }
+        let transformed = studyROICurrentToCanonicalTransform * SIMD4<Float>(
+            Float(displayed.x), Float(displayed.y), Float(displayed.z), 1
+        )
+        return SIMD3<Double>(Double(transformed.x), Double(transformed.y), Double(transformed.z))
+    }
+
+    private func studyROIAnchorHit(at point: CGPoint) -> (anchorIndex: Int, distance: CGFloat)? {
+        guard studyROIProjectionAvailable,
+              let store = studyROIStore,
+              let roi = store.selectedROI else { return nil }
+
+        let slices: [MetalMPRROISliceGeometry]
+        if let cache = studyROIContourCache,
+           cache.storeRevision == store.revision,
+           cache.rendererState == renderer.stateDescription,
+           cache.bounds == bounds,
+           cache.roiIdentifier == roi.id {
+            slices = cache.slices
+        } else {
+            slices = renderer.mprROISliceGeometries(in: bounds).map {
+                $0.applyingWorldTransform(studyROICurrentToCanonicalTransform)
+            }
+        }
+
+        let hitRadius: CGFloat = 8
+        var closest: (anchorIndex: Int, distance: CGFloat)?
+        for anchorIndex in roi.anchors.indices {
+            for slice in slices {
+                guard let screenPoint = slice.screenPoint(for: roi.anchors[anchorIndex].vector) else { continue }
+                let distance = hypot(point.x - screenPoint.x, point.y - screenPoint.y)
+                guard distance <= hitRadius,
+                      closest == nil || distance < closest!.distance else { continue }
+                closest = (anchorIndex, distance)
+            }
+        }
+        return closest
+    }
+
+    fileprivate func drawStudyROIOverlay() {
+        guard renderer.displayMode == .mpr3D,
+              studyROIProjectionAvailable,
+              let store = studyROIStore,
+              let roi = store.selectedROI else { return }
+
+        let cache: StudyROIContourCache
+        if let existing = studyROIContourCache,
+           existing.storeRevision == store.revision,
+           existing.rendererState == renderer.stateDescription,
+           existing.bounds == bounds,
+           existing.roiIdentifier == roi.id {
+            cache = existing
+        } else {
+            let slices = renderer.mprROISliceGeometries(in: bounds).map {
+                $0.applyingWorldTransform(studyROICurrentToCanonicalTransform)
+            }
+            let segments = slices.flatMap { MetalStudyROIContourBuilder.segments(for: roi, slice: $0) }
+            cache = StudyROIContourCache(
+                storeRevision: store.revision,
+                rendererState: renderer.stateDescription,
+                bounds: bounds,
+                roiIdentifier: roi.id,
+                slices: slices,
+                segments: segments
+            )
+            studyROIContourCache = cache
+        }
+
+        let backingScale = max(window?.backingScaleFactor ?? 1, 1)
+        let path = NSBezierPath()
+        for segment in cache.segments {
+            path.move(to: studyROIOverlayPoint(fromMetalViewPoint: segment.start))
+            path.line(to: studyROIOverlayPoint(fromMetalViewPoint: segment.end))
+        }
+        path.lineWidth = max(2 / backingScale, 1)
+        path.lineCapStyle = .round
+        roi.color.setStroke()
+        path.stroke()
+
+        for anchorIndex in roi.anchors.indices {
+            let anchor = roi.anchors[anchorIndex]
+            let anchorKind = roi.anchorKind(at: anchorIndex)
+            for slice in cache.slices {
+                guard let metalViewPoint = slice.screenPoint(for: anchor.vector) else { continue }
+                let point = studyROIOverlayPoint(fromMetalViewPoint: metalViewPoint)
+                switch anchorKind {
+                case .manual:
+                    let outerMarker = studyROIAnchorDiamond(center: point, radius: 5)
+                    NSColor.black.setFill()
+                    outerMarker.fill()
+                    let innerMarker = studyROIAnchorDiamond(center: point, radius: 3.5)
+                    roi.color.setFill()
+                    innerMarker.fill()
+                case .automatic:
+                    let marker = NSBezierPath(
+                        ovalIn: CGRect(x: point.x - 2, y: point.y - 2, width: 4, height: 4)
+                    )
+                    marker.lineWidth = max(1 / backingScale, 0.5)
+                    roi.color.withAlphaComponent(0.62).setStroke()
+                    marker.stroke()
+                }
+            }
+        }
+
+        let status = String(
+            format: NSLocalizedString("%@  %.3f mL  (%d manual, %d auto)", comment: ""),
+            roi.name,
+            roi.volumeML,
+            roi.manualAnchorCount,
+            roi.automaticAnchorCount
+        )
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: roi.color,
+            .backgroundColor: NSColor.black.withAlphaComponent(0.65),
+        ]
+        NSAttributedString(string: status, attributes: attributes).draw(at: CGPoint(x: 12, y: 56))
+    }
+
+    private func studyROIAnchorDiamond(center: CGPoint, radius: CGFloat) -> NSBezierPath {
+        let path = NSBezierPath()
+        path.move(to: CGPoint(x: center.x, y: center.y + radius))
+        path.line(to: CGPoint(x: center.x + radius, y: center.y))
+        path.line(to: CGPoint(x: center.x, y: center.y - radius))
+        path.line(to: CGPoint(x: center.x - radius, y: center.y))
+        path.close()
+        return path
+    }
+
+    /// ROI hit-testing and slice projection use the MTKView's unflipped AppKit
+    /// coordinates. The annotation overlay is deliberately flipped so its labels
+    /// can be laid out from the top edge, so projected ROI points must cross that
+    /// coordinate-system boundary before they are drawn.
+    private func studyROIOverlayPoint(fromMetalViewPoint point: CGPoint) -> CGPoint {
+        mprPreviewOverlayView.convert(point, from: self)
+    }
+
     private func stepThroughCurrentMode(by stepCount: Int, event: NSEvent, at point: CGPoint? = nil) {
         if renderer.displayMode.isMPRLike {
-            renderer.moveMPRPlane(axis: mprScrollAxis(for: event, at: point), by: -Float(stepCount))
+            let axis = mprScrollAxis(for: event, at: point)
+            // The sagittal storage axis is opposite to the view-facing
+            // push/pull convention used by the scroll mouse tool.
+            let viewDirection: Float = axis == 0 ? 1 : -1
+            renderer.moveMPRPlane(axis: axis, by: Float(stepCount) * viewDirection)
         } else {
             renderer.stepSlice(by: stepCount)
         }
@@ -1512,7 +1906,7 @@ final class MetalImageView: MTKView {
         switch mouseTool(for: .left, event: event) {
         case .rotate:
             break
-        case .windowLevel, .pan, .scroll, .zoom, .measure, .tumourSeed:
+        case .windowLevel, .pan, .scroll, .zoom, .measure, .tumourSeed, .roiAnchor, .deleteROIAnchor:
             resetMPRLineCursor()
             NSCursor.arrow.set()
             return

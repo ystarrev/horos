@@ -1,4 +1,5 @@
 import AppKit
+import simd
 
 private final class MetalImagePrintView: NSView {
     private let image: NSImage
@@ -71,6 +72,7 @@ private final class MetalViewerWindow: NSWindow {
     var wlwwMenuHandler: ((String) -> Void)?
     var clutMenuHandler: ((String) -> Void)?
     var opacityMenuHandler: ((String) -> Void)?
+    var roiRefinementHandler: (() -> Void)?
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .flagsChanged {
@@ -82,8 +84,19 @@ private final class MetalViewerWindow: NSWindow {
            tabKeyHandler?(event.modifierFlags.contains(.shift)) == true {
             return
         }
-
         super.sendEvent(event)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.type == .keyDown,
+           event.keyCode == 15,
+           flags.contains([.command, .option]),
+           let roiRefinementHandler {
+            roiRefinementHandler()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 
     override func resignKey() {
@@ -172,6 +185,8 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     }
 
     private var study: MetalViewerStudy
+    private let studyROIStore: MetalStudyROIStore
+    private let studyROIPersistence: MetalStudyROIPersistence
     private var scoutPlacement: MetalViewerScoutPlacement
     private let toolbarView = MetalViewerToolbarView(frame: .zero)
     private let scoutView: MetalViewerScoutView
@@ -196,13 +211,29 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private var registrationTransformsByFramePair: [
         RegistrationFramePair: MetalViewerRegistrationWorldTransform
     ] = [:]
+    private var studyROIEditingMode: MetalStudyROIEditingMode = .inactive
+    private let studyROIRefinementQueue = DispatchQueue(
+        label: "org.horosproject.horos.metal-roi-refinement",
+        qos: .userInitiated
+    )
+    private var isStudyROIRefinementInProgress = false
+    private var studyROIRefinementIndicator: NSProgressIndicator?
 
     init(study: MetalViewerStudy) {
         self.study = study
+        let roiPersistence = MetalStudyROIPersistence(study: study)
+        self.studyROIPersistence = roiPersistence
+        self.studyROIStore = MetalStudyROIStore(
+            studyInstanceUID: study.series[0].studyIdentifier,
+            restoredROIs: roiPersistence.restoredROIs
+        )
         let initialScoutPlacement = MetalViewerScoutPlacement.saved
         self.scoutPlacement = initialScoutPlacement
 
-        let firstSeries = study.series.first { $0.identifier == study.initialSeriesIdentifier } ?? study.series[0]
+        let requestedFirstSeries = study.series.first { $0.identifier == study.initialSeriesIdentifier }
+        let firstSeries = (requestedFirstSeries?.isDICOMSegmentation == false ? requestedFirstSeries : nil)
+            ?? study.series.first(where: { $0.isDICOMSegmentation == false })
+            ?? study.series[0]
         let firstPix = firstSeries.firstPreviewPix() ?? firstSeries.loadedPixList()[0]
         let imageWidth = max(CGFloat(firstPix.pwidth), 512)
         let imageHeight = max(CGFloat(firstPix.pheight), 512)
@@ -305,6 +336,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         window.opacityMenuHandler = { [weak self] title in
             self?.applyOpacity(named: title)
         }
+        window.roiRefinementHandler = { [weak self] in
+            self?.refineSelectedROIFromImage()
+        }
         contentSplitView.delegate = self
         toolbarView.wlwwSelectionHandler = { [weak self] command in
             self?.applyWLWWCommand(command)
@@ -328,6 +362,27 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
         toolbarView.annotationLevelSelectionHandler = { [weak self] level in
             self?.setAnnotationLevel(level)
+        }
+        toolbarView.roiCommandHandler = { [weak self] command in
+            self?.applyROICommand(command)
+        }
+        toolbarView.reloadROIMenu(store: studyROIStore, editingMode: studyROIEditingMode)
+        studyROIStore.didChange = { [weak self] in
+            guard let self else { return }
+            self.refreshStudyROIBindings()
+            self.scoutView.setROIs(
+                self.studyROIStore.rois,
+                selectedIdentifier: self.studyROIStore.selectedROIIdentifier
+            )
+            self.toolbarView.reloadROIMenu(store: self.studyROIStore, editingMode: self.studyROIEditingMode)
+        }
+        studyROIStore.persistenceHandler = { [weak roiPersistence] rois in
+            roiPersistence?.persist(rois)
+        }
+        roiPersistence.errorHandler = { [weak self] message in
+            self?.toolbarView.updateStatus(
+                String(format: NSLocalizedString("ROI autosave failed: %@", comment: ""), message)
+            )
         }
         setAnnotationLevel(MetalViewerAnnotationLevel.current)
         annotationDefaultsObserver = NotificationCenter.default.addObserver(
@@ -403,10 +458,18 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             }
             self.assignSeries(withIdentifier: series.identifier, to: targetPane, overlay: true)
         }
+        scoutView.roiSelectionHandler = { [weak self] identifier in
+            self?.studyROIStore.select(identifier)
+        }
+        scoutView.setROIs(
+            studyROIStore.rois,
+            selectedIdentifier: studyROIStore.selectedROIIdentifier
+        )
 
     }
 
     deinit {
+        studyROIStore.flushPendingPersistence()
         if let annotationDefaultsObserver {
             NotificationCenter.default.removeObserver(annotationDefaultsObserver)
         }
@@ -627,6 +690,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
 
         let pane = MetalViewerPaneView(series: series)
+        pane.configureStudyROI(store: studyROIStore)
         pane.setMouseToolAssignments(mouseToolAssignments)
         pane.setDisplayMode(displayMode(for: viewerMode))
         pane.activateHandler = { [weak self, weak pane] in
@@ -647,8 +711,11 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             self.assignSeries(withIdentifier: identifier, to: pane, overlay: isOverlay)
         }
         pane.displayedSeriesDidChange = { [weak self, weak pane] in
-            guard let self, let pane, self.activePaneView === pane else { return }
-            self.updateScoutHighlights(for: pane)
+            guard let self, let pane else { return }
+            self.refreshStudyROIBindings()
+            if self.activePaneView === pane {
+                self.updateScoutHighlights(for: pane)
+            }
         }
         pane.overlayBlendDidChange = { [weak self, weak pane] value in
             guard let self, let pane else { return }
@@ -672,6 +739,12 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
                 forBaseSeries: baseSeries,
                 overlaySeries: overlaySeries
             )
+            self?.refreshStudyROIBindings()
+        }
+        pane.studyROIEditingModeDidChange = { [weak self, weak pane] mode in
+            guard let self, let pane, self.activePaneView === pane else { return }
+            self.studyROIEditingMode = mode
+            self.toolbarView.reloadROIMenu(store: self.studyROIStore, editingMode: mode)
         }
         pane.closeHandler = { [weak self, weak pane] in
             guard let self, let pane else { return }
@@ -687,6 +760,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
 
         paneViews.append(pane)
+        refreshStudyROIBindings()
         applySyncedScaleIfNeeded(to: pane)
         recordScale(for: pane)
         rebuildPaneLayout()
@@ -699,6 +773,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     }
 
     private func setActivePane(_ pane: MetalViewerPaneView) {
+        if activePaneView !== pane, studyROIEditingMode != .inactive {
+            setStudyROIEditingMode(.inactive, in: nil)
+        }
         activePaneView = pane
         for candidate in paneViews {
             candidate.isActive = (candidate === pane)
@@ -1257,6 +1334,11 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             procedureEvents: study.procedureEvents,
             loadThumbnailsImmediately: false
         )
+        studyROIStore.mergeRestoredROIs(studyROIPersistence.updateStudy(study))
+        scoutView.setROIs(
+            studyROIStore.rois,
+            selectedIdentifier: studyROIStore.selectedROIIdentifier
+        )
         let selectedSeries = selectInitialSeries
             ? study.series.first(where: { $0.identifier == study.initialSeriesIdentifier })
             : activePaneView.flatMap { matchingSeries(for: $0.series, in: study) }
@@ -1344,6 +1426,299 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         toolbarView.reloadOpacityMenu(selectedTitle: state.opacityName)
     }
 
+    private func applyROICommand(_ command: MetalViewerToolbarView.ROICommand) {
+        switch command {
+        case let .select(identifier):
+            setStudyROIEditingMode(.inactive, in: nil)
+            studyROIStore.select(identifier)
+        case .newSphere:
+            guard let activePaneView else {
+                NSSound.beep()
+                return
+            }
+            viewerMode = .mpr3D
+            activePaneView.setDisplayMode(.mpr3D)
+            activePaneView.configureStudyROI(
+                store: studyROIStore,
+                currentToCanonicalTransform: matrix_identity_float4x4
+            )
+            toolbarView.selectViewerMode(.mpr3D)
+            setStudyROIEditingMode(.createSphere, in: activePaneView)
+        case .addAnchor:
+            guard studyROIStore.selectedROI != nil,
+                  let activePaneView else {
+                NSSound.beep()
+                return
+            }
+            guard canProjectSelectedROI(into: activePaneView.series) else {
+                NSSound.beep()
+                toolbarView.updateStatus(
+                    NSLocalizedString("Register this series to the ROI source series before adding anchors.", comment: "")
+                )
+                return
+            }
+            viewerMode = .mpr3D
+            activePaneView.setDisplayMode(.mpr3D)
+            toolbarView.selectViewerMode(.mpr3D)
+            setStudyROIEditingMode(.inactive, in: nil)
+            toolbarView.assignMouseToolToSelectedButton(.roiAnchor)
+        case .deleteAnchor:
+            guard studyROIStore.selectedROI?.anchors.isEmpty == false,
+                  let activePaneView else {
+                NSSound.beep()
+                return
+            }
+            guard canProjectSelectedROI(into: activePaneView.series) else {
+                NSSound.beep()
+                toolbarView.updateStatus(
+                    NSLocalizedString("Register this series to the ROI source series before deleting anchors.", comment: "")
+                )
+                return
+            }
+            viewerMode = .mpr3D
+            activePaneView.setDisplayMode(.mpr3D)
+            toolbarView.selectViewerMode(.mpr3D)
+            setStudyROIEditingMode(.inactive, in: nil)
+            toolbarView.assignMouseToolToSelectedButton(.deleteROIAnchor)
+        case .refineFromImage:
+            refineSelectedROIFromImage()
+        case .finishEditing:
+            studyROIStore.cancelProvisionalSphere()
+            setStudyROIEditingMode(.inactive, in: nil)
+        case .rename:
+            renameSelectedROI()
+        case .delete:
+            deleteSelectedROI()
+        case .undo:
+            studyROIStore.undo()
+        case .redo:
+            studyROIStore.redo()
+        }
+        toolbarView.reloadROIMenu(store: studyROIStore, editingMode: studyROIEditingMode)
+        updateToolbarStatus()
+    }
+
+    private func setStudyROIEditingMode(_ mode: MetalStudyROIEditingMode, in editingPane: MetalViewerPaneView?) {
+        studyROIEditingMode = mode
+        for pane in paneViews {
+            pane.setStudyROIEditingMode(pane === editingPane ? mode : .inactive)
+        }
+        toolbarView.reloadROIMenu(store: studyROIStore, editingMode: mode)
+    }
+
+    private func refreshStudyROIBindings() {
+        guard let roi = studyROIStore.selectedROI,
+              let canonicalSeries = study.series.first(where: {
+                  $0.isDICOMSegmentation == false
+                      && $0.identifier == roi.sourceSeriesIdentifier
+              })
+                ?? study.series.first(where: {
+                    $0.isDICOMSegmentation == false
+                        && $0.frameOfReferenceUID == roi.frameOfReferenceUID
+                }) else {
+            paneViews.forEach {
+                $0.configureStudyROI(store: studyROIStore, currentToCanonicalTransform: matrix_identity_float4x4)
+                $0.refreshStudyROIOverlay()
+            }
+            return
+        }
+
+        for pane in paneViews {
+            let currentFrame = pane.series.frameOfReferenceUID
+            let canonicalFrame = canonicalSeries.frameOfReferenceUID
+            let transform: simd_float4x4?
+            if pane.series.identifier == canonicalSeries.identifier || currentFrame == canonicalFrame {
+                transform = matrix_identity_float4x4
+            } else if currentFrame == nil || canonicalFrame == nil {
+                transform = nil
+            } else {
+                transform = registrationTransform(
+                    forBaseSeries: canonicalSeries,
+                    overlaySeries: pane.series
+                )?.movingToFixedWorld
+            }
+            pane.configureStudyROI(store: studyROIStore, currentToCanonicalTransform: transform)
+            pane.refreshStudyROIOverlay()
+        }
+    }
+
+    private func canProjectSelectedROI(into series: MetalViewerSeries) -> Bool {
+        guard let roi = studyROIStore.selectedROI,
+              let canonicalSeries = study.series.first(where: {
+                  $0.isDICOMSegmentation == false
+                      && $0.identifier == roi.sourceSeriesIdentifier
+              })
+                ?? study.series.first(where: {
+                    $0.isDICOMSegmentation == false
+                        && $0.frameOfReferenceUID == roi.frameOfReferenceUID
+                }) else {
+            return true
+        }
+        if series.identifier == canonicalSeries.identifier
+            || series.frameOfReferenceUID == canonicalSeries.frameOfReferenceUID {
+            return true
+        }
+        return registrationTransform(forBaseSeries: canonicalSeries, overlaySeries: series) != nil
+    }
+
+    private func selectedROICurrentToCanonicalTransform(
+        for series: MetalViewerSeries
+    ) -> simd_float4x4? {
+        guard let roi = studyROIStore.selectedROI,
+              let canonicalSeries = study.series.first(where: {
+                  $0.isDICOMSegmentation == false
+                      && $0.identifier == roi.sourceSeriesIdentifier
+              })
+                ?? study.series.first(where: {
+                    $0.isDICOMSegmentation == false
+                        && $0.frameOfReferenceUID == roi.frameOfReferenceUID
+                }) else {
+            return matrix_identity_float4x4
+        }
+        if series.identifier == canonicalSeries.identifier
+            || series.frameOfReferenceUID == canonicalSeries.frameOfReferenceUID {
+            return matrix_identity_float4x4
+        }
+        guard series.frameOfReferenceUID != nil,
+              canonicalSeries.frameOfReferenceUID != nil else { return nil }
+        return registrationTransform(
+            forBaseSeries: canonicalSeries,
+            overlaySeries: series
+        )?.movingToFixedWorld
+    }
+
+    private func refineSelectedROIFromImage() {
+        guard isStudyROIRefinementInProgress == false,
+              let roi = studyROIStore.selectedROI,
+              let activePaneView else {
+            NSSound.beep()
+            return
+        }
+
+        let targetSeries = activePaneView.activeWindowLevelSeries
+        guard let currentToCanonical = selectedROICurrentToCanonicalTransform(for: targetSeries) else {
+            NSSound.beep()
+            presentROIRefinementMessage(
+                title: NSLocalizedString("Register This Series First", comment: ""),
+                detail: NSLocalizedString(
+                    "The displayed series must be registered to the ROI source series before it can refine the ROI.",
+                    comment: ""
+                )
+            )
+            return
+        }
+
+        setStudyROIEditingMode(.inactive, in: nil)
+        isStudyROIRefinementInProgress = true
+        setStudyROIRefinementIndicatorVisible(true)
+        let request = MetalStudyROIRefinementRequest(
+            roi: roi,
+            pixList: targetSeries.loadedPixList(),
+            canonicalToSeriesWorld: simd_inverse(currentToCanonical)
+        )
+        studyROIRefinementQueue.async { [weak self] in
+            let result = request.run()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isStudyROIRefinementInProgress = false
+                self.setStudyROIRefinementIndicatorVisible(false)
+                guard let result else {
+                    self.presentROIRefinementMessage(
+                        title: NSLocalizedString("ROI Refinement Could Not Be Completed", comment: ""),
+                        detail: NSLocalizedString(
+                            "The current series did not provide enough decodable spatial image data around the ROI.",
+                            comment: ""
+                        )
+                    )
+                    return
+                }
+                guard self.studyROIStore.rois.first(where: { $0.id == roi.id }) == roi else {
+                    self.presentROIRefinementMessage(
+                        title: NSLocalizedString("ROI Changed During Refinement", comment: ""),
+                        detail: NSLocalizedString(
+                            "The refinement result was not applied because the ROI was edited while the image was being analyzed.",
+                            comment: ""
+                        )
+                    )
+                    return
+                }
+                self.studyROIStore.applyImageRefinement(
+                    result.automaticAnchors,
+                    to: result.roiIdentifier
+                )
+            }
+        }
+    }
+
+    private func setStudyROIRefinementIndicatorVisible(_ isVisible: Bool) {
+        if isVisible {
+            guard studyROIRefinementIndicator == nil else { return }
+            let indicator = NSProgressIndicator()
+            indicator.translatesAutoresizingMaskIntoConstraints = false
+            indicator.style = .spinning
+            indicator.controlSize = .large
+            indicator.isIndeterminate = true
+            indicator.startAnimation(nil)
+            paneContainer.addSubview(indicator)
+            NSLayoutConstraint.activate([
+                indicator.centerXAnchor.constraint(equalTo: paneContainer.centerXAnchor),
+                indicator.centerYAnchor.constraint(equalTo: paneContainer.centerYAnchor),
+            ])
+            studyROIRefinementIndicator = indicator
+        } else {
+            studyROIRefinementIndicator?.stopAnimation(nil)
+            studyROIRefinementIndicator?.removeFromSuperview()
+            studyROIRefinementIndicator = nil
+        }
+    }
+
+    private func presentROIRefinementMessage(title: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.addButton(withTitle: NSLocalizedString("OK", comment: ""))
+        if let window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    private func renameSelectedROI() {
+        guard let selectedROI = studyROIStore.selectedROI else {
+            NSSound.beep()
+            return
+        }
+        let field = NSTextField(string: selectedROI.name)
+        field.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
+
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("Rename 3D ROI", comment: "")
+        alert.informativeText = NSLocalizedString("The name is stored with the study segmentation.", comment: "")
+        alert.accessoryView = field
+        alert.addButton(withTitle: NSLocalizedString("Rename", comment: ""))
+        alert.addButton(withTitle: NSLocalizedString("Cancel", comment: ""))
+        window?.makeFirstResponder(field)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        studyROIStore.renameSelectedROI(to: field.stringValue)
+    }
+
+    private func deleteSelectedROI() {
+        guard let selectedROI = studyROIStore.selectedROI else {
+            NSSound.beep()
+            return
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(format: NSLocalizedString("Delete “%@”?", comment: ""), selectedROI.name)
+        alert.informativeText = NSLocalizedString("This removes the segmentation from the study. You can undo this while the viewer remains open.", comment: "")
+        alert.addButton(withTitle: NSLocalizedString("Delete", comment: ""))
+        alert.addButton(withTitle: NSLocalizedString("Cancel", comment: ""))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        studyROIStore.deleteSelectedROI()
+        setStudyROIEditingMode(.inactive, in: nil)
+    }
+
     private func applyViewerMode(_ mode: MetalViewerToolbarView.ViewerMode) {
         viewerMode = mode
         let displayMode = displayMode(for: mode)
@@ -1385,6 +1760,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         for pane in paneViews {
             pane.setMouseToolAssignments(assignments)
         }
+        toolbarView.reloadROIMenu(store: studyROIStore, editingMode: studyROIEditingMode)
     }
 
     private func setSyncScaleEnabled(_ isEnabled: Bool) {

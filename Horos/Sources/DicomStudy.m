@@ -1556,7 +1556,7 @@ static NSRecursiveLock *dbModifyLock = nil;
     }
     else
     {
-        if (uid == nil || [DCMAbstractSyntaxUID isImageStorage: uid] || [DCMAbstractSyntaxUID isRadiotherapy:uid] || [DCMAbstractSyntaxUID isWaveform:uid])
+        if (uid == nil || [DCMAbstractSyntaxUID isImageStorage: uid] || [DCMAbstractSyntaxUID isRadiotherapy:uid] || [DCMAbstractSyntaxUID isWaveform:uid] || [DCMAbstractSyntaxUID isSegmentation:uid])
             return YES;
         
         if ([DCMAbstractSyntaxUID isStructuredReport:uid])

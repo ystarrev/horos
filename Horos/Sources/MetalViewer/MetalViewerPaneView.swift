@@ -1235,6 +1235,10 @@ final class MetalViewerPaneView: NSView {
     private var mouseToolAssignments = MetalViewerMouseToolAssignments()
     private var tumourSeeds: [MetalViewerTumourSeed] = []
     private var tumourSeedObserver: NSObjectProtocol?
+    private weak var studyROIStore: MetalStudyROIStore?
+    private var studyROIEditingMode: MetalStudyROIEditingMode = .inactive
+    private var studyROICurrentToCanonicalTransform = matrix_identity_float4x4
+    private var studyROIProjectionAvailable = true
     private var dynamicSequence: MetalDynamicSequence?
     private var dynamicTimeIndex = 0
     private var dynamicPlaybackRate = 1.0
@@ -1255,6 +1259,7 @@ final class MetalViewerPaneView: NSView {
     var registrationInitialTransformProvider: ((MetalViewerSeries, MetalViewerSeries) -> MetalViewerRegistrationWorldTransform?)?
     var registrationSupportSelectionProvider: ((MetalViewerSeries, MetalViewerSeries) -> MetalViewerRegistrationSupportSelection?)?
     var registrationTransformDidComplete: ((MetalViewerSeries, MetalViewerSeries, MetalViewerRegistrationWorldTransform) -> Void)?
+    var studyROIEditingModeDidChange: ((MetalStudyROIEditingMode) -> Void)?
     var canClose: Bool = true {
         didSet { updateCloseButtonVisibility() }
     }
@@ -1507,6 +1512,18 @@ final class MetalViewerPaneView: NSView {
                 NSLog("MetalViewerPaneView failed to delete tumour seed: %@", error.localizedDescription)
             }
         }
+        metalView.studyROIEditingModeDidChange = { [weak self] mode in
+            self?.studyROIEditingMode = mode
+            self?.studyROIEditingModeDidChange?(mode)
+        }
+        metalView.configureStudyROI(
+            store: studyROIStore,
+            sourceSeriesIdentifier: series.identifier,
+            sourceStudyIdentifier: series.studyIdentifier,
+            frameOfReferenceUID: series.frameOfReferenceUID ?? series.identifier,
+            currentToCanonicalTransform: studyROIProjectionAvailable ? studyROICurrentToCanonicalTransform : nil
+        )
+        metalView.setStudyROIEditingMode(studyROIEditingMode)
 
         contentView.addSubview(metalView)
         contentView.addSubview(annotationOverlay, positioned: .above, relativeTo: metalView)
@@ -1867,6 +1884,31 @@ final class MetalViewerPaneView: NSView {
         updateAnnotationOverlay()
         updateReferenceLineOverlay()
         updateOrientationOverlay()
+    }
+
+    func configureStudyROI(
+        store: MetalStudyROIStore,
+        currentToCanonicalTransform: simd_float4x4? = matrix_identity_float4x4
+    ) {
+        studyROIStore = store
+        studyROIProjectionAvailable = currentToCanonicalTransform != nil
+        studyROICurrentToCanonicalTransform = currentToCanonicalTransform ?? matrix_identity_float4x4
+        metalView?.configureStudyROI(
+            store: store,
+            sourceSeriesIdentifier: series.identifier,
+            sourceStudyIdentifier: series.studyIdentifier,
+            frameOfReferenceUID: series.frameOfReferenceUID ?? series.identifier,
+            currentToCanonicalTransform: currentToCanonicalTransform
+        )
+    }
+
+    func setStudyROIEditingMode(_ mode: MetalStudyROIEditingMode) {
+        studyROIEditingMode = mode
+        metalView?.setStudyROIEditingMode(mode)
+    }
+
+    func refreshStudyROIOverlay() {
+        metalView?.refreshStudyROIOverlay()
     }
 
     func setAnnotationLevel(_ level: MetalViewerAnnotationLevel) {

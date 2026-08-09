@@ -153,6 +153,9 @@ htt://www.pixelmed.com
 + (NSString *)rawDataStorage;
 + (BOOL) isRawData:(NSString *)sopClassUID ;
 
++ (NSString *)segmentationStorage;
++ (BOOL) isSegmentation:(NSString *)sopClassUID;
+
 + (BOOL) isNonImageStorage:(NSString *)sopClassUID;
 
 + (BOOL) isQuery:(NSString *)sopClassUID;

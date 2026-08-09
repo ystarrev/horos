@@ -473,6 +473,61 @@ struct MetalMPRPreviewOverlayLayout {
     let previewPanes: [MetalMPRPreviewOverlayPane]
 }
 
+struct MetalMPRROISliceGeometry {
+    let planeRawValue: Int
+    let imageRect: CGRect
+    let topLeftWorld: SIMD3<Double>
+    let topRightWorld: SIMD3<Double>
+    let bottomLeftWorld: SIMD3<Double>
+    let bottomRightWorld: SIMD3<Double>
+
+    func worldPoint(horizontal: Double, vertical: Double) -> SIMD3<Double> {
+        let horizontal = min(max(horizontal, 0), 1)
+        let vertical = min(max(vertical, 0), 1)
+        let top = topLeftWorld + (topRightWorld - topLeftWorld) * horizontal
+        let bottom = bottomLeftWorld + (bottomRightWorld - bottomLeftWorld) * horizontal
+        return top + (bottom - top) * vertical
+    }
+
+    func screenPoint(for worldPoint: SIMD3<Double>, planeToleranceMM: Double = 0.35) -> CGPoint? {
+        let horizontalAxis = topRightWorld - topLeftWorld
+        let verticalAxis = bottomLeftWorld - topLeftWorld
+        let offset = worldPoint - topLeftWorld
+        let horizontalSquared = simd_dot(horizontalAxis, horizontalAxis)
+        let verticalSquared = simd_dot(verticalAxis, verticalAxis)
+        let cross = simd_dot(horizontalAxis, verticalAxis)
+        let determinant = horizontalSquared * verticalSquared - cross * cross
+        guard abs(determinant) > 1e-10 else { return nil }
+        let offsetHorizontal = simd_dot(offset, horizontalAxis)
+        let offsetVertical = simd_dot(offset, verticalAxis)
+        let horizontal = (offsetHorizontal * verticalSquared - offsetVertical * cross) / determinant
+        let vertical = (offsetVertical * horizontalSquared - offsetHorizontal * cross) / determinant
+        let projected = topLeftWorld + horizontalAxis * horizontal + verticalAxis * vertical
+        guard simd_distance(projected, worldPoint) <= planeToleranceMM,
+              horizontal >= 0, horizontal <= 1,
+              vertical >= 0, vertical <= 1 else { return nil }
+        return CGPoint(
+            x: imageRect.minX + CGFloat(horizontal) * imageRect.width,
+            y: imageRect.minY + CGFloat(vertical) * imageRect.height
+        )
+    }
+
+    func applyingWorldTransform(_ transform: simd_float4x4) -> MetalMPRROISliceGeometry {
+        func transformed(_ point: SIMD3<Double>) -> SIMD3<Double> {
+            let value = transform * SIMD4<Float>(Float(point.x), Float(point.y), Float(point.z), 1)
+            return SIMD3<Double>(Double(value.x), Double(value.y), Double(value.z))
+        }
+        return MetalMPRROISliceGeometry(
+            planeRawValue: planeRawValue,
+            imageRect: imageRect,
+            topLeftWorld: transformed(topLeftWorld),
+            topRightWorld: transformed(topRightWorld),
+            bottomLeftWorld: transformed(bottomLeftWorld),
+            bottomRightWorld: transformed(bottomRightWorld)
+        )
+    }
+}
+
 enum MetalViewerDisplayMode {
     case stack2D
     case mpr
@@ -1770,6 +1825,66 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             )
         case .stack2D:
             return nil
+        }
+    }
+
+    func mprROIWorldPoint(at point: CGPoint, in bounds: CGRect) -> SIMD3<Double>? {
+        prepareBaseVolumeIfNeeded()
+        guard let hit = mprPreviewHit(at: point, in: bounds) else { return nil }
+        let world = mprDisplayWorldPosition(for: hit.baseVoxel)
+        return SIMD3<Double>(Double(world.x), Double(world.y), Double(world.z))
+    }
+
+    func mprROISliceGeometries(in bounds: CGRect) -> [MetalMPRROISliceGeometry] {
+        prepareBaseVolumeIfNeeded()
+        guard displayMode.isMPRLike,
+              let layout = mprPreviewOverlayLayout(in: bounds) else { return [] }
+
+        let planes = mprPlanesInAnatomicalOrder
+        return layout.previewPanes.enumerated().compactMap { index, pane in
+            guard index < planes.count else { return nil }
+            let plane = planes[index]
+            let rect = mprPreviewInteractionRect(for: pane.rect, in: bounds)
+            let viewport = mprPreviewViewport(for: rect)
+            guard let geometry = planarMPRPreviewGeometry(for: plane, viewport: viewport),
+                  geometry.halfWidth > 0.0001,
+                  geometry.halfHeight > 0.0001 else { return nil }
+
+            let fullImageRect = CGRect(
+                x: rect.minX + CGFloat((-geometry.halfWidth + geometry.panOffset.x + 1) * 0.5) * rect.width,
+                y: rect.minY + CGFloat((-geometry.halfHeight + geometry.panOffset.y + 1) * 0.5) * rect.height,
+                width: CGFloat(geometry.halfWidth) * rect.width,
+                height: CGFloat(geometry.halfHeight) * rect.height
+            )
+            let imageRect = fullImageRect.intersection(rect)
+            guard imageRect.isNull == false, imageRect.width > 1, imageRect.height > 1 else { return nil }
+            let leftFraction = Float((imageRect.minX - fullImageRect.minX) / max(fullImageRect.width, 1))
+            let rightFraction = Float((imageRect.maxX - fullImageRect.minX) / max(fullImageRect.width, 1))
+            let topFraction = Float((imageRect.minY - fullImageRect.minY) / max(fullImageRect.height, 1))
+            let bottomFraction = Float((imageRect.maxY - fullImageRect.minY) / max(fullImageRect.height, 1))
+
+            let cornerLocals = geometry.corners.map { mprPlaneLocalCoordinates(for: plane, baseVoxel: $0) }
+            let minU = cornerLocals.map(\.x).min() ?? 0
+            let maxU = cornerLocals.map(\.x).max() ?? 1
+            let minV = cornerLocals.map(\.y).min() ?? 0
+            let maxV = cornerLocals.map(\.y).max() ?? 1
+
+            func world(horizontal: Float, vertical: Float) -> SIMD3<Double> {
+                let fractions = geometry.orientation.planeFractions(horizontal: horizontal, vertical: vertical)
+                let first = minU + fractions.x * (maxU - minU)
+                let second = minV + fractions.y * (maxV - minV)
+                let point = mprDisplayWorldPosition(for: mprPlaneVoxel(for: plane, first: first, second: second))
+                return SIMD3<Double>(Double(point.x), Double(point.y), Double(point.z))
+            }
+
+            return MetalMPRROISliceGeometry(
+                planeRawValue: plane.rawValue,
+                imageRect: imageRect,
+                topLeftWorld: world(horizontal: leftFraction, vertical: topFraction),
+                topRightWorld: world(horizontal: rightFraction, vertical: topFraction),
+                bottomLeftWorld: world(horizontal: leftFraction, vertical: bottomFraction),
+                bottomRightWorld: world(horizontal: rightFraction, vertical: bottomFraction)
+            )
         }
     }
 

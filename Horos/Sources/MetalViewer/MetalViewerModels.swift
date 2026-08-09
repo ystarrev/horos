@@ -28,6 +28,8 @@ enum MetalViewerMouseTool: Int, CaseIterable, Hashable {
     case scroll = 4
     case measure = 5
     case tumourSeed = 6
+    case roiAnchor = 7
+    case deleteROIAnchor = 8
 }
 
 enum MetalViewerMouseModifier: String, CaseIterable, Hashable {
@@ -2152,6 +2154,15 @@ final class MetalViewerSeries {
         }
 
         return structuredReportHTML() != nil
+    }
+
+    var isDICOMSegmentation: Bool {
+        if modality.caseInsensitiveCompare("SEG") == .orderedSame {
+            return true
+        }
+        guard let path = firstPreviewPix()?.srcFile,
+              let reader = try? SwiftDICOMReader.cached(contentsOfFile: path) else { return false }
+        return reader.stringValue(forTag: "0008,0016") == "1.2.840.10008.5.1.4.1.1.66.4"
     }
 
     var tumourSeedScope: MetalViewerTumourSeedScope {

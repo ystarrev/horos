@@ -159,6 +159,19 @@ int HorosModernDCMTKWriteKeyObjectReport(const char* path,
                                          const char* const* imageSOPInstanceUIDs,
                                          int imageCount);
 int HorosModernDCMTKWriteStructuredReportFromXML(const char* xmlPath, const char* dicomPath);
+int HorosModernDCMTKWriteBinarySegmentation(const char* outputPath,
+                                             const char* segmentLabel,
+                                             const char* trackingUID,
+                                             const char* authoringJSON,
+                                             double colorRed,
+                                             double colorGreen,
+                                             double colorBlue,
+                                             const char* const* sourceImagePaths,
+                                             const unsigned char* const* frameMasks,
+                                             int frameCount,
+                                             unsigned short rows,
+                                             unsigned short columns,
+                                             char** failureReason);
 int HorosModernDCMTKReplaceTagValue(const char* path, unsigned short group, unsigned short element, const char* value, int removeIfEmpty);
 void HorosModernDCMTKFreeBasicMetadata(HorosModernDCMTKBasicMetadata* metadata);
 void HorosModernDCMTKFreeDecodedFrame(HorosModernDCMTKDecodedFrame* frame);

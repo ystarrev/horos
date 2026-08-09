@@ -278,6 +278,8 @@ NSString* asciiString(NSString* str)
 -(NSArray*)cachedStudiesForSmartAlbum:(NSManagedObject*)album loading:(BOOL*)loading;
 -(void)invalidateSmartAlbumFetch;
 -(void)monitorSmartAlbumFetchActivity:(NSDictionary*)info;
+-(BOOL)isDICOMSegmentationSeries:(id)series;
+-(NSManagedObject*)localStudyContainingNonPixelViewerItem:(id)item;
 
 -(NSPredicate*)createFilterPredicateIncludingSeriesDescriptions:(BOOL)includeSeriesDescriptions;
 -(BOOL)searchIncludesSeriesDescriptions;
@@ -5461,9 +5463,12 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                     
                     [matrixViewArray release];
                     
-                    if ([[item valueForKey:@"type"] isEqualToString:@"Series"] &&
+                    BOOL isSegmentationSeries = [[item valueForKey:@"type"] isEqualToString:@"Series"] &&
+                        [self isDICOMSegmentationSeries:item];
+
+                    if (isSegmentationSeries || ([[item valueForKey:@"type"] isEqualToString:@"Series"] &&
                         [[[item valueForKey:@"images"] allObjects] count] == 1 &&
-                        [[[[[item valueForKey:@"images"] allObjects] objectAtIndex:0] valueForKey:@"numberOfFrames"] intValue] > 1)
+                        [[[[[item valueForKey:@"images"] allObjects] objectAtIndex:0] valueForKey:@"numberOfFrames"] intValue] > 1))
                         matrixViewArray = [[NSArray arrayWithObject:item] retain];
                     else
                         matrixViewArray = [[self childrenArray: item] retain];
@@ -5488,8 +5493,19 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                     
                     [self matrixInit: matrixViewArray.count];
                     
-                    files = [self imagesArray: item preferredObject:oFirstForFirst];
-                    imageLevel = [item isKindOfClass:[DicomSeries class]];
+                    if (isSegmentationSeries)
+                    {
+                        NSArray *segmentationImages = [item sortedImages];
+                        files = [segmentationImages count]
+                            ? [NSArray arrayWithObject:[segmentationImages objectAtIndex:0]]
+                            : [NSArray array];
+                        imageLevel = NO;
+                    }
+                    else
+                    {
+                        files = [self imagesArray: item preferredObject:oFirstForFirst];
+                        imageLevel = [item isKindOfClass:[DicomSeries class]];
+                    }
                     
                     @synchronized( previewPixThumbnails)
                     {
@@ -7501,7 +7517,23 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     [self openMetalViewerForDatabaseObject:currentStudy];
 }
 
-- (NSManagedObject*) localStudyContainingReportItem:(id)item
+- (BOOL)isDICOMSegmentationSeries:(id)series
+{
+    if( series == nil)
+        return NO;
+
+    NSString *objectType = [series valueForKey:@"type"];
+    if( [objectType isEqualToString:@"Image"])
+        series = [series valueForKey:@"series"];
+    else if( [objectType isEqualToString:@"Series"] == NO)
+        return NO;
+
+    NSString *seriesSOPClassUID = [series valueForKey:@"seriesSOPClassUID"];
+    NSString *modality = [[series valueForKey:@"modality"] uppercaseString];
+    return [DCMAbstractSyntaxUID isSegmentation:seriesSOPClassUID] || [modality isEqualToString:@"SEG"];
+}
+
+- (NSManagedObject*) localStudyContainingNonPixelViewerItem:(id)item
 {
     if( item == nil || [item isDistant])
         return nil;
@@ -7526,8 +7558,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     BOOL isReport = [DCMAbstractSyntaxUID isStructuredReport:seriesSOPClassUID]
         || [DCMAbstractSyntaxUID isPDF:seriesSOPClassUID]
         || [modality isEqualToString:@"SR"];
+    BOOL isSegmentation = [self isDICOMSegmentationSeries:series];
 
-    return isReport ? study : nil;
+    return (isReport || isSegmentation) ? study : nil;
 }
 
 - (void) displayWaitWindowIfNecessary
@@ -7572,10 +7605,10 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         if( [self isSurgicalProcedureItem:item])
             return;
 
-        NSManagedObject *reportStudy = [self localStudyContainingReportItem:item];
-        if( reportStudy)
+        NSManagedObject *artifactStudy = [self localStudyContainingNonPixelViewerItem:item];
+        if( artifactStudy)
         {
-            [self openMetalViewerForDatabaseObject:reportStudy];
+            [self openMetalViewerForDatabaseObject:artifactStudy];
             return;
         }
         
@@ -8216,8 +8249,19 @@ static BOOL withReset = NO;
         
         
         
-        NSManagedObject   *aFile = [databaseOutline itemAtRow:[databaseOutline selectedRow]];
-        if ([[aFile valueForKey:@"type"] isEqualToString:@"Series"] &&
+        NSManagedObject *aFile = [databaseOutline itemAtRow:[databaseOutline selectedRow]];
+        id selectedMatrixObject = [cell tag] < [matrixViewArray count]
+            ? [matrixViewArray objectAtIndex:[cell tag]]
+            : nil;
+        BOOL selectedSegmentation = [self isDICOMSegmentationSeries:aFile]
+            || [self isDICOMSegmentationSeries:selectedMatrixObject];
+
+        if (selectedSegmentation)
+        {
+            // DICOM SEG is represented as one database artifact, not as an
+            // animatable stack of its individual mask frames.
+        }
+        else if ([[aFile valueForKey:@"type"] isEqualToString:@"Series"] &&
             [[[aFile valueForKey:@"images"] allObjects] count] == 1 &&
             [[[[[aFile valueForKey:@"images"] allObjects] objectAtIndex:0] valueForKey:@"numberOfFrames"] intValue] > 1)
         {
@@ -8297,7 +8341,15 @@ static BOOL withReset = NO;
         {
             if( [cell tag] >= [matrixViewArray count]) return;
             
-            NSManagedObject   *aFile = [databaseOutline itemAtRow:[databaseOutline selectedRow]];
+            NSManagedObject *aFile = [databaseOutline itemAtRow:[databaseOutline selectedRow]];
+            id selectedMatrixObject = [matrixViewArray objectAtIndex:[cell tag]];
+            if( [self isDICOMSegmentationSeries:aFile] ||
+                [self isDICOMSegmentationSeries:selectedMatrixObject])
+            {
+                [imageView setPixels:nil files:nil rois:nil firstImage:0 level:0 reset:YES];
+                return;
+            }
+
             if ([[aFile valueForKey:@"type"] isEqualToString:@"Series"] &&
                 [[[aFile valueForKey:@"images"] allObjects] count] == 1 &&
                 [[[[[aFile valueForKey:@"images"] allObjects] objectAtIndex:0] valueForKey:@"numberOfFrames"] intValue] > 1) // multi frame image that is directly selected
@@ -8868,10 +8920,22 @@ static BOOL withReset = NO;
                     if( [index count] >= 1)
                     {
                         NSManagedObject* aFile = [databaseOutline itemAtRow:[index firstIndex]];
-                        
-                        @synchronized( previewPixThumbnails)
+                        NSInteger selectedTag = [[oMatrix selectedCell] tag];
+                        id selectedMatrixObject = selectedTag >= 0 && selectedTag < [matrixViewArray count]
+                            ? [matrixViewArray objectAtIndex:selectedTag]
+                            : nil;
+
+                        if( [self isDICOMSegmentationSeries:aFile] ||
+                            [self isDICOMSegmentationSeries:selectedMatrixObject])
                         {
-                            [imageView setPixels:previewPix files:[self imagesArray: aFile preferredObject: oAny] rois:nil firstImage:[[oMatrix selectedCell] tag] level:'i' reset:YES];
+                            [imageView setPixels:nil files:nil rois:nil firstImage:0 level:0 reset:YES];
+                        }
+                        else
+                        {
+                            @synchronized( previewPixThumbnails)
+                            {
+                                [imageView setPixels:previewPix files:[self imagesArray: aFile preferredObject: oAny] rois:nil firstImage:selectedTag level:'i' reset:YES];
+                            }
                         }
                         
                         [imageView setStringID:@"previewDatabase"];
@@ -11157,6 +11221,18 @@ constrainSplitPosition:(CGFloat)proposedPosition
 {
     if ([loadList count] == 0)
         return;
+
+    NSManagedObject *selectedObject = [loadList objectAtIndex:0];
+    NSManagedObject *selectedSeries = [[selectedObject valueForKey:@"type"] isEqualToString:@"Series"]
+        ? selectedObject
+        : [selectedObject valueForKey:@"series"];
+    if ([self isDICOMSegmentationSeries:selectedSeries])
+    {
+        NSManagedObject *study = [selectedSeries valueForKey:@"study"];
+        if (study)
+            [self openMetalViewerForDatabaseObject:study];
+        return;
+    }
     
     BOOL multiFrame = NO;
     NSMutableArray *viewerPix = nil;
@@ -11242,6 +11318,18 @@ constrainSplitPosition:(CGFloat)proposedPosition
     NSString *itemType = [item valueForKey:@"type"];
     NSManagedObject *study = nil;
 
+    NSManagedObject *itemSeries = nil;
+    if( [itemType isEqualToString:@"Series"])
+        itemSeries = item;
+    else if( [itemType isEqualToString:@"Image"])
+        itemSeries = [item valueForKey:@"series"];
+
+    if( [self isDICOMSegmentationSeries:itemSeries])
+    {
+        item = [itemSeries valueForKey:@"study"];
+        itemType = [item valueForKey:@"type"];
+    }
+
     if( [itemType isEqualToString:@"Image"])
     {
         [loadList addObject:item];
@@ -11256,7 +11344,10 @@ constrainSplitPosition:(CGFloat)proposedPosition
     {
         study = item;
         for( NSManagedObject *series in [self childrenArray:item onlyImages:YES])
-            [loadList addObjectsFromArray:[self childrenArray:series onlyImages:YES]];
+        {
+            if( [self isDICOMSegmentationSeries:series] == NO)
+                [loadList addObjectsFromArray:[self childrenArray:series onlyImages:YES]];
+        }
     }
 
     if( [loadList count])

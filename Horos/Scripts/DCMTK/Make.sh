@@ -77,6 +77,9 @@ pick_lib() {
 
 if [ -f "${bridge_src}" ]; then
     dcmsr_lib="$(pick_lib dcmsr)"
+    dcmseg_lib="$(pick_lib dcmseg)"
+    dcmiod_lib="$(pick_lib dcmiod)"
+    dcmfg_lib="$(pick_lib dcmfg)"
     dcmdata_lib="$(pick_lib dcmdata)"
     dcmimgle_lib="$(pick_lib dcmimgle)"
     dcmimage_lib="$(pick_lib dcmimage)"
@@ -94,6 +97,9 @@ if [ -f "${bridge_src}" ]; then
 
     bridge_link_args=(
         "${dcmsr_lib}"
+        "${dcmseg_lib}"
+        "${dcmfg_lib}"
+        "${dcmiod_lib}"
         "${dcmdata_lib}"
         "${dcmimgle_lib}"
         "${dcmimage_lib}"

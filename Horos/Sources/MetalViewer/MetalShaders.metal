@@ -2930,3 +2930,48 @@ kernel void metalViewerGantryTiltResample3D(
 
     destinationTexture.write(float4(value), gid);
 }
+
+struct MetalViewerScoutROIMeshVertex {
+    float3 position;
+    float3 normal;
+};
+
+struct MetalViewerScoutROIUniforms {
+    float4x4 rotation;
+    float4 color;
+};
+
+struct MetalViewerScoutROIRasterData {
+    float4 position [[position]];
+    float3 normal;
+};
+
+vertex MetalViewerScoutROIRasterData metalViewerScoutROIVertex(
+    const device MetalViewerScoutROIMeshVertex *vertices [[buffer(0)]],
+    constant MetalViewerScoutROIUniforms &uniforms [[buffer(1)]],
+    uint vertexID [[vertex_id]]
+) {
+    MetalViewerScoutROIRasterData output;
+    const float4 rotatedPosition = uniforms.rotation * float4(vertices[vertexID].position, 1.0f);
+    output.position = float4(rotatedPosition.x, rotatedPosition.y, 0.5f - rotatedPosition.z * 0.24f, 1.0f);
+    output.normal = normalize((uniforms.rotation * float4(vertices[vertexID].normal, 0.0f)).xyz);
+    return output;
+}
+
+fragment float4 metalViewerScoutROIFragment(
+    MetalViewerScoutROIRasterData input [[stage_in]],
+    constant MetalViewerScoutROIUniforms &uniforms [[buffer(1)]]
+) {
+    const float3 normal = normalize(input.normal);
+    const float3 lightDirection = normalize(float3(-0.36f, 0.62f, 0.70f));
+    const float3 viewDirection = float3(0.0f, 0.0f, 1.0f);
+    const float diffuse = saturate(dot(normal, lightDirection));
+    const float3 halfVector = normalize(lightDirection + viewDirection);
+    const float specular = pow(saturate(dot(normal, halfVector)), 30.0f);
+    const float rim = pow(1.0f - saturate(dot(normal, viewDirection)), 2.4f);
+    const float3 baseColor = uniforms.color.rgb;
+    const float3 shadedColor = baseColor * (0.20f + diffuse * 0.76f)
+        + baseColor * rim * 0.16f
+        + float3(specular * 0.42f);
+    return float4(saturate(shadedColor), 1.0f);
+}

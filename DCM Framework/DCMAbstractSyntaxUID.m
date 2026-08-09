@@ -250,6 +250,8 @@ static NSString *DCM_Verification = @"1.2.840.10008.1.1";
 	
 	/***/
 	static NSString *RawDataStorage = @"1.2.840.10008.5.1.4.1.1.66";
+	/***/
+	static NSString *SegmentationStorage = @"1.2.840.10008.5.1.4.1.1.66.4";
 	
 		// Query-Retrieve SOP Classes ...
 
@@ -891,6 +893,14 @@ static NSString *DCM_Verification = @"1.2.840.10008.1.1";
 		);
 }
 
++ (NSString *)segmentationStorage {
+	return SegmentationStorage;
+}
+
++ (BOOL)isSegmentation:(NSString *)sopClassUID {
+	return sopClassUID != nil && [sopClassUID isEqualToString:SegmentationStorage];
+}
+
 	/**
 	 * @param	sopClassUID	UID of the SOP Class, as a String without trailing zero padding
 	 * @return			true if the UID argument matches one of the known non-image Storage SOP Classes (directory, SR, presentation state, waveform, standalone, RT, spectroscopy or raw data)
@@ -904,6 +914,7 @@ static NSString *DCM_Verification = @"1.2.840.10008.1.1";
 		    || [DCMAbstractSyntaxUID isRadiotherapy:sopClassUID]
 		    || [DCMAbstractSyntaxUID isSpectroscopy:sopClassUID]
 		    || [DCMAbstractSyntaxUID isRawData:sopClassUID]
+		    || [DCMAbstractSyntaxUID isSegmentation:sopClassUID]
 			|| [DCMAbstractSyntaxUID isPDF:sopClassUID]
             || [DCMAbstractSyntaxUID isHiddenImageStorage:sopClassUID]
 		;

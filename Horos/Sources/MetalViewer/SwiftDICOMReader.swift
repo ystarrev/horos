@@ -140,6 +140,10 @@ final class SwiftDICOMReader {
         return reader
     }
 
+    static func invalidateCache(forPath path: String) {
+        readerCache.removeObject(forKey: path as NSString)
+    }
+
     static func storedPixelFrame(contentsOfFile path: String, frameIndex: Int) -> SwiftDICOMStoredPixelFrame? {
         do {
             return try cached(contentsOfFile: path).storedPixelFrame(at: frameIndex)

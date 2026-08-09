@@ -989,6 +989,8 @@
 		F4D1C0DE0011000000000002 /* SwiftDICOMImportMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D1C0DE0012000000000002 /* SwiftDICOMImportMetadata.swift */; };
 		F4A100000001000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift */; };
 		F4A10000000100000000000A /* Horos/Sources/MetalViewer/MetalViewerToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000A /* Horos/Sources/MetalViewer/MetalViewerToolbarView.swift */; };
+		F4B200000001000000000001 /* Horos/Sources/MetalViewer/MetalStudyROI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4B200000002000000000001 /* Horos/Sources/MetalViewer/MetalStudyROI.swift */; };
+		F4B200000001000000000002 /* Horos/Sources/MetalViewer/MetalStudyROISegBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4B200000002000000000002 /* Horos/Sources/MetalViewer/MetalStudyROISegBridge.mm */; };
 		F4A10000000100000000000B /* Horos/Sources/MetalViewer/MetalViewerScoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000B /* Horos/Sources/MetalViewer/MetalViewerScoutView.swift */; };
 		F4A10000000100000000000C /* Horos/Sources/MetalViewer/Metal3DViewerLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000C /* Horos/Sources/MetalViewer/Metal3DViewerLauncher.swift */; };
 		F4A10000000100000000000D /* Horos/Sources/MetalViewer/Metal3DViewerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A10000000200000000000D /* Horos/Sources/MetalViewer/Metal3DViewerWindowController.swift */; };
@@ -2304,6 +2306,9 @@
 		F4D1C0DE0012000000000002 /* SwiftDICOMImportMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/SwiftDICOMImportMetadata.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerPaneView.swift; sourceTree = SOURCE_ROOT; };
 		F4A10000000200000000000A /* Horos/Sources/MetalViewer/MetalViewerToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerToolbarView.swift; sourceTree = SOURCE_ROOT; };
+		F4B200000002000000000001 /* Horos/Sources/MetalViewer/MetalStudyROI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalStudyROI.swift; sourceTree = SOURCE_ROOT; };
+		F4B200000002000000000002 /* Horos/Sources/MetalViewer/MetalStudyROISegBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Horos/Sources/MetalViewer/MetalStudyROISegBridge.mm; sourceTree = SOURCE_ROOT; };
+		F4B200000002000000000003 /* Horos/Sources/MetalViewer/MetalStudyROISegBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Horos/Sources/MetalViewer/MetalStudyROISegBridge.h; sourceTree = SOURCE_ROOT; };
 		F4A10000000200000000000B /* Horos/Sources/MetalViewer/MetalViewerScoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerScoutView.swift; sourceTree = SOURCE_ROOT; };
 		F4A10000000200000000000C /* Horos/Sources/MetalViewer/Metal3DViewerLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DViewerLauncher.swift; sourceTree = SOURCE_ROOT; };
 		F4A10000000200000000000D /* Horos/Sources/MetalViewer/Metal3DViewerWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/Metal3DViewerWindowController.swift; sourceTree = SOURCE_ROOT; };
@@ -4289,6 +4294,9 @@
 				F4A10000000200000000000E /* Horos/Sources/MetalViewer/Metal3DViewerToolbarController.swift */,
 				F4A10000000200000000000D /* Horos/Sources/MetalViewer/Metal3DViewerWindowController.swift */,
 				F4A100000002000000000008 /* Horos/Sources/MetalViewer/MetalViewerModels.swift */,
+				F4B200000002000000000001 /* Horos/Sources/MetalViewer/MetalStudyROI.swift */,
+				F4B200000002000000000002 /* Horos/Sources/MetalViewer/MetalStudyROISegBridge.mm */,
+				F4B200000002000000000003 /* Horos/Sources/MetalViewer/MetalStudyROISegBridge.h */,
 				F4D1C0DE0002000000000001 /* Horos/Sources/MetalViewer/SwiftDICOMReader.swift */,
 				F4A100000002000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift */,
 				F4A10000000200000000000B /* Horos/Sources/MetalViewer/MetalViewerScoutView.swift */,
@@ -5742,6 +5750,8 @@
 				F4A10000000100000000000E /* Horos/Sources/MetalViewer/Metal3DViewerToolbarController.swift in Sources */,
 				F4A10000000100000000000D /* Horos/Sources/MetalViewer/Metal3DViewerWindowController.swift in Sources */,
 				F4A100000001000000000008 /* Horos/Sources/MetalViewer/MetalViewerModels.swift in Sources */,
+				F4B200000001000000000001 /* Horos/Sources/MetalViewer/MetalStudyROI.swift in Sources */,
+				F4B200000001000000000002 /* Horos/Sources/MetalViewer/MetalStudyROISegBridge.mm in Sources */,
 				F4D1C0DE0001000000000001 /* Horos/Sources/MetalViewer/SwiftDICOMReader.swift in Sources */,
 				F4A100000001000000000009 /* Horos/Sources/MetalViewer/MetalViewerPaneView.swift in Sources */,
 				F4A10000000100000000000B /* Horos/Sources/MetalViewer/MetalViewerScoutView.swift in Sources */,

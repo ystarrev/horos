@@ -157,7 +157,7 @@ static NSString * const HorosMetalTumourSeedSchema = @"com.horos.metalviewer.tum
         else
         {
             NSArray *importedObjects = [database addFilesAtPaths:@[path]
-                                               postNotifications:NO
+                                               postNotifications:YES
                                                        dicomOnly:YES
                                              rereadExistingItems:YES
                                               generatedByOsiriX:YES];
@@ -259,7 +259,7 @@ static NSString * const HorosMetalTumourSeedSchema = @"com.horos.metalviewer.tum
         if (updatedPaths.count && errorMessage.length == 0)
         {
             [database addFilesAtPaths:updatedPaths
-                    postNotifications:NO
+                    postNotifications:YES
                             dicomOnly:YES
                   rereadExistingItems:YES
                    generatedByOsiriX:YES];

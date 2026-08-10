@@ -51,6 +51,7 @@ private enum SmartAlbumField: Int, CaseIterable {
     case referringPhysician
     case performingPhysician
     case institution
+    case hasROIs
 
     var title: String {
         switch self {
@@ -65,10 +66,11 @@ private enum SmartAlbumField: Int, CaseIterable {
         case .referringPhysician: return NSLocalizedString("Referring Physician", comment: "Smart Album field")
         case .performingPhysician: return NSLocalizedString("Performing Physician", comment: "Smart Album field")
         case .institution: return NSLocalizedString("Institution", comment: "Smart Album field")
+        case .hasROIs: return NSLocalizedString("Has ROIs", comment: "Smart Album field")
         }
     }
 
-    var keyPath: String {
+    var keyPath: String? {
         switch self {
         case .patientName: return "name"
         case .patientID: return "patientID"
@@ -81,6 +83,7 @@ private enum SmartAlbumField: Int, CaseIterable {
         case .referringPhysician: return "referringPhysician"
         case .performingPhysician: return "performingPhysician"
         case .institution: return "institutionName"
+        case .hasROIs: return nil
         }
     }
 
@@ -93,7 +96,8 @@ private enum SmartAlbumField: Int, CaseIterable {
 
     static func field(for keyPath: String, usesAny: Bool) -> SmartAlbumField? {
         allCases.first { field in
-            field.keyPath == keyPath && field.isSeriesField == usesAny
+            guard let fieldKeyPath = field.keyPath else { return false }
+            return fieldKeyPath == keyPath && field.isSeriesField == usesAny
         }
     }
 }
@@ -138,13 +142,27 @@ private struct SmartAlbumRule {
     var comparison: SmartAlbumOperator
     var value: String
 
+    private var booleanValue: Bool? {
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
+        case "YES", "TRUE", "1": return true
+        case "NO", "FALSE", "0": return false
+        default: return nil
+        }
+    }
+
     func makePredicate() -> NSPredicate? {
+        if field == .hasROIs {
+            guard comparison == .isEqual, let booleanValue else { return nil }
+            let countComparison = booleanValue ? "> 0" : "== 0"
+            return NSPredicate(format: "SUBQUERY(series, $series, ($series.name ==[cd] \"OsiriX ROI SR\" OR $series.seriesDescription ==[cd] \"OsiriX ROI SR\") AND SUBQUERY($series.images, $image, $image.scale > 0).@count > 0).@count \(countComparison)")
+        }
+
         let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmedValue.isEmpty == false else { return nil }
+        guard trimmedValue.isEmpty == false, let keyPath = field.keyPath else { return nil }
 
         let prefix = field.isSeriesField ? "ANY " : ""
         return NSPredicate(
-            format: "\(prefix)\(field.keyPath) \(comparison.predicateOperator) %@",
+            format: "\(prefix)\(keyPath) \(comparison.predicateOperator) %@",
             trimmedValue
         )
     }
@@ -168,6 +186,7 @@ private final class SmartAlbumRuleRowView: NSView, NSTextFieldDelegate {
     private let fieldPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let operatorPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let valueField = NSTextField(frame: .zero)
+    private let booleanValuePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let removeButton = NSButton(frame: .zero)
 
     private var rule: SmartAlbumRule
@@ -199,6 +218,15 @@ private final class SmartAlbumRuleRowView: NSView, NSTextFieldDelegate {
         valueField.placeholderString = NSLocalizedString("Value", comment: "Smart Album rule value placeholder")
         valueField.delegate = self
 
+        let yesItem = NSMenuItem(title: NSLocalizedString("Yes", comment: "Smart Album Boolean value"), action: nil, keyEquivalent: "")
+        yesItem.tag = 1
+        booleanValuePopUp.menu?.addItem(yesItem)
+        let noItem = NSMenuItem(title: NSLocalizedString("No", comment: "Smart Album Boolean value"), action: nil, keyEquivalent: "")
+        noItem.tag = 0
+        booleanValuePopUp.menu?.addItem(noItem)
+        booleanValuePopUp.target = self
+        booleanValuePopUp.action = #selector(booleanValueChanged(_:))
+
         removeButton.bezelStyle = .circular
         removeButton.image = NSImage(systemSymbolName: "minus", accessibilityDescription: NSLocalizedString("Remove Rule", comment: "Smart Album button"))
         removeButton.imagePosition = .imageOnly
@@ -206,7 +234,7 @@ private final class SmartAlbumRuleRowView: NSView, NSTextFieldDelegate {
         removeButton.target = self
         removeButton.action = #selector(removeRule(_:))
 
-        let stack = NSStackView(views: [fieldPopUp, operatorPopUp, valueField, removeButton])
+        let stack = NSStackView(views: [fieldPopUp, operatorPopUp, valueField, booleanValuePopUp, removeButton])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 8
@@ -215,6 +243,8 @@ private final class SmartAlbumRuleRowView: NSView, NSTextFieldDelegate {
 
         valueField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         valueField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        booleanValuePopUp.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        booleanValuePopUp.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -226,6 +256,8 @@ private final class SmartAlbumRuleRowView: NSView, NSTextFieldDelegate {
             removeButton.widthAnchor.constraint(equalToConstant: 28),
             heightAnchor.constraint(equalToConstant: 38)
         ])
+
+        updateControlsForSelectedField()
     }
 
     @available(*, unavailable)
@@ -235,7 +267,15 @@ private final class SmartAlbumRuleRowView: NSView, NSTextFieldDelegate {
 
     @objc private func fieldChanged(_ sender: NSPopUpButton) {
         guard let field = SmartAlbumField(rawValue: sender.selectedTag()) else { return }
+        let wasBooleanField = rule.field == .hasROIs
         rule.field = field
+        if field == .hasROIs {
+            rule.comparison = .isEqual
+            rule.value = "YES"
+        } else if wasBooleanField {
+            rule.value = ""
+        }
+        updateControlsForSelectedField()
         onChange?(rule)
     }
 
@@ -248,6 +288,34 @@ private final class SmartAlbumRuleRowView: NSView, NSTextFieldDelegate {
     func controlTextDidChange(_ notification: Notification) {
         rule.value = valueField.stringValue
         onChange?(rule)
+    }
+
+    @objc private func booleanValueChanged(_ sender: NSPopUpButton) {
+        rule.value = sender.selectedTag() == 1 ? "YES" : "NO"
+        onChange?(rule)
+    }
+
+    private func updateControlsForSelectedField() {
+        let isBooleanField = rule.field == .hasROIs
+        if isBooleanField {
+            rule.comparison = .isEqual
+            let normalizedValue = rule.value
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .uppercased()
+            if ["YES", "TRUE", "1"].contains(normalizedValue) {
+                rule.value = "YES"
+                booleanValuePopUp.selectItem(withTag: 1)
+            } else {
+                rule.value = "NO"
+                booleanValuePopUp.selectItem(withTag: 0)
+            }
+        }
+
+        operatorPopUp.selectItem(withTag: rule.comparison.rawValue)
+        operatorPopUp.isEnabled = isBooleanField == false
+        valueField.stringValue = rule.value
+        valueField.isHidden = isBooleanField
+        booleanValuePopUp.isHidden = isBooleanField == false
     }
 
     @objc private func removeRule(_ sender: NSButton) {
@@ -937,6 +1005,10 @@ private enum SmartAlbumPredicateParser {
     }
 
     private static func parseRule(_ expression: String) -> SmartAlbumRule? {
+        if let hasROIsRule = parseHasROIsRule(expression) {
+            return hasROIsRule
+        }
+
         let pattern = #"^\s*(ANY\s+)?([A-Za-z][A-Za-z0-9_.]*)\s+(CONTAINS|BEGINSWITH|==|!=)(?:\[cd\])?\s+(.+?)\s*$"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
         let range = NSRange(expression.startIndex..<expression.endIndex, in: expression)
@@ -953,6 +1025,25 @@ private enum SmartAlbumPredicateParser {
         let value = unquoted(String(expression[valueRange]))
         guard value.isEmpty == false else { return nil }
         return SmartAlbumRule(field: field, comparison: comparison, value: value)
+    }
+
+    private static func parseHasROIsRule(_ expression: String) -> SmartAlbumRule? {
+        for value in ["YES", "NO"] {
+            let rule = SmartAlbumRule(field: .hasROIs, comparison: .isEqual, value: value)
+            guard let candidate = rule.makePredicate()?.predicateFormat else { continue }
+            if normalizedPredicate(expression) == normalizedPredicate(candidate) {
+                return rule
+            }
+        }
+        return nil
+    }
+
+    private static func normalizedPredicate(_ expression: String) -> String {
+        strippingOuterParentheses(from: expression)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { $0.isEmpty == false }
+            .joined(separator: " ")
+            .lowercased()
     }
 
     private static func topLevelParts(in expression: String, separator: String) -> [String] {

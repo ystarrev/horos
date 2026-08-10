@@ -346,8 +346,13 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
 
 -(void)deallocSources
 {
-    [(BrowserSourcesHelper*)_sourcesHelper invalidate];
+    [self shutdownBonjourSources];
     [_sourcesHelper release]; _sourcesHelper = nil;
+}
+
+-(void)shutdownBonjourSources
+{
+    [(BrowserSourcesHelper*)_sourcesHelper invalidate];
 }
 
 -(NSInteger)sourcesCount
@@ -944,6 +949,9 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     [task setArguments:[NSArray arrayWithObjects:@"-B", type, @"local", nil]];
     [task setStandardOutput:pipe];
     [task setStandardError:pipe];
+    [task setTerminationHandler:^(NSTask *finishedTask) {
+        [AppController unregisterBonjourDNSSDTask:finishedTask];
+    }];
 
     [_dnssdBrowseTasks setObject:task forKey:type];
     [_dnssdBrowseBuffers setObject:[NSMutableString string] forKey:type];
@@ -966,6 +974,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     @try
     {
         HorosLaunchTaskOrRaise(task);
+        [AppController registerBonjourDNSSDTask:task role:[NSString stringWithFormat:@"%@ browser", type]];
         NSLog(@"DNS-SD Bonjour fallback browsing for %@", type);
     }
     @catch (NSException *exception)
@@ -1113,6 +1122,9 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     [task setArguments:[NSArray arrayWithObjects:@"-L", name, type, @"local", nil]];
     [task setStandardOutput:pipe];
     [task setStandardError:pipe];
+    [task setTerminationHandler:^(NSTask *finishedTask) {
+        [AppController unregisterBonjourDNSSDTask:finishedTask];
+    }];
 
     [_dnssdResolveTasks setObject:task forKey:key];
     [_dnssdResolveBuffers setObject:[NSMutableString string] forKey:key];
@@ -1135,6 +1147,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     @try
     {
         HorosLaunchTaskOrRaise(task);
+        [AppController registerBonjourDNSSDTask:task role:[NSString stringWithFormat:@"%@ resolver", type]];
         [self performSelector:@selector(_stopDNSSDResolveTaskForKey:) withObject:key afterDelay:10.0];
     }
     @catch (NSException *exception)

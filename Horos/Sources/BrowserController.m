@@ -113,6 +113,7 @@
 #import "ThreadsManager.h"
 #import "NSThread+N2.h"
 #import "BrowserController+Activity.h"
+#import "BrowserController+Sources.h"
 #import "NSError+OsiriX.h"
 #import "NSImage+N2.h"
 #import "NSFileManager+N2.h"
@@ -1852,6 +1853,8 @@ static NSConditionLock *threadLock = nil;
             [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_observeDatabaseAddNotification:) name:_O2AddToDBAnywayNotification object:_database];
             [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_observeDatabaseDidChangeContextNotification:) name:OsirixDicomDatabaseDidChangeContextNotification object:_database];
             [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_observeDatabaseInvalidateAlbumsCacheNotification:) name:O2DatabaseInvalidateAlbumsCacheNotification object:_database];
+
+            [_database initiateLegacyROISidecarBackfillIfNeeded];
             
             [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_newStudiesRefreshComparativeStudies:) name:OsirixAddNewStudiesDBNotification object:_database];
             
@@ -12327,6 +12330,8 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     [self saveDatabaseWindowFramePreference];
     
     NSLog( @"browserPrepareForClose");
+
+    [self shutdownBonjourSources];
     
     [self saveLoadAlbumsSortDescriptors];
     

@@ -43,6 +43,7 @@
 @interface BrowserController (Sources)
 
 -(void)awakeSources;
+-(void)shutdownBonjourSources;
 -(void)deallocSources;
 
 -(void)redrawSources;

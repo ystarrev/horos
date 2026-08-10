@@ -86,6 +86,9 @@
 #import "DicomStudy.h"
 #import "SRAnnotation.h"
 #import "NSString+SymlinksAndAliases.h"
+#import <libproc.h>
+#import <errno.h>
+#import <signal.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -449,6 +452,7 @@ void exceptionHandler(NSException *exception)
 - (void)ApplyConv:(id)dummy;
 - (void)AddConv:(id)dummy;
 - (void)addPreferencesFromURL:(id)dummy;
++ (void)cleanupStaleBonjourDNSSDTasks;
 @end
 
 @implementation AppController
@@ -530,8 +534,176 @@ void exceptionHandler(NSException *exception)
 	checkForPreferencesUpdate = b;
 }
 
+static NSString *HorosBonjourDNSSDTaskRegistryPath(void)
+{
+    NSString *cacheDirectory = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
+    if (![cacheDirectory length])
+        cacheDirectory = NSTemporaryDirectory();
+
+    NSString *bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
+    if (![bundleIdentifier length])
+        bundleIdentifier = @"org.horosproject.horos";
+
+    NSString *directory = [cacheDirectory stringByAppendingPathComponent:bundleIdentifier];
+    [[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
+    return [directory stringByAppendingPathComponent:@"BonjourDNSSDTasks.plist"];
+}
+
+static BOOL HorosGetProcessStartTime(pid_t pid, uint64_t *seconds, uint64_t *microseconds)
+{
+    if (pid <= 0)
+        return NO;
+
+    struct proc_bsdinfo info = {0};
+    if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, sizeof(info)) <= 0)
+        return NO;
+
+    if (seconds)
+        *seconds = info.pbi_start_tvsec;
+    if (microseconds)
+        *microseconds = info.pbi_start_tvusec;
+    return YES;
+}
+
+static BOOL HorosProcessMatchesRecordedStartTime(pid_t pid, NSNumber *seconds, NSNumber *microseconds)
+{
+    uint64_t actualSeconds = 0;
+    uint64_t actualMicroseconds = 0;
+    return seconds && microseconds &&
+           HorosGetProcessStartTime(pid, &actualSeconds, &actualMicroseconds) &&
+           actualSeconds == seconds.unsignedLongLongValue &&
+           actualMicroseconds == microseconds.unsignedLongLongValue;
+}
+
+static BOOL HorosProcessIsDNSSD(pid_t pid)
+{
+    char executablePath[PROC_PIDPATHINFO_MAXSIZE] = {0};
+    if (proc_pidpath(pid, executablePath, sizeof(executablePath)) <= 0)
+        return NO;
+    return strcmp(executablePath, "/usr/bin/dns-sd") == 0;
+}
+
+static void HorosWriteBonjourDNSSDTaskRecords(NSArray *records)
+{
+    NSString *path = HorosBonjourDNSSDTaskRegistryPath();
+    if ([records count])
+        [records writeToFile:path atomically:YES];
+    else
+        [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+}
+
++ (void)registerBonjourDNSSDTask:(NSTask*)task role:(NSString*)role
+{
+    pid_t pid = task.processIdentifier;
+    uint64_t childSeconds = 0, childMicroseconds = 0;
+    uint64_t ownerSeconds = 0, ownerMicroseconds = 0;
+    if (pid <= 0 || !HorosGetProcessStartTime(pid, &childSeconds, &childMicroseconds) ||
+        !HorosGetProcessStartTime(getpid(), &ownerSeconds, &ownerMicroseconds))
+        return;
+
+    NSDictionary *record = @{
+        @"PID": @(pid),
+        @"StartSeconds": @(childSeconds),
+        @"StartMicroseconds": @(childMicroseconds),
+        @"OwnerPID": @(getpid()),
+        @"OwnerStartSeconds": @(ownerSeconds),
+        @"OwnerStartMicroseconds": @(ownerMicroseconds),
+        @"Role": role ?: @"Bonjour"
+    };
+
+    @synchronized(self)
+    {
+        NSArray *storedRecords = [NSArray arrayWithContentsOfFile:HorosBonjourDNSSDTaskRegistryPath()];
+        NSMutableArray *records = storedRecords ? [storedRecords mutableCopy] : [NSMutableArray array];
+
+        NSIndexSet *duplicates = [records indexesOfObjectsPassingTest:^BOOL(NSDictionary *candidate, NSUInteger index, BOOL *stop) {
+            return [[candidate objectForKey:@"PID"] intValue] == pid &&
+                   [[candidate objectForKey:@"StartSeconds"] unsignedLongLongValue] == childSeconds &&
+                   [[candidate objectForKey:@"StartMicroseconds"] unsignedLongLongValue] == childMicroseconds;
+        }];
+        [records removeObjectsAtIndexes:duplicates];
+        [records addObject:record];
+        HorosWriteBonjourDNSSDTaskRecords(records);
+    }
+}
+
++ (void)unregisterBonjourDNSSDTask:(NSTask*)task
+{
+    pid_t pid = task.processIdentifier;
+    if (pid <= 0)
+        return;
+
+    @synchronized(self)
+    {
+        NSArray *storedRecords = [NSArray arrayWithContentsOfFile:HorosBonjourDNSSDTaskRegistryPath()];
+        NSMutableArray *records = storedRecords ? [storedRecords mutableCopy] : [NSMutableArray array];
+        NSIndexSet *matches = [records indexesOfObjectsPassingTest:^BOOL(NSDictionary *candidate, NSUInteger index, BOOL *stop) {
+            return [[candidate objectForKey:@"PID"] intValue] == pid &&
+                   [[candidate objectForKey:@"OwnerPID"] intValue] == getpid();
+        }];
+        [records removeObjectsAtIndexes:matches];
+        HorosWriteBonjourDNSSDTaskRecords(records ?: @[]);
+    }
+}
+
++ (void)cleanupStaleBonjourDNSSDTasks
+{
+    @synchronized(self)
+    {
+        NSArray *records = [NSArray arrayWithContentsOfFile:HorosBonjourDNSSDTaskRegistryPath()];
+        if (![records count])
+            return;
+
+        NSMutableArray *activeRecords = [NSMutableArray array];
+        for (NSDictionary *record in records)
+        {
+            pid_t ownerPID = [[record objectForKey:@"OwnerPID"] intValue];
+            BOOL ownerIsActive = HorosProcessMatchesRecordedStartTime(ownerPID,
+                                                                      [record objectForKey:@"OwnerStartSeconds"],
+                                                                      [record objectForKey:@"OwnerStartMicroseconds"]);
+            if (ownerIsActive)
+            {
+                [activeRecords addObject:record];
+                continue;
+            }
+
+            pid_t childPID = [[record objectForKey:@"PID"] intValue];
+            BOOL childMatches = HorosProcessMatchesRecordedStartTime(childPID,
+                                                                      [record objectForKey:@"StartSeconds"],
+                                                                      [record objectForKey:@"StartMicroseconds"]);
+            if (!childMatches || !HorosProcessIsDNSSD(childPID))
+                continue;
+
+            NSString *role = [record objectForKey:@"Role"] ?: @"Bonjour";
+            NSLog(@"Stopping stale Horos %@ DNS-SD process %d", role, childPID);
+            if (kill(childPID, SIGTERM) == 0)
+            {
+                for (NSUInteger attempt = 0; attempt < 20; attempt++)
+                {
+                    usleep(10000);
+                    if (!HorosProcessMatchesRecordedStartTime(childPID,
+                                                               [record objectForKey:@"StartSeconds"],
+                                                               [record objectForKey:@"StartMicroseconds"]))
+                        break;
+                }
+
+                if (HorosProcessMatchesRecordedStartTime(childPID,
+                                                          [record objectForKey:@"StartSeconds"],
+                                                          [record objectForKey:@"StartMicroseconds"]))
+                    kill(childPID, SIGKILL);
+            }
+            else if (errno != ESRCH)
+                [activeRecords addObject:record];
+        }
+
+        HorosWriteBonjourDNSSDTaskRecords(activeRecords);
+    }
+}
+
 + (void) cleanOsiriXSubProcesses
 {
+	[AppController cleanupStaleBonjourDNSSDTasks];
+
 	enum { kPIDArrayLength = 100 };
     
     pid_t MyArray [kPIDArrayLength];
@@ -665,10 +837,14 @@ void exceptionHandler(NSException *exception)
     [BonjourDICOMRegisterTask setArguments: arguments];
     [BonjourDICOMRegisterTask setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
     [BonjourDICOMRegisterTask setStandardError: [NSFileHandle fileHandleWithNullDevice]];
+    [BonjourDICOMRegisterTask setTerminationHandler:^(NSTask *task) {
+        [AppController unregisterBonjourDNSSDTask:task];
+    }];
 
     @try
     {
         HorosLaunchTaskOrRaise(BonjourDICOMRegisterTask);
+        [AppController registerBonjourDNSSDTask:BonjourDICOMRegisterTask role:@"DICOM publisher"];
         NSLog( @"DNS-SD DICOM Bonjour fallback publishing for %@ %@:%ld", [service name], [service type], (long) port);
     }
     @catch( NSException *exception)
@@ -1880,8 +2056,10 @@ static BOOL firstCall = YES;
 	[ROI saveDefaultSettings];
 	
     [self stopDICOMBonjourDNSRegistration];
+	[BonjourDICOMService setDelegate:nil];
 	[BonjourDICOMService stop];
 	BonjourDICOMService = nil;
+	[_bonjourPublisher toggleSharing:NO];
 
     quitting = YES;
 	

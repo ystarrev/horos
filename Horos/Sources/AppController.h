@@ -137,6 +137,8 @@ extern AppController* OsiriX;
 + (BOOL) isFDACleared;
 
 +(NSString*)UID;
++(void)registerBonjourDNSSDTask:(NSTask*)task role:(NSString*)role;
++(void)unregisterBonjourDNSSDTask:(NSTask*)task;
 
 #pragma mark-
 #pragma mark initialization of the main event loop singleton

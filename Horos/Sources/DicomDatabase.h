@@ -54,6 +54,7 @@ extern NSString* const O2ScreenCapturesSeriesName;
 	NSString* _name;
 	NSRecursiveLock* _processFilesLock;
 	NSRecursiveLock* _importFilesFromIncomingDirLock;
+	BOOL _legacyROISidecarBackfillStarted;
 	BOOL _isFileSystemFreeSizeLimitReached;
 	NSTimeInterval _timeOfLastIsFileSystemFreeSizeLimitReachedVerification;
 	NSTimeInterval _timeOfLastModification;
@@ -147,6 +148,7 @@ extern NSString* const DicomDatabaseLogEntryEntityName;
 -(void)addStudies:(NSArray*)dicomStudies toAlbum:(DicomAlbum*)dicomAlbum;
 
 #pragma mark Add files
+-(void)initiateLegacyROISidecarBackfillIfNeeded;
 -(NSArray*)addFilesAtPaths:(NSArray*)paths;
 -(NSArray*)addFilesAtPaths:(NSArray*)paths postNotifications:(BOOL)postNotifications;	
 -(NSArray*)addFilesAtPaths:(NSArray*)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems;	

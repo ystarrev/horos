@@ -95,6 +95,45 @@ static NSString *OldReportFilenameForStudy(id study)
     return [DicomFile NSreplaceBadCharacter:[[study valueForKey:@"patientUID"] stringByAppendingFormat:@"-%@", [study valueForKey:@"id"]]];
 }
 
+static NSUInteger HorosROICountAtPath(NSString *path)
+{
+    if (path.length == 0)
+        return 0;
+
+    @try
+    {
+        NSData *archive = [SRAnnotation roiFromDICOM:path];
+        return [[SRAnnotation unarchiveROIsFromCompatibilityData:archive] count];
+    }
+    @catch (NSException *exception)
+    {
+        NSLog(@"Unable to read ROI archive at %@: %@", path, exception.reason ?: exception.name);
+        return 0;
+    }
+}
+
+static NSString *HorosROIReferencedSOPInstanceUID(NSString *reference, NSNumber **frameID)
+{
+    if (frameID)
+        *frameID = nil;
+    if (reference.length == 0)
+        return nil;
+
+    NSRange dashRange = [reference rangeOfString:@"-" options:NSBackwardsSearch];
+    if (dashRange.location == NSNotFound || dashRange.location + 1 >= reference.length)
+        return reference;
+
+    NSString *frameSuffix = [reference substringFromIndex:dashRange.location + 1];
+    NSScanner *scanner = [NSScanner scannerWithString:frameSuffix];
+    NSInteger frameValue = 0;
+    if ([scanner scanInteger:&frameValue] == NO || scanner.isAtEnd == NO)
+        return reference;
+
+    if (frameID && frameValue > 0)
+        *frameID = [NSNumber numberWithInteger:frameValue];
+    return [reference substringToIndex:dashRange.location];
+}
+
 static BOOL HorosCopyFileDataWithLargeBuffer(const char *sourcePath, const char *destinationPath, int *failureErrno)
 {
     BOOL success = NO;
@@ -179,6 +218,7 @@ done:
 - (NSArray *)addFilesAtPathsOnContextQueue:(NSArray *)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray;
 - (NSArray *)addFilesDescribedInDictionariesOnContextQueue:(NSArray *)dicomFilesArray postNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray;
 - (NSInteger)importFilesFromIncomingDirOnContextQueue:(NSNumber *)showGUI listenerCompressionSettings:(int)listenerCompressionSettings;
+- (void)backfillLegacyROISidecarsThread;
 
 @property(readwrite,retain) NSString* baseDirPath;
 @property(readwrite,retain) NSString* dataBaseDirPath;
@@ -960,6 +1000,115 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
 
 -(NSString*)roisDirPath {
     return [[self.dataBaseDirPath stringByAppendingPathComponent:@"ROIs"] stringByResolvingSymlinksAndAliases];
+}
+
+-(void)initiateLegacyROISidecarBackfillIfNeeded
+{
+    if (self.isMainDatabase == NO || self.isLocal == NO || self.isReadOnly || _deallocating)
+        return;
+
+    @synchronized (self)
+    {
+        if (_legacyROISidecarBackfillStarted)
+            return;
+        _legacyROISidecarBackfillStarted = YES;
+    }
+
+    NSThread *thread = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self
+                                                                            selector:@selector(backfillLegacyROISidecarsThread)
+                                                                              object:nil] autorelease];
+    thread.name = NSLocalizedString(@"Index Legacy ROIs...", nil);
+    thread.status = NSLocalizedString(@"Checking stored ROI records...", nil);
+    thread.progress = -1;
+    [[ThreadsManager defaultManager] addThreadAndStart:thread];
+}
+
+-(void)backfillLegacyROISidecarsThread
+{
+    @autoreleasepool
+    {
+        NSThread *thread = [NSThread currentThread];
+        NSString *roisDirectory = self.roisDirPath;
+        NSArray *names = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:roisDirectory error:nil];
+        if (names.count == 0 || thread.isCancelled || _deallocating)
+        {
+            thread.progress = 1;
+            return;
+        }
+
+        NSMutableArray *roiPaths = [NSMutableArray arrayWithCapacity:names.count];
+        for (NSString *name in [names sortedArrayUsingSelector:@selector(localizedStandardCompare:)])
+        {
+            if ([[name pathExtension] caseInsensitiveCompare:@"dcm"] != NSOrderedSame)
+                continue;
+
+            NSString *path = [roisDirectory stringByAppendingPathComponent:name];
+            BOOL isDirectory = NO;
+            if ([[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isDirectory] && isDirectory == NO)
+                [roiPaths addObject:[path stringByStandardizingPath]];
+        }
+
+        if (roiPaths.count == 0 || thread.isCancelled || _deallocating)
+        {
+            thread.progress = 1;
+            return;
+        }
+
+        DicomDatabase *workerDatabase = self.independentDatabase;
+        NSManagedObjectContext *context = workerDatabase.managedObjectContext;
+        __block NSMutableSet *indexedNonemptyROIPaths = [[NSMutableSet alloc] init];
+        N2PerformManagedObjectContextBlockAndWait(context, ^{
+            NSFetchRequest *request = [NSFetchRequest fetchRequestWithEntityName:@"Image"];
+            request.predicate = [NSPredicate predicateWithFormat:@"pathString BEGINSWITH %@", [roisDirectory stringByAppendingString:@"/"]];
+            request.fetchBatchSize = 256;
+            request.includesPendingChanges = NO;
+
+            NSArray *images = [context executeFetchRequest:request error:nil];
+            for (DicomImage *image in images)
+            {
+                NSString *seriesName = [image valueForKeyPath:@"series.name"];
+                NSString *seriesDescription = [image valueForKeyPath:@"series.seriesDescription"];
+                BOOL isROISeries = [seriesName isEqualToString:@"OsiriX ROI SR"] || [seriesDescription isEqualToString:@"OsiriX ROI SR"];
+                if (isROISeries && image.scale.integerValue > 0 && image.pathString.length)
+                    [indexedNonemptyROIPaths addObject:[image.pathString stringByStandardizingPath]];
+            }
+        });
+
+        NSMutableArray *pathsToImport = [NSMutableArray array];
+        thread.status = NSLocalizedString(@"Reading stored ROI records...", nil);
+        for (NSUInteger index = 0; index < roiPaths.count; index++)
+        {
+            if (thread.isCancelled || _deallocating)
+                break;
+
+            NSString *path = [roiPaths objectAtIndex:index];
+            if ([indexedNonemptyROIPaths containsObject:path] == NO && HorosROICountAtPath(path) > 0)
+                [pathsToImport addObject:path];
+            thread.progress = 0.25 * (double)(index + 1) / (double)roiPaths.count;
+        }
+        [indexedNonemptyROIPaths release];
+
+        if (thread.isCancelled || _deallocating)
+            return;
+
+        if (pathsToImport.count)
+        {
+            thread.status = [NSString stringWithFormat:NSLocalizedString(@"Indexing %@...", nil),
+                             N2LocalizedSingularPluralCount(pathsToImport.count, NSLocalizedString(@"ROI record", nil), NSLocalizedString(@"ROI records", nil))];
+            [workerDatabase addFilesAtPaths:pathsToImport
+                          postNotifications:YES
+                                  dicomOnly:YES
+                        rereadExistingItems:YES
+                         generatedByOsiriX:YES];
+            [NSNotificationCenter.defaultCenter postNotificationOnMainThreadName:O2DatabaseInvalidateAlbumsCacheNotification object:self];
+            NSLog(@"Legacy ROI index: indexed %lu non-empty sidecars from %@", (unsigned long)pathsToImport.count, roisDirectory);
+        }
+
+        thread.status = pathsToImport.count
+            ? NSLocalizedString(@"Stored ROI records indexed", nil)
+            : NSLocalizedString(@"Stored ROI index is current", nil);
+        thread.progress = 1;
+    }
 }
 
 -(NSString*)htmlTemplatesDirPath {
@@ -1820,6 +1969,8 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
 
             if (curDict)
             {
+                if ([[curDict objectForKey:@"seriesDescription"] hasPrefix:@"OsiriX ROI SR"])
+                    [curDict setObject:[NSNumber numberWithUnsignedInteger:HorosROICountAtPath(newFile)] forKey:@"numberOfROIs"];
                 [dicomFilesArray addObject:curDict];
             }
             else if (dataDirPath && [newFile hasPrefix:dataDirPath])
@@ -1959,6 +2110,16 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
     return [NSString stringWithFormat:@"%@\n%d", sopUID, frameID];
 }
 
+static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReference, DicomImage *image, NSSet *referencedSOPInstanceUIDs)
+{
+    NSString *sopInstanceUID = image.sopInstanceUID;
+    if (sopInstanceUID.length == 0 || [referencedSOPInstanceUIDs containsObject:sopInstanceUID] == NO)
+        return;
+
+    [imagesByReference setObject:image forKey:sopInstanceUID];
+    [imagesByReference setObject:image forKey:HorosDICOMImportImageLookupKey(sopInstanceUID, image.frameID.intValue)];
+}
+
 -(NSArray*)addFilesDescribedInDictionaries:(NSArray*)dicomFilesArray postNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX returnArray: (BOOL) returnArray
 {
     return [self addFilesDescribedInDictionaries: dicomFilesArray postNotifications: postNotifications rereadExistingItems: rereadExistingItems generatedByOsiriX: generatedByOsiriX importedFiles: NO returnArray: returnArray];
@@ -2007,17 +2168,25 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
     
     [self cleanForFreeSpace];
 
-    NSArray *roiSRReferenceImages = nil;
+    NSMutableDictionary *roiSRReferenceImagesByReference = [[NSMutableDictionary alloc] init];
     
     @try
     {
         NSTimeInterval addFilesStartTime = [NSDate timeIntervalSinceReferenceDate];
         NSMutableSet *studyInstanceUIDsToFetch = [NSMutableSet set];
+        NSMutableSet *roiReferencedSOPInstanceUIDs = [NSMutableSet set];
         for (NSDictionary *dicomFileDictionary in dicomFilesArray)
         {
             NSString *studyInstanceUID = [dicomFileDictionary objectForKey:@"studyID"];
             if (studyInstanceUID.length)
                 [studyInstanceUIDsToFetch addObject:studyInstanceUID];
+
+            if ([[dicomFileDictionary objectForKey:@"seriesDescription"] isEqualToString:@"OsiriX ROI SR"])
+            {
+                NSString *referencedSOPInstanceUID = HorosROIReferencedSOPInstanceUID([dicomFileDictionary objectForKey:@"referencedSOPInstanceUID"], NULL);
+                if (referencedSOPInstanceUID.length)
+                    [roiReferencedSOPInstanceUIDs addObject:referencedSOPInstanceUID];
+            }
         }
 
         NSArray *existingStudies = nil;
@@ -2025,6 +2194,37 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
             existingStudies = [self objectsForEntity:self.studyEntity predicate:[NSPredicate predicateWithFormat:@"studyInstanceUID IN %@", [studyInstanceUIDsToFetch allObjects]]];
         else
             existingStudies = [NSArray array];
+
+        if (roiReferencedSOPInstanceUIDs.count)
+        {
+            for (DicomStudy *existingStudy in existingStudies)
+            {
+                for (DicomSeries *existingSeries in existingStudy.series)
+                {
+                    for (DicomImage *existingImage in existingSeries.images)
+                        HorosAddROIReferenceImageToMap(roiSRReferenceImagesByReference, existingImage, roiReferencedSOPInstanceUIDs);
+                }
+            }
+
+            NSMutableArray *unresolvedEncodedSOPInstanceUIDs = [NSMutableArray array];
+            for (NSString *referencedSOPInstanceUID in roiReferencedSOPInstanceUIDs)
+            {
+                if ([roiSRReferenceImagesByReference objectForKey:referencedSOPInstanceUID] == nil)
+                    [unresolvedEncodedSOPInstanceUIDs addObject:[DicomImage sopInstanceUIDEncodeString:referencedSOPInstanceUID]];
+            }
+
+            const NSUInteger fetchChunkSize = 400;
+            for (NSUInteger location = 0; location < unresolvedEncodedSOPInstanceUIDs.count; location += fetchChunkSize)
+            {
+                NSRange range = NSMakeRange(location, MIN(fetchChunkSize, unresolvedEncodedSOPInstanceUIDs.count - location));
+                NSArray *encodedSOPInstanceUIDs = [unresolvedEncodedSOPInstanceUIDs subarrayWithRange:range];
+                NSFetchRequest *referenceRequest = [NSFetchRequest fetchRequestWithEntityName:@"Image"];
+                referenceRequest.predicate = [NSPredicate predicateWithFormat:@"compressedSopInstanceUID IN %@", encodedSOPInstanceUIDs];
+                NSArray *referenceImages = [self.managedObjectContext executeFetchRequest:referenceRequest error:nil];
+                for (DicomImage *referenceImage in referenceImages)
+                    HorosAddROIReferenceImageToMap(roiSRReferenceImagesByReference, referenceImage, roiReferencedSOPInstanceUIDs);
+            }
+        }
 
         NSMutableArray* studiesArray = [existingStudies mutableCopy];
         NSMutableArray* modifiedStudiesArray = [NSMutableArray array];
@@ -2177,38 +2377,14 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
                         NSString *referencedUID = [curDict objectForKey:@"referencedSOPInstanceUID"];
                         if (referencedUID.length)
                         {
-                            NSString *referencedSOPInstanceUID = referencedUID;
                             NSNumber *referencedFrameID = nil;
-
-                            NSRange dashRange = [referencedUID rangeOfString:@"-" options:NSBackwardsSearch];
-                            if (dashRange.location != NSNotFound && dashRange.location + 1 < referencedUID.length)
-                            {
-                                NSString *frameSuffix = [referencedUID substringFromIndex:dashRange.location + 1];
-                                NSScanner *scanner = [NSScanner scannerWithString:frameSuffix];
-                                NSInteger frameValue = 0;
-                                if ([scanner scanInteger:&frameValue] && scanner.isAtEnd)
-                                {
-                                    referencedSOPInstanceUID = [referencedUID substringToIndex:dashRange.location];
-                                    if (frameValue > 0)
-                                        referencedFrameID = [NSNumber numberWithInteger:frameValue];
-                                }
-                            }
-
-                            if (roiSRReferenceImages == nil)
-                            {
-                                NSFetchRequest *referenceRequest = [NSFetchRequest fetchRequestWithEntityName:@"Image"];
-                                referenceRequest.predicate = [NSPredicate predicateWithFormat:@"compressedSopInstanceUID != NIL"];
-                                roiSRReferenceImages = [[self.managedObjectContext executeFetchRequest:referenceRequest error:nil] retain];
-                            }
-
-                            NSArray *candidateImages = roiSRReferenceImages;
-                            if (referencedFrameID)
-                                candidateImages = [candidateImages filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"frameID == %@", referencedFrameID]];
-
-                            NSPredicate *matchingSOPPredicate = [NSComparisonPredicate predicateWithLeftExpression:[NSExpression expressionForKeyPath:@"compressedSopInstanceUID"]
-                                                                                                  rightExpression:[NSExpression expressionForConstantValue:[DicomImage sopInstanceUIDEncodeString:referencedSOPInstanceUID]]
-                                                                                                     customSelector:@selector(isEqualToSopInstanceUID:)];
-                            DicomImage *referencedImage = [[candidateImages filteredArrayUsingPredicate:matchingSOPPredicate] lastObject];
+                            NSString *referencedSOPInstanceUID = HorosROIReferencedSOPInstanceUID(referencedUID, &referencedFrameID);
+                            NSString *referenceKey = referencedFrameID
+                                ? HorosDICOMImportImageLookupKey(referencedSOPInstanceUID, referencedFrameID.intValue)
+                                : referencedSOPInstanceUID;
+                            DicomImage *referencedImage = [roiSRReferenceImagesByReference objectForKey:referenceKey];
+                            if (referencedImage == nil)
+                                referencedImage = [roiSRReferenceImagesByReference objectForKey:referencedSOPInstanceUID];
                             DicomStudy *referencedStudy = [referencedImage valueForKeyPath:@"series.study"];
 
                             if (referencedStudy)
@@ -2976,7 +3152,7 @@ static NSString *HorosDICOMImportImageLookupKey(NSString *sopUID, int frameID)
         N2LogExceptionWithStackTrace(e);
     }
 
-    [roiSRReferenceImages release];
+    [roiSRReferenceImagesByReference release];
     
     @try
     {

@@ -198,10 +198,14 @@ extern const char *GetPrivateIP(void);
     [_bonjourRegisterTask setArguments: arguments];
     [_bonjourRegisterTask setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
     [_bonjourRegisterTask setStandardError: [NSFileHandle fileHandleWithNullDevice]];
+    [_bonjourRegisterTask setTerminationHandler:^(NSTask *task) {
+        [AppController unregisterBonjourDNSSDTask:task];
+    }];
 
     @try
     {
         HorosLaunchTaskOrRaise(_bonjourRegisterTask);
+        [AppController registerBonjourDNSSDTask:_bonjourRegisterTask role:@"database publisher"];
         NSLog( @"DNS-SD Horos Bonjour fallback publishing for %@ %@:%ld", [service name], [service type], (long) port);
     }
     @catch( NSException *exception)

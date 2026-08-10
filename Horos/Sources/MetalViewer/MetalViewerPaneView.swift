@@ -1260,6 +1260,7 @@ final class MetalViewerPaneView: NSView {
     var registrationSupportSelectionProvider: ((MetalViewerSeries, MetalViewerSeries) -> MetalViewerRegistrationSupportSelection?)?
     var registrationTransformDidComplete: ((MetalViewerSeries, MetalViewerSeries, MetalViewerRegistrationWorldTransform) -> Void)?
     var studyROIEditingModeDidChange: ((MetalStudyROIEditingMode) -> Void)?
+    var studyROIRefinementHandler: ((Bool) -> Void)?
     var canClose: Bool = true {
         didSet { updateCloseButtonVisibility() }
     }
@@ -1515,6 +1516,9 @@ final class MetalViewerPaneView: NSView {
         metalView.studyROIEditingModeDidChange = { [weak self] mode in
             self?.studyROIEditingMode = mode
             self?.studyROIEditingModeDidChange?(mode)
+        }
+        metalView.studyROIRefinementHandler = { [weak self] preview in
+            self?.studyROIRefinementHandler?(preview)
         }
         metalView.configureStudyROI(
             store: studyROIStore,

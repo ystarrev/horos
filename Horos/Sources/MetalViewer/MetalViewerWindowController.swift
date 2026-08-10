@@ -218,6 +218,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     )
     private var isStudyROIRefinementInProgress = false
     private var studyROIRefinementIndicator: NSProgressIndicator?
+    private var studyROIRefinementGeneration = 0
+    private var pendingStudyROIPreviewWorkItem: DispatchWorkItem?
+    private var isStudyROIPreviewInFlight = false
 
     init(study: MetalViewerStudy) {
         self.study = study
@@ -745,6 +748,10 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             guard let self, let pane, self.activePaneView === pane else { return }
             self.studyROIEditingMode = mode
             self.toolbarView.reloadROIMenu(store: self.studyROIStore, editingMode: mode)
+        }
+        pane.studyROIRefinementHandler = { [weak self, weak pane] preview in
+            guard let self, let pane, self.activePaneView === pane else { return }
+            self.scheduleInteractiveROIRefinement(preview: preview)
         }
         pane.closeHandler = { [weak self, weak pane] in
             guard let self, let pane else { return }
@@ -1588,64 +1595,138 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     }
 
     private func refineSelectedROIFromImage() {
-        guard isStudyROIRefinementInProgress == false,
-              let roi = studyROIStore.selectedROI,
+        pendingStudyROIPreviewWorkItem?.cancel()
+        pendingStudyROIPreviewWorkItem = nil
+        enqueueROIRefinement(preview: false, interaction: false, showsFeedback: true)
+    }
+
+    private func scheduleInteractiveROIRefinement(preview: Bool) {
+        if preview {
+            guard pendingStudyROIPreviewWorkItem == nil,
+                  isStudyROIPreviewInFlight == false else { return }
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.pendingStudyROIPreviewWorkItem = nil
+                self?.enqueueROIRefinement(
+                    preview: true,
+                    interaction: true,
+                    showsFeedback: false
+                )
+            }
+            pendingStudyROIPreviewWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.045, execute: workItem)
+        } else {
+            pendingStudyROIPreviewWorkItem?.cancel()
+            pendingStudyROIPreviewWorkItem = nil
+            enqueueROIRefinement(
+                preview: false,
+                interaction: true,
+                showsFeedback: false
+            )
+        }
+    }
+
+    private func enqueueROIRefinement(
+        preview: Bool,
+        interaction: Bool,
+        showsFeedback: Bool
+    ) {
+        guard let roi = studyROIStore.selectedROI,
               let activePaneView else {
+            if showsFeedback { NSSound.beep() }
+            return
+        }
+        if showsFeedback, isStudyROIRefinementInProgress {
             NSSound.beep()
             return
         }
 
         let targetSeries = activePaneView.activeWindowLevelSeries
         guard let currentToCanonical = selectedROICurrentToCanonicalTransform(for: targetSeries) else {
-            NSSound.beep()
-            presentROIRefinementMessage(
-                title: NSLocalizedString("Register This Series First", comment: ""),
-                detail: NSLocalizedString(
-                    "The displayed series must be registered to the ROI source series before it can refine the ROI.",
-                    comment: ""
+            if showsFeedback {
+                NSSound.beep()
+                presentROIRefinementMessage(
+                    title: NSLocalizedString("Register This Series First", comment: ""),
+                    detail: NSLocalizedString(
+                        "The displayed series must be registered to the ROI source series before it can refine the ROI.",
+                        comment: ""
+                    )
                 )
-            )
+            }
             return
         }
 
-        setStudyROIEditingMode(.inactive, in: nil)
-        isStudyROIRefinementInProgress = true
-        setStudyROIRefinementIndicatorVisible(true)
+        if showsFeedback {
+            setStudyROIEditingMode(.inactive, in: nil)
+            isStudyROIRefinementInProgress = true
+            setStudyROIRefinementIndicatorVisible(true)
+        }
+        if preview { isStudyROIPreviewInFlight = true }
+        studyROIRefinementGeneration &+= 1
+        let generation = studyROIRefinementGeneration
         let request = MetalStudyROIRefinementRequest(
             roi: roi,
             pixList: targetSeries.loadedPixList(),
             canonicalToSeriesWorld: simd_inverse(currentToCanonical)
         )
         studyROIRefinementQueue.async { [weak self] in
-            let result = request.run()
+            let result = request.run(
+                preview: preview,
+                reusePreparedConstraints: interaction
+            )
+            let failureDetail = request.failureDetail
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.isStudyROIRefinementInProgress = false
-                self.setStudyROIRefinementIndicatorVisible(false)
+                if showsFeedback {
+                    self.isStudyROIRefinementInProgress = false
+                    self.setStudyROIRefinementIndicatorVisible(false)
+                }
+                if preview { self.isStudyROIPreviewInFlight = false }
+                guard generation == self.studyROIRefinementGeneration else { return }
                 guard let result else {
-                    self.presentROIRefinementMessage(
-                        title: NSLocalizedString("ROI Refinement Could Not Be Completed", comment: ""),
-                        detail: NSLocalizedString(
-                            "The current series did not provide enough decodable spatial image data around the ROI.",
-                            comment: ""
+                    if showsFeedback {
+                        self.presentROIRefinementMessage(
+                            title: NSLocalizedString("ROI Refinement Could Not Be Completed", comment: ""),
+                            detail: failureDetail ?? NSLocalizedString(
+                                "The refinement could not produce a reliable result for the current ROI.",
+                                comment: ""
+                            )
                         )
-                    )
+                    }
                     return
                 }
                 guard self.studyROIStore.rois.first(where: { $0.id == roi.id }) == roi else {
-                    self.presentROIRefinementMessage(
-                        title: NSLocalizedString("ROI Changed During Refinement", comment: ""),
-                        detail: NSLocalizedString(
-                            "The refinement result was not applied because the ROI was edited while the image was being analyzed.",
-                            comment: ""
+                    if showsFeedback {
+                        self.presentROIRefinementMessage(
+                            title: NSLocalizedString("ROI Changed During Refinement", comment: ""),
+                            detail: NSLocalizedString(
+                                "The refinement result was not applied because the ROI was edited while the image was being analyzed.",
+                                comment: ""
+                            )
                         )
-                    )
+                    }
                     return
                 }
-                self.studyROIStore.applyImageRefinement(
-                    result.automaticAnchors,
-                    to: result.roiIdentifier
-                )
+                if preview {
+                    self.studyROIStore.applyInteractiveImageRefinement(
+                        result.automaticAnchors,
+                        voxelField: result.voxelField,
+                        to: result.roiIdentifier
+                    )
+                } else if interaction {
+                    self.studyROIStore.applyAutomaticImageRefinement(
+                        result.automaticAnchors,
+                        voxelField: result.voxelField,
+                        measuredVolumeMM3: result.volumeMM3,
+                        to: result.roiIdentifier
+                    )
+                } else {
+                    self.studyROIStore.applyImageRefinement(
+                        result.automaticAnchors,
+                        voxelField: result.voxelField,
+                        measuredVolumeMM3: result.volumeMM3,
+                        to: result.roiIdentifier
+                    )
+                }
             }
         }
     }

@@ -2975,3 +2975,87 @@ fragment float4 metalViewerScoutROIFragment(
         + float3(specular * 0.42f);
     return float4(saturate(shadedColor), 1.0f);
 }
+
+struct MetalStudyROIRelaxationUniforms {
+    uint3 dimensions;
+    uint voxelCount;
+    float priorWeight;
+    float relaxation;
+    uint phase;
+    uint padding;
+};
+
+/// One red or black sweep of the weighted random-walker Laplacian. Every
+/// neighbor read belongs to the opposite parity, so each dispatch can update
+/// the probability buffer in place without races.
+kernel void metalStudyROIRedBlackRelaxation(
+    device float *probabilities [[buffer(0)]],
+    const device float *fixedValues [[buffer(1)]],
+    const device float *initialValues [[buffer(2)]],
+    const device float *xEdges [[buffer(3)]],
+    const device float *yEdges [[buffer(4)]],
+    const device float *zEdges [[buffer(5)]],
+    constant MetalStudyROIRelaxationUniforms &uniforms [[buffer(6)]],
+    uint index [[thread_position_in_grid]]
+) {
+    if (index >= uniforms.voxelCount) {
+        return;
+    }
+
+    const uint plane = uniforms.dimensions.x * uniforms.dimensions.y;
+    const uint z = index / plane;
+    const uint remainder = index - z * plane;
+    const uint y = remainder / uniforms.dimensions.x;
+    const uint x = remainder - y * uniforms.dimensions.x;
+    if (((x + y + z) & 1u) != uniforms.phase) {
+        return;
+    }
+
+    const float fixedValue = fixedValues[index];
+    if (isfinite(fixedValue)) {
+        probabilities[index] = clamp(fixedValue, 0.0f, 1.0f);
+        return;
+    }
+
+    float weightedProbability = uniforms.priorWeight * initialValues[index];
+    float totalWeight = uniforms.priorWeight;
+    if (x > 0) {
+        const float weight = xEdges[index - 1];
+        weightedProbability += weight * probabilities[index - 1];
+        totalWeight += weight;
+    }
+    if (x + 1 < uniforms.dimensions.x) {
+        const float weight = xEdges[index];
+        weightedProbability += weight * probabilities[index + 1];
+        totalWeight += weight;
+    }
+    if (y > 0) {
+        const float weight = yEdges[index - uniforms.dimensions.x];
+        weightedProbability += weight * probabilities[index - uniforms.dimensions.x];
+        totalWeight += weight;
+    }
+    if (y + 1 < uniforms.dimensions.y) {
+        const float weight = yEdges[index];
+        weightedProbability += weight * probabilities[index + uniforms.dimensions.x];
+        totalWeight += weight;
+    }
+    if (z > 0) {
+        const float weight = zEdges[index - plane];
+        weightedProbability += weight * probabilities[index - plane];
+        totalWeight += weight;
+    }
+    if (z + 1 < uniforms.dimensions.z) {
+        const float weight = zEdges[index];
+        weightedProbability += weight * probabilities[index + plane];
+        totalWeight += weight;
+    }
+
+    if (totalWeight > 0.0f) {
+        const float solution = weightedProbability / totalWeight;
+        probabilities[index] = clamp(
+            mix(probabilities[index], solution, uniforms.relaxation),
+            0.0f,
+            1.0f
+        );
+    }
+}

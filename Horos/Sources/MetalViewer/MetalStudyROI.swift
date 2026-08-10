@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Metal
 import simd
 
 struct MetalStudyROIPoint: Codable, Equatable, Sendable {
@@ -15,6 +16,142 @@ struct MetalStudyROIPoint: Codable, Equatable, Sendable {
 
     var vector: SIMD3<Double> {
         SIMD3<Double>(x, y, z)
+    }
+}
+
+struct MetalStudyROIGridDimensions: Codable, Equatable, Sendable {
+    let x: Int
+    let y: Int
+    let z: Int
+
+    var voxelCount: Int {
+        guard x > 0, y > 0, z > 0 else { return 0 }
+        return x * y * z
+    }
+}
+
+/// A tightly cropped, canonical-world probability field produced by image
+/// refinement. Probabilities are quantized to one byte so the complete editable
+/// result can live in the private authoring payload alongside the DICOM SEG.
+struct MetalStudyROIVoxelField: Codable, Equatable, Sendable {
+    let dimensions: MetalStudyROIGridDimensions
+    let origin: MetalStudyROIPoint
+    let spacingMM: Double
+    let probabilities: Data
+
+    var isValid: Bool {
+        dimensions.voxelCount > 0
+            && probabilities.count == dimensions.voxelCount
+            && spacingMM.isFinite
+            && spacingMM > 0
+    }
+
+    var volumeMM3: Double {
+        guard isValid else { return 0 }
+        let insideCount = probabilities.reduce(into: 0) { count, value in
+            if value >= 128 { count += 1 }
+        }
+        return Double(insideCount) * spacingMM * spacingMM * spacingMM
+    }
+
+    func extentMaximumDistance(from point: SIMD3<Double>) -> Double {
+        guard isValid else { return 0 }
+        let maximum = origin.vector + SIMD3<Double>(
+            Double(dimensions.x - 1) * spacingMM,
+            Double(dimensions.y - 1) * spacingMM,
+            Double(dimensions.z - 1) * spacingMM
+        )
+        var result = 0.0
+        for z in [origin.z, maximum.z] {
+            for y in [origin.y, maximum.y] {
+                for x in [origin.x, maximum.x] {
+                    result = max(result, simd_distance(point, SIMD3<Double>(x, y, z)))
+                }
+            }
+        }
+        return result
+    }
+
+    func occupiedMaximumDistance(from point: SIMD3<Double>) -> Double {
+        guard isValid else { return 0 }
+        var result = 0.0
+        for index in 0..<dimensions.voxelCount where probabilities[index] >= 128 {
+            let plane = dimensions.x * dimensions.y
+            let z = index / plane
+            let remainder = index - z * plane
+            let y = remainder / dimensions.x
+            let x = remainder - y * dimensions.x
+            let world = origin.vector + SIMD3<Double>(Double(x), Double(y), Double(z)) * spacingMM
+            result = max(result, simd_distance(point, world) + spacingMM)
+        }
+        return result
+    }
+
+    func probability(at point: SIMD3<Double>) -> Double? {
+        guard isValid else { return nil }
+        let coordinate = (point - origin.vector) / spacingMM
+        guard coordinate.x >= 0, coordinate.y >= 0, coordinate.z >= 0,
+              coordinate.x <= Double(dimensions.x - 1),
+              coordinate.y <= Double(dimensions.y - 1),
+              coordinate.z <= Double(dimensions.z - 1) else { return nil }
+
+        let x0 = Int(floor(coordinate.x))
+        let y0 = Int(floor(coordinate.y))
+        let z0 = Int(floor(coordinate.z))
+        let x1 = min(x0 + 1, dimensions.x - 1)
+        let y1 = min(y0 + 1, dimensions.y - 1)
+        let z1 = min(z0 + 1, dimensions.z - 1)
+        let fx = coordinate.x - Double(x0)
+        let fy = coordinate.y - Double(y0)
+        let fz = coordinate.z - Double(z0)
+
+        func value(_ x: Int, _ y: Int, _ z: Int) -> Double {
+            let index = (z * dimensions.y + y) * dimensions.x + x
+            return Double(probabilities[index]) / 255
+        }
+        let c00 = value(x0, y0, z0) * (1 - fx) + value(x1, y0, z0) * fx
+        let c10 = value(x0, y1, z0) * (1 - fx) + value(x1, y1, z0) * fx
+        let c01 = value(x0, y0, z1) * (1 - fx) + value(x1, y0, z1) * fx
+        let c11 = value(x0, y1, z1) * (1 - fx) + value(x1, y1, z1) * fx
+        let c0 = c00 * (1 - fy) + c10 * fy
+        let c1 = c01 * (1 - fy) + c11 * fy
+        return c0 * (1 - fz) + c1 * fz
+    }
+
+    func surfaceRadius(
+        from center: SIMD3<Double>,
+        along proposedDirection: SIMD3<Double>
+    ) -> Double? {
+        let directionLength = simd_length(proposedDirection)
+        guard isValid, directionLength > 0.000_001 else { return nil }
+        let direction = proposedDirection / directionLength
+        let maximumRadius = extentMaximumDistance(from: center) + spacingMM
+        let step = max(spacingMM * 0.5, 0.1)
+        var previousRadius = 0.0
+        var previousProbability = probability(at: center) ?? 0
+        guard previousProbability >= 0.5 else { return nil }
+
+        var radius = step
+        while radius <= maximumRadius {
+            let currentProbability = probability(at: center + direction * radius) ?? 0
+            if previousProbability >= 0.5, currentProbability < 0.5 {
+                var lower = previousRadius
+                var upper = radius
+                for _ in 0..<8 {
+                    let middle = (lower + upper) * 0.5
+                    if (probability(at: center + direction * middle) ?? 0) >= 0.5 {
+                        lower = middle
+                    } else {
+                        upper = middle
+                    }
+                }
+                return (lower + upper) * 0.5
+            }
+            previousRadius = radius
+            previousProbability = currentProbability
+            radius += step
+        }
+        return nil
     }
 }
 
@@ -40,6 +177,7 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
     var supportRadiusMM: Double
     var volumeMM3: Double
     var modifiedAt: Date
+    var voxelField: MetalStudyROIVoxelField?
 
     private var kernelAnchorDirections: [SIMD3<Double>] = []
     private var kernelAnchorRadii: [Double] = []
@@ -73,6 +211,7 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         supportRadiusMM = max(radiusMM * 0.8, 4)
         volumeMM3 = 4.0 / 3.0 * Double.pi * pow(max(radiusMM, 0.5), 3)
         modifiedAt = Date()
+        voxelField = nil
     }
 
     var color: NSColor {
@@ -89,7 +228,10 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
     }
 
     var conservativeBoundingRadiusMM: Double {
-        max(radiusMM, kernelAnchorRadii.max() ?? radiusMM)
+        max(
+            max(radiusMM, kernelAnchorRadii.max() ?? radiusMM),
+            voxelField?.occupiedMaximumDistance(from: center.vector) ?? 0
+        )
     }
 
     var manualAnchorCount: Int {
@@ -106,6 +248,13 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
 
     func surfaceRadius(along proposedDirection: SIMD3<Double>) -> Double {
         let directionLength = simd_length(proposedDirection)
+        if directionLength > 0.000_001,
+           let refinedRadius = voxelField?.surfaceRadius(
+               from: center.vector,
+               along: proposedDirection
+           ) {
+            return refinedRadius
+        }
         guard directionLength > 0.000_001,
               anchors.count == kernelAnchorDirections.count,
               anchors.count == kernelAnchorRadii.count,
@@ -150,6 +299,7 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         supportRadiusMM = max(self.radiusMM * 0.8, 4)
         anchors.removeAll()
         anchorKinds.removeAll()
+        voxelField = nil
         kernelAnchorDirections.removeAll()
         kernelAnchorRadii.removeAll()
         volumeMM3 = 4.0 / 3.0 * Double.pi * pow(self.radiusMM, 3)
@@ -158,6 +308,7 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
 
     @discardableResult
     mutating func addAnchor(_ point: SIMD3<Double>) -> Int {
+        voxelField = nil
         normalizeAnchorKinds()
         let minimumSeparation = max(radiusMM * 0.015, 0.25)
         let direction = Self.radialDirection(from: center.vector, to: point)
@@ -180,6 +331,7 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
     mutating func moveAnchor(at index: Int, to point: SIMD3<Double>) {
         normalizeAnchorKinds()
         guard anchors.indices.contains(index) else { return }
+        voxelField = nil
         anchors[index] = MetalStudyROIPoint(point)
         anchorKinds[index] = .manual
         rebuildAnchorSurface()
@@ -188,12 +340,14 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
     mutating func removeAnchor(at index: Int) {
         normalizeAnchorKinds()
         guard anchors.indices.contains(index) else { return }
+        voxelField = nil
         anchors.remove(at: index)
         anchorKinds.remove(at: index)
         rebuildAnchorSurface()
     }
 
     mutating func replaceAutomaticAnchors(with points: [SIMD3<Double>]) {
+        voxelField = nil
         normalizeAnchorKinds()
         let manualAnchors = anchors.indices.compactMap { index in
             anchorKinds[index] == .manual ? anchors[index] : nil
@@ -214,7 +368,25 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         rebuildAnchorSurface()
     }
 
+    mutating func applyImageRefinement(
+        automaticPoints: [SIMD3<Double>],
+        voxelField: MetalStudyROIVoxelField,
+        measuredVolumeMM3: Double? = nil,
+        updateVolume: Bool = true
+    ) {
+        replaceAutomaticAnchors(with: automaticPoints)
+        self.voxelField = voxelField.isValid ? voxelField : nil
+        if updateVolume, let field = self.voxelField {
+            volumeMM3 = measuredVolumeMM3 ?? field.volumeMM3
+        }
+        modifiedAt = Date()
+    }
+
     func implicitValue(at point: SIMD3<Double>) -> Double {
+        if let voxelField {
+            guard let probability = voxelField.probability(at: point) else { return 1 }
+            return 0.5 - probability
+        }
         let offset = point - center.vector
         let distance = simd_length(offset)
         guard anchors.count == kernelAnchorDirections.count,
@@ -229,11 +401,16 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
 
     mutating func rebuildDerivedState() {
         radiusMM = max(radiusMM, 0.5)
+        if voxelField?.isValid == false { voxelField = nil }
         normalizeAnchorKinds()
         rebuildKernelState()
     }
 
     mutating func updateEstimatedVolume() {
+        if let voxelField, voxelField.isValid {
+            volumeMM3 = voxelField.volumeMM3
+            return
+        }
         if anchors.isEmpty {
             volumeMM3 = 4.0 / 3.0 * Double.pi * pow(radiusMM, 3)
             return
@@ -369,6 +546,7 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         case id, trackingUID, name, studyInstanceUID, frameOfReferenceUID
         case sourceSeriesIdentifier, colorRed, colorGreen, colorBlue
         case center, radiusMM, anchors, anchorKinds, supportRadiusMM, volumeMM3, modifiedAt
+        case voxelField
     }
 
     init(from decoder: Decoder) throws {
@@ -392,6 +570,7 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         supportRadiusMM = try container.decode(Double.self, forKey: .supportRadiusMM)
         volumeMM3 = try container.decode(Double.self, forKey: .volumeMM3)
         modifiedAt = try container.decode(Date.self, forKey: .modifiedAt)
+        voxelField = try container.decodeIfPresent(MetalStudyROIVoxelField.self, forKey: .voxelField)
         normalizeAnchorKinds()
         rebuildKernelState()
     }
@@ -425,6 +604,7 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         try container.encode(supportRadiusMM, forKey: .supportRadiusMM)
         try container.encode(volumeMM3, forKey: .volumeMM3)
         try container.encode(modifiedAt, forKey: .modifiedAt)
+        try container.encodeIfPresent(voxelField, forKey: .voxelField)
     }
 }
 
@@ -621,11 +801,49 @@ final class MetalStudyROIStore: @unchecked Sendable {
         notifyChanged(schedulePersistence: true)
     }
 
-    func applyImageRefinement(_ points: [SIMD3<Double>], to identifier: UUID) {
+    func applyImageRefinement(
+        _ points: [SIMD3<Double>],
+        voxelField: MetalStudyROIVoxelField,
+        measuredVolumeMM3: Double,
+        to identifier: UUID
+    ) {
         guard let roiIndex = rois.firstIndex(where: { $0.id == identifier }) else { return }
         pushUndoState()
-        rois[roiIndex].replaceAutomaticAnchors(with: points)
-        scheduleVolumeEstimate(for: identifier)
+        rois[roiIndex].applyImageRefinement(
+            automaticPoints: points,
+            voxelField: voxelField,
+            measuredVolumeMM3: measuredVolumeMM3
+        )
+        notifyChanged(schedulePersistence: true)
+    }
+
+    func applyInteractiveImageRefinement(
+        _ points: [SIMD3<Double>],
+        voxelField: MetalStudyROIVoxelField,
+        to identifier: UUID
+    ) {
+        guard provisionalAnchorIdentifier == identifier,
+              let roiIndex = rois.firstIndex(where: { $0.id == identifier }) else { return }
+        rois[roiIndex].applyImageRefinement(
+            automaticPoints: points,
+            voxelField: voxelField,
+            updateVolume: false
+        )
+        notifyChanged(schedulePersistence: false)
+    }
+
+    func applyAutomaticImageRefinement(
+        _ points: [SIMD3<Double>],
+        voxelField: MetalStudyROIVoxelField,
+        measuredVolumeMM3: Double,
+        to identifier: UUID
+    ) {
+        guard let roiIndex = rois.firstIndex(where: { $0.id == identifier }) else { return }
+        rois[roiIndex].applyImageRefinement(
+            automaticPoints: points,
+            voxelField: voxelField,
+            measuredVolumeMM3: measuredVolumeMM3
+        )
         notifyChanged(schedulePersistence: true)
     }
 
@@ -737,76 +955,242 @@ final class MetalStudyROIStore: @unchecked Sendable {
 struct MetalStudyROIRefinementResult: Sendable {
     let roiIdentifier: UUID
     let automaticAnchors: [SIMD3<Double>]
+    let voxelField: MetalStudyROIVoxelField
+    let volumeMM3: Double
     let meanDisplacementMM: Double
     let maximumDisplacementMM: Double
 }
 
-final class MetalStudyROIRefinementRequest: @unchecked Sendable {
-    private struct Candidate {
-        let radius: Double
-        let displacement: Double
-        let dataCost: Double
-        let appearanceMismatch: Double?
-    }
+private final class MetalStudyROIGPUSolver: @unchecked Sendable {
+    final class EdgeBuffers: @unchecked Sendable {
+        let count: Int
+        fileprivate let x: MTLBuffer
+        fileprivate let y: MTLBuffer
+        fileprivate let z: MTLBuffer
 
-    private struct DirectionSamples {
-        let direction: SIMD3<Double>
-        let originalRadius: Double
-        let candidates: [Candidate]
-        let hasImageEvidence: Bool
-        let confidence: Double
-        let isManualConstraint: Bool
-    }
-
-    private struct DirectionSeed {
-        let direction: SIMD3<Double>
-        let manualRadius: Double?
-    }
-
-    private struct BoundaryEvidence {
-        let strength: Double
-        let normalizedProfile: [Double]
-    }
-
-    private struct BoundaryAppearanceExample {
-        let direction: SIMD3<Double>
-        let normalizedProfile: [Double]
-        let strength: Double
-    }
-
-    private struct BoundaryAppearanceModel {
-        let examples: [BoundaryAppearanceExample]
-
-        func mismatch(
-            for normalizedProfile: [Double],
-            direction: SIMD3<Double>
-        ) -> Double? {
-            guard normalizedProfile.isEmpty == false,
-                  examples.isEmpty == false else { return nil }
-            let localExamples = examples
-                .sorted { simd_dot(direction, $0.direction) > simd_dot(direction, $1.direction) }
-                .prefix(4)
-            var weightedMismatch = 0.0
-            var totalWeight = 0.0
-            for example in localExamples {
-                guard example.normalizedProfile.count == normalizedProfile.count else { continue }
-                let chordDistance = simd_distance(direction, example.direction)
-                let weight = 1 / max(chordDistance * chordDistance + 0.08, 0.08)
-                let mismatch = zip(normalizedProfile, example.normalizedProfile).reduce(0.0) {
-                    partialMismatch, pair in
-                    let difference = pair.0 - pair.1
-                    let magnitude = abs(difference)
-                    let robustCost = magnitude <= 1
-                        ? 0.5 * magnitude * magnitude
-                        : magnitude - 0.5
-                    return partialMismatch + robustCost
-                } / Double(normalizedProfile.count)
-                weightedMismatch += mismatch * weight
-                totalWeight += weight
-            }
-            guard totalWeight > 0 else { return nil }
-            return min(weightedMismatch / totalWeight, 3)
+        fileprivate init(count: Int, x: MTLBuffer, y: MTLBuffer, z: MTLBuffer) {
+            self.count = count
+            self.x = x
+            self.y = y
+            self.z = z
         }
+    }
+
+    final class Workspace: @unchecked Sendable {
+        let count: Int
+        fileprivate let probability: MTLBuffer
+        fileprivate let fixed: MTLBuffer
+        fileprivate let initial: MTLBuffer
+
+        fileprivate init(
+            count: Int,
+            probability: MTLBuffer,
+            fixed: MTLBuffer,
+            initial: MTLBuffer
+        ) {
+            self.count = count
+            self.probability = probability
+            self.fixed = fixed
+            self.initial = initial
+        }
+    }
+
+    private struct Uniforms {
+        var dimensions: SIMD3<UInt32>
+        var voxelCount: UInt32
+        var priorWeight: Float
+        var relaxation: Float
+        var phase: UInt32
+        var padding: UInt32 = 0
+    }
+
+    static let shared: MetalStudyROIGPUSolver? = MetalStudyROIGPUSolver()
+
+    private let device: MTLDevice
+    private let commandQueue: MTLCommandQueue
+    private let pipeline: MTLComputePipelineState
+
+    private init?() {
+        guard let device = MTLCreateSystemDefaultDevice(),
+              let commandQueue = device.makeCommandQueue(),
+              let library = device.makeDefaultLibrary(),
+              let function = library.makeFunction(name: "metalStudyROIRedBlackRelaxation"),
+              let pipeline = try? device.makeComputePipelineState(function: function) else {
+            return nil
+        }
+        self.device = device
+        self.commandQueue = commandQueue
+        self.pipeline = pipeline
+    }
+
+    func makeEdgeBuffers(
+        xEdges: [Float],
+        yEdges: [Float],
+        zEdges: [Float]
+    ) -> EdgeBuffers? {
+        guard xEdges.isEmpty == false,
+              xEdges.count == yEdges.count,
+              xEdges.count == zEdges.count else { return nil }
+        let byteCount = xEdges.count * MemoryLayout<Float>.stride
+        guard let x = device.makeBuffer(
+            bytes: xEdges,
+            length: byteCount,
+            options: .storageModeShared
+        ),
+              let y = device.makeBuffer(
+                bytes: yEdges,
+                length: byteCount,
+                options: .storageModeShared
+              ),
+              let z = device.makeBuffer(
+                bytes: zEdges,
+                length: byteCount,
+                options: .storageModeShared
+              ) else { return nil }
+        return EdgeBuffers(count: xEdges.count, x: x, y: y, z: z)
+    }
+
+    func makeWorkspace(count: Int) -> Workspace? {
+        guard count > 0 else { return nil }
+        let byteCount = count * MemoryLayout<Float>.stride
+        guard let probability = device.makeBuffer(
+            length: byteCount,
+            options: .storageModeShared
+        ),
+              let fixed = device.makeBuffer(
+                length: byteCount,
+                options: .storageModeShared
+              ),
+              let initial = device.makeBuffer(
+                length: byteCount,
+                options: .storageModeShared
+              ) else { return nil }
+        return Workspace(
+            count: count,
+            probability: probability,
+            fixed: fixed,
+            initial: initial
+        )
+    }
+
+    private func copy(_ values: [Float], to buffer: MTLBuffer) {
+        values.withUnsafeBytes { bytes in
+            guard let source = bytes.baseAddress else { return }
+            buffer.contents().copyMemory(from: source, byteCount: bytes.count)
+        }
+    }
+
+    private func copy(_ source: MTLBuffer, to destination: MTLBuffer, byteCount: Int) {
+        destination.contents().copyMemory(
+            from: UnsafeRawPointer(source.contents()),
+            byteCount: byteCount
+        )
+    }
+
+    func solve(
+        dimensions: MetalStudyROIGridDimensions,
+        fixedValues: [Float],
+        initialValues: [Float]?,
+        reuseProbability: Bool,
+        edgeBuffers: EdgeBuffers,
+        workspace: Workspace,
+        sweepCount: Int
+    ) -> Bool {
+        let count = dimensions.voxelCount
+        guard count > 0,
+              fixedValues.count == count,
+              edgeBuffers.count == count,
+              workspace.count == count else { return false }
+        if reuseProbability == false,
+           initialValues?.count != count {
+            return false
+        }
+        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return false }
+
+        // The workspace belongs to the prepared image/ROI pair. Reusing these
+        // shared buffers removes three full-volume Metal allocations from every
+        // drag preview while still beginning each solve from its warm solution.
+        copy(fixedValues, to: workspace.fixed)
+        let byteCount = count * MemoryLayout<Float>.stride
+        if reuseProbability {
+            copy(workspace.probability, to: workspace.initial, byteCount: byteCount)
+        } else if let initialValues {
+            copy(initialValues, to: workspace.probability)
+            copy(initialValues, to: workspace.initial)
+        }
+
+        let threadWidth = max(
+            min(pipeline.threadExecutionWidth, pipeline.maxTotalThreadsPerThreadgroup),
+            1
+        )
+        let threadsPerThreadgroup = MTLSize(width: threadWidth, height: 1, depth: 1)
+        let threads = MTLSize(width: count, height: 1, depth: 1)
+        var uniforms = Uniforms(
+            dimensions: SIMD3<UInt32>(
+                UInt32(dimensions.x),
+                UInt32(dimensions.y),
+                UInt32(dimensions.z)
+            ),
+            voxelCount: UInt32(count),
+            priorWeight: 0.000_01,
+            relaxation: 1.35,
+            phase: 0
+        )
+
+        guard let encoder = commandBuffer.makeComputeCommandEncoder() else { return false }
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBuffer(workspace.probability, offset: 0, index: 0)
+        encoder.setBuffer(workspace.fixed, offset: 0, index: 1)
+        encoder.setBuffer(workspace.initial, offset: 0, index: 2)
+        encoder.setBuffer(edgeBuffers.x, offset: 0, index: 3)
+        encoder.setBuffer(edgeBuffers.y, offset: 0, index: 4)
+        encoder.setBuffer(edgeBuffers.z, offset: 0, index: 5)
+
+        let sweepCount = max(sweepCount, 1)
+        for sweep in 0..<sweepCount {
+            for phase in UInt32(0)...UInt32(1) {
+                uniforms.phase = phase
+                encoder.setBytes(
+                    &uniforms,
+                    length: MemoryLayout<Uniforms>.stride,
+                    index: 6
+                )
+                encoder.dispatchThreads(threads, threadsPerThreadgroup: threadsPerThreadgroup)
+                if sweep + 1 < sweepCount || phase == 0 {
+                    encoder.memoryBarrier(scope: .buffers)
+                }
+            }
+        }
+        encoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        return commandBuffer.status == .completed
+    }
+
+    func quantizedProbabilities(in workspace: Workspace) -> ([UInt8], Int) {
+        let count = workspace.count
+        let pointer = workspace.probability.contents().bindMemory(to: Float.self, capacity: count)
+        var bytes = Array(repeating: UInt8(0), count: count)
+        var insideCount = 0
+        for index in 0..<count {
+            let rawProbability = pointer[index]
+            let probability = rawProbability.isFinite
+                ? min(max(rawProbability, 0), 1)
+                : 0
+            let byte = UInt8((probability * 255).rounded())
+            bytes[index] = byte
+            if byte >= 128 { insideCount += 1 }
+        }
+        return (bytes, insideCount)
+    }
+}
+
+final class MetalStudyROIRefinementRequest: @unchecked Sendable {
+    private(set) var failureDetail: String?
+
+    private func fail<T>(_ detail: String) -> T? {
+        failureDetail = detail
+        return nil
     }
 
     private struct Slice {
@@ -955,279 +1339,572 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
         self.canonicalToSeriesWorld = canonicalToSeriesWorld
     }
 
-    func run() -> MetalStudyROIRefinementResult? {
-        guard let volume = IntensityVolume(pixList: pixList) else { return nil }
-        let directionSeeds = refinementDirections()
-        guard directionSeeds.isEmpty == false else { return nil }
+    private struct RandomWalkerGrid {
+        let dimensions: MetalStudyROIGridDimensions
+        let origin: SIMD3<Double>
+        let spacing: Double
+        let intensities: [Float]
+        let valid: [Bool]
 
-        let step = min(max(volume.minimumVoxelSpacing * 0.75, 0.35), 0.8)
-        let appearanceModel = boundaryAppearanceModel(step: step, volume: volume)
-        let samples = directionSeeds.map { seed in
-            makeSamples(
-                seed: seed,
-                step: step,
-                volume: volume,
-                appearanceModel: appearanceModel
-            )
+        var voxelCount: Int { dimensions.voxelCount }
+
+        func index(x: Int, y: Int, z: Int) -> Int {
+            (z * dimensions.y + y) * dimensions.x + x
         }
-        let automaticSamples = samples.filter { $0.isManualConstraint == false }
-        guard automaticSamples.lazy.filter(\.hasImageEvidence).count
-            >= max(4, automaticSamples.count / 4) else {
-            return nil
+
+        func coordinate(for index: Int) -> SIMD3<Int> {
+            let plane = dimensions.x * dimensions.y
+            let z = index / plane
+            let remainder = index - z * plane
+            let y = remainder / dimensions.x
+            return SIMD3<Int>(remainder - y * dimensions.x, y, z)
         }
-        let directions = directionSeeds.map(\.direction)
-        let neighbors = nearestNeighbors(
-            for: directions,
-            count: min(6, max(directions.count - 1, 0))
+
+        func point(x: Int, y: Int, z: Int) -> SIMD3<Double> {
+            origin + SIMD3<Double>(Double(x), Double(y), Double(z)) * spacing
+        }
+
+        func nearestIndex(to point: SIMD3<Double>) -> Int? {
+            let coordinate = (point - origin) / spacing
+            let x = Int(coordinate.x.rounded())
+            let y = Int(coordinate.y.rounded())
+            let z = Int(coordinate.z.rounded())
+            guard x >= 0, y >= 0, z >= 0,
+                  x < dimensions.x, y < dimensions.y, z < dimensions.z else { return nil }
+            return index(x: x, y: y, z: z)
+        }
+    }
+
+    private struct RandomWalkerEdges {
+        let x: [Float]
+        let y: [Float]
+        let z: [Float]
+    }
+
+    private struct RandomWalkerFieldResult {
+        let field: MetalStudyROIVoxelField
+        let insideVoxelCount: Int
+
+        var volumeMM3: Double {
+            Double(insideVoxelCount)
+                * field.spacingMM
+                * field.spacingMM
+                * field.spacingMM
+        }
+    }
+
+    private final class PreparedRandomWalkerData: @unchecked Sendable {
+        final class ROIState: @unchecked Sendable {
+            let lock = NSLock()
+            let workspace: MetalStudyROIGPUSolver.Workspace
+            var hasWarmSolution = false
+            var previewConstraintBase: [Float]?
+
+            init(workspace: MetalStudyROIGPUSolver.Workspace) {
+                self.workspace = workspace
+            }
+        }
+
+        let grid: RandomWalkerGrid
+        let gpuEdgeBuffers: MetalStudyROIGPUSolver.EdgeBuffers
+        let validVoxelCount: Int
+        private let stateLock = NSLock()
+        private var roiStates: [UUID: ROIState] = [:]
+
+        init(
+            grid: RandomWalkerGrid,
+            gpuEdgeBuffers: MetalStudyROIGPUSolver.EdgeBuffers
+        ) {
+            self.grid = grid
+            self.gpuEdgeBuffers = gpuEdgeBuffers
+            validVoxelCount = grid.valid.lazy.filter { $0 }.count
+        }
+
+        func state(
+            for identifier: UUID,
+            solver: MetalStudyROIGPUSolver
+        ) -> ROIState? {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            if let state = roiStates[identifier] { return state }
+            guard let workspace = solver.makeWorkspace(count: grid.voxelCount) else {
+                return nil
+            }
+            let state = ROIState(workspace: workspace)
+            roiStates[identifier] = state
+            return state
+        }
+    }
+
+    private static let preparationCacheLock = NSLock()
+    private static var preparationCache: [String: PreparedRandomWalkerData] = [:]
+    private static var preparationCacheOrder: [String] = []
+
+    private func preparedRandomWalkerData() -> PreparedRandomWalkerData? {
+        let requestedHalfExtent = max(roi.conservativeBoundingRadiusMM + 10, 12)
+        // Five-millimetre buckets keep a drag inside the same prepared volume.
+        // A new volume is prepared only if the edited ROI approaches its edge.
+        let halfExtent = ceil(requestedHalfExtent / 5) * 5
+        let key = preparationCacheKey(halfExtent: halfExtent)
+        Self.preparationCacheLock.lock()
+        if let cached = Self.preparationCache[key] {
+            Self.preparationCacheLock.unlock()
+            return cached
+        }
+        Self.preparationCacheLock.unlock()
+
+        guard let volume = IntensityVolume(pixList: pixList) else {
+            return fail("No spatially consistent image slices could be decoded for refinement.")
+        }
+        guard let grid = makeRandomWalkerGrid(volume: volume, halfExtent: halfExtent) else {
+            return fail("The cropped refinement region did not contain enough usable image samples.")
+        }
+        let edges = randomWalkerEdges(grid: grid)
+        guard let gpuEdgeBuffers = MetalStudyROIGPUSolver.shared?.makeEdgeBuffers(
+            xEdges: edges.x,
+            yEdges: edges.y,
+            zEdges: edges.z
+        ) else {
+            return fail("The Metal refinement buffers could not be prepared.")
+        }
+        let prepared = PreparedRandomWalkerData(
+            grid: grid,
+            gpuEdgeBuffers: gpuEdgeBuffers
         )
-        let selectedCandidates = globallyRegularizedCandidates(
-            samples: samples,
-            neighbors: neighbors,
-            step: step
-        )
-        let anchors: [SIMD3<Double>] = samples.indices.compactMap { index -> SIMD3<Double>? in
-            guard samples[index].isManualConstraint == false else { return nil }
-            return roi.center.vector + samples[index].direction * selectedCandidates[index].radius
+        Self.preparationCacheLock.lock()
+        Self.preparationCache[key] = prepared
+        Self.preparationCacheOrder.removeAll { $0 == key }
+        Self.preparationCacheOrder.append(key)
+        while Self.preparationCacheOrder.count > 4 {
+            let discardedKey = Self.preparationCacheOrder.removeFirst()
+            Self.preparationCache.removeValue(forKey: discardedKey)
         }
-        let displacements = selectedCandidates.map { abs($0.displacement) }
-        return MetalStudyROIRefinementResult(
-            roiIdentifier: roi.id,
-            automaticAnchors: anchors,
-            meanDisplacementMM: displacements.reduce(0, +) / Double(max(displacements.count, 1)),
-            maximumDisplacementMM: displacements.max() ?? 0
+        Self.preparationCacheLock.unlock()
+        return prepared
+    }
+
+    private func preparationCacheKey(halfExtent: Double) -> String {
+        let paths = pixList.compactMap(\.srcFile)
+        let columns = canonicalToSeriesWorld.columns
+        let matrixValues = [
+            columns.0.x, columns.0.y, columns.0.z, columns.0.w,
+            columns.1.x, columns.1.y, columns.1.z, columns.1.w,
+            columns.2.x, columns.2.y, columns.2.z, columns.2.w,
+            columns.3.x, columns.3.y, columns.3.z, columns.3.w,
+        ].map { String(format: "%.5f", Double($0)) }.joined(separator: ",")
+        return [
+            paths.first ?? "",
+            paths.last ?? "",
+            String(pixList.count),
+            String(format: "%.2f,%.2f,%.2f", roi.center.x, roi.center.y, roi.center.z),
+            String(format: "%.1f", halfExtent),
+            matrixValues,
+        ].joined(separator: "|")
+    }
+
+    private func randomWalkerField(
+        prepared: PreparedRandomWalkerData,
+        sweepCount: Int,
+        preview: Bool,
+        reusePreparedConstraints: Bool
+    ) -> RandomWalkerFieldResult? {
+        let grid = prepared.grid
+        guard let solver = MetalStudyROIGPUSolver.shared,
+              let state = prepared.state(for: roi.id, solver: solver) else {
+            return fail("The Metal refinement workspace could not be prepared.")
+        }
+        state.lock.lock()
+        defer { state.lock.unlock() }
+
+        let constraintBase: [Float]
+        if (preview || reusePreparedConstraints),
+           let cached = state.previewConstraintBase {
+            constraintBase = cached
+        } else {
+            constraintBase = randomWalkerConstraintBase(grid: grid)
+            state.previewConstraintBase = constraintBase
+        }
+        var fixedValues = constraintBase
+        applyManualRandomWalkerConstraints(grid: grid, to: &fixedValues)
+        guard fixedValues.contains(where: { $0 >= 0.99 }),
+              fixedValues.contains(where: { $0 == 0 }) else {
+            return fail("The ROI did not provide both interior and exterior refinement constraints.")
+        }
+
+        // Constructing the initial field asks the current ROI surface for every
+        // voxel. Once an image/ROI pair has a solved field, that field is both a
+        // better initial estimate and dramatically cheaper to reuse.
+        let initial = state.hasWarmSolution ? nil : initialProbabilities(grid: grid)
+        guard solveRandomWalker(
+            grid: grid,
+            edgeBuffers: prepared.gpuEdgeBuffers,
+            workspace: state.workspace,
+            fixedValues: &fixedValues,
+            initial: initial,
+            reuseProbability: state.hasWarmSolution,
+            sweepCount: sweepCount
+        ) else {
+            return fail("The Metal probability solver did not complete successfully.")
+        }
+        state.hasWarmSolution = true
+
+        var (bytes, insideCount) = solver.quantizedProbabilities(in: state.workspace)
+        if preview == false {
+            retainCenterConnectedForeground(in: &bytes, grid: grid)
+            insideCount = bytes.lazy.filter { $0 >= 128 }.count
+        }
+        guard insideCount >= 8,
+              insideCount < max(Int(Double(prepared.validVoxelCount) * 0.9), 9) else {
+            return fail("The solved foreground was empty or occupied nearly the entire usable crop.")
+        }
+        return RandomWalkerFieldResult(
+            field: MetalStudyROIVoxelField(
+                dimensions: grid.dimensions,
+                origin: MetalStudyROIPoint(grid.origin),
+                spacingMM: grid.spacing,
+                probabilities: Data(bytes)
+            ),
+            insideVoxelCount: insideCount
         )
     }
 
-    private func refinementDirections() -> [DirectionSeed] {
-        var result: [DirectionSeed] = []
-        result.reserveCapacity(224)
-        for index in roi.anchors.indices where roi.anchorKind(at: index) == .manual {
-            let anchor = roi.anchors[index]
-            let offset = anchor.vector - roi.center.vector
-            let length = simd_length(offset)
-            guard length > 0.000_001 else { continue }
-            let direction = offset / length
-            if result.contains(where: { simd_distance($0.direction, direction) < 0.005 }) == false {
-                result.append(DirectionSeed(direction: direction, manualRadius: length))
+    private func retainCenterConnectedForeground(
+        in probabilities: inout [UInt8],
+        grid: RandomWalkerGrid
+    ) {
+        guard probabilities.count == grid.voxelCount else { return }
+        var seed = grid.nearestIndex(to: roi.center.vector)
+        if let candidate = seed, probabilities[candidate] < 128 {
+            seed = nil
+        }
+        if seed == nil {
+            var nearestDistanceSquared = Double.greatestFiniteMagnitude
+            for index in probabilities.indices where probabilities[index] >= 128 {
+                let coordinate = grid.coordinate(for: index)
+                let point = grid.point(x: coordinate.x, y: coordinate.y, z: coordinate.z)
+                let distanceSquared = simd_length_squared(point - roi.center.vector)
+                if distanceSquared < nearestDistanceSquared {
+                    nearestDistanceSquared = distanceSquared
+                    seed = index
+                }
             }
         }
+        guard let seed else { return }
 
-        // These automatic directions are vertices of a subdivided icosahedron.
-        // Unlike a freshly distributed point cloud, their angular identity and
-        // neighborhood remain stable every time refinement is run.
-        for direction in Self.icosphereDirections(subdivisions: 2) {
-            if result.contains(where: {
-                $0.manualRadius != nil && simd_distance($0.direction, direction) < 0.04
-            }) == false {
-                result.append(DirectionSeed(direction: direction, manualRadius: nil))
+        var connected = Array(repeating: false, count: probabilities.count)
+        var queue = [seed]
+        connected[seed] = true
+        var cursor = 0
+        while cursor < queue.count {
+            let index = queue[cursor]
+            cursor += 1
+            let coordinate = grid.coordinate(for: index)
+            for deltaZ in -1...1 {
+                let z = coordinate.z + deltaZ
+                guard z >= 0, z < grid.dimensions.z else { continue }
+                for deltaY in -1...1 {
+                    let y = coordinate.y + deltaY
+                    guard y >= 0, y < grid.dimensions.y else { continue }
+                    for deltaX in -1...1 {
+                        guard deltaX != 0 || deltaY != 0 || deltaZ != 0 else { continue }
+                        let x = coordinate.x + deltaX
+                        guard x >= 0, x < grid.dimensions.x else { continue }
+                        let neighbor = grid.index(x: x, y: y, z: z)
+                        guard connected[neighbor] == false,
+                              probabilities[neighbor] >= 128 else { continue }
+                        connected[neighbor] = true
+                        queue.append(neighbor)
+                    }
+                }
             }
+        }
+        for index in probabilities.indices where probabilities[index] >= 128 && connected[index] == false {
+            probabilities[index] = 0
+        }
+    }
+
+    private func makeRandomWalkerGrid(
+        volume: IntensityVolume,
+        halfExtent: Double
+    ) -> RandomWalkerGrid? {
+        var spacing = min(max(volume.minimumVoxelSpacing, 0.55), 1.0)
+
+        func gridDimension(for candidateSpacing: Double) -> Int {
+            let halfVoxelCount = Int(ceil(halfExtent / candidateSpacing))
+            return max(halfVoxelCount * 2 + 1, 5)
+        }
+
+        var dimension = gridDimension(for: spacing)
+        let maximumVoxelCount = 420_000.0
+        let initialVoxelCount = pow(Double(dimension), 3)
+        if initialVoxelCount > maximumVoxelCount {
+            spacing *= pow(initialVoxelCount / maximumVoxelCount, 1.0 / 3.0)
+            dimension = gridDimension(for: spacing)
+        }
+        let dimensions = MetalStudyROIGridDimensions(
+            x: dimension,
+            y: dimension,
+            z: dimension
+        )
+        let origin = roi.center.vector - SIMD3<Double>(repeating: Double(dimension - 1) * spacing * 0.5)
+        var rawIntensities = Array(repeating: Float(0), count: dimensions.voxelCount)
+        var valid = Array(repeating: false, count: dimensions.voxelCount)
+        var validValues: [Float] = []
+        validValues.reserveCapacity(dimensions.voxelCount)
+
+        for z in 0..<dimension {
+            for y in 0..<dimension {
+                for x in 0..<dimension {
+                    let index = (z * dimension + y) * dimension + x
+                    let point = origin + SIMD3<Double>(Double(x), Double(y), Double(z)) * spacing
+                    guard let value = sample(canonicalPoint: point, volume: volume),
+                          value.isFinite else { continue }
+                    let floatValue = Float(value)
+                    rawIntensities[index] = floatValue
+                    valid[index] = true
+                    validValues.append(floatValue)
+                }
+            }
+        }
+        // Thin acquired slabs legitimately occupy much less than ten percent of
+        // a cubic canonical crop. Absolute usable data and seed validation below
+        // are the meaningful requirements; crop occupancy is not.
+        guard validValues.count >= 64 else { return nil }
+        validValues.sort()
+        let lower = validValues[Int(Double(validValues.count - 1) * 0.02)]
+        let upper = validValues[Int(Double(validValues.count - 1) * 0.98)]
+        let range = max(upper - lower, 0.000_001)
+        for index in rawIntensities.indices where valid[index] {
+            rawIntensities[index] = min(max((rawIntensities[index] - lower) / range, 0), 1)
+        }
+        return RandomWalkerGrid(
+            dimensions: dimensions,
+            origin: origin,
+            spacing: spacing,
+            intensities: rawIntensities,
+            valid: valid
+        )
+    }
+
+    private func initialProbabilities(grid: RandomWalkerGrid) -> [Float] {
+        var result = Array(repeating: Float(0), count: grid.voxelCount)
+        for index in result.indices where grid.valid[index] {
+            let coordinate = grid.coordinate(for: index)
+            let point = grid.point(x: coordinate.x, y: coordinate.y, z: coordinate.z)
+            let signedValue = roi.implicitValue(at: point)
+            result[index] = signedValue <= 0 ? 1 : 0
         }
         return result
     }
 
-    private func makeSamples(
-        seed: DirectionSeed,
-        step: Double,
-        volume: IntensityVolume,
-        appearanceModel: BoundaryAppearanceModel?
-    ) -> DirectionSamples {
-        let direction = seed.direction
-        if let manualRadius = seed.manualRadius {
-            // A manual point is a positional observation of the boundary, not a
-            // normal-vector observation. Keep its radius as the only candidate;
-            // nearby automatic samples remain free to determine surface tangent.
-            return DirectionSamples(
-                direction: direction,
-                originalRadius: manualRadius,
-                candidates: [Candidate(
-                    radius: manualRadius,
-                    displacement: 0,
-                    dataCost: 0,
-                    appearanceMismatch: 0
-                )],
-                hasImageEvidence: true,
-                confidence: 1,
-                isManualConstraint: true
-            )
-        }
-        let originalRadius = roi.surfaceRadius(along: direction)
-        let maximumTravel = 10.0
-        let inwardTravel = min(max(originalRadius - 0.5, 0), maximumTravel)
-        var offsets = stride(from: -inwardTravel, through: maximumTravel, by: step).map { $0 }
-        if offsets.contains(where: { abs($0 - maximumTravel) < 0.000_1 }) == false {
-            offsets.append(maximumTravel)
-        }
-        if inwardTravel > 0,
-           offsets.contains(where: { abs($0 + inwardTravel) < 0.000_1 }) == false {
-            offsets.append(-inwardTravel)
-        }
-        if offsets.contains(where: { abs($0) < 0.000_1 }) == false { offsets.append(0) }
-        offsets.sort()
+    private func randomWalkerConstraintBase(
+        grid: RandomWalkerGrid
+    ) -> [Float] {
+        var fixed = Array(repeating: Float.nan, count: grid.voxelCount)
+        let dimensions = grid.dimensions
+        for z in 0..<dimensions.z {
+            for y in 0..<dimensions.y {
+                for x in 0..<dimensions.x {
+                    let index = grid.index(x: x, y: y, z: z)
+                    if grid.valid[index] == false
+                        || x == 0 || y == 0 || z == 0
+                        || x == dimensions.x - 1
+                        || y == dimensions.y - 1
+                        || z == dimensions.z - 1 {
+                        fixed[index] = 0
+                        continue
+                    }
 
-        let probeDistance = max(step, volume.minimumVoxelSpacing * 0.75)
-        let evidenceByOffset = offsets.map { offset in
-            boundaryEvidence(
-                radius: max(originalRadius + offset, 0.5),
-                direction: direction,
-                probeDistance: probeDistance,
-                volume: volume
-            )
-        }
-        let rawStrengths = evidenceByOffset.map { $0?.strength }
-        let validStrengths = rawStrengths.compactMap { $0 }.sorted()
-        let scale = validStrengths.isEmpty
-            ? 1
-            : max(validStrengths[min(Int(Double(validStrengths.count - 1) * 0.9), validStrengths.count - 1)], 0.000_001)
-        let confidence = boundaryConfidence(for: validStrengths)
-        let zeroIndex = offsets.indices.min(by: { abs(offsets[$0]) < abs(offsets[$1]) }) ?? 0
-        let originalStrength = rawStrengths[zeroIndex] ?? 0
-
-        let candidates = offsets.indices.map { index -> Candidate in
-            let offset = offsets[index]
-            let normalizedImprovement = ((rawStrengths[index] ?? originalStrength) - originalStrength) / scale
-            let displacementFraction = offset / max(maximumTravel, step)
-            let missingPenalty = rawStrengths[index] == nil ? 1.5 : 0
-            let appearanceMismatch = evidenceByOffset[index].flatMap { evidence in
-                appearanceModel?.mismatch(
-                    for: evidence.normalizedProfile,
-                    direction: direction
-                )
+                    let point = grid.point(x: x, y: y, z: z)
+                    let offset = point - roi.center.vector
+                    let distance = simd_length(offset)
+                    if distance > 0.000_001 {
+                        let existingRadius = roi.surfaceRadius(along: offset / distance)
+                        let signedDistance = distance - existingRadius
+                        let exteriorSearchDistance = 10.0
+                        // In three dimensions, a tiny foreground core and a
+                        // distant background shell cause the harmonic solution
+                        // to collapse inward even for uniform edge weights. This
+                        // erosion depth balances spherical harmonic falloff so
+                        // the current boundary is the neutral 0.5 solution while
+                        // retaining the requested 10 mm outward search range.
+                        let interiorSeedDepth = existingRadius * exteriorSearchDistance
+                            / max(existingRadius + 2 * exteriorSearchDistance, 0.001)
+                        if signedDistance <= -max(interiorSeedDepth, grid.spacing * 1.5) {
+                            fixed[index] = 1
+                        } else if signedDistance >= exteriorSearchDistance {
+                            fixed[index] = 0
+                        }
+                    } else {
+                        fixed[index] = 1
+                    }
+                }
             }
-            return Candidate(
-                radius: max(originalRadius + offset, 0.5),
-                displacement: offset,
-                dataCost: -normalizedImprovement * (0.15 + confidence * 0.85)
-                    + 0.28 * displacementFraction * displacementFraction
-                    + 0.8 * (appearanceMismatch ?? 0)
-                    + missingPenalty,
-                appearanceMismatch: appearanceMismatch
-            )
         }
-        return DirectionSamples(
-            direction: direction,
-            originalRadius: originalRadius,
-            candidates: candidates,
-            hasImageEvidence: validStrengths.isEmpty == false,
-            confidence: confidence,
-            isManualConstraint: false
-        )
+
+        return fixed
     }
 
-    private func boundaryStrength(
-        radius: Double,
-        direction: SIMD3<Double>,
-        probeDistance: Double,
-        volume: IntensityVolume
-    ) -> Double? {
-        boundaryEvidence(
-            radius: radius,
-            direction: direction,
-            probeDistance: probeDistance,
-            volume: volume
-        )?.strength
-    }
-
-    private func boundaryAppearanceModel(
-        step: Double,
-        volume: IntensityVolume
-    ) -> BoundaryAppearanceModel? {
-        let probeDistance = max(step, volume.minimumVoxelSpacing * 0.75)
-        var examples: [BoundaryAppearanceExample] = []
+    private func applyManualRandomWalkerConstraints(
+        grid: RandomWalkerGrid,
+        to fixed: inout [Float]
+    ) {
+        let pairedSeedDistance = max(grid.spacing * 1.75, 1.0)
         for index in roi.anchors.indices where roi.anchorKind(at: index) == .manual {
-            let offset = roi.anchors[index].vector - roi.center.vector
-            let radius = simd_length(offset)
-            guard radius > 0.000_001 else { continue }
-            let direction = offset / radius
-            guard let evidence = boundaryEvidence(
-                radius: radius,
-                direction: direction,
-                probeDistance: probeDistance,
-                volume: volume
-            ) else { continue }
-            examples.append(
-                BoundaryAppearanceExample(
-                    direction: direction,
-                    normalizedProfile: evidence.normalizedProfile,
-                    strength: evidence.strength
-                )
+            let boundaryPoint = roi.anchors[index].vector
+            let radialOffset = boundaryPoint - roi.center.vector
+            guard simd_length_squared(radialOffset) > 0.000_001 else { continue }
+            let radial = simd_normalize(radialOffset)
+            let normal = imageBoundaryNormal(
+                at: boundaryPoint,
+                radialFallback: radial,
+                grid: grid
+            )
+            setConstraint(
+                1,
+                near: boundaryPoint - normal * pairedSeedDistance,
+                radius: grid.spacing * 0.65,
+                grid: grid,
+                values: &fixed
+            )
+            setConstraint(
+                0,
+                near: boundaryPoint + normal * pairedSeedDistance,
+                radius: grid.spacing * 0.65,
+                grid: grid,
+                values: &fixed
+            )
+            // A 0.5 Dirichlet seed makes the final iso-surface pass through the
+            // user's point without pretending that the point specifies a normal.
+            setConstraint(
+                0.5,
+                near: boundaryPoint,
+                radius: grid.spacing * 0.35,
+                grid: grid,
+                values: &fixed
             )
         }
-        guard examples.isEmpty == false else { return nil }
-        let sortedStrengths = examples.map(\.strength).sorted()
-        let medianStrength = sortedStrengths[sortedStrengths.count / 2]
-        let reliableExamples = examples.filter {
-            $0.strength >= max(medianStrength * 0.2, 0.000_001)
-        }
-        return BoundaryAppearanceModel(examples: reliableExamples.isEmpty ? examples : reliableExamples)
     }
 
-    private func boundaryEvidence(
+    private func setConstraint(
+        _ value: Float,
+        near point: SIMD3<Double>,
         radius: Double,
-        direction: SIMD3<Double>,
-        probeDistance: Double,
-        volume: IntensityVolume
-    ) -> BoundaryEvidence? {
-        let point = roi.center.vector + direction * radius
-        let gradientProbe = max(probeDistance * 0.75, 0.35)
-        let axes = [
-            SIMD3<Double>(1, 0, 0),
-            SIMD3<Double>(0, 1, 0),
-            SIMD3<Double>(0, 0, 1),
+        grid: RandomWalkerGrid,
+        values: inout [Float]
+    ) {
+        guard let centerIndex = grid.nearestIndex(to: point) else { return }
+        let centerCoordinate = grid.coordinate(for: centerIndex)
+        let voxelRadius = max(Int(ceil(radius / grid.spacing)), 0)
+        for z in max(centerCoordinate.z - voxelRadius, 0)...min(centerCoordinate.z + voxelRadius, grid.dimensions.z - 1) {
+            for y in max(centerCoordinate.y - voxelRadius, 0)...min(centerCoordinate.y + voxelRadius, grid.dimensions.y - 1) {
+                for x in max(centerCoordinate.x - voxelRadius, 0)...min(centerCoordinate.x + voxelRadius, grid.dimensions.x - 1) {
+                    let index = grid.index(x: x, y: y, z: z)
+                    guard grid.valid[index] else { continue }
+                    let candidate = grid.point(x: x, y: y, z: z)
+                    if simd_distance(candidate, point) <= max(radius, grid.spacing * 0.51) {
+                        values[index] = value
+                    }
+                }
+            }
+        }
+    }
+
+    private func imageBoundaryNormal(
+        at point: SIMD3<Double>,
+        radialFallback: SIMD3<Double>,
+        grid: RandomWalkerGrid
+    ) -> SIMD3<Double> {
+        guard let index = grid.nearestIndex(to: point) else { return radialFallback }
+        let coordinate = grid.coordinate(for: index)
+        guard coordinate.x > 0, coordinate.y > 0, coordinate.z > 0,
+              coordinate.x + 1 < grid.dimensions.x,
+              coordinate.y + 1 < grid.dimensions.y,
+              coordinate.z + 1 < grid.dimensions.z else { return radialFallback }
+        let plane = grid.dimensions.x * grid.dimensions.y
+        let neighborIndices = [
+            index - 1, index + 1,
+            index - grid.dimensions.x, index + grid.dimensions.x,
+            index - plane, index + plane,
         ]
-        var gradient = SIMD3<Double>.zero
-        for component in axes.indices {
-            guard let lower = sample(
-                canonicalPoint: point - axes[component] * gradientProbe,
-                volume: volume
-            ),
-                  let upper = sample(
-                    canonicalPoint: point + axes[component] * gradientProbe,
-                    volume: volume
-                  ) else { return nil }
-            gradient[component] = (upper - lower) / (gradientProbe * 2)
-        }
-        let gradientLength = simd_length(gradient)
-        guard gradientLength > 0.000_001 else { return nil }
-        var outwardNormal = gradient / gradientLength
-        if simd_dot(outwardNormal, direction) < 0 {
-            outwardNormal = -outwardNormal
-        }
-
-        let profileOffsets = [-2.0, -1.0, 0.0, 1.0, 2.0]
-        let profile = profileOffsets.compactMap { offset in
-            sample(
-                canonicalPoint: point + outwardNormal * (offset * probeDistance),
-                volume: volume
-            )
-        }
-        guard profile.count == profileOffsets.count else { return nil }
-        let inside = (profile[0] + profile[1]) * 0.5
-        let outside = (profile[3] + profile[4]) * 0.5
-        let centralGradient = abs(profile[3] - profile[1])
-        let regionalContrast = abs(outside - inside)
-        let strength = centralGradient * 0.65 + regionalContrast * 0.35
-
-        let mean = profile.reduce(0, +) / Double(profile.count)
-        let centered = profile.map { $0 - mean }
-        let profileScale = sqrt(
-            centered.reduce(0) { $0 + $1 * $1 } / Double(centered.count)
+        guard neighborIndices.allSatisfy({ grid.valid[$0] }) else { return radialFallback }
+        let gradient = SIMD3<Double>(
+            Double(grid.intensities[index + 1] - grid.intensities[index - 1]),
+            Double(grid.intensities[index + grid.dimensions.x] - grid.intensities[index - grid.dimensions.x]),
+            Double(grid.intensities[index + plane] - grid.intensities[index - plane])
         )
-        guard profileScale > 0.000_001 else { return nil }
-        return BoundaryEvidence(
-            strength: strength,
-            normalizedProfile: centered.map { $0 / profileScale }
-        )
+        guard simd_length_squared(gradient) > 0.000_001 else { return radialFallback }
+        var normal = simd_normalize(gradient)
+        if simd_dot(normal, radialFallback) < 0 { normal = -normal }
+        return normal
     }
 
-    private func sample(
-        radius: Double,
-        direction: SIMD3<Double>,
-        volume: IntensityVolume
-    ) -> Double? {
-        sample(
-            canonicalPoint: roi.center.vector + direction * radius,
-            volume: volume
-        )
+    private func randomWalkerEdges(grid: RandomWalkerGrid) -> RandomWalkerEdges {
+        var differences: [Float] = []
+        differences.reserveCapacity(min(grid.voxelCount * 3, 100_000))
+        let sampleStride = max(grid.voxelCount / 30_000, 1)
+        for index in stride(from: 0, to: grid.voxelCount, by: sampleStride) where grid.valid[index] {
+            let coordinate = grid.coordinate(for: index)
+            if coordinate.x + 1 < grid.dimensions.x {
+                let neighbor = index + 1
+                if grid.valid[neighbor] { differences.append(abs(grid.intensities[index] - grid.intensities[neighbor])) }
+            }
+            if coordinate.y + 1 < grid.dimensions.y {
+                let neighbor = index + grid.dimensions.x
+                if grid.valid[neighbor] { differences.append(abs(grid.intensities[index] - grid.intensities[neighbor])) }
+            }
+            if coordinate.z + 1 < grid.dimensions.z {
+                let neighbor = index + grid.dimensions.x * grid.dimensions.y
+                if grid.valid[neighbor] { differences.append(abs(grid.intensities[index] - grid.intensities[neighbor])) }
+            }
+        }
+        differences.sort()
+        let localContrast = differences.isEmpty
+            ? Float(0.05)
+            : differences[Int(Double(differences.count - 1) * 0.75)]
+        let sigma = max(localContrast * 1.5, 0.025)
+        let beta = 1 / (2 * sigma * sigma)
+
+        func edgeWeight(_ first: Int, _ second: Int) -> Float {
+            guard grid.valid[first], grid.valid[second] else { return 0 }
+            let difference = grid.intensities[first] - grid.intensities[second]
+            return 0.000_5 + exp(-beta * difference * difference)
+        }
+
+        var xEdges = Array(repeating: Float(0), count: grid.voxelCount)
+        var yEdges = Array(repeating: Float(0), count: grid.voxelCount)
+        var zEdges = Array(repeating: Float(0), count: grid.voxelCount)
+        for z in 0..<grid.dimensions.z {
+            for y in 0..<grid.dimensions.y {
+                for x in 0..<grid.dimensions.x {
+                    let index = grid.index(x: x, y: y, z: z)
+                    if x + 1 < grid.dimensions.x { xEdges[index] = edgeWeight(index, index + 1) }
+                    if y + 1 < grid.dimensions.y { yEdges[index] = edgeWeight(index, index + grid.dimensions.x) }
+                    if z + 1 < grid.dimensions.z { zEdges[index] = edgeWeight(index, index + grid.dimensions.x * grid.dimensions.y) }
+                }
+            }
+        }
+        return RandomWalkerEdges(x: xEdges, y: yEdges, z: zEdges)
+    }
+
+    private func solveRandomWalker(
+        grid: RandomWalkerGrid,
+        edgeBuffers: MetalStudyROIGPUSolver.EdgeBuffers,
+        workspace: MetalStudyROIGPUSolver.Workspace,
+        fixedValues: inout [Float],
+        initial: [Float]?,
+        reuseProbability: Bool,
+        sweepCount: Int
+    ) -> Bool {
+        MetalStudyROIGPUSolver.shared?.solve(
+            dimensions: grid.dimensions,
+            fixedValues: fixedValues,
+            initialValues: initial,
+            reuseProbability: reuseProbability,
+            edgeBuffers: edgeBuffers,
+            workspace: workspace,
+            sweepCount: sweepCount
+        ) ?? false
     }
 
     private func sample(
@@ -1250,253 +1927,89 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
         )
     }
 
-    private func globallyRegularizedCandidates(
-        samples: [DirectionSamples],
-        neighbors: [[Int]],
-        step: Double
-    ) -> [Candidate] {
-        guard samples.isEmpty == false,
-              samples.count == neighbors.count else {
-            return samples.compactMap {
-                $0.candidates.min(by: { $0.dataCost < $1.dataCost })
+    func run(
+        preview: Bool = false,
+        reusePreparedConstraints: Bool = false
+    ) -> MetalStudyROIRefinementResult? {
+        failureDetail = nil
+        guard let prepared = preparedRandomWalkerData(),
+              let fieldResult = randomWalkerField(
+                prepared: prepared,
+                sweepCount: preview ? 28 : 160,
+                preview: preview,
+                reusePreparedConstraints: reusePreparedConstraints
+              ) else {
+            if failureDetail == nil {
+                failureDetail = "The refinement preparation or probability solve could not be completed."
+            }
+            return nil
+        }
+        let field = fieldResult.field
+        if preview == false {
+            let volumeRatio = fieldResult.volumeMM3 / max(roi.volumeMM3, 0.001)
+            guard (0.55...1.8).contains(volumeRatio) else {
+                return fail(String(
+                    format: "The result was rejected because its volume was %.0f%% of the starting ROI.",
+                    volumeRatio * 100
+                ))
             }
         }
-        var radii = samples.map { sample in
-            sample.candidates.min(by: { $0.dataCost < $1.dataCost })?.radius
-                ?? sample.originalRadius
+        let manualBoundaryProbabilities = roi.anchors.indices.compactMap { index -> Double? in
+            guard roi.anchorKind(at: index) == .manual else { return nil }
+            return field.probability(at: roi.anchors[index].vector)
         }
-        radii = regeneratedSurfaceRadii(samples: samples, proposedRadii: radii)
-        var bestRadii = radii
-        var bestEnergy = radialFieldEnergy(
-            samples: samples,
-            radii: radii,
-            neighbors: neighbors,
-            step: step
-        )
-
-        // Solve a single radial field instead of smoothing independent points
-        // after the fact. Reconstructing the actual surface on every pass makes
-        // the next pass respond to the geometry that will really be displayed.
-        for _ in 0..<16 {
-            let previousRadii = radii
-            var proposedRadii = previousRadii
-            for index in samples.indices {
-                guard samples[index].isManualConstraint == false else {
-                    proposedRadii[index] = samples[index].candidates[0].radius
-                    continue
-                }
-                let neighborRadii = neighbors[index].map { previousRadii[$0] }.sorted()
-                guard neighborRadii.isEmpty == false else { continue }
-                let neighborMedian = neighborRadii[neighborRadii.count / 2]
-                let predictedRadius = robustNeighborRadius(
-                    at: index,
-                    radii: previousRadii,
-                    neighbors: neighbors,
-                    step: step
-                )
-                let bestCandidate = samples[index].candidates.min { lhs, rhs in
-                    globalCandidateCost(
-                        lhs,
-                        sample: samples[index],
-                        neighborMedian: neighborMedian,
-                        predictedRadius: predictedRadius,
-                        previousRadii: previousRadii,
-                        neighborIndices: neighbors[index],
-                        step: step
-                    ) < globalCandidateCost(
-                        rhs,
-                        sample: samples[index],
-                        neighborMedian: neighborMedian,
-                        predictedRadius: predictedRadius,
-                        previousRadii: previousRadii,
-                        neighborIndices: neighbors[index],
-                        step: step
-                    )
-                }
-                proposedRadii[index] = bestCandidate?.radius ?? previousRadii[index]
-            }
-
-            radii = regeneratedSurfaceRadii(samples: samples, proposedRadii: proposedRadii)
-            let energy = radialFieldEnergy(
-                samples: samples,
-                radii: radii,
-                neighbors: neighbors,
-                step: step
-            )
-            if energy < bestEnergy {
-                bestEnergy = energy
-                bestRadii = radii
-            }
-            let maximumChange = samples.indices.map {
-                abs(radii[$0] - previousRadii[$0])
-            }.max() ?? 0
-            if maximumChange <= max(step * 0.05, 0.025) { break }
+        guard manualBoundaryProbabilities.count == roi.manualAnchorCount,
+              manualBoundaryProbabilities.allSatisfy({ (0.1...0.9).contains($0) }) else {
+            return fail("The result was rejected because it did not preserve every manual boundary landmark.")
         }
-
-        return samples.indices.map { index in
-            let nearestCandidate = samples[index].candidates.min {
-                abs($0.radius - bestRadii[index]) < abs($1.radius - bestRadii[index])
+        if preview {
+            // A live drag only needs the new probability field. Keep the current
+            // sparse visual handles and defer connectivity cleanup, volume
+            // measurement, ray extraction, and displacement statistics to the
+            // definitive solve performed when the mouse is released.
+            let currentAutomaticAnchors = roi.anchors.indices.compactMap { index -> SIMD3<Double>? in
+                roi.anchorKind(at: index) == .automatic
+                    ? roi.anchors[index].vector
+                    : nil
             }
-            return Candidate(
-                radius: bestRadii[index],
-                displacement: bestRadii[index] - samples[index].originalRadius,
-                dataCost: nearestCandidate?.dataCost ?? 0,
-                appearanceMismatch: nearestCandidate?.appearanceMismatch
+            return MetalStudyROIRefinementResult(
+                roiIdentifier: roi.id,
+                automaticAnchors: currentAutomaticAnchors,
+                voxelField: field,
+                volumeMM3: roi.volumeMM3,
+                meanDisplacementMM: 0,
+                maximumDisplacementMM: 0
             )
         }
-    }
-
-    private func regeneratedSurfaceRadii(
-        samples: [DirectionSamples],
-        proposedRadii: [Double]
-    ) -> [Double] {
-        guard samples.count == proposedRadii.count else { return proposedRadii }
-        var regeneratedROI = roi
-        regeneratedROI.replaceAutomaticAnchors(
-            with: samples.indices.compactMap { index -> SIMD3<Double>? in
-                guard samples[index].isManualConstraint == false else { return nil }
-                return roi.center.vector + samples[index].direction * proposedRadii[index]
-            }
-        )
-        return samples.indices.map { index in
-            if samples[index].isManualConstraint {
-                return samples[index].candidates[0].radius
-            }
-            return regeneratedROI.surfaceRadius(along: samples[index].direction)
+        // Automatic anchors are now sparse visual handles sampled from the voxel
+        // result; they no longer define the surface. Forty-two stable directions
+        // communicate the result without recreating the former 162-point mesh.
+        let directions = Self.icosphereDirections(subdivisions: 1)
+        let anchors = directions.compactMap { direction -> SIMD3<Double>? in
+            guard let radius = field.surfaceRadius(
+                from: roi.center.vector,
+                along: direction
+            ) else { return nil }
+            return roi.center.vector + direction * radius
         }
-    }
-
-    private func robustNeighborRadius(
-        at index: Int,
-        radii: [Double],
-        neighbors: [[Int]],
-        step: Double
-    ) -> Double {
-        let values = neighbors[index].map { radii[$0] }.sorted()
-        guard values.isEmpty == false else { return radii[index] }
-        let median = values[values.count / 2]
-        let deviations = values.map { abs($0 - median) }.sorted()
-        let robustScale = max(
-            deviations[deviations.count / 2] * 1.4826,
-            step,
-            0.35
-        )
-        var weightedRadius = 0.0
-        var totalWeight = 0.0
-        for value in values {
-            let normalizedResidual = abs(value - median) / robustScale
-            let weight = normalizedResidual <= 1 ? 1 : 1 / normalizedResidual
-            weightedRadius += value * weight
-            totalWeight += weight
+        guard anchors.count >= directions.count / 2 else {
+            return fail("The solved ROI did not form a closed surface around its centre.")
         }
-        return totalWeight > 0 ? weightedRadius / totalWeight : median
-    }
-
-    private func globalCandidateCost(
-        _ candidate: Candidate,
-        sample: DirectionSamples,
-        neighborMedian: Double,
-        predictedRadius: Double,
-        previousRadii: [Double],
-        neighborIndices: [Int],
-        step: Double
-    ) -> Double {
-        let appearanceAgreement = candidate.appearanceMismatch.map {
-            min(max(1 - $0 / 0.6, 0), 1)
-        } ?? 0
-        let dataWeight = 1 + sample.confidence * 0.7 + appearanceAgreement * 0.8
-        let bendingWeight = max(
-            0.75 - sample.confidence * 0.3 - appearanceAgreement * 0.4,
-            0.12
-        )
-        let curvatureScale = max(step * 2, 0.75)
-        let curvatureCost = bendingWeight * Self.huber(
-            (candidate.radius - predictedRadius) / curvatureScale
-        )
-        let priorCost = 0.04 * Self.huber(
-            candidate.displacement / max(step * 4, 1.5)
-        )
-
-        let signedExcursion = candidate.radius - neighborMedian
-        let coherentNeighbors = neighborIndices.filter { neighborIndex in
-            let neighborExcursion = previousRadii[neighborIndex] - neighborMedian
-            return signedExcursion * neighborExcursion > 0
-                && abs(neighborExcursion) >= max(step, 0.4)
-        }.count
-        let matchesManualBoundary = candidate.appearanceMismatch.map { $0 <= 0.3 } ?? false
-        let hasImageSupport = (sample.confidence >= 0.7 && coherentNeighbors >= 2)
-            || (sample.confidence >= 0.45 && matchesManualBoundary)
-        let permittedExcursion = hasImageSupport
-            ? max(step * 6, 2.5)
-            : max(step * 2, 0.8)
-        let excessExcursion = max(abs(signedExcursion) - permittedExcursion, 0)
-        let geometryBarrier = 3 * Self.huber(excessExcursion / max(step, 0.35))
-        return candidate.dataCost * dataWeight
-            + curvatureCost
-            + priorCost
-            + geometryBarrier
-    }
-
-    private func radialFieldEnergy(
-        samples: [DirectionSamples],
-        radii: [Double],
-        neighbors: [[Int]],
-        step: Double
-    ) -> Double {
-        guard samples.count == radii.count else { return .greatestFiniteMagnitude }
-        var energy = 0.0
-        for index in samples.indices {
-            guard samples[index].isManualConstraint == false,
-                  neighbors[index].isEmpty == false else { continue }
-            let nearestCandidate = samples[index].candidates.min {
-                abs($0.radius - radii[index]) < abs($1.radius - radii[index])
-            }
-            guard let nearestCandidate else { continue }
-            let neighborRadii = neighbors[index].map { radii[$0] }.sorted()
-            let neighborMedian = neighborRadii[neighborRadii.count / 2]
-            let predictedRadius = robustNeighborRadius(
-                at: index,
-                radii: radii,
-                neighbors: neighbors,
-                step: step
-            )
-            energy += globalCandidateCost(
-                nearestCandidate,
-                sample: samples[index],
-                neighborMedian: neighborMedian,
-                predictedRadius: predictedRadius,
-                previousRadii: radii,
-                neighborIndices: neighbors[index],
-                step: step
+        let displacements = anchors.map { point in
+            let direction = simd_normalize(point - roi.center.vector)
+            return abs(
+                simd_distance(point, roi.center.vector)
+                    - roi.surfaceRadius(along: direction)
             )
         }
-        return energy
-    }
-
-    private func boundaryConfidence(for sortedStrengths: [Double]) -> Double {
-        guard sortedStrengths.count >= 5,
-              let peak = sortedStrengths.last else { return 0 }
-        let median = sortedStrengths[sortedStrengths.count / 2]
-        let deviations = sortedStrengths.map { abs($0 - median) }.sorted()
-        let medianAbsoluteDeviation = deviations[deviations.count / 2]
-        let noiseScale = max(medianAbsoluteDeviation * 1.4826, peak * 0.08, 0.000_001)
-        let prominence = (peak - median) / noiseScale
-        return min(max((prominence - 1) / 4, 0), 1)
-    }
-
-    private static func huber(_ value: Double) -> Double {
-        let magnitude = abs(value)
-        return magnitude <= 1 ? 0.5 * magnitude * magnitude : magnitude - 0.5
-    }
-
-    private func nearestNeighbors(for directions: [SIMD3<Double>], count: Int) -> [[Int]] {
-        directions.indices.map { index in
-            directions.indices
-                .filter { $0 != index }
-                .sorted { simd_dot(directions[index], directions[$0]) > simd_dot(directions[index], directions[$1]) }
-                .prefix(count)
-                .map { $0 }
-        }
+        return MetalStudyROIRefinementResult(
+            roiIdentifier: roi.id,
+            automaticAnchors: anchors,
+            voxelField: field,
+            volumeMM3: fieldResult.volumeMM3,
+            meanDisplacementMM: displacements.reduce(0, +) / Double(max(displacements.count, 1)),
+            maximumDisplacementMM: displacements.max() ?? 0
+        )
     }
 
     private static func icosphereDirections(subdivisions: Int) -> [SIMD3<Double>] {

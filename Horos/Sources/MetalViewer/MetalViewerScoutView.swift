@@ -1028,6 +1028,7 @@ private final class MetalViewerScoutROIItemView: NSView {
             || renderedROI?.radiusMM != roi.radiusMM
             || renderedROI?.anchors != roi.anchors
             || renderedROI?.anchorKinds != roi.anchorKinds
+            || renderedROI?.voxelField != roi.voxelField
             || renderedROI?.colorRed != roi.colorRed
             || renderedROI?.colorGreen != roi.colorGreen
             || renderedROI?.colorBlue != roi.colorBlue {

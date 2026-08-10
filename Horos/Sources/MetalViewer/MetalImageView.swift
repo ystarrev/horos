@@ -518,6 +518,7 @@ final class MetalImageView: MTKView {
     var tumourSeedPlacementHandler: ((MetalViewerTumourSeedPlacement) -> Void)?
     var tumourSeedDeletionHandler: ((String) -> Void)?
     var studyROIEditingModeDidChange: ((MetalStudyROIEditingMode) -> Void)?
+    var studyROIRefinementHandler: ((Bool) -> Void)?
     var measurementsDidChange: (([MetalViewerMeasurementOverlay]) -> Void)?
     var mouseToolAssignments = MetalViewerMouseToolAssignments()
     private(set) var mouseAnnotationState: MouseAnnotationState?
@@ -1670,6 +1671,7 @@ final class MetalImageView: MTKView {
             guard hasMoved || hypot(point.x - dragAnchor.x, point.y - dragAnchor.y) > 2 else { return true }
             guard let anchor = studyROICanonicalWorldPoint(at: point) else { return true }
             studyROIStore?.moveAnchor(at: anchorIndex, to: anchor, in: identifier)
+            studyROIRefinementHandler?(true)
             activeStudyROIGesture = .movingAnchor(
                 identifier: identifier,
                 anchorIndex: anchorIndex,
@@ -1701,6 +1703,7 @@ final class MetalImageView: MTKView {
             }
             activeStudyROIGesture = .none
             refreshStudyROIOverlay()
+            studyROIRefinementHandler?(false)
             return true
         case let .movingAnchor(identifier, anchorIndex, hasMoved):
             if hasMoved, let anchor = studyROICanonicalWorldPoint(at: point) {
@@ -1709,6 +1712,7 @@ final class MetalImageView: MTKView {
             studyROIStore?.finishMovingAnchor(in: identifier)
             activeStudyROIGesture = .none
             refreshStudyROIOverlay()
+            studyROIRefinementHandler?(false)
             return true
         case let .deletingAnchor(identifier, anchorIndex):
             if studyROIAnchorHit(at: point)?.anchorIndex == anchorIndex {
@@ -1716,6 +1720,7 @@ final class MetalImageView: MTKView {
             }
             activeStudyROIGesture = .none
             refreshStudyROIOverlay()
+            studyROIRefinementHandler?(false)
             return true
         }
     }

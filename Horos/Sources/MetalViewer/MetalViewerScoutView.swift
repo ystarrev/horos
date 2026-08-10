@@ -778,68 +778,98 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
     }
 
     private static func makeSurfaceVertices(for roi: MetalStudyROI) -> [MetalViewerScoutROIVertex] {
-        let latitudeSegments = 18
-        let longitudeSegments = 28
         let normalization = Float(0.86 / max(roi.conservativeBoundingRadiusMM, 0.5))
-        var grid: [MetalViewerScoutROIVertex] = []
-        grid.reserveCapacity((latitudeSegments + 1) * (longitudeSegments + 1))
+        let goldenRatio = Float((1 + sqrt(5.0)) * 0.5)
+        var directions = [
+            SIMD3<Float>(-1, goldenRatio, 0), SIMD3<Float>(1, goldenRatio, 0),
+            SIMD3<Float>(-1, -goldenRatio, 0), SIMD3<Float>(1, -goldenRatio, 0),
+            SIMD3<Float>(0, -1, goldenRatio), SIMD3<Float>(0, 1, goldenRatio),
+            SIMD3<Float>(0, -1, -goldenRatio), SIMD3<Float>(0, 1, -goldenRatio),
+            SIMD3<Float>(goldenRatio, 0, -1), SIMD3<Float>(goldenRatio, 0, 1),
+            SIMD3<Float>(-goldenRatio, 0, -1), SIMD3<Float>(-goldenRatio, 0, 1),
+        ].map { simd_normalize($0) }
+        var faces = [
+            SIMD3<Int>(0, 11, 5), SIMD3<Int>(0, 5, 1), SIMD3<Int>(0, 1, 7),
+            SIMD3<Int>(0, 7, 10), SIMD3<Int>(0, 10, 11), SIMD3<Int>(1, 5, 9),
+            SIMD3<Int>(5, 11, 4), SIMD3<Int>(11, 10, 2), SIMD3<Int>(10, 7, 6),
+            SIMD3<Int>(7, 1, 8), SIMD3<Int>(3, 9, 4), SIMD3<Int>(3, 4, 2),
+            SIMD3<Int>(3, 2, 6), SIMD3<Int>(3, 6, 8), SIMD3<Int>(3, 8, 9),
+            SIMD3<Int>(4, 9, 5), SIMD3<Int>(2, 4, 11), SIMD3<Int>(6, 2, 10),
+            SIMD3<Int>(8, 6, 7), SIMD3<Int>(9, 8, 1),
+        ]
+
+        // A uniformly subdivided icosahedron avoids the UV sphere's singular
+        // poles. Those high-valence poles produced the pinwheel/twisted patch
+        // visible when a pole rotated toward the scout camera.
+        for _ in 0..<3 {
+            var midpointIndices: [UInt64: Int] = [:]
+            var subdividedFaces: [SIMD3<Int>] = []
+            subdividedFaces.reserveCapacity(faces.count * 4)
+
+            func midpointIndex(_ first: Int, _ second: Int) -> Int {
+                let lower = min(first, second)
+                let upper = max(first, second)
+                let key = (UInt64(lower) << 32) | UInt64(upper)
+                if let existing = midpointIndices[key] { return existing }
+                directions.append(simd_normalize(directions[first] + directions[second]))
+                let index = directions.count - 1
+                midpointIndices[key] = index
+                return index
+            }
+
+            for face in faces {
+                let firstSecond = midpointIndex(face.x, face.y)
+                let secondThird = midpointIndex(face.y, face.z)
+                let thirdFirst = midpointIndex(face.z, face.x)
+                subdividedFaces.append(contentsOf: [
+                    SIMD3<Int>(face.x, firstSecond, thirdFirst),
+                    SIMD3<Int>(face.y, secondThird, firstSecond),
+                    SIMD3<Int>(face.z, thirdFirst, secondThird),
+                    SIMD3<Int>(firstSecond, secondThird, thirdFirst),
+                ])
+            }
+            faces = subdividedFaces
+        }
+
+        let positions = directions.map { direction -> SIMD3<Float> in
+            let doubleDirection = SIMD3<Double>(
+                Double(direction.x),
+                Double(direction.y),
+                Double(direction.z)
+            )
+            return direction * Float(roi.surfaceRadius(along: doubleDirection)) * normalization
+        }
+        var normals = Array(repeating: SIMD3<Float>.zero, count: positions.count)
+        var outwardFaces: [SIMD3<Int>] = []
+        outwardFaces.reserveCapacity(faces.count)
+        for face in faces {
+            var outwardFace = face
+            let first = positions[face.x]
+            let second = positions[face.y]
+            let third = positions[face.z]
+            var faceNormal = simd_cross(second - first, third - first)
+            if simd_dot(faceNormal, first + second + third) < 0 {
+                outwardFace = SIMD3<Int>(face.x, face.z, face.y)
+                faceNormal = -faceNormal
+            }
+            outwardFaces.append(outwardFace)
+            normals[outwardFace.x] += faceNormal
+            normals[outwardFace.y] += faceNormal
+            normals[outwardFace.z] += faceNormal
+        }
+        for index in normals.indices {
+            normals[index] = simd_length_squared(normals[index]) > 0.000_001
+                ? simd_normalize(normals[index])
+                : directions[index]
+        }
+
         var vertices: [MetalViewerScoutROIVertex] = []
-        vertices.reserveCapacity(latitudeSegments * longitudeSegments * 6)
-
-        for latitude in 0...latitudeSegments {
-            let theta = Double.pi * Double(latitude) / Double(latitudeSegments)
-            for longitude in 0...longitudeSegments {
-                let phi = 2 * Double.pi * Double(longitude) / Double(longitudeSegments)
-                let direction = SIMD3<Double>(
-                    sin(theta) * cos(phi),
-                    cos(theta),
-                    sin(theta) * sin(phi)
+        vertices.reserveCapacity(outwardFaces.count * 3)
+        for face in outwardFaces {
+            for index in [face.x, face.y, face.z] {
+                vertices.append(
+                    MetalViewerScoutROIVertex(position: positions[index], normal: normals[index])
                 )
-                let radius = roi.surfaceRadius(along: direction)
-                let floatDirection = SIMD3<Float>(
-                    Float(direction.x),
-                    Float(direction.y),
-                    Float(direction.z)
-                )
-                grid.append(MetalViewerScoutROIVertex(
-                    position: floatDirection * Float(radius) * normalization,
-                    normal: simd_normalize(floatDirection)
-                ))
-            }
-        }
-
-        let rowLength = longitudeSegments + 1
-        if latitudeSegments > 1 {
-            for latitude in 1..<latitudeSegments {
-                for longitude in 0...longitudeSegments {
-                    let wrappedLongitude = longitude == longitudeSegments ? 0 : longitude
-                    let previousLongitude = (wrappedLongitude + longitudeSegments - 1) % longitudeSegments
-                    let nextLongitude = (wrappedLongitude + 1) % longitudeSegments
-                    let centerIndex = latitude * rowLength + longitude
-                    let longitudeTangent = grid[latitude * rowLength + nextLongitude].position
-                        - grid[latitude * rowLength + previousLongitude].position
-                    let latitudeTangent = grid[(latitude + 1) * rowLength + wrappedLongitude].position
-                        - grid[(latitude - 1) * rowLength + wrappedLongitude].position
-                    var normal = simd_cross(longitudeTangent, latitudeTangent)
-                    if simd_length_squared(normal) > 0.000_001 {
-                        normal = simd_normalize(normal)
-                        if simd_dot(normal, grid[centerIndex].position) < 0 {
-                            normal = -normal
-                        }
-                        grid[centerIndex].normal = normal
-                    }
-                }
-            }
-        }
-
-        for latitude in 0..<latitudeSegments {
-            for longitude in 0..<longitudeSegments {
-                let upperLeft = grid[latitude * rowLength + longitude]
-                let upperRight = grid[latitude * rowLength + longitude + 1]
-                let lowerLeft = grid[(latitude + 1) * rowLength + longitude]
-                let lowerRight = grid[(latitude + 1) * rowLength + longitude + 1]
-                vertices.append(contentsOf: [upperLeft, upperRight, lowerLeft])
-                vertices.append(contentsOf: [upperRight, lowerRight, lowerLeft])
             }
         }
         return vertices

@@ -1800,6 +1800,8 @@ final class MetalImageView: MTKView {
         roi.color.setStroke()
         path.stroke()
 
+        let manualAnchorColor = NSColor.systemRed
+        let automaticAnchorColor = NSColor.systemYellow
         for anchorIndex in roi.anchors.indices {
             let anchor = roi.anchors[anchorIndex]
             let anchorKind = roi.anchorKind(at: anchorIndex)
@@ -1812,15 +1814,19 @@ final class MetalImageView: MTKView {
                     NSColor.black.setFill()
                     outerMarker.fill()
                     let innerMarker = studyROIAnchorDiamond(center: point, radius: 3.5)
-                    roi.color.setFill()
+                    manualAnchorColor.setFill()
                     innerMarker.fill()
                 case .automatic:
-                    let marker = NSBezierPath(
-                        ovalIn: CGRect(x: point.x - 2, y: point.y - 2, width: 4, height: 4)
+                    let outerMarker = NSBezierPath(
+                        ovalIn: CGRect(x: point.x - 3.5, y: point.y - 3.5, width: 7, height: 7)
                     )
-                    marker.lineWidth = max(1 / backingScale, 0.5)
-                    roi.color.withAlphaComponent(0.62).setStroke()
-                    marker.stroke()
+                    NSColor.black.setFill()
+                    outerMarker.fill()
+                    let innerMarker = NSBezierPath(
+                        ovalIn: CGRect(x: point.x - 2.5, y: point.y - 2.5, width: 5, height: 5)
+                    )
+                    automaticAnchorColor.setFill()
+                    innerMarker.fill()
                 }
             }
         }

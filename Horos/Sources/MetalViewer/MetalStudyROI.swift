@@ -116,7 +116,7 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         let direction = proposedDirection / directionLength
         var weightedRadius = 0.0
         var totalWeight = 0.0
-        var strongestInfluence = 0.0
+        var uncoveredFraction = 1.0
         for index in anchors.indices {
             let chordDistance = simd_distance(direction, kernelAnchorDirections[index])
             if chordDistance < 0.000_001 {
@@ -132,11 +132,16 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
             let weight = priority * kernel / max(chordDistance * chordDistance, 0.000_001)
             weightedRadius += weight * kernelAnchorRadii[index]
             totalWeight += weight
-            strongestInfluence = max(strongestInfluence, kernel)
+            // Combining the compact kernels as coverage keeps the blend smooth
+            // where the nearest anchor changes. Taking only the strongest kernel
+            // created Voronoi-like creases and allowed the contour to sag back
+            // toward the original sphere between otherwise good auto anchors.
+            uncoveredFraction *= 1 - kernel
         }
         guard totalWeight > 0 else { return radiusMM }
         let constrainedRadius = weightedRadius / totalWeight
-        return max(radiusMM + (constrainedRadius - radiusMM) * strongestInfluence, 0.5)
+        let combinedInfluence = 1 - uncoveredFraction
+        return max(radiusMM + (constrainedRadius - radiusMM) * combinedInfluence, 0.5)
     }
 
     mutating func setSphere(center: SIMD3<Double>, radiusMM: Double) {
@@ -741,6 +746,7 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
         let radius: Double
         let displacement: Double
         let dataCost: Double
+        let appearanceMismatch: Double?
     }
 
     private struct DirectionSamples {
@@ -755,6 +761,52 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
     private struct DirectionSeed {
         let direction: SIMD3<Double>
         let manualRadius: Double?
+    }
+
+    private struct BoundaryEvidence {
+        let strength: Double
+        let normalizedProfile: [Double]
+    }
+
+    private struct BoundaryAppearanceExample {
+        let direction: SIMD3<Double>
+        let normalizedProfile: [Double]
+        let strength: Double
+    }
+
+    private struct BoundaryAppearanceModel {
+        let examples: [BoundaryAppearanceExample]
+
+        func mismatch(
+            for normalizedProfile: [Double],
+            direction: SIMD3<Double>
+        ) -> Double? {
+            guard normalizedProfile.isEmpty == false,
+                  examples.isEmpty == false else { return nil }
+            let localExamples = examples
+                .sorted { simd_dot(direction, $0.direction) > simd_dot(direction, $1.direction) }
+                .prefix(4)
+            var weightedMismatch = 0.0
+            var totalWeight = 0.0
+            for example in localExamples {
+                guard example.normalizedProfile.count == normalizedProfile.count else { continue }
+                let chordDistance = simd_distance(direction, example.direction)
+                let weight = 1 / max(chordDistance * chordDistance + 0.08, 0.08)
+                let mismatch = zip(normalizedProfile, example.normalizedProfile).reduce(0.0) {
+                    partialMismatch, pair in
+                    let difference = pair.0 - pair.1
+                    let magnitude = abs(difference)
+                    let robustCost = magnitude <= 1
+                        ? 0.5 * magnitude * magnitude
+                        : magnitude - 0.5
+                    return partialMismatch + robustCost
+                } / Double(normalizedProfile.count)
+                weightedMismatch += mismatch * weight
+                totalWeight += weight
+            }
+            guard totalWeight > 0 else { return nil }
+            return min(weightedMismatch / totalWeight, 3)
+        }
     }
 
     private struct Slice {
@@ -909,8 +961,14 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
         guard directionSeeds.isEmpty == false else { return nil }
 
         let step = min(max(volume.minimumVoxelSpacing * 0.75, 0.35), 0.8)
+        let appearanceModel = boundaryAppearanceModel(step: step, volume: volume)
         let samples = directionSeeds.map { seed in
-            makeSamples(seed: seed, step: step, volume: volume)
+            makeSamples(
+                seed: seed,
+                step: step,
+                volume: volume,
+                appearanceModel: appearanceModel
+            )
         }
         let automaticSamples = samples.filter { $0.isManualConstraint == false }
         guard automaticSamples.lazy.filter(\.hasImageEvidence).count
@@ -918,58 +976,19 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
             return nil
         }
         let directions = directionSeeds.map(\.direction)
-        let neighbors = nearestNeighbors(for: directions, count: min(5, max(directions.count - 1, 0)))
-        var selectedIndices = samples.map { samples in
-            samples.candidates.enumerated().min(by: { $0.element.dataCost < $1.element.dataCost })?.offset ?? 0
-        }
-
-        for _ in 0..<5 {
-            for index in samples.indices {
-                guard samples[index].isManualConstraint == false else { continue }
-                let neighboringOffsets = neighbors[index].map { neighbor -> Double in
-                    let selected = samples[neighbor].candidates[selectedIndices[neighbor]]
-                    return selected.displacement
-                }
-                let neighboringRadii = neighbors[index].map { neighbor -> Double in
-                    samples[neighbor].candidates[selectedIndices[neighbor]].radius
-                }
-                let targetOffset = neighboringOffsets.isEmpty
-                    ? 0
-                    : neighboringOffsets.reduce(0, +) / Double(neighboringOffsets.count)
-                let targetRadius = neighboringRadii.isEmpty
-                    ? samples[index].originalRadius
-                    : neighboringRadii.reduce(0, +) / Double(neighboringRadii.count)
-                let best = samples[index].candidates.enumerated().min { lhs, rhs in
-                    refinementCost(
-                        lhs.element,
-                        targetOffset: targetOffset,
-                        targetRadius: targetRadius,
-                        step: step,
-                        confidence: samples[index].confidence
-                    ) < refinementCost(
-                        rhs.element,
-                        targetOffset: targetOffset,
-                        targetRadius: targetRadius,
-                        step: step,
-                        confidence: samples[index].confidence
-                    )
-                }
-                selectedIndices[index] = best?.offset ?? selectedIndices[index]
-            }
-        }
-
-        let selectedCandidates = regularizedCandidates(
+        let neighbors = nearestNeighbors(
+            for: directions,
+            count: min(6, max(directions.count - 1, 0))
+        )
+        let selectedCandidates = globallyRegularizedCandidates(
             samples: samples,
-            selectedCandidates: samples.indices.map { samples[$0].candidates[selectedIndices[$0]] },
             neighbors: neighbors,
             step: step
         )
-        let anchors = prunedAnchors(
-            samples: samples,
-            selectedCandidates: selectedCandidates,
-            step: step,
-            volume: volume
-        )
+        let anchors: [SIMD3<Double>] = samples.indices.compactMap { index -> SIMD3<Double>? in
+            guard samples[index].isManualConstraint == false else { return nil }
+            return roi.center.vector + samples[index].direction * selectedCandidates[index].radius
+        }
         let displacements = selectedCandidates.map { abs($0.displacement) }
         return MetalStudyROIRefinementResult(
             roiIdentifier: roi.id,
@@ -977,150 +996,6 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
             meanDisplacementMM: displacements.reduce(0, +) / Double(max(displacements.count, 1)),
             maximumDisplacementMM: displacements.max() ?? 0
         )
-    }
-
-    private func prunedAnchors(
-        samples: [DirectionSamples],
-        selectedCandidates: [Candidate],
-        step: Double,
-        volume: IntensityVolume
-    ) -> [SIMD3<Double>] {
-        guard samples.count > 12, samples.count == selectedCandidates.count else {
-            return samples.indices.filter { samples[$0].isManualConstraint == false }.map {
-                roi.center.vector + samples[$0].direction * selectedCandidates[$0].radius
-            }
-        }
-
-        let targetStrengths = samples.indices.map { index in
-            boundaryStrength(
-                radius: selectedCandidates[index].radius,
-                direction: samples[index].direction,
-                probeDistance: max(step, volume.minimumVoxelSpacing * 0.75),
-                volume: volume
-            ) ?? 0
-        }
-        let sortedStrengths = targetStrengths.sorted()
-        let strengthReference = max(
-            sortedStrengths[min(Int(Double(sortedStrengths.count - 1) * 0.9), sortedStrengths.count - 1)],
-            0.000_001
-        )
-        let localGeometryTolerance = max(step * 1.15, 0.55)
-        let localBoundaryLossTolerance = 0.06
-        let manualIndices = samples.indices.filter { samples[$0].isManualConstraint }
-        let minimumAnchorCount = manualIndices.count >= 6 ? 4 : 8
-        var activeIndices = samples.indices.filter { samples[$0].isManualConstraint == false }
-
-        while activeIndices.count > minimumAnchorCount {
-            var bestRemoval: (position: Int, score: Double)?
-            for (position, sampleIndex) in activeIndices.enumerated() {
-                let neighboringIndices = (activeIndices + manualIndices)
-                    .filter { $0 != sampleIndex }
-                    .sorted {
-                        simd_dot(samples[sampleIndex].direction, samples[$0].direction)
-                            > simd_dot(samples[sampleIndex].direction, samples[$1].direction)
-                    }
-                    .prefix(6)
-                guard neighboringIndices.count >= 3 else { continue }
-
-                var weightedRadius = 0.0
-                var totalWeight = 0.0
-                for neighborIndex in neighboringIndices {
-                    let chordDistance = simd_distance(
-                        samples[sampleIndex].direction,
-                        samples[neighborIndex].direction
-                    )
-                    let weight = 1 / max(chordDistance * chordDistance, 0.000_001)
-                    weightedRadius += selectedCandidates[neighborIndex].radius * weight
-                    totalWeight += weight
-                }
-                guard totalWeight > 0 else { continue }
-                let reconstructedRadius = weightedRadius / totalWeight
-                let geometryError = abs(reconstructedRadius - selectedCandidates[sampleIndex].radius)
-                guard geometryError <= localGeometryTolerance else { continue }
-
-                let reconstructedStrength = boundaryStrength(
-                    radius: reconstructedRadius,
-                    direction: samples[sampleIndex].direction,
-                    probeDistance: max(step, volume.minimumVoxelSpacing * 0.75),
-                    volume: volume
-                ) ?? 0
-                let normalizedBoundaryLoss = max(
-                    targetStrengths[sampleIndex] - reconstructedStrength,
-                    0
-                ) / strengthReference
-                guard normalizedBoundaryLoss <= localBoundaryLossTolerance else { continue }
-
-                let score = geometryError / localGeometryTolerance + normalizedBoundaryLoss * 4
-                if let currentBest = bestRemoval {
-                    if score < currentBest.score {
-                        bestRemoval = (position, score)
-                    }
-                } else {
-                    bestRemoval = (position, score)
-                }
-            }
-            guard let bestRemoval else { break }
-            activeIndices.remove(at: bestRemoval.position)
-        }
-
-        let maximumGlobalError = max(step * 2.25, 1.25)
-        let maximumRMSError = max(step, 0.55)
-        let targetBoundaryQuality = targetStrengths.reduce(0, +)
-        let maximumMeanBoundaryLoss = strengthReference * 0.012
-
-        while true {
-            var candidateROI = roi
-            candidateROI.replaceAutomaticAnchors(
-                with: activeIndices.map {
-                    roi.center.vector + samples[$0].direction * selectedCandidates[$0].radius
-                }
-            )
-            let radialErrors = samples.indices.map { index in
-                abs(
-                    candidateROI.surfaceRadius(along: samples[index].direction)
-                        - selectedCandidates[index].radius
-                )
-            }
-            let maximumError = radialErrors.max() ?? 0
-            let rmsError = sqrt(
-                radialErrors.reduce(0) { $0 + $1 * $1 } / Double(max(radialErrors.count, 1))
-            )
-            let candidateBoundaryQuality = samples.indices.reduce(0.0) { partial, index in
-                let reconstructedRadius = candidateROI.surfaceRadius(along: samples[index].direction)
-                return partial + (boundaryStrength(
-                    radius: reconstructedRadius,
-                    direction: samples[index].direction,
-                    probeDistance: max(step, volume.minimumVoxelSpacing * 0.75),
-                    volume: volume
-                ) ?? 0)
-            }
-            let meanBoundaryLoss = max(
-                targetBoundaryQuality - candidateBoundaryQuality,
-                0
-            ) / Double(max(samples.count, 1))
-            if maximumError <= maximumGlobalError,
-               rmsError <= maximumRMSError,
-               meanBoundaryLoss <= maximumMeanBoundaryLoss {
-                return activeIndices.map {
-                    roi.center.vector + samples[$0].direction * selectedCandidates[$0].radius
-                }
-            }
-
-            let activeSet = Set(activeIndices)
-            let omittedIndices = samples.indices.filter {
-                samples[$0].isManualConstraint == false && activeSet.contains($0) == false
-            }
-            guard omittedIndices.isEmpty == false else {
-                return samples.indices.filter { samples[$0].isManualConstraint == false }.map {
-                    roi.center.vector + samples[$0].direction * selectedCandidates[$0].radius
-                }
-            }
-            let restorationCount = min(8, omittedIndices.count)
-            let indicesToRestore = omittedIndices
-                .sorted { radialErrors[$0] > radialErrors[$1] }
-                .prefix(restorationCount)
-            activeIndices.append(contentsOf: indicesToRestore)
-        }
     }
 
     private func refinementDirections() -> [DirectionSeed] {
@@ -1132,13 +1007,18 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
             let length = simd_length(offset)
             guard length > 0.000_001 else { continue }
             let direction = offset / length
-            if result.contains(where: { simd_dot($0.direction, direction) > 0.999 }) == false {
+            if result.contains(where: { simd_distance($0.direction, direction) < 0.005 }) == false {
                 result.append(DirectionSeed(direction: direction, manualRadius: length))
             }
         }
 
-        for direction in Self.fibonacciDirections(count: 192) {
-            if result.contains(where: { simd_dot($0.direction, direction) > 0.9995 }) == false {
+        // These automatic directions are vertices of a subdivided icosahedron.
+        // Unlike a freshly distributed point cloud, their angular identity and
+        // neighborhood remain stable every time refinement is run.
+        for direction in Self.icosphereDirections(subdivisions: 2) {
+            if result.contains(where: {
+                $0.manualRadius != nil && simd_distance($0.direction, direction) < 0.04
+            }) == false {
                 result.append(DirectionSeed(direction: direction, manualRadius: nil))
             }
         }
@@ -1148,14 +1028,23 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
     private func makeSamples(
         seed: DirectionSeed,
         step: Double,
-        volume: IntensityVolume
+        volume: IntensityVolume,
+        appearanceModel: BoundaryAppearanceModel?
     ) -> DirectionSamples {
         let direction = seed.direction
         if let manualRadius = seed.manualRadius {
+            // A manual point is a positional observation of the boundary, not a
+            // normal-vector observation. Keep its radius as the only candidate;
+            // nearby automatic samples remain free to determine surface tangent.
             return DirectionSamples(
                 direction: direction,
                 originalRadius: manualRadius,
-                candidates: [Candidate(radius: manualRadius, displacement: 0, dataCost: 0)],
+                candidates: [Candidate(
+                    radius: manualRadius,
+                    displacement: 0,
+                    dataCost: 0,
+                    appearanceMismatch: 0
+                )],
                 hasImageEvidence: true,
                 confidence: 1,
                 isManualConstraint: true
@@ -1176,14 +1065,15 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
         offsets.sort()
 
         let probeDistance = max(step, volume.minimumVoxelSpacing * 0.75)
-        let rawStrengths = offsets.map { offset in
-            boundaryStrength(
+        let evidenceByOffset = offsets.map { offset in
+            boundaryEvidence(
                 radius: max(originalRadius + offset, 0.5),
                 direction: direction,
                 probeDistance: probeDistance,
                 volume: volume
             )
         }
+        let rawStrengths = evidenceByOffset.map { $0?.strength }
         let validStrengths = rawStrengths.compactMap { $0 }.sorted()
         let scale = validStrengths.isEmpty
             ? 1
@@ -1197,12 +1087,20 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
             let normalizedImprovement = ((rawStrengths[index] ?? originalStrength) - originalStrength) / scale
             let displacementFraction = offset / max(maximumTravel, step)
             let missingPenalty = rawStrengths[index] == nil ? 1.5 : 0
+            let appearanceMismatch = evidenceByOffset[index].flatMap { evidence in
+                appearanceModel?.mismatch(
+                    for: evidence.normalizedProfile,
+                    direction: direction
+                )
+            }
             return Candidate(
                 radius: max(originalRadius + offset, 0.5),
                 displacement: offset,
                 dataCost: -normalizedImprovement * (0.15 + confidence * 0.85)
                     + 0.28 * displacementFraction * displacementFraction
-                    + missingPenalty
+                    + 0.8 * (appearanceMismatch ?? 0)
+                    + missingPenalty,
+                appearanceMismatch: appearanceMismatch
             )
         }
         return DirectionSamples(
@@ -1221,20 +1119,104 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
         probeDistance: Double,
         volume: IntensityVolume
     ) -> Double? {
-        let radii = [
-            radius - probeDistance * 2,
-            radius - probeDistance,
-            radius + probeDistance,
-            radius + probeDistance * 2,
+        boundaryEvidence(
+            radius: radius,
+            direction: direction,
+            probeDistance: probeDistance,
+            volume: volume
+        )?.strength
+    }
+
+    private func boundaryAppearanceModel(
+        step: Double,
+        volume: IntensityVolume
+    ) -> BoundaryAppearanceModel? {
+        let probeDistance = max(step, volume.minimumVoxelSpacing * 0.75)
+        var examples: [BoundaryAppearanceExample] = []
+        for index in roi.anchors.indices where roi.anchorKind(at: index) == .manual {
+            let offset = roi.anchors[index].vector - roi.center.vector
+            let radius = simd_length(offset)
+            guard radius > 0.000_001 else { continue }
+            let direction = offset / radius
+            guard let evidence = boundaryEvidence(
+                radius: radius,
+                direction: direction,
+                probeDistance: probeDistance,
+                volume: volume
+            ) else { continue }
+            examples.append(
+                BoundaryAppearanceExample(
+                    direction: direction,
+                    normalizedProfile: evidence.normalizedProfile,
+                    strength: evidence.strength
+                )
+            )
+        }
+        guard examples.isEmpty == false else { return nil }
+        let sortedStrengths = examples.map(\.strength).sorted()
+        let medianStrength = sortedStrengths[sortedStrengths.count / 2]
+        let reliableExamples = examples.filter {
+            $0.strength >= max(medianStrength * 0.2, 0.000_001)
+        }
+        return BoundaryAppearanceModel(examples: reliableExamples.isEmpty ? examples : reliableExamples)
+    }
+
+    private func boundaryEvidence(
+        radius: Double,
+        direction: SIMD3<Double>,
+        probeDistance: Double,
+        volume: IntensityVolume
+    ) -> BoundaryEvidence? {
+        let point = roi.center.vector + direction * radius
+        let gradientProbe = max(probeDistance * 0.75, 0.35)
+        let axes = [
+            SIMD3<Double>(1, 0, 0),
+            SIMD3<Double>(0, 1, 0),
+            SIMD3<Double>(0, 0, 1),
         ]
-        let values = radii.map { sample(radius: max($0, 0.1), direction: direction, volume: volume) }
-        guard let insideFar = values[0], let insideNear = values[1],
-              let outsideNear = values[2], let outsideFar = values[3] else { return nil }
-        let inside = (insideFar + insideNear) * 0.5
-        let outside = (outsideNear + outsideFar) * 0.5
-        let centralGradient = abs(outsideNear - insideNear)
+        var gradient = SIMD3<Double>.zero
+        for component in axes.indices {
+            guard let lower = sample(
+                canonicalPoint: point - axes[component] * gradientProbe,
+                volume: volume
+            ),
+                  let upper = sample(
+                    canonicalPoint: point + axes[component] * gradientProbe,
+                    volume: volume
+                  ) else { return nil }
+            gradient[component] = (upper - lower) / (gradientProbe * 2)
+        }
+        let gradientLength = simd_length(gradient)
+        guard gradientLength > 0.000_001 else { return nil }
+        var outwardNormal = gradient / gradientLength
+        if simd_dot(outwardNormal, direction) < 0 {
+            outwardNormal = -outwardNormal
+        }
+
+        let profileOffsets = [-2.0, -1.0, 0.0, 1.0, 2.0]
+        let profile = profileOffsets.compactMap { offset in
+            sample(
+                canonicalPoint: point + outwardNormal * (offset * probeDistance),
+                volume: volume
+            )
+        }
+        guard profile.count == profileOffsets.count else { return nil }
+        let inside = (profile[0] + profile[1]) * 0.5
+        let outside = (profile[3] + profile[4]) * 0.5
+        let centralGradient = abs(profile[3] - profile[1])
         let regionalContrast = abs(outside - inside)
-        return centralGradient * 0.65 + regionalContrast * 0.35
+        let strength = centralGradient * 0.65 + regionalContrast * 0.35
+
+        let mean = profile.reduce(0, +) / Double(profile.count)
+        let centered = profile.map { $0 - mean }
+        let profileScale = sqrt(
+            centered.reduce(0) { $0 + $1 * $1 } / Double(centered.count)
+        )
+        guard profileScale > 0.000_001 else { return nil }
+        return BoundaryEvidence(
+            strength: strength,
+            normalizedProfile: centered.map { $0 / profileScale }
+        )
     }
 
     private func sample(
@@ -1242,7 +1224,16 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
         direction: SIMD3<Double>,
         volume: IntensityVolume
     ) -> Double? {
-        let canonicalPoint = roi.center.vector + direction * radius
+        sample(
+            canonicalPoint: roi.center.vector + direction * radius,
+            volume: volume
+        )
+    }
+
+    private func sample(
+        canonicalPoint: SIMD3<Double>,
+        volume: IntensityVolume
+    ) -> Double? {
         let transformed = canonicalToSeriesWorld * SIMD4<Float>(
             Float(canonicalPoint.x),
             Float(canonicalPoint.y),
@@ -1259,81 +1250,227 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
         )
     }
 
-    private func refinementCost(
-        _ candidate: Candidate,
-        targetOffset: Double,
-        targetRadius: Double,
-        step: Double,
-        confidence: Double
-    ) -> Double {
-        let normalizedDifference = (candidate.displacement - targetOffset) / max(step, 0.1)
-        let radiusScale = max(step * 2, 0.75)
-        let normalizedRadiusDifference = (candidate.radius - targetRadius) / radiusScale
-        return candidate.dataCost
-            + 0.06 * Self.huber(normalizedDifference)
-            + (0.16 - confidence * 0.08) * Self.huber(normalizedRadiusDifference)
-    }
-
-    private func regularizedCandidates(
+    private func globallyRegularizedCandidates(
         samples: [DirectionSamples],
-        selectedCandidates: [Candidate],
         neighbors: [[Int]],
         step: Double
     ) -> [Candidate] {
-        guard samples.count == selectedCandidates.count else { return selectedCandidates }
-        let dataRadii = selectedCandidates.map(\.radius)
-        var radii = dataRadii
+        guard samples.isEmpty == false,
+              samples.count == neighbors.count else {
+            return samples.compactMap {
+                $0.candidates.min(by: { $0.dataCost < $1.dataCost })
+            }
+        }
+        var radii = samples.map { sample in
+            sample.candidates.min(by: { $0.dataCost < $1.dataCost })?.radius
+                ?? sample.originalRadius
+        }
+        radii = regeneratedSurfaceRadii(samples: samples, proposedRadii: radii)
+        var bestRadii = radii
+        var bestEnergy = radialFieldEnergy(
+            samples: samples,
+            radii: radii,
+            neighbors: neighbors,
+            step: step
+        )
 
-        for _ in 0..<12 {
+        // Solve a single radial field instead of smoothing independent points
+        // after the fact. Reconstructing the actual surface on every pass makes
+        // the next pass respond to the geometry that will really be displayed.
+        for _ in 0..<16 {
             let previousRadii = radii
+            var proposedRadii = previousRadii
             for index in samples.indices {
                 guard samples[index].isManualConstraint == false else {
-                    radii[index] = dataRadii[index]
+                    proposedRadii[index] = samples[index].candidates[0].radius
                     continue
                 }
                 let neighborRadii = neighbors[index].map { previousRadii[$0] }.sorted()
                 guard neighborRadii.isEmpty == false else { continue }
-                let neighborMean = neighborRadii.reduce(0, +) / Double(neighborRadii.count)
                 let neighborMedian = neighborRadii[neighborRadii.count / 2]
-                let confidence = samples[index].confidence
-                let dataWeight = 0.65 + confidence * 3.5
-                let priorWeight = 0.45
-                let smoothnessWeight = 2.4 - confidence * 1.2
-                var regularizedRadius = (
-                    dataRadii[index] * dataWeight
-                        + samples[index].originalRadius * priorWeight
-                        + neighborMean * smoothnessWeight
-                ) / (dataWeight + priorWeight + smoothnessWeight)
-
-                let signedExcursion = dataRadii[index] - neighborMedian
-                let coherentNeighbors = neighbors[index].filter { neighborIndex in
-                    let neighborExcursion = dataRadii[neighborIndex] - neighborMedian
-                    return signedExcursion * neighborExcursion > 0
-                        && abs(neighborExcursion) >= max(step, 0.4)
-                }.count
-                let baseExcursion = max(step * 2, 0.8)
-                let supportedExcursion = max(step * 6, 2.5)
-                let permittedExcursion = confidence >= 0.7 && coherentNeighbors >= 2
-                    ? supportedExcursion
-                    : baseExcursion
-                regularizedRadius = min(
-                    max(regularizedRadius, neighborMedian - permittedExcursion),
-                    neighborMedian + permittedExcursion
+                let predictedRadius = robustNeighborRadius(
+                    at: index,
+                    radii: previousRadii,
+                    neighbors: neighbors,
+                    step: step
                 )
-
-                let minimumRadius = samples[index].candidates.map(\.radius).min() ?? 0.5
-                let maximumRadius = samples[index].candidates.map(\.radius).max() ?? dataRadii[index]
-                radii[index] = min(max(regularizedRadius, minimumRadius), maximumRadius)
+                let bestCandidate = samples[index].candidates.min { lhs, rhs in
+                    globalCandidateCost(
+                        lhs,
+                        sample: samples[index],
+                        neighborMedian: neighborMedian,
+                        predictedRadius: predictedRadius,
+                        previousRadii: previousRadii,
+                        neighborIndices: neighbors[index],
+                        step: step
+                    ) < globalCandidateCost(
+                        rhs,
+                        sample: samples[index],
+                        neighborMedian: neighborMedian,
+                        predictedRadius: predictedRadius,
+                        previousRadii: previousRadii,
+                        neighborIndices: neighbors[index],
+                        step: step
+                    )
+                }
+                proposedRadii[index] = bestCandidate?.radius ?? previousRadii[index]
             }
+
+            radii = regeneratedSurfaceRadii(samples: samples, proposedRadii: proposedRadii)
+            let energy = radialFieldEnergy(
+                samples: samples,
+                radii: radii,
+                neighbors: neighbors,
+                step: step
+            )
+            if energy < bestEnergy {
+                bestEnergy = energy
+                bestRadii = radii
+            }
+            let maximumChange = samples.indices.map {
+                abs(radii[$0] - previousRadii[$0])
+            }.max() ?? 0
+            if maximumChange <= max(step * 0.05, 0.025) { break }
         }
 
         return samples.indices.map { index in
-            Candidate(
-                radius: radii[index],
-                displacement: radii[index] - samples[index].originalRadius,
-                dataCost: selectedCandidates[index].dataCost
+            let nearestCandidate = samples[index].candidates.min {
+                abs($0.radius - bestRadii[index]) < abs($1.radius - bestRadii[index])
+            }
+            return Candidate(
+                radius: bestRadii[index],
+                displacement: bestRadii[index] - samples[index].originalRadius,
+                dataCost: nearestCandidate?.dataCost ?? 0,
+                appearanceMismatch: nearestCandidate?.appearanceMismatch
             )
         }
+    }
+
+    private func regeneratedSurfaceRadii(
+        samples: [DirectionSamples],
+        proposedRadii: [Double]
+    ) -> [Double] {
+        guard samples.count == proposedRadii.count else { return proposedRadii }
+        var regeneratedROI = roi
+        regeneratedROI.replaceAutomaticAnchors(
+            with: samples.indices.compactMap { index -> SIMD3<Double>? in
+                guard samples[index].isManualConstraint == false else { return nil }
+                return roi.center.vector + samples[index].direction * proposedRadii[index]
+            }
+        )
+        return samples.indices.map { index in
+            if samples[index].isManualConstraint {
+                return samples[index].candidates[0].radius
+            }
+            return regeneratedROI.surfaceRadius(along: samples[index].direction)
+        }
+    }
+
+    private func robustNeighborRadius(
+        at index: Int,
+        radii: [Double],
+        neighbors: [[Int]],
+        step: Double
+    ) -> Double {
+        let values = neighbors[index].map { radii[$0] }.sorted()
+        guard values.isEmpty == false else { return radii[index] }
+        let median = values[values.count / 2]
+        let deviations = values.map { abs($0 - median) }.sorted()
+        let robustScale = max(
+            deviations[deviations.count / 2] * 1.4826,
+            step,
+            0.35
+        )
+        var weightedRadius = 0.0
+        var totalWeight = 0.0
+        for value in values {
+            let normalizedResidual = abs(value - median) / robustScale
+            let weight = normalizedResidual <= 1 ? 1 : 1 / normalizedResidual
+            weightedRadius += value * weight
+            totalWeight += weight
+        }
+        return totalWeight > 0 ? weightedRadius / totalWeight : median
+    }
+
+    private func globalCandidateCost(
+        _ candidate: Candidate,
+        sample: DirectionSamples,
+        neighborMedian: Double,
+        predictedRadius: Double,
+        previousRadii: [Double],
+        neighborIndices: [Int],
+        step: Double
+    ) -> Double {
+        let appearanceAgreement = candidate.appearanceMismatch.map {
+            min(max(1 - $0 / 0.6, 0), 1)
+        } ?? 0
+        let dataWeight = 1 + sample.confidence * 0.7 + appearanceAgreement * 0.8
+        let bendingWeight = max(
+            0.75 - sample.confidence * 0.3 - appearanceAgreement * 0.4,
+            0.12
+        )
+        let curvatureScale = max(step * 2, 0.75)
+        let curvatureCost = bendingWeight * Self.huber(
+            (candidate.radius - predictedRadius) / curvatureScale
+        )
+        let priorCost = 0.04 * Self.huber(
+            candidate.displacement / max(step * 4, 1.5)
+        )
+
+        let signedExcursion = candidate.radius - neighborMedian
+        let coherentNeighbors = neighborIndices.filter { neighborIndex in
+            let neighborExcursion = previousRadii[neighborIndex] - neighborMedian
+            return signedExcursion * neighborExcursion > 0
+                && abs(neighborExcursion) >= max(step, 0.4)
+        }.count
+        let matchesManualBoundary = candidate.appearanceMismatch.map { $0 <= 0.3 } ?? false
+        let hasImageSupport = (sample.confidence >= 0.7 && coherentNeighbors >= 2)
+            || (sample.confidence >= 0.45 && matchesManualBoundary)
+        let permittedExcursion = hasImageSupport
+            ? max(step * 6, 2.5)
+            : max(step * 2, 0.8)
+        let excessExcursion = max(abs(signedExcursion) - permittedExcursion, 0)
+        let geometryBarrier = 3 * Self.huber(excessExcursion / max(step, 0.35))
+        return candidate.dataCost * dataWeight
+            + curvatureCost
+            + priorCost
+            + geometryBarrier
+    }
+
+    private func radialFieldEnergy(
+        samples: [DirectionSamples],
+        radii: [Double],
+        neighbors: [[Int]],
+        step: Double
+    ) -> Double {
+        guard samples.count == radii.count else { return .greatestFiniteMagnitude }
+        var energy = 0.0
+        for index in samples.indices {
+            guard samples[index].isManualConstraint == false,
+                  neighbors[index].isEmpty == false else { continue }
+            let nearestCandidate = samples[index].candidates.min {
+                abs($0.radius - radii[index]) < abs($1.radius - radii[index])
+            }
+            guard let nearestCandidate else { continue }
+            let neighborRadii = neighbors[index].map { radii[$0] }.sorted()
+            let neighborMedian = neighborRadii[neighborRadii.count / 2]
+            let predictedRadius = robustNeighborRadius(
+                at: index,
+                radii: radii,
+                neighbors: neighbors,
+                step: step
+            )
+            energy += globalCandidateCost(
+                nearestCandidate,
+                sample: samples[index],
+                neighborMedian: neighborMedian,
+                predictedRadius: predictedRadius,
+                previousRadii: radii,
+                neighborIndices: neighbors[index],
+                step: step
+            )
+        }
+        return energy
     }
 
     private func boundaryConfidence(for sortedStrengths: [Double]) -> Double {
@@ -1362,15 +1499,56 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
         }
     }
 
-    private static func fibonacciDirections(count: Int) -> [SIMD3<Double>] {
-        guard count > 0 else { return [] }
-        let goldenAngle = Double.pi * (3 - sqrt(5))
-        return (0..<count).map { index in
-            let y = 1 - (Double(index) + 0.5) * 2 / Double(count)
-            let radial = sqrt(max(1 - y * y, 0))
-            let angle = Double(index) * goldenAngle
-            return SIMD3<Double>(cos(angle) * radial, y, sin(angle) * radial)
+    private static func icosphereDirections(subdivisions: Int) -> [SIMD3<Double>] {
+        let goldenRatio = (1 + sqrt(5.0)) * 0.5
+        var directions = [
+            SIMD3<Double>(-1, goldenRatio, 0), SIMD3<Double>(1, goldenRatio, 0),
+            SIMD3<Double>(-1, -goldenRatio, 0), SIMD3<Double>(1, -goldenRatio, 0),
+            SIMD3<Double>(0, -1, goldenRatio), SIMD3<Double>(0, 1, goldenRatio),
+            SIMD3<Double>(0, -1, -goldenRatio), SIMD3<Double>(0, 1, -goldenRatio),
+            SIMD3<Double>(goldenRatio, 0, -1), SIMD3<Double>(goldenRatio, 0, 1),
+            SIMD3<Double>(-goldenRatio, 0, -1), SIMD3<Double>(-goldenRatio, 0, 1),
+        ].map { simd_normalize($0) }
+        var faces = [
+            SIMD3<Int>(0, 11, 5), SIMD3<Int>(0, 5, 1), SIMD3<Int>(0, 1, 7),
+            SIMD3<Int>(0, 7, 10), SIMD3<Int>(0, 10, 11), SIMD3<Int>(1, 5, 9),
+            SIMD3<Int>(5, 11, 4), SIMD3<Int>(11, 10, 2), SIMD3<Int>(10, 7, 6),
+            SIMD3<Int>(7, 1, 8), SIMD3<Int>(3, 9, 4), SIMD3<Int>(3, 4, 2),
+            SIMD3<Int>(3, 2, 6), SIMD3<Int>(3, 6, 8), SIMD3<Int>(3, 8, 9),
+            SIMD3<Int>(4, 9, 5), SIMD3<Int>(2, 4, 11), SIMD3<Int>(6, 2, 10),
+            SIMD3<Int>(8, 6, 7), SIMD3<Int>(9, 8, 1),
+        ]
+
+        for _ in 0..<max(subdivisions, 0) {
+            var midpointIndices: [UInt64: Int] = [:]
+            var subdividedFaces: [SIMD3<Int>] = []
+            subdividedFaces.reserveCapacity(faces.count * 4)
+
+            func midpointIndex(_ first: Int, _ second: Int) -> Int {
+                let lower = min(first, second)
+                let upper = max(first, second)
+                let key = (UInt64(lower) << 32) | UInt64(upper)
+                if let existing = midpointIndices[key] { return existing }
+                directions.append(simd_normalize(directions[first] + directions[second]))
+                let index = directions.count - 1
+                midpointIndices[key] = index
+                return index
+            }
+
+            for face in faces {
+                let firstSecond = midpointIndex(face.x, face.y)
+                let secondThird = midpointIndex(face.y, face.z)
+                let thirdFirst = midpointIndex(face.z, face.x)
+                subdividedFaces.append(contentsOf: [
+                    SIMD3<Int>(face.x, firstSecond, thirdFirst),
+                    SIMD3<Int>(face.y, secondThird, firstSecond),
+                    SIMD3<Int>(face.z, thirdFirst, secondThird),
+                    SIMD3<Int>(firstSecond, secondThird, thirdFirst),
+                ])
+            }
+            faces = subdividedFaces
         }
+        return directions
     }
 }
 

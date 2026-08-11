@@ -382,6 +382,8 @@ extern "C"
 - (BOOL)seriesTextLooksLikeFLAIR:(NSString *)text;
 - (BOOL)textLooksLikeHeadRegion:(NSString *)text;
 - (BOOL)queryItemMatchesHeadRegion:(id)item;
+- (BOOL)seriesDescriptionContainsContrastPlusMarker:(id)item;
+- (BOOL)seriesTextLooksExplicitlyNonContrast:(NSString *)text;
 - (BOOL)seriesItemLooksContrastEnhanced:(id)item normalizedText:(NSString *)text;
 - (BOOL)seriesFilterMatchesItem:(id)item;
 - (BOOL)seriesHighlightMatchesItem:(id)item;
@@ -6698,9 +6700,42 @@ extern "C"
     return YES;
 }
 
+- (BOOL)seriesDescriptionContainsContrastPlusMarker:(id)item
+{
+    NSString *seriesDescription = [(DCMTKSeriesQueryNode *)item theDescription];
+    if( [seriesDescription length] == 0)
+        return NO;
+
+    static NSRegularExpression *contrastPlusExpression = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once( &onceToken, ^{
+        // Recognize C+ and +C even when attached to the neighboring sequence name.
+        contrastPlusExpression = [[NSRegularExpression alloc] initWithPattern: @"(?:^|[^\\p{L}\\p{N}])c\\s*\\+|\\+\\s*c(?:$|[^\\p{L}\\p{N}])"
+                                                                          options: NSRegularExpressionCaseInsensitive
+                                                                            error: nil];
+    });
+
+    return [contrastPlusExpression firstMatchInString: seriesDescription
+                                               options: 0
+                                                 range: NSMakeRange( 0, [seriesDescription length])] != nil;
+}
+
+- (BOOL)seriesTextLooksExplicitlyNonContrast:(NSString *)text
+{
+    NSArray *tokens = [NSArray arrayWithObjects: @"pre", @"precontrast", @"pregad", @"noncontrast", @"noncon", nil];
+    NSArray *phrases = [NSArray arrayWithObjects: @" without contrast ", @" no contrast ", @" wo contrast ", @" w o contrast ", nil];
+    return [self seriesText: text containsAnyToken: tokens] || [self seriesText: text containsAnyPhrase: phrases];
+}
+
 - (BOOL)seriesItemLooksContrastEnhanced:(id)item normalizedText:(NSString *)text
 {
+    if( [self seriesTextLooksExplicitlyNonContrast: text])
+        return NO;
+
     if( [[(DCMTKQueryNode *)item contrastBolusAgent] length] > 0)
+        return YES;
+
+    if( [self seriesDescriptionContainsContrastPlusMarker: item])
         return YES;
 
     NSArray *tokens = [NSArray arrayWithObjects: @"gad", @"gadol", @"gadavist", @"dotarem", @"prohance", @"multihance", @"magnevist", @"omniscan", @"post", @"postcontrast", @"postgad", @"enh", @"gd", @"pg", @"t1c", nil];

@@ -180,6 +180,8 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         static let scoutWidthAutosaveKey = "HorosMetalViewerScoutWidth"
         static let scoutHeightAutosaveKey = "HorosMetalViewerScoutHeight"
         static let leftSplitViewAutosaveName = "HorosMetalViewerSplitView.Left"
+        static let rightSplitViewAutosaveName = "HorosMetalViewerSplitView.Right"
+        static let topSplitViewAutosaveName = "HorosMetalViewerSplitView.Top"
         static let bottomSplitViewAutosaveName = "HorosMetalViewerSplitView.Bottom"
         static let syncScaleAutosaveKey = "HorosMetalViewerSyncScale"
     }
@@ -273,11 +275,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         rootView.layer?.backgroundColor = NSColor.black.cgColor
 
         contentSplitView.translatesAutoresizingMaskIntoConstraints = false
-        contentSplitView.isVertical = initialScoutPlacement == .left
+        contentSplitView.isVertical = initialScoutPlacement.usesVerticalTimeline
         contentSplitView.dividerStyle = .thin
-        contentSplitView.autosaveName = initialScoutPlacement == .left
-            ? Layout.leftSplitViewAutosaveName
-            : Layout.bottomSplitViewAutosaveName
+        contentSplitView.autosaveName = Self.splitViewAutosaveName(for: initialScoutPlacement)
         contentSplitView.wantsLayer = true
         contentSplitView.layer?.backgroundColor = NSColor.black.cgColor
 
@@ -297,7 +297,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         paneStackView.spacing = 8
         paneContainer.addSubview(paneStackView)
 
-        if initialScoutPlacement == .left {
+        if initialScoutPlacement.placesScoutBeforePane {
             contentSplitView.addArrangedSubview(scoutContainer)
             contentSplitView.addArrangedSubview(paneContainer)
             contentSplitView.setHoldingPriority(.defaultLow, forSubviewAt: 0)
@@ -429,7 +429,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             paneStackView.topAnchor.constraint(equalTo: paneContainer.topAnchor, constant: 8),
             paneStackView.bottomAnchor.constraint(equalTo: paneContainer.bottomAnchor, constant: -8),
         ]
-        constraints.append(initialScoutPlacement == .left ? scoutWidthConstraint : scoutHeightConstraint)
+        constraints.append(initialScoutPlacement.usesVerticalTimeline ? scoutWidthConstraint : scoutHeightConstraint)
         NSLayoutConstraint.activate(constraints)
 
         addPane(for: firstSeries, makeActive: true)
@@ -507,6 +507,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     func splitViewDidResizeSubviews(_ notification: Notification) {
         guard notification.object as AnyObject? === contentSplitView else { return }
         activeScoutDimensionConstraint.constant = currentScoutDimension
+        scoutView.recalibrateLayoutForCurrentDimension()
         saveSplitPosition()
     }
 
@@ -583,13 +584,13 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         for placement: MetalViewerScoutPlacement,
         splitLength: CGFloat
     ) -> CGFloat {
-        let defaultsKey = placement == .left
+        let defaultsKey = placement.usesVerticalTimeline
             ? Layout.scoutWidthAutosaveKey
             : Layout.scoutHeightAutosaveKey
         let savedDimension = (UserDefaults.standard.object(forKey: defaultsKey) as? NSNumber)
             .map { CGFloat(truncating: $0) }
             ?? Layout.defaultScoutDimension
-        let minimumPaneDimension = placement == .left
+        let minimumPaneDimension = placement.usesVerticalTimeline
             ? Layout.minimumPaneWidth
             : Layout.minimumPaneHeight
         let maximumDimension = max(
@@ -607,29 +608,29 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     }
 
     private var splitLength: CGFloat {
-        scoutPlacement == .left
+        scoutPlacement.usesVerticalTimeline
             ? contentSplitView.bounds.width
             : contentSplitView.bounds.height
     }
 
     private var currentScoutDimension: CGFloat {
-        scoutPlacement == .left
+        scoutPlacement.usesVerticalTimeline
             ? scoutContainer.frame.width
             : scoutContainer.frame.height
     }
 
     private var minimumPaneDimension: CGFloat {
-        scoutPlacement == .left
+        scoutPlacement.usesVerticalTimeline
             ? Layout.minimumPaneWidth
             : Layout.minimumPaneHeight
     }
 
     private var activeScoutDimensionConstraint: NSLayoutConstraint {
-        scoutPlacement == .left ? scoutWidthConstraint : scoutHeightConstraint
+        scoutPlacement.usesVerticalTimeline ? scoutWidthConstraint : scoutHeightConstraint
     }
 
     private var scoutDimensionAutosaveKey: String {
-        scoutPlacement == .left
+        scoutPlacement.usesVerticalTimeline
             ? Layout.scoutWidthAutosaveKey
             : Layout.scoutHeightAutosaveKey
     }
@@ -657,11 +658,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         paneContainer.removeFromSuperview()
 
         scoutPlacement = placement
-        contentSplitView.isVertical = placement == .left
-        contentSplitView.autosaveName = placement == .left
-            ? Layout.leftSplitViewAutosaveName
-            : Layout.bottomSplitViewAutosaveName
-        if placement == .left {
+        contentSplitView.isVertical = placement.usesVerticalTimeline
+        contentSplitView.autosaveName = Self.splitViewAutosaveName(for: placement)
+        if placement.placesScoutBeforePane {
             contentSplitView.addArrangedSubview(scoutContainer)
             contentSplitView.addArrangedSubview(paneContainer)
             contentSplitView.setHoldingPriority(.defaultLow, forSubviewAt: 0)
@@ -684,6 +683,19 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         contentSplitView.layoutSubtreeIfNeeded()
         restoreSavedSplitPosition()
         recalibrateScoutLayoutAfterPresentation()
+    }
+
+    private static func splitViewAutosaveName(for placement: MetalViewerScoutPlacement) -> String {
+        switch placement {
+        case .left:
+            return Layout.leftSplitViewAutosaveName
+        case .right:
+            return Layout.rightSplitViewAutosaveName
+        case .top:
+            return Layout.topSplitViewAutosaveName
+        case .bottom:
+            return Layout.bottomSplitViewAutosaveName
+        }
     }
 
     private func addPane(for series: MetalViewerSeries, makeActive: Bool) {

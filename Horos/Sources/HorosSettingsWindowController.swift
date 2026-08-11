@@ -1925,7 +1925,7 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
         target: nil,
         action: nil
     )
-    private let scoutPlacementDetailLabel = NSTextField(wrappingLabelWithString: "Choose whether series scout thumbnails appear along the left side or the bottom of the viewer window.")
+    private let scoutPlacementDetailLabel = NSTextField(wrappingLabelWithString: "Choose which edge of the viewer window contains the series scout thumbnails.")
     private let interpolationTitleLabel = NSTextField(labelWithString: "Planar image interpolation")
     private let interpolationPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let interpolationDetailLabel = NSTextField(wrappingLabelWithString: "")
@@ -2004,7 +2004,9 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
         scoutPlacementControl.controlSize = .regular
         scoutPlacementControl.target = self
         scoutPlacementControl.action = #selector(scoutPlacementDidChange(_:))
-        scoutPlacementControl.selectedSegment = MetalViewerScoutPlacement.saved.rawValue
+        scoutPlacementControl.selectedSegment = MetalViewerScoutPlacement.allCases.firstIndex(
+            of: MetalViewerScoutPlacement.saved
+        ) ?? 0
         metalPlanarCardView.addSubview(scoutPlacementControl)
 
         scoutPlacementDetailLabel.font = .systemFont(ofSize: 13)
@@ -2056,7 +2058,7 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
         metalPlanarCardView.frame = NSRect(x: Layout.sideInset, y: screensCardView.frame.maxY + 24, width: contentWidth, height: 194)
         metalPlanarTitleLabel.frame = NSRect(x: 22, y: 18, width: 260, height: 24)
         scoutPlacementLabel.frame = NSRect(x: 22, y: 54, width: 220, height: 24)
-        scoutPlacementControl.frame = NSRect(x: contentWidth - 198, y: 50, width: 176, height: 28)
+        scoutPlacementControl.frame = NSRect(x: contentWidth - 342, y: 50, width: 320, height: 28)
         scoutPlacementDetailLabel.frame = NSRect(x: 22, y: 84, width: contentWidth - 44, height: 36)
         interpolationTitleLabel.frame = NSRect(x: 22, y: 130, width: 260, height: 24)
         interpolationPopup.frame = NSRect(x: contentWidth - 198, y: 126, width: 176, height: 28)
@@ -2079,8 +2081,8 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
     }
 
     @objc private func scoutPlacementDidChange(_ sender: NSSegmentedControl) {
-        let placement = MetalViewerScoutPlacement(rawValue: sender.selectedSegment)
-            ?? MetalViewerScoutPlacement.defaultPlacement
+        guard MetalViewerScoutPlacement.allCases.indices.contains(sender.selectedSegment) else { return }
+        let placement = MetalViewerScoutPlacement.allCases[sender.selectedSegment]
         MetalViewerScoutPlacement.save(placement)
     }
 

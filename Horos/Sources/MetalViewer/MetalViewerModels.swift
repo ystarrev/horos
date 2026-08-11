@@ -137,6 +137,10 @@ struct MetalViewerMouseToolAssignments: Equatable {
 enum MetalViewerScoutPlacement: Int, CaseIterable {
     case left = 0
     case bottom = 1
+    case right = 2
+    case top = 3
+
+    static let allCases: [MetalViewerScoutPlacement] = [.left, .right, .top, .bottom]
 
     static let defaultsKey = "HorosMetalViewerScoutPlacement"
     static let didChangeNotification = Notification.Name("HorosMetalViewerScoutPlacementDidChange")
@@ -160,9 +164,21 @@ enum MetalViewerScoutPlacement: Int, CaseIterable {
         switch self {
         case .left:
             return NSLocalizedString("Left", comment: "")
+        case .right:
+            return NSLocalizedString("Right", comment: "")
+        case .top:
+            return NSLocalizedString("Top", comment: "")
         case .bottom:
             return NSLocalizedString("Bottom", comment: "")
         }
+    }
+
+    var usesVerticalTimeline: Bool {
+        self == .left || self == .right
+    }
+
+    var placesScoutBeforePane: Bool {
+        self == .left || self == .top
     }
 }
 

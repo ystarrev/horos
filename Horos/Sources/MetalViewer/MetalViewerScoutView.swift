@@ -46,10 +46,9 @@ private final class MetalViewerScoutClipView: NSClipView {
 
     override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
         var constrainedBounds = super.constrainBoundsRect(proposedBounds)
-        switch scoutPlacement {
-        case .left:
+        if scoutPlacement.usesVerticalTimeline {
             constrainedBounds.origin.x = 0
-        case .bottom:
+        } else {
             constrainedBounds.origin.y = 0
         }
         return constrainedBounds
@@ -65,6 +64,10 @@ private enum MetalViewerScoutLayout {
     static let thumbnailAspectRatio: CGFloat = 1.0
     static let thumbnailInset: CGFloat = 4
     static let horizontalProcedureWidth: CGFloat = 52
+    static let scrollerGutterWidth = NSScroller.scrollerWidth(
+        for: .regular,
+        scrollerStyle: .legacy
+    )
     static let studySeparatorSpacing: CGFloat = 0
     static let studySeparatorThickness: CGFloat = 10
 }
@@ -97,6 +100,7 @@ final class MetalViewerScoutView: NSScrollView {
     private let stackView = NSStackView()
     private var scoutPlacement: MetalViewerScoutPlacement
     private var viewportConstraint: NSLayoutConstraint?
+    private var preferredDocumentLengthConstraint: NSLayoutConstraint?
     private var currentSeries: [MetalViewerSeries]
     private var currentProcedureEvents: [SurgicalProcedureEvent]
     private var currentROIs: [MetalStudyROI] = []
@@ -127,6 +131,7 @@ final class MetalViewerScoutView: NSScrollView {
         backgroundColor = NSColor(calibratedWhite: 0.10, alpha: 1)
         borderType = .noBorder
         autohidesScrollers = true
+        scrollerStyle = .legacy
         verticalScrollElasticity = .none
         horizontalScrollElasticity = .none
         let clipView = MetalViewerScoutClipView()
@@ -135,7 +140,6 @@ final class MetalViewerScoutView: NSScrollView {
 
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.spacing = MetalViewerScoutLayout.studySeparatorSpacing
-        stackView.edgeInsets = NSEdgeInsets(top: 12, left: 4, bottom: 12, right: 4)
         configureScrollAxis()
 
         let documentView = MetalViewerScoutDocumentView()
@@ -189,21 +193,20 @@ final class MetalViewerScoutView: NSScrollView {
         roiViews = []
 
         let timelineEntries = Self.timelineEntries(series: series, procedureEvents: procedureEvents)
-        let arrangedEntries = scoutPlacement == .bottom
-            ? Array(timelineEntries.reversed())
-            : timelineEntries
+        let arrangedEntries = scoutPlacement.usesVerticalTimeline
+            ? timelineEntries
+            : Array(timelineEntries.reversed())
         for (index, entry) in arrangedEntries.enumerated() {
             if index > 0 {
                 let separator = MetalViewerScoutStudySeparatorView()
                 stackView.addArrangedSubview(separator)
-                switch scoutPlacement {
-                case .left:
+                if scoutPlacement.usesVerticalTimeline {
                     separator.widthAnchor.constraint(
                         equalTo: stackView.widthAnchor,
                         constant: -(stackView.edgeInsets.left + stackView.edgeInsets.right)
                     ).isActive = true
                     separator.heightAnchor.constraint(equalToConstant: MetalViewerScoutLayout.studySeparatorThickness).isActive = true
-                case .bottom:
+                } else {
                     separator.heightAnchor.constraint(
                         equalTo: stackView.heightAnchor,
                         constant: -(stackView.edgeInsets.top + stackView.edgeInsets.bottom)
@@ -217,13 +220,12 @@ final class MetalViewerScoutView: NSScrollView {
             case .study(let studySeries):
                 let groupView = MetalViewerScoutStudyGroupView(placement: scoutPlacement)
                 stackView.addArrangedSubview(groupView)
-                switch scoutPlacement {
-                case .left:
+                if scoutPlacement.usesVerticalTimeline {
                     groupView.widthAnchor.constraint(
                         equalTo: stackView.widthAnchor,
                         constant: -(stackView.edgeInsets.left + stackView.edgeInsets.right)
                     ).isActive = true
-                case .bottom:
+                } else {
                     groupView.heightAnchor.constraint(
                         equalTo: stackView.heightAnchor,
                         constant: -(stackView.edgeInsets.top + stackView.edgeInsets.bottom)
@@ -262,13 +264,12 @@ final class MetalViewerScoutView: NSScrollView {
             case .procedure(let event):
                 let procedureView = MetalViewerScoutProcedureView(event: event, placement: scoutPlacement)
                 stackView.addArrangedSubview(procedureView)
-                switch scoutPlacement {
-                case .left:
+                if scoutPlacement.usesVerticalTimeline {
                     procedureView.widthAnchor.constraint(
                         equalTo: stackView.widthAnchor,
                         constant: -(stackView.edgeInsets.left + stackView.edgeInsets.right)
                     ).isActive = true
-                case .bottom:
+                } else {
                     procedureView.heightAnchor.constraint(
                         equalTo: stackView.heightAnchor,
                         constant: -(stackView.edgeInsets.top + stackView.edgeInsets.bottom)
@@ -295,6 +296,7 @@ final class MetalViewerScoutView: NSScrollView {
         }
 
         DispatchQueue.main.async { [weak self] in
+            self?.updateHorizontalDocumentLength()
             self?.scrollToStart()
             self?.scheduleVisibleThumbnailLoad()
         }
@@ -387,13 +389,13 @@ final class MetalViewerScoutView: NSScrollView {
         documentView?.needsLayout = true
         layoutSubtreeIfNeeded()
         contentView.layoutSubtreeIfNeeded()
+        updateHorizontalDocumentLength()
         documentView?.layoutSubtreeIfNeeded()
         tile()
         var bounds = contentView.bounds
-        switch scoutPlacement {
-        case .left:
+        if scoutPlacement.usesVerticalTimeline {
             bounds.origin.x = 0
-        case .bottom:
+        } else {
             bounds.origin.y = 0
         }
         contentView.scroll(to: contentView.constrainBoundsRect(bounds).origin)
@@ -401,36 +403,113 @@ final class MetalViewerScoutView: NSScrollView {
     }
 
     private func configureScrollAxis() {
-        switch scoutPlacement {
-        case .left:
+        if scoutPlacement.usesVerticalTimeline {
             hasVerticalScroller = true
             hasHorizontalScroller = false
             stackView.orientation = .vertical
             stackView.alignment = .centerX
-        case .bottom:
+            stackView.edgeInsets = NSEdgeInsets(top: 12, left: 4, bottom: 12, right: 4)
+        } else {
             hasVerticalScroller = false
             hasHorizontalScroller = true
             stackView.orientation = .horizontal
             stackView.alignment = .centerY
+            stackView.edgeInsets = NSEdgeInsets(top: 2, left: 4, bottom: 2, right: 4)
         }
     }
 
     private func updateViewportConstraint() {
         viewportConstraint?.isActive = false
-        let constraint: NSLayoutConstraint
-        switch scoutPlacement {
-        case .left:
-            constraint = stackView.widthAnchor.constraint(equalTo: contentView.widthAnchor)
-        case .bottom:
-            constraint = stackView.heightAnchor.constraint(equalTo: contentView.heightAnchor)
+        preferredDocumentLengthConstraint?.isActive = false
+        preferredDocumentLengthConstraint = nil
+        guard let documentView else { return }
+
+        let crossAxisConstraint: NSLayoutConstraint
+        if scoutPlacement.usesVerticalTimeline {
+            crossAxisConstraint = documentView.widthAnchor.constraint(
+                equalTo: widthAnchor,
+                constant: -MetalViewerScoutLayout.scrollerGutterWidth
+            )
+        } else {
+            crossAxisConstraint = documentView.heightAnchor.constraint(
+                equalTo: heightAnchor,
+                constant: -MetalViewerScoutLayout.scrollerGutterWidth
+            )
+
+            let preferredLengthConstraint = documentView.widthAnchor.constraint(equalToConstant: 1)
+            preferredLengthConstraint.priority = .defaultHigh
+            preferredLengthConstraint.isActive = true
+            preferredDocumentLengthConstraint = preferredLengthConstraint
         }
-        constraint.isActive = true
-        viewportConstraint = constraint
+        crossAxisConstraint.isActive = true
+        viewportConstraint = crossAxisConstraint
+        updateHorizontalDocumentLength()
+    }
+
+    private func updateHorizontalDocumentLength() {
+        guard scoutPlacement.usesVerticalTimeline == false,
+              let preferredDocumentLengthConstraint else { return }
+
+        guard let documentView else { return }
+        let viewportSize = documentView.bounds.size
+        guard viewportSize.height > 0 else { return }
+
+        let groupHeight = max(
+            viewportSize.height - stackView.edgeInsets.top - stackView.edgeInsets.bottom,
+            0
+        )
+        var contentWidth = stackView.edgeInsets.left + stackView.edgeInsets.right
+        for view in stackView.arrangedSubviews {
+            switch view {
+            case let group as MetalViewerScoutStudyGroupView:
+                contentWidth += group.horizontalLength(forHeight: groupHeight)
+            case is MetalViewerScoutProcedureView:
+                contentWidth += MetalViewerScoutLayout.horizontalProcedureWidth
+            case is MetalViewerScoutStudySeparatorView:
+                contentWidth += MetalViewerScoutLayout.studySeparatorThickness
+            default:
+                contentWidth += view.fittingSize.width
+            }
+        }
+        if stackView.arrangedSubviews.count > 1 {
+            contentWidth += CGFloat(stackView.arrangedSubviews.count - 1) * stackView.spacing
+        }
+
+        preferredDocumentLengthConstraint.constant = max(ceil(contentWidth), 1)
     }
 
     override func reflectScrolledClipView(_ clipView: NSClipView) {
         super.reflectScrolledClipView(clipView)
         scheduleVisibleThumbnailLoad()
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard scoutPlacement.usesVerticalTimeline == false else {
+            super.scrollWheel(with: event)
+            return
+        }
+        let horizontalDelta = event.scrollingDeltaX
+        let verticalDelta = event.scrollingDeltaY
+        guard horizontalDelta != 0 || verticalDelta != 0 else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        // AppKit's scrolling deltas describe content motion, which is opposite
+        // the clip view's bounds-origin motion.
+        let dominantDelta = abs(horizontalDelta) > abs(verticalDelta)
+            ? horizontalDelta
+            : verticalDelta
+        let distance = -dominantDelta * (event.hasPreciseScrollingDeltas ? 1 : 24)
+        guard let documentView else { return }
+        let maximumOriginX = max(documentView.frame.width - contentView.bounds.width, 0)
+        let targetOriginX = min(
+            max(contentView.bounds.origin.x + distance, 0),
+            maximumOriginX
+        )
+
+        contentView.scroll(to: NSPoint(x: targetOriginX, y: 0))
+        reflectScrolledClipView(contentView)
     }
 
     private func scheduleVisibleThumbnailLoad() {
@@ -447,7 +526,7 @@ final class MetalViewerScoutView: NSScrollView {
         pendingThumbnailRefresh = nil
         guard let documentView else { return }
 
-        let documentLength = scoutPlacement == .left
+        let documentLength = scoutPlacement.usesVerticalTimeline
             ? documentView.bounds.height
             : documentView.bounds.width
         guard documentLength > 0 else {
@@ -456,10 +535,9 @@ final class MetalViewerScoutView: NSScrollView {
         }
 
         let visibleRect: NSRect
-        switch scoutPlacement {
-        case .left:
+        if scoutPlacement.usesVerticalTimeline {
             visibleRect = contentView.documentVisibleRect.insetBy(dx: 0, dy: -240)
-        case .bottom:
+        } else {
             visibleRect = contentView.documentVisibleRect.insetBy(dx: -240, dy: 0)
         }
         for item in itemViews {
@@ -472,7 +550,7 @@ final class MetalViewerScoutView: NSScrollView {
     private func scrollToStart(retryCount: Int = 0) {
         guard let documentView else { return }
 
-        let documentLength = scoutPlacement == .left ? documentView.bounds.height : documentView.bounds.width
+        let documentLength = scoutPlacement.usesVerticalTimeline ? documentView.bounds.height : documentView.bounds.width
         guard documentLength > 0 || retryCount >= 3 else {
             DispatchQueue.main.async { [weak self] in
                 self?.scrollToStart(retryCount: retryCount + 1)
@@ -480,10 +558,9 @@ final class MetalViewerScoutView: NSScrollView {
             return
         }
 
-        switch scoutPlacement {
-        case .left:
+        if scoutPlacement.usesVerticalTimeline {
             contentView.scroll(to: .zero)
-        case .bottom:
+        } else {
             var visibleBounds = contentView.bounds
             visibleBounds.origin = CGPoint(
                 x: max(documentView.bounds.width - visibleBounds.width, 0),
@@ -503,8 +580,8 @@ final class MetalViewerScoutView: NSScrollView {
         layoutSubtreeIfNeeded()
         documentView.layoutSubtreeIfNeeded()
         let itemFrame = item.convert(item.bounds, to: documentView)
-        let itemLength = scoutPlacement == .left ? itemFrame.height : itemFrame.width
-        let visibleLength = scoutPlacement == .left ? contentView.bounds.height : contentView.bounds.width
+        let itemLength = scoutPlacement.usesVerticalTimeline ? itemFrame.height : itemFrame.width
+        let visibleLength = scoutPlacement.usesVerticalTimeline ? contentView.bounds.height : contentView.bounds.width
         guard itemLength > 0, visibleLength > 0 else {
             guard retryCount < 4 else { return }
             DispatchQueue.main.async { [weak self] in
@@ -514,15 +591,13 @@ final class MetalViewerScoutView: NSScrollView {
         }
 
         let revealFrame: NSRect
-        switch scoutPlacement {
-        case .left:
+        if scoutPlacement.usesVerticalTimeline {
             revealFrame = itemFrame.insetBy(dx: 0, dy: -8)
-        case .bottom:
+        } else {
             revealFrame = itemFrame.insetBy(dx: -8, dy: 0)
         }
         var visibleBounds = contentView.bounds
-        switch scoutPlacement {
-        case .left:
+        if scoutPlacement.usesVerticalTimeline {
             if revealFrame.minY < visibleBounds.minY {
                 visibleBounds.origin.y = revealFrame.minY
             } else if revealFrame.maxY > visibleBounds.maxY {
@@ -531,7 +606,7 @@ final class MetalViewerScoutView: NSScrollView {
                 item.loadThumbnailIfNeeded()
                 return
             }
-        case .bottom:
+        } else {
             if revealFrame.minX < visibleBounds.minX {
                 visibleBounds.origin.x = revealFrame.minX
             } else if revealFrame.maxX > visibleBounds.maxX {
@@ -608,11 +683,10 @@ private final class MetalViewerScoutStudyGroupView: NSView {
         layer?.backgroundColor = NSColor.clear.cgColor
 
         stackView.translatesAutoresizingMaskIntoConstraints = false
-        switch placement {
-        case .left:
+        if placement.usesVerticalTimeline {
             stackView.orientation = .vertical
             stackView.alignment = .centerX
-        case .bottom:
+        } else {
             stackView.orientation = .horizontal
             stackView.alignment = .centerY
         }
@@ -635,18 +709,31 @@ private final class MetalViewerScoutStudyGroupView: NSView {
 
     func addItem(_ item: NSView) {
         stackView.addArrangedSubview(item)
-        switch scoutPlacement {
-        case .left:
+        if scoutPlacement.usesVerticalTimeline {
             item.widthAnchor.constraint(
                 equalTo: stackView.widthAnchor,
                 constant: -(stackView.edgeInsets.left + stackView.edgeInsets.right)
             ).isActive = true
-        case .bottom:
+        } else {
             item.heightAnchor.constraint(
                 equalTo: stackView.heightAnchor,
                 constant: -(stackView.edgeInsets.top + stackView.edgeInsets.bottom)
             ).isActive = true
         }
+    }
+
+    func horizontalLength(forHeight height: CGFloat) -> CGFloat {
+        let itemCount = stackView.arrangedSubviews.count
+        guard itemCount > 0 else { return 0 }
+
+        let itemLength = max(
+            height - stackView.edgeInsets.top - stackView.edgeInsets.bottom,
+            0
+        )
+        return stackView.edgeInsets.left
+            + stackView.edgeInsets.right
+            + CGFloat(itemCount) * itemLength
+            + CGFloat(itemCount - 1) * stackView.spacing
     }
 }
 
@@ -1002,10 +1089,9 @@ private final class MetalViewerScoutROIItemView: NSView {
         addSubview(nameLabel)
         addSubview(volumeLabel)
         addSubview(typeLabel)
-        switch placement {
-        case .left:
+        if placement.usesVerticalTimeline {
             heightAnchor.constraint(equalTo: widthAnchor).isActive = true
-        case .bottom:
+        } else {
             widthAnchor.constraint(equalTo: heightAnchor).isActive = true
         }
         update(roi: roi)
@@ -1194,14 +1280,14 @@ private final class MetalViewerScoutProcedureView: NSView {
             font: .systemFont(ofSize: 13, weight: .semibold),
             color: .labelColor
         )
-        operationLabel.maximumNumberOfLines = placement == .left ? 3 : 1
+        operationLabel.maximumNumberOfLines = placement.usesVerticalTimeline ? 3 : 1
 
         let diagnosisLabel = Self.label(
             event.diagnosis,
             font: .systemFont(ofSize: 11),
             color: .secondaryLabelColor
         )
-        diagnosisLabel.maximumNumberOfLines = placement == .left ? 2 : 1
+        diagnosisLabel.maximumNumberOfLines = placement.usesVerticalTimeline ? 2 : 1
         diagnosisLabel.isHidden = event.diagnosis.isEmpty
 
         let heading = NSStackView(views: [iconView, dateLabel])
@@ -1211,15 +1297,14 @@ private final class MetalViewerScoutProcedureView: NSView {
         heading.spacing = 6
 
         let content: NSView
-        switch placement {
-        case .left:
+        if placement.usesVerticalTimeline {
             let stack = NSStackView(views: [heading, operationLabel, diagnosisLabel])
             stack.translatesAutoresizingMaskIntoConstraints = false
             stack.orientation = .vertical
             stack.alignment = .width
             stack.spacing = 3
             content = stack
-        case .bottom:
+        } else {
             content = MetalViewerScoutVerticalProcedureTextView(
                 date: Self.dateFormatter.string(from: event.date),
                 operation: event.operation.isEmpty
@@ -1229,8 +1314,7 @@ private final class MetalViewerScoutProcedureView: NSView {
         }
         addSubview(content)
 
-        switch placement {
-        case .left:
+        if placement.usesVerticalTimeline {
             NSLayoutConstraint.activate([
                 iconView.widthAnchor.constraint(equalToConstant: 18),
                 iconView.heightAnchor.constraint(equalToConstant: 18),
@@ -1241,7 +1325,7 @@ private final class MetalViewerScoutProcedureView: NSView {
                 content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
                 heightAnchor.constraint(greaterThanOrEqualToConstant: 74),
             ])
-        case .bottom:
+        } else {
             NSLayoutConstraint.activate([
                 content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
                 content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),

@@ -553,7 +553,7 @@ struct MetalPrintFrame {
     let width: Int
     let height: Int
 
-    func makeImage() -> NSImage? {
+    func makeCGImage() -> CGImage? {
         guard width > 0,
               height > 0,
               bgraPixels.count >= width * height * 4,
@@ -564,7 +564,7 @@ struct MetalPrintFrame {
 
         let alphaInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
         let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(alphaInfo)
-        guard let image = CGImage(
+        return CGImage(
             width: width,
             height: height,
             bitsPerComponent: 8,
@@ -576,14 +576,20 @@ struct MetalPrintFrame {
             decode: nil,
             shouldInterpolate: true,
             intent: .defaultIntent
-        ) else {
-            return nil
-        }
+        )
+    }
+
+    func makeImage() -> NSImage? {
+        guard let image = makeCGImage() else { return nil }
         return NSImage(
             cgImage: image,
             size: NSSize(width: CGFloat(width), height: CGFloat(height))
         )
     }
+}
+
+private struct MetalViewerFrameCaptureRequest {
+    let completion: (MetalPrintFrame?) -> Void
 }
 
 final class MetalViewerRenderer: NSObject, MTKViewDelegate {
@@ -606,6 +612,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private let registrationBlockMatchingPipelineState: MTLComputePipelineState
     private let samplerState: MTLSamplerState
     private let vertexBuffer: MTLBuffer
+    private var pendingFrameCapture: MetalViewerFrameCaptureRequest?
 
     private(set) var pixList: [DCMPix]
     private var overlayPixList: [DCMPix] = []
@@ -1311,6 +1318,90 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             width: width,
             height: height
         )
+    }
+
+    func captureCurrentFrame(
+        in view: MTKView,
+        completion: @escaping (MetalPrintFrame?) -> Void
+    ) {
+        guard overlayVolumeTexture != nil,
+              pendingFrameCapture == nil else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
+
+        pendingFrameCapture = MetalViewerFrameCaptureRequest(completion: completion)
+        view.draw()
+    }
+
+    private func encodePendingFrameCapture(
+        from texture: MTLTexture,
+        into commandBuffer: MTLCommandBuffer
+    ) {
+        guard let request = pendingFrameCapture else { return }
+        pendingFrameCapture = nil
+
+        let width = texture.width
+        let height = texture.height
+        let packedBytesPerRow = width * 4
+        let alignedBytesPerRow = (packedBytesPerRow + 255) & ~255
+        let bufferLength = alignedBytesPerRow * height
+        guard width > 0,
+              height > 0,
+              let captureBuffer = deviceRef.makeBuffer(
+                length: bufferLength,
+                options: .storageModeShared
+              ),
+              let blitEncoder = commandBuffer.makeBlitCommandEncoder() else {
+            DispatchQueue.main.async { request.completion(nil) }
+            return
+        }
+
+        blitEncoder.copy(
+            from: texture,
+            sourceSlice: 0,
+            sourceLevel: 0,
+            sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+            sourceSize: MTLSize(width: width, height: height, depth: 1),
+            to: captureBuffer,
+            destinationOffset: 0,
+            destinationBytesPerRow: alignedBytesPerRow,
+            destinationBytesPerImage: bufferLength
+        )
+        blitEncoder.endEncoding()
+
+        commandBuffer.addCompletedHandler { completedBuffer in
+            guard completedBuffer.status == .completed else {
+                DispatchQueue.main.async { request.completion(nil) }
+                return
+            }
+
+            var pixels = [UInt8](repeating: 0, count: packedBytesPerRow * height)
+            pixels.withUnsafeMutableBytes { destination in
+                guard let destinationBase = destination.baseAddress else { return }
+                let sourceBase = captureBuffer.contents()
+                for row in 0..<height {
+                    destinationBase
+                        .advanced(by: row * packedBytesPerRow)
+                        .copyMemory(
+                            from: sourceBase.advanced(by: row * alignedBytesPerRow),
+                            byteCount: packedBytesPerRow
+                        )
+                }
+            }
+            let frame = MetalPrintFrame(
+                bgraPixels: Data(pixels),
+                width: width,
+                height: height
+            )
+            DispatchQueue.main.async { request.completion(frame) }
+        }
+    }
+
+    private func failPendingFrameCapture() {
+        guard let request = pendingFrameCapture else { return }
+        pendingFrameCapture = nil
+        DispatchQueue.main.async { request.completion(nil) }
     }
 
     func setPixList(_ newPixList: [DCMPix], preservingSliceIndex: Bool = true) {
@@ -7601,7 +7692,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             break
         }
 
-        guard let displayVolumeTexture = stackDisplayVolumeTexture() else { return }
+        guard let displayVolumeTexture = stackDisplayVolumeTexture() else {
+            failPendingFrameCapture()
+            return
+        }
         let displayVolumeEntry = stackDisplayVolumeEntry()
         let displayVolumeKind = displayVolumeEntry?.textureKind ?? .rescaledFloat
         let floatDisplayVolumeTexture = displayVolumeKind == .rescaledFloat ? displayVolumeTexture : nil
@@ -7609,6 +7703,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let unsignedDisplayVolumeTexture = displayVolumeKind == .storedInt16Unsigned ? displayVolumeTexture : nil
         guard let renderPassDescriptor = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable else {
+            failPendingFrameCapture()
             return
         }
 
@@ -7655,6 +7750,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
               let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+            failPendingFrameCapture()
             return
         }
 
@@ -7671,6 +7767,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
 
+        encodePendingFrameCapture(from: drawable.texture, into: commandBuffer)
         commandBuffer.present(drawable)
         commandBuffer.commit()
     }
@@ -7680,6 +7777,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         guard let renderPassDescriptor = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable,
               let baseVolumeTexture else {
+            failPendingFrameCapture()
             return
         }
         renderPassDescriptor.depthAttachment.clearDepth = 1.0
@@ -7690,6 +7788,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         guard vertices.isEmpty == false,
               let commandBuffer = commandQueue.makeCommandBuffer(),
               let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+            failPendingFrameCapture()
             return
         }
 
@@ -7773,6 +7872,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
         encoder.endEncoding()
 
+        encodePendingFrameCapture(from: drawable.texture, into: commandBuffer)
         commandBuffer.present(drawable)
         commandBuffer.commit()
     }
@@ -7838,6 +7938,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
               let drawable = view.currentDrawable,
               let baseVolumeTexture,
               let panes = mpr3DRenderPanes(for: view) else {
+            failPendingFrameCapture()
             return
         }
         renderPassDescriptor.depthAttachment.clearDepth = 1.0
@@ -7846,6 +7947,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
               let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+            failPendingFrameCapture()
             return
         }
 
@@ -7861,6 +7963,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         )
         encoder.endEncoding()
 
+        encodePendingFrameCapture(from: drawable.texture, into: commandBuffer)
         commandBuffer.present(drawable)
         commandBuffer.commit()
     }

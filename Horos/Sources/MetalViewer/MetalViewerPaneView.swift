@@ -1,7 +1,87 @@
 import AppKit
+import ImageIO
 import Metal
 import simd
+import UniformTypeIdentifiers
 import WebKit
+
+private enum MetalViewerAnimatedGIF {
+    static let maximumDimension = 1_024
+
+    static let framePlan: [(blend: Double, delay: Double)] = {
+        let transitionSteps = 12
+        let forward = (0...transitionSteps).map { step in
+            (
+                blend: Double(step) / Double(transitionSteps),
+                delay: step == 0 || step == transitionSteps ? 0.22 : 0.07
+            )
+        }
+        let backward = stride(from: transitionSteps - 1, through: 1, by: -1).map { step in
+            (blend: Double(step) / Double(transitionSteps), delay: 0.07)
+        }
+        return forward + backward
+    }()
+
+    static func scaledImage(_ image: CGImage) -> CGImage? {
+        let sourceWidth = image.width
+        let sourceHeight = image.height
+        let largestDimension = max(sourceWidth, sourceHeight)
+        guard largestDimension > maximumDimension else { return image }
+
+        let scale = CGFloat(maximumDimension) / CGFloat(largestDimension)
+        let width = max(Int((CGFloat(sourceWidth) * scale).rounded()), 1)
+        let height = max(Int((CGFloat(sourceHeight) * scale).rounded()), 1)
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.union(
+            CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+        )
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo.rawValue
+        ) else {
+            return nil
+        }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
+    }
+
+    static func data(images: [CGImage], delays: [Double]) -> Data? {
+        guard images.isEmpty == false, images.count == delays.count else { return nil }
+
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output,
+            UTType.gif.identifier as CFString,
+            images.count,
+            nil
+        ) else {
+            return nil
+        }
+
+        CGImageDestinationSetProperties(destination, [
+            kCGImagePropertyGIFDictionary: [
+                kCGImagePropertyGIFLoopCount: 0,
+            ],
+        ] as CFDictionary)
+
+        for (image, delay) in zip(images, delays) {
+            CGImageDestinationAddImage(destination, image, [
+                kCGImagePropertyGIFDictionary: [
+                    kCGImagePropertyGIFDelayTime: delay,
+                    kCGImagePropertyGIFUnclampedDelayTime: delay,
+                ],
+            ] as CFDictionary)
+        }
+
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return output as Data
+    }
+}
 
 final class MetalViewerPaneView: NSView {
     private final class OverlayBlendSlider: NSSlider {
@@ -1216,9 +1296,21 @@ final class MetalViewerPaneView: NSView {
         }
     }
 
+    private static let animatedGIFButtonImage = NSImage(
+        systemSymbolName: "film",
+        accessibilityDescription: NSLocalizedString("Copy animated GIF", comment: "")
+    )
+    private static let animatedGIFCopiedImage = NSImage(
+        systemSymbolName: "checkmark.circle.fill",
+        accessibilityDescription: NSLocalizedString("Animated GIF copied", comment: "")
+    )
+
     private let contentView = NSView()
     private let closeButton = NSButton()
+    private let overlayBlendGlassView = NSGlassEffectView()
+    private let overlayBlendControls = NSStackView()
     private let overlayBlendSlider = OverlayBlendSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
+    private let copyAnimatedGIFButton = NSButton()
     private let annotationOverlay = AnnotationOverlayView()
     private let referenceLineOverlay = ReferenceLineOverlayView()
     private let measurementOverlay = MeasurementOverlayView()
@@ -1231,6 +1323,11 @@ final class MetalViewerPaneView: NSView {
     private var isHovering = false
     private var dismissRegistrationStatusOnMouseMove = false
     private var isAdjustingOverlayBlend = false
+    private var registrationIsRunning = false
+    private var hasCompletedRegistration = false
+    private var isCopyingAnimatedGIF = false
+    private var animatedGIFCopyGeneration: UInt = 0
+    private var animatedGIFOriginalBlend: Double?
     private var displayMode: MetalViewerDisplayMode = .stack2D
     private var mouseToolAssignments = MetalViewerMouseToolAssignments()
     private var tumourSeeds: [MetalViewerTumourSeed] = []
@@ -1306,9 +1403,37 @@ final class MetalViewerPaneView: NSView {
         overlayBlendSlider.trackingStateDidChange = { [weak self] isTracking in
             self?.isAdjustingOverlayBlend = isTracking
         }
-        overlayBlendSlider.isHidden = true
         overlayBlendSlider.controlSize = .small
-        contentView.addSubview(overlayBlendSlider)
+
+        copyAnimatedGIFButton.translatesAutoresizingMaskIntoConstraints = false
+        copyAnimatedGIFButton.bezelStyle = .texturedRounded
+        copyAnimatedGIFButton.setButtonType(.momentaryPushIn)
+        copyAnimatedGIFButton.image = Self.animatedGIFButtonImage
+        copyAnimatedGIFButton.imagePosition = .imageOnly
+        copyAnimatedGIFButton.imageScaling = .scaleProportionallyDown
+        copyAnimatedGIFButton.toolTip = NSLocalizedString("Copy registered comparison as animated GIF", comment: "")
+        copyAnimatedGIFButton.setAccessibilityLabel(NSLocalizedString("Copy animated GIF", comment: ""))
+        copyAnimatedGIFButton.target = self
+        copyAnimatedGIFButton.action = #selector(copyAnimatedGIFPressed(_:))
+        copyAnimatedGIFButton.isEnabled = false
+
+        overlayBlendControls.frame = NSRect(x: 0, y: 0, width: 246, height: 44)
+        overlayBlendControls.autoresizingMask = [.width, .height]
+        overlayBlendControls.orientation = .horizontal
+        overlayBlendControls.alignment = .centerY
+        overlayBlendControls.distribution = .fill
+        overlayBlendControls.spacing = 8
+        overlayBlendControls.edgeInsets = NSEdgeInsets(top: 7, left: 12, bottom: 7, right: 10)
+        overlayBlendControls.addArrangedSubview(overlayBlendSlider)
+        overlayBlendControls.addArrangedSubview(copyAnimatedGIFButton)
+
+        overlayBlendGlassView.translatesAutoresizingMaskIntoConstraints = false
+        overlayBlendGlassView.style = .regular
+        overlayBlendGlassView.cornerRadius = 22
+        overlayBlendGlassView.effectIsInteractive = true
+        overlayBlendGlassView.contentView = overlayBlendControls
+        overlayBlendGlassView.isHidden = true
+        contentView.addSubview(overlayBlendGlassView)
 
         dynamicControls.isHidden = true
         dynamicControls.previousHandler = { [weak self] in self?.stepDynamicTime(by: -1) }
@@ -1335,9 +1460,15 @@ final class MetalViewerPaneView: NSView {
             closeButton.widthAnchor.constraint(equalToConstant: 32),
             closeButton.heightAnchor.constraint(equalToConstant: 32),
 
-            overlayBlendSlider.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
-            overlayBlendSlider.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -18),
+            overlayBlendGlassView.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            overlayBlendGlassView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
+            overlayBlendGlassView.widthAnchor.constraint(equalToConstant: 246),
+            overlayBlendGlassView.heightAnchor.constraint(equalToConstant: 44),
+
             overlayBlendSlider.widthAnchor.constraint(equalToConstant: 180),
+
+            copyAnimatedGIFButton.widthAnchor.constraint(equalToConstant: 30),
+            copyAnimatedGIFButton.heightAnchor.constraint(equalToConstant: 26),
 
             dynamicControls.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
             dynamicControls.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -16),
@@ -1345,6 +1476,7 @@ final class MetalViewerPaneView: NSView {
 
         updateAppearance()
         updateCloseButtonVisibility()
+        updateAnimatedGIFButtonState()
 
         tumourSeedObserver = NotificationCenter.default.addObserver(
             forName: MetalViewerTumourSeedStore.didChangeNotification,
@@ -1387,6 +1519,9 @@ final class MetalViewerPaneView: NSView {
     }
 
     func display(series: MetalViewerSeries) {
+        invalidateAnimatedGIFCopy(restoringBlend: true)
+        registrationIsRunning = false
+        hasCompletedRegistration = false
         stopDynamicPlayback()
         dynamicSequence = nil
         dynamicTimeIndex = 0
@@ -1395,7 +1530,9 @@ final class MetalViewerPaneView: NSView {
         self.overlaySeries = nil
         displayedSeriesDidChange?()
         overlayBlendSlider.doubleValue = 0.5
-        overlayBlendSlider.isHidden = true
+        overlayBlendGlassView.isHidden = true
+        resetAnimatedGIFButtonAppearance()
+        updateAnimatedGIFButtonState()
 
         let reusableMetalView = metalView
         metalView?.removeFromSuperview()
@@ -1535,8 +1672,8 @@ final class MetalViewerPaneView: NSView {
         contentView.addSubview(measurementOverlay, positioned: .above, relativeTo: referenceLineOverlay)
         contentView.addSubview(orientationOverlay, positioned: .above, relativeTo: measurementOverlay)
         contentView.addSubview(registrationStatusView, positioned: .above, relativeTo: orientationOverlay)
-        contentView.addSubview(overlayBlendSlider, positioned: .above, relativeTo: registrationStatusView)
-        contentView.addSubview(dynamicControls, positioned: .above, relativeTo: overlayBlendSlider)
+        contentView.addSubview(overlayBlendGlassView, positioned: .above, relativeTo: registrationStatusView)
+        contentView.addSubview(dynamicControls, positioned: .above, relativeTo: overlayBlendGlassView)
 
         NSLayoutConstraint.activate([
             metalView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -1574,11 +1711,18 @@ final class MetalViewerPaneView: NSView {
         metalView.setDisplayMode(displayMode)
         referenceLineOverlay.showsScales = displayMode == .stack2D && annotationLevel != .none
         metalView.renderer.registrationDidChange = { [weak self] isRunning, message, progress in
-            self?.registrationStatusView.update(isRunning: isRunning, message: message, progress: progress)
-            self?.dismissRegistrationStatusOnMouseMove = !isRunning && message.isEmpty == false
+            guard let self else { return }
+            self.registrationIsRunning = isRunning
+            self.registrationStatusView.update(isRunning: isRunning, message: message, progress: progress)
+            self.dismissRegistrationStatusOnMouseMove = !isRunning && message.isEmpty == false
+            self.updateAnimatedGIFButtonState()
         }
         metalView.renderer.registrationTransformDidComplete = { [weak self] transform in
-            guard let self, let overlaySeries = self.overlaySeries else { return }
+            guard let self else { return }
+            self.registrationIsRunning = false
+            self.hasCompletedRegistration = true
+            self.updateAnimatedGIFButtonState()
+            guard let overlaySeries = self.overlaySeries else { return }
             self.registrationTransformDidComplete?(self.series, overlaySeries, transform)
         }
         updateCurrentStateDescription(rendererState: metalView.renderer.stateDescription)
@@ -1617,9 +1761,14 @@ final class MetalViewerPaneView: NSView {
         if overlaySeries != nil {
             let previousWindowLevelSeries = activeWindowLevelSeries
             stopDynamicPlayback()
+            invalidateAnimatedGIFCopy(restoringBlend: true)
             overlaySeries = nil
+            registrationIsRunning = false
+            hasCompletedRegistration = false
             displayedSeriesDidChange?()
-            overlayBlendSlider.isHidden = true
+            overlayBlendGlassView.isHidden = true
+            resetAnimatedGIFButtonAppearance()
+            updateAnimatedGIFButtonState()
             metalView?.renderer.clearOverlayPixList()
             let currentWindowLevelSeries = activeWindowLevelSeries
             if previousWindowLevelSeries !== currentWindowLevelSeries {
@@ -1691,6 +1840,11 @@ final class MetalViewerPaneView: NSView {
     }
 
     func overlay(series: MetalViewerSeries) {
+        invalidateAnimatedGIFCopy(restoringBlend: true)
+        registrationIsRunning = true
+        hasCompletedRegistration = false
+        resetAnimatedGIFButtonAppearance()
+        updateAnimatedGIFButtonState()
         stopDynamicPlayback()
         dynamicSequence = nil
         dynamicControls.isHidden = true
@@ -1735,7 +1889,7 @@ final class MetalViewerPaneView: NSView {
                 }
             )
             self.setOverlayBlend(0.5)
-            self.overlayBlendSlider.isHidden = false
+            self.overlayBlendGlassView.isHidden = false
             self.updateCurrentStateDescription(
                 rendererState: self.metalView?.renderer.stateDescription ?? self.currentStateDescription
             )
@@ -1830,6 +1984,152 @@ final class MetalViewerPaneView: NSView {
         overlayBlendDidChange?(sender.doubleValue)
     }
 
+    @objc private func copyAnimatedGIFPressed(_ sender: Any?) {
+        guard overlaySeries != nil,
+              hasCompletedRegistration,
+              registrationIsRunning == false,
+              isCopyingAnimatedGIF == false else {
+            NSSound.beep()
+            return
+        }
+
+        animatedGIFCopyGeneration &+= 1
+        let generation = animatedGIFCopyGeneration
+        let originalBlend = overlayBlendSlider.doubleValue
+        animatedGIFOriginalBlend = originalBlend
+        isCopyingAnimatedGIF = true
+        overlayBlendSlider.isEnabled = false
+        resetAnimatedGIFButtonAppearance()
+        updateAnimatedGIFButtonState()
+        captureAnimatedGIFFrame(
+            at: 0,
+            generation: generation,
+            originalBlend: originalBlend,
+            images: []
+        )
+    }
+
+    private func captureAnimatedGIFFrame(
+        at index: Int,
+        generation: UInt,
+        originalBlend: Double,
+        images: [CGImage]
+    ) {
+        guard generation == animatedGIFCopyGeneration,
+              overlaySeries != nil,
+              registrationIsRunning == false,
+              let metalView else {
+            finishAnimatedGIFCopy(
+                generation: generation,
+                originalBlend: originalBlend,
+                data: nil
+            )
+            return
+        }
+
+        let framePlan = MetalViewerAnimatedGIF.framePlan
+        guard framePlan.indices.contains(index) else {
+            setOverlayBlend(originalBlend)
+            let delays = framePlan.map(\.delay)
+            DispatchQueue.global(qos: .userInitiated).async {
+                let data = MetalViewerAnimatedGIF.data(images: images, delays: delays)
+                DispatchQueue.main.async { [weak self] in
+                    self?.finishAnimatedGIFCopy(
+                        generation: generation,
+                        originalBlend: originalBlend,
+                        data: data
+                    )
+                }
+            }
+            return
+        }
+
+        setOverlayBlend(framePlan[index].blend)
+        metalView.renderer.captureCurrentFrame(in: metalView) { [weak self] frame in
+            guard let self, generation == self.animatedGIFCopyGeneration else { return }
+            guard let image = frame?.makeCGImage(),
+                  let scaledImage = MetalViewerAnimatedGIF.scaledImage(image) else {
+                self.finishAnimatedGIFCopy(
+                    generation: generation,
+                    originalBlend: originalBlend,
+                    data: nil
+                )
+                return
+            }
+
+            self.captureAnimatedGIFFrame(
+                at: index + 1,
+                generation: generation,
+                originalBlend: originalBlend,
+                images: images + [scaledImage]
+            )
+        }
+    }
+
+    private func finishAnimatedGIFCopy(
+        generation: UInt,
+        originalBlend: Double,
+        data: Data?
+    ) {
+        guard generation == animatedGIFCopyGeneration else { return }
+
+        setOverlayBlend(originalBlend)
+        animatedGIFOriginalBlend = nil
+        isCopyingAnimatedGIF = false
+        overlayBlendSlider.isEnabled = true
+        updateAnimatedGIFButtonState()
+
+        guard let data else {
+            resetAnimatedGIFButtonAppearance()
+            NSSound.beep()
+            return
+        }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        let item = NSPasteboardItem()
+        let gifType = NSPasteboard.PasteboardType(UTType.gif.identifier)
+        guard item.setData(data, forType: gifType), pasteboard.writeObjects([item]) else {
+            resetAnimatedGIFButtonAppearance()
+            NSSound.beep()
+            return
+        }
+
+        copyAnimatedGIFButton.image = Self.animatedGIFCopiedImage
+        copyAnimatedGIFButton.contentTintColor = .systemGreen
+        copyAnimatedGIFButton.toolTip = NSLocalizedString("Animated GIF copied to the clipboard", comment: "")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
+            guard let self,
+                  generation == self.animatedGIFCopyGeneration,
+                  self.isCopyingAnimatedGIF == false else { return }
+            self.resetAnimatedGIFButtonAppearance()
+        }
+    }
+
+    private func updateAnimatedGIFButtonState() {
+        copyAnimatedGIFButton.isEnabled = overlaySeries != nil
+            && hasCompletedRegistration
+            && registrationIsRunning == false
+            && isCopyingAnimatedGIF == false
+    }
+
+    private func resetAnimatedGIFButtonAppearance() {
+        copyAnimatedGIFButton.image = Self.animatedGIFButtonImage
+        copyAnimatedGIFButton.contentTintColor = nil
+        copyAnimatedGIFButton.toolTip = NSLocalizedString("Copy registered comparison as animated GIF", comment: "")
+    }
+
+    private func invalidateAnimatedGIFCopy(restoringBlend: Bool) {
+        animatedGIFCopyGeneration &+= 1
+        if restoringBlend, let animatedGIFOriginalBlend {
+            setOverlayBlend(animatedGIFOriginalBlend)
+        }
+        animatedGIFOriginalBlend = nil
+        isCopyingAnimatedGIF = false
+        overlayBlendSlider.isEnabled = true
+        resetAnimatedGIFButtonAppearance()
+    }
+
     func setOverlayBlend(_ value: Double) {
         let previousWindowLevelSeries = activeWindowLevelSeries
         let clampedValue = min(max(value, 0), 1)
@@ -1879,6 +2179,9 @@ final class MetalViewerPaneView: NSView {
     }
 
     func setDisplayMode(_ mode: MetalViewerDisplayMode) {
+        if isCopyingAnimatedGIF {
+            invalidateAnimatedGIFCopy(restoringBlend: true)
+        }
         displayMode = mode
         metalView?.setDisplayMode(mode)
         referenceLineOverlay.showsScales = mode == .stack2D && annotationLevel != .none
@@ -1888,6 +2191,7 @@ final class MetalViewerPaneView: NSView {
         updateAnnotationOverlay()
         updateReferenceLineOverlay()
         updateOrientationOverlay()
+        updateAnimatedGIFButtonState()
     }
 
     func configureStudyROI(

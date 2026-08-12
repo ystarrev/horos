@@ -2425,6 +2425,163 @@ char* HorosModernDCMTKCopyStructuredReportNamedTextValues(const char* path,
     return HorosModernDCMTKDuplicateCString(joined.c_str());
 }
 
+char* HorosModernDCMTKCopySurgicalProcedureRecordJSON(const char* path)
+{
+    DcmFileFormat fileformat;
+    DSRDocument document;
+    if (!HorosModernDCMTKLoadStructuredReport(path, fileformat, document))
+        return nullptr;
+
+    DSRDocumentTree& tree = document.getTree();
+    if (tree.gotoRoot() == 0)
+        return nullptr;
+
+    DSRContentItem& root = tree.getCurrentContentItem();
+    if (!HorosModernDCMTKStructuredReportItemMatchesCode(root, "HSP", "99HOROS", "Surgical Procedure"))
+        return nullptr;
+
+    do
+    {
+        DSRContentItem& item = tree.getCurrentContentItem();
+        if (!HorosModernDCMTKStructuredReportItemMatchesCode(item,
+                                                             "HSP.RECORD",
+                                                             "99HOROS",
+                                                             "Horos Surgical Procedure Record"))
+            continue;
+
+        const OFString value = item.getStringValue();
+        if (!value.empty())
+            return HorosModernDCMTKDuplicateOFString(value);
+    } while (tree.iterate());
+
+    return nullptr;
+}
+
+int HorosModernDCMTKWriteSurgicalProcedureStructuredReport(const char* path,
+                                                            const char* sopInstanceUID,
+                                                            const char* seriesInstanceUID,
+                                                            const char* studyInstanceUID,
+                                                            const char* patientName,
+                                                            const char* patientBirthDate,
+                                                            const char* patientID,
+                                                            const char* contentDate,
+                                                            const char* contentTime,
+                                                            const char* operation,
+                                                            const char* diagnosis,
+                                                            const char* results,
+                                                            const char* optics,
+                                                            const char* assistants,
+                                                            const char* recordJSON)
+{
+    if (path == nullptr || path[0] == '\0' ||
+        sopInstanceUID == nullptr || sopInstanceUID[0] == '\0' ||
+        seriesInstanceUID == nullptr || seriesInstanceUID[0] == '\0' ||
+        studyInstanceUID == nullptr || studyInstanceUID[0] == '\0' ||
+        contentDate == nullptr || contentDate[0] == '\0' ||
+        contentTime == nullptr || contentTime[0] == '\0' ||
+        recordJSON == nullptr || recordJSON[0] == '\0')
+        return 0;
+
+    DSRDocument document;
+    OFCondition status = document.createNewDocument(DSRTypes::DT_BasicTextSR);
+    if (status.good())
+        status = document.setSpecificCharacterSet("ISO_IR 192");
+    if (status.good())
+        status = document.createNewSeriesInStudy(studyInstanceUID);
+    if (status.good())
+        status = document.setStudyDescription("Surgical Procedure");
+    if (status.good())
+        status = document.setSeriesDescription("Horos Surgical Procedure SR");
+    if (status.good() && patientName != nullptr && patientName[0] != '\0')
+        status = document.setPatientName(patientName);
+    if (status.good() && patientBirthDate != nullptr && patientBirthDate[0] != '\0')
+        status = document.setPatientBirthDate(patientBirthDate);
+    if (status.good() && patientID != nullptr && patientID[0] != '\0')
+        status = document.setPatientID(patientID);
+    if (status.good())
+        status = document.setStudyID("SURG");
+    if (status.good())
+        status = document.setSeriesNumber("1");
+    if (status.good())
+        status = document.setInstanceNumber("1");
+    if (status.good())
+        status = document.setManufacturer("Horos");
+    if (status.good())
+        status = document.setContentDate(contentDate);
+    if (status.good())
+        status = document.setContentTime(contentTime);
+    if (status.bad())
+        return 0;
+
+    DSRDocumentTree& tree = document.getTree();
+    if (tree.addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container) == 0)
+        return 0;
+    status = tree.getCurrentContentItem().setConceptName(
+        DSRCodedEntryValue("HSP", "99HOROS", "Surgical Procedure"));
+    if (status.bad())
+        return 0;
+
+    const auto addTextItem = [&tree](const char* codeValue,
+                                     const char* codeMeaning,
+                                     const char* value) -> bool {
+        if (value == nullptr || value[0] == '\0')
+            return true;
+        if (tree.addContentItem(DSRTypes::RT_contains,
+                                DSRTypes::VT_Text,
+                                DSRTypes::AM_belowCurrent) == 0)
+            return false;
+        OFCondition itemStatus = tree.getCurrentContentItem().setConceptName(
+            DSRCodedEntryValue(codeValue, "99HOROS", codeMeaning));
+        if (itemStatus.good())
+            itemStatus = tree.getCurrentContentItem().setStringValue(value);
+        tree.goUp();
+        return itemStatus.good();
+    };
+
+    if (!addTextItem("HSP.DATE", "Procedure Date", contentDate) ||
+        !addTextItem("HSP.OP", "Operation", operation) ||
+        !addTextItem("HSP.DX", "Diagnosis", diagnosis) ||
+        !addTextItem("HSP.RESULTS", "Results", results) ||
+        !addTextItem("HSP.OPTICS", "Optics", optics) ||
+        !addTextItem("HSP.ASSTS", "Assistants", assistants) ||
+        !addTextItem("HSP.RECORD", "Horos Surgical Procedure Record", recordJSON))
+        return 0;
+
+    status = document.completeDocument();
+    if (status.bad())
+        return 0;
+
+    DcmFileFormat fileformat;
+    status = document.write(*fileformat.getDataset());
+    if (status.bad())
+        return 0;
+
+    DcmDataset* dataset = fileformat.getDataset();
+    DcmMetaInfo* metaInfo = HorosModernDCMTKMetaInfo(fileformat);
+    if (dataset == nullptr)
+        return 0;
+
+    dataset->putAndInsertString(DCM_SOPInstanceUID, sopInstanceUID, OFTrue);
+    dataset->putAndInsertString(DCM_SeriesInstanceUID, seriesInstanceUID, OFTrue);
+    dataset->putAndInsertString(DCM_StudyInstanceUID, studyInstanceUID, OFTrue);
+    dataset->putAndInsertString(DCM_Modality, "SR", OFTrue);
+    dataset->putAndInsertString(DCM_StudyDate, contentDate, OFTrue);
+    dataset->putAndInsertString(DCM_SeriesDate, contentDate, OFTrue);
+    dataset->putAndInsertString(DCM_AcquisitionDate, contentDate, OFTrue);
+    dataset->putAndInsertString(DCM_ContentDate, contentDate, OFTrue);
+    dataset->putAndInsertString(DCM_StudyTime, contentTime, OFTrue);
+    dataset->putAndInsertString(DCM_SeriesTime, contentTime, OFTrue);
+    dataset->putAndInsertString(DCM_AcquisitionTime, contentTime, OFTrue);
+    dataset->putAndInsertString(DCM_ContentTime, contentTime, OFTrue);
+    dataset->putAndInsertString(DCM_StudyDescription, "Surgical Procedure", OFTrue);
+    dataset->putAndInsertString(DCM_SeriesDescription, "Horos Surgical Procedure SR", OFTrue);
+    if (metaInfo != nullptr)
+        metaInfo->putAndInsertString(DCM_MediaStorageSOPInstanceUID, sopInstanceUID, OFTrue);
+
+    status = fileformat.saveFile(path, EXS_LittleEndianExplicit);
+    return status.good() ? 1 : 0;
+}
+
 int HorosModernDCMTKWriteCompatibilityROIStructuredReport(const char* path,
                                                           const char* sopInstanceUID,
                                                           const char* seriesInstanceUID,

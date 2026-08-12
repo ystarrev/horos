@@ -296,10 +296,14 @@ NSString* asciiString(NSString* str)
 -(NSPredicate*)resolvedSamePatientStudiesPredicateForStudy:(id)study;
 -(void)invalidateSamePatientStudyGroupCache;
 -(BOOL)isSurgicalProcedureItem:(id)item;
+-(BOOL)isSurgicalProcedureStudy:(id)item;
+-(NSArray*)arrayByRemovingSurgicalProcedureStudies:(NSArray*)items;
+-(NSPredicate*)nonSurgicalProcedureStudiesPredicate;
 -(NSArray*)surgicalProcedureEventsForVisibleStudies:(NSArray*)items;
 
 -(void)saveLoadAlbumsSortDescriptors;
 -(void)saveDatabaseOutlineViewState;
+-(void)databaseOutlineColumnLayoutDidChange:(NSNotification*)notification;
 -(void)saveDatabaseWindowFramePreference;
 
 @end
@@ -1696,7 +1700,7 @@ static NSConditionLock *threadLock = nil;
         [lastROIsAndKeyImagesSelectedFiles release]; lastROIsAndKeyImagesSelectedFiles = nil;
         [lastROIsImagesSelectedFiles release]; lastROIsImagesSelectedFiles = nil;
         [lastKeyImagesSelectedFiles release]; lastKeyImagesSelectedFiles = nil;
-        
+
         [self invalidateSmartAlbumFetch];
         [self outlineViewRefresh];
         [self refreshAlbums];
@@ -3338,6 +3342,10 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         predicate = [NSPredicate predicateWithValue: YES];
     if( distantPredicate == nil)
         distantPredicate = [NSPredicate predicateWithValue: YES];
+
+    NSPredicate *nonSurgicalProcedurePredicate = [self nonSurgicalProcedureStudiesPredicate];
+    predicate = [NSCompoundPredicate andPredicateWithSubpredicates:
+        [NSArray arrayWithObjects:predicate, nonSurgicalProcedurePredicate, nil]];
     
     error = nil;
     [outlineViewArray release];
@@ -3363,9 +3371,14 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                     if( [self seriesDescriptionSearchIsActive])
                         localEntireDBResultCount = 0;
                     else if( [self searchIncludesSeriesDescriptions] || storeBackedPatientNameSearch)
-                        localEntireDBResultCount = [_database countObjectsForEntity:_database.studyEntity predicate:self.filterPredicate error:&error];
+                        localEntireDBResultCount = [_database countObjectsForEntity:_database.studyEntity
+                                                                           predicate:[NSCompoundPredicate andPredicateWithSubpredicates:
+                                                                               [NSArray arrayWithObjects:self.filterPredicate, nonSurgicalProcedurePredicate, nil]]
+                                                                               error:&error];
                     else
-                        localEntireDBResultCount = [[[_database objectsForEntity:_database.studyEntity predicate:nil error:&error] filteredArrayUsingPredicate: self.filterPredicate] count];
+                        localEntireDBResultCount = [[[_database objectsForEntity:_database.studyEntity predicate:nil error:&error]
+                            filteredArrayUsingPredicate:[NSCompoundPredicate andPredicateWithSubpredicates:
+                                [NSArray arrayWithObjects:self.filterPredicate, nonSurgicalProcedurePredicate, nil]]] count];
 
                     if( [self seriesDescriptionSearchIsActive] == NO)
                         [self refreshEntireDBResult];
@@ -3492,6 +3505,8 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 
         if( [self seriesDescriptionSearchIsActive])
             outlineViewArray = [self studiesMatchingSeriesDescriptionSearchInStudies:outlineViewArray];
+
+        outlineViewArray = [self arrayByRemovingSurgicalProcedureStudies:outlineViewArray];
         
         @synchronized (_albumNoOfStudiesCache)
         {
@@ -3613,6 +3628,8 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         
         outlineViewArray = [outlineViewArray sortedArrayUsingDescriptors: sortDescriptors];
     }
+
+    outlineViewArray = [self arrayByRemovingSurgicalProcedureStudies:outlineViewArray];
     
     long images = 0;
     long matchingSeries = 0;
@@ -3784,7 +3801,8 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             NSInteger count = -1;
             @try
             {
-                count = [idatabase countObjectsForEntity:idatabase.studyEntity];
+                count = [idatabase countObjectsForEntity:idatabase.studyEntity
+                                                 predicate:[self nonSurgicalProcedureStudiesPredicate]];
             }
             @catch (NSException* e)
             {
@@ -3831,7 +3849,11 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                     [albumTable performSelectorOnMainThread:@selector(reloadData) withObject:nil waitUntilDone:NO modes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
 
                     NSError *countError = nil;
-                    NSUInteger smartAlbumCount = [idatabase countObjectsForEntity:idatabase.studyEntity predicate:[self smartAlbumPredicate:ialbum] error:&countError];
+                    NSPredicate *smartAlbumPredicate = [NSCompoundPredicate andPredicateWithSubpredicates:
+                        [NSArray arrayWithObjects:[self smartAlbumPredicate:ialbum], [self nonSurgicalProcedureStudiesPredicate], nil]];
+                    NSUInteger smartAlbumCount = [idatabase countObjectsForEntity:idatabase.studyEntity
+                                                                          predicate:smartAlbumPredicate
+                                                                              error:&countError];
                     if( countError)
                         NSLog(@"Smart Album count failed for %@: %@", ialbum.name, countError);
                     else
@@ -4232,7 +4254,14 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     {
         for (NSUInteger row = [rowEnumerator firstIndex]; row != NSNotFound; row = [rowEnumerator indexGreaterThanIndex: row])
         {
-            NSManagedObject *curObj = [databaseOutline itemAtRow: row];
+            id selectedItem = [databaseOutline itemAtRow: row];
+            NSManagedObject *curObj = selectedItem;
+            if( [self isSurgicalProcedureItem:selectedItem])
+            {
+                NSString *xid = [selectedItem XID];
+                if( xid.length)
+                    curObj = [self.database objectWithID:[NSManagedObject UidForXid:xid]];
+            }
             
             if( [curObj isKindOfClass: [NSManagedObject class]]) // not a distant study
             {
@@ -6711,6 +6740,8 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         
         [self refreshColumns];
     }
+
+    [self saveDatabaseOutlineViewState];
 }
 
 - (void)refreshColumns
@@ -7354,7 +7385,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 {
     for( id item in pbItems)
     {
-        if( [self isSurgicalProcedureItem:item] || [item isDistant])
+        if( [item isDistant])
+            return NO;
+        if( [self isSurgicalProcedureItem:item] && [[item XID] length] == 0)
             return NO;
     }
 
@@ -10730,7 +10763,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 -(void)saveDatabaseOutlineViewState
 {
-    if( databaseOutline == nil)
+    if( databaseOutline == nil || _restoringDatabaseOutlineViewState)
         return;
 
     NSArray *sortDescriptors = [databaseOutline sortDescriptors];
@@ -10756,6 +10789,12 @@ constrainSplitPosition:(CGFloat)proposedPosition
     }
 }
 
+-(void)databaseOutlineColumnLayoutDidChange:(NSNotification*)notification
+{
+    if( notification.object == databaseOutline)
+        [self saveDatabaseOutlineViewState];
+}
+
 -(void)loadSortDescriptors:(DicomAlbum*)album
 {
     if ([[[NSApplication sharedApplication] currentEvent] modifierFlags] & NSEventModifierFlagCommand)
@@ -10763,43 +10802,52 @@ constrainSplitPosition:(CGFloat)proposedPosition
     
     if (_database && album)
     {
-        // load the sortDescriptor
-        
-        NSString* key = nil;
-        if ([album isKindOfClass:[DicomAlbum class]])
-            key = album.XID;
-        else key = @"Database";
-        
-        NSDictionary* plist = [NSDictionary dictionaryWithContentsOfFile:self.databaseAlbumSortDescriptorsPlistPath];
-        
-        NSArray* a = [plist objectForKey:key];
-        if (a) {
-            [databaseOutline setSortDescriptors:HorosUnarchiveKeyedObject([a objectAtIndex:0], nil)];
-            NSArray* cols = [a objectAtIndex:1];
-            
-            NSArray* tableColumns = [databaseOutline tableColumns];
-            NSMutableArray* unvisitedColumns = [[tableColumns mutableCopy] autorelease];
-            NSInteger index = 0;
-            for (NSArray* col in cols) {
-                NSTableColumn* column = nil;
-                for (NSTableColumn* icolumn in tableColumns)
-                    if ([icolumn.identifier isEqualToString:[col objectAtIndex:0]]) {
-                        column = icolumn;
-                        break;
+        BOOL wasRestoring = _restoringDatabaseOutlineViewState;
+        _restoringDatabaseOutlineViewState = YES;
+        @try
+        {
+            // load the sortDescriptor
+
+            NSString* key = nil;
+            if ([album isKindOfClass:[DicomAlbum class]])
+                key = album.XID;
+            else key = @"Database";
+
+            NSDictionary* plist = [NSDictionary dictionaryWithContentsOfFile:self.databaseAlbumSortDescriptorsPlistPath];
+
+            NSArray* a = [plist objectForKey:key];
+            if (a) {
+                [databaseOutline setSortDescriptors:HorosUnarchiveKeyedObject([a objectAtIndex:0], nil)];
+                NSArray* cols = [a objectAtIndex:1];
+
+                NSArray* tableColumns = [databaseOutline tableColumns];
+                NSMutableArray* unvisitedColumns = [[tableColumns mutableCopy] autorelease];
+                NSInteger index = 0;
+                for (NSArray* col in cols) {
+                    NSTableColumn* column = nil;
+                    for (NSTableColumn* icolumn in tableColumns)
+                        if ([icolumn.identifier isEqualToString:[col objectAtIndex:0]]) {
+                            column = icolumn;
+                            break;
+                        }
+                    if (column) {
+                        [unvisitedColumns removeObject:column];
+                        if ([databaseOutline columnWithIdentifier:column.identifier] == -1)
+                            [databaseOutline addTableColumn:column];
+                        [column setHidden:NO];
+                        [column setWidth:[[col objectAtIndex:1] integerValue]];
+                        [databaseOutline moveColumn:[databaseOutline columnWithIdentifier:column.identifier] toColumn:index++];
+                    } else {
+                        DLog(@"Warning: invalid column identifier %@", col);
                     }
-                if (column) {
-                    [unvisitedColumns removeObject:column];
-                    if ([databaseOutline columnWithIdentifier:column.identifier] == -1)
-                        [databaseOutline addTableColumn:column];
-                    [column setHidden:NO];
-                    [column setWidth:[[col objectAtIndex:1] integerValue]];
-                    [databaseOutline moveColumn:[databaseOutline columnWithIdentifier:column.identifier] toColumn:index++];
-                } else {
-                    DLog(@"Warning: invalid column identifier %@", col);
                 }
+                for (NSTableColumn* column in unvisitedColumns)
+                    [column setHidden:YES];
             }
-            for (NSTableColumn* column in unvisitedColumns)
-                [column setHidden:YES];
+        }
+        @finally
+        {
+            _restoringDatabaseOutlineViewState = wasRestoring;
         }
     }
 }
@@ -12019,6 +12067,8 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             [databaseOutline selectRowIndexes: [NSIndexSet indexSetWithIndex: 0] byExtendingSelection:NO];
             [databaseOutline scrollRowToVisible: 0];
             [self buildColumnsMenu];
+            [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(databaseOutlineColumnLayoutDidChange:) name:NSOutlineViewColumnDidMoveNotification object:databaseOutline];
+            [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(databaseOutlineColumnLayoutDidChange:) name:NSOutlineViewColumnDidResizeNotification object:databaseOutline];
             
             self.modalityFilter = nil;
             
@@ -12234,6 +12284,8 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 -(void)dealloc
 {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(applyPendingSearchString:) object:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:NSOutlineViewColumnDidMoveNotification object:databaseOutline];
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:NSOutlineViewColumnDidResizeNotification object:databaseOutline];
     [self invalidateSmartAlbumFetch];
     [self invalidateSamePatientStudyGroupCache];
     [self deallocActivity];
@@ -17519,7 +17571,11 @@ static volatile int numberOfThreadsForJPEG = 0;
             NSArray *predicateBatch = [pendingPredicates subarrayWithRange:batchRange];
             NSPredicate *batchPredicate = predicateBatch.count == 1 ? [predicateBatch objectAtIndex:0] : [NSCompoundPredicate orPredicateWithSubpredicates:predicateBatch];
 
-            NSArray *directMatches = [database objectsForEntity:database.studyEntity predicate:batchPredicate];
+            NSPredicate *visibleStudyPredicate = [NSCompoundPredicate andPredicateWithSubpredicates:@[
+                batchPredicate,
+                [self nonSurgicalProcedureStudiesPredicate]
+            ]];
+            NSArray *directMatches = [database objectsForEntity:database.studyEntity predicate:visibleStudyPredicate];
             for( id directMatch in directMatches)
             {
                 if( directMatch && [patientStudies containsObject:directMatch] == NO)
@@ -17654,9 +17710,45 @@ static volatile int numberOfThreadsForJPEG = 0;
     return [item isKindOfClass:[SurgicalProcedureEvent class]];
 }
 
+- (BOOL)isSurgicalProcedureStudy:(id)item
+{
+    if( [item isKindOfClass:[DicomStudy class]] == NO)
+        return NO;
+
+    NSString *marker = [StructuredReportSupport surgicalProcedureSeriesDescription];
+    for( DicomSeries *series in [item valueForKey:@"series"])
+    {
+        if( [series.name caseInsensitiveCompare:marker] == NSOrderedSame ||
+            [series.seriesDescription caseInsensitiveCompare:marker] == NSOrderedSame)
+            return YES;
+    }
+    return NO;
+}
+
+- (NSArray *)arrayByRemovingSurgicalProcedureStudies:(NSArray *)items
+{
+    if( items.count == 0)
+        return items ?: [NSArray array];
+
+    NSMutableArray *visibleItems = [NSMutableArray arrayWithCapacity:items.count];
+    for( id item in items)
+        if( [self isSurgicalProcedureStudy:item] == NO)
+            [visibleItems addObject:item];
+    return visibleItems;
+}
+
+- (NSPredicate *)nonSurgicalProcedureStudiesPredicate
+{
+    NSString *marker = [StructuredReportSupport surgicalProcedureSeriesDescription];
+    return [NSPredicate predicateWithFormat:
+        @"SUBQUERY(series, $series, $series.name ==[cd] %@ OR $series.seriesDescription ==[cd] %@).@count == 0",
+        marker,
+        marker];
+}
+
 - (NSDictionary *)surgicalProcedureImportDatabasePaths
 {
-    if( _database.isLocal == NO || _database.sqlFilePath.length == 0 || _database.baseDirPath.length == 0)
+    if( _database.isLocal == NO || _database.isReadOnly || _database.sqlFilePath.length == 0 || _database.baseDirPath.length == 0)
         return nil;
 
     return [NSDictionary dictionaryWithObjectsAndKeys:
@@ -17686,12 +17778,24 @@ static volatile int numberOfThreadsForJPEG = 0;
     if( patientPredicates.count == 0)
         return [NSArray array];
 
-    NSArray *events = [SurgicalProcedureTimelineStore eventsForDatabaseBasePath:_database.baseDirPath];
+    NSPredicate *patientPredicate = patientPredicates.count == 1
+        ? [patientPredicates objectAtIndex:0]
+        : [NSCompoundPredicate orPredicateWithSubpredicates:patientPredicates];
+    NSPredicate *surgicalProcedurePredicate = [NSPredicate predicateWithFormat:
+        @"ANY series.name ==[cd] %@ OR ANY series.seriesDescription ==[cd] %@",
+        [StructuredReportSupport surgicalProcedureSeriesDescription],
+        [StructuredReportSupport surgicalProcedureSeriesDescription]];
+    NSPredicate *matchingProcedurePredicate = [NSCompoundPredicate andPredicateWithSubpredicates:@[
+        patientPredicate,
+        surgicalProcedurePredicate
+    ]];
+    NSArray *surgicalProcedureStudies = [_database objectsForEntity:_database.studyEntity
+                                                           predicate:matchingProcedurePredicate];
+    NSArray *events = [SurgicalProcedureTimelineStore eventsForSurgicalProcedureStudies:surgicalProcedureStudies];
     if( events.count == 0)
         return events;
 
-    NSPredicate *patientPredicate = patientPredicates.count == 1 ? [patientPredicates objectAtIndex:0] : [NSCompoundPredicate orPredicateWithSubpredicates:patientPredicates];
-    return [events filteredArrayUsingPredicate:patientPredicate];
+    return events;
 }
 
 - (NSArray *)surgicalProcedureEventsForVisibleStudies:(NSArray *)items
@@ -17849,6 +17953,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     if( studies.count == 0)
         return nil;
 
+    studies = [self arrayByRemovingSurgicalProcedureStudies:studies];
     return [studies sortedArrayUsingDescriptors: [NSArray arrayWithObject: [NSSortDescriptor sortDescriptorWithKey: @"date" ascending: NO]]];
 }
 
@@ -17901,7 +18006,7 @@ static volatile int numberOfThreadsForJPEG = 0;
         N2LogExceptionWithStackTrace(e);
     }
     
-    return studiesArray;
+    return [self arrayByRemovingSurgicalProcedureStudies:studiesArray];
 }
 
 -(BOOL)isCurrentDatabaseBonjour

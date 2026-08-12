@@ -2,79 +2,7 @@ import AppKit
 import CryptoKit
 import Foundation
 import SQLite3
-import SwiftData
 import UniformTypeIdentifiers
-
-@Model
-final class SurgicalProcedureRecord {
-    @Attribute(.unique) var eventID: String
-    var patientKey: String
-    var procedureDate: Date
-    var sourcePatientName: String
-    var sourcePatientID: String
-    var matchedPatientName: String
-    var matchedPatientID: String
-    var matchedPatientUID: String
-    var matchedBirthDate: Date?
-    var anchorStudyInstanceUID: String
-    var operation: String
-    var normalizedOperation: String
-    var diagnosis: String
-    var results: String
-    var optics: String
-    var assistants: String
-    var sourceFile: String
-    var sourceRow: Int
-    var sourceFingerprint: String
-    var importedAt: Date
-    var updatedAt: Date
-
-    init(
-        eventID: String,
-        patientKey: String,
-        procedureDate: Date,
-        sourcePatientName: String,
-        sourcePatientID: String,
-        matchedPatientName: String,
-        matchedPatientID: String,
-        matchedPatientUID: String,
-        matchedBirthDate: Date?,
-        anchorStudyInstanceUID: String,
-        operation: String,
-        normalizedOperation: String,
-        diagnosis: String,
-        results: String,
-        optics: String,
-        assistants: String,
-        sourceFile: String,
-        sourceRow: Int,
-        sourceFingerprint: String,
-        importedAt: Date,
-        updatedAt: Date
-    ) {
-        self.eventID = eventID
-        self.patientKey = patientKey
-        self.procedureDate = procedureDate
-        self.sourcePatientName = sourcePatientName
-        self.sourcePatientID = sourcePatientID
-        self.matchedPatientName = matchedPatientName
-        self.matchedPatientID = matchedPatientID
-        self.matchedPatientUID = matchedPatientUID
-        self.matchedBirthDate = matchedBirthDate
-        self.anchorStudyInstanceUID = anchorStudyInstanceUID
-        self.operation = operation
-        self.normalizedOperation = normalizedOperation
-        self.diagnosis = diagnosis
-        self.results = results
-        self.optics = optics
-        self.assistants = assistants
-        self.sourceFile = sourceFile
-        self.sourceRow = sourceRow
-        self.sourceFingerprint = sourceFingerprint
-        self.importedAt = importedAt
-        self.updatedAt = updatedAt
-    }
-}
 
 private struct PatientRecord {
     let name: String
@@ -127,27 +55,30 @@ private struct PreparedProcedure {
             && sourceFingerprint == record.sourceFingerprint
     }
 
-    func update(_ record: SurgicalProcedureRecord, at date: Date) {
-        record.eventID = eventID
-        record.patientKey = patientKey
-        record.procedureDate = procedureDate
-        record.sourcePatientName = sourcePatientName
-        record.sourcePatientID = sourcePatientID
-        record.matchedPatientName = matchedPatientName
-        record.matchedPatientID = matchedPatientID
-        record.matchedPatientUID = matchedPatientUID
-        record.matchedBirthDate = matchedBirthDate
-        record.anchorStudyInstanceUID = anchorStudyInstanceUID
-        record.operation = operation
-        record.normalizedOperation = normalizedOperation
-        record.diagnosis = diagnosis
-        record.results = results
-        record.optics = optics
-        record.assistants = assistants
-        record.sourceFile = sourceFile
-        record.sourceRow = sourceRow
-        record.sourceFingerprint = sourceFingerprint
-        record.updatedAt = date
+    func record(importedAt: Date, updatedAt: Date) -> SurgicalProcedureRecord {
+        SurgicalProcedureRecord(
+            eventID: eventID,
+            patientKey: patientKey,
+            procedureDate: procedureDate,
+            sourcePatientName: sourcePatientName,
+            sourcePatientID: sourcePatientID,
+            matchedPatientName: matchedPatientName,
+            matchedPatientID: matchedPatientID,
+            matchedPatientUID: matchedPatientUID,
+            matchedBirthDate: matchedBirthDate,
+            anchorStudyInstanceUID: anchorStudyInstanceUID,
+            operation: operation,
+            normalizedOperation: normalizedOperation,
+            diagnosis: diagnosis,
+            results: results,
+            optics: optics,
+            assistants: assistants,
+            sourceFile: sourceFile,
+            sourceRow: sourceRow,
+            sourceFingerprint: sourceFingerprint,
+            importedAt: importedAt,
+            updatedAt: updatedAt
+        )
     }
 }
 
@@ -349,7 +280,15 @@ private func readPatients(databaseURL: URL) throws -> [PatientRecord] {
     SELECT DISTINCT COALESCE(ZNAME, ''), COALESCE(ZPATIENTID, ''), COALESCE(ZPATIENTUID, ''),
            ZDATEOFBIRTH, COALESCE(ZSTUDYINSTANCEUID, ''), COALESCE(ZDATE, 0)
     FROM ZSTUDY
-    WHERE COALESCE(ZNAME, '') <> '' OR COALESCE(ZPATIENTID, '') <> ''
+    WHERE (COALESCE(ZNAME, '') <> '' OR COALESCE(ZPATIENTID, '') <> '')
+      AND NOT EXISTS (
+          SELECT 1 FROM ZSERIES
+          WHERE ZSERIES.ZSTUDY = ZSTUDY.Z_PK
+            AND (
+                UPPER(COALESCE(ZSERIES.ZNAME, '')) = 'HOROS SURGICAL PROCEDURE SR'
+                OR UPPER(COALESCE(ZSERIES.ZSERIESDESCRIPTION, '')) = 'HOROS SURGICAL PROCEDURE SR'
+            )
+      )
     """
     var statement: OpaquePointer?
     guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
@@ -462,81 +401,160 @@ private func prepareProcedures(csvURL: URL, databaseURL: URL) throws -> ([Prepar
     return (prepared, validRows, skipped)
 }
 
-private func importProcedures(_ procedures: [PreparedProcedure], sidecarURL: URL) throws -> (Int, Int, Int) {
-    let schema = Schema([SurgicalProcedureRecord.self])
-    let configuration = ModelConfiguration(
-        "SurgicalProcedures",
-        schema: schema,
-        url: sidecarURL,
-        allowsSave: true,
-        cloudKitDatabase: .none
-    )
-    let container = try ModelContainer(for: schema, configurations: [configuration])
-    let context = ModelContext(container)
-    let existing = try context.fetch(FetchDescriptor<SurgicalProcedureRecord>())
-    var byID = Dictionary(uniqueKeysWithValues: existing.map { ($0.eventID, $0) })
-    var bySourceLocation: [String: SurgicalProcedureRecord] = [:]
-    for record in existing {
-        bySourceLocation[sourceLocationKey(file: record.sourceFile, row: record.sourceRow)] = record
+private func sourceLocationKey(file: String, row: Int) -> String {
+    "\(file)\u{1f}\(row)"
+}
+
+private func decimalUIDComponent(for seed: String) -> String {
+    var decimalDigits = [0]
+    for byte in SHA256.hash(data: Data(seed.utf8)).prefix(16) {
+        var carry = Int(byte)
+        for index in decimalDigits.indices {
+            let value = decimalDigits[index] * 256 + carry
+            decimalDigits[index] = value % 10
+            carry = value / 10
+        }
+        while carry > 0 {
+            decimalDigits.append(carry % 10)
+            carry /= 10
+        }
     }
+    return decimalDigits.reversed().map(String.init).joined()
+}
+
+private func dicomUID(for eventID: String, component: String) -> String {
+    "2.25.\(decimalUIDComponent(for: "\(eventID)|\(component)"))"
+}
+
+private let dicomDateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.timeZone = .current
+    formatter.dateFormat = "yyyyMMdd"
+    return formatter
+}()
+
+private func retainedUID(_ value: String?, eventID: String, component: String) -> String {
+    guard let value, value.isEmpty == false else {
+        return dicomUID(for: eventID, component: component)
+    }
+    return value
+}
+
+private func payload(
+    for record: SurgicalProcedureRecord,
+    replacing descriptor: SurgicalProcedureSRDescriptor?
+) throws -> [String: Any] {
+    [
+        "recordJSON": try SurgicalProcedureRecordCoding.encode(record),
+        "eventID": record.eventID,
+        "sopInstanceUID": retainedUID(
+            descriptor?.sopInstanceUID,
+            eventID: record.eventID,
+            component: "sop"
+        ),
+        "seriesInstanceUID": retainedUID(
+            descriptor?.seriesInstanceUID,
+            eventID: record.eventID,
+            component: "series"
+        ),
+        "studyInstanceUID": retainedUID(
+            descriptor?.studyInstanceUID,
+            eventID: record.eventID,
+            component: "study"
+        ),
+        "patientName": record.matchedPatientName,
+        "patientBirthDate": record.matchedBirthDate.map {
+            dicomDateFormatter.string(from: $0)
+        } ?? "",
+        "patientID": record.matchedPatientID,
+        "contentDate": dicomDateFormatter.string(from: record.procedureDate),
+        "contentTime": "120000",
+        "existingPath": descriptor?.path ?? "",
+    ]
+}
+
+private func descriptorMaps(
+    _ descriptors: [SurgicalProcedureSRDescriptor]
+) -> (byID: [String: SurgicalProcedureSRDescriptor], bySource: [String: SurgicalProcedureSRDescriptor]) {
+    var byID: [String: SurgicalProcedureSRDescriptor] = [:]
+    var bySource: [String: SurgicalProcedureSRDescriptor] = [:]
+    for descriptor in descriptors {
+        byID[descriptor.record.eventID] = descriptor
+        bySource[sourceLocationKey(file: descriptor.record.sourceFile, row: descriptor.record.sourceRow)] = descriptor
+    }
+    return (byID, bySource)
+}
+
+private func storePayloads(_ payloads: [[String: Any]], databaseBasePath: String) throws {
+    guard payloads.isEmpty == false else { return }
+    let result = StructuredReportSupport.storeSurgicalProcedureRecordPayloads(
+        payloads,
+        databaseBasePath: databaseBasePath
+    )
+    let errors = (result["errors"] as? [String]) ?? []
+    let storedCount = (result["storedCount"] as? NSNumber)?.intValue ?? 0
+    guard errors.isEmpty, storedCount == payloads.count else {
+        var messages = errors
+        if storedCount != payloads.count {
+            messages.append("Horos verified \(storedCount) of \(payloads.count) surgical procedure SR files.")
+        }
+        throw ImportError.database(messages.joined(separator: "\n"))
+    }
+}
+
+private func importProcedures(
+    _ procedures: [PreparedProcedure],
+    databaseBasePath: String
+) throws -> (Int, Int, Int) {
+    let existingDescriptors = SurgicalProcedureRecordCoding.descriptors(databaseBasePath: databaseBasePath)
+    var maps = descriptorMaps(existingDescriptors)
+    var payloads: [[String: Any]] = []
     var inserted = 0
     var updated = 0
     var unchanged = 0
     let now = Date()
 
     for procedure in procedures {
-        if let record = byID[procedure.eventID] {
-            if procedure.hasSameImportedValues(as: record) {
-                unchanged += 1
-            } else {
-                bySourceLocation[sourceLocationKey(file: record.sourceFile, row: record.sourceRow)] = nil
-                procedure.update(record, at: now)
-                bySourceLocation[sourceLocationKey(file: record.sourceFile, row: record.sourceRow)] = record
-                updated += 1
-            }
-        } else if let record = bySourceLocation[sourceLocationKey(file: procedure.sourceFile, row: procedure.sourceRow)] {
-            byID[record.eventID] = nil
-            bySourceLocation[sourceLocationKey(file: record.sourceFile, row: record.sourceRow)] = nil
-            procedure.update(record, at: now)
-            byID[record.eventID] = record
-            bySourceLocation[sourceLocationKey(file: record.sourceFile, row: record.sourceRow)] = record
+        let sourceKey = sourceLocationKey(file: procedure.sourceFile, row: procedure.sourceRow)
+        let existing = maps.byID[procedure.eventID] ?? maps.bySource[sourceKey]
+        if let existing, procedure.hasSameImportedValues(as: existing.record) {
+            unchanged += 1
+            continue
+        }
+
+        let record = procedure.record(importedAt: existing?.record.importedAt ?? now, updatedAt: now)
+        payloads.append(try payload(for: record, replacing: existing))
+        let replacement = SurgicalProcedureSRDescriptor(
+            record: record,
+            replacing: existing
+        )
+        if let existing {
+            maps.byID[existing.record.eventID] = nil
+            maps.bySource[sourceLocationKey(file: existing.record.sourceFile, row: existing.record.sourceRow)] = nil
             updated += 1
         } else {
-            let record = SurgicalProcedureRecord(
-                eventID: procedure.eventID,
-                patientKey: procedure.patientKey,
-                procedureDate: procedure.procedureDate,
-                sourcePatientName: procedure.sourcePatientName,
-                sourcePatientID: procedure.sourcePatientID,
-                matchedPatientName: procedure.matchedPatientName,
-                matchedPatientID: procedure.matchedPatientID,
-                matchedPatientUID: procedure.matchedPatientUID,
-                matchedBirthDate: procedure.matchedBirthDate,
-                anchorStudyInstanceUID: procedure.anchorStudyInstanceUID,
-                operation: procedure.operation,
-                normalizedOperation: procedure.normalizedOperation,
-                diagnosis: procedure.diagnosis,
-                results: procedure.results,
-                optics: procedure.optics,
-                assistants: procedure.assistants,
-                sourceFile: procedure.sourceFile,
-                sourceRow: procedure.sourceRow,
-                sourceFingerprint: procedure.sourceFingerprint,
-                importedAt: now,
-                updatedAt: now
-            )
-            context.insert(record)
-            byID[procedure.eventID] = record
-            bySourceLocation[sourceLocationKey(file: procedure.sourceFile, row: procedure.sourceRow)] = record
             inserted += 1
         }
+        maps.byID[record.eventID] = replacement
+        maps.bySource[sourceKey] = replacement
     }
-    try context.save()
+
+    try storePayloads(payloads, databaseBasePath: databaseBasePath)
     return (inserted, updated, unchanged)
 }
 
-private func sourceLocationKey(file: String, row: Int) -> String {
-    "\(file)\u{1f}\(row)"
+private extension SurgicalProcedureSRDescriptor {
+    init(record: SurgicalProcedureRecord, replacing descriptor: SurgicalProcedureSRDescriptor?) {
+        self.record = record
+        recordJSON = ""
+        path = descriptor?.path ?? ""
+        studyXID = descriptor?.studyXID ?? ""
+        studyInstanceUID = descriptor?.studyInstanceUID ?? dicomUID(for: record.eventID, component: "study")
+        seriesInstanceUID = descriptor?.seriesInstanceUID ?? dicomUID(for: record.eventID, component: "series")
+        sopInstanceUID = descriptor?.sopInstanceUID ?? dicomUID(for: record.eventID, component: "sop")
+    }
 }
 
 private struct SurgicalProcedureImportSummary: Sendable {
@@ -649,8 +667,6 @@ final class SurgicalProcedureImportController: NSObject {
         progressAlert.accessoryView = progress
         progressAlert.beginSheetModal(for: parentWindow) { _ in }
 
-        let sidecarURL = URL(fileURLWithPath: basePath, isDirectory: true)
-            .appendingPathComponent("SurgicalProcedures.store")
         Task { @MainActor [weak browser] in
             let outcome = await Task.detached(priority: .userInitiated) {
                 do {
@@ -658,7 +674,10 @@ final class SurgicalProcedureImportController: NSObject {
                         csvURL: csvURL,
                         databaseURL: databaseURL
                     )
-                    let changes = try importProcedures(procedures, sidecarURL: sidecarURL)
+                    let changes = try importProcedures(
+                        procedures,
+                        databaseBasePath: basePath
+                    )
                     return SurgicalProcedureImportOutcome.success(
                         SurgicalProcedureImportSummary(
                             validRows: validRows,
@@ -681,7 +700,6 @@ final class SurgicalProcedureImportController: NSObject {
 
             switch outcome {
             case .success(let summary):
-                SurgicalProcedureTimelineStore.invalidateCache(forDatabaseBasePath: basePath)
                 _ = browser?.outlineViewRefresh()
                 let skippedCount = summary.validRows - summary.matchedRows
                 let skippedDetails = summary.skipped.sorted(by: { $0.key < $1.key })

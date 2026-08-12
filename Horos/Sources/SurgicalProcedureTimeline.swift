@@ -1,5 +1,79 @@
 import AppKit
-import SwiftData
+import Foundation
+
+struct SurgicalProcedureRecord: Codable, Equatable, Sendable {
+    var eventID: String
+    var patientKey: String
+    var procedureDate: Date
+    var sourcePatientName: String
+    var sourcePatientID: String
+    var matchedPatientName: String
+    var matchedPatientID: String
+    var matchedPatientUID: String
+    var matchedBirthDate: Date?
+    var anchorStudyInstanceUID: String
+    var operation: String
+    var normalizedOperation: String
+    var diagnosis: String
+    var results: String
+    var optics: String
+    var assistants: String
+    var sourceFile: String
+    var sourceRow: Int
+    var sourceFingerprint: String
+    var importedAt: Date
+    var updatedAt: Date
+}
+
+struct SurgicalProcedureSRDescriptor: Sendable {
+    let record: SurgicalProcedureRecord
+    let recordJSON: String
+    let path: String
+    let studyXID: String
+    let studyInstanceUID: String
+    let seriesInstanceUID: String
+    let sopInstanceUID: String
+
+    init?(dictionary: [String: Any]) {
+        guard let recordJSON = dictionary["recordJSON"] as? String,
+              let record = SurgicalProcedureRecordCoding.decode(recordJSON) else {
+            return nil
+        }
+        self.record = record
+        self.recordJSON = recordJSON
+        path = dictionary["path"] as? String ?? ""
+        studyXID = dictionary["studyXID"] as? String ?? ""
+        studyInstanceUID = dictionary["studyInstanceUID"] as? String ?? ""
+        seriesInstanceUID = dictionary["seriesInstanceUID"] as? String ?? ""
+        sopInstanceUID = dictionary["sopInstanceUID"] as? String ?? ""
+    }
+}
+
+enum SurgicalProcedureRecordCoding {
+    static func encode(_ record: SurgicalProcedureRecord) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .millisecondsSince1970
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(record)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw CocoaError(.fileWriteInapplicableStringEncoding)
+        }
+        return json
+    }
+
+    static func decode(_ json: String) -> SurgicalProcedureRecord? {
+        guard let data = json.data(using: .utf8) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .millisecondsSince1970
+        return try? decoder.decode(SurgicalProcedureRecord.self, from: data)
+    }
+
+    static func descriptors(databaseBasePath basePath: String) -> [SurgicalProcedureSRDescriptor] {
+        StructuredReportSupport
+            .surgicalProcedureRecordDescriptors(databaseBasePath: basePath)
+            .compactMap { SurgicalProcedureSRDescriptor(dictionary: $0) }
+    }
+}
 
 @objcMembers
 final class SurgicalProcedureEvent: NSObject {
@@ -16,8 +90,11 @@ final class SurgicalProcedureEvent: NSObject {
     let optics: String
     let assistants: String
     let anchorStudyInstanceUID: String
+    let backingStudyXID: String
+    let dicomPath: String
 
-    init(record: SurgicalProcedureRecord) {
+    init(descriptor: SurgicalProcedureSRDescriptor) {
+        let record = descriptor.record
         identifier = record.eventID
         patientKey = record.patientKey
         name = record.matchedPatientName
@@ -31,6 +108,8 @@ final class SurgicalProcedureEvent: NSObject {
         optics = record.optics
         assistants = record.assistants
         anchorStudyInstanceUID = record.anchorStudyInstanceUID
+        backingStudyXID = descriptor.studyXID
+        dicomPath = descriptor.path
         super.init()
     }
 
@@ -50,12 +129,12 @@ final class SurgicalProcedureEvent: NSObject {
     var imageSeries: Any? { nil }
     var series: Any? { nil }
     var dateAdded: Any? { nil }
-    var reportURL: Any? { nil }
-    var xid: String { studyInstanceUID }
+    var reportURL: String? { dicomPath.isEmpty ? nil : dicomPath }
+    var xid: String { backingStudyXID }
 
     @objc(XID)
     func legacyXID() -> String {
-        studyInstanceUID
+        backingStudyXID
     }
 
     @objc(displayValueForColumnIdentifier:)
@@ -95,15 +174,10 @@ final class SurgicalProcedureEvent: NSObject {
         """
     }
 
-    override func value(forUndefinedKey key: String) -> Any? {
-        nil
-    }
-
+    override func value(forUndefinedKey key: String) -> Any? { nil }
     override func setValue(_ value: Any?, forUndefinedKey key: String) {}
 
-    override var hash: Int {
-        identifier.hashValue
-    }
+    override var hash: Int { identifier.hashValue }
 
     override func isEqual(_ object: Any?) -> Bool {
         guard let other = object as? SurgicalProcedureEvent else { return false }
@@ -135,73 +209,15 @@ final class SurgicalProcedureEvent: NSObject {
 
 @objcMembers
 final class SurgicalProcedureTimelineStore: NSObject {
-    private struct CacheEntry {
-        let modificationDate: Date
-        let events: [SurgicalProcedureEvent]
-    }
-
-    private static let lock = NSLock()
-    private static var cache: [String: CacheEntry] = [:]
-    private static let storeName = "SurgicalProcedures.store"
-
-    @objc(sidecarURLForDatabaseBasePath:)
-    class func sidecarURL(forDatabaseBasePath basePath: String) -> URL {
-        URL(fileURLWithPath: basePath, isDirectory: true).appendingPathComponent(storeName)
-    }
-
-    @objc(eventsForDatabaseBasePath:)
-    class func events(forDatabaseBasePath basePath: String) -> [SurgicalProcedureEvent] {
-        guard basePath.isEmpty == false else { return [] }
-
-        let storeURL = sidecarURL(forDatabaseBasePath: basePath)
-        guard FileManager.default.fileExists(atPath: storeURL.path) else { return [] }
-        let modificationDate = latestStoreModificationDate(for: storeURL)
-
-        lock.lock()
-        defer { lock.unlock() }
-        if let cached = cache[storeURL.path], cached.modificationDate == modificationDate {
-            return cached.events
-        }
-
-        do {
-            let schema = Schema([SurgicalProcedureRecord.self])
-            let configuration = ModelConfiguration(
-                "SurgicalProcedures",
-                schema: schema,
-                url: storeURL,
-                allowsSave: false,
-                cloudKitDatabase: .none
-            )
-            let container = try ModelContainer(for: schema, configurations: [configuration])
-            let context = ModelContext(container)
-            var descriptor = FetchDescriptor<SurgicalProcedureRecord>(
-                sortBy: [
-                    SortDescriptor(\.procedureDate, order: .reverse),
-                    SortDescriptor(\.operation),
-                ]
-            )
-            descriptor.includePendingChanges = false
-            let events = try context.fetch(descriptor).map(SurgicalProcedureEvent.init(record:))
-            cache[storeURL.path] = CacheEntry(modificationDate: modificationDate, events: events)
-            return events
-        } catch {
-            NSLog("Unable to read surgical procedure SwiftData store at %@: %@", storeURL.path, error.localizedDescription)
-            return []
-        }
-    }
-
-    @objc(invalidateCacheForDatabaseBasePath:)
-    class func invalidateCache(forDatabaseBasePath basePath: String) {
-        let path = sidecarURL(forDatabaseBasePath: basePath).path
-        lock.lock()
-        cache.removeValue(forKey: path)
-        lock.unlock()
-    }
-
-    private class func latestStoreModificationDate(for storeURL: URL) -> Date {
-        let candidates = [storeURL, URL(fileURLWithPath: storeURL.path + "-wal")]
-        return candidates.compactMap { url in
-            try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-        }.max() ?? .distantPast
+    @objc(eventsForSurgicalProcedureStudies:)
+    class func events(forSurgicalProcedureStudies studies: [Any]) -> [SurgicalProcedureEvent] {
+        StructuredReportSupport
+            .surgicalProcedureRecordDescriptors(studies: studies)
+            .compactMap { SurgicalProcedureSRDescriptor(dictionary: $0) }
+            .map(SurgicalProcedureEvent.init(descriptor:))
+            .sorted {
+                if $0.date != $1.date { return $0.date > $1.date }
+                return $0.operation.localizedCaseInsensitiveCompare($1.operation) == .orderedAscending
+            }
     }
 }

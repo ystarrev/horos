@@ -127,6 +127,7 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     IBOutlet NSTextField			*databaseDescription;
     IBOutlet MyOutlineView          *databaseOutline;
     NSMenu							*columnsMenu;
+    BOOL                            _restoringDatabaseOutlineViewState;
     IBOutlet BrowserMatrix			*oMatrix;
     IBOutlet NSTableView			*albumTable;
     

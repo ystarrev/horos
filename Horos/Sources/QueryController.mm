@@ -6654,7 +6654,7 @@ extern "C"
                        @"facialbones", @"maxilla", @"maxillary", @"mandible", @"mandibular", @"jaw",
                        @"maxillofacial", @"iac", @"cpa", @"ear", @"ears", @"eye", @"eyes", @"mastoid",
                        @"tmj", @"tmjs", @"nasal", @"nose", @"paranasalsinus", @"paranasalsinuses",
-                       @"nasopharynx", @"temporalbone", @"temporalbones", @"ent", nil];
+                       @"nasopharynx", @"temporalbone", @"temporalbones", @"trigeminal", @"ent", nil];
     NSArray *phrases = [NSArray arrayWithObjects: @" temporal bone ", @" temporal bones ", @" posterior fossa ", @" cerebellopontine angle ", nil];
 
     return [self seriesText: text containsAnyToken: tokens] || [self seriesText: text containsAnyPhrase: phrases];
@@ -6669,18 +6669,22 @@ extern "C"
         NSString *studyDescription = [study studyName];
         if( studyDescription == nil)
             studyDescription = @"";
+        NSString *descriptionText = [self normalizedSearchTextForStrings: [NSArray arrayWithObject: studyDescription]];
+
+        // Trigeminal protocols are unambiguously cranial even when the PACS supplies no useful study-level region.
+        if( [self seriesText: descriptionText containsToken: @"trigeminal"])
+            return YES;
 
         if( [regionMeanings count] > 0)
         {
             if( [self textLooksLikeHeadRegion: [self normalizedSearchTextForStrings: regionMeanings]])
                 return YES;
 
-            NSString *descriptionText = [self normalizedSearchTextForStrings: [NSArray arrayWithObject: studyDescription]];
             NSArray *headAndNeckPhrases = [NSArray arrayWithObjects: @" head and neck ", @" head neck ", nil];
             return [self seriesText: descriptionText containsAnyPhrase: headAndNeckPhrases];
         }
 
-        return [self textLooksLikeHeadRegion: [self normalizedSearchTextForStrings: [NSArray arrayWithObject: studyDescription]]];
+        return [self textLooksLikeHeadRegion: descriptionText];
     }
 
     if( [item isMemberOfClass: [DCMTKSeriesQueryNode class]])

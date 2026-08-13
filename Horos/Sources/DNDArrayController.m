@@ -38,8 +38,7 @@
 
 #import "DNDArrayController.h"
 
-NSString *MovedRowsType = @"MOVED_ROWS_TYPE";
-NSString *CopiedRowsType = @"COPIED_ROWS_TYPE";
+static NSString * const MovedRowsType = @"MOVED_ROWS_TYPE";
 
 @implementation DNDArrayController
 
@@ -114,40 +113,15 @@ NSString *CopiedRowsType = @"COPIED_ROWS_TYPE";
 
 
 
-- (BOOL)tableView:(NSTableView *)tv
-        writeRows:(NSArray*)rows
-     toPasteboard:(NSPasteboard*)pboard
+- (id<NSPasteboardWriting>)tableView:(NSTableView *)tv pasteboardWriterForRow:(NSInteger)row
 {
-    if( _authView != nil)
-    {
-        if( [_authView authorizationState] != SFAuthorizationViewUnlockedState)
-        {
-            return NO;
-        }
-    }
-    
-    // declare our own pasteboard types
-    NSArray *typesArray = [NSArray arrayWithObjects:MovedRowsType, nil];
-    
-    [pboard declareTypes:typesArray owner:self];
-    
-    
-    // add rows array for local move
-    [pboard setPropertyList:rows forType:MovedRowsType];
-    
-    // create new array of selected rows for remote drop
-    // could do deferred provision, but keep it direct for clarity
-    NSMutableArray *rowCopies = [NSMutableArray arrayWithCapacity:[rows count]];
-    NSNumber *idx;
-    for (idx in rows) {
-        [rowCopies addObject:[[self arrangedObjects] objectAtIndex:[idx intValue]]];
-        [tableView selectRowIndexes: [NSIndexSet indexSetWithIndex: [idx intValue]] byExtendingSelection: NO];
-    }
-    // setPropertyList works here because we're using dictionaries, strings,
-    // and dates; otherwise, archive collection to NSData...
-    [pboard setPropertyList:rowCopies forType:CopiedRowsType];
-    
-    return YES;
+    if ((_authView != nil && [_authView authorizationState] != SFAuthorizationViewUnlockedState) ||
+        row < 0 || row >= [[self arrangedObjects] count])
+        return nil;
+
+    NSPasteboardItem *item = [[[NSPasteboardItem alloc] init] autorelease];
+    [item setString:[NSString stringWithFormat:@"%ld", (long)row] forType:MovedRowsType];
+    return item;
 }
 
 
@@ -227,7 +201,16 @@ NSString *CopiedRowsType = @"COPIED_ROWS_TYPE";
         
         [self setSortDescriptors: @[]];
         
-        NSArray *rows = [[info draggingPasteboard] propertyListForType:MovedRowsType];
+        NSMutableArray *rows = [NSMutableArray array];
+        for (NSPasteboardItem *item in [[info draggingPasteboard] pasteboardItems])
+        {
+            NSString *rowString = [item stringForType:MovedRowsType];
+            if ([rowString length])
+                [rows addObject:[NSNumber numberWithInteger:[rowString integerValue]]];
+        }
+        if ([rows count] == 0)
+            return NO;
+
         NSIndexSet  *indexSet = [self indexSetFromRows:rows];
         
         [self moveObjectsInArrangedObjectsFromIndexes:indexSet toIndex:row];

@@ -10,6 +10,7 @@
 #include <dcmtk/dcmdata/dcpixel.h>
 #include <dcmtk/dcmdata/dcpixseq.h>
 #include <dcmtk/dcmdata/dcpxitem.h>
+#include <dcmtk/dcmdata/dcsequen.h>
 #include <dcmtk/dcmdata/dcuid.h>
 #include <dcmtk/dcmsr/dsrdoc.h>
 #include <dcmtk/dcmsr/dsrtypes.h>
@@ -2425,34 +2426,83 @@ char* HorosModernDCMTKCopyStructuredReportNamedTextValues(const char* path,
     return HorosModernDCMTKDuplicateCString(joined.c_str());
 }
 
+static bool HorosModernDCMTKItemMatchesConceptCode(DcmItem& item,
+                                                    const char* codeValue,
+                                                    const char* codingSchemeDesignator,
+                                                    const char* codeMeaning)
+{
+    DcmSequenceOfItems* conceptNameSequence = nullptr;
+    if (item.findAndGetSequence(DCM_ConceptNameCodeSequence, conceptNameSequence, OFFalse).bad() ||
+        conceptNameSequence == nullptr || conceptNameSequence->card() == 0)
+        return false;
+
+    DcmItem* conceptName = conceptNameSequence->getItem(0);
+    if (conceptName == nullptr)
+        return false;
+
+    OFString actualCodeValue;
+    OFString actualCodingSchemeDesignator;
+    OFString actualCodeMeaning;
+    if (conceptName->findAndGetOFString(DCM_CodeValue, actualCodeValue, 0, OFFalse).bad() ||
+        conceptName->findAndGetOFString(DCM_CodingSchemeDesignator, actualCodingSchemeDesignator, 0, OFFalse).bad() ||
+        conceptName->findAndGetOFString(DCM_CodeMeaning, actualCodeMeaning, 0, OFFalse).bad())
+        return false;
+
+    return actualCodeValue == codeValue &&
+           actualCodingSchemeDesignator == codingSchemeDesignator &&
+           actualCodeMeaning == codeMeaning;
+}
+
+static bool HorosModernDCMTKFindSurgicalProcedureRecord(DcmItem& item, OFString& value)
+{
+    if (HorosModernDCMTKItemMatchesConceptCode(item,
+                                               "HSP.RECORD",
+                                               "99HOROS",
+                                               "Horos Surgical Procedure Record") &&
+        item.findAndGetOFStringArray(DCM_TextValue, value, OFFalse).good() &&
+        !value.empty())
+        return true;
+
+    DcmSequenceOfItems* contentSequence = nullptr;
+    if (item.findAndGetSequence(DCM_ContentSequence, contentSequence, OFFalse).bad() || contentSequence == nullptr)
+        return false;
+
+    for (unsigned long index = 0; index < contentSequence->card(); ++index)
+    {
+        DcmItem* child = contentSequence->getItem(index);
+        if (child != nullptr && HorosModernDCMTKFindSurgicalProcedureRecord(*child, value))
+            return true;
+    }
+
+    return false;
+}
+
 char* HorosModernDCMTKCopySurgicalProcedureRecordJSON(const char* path)
 {
+    if (path == nullptr || path[0] == '\0')
+        return nullptr;
+
+    HorosModernDCMTKEnsureDataDictionary();
+
     DcmFileFormat fileformat;
-    DSRDocument document;
-    if (!HorosModernDCMTKLoadStructuredReport(path, fileformat, document))
+    if (!fileformat.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect).good())
         return nullptr;
 
-    DSRDocumentTree& tree = document.getTree();
-    if (tree.gotoRoot() == 0)
+    DcmDataset* dataset = fileformat.getDataset();
+    if (dataset == nullptr)
         return nullptr;
 
-    DSRContentItem& root = tree.getCurrentContentItem();
-    if (!HorosModernDCMTKStructuredReportItemMatchesCode(root, "HSP", "99HOROS", "Surgical Procedure"))
+    OFString sopClassUID;
+    if (dataset->findAndGetOFString(DCM_SOPClassUID, sopClassUID, 0, OFFalse).bad() ||
+        sopClassUID != UID_BasicTextSRStorage)
         return nullptr;
 
-    do
-    {
-        DSRContentItem& item = tree.getCurrentContentItem();
-        if (!HorosModernDCMTKStructuredReportItemMatchesCode(item,
-                                                             "HSP.RECORD",
-                                                             "99HOROS",
-                                                             "Horos Surgical Procedure Record"))
-            continue;
+    if (!HorosModernDCMTKItemMatchesConceptCode(*dataset, "HSP", "99HOROS", "Surgical Procedure"))
+        return nullptr;
 
-        const OFString value = item.getStringValue();
-        if (!value.empty())
-            return HorosModernDCMTKDuplicateOFString(value);
-    } while (tree.iterate());
+    OFString value;
+    if (HorosModernDCMTKFindSurgicalProcedureRecord(*dataset, value))
+        return HorosModernDCMTKDuplicateOFString(value);
 
     return nullptr;
 }

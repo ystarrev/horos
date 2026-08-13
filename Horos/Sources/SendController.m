@@ -73,6 +73,12 @@ static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys(void)
     return keys;
 }
 
+static BOOL HorosServerSupportsFastStore(NSDictionary *server)
+{
+    return [[server objectForKey:@"HorosFastStoreVersion"] integerValue] >= 1 &&
+           ![[server objectForKey:@"TLSEnabled"] boolValue];
+}
+
 @interface DCMTKStoreSCUOperation: NSOperation
 {
     NSArray *files;
@@ -151,14 +157,27 @@ static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys(void)
             }
 
             BOOL shouldRetry = NO;
-            DCMTKStoreSCU *storeSCU = [[DCMTKStoreSCU alloc] initWithCallingAET: [NSUserDefaults defaultAETitle]
-                                                       calledAET: [server objectForKey:@"AETitle"]
-                                                        hostname: [server objectForKey:@"Address"]
-                                                            port: [[server objectForKey:@"Port"] intValue]
-                                                     filesToSend: files
-                                                  transferSyntax: [[NSUserDefaults standardUserDefaults] integerForKey:@"syntaxListOffis"]
-                                                     compression: 1.0
-                                                 extraParameters: server];
+            id storeSCU = nil;
+            if (HorosServerSupportsFastStore(server))
+            {
+                storeSCU = [[DCMTKFastStoreSCU alloc] initWithCallingAET:[NSUserDefaults defaultAETitle]
+                                                              calledAET:[server objectForKey:@"AETitle"]
+                                                               hostname:[server objectForKey:@"Address"]
+                                                                   port:[[server objectForKey:@"Port"] intValue]
+                                                            filesToSend:files
+                                                        extraParameters:server];
+            }
+            else
+            {
+                storeSCU = [[DCMTKStoreSCU alloc] initWithCallingAET:[NSUserDefaults defaultAETitle]
+                                                          calledAET:[server objectForKey:@"AETitle"]
+                                                           hostname:[server objectForKey:@"Address"]
+                                                               port:[[server objectForKey:@"Port"] intValue]
+                                                        filesToSend:files
+                                                     transferSyntax:[[NSUserDefaults standardUserDefaults] integerForKey:@"syntaxListOffis"]
+                                                        compression:1.0
+                                                    extraParameters:server];
+            }
 
             @try
             {
@@ -611,6 +630,14 @@ static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys(void)
 
 #pragma mark Sending functions
 
+static unsigned long long HorosTotalFileSize(NSArray *files)
+{
+    unsigned long long total = 0;
+    for (NSString *file in files)
+        total += [[[[NSFileManager defaultManager] attributesOfItemAtPath:file error:nil] objectForKey:NSFileSize] unsignedLongLongValue];
+    return total;
+}
+
 - (void) executeSend:(NSArray*) files patientName: (NSString*) patientName
 {
 	if( [NSThread currentThread].isCancelled)
@@ -624,6 +651,7 @@ static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys(void)
     NSOperationQueue *queue = [[[NSOperationQueue alloc] init] autorelease];
     queue.name = [NSString stringWithFormat: @"%@ %@", NSLocalizedString( @"Sending...", nil), patientName];
     
+    BOOL fastStore = HorosServerSupportsFastStore([self server]);
     unsigned int maxThreads = [[NSUserDefaults standardUserDefaults] integerForKey: @"SendControllerConcurrentThreads"];
     if( [[self server] objectForKey: @"SendControllerConcurrentThreads"])
         maxThreads = [[[self server] objectForKey: @"SendControllerConcurrentThreads"] intValue];
@@ -633,32 +661,51 @@ static NSMutableSet *HorosStoreSCURecentlyShownErrorKeys(void)
     
     if( maxThreads <= 0)
         maxThreads = 1;
+
+    if (fastStore)
+    {
+        maxThreads = 1;
+        unsigned long long totalBytes = HorosTotalFileSize(files);
+        NSLog(@"Horos fast DICOM send: %lu files, %.1f MB, one association; compressed pixel data sent without recompression",
+              (unsigned long)[files count], (double)totalBytes / (1024.0 * 1024.0));
+    }
+
+    queue.maxConcurrentOperationCount = maxThreads;
     
     if( maxThreads > 1)
         NSLog( @"DCMTKStoreSCU threads: %d", maxThreads);
     
-    unsigned long loc = 0;
-    do
+    if (fastStore)
     {
-        NSRange range = NSMakeRange( loc, ceil( (float)files.count / (float)maxThreads));
-        if( operations.count == maxThreads-1)
-            range.length = files.count - range.location;
-        
-        if( range.location + range.length > files.count)
-            range.length = files.count-range.location;
-        
-        if( range.length)
-        {
-            loc += range.length;
-            
-            DCMTKStoreSCUOperation *op = [[[DCMTKStoreSCUOperation alloc] initWithFiles: [files subarrayWithRange: range] server: [self server]] autorelease];
-            
-            [operations addObject: op];
-            [queue addOperation: op];
-        }
-                                  
+        DCMTKStoreSCUOperation *op = [[[DCMTKStoreSCUOperation alloc] initWithFiles:files server:[self server]] autorelease];
+        [operations addObject:op];
+        [queue addOperation:op];
     }
-    while( loc < files.count);
+    else
+    {
+        unsigned long loc = 0;
+        do
+        {
+            NSRange range = NSMakeRange( loc, ceil( (float)files.count / (float)maxThreads));
+            if( operations.count == maxThreads-1)
+                range.length = files.count - range.location;
+
+            if( range.location + range.length > files.count)
+                range.length = files.count-range.location;
+
+            if( range.length)
+            {
+                loc += range.length;
+
+                DCMTKStoreSCUOperation *op = [[[DCMTKStoreSCUOperation alloc] initWithFiles: [files subarrayWithRange: range] server: [self server]] autorelease];
+
+                [operations addObject: op];
+                [queue addOperation: op];
+            }
+
+        }
+        while( loc < files.count);
+    }
     
 //    NSUInteger initialOpCount = queue.operationCount;
     while (queue.operationCount)

@@ -431,6 +431,9 @@ private:
 
   /// current debug level
   int debugLevel;
+
+  /// true once this association has successfully moved an incoming object
+  OFBool receivedStoreRequest;
 };
 
 /** Index database factory class. Instances of this class are able to create database
@@ -463,5 +466,4 @@ public:
 
 
 };
-
 

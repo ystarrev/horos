@@ -1173,6 +1173,7 @@ DcmQueryRetrieveOsiriXDatabaseHandle::DcmQueryRetrieveOsiriXDatabaseHandle(
 , doCheckMoveIdentifier(OFFalse)
 , fnamecreator()
 , debugLevel(0)
+, receivedStoreRequest(OFFalse)
 {
 	
     handle = (DB_OsiriX_Handle *) calloc ( sizeof(DB_OsiriX_Handle),1);
@@ -1207,6 +1208,8 @@ DcmQueryRetrieveOsiriXDatabaseHandle::DcmQueryRetrieveOsiriXDatabaseHandle(
 
 DcmQueryRetrieveOsiriXDatabaseHandle::~DcmQueryRetrieveOsiriXDatabaseHandle()
 {
+	if (receivedStoreRequest && forkedProcess == NO)
+		[[DicomDatabase activeLocalDatabase] initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
 
 	if (handle)
 	{
@@ -1300,8 +1303,7 @@ OFCondition DcmQueryRetrieveOsiriXDatabaseHandle::storeRequest(
 		return DcmQROsiriXDatabaseError;
 	}
 	
-	if( forkedProcess == NO)
-		[[DicomDatabase activeLocalDatabase] initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
+	receivedStoreRequest = OFTrue;
 	
 	[pool release];
 	return EC_Normal;
@@ -1377,6 +1379,5 @@ DcmQueryRetrieveDatabaseHandle *DcmQueryRetrieveOsiriXDatabaseHandleFactory::cre
 {
   return new DcmQueryRetrieveOsiriXDatabaseHandle( callingAETitle, result);
 }
-
 
 

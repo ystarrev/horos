@@ -92,5 +92,25 @@ int runStoreSCU(const char *myAET, const char*peerAET, const char*hostname, int 
 - (void)updateLogEntry: (NSMutableDictionary*) userInfo;
 @end
 
+/** Modern, isolated Store SCU used only between capability-compatible Horos peers. */
+@interface DCMTKFastStoreSCU : NSObject
+{
+	NSString *_callingAET;
+	NSString *_calledAET;
+	NSString *_hostname;
+	int _port;
+	NSArray *_filesToSend;
+	NSDictionary *_extraParameters;
+	NSMutableDictionary *_networkLogEntry;
+}
 
+- (id)initWithCallingAET:(NSString *)myAET
+			calledAET:(NSString *)theirAET
+			hostname:(NSString *)hostname
+			port:(int)port
+			filesToSend:(NSArray *)filesToSend
+			extraParameters:(NSDictionary *)extraParameters;
+- (void)run:(NSOperation *)operation;
+
+@end
 

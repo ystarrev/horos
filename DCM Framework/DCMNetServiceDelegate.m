@@ -48,6 +48,15 @@
 
 static DCMNetServiceDelegate *_netServiceDelegate = nil;
 
+static NSString *DCMNetServiceTXTString(NSDictionary *dictionary, NSString *key)
+{
+    NSData *data = [dictionary objectForKey:key];
+    if (![data isKindOfClass:[NSData class]])
+        return nil;
+
+    return [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
+}
+
 static BOOL DCMNetServiceHostIsLocal(NSString *host)
 {
     if (![host length])
@@ -267,36 +276,40 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 
 +(NSMutableDictionary*)DICOMNodeInfoFromTXTRecordData:(NSData*)data {
 	NSDictionary *dict = [NSNetService dictionaryFromTXTRecordData: data];
-	NSString *description = nil;
+	NSString *description = DCMNetServiceTXTString(dict, @"serverDescription");
+	NSString *preferredSyntax = DCMNetServiceTXTString(dict, @"preferredSyntax");
+	int transferSyntax = SendExplicitLittleEndian;
 	
-	if( [dict valueForKey: @"serverDescription"])
-		description = [[[NSString alloc] initWithData: [dict valueForKey: @"serverDescription"] encoding:NSUTF8StringEncoding] autorelease];
-	
-	int transferSyntax = 2;
-	
-	if( [dict valueForKey: @"preferredSyntax"])
+	if( preferredSyntax)
 	{
-		NSString *ts = [[[NSString alloc] initWithData: [dict valueForKey: @"preferredSyntax"] encoding:NSUTF8StringEncoding] autorelease];
+		if( [preferredSyntax isEqualToString: @"LittleEndianImplicit"])
+			transferSyntax = SendImplicitLittleEndian;
+
+		if( [preferredSyntax isEqualToString: @"LittleEndianExplicit"])
+			transferSyntax = SendExplicitLittleEndian;
 		
-		if( [ts isEqualToString: @"LittleEndianImplicit"])
-			transferSyntax = 0;
-		
-		if( [ts isEqualToString: @"JPEGProcess14SV1TransferSyntax"])
+		if( [preferredSyntax isEqualToString: @"JPEGProcess14SV1TransferSyntax"])
 			transferSyntax = SendJPEGLossless;
 		
-		if( [ts isEqualToString: @"JPEG2000LosslessOnly"])
+		if( [preferredSyntax isEqualToString: @"JPEG2000LosslessOnly"])
 			transferSyntax = SendJPEG2000Lossless;
 		
-		if( [ts isEqualToString: @"JPEG2000"])
+		if( [preferredSyntax isEqualToString: @"JPEG2000"])
 			transferSyntax = SendJPEG2000Lossy10;
 		
-		if( [ts isEqualToString: @"RLELossless"])
+		if( [preferredSyntax isEqualToString: @"RLELossless"])
 			transferSyntax = SendRLE;
+
+		if( [preferredSyntax isEqualToString: @"JPEGLSLossless"])
+			transferSyntax = SendJPEGLSLossless;
+
+		if( [preferredSyntax isEqualToString: @"JPEGLSLossy"])
+			transferSyntax = SendJPEGLSLossy10;
 	}
 	
 	BOOL retrieveMode = CMOVERetrieveMode;
-	
-	if( [dict valueForKey: @"CGET"])
+	NSString *cget = DCMNetServiceTXTString(dict, @"CGET");
+	if( [cget boolValue])
 		retrieveMode = CGETRetrieveMode;
 	
 	NSMutableDictionary* s = [NSMutableDictionary dictionaryWithObjectsAndKeys:
@@ -308,17 +321,30 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 	if (description)
 		[s setObject:description forKey:@"Description"];
 
-    if( [dict valueForKey: @"UID"])
-    {
-        NSString *uid = [[[NSString alloc] initWithData: [dict valueForKey: @"UID"] encoding:NSUTF8StringEncoding] autorelease];
-        if( [uid length])
-            [s setObject: uid forKey: @"UID"];
-    }
-	
+    NSString *aeTitle = DCMNetServiceTXTString(dict, @"AETitle");
+    if( [aeTitle length])
+        [s setObject:aeTitle forKey:@"AETitle"];
+
+	if( [dict valueForKey: @"UID"])
+	{
+		NSString *uid = DCMNetServiceTXTString(dict, @"UID");
+		if( [uid length])
+			[s setObject: uid forKey: @"UID"];
+	}
+
+    NSString *fastStoreVersion = DCMNetServiceTXTString(dict, @"HorosFastStoreVersion");
+    if( [fastStoreVersion integerValue] > 0)
+        [s setObject:[NSNumber numberWithInteger:[fastStoreVersion integerValue]] forKey:@"HorosFastStoreVersion"];
+
+    NSString *fastStorePDU = DCMNetServiceTXTString(dict, @"HorosFastStorePDU");
+    if( [fastStorePDU integerValue] > 0)
+        [s setObject:[NSNumber numberWithInteger:[fastStorePDU integerValue]] forKey:@"HorosFastStorePDU"];
+
 	if( [dict valueForKey: @"icon"])
 	{
-		NSString *icon = [[[NSString alloc] initWithData: [dict valueForKey: @"icon"] encoding:NSUTF8StringEncoding] autorelease];
-		[s setObject: icon forKey: @"icon"];
+		NSString *icon = DCMNetServiceTXTString(dict, @"icon");
+		if( [icon length])
+			[s setObject: icon forKey: @"icon"];
 	}
     
     [s setObject: [NSNumber numberWithBool: YES] forKey: @"Activated"];
@@ -395,71 +421,16 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
                     
                     if( hostname)
                     {
-                        NSDictionary *dict = [NSNetService dictionaryFromTXTRecordData: [aServer TXTRecordData]];
-                        NSString *description = nil;
-                        
-                        if( [dict valueForKey: @"serverDescription"])
-                            description = [[[NSString alloc] initWithData: [dict valueForKey: @"serverDescription"] encoding:NSUTF8StringEncoding] autorelease];
-                        else
+                        NSMutableDictionary *s = [DCMNetServiceDelegate DICOMNodeInfoFromTXTRecordData:[aServer TXTRecordData]];
+                        NSString *description = [s objectForKey:@"Description"];
+                        if( ![description length])
                             description = [NSString stringWithFormat:@"%@ (Bonjour)", [aServer hostName]];
-                        
-                        int transferSyntax = SendExplicitLittleEndian;
-                        
-                        if( [dict valueForKey: @"preferredSyntax"])
-                        {
-                            NSString *ts = [[[NSString alloc] initWithData: [dict valueForKey: @"preferredSyntax"] encoding:NSUTF8StringEncoding] autorelease];
-                            
-                            if( [ts isEqualToString: @"LittleEndianImplicit"])
-                                transferSyntax = SendImplicitLittleEndian;
-                            
-                            if( [ts isEqualToString: @"LittleEndianExplicit"])
-                                transferSyntax = SendExplicitLittleEndian;
-                            
-                            if( [ts isEqualToString: @"JPEGProcess14SV1TransferSyntax"])
-                                transferSyntax = SendJPEGLossless;
-                                
-                            if( [ts isEqualToString: @"JPEG2000LosslessOnly"])
-                                transferSyntax = SendJPEG2000Lossless;
-                                
-                            if( [ts isEqualToString: @"JPEG2000"])
-                                transferSyntax = SendJPEG2000Lossy10;
-                                
-                            if( [ts isEqualToString: @"RLELossless"])
-                                transferSyntax = SendRLE;
-                            
-                            if( [ts isEqualToString: @"JPEGLSLossy"])
-                                transferSyntax = SendJPEGLSLossy10;
-                            
-                            if( [ts isEqualToString: @"JPEGLSLossless"])
-                                transferSyntax = SendJPEGLSLossless;
-                        }
-                        
-                        BOOL retrieveMode = CMOVERetrieveMode;
-                        
-                        if( [dict valueForKey: @"CGET"])
-                        {
-//								NSString *cg = [[[NSString alloc] initWithData: [dict valueForKey: @"CGET"] encoding:NSUTF8StringEncoding] autorelease];
-                            retrieveMode = CGETRetrieveMode;
-                        }
-                        
-                        NSMutableDictionary *s = [NSMutableDictionary dictionaryWithObjectsAndKeys:	hostname, @"Address",
-                                                                                                        [aServer name], @"AETitle",
-                                                                                                        [NSString stringWithFormat:@"%d", port], @"Port",
-                                                                                                        [NSNumber numberWithBool:YES] , @"QR",
-                                                                                                        [NSNumber numberWithInt: retrieveMode] , @"retrieveMode",
-                                                                                                        [NSNumber numberWithBool:YES] , @"Send",
-                                                                                                        description, @"Description",
-                                                                                                        [NSNumber numberWithInt: transferSyntax], @"TransferSyntax",
-                                                                                                        nil];
-                        
-                        if( [dict valueForKey: @"icon"])
-                        {
-                            NSString *icon = [[[NSString alloc] initWithData: [dict valueForKey: @"icon"] encoding:NSUTF8StringEncoding] autorelease];
-                            [s setObject: icon forKey: @"icon"];
-                            
-//                                if( [icon isEqualToString: @"iPad"] || [icon isEqualToString: @"iPhone"])
-//                                    [s setObject: @1 forKey: @"SendControllerConcurrentThreads"];
-                        }
+
+                        [s setObject:hostname forKey:@"Address"];
+                        [s setObject:[NSString stringWithFormat:@"%d", port] forKey:@"Port"];
+                        [s setObject:description forKey:@"Description"];
+                        if( ![[s objectForKey:@"AETitle"] length])
+                            [s setObject:[aServer name] forKey:@"AETitle"];
                         
                         [s setObject: @1 forKey: @"Activated"];
                         

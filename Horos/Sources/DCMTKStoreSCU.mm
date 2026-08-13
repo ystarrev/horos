@@ -83,6 +83,7 @@ END_EXTERN_C
 #include <dcmtk/ofstd/ofconapp.h>
 #include <dcmtk/dcmdata/dcuid.h>     /* for dcmtk version name */
 #include <dcmtk/dcmnet/dicom.h>     /* for DICOM_APPLICATION_REQUESTOR */
+#include <dcmtk/dcmnet/dstorscu.h>
 #include <dcmtk/dcmdata/dcostrmz.h>  /* for dcmZlibCompressionLevel */
 #include <dcmtk/dcmnet/dcasccfg.h>  /* for class DcmAssociationConfiguration */
 #include <dcmtk/dcmnet/dcasccff.h>  /* for class DcmAssociationConfigurationFile */
@@ -1860,6 +1861,256 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
 		N2LogExceptionWithStackTrace(e);
 	} @finally {
     }
+}
+
+@end
+
+
+class HorosFastStorageSCU : public DcmStorageSCU
+{
+public:
+    HorosFastStorageSCU(NSOperation *operation, NSUInteger total)
+    : Operation(operation), Total(total), Processed(0), Sent(0), Errors(0)
+    {
+    }
+
+    NSUInteger sentCount() const
+    {
+        return Sent;
+    }
+
+    NSUInteger errorCount() const
+    {
+        return Errors;
+    }
+
+protected:
+    virtual void notifySOPInstanceSent(const TransferEntry &entry)
+    {
+        ++Processed;
+        if (entry.RequestSent &&
+            (DICOM_SUCCESS_STATUS(entry.ResponseStatusCode) || DICOM_WARNING_STATUS(entry.ResponseStatusCode)))
+            ++Sent;
+        else
+            ++Errors;
+
+        NSThread *thread = [NSThread currentThread];
+        thread.progress = Total > 0 ? (double)Processed / (double)Total : 1.0;
+        thread.status = N2LocalizedSingularPluralCount((NSInteger)(Total - MIN(Processed, Total)),
+                                                       NSLocalizedString(@"file", nil),
+                                                       NSLocalizedString(@"files", nil));
+    }
+
+    virtual OFBool shouldStopAfterCurrentSOPInstance()
+    {
+        return [Operation isCancelled] ? OFTrue : OFFalse;
+    }
+
+private:
+    NSOperation *Operation;
+    NSUInteger Total;
+    NSUInteger Processed;
+    NSUInteger Sent;
+    NSUInteger Errors;
+};
+
+
+static NSString *HorosFastStoreFailure(NSString *stage, const OFCondition &condition)
+{
+    return [NSString stringWithFormat:@"%@ %04x:%04x %s",
+            stage, condition.module(), condition.code(), condition.text()];
+}
+
+
+@implementation DCMTKFastStoreSCU
+
+- (id)initWithCallingAET:(NSString *)myAET
+               calledAET:(NSString *)theirAET
+                hostname:(NSString *)hostname
+                    port:(int)port
+             filesToSend:(NSArray *)filesToSend
+         extraParameters:(NSDictionary *)extraParameters
+{
+    self = [super init];
+    if (self)
+    {
+        _callingAET = [myAET copy];
+        _calledAET = [theirAET copy];
+        _hostname = [hostname copy];
+        _port = port;
+        _extraParameters = [extraParameters copy];
+        _networkLogEntry = nil;
+
+        NSMutableArray *availableFiles = [NSMutableArray arrayWithArray:filesToSend];
+        [availableFiles removeDuplicatedStrings];
+        for (NSInteger index = (NSInteger)[availableFiles count] - 1; index >= 0; --index)
+        {
+            if (![[NSFileManager defaultManager] fileExistsAtPath:[availableFiles objectAtIndex:(NSUInteger)index]])
+                [availableFiles removeObjectAtIndex:(NSUInteger)index];
+        }
+        _filesToSend = [availableFiles copy];
+    }
+    return self;
+}
+
+- (void)dealloc
+{
+    [_callingAET release];
+    [_calledAET release];
+    [_hostname release];
+    [_filesToSend release];
+    [_extraParameters release];
+    [_networkLogEntry release];
+    [super dealloc];
+}
+
+- (void)updateNetworkLogWithSentCount:(NSUInteger)sentCount message:(NSString *)message
+{
+    if (![[BrowserController currentBrowser] isNetworkLogsActive])
+        return;
+
+    if (!_networkLogEntry)
+    {
+        _networkLogEntry = [[NSMutableDictionary alloc] init];
+        [_networkLogEntry setObject:[NSString stringWithFormat:@"%lf", [[NSDate date] timeIntervalSince1970]] forKey:@"logUID"];
+        [_networkLogEntry setObject:[NSDate date] forKey:@"logStartTime"];
+        [_networkLogEntry setObject:@"Send" forKey:@"logType"];
+        if (_calledAET)
+            [_networkLogEntry setObject:_calledAET forKey:@"logCalledAET"];
+        if (_callingAET)
+            [_networkLogEntry setObject:_callingAET forKey:@"logCallingAET"];
+    }
+
+    NSUInteger totalCount = [_filesToSend count];
+    [_networkLogEntry setObject:[NSNumber numberWithUnsignedInteger:totalCount] forKey:@"logNumberTotal"];
+    [_networkLogEntry setObject:[NSNumber numberWithUnsignedInteger:sentCount] forKey:@"logNumberReceived"];
+    [_networkLogEntry setObject:[NSNumber numberWithUnsignedInteger:totalCount - MIN(sentCount, totalCount)] forKey:@"logNumberError"];
+    [_networkLogEntry setObject:[NSDate date] forKey:@"logEndTime"];
+    [_networkLogEntry setObject:message forKey:@"logMessage"];
+    [[LogManager currentLogManager] addLogLine:_networkLogEntry];
+}
+
+- (void)run:(NSOperation *)operation
+{
+    if ([operation isCancelled] || [_filesToSend count] == 0)
+        return;
+
+    [[AppController sharedAppController] notificationTitle:NSLocalizedString(@"DICOM Send", nil)
+                                                description:[NSString stringWithFormat:NSLocalizedString(@"Sending %@...\rTo: %@ - %@", nil),
+                                                             N2LocalizedSingularPluralCount([_filesToSend count], NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil)),
+                                                             _calledAET, _hostname]
+                                                       name:@"send"];
+
+    [self updateNetworkLogWithSentCount:0 message:@"In Progress"];
+
+    NSString *failureReason = nil;
+    NSUInteger sentCount = 0;
+    NSUInteger errorCount = 0;
+    NSUInteger remainingCount = 0;
+    {
+        HorosFastStorageSCU scu(operation, [_filesToSend count]);
+        scu.setAETitle([_callingAET UTF8String]);
+        scu.setPeerAETitle([_calledAET UTF8String]);
+        scu.setPeerHostName([_hostname UTF8String]);
+        scu.setPeerPort((Uint16)_port);
+
+        NSInteger pdu = [[_extraParameters objectForKey:@"HorosFastStorePDU"] integerValue];
+        if (pdu < ASC_MINIMUMPDUSIZE || pdu > ASC_MAXIMUMPDUSIZE)
+            pdu = ASC_MAXIMUMPDUSIZE;
+        scu.setMaxReceivePDULength((Uint32)pdu);
+
+        NSInteger dimseTimeout = [[NSUserDefaults standardUserDefaults] integerForKey:@"DICOMTimeout"];
+        if (dimseTimeout < 2)
+            dimseTimeout = 2;
+        NSInteger connectionTimeout = [[NSUserDefaults standardUserDefaults] integerForKey:@"DICOMConnectionTimeout"];
+        if (connectionTimeout <= 0)
+            connectionTimeout = dimseTimeout;
+        scu.setACSETimeout((Uint32)dimseTimeout);
+        scu.setDIMSETimeout((Uint32)dimseTimeout);
+        scu.setConnectionTimeout((Sint32)connectionTimeout);
+        scu.setDIMSEBlockingMode(DIMSE_NONBLOCKING);
+        scu.setDatasetConversionMode(OFFalse);
+        scu.setDecompressionMode(DcmStorageSCU::DM_never);
+        scu.setAllowIllegalProposalMode(OFTrue);
+        scu.setHaltOnUnsuccessfulStoreMode(OFTrue);
+        scu.setProgressNotificationMode(OFFalse);
+
+        for (NSString *path in _filesToSend)
+        {
+            OFCondition condition = scu.addDicomFile(OFFilename([path fileSystemRepresentation]), ERM_autoDetect, OFFalse);
+            if (condition.bad())
+            {
+                failureReason = HorosFastStoreFailure([NSString stringWithFormat:@"Cannot prepare %@", [path lastPathComponent]], condition);
+                break;
+            }
+        }
+
+        while (!failureReason && ![operation isCancelled])
+        {
+            OFCondition condition = scu.addPresentationContexts();
+            if (condition == NET_EC_NoPresentationContextsDefined)
+                break;
+            if (condition.bad())
+            {
+                failureReason = HorosFastStoreFailure(@"Cannot prepare presentation contexts", condition);
+                break;
+            }
+
+            condition = scu.initNetwork();
+            if (condition.bad())
+            {
+                failureReason = HorosFastStoreFailure(@"TCP Initialization Error", condition);
+                break;
+            }
+
+            condition = scu.negotiateAssociation();
+            if (condition.bad())
+            {
+                failureReason = HorosFastStoreFailure(@"Association request failed", condition);
+                break;
+            }
+
+            condition = scu.sendSOPInstances();
+            if (condition.bad())
+            {
+                if (scu.isConnected())
+                    scu.abortAssociation();
+                failureReason = HorosFastStoreFailure(@"C-STORE transfer failed", condition);
+                break;
+            }
+
+            condition = scu.releaseAssociation();
+            if (condition.bad())
+            {
+                failureReason = HorosFastStoreFailure(@"Association release failed", condition);
+                break;
+            }
+        }
+
+        sentCount = scu.sentCount();
+        errorCount = scu.errorCount();
+        remainingCount = scu.getNumberOfSOPInstancesToBeSent();
+    }
+
+    if ([operation isCancelled])
+    {
+        [self updateNetworkLogWithSentCount:sentCount message:@"Incomplete"];
+        return;
+    }
+
+    if (!failureReason && (errorCount > 0 || remainingCount > 0))
+        failureReason = [NSString stringWithFormat:@"Incomplete transfer: %lu errors, %lu files not sent",
+                         (unsigned long)errorCount, (unsigned long)remainingCount];
+
+    if (failureReason)
+    {
+        [self updateNetworkLogWithSentCount:sentCount message:@"Incomplete"];
+        [[NSException exceptionWithName:@"DICOM Network Failure (STORE-SCU)" reason:failureReason userInfo:nil] raise];
+    }
+
+    [self updateNetworkLogWithSentCount:sentCount message:@"Complete"];
+    [NSThread currentThread].progress = 1.0;
+    [NSThread currentThread].status = N2LocalizedSingularPluralCount(0, NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));
 }
 
 @end

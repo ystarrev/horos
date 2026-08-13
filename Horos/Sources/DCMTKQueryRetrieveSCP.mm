@@ -93,6 +93,7 @@ END_EXTERN_C
 #include <dcmtk/dcmqrdb/dcmqrcnf.h>
 #include <dcmtk/dcmqrdb/dcmqrsrv.h>
 #include <dcmtk/dcmdata/dcdict.h>
+#include <dcmtk/dcmdata/dcxfer.h>
 #include <dcmtk/dcmdata/cmdlnarg.h>
 #include <dcmtk/ofstd/ofconapp.h>
 #include <dcmtk/dcmdata/dcuid.h>       /* for dcmtk version name */
@@ -145,6 +146,94 @@ END_EXTERN_C
 
 DcmQueryRetrieveSCP *scp = nil;
 DcmQueryRetrieveSCP *scptls = nil;
+
+static const char *HorosIncomingAssociationProfile = "HOROS_INCOMING";
+static const char *HorosIncomingPresentationContexts = "HOROS_INCOMING_CONTEXTS";
+static const char *HorosIncomingTransferSyntaxes = "HOROS_INCOMING_TRANSFER_SYNTAXES";
+static const char *HorosIncomingRoles = "HOROS_INCOMING_ROLES";
+
+static OFBool HorosSupportsIncomingTransferSyntax(E_TransferSyntax syntax)
+{
+    const int syntaxValue = OFstatic_cast(int, syntax);
+    if (syntaxValue < OFstatic_cast(int, EXS_LittleEndianImplicit) ||
+        syntaxValue > OFstatic_cast(int, EXS_HighThroughputJPEG2000))
+        return OFFalse;
+
+    if (syntax == EXS_BigEndianImplicit || syntax == EXS_JPIPReferenced ||
+        syntax == EXS_JPIPReferencedDeflate)
+        return OFFalse;
+
+    DcmXfer xfer(syntax);
+    return xfer.isValid() && xfer.getXferID()[0] != '\0' &&
+           xfer.getStreamCompression() != ESC_unsupported;
+}
+
+static OFCondition HorosAddIncomingTransferSyntax(DcmAssociationConfiguration &configuration,
+                                                   OFBool *addedSyntaxes,
+                                                   E_TransferSyntax syntax)
+{
+    if (!HorosSupportsIncomingTransferSyntax(syntax))
+        return EC_Normal;
+
+    const int syntaxValue = OFstatic_cast(int, syntax);
+    if (addedSyntaxes[syntaxValue])
+        return EC_Normal;
+
+    DcmXfer xfer(syntax);
+    OFCondition condition = configuration.addTransferSyntax(HorosIncomingTransferSyntaxes,
+                                                             xfer.getXferID());
+    if (condition.good())
+        addedSyntaxes[syntaxValue] = OFTrue;
+    return condition;
+}
+
+static OFCondition HorosConfigureIncomingAssociationProfile(DcmAssociationConfiguration &configuration,
+                                                             E_TransferSyntax preferredSyntax)
+{
+    // Most C-STORE senders use the default requestor-SCU role, while C-GET
+    // requires the requestor to act as Storage SCP. Accept both forms.
+    configuration.setAlwaysAcceptDefaultRole(OFTrue);
+
+    OFBool addedSyntaxes[OFstatic_cast(int, EXS_HighThroughputJPEG2000) + 1];
+    memset(addedSyntaxes, 0, sizeof(addedSyntaxes));
+
+    OFCondition condition = HorosAddIncomingTransferSyntax(configuration, addedSyntaxes,
+                                                            preferredSyntax);
+    if (condition.good())
+        condition = HorosAddIncomingTransferSyntax(configuration, addedSyntaxes,
+                                                    EXS_LittleEndianExplicit);
+    if (condition.good())
+        condition = HorosAddIncomingTransferSyntax(configuration, addedSyntaxes,
+                                                    EXS_BigEndianExplicit);
+    if (condition.good())
+        condition = HorosAddIncomingTransferSyntax(configuration, addedSyntaxes,
+                                                    EXS_LittleEndianImplicit);
+
+    for (int syntaxValue = OFstatic_cast(int, EXS_LittleEndianImplicit);
+         condition.good() && syntaxValue <= OFstatic_cast(int, EXS_HighThroughputJPEG2000);
+         ++syntaxValue)
+    {
+        condition = HorosAddIncomingTransferSyntax(configuration, addedSyntaxes,
+                                                    OFstatic_cast(E_TransferSyntax, syntaxValue));
+    }
+
+    for (int index = 0; condition.good() && index < numberOfDcmAllStorageSOPClassUIDs; ++index)
+    {
+        const char *sopClass = dcmAllStorageSOPClassUIDs[index];
+        condition = configuration.addPresentationContext(HorosIncomingPresentationContexts,
+                                                         sopClass,
+                                                         HorosIncomingTransferSyntaxes,
+                                                         OFFalse);
+        if (condition.good())
+            condition = configuration.addRole(HorosIncomingRoles, sopClass, ASC_SC_ROLE_SCUSCP);
+    }
+
+    if (condition.good())
+        condition = configuration.addProfile(HorosIncomingAssociationProfile,
+                                             HorosIncomingPresentationContexts,
+                                             HorosIncomingRoles);
+    return condition;
+}
 
 OFCondition mainStoreSCP(T_ASC_Association * /* assoc */, T_DIMSE_C_StoreRQ * /* request */, T_ASC_PresentationContextID /* presId */, DcmQueryRetrieveDatabaseHandle * /* dbHandle */)
 {
@@ -218,7 +307,6 @@ void errmsg(const char* msg, ...)
 - (void)run
 {
 	OFCondition cond = EC_Normal;
-    OFCmdUnsignedInt overrideMaxPDU = 0;
     DcmQueryRetrieveOptions options;
 
 	// DCMTK 3.7 defaults to INFO logging, which is noisy and expensive during C-MOVE receives.
@@ -327,8 +415,7 @@ void errmsg(const char* msg, ...)
 //	opt_port = _port;
 	
 	//max PDU size
-	options.maxPDU_ = ASC_DEFAULTMAXPDU;
-	if (overrideMaxPDU > 0) options.maxPDU_ = overrideMaxPDU;	//;
+	options.maxPDU_ = ASC_MAXIMUMPDUSIZE;
 	
 	    /* make sure data dictionary is loaded */
     if (!dcmDataDict.isDictionaryLoaded())
@@ -561,6 +648,14 @@ DcmQueryRetrieveConfig config;
 	}
 DcmAssociationConfiguration asccfg;
 DcmTLSOptions tlsOptions(NET_ACCEPTORREQUESTOR);
+
+	OFCondition profileCondition = HorosConfigureIncomingAssociationProfile(asccfg,
+	                                                                        options.networkTransferSyntax_);
+	if (profileCondition.good())
+		options.incomingProfile = HorosIncomingAssociationProfile;
+	else
+		NSLog(@"Warning: unable to configure Horos incoming DICOM transfer profile: %s",
+		      profileCondition.text());
 
 //#ifdef WITH_SQL_DATABASE
     // use SQL database

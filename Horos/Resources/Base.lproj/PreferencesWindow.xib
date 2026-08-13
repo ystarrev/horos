@@ -39,9 +39,7 @@
                 <allowedToolbarItems>
                     <toolbarItem implicitItemIdentifier="0B43AA69-31E5-44AA-B706-1735CB33FB64" label="Navigation" paletteLabel="Navigation" id="622">
                         <nil key="toolTip"/>
-                        <size key="minSize" width="49" height="25"/>
-                        <size key="maxSize" width="53" height="25"/>
-                        <segmentedControl key="view" verticalHuggingPriority="750" id="619">
+                        <segmentedControl key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="619">
                             <rect key="frame" x="7" y="14" width="49" height="25"/>
                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                             <segmentedCell key="cell" state="on" borderStyle="border" alignment="left" style="texturedSquare" trackingMode="momentary" id="620">
@@ -51,6 +49,9 @@
                                     <segment image="NSGoRightTemplate" width="23" tag="1"/>
                                 </segments>
                             </segmentedCell>
+                            <constraints>
+                                <constraint firstAttribute="width" constant="49" id="pref-nav-W01"/>
+                            </constraints>
                             <connections>
                                 <action selector="navigationAction:" target="-2" id="721"/>
                             </connections>
@@ -58,15 +59,16 @@
                     </toolbarItem>
                     <toolbarItem implicitItemIdentifier="23BBC721-B7F6-47DA-B459-270759FABEDD" label="Show All" paletteLabel="Show All" id="626">
                         <nil key="toolTip"/>
-                        <size key="minSize" width="80" height="25"/>
-                        <size key="maxSize" width="160" height="25"/>
-                        <button key="view" horizontalHuggingPriority="277" verticalHuggingPriority="750" id="623">
+                        <button key="view" horizontalHuggingPriority="277" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="623">
                             <rect key="frame" x="0.0" y="14" width="80" height="25"/>
                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                             <buttonCell key="cell" type="roundTextured" title="Show All" bezelStyle="texturedRounded" alignment="center" borderStyle="border" inset="2" id="624">
                                 <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
                                 <font key="font" metaFont="system"/>
                             </buttonCell>
+                            <constraints>
+                                <constraint firstAttribute="width" constant="80" id="pref-all-W01"/>
+                            </constraints>
                             <connections>
                                 <action selector="showAllAction:" target="-2" id="722"/>
                                 <binding destination="-2" name="enabled" keyPath="currentContext" id="732">
@@ -80,15 +82,16 @@
                     <toolbarItem implicitItemIdentifier="NSToolbarFlexibleSpaceItem" id="606"/>
                     <toolbarItem implicitItemIdentifier="A9FB2C16-102A-4508-B57E-3A3E5D2040DD" label="Authentication" paletteLabel="Authentication" image="NSLockUnlockedTemplate" id="745">
                         <nil key="toolTip"/>
-                        <size key="minSize" width="40" height="25"/>
-                        <size key="maxSize" width="40" height="25"/>
-                        <button key="view" verticalHuggingPriority="750" id="743">
+                        <button key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="743">
                             <rect key="frame" x="22" y="14" width="40" height="25"/>
                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                             <buttonCell key="cell" type="roundTextured" bezelStyle="texturedRounded" image="NSLockUnlockedTemplate" imagePosition="overlaps" alignment="center" borderStyle="border" inset="2" id="744">
                                 <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
                                 <font key="font" metaFont="system"/>
                             </buttonCell>
+                            <constraints>
+                                <constraint firstAttribute="width" constant="40" id="pref-auth-W01"/>
+                            </constraints>
                             <connections>
                                 <action selector="authAction:" target="-2" id="753"/>
                                 <binding destination="728" name="enabled" keyPath="values.AUTHENTICATION" id="751"/>

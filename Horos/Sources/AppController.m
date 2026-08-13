@@ -1534,6 +1534,8 @@ static void HorosWriteBonjourDNSSDTaskRecords(NSArray *records)
 	
 	[dict setValue: [[NSUserDefaults standardUserDefaults] stringForKey: @"AETITLE"] forKey: @"AETitle"]; 
 	[dict setValue:[AppController UID] forKey: @"UID"]; 
+	[dict setValue:@"1" forKey:@"HorosFastStoreVersion"];
+	[dict setValue:@"131072" forKey:@"HorosFastStorePDU"];
 	
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"activateCGETSCP"])
 		[dict setValue: @"YES" forKey: @"CGET"]; // TXTRECORD doesnt support NSNumber

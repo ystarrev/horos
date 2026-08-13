@@ -117,6 +117,14 @@ static NSDictionary *HorosDICOMSendNodeDictionaryFromSource(DicomNodeIdentifier 
     if (concurrentThreads)
         [node setObject:concurrentThreads forKey:@"SendControllerConcurrentThreads"];
 
+    id fastStoreVersion = [destination.dictionary objectForKey:@"HorosFastStoreVersion"];
+    if (fastStoreVersion)
+        [node setObject:fastStoreVersion forKey:@"HorosFastStoreVersion"];
+
+    id fastStorePDU = [destination.dictionary objectForKey:@"HorosFastStorePDU"];
+    if (fastStorePDU)
+        [node setObject:fastStorePDU forKey:@"HorosFastStorePDU"];
+
     return node;
 }
 

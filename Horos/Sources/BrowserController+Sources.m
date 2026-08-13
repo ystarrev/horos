@@ -65,6 +65,7 @@
 #import "NSString+SymlinksAndAliases.h"
 #import "NSUserDefaults+OsiriX.h"
 #import "WaitRendering.h"
+#import "QueryController.h"
 #import <errno.h>
 #import <fcntl.h>
 #import <netdb.h>
@@ -788,15 +789,39 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     if (![key length])
         return nil;
 
-    return [NSDictionary dictionaryWithObjectsAndKeys:
-            key, @"Key",
-            source.location, @"Address",
-            [NSNumber numberWithUnsignedInteger:source.port], @"Port",
-            nil];
+    NSMutableDictionary *probeInfo = [NSMutableDictionary dictionaryWithObjectsAndKeys:
+                                      key, @"Key",
+                                      source.location, @"Address",
+                                      [NSNumber numberWithUnsignedInteger:source.port], @"Port",
+                                      nil];
+    if ([source isKindOfClass:[DicomNodeIdentifier class]])
+    {
+        NSString *aetitle = [source.aetitle length] ? source.aetitle : source.description;
+        if (![aetitle length])
+            return nil;
+
+        [probeInfo setObject:[NSNumber numberWithBool:YES] forKey:@"DICOM"];
+        [probeInfo setObject:aetitle forKey:@"AETitle"];
+    }
+
+    return probeInfo;
 }
 
 -(BOOL)_runBonjourHeartbeatProbe:(NSDictionary*)probeInfo
 {
+    if ([[probeInfo objectForKey:@"DICOM"] boolValue])
+    {
+        return [QueryController echoServer:[NSDictionary dictionaryWithObjectsAndKeys:
+                                            [probeInfo objectForKey:@"Address"], @"Address",
+                                            [probeInfo objectForKey:@"Port"], @"Port",
+                                            [probeInfo objectForKey:@"AETitle"], @"AETitle",
+                                            [NSNumber numberWithBool:NO], @"TLSEnabled",
+                                            [NSNumber numberWithBool:YES], @"HorosHeartbeatStrict",
+                                            [NSNumber numberWithBool:YES], @"HorosHeartbeatQuiet",
+                                            [NSNumber numberWithInteger:(NSInteger)HorosBonjourHeartbeatTimeout], @"HorosHeartbeatTimeout",
+                                            nil]];
+    }
+
     return HorosCanOpenTCPConnection([probeInfo objectForKey:@"Address"],
                                      [[probeInfo objectForKey:@"Port"] unsignedIntegerValue],
                                      HorosBonjourHeartbeatTimeout);

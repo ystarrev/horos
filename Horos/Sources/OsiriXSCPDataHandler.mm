@@ -113,7 +113,7 @@ extern BOOL forkedProcess;
         if( forkedProcess)
             context = [staticContext retain];
         else
-            context = [[[DicomDatabase defaultDatabase] independentContext] retain];
+            context = [[[DicomDatabase activeLocalDatabase] independentContext] retain];
         
 	}
 	return self;

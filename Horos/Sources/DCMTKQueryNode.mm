@@ -239,8 +239,208 @@ static void
 getCallback(void *callbackData, T_DIMSE_C_GetRQ *request,
     int responseCount, T_DIMSE_C_GetRSP *response)
 {
-	[[NSThread currentThread] setProgress:1.0/(response->NumberOfCompletedSubOperations+response->NumberOfFailedSubOperations+response->NumberOfWarningSubOperations+response->NumberOfRemainingSubOperations)*(response->NumberOfCompletedSubOperations+response->NumberOfFailedSubOperations+response->NumberOfWarningSubOperations)];
+	const NSUInteger completed = response->NumberOfCompletedSubOperations +
+	                            response->NumberOfFailedSubOperations +
+	                            response->NumberOfWarningSubOperations;
+	const NSUInteger total = completed + response->NumberOfRemainingSubOperations;
+	if (total > 0)
+		[[NSThread currentThread] setProgress:(double)completed / (double)total];
 	return;
+}
+
+// DCMTK's legacy DIMSE_getUser cannot receive the same-association C-STORE
+// requests used by C-GET. Keep Horos's configured association and handle the
+// GET/STORE command sequence the same way as DCMTK's current DcmSCU API.
+static OFCondition HorosReceiveCGet(T_ASC_Association *assoc,
+                                    T_ASC_PresentationContextID getPresentationContext,
+                                    T_DIMSE_C_GetRQ *request,
+                                    DcmDataset *requestIdentifiers,
+                                    DIMSE_GetUserCallback callback,
+                                    void *callbackData,
+                                    T_DIMSE_BlockingMode blockMode,
+                                    int timeout,
+                                    T_DIMSE_C_GetRSP *response,
+                                    DcmDataset **statusDetail,
+                                    DcmDataset **responseIdentifiers,
+                                    NSString *stagingDirectory,
+                                    NSUInteger *receivedObjectCount)
+{
+    if (assoc == NULL || request == NULL || requestIdentifiers == NULL ||
+        response == NULL || stagingDirectory.length == 0)
+        return DIMSE_NULLKEY;
+
+    if (statusDetail != NULL)
+        *statusDetail = NULL;
+    if (responseIdentifiers != NULL)
+        *responseIdentifiers = NULL;
+    if (receivedObjectCount != NULL)
+        *receivedObjectCount = 0;
+    memset(response, 0, sizeof(*response));
+
+    T_DIMSE_Message outgoingMessage;
+    memset(&outgoingMessage, 0, sizeof(outgoingMessage));
+    outgoingMessage.CommandField = DIMSE_C_GET_RQ;
+    request->DataSetType = DIMSE_DATASET_PRESENT;
+    outgoingMessage.msg.CGetRQ = *request;
+
+    OFCondition condition = DIMSE_sendMessageUsingMemoryData(assoc,
+                                                              getPresentationContext,
+                                                              &outgoingMessage,
+                                                              NULL,
+                                                              requestIdentifiers,
+                                                              NULL,
+                                                              NULL);
+    if (condition != EC_Normal)
+        return condition;
+
+    int responseCount = 0;
+    BOOL receivedFinalResponse = NO;
+    while (condition == EC_Normal && receivedFinalResponse == NO)
+    {
+        T_DIMSE_Message incomingMessage;
+        memset(&incomingMessage, 0, sizeof(incomingMessage));
+        T_ASC_PresentationContextID incomingPresentationContext = 0;
+        DcmDataset *commandStatusDetail = NULL;
+
+        condition = DIMSE_receiveCommand(assoc,
+                                         blockMode,
+                                         timeout,
+                                         &incomingPresentationContext,
+                                         &incomingMessage,
+                                         &commandStatusDetail);
+        if (condition != EC_Normal)
+        {
+            delete commandStatusDetail;
+            break;
+        }
+
+        if (incomingMessage.CommandField == DIMSE_C_GET_RSP)
+        {
+            *response = incomingMessage.msg.CGetRSP;
+            if (response->MessageIDBeingRespondedTo != request->MessageID)
+            {
+                char errorText[256];
+                OFStandard::snprintf(errorText,
+                                     sizeof(errorText),
+                                     "DIMSE: Unexpected C-GET response MsgId: %d (expected: %d)",
+                                     response->MessageIDBeingRespondedTo,
+                                     request->MessageID);
+                delete commandStatusDetail;
+                return makeDcmnetCondition(DIMSEC_UNEXPECTEDRESPONSE, OF_error, errorText);
+            }
+
+            ++responseCount;
+            const BOOL pending = DICOM_PENDING_STATUS(response->DimseStatus);
+            DcmDataset *discardedResponseIdentifiers = NULL;
+            if (response->DataSetType != DIMSE_DATASET_NULL)
+            {
+                DcmDataset **identifierDestination = (!pending && responseIdentifiers != NULL)
+                                                      ? responseIdentifiers
+                                                      : &discardedResponseIdentifiers;
+                T_ASC_PresentationContextID dataPresentationContext = incomingPresentationContext;
+                condition = DIMSE_receiveDataSetInMemory(assoc,
+                                                         blockMode,
+                                                         timeout,
+                                                         &dataPresentationContext,
+                                                         identifierDestination,
+                                                         NULL,
+                                                         NULL);
+            }
+
+            if (pending)
+            {
+                delete commandStatusDetail;
+                if (condition == EC_Normal && callback != NULL)
+                    callback(callbackData, request, responseCount, response);
+            }
+            else
+            {
+                if (statusDetail != NULL)
+                    *statusDetail = commandStatusDetail;
+                else
+                    delete commandStatusDetail;
+                commandStatusDetail = NULL;
+                receivedFinalResponse = YES;
+            }
+            delete discardedResponseIdentifiers;
+        }
+        else if (incomingMessage.CommandField == DIMSE_C_STORE_RQ)
+        {
+            delete commandStatusDetail;
+            NSString *filename = [[stagingDirectory stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]]
+                                  stringByAppendingPathExtension:@"dcm"];
+            condition = DIMSE_storeProvider(assoc,
+                                            incomingPresentationContext,
+                                            &incomingMessage.msg.CStoreRQ,
+                                            filename.fileSystemRepresentation,
+                                            OFTrue,
+                                            NULL,
+                                            NULL,
+                                            NULL,
+                                            blockMode,
+                                            timeout);
+            if (condition == EC_Normal)
+            {
+                if (receivedObjectCount != NULL)
+                    ++(*receivedObjectCount);
+            }
+            else
+                [[NSFileManager defaultManager] removeItemAtPath:filename error:nil];
+        }
+        else
+        {
+            char errorText[256];
+            OFStandard::snprintf(errorText,
+                                 sizeof(errorText),
+                                 "DIMSE: Expected C-GET response or C-STORE request, received command 0x%x",
+                                 (unsigned int)incomingMessage.CommandField);
+            delete commandStatusDetail;
+            condition = makeDcmnetCondition(DIMSEC_UNEXPECTEDRESPONSE, OF_error, errorText);
+        }
+    }
+
+    return condition;
+}
+
+static OFCondition HorosPublishCGetFiles(DicomDatabase *database,
+                                         NSString *stagingDirectory,
+                                         NSUInteger receivedObjectCount)
+{
+    if (database == nil || stagingDirectory.length == 0)
+        return receivedObjectCount == 0 ? EC_Normal : DIMSE_OUTOFRESOURCES;
+
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    if (receivedObjectCount == 0)
+    {
+        [fileManager removeItemAtPath:stagingDirectory error:nil];
+        return EC_Normal;
+    }
+
+    NSError *error = nil;
+    NSString *incomingDirectory = database.incomingDirPath;
+    if (![fileManager createDirectoryAtPath:incomingDirectory
+                withIntermediateDirectories:YES
+                                 attributes:nil
+                                      error:&error])
+    {
+        NSLog(@"C-GET received %lu objects but could not prepare the incoming directory: %@",
+              (unsigned long)receivedObjectCount, error);
+        return DIMSE_OUTOFRESOURCES;
+    }
+
+    NSString *batchDirectory = [incomingDirectory stringByAppendingPathComponent:
+                                [NSString stringWithFormat:@"HorosCGet-%@", [[NSUUID UUID] UUIDString]]];
+    if (![fileManager moveItemAtPath:stagingDirectory toPath:batchDirectory error:&error])
+    {
+        NSLog(@"C-GET received %lu objects but could not publish them for import: %@",
+              (unsigned long)receivedObjectCount, error);
+        return DIMSE_OUTOFRESOURCES;
+    }
+
+    NSLog(@"C-GET received %lu object(s) into %@",
+          (unsigned long)receivedObjectCount, database.name);
+    [database initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
+    return EC_Normal;
 }
 
 //static OFCondition
@@ -1170,19 +1370,13 @@ subOpCallback(void * /*subOpCallbackData*/ ,
 
                                                                          if( [[dict valueForKey: @"retrieveMode"] intValue] == CGETRetrieveMode && retrieveMode == CGETRetrieveMode)
                                                                          {
-                                                                             if( [DCMTKQueryRetrieveSCP storeSCP] == NO)
-                                                                                 [[NSException exceptionWithName: @"DICOM Network Failure" reason: NSLocalizedString( @"DICOM Listener is not activated", nil) userInfo:nil] raise];
-
+                                                                             if ([self setupNetworkWithSyntax: UID_GETStudyRootQueryRetrieveInformationModel dataset: &dataset destination: [dict objectForKey:@"moveDestination"]])
+                                                                             {
+                                                                             }
                                                                              else
                                                                              {
-                                                                                 if ([self setupNetworkWithSyntax: UID_GETStudyRootQueryRetrieveInformationModel dataset: &dataset destination: [dict objectForKey:@"moveDestination"]])
-                                                                                 {
-                                                                                 }
-                                                                                 else
-                                                                                 {
-                                                                                     NSLog( @"***** IMAGE Level retrieve failed... try STUDY/SERIES Level retrieve");
-                                                                                     [[NSThread currentThread] cancel];
-                                                                                 }
+                                                                                 NSLog( @"***** IMAGE Level retrieve failed... try STUDY/SERIES Level retrieve");
+                                                                                 [[NSThread currentThread] cancel];
                                                                              }
                                                                          }
                                                                          else
@@ -1263,19 +1457,13 @@ subOpCallback(void * /*subOpCallbackData*/ ,
 
                                                                      if( [[dict valueForKey: @"retrieveMode"] intValue] == CGETRetrieveMode && retrieveMode == CGETRetrieveMode)
                                                                      {
-                                                                         if( [DCMTKQueryRetrieveSCP storeSCP] == NO)
-                                                                             [[NSException exceptionWithName: @"DICOM Network Failure" reason: NSLocalizedString( @"DICOM Listener is not activated", nil) userInfo:nil] raise];
-
+                                                                         if ([self setupNetworkWithSyntax: UID_GETStudyRootQueryRetrieveInformationModel dataset: &dataset destination: [dict objectForKey:@"moveDestination"]])
+                                                                         {
+                                                                         }
                                                                          else
                                                                          {
-                                                                             if ([self setupNetworkWithSyntax: UID_GETStudyRootQueryRetrieveInformationModel dataset: &dataset destination: [dict objectForKey:@"moveDestination"]])
-                                                                             {
-                                                                             }
-                                                                             else
-                                                                             {
-                                                                                 NSLog( @"***** IMAGE Level retrieve failed... try STUDY/SERIES Level retrieve");
-                                                                                 [[NSThread currentThread] cancel];
-                                                                             }
+                                                                             NSLog( @"***** IMAGE Level retrieve failed... try STUDY/SERIES Level retrieve");
+                                                                             [[NSThread currentThread] cancel];
                                                                          }
                                                                      }
                                                                      else
@@ -1354,18 +1542,11 @@ subOpCallback(void * /*subOpCallbackData*/ ,
                 
                 if( [[dict valueForKey: @"retrieveMode"] intValue] == CGETRetrieveMode && retrieveMode == CGETRetrieveMode)
                 {
-                    if( [DCMTKQueryRetrieveSCP storeSCP] == NO)
-                        [[NSException exceptionWithName: @"DICOM Network Failure" reason: NSLocalizedString( @"DICOM Listener is not activated", nil) userInfo:nil] raise];
-                    
-                    else
+                    if ([self setupNetworkWithSyntax: UID_GETStudyRootQueryRetrieveInformationModel dataset:dataset destination: [dict objectForKey:@"moveDestination"]])
                     {
-                        
-                        if ([self setupNetworkWithSyntax: UID_GETStudyRootQueryRetrieveInformationModel dataset:dataset destination: [dict objectForKey:@"moveDestination"]])
-                        {
-                        }
-                        else
-                            NSLog( @"UID_GETStudyRootQueryRetrieveInformationModel failed : %s", __PRETTY_FUNCTION__);
                     }
+                    else
+                        NSLog( @"UID_GETStudyRootQueryRetrieveInformationModel failed : %s", __PRETTY_FUNCTION__);
                 }
                 else
                 {
@@ -1581,7 +1762,7 @@ subOpCallback(void * /*subOpCallbackData*/ ,
 		{
 			cond = ASC_addPresentationContext(
 				params, pid, dcmLongSCUStorageSOPClassUIDs[i],
-				transferSyntaxes, numTransferSyntaxes);
+				transferSyntaxes, numTransferSyntaxes, ASC_SC_ROLE_SCP);
 			pid += 2;	/* only odd presentation context id's */
 		}
 	}
@@ -2791,6 +2972,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 {
 	//add self to list of moves. Prevents deallocating  the move if a new query is done
 	[[MoveManager sharedManager] addMove:self];
+	(void)net;
 
 	T_ASC_PresentationContextID presId;
     T_DIMSE_C_GetRQ    req;
@@ -2799,6 +2981,9 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
     DcmDataset          *rspIds = NULL;
     DcmDataset          *statusDetail = NULL;
     MyCallbackInfo      callbackData;
+	bzero((char *)&req, sizeof(req));
+	bzero((char *)&rsp, sizeof(rsp));
+	bzero((char *)&callbackData, sizeof(callbackData));
 		
    // sopClass = querySyntax[opt_queryModel].moveSyntax;
 
@@ -2835,9 +3020,47 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 //		ASC_getAPTitles(assoc->params, req.MoveDestination, sizeof(req.MoveDestination), NULL, 0, NULL, 0);
 //	}
 	
-	OFCondition cond;
-	
-	cond = DIMSE_getUser(assoc, presId, &req, dataset, getCallback, &callbackData, _blockMode, _dimse_timeout, net, subOpCallback, NULL, &rsp, &statusDetail, &rspIds);
+	OFCondition cond = EC_Normal;
+	DicomDatabase *database = [[DicomDatabase activeLocalDatabase] retain];
+	NSString *stagingDirectory = nil;
+	NSUInteger receivedObjectCount = 0;
+	if (database != nil)
+	{
+		stagingDirectory = [[[database tempDirPath] stringByAppendingPathComponent:
+		                     [NSString stringWithFormat:@"HorosCGet-%@", [[NSUUID UUID] UUIDString]]] copy];
+		NSError *directoryError = nil;
+		if (![[NSFileManager defaultManager] createDirectoryAtPath:stagingDirectory
+		                                      withIntermediateDirectories:YES
+		                                                       attributes:nil
+		                                                            error:&directoryError])
+		{
+			NSLog(@"Unable to create C-GET staging directory: %@", directoryError);
+			cond = DIMSE_OUTOFRESOURCES;
+		}
+	}
+	else
+		cond = DIMSE_OUTOFRESOURCES;
+
+	if (cond == EC_Normal)
+		cond = HorosReceiveCGet(assoc,
+		                            presId,
+		                            &req,
+		                            dataset,
+		                            getCallback,
+		                            &callbackData,
+		                            _blockMode,
+		                            _dimse_timeout,
+		                            &rsp,
+		                            &statusDetail,
+		                            &rspIds,
+		                            stagingDirectory,
+		                            &receivedObjectCount);
+
+	OFCondition publishCondition = HorosPublishCGetFiles(database, stagingDirectory, receivedObjectCount);
+	if (cond == EC_Normal && publishCondition != EC_Normal)
+		cond = publishCondition;
+	[stagingDirectory release];
+	[database release];
 	
     self.countOfSuboperations = rsp.NumberOfCompletedSubOperations+rsp.NumberOfFailedSubOperations+rsp.NumberOfWarningSubOperations+rsp.NumberOfRemainingSubOperations;
     self.countOfSuccessfulSuboperations = rsp.NumberOfCompletedSubOperations;
@@ -2857,7 +3080,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 			DIMSE_printCGetRSP(stdout, &rsp);
 			
             if( showErrorMessage)
-                [DCMTKQueryNode performSelectorOnMainThread:@selector(errorMessage:) withObject:[NSArray arrayWithObjects: NSLocalizedString(@"Get Failed", nil), [NSString stringWithUTF8String: DU_cmoveStatusString(rsp.DimseStatus)], NSLocalizedString(@"Continue", nil), nil] waitUntilDone:NO];
+                [DCMTKQueryNode performSelectorOnMainThread:@selector(errorMessage:) withObject:[NSArray arrayWithObjects: NSLocalizedString(@"Get Failed", nil), [NSString stringWithUTF8String: DU_cgetStatusString(rsp.DimseStatus)], NSLocalizedString(@"Continue", nil), nil] waitUntilDone:NO];
 		}
 		
         if (_verbose)

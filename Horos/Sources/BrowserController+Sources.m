@@ -37,6 +37,7 @@
  ============================================================================*/
 
 #import "BrowserController+Sources.h"
+#import "HorosSwiftInterop.h"
 #import "BrowserController+Sources+Copy.h"
 #import "DataNodeIdentifier.h"
 #import "PrettyCell.h"
@@ -342,13 +343,66 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
 
     [_sourcesTableView registerForDraggedTypes:BrowserController.DatabaseObjectXIDsPasteboardTypes];
 
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(horosDirectSessionConnected:) name:@"HorosDirectSessionDidConnect" object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(horosDirectSessionDisconnected:) name:@"HorosDirectSessionDidDisconnect" object:nil];
+    for (NSDictionary *session in [[HorosDirectTransferService sharedService] activeSessionDictionaries])
+        [self horosDirectSessionConnected:[NSNotification notificationWithName:@"HorosDirectSessionDidConnect" object:nil userInfo:session]];
+
     [self selectCurrentDatabaseSource];
 }
 
 -(void)deallocSources
 {
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:@"HorosDirectSessionDidConnect" object:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:@"HorosDirectSessionDidDisconnect" object:nil];
     [self shutdownBonjourSources];
     [_sourcesHelper release]; _sourcesHelper = nil;
+}
+
+-(void)horosDirectSessionConnected:(NSNotification*)notification
+{
+    NSDictionary *info = notification.userInfo;
+    NSString *sessionID = [info objectForKey:@"sessionID"];
+    if (!sessionID.length)
+        return;
+
+    NSArray *existingSources = [[_sourcesArrayController arrangedObjects] copy];
+    for (DataNodeIdentifier *source in existingSources)
+        if ([source isKindOfClass:[HorosDirectNodeIdentifier class]] &&
+            [[(HorosDirectNodeIdentifier*)source sessionIdentifier] isEqualToString:sessionID])
+            [_sourcesArrayController removeObject:source];
+    [existingSources release];
+
+    NSMutableDictionary *dictionary = [NSMutableDictionary dictionaryWithDictionary:info];
+    [dictionary setObject:sessionID forKey:@"HorosDirectSessionID"];
+    [dictionary setObject:([info objectForKey:@"name"] ?: @"Horos") forKey:@"Description"];
+    [dictionary setObject:([info objectForKey:@"aeTitle"] ?: @"HOROS") forKey:@"AETitle"];
+    [dictionary setObject:([info objectForKey:@"address"] ?: @"Horos") forKey:@"Address"];
+    [dictionary setObject:([info objectForKey:@"dicomPort"] ?: @0) forKey:@"Port"];
+    [dictionary setObject:@YES forKey:@"Send"];
+    [dictionary setObject:@NO forKey:@"QR"];
+    [dictionary setObject:@"DICOMDestination.tif" forKey:@"icon"];
+
+    HorosDirectNodeIdentifier *source = [HorosDirectNodeIdentifier directNodeIdentifierWithSessionDictionary:dictionary];
+    source.detected = YES;
+    source.entered = NO;
+    [_sourcesArrayController addObject:source];
+    [self redrawSources];
+}
+
+-(void)horosDirectSessionDisconnected:(NSNotification*)notification
+{
+    NSString *sessionID = [notification.userInfo objectForKey:@"sessionID"];
+    if (!sessionID.length)
+        return;
+
+    NSArray *sources = [[_sourcesArrayController arrangedObjects] copy];
+    for (DataNodeIdentifier *source in sources)
+        if ([source isKindOfClass:[HorosDirectNodeIdentifier class]] &&
+            [[(HorosDirectNodeIdentifier*)source sessionIdentifier] isEqualToString:sessionID])
+            [_sourcesArrayController removeObject:source];
+    [sources release];
+    [self redrawSources];
 }
 
 -(void)shutdownBonjourSources
@@ -528,6 +582,12 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
 
 -(void)setDatabaseFromSourceIdentifier:(DataNodeIdentifier*)dni
 {
+    if ([dni isKindOfClass:[HorosDirectNodeIdentifier class]])
+    {
+        [self selectCurrentDatabaseSource];
+        return;
+    }
+
     if ([dni isEqualToDataNodeIdentifier:[self sourceIdentifierForDatabase:_database]])
         return;
 
@@ -746,6 +806,9 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
 -(BOOL)_bonjourHeartbeatShouldProbeSource:(DataNodeIdentifier*)source
 {
+    if ([source isKindOfClass:[HorosDirectNodeIdentifier class]])
+        return NO;
+
     if (![source.location length] || source.port == 0)
         return NO;
 

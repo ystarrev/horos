@@ -116,6 +116,13 @@ typedef NSInteger DataNodeIdentifierType;*/
 
 @end
 
+@interface HorosDirectNodeIdentifier : RemoteDataNodeIdentifier
+
++(id)directNodeIdentifierWithSessionDictionary:(NSDictionary*)dictionary;
+-(NSString*)sessionIdentifier;
+
+@end
+
 @interface PhoneVolumeRenderNodeIdentifier : RemoteDataNodeIdentifier
 
 +(id)phoneVolumeRenderNodeIdentifierWithLocation:(NSString*)location port:(NSUInteger)port description:(NSString*)description dictionary:(NSDictionary*)dictionary;

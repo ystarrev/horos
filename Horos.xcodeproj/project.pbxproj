@@ -2325,6 +2325,7 @@
 		F4AC70010002000000000001 /* HorosActivityTaskCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HorosActivityTaskCoordinator.swift; path = Horos/Sources/HorosActivityTaskCoordinator.swift; sourceTree = SOURCE_ROOT; };
 		F4AC70010003000000000001 /* HorosSwiftInterop.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = HorosSwiftInterop.h; path = Horos/Sources/HorosSwiftInterop.h; sourceTree = SOURCE_ROOT; };
 		F4D1EC700002000000000001 /* HorosDirectTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HorosDirectTransfer.swift; path = Horos/Sources/HorosDirectTransfer.swift; sourceTree = SOURCE_ROOT; };
+		F4D1EC700002000000000002 /* HorosDirectTransferDICOM.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = HorosDirectTransferDICOM.h; path = Horos/Sources/HorosDirectTransferDICOM.h; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000017 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.h; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm; sourceTree = SOURCE_ROOT; };
@@ -4009,6 +4010,7 @@
 			isa = PBXGroup;
 			children = (
 				F4D1EC700002000000000001 /* HorosDirectTransfer.swift */,
+				F4D1EC700002000000000002 /* HorosDirectTransferDICOM.h */,
 				84AA013C104EA39E0091E49B /* Log Window */,
 				ABB7A43606343BFF00AD1777 /* Query */,
 				CED2CF960C9B288C0047F123 /* Horos/Sources/CIADICOMField.h */,

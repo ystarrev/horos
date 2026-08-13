@@ -96,6 +96,8 @@
         return 20;
     if ([dni isKindOfClass:[PhoneVolumeRenderNodeIdentifier class]])
         return 25;
+    if ([dni isKindOfClass:[HorosDirectNodeIdentifier class]])
+        return 27;
     if ([dni isKindOfClass:[DicomNodeIdentifier class]])
         return 30;
     return 100;
@@ -406,5 +408,41 @@
 //+(NSString*)locationWithAddress:(NSString*)host port:(NSInteger)port aet:(NSString*)aet {
 //	return [NSString stringWithFormat:@"%@@%@:%d", aet, host, (int) port];
 //}
+
+@end
+
+@implementation HorosDirectNodeIdentifier
+
++(id)directNodeIdentifierWithSessionDictionary:(NSDictionary*)dictionary
+{
+    NSString *address = [dictionary objectForKey:@"Address"] ?: @"Horos";
+    NSString *aetitle = [dictionary objectForKey:@"AETitle"] ?: @"HOROS";
+    NSString *description = [dictionary objectForKey:@"Description"] ?: aetitle;
+    NSUInteger port = [[dictionary objectForKey:@"Port"] unsignedIntegerValue];
+    return [[[self alloc] initWithLocation:address port:port aetitle:aetitle description:description dictionary:dictionary] autorelease];
+}
+
+-(NSString*)sessionIdentifier
+{
+    return [self.dictionary objectForKey:@"HorosDirectSessionID"];
+}
+
+-(BOOL)isEqualToDataNodeIdentifier:(DataNodeIdentifier*)dni
+{
+    if (![dni isKindOfClass:[HorosDirectNodeIdentifier class]])
+        return NO;
+    return self.sessionIdentifier.length && [self.sessionIdentifier isEqualToString:[(HorosDirectNodeIdentifier*)dni sessionIdentifier]];
+}
+
+-(BOOL)isEqualToDictionary:(NSDictionary*)dictionary
+{
+    NSString *sessionID = [dictionary objectForKey:@"HorosDirectSessionID"];
+    return sessionID.length && [self.sessionIdentifier isEqualToString:sessionID];
+}
+
+-(NSString*)toolTip
+{
+    return NSLocalizedString(@"Connected Horos - drag studies here for a direct transfer.", nil);
+}
 
 @end

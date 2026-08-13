@@ -66,6 +66,7 @@
 #import "N2Stuff.h"
 #import "DicomFile.h"
 #import "N2Debug.h"
+#import "HorosSwiftInterop.h"
 
 #include <dcmtk/config/osconfig.h>
 
@@ -4369,6 +4370,77 @@ extern "C"
 		
 		[dictionary release];
 		[subPool release];
+
+        // A Horos peer advertises this capability in its normal C-FIND
+        // response. Retrieve all selected whole series/studies in one direct
+        // batch; if the session is unavailable, leave moveArray untouched so
+        // the established DICOM C-GET/C-MOVE path remains the fallback.
+        if (allowNonCMOVE && moveArray.count)
+        {
+            DCMTKQueryNode *firstObject = [[moveArray objectAtIndex:0] objectForKey:@"query"];
+            NSMutableArray *directItems = [NSMutableArray arrayWithCapacity:moveArray.count];
+            BOOL directEligible = YES;
+
+            for (NSDictionary *retrieve in moveArray)
+            {
+                DCMTKQueryNode *object = [retrieve objectForKey:@"query"];
+                if (![[object _hostname] isEqualToString:[firstObject _hostname]] ||
+                    [object _port] != [firstObject _port] ||
+                    ![[object calledAET] isEqualToString:[firstObject calledAET]])
+                {
+                    directEligible = NO;
+                    break;
+                }
+
+                if ([object isMemberOfClass:[DCMTKSeriesQueryNode class]])
+                {
+                    NSString *studyUID = [(DCMTKSeriesQueryNode*)object studyInstanceUID];
+                    NSString *seriesUID = [(DCMTKSeriesQueryNode*)object seriesInstanceUID];
+                    if (!studyUID.length || !seriesUID.length)
+                    {
+                        directEligible = NO;
+                        break;
+                    }
+                    [directItems addObject:@{@"level": @"SERIES", @"studyUID": studyUID, @"seriesUID": seriesUID}];
+                }
+                else if ([object isMemberOfClass:[DCMTKStudyQueryNode class]])
+                {
+                    NSString *studyUID = [(DCMTKStudyQueryNode*)object studyInstanceUID];
+                    if (!studyUID.length)
+                    {
+                        directEligible = NO;
+                        break;
+                    }
+                    [directItems addObject:@{@"level": @"STUDY", @"studyUID": studyUID}];
+                }
+                else
+                {
+                    directEligible = NO;
+                    break;
+                }
+            }
+
+            if (directEligible && [[HorosDirectTransferService sharedService]
+                retrieveQueryItems:directItems
+                fromHost:[firstObject _hostname]
+                dicomPort:[firstObject _port]
+                calledAET:[firstObject calledAET]
+                activityThread:[NSThread currentThread]])
+            {
+                NSLog(@"Retrieve used Horos direct path for %lu item(s)", (unsigned long)moveArray.count);
+                for (DCMTKQueryNode *object in [moveArray valueForKey:@"query"])
+                {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [outlineView reloadItem:object];
+                    });
+                    @synchronized(previousAutoRetrieve)
+                    {
+                        [previousAutoRetrieve removeObjectForKey:[QueryController stringIDForStudy:object]];
+                    }
+                }
+                [moveArray removeAllObjects];
+            }
+        }
 		
         BOOL canRetrieveSeriesConcurrently = allowNonCMOVE && moveArray.count > 1;
         for( NSDictionary *d in moveArray)

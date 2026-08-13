@@ -58,6 +58,8 @@
 
 #include <dcmtk/dcmdata/dctk.h>
 #include "DCMTKTagCompatibility.h"
+#include "HorosDirectTransferDICOM.h"
+#import "HorosSwiftInterop.h"
 
 char currentDestinationMoveAET[ 60] = "";
 
@@ -263,6 +265,10 @@ extern BOOL forkedProcess;
                 continue;
             
             if( key == DCM_NumberOfStudyRelatedInstances)
+                continue;
+
+            if (key == HorosDirectPrivateCreatorTag || key == HorosDirectVersionTag ||
+                key == HorosDirectPortTag || key == HorosDirectTokenTag)
                 continue;
             
 			if (strcmp(sType, "STUDY") == 0)
@@ -1947,6 +1953,21 @@ extern BOOL forkedProcess;
 			{
 				[self imageDatasetForFetchedObject:item dataset:(DcmDataset *)dataset];
 			}
+
+            // Horos peers recognize this optional private response data. It is
+            // not added to C-FIND requests, so queries sent to ordinary PACS
+            // servers remain completely standard.
+            NSDictionary *capability = [[HorosDirectTransferService sharedService] queryCapabilityForCallingAET:callingAET];
+            NSString *version = [[capability objectForKey:@"version"] stringValue];
+            NSString *directPort = [[capability objectForKey:@"port"] stringValue];
+            NSString *directToken = [capability objectForKey:@"token"];
+            if (version.length && directPort.length && directToken.length)
+            {
+                dataset->putAndInsertString(DcmTag(HorosDirectPrivateCreatorTag, EVR_LO), HorosDirectPrivateCreator, OFTrue);
+                dataset->putAndInsertString(DcmTag(HorosDirectVersionTag, EVR_LO), version.UTF8String, OFTrue);
+                dataset->putAndInsertString(DcmTag(HorosDirectPortTag, EVR_LO), directPort.UTF8String, OFTrue);
+                dataset->putAndInsertString(DcmTag(HorosDirectTokenTag, EVR_LO), directToken.UTF8String, OFTrue);
+            }
 			*isComplete = NO;
 		}
 		else

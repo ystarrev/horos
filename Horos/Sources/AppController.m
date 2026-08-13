@@ -1539,7 +1539,7 @@ static void HorosWriteBonjourDNSSDTaskRecords(NSArray *records)
 	HorosDirectTransferService *directTransfer = [HorosDirectTransferService sharedService];
 	if ([directTransfer isRunning])
 	{
-		[dict setValue:@"1" forKey:@"HorosDirectTransferVersion"];
+		[dict setValue:@"2" forKey:@"HorosDirectTransferVersion"];
 		[dict setValue:[NSString stringWithFormat:@"%ld", (long)[directTransfer port]] forKey:@"HorosDirectTransferPort"];
 		[dict setValue:[directTransfer token] forKey:@"HorosDirectTransferToken"];
 	}

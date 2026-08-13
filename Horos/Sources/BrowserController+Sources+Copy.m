@@ -48,6 +48,7 @@
 #import "NSThread+N2.h"
 #import "N2Debug.h"
 #import "N2Stuff.h"
+#import "HorosSwiftInterop.h"
 #import <errno.h>
 #import <arpa/inet.h>
 #import <netdb.h>
@@ -349,6 +350,48 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
 	[pool release];
 }
 
+-(void)copyImagesToHorosDirectSessionThread:(NSArray*)io
+{
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    NSThread *thread = [NSThread currentThread];
+
+    @try
+    {
+        HorosDirectNodeIdentifier *destination = [io objectAtIndex:1];
+        DicomDatabase *sourceDatabase = [io objectAtIndex:2];
+        NSMutableArray *paths = [NSMutableArray array];
+        DicomDatabase *workerDatabase = sourceDatabase.independentDatabase;
+        N2PerformManagedObjectContextBlockAndWait(workerDatabase.managedObjectContext, ^{
+            for (DicomImage *image in [workerDatabase objectsWithIDs:[io objectAtIndex:0]])
+            {
+                NSString *path = image.completePath;
+                if (path.length && ![paths containsObject:path])
+                    [paths addObject:path];
+            }
+        });
+
+        if (paths.count)
+        {
+            BOOL sent = [[HorosDirectTransferService sharedService]
+                sendFiles:paths
+                toSession:destination.sessionIdentifier
+                activityThread:thread];
+            thread.status = sent ? NSLocalizedString(@"Transfer complete", nil) : NSLocalizedString(@"Direct Horos transfer failed", nil);
+            if (sent)
+                thread.progress = 1;
+        }
+        else
+            thread.status = NSLocalizedString(@"No files to send.", nil);
+    }
+    @catch (NSException *exception)
+    {
+        thread.status = NSLocalizedString(@"Direct Horos transfer failed", nil);
+        N2LogExceptionWithStackTrace(exception);
+    }
+
+    [pool release];
+}
+
 -(void)copyImagesToPhoneVolumeRenderThread:(NSArray*)io
 {
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
@@ -611,6 +654,12 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
             NSThread* thread = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(copyImagesToPhoneVolumeRenderThread:) object:[NSArray arrayWithObjects: [dicomImages valueForKey:@"objectID"], destination, _database, NULL]] autorelease];
             thread.supportsCancel = YES;
             thread.name = NSLocalizedString(@"Sending study to iPhone...", nil);
+            [[ThreadsManager defaultManager] addThreadAndStart:thread];
+            return YES;
+        } else if ([destination isKindOfClass:[HorosDirectNodeIdentifier class]]) { // live Horos check-in
+            NSThread *thread = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(copyImagesToHorosDirectSessionThread:) object:@[[dicomImages valueForKey:@"objectID"], destination, _database]] autorelease];
+            thread.supportsCancel = YES;
+            thread.name = NSLocalizedString(@"Sending images directly...", nil);
             [[ThreadsManager defaultManager] addThreadAndStart:thread];
             return YES;
         } else if ([destination isKindOfClass:[DicomNodeIdentifier class]]) { // local Horos to remote DICOM

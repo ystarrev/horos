@@ -72,6 +72,8 @@
 #include <dcmtk/dcmdata/dcfilefo.h>
 #include <dcmtk/dcmdata/dcdict.h>
 #include "DCMTKTagCompatibility.h"
+#include "HorosDirectTransferDICOM.h"
+#import "HorosSwiftInterop.h"
 //#include "cmdlnarg.h"
 #include <dcmtk/ofstd/ofconapp.h>
 #include <dcmtk/dcmdata/dcuid.h>     /* for dcmtk version name */
@@ -223,6 +225,29 @@ progressCallback(
 
 	MyCallbackInfo *callbackInfo = (MyCallbackInfo *)callbackData;
 	DCMTKQueryNode *node = callbackInfo -> node;
+
+    const char *creatorString = NULL, *versionString = NULL, *portString = NULL, *tokenString = NULL;
+    if (responseIdentifiers &&
+        responseIdentifiers->findAndGetString(HorosDirectPrivateCreatorTag, creatorString).good() && creatorString &&
+        strcmp(creatorString, HorosDirectPrivateCreator) == 0 &&
+        responseIdentifiers->findAndGetString(HorosDirectVersionTag, versionString).good() && versionString &&
+        responseIdentifiers->findAndGetString(HorosDirectPortTag, portString).good() && portString &&
+        responseIdentifiers->findAndGetString(HorosDirectTokenTag, tokenString).good() && tokenString)
+    {
+        NSInteger version = [[NSString stringWithUTF8String:versionString] integerValue];
+        NSInteger directPort = [[NSString stringWithUTF8String:portString] integerValue];
+        NSString *directToken = [NSString stringWithUTF8String:tokenString];
+        if (version >= 2 && directPort > 0 && directToken.length)
+        {
+            [[HorosDirectTransferService sharedService]
+                registerQueryCapabilityForHost:[node _hostname]
+                dicomPort:[node _port]
+                calledAET:[node calledAET]
+                version:version
+                port:directPort
+                token:directToken];
+        }
+    }
 	[node addChild:responseIdentifiers];
 }
 

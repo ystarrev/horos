@@ -1,5 +1,56 @@
 import Foundation
 import Network
+import CoreData
+
+private struct HorosDirectFileEntry {
+    let url: URL
+    let nameData: Data
+    let size: UInt64
+}
+
+private final class HorosDirectRemoteCapability {
+    let host: String
+    var directPort: Int
+    var token: String
+    var controlConnection: NWConnection?
+    var isConnecting = false
+
+    init(host: String, directPort: Int, token: String) {
+        self.host = host
+        self.directPort = directPort
+        self.token = token
+    }
+}
+
+private final class HorosDirectServerSession {
+    let identifier: String
+    let connection: NWConnection
+    let name: String
+    let aeTitle: String
+    let dicomPort: Int
+    let address: String
+    let sendQueue: DispatchQueue
+
+    init(identifier: String, connection: NWConnection, name: String, aeTitle: String, dicomPort: Int, address: String) {
+        self.identifier = identifier
+        self.connection = connection
+        self.name = name
+        self.aeTitle = aeTitle
+        self.dicomPort = dicomPort
+        self.address = address
+        self.sendQueue = DispatchQueue(label: "org.horos.direct-transfer.session.\(identifier)")
+    }
+}
+
+private enum HorosDirectSessionOperation: UInt32 {
+    case checkIn = 1
+    case pullQuery = 2
+}
+
+private enum HorosDirectControlCommand: UInt32 {
+    case batchAvailable = 1
+    case ping = 2
+}
 
 @objcMembers
 @objc(HorosDirectTransferService)
@@ -14,6 +65,10 @@ public final class HorosDirectTransferService: NSObject {
 
     private static let magic = Data("HOROSFT1".utf8)
     private static let protocolVersion: UInt32 = 1
+    private static let sessionMagic = Data("HOROSFT2".utf8)
+    private static let sessionProtocolVersion: UInt32 = 2
+    private static let sessionConnectedNotification = Notification.Name("HorosDirectSessionDidConnect")
+    private static let sessionDisconnectedNotification = Notification.Name("HorosDirectSessionDidDisconnect")
     private static let chunkSize = 4 * 1_024 * 1_024
     private static let maximumFiles = 1_000_000
     private static let maximumFilenameBytes = 1_024
@@ -27,6 +82,8 @@ public final class HorosDirectTransferService: NSObject {
     private var listener: NWListener?
     private let stateQueue = DispatchQueue(label: "org.horos.direct-transfer.listener")
     private var shouldRun = false
+    private var remoteCapabilities: [String: HorosDirectRemoteCapability] = [:]
+    private var serverSessions: [String: HorosDirectServerSession] = [:]
 
     public override init() {
         super.init()
@@ -90,10 +147,21 @@ public final class HorosDirectTransferService: NSObject {
 
     @objc public func stop() {
         stateQueue.async { [weak self] in
-            self?.shouldRun = false
-            self?.listener?.cancel()
-            self?.listener = nil
-            self?.listeningPort = 0
+            guard let self else { return }
+            self.shouldRun = false
+            self.listener?.cancel()
+            self.listener = nil
+            self.listeningPort = 0
+            for capability in self.remoteCapabilities.values {
+                capability.controlConnection?.stateUpdateHandler = nil
+                capability.controlConnection?.cancel()
+                capability.controlConnection = nil
+            }
+            for session in self.serverSessions.values {
+                session.connection.cancel()
+                self.postSessionDisconnected(session.identifier)
+            }
+            self.serverSessions.removeAll()
         }
     }
 
@@ -109,32 +177,32 @@ public final class HorosDirectTransferService: NSObject {
 
         guard uniqueFiles.count <= Self.maximumFiles else { return false }
 
-        var entries: [(url: URL, nameData: Data, size: UInt64)] = []
-        entries.reserveCapacity(uniqueFiles.count)
-        var totalBytes: UInt64 = 0
-
         do {
-            for path in uniqueFiles {
-                let url = URL(fileURLWithPath: path)
-                let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-                guard values.isRegularFile == true, let fileSize = values.fileSize, fileSize > 0 else {
-                    throw DirectTransferError.invalidFile(path)
-                }
-                let nameData = url.lastPathComponent.data(using: .utf8) ?? Data()
-                guard !nameData.isEmpty, nameData.count <= Self.maximumFilenameBytes else {
-                    throw DirectTransferError.invalidFile(path)
-                }
-                let size = UInt64(fileSize)
-                guard size <= Self.maximumFileBytes else { throw DirectTransferError.invalidFile(path) }
-                let (newTotal, overflow) = totalBytes.addingReportingOverflow(size)
-                guard !overflow else { throw DirectTransferError.invalidFile(path) }
-                entries.append((url, nameData, size))
-                totalBytes = newTotal
-            }
+            let entries = try prepareEntries(for: uniqueFiles)
+            let totalBytes = try totalSize(of: entries)
+
+            return sendLegacyBatch(
+                entries: entries,
+                totalBytes: totalBytes,
+                host: host,
+                port: port,
+                token: token,
+                activityThread: activityThread
+            )
         } catch {
             NSLog("Horos direct transfer could not prepare files: %@", error.localizedDescription)
             return false
         }
+    }
+
+    private func sendLegacyBatch(
+        entries: [HorosDirectFileEntry],
+        totalBytes: UInt64,
+        host: String,
+        port: Int,
+        token: String,
+        activityThread: Thread?
+    ) -> Bool {
 
         let connection = NWConnection(
             host: NWEndpoint.Host(host),
@@ -160,40 +228,13 @@ public final class HorosDirectTransferService: NSObject {
 
             var sentBytes: UInt64 = 0
 
-            for (index, entry) in entries.enumerated() {
-                if activityThread?.isCancelled == true { throw DirectTransferError.cancelled }
-
-                var fileHeader = Data()
-                fileHeader.appendNetwork(UInt32(entry.nameData.count))
-                fileHeader.appendNetwork(entry.size)
-                fileHeader.append(entry.nameData)
-                try sendData(fileHeader, over: connection, thread: activityThread)
-
-                let handle = try FileHandle(forReadingFrom: entry.url)
-                do {
-                    var remaining = entry.size
-                    activityThread?.setStatus(String(
-                        format: NSLocalizedString("Sending file %d of %d...", comment: ""),
-                        index + 1,
-                        entries.count
-                    ))
-                    while remaining > 0 {
-                        if activityThread?.isCancelled == true { throw DirectTransferError.cancelled }
-                        let requested = Int(min(UInt64(Self.chunkSize), remaining))
-                        let data = try handle.read(upToCount: requested) ?? Data()
-                        let readCount = data.count
-                        guard readCount > 0 else { throw DirectTransferError.truncatedFile(entry.url.path) }
-                        try sendData(data, over: connection, thread: activityThread)
-                        remaining -= UInt64(readCount)
-                        sentBytes += UInt64(readCount)
-                        activityThread?.setProgress(totalBytes > 0 ? CGFloat(sentBytes) / CGFloat(totalBytes) : 1)
-                    }
-                } catch {
-                    try? handle.close()
-                    throw error
-                }
-                try handle.close()
-            }
+            try sendFileContents(
+                entries,
+                totalBytes: totalBytes,
+                sentBytes: &sentBytes,
+                over: connection,
+                activityThread: activityThread
+            )
 
             let acknowledgement = try receiveExactly(4, from: connection, timeout: 30, thread: activityThread)
             guard acknowledgement.networkUInt32(at: 0) == 0 else {
@@ -225,22 +266,806 @@ public final class HorosDirectTransferService: NSObject {
     private func accept(_ connection: NWConnection) {
         connection.start(queue: Self.ioQueue)
         Self.ioQueue.async { [weak self] in
-            self?.receiveBatch(over: connection)
+            self?.receiveConnection(over: connection)
         }
     }
 
-    private func receiveBatch(over connection: NWConnection) {
-        let fileManager = FileManager.default
-        var stagingDirectory: URL?
-
+    private func receiveConnection(over connection: NWConnection) {
         do {
             try waitUntilReady(connection, timeout: 8, thread: nil)
-            let header = try receiveExactly(Self.magic.count + 20, from: connection, timeout: 30, thread: nil)
-            guard header.prefix(Self.magic.count) == Self.magic else { throw DirectTransferError.invalidProtocol }
-            let version = header.networkUInt32(at: Self.magic.count)
-            let fileCount = Int(header.networkUInt32(at: Self.magic.count + 4))
-            let declaredTotal = header.networkUInt64(at: Self.magic.count + 8)
-            let tokenLength = Int(header.networkUInt32(at: Self.magic.count + 16))
+            let magic = try receiveExactly(Self.magic.count, from: connection, timeout: 30, thread: nil)
+            if magic == Self.magic {
+                receiveLegacyBatch(over: connection)
+            } else if magic == Self.sessionMagic {
+                receiveSessionRequest(over: connection)
+            } else {
+                throw DirectTransferError.invalidProtocol
+            }
+        } catch {
+            connection.cancel()
+            NSLog("Horos direct transfer rejected a connection: %@", error.localizedDescription)
+        }
+    }
+
+    // A C-FIND response from another Horos advertises this endpoint. Keep the
+    // control connection outbound from the querying Mac so changing client IPs
+    // and NAT do not prevent a later drag-and-drop transfer back to it.
+    @objc(registerQueryCapabilityForHost:dicomPort:calledAET:version:port:token:)
+    public func registerQueryCapability(
+        host: String,
+        dicomPort: Int,
+        calledAET: String,
+        version: Int,
+        port: Int,
+        token: String
+    ) {
+        guard version >= Int(Self.sessionProtocolVersion),
+              !host.isEmpty,
+              dicomPort > 0,
+              port > 0,
+              port <= Int(UInt16.max),
+              !token.isEmpty else { return }
+
+        stateQueue.async { [weak self] in
+            guard let self else { return }
+            let key = self.capabilityKey(host: host, dicomPort: dicomPort, calledAET: calledAET)
+            let capability: HorosDirectRemoteCapability
+            if let existing = self.remoteCapabilities[key] {
+                existing.directPort = port
+                existing.token = token
+                capability = existing
+            } else {
+                capability = HorosDirectRemoteCapability(
+                    host: host,
+                    directPort: port,
+                    token: token
+                )
+                self.remoteCapabilities[key] = capability
+            }
+            self.connectControlSessionIfNeeded(capability, key: key)
+        }
+    }
+
+    @objc(retrieveQueryItems:fromHost:dicomPort:calledAET:activityThread:)
+    public func retrieveQueryItems(
+        _ items: [[String: String]],
+        fromHost host: String,
+        dicomPort: Int,
+        calledAET: String,
+        activityThread: Thread?
+    ) -> Bool {
+        guard !items.isEmpty,
+              items.allSatisfy({ item in
+                  let level = item["level"] ?? ""
+                  return (level == "STUDY" || level == "SERIES") && !(item["studyUID"] ?? "").isEmpty
+              }) else { return false }
+
+        let key = capabilityKey(host: host, dicomPort: dicomPort, calledAET: calledAET)
+        guard let endpoint = stateQueue.sync(execute: { () -> (host: String, port: Int, token: String)? in
+            guard let capability = remoteCapabilities[key] else { return nil }
+            return (capability.host, capability.directPort, capability.token)
+        }) else { return false }
+
+        let connection = makeConnection(host: endpoint.host, port: endpoint.port)
+        connection.start(queue: Self.ioQueue)
+        let started = CFAbsoluteTimeGetCurrent()
+        do {
+            activityThread?.setStatus(NSLocalizedString("Connecting directly to Horos...", comment: ""))
+            try waitUntilReady(connection, timeout: 8, thread: activityThread)
+            try sendSessionHeader(operation: .pullQuery, token: endpoint.token, over: connection, thread: activityThread)
+            let requestData = try JSONSerialization.data(withJSONObject: items)
+            try sendLengthPrefixed(requestData, over: connection, thread: activityThread)
+            let result = try receivePulledBatch(over: connection, activityThread: activityThread)
+            connection.cancel()
+
+            activityThread?.setProgress(1)
+            activityThread?.setStatus(NSLocalizedString("Transfer complete", comment: ""))
+            let elapsed = CFAbsoluteTimeGetCurrent() - started
+            NSLog(String(
+                format: "Horos direct query retrieve completed: %d files, %.1f MiB in %.2f s (%.1f MiB/s)",
+                result.fileCount,
+                Double(result.bytes) / (1_024 * 1_024),
+                elapsed,
+                elapsed > 0 ? Double(result.bytes) / (1_024 * 1_024) / elapsed : 0
+            ))
+            return true
+        } catch {
+            connection.cancel()
+            NSLog("Horos direct query retrieve failed; using DICOM fallback: %@", error.localizedDescription)
+            return false
+        }
+    }
+
+    @objc(sendFiles:toSession:activityThread:)
+    public func send(files: [String], toSession sessionID: String, activityThread: Thread?) -> Bool {
+        let uniqueFiles = NSOrderedSet(array: files).array.compactMap { $0 as? String }
+        guard let session = stateQueue.sync(execute: { serverSessions[sessionID] }) else { return false }
+
+        do {
+            let entries = try prepareEntries(for: uniqueFiles)
+            let totalBytes = try totalSize(of: entries)
+            activityThread?.setStatus(String(
+                format: NSLocalizedString("Sending %ld files to %@...", comment: ""),
+                uniqueFiles.count,
+                session.name
+            ))
+            try session.sendQueue.sync {
+                try sendControlCommand(.batchAvailable, value: "", over: session.connection)
+                try sendPulledBatch(
+                    entries: entries,
+                    totalBytes: totalBytes,
+                    over: session.connection,
+                    activityThread: activityThread
+                )
+            }
+            activityThread?.setStatus(NSLocalizedString("Transfer complete", comment: ""))
+            return true
+        } catch {
+            session.connection.cancel()
+            removeServerSession(sessionID, connection: session.connection)
+            NSLog("Horos direct checked-in transfer failed: %@", error.localizedDescription)
+            return false
+        }
+    }
+
+    private func receiveSessionRequest(over connection: NWConnection) {
+        do {
+            let header = try receiveExactly(12, from: connection, timeout: 30, thread: nil)
+            guard header.networkUInt32(at: 0) == Self.sessionProtocolVersion,
+                  let operation = HorosDirectSessionOperation(rawValue: header.networkUInt32(at: 4)) else {
+                throw DirectTransferError.invalidProtocol
+            }
+            let tokenLength = Int(header.networkUInt32(at: 8))
+            guard tokenLength > 0, tokenLength <= 256 else { throw DirectTransferError.invalidProtocol }
+            let receivedToken = try receiveExactly(tokenLength, from: connection, timeout: 10, thread: nil)
+            guard receivedToken == Data(token.utf8) else { throw DirectTransferError.unauthorized }
+
+            switch operation {
+            case .checkIn:
+                receiveCheckIn(over: connection)
+            case .pullQuery:
+                let requestData = try receiveLengthPrefixed(from: connection, maximumLength: 4 * 1_024 * 1_024)
+                guard let items = try JSONSerialization.jsonObject(with: requestData) as? [[String: String]] else {
+                    throw DirectTransferError.invalidProtocol
+                }
+                let files = try filesForQueryItems(items)
+                try sendPulledBatch(files: files, over: connection, activityThread: nil)
+                connection.cancel()
+            }
+        } catch {
+            connection.cancel()
+            NSLog("Horos direct session request failed: %@", error.localizedDescription)
+        }
+    }
+
+    private func capabilityKey(host: String, dicomPort: Int, calledAET: String) -> String {
+        "\(host.lowercased())|\(dicomPort)|\(calledAET.uppercased())"
+    }
+
+    private func makeConnection(host: String, port: Int) -> NWConnection {
+        NWConnection(
+            host: NWEndpoint.Host(host),
+            port: NWEndpoint.Port(rawValue: UInt16(port))!,
+            using: Self.connectionParameters()
+        )
+    }
+
+    private func connectControlSessionIfNeeded(_ capability: HorosDirectRemoteCapability, key: String) {
+        dispatchPrecondition(condition: .onQueue(stateQueue))
+        guard shouldRun,
+              !capability.isConnecting,
+              capability.controlConnection == nil else { return }
+
+        capability.isConnecting = true
+        let connection = makeConnection(host: capability.host, port: capability.directPort)
+        let connectionToken = capability.token
+        capability.controlConnection = connection
+        connection.stateUpdateHandler = { [weak self, weak connection] state in
+            guard let self, let connection else { return }
+            switch state {
+            case .failed(let error):
+                NSLog("Horos direct check-in to %@ failed: %@", capability.host, error.localizedDescription)
+                self.controlConnectionEnded(connection, capability: capability, key: key)
+            case .cancelled:
+                self.controlConnectionEnded(connection, capability: capability, key: key)
+            default:
+                break
+            }
+        }
+        connection.start(queue: Self.ioQueue)
+        Self.ioQueue.async { [weak self, weak connection] in
+            guard let self, let connection else { return }
+            do {
+                try self.waitUntilReady(connection, timeout: 8, thread: nil)
+                try self.sendSessionHeader(operation: .checkIn, token: connectionToken, over: connection, thread: nil)
+                let defaults = UserDefaults.standard
+                let configuredName = defaults.string(forKey: "bonjourServiceName")?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let displayName = (configuredName?.isEmpty == false ? configuredName : nil)
+                    ?? ProcessInfo.processInfo.hostName.components(separatedBy: ".").first
+                    ?? "Horos"
+                let metadata: [String: Any] = [
+                    "name": displayName,
+                    "aeTitle": defaults.string(forKey: "AETITLE") ?? "HOROS",
+                    "dicomPort": defaults.integer(forKey: "AEPORT"),
+                ]
+                let metadataData = try JSONSerialization.data(withJSONObject: metadata)
+                try self.sendLengthPrefixed(metadataData, over: connection, thread: nil)
+                let status = try self.receiveExactly(4, from: connection, timeout: 15, thread: nil).networkUInt32(at: 0)
+                guard status == 0 else { throw DirectTransferError.receiverRejected }
+                let sessionID = try self.receiveString(from: connection, maximumLength: 256)
+
+                self.stateQueue.async {
+                    guard capability.controlConnection === connection else { return }
+                    capability.isConnecting = false
+                }
+                NSLog("Horos direct check-in connected to %@ as session %@", capability.host, sessionID)
+                self.runControlLoop(connection, capability: capability, key: key)
+            } catch {
+                NSLog("Horos direct check-in to %@ failed: %@", capability.host, error.localizedDescription)
+                connection.cancel()
+                self.controlConnectionEnded(connection, capability: capability, key: key)
+            }
+        }
+    }
+
+    private func controlConnectionEnded(
+        _ connection: NWConnection,
+        capability: HorosDirectRemoteCapability,
+        key: String
+    ) {
+        stateQueue.async { [weak self, weak capability] in
+            guard let self, let capability, capability.controlConnection === connection else { return }
+            connection.stateUpdateHandler = nil
+            capability.controlConnection = nil
+            capability.isConnecting = false
+            guard self.shouldRun else { return }
+            self.stateQueue.asyncAfter(deadline: .now() + 3) { [weak self, weak capability] in
+                guard let self, let capability,
+                      self.remoteCapabilities[key] === capability else { return }
+                self.connectControlSessionIfNeeded(capability, key: key)
+            }
+        }
+    }
+
+    private func runControlLoop(
+        _ connection: NWConnection,
+        capability: HorosDirectRemoteCapability,
+        key: String
+    ) {
+        do {
+            while connection.state == .ready {
+                let header = try receiveExactly(8, from: connection, timeout: 45, thread: nil)
+                guard let command = HorosDirectControlCommand(rawValue: header.networkUInt32(at: 0)) else {
+                    throw DirectTransferError.invalidProtocol
+                }
+                let valueLength = Int(header.networkUInt32(at: 4))
+                guard valueLength >= 0, valueLength <= 1_024 else { throw DirectTransferError.invalidProtocol }
+                let valueData = valueLength > 0
+                    ? try receiveExactly(valueLength, from: connection, timeout: 10, thread: nil)
+                    : Data()
+                switch command {
+                case .ping:
+                    var acknowledgement = Data()
+                    acknowledgement.appendNetwork(UInt32(0))
+                    try sendData(acknowledgement, over: connection, timeout: 10, thread: nil)
+                case .batchAvailable:
+                    guard valueData.isEmpty else {
+                        throw DirectTransferError.invalidProtocol
+                    }
+                    let result = try receivePulledBatch(over: connection, activityThread: nil)
+                    NSLog(
+                        "Horos direct checked-in transfer received: %d files, %.1f MiB",
+                        result.fileCount,
+                        Double(result.bytes) / (1_024 * 1_024)
+                    )
+                }
+            }
+        } catch {
+            connection.cancel()
+        }
+        controlConnectionEnded(connection, capability: capability, key: key)
+    }
+
+    private func receiveCheckIn(over connection: NWConnection) {
+        var registeredSession: HorosDirectServerSession?
+        do {
+            let metadataData = try receiveLengthPrefixed(from: connection, maximumLength: 64 * 1_024)
+            guard let metadata = try JSONSerialization.jsonObject(with: metadataData) as? [String: Any],
+                  let name = metadata["name"] as? String,
+                  !name.isEmpty,
+                  let aeTitle = metadata["aeTitle"] as? String else {
+                throw DirectTransferError.invalidProtocol
+            }
+            let dicomPort = metadata["dicomPort"] as? Int ?? 0
+            let sessionID = UUID().uuidString
+            let address = remoteAddress(for: connection)
+            let session = HorosDirectServerSession(
+                identifier: sessionID,
+                connection: connection,
+                name: name,
+                aeTitle: aeTitle,
+                dicomPort: dicomPort,
+                address: address
+            )
+
+            stateQueue.sync {
+                let replaced = serverSessions.values.filter {
+                    $0.name.caseInsensitiveCompare(name) == .orderedSame &&
+                    $0.aeTitle.caseInsensitiveCompare(aeTitle) == .orderedSame
+                }
+                for oldSession in replaced {
+                    serverSessions.removeValue(forKey: oldSession.identifier)
+                    oldSession.connection.cancel()
+                    postSessionDisconnected(oldSession.identifier)
+                }
+                serverSessions[sessionID] = session
+            }
+            registeredSession = session
+
+            var acknowledgement = Data()
+            acknowledgement.appendNetwork(UInt32(0))
+            try sendData(acknowledgement, over: connection, thread: nil)
+            try sendString(sessionID, over: connection, thread: nil)
+            connection.stateUpdateHandler = { [weak self, weak connection] state in
+                guard let self, let connection else { return }
+                if case .failed = state {
+                    self.removeServerSession(sessionID, connection: connection)
+                } else if case .cancelled = state {
+                    self.removeServerSession(sessionID, connection: connection)
+                }
+            }
+            postSessionConnected(session)
+            schedulePing(for: sessionID)
+            NSLog("Horos direct client checked in: %@ (%@) from %@", name, aeTitle, address)
+        } catch {
+            connection.cancel()
+            if let registeredSession {
+                removeServerSession(registeredSession.identifier, connection: connection)
+            }
+            NSLog("Horos direct check-in rejected: %@", error.localizedDescription)
+        }
+    }
+
+    private func remoteAddress(for connection: NWConnection) -> String {
+        if case .hostPort(let host, _) = connection.endpoint {
+            return String(describing: host)
+        }
+        return "Horos"
+    }
+
+    private func postSessionConnected(_ session: HorosDirectServerSession) {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: Self.sessionConnectedNotification,
+                object: self,
+                userInfo: [
+                    "sessionID": session.identifier,
+                    "name": session.name,
+                    "aeTitle": session.aeTitle,
+                    "dicomPort": session.dicomPort,
+                    "address": session.address,
+                ]
+            )
+        }
+    }
+
+    private func postSessionDisconnected(_ sessionID: String) {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: Self.sessionDisconnectedNotification,
+                object: self,
+                userInfo: ["sessionID": sessionID]
+            )
+        }
+    }
+
+    private func removeServerSession(_ sessionID: String, connection: NWConnection) {
+        stateQueue.async { [weak self] in
+            guard let self,
+                  let session = self.serverSessions[sessionID],
+                  session.connection === connection else { return }
+            self.serverSessions.removeValue(forKey: sessionID)
+            self.postSessionDisconnected(sessionID)
+            NSLog("Horos direct client disconnected: %@", session.name)
+        }
+    }
+
+    private func schedulePing(for sessionID: String) {
+        stateQueue.asyncAfter(deadline: .now() + 15) { [weak self] in
+            guard let self, let session = self.serverSessions[sessionID] else { return }
+            Self.ioQueue.async { [weak self] in
+                guard let self else { return }
+                do {
+                    try session.sendQueue.sync {
+                        try self.sendControlCommand(.ping, value: "", over: session.connection)
+                        let acknowledgement = try self.receiveExactly(4, from: session.connection, timeout: 10, thread: nil)
+                        guard acknowledgement.networkUInt32(at: 0) == 0 else {
+                            throw DirectTransferError.receiverRejected
+                        }
+                    }
+                    self.schedulePing(for: sessionID)
+                } catch {
+                    session.connection.cancel()
+                    self.removeServerSession(sessionID, connection: session.connection)
+                }
+            }
+        }
+    }
+
+    private func sendControlCommand(
+        _ command: HorosDirectControlCommand,
+        value: String,
+        over connection: NWConnection
+    ) throws {
+        let valueData = Data(value.utf8)
+        var message = Data()
+        message.appendNetwork(command.rawValue)
+        message.appendNetwork(UInt32(valueData.count))
+        message.append(valueData)
+        try sendData(message, over: connection, timeout: 15, thread: nil)
+    }
+
+    @objc(queryCapabilityForCallingAET:)
+    public func queryCapability(forCallingAET callingAET: String?) -> [String: Any] {
+        guard isRunning else { return [:] }
+        return [
+            "version": Int(Self.sessionProtocolVersion),
+            "port": port,
+            "token": token,
+        ]
+    }
+
+    @objc public var activeSessionDictionaries: [[String: Any]] {
+        stateQueue.sync {
+            serverSessions.values.map { session in
+                [
+                    "sessionID": session.identifier,
+                    "name": session.name,
+                    "aeTitle": session.aeTitle,
+                    "dicomPort": session.dicomPort,
+                    "address": session.address,
+                ]
+            }
+        }
+    }
+
+    private func sendSessionHeader(
+        operation: HorosDirectSessionOperation,
+        token: String,
+        over connection: NWConnection,
+        thread: Thread?
+    ) throws {
+        let tokenData = Data(token.utf8)
+        guard !tokenData.isEmpty, tokenData.count <= 256 else { throw DirectTransferError.unauthorized }
+        var header = Data()
+        header.append(Self.sessionMagic)
+        header.appendNetwork(Self.sessionProtocolVersion)
+        header.appendNetwork(operation.rawValue)
+        header.appendNetwork(UInt32(tokenData.count))
+        header.append(tokenData)
+        try sendData(header, over: connection, thread: thread)
+    }
+
+    private func sendLengthPrefixed(_ data: Data, over connection: NWConnection, thread: Thread?) throws {
+        guard data.count <= Int(UInt32.max) else { throw DirectTransferError.invalidProtocol }
+        var packet = Data()
+        packet.appendNetwork(UInt32(data.count))
+        packet.append(data)
+        try sendData(packet, over: connection, thread: thread)
+    }
+
+    private func receiveLengthPrefixed(from connection: NWConnection, maximumLength: Int) throws -> Data {
+        let lengthData = try receiveExactly(4, from: connection, timeout: 30, thread: nil)
+        let length = Int(lengthData.networkUInt32(at: 0))
+        guard length >= 0, length <= maximumLength else { throw DirectTransferError.invalidProtocol }
+        return length > 0 ? try receiveExactly(length, from: connection, timeout: 30, thread: nil) : Data()
+    }
+
+    private func sendString(_ string: String, over connection: NWConnection, thread: Thread?) throws {
+        try sendLengthPrefixed(Data(string.utf8), over: connection, thread: thread)
+    }
+
+    private func receiveString(from connection: NWConnection, maximumLength: Int) throws -> String {
+        let data = try receiveLengthPrefixed(from: connection, maximumLength: maximumLength)
+        guard let string = String(data: data, encoding: .utf8) else { throw DirectTransferError.invalidProtocol }
+        return string
+    }
+
+    private func prepareEntries(for files: [String]) throws -> [HorosDirectFileEntry] {
+        guard !files.isEmpty, files.count <= Self.maximumFiles else { throw DirectTransferError.invalidProtocol }
+        var entries: [HorosDirectFileEntry] = []
+        entries.reserveCapacity(files.count)
+        for path in files {
+            let url = URL(fileURLWithPath: path)
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard values.isRegularFile == true, let fileSize = values.fileSize, fileSize > 0 else {
+                throw DirectTransferError.invalidFile(path)
+            }
+            let nameData = url.lastPathComponent.data(using: .utf8) ?? Data()
+            guard !nameData.isEmpty, nameData.count <= Self.maximumFilenameBytes else {
+                throw DirectTransferError.invalidFile(path)
+            }
+            let size = UInt64(fileSize)
+            guard size <= Self.maximumFileBytes else { throw DirectTransferError.invalidFile(path) }
+            entries.append(HorosDirectFileEntry(url: url, nameData: nameData, size: size))
+        }
+        return entries
+    }
+
+    private func totalSize(of entries: [HorosDirectFileEntry]) throws -> UInt64 {
+        var result: UInt64 = 0
+        for entry in entries {
+            let (newResult, overflow) = result.addingReportingOverflow(entry.size)
+            guard !overflow else { throw DirectTransferError.invalidProtocol }
+            result = newResult
+        }
+        return result
+    }
+
+    private func sendFileContents(
+        _ entries: [HorosDirectFileEntry],
+        totalBytes: UInt64,
+        sentBytes: inout UInt64,
+        over connection: NWConnection,
+        activityThread: Thread?
+    ) throws {
+        for (index, entry) in entries.enumerated() {
+            if activityThread?.isCancelled == true { throw DirectTransferError.cancelled }
+            var fileHeader = Data()
+            fileHeader.appendNetwork(UInt32(entry.nameData.count))
+            fileHeader.appendNetwork(entry.size)
+            fileHeader.append(entry.nameData)
+            try sendData(fileHeader, over: connection, thread: activityThread)
+
+            let handle = try FileHandle(forReadingFrom: entry.url)
+            defer { try? handle.close() }
+            var remaining = entry.size
+            activityThread?.setStatus(String(
+                format: NSLocalizedString("Sending file %d of %d...", comment: ""),
+                index + 1,
+                entries.count
+            ))
+            while remaining > 0 {
+                if activityThread?.isCancelled == true { throw DirectTransferError.cancelled }
+                let requested = Int(min(UInt64(Self.chunkSize), remaining))
+                let data = try handle.read(upToCount: requested) ?? Data()
+                guard !data.isEmpty else { throw DirectTransferError.truncatedFile(entry.url.path) }
+                try sendData(data, over: connection, thread: activityThread)
+                remaining -= UInt64(data.count)
+                sentBytes += UInt64(data.count)
+                activityThread?.setProgress(totalBytes > 0 ? CGFloat(sentBytes) / CGFloat(totalBytes) : 1)
+            }
+        }
+    }
+
+    private func sendPulledBatch(files: [String], over connection: NWConnection, activityThread: Thread?) throws {
+        let entries: [HorosDirectFileEntry]
+        let totalBytes: UInt64
+        do {
+            entries = try prepareEntries(for: NSOrderedSet(array: files).array.compactMap { $0 as? String })
+            totalBytes = try totalSize(of: entries)
+        } catch {
+            var response = Data()
+            response.appendNetwork(UInt32(1))
+            response.appendNetwork(UInt32(0))
+            response.appendNetwork(UInt64(0))
+            try? sendData(response, over: connection, thread: nil)
+            throw error
+        }
+
+        try sendPulledBatch(
+            entries: entries,
+            totalBytes: totalBytes,
+            over: connection,
+            activityThread: activityThread
+        )
+    }
+
+    private func sendPulledBatch(
+        entries: [HorosDirectFileEntry],
+        totalBytes: UInt64,
+        over connection: NWConnection,
+        activityThread: Thread?
+    ) throws {
+        var response = Data()
+        response.appendNetwork(UInt32(0))
+        response.appendNetwork(UInt32(entries.count))
+        response.appendNetwork(totalBytes)
+        try sendData(response, over: connection, thread: activityThread)
+        var sentBytes: UInt64 = 0
+        try sendFileContents(
+            entries,
+            totalBytes: totalBytes,
+            sentBytes: &sentBytes,
+            over: connection,
+            activityThread: activityThread
+        )
+        let acknowledgement = try receiveExactly(4, from: connection, timeout: 60, thread: activityThread)
+        guard acknowledgement.networkUInt32(at: 0) == 0 else { throw DirectTransferError.receiverRejected }
+        activityThread?.setProgress(1)
+    }
+
+    private func receivePulledBatch(
+        over connection: NWConnection,
+        activityThread: Thread?
+    ) throws -> (fileCount: Int, bytes: UInt64) {
+        let response = try receiveExactly(16, from: connection, timeout: 60, thread: activityThread)
+        guard response.networkUInt32(at: 0) == 0 else { throw DirectTransferError.batchUnavailable }
+        let fileCount = Int(response.networkUInt32(at: 4))
+        let totalBytes = response.networkUInt64(at: 8)
+        guard fileCount > 0, fileCount <= Self.maximumFiles, totalBytes > 0 else {
+            throw DirectTransferError.batchUnavailable
+        }
+        let received = try receiveIncomingFiles(
+            fileCount: fileCount,
+            declaredTotal: totalBytes,
+            over: connection,
+            activityThread: activityThread
+        )
+        var acknowledgement = Data()
+        acknowledgement.appendNetwork(UInt32(0))
+        try sendData(acknowledgement, over: connection, thread: activityThread)
+        return (fileCount, received)
+    }
+
+    private func receiveIncomingFiles(
+        fileCount: Int,
+        declaredTotal: UInt64,
+        over connection: NWConnection,
+        activityThread: Thread?
+    ) throws -> UInt64 {
+        guard let database = DicomDatabase.activeLocal() else { throw DirectTransferError.databaseUnavailable }
+        let fileManager = FileManager.default
+        let incomingURL = URL(fileURLWithPath: database.incomingDirPath(), isDirectory: true)
+        let stagingRoot = URL(fileURLWithPath: database.tempDirPath(), isDirectory: true)
+            .appendingPathComponent("Horos Direct Transfer", isDirectory: true)
+        try fileManager.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
+        removeAbandonedBatches(in: stagingRoot, fileManager: fileManager)
+        let batchURL = stagingRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: batchURL, withIntermediateDirectories: false)
+        var cleanupURL: URL? = batchURL
+        defer {
+            if let cleanupURL { try? fileManager.removeItem(at: cleanupURL) }
+        }
+
+        var receivedTotal: UInt64 = 0
+        for index in 0..<fileCount {
+            let fileHeader = try receiveExactly(12, from: connection, timeout: 30, thread: activityThread)
+            let nameLength = Int(fileHeader.networkUInt32(at: 0))
+            let fileSize = fileHeader.networkUInt64(at: 4)
+            guard nameLength > 0,
+                  nameLength <= Self.maximumFilenameBytes,
+                  fileSize > 0,
+                  fileSize <= Self.maximumFileBytes else { throw DirectTransferError.invalidProtocol }
+            let nameData = try receiveExactly(nameLength, from: connection, timeout: 30, thread: activityThread)
+            guard let proposedName = String(data: nameData, encoding: .utf8) else {
+                throw DirectTransferError.invalidProtocol
+            }
+            let safeName = URL(fileURLWithPath: proposedName).lastPathComponent
+            let destination = batchURL.appendingPathComponent(String(format: "%08d-%@", index, safeName))
+            guard fileManager.createFile(atPath: destination.path, contents: nil) else {
+                throw DirectTransferError.cannotCreateFile(destination.path)
+            }
+            let output = try FileHandle(forWritingTo: destination)
+            do {
+                var remaining = fileSize
+                activityThread?.setStatus(String(
+                    format: NSLocalizedString("Receiving file %d of %d...", comment: ""),
+                    index + 1,
+                    fileCount
+                ))
+                while remaining > 0 {
+                    let length = Int(min(UInt64(Self.chunkSize), remaining))
+                    let data = try receiveExactly(length, from: connection, timeout: 60, thread: activityThread)
+                    try output.write(contentsOf: data)
+                    remaining -= UInt64(data.count)
+                    receivedTotal += UInt64(data.count)
+                    activityThread?.setProgress(CGFloat(receivedTotal) / CGFloat(declaredTotal))
+                }
+            } catch {
+                try? output.close()
+                throw error
+            }
+            try output.close()
+        }
+
+        guard receivedTotal == declaredTotal else { throw DirectTransferError.invalidProtocol }
+        try fileManager.createDirectory(at: incomingURL, withIntermediateDirectories: true)
+        let completedBatch = incomingURL.appendingPathComponent(".HorosDirect-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.moveItem(at: batchURL, to: completedBatch)
+        cleanupURL = completedBatch
+        let visibleBatch = incomingURL.appendingPathComponent("HorosDirect-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.moveItem(at: completedBatch, to: visibleBatch)
+        cleanupURL = nil
+        database.initiateImportFilesFromIncomingDirUnlessAlreadyImporting()
+        return receivedTotal
+    }
+
+    private func filesForQueryItems(_ items: [[String: String]]) throws -> [String] {
+        guard let database = DicomDatabase.activeLocal() else {
+            throw DirectTransferError.databaseUnavailable
+        }
+        let worker = database.independentDatabase() as? DicomDatabase
+        guard let worker,
+              let context = worker.managedObjectContext else {
+            throw DirectTransferError.databaseUnavailable
+        }
+
+        var paths: [String] = []
+        var fetchError: Error?
+        context.performAndWait {
+            do {
+                for item in items {
+                    let level = item["level"] ?? ""
+                    let studyUID = item["studyUID"] ?? ""
+                    var itemPaths: [String] = []
+                    if level == "STUDY" {
+                        let request = NSFetchRequest<NSManagedObject>(entityName: "Study")
+                        request.predicate = NSPredicate(format: "studyInstanceUID == %@", studyUID)
+                        request.fetchLimit = 1
+                        if let study = try context.fetch(request).first {
+                            itemPaths = pathsForImages(in: study.value(forKey: "series"))
+                        }
+                    } else if level == "SERIES", let seriesUID = item["seriesUID"], !seriesUID.isEmpty {
+                        let request = NSFetchRequest<NSManagedObject>(entityName: "Series")
+                        request.predicate = NSPredicate(
+                            format: "study.studyInstanceUID == %@ AND (seriesDICOMUID == %@ OR seriesInstanceUID == %@)",
+                            studyUID,
+                            seriesUID,
+                            seriesUID
+                        )
+                        request.fetchLimit = 1
+                        if let series = try context.fetch(request).first {
+                            itemPaths = pathsForImages(in: series.value(forKey: "images"))
+                        }
+                    }
+
+                    let uniqueItemPaths = NSOrderedSet(array: itemPaths).array.compactMap { $0 as? String }
+                    guard !uniqueItemPaths.isEmpty,
+                          uniqueItemPaths.allSatisfy({ FileManager.default.fileExists(atPath: $0) }) else {
+                        throw DirectTransferError.batchUnavailable
+                    }
+                    paths.append(contentsOf: uniqueItemPaths)
+                }
+            } catch {
+                fetchError = error
+            }
+        }
+        if let fetchError { throw fetchError }
+        let uniquePaths = NSOrderedSet(array: paths).array.compactMap { $0 as? String }
+        guard !uniquePaths.isEmpty else { throw DirectTransferError.batchUnavailable }
+        return uniquePaths
+    }
+
+    private func pathsForImages(in relationship: Any?) -> [String] {
+        let objects: [Any]
+        if let set = relationship as? Set<NSManagedObject> {
+            objects = Array(set)
+        } else if let set = relationship as? NSSet {
+            objects = set.allObjects
+        } else {
+            return []
+        }
+
+        var paths: [String] = []
+        for object in objects {
+            guard let managedObject = object as? NSManagedObject else { continue }
+            if managedObject.entity.name == "Series" {
+                paths.append(contentsOf: pathsForImages(in: managedObject.value(forKey: "images")))
+            } else if let path = managedObject.value(forKey: "completePath") as? String, !path.isEmpty {
+                paths.append(path)
+            }
+        }
+        return paths
+    }
+
+    private func receiveLegacyBatch(over connection: NWConnection) {
+        do {
+            let header = try receiveExactly(20, from: connection, timeout: 30, thread: nil)
+            let version = header.networkUInt32(at: 0)
+            let fileCount = Int(header.networkUInt32(at: 4))
+            let declaredTotal = header.networkUInt64(at: 8)
+            let tokenLength = Int(header.networkUInt32(at: 16))
             guard version == Self.protocolVersion,
                   fileCount > 0,
                   fileCount <= Self.maximumFiles,
@@ -250,69 +1075,12 @@ public final class HorosDirectTransferService: NSObject {
             }
             let receivedToken = try receiveExactly(tokenLength, from: connection, timeout: 10, thread: nil)
             guard receivedToken == Data(token.utf8) else { throw DirectTransferError.unauthorized }
-
-            guard let database = DicomDatabase.activeLocal() else {
-                throw DirectTransferError.databaseUnavailable
-            }
-            let incomingURL = URL(fileURLWithPath: database.incomingDirPath(), isDirectory: true)
-            let stagingRoot = URL(fileURLWithPath: database.tempDirPath(), isDirectory: true)
-                .appendingPathComponent("Horos Direct Transfer", isDirectory: true)
-            try fileManager.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
-            removeAbandonedBatches(in: stagingRoot, fileManager: fileManager)
-            let batchID = UUID().uuidString
-            let batchURL = stagingRoot.appendingPathComponent(batchID, isDirectory: true)
-            try fileManager.createDirectory(at: batchURL, withIntermediateDirectories: false)
-            stagingDirectory = batchURL
-
-            var receivedTotal: UInt64 = 0
-            for index in 0..<fileCount {
-                let fileHeader = try receiveExactly(12, from: connection, timeout: 30, thread: nil)
-                let nameLength = Int(fileHeader.networkUInt32(at: 0))
-                let fileSize = fileHeader.networkUInt64(at: 4)
-                guard nameLength > 0,
-                      nameLength <= Self.maximumFilenameBytes,
-                      fileSize > 0,
-                      fileSize <= Self.maximumFileBytes else {
-                    throw DirectTransferError.invalidProtocol
-                }
-
-                let nameData = try receiveExactly(nameLength, from: connection, timeout: 30, thread: nil)
-                guard let proposedName = String(data: nameData, encoding: .utf8) else {
-                    throw DirectTransferError.invalidProtocol
-                }
-                let safeName = URL(fileURLWithPath: proposedName).lastPathComponent
-                let destination = batchURL.appendingPathComponent(String(format: "%08d-%@", index, safeName))
-                guard fileManager.createFile(atPath: destination.path, contents: nil) else {
-                    throw DirectTransferError.cannotCreateFile(destination.path)
-                }
-                let output = try FileHandle(forWritingTo: destination)
-                do {
-                    var remaining = fileSize
-                    while remaining > 0 {
-                        let length = Int(min(UInt64(Self.chunkSize), remaining))
-                        let data = try receiveExactly(length, from: connection, timeout: 60, thread: nil)
-                        try output.write(contentsOf: data)
-                        remaining -= UInt64(data.count)
-                        receivedTotal += UInt64(data.count)
-                    }
-                } catch {
-                    try? output.close()
-                    throw error
-                }
-                try output.close()
-            }
-
-            guard receivedTotal == declaredTotal, connection.state == .ready else {
-                throw DirectTransferError.invalidProtocol
-            }
-            try fileManager.createDirectory(at: incomingURL, withIntermediateDirectories: true)
-            let completedBatch = incomingURL.appendingPathComponent(".HorosDirect-\(UUID().uuidString)", isDirectory: true)
-            try fileManager.moveItem(at: batchURL, to: completedBatch)
-            stagingDirectory = completedBatch
-            let visibleBatch = incomingURL.appendingPathComponent("HorosDirect-\(UUID().uuidString)", isDirectory: true)
-            try fileManager.moveItem(at: completedBatch, to: visibleBatch)
-            stagingDirectory = nil
-            database.initiateImportFilesFromIncomingDirUnlessAlreadyImporting()
+            let receivedTotal = try receiveIncomingFiles(
+                fileCount: fileCount,
+                declaredTotal: declaredTotal,
+                over: connection,
+                activityThread: nil
+            )
 
             var acknowledgement = Data()
             acknowledgement.appendNetwork(UInt32(0))
@@ -324,9 +1092,6 @@ public final class HorosDirectTransferService: NSObject {
                 Double(receivedTotal) / (1_024 * 1_024)
             ))
         } catch {
-            if let stagingDirectory {
-                try? fileManager.removeItem(at: stagingDirectory)
-            }
             connection.cancel()
             NSLog("Horos direct transfer receiver rejected a batch: %@", error.localizedDescription)
         }
@@ -435,6 +1200,7 @@ public final class HorosDirectTransferService: NSObject {
 }
 
 private enum DirectTransferError: LocalizedError {
+    case batchUnavailable
     case cancelled
     case cannotCreateFile(String)
     case connectionClosed
@@ -448,6 +1214,7 @@ private enum DirectTransferError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .batchUnavailable: return "The requested study or series is not available for direct transfer"
         case .cancelled: return "Transfer cancelled"
         case .cannotCreateFile(let path): return "Cannot create \(path)"
         case .connectionClosed: return "Connection closed"

@@ -53,5 +53,8 @@
 -(DataNodeIdentifier*)sourceIdentifierForDatabase:(DicomDatabase*)database;
 -(void)selectCurrentDatabaseSource;
 
+-(void)horosDirectSessionConnected:(NSNotification*)notification;
+-(void)horosDirectSessionDisconnected:(NSNotification*)notification;
+
 -(int)findDBPath:(NSString*)path dbFolder:(NSString*)DBFolderLocation __deprecated;
 @end

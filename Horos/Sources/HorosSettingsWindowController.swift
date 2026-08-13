@@ -2001,6 +2001,7 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
 
         scoutPlacementControl.segmentStyle = .rounded
         scoutPlacementControl.trackingMode = .selectOne
+        scoutPlacementControl.role = .valueSelection
         scoutPlacementControl.controlSize = .regular
         scoutPlacementControl.target = self
         scoutPlacementControl.action = #selector(scoutPlacementDidChange(_:))

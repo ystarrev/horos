@@ -283,6 +283,7 @@ private final class HorosDatabaseLocationView: NSView {
         addSubview(stack)
 
         modeControl.selectedSegment = min(max(UserDefaults.standard.integer(forKey: "DEFAULT_DATABASELOCATION"), 0), 1)
+        modeControl.role = .valueSelection
         modeControl.target = self
         modeControl.action = #selector(modeChanged(_:))
         stack.addArrangedSubview(modeControl)
@@ -1200,6 +1201,7 @@ final class NetworkSettingsPaneViewController: HorosSettingsPaneViewController {
         view = root
 
         segmentedControl.selectedSegment = 0
+        segmentedControl.role = .tabs
         segmentedControl.target = self
         segmentedControl.action = #selector(segmentChanged(_:))
         segmentedControl.frame = NSRect(x: 42, y: 18, width: 520, height: 30)

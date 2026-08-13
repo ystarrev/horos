@@ -437,6 +437,7 @@ private final class SmartAlbumEditorWindowController: NSWindowController,
         presetPopUp.widthAnchor.constraint(equalToConstant: 190).isActive = true
 
         modeControl.selectedSegment = 0
+        modeControl.role = .tabs
         modeControl.target = self
         modeControl.action = #selector(modeChanged(_:))
         modeControl.setWidth(110, forSegment: 0)

@@ -985,8 +985,22 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
 
 private final class MetalViewerScoutROIPreviewView: MTKView {
     private var roiRenderer: MetalViewerScoutROIRenderer?
-    private var mouseDownLocation = NSPoint.zero
-    private var mouseDownRotation: (yaw: Float, pitch: Float) = (0, 0)
+    private lazy var rotationGesture: NSPanGestureRecognizer = {
+        let gesture = NSPanGestureRecognizer(
+            target: self,
+            action: #selector(handleRotationGesture(_:))
+        )
+        gesture.buttonMask = 0x1
+        gesture.isCancellableByScrollGesture = true
+        return gesture
+    }()
+    private lazy var selectionGesture: NSClickGestureRecognizer = {
+        NSClickGestureRecognizer(
+            target: self,
+            action: #selector(handleSelectionGesture(_:))
+        )
+    }()
+    private var gestureStartRotation: (yaw: Float, pitch: Float) = (0, 0)
     private var isRotating = false
     var onSelect: (() -> Void)?
 
@@ -1007,6 +1021,8 @@ private final class MetalViewerScoutROIPreviewView: MTKView {
         layer?.masksToBounds = true
         roiRenderer = MetalViewerScoutROIRenderer(view: self)
         delegate = roiRenderer
+        addGestureRecognizer(selectionGesture)
+        addGestureRecognizer(rotationGesture)
     }
 
     @available(*, unavailable)
@@ -1025,30 +1041,36 @@ private final class MetalViewerScoutROIPreviewView: MTKView {
         addCursorRect(bounds, cursor: isRotating ? .closedHand : .openHand)
     }
 
-    override func mouseDown(with event: NSEvent) {
+    @objc
+    private func handleSelectionGesture(_ gesture: NSClickGestureRecognizer) {
+        guard gesture.state == .ended else { return }
         onSelect?()
-        mouseDownLocation = convert(event.locationInWindow, from: nil)
-        mouseDownRotation = roiRenderer?.rotation() ?? (0, 0)
-        isRotating = true
-        window?.invalidateCursorRects(for: self)
-        NSCursor.closedHand.set()
     }
 
-    override func mouseDragged(with event: NSEvent) {
-        guard isRotating else { return }
-        let location = convert(event.locationInWindow, from: nil)
+    @objc
+    private func handleRotationGesture(_ gesture: NSPanGestureRecognizer) {
         let sensitivity: Float = 0.012
-        roiRenderer?.setRotation(
-            yaw: mouseDownRotation.yaw + Float(location.x - mouseDownLocation.x) * sensitivity,
-            pitch: mouseDownRotation.pitch - Float(location.y - mouseDownLocation.y) * sensitivity
-        )
-        needsDisplay = true
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        isRotating = false
-        window?.invalidateCursorRects(for: self)
-        NSCursor.openHand.set()
+        switch gesture.state {
+        case .began:
+            onSelect?()
+            gestureStartRotation = roiRenderer?.rotation() ?? (0, 0)
+            isRotating = true
+            window?.invalidateCursorRects(for: self)
+            NSCursor.closedHand.set()
+        case .changed:
+            let translation = gesture.translation(in: self)
+            roiRenderer?.setRotation(
+                yaw: gestureStartRotation.yaw + Float(translation.x) * sensitivity,
+                pitch: gestureStartRotation.pitch - Float(translation.y) * sensitivity
+            )
+            needsDisplay = true
+        case .ended, .cancelled, .failed:
+            isRotating = false
+            window?.invalidateCursorRects(for: self)
+            NSCursor.openHand.set()
+        default:
+            break
+        }
     }
 }
 

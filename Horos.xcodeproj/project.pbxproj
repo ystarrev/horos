@@ -1004,6 +1004,7 @@
 		F4A100000001000000000015 /* Horos/Sources/HorosSettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000015 /* Horos/Sources/HorosSettingsWindowController.swift */; };
 		F4A100000001000000000020 /* Horos/Sources/HorosDatabaseNetworkSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000020 /* Horos/Sources/HorosDatabaseNetworkSettings.swift */; };
 		F4AC70010001000000000001 /* HorosActivityTaskCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4AC70010002000000000001 /* HorosActivityTaskCoordinator.swift */; };
+		F4D1EC700001000000000001 /* HorosDirectTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D1EC700002000000000001 /* HorosDirectTransfer.swift */; };
 		F4D1C0A10001000000000002 /* StructuredReportSupport.m in Sources */ = {isa = PBXBuildFile; fileRef = F4D1C0A10002000000000002 /* StructuredReportSupport.m */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
 		F4A100000001000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm */; };
 		F4A100000001000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm */; };
@@ -2323,6 +2324,7 @@
 		F4A100000002000000000020 /* Horos/Sources/HorosDatabaseNetworkSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosDatabaseNetworkSettings.swift; sourceTree = SOURCE_ROOT; };
 		F4AC70010002000000000001 /* HorosActivityTaskCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HorosActivityTaskCoordinator.swift; path = Horos/Sources/HorosActivityTaskCoordinator.swift; sourceTree = SOURCE_ROOT; };
 		F4AC70010003000000000001 /* HorosSwiftInterop.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = HorosSwiftInterop.h; path = Horos/Sources/HorosSwiftInterop.h; sourceTree = SOURCE_ROOT; };
+		F4D1EC700002000000000001 /* HorosDirectTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HorosDirectTransfer.swift; path = Horos/Sources/HorosDirectTransfer.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000017 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.h; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm; sourceTree = SOURCE_ROOT; };
@@ -4006,6 +4008,7 @@
 		BF9201E70883664600A3D77B /* Network */ = {
 			isa = PBXGroup;
 			children = (
+				F4D1EC700002000000000001 /* HorosDirectTransfer.swift */,
 				84AA013C104EA39E0091E49B /* Log Window */,
 				ABB7A43606343BFF00AD1777 /* Query */,
 				CED2CF960C9B288C0047F123 /* Horos/Sources/CIADICOMField.h */,
@@ -5920,6 +5923,7 @@
 				5926824F11CF62DA00CFA81F /* ThreadModalForWindowController.mm in Sources */,
 				5926825111CF62DA00CFA81F /* ThreadsManager.mm in Sources */,
 				F4AC70010001000000000001 /* HorosActivityTaskCoordinator.swift in Sources */,
+				F4D1EC700001000000000001 /* HorosDirectTransfer.swift in Sources */,
 				84CD254C11ECB49A004669D6 /* OsiriXDB_DataModel.xcdatamodel in Sources */,
 				59F5F3FA11F476030047A90D /* N2ImageButtonCell.mm in Sources */,
 				59F5F4ED11F485CC0047A90D /* BrowserController+Activity.mm in Sources */,

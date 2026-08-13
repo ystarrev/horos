@@ -3,6 +3,8 @@
 #import "DCMJPEGCodecBridge.h"
 #import "BrowserController.h"
 #import "DicomStudy.h"
+#import "DicomDatabase.h"
+#import "NSThread+N2.h"
 #import "DefaultsOsiriX.h"
 #import "../Preference Panes/OSIAutoroutingPreferencePane/OSIAutoroutingPreferencePanePref.h"
 #import "DICOMExport.h"

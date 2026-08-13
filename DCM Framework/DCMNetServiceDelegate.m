@@ -340,6 +340,18 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
     if( [fastStorePDU integerValue] > 0)
         [s setObject:[NSNumber numberWithInteger:[fastStorePDU integerValue]] forKey:@"HorosFastStorePDU"];
 
+    NSString *directTransferVersion = DCMNetServiceTXTString(dict, @"HorosDirectTransferVersion");
+    if( [directTransferVersion integerValue] > 0)
+        [s setObject:[NSNumber numberWithInteger:[directTransferVersion integerValue]] forKey:@"HorosDirectTransferVersion"];
+
+    NSString *directTransferPort = DCMNetServiceTXTString(dict, @"HorosDirectTransferPort");
+    if( [directTransferPort integerValue] > 0)
+        [s setObject:[NSNumber numberWithInteger:[directTransferPort integerValue]] forKey:@"HorosDirectTransferPort"];
+
+    NSString *directTransferToken = DCMNetServiceTXTString(dict, @"HorosDirectTransferToken");
+    if( [directTransferToken length])
+        [s setObject:directTransferToken forKey:@"HorosDirectTransferToken"];
+
 	if( [dict valueForKey: @"icon"])
 	{
 		NSString *icon = DCMNetServiceTXTString(dict, @"icon");

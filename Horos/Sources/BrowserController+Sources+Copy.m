@@ -125,6 +125,13 @@ static NSDictionary *HorosDICOMSendNodeDictionaryFromSource(DicomNodeIdentifier 
     if (fastStorePDU)
         [node setObject:fastStorePDU forKey:@"HorosFastStorePDU"];
 
+    for (NSString *key in @[@"HorosDirectTransferVersion", @"HorosDirectTransferPort", @"HorosDirectTransferToken"])
+    {
+        id value = [destination.dictionary objectForKey:key];
+        if (value)
+            [node setObject:value forKey:key];
+    }
+
     return node;
 }
 

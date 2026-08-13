@@ -51,6 +51,7 @@
 #import "NSThread+N2.h"
 #import "NSUserDefaults+OsiriX.h"
 #import "N2Stuff.h"
+#import "HorosSwiftInterop.h"
 
 static volatile int sendControllerObjects = 0;
 
@@ -638,6 +639,23 @@ static unsigned long long HorosTotalFileSize(NSArray *files)
     return total;
 }
 
+static BOOL HorosServerSupportsDirectTransfer(NSDictionary *server)
+{
+    NSInteger port = [[server objectForKey:@"HorosDirectTransferPort"] integerValue];
+    return [[server objectForKey:@"HorosDirectTransferVersion"] integerValue] >= 1 &&
+           port > 0 && port <= 65535 &&
+           [[server objectForKey:@"HorosDirectTransferToken"] length] > 0 &&
+           [[server objectForKey:@"Address"] length] > 0;
+}
+
+static NSArray *HorosFlattenFileArrays(NSArray *arraysOfFiles)
+{
+    NSMutableOrderedSet *files = [NSMutableOrderedSet orderedSet];
+    for (NSArray *patientFiles in arraysOfFiles)
+        [files addObjectsFromArray:patientFiles];
+    return [files array];
+}
+
 - (void) executeSend:(NSArray*) files patientName: (NSString*) patientName
 {
 	if( [NSThread currentThread].isCancelled)
@@ -755,9 +773,32 @@ static int globalDCMTKSCUCounter = 0;
     
 	@try
 	{
-        for( int i = 0;i < arraysOfFiles.count;i++)
+        BOOL sentDirectly = NO;
+        if (HorosServerSupportsDirectTransfer(_destinationServer))
         {
-            [self executeSend: [arraysOfFiles objectAtIndex: i] patientName: [arrayOfPatientNames objectAtIndex: i]];
+            NSArray *allFiles = HorosFlattenFileArrays(arraysOfFiles);
+            NSInteger directPort = [[_destinationServer objectForKey:@"HorosDirectTransferPort"] integerValue];
+            NSLog(@"Horos direct transfer selected for %@: %lu files on one persistent connection",
+                  [_destinationServer objectForKey:@"Description"], (unsigned long)[allFiles count]);
+            sentDirectly = [[HorosDirectTransferService sharedService]
+                            sendFiles:allFiles
+                            toHost:[_destinationServer objectForKey:@"Address"]
+                            port:directPort
+                            token:[_destinationServer objectForKey:@"HorosDirectTransferToken"]
+                            activityThread:[NSThread currentThread]];
+
+            if (!sentDirectly && ![[NSThread currentThread] isCancelled])
+            {
+                NSLog(@"Horos direct transfer unavailable; falling back to DICOM C-STORE");
+                [NSThread currentThread].progress = 0;
+                [NSThread currentThread].status = NSLocalizedString(@"Using DICOM transfer...", nil);
+            }
+        }
+
+        if (!sentDirectly && ![[NSThread currentThread] isCancelled])
+        {
+            for( int i = 0;i < arraysOfFiles.count;i++)
+                [self executeSend: [arraysOfFiles objectAtIndex: i] patientName: [arrayOfPatientNames objectAtIndex: i]];
         }
 	}
 	@catch (NSException *e)

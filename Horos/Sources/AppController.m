@@ -1536,6 +1536,13 @@ static void HorosWriteBonjourDNSSDTaskRecords(NSArray *records)
 	[dict setValue:[AppController UID] forKey: @"UID"]; 
 	[dict setValue:@"1" forKey:@"HorosFastStoreVersion"];
 	[dict setValue:@"131072" forKey:@"HorosFastStorePDU"];
+	HorosDirectTransferService *directTransfer = [HorosDirectTransferService sharedService];
+	if ([directTransfer isRunning])
+	{
+		[dict setValue:@"1" forKey:@"HorosDirectTransferVersion"];
+		[dict setValue:[NSString stringWithFormat:@"%ld", (long)[directTransfer port]] forKey:@"HorosDirectTransferPort"];
+		[dict setValue:[directTransfer token] forKey:@"HorosDirectTransferToken"];
+	}
 	
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"activateCGETSCP"])
 		[dict setValue: @"YES" forKey: @"CGET"]; // TXTRECORD doesnt support NSNumber
@@ -1602,6 +1609,7 @@ static void HorosWriteBonjourDNSSDTaskRecords(NSArray *records)
 -(void) restartSTORESCP
 {
 	NSLog(@"restartSTORESCP");
+	[[HorosDirectTransferService sharedService] start];
 	
 	// Is called restart because previous instances of storescp might exist and need to be killed before starting
 	// This should be performed only if Horos is to handle storescp, depending on what is defined in the preferences
@@ -2043,6 +2051,7 @@ static BOOL firstCall = YES;
 - (void) applicationWillTerminate: (NSNotification*) aNotification
 {
 	unlink( "/tmp/kill_all_storescu");
+	[[HorosDirectTransferService sharedService] stop];
 	
     [DICOMTLS eraseKeys];
     

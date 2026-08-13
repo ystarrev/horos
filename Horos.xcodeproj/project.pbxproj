@@ -5188,6 +5188,7 @@
 		};
 		5F1E2A6D2411AE7E00365A0C /* CMake */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			name = CMake;
 			outputPaths = (
 				"$(TARGET_TEMP_DIR)/CMake.stamp",
@@ -5200,6 +5201,7 @@
 		};
 		5F1E2A6E2411AE7E00365A0C /* Make */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			inputPaths = (
 				"$(PROJECT_DIR)/Horos/Scripts/DCMTK/Make.sh",
 				"$(PROJECT_DIR)/Horos/Sources/ModernDCMTKBridge.cpp",

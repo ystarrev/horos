@@ -1765,6 +1765,34 @@ subOpCallback(void * /*subOpCallbackData*/ ,
 				transferSyntaxes, numTransferSyntaxes, ASC_SC_ROLE_SCP);
 			pid += 2;	/* only odd presentation context id's */
 		}
+
+		// The generic contexts above usually negotiate an uncompressed syntax.
+		// Reserve the remaining contexts for the lossless encodings most commonly
+		// stored by Horos so C-GET can transfer CT and MR pixel data unchanged.
+		struct HorosCGetExactContext
+		{
+			const char *sopClass;
+			const char *transferSyntax;
+		};
+		static const HorosCGetExactContext exactContexts[] =
+		{
+			{ UID_CTImageStorage, UID_JPEGProcess14SV1TransferSyntax },
+			{ UID_MRImageStorage, UID_JPEGProcess14SV1TransferSyntax },
+			{ UID_CTImageStorage, UID_JPEG2000LosslessOnlyTransferSyntax },
+			{ UID_MRImageStorage, UID_JPEG2000LosslessOnlyTransferSyntax },
+			{ UID_CTImageStorage, UID_JPEGLSLosslessTransferSyntax },
+			{ UID_MRImageStorage, UID_JPEGLSLosslessTransferSyntax }
+		};
+
+		const int exactContextCount = (int)DIM_OF(exactContexts);
+		for (i = 0; i < exactContextCount && cond.good(); ++i)
+		{
+			const char *exactTransferSyntax[] = { exactContexts[i].transferSyntax };
+			cond = ASC_addPresentationContext(
+				params, pid, exactContexts[i].sopClass,
+				exactTransferSyntax, 1, ASC_SC_ROLE_SCP);
+			pid += 2;
+		}
 	}
 	
     return cond;

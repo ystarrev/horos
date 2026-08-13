@@ -1,0 +1,147 @@
+diff --git a/dcmqrdb/libsrc/dcmqrcbg.cc b/dcmqrdb/libsrc/dcmqrcbg.cc
+index ddd3305e0..0136f5647 100644
+--- a/dcmqrdb/libsrc/dcmqrcbg.cc
++++ b/dcmqrdb/libsrc/dcmqrcbg.cc
+@@ -36,6 +36,40 @@ BEGIN_EXTERN_C
+ #include <fcntl.h>       /* needed on Solaris for O_RDONLY */
+ END_EXTERN_C
+ 
++#ifdef LOCK_IMAGE_FILES
++class HorosDcmQueryRetrieveFileLock
++{
++public:
++    explicit HorosDcmQueryRetrieveFileLock(const char *filename)
++    : fd_(-1)
++    {
++#ifdef O_BINARY
++        fd_ = open(filename, O_RDONLY | O_BINARY);
++#else
++        fd_ = open(filename, O_RDONLY);
++#endif
++        if (fd_ >= 0)
++            dcmtk_flock(fd_, LOCK_SH);
++    }
++
++    ~HorosDcmQueryRetrieveFileLock()
++    {
++        if (fd_ >= 0) {
++            dcmtk_flock(fd_, LOCK_UN);
++            close(fd_);
++        }
++    }
++
++    OFBool isOpen() const
++    {
++        return fd_ >= 0;
++    }
++
++private:
++    int fd_;
++};
++#endif
++
+ static void getSubOpProgressCallback(void * /* callbackData */,
+     T_DIMSE_StoreProgress *progress,
+     T_DIMSE_C_StoreRQ * /*req*/)
+@@ -169,30 +203,42 @@ OFCondition DcmQueryRetrieveGetContext::performGetSubOp(DIC_UI sopClass, DIC_UI
+     DIC_US msgId;
+     T_ASC_PresentationContextID presId;
+     DcmDataset *stDetail = NULL;
++    DcmFileFormat sourceFile;
++    DcmDataset *sourceDataset = NULL;
++    DcmDataset *datasetToSend = NULL;
+ 
+ #ifdef LOCK_IMAGE_FILES
+-    /* shared lock image file */
+-    int lockfd;
+-#ifdef O_BINARY
+-    lockfd = open(fname, O_RDONLY | O_BINARY);
+-#else
+-    lockfd = open(fname, O_RDONLY);
+-#endif
+-    if (lockfd < 0) {
+-        /* due to quota system the file could have been deleted */
++    HorosDcmQueryRetrieveFileLock sourceLock(fname);
++    if (!sourceLock.isOpen()) {
+         DCMQRDB_ERROR("Get SCP: storeSCU: [file: " << fname << "]: " << OFStandard::getLastSystemErrorCode().message());
+         nFailed++;
+         addFailedUIDInstance(sopInstance);
+         return EC_Normal;
+     }
+-    dcmtk_flock(lockfd, LOCK_SH);
+ #endif
+ 
++    // Reading only through the start of Pixel Data is enough to identify the
++    // stored transfer syntax. Exact matches can then use DCMTK's direct file
++    // path without parsing the image twice.
++    cond = sourceFile.loadFileUntilTag(fname, EXS_Unknown, EGL_noChange,
++        DCM_MaxReadLength, ERM_autoDetect, DCM_PixelData);
++    if (cond.bad()) {
++        nFailed++;
++        addFailedUIDInstance(sopInstance);
++        OFString temp_str;
++        DCMQRDB_ERROR("Get SCP: storeSCU: [file: " << fname << "] Cannot read source transfer syntax: "
++            << DimseCondition::dump(temp_str, cond));
++        return cond;
++    }
++
++    sourceDataset = sourceFile.getDataset();
++    DcmXfer sourceXfer(sourceDataset->getOriginalXfer());
++
+     msgId = origAssoc->nextMsgID++;
+ 
+     /* which presentation context should be used */
+     presId = ASC_findAcceptedPresentationContextID(origAssoc,
+-        sopClass);
++        sopClass, sourceXfer.getXferID());
+     if (presId == 0) {
+         nFailed++;
+         addFailedUIDInstance(sopInstance);
+@@ -212,6 +258,30 @@ OFCondition DcmQueryRetrieveGetContext::performGetSubOp(DIC_UI sopClass, DIC_UI
+                 << dcmSOPClassUIDToModality(sopClass, "OT") << ") " << sopClass);
+             return DIMSE_NOVALIDPRESENTATIONCONTEXTID;
+         }
++
++        DcmXfer acceptedXfer(pc.acceptedTransferSyntax);
++        if ((acceptedXfer.getXfer() != sourceXfer.getXfer()) &&
++            (acceptedXfer.isPixelDataCompressed() || sourceXfer.isPixelDataCompressed()))
++        {
++            cond = sourceFile.loadFile(fname);
++            if (cond.good())
++                sourceDataset = sourceFile.getDataset();
++
++            if (cond.good() && !sourceDataset->canWriteXfer(acceptedXfer.getXfer()))
++                cond = sourceDataset->chooseRepresentation(acceptedXfer.getXfer(), NULL);
++
++            if (cond.bad() || !sourceDataset->canWriteXfer(acceptedXfer.getXfer())) {
++                nFailed++;
++                addFailedUIDInstance(sopInstance);
++                OFString temp_str;
++                DCMQRDB_ERROR("Get SCP: storeSCU: [file: " << fname << "] Cannot convert "
++                    << sourceXfer.getXferName() << " to " << acceptedXfer.getXferName()
++                    << ": " << DimseCondition::dump(temp_str, cond));
++                return cond.bad() ? cond : DIMSE_SENDFAILED;
++            }
++
++            datasetToSend = sourceDataset;
++        }
+     }
+ 
+     req.MessageID = msgId;
+@@ -227,15 +297,9 @@ OFCondition DcmQueryRetrieveGetContext::performGetSubOp(DIC_UI sopClass, DIC_UI
+     T_DIMSE_DetectedCancelParameters cancelParameters;
+ 
+     cond = DIMSE_storeUser(origAssoc, presId, &req,
+-        fname, NULL, getSubOpProgressCallback, this, options_.blockMode_, options_.dimse_timeout_,
++        datasetToSend ? NULL : fname, datasetToSend, getSubOpProgressCallback, this, options_.blockMode_, options_.dimse_timeout_,
+         &rsp, &stDetail, &cancelParameters);
+ 
+-#ifdef LOCK_IMAGE_FILES
+-    /* unlock image file */
+-    dcmtk_flock(lockfd, LOCK_UN);
+-    close(lockfd);
+-#endif
+-
+     if (cond.good()) {
+         if (cancelParameters.cancelEncountered) {
+             if (origPresId == cancelParameters.presId &&

@@ -2,6 +2,7 @@
 
 set -e; set -o xtrace
 
+source_dir="$PROJECT_DIR/$TARGET_NAME"
 cmake_dir="$TARGET_TEMP_DIR/CMake"
 install_dir="$TARGET_TEMP_DIR/Install"
 copy_dir="$BUILT_PRODUCTS_DIR/DCMTK"
@@ -15,6 +16,7 @@ openjpeg_install="$CONFIGURATION_TEMP_DIR/OpenJPEG.build/Install"
 openjpeg_lib="${openjpeg_install}/lib/libopenjp2.a"
 bridge_output="${copy_dir}/libHorosModernDCMTKBridge.dylib"
 cmake_cache="${cmake_dir}/CMakeCache.txt"
+make_stamp="$TARGET_TEMP_DIR/Make.stamp"
 
 desired_modules="ofstd;oflog;oficonv;dcmdata;dcmimgle;dcmimage;dcmjpeg;dcmjpls;dcmtls;dcmnet;dcmsr;dcmwlm;dcmqrdb;dcmrt;dcmiod;dcmfg;dcmseg;dcmtract;dcmpmap;dcmect;dcmapps"
 
@@ -27,7 +29,12 @@ else
     fi
 fi
 
-if [ -d "${copy_dir}" ] && [ ! -f "${copy_dir}/.incomplete" ]; then
+dcmtk_source_changed=YES
+if [ -f "${make_stamp}" ] && [ -z "$(find "${source_dir}" -type f -newer "${make_stamp}" -print -quit)" ]; then
+    dcmtk_source_changed=NO
+fi
+
+if [ "${dcmtk_source_changed}" = NO ] && [ -d "${copy_dir}" ] && [ ! -f "${copy_dir}/.incomplete" ]; then
     if [ ! -f "${bridge_src}" ] || { [ -f "${bridge_output}" ] && [ "${bridge_src}" -ot "${bridge_output}" ] && { [ ! -f "${bridge_header}" ] || [ "${bridge_header}" -ot "${bridge_output}" ]; } && { [ ! -f "${opj_support_src}" ] || [ "${opj_support_src}" -ot "${bridge_output}" ]; } && { [ ! -f "${openjpeg_lib}" ] || [ "${openjpeg_lib}" -ot "${bridge_output}" ]; } && { [ ! -f "${bridge_script}" ] || [ "${bridge_script}" -ot "${bridge_output}" ]; }; }; then
         touch "$TARGET_TEMP_DIR/Make.stamp"
         exit 0

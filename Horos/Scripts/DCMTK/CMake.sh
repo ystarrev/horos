@@ -2,17 +2,27 @@
 
 export PATH="$PATH:/opt/local/bin:/opt/local/sbin:/opt/homebrew/bin/"
 
+set -e; set -o xtrace
+
+source_dir="$PROJECT_DIR/$TARGET_NAME"
+patch_dir="$PROJECT_DIR/Horos/Scripts/DCMTK/Patches"
+cmake_dir="$TARGET_TEMP_DIR/CMake"
+install_dir="$TARGET_TEMP_DIR/Install"
+
+for patch_file in "$patch_dir"/*.patch; do
+    [ -e "$patch_file" ] || continue
+    if git -C "$source_dir" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
+        continue
+    fi
+    git -C "$source_dir" apply --check "$patch_file"
+    git -C "$source_dir" apply "$patch_file"
+done
+
 path="$( cd "$(dirname "${BASH_SOURCE[0]}")" && pwd )/$(basename "${BASH_SOURCE[0]}")"
 cd "$TARGET_NAME"; pwd
 
 env=$(env|sort|grep -v 'LLBUILD_BUILD_ID=\|LLBUILD_LANE_ID=\|LLBUILD_TASK_ID=\|Apple_PubSub_Socket_Render=\|DISPLAY=\|SHLVL=\|SSH_AUTH_SOCK=\|SECURITYSESSIONID=')
 hash="$(git describe --always --tags --dirty) $(md5 -q "$path")-$(md5 -qs "$env")"
-
-set -e; set -o xtrace
-
-source_dir="$PROJECT_DIR/$TARGET_NAME"
-cmake_dir="$TARGET_TEMP_DIR/CMake"
-install_dir="$TARGET_TEMP_DIR/Install"
 
 mkdir -p "$cmake_dir"; cd "$cmake_dir"
 if [ -e "$cmake_dir/Makefile" -a -f "$cmake_dir/.buildhash" ] && [ "$(cat "$cmake_dir/.buildhash")" == "$hash" ]; then

@@ -71,6 +71,7 @@ public final class HorosDirectTransferService: NSObject {
     private static let sessionDisconnectedNotification = Notification.Name("HorosDirectSessionDidDisconnect")
     private static let chunkSize = 4 * 1_024 * 1_024
     private static let streamBufferSize = chunkSize
+    private static let bulkReceiveMinimumLength = 64 * 1_024
     private static let bulkIOTimeout: TimeInterval = 90
     private static let maximumFiles = 1_000_000
     private static let maximumFilenameBytes = 1_024
@@ -1064,7 +1065,12 @@ public final class HorosDirectTransferService: NSObject {
                     guard wireBytesReceived < declaredWireTotal else {
                         throw DirectTransferError.invalidProtocol
                     }
-                    minimumLength = Int(min(UInt64(Self.chunkSize), declaredWireTotal - wireBytesReceived))
+                    // Drain the TCP receive window continuously. Waiting for a
+                    // complete 4 MiB block can stall high-latency connections.
+                    minimumLength = Int(min(
+                        UInt64(Self.bulkReceiveMinimumLength),
+                        declaredWireTotal - wireBytesReceived
+                    ))
                 } else {
                     minimumLength = min(max(needed, 1), 256 * 1_024)
                 }

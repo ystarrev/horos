@@ -185,7 +185,7 @@ public final class HorosDirectTransferService: NSObject {
             let entries = try prepareEntries(for: uniqueFiles)
             let totalBytes = try totalSize(of: entries)
 
-            return sendLegacyBatch(
+            return sendFileBatch(
                 entries: entries,
                 totalBytes: totalBytes,
                 host: host,
@@ -199,7 +199,7 @@ public final class HorosDirectTransferService: NSObject {
         }
     }
 
-    private func sendLegacyBatch(
+    private func sendFileBatch(
         entries: [HorosDirectFileEntry],
         totalBytes: UInt64,
         host: String,
@@ -230,12 +230,9 @@ public final class HorosDirectTransferService: NSObject {
             header.append(tokenData)
             try sendData(header, over: connection, thread: activityThread)
 
-            var sentBytes: UInt64 = 0
-
             try sendFileContents(
                 entries,
                 totalBytes: totalBytes,
-                sentBytes: &sentBytes,
                 over: connection,
                 activityThread: activityThread
             )
@@ -279,7 +276,7 @@ public final class HorosDirectTransferService: NSObject {
             try waitUntilReady(connection, timeout: 8, thread: nil)
             let magic = try receiveExactly(Self.magic.count, from: connection, timeout: 30, thread: nil)
             if magic == Self.magic {
-                receiveLegacyBatch(over: connection)
+                receiveFileBatch(over: connection)
             } else if magic == Self.sessionMagic {
                 receiveSessionRequest(over: connection)
             } else {
@@ -570,10 +567,13 @@ public final class HorosDirectTransferService: NSObject {
             guard let metadata = try JSONSerialization.jsonObject(with: metadataData) as? [String: Any],
                   let name = metadata["name"] as? String,
                   !name.isEmpty,
-                  let aeTitle = metadata["aeTitle"] as? String else {
+                  let aeTitle = metadata["aeTitle"] as? String,
+                  !aeTitle.isEmpty,
+                  let dicomPort = metadata["dicomPort"] as? Int,
+                  dicomPort > 0,
+                  dicomPort <= Int(UInt16.max) else {
                 throw DirectTransferError.invalidProtocol
             }
-            let dicomPort = metadata["dicomPort"] as? Int ?? 0
             let sessionID = UUID().uuidString
             let address = remoteAddress(for: connection)
             let session = HorosDirectServerSession(
@@ -814,7 +814,6 @@ public final class HorosDirectTransferService: NSObject {
     private func sendFileContents(
         _ entries: [HorosDirectFileEntry],
         totalBytes: UInt64,
-        sentBytes: inout UInt64,
         over connection: NWConnection,
         activityThread: Thread?
     ) throws {
@@ -893,7 +892,6 @@ public final class HorosDirectTransferService: NSObject {
                 guard !data.isEmpty else { throw DirectTransferError.truncatedFile(entry.url.path) }
                 try appendToStream(data)
                 remaining -= UInt64(data.count)
-                sentBytes += UInt64(data.count)
             }
         }
         try flushStreamBuffer()
@@ -919,7 +917,7 @@ public final class HorosDirectTransferService: NSObject {
             if let cleanupURL { try? fileManager.removeItem(at: cleanupURL) }
         }
 
-        let receivedTotal = try receiveLegacyFramedFiles(
+        let receivedTotal = try receiveFramedFiles(
             fileCount: fileCount,
             declaredTotal: declaredTotal,
             into: batchURL,
@@ -939,7 +937,7 @@ public final class HorosDirectTransferService: NSObject {
         return receivedTotal
     }
 
-    private func receiveLegacyFramedFiles(
+    private func receiveFramedFiles(
         fileCount: Int,
         declaredTotal: UInt64,
         into batchURL: URL,
@@ -982,9 +980,6 @@ public final class HorosDirectTransferService: NSObject {
             fileCount: fileCount,
             declaredTotal: declaredTotal,
             into: batchURL,
-            preparing: false,
-            progressBase: 0,
-            progressSpan: 1,
             activityThread: activityThread
         ) { length in
             try readFromStream(length, timeout: 60)
@@ -1001,9 +996,6 @@ public final class HorosDirectTransferService: NSObject {
         fileCount: Int,
         declaredTotal: UInt64,
         into batchURL: URL,
-        preparing: Bool,
-        progressBase: CGFloat,
-        progressSpan: CGFloat,
         activityThread: Thread?,
         readData: (_ length: Int) throws -> Data
     ) throws -> UInt64 {
@@ -1040,12 +1032,13 @@ public final class HorosDirectTransferService: NSObject {
 
                     let now = CFAbsoluteTimeGetCurrent()
                     if now - lastActivityUpdate >= 0.2 || receivedTotal == declaredTotal {
-                        let statusFormat = preparing
-                            ? NSLocalizedString("Preparing file %d of %d...", comment: "")
-                            : NSLocalizedString("Receiving file %d of %d...", comment: "")
-                        activityThread?.setStatus(String(format: statusFormat, index + 1, fileCount))
+                        activityThread?.setStatus(String(
+                            format: NSLocalizedString("Receiving file %d of %d...", comment: ""),
+                            index + 1,
+                            fileCount
+                        ))
                         activityThread?.setProgress(
-                            progressBase + progressSpan * CGFloat(receivedTotal) / CGFloat(declaredTotal)
+                            CGFloat(receivedTotal) / CGFloat(declaredTotal)
                         )
                         lastActivityUpdate = now
                     }
@@ -1061,7 +1054,7 @@ public final class HorosDirectTransferService: NSObject {
         return receivedTotal
     }
 
-    private func receiveLegacyBatch(over connection: NWConnection) {
+    private func receiveFileBatch(over connection: NWConnection) {
         do {
             let header = try receiveExactly(20, from: connection, timeout: 30, thread: nil)
             let version = header.networkUInt32(at: 0)

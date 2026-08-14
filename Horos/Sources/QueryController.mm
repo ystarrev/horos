@@ -66,7 +66,6 @@
 #import "N2Stuff.h"
 #import "DicomFile.h"
 #import "N2Debug.h"
-#import "HorosSwiftInterop.h"
 
 #include <dcmtk/config/osconfig.h>
 

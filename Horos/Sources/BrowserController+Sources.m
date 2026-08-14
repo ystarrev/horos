@@ -207,6 +207,16 @@ static NSString* HorosDNSSDHostWithoutTrailingDot(NSString *host)
     return cleanHost;
 }
 
+static NSString* HorosPeerUIDFromDictionary(NSDictionary *dictionary)
+{
+    id value = [dictionary objectForKey:@"UID"];
+    if (![value isKindOfClass:[NSString class]])
+        return nil;
+
+    NSString *uid = [(NSString*)value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    return [uid length] ? [uid lowercaseString] : nil;
+}
+
 static NSString* HorosDNSSDUnescapedString(NSString *string)
 {
     NSMutableString *decoded = [NSMutableString string];
@@ -305,6 +315,12 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
 
 @end
 
+@interface BrowserController (HorosDirectSourceReconciliation)
+
+-(void)reconcileHorosDirectSources;
+
+@end
+
 @interface DefaultLocalDatabaseNodeIdentifier : LocalDatabaseNodeIdentifier
 
 +(DefaultLocalDatabaseNodeIdentifier*)identifier;
@@ -345,8 +361,7 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(horosDirectSessionConnected:) name:@"HorosDirectSessionDidConnect" object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(horosDirectSessionDisconnected:) name:@"HorosDirectSessionDidDisconnect" object:nil];
-    for (NSDictionary *session in [[HorosDirectTransferService sharedService] activeSessionDictionaries])
-        [self horosDirectSessionConnected:[NSNotification notificationWithName:@"HorosDirectSessionDidConnect" object:nil userInfo:session]];
+    [self reconcileHorosDirectSources];
 
     [self selectCurrentDatabaseSource];
 }
@@ -361,48 +376,96 @@ static NSDictionary* HorosDNSSDTXTDictionaryFromLine(NSString *line)
 
 -(void)horosDirectSessionConnected:(NSNotification*)notification
 {
-    NSDictionary *info = notification.userInfo;
-    NSString *sessionID = [info objectForKey:@"sessionID"];
-    if (!sessionID.length)
-        return;
-
-    NSArray *existingSources = [[_sourcesArrayController arrangedObjects] copy];
-    for (DataNodeIdentifier *source in existingSources)
-        if ([source isKindOfClass:[HorosDirectNodeIdentifier class]] &&
-            [[(HorosDirectNodeIdentifier*)source sessionIdentifier] isEqualToString:sessionID])
-            [_sourcesArrayController removeObject:source];
-    [existingSources release];
-
-    NSMutableDictionary *dictionary = [NSMutableDictionary dictionaryWithDictionary:info];
-    [dictionary setObject:sessionID forKey:@"HorosDirectSessionID"];
-    [dictionary setObject:([info objectForKey:@"name"] ?: @"Horos") forKey:@"Description"];
-    [dictionary setObject:([info objectForKey:@"aeTitle"] ?: @"HOROS") forKey:@"AETitle"];
-    [dictionary setObject:([info objectForKey:@"address"] ?: @"Horos") forKey:@"Address"];
-    [dictionary setObject:([info objectForKey:@"dicomPort"] ?: @0) forKey:@"Port"];
-    [dictionary setObject:@YES forKey:@"Send"];
-    [dictionary setObject:@NO forKey:@"QR"];
-    [dictionary setObject:@"DICOMDestination.tif" forKey:@"icon"];
-
-    HorosDirectNodeIdentifier *source = [HorosDirectNodeIdentifier directNodeIdentifierWithSessionDictionary:dictionary];
-    source.detected = YES;
-    source.entered = NO;
-    [_sourcesArrayController addObject:source];
-    [self redrawSources];
+    [self reconcileHorosDirectSources];
 }
 
 -(void)horosDirectSessionDisconnected:(NSNotification*)notification
 {
-    NSString *sessionID = [notification.userInfo objectForKey:@"sessionID"];
-    if (!sessionID.length)
-        return;
+    [self reconcileHorosDirectSources];
+}
 
-    NSArray *sources = [[_sourcesArrayController arrangedObjects] copy];
+-(void)reconcileHorosDirectSources
+{
+    if (![NSThread isMainThread])
+    {
+        [self performSelectorOnMainThread:@selector(reconcileHorosDirectSources) withObject:nil waitUntilDone:NO];
+        return;
+    }
+
+    NSArray *sessions = [[HorosDirectTransferService sharedService] activeSessionDictionaries];
+    NSMutableDictionary *sessionsByID = [NSMutableDictionary dictionaryWithCapacity:[sessions count]];
+    for (NSDictionary *session in sessions)
+    {
+        NSString *sessionID = [session objectForKey:@"sessionID"];
+        if ([sessionID length])
+            [sessionsByID setObject:session forKey:sessionID];
+    }
+
+    NSArray *sources = [[_sourcesArrayController content] copy];
+    NSMutableSet *bonjourPeerUIDs = [NSMutableSet set];
     for (DataNodeIdentifier *source in sources)
-        if ([source isKindOfClass:[HorosDirectNodeIdentifier class]] &&
-            [[(HorosDirectNodeIdentifier*)source sessionIdentifier] isEqualToString:sessionID])
+    {
+        if ([source isKindOfClass:[HorosDirectNodeIdentifier class]] ||
+            ![source isKindOfClass:[DicomNodeIdentifier class]])
+            continue;
+
+        NSString *peerUID = HorosPeerUIDFromDictionary(source.dictionary);
+        if ([peerUID length])
+            [bonjourPeerUIDs addObject:peerUID];
+    }
+
+    BOOL changed = NO;
+    NSMutableSet *displayedSessionIDs = [NSMutableSet set];
+    for (DataNodeIdentifier *source in sources)
+    {
+        if (![source isKindOfClass:[HorosDirectNodeIdentifier class]])
+            continue;
+
+        NSString *sessionID = [(HorosDirectNodeIdentifier*)source sessionIdentifier];
+        NSDictionary *session = [sessionsByID objectForKey:sessionID];
+        NSString *peerUID = HorosPeerUIDFromDictionary(session);
+        if (!session || ([peerUID length] && [bonjourPeerUIDs containsObject:peerUID]))
+        {
             [_sourcesArrayController removeObject:source];
+            changed = YES;
+        }
+        else
+            [displayedSessionIDs addObject:sessionID];
+    }
     [sources release];
-    [self redrawSources];
+
+    for (NSDictionary *session in sessions)
+    {
+        NSString *sessionID = [session objectForKey:@"sessionID"];
+        NSString *peerUID = HorosPeerUIDFromDictionary(session);
+        if (![sessionID length] || [displayedSessionIDs containsObject:sessionID] ||
+            ([peerUID length] && [bonjourPeerUIDs containsObject:peerUID]))
+            continue;
+
+        NSString *aeTitle = [session objectForKey:@"aeTitle"] ?: @"HOROS";
+        NSString *displayName = [session objectForKey:@"name"] ?: aeTitle;
+        if ([displayName caseInsensitiveCompare:aeTitle] == NSOrderedSame)
+            displayName = aeTitle;
+
+        NSMutableDictionary *dictionary = [NSMutableDictionary dictionaryWithDictionary:session];
+        [dictionary setObject:sessionID forKey:@"HorosDirectSessionID"];
+        [dictionary setObject:displayName forKey:@"Description"];
+        [dictionary setObject:aeTitle forKey:@"AETitle"];
+        [dictionary setObject:([session objectForKey:@"address"] ?: @"Horos") forKey:@"Address"];
+        [dictionary setObject:([session objectForKey:@"dicomPort"] ?: @0) forKey:@"Port"];
+        [dictionary setObject:@YES forKey:@"Send"];
+        [dictionary setObject:@NO forKey:@"QR"];
+        [dictionary setObject:@"DICOMDestination.tif" forKey:@"icon"];
+
+        HorosDirectNodeIdentifier *source = [HorosDirectNodeIdentifier directNodeIdentifierWithSessionDictionary:dictionary];
+        source.detected = YES;
+        source.entered = NO;
+        [_sourcesArrayController addObject:source];
+        changed = YES;
+    }
+
+    if (changed)
+        [self redrawSources];
 }
 
 -(void)shutdownBonjourSources
@@ -928,6 +991,8 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         if (!isDisplayed)
             [_browser.sources addObject:source];
 
+        [_browser reconcileHorosDirectSources];
+
         if (changed)
         {
             NSLog(@"Bonjour source responding again: %@ %@:%lu", source.description, source.location, (unsigned long)source.port);
@@ -948,6 +1013,8 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         [_browser.sources removeObject:source];
         [source performSelector:@selector(autorelease) withObject:nil afterDelay:60];
     }
+
+    [_browser reconcileHorosDirectSources];
 
     if ([source isKindOfClass:[RemoteDatabaseNodeIdentifier class]] &&
         [[_browser sourceIdentifierForDatabase:_browser.database] isEqualToDataNodeIdentifier:source])
@@ -1420,6 +1487,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         }
     }
 
+    [_browser reconcileHorosDirectSources];
     [self _verifyBonjourSource:source];
     [self _stopDNSSDResolveTaskForKey:key];
 }
@@ -1449,6 +1517,8 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
             break;
         }
     }
+
+    [_browser reconcileHorosDirectSources];
 }
 
 -(void)_notifyIfNativeBonjourSearchRecoveredForType:(NSString*)type
@@ -1752,6 +1822,8 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
     dontListenToSourcesChanges = NO;
 
+    [_browser reconcileHorosDirectSources];
+
     if( [_browser rowForSourceIdentifier: previousNode] == -1)
         [_browser performSelector: @selector(setDatabase:) withObject: DicomDatabase.defaultDatabase afterDelay: 0.01]; //This will guarantee that this will not happen in middle of a drag & drop, for example
     else
@@ -1986,6 +2058,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
                     }
 
                     [self _verifyBonjourSource:source];
+                    [_browser reconcileHorosDirectSources];
                 }
             }
 
@@ -2026,6 +2099,8 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         [_bonjourSources removeObjectAtIndex: [_bonjourServices indexOfObject: bsk]];
         [_bonjourServices removeObject: bsk];
     }
+
+    [_browser reconcileHorosDirectSources];
 }
 
 -(void)netServiceBrowser:(NSNetServiceBrowser*)nsb didFindService:(NSNetService*)service moreComing:(BOOL)moreComing
@@ -2096,6 +2171,8 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         [_bonjourSources removeObjectAtIndex: [_bonjourServices indexOfObject: bsk]];
         [_bonjourServices removeObject: bsk];
     }
+
+    [_browser reconcileHorosDirectSources];
 }
 
 -(NSString*)tableView:(NSTableView*)tableView toolTipForCell:(NSCell*)cell rect:(NSRectPointer)rect tableColumn:(NSTableColumn*)tc row:(NSInteger)row mouseLocation:(NSPoint)mouseLocation

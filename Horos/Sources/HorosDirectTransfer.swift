@@ -30,15 +30,25 @@ private final class HorosDirectServerSession {
     let connection: NWConnection
     let name: String
     let aeTitle: String
+    let peerUID: String?
     let dicomPort: Int
     let address: String
     let sendQueue: DispatchQueue
 
-    init(identifier: String, connection: NWConnection, name: String, aeTitle: String, dicomPort: Int, address: String) {
+    init(
+        identifier: String,
+        connection: NWConnection,
+        name: String,
+        aeTitle: String,
+        peerUID: String?,
+        dicomPort: Int,
+        address: String
+    ) {
         self.identifier = identifier
         self.connection = connection
         self.name = name
         self.aeTitle = aeTitle
+        self.peerUID = peerUID
         self.dicomPort = dicomPort
         self.address = address
         self.sendQueue = DispatchQueue(label: "org.horos.direct-transfer.session.\(identifier)")
@@ -457,11 +467,14 @@ public final class HorosDirectTransferService: NSObject {
                 let displayName = (configuredName?.isEmpty == false ? configuredName : nil)
                     ?? ProcessInfo.processInfo.hostName.components(separatedBy: ".").first
                     ?? "Horos"
-                let metadata: [String: Any] = [
+                var metadata: [String: Any] = [
                     "name": displayName,
                     "aeTitle": defaults.string(forKey: "AETITLE") ?? "HOROS",
                     "dicomPort": defaults.integer(forKey: "AEPORT"),
                 ]
+                if let peerUID = HorosDirectTransferInstanceUID(), !peerUID.isEmpty {
+                    metadata["UID"] = peerUID
+                }
                 let metadataData = try JSONSerialization.data(withJSONObject: metadata)
                 try self.sendLengthPrefixed(metadataData, over: connection, thread: nil)
                 let status = try self.receiveExactly(4, from: connection, timeout: 15, thread: nil).networkUInt32(at: 0)
@@ -576,19 +589,24 @@ public final class HorosDirectTransferService: NSObject {
             }
             let sessionID = UUID().uuidString
             let address = remoteAddress(for: connection)
+            let peerUID = (metadata["UID"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let session = HorosDirectServerSession(
                 identifier: sessionID,
                 connection: connection,
                 name: name,
                 aeTitle: aeTitle,
+                peerUID: peerUID?.isEmpty == false ? peerUID : nil,
                 dicomPort: dicomPort,
                 address: address
             )
 
             stateQueue.sync {
                 let replaced = serverSessions.values.filter {
-                    $0.name.caseInsensitiveCompare(name) == .orderedSame &&
-                    $0.aeTitle.caseInsensitiveCompare(aeTitle) == .orderedSame
+                    if let peerUID = session.peerUID, let existingUID = $0.peerUID {
+                        return existingUID.caseInsensitiveCompare(peerUID) == .orderedSame
+                    }
+                    return $0.name.caseInsensitiveCompare(name) == .orderedSame &&
+                        $0.aeTitle.caseInsensitiveCompare(aeTitle) == .orderedSame
                 }
                 for oldSession in replaced {
                     serverSessions.removeValue(forKey: oldSession.identifier)
@@ -632,16 +650,20 @@ public final class HorosDirectTransferService: NSObject {
 
     private func postSessionConnected(_ session: HorosDirectServerSession) {
         DispatchQueue.main.async {
+            var userInfo: [String: Any] = [
+                "sessionID": session.identifier,
+                "name": session.name,
+                "aeTitle": session.aeTitle,
+                "dicomPort": session.dicomPort,
+                "address": session.address,
+            ]
+            if let peerUID = session.peerUID {
+                userInfo["UID"] = peerUID
+            }
             NotificationCenter.default.post(
                 name: Self.sessionConnectedNotification,
                 object: self,
-                userInfo: [
-                    "sessionID": session.identifier,
-                    "name": session.name,
-                    "aeTitle": session.aeTitle,
-                    "dicomPort": session.dicomPort,
-                    "address": session.address,
-                ]
+                userInfo: userInfo
             )
         }
     }
@@ -716,13 +738,17 @@ public final class HorosDirectTransferService: NSObject {
     @objc public var activeSessionDictionaries: [[String: Any]] {
         stateQueue.sync {
             serverSessions.values.map { session in
-                [
+                var dictionary: [String: Any] = [
                     "sessionID": session.identifier,
                     "name": session.name,
                     "aeTitle": session.aeTitle,
                     "dicomPort": session.dicomPort,
                     "address": session.address,
                 ]
+                if let peerUID = session.peerUID {
+                    dictionary["UID"] = peerUID
+                }
+                return dictionary
             }
         }
     }

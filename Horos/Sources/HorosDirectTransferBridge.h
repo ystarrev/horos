@@ -11,6 +11,8 @@ FOUNDATION_EXPORT BOOL HorosRetrieveDICOMQueryItems(
     NSString *calledAET
 );
 
+FOUNDATION_EXPORT NSString *HorosDirectTransferInstanceUID(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -76,6 +76,7 @@
 #import <PreferencePanes/PreferencePanes.h>
 #import <UserNotifications/UserNotifications.h>
 #import "HorosSwiftInterop.h"
+#import "HorosDirectTransferBridge.h"
 #import "N2Stuff.h"
 #import "Security/Security.h"
 #import "Security/SecRequirement.h"
@@ -96,6 +97,11 @@
 #import "url.h"
 #include <OpenJPEG/opj_config.h>
 #define BUILTIN_DCMTK YES
+
+NSString *HorosDirectTransferInstanceUID(void)
+{
+    return [AppController UID];
+}
 
 static NSMenu *mainMenuCLUTMenu = nil, *mainMenuWLWWMenu = nil, *mainMenuConvMenu = nil, *mainOpacityMenu = nil;
 static NSDictionary *previousWLWWKeys = nil, *previousCLUTKeys = nil, *previousConvKeys = nil, *previousOpacityKeys = nil;

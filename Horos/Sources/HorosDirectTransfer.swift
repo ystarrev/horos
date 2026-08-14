@@ -70,6 +70,7 @@ public final class HorosDirectTransferService: NSObject {
     private static let sessionConnectedNotification = Notification.Name("HorosDirectSessionDidConnect")
     private static let sessionDisconnectedNotification = Notification.Name("HorosDirectSessionDidDisconnect")
     private static let chunkSize = 4 * 1_024 * 1_024
+    private static let streamBufferSize = 16 * 1_024 * 1_024
     private static let maximumFiles = 1_000_000
     private static let maximumFilenameBytes = 1_024
     private static let maximumFileBytes: UInt64 = 1 << 40
@@ -344,11 +345,20 @@ public final class HorosDirectTransferService: NSObject {
         guard let endpoint = stateQueue.sync(execute: { () -> (host: String, port: Int, token: String)? in
             guard let capability = remoteCapabilities[key] else { return nil }
             return (capability.host, capability.directPort, capability.token)
-        }) else { return false }
+        }) else {
+            NSLog("Horos direct query retrieve is unavailable for %@:%d; using DICOM fallback", host, dicomPort)
+            return false
+        }
 
         let connection = makeConnection(host: endpoint.host, port: endpoint.port)
         connection.start(queue: Self.ioQueue)
         let started = CFAbsoluteTimeGetCurrent()
+        NSLog(
+            "Horos direct query retrieve starting: %d item(s) from %@:%d",
+            items.count,
+            endpoint.host,
+            endpoint.port
+        )
         do {
             activityThread?.setStatus(NSLocalizedString("Connecting directly to Horos...", comment: ""))
             try waitUntilReady(connection, timeout: 8, thread: activityThread)
@@ -362,11 +372,12 @@ public final class HorosDirectTransferService: NSObject {
             activityThread?.setStatus(NSLocalizedString("Transfer complete", comment: ""))
             let elapsed = CFAbsoluteTimeGetCurrent() - started
             NSLog(String(
-                format: "Horos direct query retrieve completed: %d files, %.1f MiB in %.2f s (%.1f MiB/s)",
+                format: "Horos direct query retrieve completed: %d files, %.1f MiB in %.2f s (%.1f MiB/s, %.1f Mbit/s)",
                 result.fileCount,
                 Double(result.bytes) / (1_024 * 1_024),
                 elapsed,
-                elapsed > 0 ? Double(result.bytes) / (1_024 * 1_024) / elapsed : 0
+                elapsed > 0 ? Double(result.bytes) / (1_024 * 1_024) / elapsed : 0,
+                elapsed > 0 ? Double(result.bytes) * 8 / 1_000_000 / elapsed : 0
             ))
             return true
         } catch {
@@ -384,6 +395,13 @@ public final class HorosDirectTransferService: NSObject {
         do {
             let entries = try prepareEntries(for: uniqueFiles)
             let totalBytes = try totalSize(of: entries)
+            let started = CFAbsoluteTimeGetCurrent()
+            NSLog(
+                "Horos direct checked-in transfer starting: %d files, %.1f MiB to %@",
+                entries.count,
+                Double(totalBytes) / (1_024 * 1_024),
+                session.name
+            )
             activityThread?.setStatus(String(
                 format: NSLocalizedString("Sending %ld files to %@...", comment: ""),
                 uniqueFiles.count,
@@ -399,6 +417,16 @@ public final class HorosDirectTransferService: NSObject {
                 )
             }
             activityThread?.setStatus(NSLocalizedString("Transfer complete", comment: ""))
+            activityThread?.setProgress(1)
+            let elapsed = CFAbsoluteTimeGetCurrent() - started
+            NSLog(String(
+                format: "Horos direct checked-in transfer completed: %d files, %.1f MiB in %.2f s (%.1f MiB/s, %.1f Mbit/s)",
+                entries.count,
+                Double(totalBytes) / (1_024 * 1_024),
+                elapsed,
+                elapsed > 0 ? Double(totalBytes) / (1_024 * 1_024) / elapsed : 0,
+                elapsed > 0 ? Double(totalBytes) * 8 / 1_000_000 / elapsed : 0
+            ))
             return true
         } catch {
             session.connection.cancel()
@@ -428,7 +456,14 @@ public final class HorosDirectTransferService: NSObject {
                 guard let items = try JSONSerialization.jsonObject(with: requestData) as? [[String: String]] else {
                     throw DirectTransferError.invalidProtocol
                 }
+                let resolutionStarted = CFAbsoluteTimeGetCurrent()
                 let files = try filesForQueryItems(items)
+                NSLog(
+                    "Horos direct query resolved %d item(s) to %d files in %.3f s",
+                    items.count,
+                    files.count,
+                    CFAbsoluteTimeGetCurrent() - resolutionStarted
+                )
                 try sendPulledBatch(files: files, over: connection, activityThread: nil)
                 connection.cancel()
             }
@@ -552,15 +587,21 @@ public final class HorosDirectTransferService: NSObject {
                     guard valueData.isEmpty else {
                         throw DirectTransferError.invalidProtocol
                     }
+                    let started = CFAbsoluteTimeGetCurrent()
                     let result = try receivePulledBatch(over: connection, activityThread: nil)
-                    NSLog(
-                        "Horos direct checked-in transfer received: %d files, %.1f MiB",
+                    let elapsed = CFAbsoluteTimeGetCurrent() - started
+                    NSLog(String(
+                        format: "Horos direct checked-in transfer received: %d files, %.1f MiB in %.2f s (%.1f MiB/s, %.1f Mbit/s)",
                         result.fileCount,
-                        Double(result.bytes) / (1_024 * 1_024)
-                    )
+                        Double(result.bytes) / (1_024 * 1_024),
+                        elapsed,
+                        elapsed > 0 ? Double(result.bytes) / (1_024 * 1_024) / elapsed : 0,
+                        elapsed > 0 ? Double(result.bytes) * 8 / 1_000_000 / elapsed : 0
+                    ))
                 }
             }
         } catch {
+            NSLog("Horos direct check-in control connection to %@ ended: %@", capability.host, error.localizedDescription)
             connection.cancel()
         }
         controlConnectionEnded(connection, capability: capability, key: key)
@@ -685,6 +726,7 @@ public final class HorosDirectTransferService: NSObject {
                     }
                     self.schedulePing(for: sessionID)
                 } catch {
+                    NSLog("Horos direct heartbeat to %@ failed: %@", session.name, error.localizedDescription)
                     session.connection.cancel()
                     self.removeServerSession(sessionID, connection: session.connection)
                 }
@@ -809,33 +851,60 @@ public final class HorosDirectTransferService: NSObject {
         over connection: NWConnection,
         activityThread: Thread?
     ) throws {
+        // TCP is a byte stream, so file boundaries do not need to match
+        // individual NWConnection sends. Coalescing headers and small DICOM
+        // files avoids paying one contentProcessed round trip per image on
+        // higher-latency links.
+        var streamBuffer = Data()
+        streamBuffer.reserveCapacity(Self.streamBufferSize + Self.chunkSize)
+        var lastActivityUpdate = CFAbsoluteTimeGetCurrent()
+
+        func flushStreamBuffer() throws {
+            guard !streamBuffer.isEmpty else { return }
+            try sendData(streamBuffer, over: connection, thread: activityThread)
+            streamBuffer.removeAll(keepingCapacity: true)
+        }
+
+        func appendToStream(_ data: Data) throws {
+            if streamBuffer.count + data.count > Self.streamBufferSize {
+                try flushStreamBuffer()
+            }
+            streamBuffer.append(data)
+        }
+
         for (index, entry) in entries.enumerated() {
             if activityThread?.isCancelled == true { throw DirectTransferError.cancelled }
             var fileHeader = Data()
             fileHeader.appendNetwork(UInt32(entry.nameData.count))
             fileHeader.appendNetwork(entry.size)
             fileHeader.append(entry.nameData)
-            try sendData(fileHeader, over: connection, thread: activityThread)
+            try appendToStream(fileHeader)
 
             let handle = try FileHandle(forReadingFrom: entry.url)
             defer { try? handle.close() }
             var remaining = entry.size
-            activityThread?.setStatus(String(
-                format: NSLocalizedString("Sending file %d of %d...", comment: ""),
-                index + 1,
-                entries.count
-            ))
             while remaining > 0 {
                 if activityThread?.isCancelled == true { throw DirectTransferError.cancelled }
                 let requested = Int(min(UInt64(Self.chunkSize), remaining))
                 let data = try handle.read(upToCount: requested) ?? Data()
                 guard !data.isEmpty else { throw DirectTransferError.truncatedFile(entry.url.path) }
-                try sendData(data, over: connection, thread: activityThread)
+                try appendToStream(data)
                 remaining -= UInt64(data.count)
                 sentBytes += UInt64(data.count)
-                activityThread?.setProgress(totalBytes > 0 ? CGFloat(sentBytes) / CGFloat(totalBytes) : 1)
+
+                let now = CFAbsoluteTimeGetCurrent()
+                if now - lastActivityUpdate >= 0.2 || sentBytes == totalBytes {
+                    activityThread?.setStatus(String(
+                        format: NSLocalizedString("Sending file %d of %d...", comment: ""),
+                        index + 1,
+                        entries.count
+                    ))
+                    activityThread?.setProgress(totalBytes > 0 ? CGFloat(sentBytes) / CGFloat(totalBytes) : 1)
+                    lastActivityUpdate = now
+                }
             }
         }
+        try flushStreamBuffer()
     }
 
     private func sendPulledBatch(files: [String], over connection: NWConnection, activityThread: Thread?) throws {
@@ -929,15 +998,49 @@ public final class HorosDirectTransferService: NSObject {
         }
 
         var receivedTotal: UInt64 = 0
+        var lastActivityUpdate = CFAbsoluteTimeGetCurrent()
+        var streamBuffer = Data()
+        var streamOffset = 0
+
+        func readFromStream(_ length: Int, timeout: TimeInterval) throws -> Data {
+            guard length >= 0 else { throw DirectTransferError.invalidProtocol }
+            while streamBuffer.count - streamOffset < length {
+                if streamOffset > 0 {
+                    streamBuffer.removeSubrange(0..<streamOffset)
+                    streamOffset = 0
+                }
+                let needed = length - streamBuffer.count
+                let minimumLength = min(max(needed, 1), 256 * 1_024)
+                let maximumLength = max(Self.chunkSize, minimumLength)
+                let chunk = try receiveSome(
+                    minimumLength: minimumLength,
+                    maximumLength: maximumLength,
+                    from: connection,
+                    timeout: timeout,
+                    thread: activityThread
+                )
+                streamBuffer.append(chunk)
+            }
+
+            let range = streamOffset..<(streamOffset + length)
+            let result = streamBuffer.subdata(in: range)
+            streamOffset += length
+            if streamOffset == streamBuffer.count {
+                streamBuffer.removeAll(keepingCapacity: true)
+                streamOffset = 0
+            }
+            return result
+        }
+
         for index in 0..<fileCount {
-            let fileHeader = try receiveExactly(12, from: connection, timeout: 30, thread: activityThread)
+            let fileHeader = try readFromStream(12, timeout: 30)
             let nameLength = Int(fileHeader.networkUInt32(at: 0))
             let fileSize = fileHeader.networkUInt64(at: 4)
             guard nameLength > 0,
                   nameLength <= Self.maximumFilenameBytes,
                   fileSize > 0,
                   fileSize <= Self.maximumFileBytes else { throw DirectTransferError.invalidProtocol }
-            let nameData = try receiveExactly(nameLength, from: connection, timeout: 30, thread: activityThread)
+            let nameData = try readFromStream(nameLength, timeout: 30)
             guard let proposedName = String(data: nameData, encoding: .utf8) else {
                 throw DirectTransferError.invalidProtocol
             }
@@ -949,18 +1052,23 @@ public final class HorosDirectTransferService: NSObject {
             let output = try FileHandle(forWritingTo: destination)
             do {
                 var remaining = fileSize
-                activityThread?.setStatus(String(
-                    format: NSLocalizedString("Receiving file %d of %d...", comment: ""),
-                    index + 1,
-                    fileCount
-                ))
                 while remaining > 0 {
                     let length = Int(min(UInt64(Self.chunkSize), remaining))
-                    let data = try receiveExactly(length, from: connection, timeout: 60, thread: activityThread)
+                    let data = try readFromStream(length, timeout: 60)
                     try output.write(contentsOf: data)
                     remaining -= UInt64(data.count)
                     receivedTotal += UInt64(data.count)
-                    activityThread?.setProgress(CGFloat(receivedTotal) / CGFloat(declaredTotal))
+
+                    let now = CFAbsoluteTimeGetCurrent()
+                    if now - lastActivityUpdate >= 0.2 || receivedTotal == declaredTotal {
+                        activityThread?.setStatus(String(
+                            format: NSLocalizedString("Receiving file %d of %d...", comment: ""),
+                            index + 1,
+                            fileCount
+                        ))
+                        activityThread?.setProgress(CGFloat(receivedTotal) / CGFloat(declaredTotal))
+                        lastActivityUpdate = now
+                    }
                 }
             } catch {
                 try? output.close()
@@ -1161,41 +1269,61 @@ public final class HorosDirectTransferService: NSObject {
     private func receiveExactly(_ length: Int, from connection: NWConnection, timeout: TimeInterval, thread: Thread?) throws -> Data {
         var result = Data()
         result.reserveCapacity(length)
-        let deadline = Date().addingTimeInterval(timeout)
 
         while result.count < length {
-            if thread?.isCancelled == true { throw DirectTransferError.cancelled }
-            guard Date() < deadline else { throw DirectTransferError.timeout }
-
-            let semaphore = DispatchSemaphore(value: 0)
-            var received: Data?
-            var receiveError: NWError?
-            var complete = false
             let remaining = length - result.count
-            connection.receive(minimumIncompleteLength: 1, maximumLength: remaining) { data, _, isComplete, error in
-                received = data
-                receiveError = error
-                complete = isComplete
-                semaphore.signal()
-            }
-            while semaphore.wait(timeout: .now() + 0.1) == .timedOut {
-                if thread?.isCancelled == true {
-                    connection.cancel()
-                    throw DirectTransferError.cancelled
-                }
-                guard Date() < deadline else {
-                    connection.cancel()
-                    throw DirectTransferError.timeout
-                }
-            }
-            if let receiveError { throw receiveError }
-            if let received, !received.isEmpty {
-                result.append(received)
-            } else if complete {
-                throw DirectTransferError.connectionClosed
-            }
+            let minimumLength = min(remaining, 256 * 1_024)
+            result.append(try receiveSome(
+                minimumLength: minimumLength,
+                maximumLength: remaining,
+                from: connection,
+                timeout: timeout,
+                thread: thread
+            ))
         }
         return result
+    }
+
+    private func receiveSome(
+        minimumLength: Int,
+        maximumLength: Int,
+        from connection: NWConnection,
+        timeout: TimeInterval,
+        thread: Thread?
+    ) throws -> Data {
+        guard minimumLength > 0, maximumLength >= minimumLength else {
+            throw DirectTransferError.invalidProtocol
+        }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        let semaphore = DispatchSemaphore(value: 0)
+        var received: Data?
+        var receiveError: NWError?
+        var complete = false
+        connection.receive(
+            minimumIncompleteLength: minimumLength,
+            maximumLength: maximumLength
+        ) { data, _, isComplete, error in
+            received = data
+            receiveError = error
+            complete = isComplete
+            semaphore.signal()
+        }
+
+        while semaphore.wait(timeout: .now() + 0.1) == .timedOut {
+            if thread?.isCancelled == true {
+                connection.cancel()
+                throw DirectTransferError.cancelled
+            }
+            guard Date() < deadline else {
+                connection.cancel()
+                throw DirectTransferError.timeout
+            }
+        }
+        if let receiveError { throw receiveError }
+        if let received, !received.isEmpty { return received }
+        if complete { throw DirectTransferError.connectionClosed }
+        throw DirectTransferError.invalidProtocol
     }
 }
 

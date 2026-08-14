@@ -1043,13 +1043,236 @@ public final class HorosDirectTransferService: NSObject {
             if let cleanupURL { try? fileManager.removeItem(at: cleanupURL) }
         }
 
-        var receivedTotal: UInt64 = 0
-        var lastActivityUpdate = CFAbsoluteTimeGetCurrent()
-        var lastPerformanceLog = lastActivityUpdate
-        let transferStarted = lastActivityUpdate
+        let receivedTotal: UInt64
+        if let declaredWireTotal {
+            let streamURL = batchURL.appendingPathComponent(".HorosDirectStream")
+            guard fileManager.createFile(atPath: streamURL.path, contents: nil) else {
+                throw DirectTransferError.cannotCreateFile(streamURL.path)
+            }
+            activityThread?.setStatus(String(
+                format: NSLocalizedString("Receiving %d files from Horos...", comment: ""),
+                fileCount
+            ))
+            try receiveBulkWireStream(
+                byteCount: declaredWireTotal,
+                to: streamURL,
+                over: connection,
+                activityThread: activityThread
+            )
+            receivedTotal = try unpackBulkWireStream(
+                at: streamURL,
+                fileCount: fileCount,
+                declaredTotal: declaredTotal,
+                declaredWireTotal: declaredWireTotal,
+                into: batchURL,
+                activityThread: activityThread
+            )
+            try fileManager.removeItem(at: streamURL)
+        } else {
+            receivedTotal = try receiveLegacyFramedFiles(
+                fileCount: fileCount,
+                declaredTotal: declaredTotal,
+                into: batchURL,
+                over: connection,
+                activityThread: activityThread
+            )
+        }
+
+        guard receivedTotal == declaredTotal else { throw DirectTransferError.invalidProtocol }
+        try fileManager.createDirectory(at: incomingURL, withIntermediateDirectories: true)
+        let completedBatch = incomingURL.appendingPathComponent(".HorosDirect-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.moveItem(at: batchURL, to: completedBatch)
+        cleanupURL = completedBatch
+        let visibleBatch = incomingURL.appendingPathComponent("HorosDirect-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.moveItem(at: completedBatch, to: visibleBatch)
+        cleanupURL = nil
+        database.initiateImportFilesFromIncomingDirUnlessAlreadyImporting()
+        return receivedTotal
+    }
+
+    private func receiveBulkWireStream(
+        byteCount: UInt64,
+        to destination: URL,
+        over connection: NWConnection,
+        activityThread: Thread?
+    ) throws {
+        let output = try FileHandle(forWritingTo: destination)
+        defer { try? output.close() }
+
+        let completion = DispatchSemaphore(value: 0)
+        let stateLock = NSLock()
+        var receivedBytes: UInt64 = 0
+        var terminalError: Error?
+        var finished = false
+        var lastDataTime = CFAbsoluteTimeGetCurrent()
+        var lastActivityUpdate = lastDataTime
+        var lastPerformanceLog = lastDataTime
+        let transferStarted = lastDataTime
+
+        func finish(_ error: Error?) {
+            stateLock.lock()
+            guard !finished else {
+                stateLock.unlock()
+                return
+            }
+            finished = true
+            terminalError = error
+            stateLock.unlock()
+            completion.signal()
+        }
+
+        var receiveNext: (() -> Void)?
+        receiveNext = {
+            stateLock.lock()
+            let alreadyFinished = finished
+            let remaining = byteCount - receivedBytes
+            stateLock.unlock()
+            guard !alreadyFinished else { return }
+            guard remaining > 0 else {
+                finish(nil)
+                return
+            }
+
+            let minimumLength = Int(min(UInt64(Self.bulkReceiveMinimumLength), remaining))
+            let maximumLength = Int(min(UInt64(Self.chunkSize), remaining))
+            connection.receive(
+                minimumIncompleteLength: minimumLength,
+                maximumLength: maximumLength
+            ) { data, _, isComplete, error in
+                if let data, !data.isEmpty {
+                    do {
+                        try output.write(contentsOf: data)
+                    } catch {
+                        finish(error)
+                        return
+                    }
+
+                    let now = CFAbsoluteTimeGetCurrent()
+                    stateLock.lock()
+                    let (newTotal, overflow) = receivedBytes.addingReportingOverflow(UInt64(data.count))
+                    guard !overflow, newTotal <= byteCount else {
+                        stateLock.unlock()
+                        finish(DirectTransferError.invalidProtocol)
+                        return
+                    }
+                    receivedBytes = newTotal
+                    lastDataTime = now
+                    let shouldUpdateActivity = now - lastActivityUpdate >= 0.2 || newTotal == byteCount
+                    let shouldLog = now - lastPerformanceLog >= 5 || newTotal == byteCount
+                    if shouldUpdateActivity { lastActivityUpdate = now }
+                    if shouldLog { lastPerformanceLog = now }
+                    stateLock.unlock()
+
+                    if shouldUpdateActivity {
+                        activityThread?.setProgress(0.9 * CGFloat(newTotal) / CGFloat(byteCount))
+                    }
+                    if shouldLog {
+                        let elapsed = max(now - transferStarted, 0.001)
+                        NSLog(String(
+                            format: "Horos direct bulk receive progress: %.1f/%.1f MiB (%.1f MiB/s)",
+                            Double(newTotal) / (1_024 * 1_024),
+                            Double(byteCount) / (1_024 * 1_024),
+                            Double(newTotal) / (1_024 * 1_024) / elapsed
+                        ))
+                    }
+                }
+
+                stateLock.lock()
+                let completeByteCount = receivedBytes == byteCount
+                stateLock.unlock()
+                if completeByteCount {
+                    finish(nil)
+                } else if let error {
+                    finish(error)
+                } else if isComplete {
+                    finish(DirectTransferError.connectionClosed)
+                } else {
+                    receiveNext?()
+                }
+            }
+        }
+
+        receiveNext?()
+        var cancellationRequested = false
+        var timeoutRequested = false
+        while completion.wait(timeout: .now() + 0.1) == .timedOut {
+            if activityThread?.isCancelled == true, !cancellationRequested {
+                cancellationRequested = true
+                connection.cancel()
+            }
+            stateLock.lock()
+            let stalledFor = CFAbsoluteTimeGetCurrent() - lastDataTime
+            stateLock.unlock()
+            if stalledFor >= Self.bulkIOTimeout, !timeoutRequested {
+                timeoutRequested = true
+                connection.cancel()
+            }
+        }
+        receiveNext = nil
+
+        if cancellationRequested { throw DirectTransferError.cancelled }
+        if timeoutRequested { throw DirectTransferError.timeout }
+        if let terminalError { throw terminalError }
+        stateLock.lock()
+        let finalByteCount = receivedBytes
+        stateLock.unlock()
+        guard finalByteCount == byteCount else { throw DirectTransferError.invalidProtocol }
+    }
+
+    private func unpackBulkWireStream(
+        at streamURL: URL,
+        fileCount: Int,
+        declaredTotal: UInt64,
+        declaredWireTotal: UInt64,
+        into batchURL: URL,
+        activityThread: Thread?
+    ) throws -> UInt64 {
+        let input = try FileHandle(forReadingFrom: streamURL)
+        defer { try? input.close() }
+        var wireBytesRead: UInt64 = 0
+
+        func readExactlyFromFile(_ length: Int) throws -> Data {
+            guard length >= 0 else { throw DirectTransferError.invalidProtocol }
+            var result = Data()
+            result.reserveCapacity(length)
+            while result.count < length {
+                let data = try input.read(upToCount: length - result.count) ?? Data()
+                guard !data.isEmpty else { throw DirectTransferError.invalidProtocol }
+                result.append(data)
+            }
+            wireBytesRead += UInt64(result.count)
+            guard wireBytesRead <= declaredWireTotal else { throw DirectTransferError.invalidProtocol }
+            return result
+        }
+
+        let receivedTotal = try unpackFramedFiles(
+            fileCount: fileCount,
+            declaredTotal: declaredTotal,
+            into: batchURL,
+            preparing: true,
+            progressBase: 0.9,
+            progressSpan: 0.1,
+            activityThread: activityThread,
+            readData: readExactlyFromFile
+        )
+
+        guard receivedTotal == declaredTotal,
+              wireBytesRead == declaredWireTotal,
+              (try input.read(upToCount: 1) ?? Data()).isEmpty else {
+            throw DirectTransferError.invalidProtocol
+        }
+        return receivedTotal
+    }
+
+    private func receiveLegacyFramedFiles(
+        fileCount: Int,
+        declaredTotal: UInt64,
+        into batchURL: URL,
+        over connection: NWConnection,
+        activityThread: Thread?
+    ) throws -> UInt64 {
         var streamBuffer = Data()
         var streamOffset = 0
-        var wireBytesReceived: UInt64 = 0
 
         func readFromStream(_ length: Int, timeout: TimeInterval) throws -> Data {
             guard length >= 0 else { throw DirectTransferError.invalidProtocol }
@@ -1060,32 +1283,14 @@ public final class HorosDirectTransferService: NSObject {
                 }
                 let availableBytes = streamBuffer.count - streamOffset
                 let needed = length - availableBytes
-                let minimumLength: Int
-                if let declaredWireTotal {
-                    guard wireBytesReceived < declaredWireTotal else {
-                        throw DirectTransferError.invalidProtocol
-                    }
-                    // Drain the TCP receive window continuously. Waiting for a
-                    // complete 4 MiB block can stall high-latency connections.
-                    minimumLength = Int(min(
-                        UInt64(Self.bulkReceiveMinimumLength),
-                        declaredWireTotal - wireBytesReceived
-                    ))
-                } else {
-                    minimumLength = min(max(needed, 1), 256 * 1_024)
-                }
                 let chunk = try receiveSome(
-                    minimumLength: minimumLength,
+                    minimumLength: min(max(needed, 1), 256 * 1_024),
                     maximumLength: Self.chunkSize,
                     from: connection,
                     timeout: max(timeout, Self.bulkIOTimeout),
                     thread: activityThread
                 )
                 streamBuffer.append(chunk)
-                wireBytesReceived += UInt64(chunk.count)
-                if let declaredWireTotal, wireBytesReceived > declaredWireTotal {
-                    throw DirectTransferError.invalidProtocol
-                }
             }
 
             let range = streamOffset..<(streamOffset + length)
@@ -1098,15 +1303,49 @@ public final class HorosDirectTransferService: NSObject {
             return result
         }
 
+        let receivedTotal = try unpackFramedFiles(
+            fileCount: fileCount,
+            declaredTotal: declaredTotal,
+            into: batchURL,
+            preparing: false,
+            progressBase: 0,
+            progressSpan: 1,
+            activityThread: activityThread
+        ) { length in
+            try readFromStream(length, timeout: 60)
+        }
+
+        guard receivedTotal == declaredTotal,
+              streamBuffer.count == streamOffset else {
+            throw DirectTransferError.invalidProtocol
+        }
+        return receivedTotal
+    }
+
+    private func unpackFramedFiles(
+        fileCount: Int,
+        declaredTotal: UInt64,
+        into batchURL: URL,
+        preparing: Bool,
+        progressBase: CGFloat,
+        progressSpan: CGFloat,
+        activityThread: Thread?,
+        readData: (_ length: Int) throws -> Data
+    ) throws -> UInt64 {
+        let fileManager = FileManager.default
+        var receivedTotal: UInt64 = 0
+        var lastActivityUpdate = CFAbsoluteTimeGetCurrent()
+
         for index in 0..<fileCount {
-            let fileHeader = try readFromStream(12, timeout: 30)
+            if activityThread?.isCancelled == true { throw DirectTransferError.cancelled }
+            let fileHeader = try readData(12)
             let nameLength = Int(fileHeader.networkUInt32(at: 0))
             let fileSize = fileHeader.networkUInt64(at: 4)
             guard nameLength > 0,
                   nameLength <= Self.maximumFilenameBytes,
                   fileSize > 0,
                   fileSize <= Self.maximumFileBytes else { throw DirectTransferError.invalidProtocol }
-            let nameData = try readFromStream(nameLength, timeout: 30)
+            let nameData = try readData(nameLength)
             guard let proposedName = String(data: nameData, encoding: .utf8) else {
                 throw DirectTransferError.invalidProtocol
             }
@@ -1119,30 +1358,20 @@ public final class HorosDirectTransferService: NSObject {
             do {
                 var remaining = fileSize
                 while remaining > 0 {
-                    let length = Int(min(UInt64(Self.chunkSize), remaining))
-                    let data = try readFromStream(length, timeout: 60)
+                    let data = try readData(Int(min(UInt64(Self.chunkSize), remaining)))
                     try output.write(contentsOf: data)
                     remaining -= UInt64(data.count)
                     receivedTotal += UInt64(data.count)
 
                     let now = CFAbsoluteTimeGetCurrent()
                     if now - lastActivityUpdate >= 0.2 || receivedTotal == declaredTotal {
-                        activityThread?.setStatus(String(
-                            format: NSLocalizedString("Receiving file %d of %d...", comment: ""),
-                            index + 1,
-                            fileCount
-                        ))
-                        activityThread?.setProgress(CGFloat(receivedTotal) / CGFloat(declaredTotal))
-                        if now - lastPerformanceLog >= 5 {
-                            let elapsed = max(now - transferStarted, 0.001)
-                            NSLog(String(
-                                format: "Horos direct bulk receive progress: %.1f/%.1f MiB (%.1f MiB/s)",
-                                Double(receivedTotal) / (1_024 * 1_024),
-                                Double(declaredTotal) / (1_024 * 1_024),
-                                Double(receivedTotal) / (1_024 * 1_024) / elapsed
-                            ))
-                            lastPerformanceLog = now
-                        }
+                        let statusFormat = preparing
+                            ? NSLocalizedString("Preparing file %d of %d...", comment: "")
+                            : NSLocalizedString("Receiving file %d of %d...", comment: "")
+                        activityThread?.setStatus(String(format: statusFormat, index + 1, fileCount))
+                        activityThread?.setProgress(
+                            progressBase + progressSpan * CGFloat(receivedTotal) / CGFloat(declaredTotal)
+                        )
                         lastActivityUpdate = now
                     }
                 }
@@ -1154,20 +1383,6 @@ public final class HorosDirectTransferService: NSObject {
         }
 
         guard receivedTotal == declaredTotal else { throw DirectTransferError.invalidProtocol }
-        if let declaredWireTotal {
-            guard wireBytesReceived == declaredWireTotal,
-                  streamBuffer.count == streamOffset else {
-                throw DirectTransferError.invalidProtocol
-            }
-        }
-        try fileManager.createDirectory(at: incomingURL, withIntermediateDirectories: true)
-        let completedBatch = incomingURL.appendingPathComponent(".HorosDirect-\(UUID().uuidString)", isDirectory: true)
-        try fileManager.moveItem(at: batchURL, to: completedBatch)
-        cleanupURL = completedBatch
-        let visibleBatch = incomingURL.appendingPathComponent("HorosDirect-\(UUID().uuidString)", isDirectory: true)
-        try fileManager.moveItem(at: completedBatch, to: visibleBatch)
-        cleanupURL = nil
-        database.initiateImportFilesFromIncomingDirUnlessAlreadyImporting()
         return receivedTotal
     }
 

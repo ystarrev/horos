@@ -12,3 +12,4 @@
 #import "Sources/MetalViewer/Metal3DSurfaceExtractor.h"
 #import "Sources/MetalViewer/MetalTumourSeedSRBridge.h"
 #import "Sources/MetalViewer/MetalStudyROISegBridge.h"
+#import "Sources/HorosDirectTransferBridge.h"

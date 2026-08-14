@@ -74,6 +74,8 @@
 #include "DCMTKTagCompatibility.h"
 #include "HorosDirectTransferDICOM.h"
 #import "HorosSwiftInterop.h"
+#import "HorosDirectTransferBridge.h"
+#import "NSUserDefaults+OsiriX.h"
 //#include "cmdlnarg.h"
 #include <dcmtk/ofstd/ofconapp.h>
 #include <dcmtk/dcmdata/dcuid.h>     /* for dcmtk version name */
@@ -237,7 +239,7 @@ progressCallback(
         NSInteger version = [[NSString stringWithUTF8String:versionString] integerValue];
         NSInteger directPort = [[NSString stringWithUTF8String:portString] integerValue];
         NSString *directToken = [NSString stringWithUTF8String:tokenString];
-        if (version >= 3 && directPort > 0 && directToken.length)
+        if (version >= 4 && directPort > 0 && directToken.length)
         {
             [[HorosDirectTransferService sharedService]
                 registerQueryCapabilityForHost:[node _hostname]
@@ -652,6 +654,107 @@ subOpCallback(void * /*subOpCallbackData*/ ,
 + (BOOL)allowsAnyHTTPSCertificateForHost:(NSString*)host;
 + (void)setAllowsAnyHTTPSCertificate:(BOOL)allow forHost:(NSString*)host;
 @end
+
+extern "C" BOOL HorosRetrieveDICOMQueryItems(
+    NSArray<NSDictionary<NSString *, NSString *> *> *items,
+    NSString *host,
+    NSInteger dicomPort,
+    NSString *calledAET)
+{
+    if (items.count == 0 || host.length == 0 || calledAET.length == 0 ||
+        dicomPort <= 0 || dicomPort > UINT16_MAX)
+        return NO;
+
+    NSString *callingAET = [NSUserDefaults defaultAETitle];
+    if (callingAET.length == 0)
+        return NO;
+
+    NSUInteger completedItems = 0;
+    NSUInteger receivedObjects = 0;
+    CFAbsoluteTime started = CFAbsoluteTimeGetCurrent();
+
+    @autoreleasepool
+    {
+        for (NSDictionary<NSString *, NSString *> *item in items)
+        {
+            @autoreleasepool
+            {
+                NSString *level = [item objectForKey:@"level"];
+                NSString *studyUID = [item objectForKey:@"studyUID"];
+                NSString *seriesUID = [item objectForKey:@"seriesUID"];
+                if (studyUID.length == 0)
+                    return NO;
+
+                DcmDataset dataset;
+                DCMTKQueryNode *node = nil;
+                NSDictionary *extraParameters = @{@"retrieveMode": @(CGETRetrieveMode)};
+
+                if ([level isEqualToString:@"STUDY"])
+                {
+                    dataset.putAndInsertString(DCM_StudyInstanceUID, studyUID.UTF8String, OFTrue);
+                    dataset.putAndInsertString(DCM_QueryRetrieveLevel, "STUDY", OFTrue);
+                    node = [DCMTKStudyQueryNode
+                        queryNodeWithDataset:&dataset
+                        callingAET:callingAET
+                        calledAET:calledAET
+                        hostname:host
+                        port:(int)dicomPort
+                        transferSyntax:0
+                        compression:0.f
+                        extraParameters:extraParameters];
+                }
+                else if ([level isEqualToString:@"SERIES"] && seriesUID.length > 0)
+                {
+                    dataset.putAndInsertString(DCM_StudyInstanceUID, studyUID.UTF8String, OFTrue);
+                    dataset.putAndInsertString(DCM_SeriesInstanceUID, seriesUID.UTF8String, OFTrue);
+                    dataset.putAndInsertString(DCM_QueryRetrieveLevel, "SERIES", OFTrue);
+                    node = [DCMTKSeriesQueryNode
+                        queryNodeWithDataset:&dataset
+                        callingAET:callingAET
+                        calledAET:calledAET
+                        hostname:host
+                        port:(int)dicomPort
+                        transferSyntax:0
+                        compression:0.f
+                        extraParameters:extraParameters];
+                }
+                else
+                    return NO;
+
+                if (node == nil)
+                    return NO;
+
+                node.noSmartMode = YES;
+                [node setShowErrorMessage:NO];
+                [node move:@{
+                    @"retrieveMode": @(CGETRetrieveMode),
+                    @"moveDestination": callingAET
+                } retrieveMode:CGETRetrieveMode];
+
+                NSUInteger total = node.countOfSuboperations;
+                NSUInteger successful = node.countOfSuccessfulSuboperations;
+                if (total == 0 || successful != total)
+                {
+                    NSLog(@"Horos checked-in C-GET failed for %@ %@: %lu/%lu object(s)",
+                          level,
+                          [level isEqualToString:@"SERIES"] ? seriesUID : studyUID,
+                          (unsigned long)successful,
+                          (unsigned long)total);
+                    return NO;
+                }
+
+                completedItems++;
+                receivedObjects += successful;
+            }
+        }
+    }
+
+    NSLog(@"Horos checked-in C-GET completed: %lu item(s), %lu object(s) in %.3f s",
+          (unsigned long)completedItems,
+          (unsigned long)receivedObjects,
+          CFAbsoluteTimeGetCurrent() - started);
+    return completedItems == items.count;
+}
 
 @implementation DCMTKQueryNode
 

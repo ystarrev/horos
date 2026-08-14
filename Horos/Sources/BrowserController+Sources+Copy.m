@@ -38,6 +38,8 @@
 
 #import "BrowserController+Sources+Copy.h"
 #import "DicomImage.h"
+#import "DicomSeries.h"
+#import "DicomStudy.h"
 #import "DicomFile.h"
 #import "DicomDatabase.h"
 #import "DataNodeIdentifier.h"
@@ -359,21 +361,39 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
     {
         HorosDirectNodeIdentifier *destination = [io objectAtIndex:1];
         DicomDatabase *sourceDatabase = [io objectAtIndex:2];
-        NSMutableArray *paths = [NSMutableArray array];
+        NSMutableArray *queryItems = [NSMutableArray array];
+        NSMutableSet *seriesKeys = [NSMutableSet set];
         DicomDatabase *workerDatabase = sourceDatabase.independentDatabase;
         N2PerformManagedObjectContextBlockAndWait(workerDatabase.managedObjectContext, ^{
             for (DicomImage *image in [workerDatabase objectsWithIDs:[io objectAtIndex:0]])
             {
-                NSString *path = image.completePath;
-                if (path.length && ![paths containsObject:path])
-                    [paths addObject:path];
+                DicomSeries *series = image.series;
+                NSString *studyUID = series.study.studyInstanceUID;
+                NSString *seriesUID = series.seriesDICOMUID;
+                if (!seriesUID.length)
+                    seriesUID = series.seriesInstanceUID;
+                if (!studyUID.length || !seriesUID.length)
+                    continue;
+
+                NSString *key = [NSString stringWithFormat:@"%@|%@", studyUID, seriesUID];
+                if ([seriesKeys containsObject:key])
+                    continue;
+
+                [seriesKeys addObject:key];
+                [queryItems addObject:@{
+                    @"level": @"SERIES",
+                    @"studyUID": studyUID,
+                    @"seriesUID": seriesUID
+                }];
             }
         });
 
-        if (paths.count)
+        if (queryItems.count)
         {
+            // The checked-in Mac may be behind NAT. Send only the selected
+            // series UIDs and let that Mac pull them over the proven C-GET path.
             BOOL sent = [[HorosDirectTransferService sharedService]
-                sendFiles:paths
+                requestRetrieveQueryItems:queryItems
                 toSession:destination.sessionIdentifier
                 activityThread:thread];
             thread.status = sent ? NSLocalizedString(@"Transfer complete", nil) : NSLocalizedString(@"Direct Horos transfer failed", nil);
@@ -381,7 +401,7 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
                 thread.progress = 1;
         }
         else
-            thread.status = NSLocalizedString(@"No files to send.", nil);
+            thread.status = NSLocalizedString(@"No DICOM series to send.", nil);
     }
     @catch (NSException *exception)
     {

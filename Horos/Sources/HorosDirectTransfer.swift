@@ -66,11 +66,12 @@ public final class HorosDirectTransferService: NSObject {
     private static let magic = Data("HOROSFT1".utf8)
     private static let protocolVersion: UInt32 = 1
     private static let sessionMagic = Data("HOROSFT2".utf8)
-    private static let sessionProtocolVersion: UInt32 = 2
+    private static let sessionProtocolVersion: UInt32 = 3
     private static let sessionConnectedNotification = Notification.Name("HorosDirectSessionDidConnect")
     private static let sessionDisconnectedNotification = Notification.Name("HorosDirectSessionDidDisconnect")
     private static let chunkSize = 4 * 1_024 * 1_024
-    private static let streamBufferSize = 16 * 1_024 * 1_024
+    private static let streamBufferSize = chunkSize
+    private static let bulkIOTimeout: TimeInterval = 90
     private static let maximumFiles = 1_000_000
     private static let maximumFilenameBytes = 1_024
     private static let maximumFileBytes: UInt64 = 1 << 40
@@ -844,6 +845,17 @@ public final class HorosDirectTransferService: NSObject {
         return result
     }
 
+    private func wireSize(of entries: [HorosDirectFileEntry], fileBytes: UInt64) throws -> UInt64 {
+        var result = fileBytes
+        for entry in entries {
+            let framingBytes = UInt64(12 + entry.nameData.count)
+            let (newResult, overflow) = result.addingReportingOverflow(framingBytes)
+            guard !overflow else { throw DirectTransferError.invalidProtocol }
+            result = newResult
+        }
+        return result
+    }
+
     private func sendFileContents(
         _ entries: [HorosDirectFileEntry],
         totalBytes: UInt64,
@@ -855,14 +867,49 @@ public final class HorosDirectTransferService: NSObject {
         // individual NWConnection sends. Coalescing headers and small DICOM
         // files avoids paying one contentProcessed round trip per image on
         // higher-latency links.
+        let totalWireBytes = try wireSize(of: entries, fileBytes: totalBytes)
         var streamBuffer = Data()
-        streamBuffer.reserveCapacity(Self.streamBufferSize + Self.chunkSize)
+        streamBuffer.reserveCapacity(Self.streamBufferSize)
         var lastActivityUpdate = CFAbsoluteTimeGetCurrent()
+        var lastPerformanceLog = lastActivityUpdate
+        let transferStarted = lastActivityUpdate
+        var wireBytesSent: UInt64 = 0
+        var currentFileNumber = 0
 
         func flushStreamBuffer() throws {
             guard !streamBuffer.isEmpty else { return }
-            try sendData(streamBuffer, over: connection, thread: activityThread)
+            let byteCount = streamBuffer.count
+            try sendData(
+                streamBuffer,
+                over: connection,
+                timeout: Self.bulkIOTimeout,
+                thread: activityThread
+            )
+            wireBytesSent += UInt64(byteCount)
             streamBuffer.removeAll(keepingCapacity: true)
+
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - lastActivityUpdate >= 0.2 || wireBytesSent == totalWireBytes {
+                activityThread?.setStatus(String(
+                    format: NSLocalizedString("Sending file %d of %d...", comment: ""),
+                    currentFileNumber,
+                    entries.count
+                ))
+                activityThread?.setProgress(
+                    totalWireBytes > 0 ? CGFloat(wireBytesSent) / CGFloat(totalWireBytes) : 1
+                )
+                if now - lastPerformanceLog >= 5 {
+                    let elapsed = max(now - transferStarted, 0.001)
+                    NSLog(String(
+                        format: "Horos direct bulk send progress: %.1f/%.1f MiB (%.1f MiB/s)",
+                        Double(wireBytesSent) / (1_024 * 1_024),
+                        Double(totalWireBytes) / (1_024 * 1_024),
+                        Double(wireBytesSent) / (1_024 * 1_024) / elapsed
+                    ))
+                    lastPerformanceLog = now
+                }
+                lastActivityUpdate = now
+            }
         }
 
         func appendToStream(_ data: Data) throws {
@@ -874,6 +921,7 @@ public final class HorosDirectTransferService: NSObject {
 
         for (index, entry) in entries.enumerated() {
             if activityThread?.isCancelled == true { throw DirectTransferError.cancelled }
+            currentFileNumber = index + 1
             var fileHeader = Data()
             fileHeader.appendNetwork(UInt32(entry.nameData.count))
             fileHeader.appendNetwork(entry.size)
@@ -891,17 +939,6 @@ public final class HorosDirectTransferService: NSObject {
                 try appendToStream(data)
                 remaining -= UInt64(data.count)
                 sentBytes += UInt64(data.count)
-
-                let now = CFAbsoluteTimeGetCurrent()
-                if now - lastActivityUpdate >= 0.2 || sentBytes == totalBytes {
-                    activityThread?.setStatus(String(
-                        format: NSLocalizedString("Sending file %d of %d...", comment: ""),
-                        index + 1,
-                        entries.count
-                    ))
-                    activityThread?.setProgress(totalBytes > 0 ? CGFloat(sentBytes) / CGFloat(totalBytes) : 1)
-                    lastActivityUpdate = now
-                }
             }
         }
         try flushStreamBuffer()
@@ -917,6 +954,7 @@ public final class HorosDirectTransferService: NSObject {
             var response = Data()
             response.appendNetwork(UInt32(1))
             response.appendNetwork(UInt32(0))
+            response.appendNetwork(UInt64(0))
             response.appendNetwork(UInt64(0))
             try? sendData(response, over: connection, thread: nil)
             throw error
@@ -940,6 +978,7 @@ public final class HorosDirectTransferService: NSObject {
         response.appendNetwork(UInt32(0))
         response.appendNetwork(UInt32(entries.count))
         response.appendNetwork(totalBytes)
+        response.appendNetwork(try wireSize(of: entries, fileBytes: totalBytes))
         try sendData(response, over: connection, thread: activityThread)
         var sentBytes: UInt64 = 0
         try sendFileContents(
@@ -958,16 +997,21 @@ public final class HorosDirectTransferService: NSObject {
         over connection: NWConnection,
         activityThread: Thread?
     ) throws -> (fileCount: Int, bytes: UInt64) {
-        let response = try receiveExactly(16, from: connection, timeout: 60, thread: activityThread)
+        let response = try receiveExactly(24, from: connection, timeout: 60, thread: activityThread)
         guard response.networkUInt32(at: 0) == 0 else { throw DirectTransferError.batchUnavailable }
         let fileCount = Int(response.networkUInt32(at: 4))
         let totalBytes = response.networkUInt64(at: 8)
-        guard fileCount > 0, fileCount <= Self.maximumFiles, totalBytes > 0 else {
+        let totalWireBytes = response.networkUInt64(at: 16)
+        guard fileCount > 0,
+              fileCount <= Self.maximumFiles,
+              totalBytes > 0,
+              totalWireBytes >= totalBytes else {
             throw DirectTransferError.batchUnavailable
         }
         let received = try receiveIncomingFiles(
             fileCount: fileCount,
             declaredTotal: totalBytes,
+            declaredWireTotal: totalWireBytes,
             over: connection,
             activityThread: activityThread
         )
@@ -980,6 +1024,7 @@ public final class HorosDirectTransferService: NSObject {
     private func receiveIncomingFiles(
         fileCount: Int,
         declaredTotal: UInt64,
+        declaredWireTotal: UInt64? = nil,
         over connection: NWConnection,
         activityThread: Thread?
     ) throws -> UInt64 {
@@ -999,8 +1044,11 @@ public final class HorosDirectTransferService: NSObject {
 
         var receivedTotal: UInt64 = 0
         var lastActivityUpdate = CFAbsoluteTimeGetCurrent()
+        var lastPerformanceLog = lastActivityUpdate
+        let transferStarted = lastActivityUpdate
         var streamBuffer = Data()
         var streamOffset = 0
+        var wireBytesReceived: UInt64 = 0
 
         func readFromStream(_ length: Int, timeout: TimeInterval) throws -> Data {
             guard length >= 0 else { throw DirectTransferError.invalidProtocol }
@@ -1009,17 +1057,29 @@ public final class HorosDirectTransferService: NSObject {
                     streamBuffer.removeSubrange(0..<streamOffset)
                     streamOffset = 0
                 }
-                let needed = length - streamBuffer.count
-                let minimumLength = min(max(needed, 1), 256 * 1_024)
-                let maximumLength = max(Self.chunkSize, minimumLength)
+                let availableBytes = streamBuffer.count - streamOffset
+                let needed = length - availableBytes
+                let minimumLength: Int
+                if let declaredWireTotal {
+                    guard wireBytesReceived < declaredWireTotal else {
+                        throw DirectTransferError.invalidProtocol
+                    }
+                    minimumLength = Int(min(UInt64(Self.chunkSize), declaredWireTotal - wireBytesReceived))
+                } else {
+                    minimumLength = min(max(needed, 1), 256 * 1_024)
+                }
                 let chunk = try receiveSome(
                     minimumLength: minimumLength,
-                    maximumLength: maximumLength,
+                    maximumLength: Self.chunkSize,
                     from: connection,
-                    timeout: timeout,
+                    timeout: max(timeout, Self.bulkIOTimeout),
                     thread: activityThread
                 )
                 streamBuffer.append(chunk)
+                wireBytesReceived += UInt64(chunk.count)
+                if let declaredWireTotal, wireBytesReceived > declaredWireTotal {
+                    throw DirectTransferError.invalidProtocol
+                }
             }
 
             let range = streamOffset..<(streamOffset + length)
@@ -1067,6 +1127,16 @@ public final class HorosDirectTransferService: NSObject {
                             fileCount
                         ))
                         activityThread?.setProgress(CGFloat(receivedTotal) / CGFloat(declaredTotal))
+                        if now - lastPerformanceLog >= 5 {
+                            let elapsed = max(now - transferStarted, 0.001)
+                            NSLog(String(
+                                format: "Horos direct bulk receive progress: %.1f/%.1f MiB (%.1f MiB/s)",
+                                Double(receivedTotal) / (1_024 * 1_024),
+                                Double(declaredTotal) / (1_024 * 1_024),
+                                Double(receivedTotal) / (1_024 * 1_024) / elapsed
+                            ))
+                            lastPerformanceLog = now
+                        }
                         lastActivityUpdate = now
                     }
                 }
@@ -1078,6 +1148,12 @@ public final class HorosDirectTransferService: NSObject {
         }
 
         guard receivedTotal == declaredTotal else { throw DirectTransferError.invalidProtocol }
+        if let declaredWireTotal {
+            guard wireBytesReceived == declaredWireTotal,
+                  streamBuffer.count == streamOffset else {
+                throw DirectTransferError.invalidProtocol
+            }
+        }
         try fileManager.createDirectory(at: incomingURL, withIntermediateDirectories: true)
         let completedBatch = incomingURL.appendingPathComponent(".HorosDirect-\(UUID().uuidString)", isDirectory: true)
         try fileManager.moveItem(at: batchURL, to: completedBatch)

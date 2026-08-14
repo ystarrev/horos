@@ -237,7 +237,7 @@ progressCallback(
         NSInteger version = [[NSString stringWithUTF8String:versionString] integerValue];
         NSInteger directPort = [[NSString stringWithUTF8String:portString] integerValue];
         NSString *directToken = [NSString stringWithUTF8String:tokenString];
-        if (version >= 2 && directPort > 0 && directToken.length)
+        if (version >= 3 && directPort > 0 && directToken.length)
         {
             [[HorosDirectTransferService sharedService]
                 registerQueryCapabilityForHost:[node _hostname]

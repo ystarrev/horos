@@ -71,6 +71,7 @@
 #import "Wait.h"
 #import "WaitRendering.h"
 #import "SRAnnotation.h"
+#import "ROI.h"
 #import "DicomDatabase+Clean.h"
 #import "DicomDatabase+Routing.h"
 #include <copyfile.h>
@@ -81,6 +82,11 @@
 #include <unistd.h>
 
 NSString* const CurrentDatabaseVersion = @"2.5";
+NSString* const HorosLegacyOsiriXBrushROIPredicateFormat = @"SUBQUERY(series, $series, ($series.name ==[cd] \"OsiriX ROI SR\" OR $series.seriesDescription ==[cd] \"OsiriX ROI SR\") AND SUBQUERY($series.images, $image, $image.rotationAngle == 987654).@count > 0).@count > 0";
+
+// ROI SR images are never displayed; their unused rotation field keeps this database-only classification queryable.
+static const double HorosLegacyOsiriXBrushROIMarker = 987654.0;
+static const double HorosLegacyOsiriXVectorROIMarker = -987654.0;
 
 static NSString *ReportFilenameForStudy(id study)
 {
@@ -95,21 +101,67 @@ static NSString *OldReportFilenameForStudy(id study)
     return [DicomFile NSreplaceBadCharacter:[[study valueForKey:@"patientUID"] stringByAppendingFormat:@"-%@", [study valueForKey:@"id"]]];
 }
 
-static NSUInteger HorosROICountAtPath(NSString *path)
+static NSUInteger HorosROIMetadataAtPath(NSString *path, BOOL *hasBrushMask, BOOL *readable)
 {
+    if (hasBrushMask)
+        *hasBrushMask = NO;
+    if (readable)
+        *readable = NO;
     if (path.length == 0)
         return 0;
 
     @try
     {
         NSData *archive = [SRAnnotation roiFromDICOM:path];
-        return [[SRAnnotation unarchiveROIsFromCompatibilityData:archive] count];
+        if (archive == nil)
+            return 0;
+
+        NSArray *rois = [SRAnnotation unarchiveROIsFromCompatibilityData:archive];
+        if ([rois isKindOfClass:[NSArray class]] == NO)
+            return 0;
+
+        if (readable)
+            *readable = YES;
+
+        for (id object in rois)
+        {
+            if ([object isKindOfClass:[ROI class]] == NO)
+                continue;
+
+            ROI *roi = object;
+            if (roi.type != tPlain || roi.textureBuffer == NULL || roi.textureWidth <= 0 || roi.textureHeight <= 0)
+                continue;
+
+            NSUInteger width = (NSUInteger)roi.textureWidth;
+            NSUInteger height = (NSUInteger)roi.textureHeight;
+            if (width > NSUIntegerMax / height)
+                continue;
+
+            const unsigned char *pixels = roi.textureBuffer;
+            NSUInteger pixelCount = width * height;
+            for (NSUInteger pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++)
+            {
+                if (pixels[pixelIndex] != 0)
+                {
+                    if (hasBrushMask)
+                        *hasBrushMask = YES;
+                    return rois.count;
+                }
+            }
+        }
+
+        return rois.count;
     }
     @catch (NSException *exception)
     {
         NSLog(@"Unable to read ROI archive at %@: %@", path, exception.reason ?: exception.name);
         return 0;
     }
+}
+
+static NSUInteger HorosROICountAtPath(NSString *path)
+{
+    return HorosROIMetadataAtPath(path, NULL, NULL);
 }
 
 static NSString *HorosROIReferencedSOPInstanceUID(NSString *reference, NSNumber **frameID)
@@ -1029,13 +1081,94 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
     {
         NSThread *thread = [NSThread currentThread];
         NSString *roisDirectory = self.roisDirPath;
-        NSArray *names = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:roisDirectory error:nil];
-        if (names.count == 0 || thread.isCancelled || _deallocating)
+        DicomDatabase *workerDatabase = self.independentDatabase;
+        NSManagedObjectContext *context = workerDatabase.managedObjectContext;
+        if (context == nil || thread.isCancelled || _deallocating)
         {
             thread.progress = 1;
             return;
         }
 
+        NSMutableSet *indexedROIPaths = [NSMutableSet set];
+        NSMutableArray *unclassifiedROIImages = [NSMutableArray array];
+        N2PerformManagedObjectContextBlockAndWait(context, ^{
+            NSFetchRequest *request = [NSFetchRequest fetchRequestWithEntityName:@"Image"];
+            request.predicate = [NSPredicate predicateWithFormat:@"series.name ==[cd] %@ OR series.seriesDescription ==[cd] %@", @"OsiriX ROI SR", @"OsiriX ROI SR"];
+            request.fetchBatchSize = 256;
+            request.includesPendingChanges = NO;
+
+            NSError *fetchError = nil;
+            NSArray *images = [context executeFetchRequest:request error:&fetchError];
+            if (fetchError)
+                NSLog(@"Legacy ROI index fetch failed: %@", fetchError);
+
+            for (DicomImage *image in images)
+            {
+                NSString *path = image.completePathResolved;
+                if (path.length == 0)
+                    path = image.completePath;
+                if (path.length == 0)
+                    continue;
+
+                path = [path stringByStandardizingPath];
+                [indexedROIPaths addObject:path];
+
+                double marker = image.rotationAngle.doubleValue;
+                if (marker != HorosLegacyOsiriXBrushROIMarker && marker != HorosLegacyOsiriXVectorROIMarker)
+                {
+                    [unclassifiedROIImages addObject:@{
+                        @"objectID": image.objectID,
+                        @"path": path
+                    }];
+                }
+            }
+        });
+
+        NSMutableDictionary *markersByImageID = [NSMutableDictionary dictionaryWithCapacity:unclassifiedROIImages.count];
+        thread.status = NSLocalizedString(@"Classifying legacy ROI records...", nil);
+        for (NSUInteger index = 0; index < unclassifiedROIImages.count; index++)
+        {
+            if (thread.isCancelled || _deallocating)
+                break;
+
+            NSDictionary *record = [unclassifiedROIImages objectAtIndex:index];
+            BOOL hasBrushMask = NO;
+            BOOL readable = NO;
+            HorosROIMetadataAtPath([record objectForKey:@"path"], &hasBrushMask, &readable);
+            if (readable)
+            {
+                NSNumber *marker = [NSNumber numberWithDouble:hasBrushMask ? HorosLegacyOsiriXBrushROIMarker : HorosLegacyOsiriXVectorROIMarker];
+                [markersByImageID setObject:marker forKey:[record objectForKey:@"objectID"]];
+            }
+
+            if (unclassifiedROIImages.count)
+                thread.progress = 0.6 * (double)(index + 1) / (double)unclassifiedROIImages.count;
+        }
+
+        __block BOOL classificationChanged = NO;
+        if (markersByImageID.count && thread.isCancelled == NO && _deallocating == NO)
+        {
+            N2PerformManagedObjectContextBlockAndWait(context, ^{
+                [markersByImageID enumerateKeysAndObjectsUsingBlock:^(NSManagedObjectID *objectID, NSNumber *marker, BOOL *stop) {
+                    NSError *lookupError = nil;
+                    DicomImage *image = (DicomImage *)[context existingObjectWithID:objectID error:&lookupError];
+                    if (image && lookupError == nil && [image.rotationAngle isEqualToNumber:marker] == NO)
+                    {
+                        image.rotationAngle = marker;
+                        classificationChanged = YES;
+                    }
+                }];
+
+                if (classificationChanged)
+                {
+                    NSError *saveError = nil;
+                    if ([context save:&saveError] == NO)
+                        NSLog(@"Legacy ROI classification save failed: %@", saveError);
+                }
+            });
+        }
+
+        NSArray *names = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:roisDirectory error:nil] ?: @[];
         NSMutableArray *roiPaths = [NSMutableArray arrayWithCapacity:names.count];
         for (NSString *name in [names sortedArrayUsingSelector:@selector(localizedStandardCompare:)])
         {
@@ -1048,32 +1181,6 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
                 [roiPaths addObject:[path stringByStandardizingPath]];
         }
 
-        if (roiPaths.count == 0 || thread.isCancelled || _deallocating)
-        {
-            thread.progress = 1;
-            return;
-        }
-
-        DicomDatabase *workerDatabase = self.independentDatabase;
-        NSManagedObjectContext *context = workerDatabase.managedObjectContext;
-        __block NSMutableSet *indexedNonemptyROIPaths = [[NSMutableSet alloc] init];
-        N2PerformManagedObjectContextBlockAndWait(context, ^{
-            NSFetchRequest *request = [NSFetchRequest fetchRequestWithEntityName:@"Image"];
-            request.predicate = [NSPredicate predicateWithFormat:@"pathString BEGINSWITH %@", [roisDirectory stringByAppendingString:@"/"]];
-            request.fetchBatchSize = 256;
-            request.includesPendingChanges = NO;
-
-            NSArray *images = [context executeFetchRequest:request error:nil];
-            for (DicomImage *image in images)
-            {
-                NSString *seriesName = [image valueForKeyPath:@"series.name"];
-                NSString *seriesDescription = [image valueForKeyPath:@"series.seriesDescription"];
-                BOOL isROISeries = [seriesName isEqualToString:@"OsiriX ROI SR"] || [seriesDescription isEqualToString:@"OsiriX ROI SR"];
-                if (isROISeries && image.scale.integerValue > 0 && image.pathString.length)
-                    [indexedNonemptyROIPaths addObject:[image.pathString stringByStandardizingPath]];
-            }
-        });
-
         NSMutableArray *pathsToImport = [NSMutableArray array];
         thread.status = NSLocalizedString(@"Reading stored ROI records...", nil);
         for (NSUInteger index = 0; index < roiPaths.count; index++)
@@ -1082,11 +1189,10 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
                 break;
 
             NSString *path = [roiPaths objectAtIndex:index];
-            if ([indexedNonemptyROIPaths containsObject:path] == NO && HorosROICountAtPath(path) > 0)
+            if ([indexedROIPaths containsObject:path] == NO && HorosROICountAtPath(path) > 0)
                 [pathsToImport addObject:path];
-            thread.progress = 0.25 * (double)(index + 1) / (double)roiPaths.count;
+            thread.progress = 0.6 + 0.2 * (double)(index + 1) / (double)roiPaths.count;
         }
-        [indexedNonemptyROIPaths release];
 
         if (thread.isCancelled || _deallocating)
             return;
@@ -1097,12 +1203,14 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
                              N2LocalizedSingularPluralCount(pathsToImport.count, NSLocalizedString(@"ROI record", nil), NSLocalizedString(@"ROI records", nil))];
             [workerDatabase addFilesAtPaths:pathsToImport
                           postNotifications:YES
-                                  dicomOnly:YES
+                          dicomOnly:YES
                         rereadExistingItems:YES
                          generatedByOsiriX:YES];
-            [NSNotificationCenter.defaultCenter postNotificationOnMainThreadName:O2DatabaseInvalidateAlbumsCacheNotification object:self];
             NSLog(@"Legacy ROI index: indexed %lu non-empty sidecars from %@", (unsigned long)pathsToImport.count, roisDirectory);
         }
+
+        if (classificationChanged || pathsToImport.count)
+            [NSNotificationCenter.defaultCenter postNotificationOnMainThreadName:O2DatabaseInvalidateAlbumsCacheNotification object:self];
 
         thread.status = pathsToImport.count
             ? NSLocalizedString(@"Stored ROI records indexed", nil)
@@ -1610,17 +1718,46 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
 
 -(void)modifyDefaultAlbums {
     @try {
-        for (DicomAlbum* album in self.albums)
+        NSArray *albums = self.albums;
+        BOOL changed = NO;
+        NSString *legacyAnyROIPredicate = @"SUBQUERY(series, $series, ($series.name ==[cd] \"OsiriX ROI SR\" OR $series.seriesDescription ==[cd] \"OsiriX ROI SR\") AND SUBQUERY($series.images, $image, $image.scale > 0).@count > 0).@count > 0";
+        NSString *legacyROIAlbumName = NSLocalizedString(@"Legacy OsiriX ROIs", nil);
+
+        for (DicomAlbum* album in albums)
         {
             if ([album.predicateString isEqualToString:@"(ANY series.comment != '' AND ANY series.comment != NIL) OR (comment != '' AND comment != NIL)"])
+            {
                 album.predicateString = @"(comment != '' AND comment != NIL)";
+                changed = YES;
+            }
             
             if( [album valueForKey: @"predicateString"] && [[album valueForKey: @"predicateString"] rangeOfString: @"ANY series.modality"].location != NSNotFound)
             {
                 NSString *previousString = [album valueForKey: @"predicateString"];
                 [album setValue: [previousString stringByReplacingOccurrencesOfString:@"ANY series.modality" withString:@"modality"] forKey: @"predicateString"];
+                changed = YES;
+            }
+
+            if (album.smartAlbum.boolValue &&
+                [album.name isEqualToString:@"Has ROIs"] &&
+                [album.predicateString isEqualToString:legacyAnyROIPredicate] &&
+                [[albums valueForKey:@"name"] containsObject:legacyROIAlbumName] == NO)
+            {
+                album.name = legacyROIAlbumName;
+                changed = YES;
+            }
+
+            if (album.smartAlbum.boolValue &&
+                [album.name isEqualToString:legacyROIAlbumName] &&
+                [album.predicateString isEqualToString:legacyAnyROIPredicate])
+            {
+                album.predicateString = HorosLegacyOsiriXBrushROIPredicateFormat;
+                changed = YES;
             }
         }
+
+        if (changed)
+            [self save:nil];
     } @catch (NSException* e) {
         N2LogExceptionWithStackTrace(e);
     }
@@ -1970,7 +2107,13 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
             if (curDict)
             {
                 if ([[curDict objectForKey:@"seriesDescription"] hasPrefix:@"OsiriX ROI SR"])
-                    [curDict setObject:[NSNumber numberWithUnsignedInteger:HorosROICountAtPath(newFile)] forKey:@"numberOfROIs"];
+                {
+                    BOOL hasBrushMask = NO;
+                    NSUInteger roiCount = HorosROIMetadataAtPath(newFile, &hasBrushMask, NULL);
+                    [curDict setObject:[NSNumber numberWithUnsignedInteger:roiCount] forKey:@"numberOfROIs"];
+                    [curDict setObject:[NSNumber numberWithDouble:hasBrushMask ? HorosLegacyOsiriXBrushROIMarker : HorosLegacyOsiriXVectorROIMarker]
+                               forKey:@"legacyROIBrushMaskMarker"];
+                }
                 [dicomFilesArray addObject:curDict];
             }
             else if (dataDirPath && [newFile hasPrefix:dataDirPath])
@@ -2870,6 +3013,10 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                         id numberOfROIs = [curDict objectForKey: @"numberOfROIs"];
                                         if (numberOfROIs)
                                             [image setValue: numberOfROIs forKey:@"scale"];
+
+                                        id brushMaskMarker = [curDict objectForKey:@"legacyROIBrushMaskMarker"];
+                                        if (brushMaskMarker)
+                                            [image setValue:brushMaskMarker forKey:@"rotationAngle"];
                                     }
                                     
                                     // Relations

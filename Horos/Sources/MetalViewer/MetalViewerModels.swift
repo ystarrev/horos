@@ -2587,7 +2587,7 @@ private final class MetalDICOMFrameGeometryCache {
     }
 }
 
-struct MetalViewerSliceGeometry {
+struct MetalViewerSliceGeometry: Sendable {
     let origin: SIMD3<Double>
     let row: SIMD3<Double>
     let column: SIMD3<Double>

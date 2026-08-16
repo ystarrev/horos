@@ -124,8 +124,8 @@ static NSString *SurgicalProcedureSafeFilename(NSString *value)
 
 static BOOL SurgicalProcedureSeriesMatches(DicomSeries *series)
 {
-    return [series.name caseInsensitiveCompare:SurgicalProcedureSeriesDescription] == NSOrderedSame ||
-           [series.seriesDescription caseInsensitiveCompare:SurgicalProcedureSeriesDescription] == NSOrderedSame;
+    return (series.name.length && [series.name caseInsensitiveCompare:SurgicalProcedureSeriesDescription] == NSOrderedSame) ||
+           (series.seriesDescription.length && [series.seriesDescription caseInsensitiveCompare:SurgicalProcedureSeriesDescription] == NSOrderedSame);
 }
 
 static NSArray<NSDictionary<NSString *, id> *> *SurgicalProcedureDescriptorsForStudies(NSArray *studies)

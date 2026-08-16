@@ -10,6 +10,7 @@
 #import "DICOMExport.h"
 #import "Sources/StructuredReportSupport.h"
 #import "Sources/MetalViewer/Metal3DSurfaceExtractor.h"
+#import "Sources/MetalViewer/MetalLegacyROISRBridge.h"
 #import "Sources/MetalViewer/MetalTumourSeedSRBridge.h"
 #import "Sources/MetalViewer/MetalStudyROISegBridge.h"
 #import "Sources/HorosDirectTransferBridge.h"

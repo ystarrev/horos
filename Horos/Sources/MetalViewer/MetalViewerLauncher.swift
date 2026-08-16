@@ -648,13 +648,17 @@ final class MetalViewerLauncher: NSObject {
             .perform(NSSelectorFromString("surgicalProcedureEventsForStudy:"), with: currentStudy)?
             .takeUnretainedValue() as? [SurgicalProcedureEvent] ?? []
 
-        var uniqueStudies = relatedStudies
+        var uniqueStudies = relatedStudies.filter {
+            $0.isDeleted == false && $0.managedObjectContext != nil
+        }
         if uniqueStudies.contains(where: { ($0.studyInstanceUID ?? "") == (currentStudy.studyInstanceUID ?? "") }) == false {
             uniqueStudies.append(currentStudy)
         }
 
         let sortedStudies = uniqueStudies
-            .filter { ($0.series.count) > 0 }
+            .filter { study in
+                (study.value(forKey: "series") as? NSSet)?.count ?? 0 > 0
+            }
             .sorted {
                 let lhs = $0.date ?? .distantPast
                 let rhs = $1.date ?? .distantPast

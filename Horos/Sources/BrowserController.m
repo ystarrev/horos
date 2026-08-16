@@ -6281,6 +6281,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     for( DicomStudy *study in studiesSet)
         [study noFiles];
     [database save];
+    [self invalidateSamePatientStudyGroupCache];
     [database release];
     
     [self outlineViewRefresh];
@@ -17718,8 +17719,8 @@ static volatile int numberOfThreadsForJPEG = 0;
     NSString *marker = [StructuredReportSupport surgicalProcedureSeriesDescription];
     for( DicomSeries *series in [item valueForKey:@"series"])
     {
-        if( [series.name caseInsensitiveCompare:marker] == NSOrderedSame ||
-            [series.seriesDescription caseInsensitiveCompare:marker] == NSOrderedSame)
+        if( (series.name.length && [series.name caseInsensitiveCompare:marker] == NSOrderedSame) ||
+            (series.seriesDescription.length && [series.seriesDescription caseInsensitiveCompare:marker] == NSOrderedSame))
             return YES;
     }
     return NO;

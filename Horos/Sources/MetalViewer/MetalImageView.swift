@@ -2,6 +2,145 @@ import AppKit
 import MetalKit
 import simd
 
+private struct MetalLegacyROI {
+    enum Kind: String {
+        case line
+        case rectangle
+        case oval
+        case openPolygon
+        case closedPolygon
+        case angle
+        case text
+        case arrow
+        case point
+        case brush
+        case layer
+        case polyline
+    }
+
+    let sliceIndex: Int
+    let kind: Kind
+    let name: String
+    let comments: String
+    let points: [CGPoint]
+    let rect: CGRect
+    let color: NSColor
+    let thickness: CGFloat
+    let isSpline: Bool
+    let displaysText: Bool
+    let textLines: [String]
+    let maskRect: CGRect?
+    let maskData: Data?
+    let maskImage: CGImage?
+    let layerImage: NSImage?
+
+    init?(dictionary: [String: Any]) {
+        guard let sliceIndex = Self.number(dictionary["sliceIndex"])?.intValue,
+              let kindName = dictionary["kind"] as? String,
+              let kind = Kind(rawValue: kindName) else {
+            return nil
+        }
+
+        self.sliceIndex = sliceIndex
+        self.kind = kind
+        name = dictionary["name"] as? String ?? ""
+        comments = dictionary["comments"] as? String ?? ""
+
+        let coordinates = (dictionary["points"] as? [Any] ?? []).compactMap(Self.number)
+        var points: [CGPoint] = []
+        points.reserveCapacity(coordinates.count / 2)
+        for index in stride(from: 0, to: coordinates.count - 1, by: 2) {
+            points.append(CGPoint(x: coordinates[index].doubleValue, y: coordinates[index + 1].doubleValue))
+        }
+        self.points = points
+
+        let x = Self.number(dictionary["rectX"])?.doubleValue ?? 0
+        let y = Self.number(dictionary["rectY"])?.doubleValue ?? 0
+        let width = Self.number(dictionary["rectWidth"])?.doubleValue ?? 0
+        let height = Self.number(dictionary["rectHeight"])?.doubleValue ?? 0
+        if kind == .oval {
+            // Legacy oval ROIs store their center in rect.origin and radii in rect.size.
+            rect = CGRect(
+                x: x - abs(width),
+                y: y - abs(height),
+                width: abs(width) * 2,
+                height: abs(height) * 2
+            )
+        } else {
+            rect = CGRect(
+                x: min(x, x + width),
+                y: min(y, y + height),
+                width: abs(width),
+                height: abs(height)
+            )
+        }
+
+        let red = Self.number(dictionary["red"])?.doubleValue ?? 1
+        let green = Self.number(dictionary["green"])?.doubleValue ?? 1
+        let blue = Self.number(dictionary["blue"])?.doubleValue ?? 0
+        let alpha = Self.number(dictionary["alpha"])?.doubleValue ?? 1
+        color = NSColor(
+            calibratedRed: min(max(red, 0), 1),
+            green: min(max(green, 0), 1),
+            blue: min(max(blue, 0), 1),
+            alpha: min(max(alpha, 0), 1)
+        )
+        thickness = max(CGFloat(Self.number(dictionary["thickness"])?.doubleValue ?? 1), 1)
+        isSpline = Self.number(dictionary["spline"])?.boolValue ?? false
+        displaysText = Self.number(dictionary["displayText"])?.boolValue ?? true
+        textLines = dictionary["textLines"] as? [String] ?? []
+
+        if let maskWidth = Self.number(dictionary["maskWidth"])?.intValue,
+           let maskHeight = Self.number(dictionary["maskHeight"])?.intValue,
+           maskWidth > 0,
+           maskHeight > 0,
+           let data = Self.data(dictionary["maskData"]),
+           data.count >= maskWidth * maskHeight,
+           let provider = CGDataProvider(data: data as CFData) {
+            let originX = Self.number(dictionary["maskOriginX"])?.doubleValue ?? 0
+            let originY = Self.number(dictionary["maskOriginY"])?.doubleValue ?? 0
+            maskRect = CGRect(
+                x: CGFloat(originX),
+                y: CGFloat(originY),
+                width: CGFloat(maskWidth),
+                height: CGFloat(maskHeight)
+            )
+            maskData = Data(data.prefix(maskWidth * maskHeight))
+            maskImage = CGImage(
+                maskWidth: maskWidth,
+                height: maskHeight,
+                bitsPerComponent: 8,
+                bitsPerPixel: 8,
+                bytesPerRow: maskWidth,
+                provider: provider,
+                decode: [1, 0],
+                shouldInterpolate: false
+            )
+        } else {
+            maskRect = nil
+            maskData = nil
+            maskImage = nil
+        }
+
+        if let data = Self.data(dictionary["layerImageData"]) {
+            layerImage = NSImage(data: data)
+        } else {
+            layerImage = nil
+        }
+    }
+
+    private static func number(_ value: Any?) -> NSNumber? {
+        value as? NSNumber
+    }
+
+    private static func data(_ value: Any?) -> Data? {
+        if let data = value as? Data {
+            return data
+        }
+        return (value as? NSData).map { Data(referencing: $0) }
+    }
+}
+
 private final class MetalMPRPreviewOverlayView: NSView {
     weak var owner: MetalImageView?
 
@@ -10,8 +149,13 @@ private final class MetalMPRPreviewOverlayView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        guard let owner,
-              owner.renderer.displayMode.isMPRLike,
+        guard let owner else {
+            return
+        }
+
+        owner.drawLegacyROIOverlay()
+
+        guard owner.renderer.displayMode.isMPRLike,
               let layout = owner.renderer.mprPreviewOverlayLayout(in: bounds) else {
             return
         }
@@ -168,6 +312,7 @@ final class MetalImageView: MTKView {
     private var studyROISourceStudyIdentifier = ""
     private var studyROIFrameOfReferenceUID = ""
     private var studyROICurrentToCanonicalTransform = matrix_identity_float4x4
+    private var legacyROIsBySlice: [Int: [MetalLegacyROI]] = [:]
     private var studyROIProjectionAvailable = true
     private var activeStudyROIGesture: StudyROIGesture = .none
     private var studyROIContourCache: StudyROIContourCache?
@@ -560,6 +705,7 @@ final class MetalImageView: MTKView {
         mprPreviewOverlayView.frame = bounds
         mprPreviewOverlayView.autoresizingMask = [.width, .height]
         addSubview(mprPreviewOverlayView)
+        reloadLegacyROIs(for: pixList)
 
         renderer.stateDidChange = { [weak self] state in
             self?.studyROIContourCache = nil
@@ -587,6 +733,7 @@ final class MetalImageView: MTKView {
 
     func display(pixList: [DCMPix], preservingSliceIndex: Bool = true) {
         renderer.setPixList(pixList, preservingSliceIndex: preservingSliceIndex)
+        reloadLegacyROIs(for: pixList)
         needsDisplay = true
         mprPreviewOverlayView.needsDisplay = true
         publishMeasurementOverlays()
@@ -631,6 +778,7 @@ final class MetalImageView: MTKView {
             transferFunctionState: transferFunctionState,
             transferFunctionStateDidChange: transferFunctionStateDidChange
         )
+        reloadLegacyROIs(for: pixList)
         needsDisplay = true
         mprPreviewOverlayView.needsDisplay = true
         mprPreviewOverlayView.window?.invalidateCursorRects(for: mprPreviewOverlayView)
@@ -1585,6 +1733,67 @@ final class MetalImageView: MTKView {
         return MetalViewerSliceGeometry(pix: pix)
     }
 
+    var hasLegacyBrushROI: Bool {
+        legacyROIsBySlice.values.joined().contains {
+            $0.kind == .brush && $0.maskData?.contains(where: { $0 > 0 }) == true
+        }
+    }
+
+    func legacyBrushSegmentationRequest() -> MetalLegacyBrushSegmentationRequest? {
+        let brushes = legacyROIsBySlice.values.joined().filter {
+            $0.kind == .brush
+                && $0.maskData?.contains(where: { $0 > 0 }) == true
+                && $0.maskRect != nil
+        }
+        guard let selected = brushes.min(by: { left, right in
+            let leftDistance = abs(left.sliceIndex - renderer.currentSliceIndex)
+            let rightDistance = abs(right.sliceIndex - renderer.currentSliceIndex)
+            if leftDistance != rightDistance { return leftDistance < rightDistance }
+            return (left.maskData?.lazy.filter { $0 > 0 }.count ?? 0)
+                > (right.maskData?.lazy.filter { $0 > 0 }.count ?? 0)
+        }) else { return nil }
+
+        func normalizedName(_ value: String) -> String {
+            value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        let selectedNameKey = normalizedName(selected.name)
+        let groupedBrushes = brushes.filter { normalizedName($0.name) == selectedNameKey }
+        let maskSlices = groupedBrushes.compactMap { roi -> MetalLegacyBrushMaskSlice? in
+            guard renderer.pixList.indices.contains(roi.sliceIndex),
+                  let geometry = MetalViewerSliceGeometry(pix: renderer.pixList[roi.sliceIndex]),
+                  let maskRect = roi.maskRect,
+                  let maskData = roi.maskData else { return nil }
+            let width = Int(maskRect.width.rounded())
+            let height = Int(maskRect.height.rounded())
+            guard width > 0, height > 0, maskData.count >= width * height else { return nil }
+            return MetalLegacyBrushMaskSlice(
+                geometry: geometry,
+                maskWidth: width,
+                maskHeight: height,
+                originX: Double(maskRect.minX),
+                originY: Double(maskRect.minY),
+                maskData: maskData
+            )
+        }
+        guard maskSlices.isEmpty == false else { return nil }
+
+        let displayName: String
+        let trimmedName = selected.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedName.isEmpty || trimmedName.caseInsensitiveCompare("Unnamed") == .orderedSame {
+            displayName = NSLocalizedString("Legacy ROI", comment: "")
+        } else {
+            displayName = trimmedName
+        }
+        let rgb = selected.color.usingColorSpace(.deviceRGB) ?? selected.color
+        return MetalLegacyBrushSegmentationRequest(
+            name: displayName,
+            colorRed: Double(rgb.redComponent),
+            colorGreen: Double(rgb.greenComponent),
+            colorBlue: Double(rgb.blueComponent),
+            slices: maskSlices
+        )
+    }
+
     var displayedImageRect: CGRect {
         renderer.imageRect(in: bounds)
     }
@@ -1763,6 +1972,347 @@ final class MetalImageView: MTKView {
             }
         }
         return closest
+    }
+
+    private func reloadLegacyROIs(for pixList: [DCMPix]) {
+        let dictionaries = MetalLegacyROISRBridge.roiDictionaries(forPixList: pixList)
+        legacyROIsBySlice = Dictionary(grouping: dictionaries.compactMap(MetalLegacyROI.init(dictionary:))) {
+            $0.sliceIndex
+        }
+        mprPreviewOverlayView.needsDisplay = true
+    }
+
+    fileprivate func drawLegacyROIOverlay() {
+        guard renderer.displayMode == .stack2D,
+              let rois = legacyROIsBySlice[renderer.currentSliceIndex],
+              rois.isEmpty == false,
+              let pix = renderer.currentPix,
+              pix.pwidth > 0,
+              pix.pheight > 0 else {
+            return
+        }
+
+        let imageCorners = [
+            CGPoint(x: 0, y: 0),
+            CGPoint(x: CGFloat(pix.pwidth), y: 0),
+            CGPoint(x: CGFloat(pix.pwidth), y: CGFloat(pix.pheight)),
+            CGPoint(x: 0, y: CGFloat(pix.pheight)),
+        ].compactMap {
+            legacyROIOverlayPoint(forPixelPoint: $0, sliceIndex: renderer.currentSliceIndex)
+        }
+        guard imageCorners.count == 4 else { return }
+
+        NSGraphicsContext.saveGraphicsState()
+        legacyROIPolylinePath(points: imageCorners, closed: true).addClip()
+        for roi in rois {
+            drawLegacyROI(roi)
+        }
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private func drawLegacyROI(_ roi: MetalLegacyROI) {
+        let mappedPoints = roi.points.compactMap {
+            legacyROIOverlayPoint(forPixelPoint: $0, sliceIndex: roi.sliceIndex)
+        }
+        let backingScale = max(window?.backingScaleFactor ?? 1, 1)
+        let lineWidth = max(roi.thickness, 1 / backingScale)
+
+        switch roi.kind {
+        case .rectangle:
+            drawLegacyROIPath(
+                legacyROIRectanglePoints(roi.rect, sliceIndex: roi.sliceIndex),
+                closed: true,
+                roi: roi,
+                lineWidth: lineWidth
+            )
+        case .oval:
+            drawLegacyROIPath(
+                legacyROIOvalPoints(roi.rect, sliceIndex: roi.sliceIndex),
+                closed: true,
+                roi: roi,
+                lineWidth: lineWidth
+            )
+        case .arrow:
+            drawLegacyROIPath(mappedPoints, closed: false, roi: roi, lineWidth: lineWidth)
+            if mappedPoints.count >= 2 {
+                drawLegacyROIArrowHead(
+                    at: mappedPoints[0],
+                    from: mappedPoints[1],
+                    color: roi.color,
+                    lineWidth: lineWidth
+                )
+            }
+        case .point:
+            let point = mappedPoints.first
+                ?? legacyROIOverlayPoint(forPixelPoint: roi.rect.origin, sliceIndex: roi.sliceIndex)
+            if let point {
+                drawLegacyROIPoint(at: point, color: roi.color, lineWidth: lineWidth)
+            }
+        case .brush:
+            drawLegacyROIBrush(roi)
+        case .layer:
+            drawLegacyROILayer(roi, mappedPoints: mappedPoints)
+        case .text:
+            break
+        case .closedPolygon:
+            drawLegacyROIPath(mappedPoints, closed: true, roi: roi, lineWidth: lineWidth)
+        case .line, .openPolygon, .angle, .polyline:
+            drawLegacyROIPath(mappedPoints, closed: false, roi: roi, lineWidth: lineWidth)
+        }
+
+        drawLegacyROIText(for: roi, mappedPoints: mappedPoints)
+    }
+
+    private func drawLegacyROIPath(
+        _ points: [CGPoint],
+        closed: Bool,
+        roi: MetalLegacyROI,
+        lineWidth: CGFloat
+    ) {
+        guard points.count >= 2 else { return }
+
+        let path = roi.isSpline && points.count >= 3
+            ? legacyROISplinePath(points: points, closed: closed)
+            : legacyROIPolylinePath(points: points, closed: closed)
+        path.lineWidth = lineWidth
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        roi.color.setStroke()
+        path.stroke()
+    }
+
+    private func legacyROIPolylinePath(points: [CGPoint], closed: Bool) -> NSBezierPath {
+        let path = NSBezierPath()
+        path.move(to: points[0])
+        for point in points.dropFirst() {
+            path.line(to: point)
+        }
+        if closed {
+            path.close()
+        }
+        return path
+    }
+
+    private func legacyROISplinePath(points: [CGPoint], closed: Bool) -> NSBezierPath {
+        let path = NSBezierPath()
+        path.move(to: points[0])
+        let segmentCount = closed ? points.count : points.count - 1
+        for index in 0..<segmentCount {
+            let p0 = legacyROISplinePoint(points, index: index - 1, closed: closed)
+            let p1 = legacyROISplinePoint(points, index: index, closed: closed)
+            let p2 = legacyROISplinePoint(points, index: index + 1, closed: closed)
+            let p3 = legacyROISplinePoint(points, index: index + 2, closed: closed)
+            let control1 = CGPoint(
+                x: p1.x + (p2.x - p0.x) / 6,
+                y: p1.y + (p2.y - p0.y) / 6
+            )
+            let control2 = CGPoint(
+                x: p2.x - (p3.x - p1.x) / 6,
+                y: p2.y - (p3.y - p1.y) / 6
+            )
+            path.curve(to: p2, controlPoint1: control1, controlPoint2: control2)
+        }
+        if closed {
+            path.close()
+        }
+        return path
+    }
+
+    private func legacyROISplinePoint(_ points: [CGPoint], index: Int, closed: Bool) -> CGPoint {
+        if closed {
+            let wrappedIndex = (index % points.count + points.count) % points.count
+            return points[wrappedIndex]
+        }
+        return points[min(max(index, 0), points.count - 1)]
+    }
+
+    private func legacyROIRectanglePoints(_ rect: CGRect, sliceIndex: Int) -> [CGPoint] {
+        [
+            CGPoint(x: rect.minX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.maxY),
+            CGPoint(x: rect.minX, y: rect.maxY),
+        ].compactMap { legacyROIOverlayPoint(forPixelPoint: $0, sliceIndex: sliceIndex) }
+    }
+
+    private func legacyROIOvalPoints(_ rect: CGRect, sliceIndex: Int) -> [CGPoint] {
+        guard rect.width > 0, rect.height > 0 else { return [] }
+        let segmentCount = 64
+        return (0..<segmentCount).compactMap { index in
+            let angle = CGFloat(index) / CGFloat(segmentCount) * 2 * .pi
+            let pixelPoint = CGPoint(
+                x: rect.midX + cos(angle) * rect.width * 0.5,
+                y: rect.midY + sin(angle) * rect.height * 0.5
+            )
+            return legacyROIOverlayPoint(forPixelPoint: pixelPoint, sliceIndex: sliceIndex)
+        }
+    }
+
+    private func drawLegacyROIPoint(at point: CGPoint, color: NSColor, lineWidth: CGFloat) {
+        let radius: CGFloat = 8
+        let path = NSBezierPath(ovalIn: CGRect(
+            x: point.x - radius,
+            y: point.y - radius,
+            width: radius * 2,
+            height: radius * 2
+        ))
+        path.lineWidth = lineWidth
+        color.setStroke()
+        path.stroke()
+
+        let center = NSBezierPath(ovalIn: CGRect(x: point.x - 2, y: point.y - 2, width: 4, height: 4))
+        color.setFill()
+        center.fill()
+    }
+
+    private func drawLegacyROIArrowHead(
+        at tip: CGPoint,
+        from previous: CGPoint,
+        color: NSColor,
+        lineWidth: CGFloat
+    ) {
+        let angle = atan2(tip.y - previous.y, tip.x - previous.x)
+        let length = max(9, lineWidth * 4)
+        let spread = CGFloat.pi / 7
+        let path = NSBezierPath()
+        path.move(to: tip)
+        path.line(to: CGPoint(
+            x: tip.x - cos(angle - spread) * length,
+            y: tip.y - sin(angle - spread) * length
+        ))
+        path.move(to: tip)
+        path.line(to: CGPoint(
+            x: tip.x - cos(angle + spread) * length,
+            y: tip.y - sin(angle + spread) * length
+        ))
+        path.close()
+        color.setFill()
+        path.fill()
+    }
+
+    private func drawLegacyROIBrush(_ roi: MetalLegacyROI) {
+        guard let maskImage = roi.maskImage,
+              let maskRect = roi.maskRect,
+              let context = NSGraphicsContext.current?.cgContext,
+              let transform = legacyROIPixelToOverlayTransform(sliceIndex: roi.sliceIndex) else {
+            return
+        }
+
+        context.saveGState()
+        context.concatenate(transform)
+        context.clip(to: maskRect, mask: maskImage)
+        context.setFillColor(roi.color.cgColor)
+        context.fill(maskRect)
+        context.restoreGState()
+    }
+
+    private func drawLegacyROILayer(_ roi: MetalLegacyROI, mappedPoints: [CGPoint]) {
+        guard let layerImage = roi.layerImage,
+              let context = NSGraphicsContext.current?.cgContext else {
+            return
+        }
+
+        let imageSize = layerImage.size
+        let destinationRect: CGRect
+        let transform: CGAffineTransform
+        if mappedPoints.count >= 4, imageSize.width > 0, imageSize.height > 0 {
+            let topLeft = mappedPoints[0]
+            let topRight = mappedPoints[1]
+            let bottomLeft = mappedPoints[3]
+            transform = CGAffineTransform(
+                a: (topRight.x - topLeft.x) / imageSize.width,
+                b: (topRight.y - topLeft.y) / imageSize.width,
+                c: (bottomLeft.x - topLeft.x) / imageSize.height,
+                d: (bottomLeft.y - topLeft.y) / imageSize.height,
+                tx: topLeft.x,
+                ty: topLeft.y
+            )
+            destinationRect = CGRect(origin: .zero, size: imageSize)
+        } else {
+            guard roi.rect.width > 0,
+                  roi.rect.height > 0,
+                  let pixelTransform = legacyROIPixelToOverlayTransform(sliceIndex: roi.sliceIndex) else {
+                return
+            }
+            transform = pixelTransform
+            destinationRect = roi.rect
+        }
+
+        context.saveGState()
+        context.concatenate(transform)
+        layerImage.draw(
+            in: destinationRect,
+            from: .zero,
+            operation: .sourceOver,
+            fraction: roi.color.alphaComponent,
+            respectFlipped: true,
+            hints: nil
+        )
+        context.restoreGState()
+    }
+
+    private func drawLegacyROIText(for roi: MetalLegacyROI, mappedPoints: [CGPoint]) {
+        guard roi.displaysText else { return }
+        var lines = roi.textLines
+        if roi.kind == .text && lines.isEmpty {
+            lines = [roi.name, roi.comments].filter { $0.isEmpty == false }
+        } else if lines.isEmpty,
+                  roi.name.isEmpty == false,
+                  roi.name.caseInsensitiveCompare("Unnamed") != .orderedSame {
+            lines = [roi.name]
+        }
+        guard lines.isEmpty == false else { return }
+
+        let fallbackPixelAnchor: CGPoint
+        switch roi.kind {
+        case .point, .text:
+            fallbackPixelAnchor = roi.rect.origin
+        case .brush:
+            fallbackPixelAnchor = CGPoint(x: roi.maskRect?.maxX ?? roi.rect.maxX, y: roi.maskRect?.maxY ?? roi.rect.maxY)
+        default:
+            fallbackPixelAnchor = CGPoint(x: roi.rect.maxX, y: roi.rect.maxY)
+        }
+        let anchor = mappedPoints.last
+            ?? legacyROIOverlayPoint(forPixelPoint: fallbackPixelAnchor, sliceIndex: roi.sliceIndex)
+        guard let anchor else { return }
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+            .foregroundColor: roi.color,
+            .backgroundColor: NSColor.black.withAlphaComponent(0.68),
+            .paragraphStyle: paragraph,
+        ]
+        NSAttributedString(string: lines.joined(separator: "\n"), attributes: attributes)
+            .draw(at: CGPoint(x: anchor.x + 6, y: anchor.y + 4))
+    }
+
+    private func legacyROIOverlayPoint(forPixelPoint point: CGPoint, sliceIndex: Int) -> CGPoint? {
+        guard let metalViewPoint = renderer.stackScreenPoint(
+            for: point,
+            sliceIndex: sliceIndex,
+            in: bounds
+        ) else {
+            return nil
+        }
+        return mprPreviewOverlayView.convert(metalViewPoint, from: self)
+    }
+
+    private func legacyROIPixelToOverlayTransform(sliceIndex: Int) -> CGAffineTransform? {
+        guard let origin = legacyROIOverlayPoint(forPixelPoint: .zero, sliceIndex: sliceIndex),
+              let unitX = legacyROIOverlayPoint(forPixelPoint: CGPoint(x: 1, y: 0), sliceIndex: sliceIndex),
+              let unitY = legacyROIOverlayPoint(forPixelPoint: CGPoint(x: 0, y: 1), sliceIndex: sliceIndex) else {
+            return nil
+        }
+        return CGAffineTransform(
+            a: unitX.x - origin.x,
+            b: unitX.y - origin.y,
+            c: unitY.x - origin.x,
+            d: unitY.y - origin.y,
+            tx: origin.x,
+            ty: origin.y
+        )
     }
 
     fileprivate func drawStudyROIOverlay() {

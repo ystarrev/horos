@@ -2030,14 +2030,18 @@ static NSRecursiveLock *dbModifyLock = nil;
     N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
         @try  {
         NSArray *candidateROIs = roisArray;
-        NSString *searchedUID = [image valueForKey: @"sopInstanceUID"];
-        
-        searchedUID = [searchedUID stringByAppendingFormat: @"-%d", [[image valueForKey: @"frameID"] intValue]];
+        NSString *sopInstanceUID = [image valueForKey: @"sopInstanceUID"];
+        if (sopInstanceUID.length == 0)
+            return;
+        NSInteger frameID = [[image valueForKey: @"frameID"] integerValue];
+        NSArray *searchedUIDs = frameID > 0
+            ? @[[sopInstanceUID stringByAppendingFormat: @"-%ld", (long) frameID]]
+            : @[sopInstanceUID, [sopInstanceUID stringByAppendingString: @"-0"]];
         
         if( candidateROIs == nil)
             candidateROIs = [[[self roiSRSeries] valueForKey: @"images"] allObjects];
         
-        NSArray	*found = [candidateROIs filteredArrayUsingPredicate: [NSPredicate predicateWithFormat: @"comment == %@", searchedUID]];
+        NSArray	*found = [candidateROIs filteredArrayUsingPredicate: [NSPredicate predicateWithFormat: @"comment IN %@", searchedUIDs]];
         
         // Take the most recent roi
         if( [found count] > 1)

@@ -2426,20 +2426,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     func screenPoint(for measurementPoint: MetalViewerMeasurementPoint, in bounds: CGRect) -> CGPoint? {
         switch measurementPoint.displaySpace {
         case let .stack2D(sliceIndex, pixelPoint):
-            guard displayMode == .stack2D,
-                  sliceIndex == currentSliceIndex,
-                  let pix = currentPix,
-                  pix.pwidth > 0,
-                  pix.pheight > 0 else {
-                return nil
-            }
-
-            let rect = imageRect(in: bounds)
-            let unrotatedPoint = CGPoint(
-                x: rect.minX + (pixelPoint.x / CGFloat(pix.pwidth)) * rect.width,
-                y: rect.maxY - (pixelPoint.y / CGFloat(pix.pheight)) * rect.height
-            )
-            return rotatedStackPoint(unrotatedPoint, in: rect)
+            return stackScreenPoint(for: pixelPoint, sliceIndex: sliceIndex, in: bounds)
         case let .mprPreview(planeRawValue, baseVoxel):
             guard displayMode.isMPRLike,
                   let plane = MetalMPRPlane(rawValue: planeRawValue),
@@ -2458,6 +2445,23 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             }
             return CGPoint(x: CGFloat(screenPoint.x), y: CGFloat(screenPoint.y))
         }
+    }
+
+    func stackScreenPoint(for pixelPoint: CGPoint, sliceIndex: Int, in bounds: CGRect) -> CGPoint? {
+        guard displayMode == .stack2D,
+              sliceIndex == currentSliceIndex,
+              let pix = currentPix,
+              pix.pwidth > 0,
+              pix.pheight > 0 else {
+            return nil
+        }
+
+        let rect = imageRect(in: bounds)
+        let unrotatedPoint = CGPoint(
+            x: rect.minX + (pixelPoint.x / CGFloat(pix.pwidth)) * rect.width,
+            y: rect.maxY - (pixelPoint.y / CGFloat(pix.pheight)) * rect.height
+        )
+        return rotatedStackPoint(unrotatedPoint, in: rect)
     }
 
     private func stackTumourSeedPlacement(at point: CGPoint, in bounds: CGRect) -> MetalViewerTumourSeedPlacement? {

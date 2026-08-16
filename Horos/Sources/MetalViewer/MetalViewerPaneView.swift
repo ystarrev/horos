@@ -2169,6 +2169,14 @@ final class MetalViewerPaneView: NSView {
         return metalView?.currentSliceGeometry
     }
 
+    var hasLegacyBrushROI: Bool {
+        metalView?.hasLegacyBrushROI ?? false
+    }
+
+    func legacyBrushSegmentationRequest() -> MetalLegacyBrushSegmentationRequest? {
+        metalView?.legacyBrushSegmentationRequest()
+    }
+
     var supportsImagePrinting: Bool {
         metalView?.renderer.displayMode == .stack2D
     }

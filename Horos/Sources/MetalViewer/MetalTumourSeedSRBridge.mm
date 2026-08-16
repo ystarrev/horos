@@ -7,6 +7,7 @@
 #import "DicomImage.h"
 #import "DicomSeries.h"
 #import "DicomStudy.h"
+#import "MetalLegacyROISRBridge.h"
 #import "ROI.h"
 #import "SRAnnotation.h"
 
@@ -23,37 +24,22 @@ static NSString * const HorosMetalTumourSeedSchema = @"com.horos.metalviewer.tum
 
     NSMutableArray<NSDictionary<NSString *, id> *> *seedDictionaries = [NSMutableArray array];
     NSMutableSet<NSString *> *seenIdentifiers = [NSMutableSet set];
-    DicomStudy *study = nil;
-
-    for (DCMPix *pix in pixList)
+    NSArray<NSDictionary<NSString *, id> *> *sourceRecords = [MetalLegacyROISRBridge sourceRecordsForPixList:pixList];
+    for (NSDictionary<NSString *, id> *record in sourceRecords)
     {
-        if (![pix isKindOfClass:DCMPix.class])
+        NSUInteger index = [record[@"sliceIndex"] unsignedIntegerValue];
+        if (index >= pixList.count)
             continue;
 
-        DicomImage *image = [self imageForPix:pix];
-        DicomStudy *candidateStudy = [image valueForKeyPath:@"series.study"];
-        if (candidateStudy)
-        {
-            study = candidateStudy;
-            break;
-        }
-    }
-
-    NSArray *roiImages = study ? ([[[study roiSRSeries] valueForKey:@"images"] allObjects] ?: @[]) : @[];
-
-    for (NSUInteger index = 0; index < pixList.count; index++)
-    {
         DCMPix *pix = pixList[index];
         if (![pix isKindOfClass:DCMPix.class])
             continue;
 
         DicomImage *image = [self imageForPix:pix];
-        DicomStudy *imageStudy = [image valueForKeyPath:@"series.study"];
-        if (imageStudy == nil)
+        if (image == nil)
             continue;
 
-        NSArray *candidateRoiImages = (imageStudy == study) ? roiImages : nil;
-        NSString *path = [imageStudy roiPathForImage:image inArray:candidateRoiImages];
+        NSString *path = record[@"path"];
         NSArray *rois = [self roiArrayAtPath:path];
         for (ROI *roi in rois)
         {
@@ -128,7 +114,7 @@ static NSString * const HorosMetalTumourSeedSchema = @"com.horos.metalviewer.tum
         NSString *path = [study roiPathForImage:image inArray:nil];
         NSMutableArray *rois = [NSMutableArray arrayWithArray:[self roiArrayAtPath:path]];
 
-        NSIndexSet *duplicateIndexes = [rois indexesOfObjectsPassingTest:^BOOL(id candidate, NSUInteger idx, BOOL *stop) {
+        NSIndexSet *duplicateIndexes = [rois indexesOfObjectsPassingTest:^BOOL(id candidate, __unused NSUInteger idx, __unused BOOL *stop) {
             if (![candidate isKindOfClass:ROI.class])
                 return NO;
             NSDictionary *metadata = [self metadataForROI:candidate];
@@ -231,7 +217,7 @@ static NSString * const HorosMetalTumourSeedSchema = @"com.horos.metalviewer.tum
             if (rois.count == 0)
                 continue;
 
-            NSIndexSet *matchingIndexes = [rois indexesOfObjectsPassingTest:^BOOL(id candidate, NSUInteger idx, BOOL *stop) {
+            NSIndexSet *matchingIndexes = [rois indexesOfObjectsPassingTest:^BOOL(id candidate, __unused NSUInteger idx, __unused BOOL *stop) {
                 if (![candidate isKindOfClass:ROI.class])
                     return NO;
 

@@ -33,6 +33,7 @@ final class MetalViewerToolbarView: NSView {
     enum ROICommand {
         case select(UUID)
         case newSphere
+        case createSEGFromLegacyBrush
         case addAnchor
         case deleteAnchor
         case refineFromImage
@@ -49,6 +50,7 @@ final class MetalViewerToolbarView: NSView {
     private let clutPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let opacityPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let roiPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let legacyBrushSEGButton = NSButton(frame: .zero)
     private let syncScaleButton = NSButton(frame: .zero)
     private let leftMouseButtonRadio = NSButton(radioButtonWithTitle: NSLocalizedString("Left Button", comment: ""), target: nil, action: nil)
     private let rightMouseButtonRadio = NSButton(radioButtonWithTitle: NSLocalizedString("Right Button", comment: ""), target: nil, action: nil)
@@ -201,8 +203,13 @@ final class MetalViewerToolbarView: NSView {
         viewerModePopup.selectItem(withTag: mode.rawValue)
     }
 
-    func reloadROIMenu(store: MetalStudyROIStore, editingMode: MetalStudyROIEditingMode) {
+    func reloadROIMenu(
+        store: MetalStudyROIStore,
+        editingMode: MetalStudyROIEditingMode,
+        canCreateSEGFromLegacyBrush: Bool = false
+    ) {
         roiPopup.removeAllItems()
+        legacyBrushSEGButton.isEnabled = canCreateSEGFromLegacyBrush
 
         func addItem(
             _ title: String,
@@ -242,6 +249,11 @@ final class MetalViewerToolbarView: NSView {
 
         roiPopup.menu?.addItem(.separator())
         addItem(NSLocalizedString("New Spherical ROI…", comment: ""), command: .newSphere)
+        addItem(
+            NSLocalizedString("Create SEG from Legacy Brush ROI", comment: ""),
+            command: .createSEGFromLegacyBrush,
+            enabled: canCreateSEGFromLegacyBrush
+        )
         let selectedMouseTool = mouseToolAssignments.resolvedTool(
             for: selectedMouseButton,
             modifierFlags: mouseModifierFlags
@@ -463,15 +475,35 @@ final class MetalViewerToolbarView: NSView {
         roiPopup.translatesAutoresizingMaskIntoConstraints = false
         roiPopup.controlSize = .mini
         roiPopup.toolTip = NSLocalizedString("Create and edit study-level 3D segmentations in the 3D MPR view.", comment: "")
+
+        legacyBrushSEGButton.translatesAutoresizingMaskIntoConstraints = false
+        legacyBrushSEGButton.title = NSLocalizedString("SEG", comment: "")
+        legacyBrushSEGButton.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        legacyBrushSEGButton.controlSize = .small
+        legacyBrushSEGButton.bezelStyle = .texturedRounded
+        legacyBrushSEGButton.target = self
+        legacyBrushSEGButton.action = #selector(createSEGFromLegacyBrush(_:))
+        legacyBrushSEGButton.toolTip = NSLocalizedString(
+            "Create an editable DICOM SEG from the legacy brush ROI nearest the displayed slice.",
+            comment: ""
+        )
+        legacyBrushSEGButton.isEnabled = false
+
+        let controls = NSStackView(views: [roiPopup, legacyBrushSEGButton])
+        controls.translatesAutoresizingMaskIntoConstraints = false
+        controls.orientation = .horizontal
+        controls.alignment = .centerY
+        controls.spacing = 5
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(roiPopup)
+        container.addSubview(controls)
         NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(equalToConstant: 152),
+            container.widthAnchor.constraint(equalToConstant: 198),
             container.heightAnchor.constraint(equalToConstant: 42),
-            roiPopup.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            roiPopup.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            controls.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            controls.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             roiPopup.widthAnchor.constraint(equalToConstant: 148),
+            legacyBrushSEGButton.widthAnchor.constraint(equalToConstant: 42),
         ])
         return container
     }
@@ -620,6 +652,11 @@ final class MetalViewerToolbarView: NSView {
     private func roiSelectionDidChange(_ sender: NSMenuItem) {
         guard let command = sender.representedObject as? ROICommand else { return }
         roiCommandHandler?(command)
+    }
+
+    @objc
+    private func createSEGFromLegacyBrush(_ sender: NSButton) {
+        roiCommandHandler?(.createSEGFromLegacyBrush)
     }
 
     private func configureMouseButtonRadio(_ radio: NSButton, buttonChoice: MetalViewerMouseButton) {

@@ -369,7 +369,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         toolbarView.roiCommandHandler = { [weak self] command in
             self?.applyROICommand(command)
         }
-        toolbarView.reloadROIMenu(store: studyROIStore, editingMode: studyROIEditingMode)
+        reloadStudyROIMenu()
         studyROIStore.didChange = { [weak self] in
             guard let self else { return }
             self.refreshStudyROIBindings()
@@ -377,7 +377,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
                 self.studyROIStore.rois,
                 selectedIdentifier: self.studyROIStore.selectedROIIdentifier
             )
-            self.toolbarView.reloadROIMenu(store: self.studyROIStore, editingMode: self.studyROIEditingMode)
+            self.reloadStudyROIMenu()
         }
         studyROIStore.persistenceHandler = { [weak roiPersistence] rois in
             roiPersistence?.persist(rois)
@@ -730,6 +730,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             self.refreshStudyROIBindings()
             if self.activePaneView === pane {
                 self.updateScoutHighlights(for: pane)
+                self.reloadStudyROIMenu()
             }
         }
         pane.overlayBlendDidChange = { [weak self, weak pane] value in
@@ -759,7 +760,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         pane.studyROIEditingModeDidChange = { [weak self, weak pane] mode in
             guard let self, let pane, self.activePaneView === pane else { return }
             self.studyROIEditingMode = mode
-            self.toolbarView.reloadROIMenu(store: self.studyROIStore, editingMode: mode)
+            self.reloadStudyROIMenu()
         }
         pane.studyROIRefinementHandler = { [weak self, weak pane] preview in
             guard let self, let pane, self.activePaneView === pane else { return }
@@ -801,6 +802,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
         updateScoutHighlights(for: pane)
         reloadWLWWMenu(for: pane)
+        reloadStudyROIMenu()
         pane.focusImageView()
         updateToolbarStatus()
         updateReferenceLines()
@@ -1445,6 +1447,14 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         toolbarView.reloadOpacityMenu(selectedTitle: state.opacityName)
     }
 
+    private func reloadStudyROIMenu() {
+        toolbarView.reloadROIMenu(
+            store: studyROIStore,
+            editingMode: studyROIEditingMode,
+            canCreateSEGFromLegacyBrush: activePaneView?.hasLegacyBrushROI ?? false
+        )
+    }
+
     private func applyROICommand(_ command: MetalViewerToolbarView.ROICommand) {
         switch command {
         case let .select(identifier):
@@ -1463,6 +1473,8 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             )
             toolbarView.selectViewerMode(.mpr3D)
             setStudyROIEditingMode(.createSphere, in: activePaneView)
+        case .createSEGFromLegacyBrush:
+            createSEGFromLegacyBrushROI()
         case .addAnchor:
             guard studyROIStore.selectedROI != nil,
                   let activePaneView else {
@@ -1513,7 +1525,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         case .redo:
             studyROIStore.redo()
         }
-        toolbarView.reloadROIMenu(store: studyROIStore, editingMode: studyROIEditingMode)
+        reloadStudyROIMenu()
         updateToolbarStatus()
     }
 
@@ -1522,7 +1534,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         for pane in paneViews {
             pane.setStudyROIEditingMode(pane === editingPane ? mode : .inactive)
         }
-        toolbarView.reloadROIMenu(store: studyROIStore, editingMode: mode)
+        reloadStudyROIMenu()
     }
 
     private func refreshStudyROIBindings() {
@@ -1610,6 +1622,81 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         pendingStudyROIPreviewWorkItem?.cancel()
         pendingStudyROIPreviewWorkItem = nil
         enqueueROIRefinement(preview: false, interaction: false, showsFeedback: true)
+    }
+
+    private func createSEGFromLegacyBrushROI() {
+        guard isStudyROIRefinementInProgress == false,
+              let sourcePane = activePaneView,
+              let request = sourcePane.legacyBrushSegmentationRequest() else {
+            NSSound.beep()
+            return
+        }
+
+        pendingStudyROIPreviewWorkItem?.cancel()
+        pendingStudyROIPreviewWorkItem = nil
+        studyROIStore.cancelProvisionalSphere()
+        setStudyROIEditingMode(.inactive, in: nil)
+        isStudyROIRefinementInProgress = true
+        setStudyROIRefinementIndicatorVisible(true)
+        studyROIRefinementGeneration &+= 1
+        let generation = studyROIRefinementGeneration
+        let sourceSeriesIdentifier = sourcePane.series.identifier
+        let sourceStudyIdentifier = sourcePane.series.studyIdentifier
+        let frameOfReferenceUID = sourcePane.series.frameOfReferenceUID ?? sourceSeriesIdentifier
+
+        studyROIRefinementQueue.async { [weak self, weak sourcePane] in
+            let result = request.run()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isStudyROIRefinementInProgress = false
+                self.setStudyROIRefinementIndicatorVisible(false)
+                guard generation == self.studyROIRefinementGeneration else { return }
+                guard let result else {
+                    self.presentROIRefinementMessage(
+                        title: NSLocalizedString("Legacy ROI Could Not Be Converted", comment: ""),
+                        detail: NSLocalizedString(
+                            "The legacy brush mask did not contain enough valid image geometry to create a DICOM SEG.",
+                            comment: ""
+                        )
+                    )
+                    return
+                }
+
+                let color = NSColor(
+                    deviceRed: CGFloat(result.colorRed),
+                    green: CGFloat(result.colorGreen),
+                    blue: CGFloat(result.colorBlue),
+                    alpha: 1
+                )
+                guard self.studyROIStore.createImageSeededROI(
+                    name: result.name,
+                    studyInstanceUID: sourceStudyIdentifier,
+                    frameOfReferenceUID: frameOfReferenceUID,
+                    sourceSeriesIdentifier: sourceSeriesIdentifier,
+                    color: color,
+                    center: result.center,
+                    radiusMM: result.radiusMM,
+                    voxelField: result.voxelField
+                ) != nil else {
+                    self.presentROIRefinementMessage(
+                        title: NSLocalizedString("Legacy ROI Could Not Be Converted", comment: ""),
+                        detail: NSLocalizedString("The generated segmentation field was invalid.", comment: "")
+                    )
+                    return
+                }
+
+                if let sourcePane,
+                   self.paneViews.contains(where: { $0 === sourcePane }),
+                   self.activePaneView === sourcePane {
+                    self.viewerMode = .mpr3D
+                    sourcePane.setDisplayMode(.mpr3D)
+                    self.toolbarView.selectViewerMode(.mpr3D)
+                }
+                self.refreshStudyROIBindings()
+                self.reloadStudyROIMenu()
+                self.updateToolbarStatus()
+            }
+        }
     }
 
     private func scheduleInteractiveROIRefinement(preview: Bool) {
@@ -1853,7 +1940,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         for pane in paneViews {
             pane.setMouseToolAssignments(assignments)
         }
-        toolbarView.reloadROIMenu(store: studyROIStore, editingMode: studyROIEditingMode)
+        reloadStudyROIMenu()
     }
 
     private func setSyncScaleEnabled(_ isEnabled: Bool) {

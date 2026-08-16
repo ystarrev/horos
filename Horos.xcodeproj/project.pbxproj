@@ -1008,6 +1008,7 @@
 		F4D1C0A10001000000000002 /* StructuredReportSupport.m in Sources */ = {isa = PBXBuildFile; fileRef = F4D1C0A10002000000000002 /* StructuredReportSupport.m */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
 		F4A100000001000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm */; };
 		F4A100000001000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm */; };
+		F4B300000001000000000001 /* Horos/Sources/MetalViewer/MetalLegacyROISRBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4B300000002000000000001 /* Horos/Sources/MetalViewer/MetalLegacyROISRBridge.mm */; };
 		F4A100100001000000000001 /* libHorosModernDCMTKBridge.dylib in Resources */ = {isa = PBXBuildFile; fileRef = F4A100100001000000000002 /* libHorosModernDCMTKBridge.dylib */; };
 		F4A200000001000000000001 /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A200000002000000000001 /* UniformTypeIdentifiers.framework */; };
 		F4CDA0010000000000000001 /* HorosDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4CDA0020000000000000001 /* HorosDataModels.swift */; };
@@ -2330,6 +2331,8 @@
 		F4A100000002000000000017 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.h; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000019 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.h; sourceTree = SOURCE_ROOT; };
+		F4B300000002000000000001 /* Horos/Sources/MetalViewer/MetalLegacyROISRBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Horos/Sources/MetalViewer/MetalLegacyROISRBridge.mm; sourceTree = SOURCE_ROOT; };
+		F4B300000002000000000002 /* Horos/Sources/MetalViewer/MetalLegacyROISRBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Horos/Sources/MetalViewer/MetalLegacyROISRBridge.h; sourceTree = SOURCE_ROOT; };
 		F4A100100001000000000002 /* libHorosModernDCMTKBridge.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libHorosModernDCMTKBridge.dylib; path = DCMTK/libHorosModernDCMTKBridge.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
 		F4D1C0A10002000000000002 /* StructuredReportSupport.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = StructuredReportSupport.m; path = Horos/Sources/StructuredReportSupport.m; sourceTree = SOURCE_ROOT; };
 		F4D1C0A10002000000000003 /* StructuredReportSupport.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = StructuredReportSupport.h; path = Horos/Sources/StructuredReportSupport.h; sourceTree = SOURCE_ROOT; };
@@ -4315,6 +4318,8 @@
 				F4A100000002000000000017 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.h */,
 				F4A100000002000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm */,
 				F4A100000002000000000019 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.h */,
+				F4B300000002000000000001 /* Horos/Sources/MetalViewer/MetalLegacyROISRBridge.mm */,
+				F4B300000002000000000002 /* Horos/Sources/MetalViewer/MetalLegacyROISRBridge.h */,
 			);
 			name = "Metal Viewer";
 			sourceTree = "<group>";
@@ -5770,6 +5775,7 @@
 				F4A100000001000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal in Sources */,
 				F4A100000001000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm in Sources */,
 				F4A100000001000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm in Sources */,
+				F4B300000001000000000001 /* Horos/Sources/MetalViewer/MetalLegacyROISRBridge.mm in Sources */,
 				AB28B8D605B79D1500A9906C /* XMLController.m in Sources */,
 				AB28B8E205B79D1F00A9906C /* Wait.m in Sources */,
 				AB28B8E305B79D1F00A9906C /* AppController.m in Sources */,

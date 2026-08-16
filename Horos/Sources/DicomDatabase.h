@@ -43,6 +43,7 @@ enum {Compress, Decompress};
 extern NSString* const CurrentDatabaseVersion;
 extern NSString* const OsirixDataDirName;
 extern NSString* const O2ScreenCapturesSeriesName;
+extern NSString* const HorosLegacyOsiriXBrushROIPredicateFormat;
 
 @class N2MutableUInteger, DicomAlbum, DataNodeIdentifier;
 

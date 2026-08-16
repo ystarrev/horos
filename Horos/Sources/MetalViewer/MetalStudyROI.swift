@@ -155,6 +155,208 @@ struct MetalStudyROIVoxelField: Codable, Equatable, Sendable {
     }
 }
 
+struct MetalLegacyBrushMaskSlice: Sendable {
+    let geometry: MetalViewerSliceGeometry
+    let maskWidth: Int
+    let maskHeight: Int
+    let originX: Double
+    let originY: Double
+    let maskData: Data
+
+    var effectiveThicknessMM: Double {
+        let betweenSlices = abs(geometry.spacingBetweenSlices)
+        if betweenSlices > 0.01 { return betweenSlices }
+        let sliceThickness = abs(geometry.sliceThickness)
+        if sliceThickness > 0.01 { return sliceThickness }
+        return max(geometry.spacingX, geometry.spacingY)
+    }
+
+    func occupiedPixelBounds() -> (minimumX: Int, minimumY: Int, maximumX: Int, maximumY: Int)? {
+        guard maskWidth > 0,
+              maskHeight > 0,
+              maskData.count >= maskWidth * maskHeight else { return nil }
+        var minimumX = maskWidth
+        var minimumY = maskHeight
+        var maximumX = -1
+        var maximumY = -1
+        for storedRow in 0..<maskHeight {
+            let pixelY = maskHeight - storedRow - 1
+            let rowOffset = storedRow * maskWidth
+            for pixelX in 0..<maskWidth where maskData[rowOffset + pixelX] > 0 {
+                minimumX = min(minimumX, pixelX)
+                minimumY = min(minimumY, pixelY)
+                maximumX = max(maximumX, pixelX)
+                maximumY = max(maximumY, pixelY)
+            }
+        }
+        guard maximumX >= minimumX, maximumY >= minimumY else { return nil }
+        return (minimumX, minimumY, maximumX, maximumY)
+    }
+
+    func contains(worldPoint: SIMD3<Double>, gridSpacing: Double) -> Bool {
+        let distanceFromPlane = abs(simd_dot(worldPoint - geometry.origin, geometry.normal))
+        let halfThickness = max(effectiveThicknessMM * 0.5, gridSpacing * 0.55)
+        guard distanceFromPlane <= halfThickness else { return false }
+
+        let pixelPoint = geometry.slicePoint(from: worldPoint)
+        let localX = Int(floor(Double(pixelPoint.x) - originX))
+        let localY = Int(floor(Double(pixelPoint.y) - originY))
+        guard localX >= 0, localX < maskWidth,
+              localY >= 0, localY < maskHeight else { return false }
+
+        // The bridge reverses rows for Core Graphics display. Convert back to
+        // the source DICOM pixel-row convention when sampling the mask.
+        let storedRow = maskHeight - localY - 1
+        return maskData[storedRow * maskWidth + localX] > 0
+    }
+}
+
+struct MetalLegacyBrushSegmentationRequest: Sendable {
+    let name: String
+    let colorRed: Double
+    let colorGreen: Double
+    let colorBlue: Double
+    let slices: [MetalLegacyBrushMaskSlice]
+
+    func run() -> MetalLegacyBrushSegmentationResult? {
+        let populatedSlices = slices.compactMap { slice -> (MetalLegacyBrushMaskSlice, (Int, Int, Int, Int))? in
+            guard let bounds = slice.occupiedPixelBounds() else { return nil }
+            return (slice, (bounds.minimumX, bounds.minimumY, bounds.maximumX, bounds.maximumY))
+        }
+        guard populatedSlices.isEmpty == false else { return nil }
+
+        var minimum = SIMD3<Double>(repeating: Double.greatestFiniteMagnitude)
+        var maximum = SIMD3<Double>(repeating: -Double.greatestFiniteMagnitude)
+        var minimumSourceSpacing = Double.greatestFiniteMagnitude
+        for (slice, bounds) in populatedSlices {
+            minimumSourceSpacing = min(
+                minimumSourceSpacing,
+                max(min(slice.geometry.spacingX, slice.geometry.spacingY), 0.01)
+            )
+            let halfThickness = slice.effectiveThicknessMM * 0.5
+            for pixelY in [Double(bounds.1) + slice.originY, Double(bounds.3 + 1) + slice.originY] {
+                for pixelX in [Double(bounds.0) + slice.originX, Double(bounds.2 + 1) + slice.originX] {
+                    let planePoint = slice.geometry.dicomPoint(pixelX: pixelX, pixelY: pixelY)
+                    for direction in [-1.0, 1.0] {
+                        let point = planePoint + slice.geometry.normal * (halfThickness * direction)
+                        minimum = SIMD3<Double>(
+                            min(minimum.x, point.x),
+                            min(minimum.y, point.y),
+                            min(minimum.z, point.z)
+                        )
+                        maximum = SIMD3<Double>(
+                            max(maximum.x, point.x),
+                            max(maximum.y, point.y),
+                            max(maximum.z, point.z)
+                        )
+                    }
+                }
+            }
+        }
+        guard minimumSourceSpacing.isFinite,
+              minimum.x.isFinite, minimum.y.isFinite, minimum.z.isFinite,
+              maximum.x.isFinite, maximum.y.isFinite, maximum.z.isFinite else { return nil }
+
+        var spacing = min(max(minimumSourceSpacing, 0.45), 1.0)
+        let padding = SIMD3<Double>(repeating: spacing * 1.5)
+        minimum -= padding
+        maximum += padding
+
+        func dimensions(for candidateSpacing: Double) -> MetalStudyROIGridDimensions? {
+            let extent = maximum - minimum
+            let rawValues = [extent.x, extent.y, extent.z].map {
+                ceil(max($0, 0) / candidateSpacing) + 1
+            }
+            guard rawValues.allSatisfy({ $0.isFinite && $0 >= 2 && $0 <= 4_096 }) else { return nil }
+            let values = rawValues.map { Int($0) }
+            return MetalStudyROIGridDimensions(x: values[0], y: values[1], z: values[2])
+        }
+
+        let maximumVoxelCount = 420_000
+        var gridDimensions: MetalStudyROIGridDimensions?
+        for _ in 0..<8 {
+            guard let candidate = dimensions(for: spacing) else { return nil }
+            gridDimensions = candidate
+            if candidate.voxelCount <= maximumVoxelCount { break }
+            spacing *= pow(Double(candidate.voxelCount) / Double(maximumVoxelCount), 1.0 / 3.0) * 1.01
+        }
+        guard let gridDimensions,
+              gridDimensions.voxelCount > 0,
+              gridDimensions.voxelCount <= maximumVoxelCount else { return nil }
+
+        var probabilities = Array(repeating: UInt8(0), count: gridDimensions.voxelCount)
+        var insideCount = 0
+        var coordinateSum = SIMD3<Double>(repeating: 0)
+        for z in 0..<gridDimensions.z {
+            for y in 0..<gridDimensions.y {
+                for x in 0..<gridDimensions.x {
+                    let point = minimum + SIMD3<Double>(Double(x), Double(y), Double(z)) * spacing
+                    guard populatedSlices.contains(where: {
+                        $0.0.contains(worldPoint: point, gridSpacing: spacing)
+                    }) else { continue }
+                    let index = (z * gridDimensions.y + y) * gridDimensions.x + x
+                    probabilities[index] = 255
+                    insideCount += 1
+                    coordinateSum += SIMD3<Double>(Double(x), Double(y), Double(z))
+                }
+            }
+        }
+        guard insideCount > 0 else { return nil }
+
+        let meanCoordinate = coordinateSum / Double(insideCount)
+        var centerCoordinate = SIMD3<Int>(repeating: 0)
+        var nearestDistanceSquared = Double.greatestFiniteMagnitude
+        for index in probabilities.indices where probabilities[index] >= 128 {
+            let plane = gridDimensions.x * gridDimensions.y
+            let z = index / plane
+            let remainder = index - z * plane
+            let y = remainder / gridDimensions.x
+            let x = remainder - y * gridDimensions.x
+            let coordinate = SIMD3<Double>(Double(x), Double(y), Double(z))
+            let distanceSquared = simd_length_squared(coordinate - meanCoordinate)
+            if distanceSquared < nearestDistanceSquared {
+                nearestDistanceSquared = distanceSquared
+                centerCoordinate = SIMD3<Int>(x, y, z)
+            }
+        }
+
+        let field = MetalStudyROIVoxelField(
+            dimensions: gridDimensions,
+            origin: MetalStudyROIPoint(minimum),
+            spacingMM: spacing,
+            probabilities: Data(probabilities)
+        )
+        let center = minimum + SIMD3<Double>(
+            Double(centerCoordinate.x),
+            Double(centerCoordinate.y),
+            Double(centerCoordinate.z)
+        ) * spacing
+        let equivalentRadius = max(
+            pow(3 * field.volumeMM3 / (4 * Double.pi), 1.0 / 3.0),
+            spacing
+        )
+        return MetalLegacyBrushSegmentationResult(
+            name: name,
+            colorRed: colorRed,
+            colorGreen: colorGreen,
+            colorBlue: colorBlue,
+            center: center,
+            radiusMM: equivalentRadius,
+            voxelField: field
+        )
+    }
+}
+
+struct MetalLegacyBrushSegmentationResult: Sendable {
+    let name: String
+    let colorRed: Double
+    let colorGreen: Double
+    let colorBlue: Double
+    let center: SIMD3<Double>
+    let radiusMM: Double
+    let voxelField: MetalStudyROIVoxelField
+}
+
 enum MetalStudyROIAnchorKind: String, Codable, Equatable, Sendable {
     case manual
     case automatic
@@ -704,6 +906,39 @@ final class MetalStudyROIStore: @unchecked Sendable {
         rois.append(roi)
         selectedROIIdentifier = roi.id
         notifyChanged(schedulePersistence: false)
+        return roi.id
+    }
+
+    @discardableResult
+    func createImageSeededROI(
+        name: String,
+        studyInstanceUID: String,
+        frameOfReferenceUID: String,
+        sourceSeriesIdentifier: String,
+        color: NSColor,
+        center: SIMD3<Double>,
+        radiusMM: Double,
+        voxelField: MetalStudyROIVoxelField
+    ) -> UUID? {
+        guard voxelField.isValid else { return nil }
+        pushUndoState()
+        var roi = MetalStudyROI(
+            name: name,
+            studyInstanceUID: studyInstanceUID,
+            frameOfReferenceUID: frameOfReferenceUID,
+            sourceSeriesIdentifier: sourceSeriesIdentifier,
+            color: color,
+            center: center,
+            radiusMM: radiusMM
+        )
+        roi.applyImageRefinement(
+            automaticPoints: [],
+            voxelField: voxelField,
+            measuredVolumeMM3: voxelField.volumeMM3
+        )
+        rois.append(roi)
+        selectedROIIdentifier = roi.id
+        notifyChanged(schedulePersistence: true)
         return roi.id
     }
 

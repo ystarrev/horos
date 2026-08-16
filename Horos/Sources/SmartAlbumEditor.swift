@@ -51,7 +51,7 @@ private enum SmartAlbumField: Int, CaseIterable {
     case referringPhysician
     case performingPhysician
     case institution
-    case hasROIs
+    case hasLegacyBrushROIs
 
     var title: String {
         switch self {
@@ -66,7 +66,7 @@ private enum SmartAlbumField: Int, CaseIterable {
         case .referringPhysician: return NSLocalizedString("Referring Physician", comment: "Smart Album field")
         case .performingPhysician: return NSLocalizedString("Performing Physician", comment: "Smart Album field")
         case .institution: return NSLocalizedString("Institution", comment: "Smart Album field")
-        case .hasROIs: return NSLocalizedString("Has ROIs", comment: "Smart Album field")
+        case .hasLegacyBrushROIs: return NSLocalizedString("Has Legacy OsiriX Brush Masks", comment: "Smart Album field")
         }
     }
 
@@ -83,7 +83,7 @@ private enum SmartAlbumField: Int, CaseIterable {
         case .referringPhysician: return "referringPhysician"
         case .performingPhysician: return "performingPhysician"
         case .institution: return "institutionName"
-        case .hasROIs: return nil
+        case .hasLegacyBrushROIs: return nil
         }
     }
 
@@ -151,10 +151,10 @@ private struct SmartAlbumRule {
     }
 
     func makePredicate() -> NSPredicate? {
-        if field == .hasROIs {
+        if field == .hasLegacyBrushROIs {
             guard comparison == .isEqual, let booleanValue else { return nil }
-            let countComparison = booleanValue ? "> 0" : "== 0"
-            return NSPredicate(format: "SUBQUERY(series, $series, ($series.name ==[cd] \"OsiriX ROI SR\" OR $series.seriesDescription ==[cd] \"OsiriX ROI SR\") AND SUBQUERY($series.images, $image, $image.scale > 0).@count > 0).@count \(countComparison)")
+            let predicate = NSPredicate(format: HorosLegacyOsiriXBrushROIPredicateFormat)
+            return booleanValue ? predicate : NSCompoundPredicate(notPredicateWithSubpredicate: predicate)
         }
 
         let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -267,9 +267,9 @@ private final class SmartAlbumRuleRowView: NSView, NSTextFieldDelegate {
 
     @objc private func fieldChanged(_ sender: NSPopUpButton) {
         guard let field = SmartAlbumField(rawValue: sender.selectedTag()) else { return }
-        let wasBooleanField = rule.field == .hasROIs
+        let wasBooleanField = rule.field == .hasLegacyBrushROIs
         rule.field = field
-        if field == .hasROIs {
+        if field == .hasLegacyBrushROIs {
             rule.comparison = .isEqual
             rule.value = "YES"
         } else if wasBooleanField {
@@ -296,7 +296,7 @@ private final class SmartAlbumRuleRowView: NSView, NSTextFieldDelegate {
     }
 
     private func updateControlsForSelectedField() {
-        let isBooleanField = rule.field == .hasROIs
+        let isBooleanField = rule.field == .hasLegacyBrushROIs
         if isBooleanField {
             rule.comparison = .isEqual
             let normalizedValue = rule.value
@@ -1006,8 +1006,8 @@ private enum SmartAlbumPredicateParser {
     }
 
     private static func parseRule(_ expression: String) -> SmartAlbumRule? {
-        if let hasROIsRule = parseHasROIsRule(expression) {
-            return hasROIsRule
+        if let hasLegacyBrushROIsRule = parseHasLegacyBrushROIsRule(expression) {
+            return hasLegacyBrushROIsRule
         }
 
         let pattern = #"^\s*(ANY\s+)?([A-Za-z][A-Za-z0-9_.]*)\s+(CONTAINS|BEGINSWITH|==|!=)(?:\[cd\])?\s+(.+?)\s*$"#
@@ -1028,11 +1028,14 @@ private enum SmartAlbumPredicateParser {
         return SmartAlbumRule(field: field, comparison: comparison, value: value)
     }
 
-    private static func parseHasROIsRule(_ expression: String) -> SmartAlbumRule? {
+    private static func parseHasLegacyBrushROIsRule(_ expression: String) -> SmartAlbumRule? {
         for value in ["YES", "NO"] {
-            let rule = SmartAlbumRule(field: .hasROIs, comparison: .isEqual, value: value)
-            guard let candidate = rule.makePredicate()?.predicateFormat else { continue }
-            if normalizedPredicate(expression) == normalizedPredicate(candidate) {
+            let rule = SmartAlbumRule(field: .hasLegacyBrushROIs, comparison: .isEqual, value: value)
+            let isTrue = value == "YES"
+            let legacyCountComparison = isTrue ? "> 0" : "== 0"
+            let legacyPredicate = NSPredicate(format: "SUBQUERY(series, $series, ($series.name ==[cd] \"OsiriX ROI SR\" OR $series.seriesDescription ==[cd] \"OsiriX ROI SR\") AND SUBQUERY($series.images, $image, $image.scale > 0).@count > 0).@count \(legacyCountComparison)")
+            let candidates = [rule.makePredicate()?.predicateFormat, legacyPredicate.predicateFormat].compactMap { $0 }
+            if candidates.contains(where: { normalizedPredicate(expression) == normalizedPredicate($0) }) {
                 return rule
             }
         }

@@ -884,6 +884,7 @@ final class MetalSeriesTextureCache {
         device: MTLDevice
     ) -> String? {
         guard pixList.isEmpty == false,
+              pixList.contains(where: Self.isDICOMSegmentation) == false,
               let dimensions = pixList.compactMap({ dimensionsWithoutLoading(for: $0) }).first else {
             return nil
         }
@@ -914,6 +915,16 @@ final class MetalSeriesTextureCache {
         }
 
         return components.joined(separator: "|")
+    }
+
+    private static func isDICOMSegmentation(_ pix: DCMPix) -> Bool {
+        if pix.modalityString?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .caseInsensitiveCompare("SEG") == .orderedSame {
+            return true
+        }
+        return (pix.value(forKey: "SOPClassUID") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            == "1.2.840.10008.5.1.4.1.1.66.4"
     }
 
     func cachedEntry(
@@ -1236,8 +1247,8 @@ final class MetalSeriesTextureCache {
         let failedSliceIndexes = state.failures
         guard failedSliceIndexes.isEmpty == false else { return true }
 
-        // Retry only failed file reads serially before deciding that a source
-        // slice is genuinely missing or malformed.
+        // Retry failed slice preparation serially before deciding that a source
+        // slice is genuinely missing or incompatible with this volume.
         NSLog(
             "%@",
             "MetalSeriesTextureCache: retrying \(failedSliceIndexes.count) DICOM slice(s) serially"
@@ -1256,6 +1267,7 @@ final class MetalSeriesTextureCache {
                 max($0.width, 1) == width && max($0.height, 1) == height
             } ?? false
             let recovered: Bool
+            let failureReason: String
             if dimensionsMatch,
                let slice,
                slice.width == width,
@@ -1270,13 +1282,25 @@ final class MetalSeriesTextureCache {
                     bytesPerRow: bytesPerRow,
                     bytesPerImage: bytesPerImage
                 )
+                failureReason = recovered ? "" : "texture upload failed"
             } else {
                 recovered = false
+                if sliceDimensions == nil {
+                    failureReason = "dimensions unavailable"
+                } else if dimensionsMatch == false {
+                    failureReason = "dimensions do not match \(width)x\(height)"
+                } else if slice == nil {
+                    failureReason = "pixel data could not be decoded"
+                } else if slice?.width != width || slice?.height != height {
+                    failureReason = "decoded dimensions do not match \(width)x\(height)"
+                } else {
+                    failureReason = "stored-pixel encoding does not match the volume"
+                }
             }
             if recovered == false {
                 NSLog(
                     "%@",
-                    "MetalSeriesTextureCache: DICOM slice \(sliceIndex) could not be decoded from \(pix.srcFile ?? "unknown source")"
+                    "MetalSeriesTextureCache: DICOM slice \(sliceIndex) is incompatible with the volume (\(failureReason)): \(pix.srcFile ?? "unknown source")"
                 )
                 missingSliceIndexes.append(sliceIndex)
             }

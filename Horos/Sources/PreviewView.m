@@ -135,6 +135,46 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 @synthesize syncRelativeDiff;
 @synthesize stringID;
 
+// previewPix can contain one representative from each visible series, so an
+// equal item count alone does not mean it is the selected series' image stack.
+- (BOOL)pixListRepresentsDisplayedFiles:(NSArray *)pixels
+{
+    if (pixels == nil || [pixels count] == 0)
+        return NO;
+
+    id firstPixelObject = [pixels objectAtIndex:0];
+    if ([firstPixelObject isKindOfClass:[DCMPix class]] == NO)
+        return NO;
+    long seriesNumber = [(DCMPix *)firstPixelObject serieNo];
+    for (NSUInteger index = 0; index < [pixels count]; index++)
+    {
+        id pixelObject = [pixels objectAtIndex:index];
+        if ([pixelObject isKindOfClass:[DCMPix class]] == NO)
+            return NO;
+        if ([(DCMPix *)pixelObject serieNo] != seriesNumber)
+            return NO;
+    }
+
+    if (_dcmFilesList == nil || [_dcmFilesList count] == 0)
+        return YES;
+    if ([pixels count] != [_dcmFilesList count])
+        return NO;
+
+    for (NSUInteger index = 0; index < [pixels count]; index++)
+    {
+        id pixelObject = [pixels objectAtIndex:index];
+        id fileObject = [_dcmFilesList objectAtIndex:index];
+        if ([fileObject isKindOfClass:[NSManagedObject class]] == NO)
+            return NO;
+        NSManagedObjectID *pixelObjectID = [(DCMPix *)pixelObject imageObjectID];
+        NSManagedObjectID *fileObjectID = [(NSManagedObject *)fileObject objectID];
+        if (pixelObjectID == nil || [pixelObjectID isEqual:fileObjectID] == NO)
+            return NO;
+    }
+
+    return YES;
+}
+
 - (instancetype)initWithFrame:(NSRect)frameRect
 {
     self = [super initWithFrame:frameRect];
@@ -206,7 +246,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     _displayedImageIndex = MAX(0, firstImage);
     _displayedImageCount = files.count > 0 ? (NSInteger)files.count : (NSInteger)safePixels.count;
 
-    if (_displayedImageCount == 0 || safePixels.count == _displayedImageCount)
+    if ([self pixListRepresentsDisplayedFiles:safePixels])
     {
         [_metalView updatePixList:safePixels firstImage:firstImage resetWindowLevel:reset];
     }
@@ -232,7 +272,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     if (_dcmPixList && index >= 0 && index < [_dcmPixList count])
         pix = [_dcmPixList objectAtIndex:index];
 
-    BOOL canRefreshFullPixList = _dcmPixList && (_dcmFilesList.count == 0 || [_dcmPixList count] == _dcmFilesList.count);
+    BOOL canRefreshFullPixList = [self pixListRepresentsDisplayedFiles:_dcmPixList];
     if (pix && canRefreshFullPixList && [_dcmPixList count] != _metalView.currentPixListCount)
         [_metalView updatePixList:_dcmPixList firstImage:index resetWindowLevel:NO];
     else
@@ -251,7 +291,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     if (_dcmPixList && index >= 0 && index < [_dcmPixList count])
         pix = [_dcmPixList objectAtIndex:index];
 
-    BOOL canRefreshFullPixList = _dcmPixList && (_dcmFilesList.count == 0 || [_dcmPixList count] == _dcmFilesList.count);
+    BOOL canRefreshFullPixList = [self pixListRepresentsDisplayedFiles:_dcmPixList];
     if (pix && canRefreshFullPixList && [_dcmPixList count] != _metalView.currentPixListCount)
         [_metalView updatePixList:_dcmPixList firstImage:index resetWindowLevel:NO];
     else
@@ -307,7 +347,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     if (_dcmPixList == nil || [_dcmPixList count] == 0)
         return;
 
-    if ((_dcmFilesList.count == 0 || [_dcmPixList count] == _dcmFilesList.count)
+    if ([self pixListRepresentsDisplayedFiles:_dcmPixList]
         && [_dcmPixList count] != _metalView.currentPixListCount)
     {
         NSInteger index = _metalView.currentIndex;

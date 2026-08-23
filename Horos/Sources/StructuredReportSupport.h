@@ -5,6 +5,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface StructuredReportSupport : NSObject
 
 + (nullable NSString *)htmlStringForPath:(NSString *)path;
++ (NSString *)surgicalProcedureStudyDescription;
 + (NSString *)surgicalProcedureSeriesDescription;
 + (nullable NSString *)surgicalProcedureRecordJSONForPath:(NSString *)path;
 + (BOOL)writeSurgicalProcedureRecordJSON:(NSString *)recordJSON

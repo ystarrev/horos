@@ -34,6 +34,7 @@ typedef int (*HorosWriteSurgicalProcedureStructuredReportFunction)(const char*,
                                                                     const char*);
 typedef void (*HorosFreeStringFunction)(char*);
 
+static NSString * const SurgicalProcedureStudyDescription = @"Surgical Procedure";
 static NSString * const SurgicalProcedureSeriesDescription = @"Horos Surgical Procedure SR";
 
 static NSString * const SurgicalProcedurePayloadRecordJSONKey = @"recordJSON";
@@ -204,6 +205,11 @@ didFailProvisionalNavigation:(WKNavigation *)navigation
 @end
 
 @implementation StructuredReportSupport
+
++ (NSString *)surgicalProcedureStudyDescription
+{
+    return SurgicalProcedureStudyDescription;
+}
 
 + (NSString *)surgicalProcedureSeriesDescription
 {

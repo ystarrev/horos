@@ -295,11 +295,12 @@ NSString* asciiString(NSString* str)
 -(NSArray*)resolvedSamePatientStudyGroupForStudy:(id)study;
 -(NSPredicate*)resolvedSamePatientStudiesPredicateForStudy:(id)study;
 -(void)invalidateSamePatientStudyGroupCache;
+-(void)primeSamePatientStudyGroupCacheForStudies:(NSArray*)studies;
 -(BOOL)isSurgicalProcedureItem:(id)item;
 -(BOOL)isSurgicalProcedureStudy:(id)item;
 -(NSArray*)arrayByRemovingSurgicalProcedureStudies:(NSArray*)items;
+-(NSArray*)arrayByPresentingSurgicalProcedureStudies:(NSArray*)items sortDescriptors:(NSArray*)sortDescriptors presentEvents:(BOOL)presentEvents;
 -(NSPredicate*)nonSurgicalProcedureStudiesPredicate;
--(NSArray*)surgicalProcedureEventsForVisibleStudies:(NSArray*)items;
 
 -(void)saveLoadAlbumsSortDescriptors;
 -(void)saveDatabaseOutlineViewState;
@@ -3196,7 +3197,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     
     if( [NSThread isMainThread] == NO)
         NSLog( @"******* We HAVE TO be in main thread !");
-    
+
     NSError				*error =nil;
     NSPredicate			*predicate = nil, *distantPredicate = nil, *subPredicate = nil;
     NSString			*description = [NSString string];
@@ -3343,10 +3344,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     if( distantPredicate == nil)
         distantPredicate = [NSPredicate predicateWithValue: YES];
 
-    NSPredicate *nonSurgicalProcedurePredicate = [self nonSurgicalProcedureStudiesPredicate];
-    predicate = [NSCompoundPredicate andPredicateWithSubpredicates:
-        [NSArray arrayWithObjects:predicate, nonSurgicalProcedurePredicate, nil]];
-    
     error = nil;
     [outlineViewArray release];
     outlineViewArray = nil;
@@ -3372,13 +3369,11 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                         localEntireDBResultCount = 0;
                     else if( [self searchIncludesSeriesDescriptions] || storeBackedPatientNameSearch)
                         localEntireDBResultCount = [_database countObjectsForEntity:_database.studyEntity
-                                                                           predicate:[NSCompoundPredicate andPredicateWithSubpredicates:
-                                                                               [NSArray arrayWithObjects:self.filterPredicate, nonSurgicalProcedurePredicate, nil]]
+                                                                           predicate:self.filterPredicate
                                                                                error:&error];
                     else
                         localEntireDBResultCount = [[[_database objectsForEntity:_database.studyEntity predicate:nil error:&error]
-                            filteredArrayUsingPredicate:[NSCompoundPredicate andPredicateWithSubpredicates:
-                                [NSArray arrayWithObjects:self.filterPredicate, nonSurgicalProcedurePredicate, nil]]] count];
+                            filteredArrayUsingPredicate:self.filterPredicate] count];
 
                     if( [self seriesDescriptionSearchIsActive] == NO)
                         [self refreshEntireDBResult];
@@ -3387,9 +3382,14 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             else if( ([self searchIncludesSeriesDescriptions] ||
                       (searchType == 0 && [[_searchString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] length] > 0)) &&
                      testPredicate == nil)
+            {
                 outlineViewArray = [_database objectsForEntity:_database.studyEntity predicate:predicate error:&error];
+            }
             else
-                outlineViewArray = [[_database objectsForEntity:_database.studyEntity predicate:nil error:&error] filteredArrayUsingPredicate:predicate];
+            {
+                NSArray *allStudies = [_database objectsForEntity:_database.studyEntity predicate:nil error:&error];
+                outlineViewArray = [allStudies filteredArrayUsingPredicate:predicate];
+            }
         }
         @catch( NSException *ne)
         {
@@ -3399,7 +3399,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         
         if( error)
             NSLog( @"**** executeFetchRequest: %@", error);
-        
+
         // Smart Album Distant Studies, if available
         @synchronized( self)
         {
@@ -3505,8 +3505,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 
         if( [self seriesDescriptionSearchIsActive])
             outlineViewArray = [self studiesMatchingSeriesDescriptionSearchInStudies:outlineViewArray];
-
-        outlineViewArray = [self arrayByRemovingSurgicalProcedureStudies:outlineViewArray];
         
         @synchronized (_albumNoOfStudiesCache)
         {
@@ -3525,7 +3523,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         
         exception = [ne description];
     }
-    
+
     if( albumTable.selectedRow > 0) filtered = YES;
     
     NSSortDescriptor * sortdate = [[[NSSortDescriptor alloc] initWithKey: @"date" ascending:NO] autorelease];
@@ -3545,13 +3543,18 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     // Album and series-aware search results must remain exact result sets.
     // Adding every other study for each matching patient would make unrelated
     // studies appear to belong to the selected album or saved cohort.
-    if( filtered == YES && albumTable.selectedRow <= 0 && smartAlbumName == nil && [self searchIncludesSeriesDescriptions] == NO && [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesOfSamePatientTogether"] && outlineViewArray.count > 0 && outlineViewArray.count < 500)
+    // Resolving related studies is useful once a search identifies a small
+    // patient cohort. Broad surname/prefix results should display immediately
+    // instead of resolving dozens of unrelated patient groups.
+    static const NSUInteger samePatientAutoExpansionLimit = 50;
+    if( filtered == YES && albumTable.selectedRow <= 0 && smartAlbumName == nil && [self searchIncludesSeriesDescriptions] == NO && [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesOfSamePatientTogether"] && outlineViewArray.count > 0 && outlineViewArray.count <= samePatientAutoExpansionLimit)
     {
         @try
         {
             if( [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesOfSamePatientTogetherAndGrouped"])
             {
                 outlineViewArray = [outlineViewArray sortedArrayUsingDescriptors: sortDescriptors];
+                [self primeSamePatientStudyGroupCacheForStudies:outlineViewArray];
                 
                 NSMutableArray *copyOutlineViewArray = [NSMutableArray arrayWithArray: outlineViewArray];
                 NSMutableSet *resolvedStudyInstanceUIDs = [NSMutableSet set];
@@ -3629,7 +3632,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         outlineViewArray = [outlineViewArray sortedArrayUsingDescriptors: sortDescriptors];
     }
 
-    outlineViewArray = [self arrayByRemovingSurgicalProcedureStudies:outlineViewArray];
+    outlineViewArray = [self arrayByPresentingSurgicalProcedureStudies:outlineViewArray
+                                                              sortDescriptors:sortDescriptors
+                                                               presentEvents:smartAlbumName == nil && [self seriesDescriptionSearchIsActive] == NO];
     
     long images = 0;
     long matchingSeries = 0;
@@ -3651,19 +3656,12 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     else
         description = [description stringByAppendingFormat: NSLocalizedString(@" / Result = %@ studies (%@ images)", nil), [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInt: [outlineViewArray count]]], [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInt:images]]];
 
-    if( smartAlbumName == nil && [self seriesDescriptionSearchIsActive] == NO)
-    {
-        NSArray *procedureEvents = [self surgicalProcedureEventsForVisibleStudies:outlineViewArray];
-        if( procedureEvents.count)
-            outlineViewArray = [[outlineViewArray arrayByAddingObjectsFromArray:procedureEvents] sortedArrayUsingDescriptors:sortDescriptors];
-    }
-    
     outlineViewArray = [outlineViewArray retain];
     
     
     [databaseOutline reloadData];
     [comparativeTable reloadData];
-    
+
     @try
     {
         for( id obj in outlineViewArray)
@@ -3681,8 +3679,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     {
         N2LogExceptionWithStackTrace(ne);
     }
-    
-    
+
     if( [previousObjects count] > 0)
     {
         BOOL extend = NO;
@@ -3701,7 +3698,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         [[NSNotificationCenter defaultCenter] postNotificationName: NSOutlineViewSelectionDidChangeNotification  object:databaseOutline userInfo: nil];
     
     [databaseDescription setStringValue: description];
-    
+
     return exception;
 }
 
@@ -17062,7 +17059,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     BOOL searchFieldIsBeingEdited = searchString != nil &&
         (firstResponder == searchField || firstResponder == [searchField currentEditor]);
 
-    if( searchFieldIsBeingEdited)
+    if( searchFieldIsBeingEdited && searchString.length > 1)
     {
         [self performSelector:@selector(applyPendingSearchString:)
                    withObject:nil
@@ -17114,6 +17111,7 @@ static volatile int numberOfThreadsForJPEG = 0;
             distantSearchThread = nil;
         }
     }
+
 }
 
 - (IBAction)searchForCurrentPatient: (id)sender
@@ -17605,6 +17603,126 @@ static volatile int numberOfThreadsForJPEG = 0;
     _samePatientStudyGroupDatabaseModification = 0;
 }
 
+- (void)primeSamePatientStudyGroupCacheForStudies:(NSArray *)studies
+{
+    if( studies.count < 2 || [NSThread isMainThread] == NO || self.database == nil)
+        return;
+
+    NSManagedObjectContext *context = self.database.managedObjectContext;
+    NSTimeInterval databaseModification = self.database.timeOfLastModification;
+    if( _samePatientStudyGroupCache && _samePatientStudyGroupDatabaseModification != databaseModification)
+        [self invalidateSamePatientStudyGroupCache];
+
+    if( _samePatientStudyGroupCache == nil)
+    {
+        _samePatientStudyGroupCache = [[NSCache alloc] init];
+        [_samePatientStudyGroupCache setName:@"Horos same-patient study groups"];
+        [_samePatientStudyGroupCache setCountLimit:4096];
+    }
+    _samePatientStudyGroupDatabaseModification = databaseModification;
+
+    NSMutableOrderedSet *seedStudies = [NSMutableOrderedSet orderedSet];
+    for( id item in studies)
+    {
+        id study = [self studyForDisplayOnlyThisPatientItem:item];
+        if( [study isKindOfClass:[NSManagedObject class]] == NO ||
+            ((NSManagedObject *)study).managedObjectContext != context ||
+            [self isSurgicalProcedureStudy:study])
+            continue;
+
+        if( [_samePatientStudyGroupCache objectForKey:((NSManagedObject *)study).objectID] == nil)
+            [seedStudies addObject:study];
+    }
+
+    if( seedStudies.count < 2)
+        return;
+
+    static const NSUInteger samePatientPredicateBatchSize = 64;
+    NSMutableOrderedSet *candidateStudies = [NSMutableOrderedSet orderedSetWithOrderedSet:seedStudies];
+    NSMutableSet *processedPredicateFormats = [NSMutableSet set];
+    NSArray *pendingStudies = seedStudies.array;
+
+    // Resolve the union of every requested patient group in a few batched
+    // store queries. Further rounds preserve the existing transitive matching.
+    while( pendingStudies.count)
+    {
+        NSMutableArray *pendingPredicates = [NSMutableArray array];
+        for( id study in pendingStudies)
+        {
+            NSPredicate *predicate = [self directSamePatientStudiesPredicateForStudy:study];
+            NSString *predicateFormat = predicate.predicateFormat;
+            if( predicate && [processedPredicateFormats containsObject:predicateFormat] == NO)
+            {
+                [processedPredicateFormats addObject:predicateFormat];
+                [pendingPredicates addObject:predicate];
+            }
+        }
+
+        if( pendingPredicates.count == 0)
+            break;
+
+        NSMutableOrderedSet *nextStudies = [NSMutableOrderedSet orderedSet];
+        for( NSUInteger predicateIndex = 0; predicateIndex < pendingPredicates.count; predicateIndex += samePatientPredicateBatchSize)
+        {
+            NSRange batchRange = NSMakeRange(predicateIndex, MIN(samePatientPredicateBatchSize, pendingPredicates.count - predicateIndex));
+            NSArray *predicateBatch = [pendingPredicates subarrayWithRange:batchRange];
+            NSPredicate *batchPredicate = predicateBatch.count == 1
+                ? [predicateBatch objectAtIndex:0]
+                : [NSCompoundPredicate orPredicateWithSubpredicates:predicateBatch];
+            NSPredicate *visibleStudyPredicate = [NSCompoundPredicate andPredicateWithSubpredicates:@[
+                batchPredicate,
+                [self nonSurgicalProcedureStudiesPredicate]
+            ]];
+
+            for( id match in [self.database objectsForEntity:self.database.studyEntity predicate:visibleStudyPredicate])
+            {
+                if( match && [candidateStudies containsObject:match] == NO)
+                {
+                    [candidateStudies addObject:match];
+                    [nextStudies addObject:match];
+                }
+            }
+        }
+        pendingStudies = nextStudies.array;
+    }
+
+    NSArray *candidates = candidateStudies.array;
+    for( NSManagedObject *seedStudy in seedStudies)
+    {
+        if( [_samePatientStudyGroupCache objectForKey:seedStudy.objectID])
+            continue;
+
+        NSMutableOrderedSet *patientStudies = [NSMutableOrderedSet orderedSetWithObject:seedStudy];
+        NSMutableArray *pendingGroupStudies = [NSMutableArray arrayWithObject:seedStudy];
+        NSMutableSet *groupPredicateFormats = [NSMutableSet set];
+
+        while( pendingGroupStudies.count)
+        {
+            id patientStudy = [[[pendingGroupStudies objectAtIndex:0] retain] autorelease];
+            [pendingGroupStudies removeObjectAtIndex:0];
+
+            NSPredicate *patientPredicate = [self directSamePatientStudiesPredicateForStudy:patientStudy];
+            NSString *predicateFormat = patientPredicate.predicateFormat;
+            if( patientPredicate == nil || [groupPredicateFormats containsObject:predicateFormat])
+                continue;
+            [groupPredicateFormats addObject:predicateFormat];
+
+            for( id candidate in candidates)
+            {
+                if( [patientStudies containsObject:candidate] == NO && [patientPredicate evaluateWithObject:candidate])
+                {
+                    [patientStudies addObject:candidate];
+                    [pendingGroupStudies addObject:candidate];
+                }
+            }
+        }
+
+        NSArray *patientGroup = patientStudies.array;
+        for( NSManagedObject *patientStudy in patientGroup)
+            [_samePatientStudyGroupCache setObject:patientGroup forKey:patientStudy.objectID];
+    }
+}
+
 - (NSArray *)resolvedSamePatientStudyGroupForStudy:(id)study
 {
     study = [self studyForDisplayOnlyThisPatientItem:study];
@@ -17716,14 +17834,11 @@ static volatile int numberOfThreadsForJPEG = 0;
     if( [item isKindOfClass:[DicomStudy class]] == NO)
         return NO;
 
-    NSString *marker = [StructuredReportSupport surgicalProcedureSeriesDescription];
-    for( DicomSeries *series in [item valueForKey:@"series"])
-    {
-        if( (series.name.length && [series.name caseInsensitiveCompare:marker] == NSOrderedSame) ||
-            (series.seriesDescription.length && [series.seriesDescription caseInsensitiveCompare:marker] == NSOrderedSame))
-            return YES;
-    }
-    return NO;
+    NSString *modality = [self samePatientMatchingStringValueForKey:@"modality" item:item];
+    NSString *studyDescription = [self samePatientMatchingStringValueForKey:@"studyName" item:item];
+    return modality.length && studyDescription.length &&
+        [modality caseInsensitiveCompare:@"SR"] == NSOrderedSame &&
+        [studyDescription caseInsensitiveCompare:[StructuredReportSupport surgicalProcedureStudyDescription]] == NSOrderedSame;
 }
 
 - (NSArray *)arrayByRemovingSurgicalProcedureStudies:(NSArray *)items
@@ -17738,13 +17853,67 @@ static volatile int numberOfThreadsForJPEG = 0;
     return visibleItems;
 }
 
+- (NSArray *)arrayByPresentingSurgicalProcedureStudies:(NSArray *)items
+                                       sortDescriptors:(NSArray *)sortDescriptors
+                                        presentEvents:(BOOL)presentEvents
+{
+    if( items.count == 0)
+        return items ?: [NSArray array];
+
+    NSMutableArray *regularStudies = [NSMutableArray arrayWithCapacity:items.count];
+    NSMutableArray *procedureStudies = [NSMutableArray array];
+    for( id item in items)
+    {
+        if( [self isSurgicalProcedureStudy:item])
+            [procedureStudies addObject:item];
+        else
+            [regularStudies addObject:item];
+    }
+
+    if( procedureStudies.count == 0)
+        return items;
+
+    // Procedure rows are useful in a single-patient timeline, but would add
+    // thousands of entries to the unfiltered database view.
+    if( presentEvents == NO || items.count > 500)
+        return regularStudies;
+
+    id referenceStudy = regularStudies.count ? [regularStudies objectAtIndex:0] : [procedureStudies objectAtIndex:0];
+    for( id item in items)
+    {
+        if( [item isDistant] || [[item valueForKey:@"type"] isEqualToString:@"Study"] == NO)
+            return regularStudies;
+
+        if( item != referenceStudy)
+        {
+            BOOL matchesReference = NO;
+            if( [self isSurgicalProcedureStudy:item] || [self isSurgicalProcedureStudy:referenceStudy])
+            {
+                NSPredicate *referencePredicate = [self directSamePatientStudiesPredicateForStudy:referenceStudy];
+                NSPredicate *itemPredicate = [self directSamePatientStudiesPredicateForStudy:item];
+                matchesReference = (referencePredicate && [referencePredicate evaluateWithObject:item]) ||
+                    (itemPredicate && [itemPredicate evaluateWithObject:referenceStudy]);
+            }
+            else
+                matchesReference = [self study:item matchesSamePatientAsStudy:referenceStudy];
+
+            if( matchesReference == NO)
+                return regularStudies;
+        }
+    }
+
+    NSArray *procedureEvents = [SurgicalProcedureTimelineStore eventsForSurgicalProcedureStudies:procedureStudies];
+    if( procedureEvents.count == 0)
+        return regularStudies;
+
+    return [[regularStudies arrayByAddingObjectsFromArray:procedureEvents] sortedArrayUsingDescriptors:sortDescriptors];
+}
+
 - (NSPredicate *)nonSurgicalProcedureStudiesPredicate
 {
-    NSString *marker = [StructuredReportSupport surgicalProcedureSeriesDescription];
-    return [NSPredicate predicateWithFormat:
-        @"SUBQUERY(series, $series, $series.name ==[cd] %@ OR $series.seriesDescription ==[cd] %@).@count == 0",
-        marker,
-        marker];
+    return [NSPredicate predicateWithFormat:@"NOT (modality ==[cd] %@ AND studyName ==[cd] %@)",
+        @"SR",
+        [StructuredReportSupport surgicalProcedureStudyDescription]];
 }
 
 - (NSDictionary *)surgicalProcedureImportDatabasePaths
@@ -17797,30 +17966,6 @@ static volatile int numberOfThreadsForJPEG = 0;
         return events;
 
     return events;
-}
-
-- (NSArray *)surgicalProcedureEventsForVisibleStudies:(NSArray *)items
-{
-    NSMutableArray *studies = [NSMutableArray array];
-    for( id item in items)
-    {
-        if( [self isSurgicalProcedureItem:item])
-            continue;
-        if( [item isDistant] || [[item valueForKey:@"type"] isEqualToString:@"Study"] == NO)
-            return [NSArray array];
-        [studies addObject:item];
-    }
-
-    if( studies.count == 0 || studies.count > 500)
-        return [NSArray array];
-
-    id referenceStudy = [studies objectAtIndex:0];
-    for( id study in studies)
-    {
-        if( study != referenceStudy && [self study:study matchesSamePatientAsStudy:referenceStudy] == NO)
-            return [NSArray array];
-    }
-    return [self surgicalProcedureEventsForStudy:referenceStudy];
 }
 
 - (BOOL)searchIncludesSeriesDescriptions

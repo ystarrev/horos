@@ -2302,6 +2302,17 @@ final class MetalViewerSeries {
         return pix
     }
 
+    /// Returns the backing DICOM path without constructing a DCMPix. This is
+    /// important for non-image composite objects such as DICOM SEG, whose
+    /// one-bit Pixel Data is not part of the ordinary image display pipeline.
+    func firstSourcePath() -> String? {
+        if let path = cachedPixList?.first?.srcFile, path.isEmpty == false {
+            return path
+        }
+        guard let firstObject = imageObjects.first else { return nil }
+        return Self.resolvedPath(for: firstObject)
+    }
+
     func middlePreviewPix() -> DCMPix? {
         if let cachedPixList, cachedPixList.isEmpty == false {
             return cachedPixList[cachedPixList.count / 2]
@@ -2616,6 +2627,40 @@ struct MetalViewerSliceGeometry: Sendable {
         self.sliceThickness = metadata.sliceThickness
         self.spacingBetweenSlices = metadata.spacingBetweenSlices
         self.sliceLocation = metadata.sliceLocation
+    }
+
+    init?(attributes: SwiftDICOMFrameGeometryAttributes, width: Int, height: Int) {
+        var row = attributes.row
+        var column = attributes.column
+        guard simd_length(row) > 0.000_001,
+              simd_length(column) > 0.000_001 else { return nil }
+        row = simd_normalize(row)
+        column = simd_normalize(column)
+        let normalCandidate = simd_cross(row, column)
+        guard simd_length(normalCandidate) > 0.000_001 else { return nil }
+
+        self.row = row
+        self.column = column
+        normal = simd_normalize(normalCandidate)
+        spacingX = max(attributes.spacingX, 0.000_001)
+        spacingY = max(attributes.spacingY, 0.000_001)
+        self.width = Double(max(width, 1))
+        self.height = Double(max(height, 1))
+        origin = attributes.origin
+        sliceThickness = attributes.sliceThickness
+        spacingBetweenSlices = attributes.spacingBetweenSlices
+
+        let center = origin
+            + row * ((self.width * 0.5 - 0.5) * spacingX)
+            + column * ((self.height * 0.5 - 0.5) * spacingY)
+        let absoluteNormal = simd_abs(normal)
+        if absoluteNormal.x >= absoluteNormal.y, absoluteNormal.x >= absoluteNormal.z {
+            sliceLocation = center.x
+        } else if absoluteNormal.y >= absoluteNormal.z {
+            sliceLocation = center.y
+        } else {
+            sliceLocation = center.z
+        }
     }
 
     func slicePoint(from worldPoint: SIMD3<Double>) -> CGPoint {

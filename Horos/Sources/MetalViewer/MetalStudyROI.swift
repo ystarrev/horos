@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 import Metal
 import simd
@@ -152,6 +153,132 @@ struct MetalStudyROIVoxelField: Codable, Equatable, Sendable {
             radius += step
         }
         return nil
+    }
+
+    /// Returns sub-voxel points where the 0.5 isosurface crosses grid edges.
+    /// Unlike rays from a single centre, this covers concave, tubular, and
+    /// branching structures in their entirety.
+    func boundaryPoints() -> [SIMD3<Double>] {
+        guard isValid else { return [] }
+        let values = [UInt8](probabilities)
+        let width = dimensions.x
+        let height = dimensions.y
+        let depth = dimensions.z
+        let plane = width * height
+        var result: [SIMD3<Double>] = []
+        result.reserveCapacity(min(dimensions.voxelCount / 4, 100_000))
+
+        func appendCrossing(
+            from index: Int,
+            to neighborIndex: Int,
+            coordinate: SIMD3<Double>,
+            axis: SIMD3<Double>
+        ) {
+            let first = Double(values[index]) / 255
+            let second = Double(values[neighborIndex]) / 255
+            guard (first >= 0.5) != (second >= 0.5) else { return }
+            let denominator = second - first
+            let fraction = abs(denominator) > 0.000_001
+                ? min(max((0.5 - first) / denominator, 0), 1)
+                : 0.5
+            result.append(
+                origin.vector + (coordinate + axis * fraction) * spacingMM
+            )
+        }
+
+        for z in 0..<depth {
+            for y in 0..<height {
+                for x in 0..<width {
+                    let index = z * plane + y * width + x
+                    let coordinate = SIMD3<Double>(Double(x), Double(y), Double(z))
+                    if x + 1 < width {
+                        appendCrossing(
+                            from: index,
+                            to: index + 1,
+                            coordinate: coordinate,
+                            axis: SIMD3<Double>(1, 0, 0)
+                        )
+                    }
+                    if y + 1 < height {
+                        appendCrossing(
+                            from: index,
+                            to: index + width,
+                            coordinate: coordinate,
+                            axis: SIMD3<Double>(0, 1, 0)
+                        )
+                    }
+                    if z + 1 < depth {
+                        appendCrossing(
+                            from: index,
+                            to: index + plane,
+                            coordinate: coordinate,
+                            axis: SIMD3<Double>(0, 0, 1)
+                        )
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    func uniformlySampledBoundaryPoints(targetCount: Int) -> [SIMD3<Double>] {
+        let candidates = boundaryPoints()
+        guard targetCount > 0 else { return [] }
+        guard candidates.count > targetCount else { return candidates }
+
+        let centroid = candidates.reduce(SIMD3<Double>.zero, +) / Double(candidates.count)
+        var selectedIndex = candidates.indices.max {
+            simd_length_squared(candidates[$0] - centroid)
+                < simd_length_squared(candidates[$1] - centroid)
+        } ?? 0
+        var minimumDistances = Array(
+            repeating: Double.greatestFiniteMagnitude,
+            count: candidates.count
+        )
+        var result: [SIMD3<Double>] = []
+        result.reserveCapacity(targetCount)
+
+        for _ in 0..<targetCount {
+            let selected = candidates[selectedIndex]
+            result.append(selected)
+            var farthestIndex = selectedIndex
+            var farthestDistance = -Double.greatestFiniteMagnitude
+            for index in candidates.indices {
+                minimumDistances[index] = min(
+                    minimumDistances[index],
+                    simd_length_squared(candidates[index] - selected)
+                )
+                if minimumDistances[index] > farthestDistance {
+                    farthestDistance = minimumDistances[index]
+                    farthestIndex = index
+                }
+            }
+            guard farthestDistance > spacingMM * spacingMM * 0.25 else { break }
+            selectedIndex = farthestIndex
+        }
+        return result
+    }
+
+    func nearestBoundaryPoint(to point: SIMD3<Double>) -> SIMD3<Double>? {
+        boundaryPoints().min {
+            simd_length_squared($0 - point) < simd_length_squared($1 - point)
+        }
+    }
+
+    func outwardNormal(at point: SIMD3<Double>) -> SIMD3<Double>? {
+        guard isValid else { return nil }
+        let step = max(spacingMM, 0.1)
+        func sampled(_ offset: SIMD3<Double>) -> Double {
+            probability(at: point + offset) ?? 0
+        }
+        let gradient = SIMD3<Double>(
+            sampled(SIMD3<Double>(step, 0, 0)) - sampled(SIMD3<Double>(-step, 0, 0)),
+            sampled(SIMD3<Double>(0, step, 0)) - sampled(SIMD3<Double>(0, -step, 0)),
+            sampled(SIMD3<Double>(0, 0, step)) - sampled(SIMD3<Double>(0, 0, -step))
+        )
+        guard simd_length_squared(gradient) > 0.000_001 else { return nil }
+        // Probability decreases from foreground to background.
+        return -simd_normalize(gradient)
     }
 }
 
@@ -376,6 +503,7 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
     var radiusMM: Double
     var anchors: [MetalStudyROIPoint]
     var anchorKinds: [MetalStudyROIAnchorKind]
+    var anchorBaselinePoints: [MetalStudyROIPoint]
     var supportRadiusMM: Double
     var volumeMM3: Double
     var modifiedAt: Date
@@ -383,6 +511,9 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
 
     private var kernelAnchorDirections: [SIMD3<Double>] = []
     private var kernelAnchorRadii: [Double] = []
+    private var kernelAnchorDisplacements: [SIMD3<Double>] = []
+    private var kernelSpatialSupportMM = 4.0
+    private var hasAnchorDeformation = false
     private var kernelAngularSupport = 1.0
 
     init(
@@ -410,6 +541,7 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         self.radiusMM = max(radiusMM, 0.5)
         anchors = []
         anchorKinds = []
+        anchorBaselinePoints = []
         supportRadiusMM = max(radiusMM * 0.8, 4)
         volumeMM3 = 4.0 / 3.0 * Double.pi * pow(max(radiusMM, 0.5), 3)
         modifiedAt = Date()
@@ -450,28 +582,56 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
 
     func surfaceRadius(along proposedDirection: SIMD3<Double>) -> Double {
         let directionLength = simd_length(proposedDirection)
-        if directionLength > 0.000_001,
-           let refinedRadius = voxelField?.surfaceRadius(
-               from: center.vector,
-               along: proposedDirection
-           ) {
-            return refinedRadius
-        }
-        guard directionLength > 0.000_001,
-              anchors.count == kernelAnchorDirections.count,
-              anchors.count == kernelAnchorRadii.count,
-              anchors.isEmpty == false else {
+        guard directionLength > 0.000_001 else {
             return radiusMM
         }
-
         let direction = proposedDirection / directionLength
+
+        if let voxelField,
+           let baselineRadius = voxelField.surfaceRadius(
+               from: center.vector,
+               along: direction
+           ) {
+            guard hasAnchorDeformation else { return baselineRadius }
+            let baselinePoint = center.vector + direction * baselineRadius
+            var deformedPoint = baselinePoint
+            // The displacement kernels are centred on their edited target
+            // locations. A few fixed-point iterations find the corresponding
+            // deformed surface point without assuming the surface is spherical.
+            for _ in 0..<3 {
+                deformedPoint = baselinePoint + interpolatedSurfaceDisplacement(at: deformedPoint)
+            }
+            return max(simd_dot(deformedPoint - center.vector, direction), 0.5)
+        }
+
+        guard anchors.isEmpty == false,
+              anchors.count == kernelAnchorDirections.count,
+              anchors.count == kernelAnchorRadii.count else {
+            return radiusMM
+        }
+        return max(
+            interpolatedAnchorValue(
+                along: direction,
+                values: kernelAnchorRadii,
+                fallback: radiusMM
+            ),
+            0.5
+        )
+    }
+
+    private func interpolatedAnchorValue(
+        along direction: SIMD3<Double>,
+        values: [Double],
+        fallback: Double
+    ) -> Double {
+        guard values.count == anchors.count else { return fallback }
         var weightedRadius = 0.0
         var totalWeight = 0.0
         var uncoveredFraction = 1.0
         for index in anchors.indices {
             let chordDistance = simd_distance(direction, kernelAnchorDirections[index])
             if chordDistance < 0.000_001 {
-                return max(kernelAnchorRadii[index], 0.5)
+                return values[index]
             }
             let kernel = Self.wendlandC2(chordDistance / max(kernelAngularSupport, 0.001))
             guard kernel > 0 else { continue }
@@ -481,7 +641,7 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
             // should still be free to fit.
             let priority = anchorKind(at: index) == .manual ? 2.5 : 1.0
             let weight = priority * kernel / max(chordDistance * chordDistance, 0.000_001)
-            weightedRadius += weight * kernelAnchorRadii[index]
+            weightedRadius += weight * values[index]
             totalWeight += weight
             // Combining the compact kernels as coverage keeps the blend smooth
             // where the nearest anchor changes. Taking only the strongest kernel
@@ -489,10 +649,37 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
             // toward the original sphere between otherwise good auto anchors.
             uncoveredFraction *= 1 - kernel
         }
-        guard totalWeight > 0 else { return radiusMM }
+        guard totalWeight > 0 else { return fallback }
         let constrainedRadius = weightedRadius / totalWeight
         let combinedInfluence = 1 - uncoveredFraction
-        return max(radiusMM + (constrainedRadius - radiusMM) * combinedInfluence, 0.5)
+        return fallback + (constrainedRadius - fallback) * combinedInfluence
+    }
+
+    private func interpolatedSurfaceDisplacement(
+        at point: SIMD3<Double>
+    ) -> SIMD3<Double> {
+        guard hasAnchorDeformation,
+              anchors.count == kernelAnchorDisplacements.count else {
+            return .zero
+        }
+        var weightedDisplacement = SIMD3<Double>.zero
+        var totalWeight = 0.0
+        var uncoveredFraction = 1.0
+        for index in anchors.indices {
+            let distance = simd_distance(point, anchors[index].vector)
+            if distance < 0.000_001 {
+                return kernelAnchorDisplacements[index]
+            }
+            let kernel = Self.wendlandC2(distance / max(kernelSpatialSupportMM, 0.001))
+            guard kernel > 0 else { continue }
+            let priority = anchorKind(at: index) == .manual ? 2.5 : 1.0
+            let weight = priority * kernel / max(distance * distance, 0.000_001)
+            weightedDisplacement += kernelAnchorDisplacements[index] * weight
+            totalWeight += weight
+            uncoveredFraction *= 1 - kernel
+        }
+        guard totalWeight > 0 else { return .zero }
+        return weightedDisplacement / totalWeight * (1 - uncoveredFraction)
     }
 
     mutating func setSphere(center: SIMD3<Double>, radiusMM: Double) {
@@ -501,30 +688,56 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         supportRadiusMM = max(self.radiusMM * 0.8, 4)
         anchors.removeAll()
         anchorKinds.removeAll()
+        anchorBaselinePoints.removeAll()
         voxelField = nil
         kernelAnchorDirections.removeAll()
         kernelAnchorRadii.removeAll()
+        kernelAnchorDisplacements.removeAll()
+        hasAnchorDeformation = false
         volumeMM3 = 4.0 / 3.0 * Double.pi * pow(self.radiusMM, 3)
         modifiedAt = Date()
     }
 
     @discardableResult
     mutating func addAnchor(_ point: SIMD3<Double>) -> Int {
-        voxelField = nil
+        seedAutomaticBoundaryScaffoldIfNeeded()
         normalizeAnchorKinds()
-        let minimumSeparation = max(radiusMM * 0.015, 0.25)
-        let direction = Self.radialDirection(from: center.vector, to: point)
+        normalizeAnchorBaselines()
+        let minimumSeparation = max(voxelField?.spacingMM ?? radiusMM * 0.015, 0.25)
         if let index = anchors.firstIndex(where: {
             simd_distance($0.vector, point) < minimumSeparation
-                || simd_distance(Self.radialDirection(from: center.vector, to: $0.vector), direction) < 0.01
         }) {
             anchors[index] = MetalStudyROIPoint(point)
             anchorKinds[index] = .manual
             rebuildAnchorSurface()
             return index
         } else {
+            let estimatedBaseline = point - interpolatedSurfaceDisplacement(at: point)
+            let baselinePoint = voxelField?.nearestBoundaryPoint(to: estimatedBaseline) ?? point
+            let promotionDistance = max((voxelField?.spacingMM ?? 0.5) * 4, 2.5)
+            if let automaticIndex = anchors.indices
+                .filter({ anchorKinds[$0] == .automatic })
+                .min(by: {
+                    simd_length_squared(anchorBaselinePoints[$0].vector - baselinePoint)
+                        < simd_length_squared(anchorBaselinePoints[$1].vector - baselinePoint)
+                }),
+               simd_distance(
+                   anchorBaselinePoints[automaticIndex].vector,
+                   baselinePoint
+               ) <= promotionDistance {
+                // Promote the nearest scaffold correspondence instead of leaving
+                // a zero-displacement handle behind at the old surface. Keeping
+                // both would permit a duplicated fold between the old and new
+                // boundary positions.
+                anchors[automaticIndex] = MetalStudyROIPoint(point)
+                anchorKinds[automaticIndex] = .manual
+                anchorBaselinePoints[automaticIndex] = MetalStudyROIPoint(baselinePoint)
+                rebuildAnchorSurface()
+                return automaticIndex
+            }
             anchors.append(MetalStudyROIPoint(point))
             anchorKinds.append(.manual)
+            anchorBaselinePoints.append(MetalStudyROIPoint(baselinePoint))
         }
         rebuildAnchorSurface()
         return anchors.count - 1
@@ -532,8 +745,8 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
 
     mutating func moveAnchor(at index: Int, to point: SIMD3<Double>) {
         normalizeAnchorKinds()
+        normalizeAnchorBaselines()
         guard anchors.indices.contains(index) else { return }
-        voxelField = nil
         anchors[index] = MetalStudyROIPoint(point)
         anchorKinds[index] = .manual
         rebuildAnchorSurface()
@@ -541,32 +754,38 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
 
     mutating func removeAnchor(at index: Int) {
         normalizeAnchorKinds()
+        normalizeAnchorBaselines()
         guard anchors.indices.contains(index) else { return }
-        voxelField = nil
         anchors.remove(at: index)
         anchorKinds.remove(at: index)
+        anchorBaselinePoints.remove(at: index)
         rebuildAnchorSurface()
     }
 
     mutating func replaceAutomaticAnchors(with points: [SIMD3<Double>]) {
-        voxelField = nil
         normalizeAnchorKinds()
-        let manualAnchors = anchors.indices.compactMap { index in
-            anchorKinds[index] == .manual ? anchors[index] : nil
+        normalizeAnchorBaselines()
+        let manualIndices = anchors.indices.filter { anchorKinds[$0] == .manual }
+        let manualAnchors = manualIndices.map { anchors[$0] }
+        let boundaryPoints = voxelField?.boundaryPoints() ?? []
+        let manualBaselines = manualAnchors.map { anchor in
+            MetalStudyROIPoint(
+                boundaryPoints.min {
+                    simd_length_squared($0 - anchor.vector)
+                        < simd_length_squared($1 - anchor.vector)
+                } ?? anchor.vector
+            )
         }
-        let manualDirections = manualAnchors.map {
-            Self.radialDirection(from: center.vector, to: $0.vector)
-        }
-        let minimumManualChordDistance = 0.04
+        let minimumManualDistance = max(voxelField?.spacingMM ?? 0.5, 0.5)
         let automaticPoints = points.filter { point in
-            let direction = Self.radialDirection(from: center.vector, to: point)
-            return manualDirections.allSatisfy {
-                simd_distance($0, direction) >= minimumManualChordDistance
+            manualAnchors.allSatisfy {
+                simd_distance($0.vector, point) >= minimumManualDistance
             }
         }
         anchors = manualAnchors + automaticPoints.map(MetalStudyROIPoint.init)
         anchorKinds = Array(repeating: .manual, count: manualAnchors.count)
             + Array(repeating: .automatic, count: automaticPoints.count)
+        anchorBaselinePoints = manualBaselines + automaticPoints.map(MetalStudyROIPoint.init)
         rebuildAnchorSurface()
     }
 
@@ -576,8 +795,8 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         measuredVolumeMM3: Double? = nil,
         updateVolume: Bool = true
     ) {
-        replaceAutomaticAnchors(with: automaticPoints)
         self.voxelField = voxelField.isValid ? voxelField : nil
+        replaceAutomaticAnchors(with: automaticPoints)
         if updateVolume, let field = self.voxelField {
             volumeMM3 = measuredVolumeMM3 ?? field.volumeMM3
         }
@@ -586,7 +805,8 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
 
     func implicitValue(at point: SIMD3<Double>) -> Double {
         if let voxelField {
-            guard let probability = voxelField.probability(at: point) else { return 1 }
+            let sampledPoint = point - interpolatedSurfaceDisplacement(at: point)
+            guard let probability = voxelField.probability(at: sampledPoint) else { return 1 }
             return 0.5 - probability
         }
         let offset = point - center.vector
@@ -605,11 +825,79 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         radiusMM = max(radiusMM, 0.5)
         if voxelField?.isValid == false { voxelField = nil }
         normalizeAnchorKinds()
+        normalizeAnchorBaselines()
         rebuildKernelState()
     }
 
+    /// Adds a sparse, deterministic set of movable boundary landmarks to an
+    /// imported voxel mask. The voxel field remains the exact baseline; these
+    /// zero-displacement landmarks localize subsequent manual deformations and
+    /// keep image refinement from replacing the imported shape wholesale.
+    @discardableResult
+    mutating func seedAutomaticBoundaryScaffoldIfNeeded(targetCount: Int = 96) -> Bool {
+        normalizeAnchorKinds()
+        normalizeAnchorBaselines()
+        guard automaticAnchorCount == 0,
+              let voxelField,
+              voxelField.isValid,
+              targetCount >= 24 else { return false }
+        let minimumManualDistance = max(voxelField.spacingMM, 0.5)
+        let points = voxelField.uniformlySampledBoundaryPoints(targetCount: targetCount)
+            .filter { point in
+                anchors.indices.allSatisfy { index in
+                    anchorKinds[index] != .manual
+                        || simd_distance(anchors[index].vector, point) >= minimumManualDistance
+                }
+            }
+        guard points.count >= min(targetCount / 2, 32) else { return false }
+
+        let encodedPoints = points.map(MetalStudyROIPoint.init)
+        anchors.append(contentsOf: encodedPoints)
+        anchorKinds.append(contentsOf: repeatElement(.automatic, count: encodedPoints.count))
+        anchorBaselinePoints.append(contentsOf: encodedPoints)
+        rebuildAnchorSurface()
+        return true
+    }
+
+    func duplicated(name: String) -> MetalStudyROI {
+        var duplicate = MetalStudyROI(
+            id: UUID(),
+            trackingUID: Self.makeTrackingUID(),
+            name: name,
+            studyInstanceUID: studyInstanceUID,
+            frameOfReferenceUID: frameOfReferenceUID,
+            sourceSeriesIdentifier: sourceSeriesIdentifier,
+            color: color,
+            center: center.vector,
+            radiusMM: radiusMM
+        )
+        duplicate.anchors = anchors
+        duplicate.anchorKinds = anchorKinds
+        duplicate.anchorBaselinePoints = anchorBaselinePoints
+        duplicate.supportRadiusMM = supportRadiusMM
+        duplicate.volumeMM3 = volumeMM3
+        duplicate.voxelField = voxelField
+        duplicate.modifiedAt = Date()
+        duplicate.rebuildDerivedState()
+        return duplicate
+    }
+
+    func anchorSurfaceNormal(at index: Int) -> SIMD3<Double>? {
+        guard anchorBaselinePoints.indices.contains(index) else { return nil }
+        return voxelField?.outwardNormal(at: anchorBaselinePoints[index].vector)
+    }
+
+    func deformedSurfacePoint(fromBaseline point: SIMD3<Double>) -> SIMD3<Double> {
+        guard hasAnchorDeformation else { return point }
+        var result = point
+        for _ in 0..<3 {
+            result = point + interpolatedSurfaceDisplacement(at: result)
+        }
+        return result
+    }
+
     mutating func updateEstimatedVolume() {
-        if let voxelField, voxelField.isValid {
+        if let voxelField, voxelField.isValid, hasAnchorDeformation == false {
             volumeMM3 = voxelField.volumeMM3
             return
         }
@@ -658,6 +946,9 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         guard count > 0 else {
             kernelAnchorDirections = []
             kernelAnchorRadii = []
+            kernelAnchorDisplacements = []
+            kernelSpatialSupportMM = 4
+            hasAnchorDeformation = false
             kernelAngularSupport = 1
             supportRadiusMM = max(radiusMM * 0.8, 4)
             return
@@ -669,6 +960,17 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         kernelAnchorRadii = anchors.map {
             max(simd_distance(center.vector, $0.vector), 0.5)
         }
+        kernelAnchorDisplacements = anchors.indices.map { index in
+            guard anchorBaselinePoints.indices.contains(index) else { return .zero }
+            return anchors[index].vector - anchorBaselinePoints[index].vector
+        }
+        hasAnchorDeformation = kernelAnchorDisplacements.contains {
+            simd_length_squared($0) > 0.05 * 0.05
+        }
+        kernelSpatialSupportMM = Self.preferredSpatialSupport(
+            for: anchorBaselinePoints.map(\.vector),
+            maximumDisplacement: kernelAnchorDisplacements.map { simd_length($0) }.max() ?? 0
+        )
         kernelAngularSupport = Self.preferredAngularSupport(for: kernelAnchorDirections)
         supportRadiusMM = max(radiusMM * kernelAngularSupport, 4)
     }
@@ -684,6 +986,44 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
                 count: anchors.count - anchorKinds.count
             ))
         }
+    }
+
+    private mutating func normalizeAnchorBaselines() {
+        guard anchorBaselinePoints.count != anchors.count else { return }
+        guard let voxelField, voxelField.isValid else {
+            anchorBaselinePoints = anchors
+            return
+        }
+
+        // Authoring payloads created before surface correspondences were stored
+        // used centre-radial automatic points. Preserve manual work, derive its
+        // nearest baseline correspondence, and replace the obsolete automatic
+        // scaffold with complete topology-independent boundary coverage.
+        let manualAnchors = anchors.indices.compactMap { index in
+            anchorKinds[index] == .manual ? anchors[index] : nil
+        }
+        let boundaryPoints = voxelField.boundaryPoints()
+        anchors = manualAnchors
+        anchorKinds = Array(repeating: .manual, count: manualAnchors.count)
+        anchorBaselinePoints = manualAnchors.map { anchor in
+            MetalStudyROIPoint(
+                boundaryPoints.min {
+                    simd_length_squared($0 - anchor.vector)
+                        < simd_length_squared($1 - anchor.vector)
+                } ?? anchor.vector
+            )
+        }
+        let minimumManualDistance = max(voxelField.spacingMM, 0.5)
+        let automaticPoints = voxelField.uniformlySampledBoundaryPoints(targetCount: 96)
+            .filter { point in
+                manualAnchors.allSatisfy {
+                    simd_distance($0.vector, point) >= minimumManualDistance
+                }
+            }
+            .map(MetalStudyROIPoint.init)
+        anchors.append(contentsOf: automaticPoints)
+        anchorKinds.append(contentsOf: repeatElement(.automatic, count: automaticPoints.count))
+        anchorBaselinePoints.append(contentsOf: automaticPoints)
     }
 
     private mutating func rebuildAnchorSurface() {
@@ -717,6 +1057,25 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         return min(max(median * 3.5, 0.9), 1.5)
     }
 
+    private static func preferredSpatialSupport(
+        for points: [SIMD3<Double>],
+        maximumDisplacement: Double
+    ) -> Double {
+        guard points.count > 1 else { return max(4, maximumDisplacement + 1) }
+        var nearestDistances: [Double] = []
+        nearestDistances.reserveCapacity(points.count)
+        for index in points.indices {
+            var nearest = Double.greatestFiniteMagnitude
+            for otherIndex in points.indices where otherIndex != index {
+                nearest = min(nearest, simd_distance(points[index], points[otherIndex]))
+            }
+            if nearest.isFinite { nearestDistances.append(nearest) }
+        }
+        nearestDistances.sort()
+        let median = nearestDistances[nearestDistances.count / 2]
+        return min(max(median * 3, maximumDisplacement + median, 2.5), 12)
+    }
+
     private static func wendlandC2(_ normalizedDistance: Double) -> Double {
         guard normalizedDistance < 1 else { return 0 }
         let remainder = 1 - max(normalizedDistance, 0)
@@ -747,7 +1106,8 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, trackingUID, name, studyInstanceUID, frameOfReferenceUID
         case sourceSeriesIdentifier, colorRed, colorGreen, colorBlue
-        case center, radiusMM, anchors, anchorKinds, supportRadiusMM, volumeMM3, modifiedAt
+        case center, radiusMM, anchors, anchorKinds, anchorBaselinePoints
+        case supportRadiusMM, volumeMM3, modifiedAt
         case voxelField
     }
 
@@ -769,11 +1129,16 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
             [MetalStudyROIAnchorKind].self,
             forKey: .anchorKinds
         ) ?? Self.legacyAnchorKinds(for: anchors)
+        anchorBaselinePoints = try container.decodeIfPresent(
+            [MetalStudyROIPoint].self,
+            forKey: .anchorBaselinePoints
+        ) ?? []
         supportRadiusMM = try container.decode(Double.self, forKey: .supportRadiusMM)
         volumeMM3 = try container.decode(Double.self, forKey: .volumeMM3)
         modifiedAt = try container.decode(Date.self, forKey: .modifiedAt)
         voxelField = try container.decodeIfPresent(MetalStudyROIVoxelField.self, forKey: .voxelField)
         normalizeAnchorKinds()
+        normalizeAnchorBaselines()
         rebuildKernelState()
     }
 
@@ -803,6 +1168,7 @@ struct MetalStudyROI: Codable, Equatable, Identifiable, Sendable {
         try container.encode(radiusMM, forKey: .radiusMM)
         try container.encode(anchors, forKey: .anchors)
         try container.encode(anchorKinds, forKey: .anchorKinds)
+        try container.encode(anchorBaselinePoints, forKey: .anchorBaselinePoints)
         try container.encode(supportRadiusMM, forKey: .supportRadiusMM)
         try container.encode(volumeMM3, forKey: .volumeMM3)
         try container.encode(modifiedAt, forKey: .modifiedAt)
@@ -1091,6 +1457,29 @@ final class MetalStudyROIStore: @unchecked Sendable {
         rois[index].name = trimmed
         rois[index].modifiedAt = Date()
         notifyChanged(schedulePersistence: true)
+    }
+
+    @discardableResult
+    func duplicateSelectedROI() -> UUID? {
+        guard let selectedROIIdentifier,
+              let source = rois.first(where: { $0.id == selectedROIIdentifier }) else { return nil }
+        pushUndoState()
+
+        let baseName = source.name + " " + NSLocalizedString("Copy", comment: "")
+        let existingNames = Set(rois.map { $0.name.lowercased() })
+        var name = baseName
+        var suffix = 2
+        while existingNames.contains(name.lowercased()) {
+            name = "\(baseName) \(suffix)"
+            suffix += 1
+        }
+
+        var duplicate = source.duplicated(name: name)
+        duplicate.seedAutomaticBoundaryScaffoldIfNeeded()
+        rois.append(duplicate)
+        self.selectedROIIdentifier = duplicate.id
+        notifyChanged(schedulePersistence: true)
+        return duplicate.id
     }
 
     func deleteSelectedROI() {
@@ -1760,7 +2149,7 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
             state.previewConstraintBase = constraintBase
         }
         var fixedValues = constraintBase
-        applyManualRandomWalkerConstraints(grid: grid, to: &fixedValues)
+        applyAnchorRandomWalkerConstraints(grid: grid, to: &fixedValues)
         guard fixedValues.contains(where: { $0 >= 0.99 }),
               fixedValues.contains(where: { $0 == 0 }) else {
             return fail("The ROI did not provide both interior and exterior refinement constraints.")
@@ -1937,78 +2326,146 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
     ) -> [Float] {
         var fixed = Array(repeating: Float.nan, count: grid.voxelCount)
         let dimensions = grid.dimensions
+        var inside = Array(repeating: false, count: grid.voxelCount)
         for z in 0..<dimensions.z {
             for y in 0..<dimensions.y {
                 for x in 0..<dimensions.x {
                     let index = grid.index(x: x, y: y, z: z)
-                    if grid.valid[index] == false
-                        || x == 0 || y == 0 || z == 0
-                        || x == dimensions.x - 1
-                        || y == dimensions.y - 1
-                        || z == dimensions.z - 1 {
-                        fixed[index] = 0
-                        continue
-                    }
+                    guard grid.valid[index] else { continue }
+                    inside[index] = roi.implicitValue(
+                        at: grid.point(x: x, y: y, z: z)
+                    ) <= 0
+                }
+            }
+        }
 
-                    let point = grid.point(x: x, y: y, z: z)
-                    let offset = point - roi.center.vector
-                    let distance = simd_length(offset)
-                    if distance > 0.000_001 {
-                        let existingRadius = roi.surfaceRadius(along: offset / distance)
-                        let signedDistance = distance - existingRadius
-                        let exteriorSearchDistance = 10.0
-                        // In three dimensions, a tiny foreground core and a
-                        // distant background shell cause the harmonic solution
-                        // to collapse inward even for uniform edge weights. This
-                        // erosion depth balances spherical harmonic falloff so
-                        // the current boundary is the neutral 0.5 solution while
-                        // retaining the requested 10 mm outward search range.
-                        let interiorSeedDepth = existingRadius * exteriorSearchDistance
-                            / max(existingRadius + 2 * exteriorSearchDistance, 0.001)
-                        if signedDistance <= -max(interiorSeedDepth, grid.spacing * 1.5) {
-                            fixed[index] = 1
-                        } else if signedDistance >= exteriorSearchDistance {
-                            fixed[index] = 0
-                        }
-                    } else {
-                        fixed[index] = 1
+        func neighborIndices(x: Int, y: Int, z: Int) -> [Int] {
+            var result: [Int] = []
+            result.reserveCapacity(6)
+            if x > 0 { result.append(grid.index(x: x - 1, y: y, z: z)) }
+            if x + 1 < dimensions.x { result.append(grid.index(x: x + 1, y: y, z: z)) }
+            if y > 0 { result.append(grid.index(x: x, y: y - 1, z: z)) }
+            if y + 1 < dimensions.y { result.append(grid.index(x: x, y: y + 1, z: z)) }
+            if z > 0 { result.append(grid.index(x: x, y: y, z: z - 1)) }
+            if z + 1 < dimensions.z { result.append(grid.index(x: x, y: y, z: z + 1)) }
+            return result
+        }
+
+        // A topology-independent distance transform supplies a stable interior
+        // core and distant exterior shell. The previous centre/radius test could
+        // only describe star-shaped objects and abandoned curved vessel limbs.
+        var boundaryDistance = Array(repeating: Int.max, count: grid.voxelCount)
+        var queue: [Int] = []
+        queue.reserveCapacity(grid.voxelCount / 8)
+        for z in 0..<dimensions.z {
+            for y in 0..<dimensions.y {
+                for x in 0..<dimensions.x {
+                    let index = grid.index(x: x, y: y, z: z)
+                    guard grid.valid[index] else { continue }
+                    let neighbors = neighborIndices(x: x, y: y, z: z)
+                    let isBoundary = neighbors.contains { neighbor in
+                        (grid.valid[neighbor] && inside[neighbor] != inside[index])
+                            || (inside[index] && grid.valid[neighbor] == false)
+                    }
+                    if isBoundary {
+                        boundaryDistance[index] = 0
+                        queue.append(index)
                     }
                 }
             }
+        }
+        var cursor = 0
+        while cursor < queue.count {
+            let index = queue[cursor]
+            cursor += 1
+            let coordinate = grid.coordinate(for: index)
+            let nextDistance = boundaryDistance[index] + 1
+            for neighbor in neighborIndices(
+                x: coordinate.x,
+                y: coordinate.y,
+                z: coordinate.z
+            ) where grid.valid[neighbor]
+                && inside[neighbor] == inside[index]
+                && nextDistance < boundaryDistance[neighbor] {
+                boundaryDistance[neighbor] = nextDistance
+                queue.append(neighbor)
+            }
+        }
+
+        let interiorSeedDepth = max(min(roi.radiusMM * 0.25, 2.0), grid.spacing * 1.25)
+        let interiorSteps = max(Int(ceil(interiorSeedDepth / grid.spacing)), 1)
+        let exteriorSteps = max(Int(ceil(10.0 / grid.spacing)), 1)
+        var deepestInsideIndex: Int?
+        for index in fixed.indices {
+            guard grid.valid[index] else {
+                fixed[index] = 0
+                continue
+            }
+            let coordinate = grid.coordinate(for: index)
+            if coordinate.x == 0 || coordinate.y == 0 || coordinate.z == 0
+                || coordinate.x == dimensions.x - 1
+                || coordinate.y == dimensions.y - 1
+                || coordinate.z == dimensions.z - 1 {
+                fixed[index] = 0
+            } else if inside[index], boundaryDistance[index] >= interiorSteps {
+                fixed[index] = 1
+            } else if inside[index] == false, boundaryDistance[index] >= exteriorSteps {
+                fixed[index] = 0
+            }
+            if inside[index], let current = deepestInsideIndex {
+                if boundaryDistance[index] > boundaryDistance[current] {
+                    deepestInsideIndex = index
+                }
+            } else if inside[index] {
+                deepestInsideIndex = index
+            }
+        }
+        if fixed.contains(where: { $0 >= 0.99 }) == false,
+           let deepestInsideIndex {
+            fixed[deepestInsideIndex] = 1
         }
 
         return fixed
     }
 
-    private func applyManualRandomWalkerConstraints(
+    private func applyAnchorRandomWalkerConstraints(
         grid: RandomWalkerGrid,
         to fixed: inout [Float]
     ) {
         let pairedSeedDistance = max(grid.spacing * 1.75, 1.0)
-        for index in roi.anchors.indices where roi.anchorKind(at: index) == .manual {
+        for index in roi.anchors.indices {
             let boundaryPoint = roi.anchors[index].vector
             let radialOffset = boundaryPoint - roi.center.vector
             guard simd_length_squared(radialOffset) > 0.000_001 else { continue }
             let radial = simd_normalize(radialOffset)
+            let surfaceFallback = roi.anchorSurfaceNormal(at: index) ?? radial
             let normal = imageBoundaryNormal(
                 at: boundaryPoint,
-                radialFallback: radial,
+                radialFallback: surfaceFallback,
                 grid: grid
             )
+            let isManual = roi.anchorKind(at: index) == .manual
+            // Automatic scaffold points are allowed to move, but an inside/outside
+            // pair prevents the solver from abandoning the imported SEG surface.
+            // Manual points additionally receive an exact 0.5 boundary constraint.
+            let guardDistance = isManual
+                ? pairedSeedDistance
+                : max(grid.spacing * 2.5, 2.0)
             setConstraint(
                 1,
-                near: boundaryPoint - normal * pairedSeedDistance,
+                near: boundaryPoint - normal * guardDistance,
                 radius: grid.spacing * 0.65,
                 grid: grid,
                 values: &fixed
             )
             setConstraint(
                 0,
-                near: boundaryPoint + normal * pairedSeedDistance,
+                near: boundaryPoint + normal * guardDistance,
                 radius: grid.spacing * 0.65,
                 grid: grid,
                 values: &fixed
             )
+            guard isManual else { continue }
             // A 0.5 Dirichlet seed makes the final iso-surface pass through the
             // user's point without pretending that the point specifies a normal.
             setConstraint(
@@ -2200,7 +2657,7 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
         if preview {
             // A live drag only needs the new probability field. Keep the current
             // sparse visual handles and defer connectivity cleanup, volume
-            // measurement, ray extraction, and displacement statistics to the
+            // measurement, boundary sampling, and displacement statistics to the
             // definitive solve performed when the mouse is released.
             let currentAutomaticAnchors = roi.anchors.indices.compactMap { index -> SIMD3<Double>? in
                 roi.anchorKind(at: index) == .automatic
@@ -2216,88 +2673,22 @@ final class MetalStudyROIRefinementRequest: @unchecked Sendable {
                 maximumDisplacementMM: 0
             )
         }
-        // Automatic anchors are now sparse visual handles sampled from the voxel
-        // result; they no longer define the surface. Forty-two stable directions
-        // communicate the result without recreating the former 162-point mesh.
-        let directions = Self.icosphereDirections(subdivisions: 1)
-        let anchors = directions.compactMap { direction -> SIMD3<Double>? in
-            guard let radius = field.surfaceRadius(
-                from: roi.center.vector,
-                along: direction
-            ) else { return nil }
-            return roi.center.vector + direction * radius
-        }
-        guard anchors.count >= directions.count / 2 else {
-            return fail("The solved ROI did not form a closed surface around its centre.")
-        }
-        let displacements = anchors.map { point in
-            let direction = simd_normalize(point - roi.center.vector)
-            return abs(
-                simd_distance(point, roi.center.vector)
-                    - roi.surfaceRadius(along: direction)
-            )
+        // Sample the complete solved isosurface. This remains stable for curved
+        // vessels and concave structures that cannot be observed from one centre.
+        let anchors = field.uniformlySampledBoundaryPoints(targetCount: 96)
+        guard anchors.count >= 24 else {
+            return fail("The solved ROI did not provide a usable closed boundary.")
         }
         return MetalStudyROIRefinementResult(
             roiIdentifier: roi.id,
             automaticAnchors: anchors,
             voxelField: field,
             volumeMM3: fieldResult.volumeMM3,
-            meanDisplacementMM: displacements.reduce(0, +) / Double(max(displacements.count, 1)),
-            maximumDisplacementMM: displacements.max() ?? 0
+            meanDisplacementMM: 0,
+            maximumDisplacementMM: 0
         )
     }
 
-    private static func icosphereDirections(subdivisions: Int) -> [SIMD3<Double>] {
-        let goldenRatio = (1 + sqrt(5.0)) * 0.5
-        var directions = [
-            SIMD3<Double>(-1, goldenRatio, 0), SIMD3<Double>(1, goldenRatio, 0),
-            SIMD3<Double>(-1, -goldenRatio, 0), SIMD3<Double>(1, -goldenRatio, 0),
-            SIMD3<Double>(0, -1, goldenRatio), SIMD3<Double>(0, 1, goldenRatio),
-            SIMD3<Double>(0, -1, -goldenRatio), SIMD3<Double>(0, 1, -goldenRatio),
-            SIMD3<Double>(goldenRatio, 0, -1), SIMD3<Double>(goldenRatio, 0, 1),
-            SIMD3<Double>(-goldenRatio, 0, -1), SIMD3<Double>(-goldenRatio, 0, 1),
-        ].map { simd_normalize($0) }
-        var faces = [
-            SIMD3<Int>(0, 11, 5), SIMD3<Int>(0, 5, 1), SIMD3<Int>(0, 1, 7),
-            SIMD3<Int>(0, 7, 10), SIMD3<Int>(0, 10, 11), SIMD3<Int>(1, 5, 9),
-            SIMD3<Int>(5, 11, 4), SIMD3<Int>(11, 10, 2), SIMD3<Int>(10, 7, 6),
-            SIMD3<Int>(7, 1, 8), SIMD3<Int>(3, 9, 4), SIMD3<Int>(3, 4, 2),
-            SIMD3<Int>(3, 2, 6), SIMD3<Int>(3, 6, 8), SIMD3<Int>(3, 8, 9),
-            SIMD3<Int>(4, 9, 5), SIMD3<Int>(2, 4, 11), SIMD3<Int>(6, 2, 10),
-            SIMD3<Int>(8, 6, 7), SIMD3<Int>(9, 8, 1),
-        ]
-
-        for _ in 0..<max(subdivisions, 0) {
-            var midpointIndices: [UInt64: Int] = [:]
-            var subdividedFaces: [SIMD3<Int>] = []
-            subdividedFaces.reserveCapacity(faces.count * 4)
-
-            func midpointIndex(_ first: Int, _ second: Int) -> Int {
-                let lower = min(first, second)
-                let upper = max(first, second)
-                let key = (UInt64(lower) << 32) | UInt64(upper)
-                if let existing = midpointIndices[key] { return existing }
-                directions.append(simd_normalize(directions[first] + directions[second]))
-                let index = directions.count - 1
-                midpointIndices[key] = index
-                return index
-            }
-
-            for face in faces {
-                let firstSecond = midpointIndex(face.x, face.y)
-                let secondThird = midpointIndex(face.y, face.z)
-                let thirdFirst = midpointIndex(face.z, face.x)
-                subdividedFaces.append(contentsOf: [
-                    SIMD3<Int>(face.x, firstSecond, thirdFirst),
-                    SIMD3<Int>(face.y, secondThird, firstSecond),
-                    SIMD3<Int>(face.z, thirdFirst, secondThird),
-                    SIMD3<Int>(firstSecond, secondThird, thirdFirst),
-                ])
-            }
-            faces = subdividedFaces
-        }
-        return directions
-    }
 }
 
 struct MetalStudyROIContourSegment {
@@ -2452,26 +2843,233 @@ final class MetalStudyROIPersistence: @unchecked Sendable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         for series in study.series {
-            guard let pix = series.firstPreviewPix(),
-                  let path = pix.srcFile,
+            guard let path = series.firstSourcePath(),
                   let reader = try? SwiftDICOMReader.cached(contentsOfFile: path) else { continue }
             let isSegmentation = series.modality.caseInsensitiveCompare("SEG") == .orderedSame
                 || reader.stringValue(forTag: "0008,0016") == "1.2.840.10008.5.1.4.1.1.66.4"
-            guard isSegmentation,
-                  let json = reader.stringValue(forTag: "7777,1001"),
-                  let data = Data(base64Encoded: json),
-                  let envelope = try? decoder.decode(MetalStudyROIAuthoringEnvelope.self, from: data),
-                  envelope.schema == MetalStudyROIAuthoringEnvelope.schema else { continue }
-            restored.removeAll { $0.id == envelope.roi.id }
-            restored.append(envelope.roi)
-            paths[envelope.roi.id] = path
-            payloads[envelope.roi.id] = json
+            guard isSegmentation else { continue }
+
+            if let json = reader.stringValue(forTag: "7777,1001"),
+               let data = Data(base64Encoded: json),
+               let envelope = try? decoder.decode(MetalStudyROIAuthoringEnvelope.self, from: data),
+               envelope.schema == MetalStudyROIAuthoringEnvelope.schema {
+                restored.removeAll { $0.id == envelope.roi.id }
+                restored.append(envelope.roi)
+                paths[envelope.roi.id] = path
+                payloads[envelope.roi.id] = json
+                continue
+            }
+
+            // A standard SEG is useful even without Horos' optional private
+            // authoring state. Reconstruct its masks into the same canonical
+            // voxel field used by the manual Metal ROI tools.
+            guard let segmentation = try? reader.segmentation() else { continue }
+            let decodedROIs = externalROIs(
+                from: segmentation,
+                sourcePath: path,
+                study: study
+            )
+            for roi in decodedROIs {
+                restored.removeAll { $0.id == roi.id }
+                restored.append(roi)
+                paths[roi.id] = path
+                if let json = encodedAuthoringJSON(for: roi) {
+                    // Treat the imported state as already persisted. It is only
+                    // rewritten if the user actually edits it.
+                    payloads[roi.id] = json
+                }
+            }
         }
         return RestoredState(
             rois: restored.sorted { $0.modifiedAt > $1.modifiedAt },
             paths: paths,
             payloads: payloads
         )
+    }
+
+    private static func externalROIs(
+        from segmentation: SwiftDICOMSegmentation,
+        sourcePath: String,
+        study: MetalViewerStudy
+    ) -> [MetalStudyROI] {
+        let sourceSeries = bestSourceSeries(for: segmentation, in: study)
+        let sourceSeriesIdentifier = sourceSeries?.identifier
+            ?? study.series.first(where: { $0.isDICOMSegmentation == false })?.identifier
+            ?? study.initialSeriesIdentifier
+        let studyInstanceUID = sourceSeries?.studyIdentifier
+            ?? study.series.first?.studyIdentifier
+            ?? ""
+        let frameOfReferenceUID = segmentation.frameOfReferenceUID.isEmpty
+            ? sourceSeries?.frameOfReferenceUID ?? ""
+            : segmentation.frameOfReferenceUID
+        let fileAttributes = try? FileManager.default.attributesOfItem(atPath: sourcePath)
+        let modificationDate = fileAttributes?[.modificationDate] as? Date ?? .distantPast
+
+        return segmentation.segments.compactMap { definition -> MetalStudyROI? in
+            let segmentFrames = segmentation.frames.filter {
+                $0.segmentNumber == definition.number && $0.maskData.contains(where: { $0 != 0 })
+            }
+            guard segmentFrames.isEmpty == false else { return nil }
+            let slices = segmentFrames.compactMap { frame -> MetalLegacyBrushMaskSlice? in
+                guard let geometry = MetalViewerSliceGeometry(
+                    attributes: frame.geometry,
+                    width: segmentation.columns,
+                    height: segmentation.rows
+                ) else { return nil }
+                return MetalLegacyBrushMaskSlice(
+                    geometry: geometry,
+                    maskWidth: segmentation.columns,
+                    maskHeight: segmentation.rows,
+                    originX: 0,
+                    originY: 0,
+                    maskData: verticallyReversedMask(
+                        frame.maskData,
+                        rows: segmentation.rows,
+                        columns: segmentation.columns
+                    )
+                )
+            }
+            let color = displayColor(
+                dicomCIELab: definition.recommendedDisplayCIELab,
+                segmentNumber: definition.number
+            )
+            guard let reconstructed = MetalLegacyBrushSegmentationRequest(
+                name: definition.label,
+                colorRed: Double(color.redComponent),
+                colorGreen: Double(color.greenComponent),
+                colorBlue: Double(color.blueComponent),
+                slices: slices
+            ).run() else { return nil }
+
+            let trackingUID = definition.trackingUID
+                ?? deterministicDICOMUID(seed: "\(segmentation.sopInstanceUID)|\(definition.number)")
+            var roi = MetalStudyROI(
+                id: deterministicUUID(seed: "\(segmentation.sopInstanceUID)|\(definition.number)"),
+                trackingUID: trackingUID,
+                name: definition.label,
+                studyInstanceUID: studyInstanceUID,
+                frameOfReferenceUID: frameOfReferenceUID,
+                sourceSeriesIdentifier: sourceSeriesIdentifier,
+                color: color,
+                center: reconstructed.center,
+                radiusMM: reconstructed.radiusMM
+            )
+            roi.applyImageRefinement(
+                automaticPoints: [],
+                voxelField: reconstructed.voxelField,
+                measuredVolumeMM3: reconstructed.voxelField.volumeMM3
+            )
+            roi.modifiedAt = modificationDate
+            return roi
+        }
+    }
+
+    private static func bestSourceSeries(
+        for segmentation: SwiftDICOMSegmentation,
+        in study: MetalViewerStudy
+    ) -> MetalViewerSeries? {
+        let referencedSOPInstanceUIDs = Set(segmentation.frames.compactMap(\.referencedSOPInstanceUID))
+        let candidates = study.series.filter { $0.isDICOMSegmentation == false }
+        if referencedSOPInstanceUIDs.isEmpty == false {
+            let scored = candidates.map { series -> (MetalViewerSeries, Int) in
+                let seriesSOPInstanceUIDs = Set(series.loadedPixList().compactMap { pix -> String? in
+                    guard let path = pix.srcFile,
+                          let reader = try? SwiftDICOMReader.cached(contentsOfFile: path) else { return nil }
+                    return reader.stringValue(forTag: "0008,0018")
+                })
+                return (series, referencedSOPInstanceUIDs.intersection(seriesSOPInstanceUIDs).count)
+            }
+            if let match = scored.max(by: { $0.1 < $1.1 }), match.1 > 0 {
+                return match.0
+            }
+        }
+        if segmentation.frameOfReferenceUID.isEmpty == false,
+           let match = candidates.first(where: {
+               $0.frameOfReferenceUID == segmentation.frameOfReferenceUID
+           }) {
+            return match
+        }
+        return candidates.first
+    }
+
+    private static func verticallyReversedMask(_ mask: Data, rows: Int, columns: Int) -> Data {
+        guard rows > 0, columns > 0, mask.count >= rows * columns else { return mask }
+        let source = [UInt8](mask)
+        var result = [UInt8](repeating: 0, count: rows * columns)
+        for sourceRow in 0..<rows {
+            let destinationRow = rows - sourceRow - 1
+            result.replaceSubrange(
+                destinationRow * columns..<(destinationRow + 1) * columns,
+                with: source[sourceRow * columns..<(sourceRow + 1) * columns]
+            )
+        }
+        return Data(result)
+    }
+
+    private static func encodedAuthoringJSON(for roi: MetalStudyROI) -> String? {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        return (try? encoder.encode(MetalStudyROIAuthoringEnvelope(roi: roi)))?.base64EncodedString()
+    }
+
+    private static func deterministicUUID(seed: String) -> UUID {
+        let hexadecimal = SHA256.hash(data: Data(seed.utf8)).prefix(16)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let uuidString = "\(hexadecimal.prefix(8))-\(hexadecimal.dropFirst(8).prefix(4))-\(hexadecimal.dropFirst(12).prefix(4))-\(hexadecimal.dropFirst(16).prefix(4))-\(hexadecimal.dropFirst(20).prefix(12))"
+        return UUID(uuidString: uuidString) ?? UUID()
+    }
+
+    private static func deterministicDICOMUID(seed: String) -> String {
+        var decimalDigits = [0]
+        for byte in SHA256.hash(data: Data(seed.utf8)).prefix(16) {
+            var carry = Int(byte)
+            for index in decimalDigits.indices {
+                let value = decimalDigits[index] * 256 + carry
+                decimalDigits[index] = value % 10
+                carry = value / 10
+            }
+            while carry > 0 {
+                decimalDigits.append(carry % 10)
+                carry /= 10
+            }
+        }
+        return "2.25." + decimalDigits.reversed().map(String.init).joined()
+    }
+
+    private static func displayColor(dicomCIELab values: [Double], segmentNumber: Int) -> NSColor {
+        guard values.count >= 3 else {
+            let defaults: [NSColor] = [.systemYellow, .systemGreen, .systemCyan, .systemOrange, .systemPink]
+            return defaults[(max(segmentNumber, 1) - 1) % defaults.count].usingColorSpace(.deviceRGB)
+                ?? .systemYellow
+        }
+
+        let lightness = values[0] * 100 / 65_535
+        let a = values[1] * 255 / 65_535 - 128
+        let b = values[2] * 255 / 65_535 - 128
+        let fy = (lightness + 16) / 116
+        let fx = fy + a / 500
+        let fz = fy - b / 200
+        let epsilon = 216.0 / 24_389.0
+        let kappa = 24_389.0 / 27.0
+        func inverseLab(_ value: Double) -> Double {
+            let cube = value * value * value
+            return cube > epsilon ? cube : (116 * value - 16) / kappa
+        }
+        let x = 0.95047 * inverseLab(fx)
+        let y = inverseLab(fy)
+        let z = 1.08883 * inverseLab(fz)
+        func gamma(_ value: Double) -> Double {
+            let linear = max(value, 0)
+            return linear <= 0.003_130_8
+                ? 12.92 * linear
+                : 1.055 * pow(linear, 1 / 2.4) - 0.055
+        }
+        let red = min(max(gamma(3.240_454_2 * x - 1.537_138_5 * y - 0.498_531_4 * z), 0), 1)
+        let green = min(max(gamma(-0.969_266 * x + 1.876_010_8 * y + 0.041_556 * z), 0), 1)
+        let blue = min(max(gamma(0.055_643_4 * x - 0.204_025_9 * y + 1.057_225_2 * z), 0), 1)
+        return NSColor(deviceRed: red, green: green, blue: blue, alpha: 1)
     }
 
     func persist(_ rois: [MetalStudyROI]) {

@@ -866,6 +866,14 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
 
     private static func makeSurfaceVertices(for roi: MetalStudyROI) -> [MetalViewerScoutROIVertex] {
         let normalization = Float(0.86 / max(roi.conservativeBoundingRadiusMM, 0.5))
+        if let voxelField = roi.voxelField, voxelField.isValid {
+            let vertices = makeVoxelSurfaceVertices(
+                for: roi,
+                field: voxelField,
+                normalization: normalization
+            )
+            if vertices.isEmpty == false { return vertices }
+        }
         let goldenRatio = Float((1 + sqrt(5.0)) * 0.5)
         var directions = [
             SIMD3<Float>(-1, goldenRatio, 0), SIMD3<Float>(1, goldenRatio, 0),
@@ -957,6 +965,183 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
                 vertices.append(
                     MetalViewerScoutROIVertex(position: positions[index], normal: normals[index])
                 )
+            }
+        }
+        return vertices
+    }
+
+    private static func makeVoxelSurfaceVertices(
+        for roi: MetalStudyROI,
+        field: MetalStudyROIVoxelField,
+        normalization: Float
+    ) -> [MetalViewerScoutROIVertex] {
+        let dimensions = field.dimensions
+        guard dimensions.x > 1, dimensions.y > 1, dimensions.z > 1 else { return [] }
+        let values = [UInt8](field.probabilities)
+        let plane = dimensions.x * dimensions.y
+        let cornerOffsets = [
+            SIMD3<Int>(0, 0, 0), SIMD3<Int>(1, 0, 0),
+            SIMD3<Int>(1, 1, 0), SIMD3<Int>(0, 1, 0),
+            SIMD3<Int>(0, 0, 1), SIMD3<Int>(1, 0, 1),
+            SIMD3<Int>(1, 1, 1), SIMD3<Int>(0, 1, 1),
+        ]
+        let tetrahedra = [
+            SIMD4<Int>(0, 5, 1, 6), SIMD4<Int>(0, 1, 2, 6),
+            SIMD4<Int>(0, 2, 3, 6), SIMD4<Int>(0, 3, 7, 6),
+            SIMD4<Int>(0, 7, 4, 6), SIMD4<Int>(0, 4, 5, 6),
+        ]
+        var vertices: [MetalViewerScoutROIVertex] = []
+        vertices.reserveCapacity(min(dimensions.voxelCount, 80_000))
+
+        func index(_ coordinate: SIMD3<Int>) -> Int {
+            coordinate.z * plane + coordinate.y * dimensions.x + coordinate.x
+        }
+
+        func worldPoint(_ coordinate: SIMD3<Int>) -> SIMD3<Double> {
+            field.origin.vector + SIMD3<Double>(
+                Double(coordinate.x),
+                Double(coordinate.y),
+                Double(coordinate.z)
+            ) * field.spacingMM
+        }
+
+        func interpolatedPoint(
+            _ first: Int,
+            _ second: Int,
+            positions: [SIMD3<Double>],
+            probabilities: [Double]
+        ) -> SIMD3<Double> {
+            let denominator = probabilities[second] - probabilities[first]
+            let fraction = abs(denominator) > 0.000_001
+                ? min(max((0.5 - probabilities[first]) / denominator, 0), 1)
+                : 0.5
+            return positions[first] + (positions[second] - positions[first]) * fraction
+        }
+
+        func appendTriangle(
+            _ first: SIMD3<Double>,
+            _ second: SIMD3<Double>,
+            _ third: SIMD3<Double>,
+            outwardReference: SIMD3<Double>
+        ) {
+            var points = [first, second, third]
+            var faceNormal = simd_cross(second - first, third - first)
+            guard simd_length_squared(faceNormal) > 0.000_000_1 else { return }
+            if simd_dot(faceNormal, outwardReference) < 0 {
+                points.swapAt(1, 2)
+                faceNormal = -faceNormal
+            }
+            let fallbackNormal = simd_normalize(faceNormal)
+            for baselinePoint in points {
+                let deformedPoint = roi.deformedSurfacePoint(fromBaseline: baselinePoint)
+                let normal = field.outwardNormal(at: baselinePoint) ?? fallbackNormal
+                let relativePoint = deformedPoint - roi.center.vector
+                vertices.append(
+                    MetalViewerScoutROIVertex(
+                        position: SIMD3<Float>(
+                            Float(relativePoint.x),
+                            Float(relativePoint.y),
+                            Float(relativePoint.z)
+                        ) * normalization,
+                        normal: SIMD3<Float>(
+                            Float(normal.x),
+                            Float(normal.y),
+                            Float(normal.z)
+                        )
+                    )
+                )
+            }
+        }
+
+        for z in 0..<(dimensions.z - 1) {
+            for y in 0..<(dimensions.y - 1) {
+                for x in 0..<(dimensions.x - 1) {
+                    let cubeOrigin = SIMD3<Int>(x, y, z)
+                    let coordinates = cornerOffsets.map { offset in
+                        SIMD3<Int>(
+                            cubeOrigin.x + offset.x,
+                            cubeOrigin.y + offset.y,
+                            cubeOrigin.z + offset.z
+                        )
+                    }
+                    let probabilities = coordinates.map {
+                        Double(values[index($0)]) / 255
+                    }
+                    guard probabilities.contains(where: { $0 >= 0.5 }),
+                          probabilities.contains(where: { $0 < 0.5 }) else { continue }
+                    let positions = coordinates.map(worldPoint)
+
+                    for tetrahedron in tetrahedra {
+                        let indices = [tetrahedron.x, tetrahedron.y, tetrahedron.z, tetrahedron.w]
+                        let inside = indices.filter { probabilities[$0] >= 0.5 }
+                        let outside = indices.filter { probabilities[$0] < 0.5 }
+                        guard inside.isEmpty == false, outside.isEmpty == false else { continue }
+                        let insideCentroid = inside.reduce(SIMD3<Double>.zero) {
+                            $0 + positions[$1]
+                        } / Double(inside.count)
+                        let outsideCentroid = outside.reduce(SIMD3<Double>.zero) {
+                            $0 + positions[$1]
+                        } / Double(outside.count)
+                        let outwardReference = outsideCentroid - insideCentroid
+
+                        if inside.count == 1, let insideIndex = inside.first {
+                            let points = outside.map {
+                                interpolatedPoint(
+                                    insideIndex,
+                                    $0,
+                                    positions: positions,
+                                    probabilities: probabilities
+                                )
+                            }
+                            appendTriangle(
+                                points[0], points[1], points[2],
+                                outwardReference: outwardReference
+                            )
+                        } else if outside.count == 1, let outsideIndex = outside.first {
+                            let points = inside.map {
+                                interpolatedPoint(
+                                    outsideIndex,
+                                    $0,
+                                    positions: positions,
+                                    probabilities: probabilities
+                                )
+                            }
+                            appendTriangle(
+                                points[0], points[1], points[2],
+                                outwardReference: outwardReference
+                            )
+                        } else if inside.count == 2, outside.count == 2 {
+                            let first = interpolatedPoint(
+                                inside[0], outside[0],
+                                positions: positions,
+                                probabilities: probabilities
+                            )
+                            let second = interpolatedPoint(
+                                inside[0], outside[1],
+                                positions: positions,
+                                probabilities: probabilities
+                            )
+                            let third = interpolatedPoint(
+                                inside[1], outside[1],
+                                positions: positions,
+                                probabilities: probabilities
+                            )
+                            let fourth = interpolatedPoint(
+                                inside[1], outside[0],
+                                positions: positions,
+                                probabilities: probabilities
+                            )
+                            appendTriangle(
+                                first, second, third,
+                                outwardReference: outwardReference
+                            )
+                            appendTriangle(
+                                first, third, fourth,
+                                outwardReference: outwardReference
+                            )
+                        }
+                    }
+                }
             }
         }
         return vertices
@@ -1136,6 +1321,7 @@ private final class MetalViewerScoutROIItemView: NSView {
             || renderedROI?.radiusMM != roi.radiusMM
             || renderedROI?.anchors != roi.anchors
             || renderedROI?.anchorKinds != roi.anchorKinds
+            || renderedROI?.anchorBaselinePoints != roi.anchorBaselinePoints
             || renderedROI?.voxelField != roi.voxelField
             || renderedROI?.colorRed != roi.colorRed
             || renderedROI?.colorGreen != roi.colorGreen

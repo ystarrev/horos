@@ -1516,6 +1516,11 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         case .finishEditing:
             studyROIStore.cancelProvisionalSphere()
             setStudyROIEditingMode(.inactive, in: nil)
+        case .duplicate:
+            setStudyROIEditingMode(.inactive, in: nil)
+            if studyROIStore.duplicateSelectedROI() == nil {
+                NSSound.beep()
+            }
         case .rename:
             renameSelectedROI()
         case .delete:
@@ -1729,11 +1734,16 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         interaction: Bool,
         showsFeedback: Bool
     ) {
-        guard let roi = studyROIStore.selectedROI,
+        guard let storedROI = studyROIStore.selectedROI,
               let activePaneView else {
             if showsFeedback { NSSound.beep() }
             return
         }
+        // External DICOM SEGs contain a precise voxel mask but no Horos authoring
+        // landmarks. Give the refinement request a movable boundary scaffold
+        // without mutating the stored ROI unless a successful result is applied.
+        var roi = storedROI
+        roi.seedAutomaticBoundaryScaffoldIfNeeded()
         if showsFeedback, isStudyROIRefinementInProgress {
             NSSound.beep()
             return
@@ -1793,7 +1803,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
                     }
                     return
                 }
-                guard self.studyROIStore.rois.first(where: { $0.id == roi.id }) == roi else {
+                guard self.studyROIStore.rois.first(where: { $0.id == storedROI.id }) == storedROI else {
                     if showsFeedback {
                         self.presentROIRefinementMessage(
                             title: NSLocalizedString("ROI Changed During Refinement", comment: ""),

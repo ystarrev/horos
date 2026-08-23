@@ -42,6 +42,34 @@ struct SwiftDICOMFrameGeometryAttributes {
     let spacingBetweenSlices: Double
 }
 
+/// One segment definition and its display metadata from a DICOM Segmentation
+/// Storage object. The color remains in DICOM CIELab here so the reader does
+/// not need an AppKit dependency.
+struct SwiftDICOMSegmentationDefinition {
+    let number: Int
+    let label: String
+    let trackingUID: String?
+    let recommendedDisplayCIELab: [Double]
+}
+
+/// A decoded SEG frame. `maskData` contains one byte per source pixel in
+/// normal DICOM row order (zero outside, 255 inside).
+struct SwiftDICOMSegmentationFrame {
+    let segmentNumber: Int
+    let geometry: SwiftDICOMFrameGeometryAttributes
+    let referencedSOPInstanceUID: String?
+    let maskData: Data
+}
+
+struct SwiftDICOMSegmentation {
+    let sopInstanceUID: String
+    let frameOfReferenceUID: String
+    let rows: Int
+    let columns: Int
+    let segments: [SwiftDICOMSegmentationDefinition]
+    let frames: [SwiftDICOMSegmentationFrame]
+}
+
 enum SwiftDICOMReaderError: LocalizedError {
     case invalidFile(String)
     case unsupportedTransferSyntax(String)
@@ -180,6 +208,145 @@ final class SwiftDICOMReader {
     func numberValues(forTag tagString: String) -> [Double] {
         guard let tag = SwiftDICOMTag(dicomString: tagString) else { return [] }
         return Self.numbers(in: root, tag: tag) ?? []
+    }
+
+    /// Decodes standards-compliant native binary or fractional DICOM SEG
+    /// Pixel Data. Horos-authored objects normally restore their richer editable
+    /// state from a private payload; this is the interoperable path for SEG
+    /// objects authored elsewhere.
+    func segmentation() throws -> SwiftDICOMSegmentation {
+        let sopClassUID = Self.string(in: root, tag: .sopClassUID) ?? ""
+        let modality = Self.string(in: root, tag: .modality)?.uppercased() ?? ""
+        guard sopClassUID == "1.2.840.10008.5.1.4.1.1.66.4" || modality == "SEG" else {
+            throw SwiftDICOMReaderError.unsupportedPixelFormat("the object is not DICOM Segmentation Storage")
+        }
+        guard transferSyntaxUID == Self.explicitVRLittleEndianUID
+                || transferSyntaxUID == Self.implicitVRLittleEndianUID else {
+            throw SwiftDICOMReaderError.unsupportedTransferSyntax(transferSyntaxUID)
+        }
+        guard let rows = Self.unsignedShort(in: root, tag: .rows), rows > 0,
+              let columns = Self.unsignedShort(in: root, tag: .columns), columns > 0 else {
+            throw SwiftDICOMReaderError.missingAttribute("SEG Rows/Columns")
+        }
+
+        let segmentDefinitions = root.sequenceItems(for: .segmentSequence).compactMap {
+            item -> SwiftDICOMSegmentationDefinition? in
+            guard let number = Self.unsignedShort(in: item, tag: .segmentNumber), number > 0 else {
+                return nil
+            }
+            let label = Self.decodedString(in: item, tag: .segmentLabel, encoding: textEncoding)
+                ?? "Segment \(number)"
+            return SwiftDICOMSegmentationDefinition(
+                number: number,
+                label: label,
+                trackingUID: Self.string(in: item, tag: .trackingUID),
+                recommendedDisplayCIELab: Self.numbers(
+                    in: item,
+                    tag: .recommendedDisplayCIELabValue
+                ) ?? []
+            )
+        }
+        guard segmentDefinitions.isEmpty == false else {
+            throw SwiftDICOMReaderError.missingAttribute("Segment Sequence")
+        }
+
+        let perFrameGroups = root.sequenceItems(for: .perFrameFunctionalGroups)
+        guard perFrameGroups.count >= numberOfFrames else {
+            throw SwiftDICOMReaderError.truncated("SEG Per-frame Functional Groups Sequence")
+        }
+        guard let pixelElement = root.element(for: .pixelData),
+              let pixelRange = pixelElement.valueRange else {
+            throw SwiftDICOMReaderError.missingAttribute("SEG Pixel Data")
+        }
+
+        let pixelCount = rows * columns
+        let bitsAllocated = Self.unsignedShort(in: root, tag: .bitsAllocated) ?? 0
+        let segmentationType = Self.string(in: root, tag: .segmentationType)?.uppercased() ?? "BINARY"
+        let maximumFractionalValue = max(
+            Self.unsignedShort(in: root, tag: .maximumFractionalValue) ?? 255,
+            1
+        )
+
+        func decodedMask(frameIndex: Int) throws -> Data {
+            var mask = [UInt8](repeating: 0, count: pixelCount)
+            if segmentationType == "BINARY", bitsAllocated == 1 {
+                // Native one-bit multi-frame Pixel Data is one continuous
+                // little-endian bit stream; individual frames are not padded.
+                let firstBit = frameIndex * pixelCount
+                for pixelIndex in 0..<pixelCount {
+                    let bitIndex = firstBit + pixelIndex
+                    let byteIndex = pixelRange.lowerBound + bitIndex / 8
+                    guard byteIndex < pixelRange.upperBound else {
+                        throw SwiftDICOMReaderError.truncated("SEG binary frame \(frameIndex)")
+                    }
+                    if data[byteIndex] & UInt8(1 << (bitIndex & 7)) != 0 {
+                        mask[pixelIndex] = 255
+                    }
+                }
+            } else if bitsAllocated == 8 {
+                let firstByte = pixelRange.lowerBound + frameIndex * pixelCount
+                guard firstByte >= pixelRange.lowerBound,
+                      firstByte + pixelCount <= pixelRange.upperBound else {
+                    throw SwiftDICOMReaderError.truncated("SEG fractional frame \(frameIndex)")
+                }
+                let threshold = max(maximumFractionalValue / 2, 1)
+                for pixelIndex in 0..<pixelCount where Int(data[firstByte + pixelIndex]) >= threshold {
+                    mask[pixelIndex] = 255
+                }
+            } else if bitsAllocated == 16 {
+                let firstByte = pixelRange.lowerBound + frameIndex * pixelCount * 2
+                guard firstByte >= pixelRange.lowerBound,
+                      firstByte + pixelCount * 2 <= pixelRange.upperBound else {
+                    throw SwiftDICOMReaderError.truncated("SEG fractional frame \(frameIndex)")
+                }
+                let threshold = max(maximumFractionalValue / 2, 1)
+                for pixelIndex in 0..<pixelCount {
+                    if Int(data.uint16(at: firstByte + pixelIndex * 2)) >= threshold {
+                        mask[pixelIndex] = 255
+                    }
+                }
+            } else {
+                throw SwiftDICOMReaderError.unsupportedPixelFormat(
+                    "SEG type=\(segmentationType), BitsAllocated=\(bitsAllocated)"
+                )
+            }
+            return Data(mask)
+        }
+
+        var frames: [SwiftDICOMSegmentationFrame] = []
+        frames.reserveCapacity(numberOfFrames)
+        for frameIndex in 0..<numberOfFrames {
+            let group = perFrameGroups[frameIndex]
+            let segmentIdentification = group.firstSequenceItem(for: .segmentIdentificationSequence)
+            let segmentNumber = Self.unsignedShort(
+                in: segmentIdentification,
+                tag: .referencedSegmentNumber
+            ) ?? segmentDefinitions[0].number
+            guard segmentDefinitions.contains(where: { $0.number == segmentNumber }),
+                  let geometry = frameGeometryAttributes(at: frameIndex) else {
+                continue
+            }
+            let derivationImage = group.firstSequenceItem(for: .derivationImageSequence)
+            let sourceImage = derivationImage?.firstSequenceItem(for: .sourceImageSequence)
+            frames.append(SwiftDICOMSegmentationFrame(
+                segmentNumber: segmentNumber,
+                geometry: geometry,
+                referencedSOPInstanceUID: Self.string(in: sourceImage, tag: .referencedSOPInstanceUID),
+                maskData: try decodedMask(frameIndex: frameIndex)
+            ))
+        }
+        guard frames.isEmpty == false else {
+            throw SwiftDICOMReaderError.invalidFile("SEG contains no decodable spatial frames")
+        }
+
+        return SwiftDICOMSegmentation(
+            sopInstanceUID: Self.string(in: root, tag: .sopInstanceUID) ?? sourcePath,
+            frameOfReferenceUID: Self.string(in: root, tag: .frameOfReferenceUID) ?? "",
+            rows: rows,
+            columns: columns,
+            segments: segmentDefinitions,
+            frames: frames
+        )
     }
 
     func storedPixelFrame(at frameIndex: Int) throws -> SwiftDICOMStoredPixelFrame {
@@ -714,7 +881,13 @@ private struct SwiftDICOMTag: Hashable {
     static let transferSyntaxUID = Self(group: 0x0002, element: 0x0010)
     static let privateInformationCreatorUID = Self(group: 0x0002, element: 0x0100)
     static let specificCharacterSet = Self(group: 0x0008, element: 0x0005)
+    static let sopClassUID = Self(group: 0x0008, element: 0x0016)
+    static let sopInstanceUID = Self(group: 0x0008, element: 0x0018)
     static let imageType = Self(group: 0x0008, element: 0x0008)
+    static let modality = Self(group: 0x0008, element: 0x0060)
+    static let sourceImageSequence = Self(group: 0x0008, element: 0x2112)
+    static let derivationImageSequence = Self(group: 0x0008, element: 0x9124)
+    static let referencedSOPInstanceUID = Self(group: 0x0008, element: 0x1155)
     static let acquisitionDateTime = Self(group: 0x0008, element: 0x002a)
     static let acquisitionTime = Self(group: 0x0008, element: 0x0032)
     static let contentTime = Self(group: 0x0008, element: 0x0033)
@@ -749,6 +922,7 @@ private struct SwiftDICOMTag: Hashable {
     static let rescaleSlope = Self(group: 0x0028, element: 0x1053)
     static let pixelData = Self(group: 0x7fe0, element: 0x0010)
 
+    static let frameOfReferenceUID = Self(group: 0x0020, element: 0x0052)
     static let temporalPositionIdentifier = Self(group: 0x0020, element: 0x0100)
     static let numberOfTemporalPositions = Self(group: 0x0020, element: 0x0105)
     static let imagePositionPatient = Self(group: 0x0020, element: 0x0032)
@@ -774,6 +948,16 @@ private struct SwiftDICOMTag: Hashable {
     static let planeOrientationSequence = Self(group: 0x0020, element: 0x9116)
     static let sharedFunctionalGroups = Self(group: 0x5200, element: 0x9229)
     static let perFrameFunctionalGroups = Self(group: 0x5200, element: 0x9230)
+
+    static let segmentationType = Self(group: 0x0062, element: 0x0001)
+    static let segmentSequence = Self(group: 0x0062, element: 0x0002)
+    static let segmentNumber = Self(group: 0x0062, element: 0x0004)
+    static let segmentLabel = Self(group: 0x0062, element: 0x0005)
+    static let segmentIdentificationSequence = Self(group: 0x0062, element: 0x000a)
+    static let referencedSegmentNumber = Self(group: 0x0062, element: 0x000b)
+    static let recommendedDisplayCIELabValue = Self(group: 0x0062, element: 0x000d)
+    static let maximumFractionalValue = Self(group: 0x0062, element: 0x000e)
+    static let trackingUID = Self(group: 0x0062, element: 0x0021)
 
     static let timeSlotVector = Self(group: 0x0054, element: 0x0070)
     static let sliceVector = Self(group: 0x0054, element: 0x0080)
@@ -1104,7 +1288,11 @@ private struct SwiftDICOMParser {
              SwiftDICOMTag.bitsAllocated.key,
              SwiftDICOMTag.bitsStored.key,
              SwiftDICOMTag.highBit.key,
-             SwiftDICOMTag.pixelRepresentation.key:
+             SwiftDICOMTag.pixelRepresentation.key,
+             SwiftDICOMTag.segmentNumber.key,
+             SwiftDICOMTag.referencedSegmentNumber.key,
+             SwiftDICOMTag.maximumFractionalValue.key,
+             SwiftDICOMTag.recommendedDisplayCIELabValue.key:
             return "US"
         case SwiftDICOMTag.pixelData.key:
             return "OW"
@@ -1127,7 +1315,11 @@ private struct SwiftDICOMParser {
         SwiftDICOMTag.planeOrientationVolumeSequence.key,
         SwiftDICOMTag.temporalPositionSequence.key,
         SwiftDICOMTag.sharedFunctionalGroups.key,
-        SwiftDICOMTag.perFrameFunctionalGroups.key
+        SwiftDICOMTag.perFrameFunctionalGroups.key,
+        SwiftDICOMTag.segmentSequence.key,
+        SwiftDICOMTag.segmentIdentificationSequence.key,
+        SwiftDICOMTag.derivationImageSequence.key,
+        SwiftDICOMTag.sourceImageSequence.key
     ]
 
     private static let longValueRepresentations: Set<String> = [

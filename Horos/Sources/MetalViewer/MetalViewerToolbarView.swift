@@ -38,6 +38,7 @@ final class MetalViewerToolbarView: NSView {
         case deleteAnchor
         case refineFromImage
         case finishEditing
+        case duplicate
         case rename
         case delete
         case undo
@@ -283,6 +284,7 @@ final class MetalViewerToolbarView: NSView {
             enabled: editingMode != .inactive
         )
         roiPopup.menu?.addItem(.separator())
+        addItem(NSLocalizedString("Duplicate ROI", comment: ""), command: .duplicate, enabled: store.selectedROI != nil)
         addItem(NSLocalizedString("Rename ROI…", comment: ""), command: .rename, enabled: store.selectedROI != nil)
         addItem(NSLocalizedString("Delete ROI", comment: ""), command: .delete, enabled: store.selectedROI != nil)
         roiPopup.menu?.addItem(.separator())

@@ -29,7 +29,6 @@ Binaries/weasis/
 Binaries/._OsiriX Report.template
 Binaries/FeedbackReporter.framework/
 Binaries/homephone.framework/
-Binaries/EmbeddedPlugins/HorosCloud.horosplugin
 
 *.xcscmblueprint
 Horos.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist

@@ -43,7 +43,8 @@ enum
 
 #import <Cocoa/Cocoa.h>
 
-/** \ brief Eanbles DICOM Bonjour */
+// Horos-owned networking service. Keep the class name and node format stable
+// while retiring the unrelated DCM file-parsing framework.
 @interface DCMNetServiceDelegate : NSObject <NSNetServiceDelegate, NSNetServiceBrowserDelegate>
 {
 	NSNetServiceBrowser *_dicomNetBrowser;

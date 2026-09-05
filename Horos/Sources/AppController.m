@@ -53,6 +53,7 @@
 #import "DicomFile.h"
 #import "DCMPix.h"
 #import "DCM.h"
+#import "DCMNetServiceDelegate.h"
 #import "DCMTKQueryRetrieveSCP.h"
 #import "AppControllerDCMTKCategory.h"
 #import "DefaultsOsiriX.h"

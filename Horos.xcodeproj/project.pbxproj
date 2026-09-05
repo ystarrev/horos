@@ -400,7 +400,7 @@
 		7E9C6D2E066D2BE800D33966 /* redLight.tif in Resources */ = {isa = PBXBuildFile; fileRef = 7E9C6D2C066D2BE800D33966 /* redLight.tif */; };
 		7EB4AAE7079494CB007AD271 /* QueryArrayController.h in Headers */ = {isa = PBXBuildFile; fileRef = 7EB4AAE5079494CB007AD271 /* QueryArrayController.h */; };
 		7EB4AAE8079494CB007AD271 /* QueryArrayController.mm in Sources */ = {isa = PBXBuildFile; fileRef = 7EB4AAE6079494CB007AD271 /* QueryArrayController.mm */; };
-		7EBB31090887269B00BF6B39 /* DCMNetServiceDelegate.h in Headers */ = {isa = PBXBuildFile; fileRef = 7EBB31070887269B00BF6B39 /* DCMNetServiceDelegate.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		7EBB31090887269B00BF6B39 /* DCMNetServiceDelegate.h in Headers */ = {isa = PBXBuildFile; fileRef = 7EBB31070887269B00BF6B39 /* DCMNetServiceDelegate.h */; };
 		7EBB310A0887269B00BF6B39 /* DCMNetServiceDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 7EBB31080887269B00BF6B39 /* DCMNetServiceDelegate.m */; };
 		7EBE4B2608917A7200FC1C36 /* LogTableView.m in Sources */ = {isa = PBXBuildFile; fileRef = BF17E990088768CA00ECF621 /* LogTableView.m */; };
 		7EBE4B2708917A7500FC1C36 /* LogTableView.h in Headers */ = {isa = PBXBuildFile; fileRef = BF17E98F088768CA00ECF621 /* LogTableView.h */; };
@@ -1700,8 +1700,8 @@
 		7E9C6D2C066D2BE800D33966 /* redLight.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = redLight.tif; sourceTree = "<group>"; };
 		7EB4AAE5079494CB007AD271 /* QueryArrayController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QueryArrayController.h; path = Horos/Sources/QueryArrayController.h; sourceTree = SOURCE_ROOT; };
 		7EB4AAE6079494CB007AD271 /* QueryArrayController.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = QueryArrayController.mm; path = Horos/Sources/QueryArrayController.mm; sourceTree = SOURCE_ROOT; };
-		7EBB31070887269B00BF6B39 /* DCMNetServiceDelegate.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = DCMNetServiceDelegate.h; path = "DCM Framework/DCMNetServiceDelegate.h"; sourceTree = SOURCE_ROOT; };
-		7EBB31080887269B00BF6B39 /* DCMNetServiceDelegate.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = DCMNetServiceDelegate.m; path = "DCM Framework/DCMNetServiceDelegate.m"; sourceTree = SOURCE_ROOT; };
+		7EBB31070887269B00BF6B39 /* DCMNetServiceDelegate.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = DCMNetServiceDelegate.h; path = Horos/Sources/DCMNetServiceDelegate.h; sourceTree = SOURCE_ROOT; };
+		7EBB31080887269B00BF6B39 /* DCMNetServiceDelegate.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = DCMNetServiceDelegate.m; path = Horos/Sources/DCMNetServiceDelegate.m; sourceTree = SOURCE_ROOT; };
 		7ECB4B3F072EF9F800C2CFC4 /* DCMCalendarScript.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DCMCalendarScript.h; path = Horos/Sources/DCMCalendarScript.h; sourceTree = SOURCE_ROOT; };
 		7ECB4B40072EF9F800C2CFC4 /* DCMCalendarScript.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = DCMCalendarScript.m; path = Horos/Sources/DCMCalendarScript.m; sourceTree = SOURCE_ROOT; };
 		7ECBB8210683A68D00FF3FF4 /* DCMPixelDataAttribute.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = DCMPixelDataAttribute.h; path = "DCM Framework/DCMPixelDataAttribute.h"; sourceTree = SOURCE_ROOT; };
@@ -3024,8 +3024,6 @@
 		7E0B3A08067525FD00908593 /* DCM */ = {
 			isa = PBXGroup;
 			children = (
-				7EBB31070887269B00BF6B39 /* DCMNetServiceDelegate.h */,
-				7EBB31080887269B00BF6B39 /* DCMNetServiceDelegate.m */,
 				CE79D9860FD84C350043DD73 /* DCMAbstractSyntaxUID.h */,
 				CE79D9870FD84C350043DD73 /* DCMAbstractSyntaxUID.m */,
 				7E0B3A13067526A600908593 /* DCM.h */,
@@ -4012,6 +4010,8 @@
 		BF9201E70883664600A3D77B /* Network */ = {
 			isa = PBXGroup;
 			children = (
+				7EBB31070887269B00BF6B39 /* DCMNetServiceDelegate.h */,
+				7EBB31080887269B00BF6B39 /* DCMNetServiceDelegate.m */,
 				F4D1EC700002000000000001 /* HorosDirectTransfer.swift */,
 				F4D1EC700002000000000002 /* HorosDirectTransferDICOM.h */,
 				84AA013C104EA39E0091E49B /* Log Window */,
@@ -4357,7 +4357,6 @@
 				BFAEB3FA06BF3BD900C7EF1E /* DCMPixelDataAttributeJPEG8.h in Headers */,
 				BFAEB40A06BF3BEE00C7EF1E /* DCMPixelDataAttributeJPEG12.h in Headers */,
 				BFAEB41A06BF3BFA00C7EF1E /* DCMPixelDataAttributeJPEG16.h in Headers */,
-				7EBB31090887269B00BF6B39 /* DCMNetServiceDelegate.h in Headers */,
 				7E82C63F08D9FF35000BAFF9 /* DCMLimitedObject.h in Headers */,
 				7E8340DB08E9F7C500E41C5E /* DCMPresentationState.h in Headers */,
 				BFDDE5C1091717F80033317B /* DCMEncapsulatedPDF.h in Headers */,
@@ -4416,6 +4415,7 @@
 				7E172F580933CAE00057BCE8 /* DCMObjectDBImport.h in Headers */,
 				7E172F660933D5FF0057BCE8 /* DCMObjectPixelDataImport.h in Headers */,
 				BF34857A0951270C00B05AD2 /* SendController.h in Headers */,
+				7EBB31090887269B00BF6B39 /* DCMNetServiceDelegate.h in Headers */,
 				998309111BB62D4100CAB197 /* JRSwizzle.h in Headers */,
 				994FABF71CEBFB8C00980A15 /* MiddleAlignedTextFieldCell.h in Headers */,
 				994FABF31CEBF25800980A15 /* OnOffSwitchControlCell.h in Headers */,
@@ -5537,7 +5537,6 @@
 				BFAEB3FB06BF3BD900C7EF1E /* DCMPixelDataAttributeJPEG8.m in Sources */,
 				BFAEB40B06BF3BEE00C7EF1E /* DCMPixelDataAttributeJPEG12.m in Sources */,
 				BFAEB41B06BF3BFA00C7EF1E /* DCMPixelDataAttributeJPEG16.m in Sources */,
-				7EBB310A0887269B00BF6B39 /* DCMNetServiceDelegate.m in Sources */,
 				7E82C64008D9FF35000BAFF9 /* DCMLimitedObject.m in Sources */,
 				7E8340DC08E9F7C500E41C5E /* DCMPresentationState.m in Sources */,
 				BFDDE5C2091717F80033317B /* DCMEncapsulatedPDF.m in Sources */,
@@ -5826,6 +5825,7 @@
 				7E172F590933CAE00057BCE8 /* DCMObjectDBImport.m in Sources */,
 				7E172F670933D5FF0057BCE8 /* DCMObjectPixelDataImport.m in Sources */,
 				BF34857B0951270C00B05AD2 /* SendController.m in Sources */,
+				7EBB310A0887269B00BF6B39 /* DCMNetServiceDelegate.m in Sources */,
 				BF7A836009B8B8E70051F091 /* DICOMToNSString.m in Sources */,
 				BF7A838109B8D1C20051F091 /* DCMTKStoreSCU.mm in Sources */,
 				BF8E5AC109CA0D8200DE02FF /* DCMTKQueryRetrieveSCP.mm in Sources */,

@@ -51,7 +51,6 @@
 
 #import "DCMLimitedObject.h"
 
-#import "DCMNetServiceDelegate.h"
 #import "DCMEncapsulatedPDF.h"
 
 
@@ -68,5 +67,4 @@ enum DCM_CompressionQuality {DCMLosslessQuality = 0, DCMHighQuality, DCMMediumQu
 @protocol MoveStatusProtocol
 	- (void)setStatus:(unsigned short)moveStatus  numberSent:(int)numberSent numberError:(int)numberErrors;
 @end
-
 

@@ -267,8 +267,8 @@ done:
 
 @interface DicomDatabase ()
 
-- (NSArray *)addFilesAtPathsOnContextQueue:(NSArray *)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray;
-- (NSArray *)addFilesDescribedInDictionariesOnContextQueue:(NSArray *)dicomFilesArray postNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray;
+- (NSArray *)addFilesAtPathsOnContextQueue:(NSArray *)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray originalDatesAdded:(NSDictionary *)originalDatesAdded;
+- (NSArray *)addFilesDescribedInDictionariesOnContextQueue:(NSArray *)dicomFilesArray postNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray originalDatesAdded:(NSDictionary *)originalDatesAdded;
 - (NSInteger)importFilesFromIncomingDirOnContextQueue:(NSNumber *)showGUI listenerCompressionSettings:(int)listenerCompressionSettings;
 - (void)backfillLegacyROISidecarsThread;
 
@@ -2013,12 +2013,29 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
                                   rereadExistingItems:rereadExistingItems
                                    generatedByOsiriX:generatedByOsiriX
                                         importedFiles:importedFiles
-                                          returnArray:returnArray] retain];
+                                          returnArray:returnArray
+                                   originalDatesAdded:nil] retain];
     });
     return [result autorelease];
 }
 
--(NSArray*)addFilesAtPathsOnContextQueue:(NSArray*)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray
+-(NSArray*)rereadFilesAtPaths:(NSArray*)paths originalDatesAdded:(NSDictionary*)originalDatesAdded
+{
+    __block NSArray *result = nil;
+    N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
+        result = [[self addFilesAtPathsOnContextQueue:paths
+                                  postNotifications:YES
+                                          dicomOnly:YES
+                                rereadExistingItems:YES
+                                 generatedByOsiriX:NO
+                                      importedFiles:NO
+                                        returnArray:YES
+                                 originalDatesAdded:originalDatesAdded ?: @{}] retain];
+    });
+    return [result autorelease];
+}
+
+-(NSArray*)addFilesAtPathsOnContextQueue:(NSArray*)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray originalDatesAdded:(NSDictionary*)originalDatesAdded
 {
     NSThread* thread = [NSThread currentThread];
     
@@ -2148,12 +2165,13 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
         //        NSLog(@"before: %X", self.managedObjectContext);
         //      NSArray* addedImagesArray = [self addFilesInDictionaries:dicomFilesArray postNotifications:postNotifications rereadExistingItems:rereadExistingItems generatedByOsiriX:generatedByOsiriX];
         
-        NSArray* objectIDs = [self addFilesDescribedInDictionaries:dicomFilesArray
+        NSArray* objectIDs = [self addFilesDescribedInDictionariesOnContextQueue:dicomFilesArray
                                                  postNotifications:postNotifications
                                                rereadExistingItems:rereadExistingItems
                                                  generatedByOsiriX:generatedByOsiriX
                                                      importedFiles: importedFiles
-                                                       returnArray: returnArray];
+                                                       returnArray: returnArray
+                                                originalDatesAdded:originalDatesAdded];
         
         [thread exitOperation];
         
@@ -2277,12 +2295,13 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                                   rereadExistingItems:rereadExistingItems
                                                    generatedByOsiriX:generatedByOsiriX
                                                         importedFiles:importedFiles
-                                                          returnArray:returnArray] retain];
+                                                          returnArray:returnArray
+                                                   originalDatesAdded:nil] retain];
     });
     return [result autorelease];
 }
 
--(NSArray*)addFilesDescribedInDictionariesOnContextQueue:(NSArray*)dicomFilesArray postNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray
+-(NSArray*)addFilesDescribedInDictionariesOnContextQueue:(NSArray*)dicomFilesArray postNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray originalDatesAdded:(NSDictionary*)originalDatesAdded
 {
     
     NSThread* thread = [NSThread currentThread];
@@ -2460,6 +2479,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                     //				NSLog(@"curDict: %@", curDict);
                     
                     newFile = [curDict objectForKey:@"filePath"];
+                    NSDictionary *sourceDates = originalDatesAdded && newFile ? [originalDatesAdded objectForKey:newFile.stringByStandardizingPath] : nil;
                     
                     BOOL DICOMSR = NO;
                     BOOL inParseExistingObject = rereadExistingItems;
@@ -2614,7 +2634,8 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                     NSSet* series = [tstudy series];
                                     if (series.count == 1 && [[series.anyObject id] intValue] == 5005 && [[series.anyObject name] isEqualToString:@"OsiriX No Autodeletion"]) {
                                         newObject = YES;
-                                        tstudy.dateAdded = today;
+                                        if (originalDatesAdded == nil)
+                                            tstudy.dateAdded = today;
                                         tstudy.patientUID = [curDict objectForKey: @"patientUID"];
                                     }
                                     
@@ -2672,7 +2693,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                 newObject = YES;
                                 newStudy = YES;
                                 
-                                study.dateAdded = today;
+                                study.dateAdded = sourceDates ? [sourceDates objectForKey:@"study"] : today;
                                 
                                 [newStudies addObject: study];
                                 [studiesArray addObject: study];
@@ -2794,7 +2815,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                 {
                                     // Fields
                                     seriesTable = [NSEntityDescription insertNewObjectForEntityForName:@"Series" inManagedObjectContext:self.managedObjectContext];
-                                    [seriesTable setValue:today forKey:@"dateAdded"];
+                                    [seriesTable setValue:sourceDates ? [sourceDates objectForKey:@"series"] : today forKey:@"dateAdded"];
                                     
                                     newObject = YES;
                                 }
@@ -2931,7 +2952,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                 
                                 if (newObject || inParseExistingObject)
                                 {
-                                    if (DICOMSR == NO)
+                                    if (DICOMSR == NO && originalDatesAdded == nil)
                                     {
                                         [seriesTable setValue:today forKey:@"dateAdded"];
                                         study.dateAdded = today;
@@ -3226,7 +3247,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                 }
                                 else
                                 {
-                                    if (DICOMSR == NO)
+                                    if (DICOMSR == NO && originalDatesAdded == nil)
                                     {
                                         [seriesTable setValue:today forKey:@"dateAdded"];
                                         study.dateAdded = today;

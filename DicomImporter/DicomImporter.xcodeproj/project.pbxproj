@@ -58,8 +58,6 @@
 		CE23672B0770ECBE007C27AB /* OsiriX.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OsiriX.framework; path = ../build/OsiriX.framework; sourceTree = SOURCE_ROOT; };
 		CE2367500770ED5F007C27AB /* OmniBase.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OmniBase.framework; path = ../Binaries/OmniBase.framework; sourceTree = SOURCE_ROOT; };
 		CE23676A0770ED63007C27AB /* OmniNetworking.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OmniNetworking.framework; path = ../Binaries/OmniNetworking.framework; sourceTree = SOURCE_ROOT; };
-		CEC0E1A80750D6BD00554B2C /* nameDictionary.plist */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.xml; name = nameDictionary.plist; path = "../DCM Framework/nameDictionary.plist"; sourceTree = SOURCE_ROOT; };
-		CEC0E1AD0750D6BD00554B2C /* tagDictionary.plist */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.xml; name = tagDictionary.plist; path = "../DCM Framework/tagDictionary.plist"; sourceTree = SOURCE_ROOT; };
 		CEC0E1CC0750D6F200554B2C /* DCM.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = DCM.h; path = "../DCM Framework/DCM.h"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -107,8 +105,6 @@
 		089C167CFE841241C02AAC07 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				CEC0E1A80750D6BD00554B2C /* nameDictionary.plist */,
-				CEC0E1AD0750D6BD00554B2C /* tagDictionary.plist */,
 				C88FB7E30674480E006EBB30 /* schema.strings */,
 				C88FB7D7067446EC006EBB30 /* schema.xml */,
 				8D576317048677EA00EA77CD /* Info.plist */,

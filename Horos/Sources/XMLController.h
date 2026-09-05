@@ -41,8 +41,6 @@
 #import <Cocoa/Cocoa.h>
 #import "OSIWindowController.h"
 
-@class DCMObject;
-
 /** \brief Window Controller for XML parsing */
 
 @interface XMLController : OSIWindowController <NSToolbarDelegate, NSWindowDelegate, NSToolbarItemValidation, NSComboBoxDelegate, NSComboBoxDataSource>
@@ -57,7 +55,6 @@
     NSToolbar					*toolbar;	
 	NSString					*srcFile;
 	NSXMLDocument				*xmlDocument;
-    DCMObject                   *dcmDocument;
 	DicomImage                  *imObj;
 	NSMutableArray				*dictionaryArray;
 	
@@ -90,7 +87,6 @@
 - (IBAction) validatorWebSite:(id) sender;
 - (IBAction) verify:(id) sender;
 - (void) reload:(id) sender;
-- (void) reloadFromDCMDocument;
 - (BOOL) item: (id) item containsString: (NSString*) s;
 - (void) expandAllItems: (id) sender;
 - (void) deepExpandAllItems: (id) sender;

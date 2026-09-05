@@ -39,12 +39,12 @@
 
 /** \brief  DICOM Attribute Tag 
 *
-*  The DICOM  Attribute tags consist of a 4 byte group and a 4 byte element in hexadecimal notation
+*  The DICOM Attribute tags consist of a 2 byte group and a 2 byte element in hexadecimal notation
 * Other properties are the VR value representation.  For implicit transfer syntaxes
 * the VR is obtained from the dicom dictionary.  For explicit transfer syntaxes, the VR will be defined in the
-* file/data.  The string valeu is the human readable definition of the tag.
+* file/data. The string value contains the hexadecimal group and element.
 */
-@interface DCMAttributeTag : NSObject {
+@interface DCMAttributeTag : NSObject <NSCopying> {
 
 	int  _group;
 	int _element;
@@ -87,7 +87,7 @@
 - (id)initWithTag:(DCMAttributeTag *)tag;
 
 /** Create a tag  from a string representation of the element and tag\n
-* Format for the string is oxGGGGEEEE
+* Format is GGGG,EEEE, optionally with 0x prefixes or surrounding parentheses.
 */
 - (id)initWithTagString:(NSString *)tagString;
 

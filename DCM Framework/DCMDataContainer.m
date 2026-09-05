@@ -40,17 +40,6 @@
 
 static NSString *signalCatch = @"signalCatch";
 
-static NSDate *DCMDataContainerDateFromString(NSString *value, NSString *format)
-{
-    NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
-    formatter.calendar = [[[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian] autorelease];
-    formatter.locale = [[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"] autorelease];
-    formatter.timeZone = [NSTimeZone defaultTimeZone];
-    formatter.dateFormat = format;
-    formatter.lenient = NO;
-    return [formatter dateFromString:value];
-}
-
 void (*signal(int signum, void (*sighandler)(int)))(int);
 
 static sigjmp_buf mark;
@@ -514,7 +503,7 @@ void signal_EXC(int sig_num)
 	if (!exception) {
 		NSString *dateString;
 		dateString = [[[NSString alloc] initWithBytes:(_ptr + position) length:8 encoding:NSUTF8StringEncoding] autorelease];
-		NSDate *date = DCMDataContainerDateFromString(dateString, @"yyyyMMdd");
+		NSDate *date = [DCMCalendarDate dicomDate:dateString];
 		position += 8;
 		return date;
 	}
@@ -531,7 +520,7 @@ void signal_EXC(int sig_num)
 		string = [string stringByTrimmingCharactersInSet:[NSCharacterSet controlCharacterSet]];
 		string = [string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 
-		if (string && [string intValue]) {
+		if (string.length) {
 			NSArray *dateArray = [string componentsSeparatedByString:@"\\"];
 			for ( NSString *dateString in dateArray ) {
 				DCMCalendarDate *dcmDate = [DCMCalendarDate dicomDate:dateString];
@@ -553,17 +542,9 @@ void signal_EXC(int sig_num)
 - (NSDate *)nextTimeWithLength:(int)length{
 	NSException *exception = [self testForLength:length];
 	if (!exception) {
-		NSString *format;
-		if (length == 4)
-			format = @"HHmm";
-		else if (length == 6)
-			format = @"HHmmss";
-		else
-			format = @"HHmmss.SSSSSS";
-		
 		NSString *dateString;
 		dateString = [[[NSString alloc] initWithBytes:(_ptr + position) length:length encoding:NSUTF8StringEncoding] autorelease];
-		NSDate *date = DCMDataContainerDateFromString(dateString, format);
+		NSDate *date = [DCMCalendarDate dicomTime:dateString];
 		position += length;
 		return date;
 	}
@@ -583,7 +564,7 @@ void signal_EXC(int sig_num)
 		string = [string stringByTrimmingCharactersInSet:[NSCharacterSet controlCharacterSet]];
 		string = [string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 
-		if (string && [string intValue]) {
+		if (string.length) {
 			NSArray *dateArray = [string componentsSeparatedByString:@"\\"];
 			for ( NSString *dateString in dateArray ) {
 				DCMCalendarDate *dcmDate = [DCMCalendarDate dicomTime:dateString];
@@ -605,21 +586,11 @@ void signal_EXC(int sig_num)
 - (NSDate *)nextDateTimeWithLength:(int)length{
 	NSException *exception = [self testForLength:length];
 	if (!exception) {
-		NSString *format;
-		if (length == 12)
-			format = @"yyyyMMddHHmm";
-		else if (length == 14)
-			format = @"yyyyMMddHHmmss";
-		else if (length == 18)
-			format = @"yyyyMMddHHmmss.SSSSSS";
-		else
-			format = @"yyyyMMddHHmmss.SSSSSSxx";
-		//YYYYMMDDHHMMSS.FFFFFF&ZZZZ 
 		NSString *dateString;
 
 		dateString = [[[NSString alloc] initWithBytes:(_ptr + position) length:length encoding:NSUTF8StringEncoding] autorelease];
 
-		NSDate *date = DCMDataContainerDateFromString(dateString, format);
+		NSDate *date = [DCMCalendarDate dicomDateTime:dateString];
 		position += length;
 
 		return date;
@@ -631,7 +602,6 @@ void signal_EXC(int sig_num)
 
 - (NSMutableArray *)nextDateTimesWithLength:(int)length{
 	NSException *exception = [self testForLength:length];
-	//NSString *format;
 	NSMutableArray *times = [NSMutableArray array];
     
 	if (!exception) {
@@ -641,7 +611,6 @@ void signal_EXC(int sig_num)
 
 		NSArray *dateArray = [string componentsSeparatedByString:@"\\"];
 		for ( NSString *dateString in dateArray ) {
-			//NSCalendarDate *date = [[[NSCalendarDate alloc] initWithString:dateString  calendarFormat:format] autorelease];
 			DCMCalendarDate *dcmDate = [DCMCalendarDate dicomDateTime:dateString];
 			if(dcmDate)
 				[times addObject:dcmDate];

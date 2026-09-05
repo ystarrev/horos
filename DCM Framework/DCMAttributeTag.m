@@ -37,7 +37,42 @@
 
 
 #import "DCMAttributeTag.h"
-#import "DCM.h"
+#import "DCMTagDictionary.h"
+#import "DCMTagForNameDictionary.h"
+
+static BOOL DCMParseTagComponent(NSString *text, unsigned int *value)
+{
+    text = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([text hasPrefix:@"0x"] || [text hasPrefix:@"0X"])
+        text = [text substringFromIndex:2];
+    if (text.length == 0 || text.length > 4)
+        return NO;
+    unsigned int result = 0;
+    for (NSUInteger i = 0; i < text.length; ++i)
+    {
+        unichar c = [text characterAtIndex:i];
+        unsigned int digit;
+        if (c >= '0' && c <= '9') digit = c - '0';
+        else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+        else return NO;
+        result = (result << 4) | digit;
+    }
+    *value = result;
+    return YES;
+}
+
+static BOOL DCMParseTagString(NSString *text, unsigned int *group, unsigned int *element)
+{
+    if (![text isKindOfClass:[NSString class]])
+        return NO;
+    text = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([text hasPrefix:@"("] && [text hasSuffix:@")"])
+        text = [text substringWithRange:NSMakeRange(1, text.length - 2)];
+    NSArray *parts = [text componentsSeparatedByString:@","];
+    return parts.count == 2 && DCMParseTagComponent(parts[0], group)
+        && DCMParseTagComponent(parts[1], element);
+}
 
 @implementation DCMAttributeTag
 
@@ -60,75 +95,43 @@
 }
 
 - (id) initWithGroup:(int)group element:(int)element{
-	if (self = [super init]) {
+	if (group < 0 || group > 0xffff || element < 0 || element > 0xffff) {
+        [self release];
+        return nil;
+    }
+	if ((self = [super init])) {
 		_group = group;
 		_element = element;
-		_name = [@"Unknown" retain];
-		_vr = nil;
-		NSDictionary *dict = [(NSDictionary *)[DCMTagDictionary sharedTagDictionary] objectForKey:[self stringValue]];
-		if (dict) {
-            [_name release];
-			_name = [[dict objectForKey:@"Description"] retain];
-			_vr = [[dict objectForKey:@"VR"] retain];
-		}
-		
-		if (!_vr)
-			_vr = [@"UN" retain];
-		/*
-		if (![DCMValueRepresentation isValidVR:_vr])
-			_vr = [@"UN" retain];
-		*/
-
-		
+		NSDictionary *info = [DCMTagDictionary infoForGroup:group element:element];
+        _name = [(info[@"Description"] ?: @"Unknown") retain];
+        _vr = [(info[@"VR"] ?: @"UN") retain];
 	}
 	return self;
 }
 
 - (id) initWithTag:(DCMAttributeTag *)tag{
-	return [self initWithGroup: tag.group element: tag.element];
-	
+    if (!tag) {
+        [self release];
+        return nil;
+    }
+    if ((self = [self initWithGroup:tag.group element:tag.element]))
+        self.vr = tag.vr;
+    return self;
 }
 
 - (id) initWithTagString:(NSString *)tagString{
-	if (self = [super init])
-	{
-        NSString* _tag = [NSString stringWithString:tagString];
-        _tag = [_tag stringByReplacingOccurrencesOfString:@"(" withString:@""];
-        _tag = [_tag stringByReplacingOccurrencesOfString:@")" withString:@""];
-        
-		NSScanner *scanner = [NSScanner scannerWithString:_tag];
-		if( tagString == nil || _tag == nil)
-			NSLog( @"tagString == nil");
-		unsigned int uGroup, uElement;
-		[scanner scanHexInt:&uGroup];
-		[scanner scanString:@"," intoString:nil];
-		[scanner scanHexInt:&uElement];
-		_group = (int)uGroup;
-		_element = (int)uElement;
-
-		NSDictionary *dict = [[DCMTagDictionary sharedTagDictionary] objectForKey:_tag];
-		
-		if (dict)
-		{
-			_name = [(NSString *)CFDictionaryGetValue((CFDictionaryRef)dict, @"Description") retain];
-			_vr =	[(NSString *)CFDictionaryGetValue((CFDictionaryRef)dict, @"VR") retain];
-		}
-		if (!_vr)
-			_vr = [@"UN" retain];
-		/*
-		if (![DCMValueRepresentation isValidVR:_vr])
-			_vr = [@"UN" retain];
-		*/
-	}
-	return self;
-	
+    unsigned int group, element;
+    if (!DCMParseTagString(tagString, &group, &element)) {
+        [self release];
+        return nil;
+    }
+    return [self initWithGroup:(int)group element:(int)element];
 }
 - (id) initWithName:(NSString *)name
 {
-	NSString *tagString = [(NSDictionary *)[DCMTagForNameDictionary sharedTagForNameDictionary] objectForKey:name];
-	if( tagString == nil)
-		return nil;
-	return [self initWithTagString:tagString];
+    NSString *tagString = [name isKindOfClass:[NSString class]]
+        ? [[DCMTagForNameDictionary sharedTagForNameDictionary] objectForKey:name] : nil;
+    return [self initWithTagString:tagString];
 }
 
 
@@ -151,7 +154,7 @@
 
 - (NSString *)stringValue {
 	if (!_stringValue)
-		_stringValue = [[NSString alloc] initWithFormat:@"%0004X,%0004X", _group, _element];
+		_stringValue = [[NSString alloc] initWithFormat:@"%04X,%04X", _group, _element];
 	return _stringValue;
 }
 
@@ -168,23 +171,23 @@
 }
 
 - (long)longValue {
-	NSLog(@"long Value for %@:%ld", self.description, (long)(_group<<16) + (long)(_element&0xffff));
-	return (long)(_group<<16) + (long)(_element&0xffff);
+    return (long)(((unsigned long)_group << 16) | (unsigned long)_element);
 }
 
 - (NSComparisonResult)compare:(DCMAttributeTag *)tag {
-	//NSNumber *thisTag = [NSNumber numberWithLong:[self longValue]];
-	//NSNumber *otherTag = [NSNumber numberWithLong:[tag longValue]];
 	return [[self stringValue] compare: tag.stringValue];
 }
 
 - (BOOL)isEquaToTag:(DCMAttributeTag *)tag {
-	return [[tag stringValue] isEqualToString: self.stringValue];
-
+    return [tag isKindOfClass:[DCMAttributeTag class]] && _group == tag.group && _element == tag.element;
 }
 
 -(BOOL)isEqual:(id)object {
 	return [object isKindOfClass:[DCMAttributeTag class]] && [self isEquaToTag:object];
+}
+
+- (NSUInteger)hash {
+    return (NSUInteger)self.longValue;
 }
 
 @end

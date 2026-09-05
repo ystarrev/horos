@@ -639,6 +639,7 @@
 		AB28B48C05B7998B00A9906C /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 29B97325FDCFA39411CA2CEA /* Foundation.framework */; };
 		AB28B8D005B79D1000A9906C /* MyOutlineView.h in Headers */ = {isa = PBXBuildFile; fileRef = AB0813D6057C698900A72813 /* MyOutlineView.h */; };
 		AB28B8D605B79D1500A9906C /* XMLController.m in Sources */ = {isa = PBXBuildFile; fileRef = AB4A6DF4056EC14E009E6C6E /* XMLController.m */; };
+		C0DE26090500000000000001 /* HorosDICOMMetadata.m in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26090500000000000002 /* HorosDICOMMetadata.m */; };
 		AB28B8E105B79D1E00A9906C /* XMLController.h in Headers */ = {isa = PBXBuildFile; fileRef = AB4A6DF3056EC14E009E6C6E /* XMLController.h */; };
 		AB28B8E205B79D1F00A9906C /* Wait.m in Sources */ = {isa = PBXBuildFile; fileRef = AB6F34FC0574081F00CDCA47 /* Wait.m */; };
 		AB28B8E305B79D1F00A9906C /* AppController.m in Sources */ = {isa = PBXBuildFile; fileRef = AB142DFD05600D76008461A0 /* AppController.m */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
@@ -776,7 +777,7 @@
 		BF5C0187065320A800BAFCF7 /* ImageAndTextCell.h in Headers */ = {isa = PBXBuildFile; fileRef = BF5C0185065320A800BAFCF7 /* ImageAndTextCell.h */; };
 		BF5C0188065320A800BAFCF7 /* ImageAndTextCell.m in Sources */ = {isa = PBXBuildFile; fileRef = BF5C0186065320A800BAFCF7 /* ImageAndTextCell.m */; };
 		BF61E58E06A5BB9E001C0B29 /* DCMCalendarDate.h in Headers */ = {isa = PBXBuildFile; fileRef = BF61E58C06A5BB9E001C0B29 /* DCMCalendarDate.h */; settings = {ATTRIBUTES = (Public, ); }; };
-		BF61E58F06A5BB9E001C0B29 /* DCMCalendarDate.m in Sources */ = {isa = PBXBuildFile; fileRef = BF61E58D06A5BB9E001C0B29 /* DCMCalendarDate.m */; };
+		BF61E58F06A5BB9E001C0B29 /* DCMCalendarDate.mm in Sources */ = {isa = PBXBuildFile; fileRef = BF61E58D06A5BB9E001C0B29 /* DCMCalendarDate.mm */; };
 		BF76A59906ACC6FD00FABE42 /* ButtonAndTextField.h in Headers */ = {isa = PBXBuildFile; fileRef = BF76A59706ACC6FD00FABE42 /* ButtonAndTextField.h */; };
 		BF76A59A06ACC6FD00FABE42 /* ButtonAndTextField.m in Sources */ = {isa = PBXBuildFile; fileRef = BF76A59806ACC6FD00FABE42 /* ButtonAndTextField.m */; };
 		BF76A5A706ACC70C00FABE42 /* ButtonAndTextCell.h in Headers */ = {isa = PBXBuildFile; fileRef = BF76A5A506ACC70C00FABE42 /* ButtonAndTextCell.h */; };
@@ -808,11 +809,9 @@
 		BFDDE5C1091717F80033317B /* DCMEncapsulatedPDF.h in Headers */ = {isa = PBXBuildFile; fileRef = BFDDE5BF091717F80033317B /* DCMEncapsulatedPDF.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		BFDDE5C2091717F80033317B /* DCMEncapsulatedPDF.m in Sources */ = {isa = PBXBuildFile; fileRef = BFDDE5C0091717F80033317B /* DCMEncapsulatedPDF.m */; };
 		BFEB763D0677FDA700F242F3 /* DCMTagDictionary.h in Headers */ = {isa = PBXBuildFile; fileRef = BFEB76370677FDA700F242F3 /* DCMTagDictionary.h */; settings = {ATTRIBUTES = (Public, ); }; };
-		BFEB763E0677FDA700F242F3 /* DCMTagDictionary.m in Sources */ = {isa = PBXBuildFile; fileRef = BFEB76380677FDA700F242F3 /* DCMTagDictionary.m */; };
+		BFEB763E0677FDA700F242F3 /* DCMTagDictionary.mm in Sources */ = {isa = PBXBuildFile; fileRef = BFEB76380677FDA700F242F3 /* DCMTagDictionary.mm */; };
 		BFEB763F0677FDA700F242F3 /* DCMTagForNameDictionary.h in Headers */ = {isa = PBXBuildFile; fileRef = BFEB76390677FDA700F242F3 /* DCMTagForNameDictionary.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		BFEB76400677FDA700F242F3 /* DCMTagForNameDictionary.m in Sources */ = {isa = PBXBuildFile; fileRef = BFEB763A0677FDA700F242F3 /* DCMTagForNameDictionary.m */; };
-		BFEB76410677FDA700F242F3 /* nameDictionary.plist in Resources */ = {isa = PBXBuildFile; fileRef = BFEB763B0677FDA700F242F3 /* nameDictionary.plist */; };
-		BFEB76420677FDA700F242F3 /* tagDictionary.plist in Resources */ = {isa = PBXBuildFile; fileRef = BFEB763C0677FDA700F242F3 /* tagDictionary.plist */; };
 		BFEB767F0678071400F242F3 /* DCMUIDs.h in Headers */ = {isa = PBXBuildFile; fileRef = BFEB767E0678071400F242F3 /* DCMUIDs.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		BFF5D24009F93B3F0077E16B /* LogManager.h in Headers */ = {isa = PBXBuildFile; fileRef = BFF5D23E09F93B3F0077E16B /* LogManager.h */; };
 		BFF5D24109F93B3F0077E16B /* LogManager.mm in Sources */ = {isa = PBXBuildFile; fileRef = BFF5D23F09F93B3F0077E16B /* LogManager.mm */; };
@@ -823,8 +822,8 @@
 		CE114AC417F9568600CB4ED7 /* RTStructIcon.jpg in Resources */ = {isa = PBXBuildFile; fileRef = CE114AC317F9568600CB4ED7 /* RTStructIcon.jpg */; };
 		CE1335EA06B02DC000B7FC03 /* iChat.icns in Resources */ = {isa = PBXBuildFile; fileRef = CE1335E806B02DC000B7FC03 /* iChat.icns */; };
 		CE1366B50B41D0F200944876 /* mpeg2.tif in Resources */ = {isa = PBXBuildFile; fileRef = CE1366B40B41D0F200944876 /* mpeg2.tif */; };
-		CE1C4EF20FDA6F4600185561 /* nameDictionary.plist in Resources */ = {isa = PBXBuildFile; fileRef = BFEB763B0677FDA700F242F3 /* nameDictionary.plist */; };
-		CE1C4EF30FDA6F5300185561 /* tagDictionary.plist in Resources */ = {isa = PBXBuildFile; fileRef = BFEB763C0677FDA700F242F3 /* tagDictionary.plist */; };
+		CE1C4EF20FDA6F4600185561 /* dicom.dic in Resources */ = {isa = PBXBuildFile; fileRef = ABBB639E0635874D00D9531F /* dicom.dic */; };
+		CE1C4EF30FDA6F5300185561 /* DCMTagDictionaryCompatibility.json in Resources */ = {isa = PBXBuildFile; fileRef = BFEB763C0677FDA700F242F3 /* DCMTagDictionaryCompatibility.json */; };
 		CE1E7F5D07E2DD0D00A85908 /* DatabaseWindow.icns in Resources */ = {isa = PBXBuildFile; fileRef = CE1E7F5A07E2DD0D00A85908 /* DatabaseWindow.icns */; };
 		CE1F6C4C07D715EB00165CBE /* Reset.pdf in Resources */ = {isa = PBXBuildFile; fileRef = CE1F6C4907D715EB00165CBE /* Reset.pdf */; };
 		CE279EF006AEFB87008315C8 /* Mail.icns in Resources */ = {isa = PBXBuildFile; fileRef = CE279EEE06AEFB87008315C8 /* Mail.icns */; };
@@ -1974,6 +1973,8 @@
 		AB4A6C9D056E81FA009E6C6E /* SplashScreen.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = SplashScreen.m; sourceTree = "<group>"; };
 		AB4A6DF3056EC14E009E6C6E /* XMLController.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = XMLController.h; sourceTree = "<group>"; };
 		AB4A6DF4056EC14E009E6C6E /* XMLController.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = XMLController.m; sourceTree = "<group>"; };
+		C0DE26090500000000000002 /* HorosDICOMMetadata.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HorosDICOMMetadata.m; sourceTree = "<group>"; };
+		C0DE26090500000000000003 /* HorosDICOMMetadata.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HorosDICOMMetadata.h; sourceTree = "<group>"; };
 		AB4E3CAE05ADDE13001411D1 /* DicomDirParser.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DicomDirParser.h; sourceTree = "<group>"; };
 		AB4E3CAF05ADDE13001411D1 /* DicomDirParser.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DicomDirParser.m; sourceTree = "<group>"; };
 		AB5E1A300595697700C48BEB /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = /System/Library/Frameworks/Accelerate.framework; sourceTree = "<absolute>"; };
@@ -2102,7 +2103,7 @@
 		BF5C0186065320A800BAFCF7 /* ImageAndTextCell.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = ImageAndTextCell.m; sourceTree = "<group>"; };
 		BF5F14C20B14E12700B309B9 /* CoreVideo.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreVideo.framework; path = /System/Library/Frameworks/CoreVideo.framework; sourceTree = "<absolute>"; };
 		BF61E58C06A5BB9E001C0B29 /* DCMCalendarDate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DCMCalendarDate.h; sourceTree = "<group>"; };
-		BF61E58D06A5BB9E001C0B29 /* DCMCalendarDate.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = DCMCalendarDate.m; path = "DCM Framework/DCMCalendarDate.m"; sourceTree = SOURCE_ROOT; };
+		BF61E58D06A5BB9E001C0B29 /* DCMCalendarDate.mm */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.objcpp; name = DCMCalendarDate.mm; path = "DCM Framework/DCMCalendarDate.mm"; sourceTree = SOURCE_ROOT; };
 		BF76A59706ACC6FD00FABE42 /* ButtonAndTextField.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ButtonAndTextField.h; sourceTree = "<group>"; };
 		BF76A59806ACC6FD00FABE42 /* ButtonAndTextField.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ButtonAndTextField.m; sourceTree = "<group>"; };
 		BF76A5A506ACC70C00FABE42 /* ButtonAndTextCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ButtonAndTextCell.h; sourceTree = "<group>"; };
@@ -2136,11 +2137,10 @@
 		BFDDE5BF091717F80033317B /* DCMEncapsulatedPDF.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DCMEncapsulatedPDF.h; sourceTree = "<group>"; };
 		BFDDE5C0091717F80033317B /* DCMEncapsulatedPDF.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DCMEncapsulatedPDF.m; sourceTree = "<group>"; };
 		BFEB76370677FDA700F242F3 /* DCMTagDictionary.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DCMTagDictionary.h; sourceTree = "<group>"; };
-		BFEB76380677FDA700F242F3 /* DCMTagDictionary.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = DCMTagDictionary.m; path = "DCM Framework/DCMTagDictionary.m"; sourceTree = SOURCE_ROOT; };
+		BFEB76380677FDA700F242F3 /* DCMTagDictionary.mm */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.objcpp; name = DCMTagDictionary.mm; path = "DCM Framework/DCMTagDictionary.mm"; sourceTree = SOURCE_ROOT; };
 		BFEB76390677FDA700F242F3 /* DCMTagForNameDictionary.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DCMTagForNameDictionary.h; sourceTree = "<group>"; };
 		BFEB763A0677FDA700F242F3 /* DCMTagForNameDictionary.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = DCMTagForNameDictionary.m; path = "DCM Framework/DCMTagForNameDictionary.m"; sourceTree = SOURCE_ROOT; };
-		BFEB763B0677FDA700F242F3 /* nameDictionary.plist */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.plist.xml; path = nameDictionary.plist; sourceTree = "<group>"; };
-		BFEB763C0677FDA700F242F3 /* tagDictionary.plist */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.plist.xml; path = tagDictionary.plist; sourceTree = "<group>"; };
+		BFEB763C0677FDA700F242F3 /* DCMTagDictionaryCompatibility.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = DCMTagDictionaryCompatibility.json; sourceTree = "<group>"; };
 		BFEB767E0678071400F242F3 /* DCMUIDs.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DCMUIDs.h; sourceTree = "<group>"; };
 		BFF5D23E09F93B3F0077E16B /* LogManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = LogManager.h; sourceTree = "<group>"; };
 		BFF5D23F09F93B3F0077E16B /* LogManager.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = LogManager.mm; sourceTree = "<group>"; };
@@ -3053,7 +3053,7 @@
 				7E82C63E08D9FF35000BAFF9 /* DCMLimitedObject.m */,
 				BFEB767E0678071400F242F3 /* DCMUIDs.h */,
 				BFEB76370677FDA700F242F3 /* DCMTagDictionary.h */,
-				BFEB76380677FDA700F242F3 /* DCMTagDictionary.m */,
+				BFEB76380677FDA700F242F3 /* DCMTagDictionary.mm */,
 				BFEB76390677FDA700F242F3 /* DCMTagForNameDictionary.h */,
 				BFEB763A0677FDA700F242F3 /* DCMTagForNameDictionary.m */,
 				BF3BB37E067808D5004F6E91 /* DCMTransferSyntax.h */,
@@ -3061,15 +3061,14 @@
 				7E0B3A1C067526A600908593 /* DCMValueRepresentation.h */,
 				7E0B3A1D067526A600908593 /* DCMValueRepresentation.m */,
 				BF61E58C06A5BB9E001C0B29 /* DCMCalendarDate.h */,
-				BF61E58D06A5BB9E001C0B29 /* DCMCalendarDate.m */,
+				BF61E58D06A5BB9E001C0B29 /* DCMCalendarDate.mm */,
 				7E8340D908E9F7C500E41C5E /* DCMPresentationState.h */,
 				7E8340DA08E9F7C500E41C5E /* DCMPresentationState.m */,
 				BFDDE5BF091717F80033317B /* DCMEncapsulatedPDF.h */,
 				BFDDE5C0091717F80033317B /* DCMEncapsulatedPDF.m */,
 				7E0B3A21067526A600908593 /* version.plist */,
 				7E0B3A40067526CD00908593 /* Info.plist */,
-				BFEB763B0677FDA700F242F3 /* nameDictionary.plist */,
-				BFEB763C0677FDA700F242F3 /* tagDictionary.plist */,
+				BFEB763C0677FDA700F242F3 /* DCMTagDictionaryCompatibility.json */,
 			);
 			name = DCM;
 			path = "DCM Framework";
@@ -3599,6 +3598,8 @@
 				ABFA7CD3056056F300963FF8 /* DicomData.h */,
 				AB4A6DF3056EC14E009E6C6E /* XMLController.h */,
 				AB4A6DF4056EC14E009E6C6E /* XMLController.m */,
+				C0DE26090500000000000002 /* HorosDICOMMetadata.m */,
+				C0DE26090500000000000003 /* HorosDICOMMetadata.h */,
 				CE96D0DB0BEE6F9800C4E397 /* XMLControllerDCMTKCategory.h */,
 				CE96D0DC0BEE6F9800C4E397 /* XMLControllerDCMTKCategory.mm */,
 			);
@@ -4775,8 +4776,8 @@
 			isa = PBXResourcesBuildPhase;
 			files = (
 				7E0B3AA00675274500908593 /* version.plist in Resources */,
-				BFEB76410677FDA700F242F3 /* nameDictionary.plist in Resources */,
-				BFEB76420677FDA700F242F3 /* tagDictionary.plist in Resources */,
+				CE1C4EF20FDA6F4600185561 /* dicom.dic in Resources */,
+				CE1C4EF30FDA6F5300185561 /* DCMTagDictionaryCompatibility.json in Resources */,
 			);
 		};
 		AB28B42B05B7921E00A9906C /* Resources */ = {
@@ -4973,9 +4974,7 @@
 				84A220E80F25E41800C6C3EB /* ROIs.tif in Resources */,
 				84A220E90F25E41800C6C3EB /* Keys.tif in Resources */,
 				A9D18CE60F65120000476DBD /* RotateAxisCursor.png in Resources */,
-				CE1C4EF20FDA6F4600185561 /* nameDictionary.plist in Resources */,
 				71AD67681FC4256E00A1E2F8 /* Tiling2x1.pdf in Resources */,
-				CE1C4EF30FDA6F5300185561 /* tagDictionary.plist in Resources */,
 				CED1FD1B1035E9BB0076AB33 /* SetPixelValue.pdf in Resources */,
 				CE4B5CFC10E5F9DE00C11948 /* Safari.tif in Resources */,
 				CE06475210F12DA500551AD9 /* PlayTemplate.png in Resources */,
@@ -5526,14 +5525,14 @@
 				7E0B3A700675273F00908593 /* DCMDataContainer.m in Sources */,
 				7E0B3A7C0675274000908593 /* DCMObject.m in Sources */,
 				7E0B3A880675274200908593 /* DCMValueRepresentation.m in Sources */,
-				BFEB763E0677FDA700F242F3 /* DCMTagDictionary.m in Sources */,
+				BFEB763E0677FDA700F242F3 /* DCMTagDictionary.mm in Sources */,
 				BFEB76400677FDA700F242F3 /* DCMTagForNameDictionary.m in Sources */,
 				BF3BB381067808D5004F6E91 /* DCMTransferSyntax.mm in Sources */,
 				7EE0DC03067A48A3003E745F /* DCMCharacterSet.m in Sources */,
 				7EE0DC3F067A5138003E745F /* DCMSequenceAttribute.m in Sources */,
 				7ECBB8240683A68D00FF3FF4 /* DCMPixelDataAttribute.mm in Sources */,
 				F4D1C0DE0001000000000003 /* DCMJPEGCodecBridge.mm in Sources */,
-				BF61E58F06A5BB9E001C0B29 /* DCMCalendarDate.m in Sources */,
+				BF61E58F06A5BB9E001C0B29 /* DCMCalendarDate.mm in Sources */,
 				BFAEB3FB06BF3BD900C7EF1E /* DCMPixelDataAttributeJPEG8.m in Sources */,
 				BFAEB40B06BF3BEE00C7EF1E /* DCMPixelDataAttributeJPEG12.m in Sources */,
 				BFAEB41B06BF3BFA00C7EF1E /* DCMPixelDataAttributeJPEG16.m in Sources */,
@@ -5776,6 +5775,7 @@
 				F4A100000001000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm in Sources */,
 				F4B300000001000000000001 /* Horos/Sources/MetalViewer/MetalLegacyROISRBridge.mm in Sources */,
 				AB28B8D605B79D1500A9906C /* XMLController.m in Sources */,
+				C0DE26090500000000000001 /* HorosDICOMMetadata.m in Sources */,
 				AB28B8E205B79D1F00A9906C /* Wait.m in Sources */,
 				AB28B8E305B79D1F00A9906C /* AppController.m in Sources */,
 				AB28B8E505B79D2100A9906C /* QueryController.mm in Sources */,

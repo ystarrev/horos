@@ -53,8 +53,7 @@
 #import "DicomStudy.h"
 #import "DicomSeries.h"
 #import "DicomImage.h"
-#import "DCMObject.h"
-#import "DCMAttribute.h"
+#import "HorosDICOMMetadata.h"
 #import "DCMAttributeTag.h"
 #import "DicomDatabase.h"
 
@@ -68,6 +67,20 @@ static NSString*	EditingToolbarItemIdentifier			= @"Editing";
 static NSString*	VerifyToolbarItemIdentifier				= @"Validator";
 
 static BOOL showWarning = YES;
+
+static BOOL HorosMetadataItemIsReadOnly(NSXMLNode *item)
+{
+    for (NSXMLNode *node = item; node.kind == NSXMLElementKind; node = node.parent)
+        if ([[[(NSXMLElement *)node attributeForName:@"readOnly"] stringValue] boolValue])
+            return YES;
+    return NO;
+}
+
+@interface XMLController ()
+- (NSXMLDocument *)loadMetadataDocument;
+- (void)reloadMetadataOutline:(NSXMLDocument *)document;
+- (NSArray *)updateDB:(NSArray *)files objects:(NSArray *)objects originalDatesAdded:(NSDictionary *)originalDatesAdded;
+@end
 
 @implementation XMLController
 
@@ -209,11 +222,32 @@ static BOOL showWarning = YES;
 
 - (NSArray*) updateDB:(NSArray*) files objects: (NSArray*) objects
 {
+    // Keep value snapshots across both reimports, even if regrouping deletes the original objects.
+    NSMutableDictionary *originalDatesAdded = [NSMutableDictionary dictionary];
+    N2PerformManagedObjectContextBlockAndWait(BrowserController.currentBrowser.database.managedObjectContext, ^{
+        for (DicomImage *image in objects)
+        {
+            NSString *path = image.completePath.stringByStandardizingPath;
+            if (path.length == 0)
+                continue;
+            NSMutableDictionary *dates = [NSMutableDictionary dictionary];
+            if (image.series.dateAdded)
+                [dates setObject:image.series.dateAdded forKey:@"series"];
+            if (image.series.study.dateAdded)
+                [dates setObject:image.series.study.dateAdded forKey:@"study"];
+            [originalDatesAdded setObject:dates forKey:path];
+        }
+    });
+    return [self updateDB:files objects:objects originalDatesAdded:originalDatesAdded];
+}
+
+- (NSArray *)updateDB:(NSArray *)files objects:(NSArray *)objects originalDatesAdded:(NSDictionary *)originalDatesAdded
+{
 	[DCMPix purgeCachedDictionaries];
 	
 	dontClose = YES;
 	
-	NSArray *addedObjects = [BrowserController.currentBrowser.database addFilesAtPaths:files postNotifications:YES dicomOnly:YES rereadExistingItems:YES generatedByOsiriX:NO importedFiles:NO returnArray:YES];
+	NSArray *addedObjects = [BrowserController.currentBrowser.database rereadFilesAtPaths:files originalDatesAdded:originalDatesAdded];
    
     addedObjects = [BrowserController.currentBrowser.database objectsWithIDs: addedObjects];
     
@@ -252,7 +286,7 @@ static BOOL showWarning = YES;
 			
 			[[BrowserController currentBrowser] proceedDeleteObjects: objects];
 			
-			[self updateDB: files objects: nil];
+			[self updateDB:files objects:nil originalDatesAdded:originalDatesAdded];
 			
 			[[self window] close];
 		}
@@ -277,7 +311,7 @@ static BOOL showWarning = YES;
 		hexscanner = [NSScanner scannerWithString:[addElement stringValue]];
 		[hexscanner scanHexInt:&element];
 		
-		if( group > 0)
+		if( group > 0 && group <= 0xffff && element <= 0xffff)
 		{
 			NSMutableArray *groupsAndElements = [NSMutableArray array];
 			
@@ -303,13 +337,28 @@ static BOOL showWarning = YES;
             [modificationsToApplyArray addObjectsFromArray: groupsAndElements];
             
             DCMAttributeTag *tag = [DCMAttributeTag tagWithGroup: group element: element];
-            DCMAttribute *attribute = [DCMAttribute attributeWithAttributeTag: tag];
-            [attribute setValues: [NSMutableArray arrayWithObject: [addValue stringValue]]];
-            
-            [dcmDocument setAttribute: attribute];
+            NSXMLDocument *preview = [[xmlDocument copy] autorelease];
+            NSXMLElement *attribute = HorosDICOMMetadataAttribute(tag.stringValue, tag.name, tag.vr, @[[addValue stringValue]]);
+            NSXMLElement *root = preview.rootElement;
+            NSUInteger index = 0;
+            while (index < root.childCount)
+            {
+                NSXMLElement *child = (NSXMLElement *)[root childAtIndex:index];
+                NSString *childTag = [[child attributeForName:@"attributeTag"] stringValue];
+                NSComparisonResult order = [childTag compare:tag.stringValue];
+                if (order == NSOrderedSame)
+                {
+                    [root removeChildAtIndex:index];
+                    break;
+                }
+                if (order == NSOrderedDescending)
+                    break;
+                ++index;
+            }
+            [root insertChild:attribute atIndex:index];
             [self didChangeValueForKey: @"modificationsToApply"];
             
-            [self reloadFromDCMDocument];
+            [self reloadMetadataOutline:preview];
             
             NSString *searchGpEl = [NSString stringWithFormat:@"%@,%@", [NSString stringWithFormat:@"%04x", group], [NSString stringWithFormat:@"%04x", element]];
             
@@ -352,7 +401,27 @@ static BOOL showWarning = YES;
 	HorosBeginSheet(addWindow, [self window], self, nil, nil);
 }
 
-- (void) reloadFromDCMDocument
+- (NSXMLDocument *)loadMetadataDocument
+{
+    isDICOM = NO;
+    if ([DicomFile isNIfTIFile:srcFile])
+        return [DicomFile getNIfTIXML:srcFile];
+
+    NSError *error = nil;
+    NSXMLDocument *document = [XMLController metadataDocumentForFile:srcFile error:&error];
+    if (document != nil)
+    {
+        isDICOM = YES;
+        return document;
+    }
+    NSLog(@"Unable to read metadata at %@: %@", srcFile, error.localizedDescription);
+    NSXMLElement *root = [NSXMLElement elementWithName:@"MetaDataUnavailable"];
+    [root addChild:[NSXMLElement elementWithName:@"Reason" stringValue:
+                   error.localizedDescription ?: @"Unsupported metadata"]];
+    return [[[NSXMLDocument alloc] initWithRootElement:root] autorelease];
+}
+
+- (void)reloadMetadataOutline:(NSXMLDocument *)document
 {
 	NSMutableDictionary	*previousOutline = [NSMutableDictionary dictionary];
 	
@@ -366,8 +435,9 @@ static BOOL showWarning = YES;
 		}
 	}
     
+    [document retain];
     [xmlDocument release];
-    xmlDocument = [[dcmDocument xmlDocument] retain];
+    xmlDocument = document;
     
     int selectedRow = [table selectedRow];
 	
@@ -388,7 +458,8 @@ static BOOL showWarning = YES;
 		}
 	}
 	
-	[table selectRowIndexes: [NSIndexSet indexSetWithIndex: selectedRow] byExtendingSelection: NO];
+	if (selectedRow >= 0 && selectedRow < table.numberOfRows)
+        [table selectRowIndexes: [NSIndexSet indexSetWithIndex: selectedRow] byExtendingSelection: NO];
 	[[tableScrollView contentView] scrollToPoint: origin];
 	[tableScrollView reflectScrolledClipView: [tableScrollView contentView]];
 	table.needsDisplay = YES;
@@ -397,49 +468,7 @@ static BOOL showWarning = YES;
 
 -(void) reload:(id) sender // reloadFromFile
 {
-	NSMutableDictionary	*previousOutline = [NSMutableDictionary dictionary];
-	int i;
-	
-	for( i = 1; i < [table numberOfRows]; i++)
-	{
-		id item = [table itemAtRow: i];
-		
-		if( [table isExpandable: item])
-		{
-			[previousOutline setValue: [NSNumber numberWithBool: [table isItemExpanded: item]] forKey: [self getPath: item]];
-		}
-	}
-
-	[xmlDocument release];
-    [dcmDocument release];
-    
-    dcmDocument = [[DCMObject objectWithContentsOfFile:srcFile decodingPixelData:NO] retain];
-    xmlDocument = [[dcmDocument xmlDocument] retain];
-	
-	int selectedRow = [table selectedRow];
-	
-	NSPoint origin = [[table superview] bounds].origin;
-	
-	[table reloadData];
-	[table expandItem:[table itemAtRow:0] expandChildren:NO];
-	
-	for( i = 1; i < [table numberOfRows]; i++)
-	{
-		id item = [table itemAtRow: i];
-		
-		if( [table isExpandable: item])
-		{
-			NSNumber *num = [previousOutline valueForKey: [self getPath: item]];
-			
-			if( [num boolValue]) [table expandItem: item];
-		}
-	}
-	
-	[table selectRowIndexes: [NSIndexSet indexSetWithIndex: selectedRow] byExtendingSelection: NO];
-	[[tableScrollView contentView] scrollToPoint: origin];
-	[tableScrollView reflectScrolledClipView: [tableScrollView contentView]];
-	table.needsDisplay = YES;
-	[[self window] makeFirstResponder: table];
+	[self reloadMetadataOutline:[self loadMetadataDocument]];
 	
 	int fileSize = [[[[NSFileManager defaultManager] attributesOfItemAtPath: srcFile error: nil] valueForKey: NSFileSize] longLongValue] / 1024L;
 	[[self window] setTitle: [NSString stringWithFormat: NSLocalizedString( @"Meta-Data: %@ (%d KB)", nil), srcFile, fileSize]];
@@ -477,7 +506,7 @@ static BOOL showWarning = YES;
         if (result != NSModalResponseOK)
             return;
         
-        [[dcmDocument description] writeToFile:panel.URL.path atomically:NO encoding:NSUTF8StringEncoding error:NULL];
+        [HorosDICOMMetadataText(xmlDocument) writeToFile:panel.URL.path atomically:NO encoding:NSUTF8StringEncoding error:NULL];
     }];
 }
 
@@ -497,61 +526,13 @@ static BOOL showWarning = YES;
 	srcFile = [[image valueForKey:@"completePath"] retain];
 	
 	[xmlDocument release];
-	xmlDocument = nil;
-    [dcmDocument release];
-    dcmDocument = nil;
-	
-	if([DicomFile isDICOMFile:srcFile])
-	{
-//        NSTask *theTask = [[[NSTask alloc] init] autorelease];
-//        
-//        NSPipe *thePipe = [NSPipe pipe];
-//        
-//        [theTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
-//        [theTask setArguments: [NSMutableArray arrayWithObject: srcFile]];
-//        [theTask setStandardOutput: thePipe];
-//        
-//        NSData *resData = [[thePipe fileHandleForReading] readDataToEndOfFile];
-//        
-//        while( [theTask isRunning])
-//            [NSThread sleepForTimeInterval: 0.1];
-//        
-//        NSString *resString = [[[NSString alloc] initWithData:resData encoding: NSUTF8StringEncoding] autorelease];
-//        
-//        NSLog( @"%@", resString);
-//
-//        xmlDocument = [[NSXMLDocument alloc] initWithData:resData  options: 0 error: nil];
-        
-        dcmDocument = [[DCMObject objectWithContentsOfFile:srcFile decodingPixelData:NO] retain];
-        xmlDocument = [[dcmDocument xmlDocument] retain];
-        
-		isDICOM = YES;
-	}
-	else if([DicomFile isNIfTIFile:srcFile])
-	{
-		xmlDocument = [[DicomFile getNIfTIXML:srcFile] retain];
-	}
-	else
-	{
-		dcmDocument = [[DCMObject objectWithContentsOfFile:srcFile decodingPixelData:NO] retain];
-		
-		if( dcmDocument)
-		{
-			xmlDocument = [[dcmDocument xmlDocument] retain];
-			isDICOM = YES;
-		}
-		else
-		{
-			NSXMLElement *rootElement = [[NSXMLElement alloc] initWithName:@"Unsupported Meta-Data"];
-			xmlDocument = [[NSXMLDocument alloc] initWithRootElement:rootElement];
-			[rootElement release];
-		}
-	}
+	xmlDocument = [[self loadMetadataDocument] retain];
 	
 	[table reloadData];
 	[table expandItem:[table itemAtRow:0] expandChildren:NO];
 	
-    [table selectRowIndexes: [NSIndexSet indexSetWithIndex: selectedRow] byExtendingSelection: NO];
+    if (selectedRow >= 0 && selectedRow < table.numberOfRows)
+        [table selectRowIndexes: [NSIndexSet indexSetWithIndex: selectedRow] byExtendingSelection: NO];
 	[[tableScrollView contentView] scrollToPoint: origin];
 	[tableScrollView reflectScrolledClipView: [tableScrollView contentView]];
 	table.needsDisplay = YES;
@@ -617,7 +598,6 @@ static BOOL showWarning = YES;
     [xmlData release];
 	
 	[xmlDocument release];
-    [dcmDocument release];
 	[toolbar setDelegate: nil];
 	[toolbar release];
 	
@@ -924,39 +904,9 @@ static BOOL showWarning = YES;
 
 - (BOOL)outlineView:(NSOutlineView *)outlineView shouldEditTableColumn:(NSTableColumn *)tableColumn item:(id)item
 {
-	return YES;
-	/*
-	if( [[NSUserDefaults standardUserDefaults] boolForKey:@"ALLOWDICOMEDITING"] == NO) return NO;
-	
-	if( isDICOM == NO) return NO;
-	
-	if( [[NSFileManager defaultManager] isWritableFileAtPath: [imObj valueForKey:@"completePath"]] == NO) return NO;
-	
-	if( self.editingActivated == NO) return NO;
-	
-	if( [[tableColumn identifier] isEqualToString: @"stringValue"])
-	{
-        if( [xmlDocument rootElement] == [item parent]) // Only elements at root level
-        {
-            if( [item attributeForName:@"group"] && [item attributeForName:@"element"])
-            {
-                if( [[[item attributeForName:@"group"] stringValue] intValue] != 0)	//[[[item attributeForName:@"group"] stringValue] intValue] != 2 && 
-                {
-                    return YES;
-                }
-            }
-            else if( [[[[item children] objectAtIndex: 0] children] count] == 0)	// A multiple value
-            {
-                return YES;
-            }
-            else NSLog( @"Sequence");
-		}
-        
-		return NO;
-	}
-	else
-		return NO;
-     */
+    // The current writer accepts top-level tag replacements, not sequence paths
+    // or hidden binary payloads. Do not let display placeholders become edits.
+    return !HorosMetadataItemIsReadOnly(item);
 }
 
 - (IBAction) switchEditing: (id) sender
@@ -1037,6 +987,12 @@ static BOOL showWarning = YES;
 	
 	id item = [array objectAtIndex: 0];
 	id object = [array objectAtIndex: 1];
+
+    if (HorosMetadataItemIsReadOnly(item))
+    {
+        allowSelectionChange = YES;
+        return;
+    }
 	
 	NSStringEncoding encoding = [NSString encodingForDICOMCharacterSet: [[DicomFile getEncodingArrayForFile: srcFile] objectAtIndex: 0]];
 	
@@ -1213,8 +1169,10 @@ static BOOL showWarning = YES;
 		}
 		else
 		{
-			if( [[NSUserDefaults standardUserDefaults] boolForKey:@"ALLOWDICOMEDITING"] == NO || self.editingActivated == NO)
-				HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"Activate DICOM editing to change the values.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+			if( [[NSUserDefaults standardUserDefaults] boolForKey:@"ALLOWDICOMEDITING"] == NO)
+				HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"DICOM editing is disabled in Settings. Enable it in General settings before editing metadata.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+			else if( self.editingActivated == NO)
+				HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"DICOM editing is allowed in Settings, but is not enabled for this window. Click Edit in the Meta-Data toolbar, just left of Add, then change the value.", nil), NSLocalizedString(@"OK", nil), nil, nil);
 			else
 				HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Editing", nil), NSLocalizedString(@"DICOM editing not possible for this file.", nil), NSLocalizedString(@"OK", nil), nil, nil);
 		}
@@ -1282,6 +1240,9 @@ static BOOL showWarning = YES;
 			   if ([selectedRowIndexes containsIndex:index])
 			   {
 					id	item = [table itemAtRow: index];
+
+                    if (HorosMetadataItemIsReadOnly(item))
+                        continue;
 					
 					if( index > 0)
 					{

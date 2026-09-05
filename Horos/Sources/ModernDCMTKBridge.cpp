@@ -1138,6 +1138,116 @@ char* HorosModernDCMTKCopySpecificCharacterSet(const char* path)
     return nullptr;
 }
 
+struct HorosMetadataCharacterSet
+{
+    DcmItem* item;
+    OFString value;
+    bool present;
+};
+
+static OFCondition HorosModernDCMTKPrepareMetadataXML(DcmItem& item,
+    std::vector<HorosMetadataCharacterSet>& characterSets, unsigned int depth = 0)
+{
+    if (depth > 128)
+        return EC_CorruptedData;
+
+    OFString charset;
+    const bool present = item.findAndGetOFStringArray(DCM_SpecificCharacterSet, charset, OFFalse).good();
+    characterSets.push_back({&item, charset, present});
+    for (unsigned long index = 0; index < item.card(); ++index)
+    {
+        DcmElement* element = item.getElement(index);
+        if (element == nullptr)
+            return EC_CorruptedData;
+        if (element->ident() == EVR_SQ)
+        {
+            auto* sequence = static_cast<DcmSequenceOfItems*>(element);
+            for (unsigned long itemIndex = 0; itemIndex < sequence->card(); ++itemIndex)
+            {
+                DcmItem* child = sequence->getItem(itemIndex);
+                if (child == nullptr)
+                    return EC_CorruptedData;
+                OFCondition status = HorosModernDCMTKPrepareMetadataXML(*child, characterSets, depth + 1);
+                if (status.bad())
+                    return status;
+            }
+        }
+        else
+        {
+            // XML only emits loaded scalar values. Load long text/numeric arrays,
+            // but never pull pixel, document, waveform or other bulk data in.
+            switch (DcmVR(element->getVR()).getValidEVR())
+            {
+                case EVR_OB: case EVR_OW: case EVR_OF: case EVR_OD:
+                case EVR_OL: case EVR_OV: case EVR_UN:
+                    break;
+                default:
+                {
+                    OFCondition status = element->loadAllDataIntoMemory();
+                    if (status.bad())
+                        return status;
+                    break;
+                }
+            }
+        }
+    }
+    return EC_Normal;
+}
+
+char* HorosModernDCMTKCopyMetadataXML(const char* path, char** failureReason)
+{
+    if (failureReason != nullptr)
+        *failureReason = nullptr;
+    auto fail = [failureReason](const std::string& reason) -> char* {
+        HorosModernDCMTKValidationFail(failureReason, reason);
+        return nullptr;
+    };
+    if (path == nullptr || path[0] == '\0')
+        return fail("No DICOM file was specified.");
+
+    try
+    {
+        HorosModernDCMTKEnsureDataDictionary();
+        DcmFileFormat file;
+        OFCondition status = file.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect);
+        if (status.bad())
+            return fail(std::string("Cannot read DICOM metadata: ") + status.text());
+
+        std::vector<HorosMetadataCharacterSet> characterSets;
+        status = HorosModernDCMTKPrepareMetadataXML(*file.getDataset(), characterSets);
+        if (status.good())
+            status = file.getDataset()->convertToUTF8();
+        if (status.bad())
+            return fail(std::string("Cannot decode DICOM metadata: ") + status.text());
+
+        // This is a display-only dataset, never saved. Preserve the actual source
+        // charset declarations while presenting converted Unicode values.
+        for (const auto& charset : characterSets)
+        {
+            if (charset.present)
+            {
+                status = charset.item->putAndInsertString(DCM_SpecificCharacterSet, charset.value.c_str());
+                if (status.bad())
+                    return fail(status.text());
+            }
+            else
+                charset.item->findAndDeleteElement(DCM_SpecificCharacterSet, OFFalse, OFFalse);
+        }
+
+        std::ostringstream output;
+        output << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+        status = file.writeXML(output, 0); // No binary payloads or external DTD.
+        if (status.bad() || !output.good())
+            return fail("Cannot create the metadata display.");
+        char* result = HorosModernDCMTKDuplicateCString(output.str().c_str());
+        return result != nullptr ? result : fail("Not enough memory for the metadata display.");
+    }
+    catch (const std::exception& exception)
+    {
+        return fail(std::string("Cannot read DICOM metadata: ") + exception.what());
+    }
+}
+
 char* HorosModernDCMTKCopyField(const char* path, const char* fieldName)
 {
     if (path == nullptr || path[0] == '\0' || fieldName == nullptr || fieldName[0] == '\0')

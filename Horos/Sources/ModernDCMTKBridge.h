@@ -61,6 +61,10 @@ int HorosModernDCMTKValidateDICOMFile(const char* path, char** failureReason);
 int HorosModernDCMTKValidateDICOMDIR(const char* path, char** failureReason);
 char* HorosModernDCMTKCopyGeneratedUID(void);
 char* HorosModernDCMTKCopySpecificCharacterSet(const char* path);
+// Read-only DCMTK XML, including sequences and file meta information. Binary
+// values are omitted; text is UTF-8 and charset tags retain their source values.
+// Free both returned strings with HorosModernDCMTKFreeString.
+char* HorosModernDCMTKCopyMetadataXML(const char* path, char** failureReason);
 char* HorosModernDCMTKCopyField(const char* path, const char* fieldName);
 char* HorosModernDCMTKCopyFieldByTag(const char* path, unsigned short group, unsigned short element);
 int HorosModernDCMTKCopyBufferByTag(const char* path, unsigned short group, unsigned short element, unsigned char** buffer, unsigned long* length);

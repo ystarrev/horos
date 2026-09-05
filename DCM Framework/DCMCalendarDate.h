@@ -40,8 +40,9 @@
 
 /** \brief NSDate subclass that deals with DICOM date and time formats.
 *
-* DICOM parsing and formatting are implemented with NSCalendar and
-* NSDateFormatter; no NSCalendarDate behavior is required.
+* DCMTK handles DICOM parsing and formatting; Foundation supplies Gregorian
+* calendar and local-timezone conversion. The class remains for archive and
+* caller compatibility until the remaining legacy parser is removed.
 */
 @interface DCMCalendarDate : NSDate {
 	NSTimeInterval _timeIntervalSinceReferenceDate;
@@ -52,7 +53,7 @@
 }
 
 /** Create a DICOM date from a string
-* Format for DA is YYMMDD = @"%Y%m%d"
+* Format for DA is YYYYMMDD = @"%Y%m%d"
 * or occasionally @"%Y.%m.%d", @"%Y%m", @"%Y" 
 */
 + (id)dicomDate:(NSString *)string;
@@ -72,7 +73,7 @@
 /** Create a DICOM date from an NSDate */
 + (id)dicomDateWithDate:(NSDate *)date;
 
-/** Create a DICOM time from a string */
+/** Create a DICOM time from an NSDate, preserving fractional seconds */
 + (id)dicomTimeWithDate:(NSDate *)date;
 
 /** Create a DICOM datetime from a DICOM date and a DICOM time */
@@ -113,7 +114,7 @@
 /** return the date as an NSNumber YYYYMMDD*/
 - (NSNumber *)dateAsNumber;
 
-/** return the time as an NSNumber HHMMSS.ff*/
+/** return the time as an integral NSNumber HHMMSS for database comparisons */
 - (NSNumber *)timeAsNumber;
 
 /** Test to see if this is a query */

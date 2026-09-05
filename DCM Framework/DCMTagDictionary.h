@@ -42,6 +42,8 @@
 
 }
 +(id)sharedTagDictionary;
++ (NSDictionary *)sharedNameDictionary;
++ (NSDictionary *)infoForGroup:(int)group element:(int)element;
 
 
 @end

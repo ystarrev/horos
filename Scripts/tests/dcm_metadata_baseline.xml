@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<file-format>
+  <meta-header xfer="1.2.840.10008.1.2.1" name="Little Endian Explicit">
+    <element tag="0002,0010" vr="UI" vm="1" len="20" name="TransferSyntaxUID">1.2.840.10008.1.2.1</element>
+  </meta-header>
+  <data-set xfer="1.2.840.10008.1.2.1" name="Little Endian Explicit">
+    <element tag="0008,0005" vr="CS" vm="1" len="10" name="SpecificCharacterSet">ISO_IR 100</element>
+    <element tag="0008,0020" vr="DA" vm="1" len="8" name="StudyDate">20260228</element>
+    <element tag="0008,002a" vr="DT" vm="1" len="26" name="AcquisitionDateTime">20260228000000.123456-0700</element>
+    <element tag="0008,0030" vr="TM" vm="1" len="14" name="StudyTime">000000.123456</element>
+    <element tag="0008,0050" vr="SH" vm="0" len="0" name="AccessionNumber"></element>
+    <sequence tag="0008,1115" vr="SQ" card="2" name="ReferencedSeriesSequence">
+      <item card="2">
+        <sequence tag="0008,1140" vr="SQ" card="1" name="ReferencedImageSequence">
+          <item card="1">
+            <element tag="0008,1155" vr="UI" vm="1" len="8" name="ReferencedSOPInstanceUID">1.2.3.4</element>
+          </item>
+        </sequence>
+        <element tag="0020,000e" vr="UI" vm="1" len="8" name="SeriesInstanceUID">1.2.3.5</element>
+      </item>
+      <item card="0"></item>
+    </sequence>
+    <element tag="0010,0010" vr="PN" vm="1" len="18" name="PatientName">Test^J&#233;r&#244;me &amp; Example</element>
+    <element tag="0020,0032" vr="DS" vm="3" len="12" name="ImagePositionPatient">1.25\-2.5\0</element>
+    <element tag="0040,a160" vr="UT" vm="1" len="44" name="TextValue">literal \ slash &lt;tag&gt;
+second line</element>
+    <element tag="0042,0011" vr="OB" vm="1" len="8192" name="EncapsulatedDocument" loaded="no" binary="hidden"></element>
+    <element tag="0071,0010" vr="LO" vm="1" len="6" name="PrivateCreator">CUSTOM</element>
+    <element tag="0071,1001" vr="LO" vm="1" len="4" name="Unknown Tag &amp; Data">text</element>
+    <sequence tag="7fe0,0010" vr="OB" card="2" name="PixelData">
+      <pixel-item len="0" binary="hidden"></pixel-item>
+      <pixel-item len="65536" loaded="no" binary="hidden"></pixel-item>
+    </sequence>
+  </data-set>
+</file-format>

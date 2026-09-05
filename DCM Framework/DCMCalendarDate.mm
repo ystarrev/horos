@@ -35,8 +35,102 @@
      PURPOSE.
  ============================================================================*/
 
-#import "DCMCalendarDate.h"//aTimeZone
-#import "DCM.h"
+#import "DCMCalendarDate.h"
+
+#include <dcmtk/dcmdata/dcvrda.h>
+#include <dcmtk/dcmdata/dcvrtm.h>
+#include <dcmtk/dcmdata/dcvrdt.h>
+#include <cmath>
+
+@interface DCMCalendarDate ()
+- (NSString *)calendarFormat;
+- (void)setCalendarFormat:(NSString *)format;
+- (instancetype)initWithString:(NSString *)description calendarFormat:(NSString *)format microseconds:(unsigned long)usecs;
+@end
+
+static const NSCalendarUnit DCMDateUnits = NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay
+    | NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond;
+
+static NSCalendar *DCMGregorianCalendar(NSTimeZone *timeZone)
+{
+    NSCalendar *calendar = [[[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian] autorelease];
+    calendar.timeZone = timeZone ?: [NSTimeZone defaultTimeZone];
+    return calendar;
+}
+
+static OFString DCMDICOMDateValue(NSString *string)
+{
+    if (![string isKindOfClass:[NSString class]])
+        return OFString();
+    string = [string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    const char *ascii = [string cStringUsingEncoding:NSASCIIStringEncoding];
+    return ascii ? OFString(ascii, string.length) : OFString();
+}
+
+static NSString *DCMFormatForDatePrecision(size_t digits)
+{
+    switch (digits)
+    {
+        case 4: return @"%Y";
+        case 6: return @"%Y%m";
+        case 8: return @"%Y%m%d";
+        case 10: return @"%Y%m%d%H";
+        case 12: return @"%Y%m%d%H%M";
+        default: return @"%Y%m%d%H%M%S";
+    }
+}
+
+static DCMCalendarDate *DCMDateFromOFValues(const OFDate &day, const OFTime &time,
+                                         NSTimeZone *timeZone, NSString *format)
+{
+    // NSDate has no leap-second representation; do not silently move it to another day.
+    if (!day.isValid() || day.getYear() == 0 || day.getYear() > 9999 || !time.isValid() || time.getSecond() >= 60)
+        return nil;
+    NSDateComponents *parts = [[[NSDateComponents alloc] init] autorelease];
+    parts.year = day.getYear();
+    parts.month = day.getMonth();
+    parts.day = day.getDay();
+    parts.hour = time.getHour();
+    parts.minute = time.getMinute();
+    parts.second = time.getIntSecond();
+    NSCalendar *calendar = DCMGregorianCalendar(timeZone);
+    NSDate *base = [calendar dateFromComponents:parts];
+    if (!base)
+        return nil;
+    // DCMTK validates fields independently. Reject February 30 and DST gaps
+    // instead of accepting Foundation's normalized date/time.
+    NSDateComponents *actual = [calendar components:DCMDateUnits fromDate:base];
+    if (actual.year != parts.year || actual.month != parts.month || actual.day != parts.day
+        || actual.hour != parts.hour || actual.minute != parts.minute || actual.second != parts.second)
+        return nil;
+    DCMCalendarDate *date = [DCMCalendarDate dateWithTimeIntervalSinceReferenceDate:
+        base.timeIntervalSinceReferenceDate + (time.getSecond() - time.getIntSecond())];
+    [date setTimeZone:calendar.timeZone];
+    [date setCalendarFormat:format];
+    return date;
+}
+
+static BOOL DCMGetOFDateTime(NSDate *date, NSTimeZone *timeZone, OFDateTime &value)
+{
+    if (!date || !std::isfinite(date.timeIntervalSinceReferenceDate))
+        return NO;
+    NSTimeInterval seconds = date.timeIntervalSinceReferenceDate;
+    NSTimeInterval wholeSeconds = std::floor(seconds);
+    long microseconds = std::lround((seconds - wholeSeconds) * 1e6);
+    if (microseconds == 1000000)
+    {
+        ++wholeSeconds;
+        microseconds = 0;
+    }
+    NSDate *wholeDate = [NSDate dateWithTimeIntervalSinceReferenceDate:wholeSeconds];
+    NSDateComponents *parts = [DCMGregorianCalendar(timeZone) components:DCMDateUnits fromDate:wholeDate];
+    if (parts.year < 1 || parts.year > 9999)
+        return NO;
+    OFDate day((unsigned int)parts.year, (unsigned int)parts.month, (unsigned int)parts.day);
+    OFTime time((unsigned int)parts.hour, (unsigned int)parts.minute, parts.second + microseconds / 1e6);
+    value = OFDateTime(day, time);
+    return value.isValid();
+}
 
 static NSString *DCMUnicodeDateFormat(NSString *format)
 {
@@ -94,186 +188,95 @@ static NSDateFormatter *DCMDateFormatter(NSString *format, NSTimeZone *timeZone)
 }
 
 
-+ (id)dicomDate:(NSString *)string{
-
-	if( string == nil) 
-		return nil;
-		
-	if ([string rangeOfString:@"-"].location == NSNotFound)
-	{
-		//format for DA is YYMMDD = @"%Y%m%d"
-		if (DCMDEBUG)
-			NSLog (@"date string: %@ intValue: %d", string,[string intValue] );
-		NSString *format = @"%Y%m%d";
-		if (string && [string intValue]) {
-			if ([string length] == 10)
-				format = @"%Y.%m.%d";
-			else if ([string length] == 8)
-				format = @"%Y%m%d";
-			else if ([string length] == 6)
-				format = @"%Y%m";
-			else if ([string length] == 4)
-				format = @"%Y";
-			DCMCalendarDate *date = [[[DCMCalendarDate alloc] initWithString:string  calendarFormat:format] autorelease];
-			[date setIsQuery:NO];
-			[date setQueryString:nil];
-			return date;
-		}
-		else
-			return nil;
-	}
-	else
-		return [DCMCalendarDate queryDate:string];
++ (id)dicomDate:(NSString *)string
+{
+    if (![string isKindOfClass:[NSString class]])
+        return nil;
+    if ([string rangeOfString:@"-"].location != NSNotFound)
+        return [self queryDate:string];
+    OFString value = DCMDICOMDateValue(string);
+    NSString *format = value.size() == 10 ? @"%Y.%m.%d" : DCMFormatForDatePrecision(value.size());
+    // Retain Horos' abbreviated year/month input in addition to standard DA.
+    if (value.size() == 4) value += "0101";
+    else if (value.size() == 6) value += "01";
+    OFDate day;
+    if (DcmDate::getOFDateFromString(value, day, OFTrue).bad())
+        return nil;
+    return DCMDateFromOFValues(day, OFTime(0, 0, 0), nil, format);
 }
+
 + (id)dicomTime:(NSString *)string
 {
-	if( string == nil) 
-		return nil;
-		
-	if ([string rangeOfString:@"-"].location == NSNotFound)
-	{
-		//format for TM is HHMMSS.ffffff = @"%H%M%S.%U";
-			if (DCMDEBUG)
-			NSLog (@"time string: %@", string);
-		if (string  && [string intValue]) {
-			NSArray *timeComponents = [string componentsSeparatedByString:@"."];
-			NSString *firstComponent = [timeComponents objectAtIndex:0];
-			NSString *format = @"%H%M%S";
-			if ([firstComponent length] == 8)
-				format = @"%H:%M:%S";
-			if ([firstComponent length] == 6)
-				format = @"%H%M%S";
-			else if ([firstComponent length] == 4)
-				format = @"%H%M";
-			else if ([firstComponent length] == 2)
-				format = @"%H";
-            
-            int useconds = 0;
-			if ([timeComponents count] > 1)
-				useconds = [[timeComponents objectAtIndex:1] intValue] * pow(10, 6 - [(NSString *)[timeComponents objectAtIndex:1] length]);
-            
-			DCMCalendarDate *date = [[[DCMCalendarDate alloc] initWithString:firstComponent calendarFormat:format microseconds: useconds] autorelease];
-			
-			[date setIsQuery:NO];
-			[date setQueryString:nil];
-			return date;
-		}
-		else
-			return nil;
-	}
-	else
-		return [DCMCalendarDate queryDate:string];
+    if (![string isKindOfClass:[NSString class]])
+        return nil;
+    if ([string rangeOfString:@"-"].location != NSNotFound)
+        return [self queryDate:string];
+    OFString value = DCMDICOMDateValue(string);
+    OFTime time;
+    if (!DcmTime::check(value.c_str(), value.size(), OFTrue)
+        || DcmTime::getOFTimeFromString(value, time, OFTrue, 0).bad())
+        return nil;
+    size_t digits = value.find('.');
+    if (digits == OFString_npos) digits = value.size();
+    NSString *format = value.find(':') != OFString_npos ? @"%H:%M:%S"
+        : digits == 2 ? @"%H" : digits == 4 ? @"%H%M" : @"%H%M%S";
+    return DCMDateFromOFValues(OFDate(2001, 1, 1), time, nil, format);
 }
 
 + (id)dicomDateTime:(NSString *)string
 {
-	if( string == nil) 
-		return nil;
-    
-    if (DCMDEBUG)
-        NSLog (@"date time string: %@", string);
-    
-    if (string.length) {
-        NSArray *timeComponents = [string componentsSeparatedByString:@"."];
-        NSString *format = nil;
-//        int length = (int)[string length];
-        
-        if( timeComponents.count > 2)
-            NSLog( @"****** DICOM DateTime invalid format: %@", string);
-        
-        switch ([(NSString *)[timeComponents objectAtIndex:0] length]) {
-            case 19:format = @"%Y%m%d%H%M%S%z";
-                break;
-            case 14:format = @"%Y%m%d%H%M%S";
-                break;
-            case 12:format = @"%Y%m%d%H%M";
-                break;
-            case 10:format = @"%Y%m%d%H";
-                break;
-            case 8:format = @"%Y%m%d";
-                break;
-            case 6:format = @"%Y%m";
-                break;
-            case 4:format = @"%Y";
-                break;
-                
-            default: format = @"%Y%m%d%H%M%S";
-                NSLog( @"****** DICOM DateTime invalid format ? %@", string);
-                break;
-        }
-        
-        NSTimeZone *tz = nil;
-        int useconds = 0;
-        if ([timeComponents count] > 1) {
-            NSString *timeZone = nil;
-            NSString *usecondsString = nil;
-            
-            if( [[timeComponents objectAtIndex:1] rangeOfString: @"+"].location != NSNotFound)
-            {
-                usecondsString = [[timeComponents objectAtIndex:1] substringToIndex: [[timeComponents objectAtIndex:1] rangeOfString: @"+"].location];
-                timeZone = [[timeComponents objectAtIndex:1] substringFromIndex: [[timeComponents objectAtIndex:1] rangeOfString: @"+"].location];
-            }
-            else if( [[timeComponents objectAtIndex:1] rangeOfString: @"-"].location != NSNotFound)
-            {
-                usecondsString = [[timeComponents objectAtIndex:1] substringToIndex: [[timeComponents objectAtIndex:1] rangeOfString: @"-"].location];
-                timeZone = [[timeComponents objectAtIndex:1] substringFromIndex: [[timeComponents objectAtIndex:1] rangeOfString: @"-"].location];
-            }
-            else
-            {
-                usecondsString = [timeComponents objectAtIndex:1];
-                timeZone = nil;
-            }
-            
-            if( timeZone.length) {
-                int tzHours = [[timeZone substringToIndex:3] intValue];
-                int tzMinutes = [[timeZone substringFromIndex:3] intValue];
-                if (tzHours < 0)
-                    tzMinutes = -tzMinutes;
-                tz = [NSTimeZone timeZoneForSecondsFromGMT:(tzHours * 3600) + (tzMinutes * 60)];
-            }
-            
-            useconds = [usecondsString intValue] * pow(10, 6 - usecondsString.length);
-        }
-        
-        DCMCalendarDate *date = [[[DCMCalendarDate alloc] initWithString:[timeComponents objectAtIndex:0] calendarFormat:format microseconds: useconds] autorelease];
-        if( tz)
-            [date setTimeZone: tz];
-        
-        [date setIsQuery:NO];
-        [date setQueryString:nil];
-        
-        return date;
-    }
-    else
+    OFString value = DCMDICOMDateValue(string);
+    OFDateTime dateTime;
+    if (!DcmDateTime::check(value.c_str(), value.size())
+        || DcmDateTime::getOFDateTimeFromString(value, dateTime).bad())
         return nil;
-		
+    BOOL hasTimeZone = value.size() >= 9
+        && (value[value.size() - 5] == '+' || value[value.size() - 5] == '-');
+    NSTimeZone *timeZone = nil;
+    if (hasTimeZone)
+    {
+        double offset;
+        OFTime checkedZone;
+        // DCMTK's date-only DT path does not report a rejected timezone assignment.
+        if (DcmTime::getTimeZoneFromString(value.c_str() + value.size() - 5, 5, offset).bad()
+            || !checkedZone.setTime(0, 0, 0, offset))
+            return nil;
+        timeZone = [NSTimeZone timeZoneForSecondsFromGMT:std::lround(offset * 3600)];
+    }
+    size_t digits = value.find('.');
+    if (digits == OFString_npos) digits = value.size() - (hasTimeZone ? 5 : 0);
+    // Use the explicit offset while constructing the instant, not afterwards.
+    // With no offset, Foundation applies local DST rules for the date in question.
+    return DCMDateFromOFValues(dateTime.getDate(), dateTime.getTime(), timeZone, DCMFormatForDatePrecision(digits));
 }
 
 + (id)dicomDateWithDate:(NSDate *)date
 {
-	NSString *dateString = [DCMDateFormatter(@"%Y%m%d", nil) stringFromDate:date];
-	return [DCMCalendarDate dicomDate:dateString];
-}
-	
-+ (id)dicomTimeWithDate:(NSDate *)date
-{
-	NSString *dateString = [DCMDateFormatter(@"%H%M%S", nil) stringFromDate:date];
-	return [DCMCalendarDate dicomTime:dateString];
+    OFDateTime value;
+    NSTimeZone *timeZone = [NSTimeZone defaultTimeZone];
+    if (!DCMGetOFDateTime(date, timeZone, value))
+        return nil;
+    return DCMDateFromOFValues(value.getDate(), OFTime(0, 0, 0), timeZone, @"%Y%m%d");
 }
 
-+ (id)dicomDateTimeWithDicomDate:(DCMCalendarDate*)date dicomTime:(DCMCalendarDate*)time
++ (id)dicomTimeWithDate:(NSDate *)date
 {
-	if (date == nil || time == nil)
-		return nil;
-	
-	DCMCalendarDate *dateTime = [[[DCMCalendarDate alloc] initWithYear:date.yearOfCommonEra month:date.monthOfYear day:date.dayOfMonth
-				hour:time.hourOfDay minute:time.minuteOfHour second:time.secondOfMinute timeZone:date.timeZone] autorelease];
-	
-	[dateTime setIsQuery:NO];
-	[dateTime setQueryString:nil];
-	return dateTime;
+    OFDateTime value;
+    NSTimeZone *timeZone = [NSTimeZone defaultTimeZone];
+    if (!DCMGetOFDateTime(date, timeZone, value))
+        return nil;
+    return DCMDateFromOFValues(OFDate(2001, 1, 1), value.getTime(), timeZone, @"%H%M%S");
 }
-	
+
++ (id)dicomDateTimeWithDicomDate:(DCMCalendarDate *)date dicomTime:(DCMCalendarDate *)time
+{
+    if (!date || !time || date.isQuery || time.isQuery)
+        return nil;
+    OFDateTime dayValue, timeValue;
+    if (!DCMGetOFDateTime(date, date.timeZone, dayValue) || !DCMGetOFDateTime(time, time.timeZone, timeValue))
+        return nil;
+    return DCMDateFromOFValues(dayValue.getDate(), timeValue.getTime(), date.timeZone, nil);
+}
 + (id)queryDate:(NSString *)query{
 	DCMCalendarDate *date = [[[DCMCalendarDate alloc] init] autorelease];
 	[date setIsQuery:YES];
@@ -439,58 +442,63 @@ static NSDateFormatter *DCMDateFormatter(NSString *format, NSTimeZone *timeZone)
 	return [DCMDateFormatter(format, self.timeZone) stringFromDate:self];
 }
 
-- (NSString *)dateString{
-	if (isQuery)
-		return queryString;
-	NSString *format = @"%Y%m%d";
-	return [self descriptionWithCalendarFormat:format];
+- (NSString *)dateString
+{
+    if (isQuery)
+        return queryString;
+    OFDateTime value;
+    OFString result;
+    if (!DCMGetOFDateTime(self, self.timeZone, value)
+        || DcmDate::getDicomDateFromOFDate(value.getDate(), result).bad())
+        return nil;
+    return @(result.c_str());
 }
 
-- (NSString *)timeStringWithMilliseconds{
-	if (isQuery)
-		return queryString;
-	NSString *format = @"%H%M%S.%F";
-	return [self descriptionWithCalendarFormat:format];
+- (NSString *)timeStringWithMilliseconds
+{
+    return [self timeString];
 }
 
-- (NSString *)timeString {
-	if (isQuery)
-		return queryString;
-	NSString *format = @"%H%M%S";
-	NSString *time =  [self descriptionWithCalendarFormat:format];
-    
-    NSTimeInterval ti = self.timeIntervalSinceReferenceDate;
-    NSTimeInterval useconds = ti - (unsigned long)ti;
-    time = [time stringByAppendingFormat: @".%0000006ld", (unsigned long) (useconds * 1e6)];
-    
-	return [NSString stringWithFormat:@"%@", time];
+- (NSString *)timeString
+{
+    if (isQuery)
+        return queryString;
+    OFDateTime value;
+    OFString result;
+    if (!DCMGetOFDateTime(self, self.timeZone, value)
+        || DcmTime::getDicomTimeFromOFTime(value.getTime(), result, OFTrue, OFTrue).bad())
+        return nil;
+    return @(result.c_str());
 }
 
-- (NSString *)dateTimeString:(BOOL)withTimeZone{
-	if (isQuery)
-		return queryString;
-	NSString *format = @"%Y%m%d%H%M%S";
-	NSString *time =  [self descriptionWithCalendarFormat:format];
-    
-    NSTimeInterval ti = self.timeIntervalSinceReferenceDate;
-    NSTimeInterval useconds = ti - (unsigned long)ti;
-    time = [time stringByAppendingFormat: @".%0000006ld", (unsigned long) (useconds * 1e6)];
-    
-	if (!withTimeZone)
-		return time;
-	else {
-		NSString *tz = [self descriptionWithCalendarFormat:@"%z"];
-		return [NSString stringWithFormat:@"%@%@", time,tz];
-	}
+- (NSString *)dateTimeString:(BOOL)withTimeZone
+{
+    if (isQuery)
+        return queryString;
+    OFDateTime value;
+    OFString result;
+    if (!DCMGetOFDateTime(self, self.timeZone, value)
+        || DcmDateTime::getDicomDateTimeFromOFDateTime(value, result, OFTrue, OFTrue, OFFalse).bad())
+        return nil;
+    NSString *string = @(result.c_str());
+    // Keep Foundation's integer-minute offset formatting; OFTime truncates
+    // some fractional-hour offsets by a minute when converting from double.
+    return withTimeZone ? [string stringByAppendingString:[self descriptionWithCalendarFormat:@"%z"]] : string;
 }
 
-- (NSNumber *)dateAsNumber{
-	return [NSNumber numberWithInt:[[self dateString] intValue]];
-}
-- (NSNumber *)timeAsNumber{
-	return [NSNumber numberWithInt:[[self timeString] floatValue]];
+- (NSNumber *)dateAsNumber
+{
+    return @([[self dateString] intValue]);
 }
 
+- (NSNumber *)timeAsNumber
+{
+    if (isQuery)
+        return @([queryString intValue]);
+    NSDateComponents *parts = self.dateComponents;
+    // The database contract is integral HHMMSS, not fractional seconds.
+    return @(parts.hour * 10000 + parts.minute * 100 + parts.second);
+}
 
 //------------------------------------------------------------------------------------------------------------------------------------
 #pragma mark•

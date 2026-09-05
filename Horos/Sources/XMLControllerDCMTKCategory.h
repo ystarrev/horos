@@ -43,6 +43,8 @@
 
 @interface XMLController (XMLControllerDCMTKCategory)
 
++ (NSXMLDocument *)metadataDocumentForFile:(NSString *)path error:(NSError **)error;
+
 + (BOOL) modifyDicom:(NSArray*) tagAndValues dicomFiles:(NSArray*) dicomFiles;
 
 - (void) prepareDictionaryArray;

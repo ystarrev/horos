@@ -59,6 +59,16 @@ struct MetalMPRVertex {
     float4 color;
 };
 
+struct MetalMPRROIVertex {
+    float3 position;
+    float3 normal;
+};
+
+struct MetalMPRROIUniforms {
+    float4x4 viewProjectionMatrix;
+    float4 color;
+};
+
 struct MetalMPRUniforms {
     float4x4 viewProjectionMatrix;
     float baseWindowLevel;
@@ -174,6 +184,11 @@ struct MetalMPRRasterizerData {
 struct MetalMPRBorderRasterizerData {
     float4 position [[position]];
     float4 color;
+};
+
+struct MetalMPRROIRasterizerData {
+    float4 position [[position]];
+    float3 normal;
 };
 
 struct Metal3DVertex {
@@ -1080,6 +1095,22 @@ vertex MetalMPRRasterizerData metalViewerMPRPlaneHighlightVertex(
     out.position.z = max(out.position.z - 0.0005 * out.position.w, 0.0);
     out.baseVoxel = vertices[vertexID].baseVoxel;
     out.color = vertices[vertexID].color;
+    return out;
+}
+
+vertex MetalMPRROIRasterizerData metalViewerMPRROIVertex(
+    const device MetalMPRROIVertex *vertices [[buffer(0)]],
+    constant MetalMPRROIUniforms &uniforms [[buffer(1)]],
+    uint vertexID [[vertex_id]]
+) {
+    MetalMPRROIRasterizerData out;
+    out.position = uniforms.viewProjectionMatrix * float4(vertices[vertexID].position, 1.0);
+    const float3x3 normalMatrix = float3x3(
+        uniforms.viewProjectionMatrix[0].xyz,
+        uniforms.viewProjectionMatrix[1].xyz,
+        uniforms.viewProjectionMatrix[2].xyz
+    );
+    out.normal = normalize(normalMatrix * vertices[vertexID].normal);
     return out;
 }
 
@@ -2112,6 +2143,20 @@ fragment float4 metalViewerMPRPlaneHighlightFragment(
     return in.color;
 }
 
+fragment float4 metalViewerMPRROIFragment(
+    MetalMPRROIRasterizerData in [[stage_in]],
+    constant MetalMPRROIUniforms &uniforms [[buffer(1)]]
+) {
+    const float3 normal = normalize(in.normal);
+    const float3 lightDirection = normalize(float3(-0.32, 0.58, -0.74));
+    const float3 viewDirection = float3(0.0, 0.0, -1.0);
+    const float diffuse = saturate(dot(normal, lightDirection));
+    const float rim = pow(1.0 - saturate(dot(normal, viewDirection)), 2.0);
+    const float3 shadedColor = uniforms.color.rgb * (0.32 + diffuse * 0.62)
+        + uniforms.color.rgb * rim * 0.12;
+    return float4(saturate(shadedColor), uniforms.color.a);
+}
+
 static inline float metalPreviewApplyStoredRescale(float storedValue, constant MetalPreviewUniforms &uniforms)
 {
     return storedValue * uniforms.rescaleSlope + uniforms.rescaleIntercept;
@@ -2953,7 +2998,7 @@ vertex MetalViewerScoutROIRasterData metalViewerScoutROIVertex(
 ) {
     MetalViewerScoutROIRasterData output;
     const float4 rotatedPosition = uniforms.rotation * float4(vertices[vertexID].position, 1.0f);
-    output.position = float4(rotatedPosition.x, rotatedPosition.y, 0.5f - rotatedPosition.z * 0.24f, 1.0f);
+    output.position = float4(rotatedPosition.x, rotatedPosition.y, 0.5f + rotatedPosition.z * 0.24f, 1.0f);
     output.normal = normalize((uniforms.rotation * float4(vertices[vertexID].normal, 0.0f)).xyz);
     return output;
 }
@@ -2963,8 +3008,8 @@ fragment float4 metalViewerScoutROIFragment(
     constant MetalViewerScoutROIUniforms &uniforms [[buffer(1)]]
 ) {
     const float3 normal = normalize(input.normal);
-    const float3 lightDirection = normalize(float3(-0.36f, 0.62f, 0.70f));
-    const float3 viewDirection = float3(0.0f, 0.0f, 1.0f);
+    const float3 lightDirection = normalize(float3(-0.32f, 0.58f, -0.74f));
+    const float3 viewDirection = float3(0.0f, 0.0f, -1.0f);
     const float diffuse = saturate(dot(normal, lightDirection));
     const float3 halfVector = normalize(lightDirection + viewDirection);
     const float specular = pow(saturate(dot(normal, halfVector)), 30.0f);

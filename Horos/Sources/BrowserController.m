@@ -275,6 +275,10 @@ NSString* asciiString(NSString* str)
 -(void)observeScrollerStyleDidChangeNotification:(NSNotification*)n;
 -(void)removeAlbumObject:(DicomAlbum*)album;
 -(void)openMetalViewerForDatabaseObject:(NSManagedObject*)item;
+-(void)addDatabaseObjectToCurrentMetalViewer:(id)sender;
+-(void)addMetalViewerPatientForDatabaseObject:(NSManagedObject*)item;
+-(void)addMetalViewerPatientForImages:(NSArray*)loadList;
+-(void)presentMetalViewerForImages:(NSArray*)loadList forceDynamicInterpretation:(BOOL)forceDynamicInterpretation addToCurrentViewer:(BOOL)addToCurrentViewer;
 -(void)saveSmartAlbumWithName:(NSString*)name predicateFormat:(NSString*)predicateFormat album:(DicomAlbum*)album;
 -(NSArray*)cachedStudiesForSmartAlbum:(NSManagedObject*)album loading:(BOOL*)loading;
 -(void)invalidateSmartAlbumFetch;
@@ -301,6 +305,8 @@ NSString* asciiString(NSString* str)
 -(NSArray*)arrayByRemovingSurgicalProcedureStudies:(NSArray*)items;
 -(NSArray*)arrayByPresentingSurgicalProcedureStudies:(NSArray*)items sortDescriptors:(NSArray*)sortDescriptors presentEvents:(BOOL)presentEvents;
 -(NSPredicate*)nonSurgicalProcedureStudiesPredicate;
+-(NSString*)databaseBuildTimestamp;
+-(void)configureDatabaseDescriptionFooter;
 
 -(void)saveLoadAlbumsSortDescriptors;
 -(void)saveDatabaseOutlineViewState;
@@ -3224,7 +3230,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         DataNodeIdentifier* bs = [self sourceIdentifierAtRow: [_sourcesTableView selectedRow]];
         
         if( bs)
-            description = [description stringByAppendingFormat:NSLocalizedString(@"%@: %@ / ", nil), [_database isLocal] ? NSLocalizedString( @"Local Database", nil) : NSLocalizedString( @"Remote Database", nil), [bs description]];
+            description = [description stringByAppendingFormat: @"%@ / ", [bs description]];
     }
     
     // ********************
@@ -3697,6 +3703,11 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     if( [outlineViewArray count] > 0)
         [[NSNotificationCenter defaultCenter] postNotificationName: NSOutlineViewSelectionDidChangeNotification  object:databaseOutline userInfo: nil];
     
+    NSString *buildTimestamp = [self databaseBuildTimestamp];
+    if( description.length > 0)
+        description = [description stringByAppendingFormat: @" / %@", buildTimestamp];
+    else
+        description = buildTimestamp;
     [databaseDescription setStringValue: description];
 
     return exception;
@@ -11268,6 +11279,16 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 - (void)openMetalViewerForImages:(NSArray*)loadList forceDynamicInterpretation:(BOOL)forceDynamicInterpretation
 {
+    [self presentMetalViewerForImages:loadList forceDynamicInterpretation:forceDynamicInterpretation addToCurrentViewer:NO];
+}
+
+- (void)addMetalViewerPatientForImages:(NSArray*)loadList
+{
+    [self presentMetalViewerForImages:loadList forceDynamicInterpretation:NO addToCurrentViewer:YES];
+}
+
+- (void)presentMetalViewerForImages:(NSArray*)loadList forceDynamicInterpretation:(BOOL)forceDynamicInterpretation addToCurrentViewer:(BOOL)addToCurrentViewer
+{
     if ([loadList count] == 0)
         return;
 
@@ -11350,7 +11371,10 @@ constrainSplitPosition:(CGFloat)proposedPosition
     {
         [self markImagesAsOpened:correspondingObjects];
 
-        [launcherClass launchWithContext:context];
+        if (addToCurrentViewer)
+            [launcherClass addPatientWithContext:context];
+        else
+            [launcherClass launchWithContext:context];
     }
     else
     {
@@ -11359,6 +11383,72 @@ constrainSplitPosition:(CGFloat)proposedPosition
     
     [viewerPix release];
     [correspondingObjects release];
+}
+
+- (void)addDatabaseObjectToCurrentMetalViewer:(id)sender
+{
+    NSInteger row = [databaseOutline clickedRow];
+    if (row < 0)
+        row = [databaseOutline selectedRow];
+    if (row < 0)
+    {
+        NSBeep();
+        return;
+    }
+    id selectedItem = [databaseOutline itemAtRow:row];
+    NSManagedObject *item = [selectedItem isKindOfClass:[NSManagedObject class]] ? selectedItem : nil;
+    if (item)
+        [self addMetalViewerPatientForDatabaseObject:item];
+    else
+        NSBeep();
+}
+
+- (void)addMetalViewerPatientForDatabaseObject:(NSManagedObject*)item
+{
+    NSMutableArray *loadList = [NSMutableArray array];
+    NSString *itemType = [item valueForKey:@"type"];
+    NSManagedObject *study = nil;
+    NSManagedObject *itemSeries = nil;
+
+    if ([itemType isEqualToString:@"Series"])
+        itemSeries = item;
+    else if ([itemType isEqualToString:@"Image"])
+        itemSeries = [item valueForKey:@"series"];
+
+    if ([self isDICOMSegmentationSeries:itemSeries])
+    {
+        item = [itemSeries valueForKey:@"study"];
+        itemType = [item valueForKey:@"type"];
+    }
+
+    if ([itemType isEqualToString:@"Image"])
+    {
+        [loadList addObject:item];
+        study = [item valueForKeyPath:@"series.study"];
+    }
+    else if ([itemType isEqualToString:@"Series"])
+    {
+        [loadList addObjectsFromArray:[self childrenArray:item onlyImages:YES]];
+        study = [item valueForKey:@"study"];
+    }
+    else if ([itemType isEqualToString:@"Study"])
+    {
+        study = item;
+        for (NSManagedObject *series in [self childrenArray:item onlyImages:YES])
+        {
+            if ([self isDICOMSegmentationSeries:series] == NO)
+                [loadList addObjectsFromArray:[self childrenArray:series onlyImages:YES]];
+        }
+    }
+
+    if ([loadList count] == 0)
+    {
+        NSBeep();
+        return;
+    }
+    if (study)
+        [[AppController sharedAppController] addStudyToRecentStudiesMenu:[study objectID]];
+    [self addMetalViewerPatientForImages:loadList];
 }
 
 - (void)openMetalViewerForDatabaseObject:(NSManagedObject*)item
@@ -11799,6 +11889,9 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     
     [menu addItemWithTitle: NSLocalizedString(@"Display only this patient", nil) action: @selector(searchForCurrentPatient:) keyEquivalent:@""];
     [menu addItemWithTitle: NSLocalizedString(@"Query Selected Patient from Q&R Window...", nil) action: @selector(querySelectedStudy:) keyEquivalent:@""];
+    Class metalLauncherClass = NSClassFromString(@"HorosMetalViewerLauncher");
+    if (metalLauncherClass && [metalLauncherClass canAddPatientToCurrentViewer])
+        [menu addItemWithTitle: NSLocalizedString(@"Add to Current Metal Planar Viewer", nil) action: @selector(addDatabaseObjectToCurrentMetalViewer:) keyEquivalent:@""];
     [menu addItemWithTitle: NSLocalizedString(@"Export to DICOM File(s)", nil) action: @selector(exportDICOMFile:) keyEquivalent:@""];
     
     [menu addItem: [NSMenuItem separatorItem]];
@@ -11862,40 +11955,30 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     }
 }
 
-- (void)addDatabaseBuildLabel
+- (NSString*)databaseBuildTimestamp
 {
-    NSView *contentView = [self.window contentView];
-    if( contentView == nil)
-        return;
+    static NSString *timestamp = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSDate *buildDate = nil;
+        NSString *executablePath = [[NSBundle mainBundle] executablePath];
+        if( executablePath.length)
+            buildDate = [[[NSFileManager defaultManager] attributesOfItemAtPath: executablePath error: nil] fileModificationDate];
+        if( buildDate == nil)
+            buildDate = [NSDate date];
 
-    NSDate *buildDate = nil;
-    NSString *executablePath = [[NSBundle mainBundle] executablePath];
-    if( executablePath.length)
-        buildDate = [[[NSFileManager defaultManager] attributesOfItemAtPath: executablePath error: nil] fileModificationDate];
-    if( buildDate == nil)
-        buildDate = [NSDate date];
+        NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
+        [formatter setLocale: [[[NSLocale alloc] initWithLocaleIdentifier: @"en_US_POSIX"] autorelease]];
+        [formatter setDateFormat: @"MMM-dd-yyyy HH:mm"];
+        timestamp = [[formatter stringFromDate: buildDate] retain];
+    });
+    return timestamp;
+}
 
-    NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
-    [formatter setLocale: [[[NSLocale alloc] initWithLocaleIdentifier: @"en_US_POSIX"] autorelease]];
-    [formatter setDateFormat: @"MMM-dd-yyyy HH:mm"];
-
-    NSTextField *buildLabel = [[[NSTextField alloc] initWithFrame: NSMakeRect( 0, 0, 230, 16)] autorelease];
-    [buildLabel setStringValue: [NSString stringWithFormat: @"BuildNo: %@", [formatter stringFromDate: buildDate]]];
-    [buildLabel setFont: [NSFont systemFontOfSize: 12]];
-    [buildLabel setTextColor: [NSColor redColor]];
-    [buildLabel setAlignment: NSTextAlignmentRight];
-    [buildLabel setEditable: NO];
-    [buildLabel setSelectable: NO];
-    [buildLabel setBordered: NO];
-    [buildLabel setBezeled: NO];
-    [buildLabel setDrawsBackground: NO];
-
-    NSRect labelFrame = [buildLabel frame];
-    labelFrame.origin.x = contentView.bounds.size.width - labelFrame.size.width - 4;
-    labelFrame.origin.y = 2;
-    [buildLabel setFrame: labelFrame];
-    [buildLabel setAutoresizingMask: NSViewMinXMargin | NSViewMaxYMargin];
-    [contentView addSubview: buildLabel positioned: NSWindowAbove relativeTo: nil];
+- (void)configureDatabaseDescriptionFooter
+{
+    [databaseDescription setFont: [NSFont systemFontOfSize: 12]];
+    [databaseDescription setTextColor: [NSColor redColor]];
 }
 
 -(void) awakeFromNib
@@ -11924,7 +12007,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         else
             [self.window setFrame: r display: YES];
         
-        [self addDatabaseBuildLabel];
+        [self configureDatabaseDescriptionFooter];
 
         gHorizontalHistory = [[NSUserDefaults standardUserDefaults] boolForKey: @"horizontalHistory"];
         
@@ -17870,39 +17953,49 @@ static volatile int numberOfThreadsForJPEG = 0;
             [regularStudies addObject:item];
     }
 
-    if( procedureStudies.count == 0)
-        return items;
-
     // Procedure rows are useful in a single-patient timeline, but would add
     // thousands of entries to the unfiltered database view.
     if( presentEvents == NO || items.count > 500)
         return regularStudies;
 
-    id referenceStudy = regularStudies.count ? [regularStudies objectAtIndex:0] : [procedureStudies objectAtIndex:0];
-    for( id item in items)
+    if( regularStudies.count == 0)
     {
-        if( [item isDistant] || [[item valueForKey:@"type"] isEqualToString:@"Study"] == NO)
-            return regularStudies;
-
-        if( item != referenceStudy)
-        {
-            BOOL matchesReference = NO;
-            if( [self isSurgicalProcedureStudy:item] || [self isSurgicalProcedureStudy:referenceStudy])
-            {
-                NSPredicate *referencePredicate = [self directSamePatientStudiesPredicateForStudy:referenceStudy];
-                NSPredicate *itemPredicate = [self directSamePatientStudiesPredicateForStudy:item];
-                matchesReference = (referencePredicate && [referencePredicate evaluateWithObject:item]) ||
-                    (itemPredicate && [itemPredicate evaluateWithObject:referenceStudy]);
-            }
-            else
-                matchesReference = [self study:item matchesSamePatientAsStudy:referenceStudy];
-
-            if( matchesReference == NO)
-                return regularStudies;
-        }
+        NSArray *procedureEvents = [SurgicalProcedureTimelineStore eventsForSurgicalProcedureStudies:procedureStudies];
+        return [procedureEvents sortedArrayUsingDescriptors:sortDescriptors];
     }
 
-    NSArray *procedureEvents = [SurgicalProcedureTimelineStore eventsForSurgicalProcedureStudies:procedureStudies];
+    // A patient search, album, modality filter, or date filter may omit the
+    // backing SR study. Resolve each patient group represented by this small
+    // result set and use the same patient-linked lookup as the Metal Planar
+    // scout. Historical patient IDs can create more than one group, so merge
+    // and deduplicate their procedure events rather than rejecting them all.
+    NSMutableArray *procedureEvents = [NSMutableArray array];
+    NSMutableSet *processedStudyIDs = [NSMutableSet set];
+    NSMutableSet *procedureEventIDs = [NSMutableSet set];
+    for( id referenceStudy in regularStudies)
+    {
+        if( [referenceStudy isDistant] || [[referenceStudy valueForKey:@"type"] isEqualToString:@"Study"] == NO)
+            return regularStudies;
+
+        NSManagedObjectID *referenceID = [referenceStudy isKindOfClass:[NSManagedObject class]]
+            ? [(NSManagedObject *)referenceStudy objectID] : nil;
+        if( referenceID && [processedStudyIDs containsObject:referenceID])
+            continue;
+
+        NSArray *patientStudies = [self resolvedSamePatientStudyGroupForStudy:referenceStudy];
+        for( id patientStudy in patientStudies)
+            if( [patientStudy isKindOfClass:[NSManagedObject class]])
+                [processedStudyIDs addObject:[(NSManagedObject *)patientStudy objectID]];
+
+        for( SurgicalProcedureEvent *event in [self surgicalProcedureEventsForStudy:referenceStudy])
+        {
+            if( event.identifier.length && [procedureEventIDs containsObject:event.identifier] == NO)
+            {
+                [procedureEventIDs addObject:event.identifier];
+                [procedureEvents addObject:event];
+            }
+        }
+    }
     if( procedureEvents.count == 0)
         return regularStudies;
 

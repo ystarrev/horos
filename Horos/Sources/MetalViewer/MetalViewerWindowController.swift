@@ -165,10 +165,106 @@ private final class MetalViewerWindow: NSWindow {
     }
 }
 
+private final class MetalViewerPatientScoutLaneView: NSView {
+    let scoutView: MetalViewerScoutView
+    private let titleLabel = NSTextField(labelWithString: "")
+    private var titleHeightConstraint: NSLayoutConstraint!
+    private var scoutTopToTitleConstraint: NSLayoutConstraint!
+    private var scoutTopToLaneConstraint: NSLayoutConstraint!
+
+    init(study: MetalViewerStudy, placement: MetalViewerScoutPlacement) {
+        scoutView = MetalViewerScoutView(
+            series: study.series,
+            procedureEvents: study.procedureEvents,
+            placement: placement
+        )
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1).cgColor
+
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        titleLabel.textColor = .secondaryLabelColor
+        titleLabel.lineBreakMode = .byTruncatingMiddle
+        titleLabel.maximumNumberOfLines = 1
+        updateTitle(study.patientIdentity.displayName)
+        titleHeightConstraint = titleLabel.heightAnchor.constraint(equalToConstant: 0)
+        scoutTopToTitleConstraint = scoutView.topAnchor.constraint(
+            equalTo: titleLabel.bottomAnchor,
+            constant: 2
+        )
+        scoutTopToLaneConstraint = scoutView.topAnchor.constraint(equalTo: topAnchor)
+
+        addSubview(titleLabel)
+        addSubview(scoutView)
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 3),
+            titleHeightConstraint,
+            scoutView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scoutView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scoutView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        setShowsTitle(false)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func updateTitle(_ title: String) {
+        titleLabel.stringValue = title
+        titleLabel.toolTip = title
+    }
+
+    func setShowsTitle(_ showsTitle: Bool) {
+        titleLabel.isHidden = showsTitle == false
+        titleHeightConstraint.constant = showsTitle ? 17 : 0
+        scoutTopToLaneConstraint.isActive = showsTitle == false
+        scoutTopToTitleConstraint.isActive = showsTitle
+    }
+}
+
+private final class MetalViewerPatientContext {
+    var study: MetalViewerStudy
+    let roiStore: MetalStudyROIStore
+    let roiPersistence: MetalStudyROIPersistence
+    let scoutLaneView: MetalViewerPatientScoutLaneView
+    var displayedROIIdentifiers = Set<UUID>()
+    var knownROIIdentifiers = Set<UUID>()
+
+    init(study: MetalViewerStudy, placement: MetalViewerScoutPlacement) {
+        self.study = study
+        roiPersistence = MetalStudyROIPersistence(study: study)
+        roiStore = MetalStudyROIStore(
+            studyInstanceUID: study.series[0].studyIdentifier,
+            restoredROIs: roiPersistence.restoredROIs
+        )
+        scoutLaneView = MetalViewerPatientScoutLaneView(study: study, placement: placement)
+        if let selectedIdentifier = roiStore.selectedROIIdentifier {
+            displayedROIIdentifiers.insert(selectedIdentifier)
+        }
+        knownROIIdentifiers = Set(roiStore.rois.map(\.id))
+    }
+}
+
 final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate {
+    private static weak var roiColorPanelOwner: MetalViewerWindowController?
+
     private struct RegistrationFramePair: Hashable {
         let movingFrameUID: String
         let fixedFrameUID: String
+    }
+
+    private struct PendingROITransfer {
+        let sourcePatientIdentifier: String
+        let sourceROIIdentifier: UUID
+        let sourceSeriesIdentifier: String
+        let targetPatientIdentifier: String
+        let targetSeriesIdentifier: String
     }
 
     private enum Layout {
@@ -186,12 +282,14 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         static let syncScaleAutosaveKey = "HorosMetalViewerSyncScale"
     }
 
-    private var study: MetalViewerStudy
-    private let studyROIStore: MetalStudyROIStore
-    private let studyROIPersistence: MetalStudyROIPersistence
+    private let primaryPatientContext: MetalViewerPatientContext
+    private var secondaryPatientContext: MetalViewerPatientContext?
+    private var roiCommandPatientContext: MetalViewerPatientContext?
     private var scoutPlacement: MetalViewerScoutPlacement
     private let toolbarView = MetalViewerToolbarView(frame: .zero)
-    private let scoutView: MetalViewerScoutView
+    private let scoutLaneStackView = NSStackView()
+    private var scoutLaneCrossAxisConstraints: [NSLayoutConstraint] = []
+    private var scoutLaneEqualSizeConstraints: [NSLayoutConstraint] = []
     private let contentSplitView = NSSplitView(frame: .zero)
     private let scoutContainer = NSView()
     private let paneContainer = NSView()
@@ -210,10 +308,13 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private var lastPaneScales: [ObjectIdentifier: Float] = [:]
     private var annotationDefaultsObserver: NSObjectProtocol?
     private var scoutPlacementObserver: NSObjectProtocol?
+    private var roiOverlayPreferencesObserver: NSObjectProtocol?
     private var registrationTransformsByFramePair: [
         RegistrationFramePair: MetalViewerRegistrationWorldTransform
     ] = [:]
+    private var pendingROITransfer: PendingROITransfer?
     private var studyROIEditingMode: MetalStudyROIEditingMode = .inactive
+    private var colorPanelROIIdentifier: UUID?
     private let studyROIRefinementQueue = DispatchQueue(
         label: "org.horosproject.horos.metal-roi-refinement",
         qos: .userInitiated
@@ -224,15 +325,45 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private var pendingStudyROIPreviewWorkItem: DispatchWorkItem?
     private var isStudyROIPreviewInFlight = false
 
+    private var patientContexts: [MetalViewerPatientContext] {
+        [primaryPatientContext] + [secondaryPatientContext].compactMap { $0 }
+    }
+
+    private var allSeries: [MetalViewerSeries] {
+        patientContexts.flatMap { $0.study.series }
+    }
+
+    private var activePatientContext: MetalViewerPatientContext {
+        if let roiCommandPatientContext {
+            return roiCommandPatientContext
+        }
+        if let activePaneView,
+           let context = patientContext(for: activePaneView.series) {
+            return context
+        }
+        return primaryPatientContext
+    }
+
+    private var studyROIStore: MetalStudyROIStore {
+        activePatientContext.roiStore
+    }
+
+    private var displayedROIIdentifiers: Set<UUID> {
+        get { activePatientContext.displayedROIIdentifiers }
+        set { activePatientContext.displayedROIIdentifiers = newValue }
+    }
+
+    var canAddPatient: Bool {
+        secondaryPatientContext == nil
+    }
+
     init(study: MetalViewerStudy) {
-        self.study = study
-        let roiPersistence = MetalStudyROIPersistence(study: study)
-        self.studyROIPersistence = roiPersistence
-        self.studyROIStore = MetalStudyROIStore(
-            studyInstanceUID: study.series[0].studyIdentifier,
-            restoredROIs: roiPersistence.restoredROIs
-        )
         let initialScoutPlacement = MetalViewerScoutPlacement.saved
+        let primaryPatientContext = MetalViewerPatientContext(
+            study: study,
+            placement: initialScoutPlacement
+        )
+        self.primaryPatientContext = primaryPatientContext
         self.scoutPlacement = initialScoutPlacement
 
         let requestedFirstSeries = study.series.first { $0.identifier == study.initialSeriesIdentifier }
@@ -254,11 +385,6 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             defer: false
         )
 
-        self.scoutView = MetalViewerScoutView(
-            series: study.series,
-            procedureEvents: study.procedureEvents,
-            placement: initialScoutPlacement
-        )
         self.scoutWidthConstraint = scoutContainer.widthAnchor.constraint(
             equalToConstant: Self.savedScoutDimension(for: .left, splitLength: contentRect.width)
         )
@@ -284,7 +410,13 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         scoutContainer.translatesAutoresizingMaskIntoConstraints = false
         scoutContainer.wantsLayer = true
         scoutContainer.layer?.backgroundColor = NSColor(calibratedWhite: 0.10, alpha: 1).cgColor
-        scoutContainer.addSubview(scoutView)
+        scoutLaneStackView.translatesAutoresizingMaskIntoConstraints = false
+        scoutLaneStackView.orientation = initialScoutPlacement.usesVerticalTimeline ? .horizontal : .vertical
+        scoutLaneStackView.distribution = .fillEqually
+        scoutLaneStackView.alignment = initialScoutPlacement.usesVerticalTimeline ? .height : .width
+        scoutLaneStackView.spacing = 2
+        scoutLaneStackView.addArrangedSubview(primaryPatientContext.scoutLaneView)
+        scoutContainer.addSubview(scoutLaneStackView)
 
         paneContainer.translatesAutoresizingMaskIntoConstraints = false
         paneContainer.wantsLayer = true
@@ -325,7 +457,11 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             self?.setAnnotationLevel(level)
         }
         window.modifierFlagsHandler = { [weak self] flags in
-            self?.toolbarView.setMouseModifierFlags(flags)
+            guard let self else { return }
+            self.toolbarView.setMouseModifierFlags(flags)
+            for pane in self.paneViews {
+                pane.updateMouseToolCursor(modifierFlags: flags)
+            }
         }
         window.printImageHandler = { [weak self] in
             self?.printActiveImage()
@@ -370,23 +506,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             self?.applyROICommand(command)
         }
         reloadStudyROIMenu()
-        studyROIStore.didChange = { [weak self] in
-            guard let self else { return }
-            self.refreshStudyROIBindings()
-            self.scoutView.setROIs(
-                self.studyROIStore.rois,
-                selectedIdentifier: self.studyROIStore.selectedROIIdentifier
-            )
-            self.reloadStudyROIMenu()
-        }
-        studyROIStore.persistenceHandler = { [weak roiPersistence] rois in
-            roiPersistence?.persist(rois)
-        }
-        roiPersistence.errorHandler = { [weak self] message in
-            self?.toolbarView.updateStatus(
-                String(format: NSLocalizedString("ROI autosave failed: %@", comment: ""), message)
-            )
-        }
+        configurePatientContext(primaryPatientContext)
         setAnnotationLevel(MetalViewerAnnotationLevel.current)
         annotationDefaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
@@ -408,6 +528,13 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
                 ?? MetalViewerScoutPlacement.saved
             self?.applyScoutPlacement(placement)
         }
+        roiOverlayPreferencesObserver = NotificationCenter.default.addObserver(
+            forName: MetalViewerMPRROIOverlayPreferences.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyStudyROISurfacePreferences()
+        }
 
         var constraints = [
             toolbarView.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
@@ -419,10 +546,10 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             contentSplitView.topAnchor.constraint(equalTo: toolbarView.bottomAnchor),
             contentSplitView.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
 
-            scoutView.leadingAnchor.constraint(equalTo: scoutContainer.leadingAnchor),
-            scoutView.trailingAnchor.constraint(equalTo: scoutContainer.trailingAnchor),
-            scoutView.topAnchor.constraint(equalTo: scoutContainer.topAnchor),
-            scoutView.bottomAnchor.constraint(equalTo: scoutContainer.bottomAnchor),
+            scoutLaneStackView.leadingAnchor.constraint(equalTo: scoutContainer.leadingAnchor),
+            scoutLaneStackView.trailingAnchor.constraint(equalTo: scoutContainer.trailingAnchor),
+            scoutLaneStackView.topAnchor.constraint(equalTo: scoutContainer.topAnchor),
+            scoutLaneStackView.bottomAnchor.constraint(equalTo: scoutContainer.bottomAnchor),
 
             paneStackView.leadingAnchor.constraint(equalTo: paneContainer.leadingAnchor, constant: 8),
             paneStackView.trailingAnchor.constraint(equalTo: paneContainer.trailingAnchor, constant: -8),
@@ -431,53 +558,288 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         ]
         constraints.append(initialScoutPlacement.usesVerticalTimeline ? scoutWidthConstraint : scoutHeightConstraint)
         NSLayoutConstraint.activate(constraints)
+        configureScoutLaneStack(for: initialScoutPlacement)
 
         addPane(for: firstSeries, makeActive: true)
 
-        scoutView.selectionHandler = { [weak self] series in
-            guard let self else { return }
-            if let targetPane = self.activePaneView ?? self.paneViews.first {
-                let syncedScale = self.synchronizedScaleValue(excluding: targetPane) ?? targetPane.currentScale
-                targetPane.display(series: series)
-                self.applySyncedScaleIfNeeded(to: targetPane, preferredScale: syncedScale)
-                self.reloadWLWWMenu(for: targetPane)
-                if self.activePaneView == nil {
-                    self.setActivePane(targetPane)
-                } else {
-                    self.updateToolbarStatus()
-                    self.updateReferenceLines()
-                }
+    }
+
+    private func patientContext(for series: MetalViewerSeries) -> MetalViewerPatientContext? {
+        patientContexts.first {
+            $0.study.patientIdentity.identifier == series.patientIdentity.identifier
+        }
+    }
+
+    private func patientContext(identifier: String) -> MetalViewerPatientContext? {
+        patientContexts.first { $0.study.patientIdentity.identifier == identifier }
+    }
+
+    private func configurePatientContext(_ context: MetalViewerPatientContext) {
+        let scout = context.scoutLaneView.scoutView
+        context.roiStore.didChange = { [weak self, weak context] in
+            guard let self, let context else { return }
+            self.synchronizeDisplayedROIsWithStore(in: context)
+            self.refreshStudyROIBindings()
+            self.refreshScoutROIs(in: context)
+            if self.activePatientContext === context {
+                self.reloadStudyROIMenu()
             }
         }
+        context.roiStore.persistenceHandler = { [weak persistence = context.roiPersistence] rois in
+            persistence?.persist(rois)
+        }
+        context.roiPersistence.errorHandler = { [weak self, weak context] message in
+            guard let self, let context else { return }
+            self.toolbarView.updateStatus(
+                String(
+                    format: NSLocalizedString("ROI autosave failed for %@: %@", comment: ""),
+                    context.study.patientIdentity.displayName,
+                    message
+                )
+            )
+        }
 
-        scoutView.openSeriesHandler = { [weak self] series in
+        scout.selectionHandler = { [weak self] series in
+            guard let self else { return }
+            let targetPane = self.activePaneView
+                ?? self.paneViews.first(where: { $0.series.patientIdentity == series.patientIdentity })
+                ?? self.paneViews.first
+            guard let targetPane else { return }
+            let syncedScale = self.synchronizedScaleValue(excluding: targetPane) ?? targetPane.currentScale
+            targetPane.display(series: series)
+            self.applySyncedScaleIfNeeded(to: targetPane, preferredScale: syncedScale)
+            self.setActivePane(targetPane)
+        }
+        scout.openSeriesHandler = { [weak self] series in
             self?.addPane(for: series, makeActive: true)
         }
-        scoutView.overlaySeriesHandler = { [weak self] series in
-            guard let self else { return }
-            guard let targetPane = self.activePaneView ?? self.paneViews.first else {
+        scout.overlaySeriesHandler = { [weak self] series in
+            guard let self,
+                  let targetPane = self.activePaneView ?? self.paneViews.first else {
                 NSSound.beep()
                 return
             }
             self.assignSeries(withIdentifier: series.identifier, to: targetPane, overlay: true)
         }
-        scoutView.roiSelectionHandler = { [weak self] identifier in
-            self?.studyROIStore.select(identifier)
+        scout.roiSelectionHandler = { [weak self, weak context] identifier in
+            guard let self, let context else { return }
+            self.roiCommandPatientContext = context
+            context.displayedROIIdentifiers.insert(identifier)
+            context.roiStore.select(identifier)
         }
-        scoutView.setROIs(
-            studyROIStore.rois,
-            selectedIdentifier: studyROIStore.selectedROIIdentifier
-        )
+        scout.roiContextCommandHandler = { [weak self, weak context] identifier, command in
+            guard let self, let context else { return }
+            self.roiCommandPatientContext = context
+            switch command {
+            case .toggleMPRVisibility:
+                self.toggleMPRVisibility(for: identifier)
+            case .adjustPosition:
+                self.beginAdjustingROIPosition(identifier, in: context)
+            case .rename:
+                context.roiStore.select(identifier)
+                self.applyROICommand(.rename)
+            case .duplicate:
+                context.roiStore.select(identifier)
+                self.applyROICommand(.duplicate)
+            case .color:
+                context.roiStore.select(identifier)
+                self.applyROICommand(.color)
+            case .delete:
+                context.roiStore.select(identifier)
+                self.applyROICommand(.delete)
+            }
+        }
+        scout.roiRotationHandler = { [weak self] rotation in
+            self?.activePaneView?.setMPRSceneRotation(rotation)
+        }
+        scout.roiTransferHandler = { [weak self] sourcePatientIdentifier, roiIdentifier, targetSeries in
+            self?.beginROITransfer(
+                sourcePatientIdentifier: sourcePatientIdentifier,
+                roiIdentifier: roiIdentifier,
+                targetSeries: targetSeries
+            )
+        }
+        refreshScoutROIs(in: context)
+    }
 
+    private func refreshScoutROIs(in context: MetalViewerPatientContext) {
+        context.scoutLaneView.scoutView.setROIs(
+            context.roiStore.rois,
+            selectedIdentifier: context.roiStore.selectedROIIdentifier,
+            displayedIdentifiers: context.displayedROIIdentifiers
+        )
+    }
+
+    private func beginAdjustingROIPosition(
+        _ identifier: UUID,
+        in context: MetalViewerPatientContext
+    ) {
+        guard let roi = context.roiStore.rois.first(where: { $0.id == identifier }),
+              let sourceSeries = context.study.series.first(where: {
+                  $0.identifier == roi.sourceSeriesIdentifier
+              }) ?? context.study.series.first(where: {
+                  $0.frameOfReferenceUID == roi.frameOfReferenceUID
+                      && $0.isDICOMSegmentation == false
+              }) else {
+            NSSound.beep()
+            return
+        }
+
+        context.roiStore.select(identifier)
+        context.displayedROIIdentifiers.insert(identifier)
+        var pane = paneViews.first(where: { $0.series.identifier == sourceSeries.identifier })
+        if pane == nil {
+            addPane(for: sourceSeries, makeActive: true)
+            pane = activePaneView
+        }
+        guard let pane else {
+            NSSound.beep()
+            return
+        }
+        setActivePane(pane)
+        roiCommandPatientContext = context
+        viewerMode = .mpr3D
+        pane.setDisplayMode(.mpr3D)
+        toolbarView.selectViewerMode(.mpr3D)
+        refreshStudyROIBindings()
+        setStudyROIEditingMode(.translate, in: pane)
+        refreshScoutROIs(in: context)
+        toolbarView.updateStatus(
+            NSLocalizedString(
+                "Drag the ROI in any MPR plane to adjust its position. Use another plane to correct depth; press Escape when finished.",
+                comment: ""
+            )
+        )
+    }
+
+    @discardableResult
+    func addPatientStudy(
+        _ study: MetalViewerStudy,
+        selectInitialSeries: Bool
+    ) -> Bool {
+        if let existingContext = patientContext(identifier: study.patientIdentity.identifier) {
+            _ = updatePatientStudy(
+                study,
+                selectInitialSeries: selectInitialSeries,
+                revealSelectedSeriesInScout: true
+            )
+            return true
+        }
+        guard secondaryPatientContext == nil else {
+            NSSound.beep()
+            toolbarView.updateStatus(
+                NSLocalizedString("The Metal Planar workspace currently supports two patients.", comment: "")
+            )
+            return false
+        }
+
+        let context = MetalViewerPatientContext(study: study, placement: scoutPlacement)
+        secondaryPatientContext = context
+        configurePatientContext(context)
+        scoutLaneStackView.addArrangedSubview(context.scoutLaneView)
+        configureScoutLaneStack(for: scoutPlacement)
+        let expandedScoutDimension = clampedScoutDimension(
+            max(
+                currentScoutDimension * 2 + scoutLaneStackView.spacing,
+                Layout.defaultScoutDimension * 2
+            )
+        )
+        contentSplitView.setPosition(
+            dividerPosition(forScoutDimension: expandedScoutDimension),
+            ofDividerAt: 0
+        )
+        activeScoutDimensionConstraint.constant = currentScoutDimension
+        updateWindowTitle()
+
+        if selectInitialSeries,
+           let series = study.series.first(where: { $0.identifier == study.initialSeriesIdentifier })
+                ?? study.series.first {
+            addPane(for: series, makeActive: true)
+        }
+        recalibrateScoutLayoutAfterPresentation()
+        return true
+    }
+
+    @discardableResult
+    func updatePatientStudy(
+        _ study: MetalViewerStudy,
+        selectInitialSeries: Bool = false,
+        revealSelectedSeriesInScout: Bool = false
+    ) -> Int {
+        guard let context = patientContext(identifier: study.patientIdentity.identifier) else {
+            return addPatientStudy(study, selectInitialSeries: selectInitialSeries) ? 1 : 0
+        }
+        return updateStudy(
+            study,
+            in: context,
+            selectInitialSeries: selectInitialSeries,
+            revealSelectedSeriesInScout: revealSelectedSeriesInScout
+        )
+    }
+
+    private func configureScoutLaneStack(for placement: MetalViewerScoutPlacement) {
+        NSLayoutConstraint.deactivate(scoutLaneCrossAxisConstraints)
+        NSLayoutConstraint.deactivate(scoutLaneEqualSizeConstraints)
+        scoutLaneStackView.orientation = placement.usesVerticalTimeline ? .horizontal : .vertical
+        scoutLaneStackView.distribution = .fillEqually
+        scoutLaneStackView.alignment = placement.usesVerticalTimeline ? .height : .width
+        let resizeOrientation: NSLayoutConstraint.Orientation = placement.usesVerticalTimeline
+            ? .horizontal
+            : .vertical
+        patientContexts.forEach {
+            $0.scoutLaneView.setContentHuggingPriority(.defaultLow, for: resizeOrientation)
+            $0.scoutLaneView.setContentCompressionResistancePriority(
+                .defaultLow,
+                for: resizeOrientation
+            )
+        }
+        scoutLaneCrossAxisConstraints = patientContexts.map { context in
+            if placement.usesVerticalTimeline {
+                return context.scoutLaneView.heightAnchor.constraint(
+                    equalTo: scoutLaneStackView.heightAnchor
+                )
+            }
+            return context.scoutLaneView.widthAnchor.constraint(
+                equalTo: scoutLaneStackView.widthAnchor
+            )
+        }
+        if let firstLane = patientContexts.first?.scoutLaneView {
+            scoutLaneEqualSizeConstraints = patientContexts.dropFirst().map { context in
+                if placement.usesVerticalTimeline {
+                    return context.scoutLaneView.widthAnchor.constraint(equalTo: firstLane.widthAnchor)
+                }
+                return context.scoutLaneView.heightAnchor.constraint(equalTo: firstLane.heightAnchor)
+            }
+        } else {
+            scoutLaneEqualSizeConstraints = []
+        }
+        NSLayoutConstraint.activate(scoutLaneCrossAxisConstraints)
+        NSLayoutConstraint.activate(scoutLaneEqualSizeConstraints)
+        patientContexts.forEach {
+            $0.scoutLaneView.setShowsTitle(secondaryPatientContext != nil)
+            $0.scoutLaneView.scoutView.setPlacement(placement)
+        }
+    }
+
+    private func updateWindowTitle() {
+        window?.title = patientContexts.map { $0.study.title }.joined(separator: "  |  ")
     }
 
     deinit {
-        studyROIStore.flushPendingPersistence()
+        patientContexts.forEach { $0.roiStore.flushPendingPersistence() }
+        if Self.roiColorPanelOwner === self {
+            NSColorPanel.shared.setTarget(nil)
+            NSColorPanel.shared.setAction(nil)
+            Self.roiColorPanelOwner = nil
+        }
         if let annotationDefaultsObserver {
             NotificationCenter.default.removeObserver(annotationDefaultsObserver)
         }
         if let scoutPlacementObserver {
             NotificationCenter.default.removeObserver(scoutPlacementObserver)
+        }
+        if let roiOverlayPreferencesObserver {
+            NotificationCenter.default.removeObserver(roiOverlayPreferencesObserver)
         }
     }
 
@@ -489,16 +851,16 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMinimumPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
         guard splitView === contentSplitView, dividerIndex == 0 else { return proposedMinimumPosition }
         let minimumPosition = isScoutFirst
-            ? Layout.minimumScoutDimension
+            ? minimumScoutDimension
             : minimumPaneDimension
         return max(proposedMinimumPosition, minimumPosition)
     }
 
     func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMaximumPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
         guard splitView === contentSplitView, dividerIndex == 0 else { return proposedMaximumPosition }
-        let trailingMinimum = isScoutFirst ? minimumPaneDimension : Layout.minimumScoutDimension
+        let trailingMinimum = isScoutFirst ? minimumPaneDimension : minimumScoutDimension
         let maximumPosition = max(
-            isScoutFirst ? Layout.minimumScoutDimension : minimumPaneDimension,
+            isScoutFirst ? minimumScoutDimension : minimumPaneDimension,
             splitLength - splitView.dividerThickness - trailingMinimum
         )
         return min(proposedMaximumPosition, maximumPosition)
@@ -507,7 +869,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     func splitViewDidResizeSubviews(_ notification: Notification) {
         guard notification.object as AnyObject? === contentSplitView else { return }
         activeScoutDimensionConstraint.constant = currentScoutDimension
-        scoutView.recalibrateLayoutForCurrentDimension()
+        patientContexts.forEach { $0.scoutLaneView.scoutView.recalibrateLayoutForCurrentDimension() }
         saveSplitPosition()
     }
 
@@ -559,7 +921,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         )
         contentSplitView.adjustSubviews()
         activeScoutDimensionConstraint.constant = currentScoutDimension
-        scoutView.recalibrateLayoutForCurrentDimension()
+        patientContexts.forEach { $0.scoutLaneView.scoutView.recalibrateLayoutForCurrentDimension() }
     }
 
     private func saveSplitPosition() {
@@ -574,10 +936,16 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
 
     private func clampedScoutDimension(_ dimension: CGFloat) -> CGFloat {
         let maximumDimension = max(
-            Layout.minimumScoutDimension,
+            minimumScoutDimension,
             splitLength - contentSplitView.dividerThickness - minimumPaneDimension
         )
-        return min(max(dimension, Layout.minimumScoutDimension), maximumDimension)
+        return min(max(dimension, minimumScoutDimension), maximumDimension)
+    }
+
+    private var minimumScoutDimension: CGFloat {
+        secondaryPatientContext == nil
+            ? Layout.minimumScoutDimension
+            : Layout.minimumScoutDimension * 2 + scoutLaneStackView.spacing
     }
 
     private static func savedScoutDimension(
@@ -635,6 +1003,13 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             : Layout.scoutHeightAutosaveKey
     }
 
+    private func applyStudyROISurfacePreferences() {
+        let opacity = MetalViewerMPRROIOverlayPreferences.opacity
+        for pane in paneViews {
+            pane.setStudyROISurfaceOpacity(opacity)
+        }
+    }
+
     private func dividerPosition(forScoutDimension dimension: CGFloat) -> CGFloat {
         if isScoutFirst {
             return dimension
@@ -677,7 +1052,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             splitLength: splitLength
         )
         activeScoutDimensionConstraint.isActive = true
-        scoutView.setPlacement(placement)
+        configureScoutLaneStack(for: placement)
 
         window?.contentView?.layoutSubtreeIfNeeded()
         contentSplitView.layoutSubtreeIfNeeded()
@@ -705,7 +1080,11 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         }
 
         let pane = MetalViewerPaneView(series: series)
-        pane.configureStudyROI(store: studyROIStore)
+        guard let context = patientContext(for: series) else {
+            NSSound.beep()
+            return
+        }
+        pane.configureStudyROI(store: context.roiStore)
         pane.setMouseToolAssignments(mouseToolAssignments)
         pane.setDisplayMode(displayMode(for: viewerMode))
         pane.activateHandler = { [weak self, weak pane] in
@@ -756,6 +1135,11 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
                 overlaySeries: overlaySeries
             )
             self?.refreshStudyROIBindings()
+            self?.completePendingROITransfer(
+                baseSeries: baseSeries,
+                overlaySeries: overlaySeries,
+                transform: transform
+            )
         }
         pane.studyROIEditingModeDidChange = { [weak self, weak pane] mode in
             guard let self, let pane, self.activePaneView === pane else { return }
@@ -765,6 +1149,10 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         pane.studyROIRefinementHandler = { [weak self, weak pane] preview in
             guard let self, let pane, self.activePaneView === pane else { return }
             self.scheduleInteractiveROIRefinement(preview: preview)
+        }
+        pane.mprRotationDidChange = { [weak self, weak pane] rotation in
+            guard let self, let pane, self.activePaneView === pane else { return }
+            self.patientContext(for: pane.series)?.scoutLaneView.scoutView.setROIRotation(rotation)
         }
         pane.closeHandler = { [weak self, weak pane] in
             guard let self, let pane else { return }
@@ -796,11 +1184,13 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         if activePaneView !== pane, studyROIEditingMode != .inactive {
             setStudyROIEditingMode(.inactive, in: nil)
         }
+        roiCommandPatientContext = nil
         activePaneView = pane
         for candidate in paneViews {
             candidate.isActive = (candidate === pane)
         }
         updateScoutHighlights(for: pane)
+        patientContext(for: pane.series)?.scoutLaneView.scoutView.setROIRotation(pane.mprSceneRotation)
         reloadWLWWMenu(for: pane)
         reloadStudyROIMenu()
         pane.focusImageView()
@@ -895,7 +1285,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     }
 
     private func assignSeries(withIdentifier identifier: String, to pane: MetalViewerPaneView, overlay: Bool) {
-        guard let series = study.series.first(where: { $0.identifier == identifier }) else {
+        guard let series = allSeries.first(where: { $0.identifier == identifier }) else {
             NSSound.beep()
             return
         }
@@ -957,7 +1347,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         guard let baseMetadata = baseSeries.registrationMetadata else { return nil }
         let baseModality = baseSeries.modality.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
 
-        let candidates = study.series.filter { candidate in
+        let candidates = allSeries.filter { candidate in
             guard candidate.studyIdentifier == studyIdentifier,
                   candidate.modality.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == baseModality,
                   excludedSeries.allSatisfy({ $0.sharesSourceSeries(with: candidate) == false }),
@@ -1060,6 +1450,156 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         registrationTransformsByFramePair[key] = transform
     }
 
+    private func beginROITransfer(
+        sourcePatientIdentifier: String,
+        roiIdentifier: UUID,
+        targetSeries: MetalViewerSeries
+    ) {
+        guard sourcePatientIdentifier != targetSeries.patientIdentity.identifier,
+              let sourceContext = patientContext(identifier: sourcePatientIdentifier),
+              let targetContext = patientContext(for: targetSeries),
+              let sourceROI = sourceContext.roiStore.rois.first(where: { $0.id == roiIdentifier }),
+              let sourceSeries = sourceContext.study.series.first(where: {
+                  $0.identifier == sourceROI.sourceSeriesIdentifier
+              }) ?? sourceContext.study.series.first(where: {
+                  $0.frameOfReferenceUID == sourceROI.frameOfReferenceUID
+                      && $0.isDICOMSegmentation == false
+              }),
+              sourceSeries.frameOfReferenceUID != nil,
+              targetSeries.frameOfReferenceUID != nil else {
+            NSSound.beep()
+            toolbarView.updateStatus(
+                NSLocalizedString("The ROI and target series do not contain enough spatial information for transfer.", comment: "")
+            )
+            return
+        }
+
+        pendingROITransfer = PendingROITransfer(
+            sourcePatientIdentifier: sourcePatientIdentifier,
+            sourceROIIdentifier: roiIdentifier,
+            sourceSeriesIdentifier: sourceSeries.identifier,
+            targetPatientIdentifier: targetContext.study.patientIdentity.identifier,
+            targetSeriesIdentifier: targetSeries.identifier
+        )
+        toolbarView.updateStatus(
+            String(
+                format: NSLocalizedString("Registering %@ to %@ before copying ROI…", comment: ""),
+                sourceContext.study.patientIdentity.displayName,
+                targetContext.study.patientIdentity.displayName
+            )
+        )
+
+        var targetPane = paneViews.first {
+            $0.series.identifier == targetSeries.identifier
+        }
+        if targetPane == nil {
+            addPane(for: targetSeries, makeActive: true)
+            targetPane = activePaneView
+        } else if let targetPane {
+            setActivePane(targetPane)
+        }
+        guard let targetPane else {
+            pendingROITransfer = nil
+            NSSound.beep()
+            return
+        }
+        if targetPane.series.identifier != targetSeries.identifier {
+            targetPane.display(series: targetSeries)
+        }
+        targetPane.overlay(series: sourceSeries)
+
+        if let transform = registrationTransform(
+            forBaseSeries: targetSeries,
+            overlaySeries: sourceSeries
+        ) {
+            completePendingROITransfer(
+                baseSeries: targetSeries,
+                overlaySeries: sourceSeries,
+                transform: transform
+            )
+        }
+    }
+
+    private func completePendingROITransfer(
+        baseSeries: MetalViewerSeries,
+        overlaySeries: MetalViewerSeries,
+        transform: MetalViewerRegistrationWorldTransform
+    ) {
+        guard let pending = pendingROITransfer,
+              pending.targetSeriesIdentifier == baseSeries.identifier,
+              pending.sourceSeriesIdentifier == overlaySeries.identifier else {
+            return
+        }
+        pendingROITransfer = nil
+        guard
+              let sourceContext = patientContext(identifier: pending.sourcePatientIdentifier),
+              let targetContext = patientContext(identifier: pending.targetPatientIdentifier),
+              let sourceROI = sourceContext.roiStore.rois.first(where: {
+                  $0.id == pending.sourceROIIdentifier
+              }),
+              let targetSeries = targetContext.study.series.first(where: {
+                  $0.identifier == pending.targetSeriesIdentifier
+              }),
+              let targetFrameUID = targetSeries.frameOfReferenceUID,
+              let transferredROI = sourceROI.transferred(
+                  movingToFixedWorld: transform.movingToFixedWorld,
+                  studyInstanceUID: targetSeries.studyIdentifier,
+                  frameOfReferenceUID: targetFrameUID,
+                  sourceSeriesIdentifier: targetSeries.identifier
+              ),
+              targetSeriesContainsTransferredROICenter(
+                  transferredROI.center.vector,
+                  series: targetSeries
+              ) else {
+            NSSound.beep()
+            toolbarView.updateStatus(
+                NSLocalizedString("ROI transfer stopped because the registered result did not land within the target image volume.", comment: "")
+            )
+            return
+        }
+
+        roiCommandPatientContext = targetContext
+        targetContext.displayedROIIdentifiers.insert(transferredROI.id)
+        targetContext.roiStore.addTransferredROI(transferredROI)
+        refreshScoutROIs(in: targetContext)
+        refreshStudyROIBindings()
+        reloadStudyROIMenu()
+        toolbarView.updateStatus(
+            String(
+                format: NSLocalizedString("Copied ROI to %@. Refine it on the target images before clinical use.", comment: ""),
+                targetContext.study.patientIdentity.displayName
+            )
+        )
+    }
+
+    private func targetSeriesContainsTransferredROICenter(
+        _ point: SIMD3<Double>,
+        series: MetalViewerSeries
+    ) -> Bool {
+        let geometries = series.loadedPixList().compactMap { MetalViewerSliceGeometry(pix: $0) }
+        guard let firstGeometry = geometries.first else { return false }
+        let nearestGeometry = geometries.min {
+            abs(simd_dot(point - $0.origin, $0.normal))
+                < abs(simd_dot(point - $1.origin, $1.normal))
+        } ?? firstGeometry
+        let pixelPoint = nearestGeometry.slicePoint(from: point)
+        let horizontalMargin = nearestGeometry.width * 0.25
+        let verticalMargin = nearestGeometry.height * 0.25
+        guard Double(pixelPoint.x) >= -horizontalMargin,
+              Double(pixelPoint.x) <= nearestGeometry.width + horizontalMargin,
+              Double(pixelPoint.y) >= -verticalMargin,
+              Double(pixelPoint.y) <= nearestGeometry.height + verticalMargin else {
+            return false
+        }
+        let signedDistances = geometries.map {
+            simd_dot($0.origin - firstGeometry.origin, firstGeometry.normal)
+        }
+        let pointDistance = simd_dot(point - firstGeometry.origin, firstGeometry.normal)
+        let minimumDistance = (signedDistances.min() ?? 0) - 20
+        let maximumDistance = (signedDistances.max() ?? 0) + 20
+        return pointDistance >= minimumDistance && pointDistance <= maximumDistance
+    }
+
     private func registrationSupportSelection(
         forBaseSeries baseSeries: MetalViewerSeries,
         overlaySeries: MetalViewerSeries
@@ -1090,7 +1630,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             return nil
         }
 
-        let supportCandidates = study.series.filter { candidate in
+        let supportCandidates = allSeries.filter { candidate in
             guard candidate !== mrSeries,
                   candidate.studyIdentifier == mrSeries.studyIdentifier,
                   candidate.isMagneticResonance,
@@ -1215,7 +1755,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             for primarySeries: MetalViewerSeries,
             frameUID: String
         ) -> [MetalViewerSeries] {
-            study.series.filter { candidate in
+            allSeries.filter { candidate in
                 guard candidate !== primarySeries,
                       candidate.studyIdentifier == primarySeries.studyIdentifier,
                       candidate.isMagneticResonance,
@@ -1334,9 +1874,23 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         selectInitialSeries: Bool = false,
         revealSelectedSeriesInScout: Bool = false
     ) -> Int {
+        updateStudy(
+            study,
+            in: primaryPatientContext,
+            selectInitialSeries: selectInitialSeries,
+            revealSelectedSeriesInScout: revealSelectedSeriesInScout
+        )
+    }
+
+    private func updateStudy(
+        _ study: MetalViewerStudy,
+        in context: MetalViewerPatientContext,
+        selectInitialSeries: Bool,
+        revealSelectedSeriesInScout: Bool
+    ) -> Int {
         for series in study.series {
-            let previousSeries = self.study.series.first(where: { $0.identifier == series.identifier })
-                ?? self.study.series.first(where: { $0.sharesSourceSeries(with: series) })
+            let previousSeries = context.study.series.first(where: { $0.identifier == series.identifier })
+                ?? context.study.series.first(where: { $0.sharesSourceSeries(with: series) })
             if let previousSeries {
                 let automaticWindowNeedsRefresh =
                     previousSeries.windowLevelPresetTitle == NSLocalizedString("Auto", comment: "")
@@ -1348,26 +1902,33 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
                 series.transferFunctionState = previousSeries.transferFunctionState
             }
         }
-        self.study = study
-        window?.title = study.title
-        scoutView.reload(
+        context.study = study
+        context.scoutLaneView.updateTitle(study.patientIdentity.displayName)
+        let contextScout = context.scoutLaneView.scoutView
+        contextScout.reload(
             series: study.series,
             procedureEvents: study.procedureEvents,
             loadThumbnailsImmediately: false
         )
-        studyROIStore.mergeRestoredROIs(studyROIPersistence.updateStudy(study))
-        scoutView.setROIs(
-            studyROIStore.rois,
-            selectedIdentifier: studyROIStore.selectedROIIdentifier
-        )
+        context.roiStore.mergeRestoredROIs(context.roiPersistence.updateStudy(study))
+        refreshScoutROIs(in: context)
+        updateWindowTitle()
         let selectedSeries = selectInitialSeries
             ? study.series.first(where: { $0.identifier == study.initialSeriesIdentifier })
-            : activePaneView.flatMap { matchingSeries(for: $0.series, in: study) }
+            : activePaneView.flatMap {
+                $0.series.patientIdentity == study.patientIdentity
+                    ? matchingSeries(for: $0.series, in: study)
+                    : nil
+            }
         let selectedIdentifier = selectedSeries?.identifier ?? study.initialSeriesIdentifier
         let selectedOverlayIdentifier = selectInitialSeries
             ? nil
-            : activePaneView?.overlaySeries.flatMap { matchingSeries(for: $0, in: study) }?.identifier
-        scoutView.setDisplayedSeries(
+            : activePaneView?.overlaySeries.flatMap {
+                $0.patientIdentity == study.patientIdentity
+                    ? matchingSeries(for: $0, in: study)
+                    : nil
+            }?.identifier
+        contextScout.setDisplayedSeries(
             primaryIdentifier: selectedIdentifier,
             overlayIdentifier: selectedOverlayIdentifier,
             scrollToVisible: revealSelectedSeriesInScout
@@ -1375,12 +1936,17 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
 
         var refreshedPaneCount = 0
         for pane in paneViews {
-            guard let updatedSeries = matchingSeries(for: pane.series, in: study) else {
-                continue
-            }
+            let baseBelongsToContext = pane.series.patientIdentity == study.patientIdentity
+            let overlayBelongsToContext = pane.overlaySeries?.patientIdentity == study.patientIdentity
+            guard baseBelongsToContext || overlayBelongsToContext else { continue }
+            let updatedSeries = baseBelongsToContext
+                ? (matchingSeries(for: pane.series, in: study) ?? pane.series)
+                : pane.series
             let syncedScale = synchronizedScaleValue(excluding: pane) ?? pane.currentScale
             let updatedOverlaySeries = pane.overlaySeries.flatMap { overlaySeries in
-                matchingSeries(for: overlaySeries, in: study)
+                overlayBelongsToContext
+                    ? (matchingSeries(for: overlaySeries, in: study) ?? overlaySeries)
+                    : overlaySeries
             }
             if pane.refreshAfterDatabaseUpdate(series: updatedSeries, overlaySeries: updatedOverlaySeries) {
                 applySyncedScaleIfNeeded(to: pane, preferredScale: syncedScale)
@@ -1390,7 +1956,9 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
 
         if selectInitialSeries,
            let selectedSeries = study.series.first(where: { $0.identifier == study.initialSeriesIdentifier }),
-           let targetPane = activePaneView ?? paneViews.first {
+           let targetPane = paneViews.first(where: {
+               $0.series.patientIdentity == study.patientIdentity
+           }) ?? activePaneView ?? paneViews.first {
             let syncedScale = synchronizedScaleValue(excluding: targetPane) ?? targetPane.currentScale
             targetPane.display(series: selectedSeries)
             applySyncedScaleIfNeeded(to: targetPane, preferredScale: syncedScale)
@@ -1414,10 +1982,18 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     }
 
     private func updateScoutHighlights(for pane: MetalViewerPaneView) {
-        scoutView.setDisplayedSeries(
-            primaryIdentifier: pane.series.identifier,
-            overlayIdentifier: pane.overlaySeries?.identifier
-        )
+        for context in patientContexts {
+            let primaryIdentifier = pane.series.patientIdentity == context.study.patientIdentity
+                ? pane.series.identifier
+                : nil
+            let overlayIdentifier = pane.overlaySeries?.patientIdentity == context.study.patientIdentity
+                ? pane.overlaySeries?.identifier
+                : nil
+            context.scoutLaneView.scoutView.setDisplayedSeries(
+                primaryIdentifier: primaryIdentifier,
+                overlayIdentifier: overlayIdentifier
+            )
+        }
     }
 
     private func updateToolbarStatus() {
@@ -1459,6 +2035,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         switch command {
         case let .select(identifier):
             setStudyROIEditingMode(.inactive, in: nil)
+            displayedROIIdentifiers.insert(identifier)
             studyROIStore.select(identifier)
         case .newSphere:
             guard let activePaneView else {
@@ -1523,6 +2100,8 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             }
         case .rename:
             renameSelectedROI()
+        case .color:
+            showSelectedROIColorPanel()
         case .delete:
             deleteSelectedROI()
         case .undo:
@@ -1543,69 +2122,75 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     }
 
     private func refreshStudyROIBindings() {
-        guard let roi = studyROIStore.selectedROI,
-              let canonicalSeries = study.series.first(where: {
-                  $0.isDICOMSegmentation == false
-                      && $0.identifier == roi.sourceSeriesIdentifier
-              })
-                ?? study.series.first(where: {
-                    $0.isDICOMSegmentation == false
-                        && $0.frameOfReferenceUID == roi.frameOfReferenceUID
-                }) else {
-            paneViews.forEach {
-                $0.configureStudyROI(store: studyROIStore, currentToCanonicalTransform: matrix_identity_float4x4)
-                $0.refreshStudyROIOverlay()
-            }
-            return
-        }
-
         for pane in paneViews {
-            let currentFrame = pane.series.frameOfReferenceUID
-            let canonicalFrame = canonicalSeries.frameOfReferenceUID
-            let transform: simd_float4x4?
-            if pane.series.identifier == canonicalSeries.identifier || currentFrame == canonicalFrame {
-                transform = matrix_identity_float4x4
-            } else if currentFrame == nil || canonicalFrame == nil {
-                transform = nil
-            } else {
-                transform = registrationTransform(
-                    forBaseSeries: canonicalSeries,
-                    overlaySeries: pane.series
-                )?.movingToFixedWorld
+            guard let context = patientContext(for: pane.series) else { continue }
+            let displayedROIs = context.roiStore.rois.filter {
+                context.displayedROIIdentifiers.contains($0.id)
             }
-            pane.configureStudyROI(store: studyROIStore, currentToCanonicalTransform: transform)
+            let selectedTransform = context.roiStore.selectedROI.flatMap {
+                currentToCanonicalTransform(for: $0, displayedIn: pane.series)
+            }
+            pane.configureStudyROI(
+                store: context.roiStore,
+                currentToCanonicalTransform: context.roiStore.selectedROI == nil
+                    ? matrix_identity_float4x4
+                    : selectedTransform
+            )
+            let projections = displayedROIs.compactMap { roi -> MetalStudyROISurfaceProjection? in
+                guard let transform = currentToCanonicalTransform(for: roi, displayedIn: pane.series) else {
+                    return nil
+                }
+                return MetalStudyROISurfaceProjection(
+                    roi: roi,
+                    currentToCanonicalTransform: transform
+                )
+            }
+            pane.setStudyROISurfaces(projections)
             pane.refreshStudyROIOverlay()
         }
     }
 
+    private func synchronizeDisplayedROIsWithStore(in context: MetalViewerPatientContext) {
+        let validIdentifiers = Set(context.roiStore.rois.map(\.id))
+        context.displayedROIIdentifiers.formIntersection(validIdentifiers)
+        context.displayedROIIdentifiers.formUnion(
+            validIdentifiers.subtracting(context.knownROIIdentifiers)
+        )
+        context.knownROIIdentifiers = validIdentifiers
+    }
+
+    private func toggleMPRVisibility(for identifier: UUID) {
+        if displayedROIIdentifiers.remove(identifier) == nil {
+            displayedROIIdentifiers.insert(identifier)
+        }
+        refreshStudyROIBindings()
+        refreshScoutROIs(in: activePatientContext)
+    }
+
     private func canProjectSelectedROI(into series: MetalViewerSeries) -> Bool {
-        guard let roi = studyROIStore.selectedROI,
-              let canonicalSeries = study.series.first(where: {
-                  $0.isDICOMSegmentation == false
-                      && $0.identifier == roi.sourceSeriesIdentifier
-              })
-                ?? study.series.first(where: {
-                    $0.isDICOMSegmentation == false
-                        && $0.frameOfReferenceUID == roi.frameOfReferenceUID
-                }) else {
-            return true
-        }
-        if series.identifier == canonicalSeries.identifier
-            || series.frameOfReferenceUID == canonicalSeries.frameOfReferenceUID {
-            return true
-        }
-        return registrationTransform(forBaseSeries: canonicalSeries, overlaySeries: series) != nil
+        guard let roi = studyROIStore.selectedROI else { return true }
+        return currentToCanonicalTransform(for: roi, displayedIn: series) != nil
     }
 
     private func selectedROICurrentToCanonicalTransform(
         for series: MetalViewerSeries
     ) -> simd_float4x4? {
-        guard let roi = studyROIStore.selectedROI,
-              let canonicalSeries = study.series.first(where: {
+        guard let roi = studyROIStore.selectedROI else { return matrix_identity_float4x4 }
+        return currentToCanonicalTransform(for: roi, displayedIn: series)
+    }
+
+    private func currentToCanonicalTransform(
+        for roi: MetalStudyROI,
+        displayedIn series: MetalViewerSeries
+    ) -> simd_float4x4? {
+        let roiContext = patientContexts.first {
+            $0.roiStore.rois.contains(where: { $0.id == roi.id })
+        } ?? patientContext(for: series)
+        guard let canonicalSeries = roiContext?.study.series.first(where: {
                   $0.isDICOMSegmentation == false
                       && $0.identifier == roi.sourceSeriesIdentifier
               })
-                ?? study.series.first(where: {
+                ?? roiContext?.study.series.first(where: {
                     $0.isDICOMSegmentation == false
                         && $0.frameOfReferenceUID == roi.frameOfReferenceUID
                 }) else {
@@ -1621,6 +2206,32 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             forBaseSeries: canonicalSeries,
             overlaySeries: series
         )?.movingToFixedWorld
+    }
+
+    private func showSelectedROIColorPanel() {
+        guard let roi = studyROIStore.selectedROI else {
+            NSSound.beep()
+            return
+        }
+        colorPanelROIIdentifier = roi.id
+        let panel = NSColorPanel.shared
+        panel.title = String(
+            format: NSLocalizedString("ROI Color — %@", comment: ""),
+            roi.name
+        )
+        panel.showsAlpha = false
+        panel.isContinuous = false
+        panel.color = roi.color
+        panel.setTarget(self)
+        panel.setAction(#selector(roiColorPanelDidChange(_:)))
+        Self.roiColorPanelOwner = self
+        panel.orderFront(nil)
+    }
+
+    @objc
+    private func roiColorPanelDidChange(_ sender: NSColorPanel) {
+        guard let identifier = colorPanelROIIdentifier else { return }
+        studyROIStore.setColor(sender.color, for: identifier)
     }
 
     private func refineSelectedROIFromImage() {
@@ -1742,6 +2353,8 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         // External DICOM SEGs contain a precise voxel mask but no Horos authoring
         // landmarks. Give the refinement request a movable boundary scaffold
         // without mutating the stored ROI unless a successful result is applied.
+        let preservesEstablishedBoundary = storedROI.voxelField?.isValid == true
+            && (storedROI.automaticAnchorCount > 0 || storedROI.manualAnchorCount > 0)
         var roi = storedROI
         roi.seedAutomaticBoundaryScaffoldIfNeeded()
         if showsFeedback, isStudyROIRefinementInProgress {
@@ -1775,7 +2388,8 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         let request = MetalStudyROIRefinementRequest(
             roi: roi,
             pixList: targetSeries.loadedPixList(),
-            canonicalToSeriesWorld: simd_inverse(currentToCanonical)
+            canonicalToSeriesWorld: simd_inverse(currentToCanonical),
+            preservesEstablishedBoundary: preservesEstablishedBoundary
         )
         studyROIRefinementQueue.async { [weak self] in
             let result = request.run(

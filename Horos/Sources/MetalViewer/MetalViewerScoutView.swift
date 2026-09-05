@@ -94,6 +94,17 @@ private enum MetalViewerScoutTimelineEntry {
 extension NSPasteboard.PasteboardType {
     static let metalViewerSeriesIdentifier = NSPasteboard.PasteboardType("org.horos.metalviewer.series-id")
     static let metalViewerDropMode = NSPasteboard.PasteboardType("org.horos.metalviewer.drop-mode")
+    static let metalViewerROIIdentifier = NSPasteboard.PasteboardType("org.horos.metalviewer.roi-id")
+    static let metalViewerROIPatientIdentifier = NSPasteboard.PasteboardType("org.horos.metalviewer.roi-patient-id")
+}
+
+enum MetalViewerScoutROIContextCommand {
+    case toggleMPRVisibility
+    case adjustPosition
+    case duplicate
+    case rename
+    case color
+    case delete
 }
 
 final class MetalViewerScoutView: NSScrollView {
@@ -104,17 +115,22 @@ final class MetalViewerScoutView: NSScrollView {
     private var currentSeries: [MetalViewerSeries]
     private var currentProcedureEvents: [SurgicalProcedureEvent]
     private var currentROIs: [MetalStudyROI] = []
+    private var displayedROIIdentifiers: Set<UUID> = []
     private var itemViews: [MetalViewerScoutItemView] = []
     private var groupViews: [MetalViewerScoutStudyGroupView] = []
     private var procedureViews: [MetalViewerScoutProcedureView] = []
     private var separatorViews: [MetalViewerScoutStudySeparatorView] = []
     private var roiViews: [MetalViewerScoutROIItemView] = []
     private var pendingThumbnailRefresh: DispatchWorkItem?
+    private var roiRotation = MetalViewerMPRSceneRotation.initial
 
     var selectionHandler: ((MetalViewerSeries) -> Void)?
     var openSeriesHandler: ((MetalViewerSeries) -> Void)?
     var overlaySeriesHandler: ((MetalViewerSeries) -> Void)?
     var roiSelectionHandler: ((UUID) -> Void)?
+    var roiContextCommandHandler: ((UUID, MetalViewerScoutROIContextCommand) -> Void)?
+    var roiRotationHandler: ((simd_quatf) -> Void)?
+    var roiTransferHandler: ((String, UUID, MetalViewerSeries) -> Void)?
 
     init(
         series: [MetalViewerSeries],
@@ -161,6 +177,21 @@ final class MetalViewerScoutView: NSScrollView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        for roiView in roiViews.reversed() {
+            let localPoint = roiView.convert(point, from: self)
+            guard roiView.bounds.contains(localPoint) else { continue }
+            return roiView.interactiveHitView(at: localPoint)
+        }
+        for itemView in itemViews.reversed() {
+            let localPoint = itemView.convert(point, from: self)
+            if itemView.bounds.contains(localPoint) {
+                return itemView
+            }
+        }
+        return super.hitTest(point)
     }
 
     func reload(
@@ -247,15 +278,30 @@ final class MetalViewerScoutView: NSScrollView {
                         self?.setSelectedSeries(identifier: overlaySeries.identifier)
                         self?.overlaySeriesHandler?(overlaySeries)
                     }
+                    item.onROITransfer = { [weak self] patientIdentifier, roiIdentifier, targetSeries in
+                        self?.roiTransferHandler?(patientIdentifier, roiIdentifier, targetSeries)
+                    }
                     groupView.addItem(item)
                     itemViews.append(item)
                 }
 
                 let studyIdentifier = studySeries.first?.studyIdentifier
                 for roi in currentROIs where roi.studyInstanceUID == studyIdentifier {
-                    let item = MetalViewerScoutROIItemView(roi: roi, placement: scoutPlacement)
+                    let item = MetalViewerScoutROIItemView(
+                        roi: roi,
+                        patientIdentifier: studySeries.first?.patientIdentity.identifier ?? "",
+                        placement: scoutPlacement
+                    )
+                    item.setRotation(roiRotation)
+                    item.setDisplayedInMPR(displayedROIIdentifiers.contains(roi.id))
                     item.onSelect = { [weak self] identifier in
                         self?.roiSelectionHandler?(identifier)
+                    }
+                    item.onRotation = { [weak self] rotation in
+                        self?.setROIRotation(rotation, notifyingHandler: true)
+                    }
+                    item.onContextCommand = { [weak self] identifier, command in
+                        self?.roiContextCommandHandler?(identifier, command)
                     }
                     groupView.addItem(item)
                     roiViews.append(item)
@@ -302,8 +348,13 @@ final class MetalViewerScoutView: NSScrollView {
         }
     }
 
-    func setROIs(_ rois: [MetalStudyROI], selectedIdentifier: UUID?) {
+    func setROIs(
+        _ rois: [MetalStudyROI],
+        selectedIdentifier: UUID?,
+        displayedIdentifiers: Set<UUID>
+    ) {
         currentROIs = rois
+        displayedROIIdentifiers = displayedIdentifiers
         let existingIdentifiers = Set(roiViews.map(\.roiIdentifier))
         let newIdentifiers = Set(rois.map(\.id))
         guard existingIdentifiers == newIdentifiers else {
@@ -317,6 +368,19 @@ final class MetalViewerScoutView: NSScrollView {
                 view.update(roi: roi)
             }
             view.setSelected(view.roiIdentifier == selectedIdentifier)
+            view.setDisplayedInMPR(displayedIdentifiers.contains(view.roiIdentifier))
+        }
+    }
+
+    func setROIRotation(_ rotation: simd_quatf) {
+        setROIRotation(rotation, notifyingHandler: false)
+    }
+
+    private func setROIRotation(_ rotation: simd_quatf, notifyingHandler: Bool) {
+        roiRotation = simd_normalize(rotation)
+        roiViews.forEach { $0.setRotation(roiRotation) }
+        if notifyingHandler {
+            roiRotationHandler?(roiRotation)
         }
     }
 
@@ -358,12 +422,12 @@ final class MetalViewerScoutView: NSScrollView {
     }
 
     func setDisplayedSeries(
-        primaryIdentifier: String,
+        primaryIdentifier: String?,
         overlayIdentifier: String?,
         scrollToVisible: Bool = false
     ) {
         for item in itemViews {
-            if let overlayIdentifier {
+            if let primaryIdentifier, let overlayIdentifier {
                 if item.series.identifier == primaryIdentifier {
                     item.highlight = .primaryOverlaySeries
                 } else if item.series.identifier == overlayIdentifier {
@@ -371,12 +435,14 @@ final class MetalViewerScoutView: NSScrollView {
                 } else {
                     item.highlight = .none
                 }
-            } else {
+            } else if let primaryIdentifier {
                 item.highlight = item.series.identifier == primaryIdentifier ? .singleSeries : .none
+            } else {
+                item.highlight = .none
             }
         }
 
-        if scrollToVisible {
+        if scrollToVisible, let primaryIdentifier {
             DispatchQueue.main.async { [weak self] in
                 self?.scrollSeriesToVisible(identifier: primaryIdentifier)
             }
@@ -737,9 +803,53 @@ private final class MetalViewerScoutStudyGroupView: NSView {
     }
 }
 
-private struct MetalViewerScoutROIVertex {
+struct MetalStudyROISurfaceVertex {
     var position: SIMD3<Float>
     var normal: SIMD3<Float>
+}
+
+func metalStudyROISurfaceVertices(for roi: MetalStudyROI) -> [MetalStudyROISurfaceVertex] {
+    MetalStudyROISurfaceMeshCache.shared.vertices(for: roi)
+}
+
+private final class MetalStudyROISurfaceMeshCache: @unchecked Sendable {
+    static let shared = MetalStudyROISurfaceMeshCache()
+
+    private struct Entry {
+        let roi: MetalStudyROI
+        let vertices: [MetalStudyROISurfaceVertex]
+    }
+
+    private let lock = NSLock()
+    private var entries: [UUID: Entry] = [:]
+
+    func vertices(for roi: MetalStudyROI) -> [MetalStudyROISurfaceVertex] {
+        lock.lock()
+        if let entry = entries[roi.id], hasSameSurfaceGeometry(entry.roi, roi) {
+            lock.unlock()
+            return entry.vertices
+        }
+        lock.unlock()
+
+        let vertices = MetalViewerScoutROIRenderer.makeCanonicalSurfaceVertices(for: roi)
+        lock.lock()
+        if entries.count >= 8, entries[roi.id] == nil, let expiredIdentifier = entries.keys.first {
+            entries.removeValue(forKey: expiredIdentifier)
+        }
+        entries[roi.id] = Entry(roi: roi, vertices: vertices)
+        lock.unlock()
+        return vertices
+    }
+
+    private func hasSameSurfaceGeometry(_ lhs: MetalStudyROI, _ rhs: MetalStudyROI) -> Bool {
+        lhs.center == rhs.center
+            && lhs.radiusMM == rhs.radiusMM
+            && lhs.anchors == rhs.anchors
+            && lhs.anchorKinds == rhs.anchorKinds
+            && lhs.anchorBaselinePoints == rhs.anchorBaselinePoints
+            && lhs.supportRadiusMM == rhs.supportRadiusMM
+            && lhs.voxelField == rhs.voxelField
+    }
 }
 
 private struct MetalViewerScoutROIUniforms {
@@ -755,8 +865,7 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
     private let stateLock = NSLock()
     private var vertexBuffer: MTLBuffer?
     private var vertexCount = 0
-    private var yaw: Float = 0.58
-    private var pitch: Float = -0.34
+    private var rotationState = MetalViewerMPRSceneRotation.initial
     private var color = SIMD4<Float>(1, 1, 0, 1)
 
     init?(view: MTKView) {
@@ -798,7 +907,7 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
             ? nil
             : device.makeBuffer(
                 bytes: vertices,
-                length: MemoryLayout<MetalViewerScoutROIVertex>.stride * vertices.count,
+                length: MemoryLayout<MetalStudyROISurfaceVertex>.stride * vertices.count,
                 options: .storageModeShared
             )
         stateLock.lock()
@@ -808,16 +917,15 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
         stateLock.unlock()
     }
 
-    func rotation() -> (yaw: Float, pitch: Float) {
+    func rotation() -> simd_quatf {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return (yaw, pitch)
+        return rotationState
     }
 
-    func setRotation(yaw: Float, pitch: Float) {
+    func setRotation(_ rotation: simd_quatf) {
         stateLock.lock()
-        self.yaw = yaw
-        self.pitch = min(max(pitch, -.pi * 0.48), .pi * 0.48)
+        rotationState = simd_normalize(rotation)
         stateLock.unlock()
     }
 
@@ -828,7 +936,7 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
         let vertexBuffer = self.vertexBuffer
         let vertexCount = self.vertexCount
         var uniforms = MetalViewerScoutROIUniforms(
-            rotation: Self.rotationMatrix(yaw: yaw, pitch: pitch),
+            rotation: MetalViewerMPRSceneRotation.viewMatrix(for: rotationState),
             color: color
         )
         stateLock.unlock()
@@ -845,8 +953,7 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
         encoder.label = "Metal Planar ROI scout preview"
         encoder.setRenderPipelineState(pipelineState)
         encoder.setDepthStencilState(depthStencilState)
-        encoder.setFrontFacing(.counterClockwise)
-        encoder.setCullMode(.back)
+        encoder.setCullMode(.none)
         encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
         encoder.setVertexBytes(
             &uniforms,
@@ -864,13 +971,28 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
         commandBuffer.commit()
     }
 
-    private static func makeSurfaceVertices(for roi: MetalStudyROI) -> [MetalViewerScoutROIVertex] {
+    private static func makeSurfaceVertices(for roi: MetalStudyROI) -> [MetalStudyROISurfaceVertex] {
         let normalization = Float(0.86 / max(roi.conservativeBoundingRadiusMM, 0.5))
+        let center = SIMD3<Float>(
+            Float(roi.center.x),
+            Float(roi.center.y),
+            Float(roi.center.z)
+        )
+        return metalStudyROISurfaceVertices(for: roi).map {
+            MetalStudyROISurfaceVertex(
+                position: ($0.position - center) * normalization,
+                normal: $0.normal
+            )
+        }
+    }
+
+    fileprivate static func makeCanonicalSurfaceVertices(
+        for roi: MetalStudyROI
+    ) -> [MetalStudyROISurfaceVertex] {
         if let voxelField = roi.voxelField, voxelField.isValid {
             let vertices = makeVoxelSurfaceVertices(
                 for: roi,
-                field: voxelField,
-                normalization: normalization
+                field: voxelField
             )
             if vertices.isEmpty == false { return vertices }
         }
@@ -926,13 +1048,18 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
             faces = subdividedFaces
         }
 
+        let center = SIMD3<Float>(
+            Float(roi.center.x),
+            Float(roi.center.y),
+            Float(roi.center.z)
+        )
         let positions = directions.map { direction -> SIMD3<Float> in
             let doubleDirection = SIMD3<Double>(
                 Double(direction.x),
                 Double(direction.y),
                 Double(direction.z)
             )
-            return direction * Float(roi.surfaceRadius(along: doubleDirection)) * normalization
+            return center + direction * Float(roi.surfaceRadius(along: doubleDirection))
         }
         var normals = Array(repeating: SIMD3<Float>.zero, count: positions.count)
         var outwardFaces: [SIMD3<Int>] = []
@@ -943,7 +1070,7 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
             let second = positions[face.y]
             let third = positions[face.z]
             var faceNormal = simd_cross(second - first, third - first)
-            if simd_dot(faceNormal, first + second + third) < 0 {
+            if simd_dot(faceNormal, first + second + third - center * 3) < 0 {
                 outwardFace = SIMD3<Int>(face.x, face.z, face.y)
                 faceNormal = -faceNormal
             }
@@ -958,12 +1085,12 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
                 : directions[index]
         }
 
-        var vertices: [MetalViewerScoutROIVertex] = []
+        var vertices: [MetalStudyROISurfaceVertex] = []
         vertices.reserveCapacity(outwardFaces.count * 3)
         for face in outwardFaces {
             for index in [face.x, face.y, face.z] {
                 vertices.append(
-                    MetalViewerScoutROIVertex(position: positions[index], normal: normals[index])
+                    MetalStudyROISurfaceVertex(position: positions[index], normal: normals[index])
                 )
             }
         }
@@ -972,9 +1099,8 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
 
     private static func makeVoxelSurfaceVertices(
         for roi: MetalStudyROI,
-        field: MetalStudyROIVoxelField,
-        normalization: Float
-    ) -> [MetalViewerScoutROIVertex] {
+        field: MetalStudyROIVoxelField
+    ) -> [MetalStudyROISurfaceVertex] {
         let dimensions = field.dimensions
         guard dimensions.x > 1, dimensions.y > 1, dimensions.z > 1 else { return [] }
         let values = [UInt8](field.probabilities)
@@ -990,7 +1116,7 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
             SIMD4<Int>(0, 2, 3, 6), SIMD4<Int>(0, 3, 7, 6),
             SIMD4<Int>(0, 7, 4, 6), SIMD4<Int>(0, 4, 5, 6),
         ]
-        var vertices: [MetalViewerScoutROIVertex] = []
+        var vertices: [MetalStudyROISurfaceVertex] = []
         vertices.reserveCapacity(min(dimensions.voxelCount, 80_000))
 
         func index(_ coordinate: SIMD3<Int>) -> Int {
@@ -1035,14 +1161,13 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
             for baselinePoint in points {
                 let deformedPoint = roi.deformedSurfacePoint(fromBaseline: baselinePoint)
                 let normal = field.outwardNormal(at: baselinePoint) ?? fallbackNormal
-                let relativePoint = deformedPoint - roi.center.vector
                 vertices.append(
-                    MetalViewerScoutROIVertex(
+                    MetalStudyROISurfaceVertex(
                         position: SIMD3<Float>(
-                            Float(relativePoint.x),
-                            Float(relativePoint.y),
-                            Float(relativePoint.z)
-                        ) * normalization,
+                            Float(deformedPoint.x),
+                            Float(deformedPoint.y),
+                            Float(deformedPoint.z)
+                        ),
                         normal: SIMD3<Float>(
                             Float(normal.x),
                             Float(normal.y),
@@ -1147,47 +1272,18 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
         return vertices
     }
 
-    private static func rotationMatrix(yaw: Float, pitch: Float) -> simd_float4x4 {
-        let yawCosine = cos(yaw)
-        let yawSine = sin(yaw)
-        let pitchCosine = cos(pitch)
-        let pitchSine = sin(pitch)
-        let yawMatrix = simd_float4x4(columns: (
-            SIMD4<Float>(yawCosine, 0, -yawSine, 0),
-            SIMD4<Float>(0, 1, 0, 0),
-            SIMD4<Float>(yawSine, 0, yawCosine, 0),
-            SIMD4<Float>(0, 0, 0, 1)
-        ))
-        let pitchMatrix = simd_float4x4(columns: (
-            SIMD4<Float>(1, 0, 0, 0),
-            SIMD4<Float>(0, pitchCosine, pitchSine, 0),
-            SIMD4<Float>(0, -pitchSine, pitchCosine, 0),
-            SIMD4<Float>(0, 0, 0, 1)
-        ))
-        return yawMatrix * pitchMatrix
-    }
 }
 
 private final class MetalViewerScoutROIPreviewView: MTKView {
     private var roiRenderer: MetalViewerScoutROIRenderer?
-    private lazy var rotationGesture: NSPanGestureRecognizer = {
-        let gesture = NSPanGestureRecognizer(
-            target: self,
-            action: #selector(handleRotationGesture(_:))
-        )
-        gesture.buttonMask = 0x1
-        gesture.isCancellableByScrollGesture = true
-        return gesture
-    }()
-    private lazy var selectionGesture: NSClickGestureRecognizer = {
-        NSClickGestureRecognizer(
-            target: self,
-            action: #selector(handleSelectionGesture(_:))
-        )
-    }()
-    private var gestureStartRotation: (yaw: Float, pitch: Float) = (0, 0)
+    private var dragStartPoint = CGPoint.zero
+    private var dragLastPoint = CGPoint.zero
+    private var didStartTransferDrag = false
     private var isRotating = false
     var onSelect: (() -> Void)?
+    var onContextMenu: ((NSEvent) -> Void)?
+    var onRotation: ((simd_quatf) -> Void)?
+    var onTransferDrag: ((NSEvent) -> Void)?
 
     init() {
         super.init(frame: .zero, device: MTLCreateSystemDefaultDevice())
@@ -1206,8 +1302,6 @@ private final class MetalViewerScoutROIPreviewView: MTKView {
         layer?.masksToBounds = true
         roiRenderer = MetalViewerScoutROIRenderer(view: self)
         delegate = roiRenderer
-        addGestureRecognizer(selectionGesture)
-        addGestureRecognizer(rotationGesture)
     }
 
     @available(*, unavailable)
@@ -1220,58 +1314,139 @@ private final class MetalViewerScoutROIPreviewView: MTKView {
         needsDisplay = true
     }
 
+    func setRotation(_ rotation: simd_quatf) {
+        roiRenderer?.setRotation(rotation)
+        needsDisplay = true
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    override func rightMouseDown(with event: NSEvent) {
+        onContextMenu?(event)
+    }
+
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: isRotating ? .closedHand : .openHand)
+        addCursorRect(bounds, cursor: isRotating ? .closedHand : .dragCopy)
     }
 
-    @objc
-    private func handleSelectionGesture(_ gesture: NSClickGestureRecognizer) {
-        guard gesture.state == .ended else { return }
+    override func mouseDown(with event: NSEvent) {
         onSelect?()
+        dragStartPoint = convert(event.locationInWindow, from: nil)
+        dragLastPoint = dragStartPoint
+        didStartTransferDrag = false
+        isRotating = event.modifierFlags.contains(.option)
+        window?.invalidateCursorRects(for: self)
     }
 
-    @objc
-    private func handleRotationGesture(_ gesture: NSPanGestureRecognizer) {
-        let sensitivity: Float = 0.012
-        switch gesture.state {
-        case .began:
-            onSelect?()
-            gestureStartRotation = roiRenderer?.rotation() ?? (0, 0)
+    override func mouseDragged(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard hypot(point.x - dragStartPoint.x, point.y - dragStartPoint.y) > 3 else { return }
+
+        if isRotating || event.modifierFlags.contains(.option) {
             isRotating = true
             window?.invalidateCursorRects(for: self)
             NSCursor.closedHand.set()
-        case .changed:
-            let translation = gesture.translation(in: self)
-            roiRenderer?.setRotation(
-                yaw: gestureStartRotation.yaw + Float(translation.x) * sensitivity,
-                pitch: gestureStartRotation.pitch - Float(translation.y) * sensitivity
+            let delta = CGPoint(
+                x: point.x - dragLastPoint.x,
+                y: point.y - dragLastPoint.y
             )
+            dragLastPoint = point
+            let rotation = MetalViewerMPRSceneRotation.applyingDrag(
+                to: roiRenderer?.rotation() ?? MetalViewerMPRSceneRotation.initial,
+                deltaX: Float(delta.x),
+                deltaY: Float(delta.y),
+                viewportSize: bounds.size
+            )
+            roiRenderer?.setRotation(rotation)
             needsDisplay = true
-        case .ended, .cancelled, .failed:
-            isRotating = false
-            window?.invalidateCursorRects(for: self)
-            NSCursor.openHand.set()
-        default:
-            break
+            onRotation?(rotation)
+        } else if didStartTransferDrag == false {
+            didStartTransferDrag = true
+            onTransferDrag?(event)
         }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        isRotating = false
+        didStartTransferDrag = false
+        window?.invalidateCursorRects(for: self)
     }
 }
 
-private final class MetalViewerScoutROIItemView: NSView {
+private final class MetalViewerROIOpacityMenuView: NSView {
+    private let slider = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
+    private let valueLabel = NSTextField(labelWithString: "50%")
+    private let onChange: (Float) -> Void
+
+    init(opacity: Float, onChange: @escaping (Float) -> Void) {
+        self.onChange = onChange
+        super.init(frame: NSRect(x: 0, y: 0, width: 250, height: 38))
+
+        let titleLabel = NSTextField(labelWithString: NSLocalizedString("MPR Opacity", comment: ""))
+        titleLabel.font = .systemFont(ofSize: 13)
+        valueLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        valueLabel.alignment = .right
+        slider.isContinuous = true
+        slider.doubleValue = Double(opacity)
+        slider.target = self
+        slider.action = #selector(sliderChanged(_:))
+        updateValueLabel(opacity)
+
+        let stack = NSStackView(views: [titleLabel, slider, valueLabel])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 8
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            titleLabel.widthAnchor.constraint(equalToConstant: 76),
+            valueLabel.widthAnchor.constraint(equalToConstant: 38),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc
+    private func sliderChanged(_ sender: NSSlider) {
+        let opacity = Float(sender.doubleValue)
+        updateValueLabel(opacity)
+        onChange(opacity)
+    }
+
+    private func updateValueLabel(_ opacity: Float) {
+        valueLabel.stringValue = "\(Int((opacity * 100).rounded()))%"
+    }
+}
+
+private final class MetalViewerScoutROIItemView: NSView, NSDraggingSource {
     private let nameLabel = NSTextField(labelWithString: "")
     private let volumeLabel = NSTextField(labelWithString: "")
     private let typeLabel = NSTextField(labelWithString: NSLocalizedString("DICOM SEG", comment: ""))
     private let previewView = MetalViewerScoutROIPreviewView()
     private var roiColor = NSColor.systemYellow
     private var renderedROI: MetalStudyROI?
+    private var isDisplayedInMPR = false
+    private var isTransferDragActive = false
+    private let patientIdentifier: String
 
     private(set) var roiIdentifier: UUID
     var onSelect: ((UUID) -> Void)?
+    var onContextCommand: ((UUID, MetalViewerScoutROIContextCommand) -> Void)?
+    var onRotation: ((simd_quatf) -> Void)?
 
-    init(roi: MetalStudyROI, placement: MetalViewerScoutPlacement) {
+    init(
+        roi: MetalStudyROI,
+        patientIdentifier: String,
+        placement: MetalViewerScoutPlacement
+    ) {
         roiIdentifier = roi.id
+        self.patientIdentifier = patientIdentifier
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
@@ -1292,6 +1467,15 @@ private final class MetalViewerScoutROIItemView: NSView {
             guard let self else { return }
             onSelect?(roiIdentifier)
         }
+        previewView.onContextMenu = { [weak self] event in
+            self?.showContextMenu(with: event)
+        }
+        previewView.onRotation = { [weak self] rotation in
+            self?.onRotation?(rotation)
+        }
+        previewView.onTransferDrag = { [weak self] event in
+            self?.beginTransferDrag(with: event)
+        }
         addSubview(previewView)
         addSubview(nameLabel)
         addSubview(volumeLabel)
@@ -1308,6 +1492,13 @@ private final class MetalViewerScoutROIItemView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    fileprivate func interactiveHitView(at point: NSPoint) -> NSView {
+        let previewPoint = convert(point, to: previewView)
+        return previewView.bounds.contains(previewPoint) ? previewView : self
     }
 
     func update(roi: MetalStudyROI) {
@@ -1331,7 +1522,7 @@ private final class MetalViewerScoutROIItemView: NSView {
         renderedROI = roi
         toolTip = String(
             format: NSLocalizedString(
-                "%@\nVolume: %.3f mL\n%d manual anchors, %d automatic anchors\nStored as DICOM SEG\nDrag the 3D preview to rotate",
+                "%@\nVolume: %.3f mL\n%d manual anchors, %d automatic anchors\nStored as DICOM SEG\nDrag to another patient's series to copy\nOption-drag the 3D preview to rotate",
                 comment: ""
             ),
             roi.name,
@@ -1341,6 +1532,10 @@ private final class MetalViewerScoutROIItemView: NSView {
         )
     }
 
+    func setRotation(_ rotation: simd_quatf) {
+        previewView.setRotation(rotation)
+    }
+
     func setSelected(_ selected: Bool) {
         layer?.borderColor = (selected ? metalViewerActiveSelectionBlue : roiColor.withAlphaComponent(0.8)).cgColor
         layer?.backgroundColor = (selected
@@ -1348,8 +1543,152 @@ private final class MetalViewerScoutROIItemView: NSView {
             : NSColor(calibratedWhite: 0.12, alpha: 1)).cgColor
     }
 
+    func setDisplayedInMPR(_ displayed: Bool) {
+        isDisplayedInMPR = displayed
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let previewPoint = convert(point, to: previewView)
+        if previewView.bounds.contains(previewPoint) {
+            return previewView.hitTest(previewPoint)
+        }
+        return bounds.contains(point) ? self : nil
+    }
+
     override func mouseDown(with event: NSEvent) {
         onSelect?(roiIdentifier)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        beginTransferDrag(with: event)
+    }
+
+    private func beginTransferDrag(with event: NSEvent) {
+        guard isTransferDragActive == false,
+              patientIdentifier.isEmpty == false else { return }
+        isTransferDragActive = true
+        let item = NSPasteboardItem()
+        item.setString(roiIdentifier.uuidString, forType: .metalViewerROIIdentifier)
+        item.setString(patientIdentifier, forType: .metalViewerROIPatientIdentifier)
+        let draggingItem = NSDraggingItem(pasteboardWriter: item)
+        draggingItem.setDraggingFrame(bounds, contents: bitmapImage())
+        let session = beginDraggingSession(with: [draggingItem], event: event, source: self)
+        session.animatesToStartingPositionsOnCancelOrFail = true
+        session.draggingFormation = .none
+    }
+
+    func draggingSession(
+        _ session: NSDraggingSession,
+        sourceOperationMaskFor context: NSDraggingContext
+    ) -> NSDragOperation {
+        .copy
+    }
+
+    func draggingSession(
+        _ session: NSDraggingSession,
+        endedAt screenPoint: NSPoint,
+        operation: NSDragOperation
+    ) {
+        isTransferDragActive = false
+    }
+
+    private func bitmapImage() -> NSImage {
+        let image = NSImage(size: bounds.size)
+        guard let representation = bitmapImageRepForCachingDisplay(in: bounds) else {
+            return image
+        }
+        cacheDisplay(in: bounds, to: representation)
+        image.addRepresentation(representation)
+        return image
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        showContextMenu(with: event)
+    }
+
+    private func showContextMenu(with event: NSEvent) {
+        let menu = NSMenu()
+        let visibilityItem = NSMenuItem(
+            title: NSLocalizedString("Show in MPR", comment: ""),
+            action: #selector(toggleMPRVisibility(_:)),
+            keyEquivalent: ""
+        )
+        visibilityItem.target = self
+        visibilityItem.state = isDisplayedInMPR ? .on : .off
+        menu.addItem(visibilityItem)
+        addContextMenuItem(
+            NSLocalizedString("Adjust Position in MPR", comment: ""),
+            action: #selector(adjustROIPosition(_:)),
+            to: menu
+        )
+
+        let opacityItem = NSMenuItem()
+        opacityItem.view = MetalViewerROIOpacityMenuView(
+            opacity: MetalViewerMPRROIOverlayPreferences.opacity
+        ) { opacity in
+            MetalViewerMPRROIOverlayPreferences.setOpacity(opacity)
+        }
+        menu.addItem(opacityItem)
+        menu.addItem(.separator())
+
+        addContextMenuItem(
+            NSLocalizedString("Rename ROI…", comment: ""),
+            action: #selector(renameROI(_:)),
+            to: menu
+        )
+        addContextMenuItem(
+            NSLocalizedString("Duplicate ROI", comment: ""),
+            action: #selector(duplicateROI(_:)),
+            to: menu
+        )
+        addContextMenuItem(
+            NSLocalizedString("ROI Color…", comment: ""),
+            action: #selector(changeROIColor(_:)),
+            to: menu
+        )
+        menu.addItem(.separator())
+        addContextMenuItem(
+            NSLocalizedString("Delete ROI", comment: ""),
+            action: #selector(deleteROI(_:)),
+            to: menu
+        )
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    private func addContextMenuItem(_ title: String, action: Selector, to menu: NSMenu) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        menu.addItem(item)
+    }
+
+    @objc
+    private func toggleMPRVisibility(_ sender: NSMenuItem) {
+        onContextCommand?(roiIdentifier, .toggleMPRVisibility)
+    }
+
+    @objc
+    private func adjustROIPosition(_ sender: NSMenuItem) {
+        onContextCommand?(roiIdentifier, .adjustPosition)
+    }
+
+    @objc
+    private func renameROI(_ sender: NSMenuItem) {
+        onContextCommand?(roiIdentifier, .rename)
+    }
+
+    @objc
+    private func duplicateROI(_ sender: NSMenuItem) {
+        onContextCommand?(roiIdentifier, .duplicate)
+    }
+
+    @objc
+    private func changeROIColor(_ sender: NSMenuItem) {
+        onContextCommand?(roiIdentifier, .color)
+    }
+
+    @objc
+    private func deleteROI(_ sender: NSMenuItem) {
+        onContextCommand?(roiIdentifier, .delete)
     }
 
     override func layout() {
@@ -1596,6 +1935,7 @@ private final class MetalViewerScoutItemView: NSView {
     var onSelect: ((MetalViewerSeries) -> Void)?
     var onOpen: ((MetalViewerSeries) -> Void)?
     var onOverlay: ((MetalViewerSeries) -> Void)?
+    var onROITransfer: ((String, UUID, MetalViewerSeries) -> Void)?
 
     var highlight: MetalViewerScoutHighlight = .none {
         didSet { updateAppearance() }
@@ -1609,6 +1949,7 @@ private final class MetalViewerScoutItemView: NSView {
         wantsLayer = true
         layer?.cornerRadius = 10
         layer?.borderWidth = 2
+        registerForDraggedTypes([.metalViewerROIIdentifier])
 
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.imageScaling = .scaleProportionallyUpOrDown
@@ -1678,6 +2019,8 @@ private final class MetalViewerScoutItemView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func layout() {
         super.layout()
         updateDateTimeFontForCurrentWidth()
@@ -1743,6 +2086,35 @@ private final class MetalViewerScoutItemView: NSView {
         cancelPendingDrag()
         removeDragPreview()
         showContextMenu(with: event)
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        roiTransferPayload(from: sender) == nil ? [] : .copy
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        roiTransferPayload(from: sender) != nil
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let payload = roiTransferPayload(from: sender),
+              payload.patientIdentifier != series.patientIdentity.identifier else {
+            return false
+        }
+        onROITransfer?(payload.patientIdentifier, payload.roiIdentifier, series)
+        return true
+    }
+
+    private func roiTransferPayload(
+        from draggingInfo: NSDraggingInfo
+    ) -> (patientIdentifier: String, roiIdentifier: UUID)? {
+        let pasteboard = draggingInfo.draggingPasteboard
+        guard let patientIdentifier = pasteboard.string(forType: .metalViewerROIPatientIdentifier),
+              let roiString = pasteboard.string(forType: .metalViewerROIIdentifier),
+              let roiIdentifier = UUID(uuidString: roiString) else {
+            return nil
+        }
+        return (patientIdentifier, roiIdentifier)
     }
 
     private func updateAppearance() {

@@ -240,9 +240,23 @@ static void *MetalStudyROIModernBridgeSymbol(const char *name)
         NSString *databasePrefix = [database.dataBaseDirPath stringByAppendingString:@"/"];
         if ([path hasPrefix:databasePrefix])
             relativePath = [path substringFromIndex:databasePrefix.length];
+
+        NSString *filename = path.lastPathComponent;
+        NSMutableSet<NSString *> *pathStrings = [NSMutableSet setWithObjects:path, relativePath, filename, nil];
+        NSMutableArray<NSPredicate *> *pathPredicates = [NSMutableArray arrayWithObject:
+            [NSPredicate predicateWithFormat:@"pathString IN %@", pathStrings]];
+        NSString *numberString = filename.stringByDeletingPathExtension;
+        BOOL hasNumericDatabaseFilename =
+            [filename.pathExtension caseInsensitiveCompare:@"dcm"] == NSOrderedSame
+            && numberString.length > 0
+            && [numberString rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet.invertedSet].location == NSNotFound;
+        if (hasNumericDatabaseFilename)
+            [pathPredicates addObject:[NSPredicate predicateWithFormat:@"pathNumber == %@", @([numberString longLongValue])]];
+
         NSFetchRequest *request = [NSFetchRequest fetchRequestWithEntityName:@"Image"];
-        request.predicate = [NSPredicate predicateWithFormat:@"path == %@ OR path == %@ OR path == %@",
-                             path, relativePath, path.lastPathComponent];
+        // DicomImage.path is a computed convenience property. Core Data stores
+        // local numeric filenames and linked paths in separate attributes.
+        request.predicate = [NSCompoundPredicate orPredicateWithSubpredicates:pathPredicates];
         NSError *fetchError = nil;
         NSArray *images = [database.managedObjectContext executeFetchRequest:request error:&fetchError];
         if (fetchError)
@@ -250,14 +264,20 @@ static void *MetalStudyROIModernBridgeSymbol(const char *name)
             failure = fetchError.localizedDescription;
             return;
         }
+
+        NSSet *matchedImages = [NSSet setWithArray:images];
+        NSMutableSet *emptySeries = [NSMutableSet set];
         for (NSManagedObject *image in images)
         {
             NSManagedObject *series = [image valueForKey:@"series"];
             NSSet *seriesImages = [series valueForKey:@"images"];
+            if (series && seriesImages.count > 0 && [seriesImages isSubsetOfSet:matchedImages])
+                [emptySeries addObject:series];
             [database.managedObjectContext deleteObject:image];
-            if (series && seriesImages.count <= 1)
-                [database.managedObjectContext deleteObject:series];
         }
+        for (NSManagedObject *series in emptySeries)
+            [database.managedObjectContext deleteObject:series];
+
         NSError *saveError = nil;
         if ([database.managedObjectContext save:&saveError] == NO)
             failure = saveError.localizedDescription;

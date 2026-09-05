@@ -1336,6 +1336,7 @@ final class MetalViewerPaneView: NSView {
     private var studyROIEditingMode: MetalStudyROIEditingMode = .inactive
     private var studyROICurrentToCanonicalTransform = matrix_identity_float4x4
     private var studyROIProjectionAvailable = true
+    private var studyROISurfaceProjections: [MetalStudyROISurfaceProjection] = []
     private var dynamicSequence: MetalDynamicSequence?
     private var dynamicTimeIndex = 0
     private var dynamicPlaybackRate = 1.0
@@ -1358,6 +1359,7 @@ final class MetalViewerPaneView: NSView {
     var registrationTransformDidComplete: ((MetalViewerSeries, MetalViewerSeries, MetalViewerRegistrationWorldTransform) -> Void)?
     var studyROIEditingModeDidChange: ((MetalStudyROIEditingMode) -> Void)?
     var studyROIRefinementHandler: ((Bool) -> Void)?
+    var mprRotationDidChange: ((simd_quatf) -> Void)?
     var canClose: Bool = true {
         didSet { updateCloseButtonVisibility() }
     }
@@ -1657,6 +1659,9 @@ final class MetalViewerPaneView: NSView {
         metalView.studyROIRefinementHandler = { [weak self] preview in
             self?.studyROIRefinementHandler?(preview)
         }
+        metalView.mprRotationDidChange = { [weak self] rotation in
+            self?.mprRotationDidChange?(rotation)
+        }
         metalView.configureStudyROI(
             store: studyROIStore,
             sourceSeriesIdentifier: series.identifier,
@@ -1664,6 +1669,7 @@ final class MetalViewerPaneView: NSView {
             frameOfReferenceUID: series.frameOfReferenceUID ?? series.identifier,
             currentToCanonicalTransform: studyROIProjectionAvailable ? studyROICurrentToCanonicalTransform : nil
         )
+        metalView.setStudyROISurfaces(studyROISurfaceProjections)
         metalView.setStudyROIEditingMode(studyROIEditingMode)
 
         contentView.addSubview(metalView)
@@ -2202,6 +2208,15 @@ final class MetalViewerPaneView: NSView {
         updateAnimatedGIFButtonState()
     }
 
+    var mprSceneRotation: simd_quatf {
+        metalView?.mprSceneRotation ?? MetalViewerMPRSceneRotation.initial
+    }
+
+    func setMPRSceneRotation(_ rotation: simd_quatf) {
+        metalView?.setMPRSceneRotation(rotation)
+        updateOrientationOverlay()
+    }
+
     func configureStudyROI(
         store: MetalStudyROIStore,
         currentToCanonicalTransform: simd_float4x4? = matrix_identity_float4x4
@@ -2223,8 +2238,17 @@ final class MetalViewerPaneView: NSView {
         metalView?.setStudyROIEditingMode(mode)
     }
 
+    func setStudyROISurfaces(_ projections: [MetalStudyROISurfaceProjection]) {
+        studyROISurfaceProjections = projections
+        metalView?.setStudyROISurfaces(projections)
+    }
+
     func refreshStudyROIOverlay() {
         metalView?.refreshStudyROIOverlay()
+    }
+
+    func setStudyROISurfaceOpacity(_ opacity: Float) {
+        metalView?.setStudyROISurfaceOpacity(opacity)
     }
 
     func setAnnotationLevel(_ level: MetalViewerAnnotationLevel) {
@@ -2238,6 +2262,10 @@ final class MetalViewerPaneView: NSView {
     func setMouseToolAssignments(_ assignments: MetalViewerMouseToolAssignments) {
         mouseToolAssignments = assignments
         metalView?.mouseToolAssignments = assignments
+    }
+
+    func updateMouseToolCursor(modifierFlags: NSEvent.ModifierFlags) {
+        metalView?.updateMouseToolCursor(modifierFlags: modifierFlags)
     }
 
     var currentScale: Float? {

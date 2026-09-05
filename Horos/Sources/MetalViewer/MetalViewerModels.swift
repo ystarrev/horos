@@ -15,6 +15,49 @@ enum MetalTextureLimits {
     }
 }
 
+enum MetalViewerMPRSceneRotation {
+    static let initial = simd_normalize(
+        simd_quatf(angle: -0.65, axis: SIMD3<Float>(0, 0, 1))
+            * simd_quatf(angle: -0.55, axis: SIMD3<Float>(1, 0, 0))
+    )
+
+    static func matrix(for rotation: simd_quatf) -> simd_float4x4 {
+        let vector = simd_normalize(rotation).vector
+        let x = vector.x
+        let y = vector.y
+        let z = vector.z
+        let w = vector.w
+        return simd_float4x4(
+            SIMD4<Float>(1 - 2 * y * y - 2 * z * z, 2 * x * y + 2 * w * z, 2 * x * z - 2 * w * y, 0),
+            SIMD4<Float>(2 * x * y - 2 * w * z, 1 - 2 * x * x - 2 * z * z, 2 * y * z + 2 * w * x, 0),
+            SIMD4<Float>(2 * x * z + 2 * w * y, 2 * y * z - 2 * w * x, 1 - 2 * x * x - 2 * y * y, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
+    }
+
+    static func viewMatrix(for rotation: simd_quatf) -> simd_float4x4 {
+        var horizontalConvention = matrix_identity_float4x4
+        horizontalConvention.columns.0.x = -1
+        return horizontalConvention * matrix(for: rotation)
+    }
+
+    static func applyingDrag(
+        to rotation: simd_quatf,
+        deltaX: Float,
+        deltaY: Float,
+        viewportSize: CGSize
+    ) -> simd_quatf {
+        let width = Float(max(viewportSize.width, 1))
+        let height = Float(max(viewportSize.height, 1))
+        let radiansPerDegree = Float.pi / 180
+        let azimuth = deltaX * (200 / width) * radiansPerDegree
+        let elevation = deltaY * (200 / height) * radiansPerDegree
+        let azimuthRotation = simd_quatf(angle: azimuth, axis: SIMD3<Float>(0, 1, 0))
+        let elevationRotation = simd_quatf(angle: elevation, axis: SIMD3<Float>(1, 0, 0))
+        return simd_normalize(elevationRotation * azimuthRotation * rotation)
+    }
+}
+
 enum MetalViewerMouseButton: Int, CaseIterable, Hashable {
     case left = 0
     case right = 1
@@ -30,6 +73,144 @@ enum MetalViewerMouseTool: Int, CaseIterable, Hashable {
     case tumourSeed = 6
     case roiAnchor = 7
     case deleteROIAnchor = 8
+}
+
+enum MetalViewerMouseToolArtwork {
+    private static let images: [MetalViewerMouseTool: NSImage] = Dictionary(
+        uniqueKeysWithValues: MetalViewerMouseTool.allCases.map { tool in
+            (tool, makeImage(for: tool))
+        }
+    )
+
+    private static let cursors: [MetalViewerMouseTool: NSCursor] = Dictionary(
+        uniqueKeysWithValues: MetalViewerMouseTool.allCases.map { tool in
+            (tool, makeCursor(for: tool))
+        }
+    )
+
+    static func image(for tool: MetalViewerMouseTool) -> NSImage {
+        images[tool] ?? NSImage(size: NSSize(width: 24, height: 24))
+    }
+
+    static func cursor(for tool: MetalViewerMouseTool) -> NSCursor {
+        cursors[tool] ?? .arrow
+    }
+
+    private static func makeImage(for tool: MetalViewerMouseTool) -> NSImage {
+        switch tool {
+        case .windowLevel:
+            return namedImage("WLWW")
+        case .pan:
+            return namedImage("Move")
+        case .zoom:
+            return namedImage("Zoom")
+        case .rotate:
+            return namedImage("Rotate")
+        case .scroll:
+            return namedImage("Stack")
+        case .measure:
+            return namedImage("Length")
+        case .tumourSeed:
+            return tumourSeedTargetImage()
+        case .roiAnchor:
+            return roiAnchorImage(deleting: false)
+        case .deleteROIAnchor:
+            return roiAnchorImage(deleting: true)
+        }
+    }
+
+    private static func namedImage(_ name: String) -> NSImage {
+        NSImage(named: NSImage.Name(name)) ?? NSImage(size: NSSize(width: 24, height: 24))
+    }
+
+    private static func makeCursor(for tool: MetalViewerMouseTool) -> NSCursor {
+        let canvasSize = NSSize(width: 32, height: 32)
+        let icon = image(for: tool)
+        let cursorImage = NSImage(size: canvasSize, flipped: false) { _ in
+            NSGraphicsContext.current?.imageInterpolation = .high
+            icon.draw(
+                in: NSRect(x: 4, y: 4, width: 24, height: 24),
+                from: .zero,
+                operation: .sourceOver,
+                fraction: 1,
+                respectFlipped: true,
+                hints: nil
+            )
+            return true
+        }
+        return NSCursor(
+            image: cursorImage,
+            hotSpot: NSPoint(x: canvasSize.width * 0.5, y: canvasSize.height * 0.5)
+        )
+    }
+
+    private static func roiAnchorImage(deleting: Bool) -> NSImage {
+        let size = NSSize(width: 24, height: 24)
+        let image = NSImage(size: size, flipped: false) { _ in
+            NSColor.clear.setFill()
+            NSRect(origin: .zero, size: size).fill()
+
+            let color = deleting ? NSColor.systemRed : NSColor.systemGreen
+            let markerRect = NSRect(x: 5, y: 5, width: 14, height: 14)
+            color.setFill()
+            NSBezierPath(ovalIn: markerRect).fill()
+            NSColor.black.withAlphaComponent(0.65).setStroke()
+            let outline = NSBezierPath(ovalIn: markerRect)
+            outline.lineWidth = 1
+            outline.stroke()
+
+            let glyph = NSBezierPath()
+            glyph.lineWidth = 2
+            glyph.lineCapStyle = .round
+            glyph.move(to: CGPoint(x: 8.5, y: 12))
+            glyph.line(to: CGPoint(x: 15.5, y: 12))
+            if deleting == false {
+                glyph.move(to: CGPoint(x: 12, y: 8.5))
+                glyph.line(to: CGPoint(x: 12, y: 15.5))
+            }
+            NSColor.white.setStroke()
+            glyph.stroke()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    private static func tumourSeedTargetImage() -> NSImage {
+        let size = NSSize(width: 24, height: 24)
+        let image = NSImage(size: size, flipped: false) { _ in
+            NSColor.clear.setFill()
+            NSRect(origin: .zero, size: size).fill()
+
+            let center = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
+            let outerRect = NSRect(x: 3, y: 3, width: 18, height: 18)
+            let middleRect = outerRect.insetBy(dx: 4, dy: 4)
+            let innerRect = outerRect.insetBy(dx: 7, dy: 7)
+
+            NSColor.systemRed.setFill()
+            NSBezierPath(ovalIn: outerRect).fill()
+            NSColor.white.setFill()
+            NSBezierPath(ovalIn: middleRect).fill()
+            NSColor.systemRed.setFill()
+            NSBezierPath(ovalIn: innerRect).fill()
+
+            let crosshair = NSBezierPath()
+            crosshair.lineWidth = 1.4
+            crosshair.move(to: CGPoint(x: center.x, y: 1.5))
+            crosshair.line(to: CGPoint(x: center.x, y: 6))
+            crosshair.move(to: CGPoint(x: center.x, y: 18))
+            crosshair.line(to: CGPoint(x: center.x, y: 22.5))
+            crosshair.move(to: CGPoint(x: 1.5, y: center.y))
+            crosshair.line(to: CGPoint(x: 6, y: center.y))
+            crosshair.move(to: CGPoint(x: 18, y: center.y))
+            crosshair.line(to: CGPoint(x: 22.5, y: center.y))
+            NSColor.white.setStroke()
+            crosshair.stroke()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
 }
 
 enum MetalViewerMouseModifier: String, CaseIterable, Hashable {
@@ -179,6 +360,24 @@ enum MetalViewerScoutPlacement: Int, CaseIterable {
 
     var placesScoutBeforePane: Bool {
         self == .left || self == .top
+    }
+}
+
+enum MetalViewerMPRROIOverlayPreferences {
+    static let didChangeNotification = Notification.Name("HorosMetalViewerMPRROIOverlayDidChange")
+    private static let opacityDefaultsKey = "HorosMetalViewerMPRROIOverlayOpacity"
+
+    static var opacity: Float {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: opacityDefaultsKey) != nil else { return 0.5 }
+        return min(max(defaults.float(forKey: opacityDefaultsKey), 0), 1)
+    }
+
+    static func setOpacity(_ opacity: Float) {
+        let clampedOpacity = min(max(opacity, 0), 1)
+        guard abs(clampedOpacity - self.opacity) > 0.0001 else { return }
+        UserDefaults.standard.set(clampedOpacity, forKey: opacityDefaultsKey)
+        NotificationCenter.default.post(name: didChangeNotification, object: nil)
     }
 }
 
@@ -1947,6 +2146,22 @@ struct MetalViewerRegistrationSupportSelection {
     let items: [Item]
 }
 
+struct MetalViewerPatientIdentity: Hashable {
+    let identifier: String
+    let displayName: String
+    let patientID: String
+    let dateOfBirth: Date?
+
+    static func fallback(title: String) -> MetalViewerPatientIdentity {
+        MetalViewerPatientIdentity(
+            identifier: "fallback:\(title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current))",
+            displayName: title,
+            patientID: "",
+            dateOfBirth: nil
+        )
+    }
+}
+
 final class MetalViewerSeries {
     private static let dynamicDetectionQueue = DispatchQueue(
         label: "org.horosproject.horos.metalviewer.dynamic-detection",
@@ -1954,6 +2169,7 @@ final class MetalViewerSeries {
     )
 
     let identifier: String
+    let patientIdentity: MetalViewerPatientIdentity
     let title: String
     let seriesNumber: String
     let studyIdentifier: String
@@ -2111,6 +2327,7 @@ final class MetalViewerSeries {
 
     init(
         identifier: String = UUID().uuidString,
+        patientIdentity: MetalViewerPatientIdentity,
         title: String,
         seriesNumber: String,
         studyIdentifier: String,
@@ -2126,6 +2343,7 @@ final class MetalViewerSeries {
         dynamicTimePointCountHint: Int? = nil
     ) {
         self.identifier = identifier
+        self.patientIdentity = patientIdentity
         self.title = title
         self.seriesNumber = seriesNumber
         self.studyIdentifier = studyIdentifier
@@ -2484,18 +2702,21 @@ final class MetalViewerSeries {
 }
 
 final class MetalViewerStudy {
+    let patientIdentity: MetalViewerPatientIdentity
     let title: String
     let series: [MetalViewerSeries]
     let initialSeriesIdentifier: String
     let procedureEvents: [SurgicalProcedureEvent]
 
     init(
+        patientIdentity: MetalViewerPatientIdentity,
         title: String,
         series: [MetalViewerSeries],
         initialSeriesIdentifier: String,
         procedureEvents: [SurgicalProcedureEvent] = []
     ) {
         precondition(series.isEmpty == false, "MetalViewerStudy requires at least one series.")
+        self.patientIdentity = patientIdentity
         self.title = title
         self.series = series
         self.initialSeriesIdentifier = initialSeriesIdentifier

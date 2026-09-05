@@ -8,7 +8,8 @@ framework_path="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/Horos.framework"
 
 if [ "$CODE_SIGNING_ALLOWED" != "NO" ]; then
     sign_identity="${EXPANDED_CODE_SIGN_IDENTITY:-$CODE_SIGN_IDENTITY}"
-    if [ -z "$sign_identity" ] || [ "$sign_identity" = "Apple Development" ]; then
+    if [ -z "$sign_identity" ] || [ "$sign_identity" = "Apple Development" ] || \
+       ! /usr/bin/security find-identity -v -p codesigning | /usr/bin/grep -Fq "$sign_identity"; then
         sign_identity="-"
     fi
 fi

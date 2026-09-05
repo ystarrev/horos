@@ -13,7 +13,7 @@ private struct PatientRecord {
     let studyDate: Double
 }
 
-private struct PreparedProcedure {
+private struct PreparedProcedure: Sendable {
     let eventID: String
     let patientKey: String
     let procedureDate: Date
@@ -33,27 +33,6 @@ private struct PreparedProcedure {
     let sourceFile: String
     let sourceRow: Int
     let sourceFingerprint: String
-
-    func hasSameImportedValues(as record: SurgicalProcedureRecord) -> Bool {
-        patientKey == record.patientKey
-            && procedureDate == record.procedureDate
-            && sourcePatientName == record.sourcePatientName
-            && sourcePatientID == record.sourcePatientID
-            && matchedPatientName == record.matchedPatientName
-            && matchedPatientID == record.matchedPatientID
-            && matchedPatientUID == record.matchedPatientUID
-            && matchedBirthDate == record.matchedBirthDate
-            && anchorStudyInstanceUID == record.anchorStudyInstanceUID
-            && operation == record.operation
-            && normalizedOperation == record.normalizedOperation
-            && diagnosis == record.diagnosis
-            && results == record.results
-            && optics == record.optics
-            && assistants == record.assistants
-            && sourceFile == record.sourceFile
-            && sourceRow == record.sourceRow
-            && sourceFingerprint == record.sourceFingerprint
-    }
 
     func record(importedAt: Date, updatedAt: Date) -> SurgicalProcedureRecord {
         SurgicalProcedureRecord(
@@ -83,15 +62,14 @@ private struct PreparedProcedure {
 }
 
 private enum ImportError: LocalizedError {
-    case malformedCSV
     case missingColumns([String])
     case database(String)
+    case spreadsheet(String)
 
     var errorDescription: String? {
         switch self {
-        case .malformedCSV: "The CSV contains an unterminated quoted field."
-        case .missingColumns(let columns): "CSV is missing required columns: \(columns.joined(separator: ", "))."
-        case .database(let message): message
+        case .missingColumns(let columns): "The table is missing required columns: \(columns.joined(separator: ", "))."
+        case .database(let message), .spreadsheet(let message): message
         }
     }
 }
@@ -224,50 +202,115 @@ private func parseDate(_ value: String) -> Date? {
     return calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date)
 }
 
-private func parseCSV(_ text: String) throws -> [[String]] {
-    var rows: [[String]] = []
-    var row: [String] = []
-    var field = ""
-    var insideQuotes = false
-    var index = text.startIndex
-
-    while index < text.endIndex {
-        let character = text[index]
-        let next = text.index(after: index)
-        let isLineBreak = character == "\n" || character == "\r" || character == "\r\n"
-        if character == "\"" {
-            if insideQuotes, next < text.endIndex, text[next] == "\"" {
-                field.append("\"")
-                index = text.index(after: next)
-                continue
-            }
-            insideQuotes.toggle()
-        } else if character == ",", insideQuotes == false {
-            row.append(field)
-            field = ""
-        } else if isLineBreak, insideQuotes == false {
-            if character == "\r", next < text.endIndex, text[next] == "\n" {
-                index = next
-            }
-            row.append(field)
-            rows.append(row)
-            row = []
-            field = ""
-        } else {
-            field.append(character)
-        }
-        index = text.index(after: index)
-    }
-
-    guard insideQuotes == false else { throw ImportError.malformedCSV }
-    if field.isEmpty == false || row.isEmpty == false {
-        row.append(field)
-        rows.append(row)
-    }
-    return rows
+private struct SurgicalNumbersTable: Decodable, Sendable {
+    let sheet: String
+    let table: String
+    let headerRow: Int
+    let rows: [[String]]
 }
 
-private func readPatients(databaseURL: URL) throws -> [PatientRecord] {
+private enum SurgicalNumbersReader {
+    // Numbers reads a disposable copy, never the user's original document. Bulk column
+    // reads avoid an Apple Event round trip for every cell in a large surgical log.
+    static let script = #"""
+    function run(argv) {
+        var numbers = Application(argv[0]);
+        var document = numbers.open(Path(argv[1]));
+        try {
+            var required = ['Date', 'Name', 'ID', 'Operation', 'Diagnosis', 'Results', 'Optics', 'Assistants'];
+            var matches = [];
+            var sheets = document.sheets();
+            function normalized(value) { return String(value == null ? '' : value).trim().toLowerCase(); }
+            function cellText(value, formatted) {
+                if (value instanceof Date) {
+                    function pad(n) { return ('0' + n).slice(-2); }
+                    // Numbers exposes date-only cells as UTC instants. Local calendar
+                    // accessors can shift midnight into the previous day west of UTC.
+                    return value.getUTCFullYear() + '-' + pad(value.getUTCMonth() + 1) + '-' + pad(value.getUTCDate());
+                }
+                if (value == null) return formatted == null ? '' : String(formatted);
+                if (typeof value === 'number' && /^0\d+$/.test(String(formatted))) return String(formatted);
+                return String(value);
+            }
+            for (var s = 0; s < sheets.length; s++) {
+                var tables = sheets[s].tables();
+                for (var t = 0; t < tables.length; t++) {
+                    var table = tables[t];
+                    var count = table.rowCount();
+                    for (var h = 0; h < Math.min(20, count); h++) {
+                        var header = table.rows[h].cells.value().map(normalized);
+                        if (!required.every(function (name) { return header.indexOf(name.toLowerCase()) >= 0; })) continue;
+                        required.forEach(function (name) {
+                            if (header.indexOf(name.toLowerCase()) !== header.lastIndexOf(name.toLowerCase()))
+                                throw new Error('Duplicate column: ' + name);
+                        });
+                        var columns = required.map(function (name) {
+                            var cells = table.columns[header.indexOf(name.toLowerCase())].cells;
+                            var values = cells.value();
+                            var formatted = cells.formattedValue();
+                            return values.map(function (value, i) { return cellText(value, formatted[i]); });
+                        });
+                        var rows = [required];
+                        var lastRow = count - table.footerRowCount();
+                        if (columns.some(function (column) { return column.length !== count; }))
+                            throw new Error('Numbers returned an incomplete column.');
+                        for (var r = h + 1; r < lastRow; r++) {
+                            rows.push(columns.map(function (column) { return column[r]; }));
+                        }
+                        matches.push({sheet: sheets[s].name(), table: table.name(), headerRow: h + 1, rows: rows});
+                        break;
+                    }
+                }
+            }
+            if (matches.length !== 1) {
+                throw new Error(matches.length === 0
+                    ? 'No surgical log table found. Required columns: ' + required.join(', ')
+                    : 'More than one surgical log table found: ' + matches.map(function (m) { return m.sheet + ' / ' + m.table; }).join(', '));
+            }
+            return JSON.stringify(matches[0]);
+        } finally {
+            document.close({saving: 'no'});
+        }
+    }
+    """#
+
+    static func read(url: URL, applicationURL: URL) throws -> SurgicalNumbersTable {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HorosSurgeryPreview-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true,
+                                               attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+        let snapshot = temporaryDirectory.appendingPathComponent("Surgical Log Preview.numbers")
+        try FileManager.default.copyItem(at: url, to: snapshot)
+        let errorURL = temporaryDirectory.appendingPathComponent("reader-error.txt")
+        FileManager.default.createFile(atPath: errorURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        let errorFile = try FileHandle(forWritingTo: errorURL)
+        defer { try? errorFile.close() }
+        let output = Pipe()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-l", "JavaScript", "-e", script, applicationURL.path, snapshot.path]
+        process.standardOutput = output
+        process.standardError = errorFile
+        try process.run()
+        let timeout = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timeout.schedule(deadline: .now() + 180)
+        timeout.setEventHandler { if process.isRunning { process.terminate() } }
+        timeout.resume()
+        defer { timeout.cancel() }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let detail = (try? String(contentsOf: errorURL, encoding: .utf8)) ?? "Numbers did not finish reading the document."
+            throw ImportError.spreadsheet("Unable to read the Numbers document. Allow Horos to control Numbers in System Settings > Privacy & Security > Automation if requested.\n\n\(detail)")
+        }
+        return try JSONDecoder().decode(SurgicalNumbersTable.self, from: data)
+    }
+}
+
+private func readPatients(databaseURL: URL) throws -> (patients: [PatientRecord], expectedSRCount: Int) {
     var database: OpaquePointer?
     let result = sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil)
     guard result == SQLITE_OK, let database else {
@@ -275,6 +318,7 @@ private func readPatients(databaseURL: URL) throws -> [PatientRecord] {
         throw ImportError.database("Unable to open Horos database read-only: \(databaseURL.path)")
     }
     defer { sqlite3_close(database) }
+    sqlite3_busy_timeout(database, 5_000)
 
     let sql = """
     SELECT DISTINCT COALESCE(ZNAME, ''), COALESCE(ZPATIENTID, ''), COALESCE(ZPATIENTUID, ''),
@@ -303,7 +347,8 @@ private func readPatients(databaseURL: URL) throws -> [PatientRecord] {
 
     let coreDataEpoch = Date(timeIntervalSince1970: 978_307_200)
     var records: [PatientRecord] = []
-    while sqlite3_step(statement) == SQLITE_ROW {
+    var step = sqlite3_step(statement)
+    while step == SQLITE_ROW {
         let birthDate: Date? = sqlite3_column_type(statement, 3) == SQLITE_NULL
             ? nil
             : coreDataEpoch.addingTimeInterval(sqlite3_column_double(statement, 3))
@@ -315,14 +360,29 @@ private func readPatients(databaseURL: URL) throws -> [PatientRecord] {
             studyInstanceUID: clean(textColumn(4)),
             studyDate: sqlite3_column_double(statement, 5)
         ))
+        step = sqlite3_step(statement)
     }
-    return records
+    guard step == SQLITE_DONE else { throw ImportError.database(String(cString: sqlite3_errmsg(database))) }
+    let countSQL = """
+    SELECT COUNT(*) FROM ZIMAGE
+    JOIN ZSERIES ON ZIMAGE.ZSERIES = ZSERIES.Z_PK
+    WHERE UPPER(COALESCE(ZSERIES.ZNAME, '')) = 'HOROS SURGICAL PROCEDURE SR'
+       OR UPPER(COALESCE(ZSERIES.ZSERIESDESCRIPTION, '')) = 'HOROS SURGICAL PROCEDURE SR'
+    """
+    var countStatement: OpaquePointer?
+    guard sqlite3_prepare_v2(database, countSQL, -1, &countStatement, nil) == SQLITE_OK, let countStatement else {
+        throw ImportError.database(String(cString: sqlite3_errmsg(database)))
+    }
+    defer { sqlite3_finalize(countStatement) }
+    guard sqlite3_step(countStatement) == SQLITE_ROW else {
+        throw ImportError.database(String(cString: sqlite3_errmsg(database)))
+    }
+    return (records, Int(sqlite3_column_int64(countStatement, 0)))
 }
 
-private func prepareProcedures(csvURL: URL, databaseURL: URL) throws -> ([PreparedProcedure], Int, [String: Int]) {
-    let text = try String(contentsOf: csvURL, encoding: .utf8)
-    let rows = try parseCSV(text)
-    guard let header = rows.first else { throw ImportError.malformedCSV }
+private func prepareProcedures(table: SurgicalNumbersTable, sourceURL: URL, patients: [PatientRecord]) throws -> ([PreparedProcedure], [SurgicalProcedurePreviewRow]) {
+    let rows = table.rows
+    guard let header = rows.first else { throw ImportError.spreadsheet("The surgical log table is empty.") }
     var columns: [String: Int] = [:]
     for (index, rawName) in header.enumerated() {
         let name = clean(rawName)
@@ -334,11 +394,10 @@ private func prepareProcedures(csvURL: URL, databaseURL: URL) throws -> ([Prepar
     let missing = required.filter { columns[$0] == nil }
     guard missing.isEmpty else { throw ImportError.missingColumns(missing) }
 
-    let matcher = PatientMatcher(records: try readPatients(databaseURL: databaseURL))
+    let matcher = PatientMatcher(records: patients)
     var prepared: [PreparedProcedure] = []
     var eventOccurrences: [String: Int] = [:]
-    var validRows = 0
-    var skipped: [String: Int] = [:]
+    var skipped: [SurgicalProcedurePreviewRow] = []
 
     func value(_ name: String, in row: [String]) -> String {
         guard let index = columns[name], index < row.count else { return "" }
@@ -346,16 +405,21 @@ private func prepareProcedures(csvURL: URL, databaseURL: URL) throws -> ([Prepar
     }
 
     for (zeroBasedIndex, row) in rows.dropFirst().enumerated() {
-        guard let procedureDate = parseDate(value("Date", in: row)) else { continue }
+        guard row.contains(where: { clean($0).isEmpty == false }) else { continue }
+        let sourceRow = table.headerRow + zeroBasedIndex + 1
         let operation = value("Operation", in: row)
         let sourceName = value("Name", in: row)
-        guard operation.isEmpty == false, sourceName.isEmpty == false else { continue }
-        validRows += 1
-
         let sourceID = value("ID", in: row)
+        let dateText = value("Date", in: row)
+        func skip(_ reason: String) {
+            skipped.append(SurgicalProcedurePreviewRow(row: sourceRow, action: .skipped, patient: sourceName,
+                date: dateText, operation: operation, details: "\(reason)\n\nSource ID: \(sourceID)"))
+        }
+        guard let procedureDate = parseDate(dateText) else { skip("Missing or invalid surgery date."); continue }
+        guard operation.isEmpty == false, sourceName.isEmpty == false else { skip("Missing Name or Operation."); continue }
         let (match, reason) = matcher.match(name: sourceName, patientID: sourceID)
         guard let match else {
-            skipped[reason, default: 0] += 1
+            skip(reason.replacingOccurrences(of: "_", with: " "))
             continue
         }
 
@@ -372,8 +436,8 @@ private func prepareProcedures(csvURL: URL, databaseURL: URL) throws -> ([Prepar
             sourceName, sourceID, match.name, match.patientID, match.patientUID,
             match.birthDate.map(calendarDateString) ?? "", match.studyInstanceUID,
             operation, operationKey, value("Diagnosis", in: row), value("Results", in: row),
-            value("Optics", in: row), value("Assistants", in: row), csvURL.path,
-            String(zeroBasedIndex + 2),
+            value("Optics", in: row), value("Assistants", in: row), sourceURL.path,
+            String(sourceRow),
         ]
         let fingerprint = sha256(values.joined(separator: "\u{1f}"))
         prepared.append(PreparedProcedure(
@@ -393,16 +457,154 @@ private func prepareProcedures(csvURL: URL, databaseURL: URL) throws -> ([Prepar
             results: value("Results", in: row),
             optics: value("Optics", in: row),
             assistants: value("Assistants", in: row),
-            sourceFile: csvURL.path,
-            sourceRow: zeroBasedIndex + 2,
+            sourceFile: sourceURL.path,
+            sourceRow: sourceRow,
             sourceFingerprint: fingerprint
         ))
     }
-    return (prepared, validRows, skipped)
+    return (prepared, skipped)
 }
 
-private func sourceLocationKey(file: String, row: Int) -> String {
-    "\(file)\u{1f}\(row)"
+private enum SurgicalProcedurePreviewAction: String, Sendable {
+    case add = "Add"
+    case update = "Update"
+    case unchanged = "Unchanged"
+    case skipped = "Skipped"
+    case review = "Review"
+}
+
+private struct SurgicalProcedurePreviewRow: Sendable {
+    let row: Int
+    let action: SurgicalProcedurePreviewAction
+    let patient: String
+    let date: String
+    let operation: String
+    let details: String
+}
+
+private struct SurgicalProcedureImportPreview: Sendable {
+    let source: String
+    let sourceURL: URL
+    let sourceStamp: SurgicalProcedureSourceStamp
+    let database: String
+    let existingRecordCount: Int
+    let rows: [SurgicalProcedurePreviewRow]
+    let changes: [SurgicalProcedurePlannedChange]
+
+    var summary: String {
+        [.add, .update, .unchanged, .skipped, .review].map { (action: SurgicalProcedurePreviewAction) in
+            "\(action.rawValue): \(rows.filter { $0.action == action }.count)"
+        }.joined(separator: "    ")
+    }
+}
+
+private struct SurgicalProcedureSourceStamp: Equatable, Sendable {
+    let modificationDate: Date
+    let size: UInt64
+}
+
+private func surgicalProcedureSourceStamp(_ url: URL) throws -> SurgicalProcedureSourceStamp {
+    let access = url.startAccessingSecurityScopedResource()
+    defer { if access { url.stopAccessingSecurityScopedResource() } }
+    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+    guard let date = attributes[.modificationDate] as? Date,
+          let number = attributes[.size] as? NSNumber else {
+        throw ImportError.spreadsheet("Unable to verify the selected Numbers document.")
+    }
+    return SurgicalProcedureSourceStamp(modificationDate: date, size: number.uint64Value)
+}
+
+private struct SurgicalProcedurePlannedChange: Sendable {
+    let action: SurgicalProcedurePreviewAction
+    let procedure: PreparedProcedure
+    let replacing: SurgicalProcedureSRDescriptor?
+}
+
+private struct SurgicalProcedurePreviewComparison: Sendable {
+    let rows: [SurgicalProcedurePreviewRow]
+    let changes: [SurgicalProcedurePlannedChange]
+}
+
+private func procedureFields(_ record: SurgicalProcedureRecord) -> [(String, String)] {
+    [
+        ("Date", calendarDateString(record.procedureDate) + " 12:00"),
+        ("Operation", record.operation),
+        ("Diagnosis", record.diagnosis),
+        ("Results", record.results),
+        ("Optics", record.optics),
+        ("Assistants", record.assistants),
+    ]
+}
+
+private func previewProcedures(
+    _ procedures: [PreparedProcedure],
+    existing: [SurgicalProcedureSRDescriptor],
+    skipped: [SurgicalProcedurePreviewRow]
+) -> SurgicalProcedurePreviewComparison {
+    let byID = Dictionary(grouping: existing, by: { $0.record.eventID })
+    let bySourceRow = Dictionary(grouping: existing, by: { $0.record.sourceRow })
+    let byPatientDate = Dictionary(grouping: existing, by: {
+        "\($0.record.patientKey)|\(calendarDateString($0.record.procedureDate))"
+    })
+    var claimedRecords = Set<String>()
+    var rows = skipped
+    var plannedChanges: [SurgicalProcedurePlannedChange] = []
+    for procedure in procedures {
+        let sameDay = byPatientDate["\(procedure.patientKey)|\(calendarDateString(procedure.procedureDate))"] ?? []
+        // Row numbers can move between exports. Never overwrite a different patient's
+        // procedure simply because it now occupies the same spreadsheet row.
+        let candidates = byID[procedure.eventID] ?? (bySourceRow[procedure.sourceRow] ?? []).filter {
+            $0.record.patientKey == procedure.patientKey
+                && calendarDateString($0.record.procedureDate) == calendarDateString(procedure.procedureDate)
+        }
+        let record = procedure.record(importedAt: Date(), updatedAt: Date())
+        let fields = procedureFields(record)
+        var action: SurgicalProcedurePreviewAction
+        var detail: String
+        var replacement: SurgicalProcedureSRDescriptor?
+        if candidates.count > 1 {
+            action = .review
+            detail = "Multiple existing surgery records match this row; no update is proposed."
+        } else if let descriptor = candidates.first {
+            if claimedRecords.insert(descriptor.record.eventID).inserted == false {
+                action = .review
+                detail = "Another spreadsheet row already matched this surgery; no second update is proposed."
+            } else {
+                let previous = procedureFields(descriptor.record)
+                let changes = zip(previous, fields).filter { $0.0.1 != $0.1.1 }
+                if changes.isEmpty {
+                    action = .unchanged
+                    detail = "The existing surgical procedure SR is already current. Changes to the source filename, row number, fingerprint, or automatically selected anchor study do not alter the procedure and will not trigger an update."
+                } else {
+                    action = .update
+                    replacement = descriptor
+                    detail = changes.map { old, new in
+                        "\(new.0)\n  Current: \(old.1.isEmpty ? "(empty)" : old.1)\n  Proposed: \(new.1.isEmpty ? "(empty)" : new.1)"
+                    }.joined(separator: "\n\n")
+                }
+            }
+        } else if sameDay.isEmpty == false {
+            action = .review
+            detail = "There is already a surgery for this patient on this date with a different operation or event identity. No addition is proposed until this is reviewed.\n\nExisting operations: "
+                + sameDay.map { $0.record.operation }.joined(separator: "; ")
+        } else {
+            action = .add
+            detail = "Would add a surgical procedure SR to this matched patient's studies."
+        }
+        if action != .update {
+            detail += "\n\n" + fields.map { "\($0.0): \($0.1.isEmpty ? "(empty)" : $0.1)" }.joined(separator: "\n")
+        }
+        rows.append(SurgicalProcedurePreviewRow(row: procedure.sourceRow, action: action,
+            patient: "\(procedure.matchedPatientName) [\(procedure.matchedPatientID)]",
+            date: calendarDateString(procedure.procedureDate), operation: procedure.operation, details: detail))
+        if action == .add || action == .update {
+            plannedChanges.append(SurgicalProcedurePlannedChange(
+                action: action, procedure: procedure, replacing: replacement))
+        }
+    }
+    return SurgicalProcedurePreviewComparison(
+        rows: rows.sorted { $0.row < $1.row },
+        changes: plannedChanges.sorted { $0.procedure.sourceRow < $1.procedure.sourceRow })
 }
 
 private func decimalUIDComponent(for seed: String) -> String {
@@ -436,9 +638,7 @@ private let dicomDateFormatter: DateFormatter = {
 }()
 
 private func retainedUID(_ value: String?, eventID: String, component: String) -> String {
-    guard let value, value.isEmpty == false else {
-        return dicomUID(for: eventID, component: component)
-    }
+    guard let value, value.isEmpty == false else { return dicomUID(for: eventID, component: component) }
     return value
 }
 
@@ -449,42 +649,16 @@ private func payload(
     [
         "recordJSON": try SurgicalProcedureRecordCoding.encode(record),
         "eventID": record.eventID,
-        "sopInstanceUID": retainedUID(
-            descriptor?.sopInstanceUID,
-            eventID: record.eventID,
-            component: "sop"
-        ),
-        "seriesInstanceUID": retainedUID(
-            descriptor?.seriesInstanceUID,
-            eventID: record.eventID,
-            component: "series"
-        ),
-        "studyInstanceUID": retainedUID(
-            descriptor?.studyInstanceUID,
-            eventID: record.eventID,
-            component: "study"
-        ),
+        "sopInstanceUID": retainedUID(descriptor?.sopInstanceUID, eventID: record.eventID, component: "sop"),
+        "seriesInstanceUID": retainedUID(descriptor?.seriesInstanceUID, eventID: record.eventID, component: "series"),
+        "studyInstanceUID": retainedUID(descriptor?.studyInstanceUID, eventID: record.eventID, component: "study"),
         "patientName": record.matchedPatientName,
-        "patientBirthDate": record.matchedBirthDate.map {
-            dicomDateFormatter.string(from: $0)
-        } ?? "",
+        "patientBirthDate": record.matchedBirthDate.map { dicomDateFormatter.string(from: $0) } ?? "",
         "patientID": record.matchedPatientID,
         "contentDate": dicomDateFormatter.string(from: record.procedureDate),
         "contentTime": "120000",
         "existingPath": descriptor?.path ?? "",
     ]
-}
-
-private func descriptorMaps(
-    _ descriptors: [SurgicalProcedureSRDescriptor]
-) -> (byID: [String: SurgicalProcedureSRDescriptor], bySource: [String: SurgicalProcedureSRDescriptor]) {
-    var byID: [String: SurgicalProcedureSRDescriptor] = [:]
-    var bySource: [String: SurgicalProcedureSRDescriptor] = [:]
-    for descriptor in descriptors {
-        byID[descriptor.record.eventID] = descriptor
-        bySource[sourceLocationKey(file: descriptor.record.sourceFile, row: descriptor.record.sourceRow)] = descriptor
-    }
-    return (byID, bySource)
 }
 
 private func storePayloads(_ payloads: [[String: Any]], databaseBasePath: String) throws {
@@ -505,70 +679,245 @@ private func storePayloads(_ payloads: [[String: Any]], databaseBasePath: String
 }
 
 private func importProcedures(
-    _ procedures: [PreparedProcedure],
+    _ changes: [SurgicalProcedurePlannedChange],
+    expectedExistingCount: Int,
     databaseBasePath: String
-) throws -> (Int, Int, Int) {
-    let existingDescriptors = SurgicalProcedureRecordCoding.descriptors(databaseBasePath: databaseBasePath)
-    var maps = descriptorMaps(existingDescriptors)
+) throws -> (inserted: Int, updated: Int, unchanged: Int) {
+    guard changes.isEmpty == false else { return (0, 0, 0) }
+    let current = SurgicalProcedureRecordCoding.descriptors(databaseBasePath: databaseBasePath)
+    guard current.count == expectedExistingCount else {
+        throw ImportError.database("The surgery records changed after this preview was created. Close the preview and run it again.")
+    }
+    let currentByID = Dictionary(grouping: current, by: { $0.record.eventID })
+    let currentByPatientDate = Dictionary(grouping: current, by: {
+        "\($0.record.patientKey)|\(calendarDateString($0.record.procedureDate))"
+    })
     var payloads: [[String: Any]] = []
-    var inserted = 0
+    var added = 0
     var updated = 0
-    var unchanged = 0
     let now = Date()
 
-    for procedure in procedures {
-        let sourceKey = sourceLocationKey(file: procedure.sourceFile, row: procedure.sourceRow)
-        let existing = maps.byID[procedure.eventID] ?? maps.bySource[sourceKey]
-        if let existing, procedure.hasSameImportedValues(as: existing.record) {
-            unchanged += 1
+    for change in changes {
+        let procedure = change.procedure
+        let replacement: SurgicalProcedureSRDescriptor?
+        switch change.action {
+        case .add:
+            let patientDate = "\(procedure.patientKey)|\(calendarDateString(procedure.procedureDate))"
+            guard currentByID[procedure.eventID] == nil,
+                  currentByPatientDate[patientDate, default: []].isEmpty else {
+                throw ImportError.database("A surgery matching spreadsheet row \(procedure.sourceRow) appeared after this preview was created. Run the preview again.")
+            }
+            replacement = nil
+            added += 1
+        case .update:
+            guard let expected = change.replacing,
+                  let candidates = currentByID[expected.record.eventID],
+                  candidates.count == 1,
+                  let candidate = candidates.first,
+                  candidate.record == expected.record,
+                  candidate.path == expected.path else {
+                throw ImportError.database("The surgery corresponding to spreadsheet row \(procedure.sourceRow) changed after this preview was created. Run the preview again.")
+            }
+            replacement = candidate
+            updated += 1
+        default:
             continue
         }
-
-        let record = procedure.record(importedAt: existing?.record.importedAt ?? now, updatedAt: now)
-        payloads.append(try payload(for: record, replacing: existing))
-        let replacement = SurgicalProcedureSRDescriptor(
-            record: record,
-            replacing: existing
-        )
-        if let existing {
-            maps.byID[existing.record.eventID] = nil
-            maps.bySource[sourceLocationKey(file: existing.record.sourceFile, row: existing.record.sourceRow)] = nil
-            updated += 1
-        } else {
-            inserted += 1
-        }
-        maps.byID[record.eventID] = replacement
-        maps.bySource[sourceKey] = replacement
+        let record = procedure.record(importedAt: replacement?.record.importedAt ?? now, updatedAt: now)
+        payloads.append(try payload(for: record, replacing: replacement))
     }
 
     try storePayloads(payloads, databaseBasePath: databaseBasePath)
-    return (inserted, updated, unchanged)
+    return (added, updated, 0)
 }
 
-private extension SurgicalProcedureSRDescriptor {
-    init(record: SurgicalProcedureRecord, replacing descriptor: SurgicalProcedureSRDescriptor?) {
-        self.record = record
-        recordJSON = ""
-        path = descriptor?.path ?? ""
-        studyXID = descriptor?.studyXID ?? ""
-        studyInstanceUID = descriptor?.studyInstanceUID ?? dicomUID(for: record.eventID, component: "study")
-        seriesInstanceUID = descriptor?.seriesInstanceUID ?? dicomUID(for: record.eventID, component: "series")
-        sopInstanceUID = descriptor?.sopInstanceUID ?? dicomUID(for: record.eventID, component: "sop")
+@MainActor
+private final class SurgicalProcedurePreviewWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
+    private let preview: SurgicalProcedureImportPreview
+    private let tableView = NSTableView()
+    private let detailsView = NSTextView()
+    private let filter = NSPopUpButton()
+    private let onCommit: @MainActor () -> Void
+    private var visibleRows: [SurgicalProcedurePreviewRow] = []
+
+    init(preview: SurgicalProcedureImportPreview, onCommit: @escaping @MainActor () -> Void) {
+        self.preview = preview
+        self.onCommit = onCommit
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
+                              styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                              backing: .buffered, defer: false)
+        window.title = "Surgical Procedure Import Preview"
+        window.minSize = NSSize(width: 800, height: 520)
+        window.isReleasedWhenClosed = false
+        super.init(window: window)
+        guard let content = window.contentView else { return }
+
+        let sourceLabel = NSTextField(wrappingLabelWithString: preview.source + "\nDatabase: " + preview.database)
+        sourceLabel.font = .systemFont(ofSize: 12)
+        sourceLabel.isSelectable = true
+        let summary = NSTextField(labelWithString: preview.summary)
+        summary.font = .systemFont(ofSize: 13, weight: .semibold)
+        let readOnlyLabel = NSTextField(labelWithString: "No database records have been changed. Review the proposed changes before committing.")
+        readOnlyLabel.textColor = .secondaryLabelColor
+        filter.addItems(withTitles: ["All Rows", "Proposed Changes", "Needs Review / Skipped", "Unchanged"])
+        filter.target = self
+        filter.action = #selector(updateFilter)
+
+        for (identifier, title, width) in [
+            ("row", "Row", 55.0), ("action", "Action", 90.0), ("patient", "Matched Patient", 280.0),
+            ("date", "Surgery Date", 110.0), ("operation", "Operation", 490.0)
+        ] {
+            let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
+            column.title = title
+            column.width = width
+            tableView.addTableColumn(column)
+        }
+        tableView.delegate = self
+        tableView.dataSource = self
+        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.rowHeight = 24
+        tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        let tableScroll = NSScrollView()
+        tableScroll.documentView = tableView
+        tableScroll.hasVerticalScroller = true
+        tableScroll.hasHorizontalScroller = true
+        tableScroll.borderType = .bezelBorder
+
+        let detailsScroll = NSScrollView()
+        detailsScroll.hasVerticalScroller = true
+        detailsScroll.borderType = .bezelBorder
+        detailsScroll.documentView = detailsView
+        detailsView.isEditable = false
+        detailsView.isSelectable = true
+        detailsView.isRichText = false
+        detailsView.font = .systemFont(ofSize: 13)
+        detailsView.textColor = .textColor
+        detailsView.backgroundColor = .textBackgroundColor
+        detailsView.textContainerInset = NSSize(width: 10, height: 10)
+        detailsView.isVerticallyResizable = true
+        detailsView.isHorizontallyResizable = false
+        detailsView.autoresizingMask = [.width]
+        detailsView.textContainer?.widthTracksTextView = true
+        detailsView.textContainer?.containerSize = NSSize(width: 1000, height: CGFloat.greatestFiniteMagnitude)
+        let close = NSButton(title: "Close", target: self, action: #selector(closePreview))
+        close.keyEquivalent = "\u{1b}"
+        let commit = NSButton(
+            title: "Commit \(preview.changes.count) Change\(preview.changes.count == 1 ? "" : "s")",
+            target: self,
+            action: #selector(confirmCommit)
+        )
+        commit.bezelStyle = .rounded
+        commit.isEnabled = preview.changes.isEmpty == false
+
+        for view in [sourceLabel, summary, readOnlyLabel, filter, tableScroll, detailsScroll, close, commit] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            sourceLabel.topAnchor.constraint(equalTo: content.topAnchor, constant: 16),
+            sourceLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
+            sourceLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
+            summary.topAnchor.constraint(equalTo: sourceLabel.bottomAnchor, constant: 12),
+            summary.leadingAnchor.constraint(equalTo: sourceLabel.leadingAnchor),
+            summary.trailingAnchor.constraint(lessThanOrEqualTo: filter.leadingAnchor, constant: -12),
+            filter.centerYAnchor.constraint(equalTo: summary.centerYAnchor),
+            filter.trailingAnchor.constraint(equalTo: sourceLabel.trailingAnchor),
+            tableScroll.topAnchor.constraint(equalTo: filter.bottomAnchor, constant: 10),
+            tableScroll.leadingAnchor.constraint(equalTo: sourceLabel.leadingAnchor),
+            tableScroll.trailingAnchor.constraint(equalTo: sourceLabel.trailingAnchor),
+            tableScroll.heightAnchor.constraint(equalTo: content.heightAnchor, multiplier: 0.40),
+            detailsScroll.topAnchor.constraint(equalTo: tableScroll.bottomAnchor, constant: 10),
+            detailsScroll.leadingAnchor.constraint(equalTo: sourceLabel.leadingAnchor),
+            detailsScroll.trailingAnchor.constraint(equalTo: sourceLabel.trailingAnchor),
+            detailsScroll.bottomAnchor.constraint(equalTo: close.topAnchor, constant: -12),
+            close.trailingAnchor.constraint(equalTo: sourceLabel.trailingAnchor),
+            close.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -12),
+            commit.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -10),
+            commit.centerYAnchor.constraint(equalTo: close.centerYAnchor),
+            readOnlyLabel.leadingAnchor.constraint(equalTo: sourceLabel.leadingAnchor),
+            readOnlyLabel.centerYAnchor.constraint(equalTo: close.centerYAnchor),
+            readOnlyLabel.trailingAnchor.constraint(lessThanOrEqualTo: commit.leadingAnchor, constant: -12),
+        ])
+        updateFilter()
+        window.center()
     }
-}
 
-private struct SurgicalProcedureImportSummary: Sendable {
-    let validRows: Int
-    let matchedRows: Int
-    let skipped: [String: Int]
-    let inserted: Int
-    let updated: Int
-    let unchanged: Int
-}
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-private enum SurgicalProcedureImportOutcome: Sendable {
-    case success(SurgicalProcedureImportSummary)
-    case failure(String)
+    @objc private func closePreview() { close() }
+
+    @objc private func confirmCommit() {
+        guard let window, preview.changes.isEmpty == false else { return }
+        let additions = preview.changes.filter { $0.action == .add }.count
+        let updates = preview.changes.filter { $0.action == .update }.count
+        let alert = NSAlert()
+        alert.messageText = "Commit Surgical Procedure Changes?"
+        alert.informativeText = "Horos will add \(additions) and update \(updates) surgical procedure SR record\(preview.changes.count == 1 ? "" : "s"). Review, skipped, and unchanged rows will not be modified."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Commit")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.onCommit()
+        }
+    }
+
+    @objc private func updateFilter() {
+        visibleRows = preview.rows.filter { row in
+            switch filter.indexOfSelectedItem {
+            case 1: return row.action == .add || row.action == .update
+            case 2: return row.action == .review || row.action == .skipped
+            case 3: return row.action == .unchanged
+            default: return true
+            }
+        }
+        tableView.reloadData()
+        if visibleRows.isEmpty {
+            detailsView.string = "No rows in this category."
+        } else {
+            tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+            tableViewSelectionDidChange(Notification(name: NSTableView.selectionDidChangeNotification))
+        }
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int { visibleRows.count }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard let identifier = tableColumn?.identifier, visibleRows.indices.contains(row) else { return nil }
+        let entry = visibleRows[row]
+        let cell = (tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView) ?? NSTableCellView()
+        if cell.textField == nil {
+            cell.identifier = identifier
+            let label = NSTextField(labelWithString: "")
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.lineBreakMode = .byTruncatingTail
+            cell.addSubview(label)
+            cell.textField = label
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+                label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+                label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            ])
+        }
+        let text: String
+        switch identifier.rawValue {
+        case "row": text = String(entry.row)
+        case "action": text = entry.action.rawValue
+        case "patient": text = entry.patient
+        case "date": text = entry.date
+        default: text = entry.operation
+        }
+        cell.textField?.stringValue = text
+        cell.toolTip = text
+        return cell
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        guard visibleRows.indices.contains(tableView.selectedRow) else { detailsView.string = ""; return }
+        let row = visibleRows[tableView.selectedRow]
+        detailsView.string = "Row \(row.row) - \(row.action.rawValue)\n\(row.patient)\n\(row.date) - \(row.operation)\n\n\(row.details)"
+        detailsView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+    }
 }
 
 @MainActor
@@ -576,6 +925,30 @@ private enum SurgicalProcedureImportOutcome: Sendable {
 final class SurgicalProcedureImportController: NSObject {
     private static let menuItemTag = 0x5355_5247
     private static let shared = SurgicalProcedureImportController()
+    private static let lastFileKey = "SurgicalProcedureImportLastNumbersFile"
+    private static let lastBookmarkKey = "SurgicalProcedureImportLastNumbersBookmark"
+    private var isPreviewing = false
+    private var isCommitting = false
+    private var previewWindow: SurgicalProcedurePreviewWindowController?
+
+    private func rememberFile(_ url: URL) {
+        UserDefaults.standard.set(url.path, forKey: Self.lastFileKey)
+        let bookmark = try? url.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                                            includingResourceValuesForKeys: nil, relativeTo: nil)
+        UserDefaults.standard.set(bookmark, forKey: Self.lastBookmarkKey)
+    }
+
+    private func rememberedFile() -> URL? {
+        if let bookmark = UserDefaults.standard.data(forKey: Self.lastBookmarkKey) {
+            var stale = false
+            if let url = try? URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope, .withoutUI],
+                                  relativeTo: nil, bookmarkDataIsStale: &stale) {
+                if stale { rememberFile(url) }
+                return url
+            }
+        }
+        return UserDefaults.standard.string(forKey: Self.lastFileKey).map { URL(fileURLWithPath: $0) }
+    }
 
     @objc(installMenuItem)
     class func installMenuItem() {
@@ -605,6 +978,7 @@ final class SurgicalProcedureImportController: NSObject {
 
     @objc(importSurgicalProcedures:)
     private func importSurgicalProcedures(_ sender: Any?) {
+        guard isPreviewing == false else { return }
         guard let browser = BrowserController.currentBrowser(),
               let databasePaths = browser
                 .perform(NSSelectorFromString("surgicalProcedureImportDatabasePaths"))?
@@ -623,73 +997,84 @@ final class SurgicalProcedureImportController: NSObject {
 
         let panel = NSOpenPanel()
         panel.title = NSLocalizedString("Import Surgical Procedures", comment: "")
-        panel.message = NSLocalizedString("Choose the surgical log CSV to match against the current Horos database.", comment: "")
-        panel.prompt = NSLocalizedString("Import", comment: "")
-        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.message = NSLocalizedString("Choose a Numbers surgical log to preview changes before importing.", comment: "")
+        panel.prompt = NSLocalizedString("Preview", comment: "")
+        panel.allowedContentTypes = [UTType(filenameExtension: "numbers")
+            ?? UTType(importedAs: "com.apple.iwork.numbers.numbers", conformingTo: .data)]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
 
-        let defaultCSV = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Library/CloudStorage/Dropbox/ImagesD/SurgicalLog.csv")
-        if FileManager.default.fileExists(atPath: defaultCSV.path) {
-            panel.directoryURL = defaultCSV.deletingLastPathComponent()
-            panel.nameFieldStringValue = defaultCSV.lastPathComponent
+        if let previous = rememberedFile() {
+            panel.directoryURL = previous.deletingLastPathComponent()
+            panel.nameFieldStringValue = previous.lastPathComponent
         }
 
-        panel.beginSheetModal(for: parentWindow) { [weak self, weak browser] response in
-            guard response == .OK, let csvURL = panel.url, let self else { return }
-            self.performImport(
-                csvURL: csvURL,
+        panel.beginSheetModal(for: parentWindow) { [weak self] response in
+            guard response == .OK, let numbersURL = panel.url, let self else { return }
+            self.rememberFile(numbersURL)
+            let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Numbers")
+                ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.iWork.Numbers")
+            guard let appURL else {
+                self.presentMessage(title: "Numbers Required", message: "Install Apple Numbers to read this document.",
+                                    style: .warning, window: parentWindow)
+                return
+            }
+            self.performPreview(
+                numbersURL: numbersURL,
+                applicationURL: appURL,
                 databaseURL: URL(fileURLWithPath: databasePath),
                 basePath: basePath,
-                browser: browser,
                 parentWindow: parentWindow
             )
         }
     }
 
-    private func performImport(
-        csvURL: URL,
+    private func performPreview(
+        numbersURL: URL,
+        applicationURL: URL,
         databaseURL: URL,
         basePath: String,
-        browser: BrowserController?,
         parentWindow: NSWindow
     ) {
+        isPreviewing = true
         let progressAlert = NSAlert()
-        progressAlert.messageText = NSLocalizedString("Importing Surgical Procedures", comment: "")
-        progressAlert.informativeText = NSLocalizedString("Matching the CSV against the current Horos database...", comment: "")
+        progressAlert.messageText = NSLocalizedString("Preparing Surgical Procedure Preview", comment: "")
+        progressAlert.informativeText = NSLocalizedString("Reading Numbers and comparing with the current Horos database. No records will be changed.", comment: "")
         progressAlert.alertStyle = .informational
         let progress = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 280, height: 20))
         progress.style = .spinning
         progress.controlSize = .regular
         progress.startAnimation(nil)
         progressAlert.accessoryView = progress
+        progressAlert.addButton(withTitle: "Please Wait").isEnabled = false
         progressAlert.beginSheetModal(for: parentWindow) { _ in }
 
-        Task { @MainActor [weak browser] in
-            let outcome = await Task.detached(priority: .userInitiated) {
+        Task { @MainActor [self] in
+            let outcome: Result<SurgicalProcedureImportPreview, Error> = await Task.detached(priority: .userInitiated) {
                 do {
-                    let (procedures, validRows, skipped) = try prepareProcedures(
-                        csvURL: csvURL,
-                        databaseURL: databaseURL
-                    )
-                    let changes = try importProcedures(
-                        procedures,
-                        databaseBasePath: basePath
-                    )
-                    return SurgicalProcedureImportOutcome.success(
-                        SurgicalProcedureImportSummary(
-                            validRows: validRows,
-                            matchedRows: procedures.count,
-                            skipped: skipped,
-                            inserted: changes.0,
-                            updated: changes.1,
-                            unchanged: changes.2
-                        )
-                    )
+                    let sourceStamp = try surgicalProcedureSourceStamp(numbersURL)
+                    let table = try SurgicalNumbersReader.read(url: numbersURL, applicationURL: applicationURL)
+                    guard try surgicalProcedureSourceStamp(numbersURL) == sourceStamp else {
+                        throw ImportError.spreadsheet("The Numbers document changed while Horos was reading it. Save it and run the preview again.")
+                    }
+                    let snapshot = try readPatients(databaseURL: databaseURL)
+                    let (procedures, skipped) = try prepareProcedures(table: table, sourceURL: numbersURL, patients: snapshot.patients)
+                    let existing = SurgicalProcedureRecordCoding.descriptors(databaseBasePath: basePath)
+                    guard existing.count == snapshot.expectedSRCount else {
+                        throw ImportError.database("The database lists \(snapshot.expectedSRCount) surgery SR files, but only \(existing.count) could be read. Preview stopped to avoid proposing duplicates. Check that the database drive is available and try again after any transfers finish.")
+                    }
+                    let comparison = previewProcedures(procedures, existing: existing, skipped: skipped)
+                    return .success(SurgicalProcedureImportPreview(
+                        source: "\(numbersURL.path)\n\(table.sheet) / \(table.table)",
+                        sourceURL: numbersURL,
+                        sourceStamp: sourceStamp,
+                        database: basePath,
+                        existingRecordCount: existing.count,
+                        rows: comparison.rows,
+                        changes: comparison.changes))
                 } catch {
-                    return SurgicalProcedureImportOutcome.failure(error.localizedDescription)
+                    return .failure(error)
                 }
             }.value
 
@@ -697,31 +1082,78 @@ final class SurgicalProcedureImportController: NSObject {
                 parentWindow.endSheet(progressAlert.window)
             }
             progress.stopAnimation(nil)
+            isPreviewing = false
 
             switch outcome {
-            case .success(let summary):
-                _ = browser?.outlineViewRefresh()
-                let skippedCount = summary.validRows - summary.matchedRows
-                let skippedDetails = summary.skipped.sorted(by: { $0.key < $1.key })
-                    .map { "\($0.key.replacingOccurrences(of: "_", with: " ")): \($0.value)" }
-                    .joined(separator: "\n")
-                var message = "Matched \(summary.matchedRows) of \(summary.validRows) dated procedures.\n"
-                message += "Added \(summary.inserted), updated \(summary.updated), already current \(summary.unchanged)."
-                if skippedCount > 0 {
-                    message += "\n\nSkipped \(skippedCount) unmatched or ambiguous rows."
-                    if skippedDetails.isEmpty == false { message += "\n\(skippedDetails)" }
+            case .success(let preview):
+                previewWindow?.close()
+                previewWindow = SurgicalProcedurePreviewWindowController(preview: preview) { [unowned self, weak browser = BrowserController.currentBrowser()] in
+                    performCommit(preview: preview, browser: browser)
                 }
+                NSApp.activate(ignoringOtherApps: true)
+                previewWindow?.showWindow(nil)
+            case .failure(let error):
                 presentMessage(
-                    title: NSLocalizedString("Surgical Procedure Import Complete", comment: ""),
-                    message: message,
-                    style: .informational,
+                    title: NSLocalizedString("Surgical Procedure Preview Failed", comment: ""),
+                    message: error.localizedDescription,
+                    style: .critical,
                     window: parentWindow
                 )
+            }
+        }
+    }
 
-            case .failure(let message):
+    private func performCommit(preview: SurgicalProcedureImportPreview, browser: BrowserController?) {
+        guard isCommitting == false, preview.changes.isEmpty == false,
+              let parentWindow = previewWindow?.window else { return }
+        isCommitting = true
+        let progressAlert = NSAlert()
+        progressAlert.messageText = "Committing Surgical Procedure Changes"
+        progressAlert.informativeText = "Writing and verifying DICOM SR records in the current Horos database..."
+        progressAlert.alertStyle = .informational
+        let progress = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 280, height: 20))
+        progress.style = .spinning
+        progress.startAnimation(nil)
+        progressAlert.accessoryView = progress
+        progressAlert.addButton(withTitle: "Please Wait").isEnabled = false
+        progressAlert.beginSheetModal(for: parentWindow) { _ in }
+
+        Task { @MainActor in
+            let outcome: Result<(inserted: Int, updated: Int, unchanged: Int), Error> = await Task.detached(priority: .userInitiated) {
+                do {
+                    guard try surgicalProcedureSourceStamp(preview.sourceURL) == preview.sourceStamp else {
+                        throw ImportError.spreadsheet("The Numbers document changed after this preview was created. Close the preview and run it again.")
+                    }
+                    return .success(try importProcedures(
+                        preview.changes,
+                        expectedExistingCount: preview.existingRecordCount,
+                        databaseBasePath: preview.database
+                    ))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+
+            if parentWindow.attachedSheet === progressAlert.window {
+                parentWindow.endSheet(progressAlert.window)
+            }
+            progress.stopAnimation(nil)
+            isCommitting = false
+            switch outcome {
+            case .success(let summary):
+                previewWindow?.close()
+                previewWindow = nil
+                _ = browser?.outlineViewRefresh()
                 presentMessage(
-                    title: NSLocalizedString("Surgical Procedure Import Failed", comment: ""),
-                    message: message,
+                    title: "Surgical Procedure Import Complete",
+                    message: "Added \(summary.inserted) and updated \(summary.updated) surgical procedure SR record\(summary.inserted + summary.updated == 1 ? "" : "s").",
+                    style: .informational,
+                    window: browser?.window ?? NSApp.keyWindow
+                )
+            case .failure(let error):
+                presentMessage(
+                    title: "Surgical Procedure Import Failed",
+                    message: error.localizedDescription,
                     style: .critical,
                     window: parentWindow
                 )

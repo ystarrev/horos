@@ -40,6 +40,7 @@ final class MetalViewerToolbarView: NSView {
         case finishEditing
         case duplicate
         case rename
+        case color
         case delete
         case undo
         case redo
@@ -278,14 +279,24 @@ final class MetalViewerToolbarView: NSView {
             keyEquivalent: "r",
             modifierMask: [.command, .option]
         )
+        let finishEditingTitle: String
+        switch editingMode {
+        case .translate:
+            finishEditingTitle = NSLocalizedString("Finish Adjusting ROI", comment: "")
+        case .createSphere:
+            finishEditingTitle = NSLocalizedString("Cancel New ROI", comment: "")
+        case .inactive:
+            finishEditingTitle = NSLocalizedString("Finish ROI Editing", comment: "")
+        }
         addItem(
-            NSLocalizedString("Cancel New ROI", comment: ""),
+            finishEditingTitle,
             command: .finishEditing,
             enabled: editingMode != .inactive
         )
         roiPopup.menu?.addItem(.separator())
         addItem(NSLocalizedString("Duplicate ROI", comment: ""), command: .duplicate, enabled: store.selectedROI != nil)
         addItem(NSLocalizedString("Rename ROI…", comment: ""), command: .rename, enabled: store.selectedROI != nil)
+        addItem(NSLocalizedString("ROI Color…", comment: ""), command: .color, enabled: store.selectedROI != nil)
         addItem(NSLocalizedString("Delete ROI", comment: ""), command: .delete, enabled: store.selectedROI != nil)
         roiPopup.menu?.addItem(.separator())
         addItem(NSLocalizedString("Undo ROI Edit", comment: ""), command: .undo, enabled: store.canUndo)
@@ -737,26 +748,7 @@ final class MetalViewerToolbarView: NSView {
     }
 
     private func mouseToolImage(for tool: MetalViewerMouseTool) -> NSImage {
-        switch tool {
-        case .windowLevel:
-            return toolbarImage(named: "WLWW")
-        case .pan:
-            return toolbarImage(named: "Move")
-        case .zoom:
-            return toolbarImage(named: "Zoom")
-        case .rotate:
-            return toolbarImage(named: "Rotate")
-        case .scroll:
-            return toolbarImage(named: "Stack")
-        case .measure:
-            return toolbarImage(named: "Length")
-        case .tumourSeed:
-            return tumourSeedTargetImage()
-        case .roiAnchor:
-            return roiAnchorImage(deleting: false)
-        case .deleteROIAnchor:
-            return roiAnchorImage(deleting: true)
-        }
+        MetalViewerMouseToolArtwork.image(for: tool)
     }
 
     private func mouseToolTitle(_ tool: MetalViewerMouseTool) -> String {
@@ -803,74 +795,6 @@ final class MetalViewerToolbarView: NSView {
         case .deleteROIAnchor:
             return NSLocalizedString("Delete ROI Anchor: click an existing anchor to remove it from the selected 3D ROI.", comment: "")
         }
-    }
-
-    private func roiAnchorImage(deleting: Bool) -> NSImage {
-        let size = NSSize(width: 24, height: 24)
-        let image = NSImage(size: size, flipped: false) { _ in
-            NSColor.clear.setFill()
-            NSRect(origin: .zero, size: size).fill()
-
-            let color = deleting ? NSColor.systemRed : NSColor.systemGreen
-            let markerRect = NSRect(x: 5, y: 5, width: 14, height: 14)
-            color.setFill()
-            NSBezierPath(ovalIn: markerRect).fill()
-            NSColor.black.withAlphaComponent(0.65).setStroke()
-            let outline = NSBezierPath(ovalIn: markerRect)
-            outline.lineWidth = 1
-            outline.stroke()
-
-            let glyph = NSBezierPath()
-            glyph.lineWidth = 2
-            glyph.lineCapStyle = .round
-            glyph.move(to: CGPoint(x: 8.5, y: 12))
-            glyph.line(to: CGPoint(x: 15.5, y: 12))
-            if deleting == false {
-                glyph.move(to: CGPoint(x: 12, y: 8.5))
-                glyph.line(to: CGPoint(x: 12, y: 15.5))
-            }
-            NSColor.white.setStroke()
-            glyph.stroke()
-            return true
-        }
-        image.isTemplate = false
-        return image
-    }
-
-    private func tumourSeedTargetImage() -> NSImage {
-        let size = NSSize(width: 24, height: 24)
-        let image = NSImage(size: size, flipped: false) { _ in
-            NSColor.clear.setFill()
-            NSRect(origin: .zero, size: size).fill()
-
-            let center = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
-            let outerRect = NSRect(x: 3, y: 3, width: 18, height: 18)
-            let middleRect = outerRect.insetBy(dx: 4, dy: 4)
-            let innerRect = outerRect.insetBy(dx: 7, dy: 7)
-
-            NSColor.systemRed.setFill()
-            NSBezierPath(ovalIn: outerRect).fill()
-            NSColor.white.setFill()
-            NSBezierPath(ovalIn: middleRect).fill()
-            NSColor.systemRed.setFill()
-            NSBezierPath(ovalIn: innerRect).fill()
-
-            let crosshair = NSBezierPath()
-            crosshair.lineWidth = 1.4
-            crosshair.move(to: CGPoint(x: center.x, y: 1.5))
-            crosshair.line(to: CGPoint(x: center.x, y: 6))
-            crosshair.move(to: CGPoint(x: center.x, y: 18))
-            crosshair.line(to: CGPoint(x: center.x, y: 22.5))
-            crosshair.move(to: CGPoint(x: 1.5, y: center.y))
-            crosshair.line(to: CGPoint(x: 6, y: center.y))
-            crosshair.move(to: CGPoint(x: 18, y: center.y))
-            crosshair.line(to: CGPoint(x: 22.5, y: center.y))
-            NSColor.white.setStroke()
-            crosshair.stroke()
-            return true
-        }
-        image.isTemplate = false
-        return image
     }
 
     private func makeSyncScaleContent() -> NSView {

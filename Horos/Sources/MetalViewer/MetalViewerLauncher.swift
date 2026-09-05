@@ -114,7 +114,7 @@ enum MetalViewerScreenPlacement {
 @objc(HorosMetalViewerLauncher)
 final class MetalViewerLauncher: NSObject {
     private static var retainedControllers: [MetalViewerWindowController] = []
-    private static var refreshContexts: [ObjectIdentifier: ViewerRefreshContext] = [:]
+    private static var refreshContexts: [ObjectIdentifier: [ViewerRefreshContext]] = [:]
     private static var databaseAddObserver: NSObjectProtocol?
     private static var pendingDatabaseRefresh: DispatchWorkItem?
     private static var pendingRefreshIdentifiers: RefreshIdentifiers?
@@ -136,6 +136,66 @@ final class MetalViewerLauncher: NSObject {
     @objc(closeAllWindows)
     class func closeAllWindows() {
         retainedControllers.compactMap { $0.window }.forEach { $0.close() }
+    }
+
+    @objc(canAddPatientToCurrentViewer)
+    class func canAddPatientToCurrentViewer() -> Bool {
+        frontmostController()?.canAddPatient
+            ?? false
+    }
+
+    @objc(addPatientWithContext:)
+    class func addPatient(withContext context: NSDictionary) {
+        guard let controller = frontmostController(),
+              let pixList = context["pixList"] as? NSArray,
+              let frames = pixList as? [DCMPix],
+              let title = context["title"] as? String,
+              frames.isEmpty == false else {
+            NSSound.beep()
+            return
+        }
+        let forceDynamicInterpretation = (context["forceDynamicInterpretation"] as? NSNumber)?.boolValue ?? false
+        let identifiers = refreshIdentifiers(from: frames)
+        let initialStudy = buildInitialStudy(
+            from: frames,
+            fallbackTitle: title,
+            forceDynamicInterpretation: forceDynamicInterpretation
+        )
+        guard controller.addPatientStudy(initialStudy, selectInitialSeries: true) else { return }
+        upsertRefreshContext(
+            ViewerRefreshContext(
+                frames: frames,
+                fallbackTitle: title,
+                identifiers: identifiers,
+                forceDynamicInterpretation: forceDynamicInterpretation
+            ),
+            for: controller
+        )
+        ensureDatabaseAddObserver()
+        controller.window?.makeKeyAndOrderFront(NSApp)
+        NSApp.activate(ignoringOtherApps: true)
+
+        DispatchQueue.main.async {
+            let fullStudy = buildStudy(
+                from: frames,
+                fallbackTitle: title,
+                forceDynamicInterpretation: forceDynamicInterpretation,
+                markScoutStudiesOpened: true
+            )
+            controller.updatePatientStudy(
+                fullStudy,
+                selectInitialSeries: true,
+                revealSelectedSeriesInScout: true
+            )
+        }
+    }
+
+    private class func frontmostController() -> MetalViewerWindowController? {
+        if let keyWindow = NSApp.keyWindow,
+           let controller = retainedControllers.first(where: { $0.window === keyWindow }) {
+            return controller
+        }
+        return retainedControllers.reversed().first { $0.window?.isVisible == true }
     }
 
     private enum DefaultsKey {
@@ -264,13 +324,12 @@ final class MetalViewerLauncher: NSObject {
 
         let launchIdentifiers = refreshIdentifiers(from: frames)
         if let existingController = existingController(matching: launchIdentifiers) {
-            let controllerIdentifier = ObjectIdentifier(existingController)
-            refreshContexts[controllerIdentifier] = ViewerRefreshContext(
+            upsertRefreshContext(ViewerRefreshContext(
                 frames: frames,
                 fallbackTitle: title,
                 identifiers: launchIdentifiers,
                 forceDynamicInterpretation: forceDynamicInterpretation
-            )
+            ), for: existingController)
             ensureDatabaseAddObserver()
 
             let fullStudy = buildStudy(
@@ -279,7 +338,7 @@ final class MetalViewerLauncher: NSObject {
                 forceDynamicInterpretation: forceDynamicInterpretation,
                 markScoutStudiesOpened: true
             )
-            existingController.updateStudy(
+            existingController.updatePatientStudy(
                 fullStudy,
                 selectInitialSeries: true,
                 revealSelectedSeriesInScout: true
@@ -296,13 +355,12 @@ final class MetalViewerLauncher: NSObject {
         )
         let controller = MetalViewerWindowController(study: study)
         retainedControllers.append(controller)
-        let controllerIdentifier = ObjectIdentifier(controller)
-        refreshContexts[controllerIdentifier] = ViewerRefreshContext(
+        upsertRefreshContext(ViewerRefreshContext(
             frames: frames,
             fallbackTitle: title,
             identifiers: launchIdentifiers,
             forceDynamicInterpretation: forceDynamicInterpretation
-        )
+        ), for: controller)
         ensureDatabaseAddObserver()
 
         NotificationCenter.default.addObserver(
@@ -353,13 +411,29 @@ final class MetalViewerLauncher: NSObject {
         guard identifiers.isEmpty == false else { return nil }
 
         for controller in retainedControllers {
-            guard let context = refreshContexts[ObjectIdentifier(controller)] else { continue }
-            if context.identifiers.intersects(identifiers) {
+            guard let contexts = refreshContexts[ObjectIdentifier(controller)] else { continue }
+            if contexts.contains(where: { $0.identifiers.intersects(identifiers) }) {
                 return controller
             }
         }
 
         return nil
+    }
+
+    private class func upsertRefreshContext(
+        _ context: ViewerRefreshContext,
+        for controller: MetalViewerWindowController
+    ) {
+        let identifier = ObjectIdentifier(controller)
+        var contexts = refreshContexts[identifier] ?? []
+        if let index = contexts.firstIndex(where: {
+            $0.identifiers.intersects(context.identifiers)
+        }) {
+            contexts[index] = context
+        } else {
+            contexts.append(context)
+        }
+        refreshContexts[identifier] = contexts
     }
 
     private class func scheduleDatabaseRefresh(for notification: Notification) {
@@ -429,22 +503,23 @@ final class MetalViewerLauncher: NSObject {
     private class func refreshOpenViewersFromDatabase(matching importedIdentifiers: RefreshIdentifiers?) {
         for controller in retainedControllers {
             let controllerIdentifier = ObjectIdentifier(controller)
-            guard let context = refreshContexts[controllerIdentifier] else { continue }
-            if let importedIdentifiers = importedIdentifiers {
-                if importedIdentifiers.isEmpty == false,
+            guard let contexts = refreshContexts[controllerIdentifier] else { continue }
+            for context in contexts {
+                if let importedIdentifiers = importedIdentifiers,
+                   importedIdentifiers.isEmpty == false,
                    context.identifiers.isEmpty == false,
                    context.identifiers.intersects(importedIdentifiers) == false {
                     continue
                 }
-            }
 
-            let updatedStudy = buildStudy(
-                from: context.frames,
-                fallbackTitle: context.fallbackTitle,
-                forceDynamicInterpretation: context.forceDynamicInterpretation,
-                markScoutStudiesOpened: false
-            )
-            controller.updateStudy(updatedStudy)
+                let updatedStudy = buildStudy(
+                    from: context.frames,
+                    fallbackTitle: context.fallbackTitle,
+                    forceDynamicInterpretation: context.forceDynamicInterpretation,
+                    markScoutStudiesOpened: false
+                )
+                controller.updatePatientStudy(updatedStudy)
+            }
         }
     }
 
@@ -558,13 +633,42 @@ final class MetalViewerLauncher: NSObject {
         return ""
     }
 
+    private class func patientIdentity(
+        patientUID: String?,
+        patientName: String?,
+        patientID: String?,
+        dateOfBirth: Date?,
+        fallbackTitle: String
+    ) -> MetalViewerPatientIdentity {
+        let trimmedName = patientName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let displayName = trimmedName.isEmpty ? fallbackTitle : trimmedName
+        let normalizedPatientID = patientID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let normalizedUID = patientUID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let birthComponent = dateOfBirth.map { patientBirthDateFormatter.string(from: $0) } ?? ""
+        let normalizedName = displayName.folding(
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+            locale: Locale(identifier: "en_US_POSIX")
+        )
+        let identifier = normalizedUID.isEmpty == false
+            ? "patient-uid:\(normalizedUID.lowercased())"
+            : "demographics:\(normalizedName)|\(birthComponent)|\(normalizedPatientID.lowercased())"
+        return MetalViewerPatientIdentity(
+            identifier: identifier,
+            displayName: displayName,
+            patientID: normalizedPatientID,
+            dateOfBirth: dateOfBirth
+        )
+    }
+
     private class func buildInitialStudy(
         from frames: [DCMPix],
         fallbackTitle: String,
         forceDynamicInterpretation: Bool
     ) -> MetalViewerStudy {
         guard let currentImageObject = frames.first?.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSManagedObject else {
+            let patientIdentity = MetalViewerPatientIdentity.fallback(title: fallbackTitle)
             let series = MetalViewerSeries(
+                patientIdentity: patientIdentity,
                 title: fallbackTitle,
                 seriesNumber: "",
                 studyIdentifier: UUID().uuidString,
@@ -577,7 +681,7 @@ final class MetalViewerLauncher: NSObject {
                 initialPixList: frames,
                 forceDynamicInterpretation: forceDynamicInterpretation
             )
-            return MetalViewerStudy(title: fallbackTitle, series: [series], initialSeriesIdentifier: series.identifier)
+            return MetalViewerStudy(patientIdentity: patientIdentity, title: fallbackTitle, series: [series], initialSeriesIdentifier: series.identifier)
         }
 
         let isBonjour = BrowserController.currentBrowser()?.isCurrentDatabaseBonjour ?? false
@@ -590,6 +694,14 @@ final class MetalViewerLauncher: NSObject {
         let patientName = currentImageObject.value(forKeyPath: "series.study.name") as? String
         let patientID = currentImageObject.value(forKeyPath: "series.study.patientID") as? String
         let dateOfBirth = currentImageObject.value(forKeyPath: "series.study.dateOfBirth") as? Date
+        let patientUID = currentImageObject.value(forKeyPath: "series.study.patientUID") as? String
+        let patientIdentity = patientIdentity(
+            patientUID: patientUID,
+            patientName: patientName,
+            patientID: patientID,
+            dateOfBirth: dateOfBirth,
+            fallbackTitle: fallbackTitle
+        )
         let studyDate = currentImageObject.value(forKeyPath: "series.study.date") as? Date
         let studyTitle = patientWindowTitle(
             patientName: patientName,
@@ -601,6 +713,7 @@ final class MetalViewerLauncher: NSObject {
             ?? String(describing: currentImageObject.value(forKeyPath: "series.study") ?? UUID().uuidString)
         let series = MetalViewerSeries(
             identifier: currentSeriesID,
+            patientIdentity: patientIdentity,
             title: seriesTitle,
             seriesNumber: seriesNumber(from: currentSeriesObject),
             studyIdentifier: studyIdentifier,
@@ -613,7 +726,7 @@ final class MetalViewerLauncher: NSObject {
             initialPixList: frames,
             forceDynamicInterpretation: forceDynamicInterpretation
         )
-        return MetalViewerStudy(title: studyTitle, series: [series], initialSeriesIdentifier: currentSeriesID)
+        return MetalViewerStudy(patientIdentity: patientIdentity, title: studyTitle, series: [series], initialSeriesIdentifier: currentSeriesID)
     }
 
     private class func buildStudy(
@@ -624,7 +737,9 @@ final class MetalViewerLauncher: NSObject {
     ) -> MetalViewerStudy {
         guard let currentImageObject = frames.first?.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSManagedObject,
               let currentStudy = currentImageObject.value(forKeyPath: "series.study") as? DicomStudy else {
+            let patientIdentity = MetalViewerPatientIdentity.fallback(title: fallbackTitle)
             let series = MetalViewerSeries(
+                patientIdentity: patientIdentity,
                 title: fallbackTitle,
                 seriesNumber: "",
                 studyIdentifier: UUID().uuidString,
@@ -637,7 +752,7 @@ final class MetalViewerLauncher: NSObject {
                 initialPixList: frames,
                 forceDynamicInterpretation: forceDynamicInterpretation
             )
-            return MetalViewerStudy(title: fallbackTitle, series: [series], initialSeriesIdentifier: series.identifier)
+            return MetalViewerStudy(patientIdentity: patientIdentity, title: fallbackTitle, series: [series], initialSeriesIdentifier: series.identifier)
         }
 
         refreshObjectGraphAfterImport(currentImageObject)
@@ -673,6 +788,13 @@ final class MetalViewerLauncher: NSObject {
         var currentSeriesID = currentSeriesObject?.objectID.uriRepresentation().absoluteString
             ?? String(describing: currentImageObject.value(forKeyPath: "series.id") ?? "current-series")
         let studyTitle = patientWindowTitle(
+            patientName: currentStudy.name,
+            patientID: currentStudy.patientID,
+            dateOfBirth: currentStudy.dateOfBirth,
+            fallbackTitle: fallbackTitle
+        )
+        let patientIdentity = patientIdentity(
+            patientUID: currentStudy.patientUID,
             patientName: currentStudy.name,
             patientID: currentStudy.patientID,
             dateOfBirth: currentStudy.dateOfBirth,
@@ -727,6 +849,7 @@ final class MetalViewerLauncher: NSObject {
                 flattenedSeries.append(
                     MetalViewerSeries(
                         identifier: presentation.identifier,
+                        patientIdentity: patientIdentity,
                         title: presentation.title,
                         seriesNumber: presentation.seriesNumber,
                         studyIdentifier: study.studyInstanceUID ?? String(describing: study.objectID),
@@ -756,6 +879,7 @@ final class MetalViewerLauncher: NSObject {
         if flattenedSeries.isEmpty {
             let series = MetalViewerSeries(
                 identifier: currentSeriesID,
+                patientIdentity: patientIdentity,
                 title: fallbackTitle,
                 seriesNumber: seriesNumber(from: currentSeriesObject),
                 studyIdentifier: currentStudy.studyInstanceUID ?? UUID().uuidString,
@@ -788,6 +912,7 @@ final class MetalViewerLauncher: NSObject {
             let dynamicIdentifier = "\(currentStudy.studyInstanceUID ?? studyTitle)::dynamic-selection"
             let dynamicSeries = MetalViewerSeries(
                 identifier: dynamicIdentifier,
+                patientIdentity: patientIdentity,
                 title: NSLocalizedString("Dynamic Selection", comment: ""),
                 seriesNumber: "",
                 studyIdentifier: currentStudy.studyInstanceUID ?? UUID().uuidString,
@@ -805,6 +930,7 @@ final class MetalViewerLauncher: NSObject {
         }
 
         return MetalViewerStudy(
+            patientIdentity: patientIdentity,
             title: studyTitle,
             series: flattenedSeries,
             initialSeriesIdentifier: currentSeriesID,

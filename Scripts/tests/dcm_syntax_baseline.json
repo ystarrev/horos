@@ -1,0 +1,365 @@
+{
+  "getters": {
+    "verificationClassUID": "1.2.840.10008.1.1",
+    "computedRadiographyImageStorage": "1.2.840.10008.5.1.4.1.1.1",
+    "digitalXRayImageStorageForPresentation": "1.2.840.10008.5.1.4.1.1.1.1",
+    "digitalXRayImageStorageForProcessing": "1.2.840.10008.5.1.4.1.1.1.1.1",
+    "digitalMammographyXRayImageStorageForPresentation": "1.2.840.10008.5.1.4.1.1.1.2",
+    "digitalMammographyXRayImageStorageForProcessing": "1.2.840.10008.5.1.4.1.1.1.2.1",
+    "digitalIntraoralXRayImageStorageForPresentation": "1.2.840.10008.5.1.4.1.1.1.3",
+    "digitalIntraoralXRayImageStorageForProcessing": "1.2.840.10008.5.1.4.1.1.1.3.1",
+    "CTImageStorage": "1.2.840.10008.5.1.4.1.1.2",
+    "EnhancedXAImageStorage": "1.2.840.10008.5.1.4.1.1.12.1.1",
+    "XrayAngiographicImageStorage": "1.2.840.10008.5.1.4.1.1.12.1",
+    "XrayRadioFlouroscopicImageStorage": "1.2.840.10008.5.1.4.1.1.12.2",
+    "EnhancedXRFImageStorage": "1.2.840.10008.5.1.4.1.1.12.2.1",
+    "XrayAngiographicBiplaneImageStorage": "1.2.840.10008.5.1.4.1.1.12.3",
+    "XRay3DAngiographicImageStorage": "1.2.840.10008.5.1.4.1.1.13.1.1",
+    "XRay3DCraniofacialImageStorage": "1.2.840.10008.5.1.4.1.1.13.1.2",
+    "enhancedCTImageStorage": "1.2.840.10008.5.1.4.1.1.2.1",
+    "enhancedPETImageStorage": "1.2.840.10008.5.1.4.1.1.130",
+    "ultrasoundMultiframeImageStorageRetired": "1.2.840.10008.5.1.4.1.1.3",
+    "ultrasoundMultiframeImageStorage": "1.2.840.10008.5.1.4.1.1.3.1",
+    "MRImageStorage": "1.2.840.10008.5.1.4.1.1.4",
+    "enhancedMRImageStorage": "1.2.840.10008.5.1.4.1.1.4.1",
+    "nuclearMedicineImageStorageRetired": "1.2.840.10008.5.1.4.1.1.5",
+    "ultrasoundImageStorageRetired": "1.2.840.10008.5.1.4.1.1.6",
+    "ultrasoundImageStorage": "1.2.840.10008.5.1.4.1.1.6.1",
+    "enhancedUSVolumeStorage": "1.2.840.10008.5.1.4.1.1.6.2",
+    "secondaryCaptureImageStorage": "1.2.840.10008.5.1.4.1.1.7",
+    "multiframeSingleBitSecondaryCaptureImageStorage": "1.2.840.10008.5.1.4.1.1.7.1",
+    "multiframeGrayscaleByteSecondaryCaptureImageStorage": "1.2.840.10008.5.1.4.1.1.7.2",
+    "multiframeGrayscaleWordSecondaryCaptureImageStorage": "1.2.840.10008.5.1.4.1.1.7.3",
+    "multiframeTrueColorSecondaryCaptureImageStorage": "1.2.840.10008.5.1.4.1.1.7.4",
+    "xrayAngiographicImageStorage": "1.2.840.10008.5.1.4.1.1.12.1",
+    "xrayRadioFlouroscopicImageStorage": "1.2.840.10008.5.1.4.1.1.12.2",
+    "xrayAngiographicBiplaneImageStorage": "1.2.840.10008.5.1.4.1.1.12.3",
+    "nuclearMedicineImageStorage": "1.2.840.10008.5.1.4.1.1.20",
+    "visibleLightDraftImageStorage": "1.2.840.10008.5.1.4.1.1.77.1",
+    "visibleLightMultiFrameDraftImageStorage": "1.2.840.10008.5.1.4.1.1.77.2",
+    "visibleLightEndoscopicImageStorage": "1.2.840.10008.5.1.4.1.1.77.1.1",
+    "videoEndoscopicImageStorage": "1.2.840.10008.5.1.4.1.1.77.1.1.1",
+    "visibleLightMicroscopicImageStorage": "1.2.840.10008.5.1.4.1.1.77.1.2",
+    "videoMicroscopicImageStorage": "1.2.840.10008.5.1.4.1.1.77.1.2.1",
+    "visibleLightSlideCoordinatesMicroscopicImageStorage": "1.2.840.10008.5.1.4.1.1.77.1.3",
+    "visibleLightPhotographicImageStorage": "1.2.840.10008.5.1.4.1.1.77.1.4",
+    "videoPhotographicImageStorage": "1.2.840.10008.5.1.4.1.1.77.1.4.1",
+    "PETImageStorage": "1.2.840.10008.5.1.4.1.1.128",
+    "RTImageStorage": "1.2.840.10008.5.1.4.1.1.481.1",
+    "mediaStorageDirectoryStorage": "1.2.840.10008.1.3.10",
+    "basicTextSRStorage": "1.2.840.10008.5.1.4.1.1.88.11",
+    "enhancedSRStorage": "1.2.840.10008.5.1.4.1.1.88.22",
+    "comprehensiveSRStorage": "1.2.840.10008.5.1.4.1.1.88.33",
+    "mammographyCADSRStorage": "1.2.840.10008.5.1.4.1.1.88.50",
+    "keyObjectSelectionDocumentStorage": "1.2.840.10008.5.1.4.1.1.88.59",
+    "grayscaleSoftcopyPresentationStateStorage": "1.2.840.10008.5.1.4.1.1.11.1",
+    "twelveLeadECGStorage": "1.2.840.10008.5.1.4.1.1.9.1.1",
+    "generalECGStorage": "1.2.840.10008.5.1.4.1.1.9.1.2",
+    "ambulatoryECGStorage": "1.2.840.10008.5.1.4.1.1.9.1.3",
+    "hemodynamicWaveformStorage": "1.2.840.10008.5.1.4.1.1.9.2.1",
+    "cardiacElectrophysiologyWaveformStorage": "1.2.840.10008.5.1.4.1.1.9.3.1",
+    "basicVoiceStorage": "1.2.840.10008.5.1.4.1.1.9.4.1",
+    "standaloneOverlayStorage": "1.2.840.10008.5.1.4.1.1.8",
+    "standaloneCurveStorage": "1.2.840.10008.5.1.4.1.1.9",
+    "standaloneModalityLUTStorage": "1.2.840.10008.5.1.4.1.1.10",
+    "standaloneVOILUTStorage": "1.2.840.10008.5.1.4.1.1.11",
+    "standalonePETCurveStorage": "1.2.840.10008.5.1.4.1.1.129",
+    "RTDoseStorage": "1.2.840.10008.5.1.4.1.1.481.2",
+    "RTStructureSetStorage": "1.2.840.10008.5.1.4.1.1.481.3",
+    "RTBeamsTreatmentRecordStorage": "1.2.840.10008.5.1.4.1.1.481.4",
+    "RTPlanStorage": "1.2.840.10008.5.1.4.1.1.481.5",
+    "RTBrachyTreatmentRecordStorage": "1.2.840.10008.5.1.4.1.1.481.6",
+    "RTTreatmentSummaryRecordStorage": "1.2.840.10008.5.1.4.1.1.481.7",
+    "MRSpectroscopyStorage": "1.2.840.10008.5.1.4.1.1.4.2",
+    "rawDataStorage": "1.2.840.10008.5.1.4.1.1.66",
+    "segmentationStorage": "1.2.840.10008.5.1.4.1.1.66.4",
+    "studyRootQueryRetrieveInformationModelFind": "1.2.840.10008.5.1.4.1.2.2.1",
+    "studyRootQueryRetrieveInformationModelMove": "1.2.840.10008.5.1.4.1.2.2.2",
+    "pdfStorageClassUID": "1.2.840.10008.5.1.4.1.1.104.1",
+    "EncapsulatedCDAStorage": "1.2.840.10008.5.1.4.1.1.104.2",
+    "basicGrayscalePrintManagementMetaSOPClassUID": "1.2.840.10008.5.1.1.9",
+    "basicColorPrintManagementMetaSOPClassUID": "1.2.840.10008.5.1.1.18"
+  },
+  "arrays": {
+    "imageSyntaxes": [
+      "1.2.840.10008.5.1.4.1.1.1",
+      "1.2.840.10008.5.1.4.1.1.1.1",
+      "1.2.840.10008.5.1.4.1.1.1.1.1",
+      "1.2.840.10008.5.1.4.1.1.1.2",
+      "1.2.840.10008.5.1.4.1.1.1.2.1",
+      "1.2.840.10008.5.1.4.1.1.1.3",
+      "1.2.840.10008.5.1.4.1.1.1.3.1",
+      "1.2.840.10008.5.1.4.1.1.2",
+      "1.2.840.10008.5.1.4.1.1.2.1",
+      "1.2.840.10008.5.1.4.1.1.130",
+      "1.2.840.10008.5.1.4.1.1.3",
+      "1.2.840.10008.5.1.4.1.1.3.1",
+      "1.2.840.10008.5.1.4.1.1.4",
+      "1.2.840.10008.5.1.4.1.1.4.1",
+      "1.2.840.10008.5.1.4.1.1.5",
+      "1.2.840.10008.5.1.4.1.1.6",
+      "1.2.840.10008.5.1.4.1.1.6.2",
+      "1.2.840.10008.5.1.4.1.1.6.1",
+      "1.2.840.10008.5.1.4.1.1.7",
+      "1.2.840.10008.5.1.4.1.1.7.1",
+      "1.2.840.10008.5.1.4.1.1.7.2",
+      "1.2.840.10008.5.1.4.1.1.7.3",
+      "1.2.840.10008.5.1.4.1.1.7.4",
+      "1.2.840.10008.5.1.4.1.1.12.1",
+      "1.2.840.10008.5.1.4.1.1.12.2",
+      "1.2.840.10008.5.1.4.1.1.12.3",
+      "1.2.840.10008.5.1.4.1.1.20",
+      "1.2.840.10008.5.1.4.1.1.77.1",
+      "1.2.840.10008.5.1.4.1.1.77.1.1.1",
+      "1.2.840.10008.5.1.4.1.1.77.2",
+      "1.2.840.10008.5.1.4.1.1.77.1.1",
+      "1.2.840.10008.5.1.4.1.1.77.1.2",
+      "1.2.840.10008.5.1.4.1.1.77.1.3",
+      "1.2.840.10008.5.1.4.1.1.77.1.4",
+      "1.2.840.10008.5.1.4.1.1.128",
+      "1.2.840.10008.5.1.4.1.1.481.1",
+      "1.2.840.10008.5.1.4.1.1.104.1",
+      "1.2.840.10008.5.1.4.1.1.104.2",
+      "1.2.840.10008.5.1.4.1.1.77.1.5.1",
+      "1.2.840.10008.5.1.4.1.1.77.1.5.2",
+      "1.2.840.10008.5.1.4.1.1.77.1.5.4",
+      "1.2.392.200036.9125.1.1.2",
+      "1.2.840.10008.5.1.4.1.1.12.1.1",
+      "1.2.840.10008.5.1.4.1.1.12.2.1",
+      "1.2.840.10008.5.1.4.1.1.13.1.1",
+      "1.2.840.10008.5.1.4.1.1.13.1.2",
+      "1.3.46.670589.7.8.1618510091",
+      "1.3.46.670589.5.0.9",
+      "1.3.46.670589.2.4.1.1",
+      "1.3.46.670589.5.0.12",
+      "1.3.46.670589.11.0.0.12.3",
+      "1.3.46.670589.5.0.10",
+      "1.3.46.670589.5.0.14",
+      "1.2.840.10008.5.1.4.1.1.13.1.3"
+    ],
+    "structuredReportSyntaxes": [
+      "1.2.840.10008.5.1.4.1.1.88.11",
+      "1.2.840.10008.5.1.4.1.1.88.22",
+      "1.2.840.10008.5.1.4.1.1.88.33",
+      "1.2.840.10008.5.1.4.1.1.88.50",
+      "1.2.840.10008.5.1.4.1.1.88.40",
+      "1.2.840.10008.5.1.4.1.1.88.65",
+      "1.2.840.10008.5.1.4.1.1.88.67"
+    ],
+    "presentationStateSyntaxes": [
+      "1.2.840.10008.5.1.4.1.1.11.1",
+      "1.2.840.10008.5.1.4.1.1.11.2",
+      "1.2.840.10008.5.1.4.1.1.11.3",
+      "1.2.840.10008.5.1.4.1.1.11.4"
+    ],
+    "supportedPrivateClasses": [
+      "1.2.840.10008.5.1.4.1.1.4.2",
+      "1.2.840.10008.5.1.4.1.1.66",
+      "1.3.46.670589",
+      "1.3.12.2.1107.5.9.1",
+      "1.2.840.113619.4.26",
+      "1.2.528.1.1001.5.1.1.1",
+      "1.2.840.113619.4.27",
+      "1.2.840.113619.4.30"
+    ],
+    "waveformSyntaxes": [
+      "1.2.840.10008.5.1.4.1.1.9.1.1",
+      "1.2.840.10008.5.1.4.1.1.9.1.2",
+      "1.2.840.10008.5.1.4.1.1.9.1.3",
+      "1.2.840.10008.5.1.4.1.1.9.2.1",
+      "1.2.840.10008.5.1.4.1.1.9.3.1",
+      "1.2.840.10008.5.1.4.1.1.9.4.1"
+    ],
+    "radiotherapySyntaxes": [
+      "1.2.840.10008.5.1.4.1.1.481.2",
+      "1.2.840.10008.5.1.4.1.1.481.3",
+      "1.2.840.10008.5.1.4.1.1.481.4",
+      "1.2.840.10008.5.1.4.1.1.481.5",
+      "1.2.840.10008.5.1.4.1.1.481.6",
+      "1.2.840.10008.5.1.4.1.1.481.7"
+    ]
+  },
+  "corrections": {
+    "standaloneCurveStorage": {
+      "legacy": "1.2.840.10008.5.1.4.1.1.10",
+      "expected": "1.2.840.10008.5.1.4.1.1.9"
+    },
+    "basicColorPrintManagementMetaSOPClassUID": {
+      "legacy": ".2.840.10008.5.1.1.18",
+      "expected": "1.2.840.10008.5.1.1.18"
+    }
+  },
+  "transferFactories": {
+    "ExplicitVRLittleEndianTransferSyntax": "1.2.840.10008.1.2.1",
+    "ImplicitVRLittleEndianTransferSyntax": "1.2.840.10008.1.2",
+    "ExplicitVRBigEndianTransferSyntax": "1.2.840.10008.1.2.2",
+    "JPEG2000LosslessTransferSyntax": "1.2.840.10008.1.2.4.90",
+    "JPEG2000LossyTransferSyntax": "1.2.840.10008.1.2.4.91",
+    "JPEGBaselineTransferSyntax": "1.2.840.10008.1.2.4.50",
+    "JPEGExtendedTransferSyntax": "1.2.840.10008.1.2.4.51",
+    "JPEGLosslessTransferSyntax": "1.2.840.10008.1.2.4.70",
+    "JPEGLossless14TransferSyntax": "1.2.840.10008.1.2.4.57",
+    "JPEGLSLosslessTransferSyntax": "1.2.840.10008.1.2.4.80",
+    "JPEGLSLossyTransferSyntax": "1.2.840.10008.1.2.4.81",
+    "RLELosslessTransferSyntax": "1.2.840.10008.1.2.5",
+    "MPEG2TransferSyntax": "1.2.840.10008.1.2.4.100"
+  },
+  "transferSyntaxes": [
+    {
+      "uid": "1.2.840.10008.1.2.2",
+      "encapsulated": false,
+      "littleEndian": false,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.1",
+      "encapsulated": false,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2",
+      "encapsulated": false,
+      "littleEndian": true,
+      "explicitVR": false
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.55",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.56",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.59",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.60",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.90",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.91",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.61",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.62",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.63",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.64",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.66",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.53",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.54",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.50",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.51",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.52",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.65",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.70",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.57",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.58",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.80",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.4.81",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    },
+    {
+      "uid": "1.2.840.10008.1.2.5",
+      "encapsulated": true,
+      "littleEndian": true,
+      "explicitVR": true
+    }
+  ]
+}

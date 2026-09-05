@@ -37,273 +37,131 @@
 
 #import "DCMAbstractSyntaxUID.h"
 
+#include <dcmtk/dcmdata/dcuid.h>
+
 static NSArray *imagesSyntaxes = nil;
 static NSArray *hiddenImagesSyntaxes = nil;
-static NSMutableArray *allSupportedSyntaxes = nil;
+static NSArray *allSupportedSyntaxes = nil;
 
-static NSString *DCM_Verification = @"1.2.840.10008.1.1";
-
-// Images ...
-
-#pragma clang diaagnostic push
-#pragma clang diagnostic ignored "-Wunused-variable"
-	/***/
-	static NSString *ComputedRadiographyImageStorage = @"1.2.840.10008.5.1.4.1.1.1";
-	/***/
-	static NSString *DigitalXRayImageStorageForPresentation = @"1.2.840.10008.5.1.4.1.1.1.1";
-	/***/
-	static NSString *DigitalXRayImageStorageForProcessing = @"1.2.840.10008.5.1.4.1.1.1.1.1";
-	/***/
-	static NSString *DigitalMammographyXRayImageStorageForPresentation = @"1.2.840.10008.5.1.4.1.1.1.2";
-	/***/
-	static NSString *DigitalMammographyXRayImageStorageForProcessing = @"1.2.840.10008.5.1.4.1.1.1.2.1";
-	/***/
-	static NSString *DigitalIntraoralXRayImageStorageForPresentation = @"1.2.840.10008.5.1.4.1.1.1.3";
-	/***/
-	static NSString *DigitalIntraoralXRayImageStorageForProcessing = @"1.2.840.10008.5.1.4.1.1.1.3.1";
-	/***/
-	static NSString *CTImageStorage = @"1.2.840.10008.5.1.4.1.1.2";
-	/***/
-	static NSString *EnhancedCTImageStorage = @"1.2.840.10008.5.1.4.1.1.2.1";
-	/***/
-	static NSString *EnhancedPETImageStorage = @"1.2.840.10008.5.1.4.1.1.130";
-	/***/
-	static NSString *UltrasoundMultiframeImageStorageRetired = @"1.2.840.10008.5.1.4.1.1.3";
-	/***/
-	static NSString *UltrasoundMultiframeImageStorage = @"1.2.840.10008.5.1.4.1.1.3.1";
-	/***/
-	static NSString *MRImageStorage = @"1.2.840.10008.5.1.4.1.1.4";
-	/***/
-	static NSString *EnhancedMRImageStorage = @"1.2.840.10008.5.1.4.1.1.4.1";
-	/***/
-	static NSString *NuclearMedicineImageStorageRetired = @"1.2.840.10008.5.1.4.1.1.5";
-	/***/
-	static NSString *UltrasoundImageStorageRetired = @"1.2.840.10008.5.1.4.1.1.6";
-	/***/
-	static NSString *UltrasoundImageStorage = @"1.2.840.10008.5.1.4.1.1.6.1";
-    static NSString *EnhancedUSVolumeStorage = @"1.2.840.10008.5.1.4.1.1.6.2";
-	/***/
-	static NSString *SecondaryCaptureImageStorage = @"1.2.840.10008.5.1.4.1.1.7";
-	/***/
-	static NSString *MultiframeSingleBitSecondaryCaptureImageStorage = @"1.2.840.10008.5.1.4.1.1.7.1";
-	/***/
-	static NSString *MultiframeGrayscaleByteSecondaryCaptureImageStorage = @"1.2.840.10008.5.1.4.1.1.7.2";
-	/***/
-	static NSString *MultiframeGrayscaleWordSecondaryCaptureImageStorage = @"1.2.840.10008.5.1.4.1.1.7.3";
-	/***/
-	static NSString *MultiframeTrueColorSecondaryCaptureImageStorage = @"1.2.840.10008.5.1.4.1.1.7.4";
-	/***/
-	static NSString *XrayAngiographicImageStorage = @"1.2.840.10008.5.1.4.1.1.12.1";
-	static NSString *EnhancedXAImageStorage = @"1.2.840.10008.5.1.4.1.1.12.1.1";
-	/***/
-	static NSString *XrayRadioFlouroscopicImageStorage = @"1.2.840.10008.5.1.4.1.1.12.2";
-	static NSString *EnhancedXRFImageStorage = @"1.2.840.10008.5.1.4.1.1.12.2.1";
-	/***/
-	static NSString *XRay3DAngiographicImageStorage = @"1.2.840.10008.5.1.4.1.1.13.1.1";
-	static NSString *XRay3DCraniofacialImageStorage = @"1.2.840.10008.5.1.4.1.1.13.1.2";
-    static NSString *BreastTomosynthesisImageStorage = @"1.2.840.10008.5.1.4.1.1.13.1.3";
-    /***/
-	static NSString *GE3DModelStorage = @"1.2.840.113619.4.26";
-	static NSString *GECollageStorage = @"1.2.528.1.1001.5.1.1.1";
-	static NSString *GEeNTEGRAProtocolOrNMGenieStorage = @"1.2.840.113619.4.27";
-	static NSString *GEPETRawDataStorage = @"1.2.840.113619.4.30";
-    /***/
-    static NSString *Philips3DObject2Storage = @"1.3.46.670589.5.0.2.1";
-    static NSString *Philips3DObjectStorage = @"1.3.46.670589.5.0.2";
-    static NSString *Philips3DPresentationStateStorage = @"1.3.46.670589.2.5.1.1";
-    static NSString *PhilipsCompositeObjectStorage = @"1.3.46.670589.5.0.4";
-    static NSString *PhilipsCTSyntheticImageStorage = @"1.3.46.670589.5.0.9";
-    static NSString *PhilipsCXImageStorage = @"1.3.46.670589.2.4.1.1";
-    static NSString *PhilipsCXSyntheticImageStorage = @"1.3.46.670589.5.0.12";
-    static NSString *PhilipsLiveRunStorage = @"1.3.46.670589.7.8.1618510092";
-    static NSString *PhilipsMRCardio2Storage = @"1.3.46.670589.5.0.8.1";
-    static NSString *PhilipsMRCardioAnalysis2Storage = @"1.3.46.670589.5.0.11.1";
-    static NSString *PhilipsMRCardioAnalysisStorage = @"1.3.46.670589.5.0.11";
-    static NSString *PhilipsMRCardioProfileStorage = @"1.3.46.670589.5.0.7";
-    static NSString *PhilipsMRCardioStorage = @"1.3.46.670589.5.0.8";
-    static NSString *PhilipsMRColorImageStorage = @"1.3.46.670589.11.0.0.12.3";
-    static NSString *PhilipsMRExamcardStorage = @"1.3.46.670589.11.0.0.12.4";
-    static NSString *PhilipsMRSeriesDataStorage = @"1.3.46.670589.11.0.0.12.2";
-    static NSString *PhilipsMRSpectrumStorage = @"1.3.46.670589.11.0.0.12.1";
-    static NSString *PhilipsMRSyntheticImageStorage = @"1.3.46.670589.5.0.10";
-    static NSString *PhilipsPerfusionImageStorage = @"1.3.46.670589.5.0.14";
-    static NSString *PhilipsPerfusionStorage = @"1.3.46.670589.5.0.13";
-    static NSString *PhilipsPrivateXRayMFStorage = @"1.3.46.670589.7.8.1618510091";
-    static NSString *PhilipsReconstructionStorage = @"1.3.46.670589.7.8.16185100130";
-    static NSString *PhilipsRunStorage = @"1.3.46.670589.7.8.16185100129";
-    static NSString *PhilipsSpecialisedXAStorage = @"1.3.46.670589.2.3.1.1";
-    static NSString *PhilipsSurface2Storage = @"1.3.46.670589.5.0.3.1";
-    static NSString *PhilipsSurfaceStorage = @"1.3.46.670589.5.0.3";
-    static NSString *PhilipsVolume2Storage = @"1.3.46.670589.5.0.1.1";
-    static NSString *PhilipsVolumeSetStorage = @"1.3.46.670589.2.11.1.1";
-    static NSString *PhilipsVolumeStorage = @"1.3.46.670589.5.0.1";
-    static NSString *PhilipsVRMLStorage = @"1.3.46.670589.2.8.1.1";    
-	static NSString *PhilipsPrivatePrefixStorage = @"1.3.46.670589"; // Prefix
-
-    static NSString *SiemensCSAPrivateNonImageStorage = @"1.3.12.2.1107.5.9.1";
-	/***/
-	static NSString *XrayAngiographicBiplaneImageStorage = @"1.2.840.10008.5.1.4.1.1.12.3";
-	/***/
-	static NSString *NuclearMedicineImageStorage = @"1.2.840.10008.5.1.4.1.1.20";
-	/***/
-	static NSString *VisibleLightDraftImageStorage = @"1.2.840.10008.5.1.4.1.1.77.1";
-	/***/
-	static NSString *VisibleLightMultiFrameDraftImageStorage = @"1.2.840.10008.5.1.4.1.1.77.2";
-	/***/
-	static NSString *VisibleLightEndoscopicImageStorage = @"1.2.840.10008.5.1.4.1.1.77.1.1";
-	/***/
-	static NSString *VideoEndoscopicImageStorage = @"1.2.840.10008.5.1.4.1.1.77.1.1.1";
-	/***/
-	static NSString *VisibleLightMicroscopicImageStorage = @"1.2.840.10008.5.1.4.1.1.77.1.2";
-	/***/
-	static NSString *VideoMicroscopicImageStorage = @"1.2.840.10008.5.1.4.1.1.77.1.2.1";
-	/***/
-	static NSString *VisibleLightSlideCoordinatesMicroscopicImageStorage = @"1.2.840.10008.5.1.4.1.1.77.1.3";
-	/***/
-	static NSString *VisibleLightPhotographicImageStorage = @"1.2.840.10008.5.1.4.1.1.77.1.4";
-	/***/
-	static NSString *VideoPhotographicImageStorage = @"1.2.840.10008.5.1.4.1.1.77.1.4.1";
-	/***/
-	static NSString *PETImageStorage = @"1.2.840.10008.5.1.4.1.1.128";
-	/***/
-	static NSString *RTImageStorage = @"1.2.840.10008.5.1.4.1.1.481.1";
-	
-		// Directory ...
-
-	/***/
-	static NSString *MediaStorageDirectoryStorage = @"1.2.840.10008.1.3.10";
-	
-	// Structured Report ...
-
-	/***/
-	static NSString *BasicTextSRStorage = @"1.2.840.10008.5.1.4.1.1.88.11";
-	/***/
-	static NSString *EnhancedSRStorage = @"1.2.840.10008.5.1.4.1.1.88.22";
-	/***/
-	static NSString *ComprehensiveSRStorage = @"1.2.840.10008.5.1.4.1.1.88.33";
-	/***/
-	static NSString *ProcedureLogStorage = @"1.2.840.10008.5.1.4.1.1.88.40";
-	static NSString *MammographyCADSRStorage = @"1.2.840.10008.5.1.4.1.1.88.50";
-	static NSString *ChestCADSR = @"1.2.840.10008.5.1.4.1.1.88.65";
-	static NSString *XRayRadiationDoseSR = @"1.2.840.10008.5.1.4.1.1.88.67";
-	/***/
-	static NSString *KeyObjectSelectionDocumentStorage = @"1.2.840.10008.5.1.4.1.1.88.59";
-
-	// Presentation State ...
-
-	/***/
-	static NSString *GrayscaleSoftcopyPresentationStateStorage = @"1.2.840.10008.5.1.4.1.1.11.1";
-	static NSString *ColorSoftcopyPresentationStateStorage = @"1.2.840.10008.5.1.4.1.1.11.2";
-	static NSString *PseudoColorSoftcopyPresentationStateStorage = @"1.2.840.10008.5.1.4.1.1.11.3";
-	static NSString *BlendingSoftcopyPresentationStateStorage = @"1.2.840.10008.5.1.4.1.1.11.4";
-	
-		// Waveforms ...
-
-	/***/
-	static NSString *TwelveLeadECGStorage = @"1.2.840.10008.5.1.4.1.1.9.1.1";
-	/***/
-	static NSString *GeneralECGStorage = @"1.2.840.10008.5.1.4.1.1.9.1.2";
-	/***/
-	static NSString *AmbulatoryECGStorage = @"1.2.840.10008.5.1.4.1.1.9.1.3";
-	/***/
-	static NSString *HemodynamicWaveformStorage = @"1.2.840.10008.5.1.4.1.1.9.2.1";
-	/***/
-	static NSString *CardiacElectrophysiologyWaveformStorage = @"1.2.840.10008.5.1.4.1.1.9.3.1";
-	/***/
-	static NSString *BasicVoiceStorage = @"1.2.840.10008.5.1.4.1.1.9.4.1";
-	
-		// Standalone ...
-
-	/***/
-	static NSString *StandaloneOverlayStorage = @"1.2.840.10008.5.1.4.1.1.8";
-	/***/
-	static NSString *StandaloneCurveStorage = @"1.2.840.10008.5.1.4.1.1.10";
-	/***/
-	static NSString *StandaloneModalityLUTStorage = @"1.2.840.10008.5.1.4.1.1.10";
-	/***/
-	static NSString *StandaloneVOILUTStorage = @"1.2.840.10008.5.1.4.1.1.11";
-	/***/
-	static NSString *StandalonePETCurveStorage = @"1.2.840.10008.5.1.4.1.1.129";
-	
-		// Radiotherapy ...
-
-	/***/
-	static NSString *RTDoseStorage = @"1.2.840.10008.5.1.4.1.1.481.2";
-	/***/
-	static NSString *RTStructureSetStorage = @"1.2.840.10008.5.1.4.1.1.481.3";
-	/***/
-	static NSString *RTBeamsTreatmentRecordStorage = @"1.2.840.10008.5.1.4.1.1.481.4";
-	/***/
-	static NSString *RTPlanStorage = @"1.2.840.10008.5.1.4.1.1.481.5";
-	/***/
-	static NSString *RTBrachyTreatmentRecordStorage = @"1.2.840.10008.5.1.4.1.1.481.6";
-	/***/
-	static NSString *RTTreatmentSummaryRecordStorage = @"1.2.840.10008.5.1.4.1.1.481.7";
-	
-		// Spectroscopy ...
-	
-	/***/
-	static NSString *MRSpectroscopyStorage = @"1.2.840.10008.5.1.4.1.1.4.2";
-	
-	
-		// Raw Data ...
-	
-	/***/
-	static NSString *RawDataStorage = @"1.2.840.10008.5.1.4.1.1.66";
-	/***/
-	static NSString *SegmentationStorage = @"1.2.840.10008.5.1.4.1.1.66.4";
-	
-		// Query-Retrieve SOP Classes ...
-
-	/***/
-	static NSString *StudyRootQueryRetrieveInformationModelFind = @"1.2.840.10008.5.1.4.1.2.2.1";
-	/***/
-	static NSString *StudyRootQueryRetrieveInformationModelMove = @"1.2.840.10008.5.1.4.1.2.2.2";
-	
-	// PDF storage
-	static NSString *PDFStorageClassUID = @"1.2.840.10008.5.1.4.1.1.104.1";
-	static NSString *EncapsulatedCDAStorage = @"1.2.840.10008.5.1.4.1.1.104.2";
-	
-	//Printing
-	static NSString *BasicGrayscalePrintManagementMetaSOPClassUID = @"1.2.840.10008.5.1.1.9";
-	static NSString *BasicColorPrintManagementMetaSOPClassUID = @".2.840.10008.5.1.1.18";
-	
-	//some misc UIDs that I'm not using yet
-	
-	static NSString *StorageService = @"1.2.840.10008.4.2";
-//	static NSString *MediaCreationManagement = @"1.2.840.10008.5.1.4.1.1.2.1";
-	static NSString *SpatialRegistrationStorage = @"1.2.840.10008.5.1.4.1.1.66.1";
-	static NSString *SpatialFiducialsStorage = @"1.2.840.10008.5.1.4.1.1.66.2";
-	static NSString *OphthalmicPhotography8BitImageStorage = @"1.2.840.10008.5.1.4.1.1.77.1.5.1";
-	static NSString *OphthalmicPhotography16BitImageStorage = @"1.2.840.10008.5.1.4.1.1.77.1.5.2";
-	static NSString *FujiPrivateCR = @"1.2.392.200036.9125.1.1.2";
-	static NSString *StereometricRelationshipStorage = @"1.2.840.10008.5.1.4.1.1.77.1.5.3";
-	static NSString *OphthalmicTomographyImageStorage = @"1.2.840.10008.5.1.4.1.1.77.1.5.4";
-	static NSString *InstanceAvailabilityNotification = @"1.2.840.10008.5.1.4.33";
-	static NSString *GeneralRelevantPatientInformationQuerySOP = @"1.2.840.10008.5.1.4.37.1"; 
-	static NSString *BreastImagingRelevantPatientInformationQuery = @"1.2.840.10008.5.1.4.37.2";
-	static NSString	*CardiacRelevantPatientInformationQuery = @"1.2.840.10008.5.1.4.37.3";
-#pragma clang diaagnostic pop
+// DCMTK supplies standard identifiers; retain Horos's vendor-specific extensions.
+static NSString * const DCM_Verification = @UID_VerificationSOPClass;
+static NSString * const ComputedRadiographyImageStorage = @UID_ComputedRadiographyImageStorage;
+static NSString * const DigitalXRayImageStorageForPresentation = @UID_DigitalXRayImageStorageForPresentation;
+static NSString * const DigitalXRayImageStorageForProcessing = @UID_DigitalXRayImageStorageForProcessing;
+static NSString * const DigitalMammographyXRayImageStorageForPresentation = @UID_DigitalMammographyXRayImageStorageForPresentation;
+static NSString * const DigitalMammographyXRayImageStorageForProcessing = @UID_DigitalMammographyXRayImageStorageForProcessing;
+static NSString * const DigitalIntraoralXRayImageStorageForPresentation = @UID_DigitalIntraOralXRayImageStorageForPresentation;
+static NSString * const DigitalIntraoralXRayImageStorageForProcessing = @UID_DigitalIntraOralXRayImageStorageForProcessing;
+static NSString * const CTImageStorage = @UID_CTImageStorage;
+static NSString * const EnhancedCTImageStorage = @UID_EnhancedCTImageStorage;
+static NSString * const EnhancedPETImageStorage = @UID_EnhancedPETImageStorage;
+static NSString * const UltrasoundMultiframeImageStorageRetired = @UID_RETIRED_UltrasoundMultiframeImageStorage;
+static NSString * const UltrasoundMultiframeImageStorage = @UID_UltrasoundMultiframeImageStorage;
+static NSString * const MRImageStorage = @UID_MRImageStorage;
+static NSString * const EnhancedMRImageStorage = @UID_EnhancedMRImageStorage;
+static NSString * const NuclearMedicineImageStorageRetired = @UID_RETIRED_NuclearMedicineImageStorage;
+static NSString * const UltrasoundImageStorageRetired = @UID_RETIRED_UltrasoundImageStorage;
+static NSString * const UltrasoundImageStorage = @UID_UltrasoundImageStorage;
+static NSString * const EnhancedUSVolumeStorage = @UID_EnhancedUSVolumeStorage;
+static NSString * const SecondaryCaptureImageStorage = @UID_SecondaryCaptureImageStorage;
+static NSString * const MultiframeSingleBitSecondaryCaptureImageStorage = @UID_MultiframeSingleBitSecondaryCaptureImageStorage;
+static NSString * const MultiframeGrayscaleByteSecondaryCaptureImageStorage = @UID_MultiframeGrayscaleByteSecondaryCaptureImageStorage;
+static NSString * const MultiframeGrayscaleWordSecondaryCaptureImageStorage = @UID_MultiframeGrayscaleWordSecondaryCaptureImageStorage;
+static NSString * const MultiframeTrueColorSecondaryCaptureImageStorage = @UID_MultiframeTrueColorSecondaryCaptureImageStorage;
+static NSString * const XrayAngiographicImageStorage = @UID_XRayAngiographicImageStorage;
+static NSString * const EnhancedXAImageStorage = @UID_EnhancedXAImageStorage;
+static NSString * const XrayRadioFlouroscopicImageStorage = @UID_XRayRadiofluoroscopicImageStorage;
+static NSString * const EnhancedXRFImageStorage = @UID_EnhancedXRFImageStorage;
+static NSString * const XRay3DAngiographicImageStorage = @UID_XRay3DAngiographicImageStorage;
+static NSString * const XRay3DCraniofacialImageStorage = @UID_XRay3DCraniofacialImageStorage;
+static NSString * const BreastTomosynthesisImageStorage = @UID_BreastTomosynthesisImageStorage;
+static NSString * const GE3DModelStorage = @"1.2.840.113619.4.26";
+static NSString * const GECollageStorage = @"1.2.528.1.1001.5.1.1.1";
+static NSString * const GEeNTEGRAProtocolOrNMGenieStorage = @"1.2.840.113619.4.27";
+static NSString * const GEPETRawDataStorage = @"1.2.840.113619.4.30";
+static NSString * const PhilipsCTSyntheticImageStorage = @"1.3.46.670589.5.0.9";
+static NSString * const PhilipsCXImageStorage = @"1.3.46.670589.2.4.1.1";
+static NSString * const PhilipsCXSyntheticImageStorage = @"1.3.46.670589.5.0.12";
+static NSString * const PhilipsMRColorImageStorage = @"1.3.46.670589.11.0.0.12.3";
+static NSString * const PhilipsMRSyntheticImageStorage = @"1.3.46.670589.5.0.10";
+static NSString * const PhilipsPerfusionImageStorage = @"1.3.46.670589.5.0.14";
+static NSString * const PhilipsPrivateXRayMFStorage = @"1.3.46.670589.7.8.1618510091";
+static NSString * const PhilipsPrivatePrefixStorage = @"1.3.46.670589";
+static NSString * const SiemensCSAPrivateNonImageStorage = @"1.3.12.2.1107.5.9.1";
+static NSString * const XrayAngiographicBiplaneImageStorage = @UID_RETIRED_XRayAngiographicBiPlaneImageStorage;
+static NSString * const NuclearMedicineImageStorage = @UID_NuclearMedicineImageStorage;
+static NSString * const VisibleLightDraftImageStorage = @UID_RETIRED_VLImageStorage;
+static NSString * const VisibleLightMultiFrameDraftImageStorage = @UID_RETIRED_VLMultiframeImageStorage;
+static NSString * const VisibleLightEndoscopicImageStorage = @UID_VLEndoscopicImageStorage;
+static NSString * const VideoEndoscopicImageStorage = @UID_VideoEndoscopicImageStorage;
+static NSString * const VisibleLightMicroscopicImageStorage = @UID_VLMicroscopicImageStorage;
+static NSString * const VideoMicroscopicImageStorage = @UID_VideoMicroscopicImageStorage;
+static NSString * const VisibleLightSlideCoordinatesMicroscopicImageStorage = @UID_VLSlideCoordinatesMicroscopicImageStorage;
+static NSString * const VisibleLightPhotographicImageStorage = @UID_VLPhotographicImageStorage;
+static NSString * const VideoPhotographicImageStorage = @UID_VideoPhotographicImageStorage;
+static NSString * const PETImageStorage = @UID_PositronEmissionTomographyImageStorage;
+static NSString * const RTImageStorage = @UID_RTImageStorage;
+static NSString * const MediaStorageDirectoryStorage = @UID_MediaStorageDirectoryStorage;
+static NSString * const BasicTextSRStorage = @UID_BasicTextSRStorage;
+static NSString * const EnhancedSRStorage = @UID_EnhancedSRStorage;
+static NSString * const ComprehensiveSRStorage = @UID_ComprehensiveSRStorage;
+static NSString * const ProcedureLogStorage = @UID_ProcedureLogStorage;
+static NSString * const MammographyCADSRStorage = @UID_MammographyCADSRStorage;
+static NSString * const ChestCADSR = @UID_ChestCADSRStorage;
+static NSString * const XRayRadiationDoseSR = @UID_XRayRadiationDoseSRStorage;
+static NSString * const KeyObjectSelectionDocumentStorage = @UID_KeyObjectSelectionDocumentStorage;
+static NSString * const GrayscaleSoftcopyPresentationStateStorage = @UID_GrayscaleSoftcopyPresentationStateStorage;
+static NSString * const ColorSoftcopyPresentationStateStorage = @UID_ColorSoftcopyPresentationStateStorage;
+static NSString * const PseudoColorSoftcopyPresentationStateStorage = @UID_PseudoColorSoftcopyPresentationStateStorage;
+static NSString * const BlendingSoftcopyPresentationStateStorage = @UID_BlendingSoftcopyPresentationStateStorage;
+static NSString * const TwelveLeadECGStorage = @UID_TwelveLeadECGWaveformStorage;
+static NSString * const GeneralECGStorage = @UID_GeneralECGWaveformStorage;
+static NSString * const AmbulatoryECGStorage = @UID_AmbulatoryECGWaveformStorage;
+static NSString * const HemodynamicWaveformStorage = @UID_HemodynamicWaveformStorage;
+static NSString * const CardiacElectrophysiologyWaveformStorage = @UID_CardiacElectrophysiologyWaveformStorage;
+static NSString * const BasicVoiceStorage = @UID_BasicVoiceAudioWaveformStorage;
+static NSString * const StandaloneOverlayStorage = @UID_RETIRED_StandaloneOverlayStorage;
+static NSString * const StandaloneCurveStorage = @UID_RETIRED_StandaloneCurveStorage;
+static NSString * const StandaloneModalityLUTStorage = @UID_RETIRED_StandaloneModalityLUTStorage;
+static NSString * const StandaloneVOILUTStorage = @UID_RETIRED_StandaloneVOILUTStorage;
+static NSString * const StandalonePETCurveStorage = @UID_RETIRED_StandalonePETCurveStorage;
+static NSString * const RTDoseStorage = @UID_RTDoseStorage;
+static NSString * const RTStructureSetStorage = @UID_RTStructureSetStorage;
+static NSString * const RTBeamsTreatmentRecordStorage = @UID_RTBeamsTreatmentRecordStorage;
+static NSString * const RTPlanStorage = @UID_RTPlanStorage;
+static NSString * const RTBrachyTreatmentRecordStorage = @UID_RTBrachyTreatmentRecordStorage;
+static NSString * const RTTreatmentSummaryRecordStorage = @UID_RTTreatmentSummaryRecordStorage;
+static NSString * const MRSpectroscopyStorage = @UID_MRSpectroscopyStorage;
+static NSString * const RawDataStorage = @UID_RawDataStorage;
+static NSString * const SegmentationStorage = @UID_SegmentationStorage;
+static NSString * const StudyRootQueryRetrieveInformationModelFind = @UID_FINDStudyRootQueryRetrieveInformationModel;
+static NSString * const StudyRootQueryRetrieveInformationModelMove = @UID_MOVEStudyRootQueryRetrieveInformationModel;
+static NSString * const PDFStorageClassUID = @UID_EncapsulatedPDFStorage;
+static NSString * const EncapsulatedCDAStorage = @UID_EncapsulatedCDAStorage;
+static NSString * const BasicGrayscalePrintManagementMetaSOPClassUID = @UID_BasicGrayscalePrintManagementMetaSOPClass;
+static NSString * const BasicColorPrintManagementMetaSOPClassUID = @UID_BasicColorPrintManagementMetaSOPClass;
+static NSString * const OphthalmicPhotography8BitImageStorage = @UID_OphthalmicPhotography8BitImageStorage;
+static NSString * const OphthalmicPhotography16BitImageStorage = @UID_OphthalmicPhotography16BitImageStorage;
+static NSString * const FujiPrivateCR = @"1.2.392.200036.9125.1.1.2";
+static NSString * const OphthalmicTomographyImageStorage = @UID_OphthalmicTomographyImageStorage;
 
 @implementation DCMAbstractSyntaxUID
 
 + (NSArray*) allSupportedSyntaxes
 {
-    if( allSupportedSyntaxes == nil)
-    {
-        allSupportedSyntaxes = [NSMutableArray array];
-        
-        [allSupportedSyntaxes addObjectsFromArray: [DCMAbstractSyntaxUID imageSyntaxes]];
-        [allSupportedSyntaxes addObjectsFromArray: [DCMAbstractSyntaxUID radiotherapySyntaxes]];
-        [allSupportedSyntaxes addObjectsFromArray: [DCMAbstractSyntaxUID structuredReportSyntaxes]];
-        [allSupportedSyntaxes addObject: KeyObjectSelectionDocumentStorage];
-        [allSupportedSyntaxes addObjectsFromArray: [DCMAbstractSyntaxUID presentationStateSyntaxes]];
-        [allSupportedSyntaxes addObjectsFromArray: [DCMAbstractSyntaxUID supportedPrivateClasses]];
-        [allSupportedSyntaxes addObjectsFromArray: [DCMAbstractSyntaxUID waveformSyntaxes]];
-        [allSupportedSyntaxes addObjectsFromArray: hiddenImagesSyntaxes];
-        
-        [allSupportedSyntaxes retain]; 
-    }
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSMutableArray *syntaxes = [NSMutableArray array];
+        [syntaxes addObjectsFromArray: [DCMAbstractSyntaxUID imageSyntaxes]];
+        [syntaxes addObjectsFromArray: [DCMAbstractSyntaxUID radiotherapySyntaxes]];
+        [syntaxes addObjectsFromArray: [DCMAbstractSyntaxUID structuredReportSyntaxes]];
+        [syntaxes addObject: KeyObjectSelectionDocumentStorage];
+        [syntaxes addObjectsFromArray: [DCMAbstractSyntaxUID presentationStateSyntaxes]];
+        [syntaxes addObjectsFromArray: [DCMAbstractSyntaxUID supportedPrivateClasses]];
+        [syntaxes addObjectsFromArray: [DCMAbstractSyntaxUID waveformSyntaxes]];
+        [syntaxes addObjectsFromArray: [DCMAbstractSyntaxUID hiddenImageSyntaxes]];
+        allSupportedSyntaxes = [syntaxes copy];
+    });
     
     return  allSupportedSyntaxes;
 }
@@ -562,13 +420,14 @@ static NSString *DCM_Verification = @"1.2.840.10008.1.1";
 
 + (NSArray *)hiddenImageSyntaxes
 {
+    [self imageSyntaxes];
     return hiddenImagesSyntaxes;
 }
 
 + (NSArray *)imageSyntaxes
 {
-	if( imagesSyntaxes == nil)
-	{
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
 		imagesSyntaxes = [NSArray arrayWithObjects:
             ComputedRadiographyImageStorage ,
 		    DigitalXRayImageStorageForPresentation ,
@@ -655,8 +514,10 @@ static NSString *DCM_Verification = @"1.2.840.10008.1.1";
 			NSLog( @"***** exception in %s: %@", __PRETTY_FUNCTION__, e);
 		}
 		
-		[imagesSyntaxes retain];
-	}
+        if (!hiddenImagesSyntaxes)
+            hiddenImagesSyntaxes = [[NSArray alloc] init];
+        imagesSyntaxes = [imagesSyntaxes copy];
+    });
 	
 	return imagesSyntaxes;
 }

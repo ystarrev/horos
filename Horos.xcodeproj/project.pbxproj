@@ -760,7 +760,7 @@
 		BF34857B0951270C00B05AD2 /* SendController.m in Sources */ = {isa = PBXBuildFile; fileRef = BF3485770951270C00B05AD2 /* SendController.m */; };
 		BF398B8B065B124700AD1F25 /* InArrow.tif in Resources */ = {isa = PBXBuildFile; fileRef = BF398B8A065B124700AD1F25 /* InArrow.tif */; };
 		BF3BB380067808D5004F6E91 /* DCMTransferSyntax.h in Headers */ = {isa = PBXBuildFile; fileRef = BF3BB37E067808D5004F6E91 /* DCMTransferSyntax.h */; settings = {ATTRIBUTES = (Public, ); }; };
-		BF3BB381067808D5004F6E91 /* DCMTransferSyntax.m in Sources */ = {isa = PBXBuildFile; fileRef = BF3BB37F067808D5004F6E91 /* DCMTransferSyntax.m */; };
+		BF3BB381067808D5004F6E91 /* DCMTransferSyntax.mm in Sources */ = {isa = PBXBuildFile; fileRef = BF3BB37F067808D5004F6E91 /* DCMTransferSyntax.mm */; };
 		BF4108EA0B126C7800AAC648 /* DarkBox.h in Headers */ = {isa = PBXBuildFile; fileRef = BF4108E60B126C7800AAC648 /* DarkBox.h */; };
 		BF4108EB0B126C7800AAC648 /* DarkBox.m in Sources */ = {isa = PBXBuildFile; fileRef = BF4108E70B126C7800AAC648 /* DarkBox.m */; };
 		BF432BCD09E313EF00AC322E /* DCMTKQueryNode.h in Headers */ = {isa = PBXBuildFile; fileRef = BF432BC709E313EE00AC322E /* DCMTKQueryNode.h */; };
@@ -874,7 +874,7 @@
 		CE74DEB008CCE0C1005D12A7 /* SagOpposite.tif in Resources */ = {isa = PBXBuildFile; fileRef = CE74DEAF08CCE0C1005D12A7 /* SagOpposite.tif */; };
 		CE790A1B105D4DE200CE6AAF /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CE790A18105D4DE200CE6AAF /* Security.framework */; };
 		CE790A1C105D4DE200CE6AAF /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CE790A19105D4DE200CE6AAF /* WebKit.framework */; };
-		CE79D9890FD84C350043DD73 /* DCMAbstractSyntaxUID.m in Sources */ = {isa = PBXBuildFile; fileRef = CE79D9870FD84C350043DD73 /* DCMAbstractSyntaxUID.m */; };
+		CE79D9890FD84C350043DD73 /* DCMAbstractSyntaxUID.mm in Sources */ = {isa = PBXBuildFile; fileRef = CE79D9870FD84C350043DD73 /* DCMAbstractSyntaxUID.mm */; };
 		CE897DD50C21D951005C669E /* texture.tif in Resources */ = {isa = PBXBuildFile; fileRef = CE897DD30C21D951005C669E /* texture.tif */; };
 		CE8CDAF212B3C88D00268E4F /* DatabaseIcon.tif in Resources */ = {isa = PBXBuildFile; fileRef = CE8CDAF112B3C88D00268E4F /* DatabaseIcon.tif */; };
 		CE8D05CE0FD851F400165DDE /* DCMAbstractSyntaxUID.h in Headers */ = {isa = PBXBuildFile; fileRef = CE79D9860FD84C350043DD73 /* DCMAbstractSyntaxUID.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -2085,7 +2085,7 @@
 		BF3485770951270C00B05AD2 /* SendController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SendController.m; sourceTree = "<group>"; };
 		BF398B8A065B124700AD1F25 /* InArrow.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = InArrow.tif; sourceTree = "<group>"; };
 		BF3BB37E067808D5004F6E91 /* DCMTransferSyntax.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DCMTransferSyntax.h; sourceTree = "<group>"; };
-		BF3BB37F067808D5004F6E91 /* DCMTransferSyntax.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = DCMTransferSyntax.m; path = "DCM Framework/DCMTransferSyntax.m"; sourceTree = SOURCE_ROOT; };
+		BF3BB37F067808D5004F6E91 /* DCMTransferSyntax.mm */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.objcpp; name = DCMTransferSyntax.mm; path = "DCM Framework/DCMTransferSyntax.mm"; sourceTree = SOURCE_ROOT; };
 		BF4108E60B126C7800AAC648 /* DarkBox.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DarkBox.h; sourceTree = "<group>"; };
 		BF4108E70B126C7800AAC648 /* DarkBox.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DarkBox.m; sourceTree = "<group>"; };
 		BF432BC709E313EE00AC322E /* DCMTKQueryNode.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DCMTKQueryNode.h; sourceTree = "<group>"; };
@@ -2200,7 +2200,7 @@
 		CE790A18105D4DE200CE6AAF /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		CE790A19105D4DE200CE6AAF /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		CE79D9860FD84C350043DD73 /* DCMAbstractSyntaxUID.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DCMAbstractSyntaxUID.h; sourceTree = "<group>"; };
-		CE79D9870FD84C350043DD73 /* DCMAbstractSyntaxUID.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = DCMAbstractSyntaxUID.m; path = "DCM Framework/DCMAbstractSyntaxUID.m"; sourceTree = SOURCE_ROOT; };
+		CE79D9870FD84C350043DD73 /* DCMAbstractSyntaxUID.mm */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.objcpp; name = DCMAbstractSyntaxUID.mm; path = "DCM Framework/DCMAbstractSyntaxUID.mm"; sourceTree = SOURCE_ROOT; };
 		CE897DD30C21D951005C669E /* texture.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; name = texture.tif; path = Icons/texture.tif; sourceTree = "<group>"; };
 		CE8CDAF112B3C88D00268E4F /* DatabaseIcon.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = DatabaseIcon.tif; sourceTree = "<group>"; };
 		CE90D8C3095F5B48004FC7E2 /* FlipData.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = FlipData.tif; sourceTree = "<group>"; };
@@ -3025,7 +3025,7 @@
 			isa = PBXGroup;
 			children = (
 				CE79D9860FD84C350043DD73 /* DCMAbstractSyntaxUID.h */,
-				CE79D9870FD84C350043DD73 /* DCMAbstractSyntaxUID.m */,
+				CE79D9870FD84C350043DD73 /* DCMAbstractSyntaxUID.mm */,
 				7E0B3A13067526A600908593 /* DCM.h */,
 				7ECBB8210683A68D00FF3FF4 /* DCMPixelDataAttribute.h */,
 				7ECBB8220683A68D00FF3FF4 /* DCMPixelDataAttribute.mm */,
@@ -3057,7 +3057,7 @@
 				BFEB76390677FDA700F242F3 /* DCMTagForNameDictionary.h */,
 				BFEB763A0677FDA700F242F3 /* DCMTagForNameDictionary.m */,
 				BF3BB37E067808D5004F6E91 /* DCMTransferSyntax.h */,
-				BF3BB37F067808D5004F6E91 /* DCMTransferSyntax.m */,
+				BF3BB37F067808D5004F6E91 /* DCMTransferSyntax.mm */,
 				7E0B3A1C067526A600908593 /* DCMValueRepresentation.h */,
 				7E0B3A1D067526A600908593 /* DCMValueRepresentation.m */,
 				BF61E58C06A5BB9E001C0B29 /* DCMCalendarDate.h */,
@@ -5528,7 +5528,7 @@
 				7E0B3A880675274200908593 /* DCMValueRepresentation.m in Sources */,
 				BFEB763E0677FDA700F242F3 /* DCMTagDictionary.m in Sources */,
 				BFEB76400677FDA700F242F3 /* DCMTagForNameDictionary.m in Sources */,
-				BF3BB381067808D5004F6E91 /* DCMTransferSyntax.m in Sources */,
+				BF3BB381067808D5004F6E91 /* DCMTransferSyntax.mm in Sources */,
 				7EE0DC03067A48A3003E745F /* DCMCharacterSet.m in Sources */,
 				7EE0DC3F067A5138003E745F /* DCMSequenceAttribute.m in Sources */,
 				7ECBB8240683A68D00FF3FF4 /* DCMPixelDataAttribute.mm in Sources */,
@@ -5540,7 +5540,7 @@
 				7E82C64008D9FF35000BAFF9 /* DCMLimitedObject.m in Sources */,
 				7E8340DC08E9F7C500E41C5E /* DCMPresentationState.m in Sources */,
 				BFDDE5C2091717F80033317B /* DCMEncapsulatedPDF.m in Sources */,
-				CE79D9890FD84C350043DD73 /* DCMAbstractSyntaxUID.m in Sources */,
+				CE79D9890FD84C350043DD73 /* DCMAbstractSyntaxUID.mm in Sources */,
 				434B461F1A19F640008CF8CF /* OPJSupport.cpp in Sources */,
 				F96AE60696721E2E41B890D5 /* ijg8_jcapimin.c in Sources */,
 				F91776006D344DC1FF0DA55E /* ijg8_jcapistd.c in Sources */,

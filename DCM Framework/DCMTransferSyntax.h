@@ -39,14 +39,13 @@
 
 
 
-@interface DCMTransferSyntax : NSObject {
+@interface DCMTransferSyntax : NSObject <NSCopying> {
 
 NSString	*transferSyntax;
 BOOL		isEncapsulated;
 BOOL		isLittleEndian;
 BOOL		isExplicit;
 NSString	*name;
-NSMutableDictionary *transferSyntaxDict;
 
 }
 @property(readonly) NSString *transferSyntax;
@@ -68,6 +67,7 @@ NSMutableDictionary *transferSyntaxDict;
 +(id)JPEGLSLosslessTransferSyntax;
 +(id)JPEGLSLossyTransferSyntax;
 +(id)RLELosslessTransferSyntax;
++(id)MPEG2TransferSyntax;
 
 - (id)initWithTS:(NSString *)ts;
 - (id)initWithTS:(NSString *)ts isEncapsulated:(BOOL)encapsulated  isLittleEndian:(BOOL)endian  isExplicit:(BOOL)explicitValue name:(NSString *)aName;

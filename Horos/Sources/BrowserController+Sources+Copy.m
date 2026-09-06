@@ -200,15 +200,6 @@ static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread 
     return socketFD;
 }
 
-static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
-{
-    NSString *baseName = path.lastPathComponent;
-    if (!baseName.length)
-        baseName = @"image.dcm";
-
-    return [NSString stringWithFormat:@"%06lu-%@", (unsigned long)(index + 1), baseName];
-}
-
 @implementation BrowserController (SourcesCopy)
 
 -(void)copyImagesToLocalBrowserSourceThread:(NSArray*)io
@@ -417,116 +408,108 @@ static NSString* HorosPhoneTransferFileName(NSString *path, NSUInteger index)
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
     NSThread* thread = [NSThread currentThread];
     int socketFD = -1;
-
+    NSURL* packageDirectory = nil;
+    HorosPhoneVolumeExporter* exporter = nil;
     @try
     {
-        if (io.count < 3)
-            return;
-
-        DataNodeIdentifier* destination = [io objectAtIndex:1];
-        DicomDatabase *srcDatabase = [io objectAtIndex:2];
-        NSMutableArray* imagePaths = [NSMutableArray array];
-        NSFileManager *fm = [NSFileManager defaultManager];
-        DicomDatabase *independentDatabase = srcDatabase.independentDatabase;
-        N2PerformManagedObjectContextBlockAndWait(independentDatabase.managedObjectContext, ^{
-            for (DicomImage* image in [independentDatabase objectsWithIDs:[io objectAtIndex:0]])
-            {
-                NSString *path = image.completePath;
-                BOOL isDirectory = NO;
-                if (path.length && ![imagePaths containsObject:path] && [fm fileExistsAtPath:path isDirectory:&isDirectory] && !isDirectory)
-                    [imagePaths addObject:path];
-            }
+        if (io.count < 3) return;
+        DataNodeIdentifier* destination = io[1];
+        NSString* protocol = destination.dictionary[@"Protocol"];
+        if (![protocol isKindOfClass:NSString.class] || ![protocol isEqualToString:@"HVRVOL02"])
+            @throw [NSException exceptionWithName:NSGenericException reason:@"Update the iPhone app before sending a prepared volume." userInfo:nil];
+        // Snapshot live annotations on the main thread before taking a database-context lock.
+        __block HorosPhoneVolumeExporter* snapshot = nil;
+        dispatch_sync(dispatch_get_main_queue(), ^{ snapshot = [[HorosPhoneVolumeExporter alloc] init]; });
+        exporter = snapshot;
+        exporter.transferThread = thread;
+        packageDirectory = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
+            URLByAppendingPathComponent:[@"HorosPhone-" stringByAppendingString:NSUUID.UUID.UUIDString] isDirectory:YES];
+        NSError* directoryError = nil;
+        if (![[NSFileManager defaultManager] createDirectoryAtURL:packageDirectory withIntermediateDirectories:YES
+                attributes:@{NSFilePosixPermissions:@0700} error:&directoryError])
+            @throw [NSException exceptionWithName:NSGenericException reason:directoryError.localizedDescription userInfo:nil];
+        thread.status = NSLocalizedString(@"Preparing image volume and ROIs for iPhone...", nil);
+        DicomDatabase* database = [io[2] independentDatabase];
+        __block NSArray* fileNames = nil;
+        __block NSString* preparationError = nil;
+        N2PerformManagedObjectContextBlockAndWait(database.managedObjectContext, ^{
+            NSError* error = nil;
+            fileNames = [[exporter writeImages:[database objectsWithIDs:io[0]] toDirectory:packageDirectory error:&error] retain];
+            preparationError = [error.localizedDescription copy];
         });
-
-        if (!imagePaths.count)
-        {
-            thread.status = NSLocalizedString(@"No files to send.", nil);
-            [NSThread sleepForTimeInterval:1];
-            return;
-        }
-
-        thread.status = [NSString stringWithFormat:NSLocalizedString(@"Connecting to %@...", nil), destination.description ?: NSLocalizedString(@"iPhone", nil)];
+        [fileNames autorelease];
+        [preparationError autorelease];
+        if (fileNames.count == 0)
+            @throw [NSException exceptionWithName:NSGenericException reason:preparationError ?: @"Unable to prepare the selected image." userInfo:nil];
+        if (thread.isCancelled) return;
+        thread.status = NSLocalizedString(@"Connecting to iPhone...", nil);
         socketFD = HorosPhoneConnectWithRetry(destination.location, destination.port, thread);
         if (socketFD < 0)
+            @throw [NSException exceptionWithName:NSGenericException reason:@"The iPhone planning app is unavailable." userInfo:nil];
+        struct timeval timeout = {30, 0};
+        setsockopt(socketFD, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+        setsockopt(socketFD, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+        const char magic[8] = {'H','V','R','V','O','L','0','2'};
+        uint32_t count = htonl((uint32_t)fileNames.count);
+        if (!HorosPhoneSendAll(socketFD, magic, sizeof(magic)) || !HorosPhoneSendAll(socketFD, &count, sizeof(count)))
+            @throw [NSException exceptionWithName:NSGenericException reason:@"Volume transfer handshake failed." userInfo:nil];
+        uint64_t totalBytes = 0, sentBytes = 0;
+        for (NSString* name in fileNames)
+            totalBytes += [[[NSFileManager defaultManager] attributesOfItemAtPath:[packageDirectory URLByAppendingPathComponent:name].path error:nil] fileSize];
+        for (NSString* name in fileNames)
         {
-            thread.status = NSLocalizedString(@"Error: iPhone planning app is unavailable", nil);
-            [NSThread sleepForTimeInterval:1];
-            return;
-        }
-
-        const char magic[8] = {'H', 'V', 'R', 'S', 'T', 'D', 'Y', '1'};
-        uint32_t fileCount = htonl((uint32_t)imagePaths.count);
-        if (!HorosPhoneSendAll(socketFD, magic, sizeof(magic)) || !HorosPhoneSendAll(socketFD, &fileCount, sizeof(fileCount)))
-            @throw [NSException exceptionWithName:NSGenericException reason:@"Phone transfer handshake failed" userInfo:nil];
-
-        thread.status = [NSString stringWithFormat:NSLocalizedString(@"Sending %@ %@ to iPhone...", nil), N2LocalizedDecimal(imagePaths.count), (imagePaths.count == 1 ? NSLocalizedString(@"file", nil) : NSLocalizedString(@"files", nil))];
-
-        for (NSUInteger i = 0; i < imagePaths.count; ++i)
-        {
-            if (thread.isCancelled)
-                break;
-
-            NSString *path = [imagePaths objectAtIndex:i];
-            NSDictionary *attributes = [fm attributesOfItemAtPath:path error:nil];
-            unsigned long long fileSize = [attributes fileSize];
-            NSString *transferName = HorosPhoneTransferFileName(path, i);
-            NSData *nameData = [transferName dataUsingEncoding:NSUTF8StringEncoding];
-            if (!nameData.length || nameData.length > UINT32_MAX)
-                @throw [NSException exceptionWithName:NSGenericException reason:@"Invalid transfer file name" userInfo:nil];
-
+            if (thread.isCancelled) break;
+            NSURL* url = [packageDirectory URLByAppendingPathComponent:name];
+            uint64_t length = [[[NSFileManager defaultManager] attributesOfItemAtPath:url.path error:nil] fileSize];
+            NSData* nameData = [name dataUsingEncoding:NSUTF8StringEncoding];
             uint32_t nameLength = htonl((uint32_t)nameData.length);
-            uint64_t networkFileSize = HorosHostToNetwork64((uint64_t)fileSize);
-            if (!HorosPhoneSendAll(socketFD, &nameLength, sizeof(nameLength)) ||
-                !HorosPhoneSendAll(socketFD, nameData.bytes, nameData.length) ||
-                !HorosPhoneSendAll(socketFD, &networkFileSize, sizeof(networkFileSize)))
-                @throw [NSException exceptionWithName:NSGenericException reason:@"Phone transfer header failed" userInfo:nil];
-
-            NSFileHandle *file = [NSFileHandle fileHandleForReadingAtPath:path];
-            if (!file)
-                @throw [NSException exceptionWithName:NSGenericException reason:@"Unable to open image file for transfer" userInfo:nil];
-
-            unsigned long long bytesSentForFile = 0;
-            while (bytesSentForFile < fileSize)
+            uint64_t networkLength = HorosHostToNetwork64(length);
+            if (!HorosPhoneSendAll(socketFD, &nameLength, 4) || !HorosPhoneSendAll(socketFD, nameData.bytes, nameData.length) ||
+                !HorosPhoneSendAll(socketFD, &networkLength, 8))
+                @throw [NSException exceptionWithName:NSGenericException reason:@"Volume transfer header failed." userInfo:nil];
+            NSFileHandle* file = [NSFileHandle fileHandleForReadingFromURL:url error:nil];
+            if (!file) @throw [NSException exceptionWithName:NSGenericException reason:@"Cannot open a prepared asset." userInfo:nil];
+            @try
             {
-                if (thread.isCancelled)
-                    break;
-
-                @autoreleasepool
+                while (length && !thread.isCancelled)
                 {
-                    NSData *chunk = [file readDataOfLength:1024 * 1024];
-                    if (!chunk.length)
-                        break;
-
-                    if (!HorosPhoneSendAll(socketFD, chunk.bytes, chunk.length))
-                        @throw [NSException exceptionWithName:NSGenericException reason:@"Phone transfer data failed" userInfo:nil];
-
-                    bytesSentForFile += chunk.length;
+                    @autoreleasepool
+                    {
+                        NSData* bytes = [file readDataUpToLength:(NSUInteger)MIN(length, 1024 * 1024) error:nil];
+                        if (!bytes.length || !HorosPhoneSendAll(socketFD, bytes.bytes, bytes.length))
+                            @throw [NSException exceptionWithName:NSGenericException reason:@"Volume transfer was interrupted." userInfo:nil];
+                        length -= bytes.length;
+                        sentBytes += bytes.length;
+                        thread.progress = totalBytes ? (double)sentBytes / totalBytes : 0;
+                        thread.status = NSLocalizedString(@"Sending image volume and ROIs to iPhone...", nil);
+                    }
                 }
             }
-            [file closeFile];
-
-            thread.progress = (double)(i + 1) / (double)imagePaths.count;
-            thread.status = [NSString stringWithFormat:NSLocalizedString(@"Sending %@ of %@ files to iPhone...", nil), N2LocalizedDecimal(i + 1), N2LocalizedDecimal(imagePaths.count)];
+            @finally { [file closeFile]; }
         }
-
         if (thread.isCancelled)
             thread.status = NSLocalizedString(@"Cancelled iPhone transfer.", nil);
         else
-            thread.status = NSLocalizedString(@"Sent study to iPhone.", nil);
-
-        thread.progress = 1;
-        [NSThread sleepForTimeInterval:0.5];
+        {
+            uint8_t acknowledgement = 0;
+            ssize_t received;
+            do { received = recv(socketFD, &acknowledgement, 1, 0); } while (received < 0 && errno == EINTR);
+            if (received != 1 || acknowledgement != 1)
+                @throw [NSException exceptionWithName:NSGenericException reason:@"The iPhone did not accept the volume. Check its transfer message." userInfo:nil];
+            thread.status = NSLocalizedString(@"Sent image volume and ROIs to iPhone.", nil);
+            thread.progress = 1;
+        }
     }
-    @catch (NSException *exception)
+    @catch (NSException* exception)
     {
-        thread.status = NSLocalizedString(@"Error: iPhone transfer failed", nil);
-        N2LogExceptionWithStackTrace(exception);
-        [NSThread sleepForTimeInterval:1];
+        thread.status = exception.reason ?: NSLocalizedString(@"iPhone transfer failed.", nil);
+        [NSThread sleepForTimeInterval:3];
     }
     @finally
     {
-        if (socketFD >= 0)
-            close(socketFD);
+        if (socketFD >= 0) close(socketFD);
+        if (packageDirectory) [[NSFileManager defaultManager] removeItemAtURL:packageDirectory error:nil];
+        [exporter release];
         [pool release];
     }
 }

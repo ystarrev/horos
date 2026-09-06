@@ -128,6 +128,15 @@ final class MetalViewerLauncher: NSObject {
         return formatter
     }()
 
+    static func phoneROISnapshot() -> [String: [MetalStudyROI]] {
+        precondition(Thread.isMainThread)
+        var result: [String: [MetalStudyROI]] = [:]
+        for controller in retainedControllers where controller.window?.isVisible == true {
+            for (study, rois) in controller.phoneROISnapshot() { result[study] = rois }
+        }
+        return result
+    }
+
     @objc(visibleWindows)
     class func visibleWindows() -> [NSWindow] {
         retainedControllers.compactMap { $0.window }.filter { $0.isVisible }

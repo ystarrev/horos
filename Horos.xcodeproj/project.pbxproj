@@ -974,6 +974,7 @@
 		F4CTXCL0000000000000001 /* ContextCleaner.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4CTXCL0000000000000002 /* ContextCleaner.mm */; };
 		F4DEC000000100000000001 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 29B97325FDCFA39411CA2CEA /* Foundation.framework */; };
 		F4QRDBQ000000000000003 /* dcmqrdbq.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4QRDBQ000000000000002 /* dcmqrdbq.mm */; };
+		F4B700000001000000000001 /* Horos/Sources/MetalViewer/HorosPhoneVolumeExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4B700000002000000000001 /* Horos/Sources/MetalViewer/HorosPhoneVolumeExporter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -2020,6 +2021,7 @@
 		F4DEC000000200000000002 /* Quartz.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Quartz.framework; path = System/Library/Frameworks/Quartz.framework; sourceTree = SDKROOT; };
 		F4QRDBQ000000000000001 /* dcmqrdbq.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = dcmqrdbq.h; sourceTree = "<group>"; };
 		F4QRDBQ000000000000002 /* dcmqrdbq.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = dcmqrdbq.mm; sourceTree = "<group>"; };
+		F4B700000002000000000001 /* Horos/Sources/MetalViewer/HorosPhoneVolumeExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/HorosPhoneVolumeExporter.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -3523,6 +3525,7 @@
 				F4A10000000200000000000E /* Horos/Sources/MetalViewer/Metal3DViewerToolbarController.swift */,
 				F4A10000000200000000000D /* Horos/Sources/MetalViewer/Metal3DViewerWindowController.swift */,
 				F4A100000002000000000008 /* Horos/Sources/MetalViewer/MetalViewerModels.swift */,
+				F4B700000002000000000001 /* Horos/Sources/MetalViewer/HorosPhoneVolumeExporter.swift */,
 				F4B200000002000000000001 /* Horos/Sources/MetalViewer/MetalStudyROI.swift */,
 				F4B200000002000000000002 /* Horos/Sources/MetalViewer/MetalStudyROISegBridge.mm */,
 				F4B200000002000000000003 /* Horos/Sources/MetalViewer/MetalStudyROISegBridge.h */,
@@ -4614,6 +4617,7 @@
 				F4A10000000100000000000E /* Horos/Sources/MetalViewer/Metal3DViewerToolbarController.swift in Sources */,
 				F4A10000000100000000000D /* Horos/Sources/MetalViewer/Metal3DViewerWindowController.swift in Sources */,
 				F4A100000001000000000008 /* Horos/Sources/MetalViewer/MetalViewerModels.swift in Sources */,
+				F4B700000001000000000001 /* Horos/Sources/MetalViewer/HorosPhoneVolumeExporter.swift in Sources */,
 				F4B200000001000000000001 /* Horos/Sources/MetalViewer/MetalStudyROI.swift in Sources */,
 				F4B200000001000000000002 /* Horos/Sources/MetalViewer/MetalStudyROISegBridge.mm in Sources */,
 				F4D1C0DE0001000000000001 /* Horos/Sources/MetalViewer/SwiftDICOMReader.swift in Sources */,

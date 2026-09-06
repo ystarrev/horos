@@ -259,6 +259,8 @@ extern "C"
 
 - (BOOL) identicalOrientationTo:(DCMPix*) c;
 
+// Explicit scalar decoding for the phone exporter; does not substitute an error image.
+- (BOOL)loadDICOMModernDCMTK;
 - (void)orientationDouble:(double*) c;
 - (void)setOrientationDouble:(double*) c;
 

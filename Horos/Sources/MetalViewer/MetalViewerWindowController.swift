@@ -325,6 +325,17 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private var pendingStudyROIPreviewWorkItem: DispatchWorkItem?
     private var isStudyROIPreviewInFlight = false
 
+    func phoneROISnapshot() -> [String: [MetalStudyROI]] {
+        precondition(Thread.isMainThread)
+        var result: [String: [MetalStudyROI]] = [:]
+        for context in patientContexts {
+            for study in Set(context.study.series.map(\.studyIdentifier)) {
+                result[study] = context.roiStore.rois.filter { $0.studyInstanceUID == study }
+            }
+        }
+        return result
+    }
+
     private var patientContexts: [MetalViewerPatientContext] {
         [primaryPatientContext] + [secondaryPatientContext].compactMap { $0 }
     }

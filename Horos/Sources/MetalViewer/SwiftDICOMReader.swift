@@ -132,7 +132,7 @@ final class SwiftDICOMReader {
         return cache
     }()
 
-    init(contentsOfFile path: String) throws {
+    init(contentsOfFile path: String, metadataForExternalDecoder: Bool = false) throws {
         let mappedData: Data
         do {
             mappedData = try Data(contentsOf: URL(fileURLWithPath: path), options: [.mappedIfSafe])
@@ -144,8 +144,9 @@ final class SwiftDICOMReader {
         }
 
         var parser = SwiftDICOMParser(data: mappedData)
-        let parsed = try parser.parse()
-        guard Self.supportedTransferSyntaxUIDs.contains(parsed.transferSyntaxUID) else {
+        let parsed = try parser.parse(allowExternalPixelSyntax: metadataForExternalDecoder)
+        guard Self.supportedTransferSyntaxUIDs.contains(parsed.transferSyntaxUID) ||
+              (metadataForExternalDecoder && Self.externalPixelSyntaxUIDs.contains(parsed.transferSyntaxUID)) else {
             throw SwiftDICOMReaderError.unsupportedTransferSyntax(parsed.transferSyntaxUID)
         }
 
@@ -347,6 +348,20 @@ final class SwiftDICOMReader {
             segments: segmentDefinitions,
             frames: frames
         )
+    }
+
+    func phoneFrameCalibration(at frameIndex: Int) -> (slope: Float, intercept: Float, level: Float?, width: Float?) {
+        let frame = root.sequenceItems(for: .perFrameFunctionalGroups).safeElement(at: frameIndex)
+        let shared = root.sequenceItems(for: .sharedFunctionalGroups).first
+        let slope = Self.nestedFloat(perFrame: frame, shared: shared, root: root,
+            sequenceTag: .pixelValueTransformationSequence, valueTag: .rescaleSlope) ?? 1
+        let intercept = Self.nestedFloat(perFrame: frame, shared: shared, root: root,
+            sequenceTag: .pixelValueTransformationSequence, valueTag: .rescaleIntercept) ?? 0
+        let level = Self.nestedFloat(perFrame: frame, shared: shared, root: root,
+            sequenceTag: .frameVOILUTSequence, valueTag: .windowCenter)
+        let width = Self.nestedFloat(perFrame: frame, shared: shared, root: root,
+            sequenceTag: .frameVOILUTSequence, valueTag: .windowWidth).map { abs($0) }
+        return (slope == 0 ? 1 : slope, intercept, level, width)
     }
 
     func storedPixelFrame(at frameIndex: Int) throws -> SwiftDICOMStoredPixelFrame {
@@ -850,6 +865,14 @@ final class SwiftDICOMReader {
         return .utf8
     }
 
+    // Metadata remains explicit-VR little-endian for these compressed pixel encodings.
+    // Opt-in only: the normal Metal reader still rejects pixel encodings it cannot decode.
+    fileprivate static let externalPixelSyntaxUIDs: Set<String> = [
+        "1.2.840.10008.1.2.4.50", "1.2.840.10008.1.2.4.51", "1.2.840.10008.1.2.4.57",
+        "1.2.840.10008.1.2.4.80", "1.2.840.10008.1.2.4.81",
+        "1.2.840.10008.1.2.4.90", "1.2.840.10008.1.2.4.91", "1.2.840.10008.1.2.5"
+    ]
+
     private static let supportedTransferSyntaxUIDs: Set<String> = [
         implicitVRLittleEndianUID,
         explicitVRLittleEndianUID,
@@ -1051,7 +1074,7 @@ private struct SwiftDICOMParser {
         self.data = data
     }
 
-    mutating func parse() throws -> SwiftDICOMParseResult {
+    mutating func parse(allowExternalPixelSyntax: Bool = false) throws -> SwiftDICOMParseResult {
         var transferSyntaxUID: String?
         var fileMeta: SwiftDICOMDataset?
         if data.count >= 132,
@@ -1072,7 +1095,10 @@ private struct SwiftDICOMParser {
         case SwiftDICOMReader.explicitVRLittleEndianUID, SwiftDICOMReader.jpegLosslessSV1UID:
             explicitVR = true
         default:
-            throw SwiftDICOMReaderError.unsupportedTransferSyntax(syntaxUID)
+            guard allowExternalPixelSyntax, SwiftDICOMReader.externalPixelSyntaxUIDs.contains(syntaxUID) else {
+                throw SwiftDICOMReaderError.unsupportedTransferSyntax(syntaxUID)
+            }
+            explicitVR = true
         }
 
         let dataset = try parseDataset(end: data.count, explicitVR: explicitVR, stopsAtDelimiter: false)

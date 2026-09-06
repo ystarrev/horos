@@ -36,7 +36,6 @@
      PURPOSE.
  ============================================================================*/
 
-#import "DCMObject.h"
 #import "OSIAutoroutingPreferencePanePref.h"
 #import "HorosSwiftInterop.h"
 #import "NSPreferencePane+OsiriX.h"

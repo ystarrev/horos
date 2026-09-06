@@ -34,7 +34,7 @@ class DCMTagTests(test_dcm_extraction.DCMExtractionTests):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.compatibility = json.loads((ROOT / "DCM Framework/DCMTagDictionaryCompatibility.json").read_text())
+        cls.compatibility = json.loads((ROOT / "Horos/Resources/DCMTagDictionaryCompatibility.json").read_text())
         cls.baseline = {}
         for line in (ROOT / "Scripts/tests/dcm_tags_baseline.tsv").read_text().splitlines():
             if line.startswith("#"):
@@ -90,15 +90,14 @@ class DCMTagTests(test_dcm_extraction.DCMExtractionTests):
             self.assertFalse((ROOT / "DCM Framework" / name).exists())
             for project in projects:
                 self.assertNotIn(name, project.read_text(), str(project.relative_to(ROOT)))
-        resources = self.target_files("DCM", "PBXResourcesBuildPhase")
-        self.assertEqual(resources.count("DCMTagDictionaryCompatibility.json"), 1)
+        resources = self.target_files("Horos", "PBXResourcesBuildPhase")
+        self.assertEqual(resources.count("Horos/Resources/DCMTagDictionaryCompatibility.json"), 1)
         self.assertEqual(resources.count("DCMTK/dicom.dic"), 1)
         self.assertEqual(self.target_files("Horos", "PBXResourcesBuildPhase").count("DCMTK/dicom.dic"), 1)
 
-    def test_dictionary_implementation_uses_the_existing_dcm_target(self):
-        source = "DCM Framework/DCMTagDictionary.mm"
-        self.assertEqual(self.target_files("DCM", "PBXSourcesBuildPhase").count(source), 1)
-        self.assertNotIn(source, self.target_files("Horos", "PBXSourcesBuildPhase"))
+    def test_dictionary_implementation_is_owned_by_horos(self):
+        source = "Horos/Sources/DCMTagDictionary.mm"
+        self.assertEqual(self.target_files("Horos", "PBXSourcesBuildPhase").count(source), 1)
         self.assertFalse((ROOT / source[:-1]).exists())
         reference = next(obj for obj in self.project.values() if obj.get("path") == source)
         self.assertEqual(reference["lastKnownFileType"], "sourcecode.cpp.objcpp")

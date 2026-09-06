@@ -37,10 +37,6 @@
 
 #import "BrowserControllerDCMTKCategory.h"
 #import "DicomFileDCMTKCategory.h"
-#import "DCMObject.h"
-#import "DCM.h"
-#import "DCMTransferSyntax.h"
-#import "DCMAbstractSyntaxUID.h"
 #import "AppController.h"
 #import "DCMPix.h"
 #import "WaitRendering.h"

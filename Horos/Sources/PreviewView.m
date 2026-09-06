@@ -866,7 +866,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         return;
 
     if (pix.annotationsDictionary.count == 0)
-        [pix loadCustomImageAnnotationsPapyLink:-1 DCMLink:nil];
+        [pix loadCustomImageAnnotations];
 #endif
 }
 
@@ -1030,7 +1030,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         }
         else if ([value isEqualToString:@"Plugin"])
         {
-            // Not implemented for the lightweight Metal preview.
+            // Ignore the retired annotation token in previously saved layouts.
         }
         else
         {

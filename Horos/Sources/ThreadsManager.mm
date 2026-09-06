@@ -87,7 +87,7 @@
 	[_threadsController setAvoidsEmptySelection:NO];
 	[_threadsController setObjectClass:[HorosActivityTask class]];
     
-    // Compatibility fallback for plugins that still submit plain NSThread instances.
+    // Plain NSThread activities need polling to detect completion.
 	_timer = [[NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(cleanupFinishedThreads:) userInfo:nil repeats:YES] retain];
     
 	return self;

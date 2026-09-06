@@ -320,7 +320,7 @@ extern "C"
 
 @end
 
-@interface QueryController ()
+@interface QueryController () <NSToolbarDelegate>
 
 - (void)addStudyIfNotAvailableOnContextQueue:(id)item toArray:(NSMutableArray *)selectedItems context:(NSManagedObjectContext *)context;
 - (BOOL)openAvailableLocalImagesForQueryItem:(id)item;
@@ -328,6 +328,7 @@ extern "C"
 - (void)removePendingRetrieveAndViewItem:(id)item;
 - (void)openPendingRetrieveAndViewItemsIfPossible;
 - (void)configureQueryWindowMinimumContentSize;
+- (void)configureAutoQueryToolbar;
 - (void)configureModalityFilterButtons;
 - (void)configureSeriesSelectionPanel;
 - (NSArray *)selectedModalityStrings;
@@ -533,8 +534,6 @@ extern "C"
 			NSArray *array = [qm queries];
 			
 			NSMutableDictionary *dictionary = [NSMutableDictionary dictionaryWithDictionary: [qm parameters]];
-//			NetworkMoveDataHandler *moveDataHandler = [NetworkMoveDataHandler moveDataHandler];
-//			[dictionary setObject:moveDataHandler  forKey:@"receivedDataHandler"];
 			
 			for( DCMTKQueryNode	*object in array)
 		{
@@ -1127,11 +1126,6 @@ extern "C"
 	{
 		[self refreshAutoQR: self];
 	}
-}
-
-- (IBAction) lockAutoQRWindow:(id)sender
-{
-    
 }
 
 - (IBAction) deleteAutoQRInstance:(id)sender
@@ -5467,7 +5461,6 @@ extern "C"
 		
 		if( autoQuery == NO)
 		{
-            self.window.toolbar = nil;
             [self configureQueryWindowMinimumContentSize];
             [self restoreQueryWindowFramePreference];
 
@@ -5496,6 +5489,7 @@ extern "C"
 		}
 		else
 		{
+            [self configureAutoQueryToolbar];
             [self view: self.window.contentView recursiveBindEnableToObject:self withKeyPath: @"isUnlocked"];
             
 			[self setDateQuery: dateFilterMatrix];
@@ -5628,6 +5622,66 @@ extern "C"
         currentAutoQueryController = nil;
     
     [super dealloc];
+}
+
+- (void)configureAutoQueryToolbar
+{
+    NSWindow *window = self.window;
+    NSToolbar *toolbar = [[[NSToolbar alloc] initWithIdentifier:@"AutoQueryToolbar"] autorelease];
+    toolbar.delegate = self;
+    toolbar.allowsUserCustomization = NO;
+    toolbar.autosavesConfiguration = NO;
+    toolbar.displayMode = NSToolbarDisplayModeIconOnly;
+    window.toolbar = toolbar;
+}
+
+- (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar
+{
+    return @[@"AutoQRNavigation", @"AutoQRInstances", @"AutoQRCreate", @"AutoQRDelete",
+             NSToolbarFlexibleSpaceItemIdentifier, @"AutoQRAuthentication"];
+}
+
+- (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar
+{
+    return [self toolbarDefaultItemIdentifiers:toolbar];
+}
+
+- (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
+    itemForItemIdentifier:(NSToolbarItemIdentifier)identifier
+    willBeInsertedIntoToolbar:(BOOL)willBeInserted
+{
+    NSToolbarItem *item = [[[NSToolbarItem alloc] initWithItemIdentifier:identifier] autorelease];
+    item.autovalidates = NO;
+    if ([identifier isEqualToString:@"AutoQRNavigation"])
+    {
+        item.label = NSLocalizedString(@"Navigation", nil);
+        item.view = autoQRNavigationControl;
+    }
+    else if ([identifier isEqualToString:@"AutoQRInstances"])
+    {
+        item.label = NSLocalizedString(@"Instances List", nil);
+        item.view = autoQRInstancesPopup;
+    }
+    else if ([identifier isEqualToString:@"AutoQRCreate"] || [identifier isEqualToString:@"AutoQRDelete"])
+    {
+        BOOL isCreate = [identifier isEqualToString:@"AutoQRCreate"];
+        item.label = isCreate ? NSLocalizedString(@"Create", nil) : NSLocalizedString(@"Delete", nil);
+        item.image = [NSImage imageNamed:isCreate ? NSImageNameAddTemplate : NSImageNameRemoveTemplate];
+        item.target = self;
+        item.action = isCreate ? @selector(createAutoQRInstance:) : @selector(deleteAutoQRInstance:);
+        [item bind:NSEnabledBinding toObject:self withKeyPath:@"isUnlocked" options:nil];
+    }
+    else if ([identifier isEqualToString:@"AutoQRAuthentication"])
+    {
+        item.label = NSLocalizedString(@"Authentication", nil);
+        item.view = authButton;
+    }
+    else
+        return nil;
+
+    item.paletteLabel = item.label;
+    item.toolTip = item.label;
+    return item;
 }
 
 - (void)configurePatientModeSelector

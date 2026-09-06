@@ -98,12 +98,6 @@ static NSString* UserDefaultsObservingContext = @"UserDefaultsObservingContext";
 	[[[self mainView] window] makeFirstResponder: nil];
 }
 
-- (void) mainViewDidLoad
-{
-	if( [[NSUserDefaults standardUserDefaults] boolForKey:@"is12bitPluginAvailable"] == NO)
-		[[NSUserDefaults standardUserDefaults] setBool: NO forKey:@"automatic12BitTotoku"];
-}
-
 - (AppController*) appController
 {
 	return [AppController sharedAppController];

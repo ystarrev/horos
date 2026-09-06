@@ -55,6 +55,7 @@
 #import "LogManager.h"
 #import "MutableArrayCategory.h"
 #import "DCMAbstractSyntaxUID.h"
+#import "DCMCalendarDate.h"
 
 #include <dcmtk/dcmdata/dctk.h>
 #include "DCMTKTagCompatibility.h"

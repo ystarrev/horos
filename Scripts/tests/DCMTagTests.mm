@@ -1,5 +1,5 @@
 // Standalone runtime harness; not part of the app target. Link the newly built
-// DCM.framework after a user-approved build so its bundled dictionaries are used.
+// Horos tag helpers and DCMTK after a user-approved build, with bundled resources.
 // No database, DICOM image file, or persistent preferences are accessed.
 #import <Foundation/Foundation.h>
 #import "DCMAttributeTag.h"

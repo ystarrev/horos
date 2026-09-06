@@ -1570,6 +1570,107 @@ int HorosModernDCMTKWriteFileInTransferSyntax(const char* inputPath,
     return status.good() ? 1 : 0;
 }
 
+int HorosModernDCMTKWriteRawSecondaryCapture(const char* path,
+    const HorosModernDCMTKRawImage* image, char** failureReason)
+{
+    if (failureReason) *failureReason = nullptr;
+    auto fail = [failureReason](const std::string& reason) {
+        return HorosModernDCMTKValidationFail(failureReason, reason);
+    };
+    if (!path || !*path || !image || !image->pixels || !image->rows || !image->columns ||
+        (image->samplesPerPixel != 1 && image->samplesPerPixel != 3) ||
+        (image->bitsAllocated != 8 && image->bitsAllocated != 16) ||
+        (image->samplesPerPixel == 3 && (image->bitsAllocated != 8 || image->isSigned)) ||
+        !image->studyInstanceUID || !*image->studyInstanceUID ||
+        !image->seriesInstanceUID || !*image->seriesInstanceUID ||
+        !image->date || !image->time ||
+        !std::isfinite(image->rowSpacing) || image->rowSpacing <= 0 ||
+        !std::isfinite(image->columnSpacing) || image->columnSpacing <= 0 ||
+        !std::isfinite(image->sliceThickness) || image->sliceThickness <= 0 ||
+        !std::isfinite(image->slicePosition))
+        return fail("Invalid raw image dimensions, pixel format, identity or spacing.");
+
+    const unsigned long expected = static_cast<unsigned long>(image->rows) * image->columns *
+        image->samplesPerPixel * (image->bitsAllocated / 8);
+    if (image->length != expected || expected > 0xfffffffeUL)
+        return fail("The raw frame length does not match its dimensions.");
+
+    try
+    {
+        HorosModernDCMTKEnsureDataDictionary();
+        DcmFileFormat file;
+        DcmDataset* dataset = file.getDataset();
+        OFCondition status = EC_Normal;
+        auto put = [&](const DcmTagKey& tag, const char* value) {
+            if (status.good()) status = dataset->putAndInsertString(tag, value ? value : "");
+        };
+        auto putUS = [&](const DcmTagKey& tag, Uint16 value) {
+            if (status.good()) status = dataset->putAndInsertUint16(tag, value);
+        };
+        auto decimal = [](double value) {
+            char buffer[32];
+            OFStandard::ftoa(buffer, sizeof(buffer), value, 0, 0, 9);
+            return std::string(buffer);
+        };
+        char sopUID[100];
+        dcmGenerateUniqueIdentifier(sopUID, SITE_INSTANCE_UID_ROOT);
+        put(DCM_SOPClassUID, UID_SecondaryCaptureImageStorage);
+        put(DCM_SOPInstanceUID, sopUID);
+        put(DCM_StudyInstanceUID, image->studyInstanceUID);
+        put(DCM_SeriesInstanceUID, image->seriesInstanceUID);
+        put(DCM_SpecificCharacterSet, "ISO_IR 192");
+        put(DCM_PatientName, image->patientName);
+        put(DCM_PatientID, image->patientID);
+        put(DCM_PatientBirthDate, "");
+        put(DCM_PatientSex, "");
+        put(DCM_StudyDescription, image->studyDescription);
+        put(DCM_StudyID, image->studyID);
+        put(DCM_AccessionNumber, "");
+        put(DCM_ReferringPhysicianName, "");
+        put(DCM_Modality, "OT");
+        put(DCM_ConversionType, "WSD");
+        put(DCM_Manufacturer, "Horos");
+        put(DCM_ImageType, "DERIVED\\SECONDARY");
+        put(DCM_SeriesNumber, "101");
+        put(DCM_InstanceNumber, std::to_string(image->instanceNumber).c_str());
+        put(DCM_StudyDate, image->date); put(DCM_StudyTime, image->time);
+        put(DCM_SeriesDate, image->date); put(DCM_SeriesTime, image->time);
+        put(DCM_AcquisitionDate, image->date); put(DCM_AcquisitionTime, image->time);
+        put(DCM_ContentDate, image->date); put(DCM_ContentTime, image->time);
+        putUS(DCM_Rows, image->rows); putUS(DCM_Columns, image->columns);
+        putUS(DCM_SamplesPerPixel, image->samplesPerPixel);
+        putUS(DCM_BitsAllocated, image->bitsAllocated);
+        putUS(DCM_BitsStored, image->bitsAllocated);
+        putUS(DCM_HighBit, image->bitsAllocated - 1);
+        putUS(DCM_PixelRepresentation, image->isSigned ? 1 : 0);
+        put(DCM_PhotometricInterpretation, image->samplesPerPixel == 3 ? "RGB" : "MONOCHROME2");
+        if (image->samplesPerPixel == 3) putUS(DCM_PlanarConfiguration, 0);
+        put(DCM_PixelSpacing, (decimal(image->rowSpacing) + "\\" + decimal(image->columnSpacing)).c_str());
+        put(DCM_SliceThickness, decimal(image->sliceThickness).c_str());
+        put(DCM_ImagePositionPatient, ("0\\0\\" + decimal(image->slicePosition)).c_str());
+        put(DCM_ImageOrientationPatient, "1\\0\\0\\0\\1\\0");
+
+        if (status.good() && image->bitsAllocated == 8)
+            status = dataset->putAndInsertUint8Array(DcmTag(DCM_PixelData, EVR_OB), image->pixels, expected);
+        else if (status.good())
+        {
+            // Decode unaligned input explicitly into host-order words; DCMTK writes little endian.
+            std::vector<Uint16> words(expected / 2);
+            for (size_t index = 0; index < words.size(); ++index)
+            {
+                const unsigned char* bytes = image->pixels + index * 2;
+                words[index] = image->isBigEndian ? (Uint16(bytes[0]) << 8) | bytes[1] :
+                                                   (Uint16(bytes[1]) << 8) | bytes[0];
+            }
+            status = dataset->putAndInsertUint16Array(DcmTag(DCM_PixelData, EVR_OW), words.data(), words.size());
+        }
+        if (status.good()) status = file.saveFile(path, EXS_LittleEndianExplicit);
+        return status.good() ? 1 : fail(status.text());
+    }
+    catch (const std::exception& exception) { return fail(exception.what()); }
+    catch (...) { return fail("Cannot write the raw DICOM image."); }
+}
+
 int HorosModernDCMTKReplaceTagValue(const char* path, unsigned short group, unsigned short element, const char* value, int removeIfEmpty)
 {
     if (path == nullptr || path[0] == '\0')

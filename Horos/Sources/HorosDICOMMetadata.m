@@ -1,4 +1,5 @@
 #import "HorosDICOMMetadata.h"
+#include <math.h>
 
 static NSString *HorosMetadataNodeName(NSString *name)
 {
@@ -158,6 +159,60 @@ NSString *HorosDICOMMetadataText(NSXMLDocument *document)
     NSMutableString *text = [NSMutableString string];
     HorosAppendMetadataText(document.rootElement, @"", text);
     return text;
+}
+
+static NSXMLElement *HorosDICOMMetadataElement(NSXMLElement *item, NSString *tag)
+{
+    NSString *canonicalTag = tag.lowercaseString;
+    for (NSXMLNode *child in item.children)
+        if (child.kind == NSXMLElementKind &&
+            [[[(NSXMLElement *)child attributeForName:@"attributeTag"] stringValue] isEqualToString:canonicalTag])
+            return (NSXMLElement *)child;
+    return nil;
+}
+
+NSArray<NSString *> *HorosDICOMMetadataValues(NSXMLElement *item, NSString *tag)
+{
+    NSXMLElement *attribute = HorosDICOMMetadataElement(item, tag);
+    if (!attribute || [[[attribute attributeForName:@"readOnly"] stringValue] boolValue] ||
+        [[[attribute attributeForName:@"vr"] stringValue] isEqualToString:@"SQ"])
+        return nil;
+    NSMutableArray *values = [NSMutableArray array];
+    for (NSXMLElement *value in [attribute elementsForName:@"value"])
+        [values addObject:value.stringValue ?: @""];
+    if (values.count == 1 && [values.firstObject length] == 0)
+        return @[];
+    return values;
+}
+
+NSString *HorosDICOMMetadataString(NSXMLElement *item, NSString *tag)
+{
+    return [HorosDICOMMetadataValues(item, tag) componentsJoinedByString:@"\\"];
+}
+
+NSArray<NSXMLElement *> *HorosDICOMMetadataItems(NSXMLElement *item, NSString *tag)
+{
+    NSXMLElement *attribute = HorosDICOMMetadataElement(item, tag);
+    if (![[[attribute attributeForName:@"vr"] stringValue] isEqualToString:@"SQ"])
+        return nil;
+    return [attribute elementsForName:@"item"];
+}
+
+NSArray<NSNumber *> *HorosDICOMMetadataNumbers(NSXMLElement *item, NSString *tag)
+{
+    NSArray *values = HorosDICOMMetadataValues(item, tag);
+    if (!values) return nil;
+    NSMutableArray *numbers = [NSMutableArray arrayWithCapacity:values.count];
+    for (NSString *value in values)
+    {
+        NSScanner *scanner = [NSScanner scannerWithString:value];
+        scanner.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+        double number;
+        if (![scanner scanDouble:&number] || !scanner.isAtEnd || !isfinite(number))
+            return nil;
+        [numbers addObject:@(number)];
+    }
+    return numbers;
 }
 
 NSString *HorosDICOMMetadataShortValue(NSXMLElement *attribute)

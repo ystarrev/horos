@@ -41,7 +41,6 @@
 #import "SendController.h"
 #import "Wait.h"
 #import "DCMNetServiceDelegate.h"
-#import "DCM.h"
 #import "DCMTKStoreSCU.h"
 #import "MutableArrayCategory.h"
 #import "Notifications.h"

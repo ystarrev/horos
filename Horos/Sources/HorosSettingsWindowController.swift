@@ -726,7 +726,6 @@ private final class AnnotationsSettingsPaneViewController: HorosSettingsPaneView
             "Thickness / Location / Position",
             "Patient's Actual Age",
             "Patient's Age At Acquisition",
-            "Plugin",
         ]
     }
 

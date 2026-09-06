@@ -35,17 +35,13 @@ class DCMExtractionTests(unittest.TestCase):
     def test_node_service_is_compiled_only_in_horos(self):
         path = "Horos/Sources/DCMNetServiceDelegate.m"
         self.assertEqual(self.target_files("Horos", "PBXSourcesBuildPhase").count(path), 1)
-        self.assertNotIn(path, self.target_files("DCM", "PBXSourcesBuildPhase"))
         self.assertTrue((ROOT / path).is_file())
-        self.assertFalse((ROOT / "DCM Framework/DCMNetServiceDelegate.m").exists())
 
     def test_node_header_belongs_to_horos_not_dcm(self):
         path = "Horos/Sources/DCMNetServiceDelegate.h"
         self.assertEqual(self.target_files("Horos", "PBXHeadersBuildPhase").count(path), 1)
-        self.assertNotIn(path, self.target_files("DCM", "PBXHeadersBuildPhase"))
         self.assertTrue((ROOT / path).is_file())
-        self.assertFalse((ROOT / "DCM Framework/DCMNetServiceDelegate.h").exists())
-        self.assertNotIn("DCMNetServiceDelegate", (ROOT / "DCM Framework/DCM.h").read_text())
+        self.assertFalse((ROOT / "DCM Framework/DCM.h").exists())
 
     def test_callers_import_the_node_service_directly(self):
         usage = re.compile(r"\[DCMNetServiceDelegate\b|\b(?:CMOVE|CGET)RetrieveMode\b")

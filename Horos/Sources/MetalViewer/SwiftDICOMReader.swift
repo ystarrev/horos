@@ -440,7 +440,7 @@ final class SwiftDICOMReader {
             )
         case Self.jpegLosslessSV1UID:
             let jpegData = try encapsulatedFrame(pixelElement: pixelElement, frameIndex: frameIndex)
-            guard let result = DCMDecodeJPEGFrame(
+            guard let result = HorosDecodeJPEGFrame(
                 jpegData,
                 transferSyntaxUID,
                 photometric,

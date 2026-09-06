@@ -695,21 +695,6 @@
                                         </binding>
                                     </connections>
                                 </button>
-                                <button horizontalCompressionResistancePriority="1000" id="390">
-                                    <rect key="frame" x="130" y="39" width="542" height="18"/>
-                                    <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                    <buttonCell key="cell" type="check" title="Automatically enable 12 Bit Totoku Display support for CR, MG, DX, DR, XA and RF" bezelStyle="regularSquare" imagePosition="left" alignment="left" scrollable="YES" lineBreakMode="clipping" inset="2" id="391">
-                                        <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
-                                        <font key="font" metaFont="system"/>
-                                        <connections>
-                                            <binding destination="308" name="value" keyPath="values.automatic12BitTotoku" id="399"/>
-                                        </connections>
-                                    </buttonCell>
-                                    <connections>
-                                        <binding destination="308" name="value" keyPath="values.automatic12BitTotoku" id="394"/>
-                                        <binding destination="308" name="enabled" keyPath="values.is12bitPluginAvailable" id="443"/>
-                                    </connections>
-                                </button>
                                 <button horizontalCompressionResistancePriority="1000" id="401">
                                     <rect key="frame" x="130" y="15" width="375" height="18"/>
                                     <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>

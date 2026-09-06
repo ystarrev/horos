@@ -41,7 +41,8 @@
 #import "DicomStudy.h"
 
 #import "HorosAVAssetLoading.h"
-#import "DCM.h"
+#import "DCMAttributeTag.h"
+#import "DCMCalendarDate.h"
 #import "DCMAbstractSyntaxUID.h"
 #import "BrowserController.h"
 #import "BrowserControllerDCMTKCategory.h"
@@ -52,12 +53,14 @@
 #import "NSUserDefaults+OsiriX.h"
 #import "DicomDatabase.h"
 #import "DicomFileDCMTKCategory.h"
+#import "HorosDICOMMetadata.h"
 #import "ModernDCMTKBridge.h"
 #include <signal.h>
 #include <dlfcn.h>
 #include <stdint.h>
 
 #ifdef OSIRIX_VIEWER
+#import "HorosSwiftInterop.h"
 #import "NSThread+N2.h"
 #import "ThreadsManager.h"
 #import "DCMUSRegion.h"   // US Regions
@@ -152,23 +155,15 @@ enum EPhoto_Interpret    {MONOCHROME1, MONOCHROME2, PALETTE, RGB, HSV, ARGB, CMY
     YBR_FULL, YBR_FULL_422, YBR_PARTIAL_422, YBR_RCT, YBR_ICT, YUV_RCT, UNKNOWN_COLOR};
 
 BOOL gUserDefaultsSet = NO;
-BOOL gUseShutter = NO;
-BOOL gDisplayDICOMOverlays = YES;
-BOOL gUseVOILUT = NO;
-BOOL gUseJPEGColorSpace = NO;
-BOOL gUSEPAPYRUSDCMPIX = NO;
 int gSUVAcquisitionTimeField = 0;
 NSMutableDictionary *gCUSTOM_IMAGE_ANNOTATIONS = nil;
 BOOL	runOsiriXInProtectedMode = NO;
 BOOL	quicktimeRunning = NO;
 NSLock	*quicktimeThreadLock = nil;
 
-static NSMutableDictionary *cachedPapyGroups = nil;
-static NSMutableDictionary *cachedDCMFrameworkFiles = nil;
 static NSMutableArray *nonLinearWLWWThreads = nil;
 static NSMutableArray *minmaxThreads = nil;
 static NSConditionLock *processorsLock = nil;
-static NSConditionLock *purgeCacheLock = nil;
 static float deg2rad = M_PI / 180.0;
 
 static const int maxNumberOfOverlays = 16;
@@ -200,44 +195,6 @@ XYZ ArbitraryRotate(XYZ point, double angle, XYZ axis)
     result.z += (cosine + (1.0 - cosine) * axis.z * axis.z) * point.z;
 
     return result;
-}
-
-static BOOL HorosDecodeDICOMOverlayData(NSData *data, int rows, int columns, unsigned char **decodedData)
-{
-    if (decodedData == NULL)
-        return NO;
-
-    *decodedData = NULL;
-    if (![data isKindOfClass:[NSData class]] || rows <= 0 || columns <= 0)
-        return NO;
-
-    size_t rowCount = (size_t)rows;
-    size_t columnCount = (size_t)columns;
-    if (columnCount > SIZE_MAX / rowCount)
-        return NO;
-
-    size_t pixelCount = rowCount * columnCount;
-    size_t requiredByteCount = pixelCount / 8 + (pixelCount % 8 != 0);
-    if (requiredByteCount > (size_t)data.length)
-        return NO;
-
-    const uint8_t *packedData = (const uint8_t *)data.bytes;
-    if (packedData == NULL)
-        return NO;
-
-    unsigned char *overlayData = (unsigned char *)calloc(pixelCount, sizeof(*overlayData));
-    if (overlayData == NULL)
-        return NO;
-
-    for (size_t pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++)
-    {
-        uint8_t packedByte = packedData[pixelIndex / 8];
-        if (packedByte & (uint8_t)(1U << (pixelIndex % 8)))
-            overlayData[pixelIndex] = 0xFF;
-    }
-
-    *decodedData = overlayData;
-    return YES;
 }
 
 #ifdef OSIRIX_VIEWER
@@ -1519,7 +1476,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 @synthesize hasSUV, decayFactor;
 @synthesize units, decayCorrection, displaySUVValue;
 
-@synthesize isLUT12Bit;
 
 @synthesize referencedSOPInstanceUID;
 
@@ -1598,12 +1554,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     {
         gUserDefaultsSet = YES;
         
-        gUseShutter = [[NSUserDefaults standardUserDefaults] boolForKey:@"UseShutter"];
-        gDisplayDICOMOverlays = [[NSUserDefaults standardUserDefaults] boolForKey:@"DisplayDICOMOverlays"];
-        gUseVOILUT = [[NSUserDefaults standardUserDefaults] boolForKey:@"UseVOILUT"];
         
-        gUSEPAPYRUSDCMPIX = NO; //[[NSUserDefaults standardUserDefaults] boolForKey:@"USEPAPYRUSDCMPIX4"];
-        gUseJPEGColorSpace = [[NSUserDefaults standardUserDefaults] boolForKey:@"UseJPEGColorSpace"];
         gSUVAcquisitionTimeField = (int)[[NSUserDefaults standardUserDefaults] integerForKey:@"SUVAcquisitionTimeField"];
         
         if( gCUSTOM_IMAGE_ANNOTATIONS == nil)
@@ -1616,24 +1567,15 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         }
         
         
-#if __LP64__
-        gUSEPAPYRUSDCMPIX = NO;
-#endif
-        
 #ifdef STATIC_DICOM_LIB
-        gUSEPAPYRUSDCMPIX = NO;
-        gUseShutter = NO;
-        gDisplayDICOMOverlays = NO;
-        gUseJPEGColorSpace = NO;
         gSUVAcquisitionTimeField = 0;
 #endif
         
-        if( gUseVOILUT == YES && gUSEPAPYRUSDCMPIX == NO)
+        if( [[NSUserDefaults standardUserDefaults] boolForKey:@"UseVOILUT"])
         {
             [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"UseVOILUT"];
-            gUseVOILUT = NO; // VOILUT is not supported with DCMFramework
             
-            NSLog( @"**** VOILUT is not supported with DCMFramework -> It will be turned off");
+            NSLog( @"**** Presentation VOI LUTs are not supported by the image loader -> disabled");
         }
     }
 }
@@ -3495,16 +3437,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
 -(id) myinitEmpty
 {
-    @synchronized( [DCMPix class])
-    {
-        if( cachedPapyGroups == nil)
-            cachedPapyGroups = [NSMutableDictionary new];
-        
-        if( cachedDCMFrameworkFiles == nil)
-            cachedDCMFrameworkFiles = [NSMutableDictionary new];
-        
-    }
-    
     checking = [[NSRecursiveLock alloc] init];
     decayFactor = 1.0;
     
@@ -3540,16 +3472,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 - (void) initParameters
 {
     [DCMPix checkUserDefaults: NO];
-    
-    @synchronized( [DCMPix class])
-    {
-        if( cachedPapyGroups == nil)
-            cachedPapyGroups = [NSMutableDictionary new];
-        
-        if( cachedDCMFrameworkFiles == nil)
-            cachedDCMFrameworkFiles = [NSMutableDictionary new];
-        
-    }
     
     needToCompute8bitRepresentation = YES;
     
@@ -3690,7 +3612,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         
         memset( orientation, 0, sizeof orientation);
 #ifdef OSIRIX_VIEWER
-        [self loadCustomImageAnnotationsPapyLink:-1 DCMLink:nil];
+        [self loadCustomImageAnnotations];
 #endif
     }
     return self;
@@ -4130,7 +4052,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         radionuclideTotalDoseCorrected = radionuclideTotalDose * exp( -timebetween * logf( 2) / halflife);
 }
 
-- (void)createROIsFromRTSTRUCT: (DCMObject*)dcmObject
+- (void)createROIsFromRTSTRUCTFile:(NSString *)path
 {
 #ifdef OSIRIX_VIEWER
     
@@ -4142,7 +4064,8 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     
     NSLog( @"createROIsFromRTSTRUCT");
     
-    NSDictionary *dict = [NSDictionary dictionaryWithObject: dcmObject forKey: @"dcmObject"];
+    if (path.length == 0) return;
+    NSDictionary *dict = @{ @"path": path };
     
     NSThread* t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(createROIsFromRTSTRUCTThread:) object:dict] autorelease];
     
@@ -4160,7 +4083,14 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];  // Cuz this is run as a detached thread.
     
-    DCMObject *dcmObject = [dict objectForKey: @"dcmObject"];
+    NSError *metadataError = nil;
+    NSXMLElement *metadata = [DicomFile metadataDocumentForFile:dict[@"path"] error:&metadataError].rootElement;
+    if (!metadata)
+    {
+        NSLog(@"Cannot read RTSTRUCT metadata: %@", metadataError.localizedDescription);
+        [pool release];
+        return;
+    }
     DicomDatabase *database = BrowserController.currentBrowser.database.independentDatabase;
     
     N2PerformManagedObjectContextBlockAndWait(database.managedObjectContext, ^{
@@ -4170,7 +4100,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         // This is better than running a Fetch Request for EVERY ROI since
         // executeFetchRequest is expensive.
         
-        DCMSequenceAttribute *refFrameSequence = (DCMSequenceAttribute *)[dcmObject attributeWithName:@"ReferencedFrameofReferenceSequence"];
+        NSArray *refFrameSequence = HorosDICOMMetadataItems(metadata, @"3006,0010");
         
         if ( refFrameSequence == nil)
             [NSException raise: @"RTStruct" format: @"ReferencedFrameofReferenceSequence not found"];
@@ -4179,32 +4109,23 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         
         [NSThread currentThread].progress = 0;
         
-        for ( DCMObject *refFrameSeqItem in [refFrameSequence sequence])
+        for (NSXMLElement *refFrameSeqItem in refFrameSequence)
         {
-            DCMSequenceAttribute *refStudySeq = (DCMSequenceAttribute *)[refFrameSeqItem attributeWithName: @"RTReferencedStudySequence"];
+            NSArray *refStudySeq = HorosDICOMMetadataItems(refFrameSeqItem, @"3006,0012");
             
-            for ( DCMObject *refStudySeqItem in refStudySeq.sequence)
+            for (NSXMLElement *refStudySeqItem in refStudySeq)
             {
-                DCMSequenceAttribute *refSeriesSeq = (DCMSequenceAttribute *)[refStudySeqItem attributeWithName: @"RTReferencedSeriesSequence"];
+                NSArray *refSeriesSeq = HorosDICOMMetadataItems(refStudySeqItem, @"3006,0014");
                 
-                for ( DCMObject *refSeriesSeqItem in refSeriesSeq.sequence)
+                for (NSXMLElement *refSeriesSeqItem in refSeriesSeq)
                 {
                     
-                    NSString *refSeriesUID = [refSeriesSeqItem attributeValueWithName: @"SeriesInstanceUID"];
+                    NSString *refSeriesUID = HorosDICOMMetadataString(refSeriesSeqItem, @"0020,000e");
+                    if (refSeriesUID.length == 0)
+                        [NSException raise:@"RTStruct" format:@"Referenced Series Instance UID is missing."];
                     NSPredicate *pred = [NSPredicate predicateWithFormat: @"series.seriesDICOMUID == %@", refSeriesUID];
                     [refSeriesUIDPredicates addObject: pred];
                     
-                    /*
-                     DCMSequenceAttribute *contourImgSeq = (DCMSequenceAttribute *)[refSeriesSeqItem attributeWithName: @"ContourImageSequence"];
-                     NSEnumerator *contourImgSeqEnum = [[contourImgSeq sequence] objectEnumerator];
-                     DCMObject *contourImgSeqItem;
-                     
-                     while ( contourImgSeqItem = [contourImgSeqEnum nextObject]) {
-                     NSString *refImgUID = [contourImgSeqItem attributeValueWithName: @"ReferencedSOPInstanceUID"];
-                     NSPredicate *pred = [NSPredicate predicateWithFormat: @"sopInstanceUID like %@", refImgUID];
-                     [refImgUIDPredicates addObject: pred];
-                     }
-                     */
                 }
             }
         }
@@ -4231,74 +4152,81 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         if ( imgObjects.count == 0)
             [NSException raise: @"RTStruct" format: @"No images in Series"];
         
-        // Put all images in a dictionary for quick lookup based on SOP Instance UID
-        
-        NSMutableDictionary *imgDict = [NSMutableDictionary dictionaryWithCapacity: imgObjects.count];
-        NSMutableArray *dcmImgObjects = [NSMutableArray arrayWithCapacity: imgObjects.count];
+        // Read each referenced image once, without decoding its pixels.
+        NSMutableArray<NSDictionary *> *imageGeometry = [NSMutableArray arrayWithCapacity:imgObjects.count];
         
         for ( DicomImage *imgObj in imgObjects)
         {
-            [imgDict setObject: imgObj forKey: [imgObj valueForKey: @"sopInstanceUID"]];
-            [dcmImgObjects addObject: [DCMObject objectWithContentsOfFile: [imgObj completePath] decodingPixelData: NO]];
+            NSXMLElement *image = [DicomFile metadataDocumentForFile:imgObj.completePath error:&error].rootElement;
+            if (!image)
+                [NSException raise:@"RTStruct" format:@"Cannot read referenced image: %@", error.localizedDescription];
+            NSArray *spacing = HorosDICOMMetadataNumbers(image, @"0028,0030");
+            NSArray *position = HorosDICOMMetadataNumbers(image, @"0020,0032");
+            NSArray *imageOrientation = HorosDICOMMetadataNumbers(image, @"0020,0037");
+            if (spacing.count != 2 || position.count != 3 || imageOrientation.count != 6 ||
+                [spacing[0] doubleValue] <= 0 || [spacing[1] doubleValue] <= 0)
+                [NSException raise:@"RTStruct" format:@"Missing or invalid referenced image geometry."];
+            for (NSNumber *value in [[spacing arrayByAddingObjectsFromArray:position] arrayByAddingObjectsFromArray:imageOrientation])
+                if (!isfinite(value.floatValue))
+                    [NSException raise:@"RTStruct" format:@"Referenced image geometry is out of range."];
+            NSArray *thickness = HorosDICOMMetadataNumbers(image, @"0018,0050");
+            [imageGeometry addObject:@{ @"spacing": spacing, @"position": position,
+                @"orientation": imageOrientation, @"thickness": thickness.firstObject ?: @0 }];
         }
-        
-        DCMSequenceAttribute *roiSequence = (DCMSequenceAttribute *)[dcmObject attributeWithName:@"StructureSetROISequence"];
+
+        NSArray *roiSequence = HorosDICOMMetadataItems(metadata, @"3006,0020");
         
         if ( roiSequence == nil)
             [NSException raise: @"RTStruct" format: @"StructureSetROISequence not found"];
         
         NSMutableDictionary *roiNames = [NSMutableDictionary dictionary];
         
-        for ( DCMObject *sequenceItem in [roiSequence sequence])
+        for (NSXMLElement *sequenceItem in roiSequence)
         {
-            [roiNames setValue: [sequenceItem attributeValueWithName: @"ROIName"]
-                        forKey: [sequenceItem attributeValueWithName: @"ROINumber"]];
+            NSString *number = HorosDICOMMetadataString(sequenceItem, @"3006,0022");
+            if (number.length == 0)
+                [NSException raise:@"RTStruct" format:@"ROI number is missing."];
+            roiNames[number] = HorosDICOMMetadataString(sequenceItem, @"3006,0026") ?: number;
         }
         
-        DCMSequenceAttribute *roiContourSequence = (DCMSequenceAttribute *)[dcmObject attributeWithName:@"ROIContourSequence"];
+        NSArray *roiContourSequence = HorosDICOMMetadataItems(metadata, @"3006,0039");
         
         if ( roiContourSequence == nil)
             [NSException raise: @"RTStruct" format: @"ROIContourSequence not found"];
         
-        int numStructs = roiContourSequence.sequence.count;
+        NSUInteger numStructs = roiContourSequence.count;
         unsigned int iStruct = 0;
         
-        NSMutableArray *roiArray[ imgObjects.count ];  // Array of ROIs for each defined 'image' referenced by the RTSTRUCT
+        NSMutableArray<NSMutableArray *> *roiArray = [NSMutableArray arrayWithCapacity:imgObjects.count];
         
-        for ( unsigned int i = 0; i < imgObjects.count; i++) roiArray[ i ] = [NSMutableArray array];
+        for (NSUInteger i = 0; i < imgObjects.count; i++) [roiArray addObject:[NSMutableArray array]];
         
-        for ( DCMObject *sequenceItem in [roiContourSequence sequence])
+        for (NSXMLElement *sequenceItem in roiContourSequence)
         {
             
             float
             pixSpacingX,
             pixSpacingY;
             
-            NSArray *rgbArray = [sequenceItem attributeArrayWithName: @"ROIDisplayColor"];
+            NSArray *rgbArray = HorosDICOMMetadataNumbers(sequenceItem, @"3006,002a");
+            if (rgbArray.count != 3) rgbArray = @[@255, @255, @0];
             
             RGBColor color =
             {
-                [[rgbArray objectAtIndex: 0] floatValue] * 65535 / 256.0,
-                [[rgbArray objectAtIndex: 1] floatValue] * 65535 / 256.0,
-                [[rgbArray objectAtIndex: 2] floatValue] * 65535 / 256.0 };
+                MIN(255, MAX(0, [rgbArray[0] doubleValue])) * 65535 / 256.0,
+                MIN(255, MAX(0, [rgbArray[1] doubleValue])) * 65535 / 256.0,
+                MIN(255, MAX(0, [rgbArray[2] doubleValue])) * 65535 / 256.0 };
             
-            NSString *roiName = [roiNames valueForKey: [sequenceItem attributeValueWithName: @"ReferencedROINumber"]];
+            NSString *roiName = roiNames[HorosDICOMMetadataString(sequenceItem, @"3006,0084") ?: @""];
+            if (!roiName)
+                [NSException raise:@"RTStruct" format:@"Contour references an unknown ROI number."];
             
             NSLog( @"roiName = %@", roiName);
-            DCMSequenceAttribute *contourSequence = (DCMSequenceAttribute *)[sequenceItem attributeWithName:@"ContourSequence"];
-            if ( roiContourSequence == nil)
-                [NSException raise: @"RTStruct" format: @"contourSequence not found"];
+            NSArray *contourSequence = HorosDICOMMetadataItems(sequenceItem, @"3006,0040");
             
-            for ( DCMObject *contourItem in [contourSequence sequence])
+            for (NSXMLElement *contourItem in contourSequence)
             {
-                
-                //				DCMSequenceAttribute *contourImageSequence = (DCMSequenceAttribute*)[contourItem attributeWithName: @"ContourImageSequence"];
-                //				if ( contourImageSequence == nil) {
-                //					NSLog( @"contourImageSequence not found");
-                //					@throw;
-                //				}
-                
-                NSString *contourType = [contourItem attributeValueWithName: @"ContourGeometricType"];
+                NSString *contourType = HorosDICOMMetadataString(contourItem, @"3006,0042");
                 
                 if( [contourType isEqualToString: @"CLOSED_PLANAR"] == NO && [contourType isEqualToString: @"INTERPOLATED_PLANAR"] == NO && [contourType isEqualToString: @"POINT"] == NO)
                 {
@@ -4308,7 +4236,15 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 
                 ToolMode type = tCPolygon;
                 
-                NSArray *dcmPoints = [contourItem attributeArrayWithName: @"ContourData"];
+                NSArray *dcmPoints = HorosDICOMMetadataNumbers(contourItem, @"3006,0050");
+                NSArray *pointCount = HorosDICOMMetadataNumbers(contourItem, @"3006,0046");
+                NSUInteger numPoints = dcmPoints.count / 3;
+                if (numPoints == 0 || dcmPoints.count % 3 != 0 || pointCount.count != 1 ||
+                    [pointCount.firstObject doubleValue] != numPoints)
+                    [NSException raise:@"RTStruct" format:@"Invalid contour point count or coordinates."];
+                for (NSNumber *point in dcmPoints)
+                    if (!isfinite(point.floatValue))
+                        [NSException raise:@"RTStruct" format:@"Contour coordinates are out of range."];
                 
                 // Loop over all slices to determine if slice "contains" the ROI based on distance criterion of FIRST point
                 // This of course assumes that ALL the points in the contour are in the same slice.
@@ -4316,15 +4252,10 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 
                 for ( unsigned int imgIndex = 0; imgIndex < imgObjects.count; imgIndex++)
                 {
-                    DicomImage *img = [imgObjects objectAtIndex: imgIndex];
-                    
-                    DCMObject *imgObject = [dcmImgObjects objectAtIndex: imgIndex];
-                    
-                    if ( imgObject == nil)
-                        [NSException raise: @"RTStruct" format: @"Error opening referenced image file"];
-                    
-                    NSArray *pixSpacings = [imgObject attributeArrayWithName: @"PixelSpacing"];
-                    NSArray *position = [imgObject attributeArrayWithName: @"ImagePositionPatient"];
+                    NSDictionary *geometry = imageGeometry[imgIndex];
+                    NSArray *pixSpacings = geometry[@"spacing"];
+                    NSArray *position = geometry[@"position"];
+                    NSArray *imageOrientation = geometry[@"orientation"];
                     
                     float posX = [[position objectAtIndex: 0] floatValue];
                     float posY = [[position objectAtIndex: 1] floatValue];
@@ -4339,8 +4270,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                     float pixSpacingYrecip = 1.0f / pixSpacingY;
                     
                     // Convert ROI points from DICOM space to ROI space
-                    
-                    NSArray *imageOrientation = [imgObject attributeArrayWithName: @"ImageOrientationPatient"];
                     
                     float orients[ 9 ];
                     
@@ -4361,7 +4290,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                     temp[ 2 ] = [[dcmPoints objectAtIndex: 2] floatValue] - posZ;
                     
                     float distToSlice = fabs( temp[ 0 ] * orients[ 6 ] + temp[ 1 ] * orients[ 7 ] + temp[ 2 ] * orients[ 8 ]);
-                    float distCriterion = [[imgObject attributeValueWithName: @"SliceThickness"] floatValue] * 0.4;
+                    float distCriterion = [geometry[@"thickness"] floatValue] * 0.4;
                     if ( distCriterion <= 0.0f) distCriterion = 0.1f;  // mm
                     
                     if ( distToSlice < distCriterion)
@@ -4373,7 +4302,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                         sliceCoords[ 0 ] *= pixSpacingXrecip;
                         sliceCoords[ 1 ] *= pixSpacingYrecip;
                         
-                        int numPoints = [[contourItem attributeValueWithName: @"NumberofContourPoints"] intValue];
                         NSMutableArray *pointsArray = [NSMutableArray arrayWithCapacity: numPoints];
                         
                         [pointsArray addObject: [MyPoint point:NSMakePoint( sliceCoords[ 0 ], sliceCoords[ 1 ])]];
@@ -4463,7 +4391,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                                 roi = [theNewROI autorelease];
                         }
                         
-                        [roiArray[[imgObjects indexOfObject: img]] addObject: roi];
+                        [roiArray[imgIndex] addObject:roi];
                     }
                     
                 } // End loop over images in series (looking for containing slices)
@@ -4485,7 +4413,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         for( unsigned int i = 0; i < imgObjects.count; i++)
         {
             if( roiArray[i].count == 0) continue;  // Nothing to see, move on.
-            
+
             DicomImage *img = [imgObjects objectAtIndex: i];
             
             NSString *str = [img.series.study roiPathForImage: img inArray: nil];
@@ -4517,60 +4445,11 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             N2LogException( exception);
         }
     });
-    
+
     [pool release];
 #endif
 } // end createROIsFromRTSTRUCT
 
-
-- (void) setVOILUT:(int) first
-            number:(unsigned int) number
-             depth:(unsigned int) depth
-             table:(unsigned int *) table
-             image:(unsigned short*) src
-          isSigned:(BOOL) isSigned
-{
-    int i, index;
-    BOOL atLeastOnePixel = NO;
-    
-    if( isSigned)
-    {
-        short *signedSrc = (short*) src;
-        
-        i = (int)(width * height);
-        while( i-- > 0)
-        {
-            index = signedSrc[ i] - first;
-            if( index <= 0) index = 0;
-            else if( index >= number) index = number -1;
-            else atLeastOnePixel = YES;
-            
-            src[ i] = table[ index];
-        }
-    }
-    else
-    {
-        i = (int)(width * height);
-        while( i-- > 0)
-        {
-            index = src[ i] - first;
-            if( index <= 0) index = 0;
-            else if( index >= number) index = number -1;
-            else atLeastOnePixel = YES;
-            
-            src[ i] = table[ index];
-        }
-    }
-    
-    if( atLeastOnePixel == NO)
-    {
-        gUseVOILUT = NO;
-        [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"UseVOILUT"];
-        NSLog( @"***** VOI LUT seems corrupted ! -> It will be turned OFF");
-    }
-    else
-        VOILUTApplied = YES;
-}
 
 #pragma mark-
 
@@ -4583,433 +4462,49 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 #endif
 }
 
-- (void) dcmFrameworkLoad0x0018: (DCMObject*) dcmObject
-{
-    if( [dcmObject attributeValueWithName:@"PatientsWeight"]) patientsWeight = [[dcmObject attributeValueWithName:@"PatientsWeight"] floatValue];
-    
-    if( [dcmObject attributeValueWithName:@"SliceThickness"]) sliceThickness = [[dcmObject attributeValueWithName:@"SliceThickness"] doubleValue];
-    if( [dcmObject attributeValueWithName:@"SpacingBetweenSlices"]) spacingBetweenSlices = [[dcmObject attributeValueWithName:@"SpacingBetweenSlices"] doubleValue];
-    if( [dcmObject attributeValueWithName:@"RepetitionTime"])
-    {
-        [repetitiontime release];
-        repetitiontime = [[dcmObject attributeValueWithName:@"RepetitionTime"] retain];
-    }
-    if( [dcmObject attributeValueWithName:@"EchoTime"])
-    {
-        [echotime release];
-        echotime = [[dcmObject attributeValueWithName:@"EchoTime"] retain];
-    }
-    if( [dcmObject attributeValueWithName:@"FlipAngle"])
-    {
-        [flipAngle release];
-        flipAngle = [[dcmObject attributeValueWithName:@"FlipAngle"] retain];
-    }
-    if( [dcmObject attributeValueWithName:@"ViewPosition"])
-    {
-        [viewPosition release];
-        viewPosition = [[dcmObject attributeValueWithName:@"ViewPosition"] retain];
-    }
-    if( [dcmObject attributeValueWithName:@"PositionerPrimaryAngle"])
-    {
-        [positionerPrimaryAngle release];
-        positionerPrimaryAngle = [[dcmObject attributeValueWithName:@"PositionerPrimaryAngle"] retain];
-    }
-    if( [dcmObject attributeValueWithName:@"PositionerSecondaryAngle"])
-    {
-        [positionerSecondaryAngle release];
-        positionerSecondaryAngle = [[dcmObject attributeValueWithName:@"PositionerSecondaryAngle"] retain];
-    }
-    if( [dcmObject attributeValueWithName:@"EstimatedRadiographicMagnificationFactor"])
-        estimatedRadiographicMagnificationFactor = [[dcmObject attributeValueWithName:@"EstimatedRadiographicMagnificationFactor"] doubleValue];
-    if( [dcmObject attributeValueWithName:@"PatientPosition"])
-    {
-        [patientPosition release];
-        patientPosition = [[dcmObject attributeValueWithName:@"PatientPosition"] retain];
-    }
-    if( [dcmObject attributeValueWithName:@"RecommendedDisplayFrameRate"]) cineRate = [[dcmObject attributeValueWithName:@"RecommendedDisplayFrameRate"] floatValue];
-    if( !cineRate && [dcmObject attributeValueWithName:@"CineRate"]) cineRate = [[dcmObject attributeValueWithName:@"CineRate"] floatValue];
-    if (!cineRate && [dcmObject attributeValueWithName:@"FrameDelay"])
-    {
-        if( [[dcmObject attributeValueWithName:@"FrameDelay"] floatValue] > 0)
-            cineRate = 1000. / [[dcmObject attributeValueWithName:@"FrameDelay"] floatValue];
-    }
-    if (!cineRate && [dcmObject attributeValueWithName:@"FrameTime"])
-    {
-        if( [[dcmObject attributeValueWithName:@"FrameTime"] floatValue] > 0)
-            cineRate = 1000. / [[dcmObject attributeValueWithName:@"FrameTime"] floatValue];
-    }
-    if (!cineRate && [dcmObject attributeValueWithName:@"FrameTimeVector"])
-    {
-        if( [[dcmObject attributeValueWithName:@"FrameTimeVector"] floatValue] > 0)
-            cineRate = 1000. / [[dcmObject attributeValueWithName:@"FrameTimeVector"] floatValue];
-    }
-    
-    if ( gUseShutter)
-    {
-        if( [dcmObject attributeValueWithName:@"ShutterShape"])
-        {
-            NSArray *shutterArray = [dcmObject attributeArrayWithName:@"ShutterShape"];
-            
-            for( NSString *shutter in shutterArray)
-            {
-                if ( [shutter isEqualToString:@"RECTANGULAR"])
-                {
-                    shutterEnabled = YES;
-                    
-                    shutterRect.origin.x = [[dcmObject attributeValueWithName:@"ShutterLeftVerticalEdge"] floatValue];
-                    shutterRect.size.width = [[dcmObject attributeValueWithName:@"ShutterRightVerticalEdge"] floatValue] - shutterRect.origin.x;
-                    shutterRect.origin.y = [[dcmObject attributeValueWithName:@"ShutterUpperHorizontalEdge"] floatValue];
-                    shutterRect.size.height = [[dcmObject attributeValueWithName:@"ShutterLowerHorizontalEdge"] floatValue] - shutterRect.origin.y;
-                }
-                else if( [shutter isEqualToString:@"CIRCULAR"])
-                {
-                    shutterEnabled = YES;
-                    
-                    NSArray *centerArray = [dcmObject attributeArrayWithName:@"CenterofCircularShutter"];
-                    
-                    if( centerArray.count == 2)
-                    {
-                        shutterCircular.x = [[centerArray objectAtIndex:0] intValue];
-                        shutterCircular.y = [[centerArray objectAtIndex:1] intValue];
-                    }
-                    
-                    shutterCircular_radius = [[dcmObject attributeValueWithName:@"RadiusofCircularShutter"] floatValue];
-                }
-                else if( [shutter isEqualToString:@"POLYGONAL"])
-                {
-                    shutterEnabled = YES;
-                    
-                    NSArray *locArray = [dcmObject attributeArrayWithName:@"VerticesofthePolygonalShutter"];
-                    
-                    if( shutterPolygonal) free( shutterPolygonal);
-                    
-                    shutterPolygonalSize = 0;
-                    shutterPolygonal = malloc( [locArray count] * sizeof( NSPoint) / 2);
-                    for( unsigned int i = 0, x = 0; i < [locArray count]; i+=2, x++)
-                    {
-                        shutterPolygonal[ x].x = [[locArray objectAtIndex: i] intValue];
-                        shutterPolygonal[ x].y = [[locArray objectAtIndex: i+1] intValue];
-                        shutterPolygonalSize++;
-                    }
-                }
-                else NSLog( @"Shutter not supported: %@", shutter);
-            }
-        }
-    }
-}
 
-- (void) dcmFrameworkLoad0x0020: (DCMObject*) dcmObject
+- (BOOL)loadDICOMModernNonImage
 {
-    //orientation
-    
-    NSArray *ipp = [dcmObject attributeArrayWithName:@"ImagePositionPatient"];
-    if( ipp && [ipp count] >= 3)
+    // Reports/RT objects have no pixel matrix. Their previews must not require
+    // the legacy pixel parser or run a report-rendering task under decoder locks.
+    NSXMLElement *metadata = [DicomFile metadataDocumentForFile:self.srcFile error:NULL].rootElement;
+    NSString *uid = HorosDICOMMetadataString(metadata, @"0008,0016");
+    BOOL isPDF = [uid isEqualToString:[DCMAbstractSyntaxUID pdfStorageClassUID]];
+    BOOL isReport = [uid hasPrefix:@"1.2.840.10008.5.1.4.1.1.88."];
+    BOOL isCDA = [uid isEqualToString:[DCMAbstractSyntaxUID EncapsulatedCDAStorage]];
+    if (!metadata || (!isPDF && !isReport && !isCDA && ![DCMAbstractSyntaxUID isNonImageStorage:uid]))
+        return NO;
+
+    self.SOPClassUID = uid;
+    self.referencedSOPInstanceUID = HorosDICOMMetadataString(metadata, @"0008,1155");
+    self.imageType = HorosDICOMMetadataString(metadata, @"0008,0008");
+    if (isPDF)
     {
-        originX = [[ipp objectAtIndex:0] doubleValue];
-        originY = [[ipp objectAtIndex:1] doubleValue];
-        originZ = [[ipp objectAtIndex:2] doubleValue];
-        isOriginDefined = YES;
+        NSData *data = [DicomFile encapsulatedPDFForFile:self.srcFile documentTitle:NULL error:NULL];
+        NSPDFImageRep *rep = data ? [NSPDFImageRep imageRepWithData:data] : nil;
+        if (!rep || frameNo < 0 || frameNo >= rep.pageCount) return NO;
+        rep.currentPage = frameNo;
+        NSImage *image = [[[NSImage alloc] init] autorelease];
+        [image addRepresentation:rep];
+        [self getDataFromNSImage:image];
+    }
+    else if (isReport || isCDA)
+    {
+        [self getDataFromNSImage:[NSImage imageNamed:@"NSInfo"] ?: [NSImage imageNamed:@"NSIconViewTemplate"]];
     }
     else
     {
-        NSArray *ipv = [dcmObject attributeArrayWithName:@"ImagePositionVolume"];
-        if( ipv)
-        {
-            originX = [[ipv objectAtIndex:0] doubleValue];
-            originY = [[ipv objectAtIndex:1] doubleValue];
-            originZ = [[ipv objectAtIndex:2] doubleValue];
-            isOriginDefined = YES;
-        }
+        fImage = fExternalOwnedImage ?: malloc(128 * 128 * sizeof(float));
+        if (!fImage) return NO;
+        width = height = 128;
+        isRGB = NO;
+        for (int index = 0; index < 128 * 128; ++index) fImage[index] = index % 2;
     }
-    
-    
-    NSArray *iop = [dcmObject attributeArrayWithName:@"ImageOrientationPatient"];
-    if( iop)
-    {
-        for ( int j = 0; j < iop.count; j++)
-            orientation[ j ] = [[iop objectAtIndex:j] doubleValue];
-    }
-    else
-    {
-        NSArray *iov = [dcmObject attributeArrayWithName:@"ImageOrientationVolume"];
-        if( iov)
-        {
-            for ( int j = 0; j < iov.count; j++)
-                orientation[ j ] = [[iov objectAtIndex:j] doubleValue];
-        }
-    }
-    
-    if( [dcmObject attributeValueWithName:@"ImageLaterality"])
-    {
-        [laterality release];
-        laterality = [[dcmObject attributeValueWithName:@"ImageLaterality"] retain];
-    }
-    if( laterality == nil)
-    {
-        [laterality release];
-        laterality = [[dcmObject attributeValueWithName:@"Laterality"] retain];
-    }
-    
-    self.frameofReferenceUID = [dcmObject attributeValueWithName: @"FrameofReferenceUID"];
-}
-
-- (void) dcmFrameworkLoad0x0028: (DCMObject*) dcmObject
-{
-    // Group 0x0028
-    
-    if( [dcmObject attributeValueWithName:@"PixelRepresentation"]) fIsSigned = [[dcmObject attributeValueWithName:@"PixelRepresentation"] intValue];
-    if( [dcmObject attributeValueWithName:@"BitsAllocated"]) bitsAllocated = [[dcmObject attributeValueWithName:@"BitsAllocated"] intValue];
-    
-    short __bitsStored = [[dcmObject attributeValueWithName:@"BitsStored"] intValue];
-    
-    if (__bitsStored != 0 && self->numberOfFrames > 1)
-    {
-        self->bitsStored = __bitsStored;
-    }
-    else if (self->numberOfFrames <= 1)
-    {
-        self->bitsStored = __bitsStored;
-    }
-        
-    if( bitsStored == 8 && bitsAllocated == 16 && [[dcmObject attributeValueWithName:@"PhotometricInterpretation"] isEqualToString:@"RGB"])
-        bitsAllocated = 8;
-    
-    if ([dcmObject attributeValueWithName:@"RescaleIntercept"]) offset = [[dcmObject attributeValueWithName:@"RescaleIntercept"] floatValue];
-    if ([dcmObject attributeValueWithName:@"RescaleSlope"])
-    {
-        slope = [[dcmObject attributeValueWithName:@"RescaleSlope"] floatValue];
-        if( slope == 0) slope = 1.0;
-    }
-    
-    // image size
-    if( [dcmObject attributeValueWithName:@"Rows"])
-    {
-        height = [[dcmObject attributeValueWithName:@"Rows"] intValue];
-    }
-    
-    if( [dcmObject attributeValueWithName:@"Columns"])
-    {
-        width =  [[dcmObject attributeValueWithName:@"Columns"] intValue];
-    }
-    
 #ifdef OSIRIX_VIEWER
-    NSManagedObjectContext *iContext = nil;
-    
-    if( savedHeightInDB != 0 && savedHeightInDB != height)
-    {
-        if( savedHeightInDB != OsirixDicomImageSizeUnknown)
-            NSLog( @"******* [[imageObj valueForKey:@'height'] intValue] != height - %d versus %d", (int)savedHeightInDB, (int)height);
-        
-        if( iContext == nil)
-            iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
-        
-        N2PerformManagedObjectContextBlockAndWait(iContext, ^{
-            [HorosDCMPixExistingImageOnContextQueue(iContext, imageObjectID) setValue:[NSNumber numberWithInt:height] forKey:@"height"];
-        });
-        
-        if( height > savedHeightInDB && fExternalOwnedImage)
-            height = savedHeightInDB;
-    }
-    
-    if( savedWidthInDB != 0 && savedWidthInDB != width)
-    {
-        if( savedWidthInDB != OsirixDicomImageSizeUnknown)
-            NSLog( @"******* [[imageObj valueForKey:@'width'] intValue] != width - %d versus %d", (int)savedWidthInDB, (int)width);
-        
-        if( iContext == nil)
-            iContext = ([[NSThread currentThread] isMainThread] ? [[[BrowserController currentBrowser] database] managedObjectContext] : [[[BrowserController currentBrowser] database] independentContext]);
-        
-        N2PerformManagedObjectContextBlockAndWait(iContext, ^{
-            [HorosDCMPixExistingImageOnContextQueue(iContext, imageObjectID) setValue:[NSNumber numberWithInt:width] forKey:@"width"];
-        });
-        
-        if( width > savedWidthInDB && fExternalOwnedImage)
-            width = savedWidthInDB;
-    }
-    N2PerformManagedObjectContextBlockAndWait(iContext, ^{ [iContext save:nil]; });
+    [annotationsDictionary removeAllObjects];
+    [self loadCustomImageAnnotations];
 #endif
-    
-    if( shutterRect.size.width == 0) shutterRect.size.width = width;
-    if( shutterRect.size.height == 0) shutterRect.size.height = height;
-    
-    //window level & width
-    if ([dcmObject attributeValueWithName:@"WindowCenter"] && isRGB == NO) savedWL = (float)[[dcmObject attributeValueWithName:@"WindowCenter"] floatValue];
-    if ([dcmObject attributeValueWithName:@"WindowWidth"] && isRGB == NO) savedWW =  (float) [[dcmObject attributeValueWithName:@"WindowWidth"] floatValue];
-    if(  savedWW < 0) savedWW =-savedWW;
-    
-    if( [[dcmObject attributeValueWithName:@"RescaleType"] isEqualToString: @"US"] == NO)
-    {
-        self.rescaleType = [dcmObject attributeValueWithName:@"RescaleType"];
-        if (self.rescaleType == nil)
-            self.rescaleType = @"";
-        
-        if( [self.rescaleType.lowercaseString isEqualToString: @"houndsfield unit"])
-            self.rescaleType = @"HU";
-    }
-    //planar configuration
-    if( [dcmObject attributeValueWithName:@"PlanarConfiguration"])
-        fPlanarConf = [[dcmObject attributeValueWithName:@"PlanarConfiguration"] intValue];
-    
-    //pixel Spacing
-    if( pixelSpacingFromUltrasoundRegions == NO)
-    {
-        NSArray *pixelSpacing = [dcmObject attributeArrayWithName:@"PixelSpacing"];
-        if(pixelSpacing.count >= 2)
-        {
-            pixelSpacingY = [[pixelSpacing objectAtIndex:0] doubleValue];
-            pixelSpacingX = [[pixelSpacing objectAtIndex:1] doubleValue];
-        }
-        else if(pixelSpacing.count >= 1)
-        {
-            pixelSpacingY = [[pixelSpacing objectAtIndex:0] doubleValue];
-            pixelSpacingX = [[pixelSpacing objectAtIndex:0] doubleValue];
-        }
-        else
-        {
-            NSArray *pixelSpacing = [dcmObject attributeArrayWithName:@"ImagerPixelSpacing"];
-            if(pixelSpacing.count >= 2)
-            {
-                pixelSpacingY = [[pixelSpacing objectAtIndex:0] doubleValue];
-                pixelSpacingX = [[pixelSpacing objectAtIndex:1] doubleValue];
-            }
-            else if(pixelSpacing.count >= 1)
-            {
-                pixelSpacingY = [[pixelSpacing objectAtIndex:0] doubleValue];
-                pixelSpacingX = [[pixelSpacing objectAtIndex:0] doubleValue];
-            }
-        }
-    }
-    
-    DCMSequenceAttribute* seq = (DCMSequenceAttribute *)[dcmObject attributeWithName:@"SequenceofUltrasoundRegions"];
-    
-    if (seq)
-    {
-        // US Regions		BOOL spacingFound = NO;
-        [usRegions release];
-        usRegions = [[NSMutableArray array] retain];
-        
-#ifdef OSIRIX_VIEWER
-        for ( DCMObject *sequenceItem in seq.sequence)
-        {
-            /* US Regions --->
-             if( spacingFound == NO)
-             {
-             int physicalUnitsX = 0;
-             int physicalUnitsY = 0;
-             int spatialFormat = 0;
-             
-             physicalUnitsX = [[sequenceItem attributeValueWithName:@"PhysicalUnitsXDirection"] intValue];
-             physicalUnitsY = [[sequenceItem attributeValueWithName:@"PhysicalUnitsYDirection"] intValue];
-             spatialFormat = [[sequenceItem attributeValueWithName:@"RegionSpatialFormat"] intValue];
-             
-             if( physicalUnitsX == 3 && physicalUnitsY == 3 && spatialFormat == 1)	// We want only cm !
-             {
-             double xxx = 0, yyy = 0;
-             
-             xxx = [[sequenceItem attributeValueWithName:@"PhysicalDeltaX"] doubleValue];
-             yyy = [[sequenceItem attributeValueWithName:@"PhysicalDeltaY"] doubleValue];
-             
-             if( xxx && yyy)
-             {
-             pixelSpacingX = fabs( xxx) * 10.;	// These are in cm !
-             pixelSpacingY = fabs( yyy) * 10.;
-             spacingFound = YES;
-             
-             pixelSpacingFromUltrasoundRegions = YES;
-             }
-             }
-             }
-             <--- US Regions */
-            // US Regions --->
-            
-            // Read US Region Calibration Attributes
-            DCMUSRegion *usRegion = [[[DCMUSRegion alloc] init] autorelease];
-            
-            [usRegion setRegionSpatialFormat:[[sequenceItem attributeValueWithName:@"RegionSpatialFormat"] intValue]];
-            [usRegion setRegionDataType: [[sequenceItem attributeValueWithName:@"RegionDataType"] intValue]];
-            [usRegion setRegionFlags: [[sequenceItem attributeValueWithName:@"RegionFlags"] intValue]];
-            [usRegion setRegionLocationMinX0: [[sequenceItem attributeValueWithName:@"RegionLocationMinX0"] intValue]];
-            [usRegion setRegionLocationMinY0: [[sequenceItem attributeValueWithName:@"RegionLocationMinY0"] intValue]];
-            [usRegion setRegionLocationMaxX1: [[sequenceItem attributeValueWithName:@"RegionLocationMaxX1"] intValue]];
-            [usRegion setRegionLocationMaxY1: [[sequenceItem attributeValueWithName:@"RegionLocationMaxY1"] intValue]];
-            [usRegion setReferencePixelX0: [[sequenceItem attributeValueWithName:@"ReferencePixelX0"] intValue]];
-            [usRegion setIsReferencePixelX0Present:([sequenceItem attributeValueWithName:@"ReferencePixelX0"] != nil)];
-            [usRegion setReferencePixelY0: [[sequenceItem attributeValueWithName:@"ReferencePixelY0"] intValue]];
-            [usRegion setIsReferencePixelY0Present:([sequenceItem attributeValueWithName:@"ReferencePixelY0"] != nil)];
-            [usRegion setPhysicalUnitsXDirection: [[sequenceItem attributeValueWithName:@"PhysicalUnitsXDirection"] intValue]];
-            [usRegion setPhysicalUnitsYDirection: [[sequenceItem attributeValueWithName:@"PhysicalUnitsYDirection"] intValue]];
-            [usRegion setRefPixelPhysicalValueX: [[sequenceItem attributeValueWithName:@"ReferencePixelPhysicalValueX"] doubleValue]];
-            [usRegion setRefPixelPhysicalValueY: [[sequenceItem attributeValueWithName:@"ReferencePixelPhysicalValueY"] doubleValue]];
-            [usRegion setPhysicalDeltaX: [[sequenceItem attributeValueWithName:@"PhysicalDeltaX"] doubleValue]];
-            [usRegion setPhysicalDeltaY: [[sequenceItem attributeValueWithName:@"PhysicalDeltaY"] doubleValue]];
-            [usRegion setDopplerCorrectionAngle: [[sequenceItem attributeValueWithName:@"DopplerCorrectionAngle"] doubleValue]];
-            
-            if ([usRegion physicalUnitsXDirection] == 3 && [usRegion physicalUnitsYDirection] == 3 && [usRegion regionSpatialFormat] == 1) {
-                // We want only cm, for 2D images
-                if ([usRegion physicalDeltaX] && [usRegion physicalDeltaY])
-                {
-                    pixelSpacingX = fabs([usRegion physicalDeltaX]) * 10.;	// These are in cm !
-                    pixelSpacingY = fabs([usRegion physicalDeltaY]) * 10.;
-                    pixelSpacingFromUltrasoundRegions = YES;
-                }
-            }
-            
-            // Adds current US Region Calibration Attributes to usRegions collection
-            [usRegions addObject:usRegion];
-            
-            //NSLog (@"dcmFrameworkLoad0x0028 - US REGION is [%@]", [usRegion toString]);
-            // <--- US Regions
-        }
-#endif
-    }
-    
-    //PixelAspectRatio
-    if( pixelSpacingFromUltrasoundRegions == NO)
-    {
-        NSArray *par = [dcmObject attributeArrayWithName:@"PixelAspectRatio"];
-        if ( par.count >= 2)
-        {
-            double ratiox = 1, ratioy = 1;
-            ratiox = [[par objectAtIndex:0] doubleValue];
-            ratioy = [[par objectAtIndex:1] doubleValue];
-            
-            if( ratioy != 0)
-            {
-                pixelRatio = ratiox / ratioy;
-            }
-        }
-        else if( pixelSpacingX != pixelSpacingY)
-        {
-            if( pixelSpacingY != 0 && pixelSpacingX != 0) pixelRatio = pixelSpacingY / pixelSpacingX;
-        }
-    }
-    
-    //PhotoInterpret
-    if ([[dcmObject attributeValueWithName:@"PhotometricInterpretation"] rangeOfString:@"PALETTE"].location != NSNotFound)
-    {
-        // palette conversions done by dcm Object
-        isRGB = YES;
-    }
-}
-
-- (void) dcmFrameworkLoadOphthalmic: (DCMObject*) dcmObject
-{
-    if( [dcmObject attributeValueWithName:@"ReferencedSOPInstanceUID"])
-        self.referencedSOPInstanceUID = [dcmObject attributeValueWithName:@"ReferencedSOPInstanceUID"];
-    
-    if( [dcmObject attributeValueWithName:@"ReferenceCoordinates"])
-    {
-        NSArray *coor = [dcmObject attributeValueWithName:@"ReferenceCoordinates"];
-        
-        if ( coor.count >= 4)
-        {
-            referenceCoordinates[ 0] = [[coor objectAtIndex: 0] floatValue];
-            referenceCoordinates[ 1] = [[coor objectAtIndex: 1] floatValue];
-            
-            referenceCoordinates[ 2] = [[coor objectAtIndex: 2] floatValue];
-            referenceCoordinates[ 3] = [[coor objectAtIndex: 3] floatValue];
-        }
-    }
+    return fImage != NULL;
 }
 
 - (BOOL)loadDICOMModernDCMTK
@@ -5029,7 +4524,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     if (copyDecodedFrame([self.srcFile fileSystemRepresentation], requestedFrame, &decodedFrame) == 0)
     {
         freeDecodedFrame(&decodedFrame);
-        return NO;
+        return [self loadDICOMModernNonImage];
     }
 
     if (decodedFrame.pixels == NULL || decodedFrame.rows == 0 || decodedFrame.columns == 0 || decodedFrame.pixelCount == 0)
@@ -5111,1171 +4606,11 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     VOILUTApplied = NO;
 #ifdef OSIRIX_VIEWER
     [annotationsDictionary removeAllObjects];
-    [self loadCustomImageAnnotationsPapyLink:-1 DCMLink:nil];
+    [self loadCustomImageAnnotations];
 #endif
     return YES;
 }
 
-- (BOOL)loadDICOMDCMFramework
-{
-    // Memory test: DCMFramework requires a lot of memory...
-    unsigned long long fileSize = [[[NSFileManager defaultManager] attributesOfItemAtPath:self.srcFile error:NULL] fileSize];
-    fileSize *= 1.5;
-    
-    void *memoryTest = malloc( fileSize);
-    if( memoryTest == nil)
-    {
-        NSLog( @"------ loadDICOMDCMFramework memory test failed -> return");
-        return NO;
-    }
-    free( memoryTest);
-    
-    /////////////////////////
-    
-    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-    BOOL returnValue = YES;
-    DCMObject *dcmObject = 0L;
-    
-    if( purgeCacheLock == nil)
-        purgeCacheLock = [[NSConditionLock alloc] initWithCondition: 0];
-    
-    [purgeCacheLock lock];
-    [purgeCacheLock unlockWithCondition: [purgeCacheLock condition]+1];
-    
-    [PapyrusLock lock];
-    
-    @try
-    {
-        if( [cachedDCMFrameworkFiles objectForKey:self.srcFile])
-        {
-            NSMutableDictionary *dic = [cachedDCMFrameworkFiles objectForKey:self.srcFile];
-            
-            dcmObject = [dic objectForKey: @"dcmObject"];
-            
-            if( retainedCacheGroup != nil)
-                NSLog( @"******** DCMPix : retainedCacheGroup 3 != nil ! %@", self.srcFile);
-            
-            [dic setValue: [NSNumber numberWithInt: [[dic objectForKey: @"count"] intValue]+1] forKey: @"count"];
-            retainedCacheGroup = dic;
-        }
-        else
-        {
-            dcmObject = [DCMObject objectWithContentsOfFile:self.srcFile decodingPixelData:NO];
-            
-            if( dcmObject)
-            {
-                NSMutableDictionary *dic = [NSMutableDictionary dictionary];
-                
-                [dic setValue: dcmObject forKey: @"dcmObject"];
-                if( retainedCacheGroup != nil)
-                    NSLog( @"******** DCMPix : retainedCacheGroup 4 != nil ! %@", self.srcFile);
-                
-                [dic setValue: [NSNumber numberWithInt: 1] forKey: @"count"];
-                retainedCacheGroup = dic;
-                
-                [cachedDCMFrameworkFiles setObject:dic forKey:self.srcFile];
-            }
-        }
-    }
-    @catch (NSException *e)
-    {
-        NSLog( @"******** loadDICOMDCMFramework exception : %@", e);
-        dcmObject = nil;
-    }
-    
-    [PapyrusLock unlock];
-    
-    if(dcmObject == nil)
-    {
-        NSLog( @"******** loadDICOMDCMFramework - no DCMObject at srcFile address, nothing to do");
-        [purgeCacheLock lock];
-        [purgeCacheLock unlockWithCondition: [purgeCacheLock condition]-1];
-        [pool release];
-        return NO;
-    }
-    
-    self.SOPClassUID = [dcmObject attributeValueWithName:@"SOPClassUID"];
-    self.referencedSOPInstanceUID = [dcmObject attributeValueWithName:@"ReferencedSOPInstanceUID"];
-    //-----------------------common----------------------------------------------------------
-    
-    self.imageType = [[dcmObject attributeArrayWithName:@"ImageType"] componentsJoinedByString:@"\\"];
-    
-    short maxFrame = 1;
-    short imageNb = frameNo;
-    
-#pragma mark *pdf
-    if ([SOPClassUID isEqualToString:[DCMAbstractSyntaxUID pdfStorageClassUID]])
-    {
-        NSData *pdfData = [dcmObject attributeValueWithName:@"EncapsulatedDocument"];
-        
-        NSPDFImageRep *rep = [NSPDFImageRep imageRepWithData: pdfData];
-        [rep setCurrentPage: frameNo];
-        
-        NSImage *pdfImage = [[[NSImage alloc] init] autorelease];
-        [pdfImage addRepresentation: rep];
-        
-        [self getDataFromNSImage: pdfImage];
-        
-#ifdef OSIRIX_VIEWER
-        [self loadCustomImageAnnotationsPapyLink:-1 DCMLink:dcmObject];
-#endif
-        
-        [purgeCacheLock lock];
-        [purgeCacheLock unlockWithCondition: [purgeCacheLock condition]-1];
-        [pool release];
-        return YES;
-    } // end encapsulatedPDF
-    else if ([SOPClassUID isEqualToString:[DCMAbstractSyntaxUID EncapsulatedCDAStorage]])
-    {
-#ifdef OSIRIX_VIEWER
-        [self loadCustomImageAnnotationsPapyLink:-1 DCMLink:dcmObject];
-#endif
-        
-        [purgeCacheLock lock];
-        [purgeCacheLock unlockWithCondition: [purgeCacheLock condition]-1];
-        [pool release];
-        return YES;
-    }
-    else if( [SOPClassUID hasPrefix: @"1.2.840.10008.5.1.4.1.1.88"]) // DICOM SR
-    {
-#ifdef OSIRIX_VIEWER
-        
-        @try
-        {
-            [[NSFileManager defaultManager] confirmDirectoryAtPath:@"/tmp/dicomsr_osirix/"];
-            
-            NSString *htmlpath = [[@"/tmp/dicomsr_osirix/" stringByAppendingPathComponent:self.srcFile.lastPathComponent] stringByAppendingPathExtension: @"xml"];
-            
-            if( [[NSFileManager defaultManager] fileExistsAtPath: htmlpath] == NO)
-            {
-                NSTask *aTask = [[[NSTask alloc] init] autorelease];
-                [aTask setEnvironment:[NSDictionary dictionaryWithObject:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dicom.dic"] forKey:@"DCMDICTPATH"]];
-                [aTask setExecutableURL:[NSURL fileURLWithPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/dsr2html"]]];
-                [aTask setArguments: [NSArray arrayWithObjects: @"+X1", @"--unknown-relationship", @"--ignore-constraints", @"--ignore-item-errors", @"--skip-invalid-items",self.srcFile, htmlpath, nil]];
-                [aTask setStandardOutput:[NSPipe pipe]];
-                [aTask setStandardError:[NSPipe pipe]];
-                HorosLaunchTaskOrRaise(aTask);
-                while( [aTask isRunning])
-                    [NSThread sleepForTimeInterval: 0.1];
-                
-                //[aTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
-                [aTask interrupt];
-            }
-            
-            if( [[NSFileManager defaultManager] fileExistsAtPath: [htmlpath stringByAppendingPathExtension: @"pdf"]] == NO)
-            {
-                // Avoid launching an external process just to synthesize an SR preview PDF.
-                // In debug/dev builds that helper may be unavailable or codesign-mismatched, which
-                // causes noisy console errors even though the report itself can still be opened.
-            }
-            
-            NSData *pdfPreviewData = [NSData dataWithContentsOfFile: [htmlpath stringByAppendingPathExtension: @"pdf"]];
-            NSPDFImageRep *rep = pdfPreviewData ? [NSPDFImageRep imageRepWithData: pdfPreviewData] : nil;
-            
-            if( rep)
-            {
-                [rep setCurrentPage: frameNo];
-                
-                NSImage *pdfImage = [[[NSImage alloc] init] autorelease];
-                [pdfImage addRepresentation: rep];
-                
-                [self getDataFromNSImage: pdfImage];
-            }
-            else
-            {
-                NSImage *fallbackImage = [NSImage imageNamed: @"NSInfo"];
-                if( fallbackImage == nil)
-                    fallbackImage = [NSImage imageNamed: @"NSIconViewTemplate"];
-                [self getDataFromNSImage: fallbackImage];
-            }
-            
-            [self loadCustomImageAnnotationsPapyLink:-1 DCMLink:dcmObject];
-            
-            [purgeCacheLock lock];
-            [purgeCacheLock unlockWithCondition: [purgeCacheLock condition]-1];
-            [pool release];
-            return YES;
-        }
-        @catch (NSException * e)
-        {
-            N2LogExceptionWithStackTrace(e);
-        }
-#else
-        [self getDataFromNSImage: [NSImage imageNamed: @"NSIconViewTemplate"]];
-#endif
-    }
-    else if ( [DCMAbstractSyntaxUID isNonImageStorage: SOPClassUID])
-    {
-        if( fExternalOwnedImage)
-            fImage = fExternalOwnedImage;
-        else
-            fImage = malloc( 128 * 128 * 4);
-        
-        height = 128;
-        width = 128;
-        isRGB = NO;
-        
-        for( int i = 0; i < 128*128; i++)
-            fImage[ i ] = i%2;
-        
-#ifdef OSIRIX_VIEWER
-        [self loadCustomImageAnnotationsPapyLink:-1 DCMLink:dcmObject];
-#endif
-        
-        [purgeCacheLock lock];
-        [purgeCacheLock unlockWithCondition: [purgeCacheLock condition]-1];
-        [pool release];
-        return YES;
-    }
-    
-    @try
-    {
-        pixelSpacingX = 0;
-        pixelSpacingY = 0;
-        estimatedRadiographicMagnificationFactor = 0;
-        offset = 0.0;
-        slope = 1.0;
-        
-        originX = 0;	originY = 0;	originZ = 0;
-        orientation[ 0] = 0;	orientation[ 1] = 0;	orientation[ 2] = 0;
-        orientation[ 3] = 0;	orientation[ 4] = 0;	orientation[ 5] = 0;
-        
-        [self dcmFrameworkLoad0x0018: dcmObject];
-        [self dcmFrameworkLoad0x0020: dcmObject];
-        [self dcmFrameworkLoad0x0028: dcmObject];
-        
-#pragma mark *MR/CT/US functional multiframe
-        
-        // Is it a new MR/CT/US multi-frame exam?
-        DCMSequenceAttribute *sharedFunctionalGroupsSequence = (DCMSequenceAttribute *)[dcmObject attributeWithName:@"SharedFunctionalGroupsSequence"];
-        if (sharedFunctionalGroupsSequence)
-        {
-            for ( DCMObject *sequenceItem in sharedFunctionalGroupsSequence.sequence)
-            {
-                DCMSequenceAttribute *MRTimingAndRelatedParametersSequence = (DCMSequenceAttribute *)[sequenceItem attributeWithName:@"MRTimingAndRelatedParametersSequence"];
-                DCMObject *MRTimingAndRelatedParametersObject = [[MRTimingAndRelatedParametersSequence sequence] objectAtIndex:0];
-                if( MRTimingAndRelatedParametersObject)
-                    [self dcmFrameworkLoad0x0020: MRTimingAndRelatedParametersObject];
-                
-                DCMSequenceAttribute *planeOrientationSequence = (DCMSequenceAttribute *)[sequenceItem attributeWithName:@"PlaneOrientationSequence"];
-                DCMObject *planeOrientationObject = [[planeOrientationSequence sequence] objectAtIndex:0];
-                if( planeOrientationObject)
-                    [self dcmFrameworkLoad0x0020: planeOrientationObject];
-                
-                DCMSequenceAttribute *planePositionSequence = (DCMSequenceAttribute *)[sequenceItem attributeWithName:@"PlanePositionVolumeSequence"];
-                DCMObject *planePositionObject = [[planePositionSequence sequence] objectAtIndex:0];
-                if( planePositionObject)
-                    [self dcmFrameworkLoad0x0020: planePositionObject];
-                
-                DCMSequenceAttribute *pixelMeasureSequence = (DCMSequenceAttribute *)[sequenceItem attributeWithName:@"PixelMeasuresSequence"];
-                DCMObject *pixelMeasureObject = [[pixelMeasureSequence sequence] objectAtIndex:0];
-                //  This sequence has only one item, comprising SliceThickness and PixelSpacing (DICOM spec 2015a)
-                if(pixelMeasureObject)
-                {
-                    //It seems @brizolara didn't solve this entirely - restoring original behavior for non multi-frame datasets and adding working around for multi-frame
-                    if( numberOfFrames <= 1)
-                    {
-                        [self dcmFrameworkLoad0x0018: pixelMeasureObject];
-                        [self dcmFrameworkLoad0x0028: pixelMeasureObject];
-                    }
-                    else
-                    {
-                        [self dcmFrameworkLoad0x0018: pixelMeasureObject];
-                        [self dcmFrameworkLoad0x0028: pixelMeasureObject];
-                        
-                        if( [pixelMeasureObject attributeValueWithName:@"SliceThickness"])
-                            sliceThickness = [[pixelMeasureObject attributeValueWithName:@"SliceThickness"] doubleValue];
-                        if( [pixelMeasureObject attributeArrayWithName:@"PixelSpacing"])
-                        {
-                            NSArray *pixelSpacing = [pixelMeasureObject attributeArrayWithName:@"PixelSpacing"];
-                            if(pixelSpacing.count >= 2)
-                            {
-                                pixelSpacingY = [[pixelSpacing objectAtIndex:0] doubleValue];
-                                pixelSpacingX = [[pixelSpacing objectAtIndex:1] doubleValue];
-                            }
-                            else if(pixelSpacing.count == 1)
-                            {
-                                pixelSpacingY = [[pixelSpacing objectAtIndex:0] doubleValue];
-                                pixelSpacingX = [[pixelSpacing objectAtIndex:0] doubleValue];
-                            }
-                        }
-                    }
-                }
-                
-                DCMSequenceAttribute *pixelTransformationSequence = (DCMSequenceAttribute *)[sequenceItem attributeWithName:@"PixelValueTransformationSequence"];
-                DCMObject *pixelTransformationSequenceObject = [[pixelTransformationSequence sequence] objectAtIndex:0];
-                //  This sequence has only one item, comprising RescaleIntercept/Slope/Type (DICOM spec 2015a)
-                if( pixelTransformationSequenceObject)
-                {
-                    //It seems @brizolara didn't solve this entirely - restoring original behavior for non multi-frame datasets and adding working around for multi-frame
-                    if( numberOfFrames <= 1)
-                    {
-                        [self dcmFrameworkLoad0x0028: pixelTransformationSequenceObject];
-                    }
-                    else
-                    {
-                        [self dcmFrameworkLoad0x0028: pixelTransformationSequenceObject];
-                        
-                        if ([pixelTransformationSequenceObject attributeValueWithName:@"RescaleIntercept"])
-                            offset = [[pixelTransformationSequenceObject attributeValueWithName:@"RescaleIntercept"] floatValue];
-                        if ([pixelTransformationSequenceObject attributeValueWithName:@"RescaleSlope"])
-                        {
-                            slope = [[pixelTransformationSequenceObject attributeValueWithName:@"RescaleSlope"] floatValue];
-                            if( slope == 0) slope = 1.0;
-                        }
-                        
-                        if( [[pixelTransformationSequenceObject attributeValueWithName:@"RescaleType"] isEqualToString: @"US"] == NO)
-                        {
-                            self.rescaleType = [pixelTransformationSequenceObject attributeValueWithName:@"RescaleType"];
-                            if (self.rescaleType == nil)
-                                self.rescaleType = @"";
-                            
-                            if( [self.rescaleType.lowercaseString isEqualToString: @"houndsfield unit"])
-                                self.rescaleType = @"HU";
-                        };
-                    }
-                }
-            }
-        }
-        
-        
-#pragma mark *per frame
-        
-        // ****** ****** ****** ************************************************************************
-        // PER FRAME
-        // ****** ****** ****** ************************************************************************
-        
-        //long frameCount = 0;
-        DCMSequenceAttribute *perFrameFunctionalGroupsSequence = (DCMSequenceAttribute *)[dcmObject attributeWithName:@"Per-frameFunctionalGroupsSequence"];
-        
-        //NSLog(@"perFrameFunctionalGroupsSequence: %@", [perFrameFunctionalGroupsSequence description]);
-        if( perFrameFunctionalGroupsSequence)
-        {
-            if( perFrameFunctionalGroupsSequence.sequence.count > imageNb && imageNb >= 0)
-            {
-                DCMObject *sequenceItem = [[perFrameFunctionalGroupsSequence sequence] objectAtIndex:imageNb];
-                if( sequenceItem)
-                {
-                    DCMSequenceAttribute* seq;
-                    DCMObject* object;
-                    
-                    if ((seq = (DCMSequenceAttribute*)[sequenceItem attributeWithName:@"ImageType"]) && [seq isKindOfClass:[DCMSequenceAttribute class]])
-                    {
-                        self.imageType = [[seq sequence] componentsJoinedByString:@"\\"];
-                    }
-                    
-                    if ((seq = (DCMSequenceAttribute *)[sequenceItem attributeWithName:@"MREchoSequence"]) && [seq isKindOfClass:[DCMSequenceAttribute class]])
-                    {
-                        if ((object = [[seq sequence] objectAtIndex:0]))
-                            [self dcmFrameworkLoad0x0018:object];   //  NOTE - this may lead to problems here in multi-frame... we should see which items are allowed in MREchoSequence and load just them
-                    }
-                    
-                    if ((seq = (DCMSequenceAttribute*)[sequenceItem attributeWithName:@"PixelMeasuresSequence"]) && [seq isKindOfClass:[DCMSequenceAttribute class]])
-                    {
-                        if ((object = [[seq sequence] objectAtIndex:0])) {
-                            [self dcmFrameworkLoad0x0018:object];   //  NOTE - this may lead to problems here in multi-frame... we should see which items are allowed in PixelMeasuresSequence and load just them
-                            [self dcmFrameworkLoad0x0028:object];
-                        }
-                    }
-                    
-                    if ((seq = (DCMSequenceAttribute*)[sequenceItem attributeWithName:@"PlanePositionSequence"]) && [seq isKindOfClass:[DCMSequenceAttribute class]])
-                    {
-                        //  This sequence has only one item, comprising Origin (DICOM spec 2015a)
-                        if ((object = [[seq sequence] objectAtIndex:0]))
-                        {
-                            //It seems @brizolara didn't solve this entirely - restoring original behavior for non multi-frame datasets and adding working around for multi-frame
-                            if( numberOfFrames <= 1)
-                            {
-                                [self dcmFrameworkLoad0x0020:object];
-                                [self dcmFrameworkLoad0x0028:object];
-                            }
-                            else
-                            {
-                                [self dcmFrameworkLoad0x0020:object];
-                                [self dcmFrameworkLoad0x0028:object];
-                                
-                                NSArray *ipp = [dcmObject attributeArrayWithName:@"ImagePositionPatient"];
-                                if( ipp && [ipp count] >= 3)
-                                {
-                                    originX = [[ipp objectAtIndex:0] doubleValue];
-                                    originY = [[ipp objectAtIndex:1] doubleValue];
-                                    originZ = [[ipp objectAtIndex:2] doubleValue];
-                                    isOriginDefined = YES;
-                                }
-                            }
-                        }
-                    }
-                    
-                    if ((seq = (DCMSequenceAttribute*)[sequenceItem attributeWithName:@"PlaneOrientationSequence"]) && [seq isKindOfClass:[DCMSequenceAttribute class]])
-                    {
-                        if ((object = [[seq sequence] objectAtIndex:0]))
-                            [self dcmFrameworkLoad0x0020:object];
-                    }
-                    
-                    if ((seq = (DCMSequenceAttribute*)[sequenceItem attributeWithName:@"PlanePositionVolumeSequence"]) && [seq isKindOfClass:[DCMSequenceAttribute class]])
-                    {
-                        if ((object = [[seq sequence] objectAtIndex:0]))
-                            [self dcmFrameworkLoad0x0020:object];
-                    }
-                    
-                    if ((seq = (DCMSequenceAttribute*)[sequenceItem attributeWithName:@"PixelValueTransformationSequence"]) && [seq isKindOfClass:[DCMSequenceAttribute class]])
-                    {
-                        if ((object = [[seq sequence] objectAtIndex:0]))
-                            [self dcmFrameworkLoad0x0028:object];
-                    }
-                    
-                    if ((seq = (DCMSequenceAttribute*)[sequenceItem attributeWithName:@"OphthalmicFrameLocationSequence"]) && [seq isKindOfClass:[DCMSequenceAttribute class]])
-                    {
-                        if ((object = [[seq sequence] objectAtIndex:0]))
-                            [self dcmFrameworkLoadOphthalmic: object];
-                    }
-                }
-            }
-            else
-            {
-                NSLog(@"No Frame %d in preFrameFunctionalGroupsSequence", imageNb);
-            }
-        }
-        
-#pragma mark *tag group 6000
-
-        for (int i = 0; i < maxNumberOfOverlays; i++)
-        {
-            free(oData[i]);
-            oData[i] = NULL;
-        }
-        memset(overlaysChannelON, 0, sizeof(overlaysChannelON));
-        memset(oRows, 0, sizeof(oRows));
-        memset(oColumns, 0, sizeof(oColumns));
-        memset(oType, 0, sizeof(oType));
-        memset(oOrigin, 0, sizeof(oOrigin));
-        memset(oBits, 0, sizeof(oBits));
-        memset(oBitPosition, 0, sizeof(oBitPosition));
-
-        NSString *DICOMTag;
-        for(int i=0; i<maxNumberOfOverlays; i++)
-        {
-            DICOMTag = [NSString stringWithFormat:@"%4X,3000", 0x6000+i*2]; //  These are the OverlayData fields
-            id overlayDataValue = [dcmObject attributeValueForKey:DICOMTag];
-            if (![overlayDataValue isKindOfClass:[NSData class]])
-                continue;
-            
-            @try
-            {
-                int overlayRows = 0;
-                int overlayColumns = 0;
-                int overlayType = 0;
-                int overlayOrigin[2] = {0, 0};
-                int overlayBits = 0;
-                int overlayBitPosition = 0;
-
-                DICOMTag = [NSString stringWithFormat:@"%4X,0010", 0x6000+i*2];
-                id attributeValue = [dcmObject attributeValueForKey:DICOMTag];
-                if ([attributeValue isKindOfClass:[NSNumber class]]) // OverlayRows
-                    overlayRows = [attributeValue intValue];
-                
-                DICOMTag = [NSString stringWithFormat:@"%4X,0011", 0x6000+i*2];
-                attributeValue = [dcmObject attributeValueForKey:DICOMTag];
-                if ([attributeValue isKindOfClass:[NSNumber class]]) // OverlayColumns
-                    overlayColumns = [attributeValue intValue];
-                
-                DICOMTag = [NSString stringWithFormat:@"%4X,0040", 0x6000+i*2];
-                attributeValue = [dcmObject attributeValueForKey:DICOMTag];
-                if ([attributeValue isKindOfClass:[NSString class]] && [attributeValue length] > 0) // OverlayType
-                    overlayType = [attributeValue characterAtIndex:0];
-
-                DICOMTag = [NSString stringWithFormat:@"%4X,0050", 0x6000+i*2];
-                attributeValue = [dcmObject attributeArrayForKey:DICOMTag];
-                if ([attributeValue isKindOfClass:[NSArray class]] && [attributeValue count] >= 2) // OverlayOrigin
-                {
-                    overlayOrigin[0] = [[attributeValue objectAtIndex:0] intValue] - 1;
-                    overlayOrigin[1] = [[attributeValue objectAtIndex:1] intValue] - 1;
-                }
-                
-                DICOMTag = [NSString stringWithFormat:@"%4X,0100", 0x6000+i*2];
-                attributeValue = [dcmObject attributeValueForKey:DICOMTag];
-                if ([attributeValue isKindOfClass:[NSNumber class]]) // OverlayBitsAllocated
-                    overlayBits = [attributeValue intValue];
-                
-                DICOMTag = [NSString stringWithFormat:@"%4X,0102", 0x6000+i*2];
-                attributeValue = [dcmObject attributeValueForKey:DICOMTag];
-                if ([attributeValue isKindOfClass:[NSNumber class]]) // OverlayBitPosition
-                    overlayBitPosition = [attributeValue intValue];
-
-                unsigned char *decodedOverlayData = NULL;
-                if (overlayBits == 1 && overlayBitPosition == 0 &&
-                    HorosDecodeDICOMOverlayData((NSData *)overlayDataValue, overlayRows, overlayColumns, &decodedOverlayData))
-                {
-                    oRows[i] = overlayRows;
-                    oColumns[i] = overlayColumns;
-                    oType[i] = overlayType;
-                    oOrigin[i][0] = overlayOrigin[0];
-                    oOrigin[i][1] = overlayOrigin[1];
-                    oBits[i] = overlayBits;
-                    oBitPosition[i] = overlayBitPosition;
-                    oData[i] = decodedOverlayData;
-                    overlaysChannelON[i] = YES;
-                }
-            }
-            @catch (NSException *e)
-            {
-                N2LogExceptionWithStackTrace(e/*, @"overlays dcmframework"*/);
-            }
-        }
-        
-#pragma mark *SUV
-        
-        // Get values needed for SUV calcs:
-        if( [dcmObject attributeValueWithName:@"PatientsWeight"]) patientsWeight = [[dcmObject attributeValueWithName:@"PatientsWeight"] floatValue];
-        else patientsWeight = 0.0;
-        
-        [units release];
-        units = [[dcmObject attributeValueWithName:@"Units"] retain];
-        
-        [decayCorrection release];
-        decayCorrection = [[dcmObject attributeValueWithName:@"DecayCorrection"] retain];
-        
-        //	if( [dcmObject attributeValueWithName:@"DecayFactor"])
-        //		decayFactor = [[dcmObject attributeValueWithName:@"DecayFactor"] floatValue];
-        
-        decayFactor = 1.0;
-        
-        DCMSequenceAttribute *radiopharmaceuticalInformationSequence = (DCMSequenceAttribute *)[dcmObject attributeWithName:@"RadiopharmaceuticalInformationSequence"];
-        if( radiopharmaceuticalInformationSequence && radiopharmaceuticalInformationSequence.sequence.count > 0)
-        {
-            DCMObject *radionuclideTotalDoseObject = [radiopharmaceuticalInformationSequence.sequence objectAtIndex:0];
-            radionuclideTotalDose = [[radionuclideTotalDoseObject attributeValueWithName:@"RadionuclideTotalDose"] floatValue];
-            halflife = [[radionuclideTotalDoseObject attributeValueWithName:@"RadionuclideHalfLife"] floatValue];
-            
-            NSArray *priority = nil;
-            
-            if( gSUVAcquisitionTimeField == 0) // Prefer SeriesTime
-                priority = [NSArray arrayWithObjects: @"SeriesDate", @"SeriesTime", @"AcquisitionDate", @"AcquisitionTime", @"ContentDate", @"ContentTime", @"StudyDate", @"StudyTime", nil];
-            
-            if( gSUVAcquisitionTimeField == 1) // Prefer AcquisitionTime
-                priority = [NSArray arrayWithObjects: @"AcquisitionDate", @"AcquisitionTime", @"SeriesDate", @"SeriesTime", @"ContentDate", @"ContentTime", @"StudyDate", @"StudyTime", nil];
-            
-            if( gSUVAcquisitionTimeField == 2) // Prefer ContentTime
-                priority = [NSArray arrayWithObjects: @"ContentDate", @"ContentTime", @"SeriesDate", @"SeriesTime", @"AcquisitionDate", @"AcquisitionTime", @"StudyDate", @"StudyTime", nil];
-            
-            if( gSUVAcquisitionTimeField == 3) // Prefer StudyTime
-                priority = [NSArray arrayWithObjects: @"StudyDate", @"StudyTime", @"SeriesDate", @"SeriesTime", @"AcquisitionDate", @"AcquisitionTime", @"ContentDate", @"ContentTime", nil];
-            
-            NSString *preferredTime = nil;
-            NSString *preferredDate = nil;
-            
-            for( int v = 0; v < priority.count;)
-            {
-                NSString *value;
-                
-                if( preferredDate == nil && (value = [[dcmObject attributeValueWithName: [priority objectAtIndex: v]] dateString])) preferredDate = value;
-                v++;
-                
-                if( preferredTime == nil && (value = [[dcmObject attributeValueWithName: [priority objectAtIndex: v]] timeString])) preferredTime = value;
-                v++;
-            }
-            
-            NSString *radioTime = [[radionuclideTotalDoseObject attributeValueWithName:@"RadiopharmaceuticalStartTime"] timeString];
-            
-            if( preferredDate && preferredTime && radioTime)
-            {
-                NSDateFormatter *formatter = [[[NSDateFormatter alloc] init] autorelease];
-                formatter.locale = [[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"] autorelease];
-                formatter.dateFormat = [preferredTime length] >= 6 ? @"yyyyMMddHHmmss" : @"yyyyMMddHHmm";
-                radiopharmaceuticalStartTime = [[formatter dateFromString:[preferredDate stringByAppendingString:radioTime]] retain];
-                acquisitionTime = [[formatter dateFromString:[preferredDate stringByAppendingString:preferredTime]] retain];
-            }
-            
-            [self computeTotalDoseCorrected];
-        }
-        
-        DCMSequenceAttribute *detectorInformationSequence = (DCMSequenceAttribute *)[dcmObject attributeWithName:@"DetectorInformationSequence"];
-        if( detectorInformationSequence && detectorInformationSequence.sequence.count > 0)
-        {
-            DCMObject *detectorInformation = [detectorInformationSequence.sequence objectAtIndex:0];
-            
-            NSArray *ipp = [detectorInformation attributeArrayWithName:@"ImagePositionPatient"];
-            if( ipp && [ipp count] >= 3)
-            {
-                originX = [[ipp objectAtIndex:0] doubleValue];
-                originY = [[ipp objectAtIndex:1] doubleValue];
-                originZ = [[ipp objectAtIndex:2] doubleValue];
-                isOriginDefined = YES;
-            }
-            
-            if( spacingBetweenSlices)
-                originZ += frameNo * spacingBetweenSlices;
-            else
-                originZ += frameNo * sliceThickness;
-            
-            orientation[ 0] = 0;	orientation[ 1] = 0;	orientation[ 2] = 0;
-            orientation[ 3] = 0;	orientation[ 4] = 0;	orientation[ 5] = 0;
-            
-            NSArray *iop = [detectorInformation attributeArrayWithName:@"ImageOrientationPatient"];
-            if( iop)
-            {
-                BOOL equalZero = YES;
-                
-                for ( int j = 0; j < iop.count; j++)
-                    if( [[iop objectAtIndex:j] floatValue] != 0)
-                        equalZero = NO;
-                
-                if( equalZero == NO)
-                {
-                    for ( int j = 0; j < iop.count; j++)
-                        orientation[ j ] = [[iop objectAtIndex:j] doubleValue];
-                }
-                else // doesnt the root Image Orientation contains valid data? if not use the normal vector
-                {
-                    equalZero = YES;
-                    for ( int j = 0; j < 6; j++)
-                        if( orientation[ j] != 0)
-                            equalZero = NO;
-                    
-                    if( equalZero)
-                    {
-                        orientation[ 0] = 1;	orientation[ 1] = 0;	orientation[ 2] = 0;
-                        orientation[ 3] = 0;	orientation[ 4] = 1;	orientation[ 5] = 0;
-                    }
-                }
-            }
-        }
-        
-        if( [dcmObject attributeValueForKey: @"7053,1000"])
-        {
-            @try
-            {
-                philipsFactor = [[dcmObject attributeValueForKey: @"7053,1000"] floatValue];
-            }
-            @catch ( NSException *e)
-            {
-                NSLog( @"philipsFactor exception");
-                NSLog( @"%@", [e description]);
-            }
-            //NSLog( @"philipsFactor = %f", philipsFactor);
-        }
-        
-        // End SUV
-        
-#pragma mark *compute normal vector
-        // Compute normal vector
-        
-        orientation[6] = orientation[1]*orientation[5] - orientation[2]*orientation[4];
-        orientation[7] = orientation[2]*orientation[3] - orientation[0]*orientation[5];
-        orientation[8] = orientation[0]*orientation[4] - orientation[1]*orientation[3];
-        
-        [self computeSliceLocation];
-        
-#pragma mark READ PIXEL DATA
-        
-        maxFrame = [[dcmObject attributeValueWithName:@"NumberofFrames"] intValue];
-        if( maxFrame == 0) maxFrame = 1;
-        if( pixArray == nil) maxFrame = 1;
-        //pixelAttr contains the whole PixelData attribute of every frames. Hence needs to be before the loop
-        if ([dcmObject attributeValueWithName:@"PixelData"])
-        {
-            DCMPixelDataAttribute *pixelAttr = (DCMPixelDataAttribute *)[dcmObject attributeWithName:@"PixelData"];
-            
-            //=====================================================================
-            
-#pragma mark *loading a frame
-            
-            if ( [[dcmObject attributeValueWithName:@"Modality"] isEqualToString: @"RTDOSE"])
-            {  // Set Z value for each frame
-                NSArray *gridFrameOffsetArray = [dcmObject attributeArrayWithName: @"GridFrameOffsetVector"];  //List of Z values
-                
-                originZ += [[gridFrameOffsetArray objectAtIndex: imageNb] doubleValue];
-                
-                [self computeSliceLocation];
-            }
-            
-            if( gUseShutter && imageNb != frameNo && maxFrame > 1)
-            {
-                if( shutterPolygonalSize)
-                {
-                    self->shutterPolygonal = malloc( shutterPolygonalSize * sizeof( NSPoint));
-                    memcpy( self->shutterPolygonal, shutterPolygonal, shutterPolygonalSize * sizeof( NSPoint));
-                }
-            }
-            
-            //get PixelData
-            short *oImage = nil;
-            NSData *pixData = [pixelAttr decodeFrameAtIndex:imageNb];
-            if( [pixData length] > 0)
-            {
-                oImage =  malloc( [pixData length]);	//pointer to a memory zone where each pixel of the data has a short value reserved
-                if( oImage)
-                    [pixData getBytes:oImage length:pixData.length];
-                else
-                    NSLog( @"----- Major memory problems 1...");
-            }
-            
-            if( oImage == nil) //there was no data for this frame -> create empty image
-            {
-                //NSLog(@"image size: %d", ( height * width * 2));
-                oImage = malloc( height * width * 2);
-                if( oImage)
-                {
-                    long yo = 0;
-                    for( unsigned long i = 0 ; i < height * width; i++)
-                    {
-                        oImage[ i] = yo++;
-                        if( yo>= width) yo = 0;
-                    }
-                }
-                else
-                    NSLog( @"----- Major memory problems 2...");
-            }
-            
-            //-----------------------frame data already loaded in (short) oImage --------------
-            
-            isRGB = NO;
-            inverseVal = NO;
-            
-            NSString *colorspace = [dcmObject attributeValueWithName:@"PhotometricInterpretation"];
-            if ([colorspace rangeOfString:@"MONOCHROME1"].location != NSNotFound)
-            {
-                if( [[dcmObject attributeValueWithName:@"Modality"] isEqualToString:@"PT"] || ([[NSUserDefaults standardUserDefaults] boolForKey:@"OpacityTableNM"] == YES && [[dcmObject attributeValueWithName:@"Modality"] isEqualToString:@"NM"]))
-                {
-                    
-                }
-                else
-                    inverseVal = YES; savedWL = -savedWL;
-            }
-            /*else if ( [colorspace hasPrefix:@"MONOCHROME2"])	{inverseVal = NO; savedWL = savedWL;} */
-            if ( [colorspace hasPrefix:@"YBR"]) isRGB = YES;
-            if ( [colorspace hasPrefix:@"PALETTE"])	{ bitsAllocated = 8; isRGB = YES; NSLog(@"Palette depth conveted to 8 bit");}
-            if ([colorspace rangeOfString:@"RGB"].location != NSNotFound) isRGB = YES;
-            /******** dcm Object will do this *******convertYbrToRgb -> planar is converted***/
-            if ([colorspace rangeOfString:@"YBR"].location != NSNotFound)
-            {
-                fPlanarConf = 0;
-                isRGB = YES;
-            }
-            
-            if (isRGB == YES)
-            {
-                unsigned char   *ptr, *tmpImage;
-                int loop = (int) height * (int) width;
-                tmpImage = malloc (loop * 4L);
-                ptr = tmpImage;
-                
-                if( bitsAllocated > 8)
-                {
-                    if( [pixData length] < height*width*2*3)
-                    {
-                        NSLog( @"************* [pixData length] < height*width*2*3");
-                        loop = [pixData length]/6;
-                    }
-                    
-                    // RGB_FFF
-                    unsigned short   *bufPtr;
-                    bufPtr = (unsigned short*) oImage;
-                    while( loop-- > 0)
-                    {		//unsigned short=16 bit, then I suppose A should be 65535
-                        *ptr++	= 255;			//ptr++;
-                        *ptr++	= *bufPtr++;		//ptr++;  bufPtr++;
-                        *ptr++	= *bufPtr++;		//ptr++;  bufPtr++;
-                        *ptr++	= *bufPtr++;		//ptr++;  bufPtr++;
-                    }
-                }
-                else
-                {
-                    if( [pixData length] < height*width*3)
-                    {
-                        NSLog( @"************* [pixData length] < height*width*3");
-                        loop = [pixData length]/3;
-                    }
-                    
-                    // RGB_888
-                    unsigned char   *bufPtr;
-                    bufPtr = (unsigned char*) oImage;
-                    
-                    while( loop-- > 0)
-                    {
-                        *ptr++	= 255;			//ptr++;
-                        *ptr++	= *bufPtr++;		//ptr++;  bufPtr++;
-                        *ptr++	= *bufPtr++;		//ptr++;  bufPtr++;
-                        *ptr++	= *bufPtr++;		//ptr++;  bufPtr++;
-                    }
-                    
-                }
-                free(oImage);
-                oImage = (short*) tmpImage;
-            }
-            else
-            {
-                if( fIsSigned && bitsAllocated != bitsStored) //We have to move the signing bit
-                {
-                    if( bitsAllocated == 16)
-                    {
-                        short *bufPtr = (short*) oImage, *tmpImage;
-                        long loop;//, totSize;
-                        const int shift = bitsAllocated - bitsStored;
-                        
-                        tmpImage = malloc( height * width * 2L);
-                        short *ptr = tmpImage;
-                        
-                        loop = height * width;
-                        short div = pow( 2, shift);
-                        while( loop-- > 0)
-                            *ptr++ = ((short)(*(bufPtr++) << shift))/div;
-                        
-                        free(oImage);
-                        oImage =  (short*) tmpImage;
-                    }
-                }
-                
-                if( bitsAllocated == 8)
-                {
-                    // Planar 8
-                    //-> 16 bits image
-                    unsigned char   *bufPtr;
-                    short			*ptr, *tmpImage;
-                    int			loop, totSize;
-                    
-                    totSize = (int) ((int) height * (int) width * 2L);
-                    tmpImage = malloc( totSize);
-                    
-                    bufPtr = (unsigned char*) oImage;
-                    ptr    = tmpImage;
-                    
-                    loop = totSize/2;
-                    
-                    if( [pixData length] < loop)
-                    {
-                        NSLog( @"************* [pixData length] < height * width");
-                        loop = [pixData length];
-                    }
-                    
-                    while( loop-- > 0)
-                    {
-                        *ptr++ = *bufPtr++;
-                    }
-                    free(oImage);
-                    oImage =  (short*) tmpImage;
-                }
-            }
-            
-            
-            //***********
-            
-            if( isRGB)
-            {
-                if( fExternalOwnedImage)
-                {
-                    fImage = fExternalOwnedImage;
-                    memcpy( fImage, oImage, width*height*sizeof(float));
-                    free(oImage);
-                }
-                else fImage = (float*) oImage;
-                oImage = nil;
-                
-                if(gDisplayDICOMOverlays)
-                {
-                    for(int i=0; i<maxNumberOfOverlays; i++)
-                    {
-                        if(overlaysChannelON[i])
-                        {
-                            unsigned char	*rgbData = (unsigned char*) fImage;
-                            
-                            for( int y = 0; y < oRows[i]; y++)
-                            {
-                                for( int x = 0; x < oColumns[i]; x++)
-                                {
-                                    size_t overlayIndex = (size_t)y * (size_t)oColumns[i] + (size_t)x;
-                                    if (oData[i] && oData[i][overlayIndex])
-                                    {
-                                        long destinationX = (long)x + (long)oOrigin[i][0];
-                                        long destinationY = (long)y + (long)oOrigin[i][1];
-                                        if (destinationX >= 0 && destinationX < width &&
-                                            destinationY >= 0 && destinationY < height)
-                                        {
-                                            size_t destinationIndex = ((size_t)destinationY * (size_t)width + (size_t)destinationX) * 4;
-                                            rgbData[destinationIndex + 1] = 0xFF;
-                                            rgbData[destinationIndex + 2] = 0xFF;
-                                            rgbData[destinationIndex + 3] = 0xFF;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            else
-            {
-                if( bitsAllocated == 32) // 32-bit float or 32-bit integers
-                {
-                    if( fExternalOwnedImage)
-                        fImage = fExternalOwnedImage;
-                    else
-                        fImage = malloc(width*height*sizeof(float) + 100);
-                    
-                    if( fImage)
-                    {
-                        memcpy( fImage, oImage, height * width * sizeof( float));
-                        
-                        if( slope != 1.0 || offset != 0 || [[NSUserDefaults standardUserDefaults] boolForKey: @"32bitDICOMAreAlwaysIntegers"])
-                        {
-                            unsigned int *usint = (unsigned int*) oImage;
-                            int *sint = (int*) oImage;
-                            float *tDestF = fImage;
-                            double dOffset = offset, dSlope = slope;
-                            
-                            if( fIsSigned > 0)
-                            {
-                                unsigned long x = height * width;
-                                while( x-- > 0)
-                                    *tDestF++ = ((double) (*sint++)) * dSlope + dOffset;
-                            }
-                            else
-                            {
-                                unsigned long x = height * width;
-                                while( x-- > 0)
-                                    *tDestF++ = ((double) (*usint++)) * dSlope + dOffset;
-                            }
-                        }
-                    }
-                    else
-                        N2LogStackTrace( @"*** Not enough memory - malloc failed");
-                    
-                    free(oImage);
-                    oImage = nil;
-                }
-                else
-                {
-                    vImage_Buffer src16, dstf;
-                    dstf.height = src16.height = height;
-                    dstf.width = src16.width = width;
-                    src16.rowBytes = width*2;
-                    dstf.rowBytes = width*sizeof(float);
-                    
-                    src16.data = oImage;
-                    
-                    if( fExternalOwnedImage)
-                        fImage = fExternalOwnedImage;
-                    else
-                        fImage = malloc(width*height*sizeof(float) + 100);
-                    
-                    dstf.data = fImage;
-                    
-                    if( dstf.data)
-                    {
-                        if( bitsAllocated == 16 && [pixData length] < height*width*2)
-                        {
-                            NSLog( @"************* [pixData length] < height * width");
-                            
-                            if( [pixData length] == height*width) // 8 bits??
-                            {
-                                NSLog( @"************* [[pixData length] == height*width : 8 bits? but declared as 16 bits...");
-                                
-                                unsigned long x = height * width;
-                                float *tDestF = (float*) dstf.data;
-                                unsigned char *oChar = (unsigned char*) oImage;
-                                while( x-- > 0)
-                                    *tDestF++ = *oChar++;
-                            }
-                            else
-                                memset( dstf.data, 0, width*height*sizeof(float));
-                        }
-                        else
-                        {
-                            if( fIsSigned > 0)
-                                vImageConvert_16SToF( &src16, &dstf, offset, slope, 0);
-                            else
-                                vImageConvert_16UToF( &src16, &dstf, offset, slope, 0);
-                        }
-                        
-                        if( inverseVal)
-                        {
-                            float neg = -1;
-                            vDSP_vsmul( fImage, 1, &neg, fImage, 1, height * width);
-                        }
-                    }
-                    else N2LogStackTrace( @"*** Not enough memory - malloc failed");
-                    
-                    free(oImage);
-                    oImage = nil;
-                }
-                
-                if(gDisplayDICOMOverlays && fImage)
-                {
-                    float maxValue = 0;
-                    
-                    if( inverseVal)
-                        maxValue = -offset;
-                    else
-                    {
-                        maxValue = pow( 2, bitsStored);
-                        maxValue *= slope;
-                        maxValue += offset;
-                    }
-                    
-                    for(int i=0; i<maxNumberOfOverlays; i++)
-                    {
-                        if(overlaysChannelON[i])
-                        {
-                            for( int y = 0; y < oRows[i]; y++)
-                            {
-                                for( int x = 0; x < oColumns[i]; x++)
-                                {
-                                    size_t overlayIndex = (size_t)y * (size_t)oColumns[i] + (size_t)x;
-                                    if (oData[i] && oData[i][overlayIndex])
-                                    {
-                                        long destinationX = (long)x + (long)oOrigin[i][0];
-                                        long destinationY = (long)y + (long)oOrigin[i][1];
-                                        if (destinationX >= 0 && destinationX < width &&
-                                            destinationY >= 0 && destinationY < height)
-                                        {
-                                            size_t destinationIndex = (size_t)destinationY * (size_t)width + (size_t)destinationX;
-                                            fImage[destinationIndex] = maxValue;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            wl = 0;
-            ww = 0; //Computed later, only if needed
-            
-            if( savedWW != 0)
-            {
-                wl = savedWL;
-                ww = savedWW;
-            }
-            
-#pragma mark *after loading a frame
-            
-        }//end of if ([dcmObject attributeValueWithName:@"PixelData"])
-        
-        if( pixelSpacingY != 0)
-        {
-            if( fabs(pixelSpacingX) / fabs(pixelSpacingY) > 10000 || fabs(pixelSpacingX) / fabs(pixelSpacingY) < 0.0001)
-            {
-                pixelSpacingX = 1;
-                pixelSpacingY = 1;
-            }
-        }
-        
-        if( pixelSpacingX < 0) pixelSpacingX = -pixelSpacingX;
-        if( pixelSpacingY < 0) pixelSpacingY = -pixelSpacingY;
-        if( pixelSpacingY != 0 && pixelSpacingX != 0)
-        {
-            if( estimatedRadiographicMagnificationFactor)
-            {
-                pixelSpacingX /= estimatedRadiographicMagnificationFactor;
-                pixelSpacingY /= estimatedRadiographicMagnificationFactor;
-            }
-            
-            pixelRatio = pixelSpacingY / pixelSpacingX;
-        }
-        
-#ifdef OSIRIX_VIEWER
-        [self loadCustomImageAnnotationsPapyLink:-1 DCMLink:dcmObject];
-#endif
-    }
-    @catch (NSException *e)
-    {
-        NSLog( @"******** loadDICOMDCMFramework exception 2: %@", e);
-        returnValue = NO;
-    }
-    
-    [purgeCacheLock lock];
-    [purgeCacheLock unlockWithCondition: [purgeCacheLock condition]-1];
-    [pool release];
-    
-    return returnValue;
-}
-
-+ (void) purgeCachedDictionaries
-{
-    if( [NSThread isMainThread] == NO)
-    {
-        [DCMPix performSelectorOnMainThread: @selector(purgeCachedDictionaries) withObject: nil waitUntilDone: NO];
-        return;
-    }
-    
-    if( purgeCacheLock == nil)
-        purgeCacheLock = [[NSConditionLock alloc] initWithCondition: 0];
-    
-    if( [purgeCacheLock lockWhenCondition: 0 beforeDate: [NSDate dateWithTimeIntervalSinceNow: 10]])
-    {
-        [PapyrusLock lock];
-        
-        @try
-        {
-            [cachedDCMFrameworkFiles removeAllObjects];
-        }
-        @catch (NSException * e)
-        {
-            NSLog( @"***** exception in %s: %@", __PRETTY_FUNCTION__, e);
-        }
-        
-        [PapyrusLock unlock];
-        [purgeCacheLock unlock];
-    }
-    else NSLog( @"****** failed to acquire lock on purgeCacheLock during 10 secs : purgeCacheLock condition: %d", (int) [purgeCacheLock condition]);
-}
-
-- (void) clearCachedDCMFrameworkFiles
-{
-    [PapyrusLock lock];
-    
-    @try
-    {
-        if( fImage)
-        {
-            NSMutableDictionary *cachedGroupsForThisFile = [cachedDCMFrameworkFiles valueForKey:self.srcFile];
-            
-            if( cachedGroupsForThisFile && retainedCacheGroup == cachedGroupsForThisFile)
-            {
-                [cachedGroupsForThisFile setValue: [NSNumber numberWithInt: [[cachedGroupsForThisFile objectForKey: @"count"] intValue]-1] forKey: @"count"];
-                retainedCacheGroup = nil;
-                
-                if( [[cachedGroupsForThisFile objectForKey: @"count"] intValue] <= 0)
-                {
-                    [cachedDCMFrameworkFiles removeObjectForKey:self.srcFile];
-                }
-            }
-        }
-    }
-    @catch (NSException * e)
-    {
-        N2LogExceptionWithStackTrace(e);
-    }
-    
-    [PapyrusLock unlock];
-}
-
-- (void) clearCachedPapyGroups
-{
-    [PapyrusLock lock];
-    
-    @try
-    {
-        NSMutableDictionary *cachedGroupsForThisFile = [cachedPapyGroups valueForKey:self.srcFile];
-        if( cachedGroupsForThisFile && retainedCacheGroup == cachedGroupsForThisFile)
-        {
-            [cachedGroupsForThisFile setValue: [NSNumber numberWithInt: [[cachedGroupsForThisFile objectForKey: @"count"] intValue]-1] forKey: @"count"];
-            retainedCacheGroup = nil;
-        }
-    }
-    @catch (NSException * e)
-    {
-        N2LogExceptionWithStackTrace(e);
-    }
-    
-    [PapyrusLock unlock];
-}
-
-- (BOOL) loadDICOMPapyrus
-{
-    return NO;
-}
 
 - (BOOL) isDICOMFile:(NSString *) file
 {
@@ -6447,60 +4782,11 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         
         if( [self isDICOMFile:self.srcFile])
         {
-            // PLEASE, KEEP BOTH FUNCTIONS FOR TESTING PURPOSE. THANKS
             NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
             
             @try
             {
-                if( gUSEPAPYRUSDCMPIX)
-                {
-                    success = [self loadDICOMPapyrus]; // always fail
-                    
-#ifdef OSIRIX_VIEWER
-                    if( success == NO)
-                    {
-                        // It failed with Papyrus : potential crash with DCMFramework with a corrupted file
-                        // Only do it, if it failed: writing a file takes time... and slow down reading performances
-                        
-                        NSString *recoveryPath = [[[[BrowserController currentBrowser] database] baseDirPath] stringByAppendingPathComponent:@"ThumbnailPath"];
-                        
-                        [[NSFileManager defaultManager] removeItemAtPath: recoveryPath error: nil];
-                        
-                        @try
-                        {
-                            [URIRepresentationAbsoluteString writeToFile: recoveryPath atomically: YES encoding: NSASCIIStringEncoding  error: nil];
-                            
-                            //only try again if it's strict DICOM
-                            if (success == NO && [DCMObject isDICOM:[NSData dataWithContentsOfFile:self.srcFile]])
-                            {
-                                success = [self loadDICOMModernDCMTK];
-                                if (success == NO)
-                                    success = [self loadDICOMDCMFramework];
-                            }
-                            
-                            [[NSFileManager defaultManager] removeItemAtPath: recoveryPath error: nil];
-                        }
-                        @catch (NSException * e)
-                        {
-                            NSLog( @"***** exception in %s: %@", __PRETTY_FUNCTION__, e);
-                        }
-                    }
-#endif
-                }
-                else
-                {
-                    success = [self loadDICOMModernDCMTK];
-                    if (success == NO)
-                        success = [self loadDICOMDCMFramework];
-                    
-                    if (success == NO &&
-                        [DCMObject isDICOM:[NSData dataWithContentsOfFile:self.srcFile]]) {
-                        success = [self loadDICOMPapyrus];
-                    }
-                }
-                
-                if( numberOfFrames <= 1)
-                    [self clearCachedPapyGroups];
+                success = [self loadDICOMModernDCMTK];
             }
             
             @catch ( NSException *e)
@@ -7293,7 +5579,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             }
             
 #ifdef OSIRIX_VIEWER
-            [self loadCustomImageAnnotationsPapyLink:-1 DCMLink:nil];
+            [self loadCustomImageAnnotations];
 #endif
         }
         
@@ -9148,17 +7434,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                         [processorsLock unlock];
                     }
                     
-#ifdef OSIRIX_VIEWER
-                    if(isLUT12Bit && [AppController canDisplay12Bit])
-                    {
-                        NSInvocation *fill12BitBufferInvocation = [AppController fill12BitBufferInvocation];
-                        [fill12BitBufferInvocation setArgument:&self atIndex:2];
-                        NSValue *srcNSValue = [NSValue valueWithPointer: srcf.data];
-                        [fill12BitBufferInvocation setArgument:&srcNSValue atIndex:3];
-                        [fill12BitBufferInvocation setArgument:&transferFunctionPtr atIndex:4];
-                        [fill12BitBufferInvocation invoke];
-                    }
-#endif
                 }
                 
                 if( srcf.data != fImage) free( srcf.data);
@@ -9489,8 +7764,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         if( reloadAnnotations)
             [self reloadAnnotations];
         
-        [self clearCachedDCMFrameworkFiles];
-        [self clearCachedPapyGroups];
         
         if( fExternalOwnedImage == nil)
         {
@@ -9589,8 +7862,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     
     if(LUT12baseAddr) free(LUT12baseAddr);
     
-    [self clearCachedPapyGroups];
-    [self clearCachedDCMFrameworkFiles];
     
     [_srcFile release];
     _srcFile = nil;
@@ -9700,106 +7971,43 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
 #ifdef OSIRIX_VIEWER
 
-- (NSString*) getDICOMFieldValueForGroup:(int)group element:(int)element DCMLink:(DCMObject*)dcmObject encodings:(NSStringEncoding*)modernEncodings
+- (NSString*)getDICOMFieldValueForGroup:(int)group element:(int)element encodings:(NSStringEncoding*)modernEncodings
 {
-    if( dcmObject == nil)
+    HorosDCMPixModernDCMTKCopyFieldByTagFunction copyFieldByTag =
+        (HorosDCMPixModernDCMTKCopyFieldByTagFunction)HorosDCMPixModernDCMTKSymbol("HorosModernDCMTKCopyFieldByTag");
+    HorosDCMPixModernDCMTKFreeStringFunction freeString =
+        (HorosDCMPixModernDCMTKFreeStringFunction)HorosDCMPixModernDCMTKSymbol("HorosModernDCMTKFreeString");
+
+    if( copyFieldByTag && freeString && self.srcFile)
     {
-        HorosDCMPixModernDCMTKCopyFieldByTagFunction copyFieldByTag =
-            (HorosDCMPixModernDCMTKCopyFieldByTagFunction)HorosDCMPixModernDCMTKSymbol("HorosModernDCMTKCopyFieldByTag");
-        HorosDCMPixModernDCMTKFreeStringFunction freeString =
-            (HorosDCMPixModernDCMTKFreeStringFunction)HorosDCMPixModernDCMTKSymbol("HorosModernDCMTKFreeString");
-
-        if( copyFieldByTag && freeString && self.srcFile)
+        char *field = copyFieldByTag([self.srcFile fileSystemRepresentation], (unsigned short)group, (unsigned short)element);
+        if( field)
         {
-            char *field = copyFieldByTag([self.srcFile fileSystemRepresentation], (unsigned short)group, (unsigned short)element);
-            if( field)
+            NSStringEncoding fallbackEncodings[10] = {0};
+            if( modernEncodings == NULL)
             {
-                NSStringEncoding fallbackEncodings[10] = {0};
-                if( modernEncodings == NULL)
-                {
-                    fallbackEncodings[0] = NSISOLatin1StringEncoding;
-                    modernEncodings = fallbackEncodings;
-                }
-
-                NSString *result = [DicomFile stringWithBytes:field encodings:modernEncodings];
-                if( result == nil)
-                    result = [NSString stringWithUTF8String:field];
-                if( result == nil)
-                    result = [NSString stringWithCString:field encoding:NSISOLatin1StringEncoding];
-                if( result && [result rangeOfString:@"\\"].location != NSNotFound)
-                    result = [[result componentsSeparatedByString:@"\\"] componentsJoinedByString:@" / "];
-                freeString(field);
-                return result;
+                fallbackEncodings[0] = NSISOLatin1StringEncoding;
+                modernEncodings = fallbackEncodings;
             }
-        }
 
-        return nil;
+            NSString *result = [DicomFile stringWithBytes:field encodings:modernEncodings];
+            if( result == nil)
+                result = [NSString stringWithUTF8String:field];
+            if( result == nil)
+                result = [NSString stringWithCString:field encoding:NSISOLatin1StringEncoding];
+            if( result && [result rangeOfString:@"\\"].location != NSNotFound)
+                result = [[result componentsSeparatedByString:@"\\"] componentsJoinedByString:@" / "];
+            freeString(field);
+            return result;
+        }
     }
 
-    DCMAttribute *attr = [dcmObject attributeForTag: [DCMAttributeTag tagWithGroup: group element: element]];
-    
-    if( attr)
-    {
-        NSMutableString *result = nil;
-        
-        for( id field in [attr values])
-        {
-            if([field isKindOfClass:[NSString class]])
-            {
-                NSString *vr = [attr vr];
-                
-                if([vr isEqualToString:@"DS"]) field = [NSString stringWithFormat:@"%.6g", [field floatValue]];
-                
-                if( result == nil) result = [NSMutableString stringWithString: field];
-                else [result appendFormat: @" / %@", field];
-            }
-            else if([field isKindOfClass:[NSNumber class]])
-            {
-                NSString *vr = [attr vr];
-                
-                if([vr isEqualToString:@"FD"]) field = [NSString stringWithFormat:@"%.6g", [field floatValue]];
-                if([vr isEqualToString:@"FL"]) field = [NSString stringWithFormat:@"%.6g", [field floatValue]];
-                
-                if([field isKindOfClass:[NSString class]])
-                {
-                    if( result == nil) result = [NSMutableString stringWithString: field];
-                    else [result appendFormat: @" / %@", field];
-                }
-                else
-                {
-                    if( result == nil) result = [NSMutableString stringWithString: [field stringValue]];
-                    else [result appendFormat: @" / %@", [field stringValue]];
-                }
-            }
-            else if([field isKindOfClass:[NSDate class]])
-            {
-                NSString *vr = [attr vr];
-                if([vr isEqualToString:@"DA"])
-                {
-                    if( result == nil) result = [NSMutableString stringWithString: [[NSUserDefaults dateFormatter] stringFromDate:field]];
-                    else [result appendFormat: @" / %@", [[NSUserDefaults dateFormatter] stringFromDate:field]];
-                }
-                else if([vr isEqualToString:@"TM"])
-                {
-                    if( result == nil) result = [NSMutableString stringWithString: [BrowserController TimeWithSecondsFormat: field]];
-                    else [result appendFormat: @" / %@", [BrowserController TimeWithSecondsFormat: field]];
-                }
-                else
-                {
-                    if( result == nil) result = [NSMutableString stringWithString: [BrowserController DateTimeWithSecondsFormat: field]];
-                    else [result appendFormat: @" / %@", [BrowserController DateTimeWithSecondsFormat: field]];
-                }
-            }
-        }
-        
-        return result;
-    }
     return nil;
 }
 
-- (NSString*) getDICOMFieldValueForGroup:(int)group element:(int)element DCMLink:(DCMObject*)dcmObject
+- (NSString*)getDICOMFieldValueForGroup:(int)group element:(int)element
 {
-    return [self getDICOMFieldValueForGroup:group element:element DCMLink:dcmObject encodings:NULL];
+    return [self getDICOMFieldValueForGroup:group element:element encodings:NULL];
 }
 
 
@@ -9900,7 +8108,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 #endif
 }
 
-- (void)loadCustomImageAnnotationsPapyLink:(int)fileNb DCMLink:(DCMObject*)dcmObject
+- (void)loadCustomImageAnnotations
 {
     @try
     {
@@ -9918,7 +8126,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         // image sides (LowerLeft, LowerMiddle, LowerRight, MiddleLeft, MiddleRight, TopLeft, TopMiddle, TopRight) & sameAsDefault
         NSArray *keys = [annotationsForModality allKeys];
         NSStringEncoding modernEncodings[10] = {0};
-        if( dcmObject == nil)
+        // Match the source file's character encoding for annotation text.
         {
             modernEncodings[0] = NSISOLatin1StringEncoding;
             NSArray *characterSets = [DicomFile getEncodingArrayForFile:self.srcFile];
@@ -9984,7 +8192,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                                         value = [NSString stringWithFormat:@"%.6g", [echotime floatValue]];;
                                     }
                                     else
-                                        value = [self getDICOMFieldValueForGroup:group element:element DCMLink:dcmObject encodings:dcmObject == nil ? modernEncodings : NULL];
+                                        value = [self getDICOMFieldValueForGroup:group element:element encodings:modernEncodings];
                                     
                                     if( group == 0x0010 && element == 0x0010)
                                         value = @"PatientName";

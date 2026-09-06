@@ -43,7 +43,7 @@ void* sopInstanceUIDEncode( NSString *sopuid);
 
 #define OsirixDicomImageSizeUnknown INT_MAX
 
-@class DCMSequenceAttribute, DicomSeries, DICOMExport;
+@class DicomSeries, DICOMExport;
 
 @interface NSData (OsiriX)
 - (BOOL) isEqualToSopInstanceUID:(NSData*) sopInstanceUID;
@@ -110,7 +110,6 @@ void* sopInstanceUIDEncode( NSString *sopuid);
 - (NSSet*) paths;
 - (NSString*) completePath;
 - (NSString*) completePathResolved;
-- (DCMSequenceAttribute*) graphicAnnotationSequence;
 - (NSImage*) image;
 - (NSImage*) thumbnail;
 - (NSDictionary*) imageAsDICOMScreenCapture:(DICOMExport*) exporter;

@@ -1,6 +1,6 @@
 #import "DCMPix.h"
 #import "DicomFile.h"
-#import "DCMJPEGCodecBridge.h"
+#import "Sources/HorosJPEGCodecBridge.h"
 #import "BrowserController.h"
 #import "DicomStudy.h"
 #import "DicomDatabase.h"

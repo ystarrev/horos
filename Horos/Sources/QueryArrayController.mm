@@ -37,7 +37,8 @@
 
 #import "DefaultsOsiriX.h"
 #import "QueryArrayController.h"
-#import "DCM.h"
+#import "DCMCalendarDate.h"
+#import "DCMTransferSyntax.h"
 #import "DCMNetServiceDelegate.h"
 #import "DCMAbstractSyntaxUID.h"
 

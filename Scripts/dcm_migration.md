@@ -3,6 +3,43 @@
 Remove the legacy DCM parser and framework, not Horos image classes such as
 DCMPix. Keep the Core Data schema and existing DICOM files unchanged.
 
+## Current Status: Framework Removed
+
+- Following the user's workflow testing with no further fallback warnings,
+  removed the DCM target, scheme, link/embed steps, headers, legacy parser and
+  codec sources, and DCM-only in-target JPEG compilation. The maintained DCMTK,
+  OpenJPEG, GDCM and Grok dependencies remain unchanged.
+- DCMPix now has one DCMTK image-loading path, plus its existing non-DICOM image
+  support. Removed the DCM loader, its metadata helpers and caches, the no-op
+  Papyrus retry path, and the temporary fallback warning. Annotation callers
+  use the DCMTK-backed path directly, including print previews.
+- The six small tag/date/syntax compatibility classes compile in Horos. Their
+  Objective-C class names, coding contracts, saved aliases and date behavior
+  remain unchanged. They are adapters, not a second DICOM parser. The compact
+  tag compatibility resource is bundled with Horos's existing dicom.dic.
+- SwiftDICOMReader's JPEG frame decoder is retained as HorosJPEGCodecBridge
+  inside the app target. It calls DCMTK directly; the Swift bridging header no
+  longer imports the deleted framework header. Frame decoding is unchanged.
+- Debug and Release explicitly link OpenJPEG's own static archive. Grok's
+  installation also contains a libopenjp2.a, but it lacks the opj_* API used by
+  OPJSupport; relying on library search order selected that file in Debug.
+- Removed the unused standalone Spotlight DicomImporter project and DCM Doxygen
+  configuration. The predicate editor owns its two-byte VR constants and no
+  longer imports parser types.
+- Removed the remaining third-party plugin scaffolding: the API target/scheme,
+  public-header export, API framework aliases, unused ROI/display hooks and
+  plugin notification constants. Removed the obsolete display preference and
+  annotation chooser entry; existing saved annotation layouts remain readable.
+  Incremental packaging removes DCM.framework and the five retired API
+  frameworks from the app. DCMTK bundle lookup and built-in preferences remain.
+- No Core Data schema, patient records, DICOM files or database contents changed.
+- Source/fixture and project tests are in `Scripts/test_dcm_*.py`. This step
+  uses syntax-only checks, not an application or dependency build. Rebuild in
+  the existing Xcode build location and repeat the workflows below.
+
+The checkpoints below are a historical record of the migration. References to
+retaining the framework or warning describe those earlier checkpoints only.
+
 ## Completed Checkpoints
 
 - Dependency inventory completed: approximately 60 application/preference source
@@ -117,13 +154,24 @@ DCMPix. Keep the Core Data schema and existing DICOM files unchanged.
 
 ## Deferred Follow-Ups
 
-- [ ] Investigate the six unreadable legacy ROI archives. The identical
+- [x] Investigate the six unreadable legacy ROI archives. The identical
   NSUnarchiver "inconsistency between written and read data" errors appear in
   August 22/23 logs, before the current DCM migration. Preserve originals and
   investigate decoding compatibility on copies, including ROI display/counting.
   Paths relative to the T7 database's DATABASE.noindex directory:
   5760000/5750477.dcm, 5780000/5778823.dcm, 5790000/5783636.dcm,
   5860000/5850889.dcm, 5860000/5852632.dcm, 5860000/5850887.dcm.
+  These are valid version-16 archives containing 15 vector ROIs (12 length
+  measurements, two rectangles and one single-point record), not damaged brush masks.
+  ROI.initWithCoder stopped at the version-15 layout, leaving four trailing
+  object fields unread. It now consumes the version-16 fields; writing remains
+  at version 11. A read-only Foundation diagnostic reproduced the original
+  inconsistency on all six files with 39 fields and decoded all 15 objects
+  with 43 fields. All four extension fields were nil in these files. Original
+  DICOM files were not modified. Rebuild Horos to verify the actual viewer.
+  `Scripts/tests/ROILegacyArchiveTests.m` adds synthetic versions 1-16,
+  vector/brush geometry, empty/populated extensions and round-trip coverage;
+  this production-ROI harness has been syntax-checked, not built or run.
 
 ## Meta-Data Reader Checkpoint
 
@@ -326,43 +374,104 @@ DCMPix. Keep the Core Data schema and existing DICOM files unchanged.
   print preview; also check individual frames, a multiframe series, and Basic/None
   annotation modes. No app build or live print test was run here.
 
-## Remaining Work
+## Temporary Loader Fallback Diagnostic
 
-1. Establish the DICOM behavioural baseline. The existing fixtures and expected
-   pixel hashes in `Horos/Unit Tests/Data/DICOMFiles.plist` are a starting point,
-   not adequate coverage of all formats. Add synthetic/anonymized cases for
-   enhanced multiframe geometry, dynamic timing, compression, colour, overlays,
-   character sets, DA/TM/DT precision and ranges, SR/PDF, SEG, and legacy ROIs.
-2. Retire the compatibility tag, syntax and date wrappers once their remaining
-   DCMObject/metadata callers are migrated. Preserve saved tag-name aliases,
-   annotation settings and query ranges. Verify historical DCMCalendarDate
-   archive payloads before changing its class identity or encoded representation.
-3. Extend ModernDCMTKBridge beyond the new bulk metadata display tree for typed
-   attribute access and the remaining writers. Do not reopen a dataset per tag.
-4. Complete remaining metadata editing, secondary capture, key-image metadata,
-   and transfer conversion migration. The anonymization tag menu and report PDF
-   readers are migrated; the unused report PDF creation commands/writers are
-   removed. Verify writes on copies; preserve private data and unrelated attributes.
-5. Compare DCMPix's modern loader against the DCM fallback and migrate remaining
-   metadata/format handling before deleting that fallback. Include RTSTRUCT,
-   PET, ultrasound and ophthalmic geometry; do not silently drop support.
-6. Remove the framework target, scheme, source directory, obsolete subclasses,
-   resources, build references and unused codec dependencies after all callers
-   are migrated. Check plugin headers and aliases separately from DCM.framework.
+- Every entry into `DCMPix.loadDICOMDCMFramework` logs `[DCM fallback]` with
+  the source path and one-based frame number. This covers both the normal and
+  Papyrus-recovery paths, including attempts that subsequently fail.
+- The first fallback per app launch also queues a warning dialog on the main
+  thread. It does not synchronously wait from the decoder or disable fallback.
+  Further attempts are logged without a dialog for every slice; relaunch to
+  reset the warning. No permanent preference or database change is made.
+- Run the usual workflows and collect any `[DCM fallback]` lines. A warning means
+  the fallback was attempted, not necessarily that it succeeded or that the file
+  is corrupt. Absence of a warning covers only the paths/files exercised, not all
+  DCM uses (such as writing or transfer conversion). Only removal of the pixel
+  fallback is paused for this observation step; the other consumers below have
+  now been migrated. Source checks only; no app build or live test was run.
 
-## Gates
+## Remaining Non-Pixel Consumers
 
-- After this checkpoint: rebuild only with explicit approval using the existing
-  incremental build location. Check saved annotation layouts, the metadata tag
-  browser, smart album predicates and anonymization presets (export to copies).
-  Verify MR/CT display, enhanced multiframe scans,
-  reports, SEG/legacy ROIs, hidden/additional SOP-class preferences, DICOM export,
-  and transfer of compressed/uncompressed files. Keep the earlier networking
-  smoke tests (Sources, query/retrieve and direct transfers) in the baseline.
-- During parser migration: compare pixel values, physical geometry, metadata,
-  export round trips and throughput, not just whether a file opens. Use
-  standards-based expectations when legacy and new behaviour disagree.
-- Before final removal: inspect every retained plugin's dependencies and dynamic
-  class use, verify the packaged app has no DCM load dependency, and confirm that
-  no stale embedded framework is masking a missed reference. Do not remove other
-  libraries merely because their names contain DCM.
+- Patient unification and study merging read the destination metadata through
+  the bulk DCMTK reader, retaining the existing metadata-editing mechanism.
+  Failed reads abort instead of proceeding with missing metadata. Corrected the
+  swapped Other Patient Names / Other Patient IDs lookups. No database schema
+  or existing-file migration is performed.
+- Multi-frame key-image status reads its existing values through DCMTK, keeping
+  Horos' zero-based frame convention and existing writer. A metadata read error
+  does not clear the file's previous key-frame list. The obsolete
+  DCMObjectPixelDataImport and unused DCMObjectDBImport classes are removed,
+  together with their project entries.
+- RTSTRUCT conversion now accepts a file path and reads the reference/ROI/
+  contour sequences through DCMTK. Referenced-image geometry is read once and
+  reused. Malformed point counts, nonnumeric coordinates and missing geometry
+  stop conversion before the ROI write phase. The existing contour-to-slice
+  algorithm, brush option, ROI archive format and database import remain in
+  place. This is not a new RTSTRUCT geometry algorithm or a conversion to SEG.
+  Callers of the former DCMPix createROIsFromRTSTRUCT: API must now supply a path
+  to createROIsFromRTSTRUCTFile:; in-repository callers are updated.
+- Raw-data import writes secondary captures through the modern bridge. All six
+  formats in the existing panel are covered: RGB8, mono8 and signed/unsigned
+  mono16 in either byte order. The unreachable 32-bit branch has been removed.
+  Byte-sized formats are unsigned, matching the panel; native pixel ordering,
+  row/column spacing and slice positions are retained. The new writer uses
+  Explicit VR Little Endian, UTF-8 metadata and fresh SOP UIDs with shared study
+  and series UIDs. Dimensions/length/spacing are checked before reading frames.
+  Files have unique names and are published only after writing completes;
+  failures report how many preceding slices were completed.
+- The legacy Store SCU's alternate JPEG2000 DCM writer is removed. Conversion
+  uses its existing modern bridge helper, negotiated syntax and quality, with
+  failure propagated. Query/retrieve networking, listener code, direct transfers
+  and their concurrency settings are not changed.
+- Removed the unused/incomplete graphicAnnotationSequence stub, an unbuilt
+  NetworkMoveDataHandler subclass, and commented parser/export experiments.
+  Kept DCMTK-backed tag/date/syntax wrappers and the predicate editor's legacy
+  VR constants while the pixel fallback and compatibility APIs still need them.
+
+### Report Preview Fallback Found In Testing
+
+- The September 6 log contains one fallback, frame 1 of
+  DATABASE.noindex/12090000/12081495.dcm. Read-only DCMTK inspection identified
+  Basic Text SR Storage, modality SR, with no Rows, Columns or Pixel Data. It is
+  a diagnostic report preview, not a failed CT/MR image decoder. The retrieve
+  statuses in that log report success with zero failed suboperations.
+- After a modern pixel-decode failure, DCMPix now recognizes SR/PDF/CDA/other
+  non-image objects using DCMTK metadata and supplies their appropriate preview.
+  PDFs use the shared modern extractor with page-range checks; SR/CDA use a
+  document icon without launching a report renderer inside decoder locks.
+  Opening/viewing/printing actual reports continues through the existing report
+  path. The legacy image loader and its warning remain intact for other failures.
+- Validation: 88 source/fixture checks, syntax-only compiler checks, and project
+  file parsing. Expanded the standalone metadata harness with direct-vs-nested
+  tag access, empty/binary/numeric handling, and all six raw formats including
+  byte-order, signedness, odd RGB padding and geometry round trips. That harness
+  still needs execution against a newly built bridge; no app/dependency build
+  or live workflow test was performed in this checkpoint.
+- User gate: rebuild, retry report selection, PDF previews and normal image
+  workflows; check a small raw import, multiframe key-image edits and RTSTRUCT
+  conversion on disposable copies. Recheck compressed transfers between hosts.
+  Do not delete DCM.framework until pixel fallback coverage is established.
+
+## Follow-Up Validation
+
+- After the next normal incremental build, verify the packaged Horos executable
+  has no DCM.framework load command and the bundle contains no stale copy. The
+  project references and source imports are checked automatically; the final
+  binary still requires that user-run build.
+- Repeat MR/CT viewing, enhanced multiframe and dynamic studies, annotation
+  layouts, metadata viewing/editing, saved smart albums and anonymization
+  presets. Exercise raw import, key images and RTSTRUCT conversion on copies.
+- Recheck SR/PDF viewing and printing, surgical SR records, SEG and legacy ROI
+  viewing, export and compressed/uncompressed transfers, including Sources,
+  query/retrieve and Horos direct transfers.
+- Retain the date/tag/syntax adapters while saved settings and historical
+  archives use their public names. Removing those names is a separate
+  compatibility migration, not necessary to eliminate the DCM framework.
+- Broaden synthetic/anonymized pixel and geometry coverage, especially PET,
+  ultrasound and ophthalmic objects. The absence of fallback warnings in tested
+  workflows does not establish coverage of every DICOM SOP class or codec.
+- Run the standalone date/tag/syntax and metadata runtime harnesses against the
+  moved Horos helpers and updated DCMTK bridge after a user-approved build.
+- Annotation field reads can later share metadata snapshots to avoid a dataset
+  lookup per tag. The version-16 ROI archive fix above is independent of the
+  framework removal.

@@ -62,7 +62,6 @@ extern "C"
 
 
 @class ROI;
-@class DCMObject;
 @class DicomImage;
 @class DicomSeries;
 @class DicomStudy;
@@ -99,7 +98,6 @@ extern "C"
     float				savedWL, savedWW;
     
     //	planar configuration
-    long				fPlanarConf;
     double				pixelSpacingX, pixelSpacingY, pixelRatio;
     double              estimatedRadiographicMagnificationFactor;
     BOOL				pixelSpacingFromUltrasoundRegions;
@@ -200,8 +198,6 @@ extern "C"
     NSMutableDictionary *annotationsDictionary, *annotationsDBFields;
     NSString            *yearOld, *yearOldAcquisition;
     
-    /** 12 bit monitors */
-    BOOL				isLUT12Bit;
     unsigned char		*LUT12baseAddr;
     
     BOOL				needToCompute8bitRepresentation;
@@ -216,7 +212,6 @@ extern "C"
     
     int					savedHeightInDB, savedWidthInDB;
     
-    id					retainedCacheGroup;
     
     // Ophtalmic fundus images
     
@@ -338,7 +333,6 @@ extern "C"
 @property float decayFactor;
 @property(retain) NSString *units, *decayCorrection;
 @property BOOL displaySUVValue;
-@property BOOL isLUT12Bit;
 
 // Waveform
 @property(readonly,strong) DCMWaveform* waveform;
@@ -621,15 +615,6 @@ extern "C"
 
 - (void) checkImageAvailble:(float)newWW :(float)newWL;
 
-/** Load the DICOM image using the DCMFramework.
- * There should be no reason to call this. The class will call it when needed. */
-- (BOOL)loadDICOMDCMFramework;
-
-/** Load the DICOM image using Papyrus.
- * There should be no reason to call this. The class will call it when needed.
- */
-- (BOOL) loadDICOMPapyrus;
-
 /** Reset the Annotations */
 - (void) reloadAnnotations;
 
@@ -682,24 +667,22 @@ extern "C"
 + (BOOL) isRunOsiriXInProtectedModeActivated;
 
 /** Clears the papyrus group cache */
-- (void) clearCachedDCMFrameworkFiles;
 
-+ (void) purgeCachedDictionaries;
 
 + (double) moment: (float *) x length:(long) length mean: (double) mean order: (int) order;
 + (double) skewness: (float*) data length: (long) length mean: (double) mean;
 + (double) kurtosis: (float*) data length: (long) length mean: (double) mean;
 
 /** create ROIs from RTSTRUCT */
-- (void)createROIsFromRTSTRUCT: (DCMObject*)dcmObject;
+- (void)createROIsFromRTSTRUCTFile:(NSString *)path;
 
 #ifdef OSIRIX_VIEWER
 /** Custom Annotations */
 - (void)loadCustomImageAnnotationsDBFields: (DicomImage*) imageObj;
 
-- (void)loadCustomImageAnnotationsPapyLink:(int)fileNb DCMLink:(DCMObject*)dcmObject;
+- (void)loadCustomImageAnnotations;
 
-- (NSString*) getDICOMFieldValueForGroup:(int)group element:(int)element DCMLink:(DCMObject*)dcmObject;
+- (NSString*)getDICOMFieldValueForGroup:(int)group element:(int)element;
 #endif
 
 @end

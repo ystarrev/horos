@@ -36,7 +36,6 @@
  ============================================================================*/
 
 #import <Cocoa/Cocoa.h>
-#import "DCM.h"
 
 #undef verify
 #include <dcmtk/dcmdata/dcdatset.h>

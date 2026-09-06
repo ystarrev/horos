@@ -20,7 +20,7 @@
 /** \brief Window Controller for surveys */
 @interface Survey : NSWindowController {
 
-	IBOutlet		NSMatrix		*who, *where, *what, *usage, *plugin;
+	IBOutlet		NSMatrix		*who, *where, *what, *usage;
 	IBOutlet		NSTextField		*comments;
 }
 

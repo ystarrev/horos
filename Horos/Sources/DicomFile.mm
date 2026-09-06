@@ -39,7 +39,7 @@
 
 #include "options.h"
 #include "url.h"
-#import "DCMUIDs.h"
+#import "DCMTransferSyntax.h"
 
 #import "MutableArrayCategory.h"
 #import "SRAnnotation.h"
@@ -47,7 +47,6 @@
 #import "DicomFile.h"
 #import "DCMCalendarDate.h"
 #import "DCMAbstractSyntaxUID.h"
-#import "DCMSequenceAttribute.h"
 #import "DICOMToNSString.h"
 #import "DefaultsOsiriX.h"
 
@@ -737,12 +736,12 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
         @try
         {
             NSString *transferSyntax = [DicomFile getDicomField: @"TransferSyntaxUID" forFile: filePath];
-            if ([transferSyntax isEqualToString: DCM_JPEGLossless] ||
-                [transferSyntax isEqualToString: DCM_JPEGBaseline] ||
-                [transferSyntax isEqualToString: DCM_JPEG2000Lossy] ||
-                [transferSyntax isEqualToString: DCM_JPEG2000Lossless] ||
-                [transferSyntax isEqualToString: DCM_JPEGLSLossless] ||
-                [transferSyntax isEqualToString: DCM_JPEGLSLossy])
+            if ([transferSyntax isEqualToString: [[DCMTransferSyntax JPEGLosslessTransferSyntax] transferSyntax]] ||
+                [transferSyntax isEqualToString: [[DCMTransferSyntax JPEGBaselineTransferSyntax] transferSyntax]] ||
+                [transferSyntax isEqualToString: [[DCMTransferSyntax JPEG2000LossyTransferSyntax] transferSyntax]] ||
+                [transferSyntax isEqualToString: [[DCMTransferSyntax JPEG2000LosslessTransferSyntax] transferSyntax]] ||
+                [transferSyntax isEqualToString: [[DCMTransferSyntax JPEGLSLosslessTransferSyntax] transferSyntax]] ||
+                [transferSyntax isEqualToString: [[DCMTransferSyntax JPEGLSLossyTransferSyntax] transferSyntax]])
             {
                 *compressed = YES;
             }

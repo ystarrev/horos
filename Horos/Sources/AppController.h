@@ -236,15 +236,6 @@ extern AppController* OsiriX;
 //#pragma mark display setters and getters
 //- (IBAction) saveLayout: (id)sender;
 
-#pragma mark-
-#pragma mark 12 Bit Display support.
-+ (BOOL)canDisplay12Bit;
-+ (void)setCanDisplay12Bit:(BOOL)boo;
-+ (void)setLUT12toRGB:(unsigned char*)lut;
-+ (unsigned char*)LUT12toRGB;
-+ (void)set12BitInvocation:(NSInvocation*)invocation;
-+ (NSInvocation*)fill12BitBufferInvocation;
-
 #pragma mark -
 
 

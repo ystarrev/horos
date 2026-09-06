@@ -136,6 +136,7 @@ enum
     IBOutlet NSWindow                       *addAutoQRInstanceWindow;
     IBOutlet NSTextField                    *autoQRInstanceName;
     IBOutlet NSSegmentedControl             *autoQRNavigationControl;
+    IBOutlet NSPopUpButton                  *autoQRInstancesPopup;
     
     IBOutlet SFHorosAuthorizationView       *authView;
     IBOutlet NSButton                       *authButton;

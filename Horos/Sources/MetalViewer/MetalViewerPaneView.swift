@@ -2078,7 +2078,7 @@ final class MetalViewerPaneView: NSView {
         guard framePlan.indices.contains(index) else {
             setOverlayBlend(originalBlend)
             let delays = framePlan.map(\.delay)
-            DispatchQueue.global(qos: .userInitiated).async {
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let data = MetalViewerAnimatedGIF.data(images: images, delays: delays)
                 DispatchQueue.main.async { [weak self] in
                     self?.finishAnimatedGIFCopy(

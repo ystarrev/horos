@@ -36,9 +36,6 @@
  ============================================================================*/
 
 #import "DicomDatabase+DCMTK.h"
-#import "DCMObject.h"
-#import "DCM.h"
-#import "DCMTransferSyntax.h"
 #import "DCMAbstractSyntaxUID.h"
 #import "DCMPix.h"
 #import "AppController.h"
@@ -348,108 +345,6 @@ static BOOL HorosModernDCMTKDecompressFile(NSString *sourcePath, NSString *desti
     [thread exitOperation];
     return YES;
     
-    //	@synchronized( [BrowserController currentBrowser])
-    //	{
-    //		for( NSString *path in paths)
-    //		{
-    //			DcmFileFormat fileformat;
-    //			OFCondition cond = fileformat.loadFile( [path UTF8String]);
-    //
-    //			if( cond.good())
-    //			{
-    //				DJ_RPLossy lossyParams( DCMHighQuality);
-    //				DJ_RPLossless losslessParams(6,0);
-    //
-    //				DcmDataset *dataset = fileformat.getDataset();
-    //				DcmItem *metaInfo = fileformat.getMetaInfo();
-    //				DcmXfer original_xfer(dataset->getOriginalXfer());
-    //
-    //				DcmRepresentationParameter *params = &lossyParams;
-    //				E_TransferSyntax tSyntax = EXS_JPEG2000;	// EXS_JPEGLSLossless;
-    //
-    ////				DcmRepresentationParameter *params = &losslessParams;
-    ////				E_TransferSyntax tSyntax = EXS_JPEGProcess14TransferSyntax;	//EXS_JPEG2000; //EXS_JPEG2000LosslessOnly
-    //
-    //				DcmXfer oxferSyn( tSyntax);
-    //				dataset->chooseRepresentation(tSyntax, params);
-    //
-    //				fileformat.loadAllDataIntoMemory();
-    //
-    //				// check if everything went well
-    //				if (dataset->canWriteXfer(tSyntax))
-    //				{
-    //					// store in lossless JPEG format
-    //					//fileformat.loadAllDataIntoMemory();
-    //
-    //					[[NSFileManager defaultManager] removeItemAtPath: [path stringByAppendingString: @"cc.dcm"] error:NULL];
-    //					cond = fileformat.saveFile( [[path stringByAppendingString: @"cc.dcm"] UTF8String], tSyntax);
-    //					BOOL status =  (cond.good()) ? YES : NO;
-    //
-    //					if( status == NO)
-    //						NSLog( @"failed to compress file: %@", [paths lastObject]);
-    //				}
-    //				else NSLog( @"err");
-    //			}
-    //			else NSLog( @"err");
-    //		}
-    //	}
-    //    #endif
-    //	return YES;
-    //
-    //	@synchronized( [BrowserController currentBrowser])
-    //	{
-    //		for( int i = DCMLosslessQuality ; i <= DCMLowQuality ; i++)
-    //		{
-    //			DCMObject *dcmObject = [[DCMObject alloc] initWithContentsOfFile: [paths lastObject] decodingPixelData: NO];
-    //
-    //			BOOL succeed = NO;
-    //
-    //			@try
-    //			{
-    //				DCMTransferSyntax *tsx = [DCMTransferSyntax JPEG2000LossyTransferSyntax]; // JPEG2000LosslessTransferSyntax];
-    //
-    //				succeed = [dcmObject writeToFile: [NSString stringWithFormat: @"/tmp/testjp-%d.dcm", i] withTransferSyntax: tsx quality: i AET:@"OsiriX" atomically:YES];
-    //			}
-    //			@catch (NSException *e)
-    //			{
-    //				NSLog( @"dcmObject writeToFile failed: %@", e);
-    //			}
-    //			[dcmObject release];
-    //		}
-    //		return YES;
-    //	}
-    
-    // ********
-    
-    //	NSLog( @"** START");
-    //	NSString *dest2 = [paths lastObject];
-    //
-    //	DCMObject *dcmObject = [[DCMObject alloc] initWithContentsOfFile: [paths lastObject] decodingPixelData: NO];
-    //
-    //	BOOL succeed = NO;
-    //
-    //	@try
-    //	{
-    //		succeed = [dcmObject writeToFile: [dest2 stringByAppendingString: @" temp"] withTransferSyntax:[DCMTransferSyntax JPEG2000LossyTransferSyntax] quality: 0 AET:@"OsiriX" atomically:YES];
-    //	}
-    //	@catch (NSException *e)
-    //	{
-    //		NSLog( @"dcmObject writeToFile failed: %@", e);
-    //	}
-    //	[dcmObject release];
-    //
-    //	if( succeed)
-    //	{
-    //		if( dest2 == [paths lastObject])
-    //			[[NSFileManager defaultManager] removeItemAtPath: [paths lastObject] error:NULL];
-    //		[[NSFileManager defaultManager] movePath: [dest2 stringByAppendingString: @" temp"] toPath: dest2 handler: nil];
-    //	}
-    //	else
-    //	{
-    //		NSLog( @"failed to compress file: %@", [paths lastObject]);
-    //		[[NSFileManager defaultManager] removeItemAtPath: [dest2 stringByAppendingString: @" temp"] error:NULL];
-    //	}
-    //	NSLog( @"** END");
 }
 
 +(BOOL)decompressDicomFilesAtPaths:(NSArray*)files intoDirAtPath:(NSString*)dest
@@ -490,60 +385,6 @@ static BOOL HorosModernDCMTKDecompressFile(NSString *sourcePath, NSString *desti
     [thread exitOperation];
     return YES;
     
-    //	OFCondition cond;
-    //
-    //	@synchronized( [BrowserController currentBrowser])
-    //	{
-    //		for( NSString *file in files)
-    //		{
-    //			const char *fname = (const char *)[file UTF8String];
-    //			const char *destination = (const char *)[[file stringByAppendingString:@"bb.dcm"] UTF8String];
-    //
-    //			DcmFileFormat fileformat;
-    //			cond = fileformat.loadFile(fname);
-    //
-    //			if (cond.good())
-    //			{
-    //				DcmXfer filexfer(fileformat.getDataset()->getOriginalXfer());
-    //
-    //				if( filexfer.getXfer() != EXS_LittleEndianExplicit || filexfer.getXfer() != EXS_LittleEndianImplicit)
-    //				{
-    //					DcmDataset *dataset = fileformat.getDataset();
-    //
-    //					// decompress data set if compressed
-    //					dataset->chooseRepresentation(EXS_LittleEndianExplicit, NULL);
-    //
-    //					// check if everything went well
-    //					if (dataset->canWriteXfer(EXS_LittleEndianExplicit))
-    //					{
-    //						fileformat.loadAllDataIntoMemory();
-    //						cond = fileformat.saveFile(destination, EXS_LittleEndianExplicit);
-    //					}
-    //					else NSLog( @"err");
-    //				}
-    //				else NSLog( @"err");
-    //			}
-    //			else NSLog( @"err");
-    //		}
-    //	}
-    //	return YES;
-    
-    //	DCMObject *dcmObject = [[DCMObject alloc] initWithContentsOfFile: [files lastObject] decodingPixelData: NO];
-    //
-    //	BOOL succeed = NO;
-    //
-    //	@try
-    //	{
-    //		DCMTransferSyntax *tsx = [DCMTransferSyntax ExplicitVRLittleEndianTransferSyntax]; // JPEG2000LosslessTransferSyntax];
-    //		succeed = [dcmObject writeToFile: [[files lastObject] stringByAppendingString:@"bb.dcm"] withTransferSyntax: tsx quality: 1 AET:@"OsiriX" atomically:YES];
-    //	}
-    //	@catch (NSException *e)
-    //	{
-    //		NSLog( @"dcmObject writeToFile failed: %@", e);
-    //	}
-    //	[dcmObject release];
-    //
-    //	return YES;
 }
 
 +(NSString*)extractReportSR:(NSString*)dicomSR contentDate:(NSDate*)date {

@@ -19,8 +19,8 @@ class DCMDateTests(test_dcm_extraction.DCMExtractionTests):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.source = (ROOT / "DCM Framework/DCMCalendarDate.mm").read_text()
-        cls.header = (ROOT / "DCM Framework/DCMCalendarDate.h").read_text()
+        cls.source = (ROOT / "Horos/Sources/DCMCalendarDate.mm").read_text()
+        cls.header = (ROOT / "Horos/Sources/DCMCalendarDate.h").read_text()
         cls.fixture = json.loads((ROOT / "Scripts/tests/dcm_dates_baseline.json").read_text())
 
     def test_dicom_conversion_is_delegated_to_dcmtk(self):
@@ -44,13 +44,8 @@ class DCMDateTests(test_dcm_extraction.DCMExtractionTests):
         self.assertIn("[super initWithCoder:coder]", self.source)
         self.assertIn("if (coder.allowsKeyedCoding)", self.source)
 
-    def test_container_uses_the_same_date_parser(self):
-        source = (ROOT / "DCM Framework/DCMDataContainer.m").read_text()
-        self.assertNotIn("DCMDataContainerDateFromString", source)
-        dates = source.split("- (NSDate *)nextDate{", 1)[1].split("- (NSMutableData *)nextDataWithLength:", 1)[0]
-        self.assertNotIn("[string intValue]", dates)
-        for factory in ("dicomDate", "dicomTime", "dicomDateTime"):
-            self.assertGreaterEqual(dates.count("[DCMCalendarDate " + factory + ":dateString]"), 2)
+    def test_legacy_byte_container_is_removed(self):
+        self.assertFalse((ROOT / "DCM Framework/DCMDataContainer.m").exists())
 
     def test_datetime_fixture_offsets_and_local_dst_are_correct(self):
         for case in self.fixture["valid"]:
@@ -70,11 +65,10 @@ class DCMDateTests(test_dcm_extraction.DCMExtractionTests):
         self.assertIn("20230229", self.fixture["invalid"]["DA"])
         self.assertIn("000000-", self.fixture["ranges"]["TM"])
 
-    def test_objcpp_implementation_is_in_the_dcm_target(self):
-        path = "DCM Framework/DCMCalendarDate.mm"
+    def test_objcpp_implementation_is_in_horos(self):
+        path = "Horos/Sources/DCMCalendarDate.mm"
         self.assertFalse((ROOT / path[:-1]).exists())
-        self.assertEqual(self.target_files("DCM", "PBXSourcesBuildPhase").count(path), 1)
-        self.assertNotIn(path, self.target_files("Horos", "PBXSourcesBuildPhase"))
+        self.assertEqual(self.target_files("Horos", "PBXSourcesBuildPhase").count(path), 1)
         reference = next(obj for obj in self.project.values() if obj.get("path") == path)
         self.assertEqual(reference["lastKnownFileType"], "sourcecode.cpp.objcpp")
 

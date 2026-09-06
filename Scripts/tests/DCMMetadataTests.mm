@@ -2,6 +2,7 @@
 // Arguments: dcm_metadata_baseline.xml, newly built modern bridge dylib.
 #import <Foundation/Foundation.h>
 #import "HorosDICOMMetadata.h"
+#include "ModernDCMTKBridge.h"
 #include <dcmtk/config/osconfig.h>
 #include <dcmtk/dcmdata/dctk.h>
 #include <dlfcn.h>
@@ -109,6 +110,81 @@ static void CheckPDFExtraction(void *bridge, NSString *directory)
     freeString(failure);
 }
 
+static void CheckRawImport(void *bridge, NSString *directory)
+{
+    auto write = reinterpret_cast<decltype(&HorosModernDCMTKWriteRawSecondaryCapture)>(
+        dlsym(bridge, "HorosModernDCMTKWriteRawSecondaryCapture"));
+    auto freeString = reinterpret_cast<void (*)(char*)>(dlsym(bridge, "HorosModernDCMTKFreeString"));
+    Check(write && freeString, @"Raw image writer exported");
+    const unsigned char little[] = {0, 0, 1, 0, 0, 128, 255, 255};
+    const unsigned char big[] = {0, 0, 0, 1, 128, 0, 255, 255};
+    const unsigned char bytes[] = {0, 127, 128, 255};
+    HorosModernDCMTKRawImage image = {};
+    image.rows = image.columns = 2;
+    image.rowSpacing = 0.75; image.columnSpacing = 1.25;
+    image.sliceThickness = 2.5; image.slicePosition = 5;
+    image.patientName = "Test^J\xc3\xa9r\xc3\xb4me";
+    image.patientID = "RAW_TEST";
+    image.studyDescription = "Synthetic raw import";
+    image.studyInstanceUID = "1.2.3.100";
+    image.seriesInstanceUID = "1.2.3.100.1";
+    image.studyID = "100";
+    image.date = "20260906"; image.time = "120000";
+    NSString *path = [directory stringByAppendingPathComponent:@"raw.dcm"];
+    std::string previousUID;
+    for (int pixelType = 0; pixelType <= 5; ++pixelType)
+    {
+        image.rows = image.columns = pixelType == 0 ? 1 : 2;
+        image.samplesPerPixel = pixelType == 0 ? 3 : 1;
+        image.bitsAllocated = pixelType < 2 ? 8 : 16;
+        image.isSigned = pixelType == 3 || pixelType == 5;
+        image.isBigEndian = pixelType == 4 || pixelType == 5;
+        image.pixels = pixelType < 2 ? bytes : (image.isBigEndian ? big : little);
+        image.length = pixelType == 0 ? 3 : (pixelType == 1 ? 4 : 8);
+        image.instanceNumber = pixelType;
+        char *failure = nullptr;
+        Check(write(path.fileSystemRepresentation, &image, &failure) && !failure, @"Write raw frame");
+        DcmFileFormat file;
+        Check(file.loadFile(path.fileSystemRepresentation).good(), @"Read back raw frame");
+        DcmDataset *dataset = file.getDataset();
+        OFString value;
+        Check(dataset->findAndGetOFStringArray(DCM_SOPClassUID, value).good() && value == UID_SecondaryCaptureImageStorage, @"Secondary capture SOP class");
+        Check(dataset->findAndGetOFStringArray(DCM_SOPInstanceUID, value).good() && value != previousUID.c_str(), @"Unique instance UID");
+        previousUID = value.c_str();
+        Check(dataset->findAndGetOFStringArray(DCM_PatientName, value).good() && value == image.patientName, @"UTF-8 patient name unchanged");
+        Check(dataset->findAndGetOFStringArray(DCM_PixelSpacing, value).good() && value == "0.75\\1.25", @"Non-square row/column spacing preserved");
+        Check(dataset->findAndGetOFStringArray(DCM_ImageOrientationPatient, value).good() && value == "1\\0\\0\\0\\1\\0", @"No image rotation");
+        Check(dataset->findAndGetOFStringArray(DCM_ImagePositionPatient, value).good() && value == "0\\0\\5", @"Slice position preserved");
+        Uint16 representation = 99;
+        Check(dataset->findAndGetUint16(DCM_PixelRepresentation, representation).good() && representation == image.isSigned, @"Signedness preserved");
+        if (image.bitsAllocated == 8)
+        {
+            const Uint8 *pixels = nullptr;
+            unsigned long count = 0;
+            Check(dataset->findAndGetUint8Array(DCM_PixelData, pixels, &count).good() &&
+                  count == 4 && std::memcmp(pixels, bytes, image.length) == 0, @"8-bit bytes and odd RGB padding");
+        }
+        else
+        {
+            const Uint16 *pixels = nullptr;
+            unsigned long count = 0;
+            Check(dataset->findAndGetUint16Array(DCM_PixelData, pixels, &count).good() && count == 4 &&
+                  pixels[0] == 0 && pixels[1] == 1 && pixels[2] == 0x8000 && pixels[3] == 0xffff, @"16-bit values and byte order unchanged");
+        }
+    }
+    NSData *before = [NSData dataWithContentsOfFile:path];
+    --image.length;
+    char *failure = nullptr;
+    Check(!write(path.fileSystemRepresentation, &image, &failure) && failure, @"Truncated raw frame rejected");
+    freeString(failure);
+    Check([before isEqualToData:[NSData dataWithContentsOfFile:path]], @"Invalid input does not overwrite a file");
+    ++image.length;
+    image.rowSpacing = 0;
+    failure = nullptr;
+    Check(!write(path.fileSystemRepresentation, &image, &failure) && failure, @"Zero spacing rejected");
+    freeString(failure);
+}
+
 int main(int argc, const char **argv)
 {
     @autoreleasepool
@@ -127,6 +203,17 @@ int main(int argc, const char **argv)
         Check(Element(document, @"0040,a160").childCount == 1, @"Literal text backslash stays in one value");
         Check([Element(document, @"0040,a160").stringValue containsString:@"literal \\ slash <tag>\n"], @"Text and newline unchanged");
         Check([Element(document, @"0008,0050").stringValue isEqualToString:@""], @"Empty value");
+        Check([HorosDICOMMetadataString(document.rootElement, @"0008,0050") isEqualToString:@""], @"Present empty scalar stays empty");
+        Check(HorosDICOMMetadataValues(document.rootElement, @"0008,0050").count == 0, @"Empty scalar is not a phantom key-frame zero");
+        Check(HorosDICOMMetadataString(document.rootElement, @"0008,1155") == nil, @"Direct lookup does not borrow nested reference UID");
+        Check([HorosDICOMMetadataNumbers(document.rootElement, @"0020,0032") isEqualToArray:@[@1.25, @(-2.5), @0]], @"Numeric VM and signs preserved");
+        Check(HorosDICOMMetadataValues(document.rootElement, @"7fe0,0010") == nil, @"No binary placeholders in operational values");
+        Check(HorosDICOMMetadataValues(document.rootElement, @"0008,1115") == nil, @"Sequence cannot be read as a scalar");
+        Check(HorosDICOMMetadataItems(document.rootElement, @"0008,1115").count == 2, @"Direct sequence items include empty items");
+        Check([HorosDICOMMetadataString(document.rootElement, @"0040,a160") containsString:@"literal \\ slash <tag>\n"], @"Operational text preserves literal backslashes");
+        NSXMLElement *invalidNumbers = [NSXMLElement elementWithName:@"item"];
+        [invalidNumbers addChild:HorosDICOMMetadataAttribute(@"3006,0050", @"ContourData", @"DS", @[@"1", @"not-a-number", @"3"])];
+        Check(HorosDICOMMetadataNumbers(invalidNumbers, @"3006,0050") == nil, @"Malformed geometry is not coerced to zero");
         Check(Element(document, @"0008,1115").childCount == 2, @"Empty sequence item retained");
         Check([[[Element(document, @"7fe0,0010") attributeForName:@"readOnly"] stringValue] boolValue], @"Binary is read-only");
         Check(Element(document, @"7fe0,0010").childCount == 1, @"Compressed fragments are not fake sequence items");
@@ -159,6 +246,7 @@ int main(int argc, const char **argv)
         Check([[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:NO attributes:nil error:&error], @"Create synthetic test directory");
         @try
         {
+            CheckRawImport(bridge, directory);
             CheckPDFExtraction(bridge, directory);
             DcmFileFormat file;
             DcmDataset *dataset = file.getDataset();

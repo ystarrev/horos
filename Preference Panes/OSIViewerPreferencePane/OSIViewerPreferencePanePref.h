@@ -47,6 +47,5 @@
 }
 
 - (AppController*) appController;
-- (void) mainViewDidLoad;
 
 @end

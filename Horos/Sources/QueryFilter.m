@@ -39,7 +39,7 @@
 
 
 #import "QueryFilter.h"
-#import "DCM.h"
+#import "DCMCalendarDate.h"
 
 
 @implementation QueryFilter

@@ -156,9 +156,6 @@ static BOOL HorosStoreSCUWriteFileInTransferSyntax(const char* inputPath, const 
 
 #import "BrowserController.h"
 #import "DICOMToNSString.h"
-#import "DCMObject.h"
-#import "DCM.h"
-#import "DCMTransferSyntax.h"
 #import "SendController.h"
 
 #define OFFIS_CONSOLE_APPLICATION "storescu"
@@ -567,89 +564,15 @@ progressCallback(void * /*callbackData*/,
 
 static OFBool decompressFile(DcmFileFormat fileformat, const char *fname, char *outfname)
 {
-	OFBool status = YES;
-	DcmXfer filexfer(fileformat.getDataset()->getOriginalXfer());
-	
 	NSLog( @"SEND - decompress: %@", [[NSString stringWithUTF8String: fname] lastPathComponent]);
-
-	BOOL useDCMTKForJP2K = [[NSUserDefaults standardUserDefaults] boolForKey: @"useDCMTKForJP2K"];
-	if( useDCMTKForJP2K == NO && (filexfer.getXfer() == EXS_JPEG2000LosslessOnly || filexfer.getXfer() == EXS_JPEG2000))
-	{
-		NSString *path = [NSString stringWithUTF8String:fname];
-		NSString *outpath = [NSString stringWithUTF8String:outfname];
-		DCMObject *dcmObject = [[DCMObject alloc] initWithContentsOfFile: path decodingPixelData: NO];
-		
-		unlink( outfname);
-		[dcmObject writeToFile: outpath withTransferSyntax:[DCMTransferSyntax ImplicitVRLittleEndianTransferSyntax] quality:1 AET:@"Horos" atomically:YES];
-		[dcmObject release];
-	}
-	else
-	{
-        status = HorosStoreSCUWriteFileInTransferSyntax(fname, outfname, EXS_LittleEndianExplicit, 1);
-	}
-	
-	return status;
+    return fileformat.getDataset() &&
+        HorosStoreSCUWriteFileInTransferSyntax(fname, outfname, EXS_LittleEndianExplicit, 1);
 }
 
 static OFBool compressFile(DcmFileFormat fileformat, const char *fname, char *outfname)
 {
-	OFBool status = YES;
-    DcmDataset *dataset = fileformat.getDataset();
-    
-    if( dataset)
-    {
-        BOOL useDCMTKForJP2K = [[NSUserDefaults standardUserDefaults] boolForKey: @"useDCMTKForJP2K"];
-        if( useDCMTKForJP2K == NO && opt_networkTransferSyntax == EXS_JPEG2000)
-        {
-            NSLog(@"SEND - Compress JPEG 2000 Lossy (%d) : %s", opt_Quality, fname);
-            NSString *path = [NSString stringWithUTF8String:fname];
-            NSString *outpath = [NSString stringWithUTF8String:outfname];
-            
-            DCMObject *dcmObject = [[DCMObject alloc] initWithContentsOfFile:path decodingPixelData: NO];
-            
-            unlink( outfname);
-            
-            @try
-            {
-	                DCMTransferSyntax *tsx = [DCMTransferSyntax JPEG2000LossyTransferSyntax];
-                                        
-                [dcmObject writeToFile:outpath withTransferSyntax: tsx quality: opt_Quality AET:@"Horos" atomically:YES];
-            }
-            @catch( NSException *e)
-            {
-                NSLog( @"**** exception SendController dcmObject writeToFile: %@", e);
-            }
-            [dcmObject release];
-        }
-        else if( useDCMTKForJP2K == NO && opt_networkTransferSyntax == EXS_JPEG2000LosslessOnly)
-        {
-            NSLog(@"SEND - Compress JPEG 2000 Lossless: %s", fname);
-            
-            NSString *path = [NSString stringWithUTF8String:fname];
-            NSString *outpath = [NSString stringWithUTF8String:outfname];
-            
-            DCMObject *dcmObject = [[DCMObject alloc] initWithContentsOfFile:path decodingPixelData: NO];
-            
-            unlink( outfname);
-            
-            @try
-            {
-                [dcmObject writeToFile:outpath withTransferSyntax:[DCMTransferSyntax JPEG2000LosslessTransferSyntax] quality: DCMLosslessQuality AET:@"Horos" atomically:YES];
-            }
-            @catch( NSException *e)
-            {
-                NSLog( @"**** exception SendController dcmObject writeToFile: %@", e);
-            }
-            [dcmObject release];
-        }
-        else
-        {
-            status = HorosStoreSCUWriteFileInTransferSyntax(fname, outfname, opt_networkTransferSyntax, opt_Quality);
-        }
-    }
-    else status = NO;
-
-	return status;
+    return fileformat.getDataset() &&
+        HorosStoreSCUWriteFileInTransferSyntax(fname, outfname, opt_networkTransferSyntax, opt_Quality);
 }
 
 static long seed = 0;

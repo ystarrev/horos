@@ -38,6 +38,7 @@
 
 #import <Cocoa/Cocoa.h>
 #import "DicomFile.h"
+#include "ModernDCMTKBridge.h"
 
 /** \brief  C++ calls for DicomFile 
 *
@@ -46,6 +47,9 @@
 */
 
 @interface DicomFile (DicomFileDCMTKCategory)
+
++ (NSString *)generatedDICOMUID;
++ (BOOL)writeRawSecondaryCapture:(const HorosModernDCMTKRawImage *)image toFile:(NSString *)path error:(NSError **)error;
 
 + (NSArray*) getEncodingArrayForFile: (NSString*) file;
 + (BOOL) isDICOMFileDCMTK:(NSString *) file; /**< Check for validity of DICOM using DCMTK */

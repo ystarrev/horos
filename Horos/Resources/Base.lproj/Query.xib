@@ -13,6 +13,7 @@
                 <outlet property="authButton" destination="1111" id="1168"/>
                 <outlet property="authView" destination="1170" id="1171"/>
                 <outlet property="autoQRInstanceName" destination="1134" id="1145"/>
+                <outlet property="autoQRInstancesPopup" destination="1159" id="qrT-list-out"/>
                 <outlet property="autoQRNavigationControl" destination="1107" id="1149"/>
                 <outlet property="autoQueryCounter" destination="836" id="838"/>
                 <outlet property="autoRetrieveWindow" destination="844" id="892"/>
@@ -1421,121 +1422,60 @@
                     <constraint firstAttribute="trailing" secondItem="1153" secondAttribute="trailing" constant="-12" id="xDH-1C-EnF"/>
                 </constraints>
             </view>
-            <toolbar key="toolbar" implicitIdentifier="C832A200-6D92-46DB-AC0C-AB843AF7212F" autosavesConfiguration="NO" allowsUserCustomization="NO" showsBaselineSeparator="NO" displayMode="iconOnly" sizeMode="regular" id="1102">
-                <allowedToolbarItems>
-                    <toolbarItem implicitItemIdentifier="NSToolbarFlexibleSpaceItem" id="1118"/>
-                    <toolbarItem implicitItemIdentifier="0B43AA69-31E5-44AA-B706-1735CB33FB64" label="Navigation" paletteLabel="Navigation" id="1105">
-                        <nil key="toolTip"/>
-                        <segmentedControl key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="1107">
-                            <rect key="frame" x="7" y="14" width="49" height="25"/>
-                            <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                            <segmentedCell key="cell" state="on" borderStyle="border" alignment="left" tag="1" style="texturedSquare" trackingMode="momentary" id="1108">
-                                <font key="font" metaFont="system"/>
-                                <segments>
-                                    <segment image="NSGoLeftTemplate" width="23"/>
-                                    <segment image="NSGoRightTemplate" width="23" tag="1"/>
-                                </segments>
-                            </segmentedCell>
-                            <constraints>
-                                <constraint firstAttribute="width" constant="49" id="qrT-nav-W01"/>
-                            </constraints>
-                            <connections>
-                                <action selector="changeAutoQRInstance:" target="-2" id="1119"/>
-                            </connections>
-                        </segmentedControl>
-                    </toolbarItem>
-                    <toolbarItem implicitItemIdentifier="49D15368-6723-47A7-8F90-2CD6E81BC31D" label="Delete" paletteLabel="Delete" image="NSRemoveTemplate" id="1114">
-                        <nil key="toolTip"/>
-                        <button key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="1115">
-                            <rect key="frame" x="1" y="14" width="40" height="25"/>
-                            <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                            <buttonCell key="cell" type="roundTextured" title="Lock" bezelStyle="texturedRounded" image="NSRemoveTemplate" imagePosition="only" alignment="center" borderStyle="border" inset="2" id="1116">
-                                <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
-                                <font key="font" metaFont="system"/>
-                            </buttonCell>
-                            <constraints>
-                                <constraint firstAttribute="width" constant="40" id="qrT-del-W01"/>
-                            </constraints>
-                        </button>
-                        <connections>
-                            <action selector="deleteAutoQRInstance:" target="-2" id="1120"/>
-                            <binding destination="-2" name="enabled" keyPath="self.isUnlocked" id="1172"/>
-                        </connections>
-                    </toolbarItem>
-                    <toolbarItem implicitItemIdentifier="EDE26A27-4F8F-44D6-90DF-4D7D43114E1B" label="Create" paletteLabel="Create" image="NSAddTemplate" id="1122">
-                        <nil key="toolTip"/>
-                        <button key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="1123">
-                            <rect key="frame" x="1" y="14" width="40" height="25"/>
-                            <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                            <buttonCell key="cell" type="roundTextured" title="Lock" bezelStyle="texturedRounded" image="NSAddTemplate" imagePosition="only" alignment="center" borderStyle="border" inset="2" id="1124">
-                                <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
-                                <font key="font" metaFont="system"/>
-                            </buttonCell>
-                            <constraints>
-                                <constraint firstAttribute="width" constant="40" id="qrT-add-W01"/>
-                            </constraints>
-                        </button>
-                        <connections>
-                            <action selector="createAutoQRInstance:" target="-2" id="1126"/>
-                            <binding destination="-2" name="enabled" keyPath="self.isUnlocked" id="1173"/>
-                        </connections>
-                    </toolbarItem>
-                    <toolbarItem implicitItemIdentifier="A9FB2C16-102A-4508-B57E-3A3E5D2040DD" label="Authentication" paletteLabel="Authentication" image="NSLockUnlockedTemplate" id="1103">
-                        <nil key="toolTip"/>
-                        <button key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="1111">
-                            <rect key="frame" x="22" y="14" width="40" height="25"/>
-                            <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                            <buttonCell key="cell" type="roundTextured" title="Lock" bezelStyle="texturedRounded" image="NSLockUnlockedTemplate" imagePosition="only" alignment="center" borderStyle="border" inset="2" id="1112">
-                                <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
-                                <font key="font" metaFont="system"/>
-                            </buttonCell>
-                            <constraints>
-                                <constraint firstAttribute="width" constant="40" id="qrT-auth-W1"/>
-                            </constraints>
-                            <connections>
-                                <action selector="authAction:" target="-2" id="1169"/>
-                            </connections>
-                        </button>
-                        <connections>
-                            <action selector="lockAutoQRWindow:" target="-2" id="1121"/>
-                        </connections>
-                    </toolbarItem>
-                    <toolbarItem implicitItemIdentifier="BE0D9FAA-22E1-4631-9644-AEE8E82702C6" label="Instances List" paletteLabel="Instances List" id="1165" userLabel="Toolbar Item - Instances List">
-                        <nil key="toolTip"/>
-                        <popUpButton key="view" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="1159">
-                            <rect key="frame" x="0.0" y="14" width="212" height="25"/>
-                            <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                            <popUpButtonCell key="cell" type="roundTextured" bezelStyle="texturedRounded" alignment="left" lineBreakMode="truncatingTail" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="1160">
-                                <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
-                                <font key="font" metaFont="menu"/>
-                                <menu key="menu" title="OtherViews" id="1161">
-                                    <items>
-                                        <menuItem title="Item 1" id="1162"/>
-                                        <menuItem title="Item 2" id="1163"/>
-                                        <menuItem title="Item 3" id="1164"/>
-                                    </items>
-                                </menu>
-                                <connections>
-                                    <binding destination="-2" name="selectedIndex" keyPath="self.currentAutoQR" previousBinding="1166" id="1167"/>
-                                    <binding destination="-2" name="contentValues" keyPath="self.instancesMenuList" id="1166"/>
-                                </connections>
-                            </popUpButtonCell>
-                            <constraints>
-                                <constraint firstAttribute="width" constant="212" id="qrT-list-W1"/>
-                            </constraints>
-                        </popUpButton>
-                    </toolbarItem>
-                </allowedToolbarItems>
-                <defaultToolbarItems>
-                    <toolbarItem reference="1105"/>
-                    <toolbarItem reference="1165"/>
-                    <toolbarItem reference="1122"/>
-                    <toolbarItem reference="1114"/>
-                    <toolbarItem reference="1118"/>
-                    <toolbarItem reference="1103"/>
-                </defaultToolbarItems>
-            </toolbar>
         </window>
+        <segmentedControl verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="1107">
+            <rect key="frame" x="7" y="14" width="49" height="25"/>
+            <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
+            <segmentedCell key="cell" state="on" borderStyle="border" alignment="left" tag="1" style="texturedSquare" trackingMode="momentary" id="1108">
+                <font key="font" metaFont="system"/>
+                <segments>
+                    <segment image="NSGoLeftTemplate" width="23"/>
+                    <segment image="NSGoRightTemplate" width="23" tag="1"/>
+                </segments>
+            </segmentedCell>
+            <constraints>
+                <constraint firstAttribute="width" constant="49" id="qrT-nav-W01"/>
+            </constraints>
+            <connections>
+                <action selector="changeAutoQRInstance:" target="-2" id="1119"/>
+            </connections>
+        </segmentedControl>
+        <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="1111">
+            <rect key="frame" x="22" y="14" width="40" height="25"/>
+            <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
+            <buttonCell key="cell" type="roundTextured" title="Lock" bezelStyle="texturedRounded" image="NSLockUnlockedTemplate" imagePosition="only" alignment="center" borderStyle="border" inset="2" id="1112">
+                <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
+                <font key="font" metaFont="system"/>
+            </buttonCell>
+            <constraints>
+                <constraint firstAttribute="width" constant="40" id="qrT-auth-W1"/>
+            </constraints>
+            <connections>
+                <action selector="authAction:" target="-2" id="1169"/>
+            </connections>
+        </button>
+        <popUpButton verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="1159">
+            <rect key="frame" x="0.0" y="14" width="212" height="25"/>
+            <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
+            <popUpButtonCell key="cell" type="roundTextured" bezelStyle="texturedRounded" alignment="left" lineBreakMode="truncatingTail" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="1160">
+                <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
+                <font key="font" metaFont="menu"/>
+                <menu key="menu" title="OtherViews" id="1161">
+                    <items>
+                        <menuItem title="Item 1" id="1162"/>
+                        <menuItem title="Item 2" id="1163"/>
+                        <menuItem title="Item 3" id="1164"/>
+                    </items>
+                </menu>
+                <connections>
+                    <binding destination="-2" name="selectedIndex" keyPath="self.currentAutoQR" previousBinding="1166" id="1167"/>
+                    <binding destination="-2" name="contentValues" keyPath="self.instancesMenuList" id="1166"/>
+                </connections>
+            </popUpButtonCell>
+            <constraints>
+                <constraint firstAttribute="width" constant="212" id="qrT-list-W1"/>
+            </constraints>
+        </popUpButton>
         <menu title="Menu" id="445" userLabel="serversMenu">
             <items>
                 <menuItem title="Verify" keyEquivalent="v" id="443">

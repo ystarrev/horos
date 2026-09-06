@@ -57,7 +57,6 @@ enum
 };
 
 @class DCMPix;
-@class DCMObject;
 
 /** \brief Region of Interest
 * 
@@ -355,9 +354,6 @@ enum
 
 /** The info displayed in the text box */
 - (NSMutableDictionary*) dataString;
-
-/** Set the associated view */
-- (void) setRoiView:(NSView*) v __deprecated; // use setCurView:
 
 /** Recompute */
 - (void) recompute;

@@ -112,7 +112,6 @@ class DCMMetadataTests(DCMExtractionTests):
     def test_bridge_and_adapter_are_wired_into_existing_targets(self):
         files = self.target_files("Horos", "PBXSourcesBuildPhase")
         self.assertEqual(files.count("HorosDICOMMetadata.m"), 1)
-        self.assertNotIn("HorosDICOMMetadata.m", self.target_files("DCM", "PBXSourcesBuildPhase"))
         header = (SOURCES / "ModernDCMTKBridge.h").read_text()
         self.assertIn("char* HorosModernDCMTKCopyMetadataXML(const char* path, char** failureReason)", header)
         editor = (SOURCES / "XMLControllerDCMTKCategory.mm").read_text()
@@ -244,11 +243,11 @@ class DCMMetadataTests(DCMExtractionTests):
                            "HorosModernDCMTKCreateDICOMPDF", "DCMEncapsulatedPDF"):
                 self.assertNotIn(symbol, source)
         for extension in ("h", "m"):
-            self.assertFalse((ROOT / f"DCM Framework/DCMEncapsulatedPDF.{extension}").exists())
-        for path in (ROOT / "DCM Framework/DCM.h", ROOT / "Horos.xcodeproj/project.pbxproj"):
+            self.assertFalse((ROOT / f"Horos/Sources/DCMEncapsulatedPDF.{extension}").exists())
+        for path in (ROOT / "Horos.xcodeproj/project.pbxproj",):
             self.assertNotIn("DCMEncapsulatedPDF", path.read_text())
-        self.target_files("DCM", "PBXSourcesBuildPhase")  # Resolve all retained build references.
-        self.target_files("DCM", "PBXHeadersBuildPhase")
+        self.target_files("Horos", "PBXSourcesBuildPhase")  # Resolve all retained build references.
+        self.target_files("Horos", "PBXHeadersBuildPhase")
 
     def test_pacs_report_viewing_printing_and_other_sr_uses_are_retained(self):
         browser = (SOURCES / "BrowserController.m").read_text()

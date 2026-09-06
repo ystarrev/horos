@@ -1796,7 +1796,6 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
 //
 //		@try
 //		{
-//			[DCMObject anonymizeContentsOfFile: file  tags:tags  writingToFile:destPath];
 //		}
 //		@catch (NSException * e)
 //		{

@@ -39,7 +39,6 @@
 
 #import <Cocoa/Cocoa.h>
 
-@class DCMObject;
 
 
 #ifdef __cplusplus
@@ -67,7 +66,6 @@ typedef char* DcmFileFormat;
 {
 		NSString			*dcmSourcePath;
 		
-		DCMObject			*dcmDst;
 		DcmFileFormat		*dcmtkFileFormat;
 		
 		// Raw data support

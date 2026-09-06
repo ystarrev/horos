@@ -243,7 +243,6 @@ static BOOL HorosMetadataItemIsReadOnly(NSXMLNode *item)
 
 - (NSArray *)updateDB:(NSArray *)files objects:(NSArray *)objects originalDatesAdded:(NSDictionary *)originalDatesAdded
 {
-	[DCMPix purgeCachedDictionaries];
 	
 	dontClose = YES;
 	

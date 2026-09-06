@@ -717,7 +717,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         _ study: MetalViewerStudy,
         selectInitialSeries: Bool
     ) -> Bool {
-        if let existingContext = patientContext(identifier: study.patientIdentity.identifier) {
+        if patientContext(identifier: study.patientIdentity.identifier) != nil {
             _ = updatePatientStudy(
                 study,
                 selectInitialSeries: selectInitialSeries,

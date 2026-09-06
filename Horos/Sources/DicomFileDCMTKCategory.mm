@@ -274,6 +274,37 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
 
 @implementation DicomFile (DicomFileDCMTKCategory)
 
++ (NSString *)generatedDICOMUID
+{
+    auto generate = HorosModernDCMTKSymbol<decltype(&HorosModernDCMTKCopyGeneratedUID)>("HorosModernDCMTKCopyGeneratedUID");
+    return generate ? HorosModernDCMTKCopiedString(generate()) : nil;
+}
+
++ (BOOL)writeRawSecondaryCapture:(const HorosModernDCMTKRawImage *)image toFile:(NSString *)path error:(NSError **)error
+{
+    if (error) *error = nil;
+    auto write = HorosModernDCMTKSymbol<decltype(&HorosModernDCMTKWriteRawSecondaryCapture)>("HorosModernDCMTKWriteRawSecondaryCapture");
+    auto freeString = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    // Keep incomplete files hidden from the incoming-directory scanner.
+    NSString *temporary = [path.stringByDeletingLastPathComponent stringByAppendingPathComponent:
+        [@"." stringByAppendingString:NSUUID.UUID.UUIDString]];
+    NSString *reason = @"The DCMTK raw image writer is unavailable. Rebuild the bundled bridge.";
+    if (write && freeString)
+    {
+        char *failure = nullptr;
+        BOOL success = write(temporary.fileSystemRepresentation, image, &failure) != 0;
+        reason = failure ? [NSString stringWithUTF8String:failure] : @"Cannot write the raw image.";
+        freeString(failure);
+        if (success && [[NSFileManager defaultManager] moveItemAtPath:temporary toPath:path error:error])
+            return YES;
+    }
+    [[NSFileManager defaultManager] removeItemAtPath:temporary error:NULL];
+    if (error && !*error)
+        *error = [NSError errorWithDomain:@"HorosDICOMMetadata" code:4
+            userInfo:@{NSLocalizedDescriptionKey: reason ?: @"Cannot write the raw image."}];
+    return NO;
+}
+
 + (NSXMLDocument *)metadataDocumentForFile:(NSString *)path error:(NSError **)error
 {
     if (error != NULL)

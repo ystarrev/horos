@@ -63,7 +63,7 @@
 #import <DiskArbitration/DiskArbitration.h>
 #import "DicomFile.h"
 #import "DicomFileDCMTKCategory.h"
-#import "DCMUIDs.h"
+#import "DCMTransferSyntax.h"
 #import "DicomDatabase+DCMTK.h"
 
 @implementation BurnerWindowController
@@ -972,7 +972,7 @@
                 
                 if( [DicomFile isDICOMFile: newPath])
                 {
-                    if( [[DicomFile getDicomField: @"TransferSyntaxUID" forFile: newPath] isEqualToString: DCM_ExplicitVRBigEndian])
+                    if( [[DicomFile getDicomField: @"TransferSyntaxUID" forFile: newPath] isEqualToString: [[DCMTransferSyntax ExplicitVRBigEndianTransferSyntax] transferSyntax]])
                        [bigEndianFilesToConvert addObject: newPath];
                     
                     switch(selectedCompressionMode)

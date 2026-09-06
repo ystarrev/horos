@@ -18,8 +18,8 @@ class DCMSyntaxTests(test_dcm_extraction.DCMExtractionTests):
     def setUpClass(cls):
         super().setUpClass()
         cls.baseline = json.loads((ROOT / "Scripts/tests/dcm_syntax_baseline.json").read_text())
-        cls.uid_source = (ROOT / "DCM Framework/DCMAbstractSyntaxUID.mm").read_text()
-        cls.transfer_source = (ROOT / "DCM Framework/DCMTransferSyntax.mm").read_text()
+        cls.uid_source = (ROOT / "Horos/Sources/DCMAbstractSyntaxUID.mm").read_text()
+        cls.transfer_source = (ROOT / "Horos/Sources/DCMTransferSyntax.mm").read_text()
         header = (ROOT / "DCMTK/dcmdata/include/dcmtk/dcmdata/dcuid.h").read_text()
         cls.macros = dict(re.findall(r'^#define (UID_\w+)\s+"([^"]+)"', header, re.M))
         cls.constants = {}
@@ -63,9 +63,9 @@ class DCMSyntaxTests(test_dcm_extraction.DCMExtractionTests):
         self.assertNotIn("gTransferSyntaxes", self.transfer_source)
 
     def test_cpp_helpers_are_in_the_existing_target_once(self):
-        sources = self.target_files("DCM", "PBXSourcesBuildPhase")
+        sources = self.target_files("Horos", "PBXSourcesBuildPhase")
         for name in ("DCMAbstractSyntaxUID", "DCMTransferSyntax"):
-            path = "DCM Framework/" + name + ".mm"
+            path = "Horos/Sources/" + name + ".mm"
             self.assertEqual(sources.count(path), 1)
             self.assertNotIn(path[:-1], sources)
             self.assertFalse((ROOT / path[:-1]).exists())

@@ -52,7 +52,6 @@
 #import "SplashScreen.h"
 #import "DicomFile.h"
 #import "DCMPix.h"
-#import "DCM.h"
 #import "DCMNetServiceDelegate.h"
 #import "DCMTKQueryRetrieveSCP.h"
 #import "AppControllerDCMTKCategory.h"
@@ -107,9 +106,6 @@ NSString *HorosDirectTransferInstanceUID(void)
 static NSMenu *mainMenuCLUTMenu = nil, *mainMenuWLWWMenu = nil, *mainMenuConvMenu = nil, *mainOpacityMenu = nil;
 static NSDictionary *previousWLWWKeys = nil, *previousCLUTKeys = nil, *previousConvKeys = nil, *previousOpacityKeys = nil;
 static BOOL checkForPreferencesUpdate = YES;
-static unsigned char *LUT12toRGB = nil;
-static BOOL canDisplay12Bit = NO;
-static NSInvocation *fill12BitBufferInvocation = nil;
 //static NSString *appStartingDate = nil;
 
 BOOL					NEEDTOREBUILD = NO;
@@ -1710,7 +1706,7 @@ static void HorosWriteBonjourDNSSDTaskRecords(NSArray *records)
 	HorosPresentCriticalAlert( NSLocalizedString( @"Error", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, err);
 }
 
--(void) displayListenerError: (NSString*) err // the DiscPublishing plugin swizzles this method, do not rename it
+-(void) displayListenerError: (NSString*) err
 {
 	NSLog( @"*** listener error (displayListenerError): %@", err);
 	
@@ -2346,7 +2342,6 @@ static BOOL initialized = NO;
 				[[NSUserDefaults standardUserDefaults] setInteger: [[NSUserDefaults standardUserDefaults] integerForKey: @"DEFAULT_DATABASELOCATION"] forKey: @"DATABASELOCATION"];
 				[[NSUserDefaults standardUserDefaults] setObject: [[NSUserDefaults standardUserDefaults] stringForKey: @"DEFAULT_DATABASELOCATIONURL"] forKey: @"DATABASELOCATIONURL"];
 				
-				[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"is12bitPluginAvailable"];
 //				[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"DONTCOPYWLWWSETTINGS"];
 				[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"ROITEXTNAMEONLY"];
 				
@@ -2764,19 +2759,6 @@ static BOOL initialized = NO;
 //	[AppController displayImportantNotice: self];
 //#endif
     
-//	if( [[NSUserDefaults standardUserDefaults] integerForKey: @"TOOLKITPARSER4"] == 0 || [[NSUserDefaults standardUserDefaults] boolForKey:@"USEPAPYRUSDCMPIX4"] == NO)
-//	{
-//		[self notificationTitle: NSLocalizedString( @"Warning!", nil) description: NSLocalizedString( @"DCM Framework is selected as the DICOM reader/parser. The performances of this toolkit are slower.", nil)  name:@"result"];
-//        
-//        NSLog( @"********");
-//        NSLog( @"********");
-//        NSLog( @"********");
-//		NSLog( @"******** %@", NSLocalizedString( @"DCM Framework is selected as the DICOM reader/parser. The performances of this toolkit are slower.", nil));
-//        NSLog( @"********");
-//        NSLog( @"********");
-//        NSLog( @"********");
-//	}
-	
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SingleProcessMultiThreadedListener"] == NO)
 		NSLog( @"----- %@", NSLocalizedString( @"DICOM Listener is multi-processes mode.", nil));
 	
@@ -3800,40 +3782,6 @@ static BOOL initialized = NO;
 #pragma mark HTML Templates
 + (void)checkForHTMLTemplates { // __deprecated
 	[[[BrowserController currentBrowser] database] checkForHtmlTemplates];
-}
-
-#pragma mark-
-#pragma mark 12 Bit Display support.
-
-+ (BOOL)canDisplay12Bit;
-{
-	return canDisplay12Bit;
-}
-
-+ (void)setCanDisplay12Bit:(BOOL)boo;
-{
-	canDisplay12Bit = boo;
-	[[NSUserDefaults standardUserDefaults] setBool:boo forKey:@"is12bitPluginAvailable"];
-}
-
-+ (void)setLUT12toRGB:(unsigned char*)lut;
-{
-	LUT12toRGB = lut;
-}
-
-+ (unsigned char*)LUT12toRGB;
-{
-	return LUT12toRGB;
-}
-
-+ (void)set12BitInvocation:(NSInvocation*)invocation;
-{
-	fill12BitBufferInvocation = invocation;
-}
-
-+ (NSInvocation*)fill12BitBufferInvocation;
-{
-	return fill12BitBufferInvocation;
 }
 
 #pragma mark -

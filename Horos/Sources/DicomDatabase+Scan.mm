@@ -810,7 +810,6 @@ static NSString* _dcmElementKey(DcmElement* element) {
                 thread.status = NSLocalizedString(@"Ejecting...", nil);
                 thread.progress = -1;
                 
-                [DCMPix purgeCachedDictionaries]; // <- This is very important to 'unlink' all opened files, otherwise MacOS will display the famous 'The disk is in use and could not be ejected'
                 
                 int attempts = 0;
                 BOOL success = NO;

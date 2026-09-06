@@ -40,9 +40,10 @@
 #import "DicomSeries.h"
 #import "DicomStudy.h"
 #import "DicomFileDCMTKCategory.h"
-#import "DCM.h"
+#import "DCMAttributeTag.h"
+#import "DCMCalendarDate.h"
 #import "DCMAbstractSyntaxUID.h"
-#import "DCMObjectPixelDataImport.h"
+#import "HorosDICOMMetadata.h"
 #import "MutableArrayCategory.h"
 #import "DicomFile.h"
 #import "DICOMToNSString.h"
@@ -658,13 +659,17 @@ NSString* sopInstanceUIDDecode( unsigned char *r, int length)
                 {
                     [[DicomStudy dbModifyLock] lock];
                     @try {
-                        DCMObject *dcmObject = [[DCMObjectPixelDataImport alloc] initWithContentsOfFile: self.completePath decodingPixelData: NO];
-                        
-                        if( [dcmObject.attributes objectForKey: @"0028,6022"]) // DCM_FramesOfInterestDescription
+                        NSError *metadataError = nil;
+                        NSXMLElement *metadata = [DicomFile metadataDocumentForFile:self.completePath error:&metadataError].rootElement;
+                        if (!metadata)
+                            [NSException raise:@"DICOM key images" format:@"Cannot read existing key-image metadata: %@", metadataError.localizedDescription];
+                        NSArray *existingKeyFrames = HorosDICOMMetadataValues(metadata, @"0028,6022");
+
+                        if (existingKeyFrames != nil) // Preserve Horos' existing zero-based frame convention.
                         {
                             int frame = [[self frameID] intValue];
                             
-                            NSMutableArray *keyFrames = [NSMutableArray arrayWithArray: [[dcmObject.attributes objectForKey: @"0028,6022"] values]]; // DCM_FramesOfInterestDescription
+                            NSMutableArray *keyFrames = [NSMutableArray arrayWithArray:existingKeyFrames];
                             
                             BOOL found = NO;
                             for( NSString *k in keyFrames)
@@ -689,8 +694,6 @@ NSString* sopInstanceUIDDecode( unsigned char *r, int length)
                             if( [f boolValue])
                                 c = [[self frameID] stringValue];
                         }
-                        
-                        [dcmObject release];
                         
                         NSDictionary *dict = [NSDictionary dictionaryWithObjectsAndKeys: [NSArray arrayWithObject: self.completePath], @"files", @"(0028,6022)", @"field", c, @"value", nil]; // c can be nil : it's important to have it at the end
                         
@@ -1086,59 +1089,6 @@ NSString* sopInstanceUIDDecode( unsigned char *r, int length)
 	return [NSSet setWithObject:[self completePathWithNoDownloadAndLocalOnly]];
 }
 
-// DICOM Presentation State
-- (DCMSequenceAttribute *)graphicAnnotationSequence
-{
-	//main sequnce that includes the graphics overlays : ROIs and annotation
-	DCMSequenceAttribute *graphicAnnotationSequence = [DCMSequenceAttribute sequenceAttributeWithName:@"GraphicAnnotationSequence"];
-	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-	//need the original file to get SOPClassUID and possibly SOPInstanceUID
-	DCMObject *imageObject = [DCMObject objectWithContentsOfFile:[self primitiveValueForKey:@"completePath"] decodingPixelData:NO];
-	
-	//ref image sequence only has one item.
-	DCMSequenceAttribute *refImageSequence = [DCMSequenceAttribute sequenceAttributeWithName:@"ReferencedImageSequence"];
-	DCMObject *refImageObject = [DCMObject dcmObject];
-	[refImageObject setAttributeValues:[self primitiveValueForKey:@"sopInstanceUID"] forName:@"ReferencedSOPInstanceUID"];
-	[refImageObject setAttributeValues:[[imageObject attributeValueWithName:@"SOPClassUID"] values] forName:@"ReferencedSOPClassUID"];
-	// may need to add references frame number if we add a frame object  Nothing here yet.
-	
-	[refImageSequence addItem:refImageObject];
-	
-	// Some basic graphics info
-	
-	DCMAttribute *graphicAnnotationUnitsAttr = [DCMAttribute attributeWithAttributeTag:[DCMAttributeTag tagWithName:@"GraphicAnnotationUnits"]];
-	[graphicAnnotationUnitsAttr setValues:[NSMutableArray arrayWithObject:@"PIXEL"]];
-	
-	//loop through the ROIs and add
-	NSSet *rois = [self primitiveValueForKey:@"rois"];
-	id roi;
-	for (roi in rois)
-	{
-		//will be either a Graphic Object sequence or a Text Object Sequence
-		ToolMode roiType = (ToolMode)[[roi valueForKey:@"roiType"] intValue];
-		NSString *typeString = nil;
-		if (roiType == tText)
-		{// is text 
-		}
-		else // is a graphic
-		{
-			switch (roiType)
-			{
-				case tOval:
-					typeString = @"ELLIPSE";
-					break;
-				case tOPolygon:
-				case tCPolygon:
-					typeString = @"POLYLINE";
-					break;
-                default:;
-			}
-		}
-		
-	}	
-	[pool release];
-	 return graphicAnnotationSequence;
-}
 
 - (NSImage *)image
 {

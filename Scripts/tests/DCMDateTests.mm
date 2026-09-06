@@ -1,10 +1,8 @@
 // Standalone runtime harness, not an app target. Run against a newly built
-// DCM.framework only after build approval. Uses synthetic values and in-memory
-// data containers; never opens patient data or modifies persistent preferences.
+// Horos date helper and DCMTK only after build approval. Uses synthetic values;
+// never opens patient data or modifies persistent preferences.
 #import <Foundation/Foundation.h>
 #import "DCMCalendarDate.h"
-#import "DCMDataContainer.h"
-#import "DCMTransferSyntax.h"
 #include <cmath>
 
 static void Check(BOOL condition, NSString *message)
@@ -28,12 +26,6 @@ static NSString *Format(NSString *kind, DCMCalendarDate *date)
     if ([kind isEqual:@"DA"]) return date.dateString;
     if ([kind isEqual:@"TM"]) return date.timeString;
     return [date dateTimeString:YES];
-}
-
-static DCMDataContainer *Container(NSString *input)
-{
-    return [DCMDataContainer dataContainerWithData:[input dataUsingEncoding:NSASCIIStringEncoding]
-                                  transferSyntax:[DCMTransferSyntax ExplicitVRLittleEndianTransferSyntax]];
 }
 
 int main(int argc, const char *argv[])
@@ -99,20 +91,6 @@ int main(int argc, const char *argv[])
             Check([DCMCalendarDate dicomDateTime:@"20260308023000"] == nil, @"Reject nonexistent local DST time");
             Check([DCMCalendarDate dicomDateTime:@"20260308023000-0700"] != nil, @"Explicit offset is independent of local DST");
             [NSTimeZone setDefaultTimeZone:utc];
-
-            DCMDataContainer *container = Container(@"000000\\123456.123456");
-            NSArray *times = [container nextTimesWithLength:(int)container.length];
-            Check(times.count == 2 && [[times[0] timeString] isEqual:@"000000.000000"]
-                && [[times[1] timeString] isEqual:@"123456.123456"], @"Midnight first in multi-valued TM");
-            Check(container.position == container.length, @"Advance past all time values");
-            container = Container(@"000000");
-            Check([[(DCMCalendarDate *)[container nextTimeWithLength:6] timeString] isEqual:@"000000.000000"], @"Single TM");
-            container = Container(@"20240229");
-            Check([[(DCMCalendarDate *)[container nextDate] dateString] isEqual:@"20240229"], @"Single DA");
-            container = Container(@"20240229123456.123456-0030");
-            DCMCalendarDate *parsed = (DCMCalendarDate *)[container nextDateTimeWithLength:(int)container.length];
-            [parsed setTimeZone:utc];
-            Check([[parsed dateTimeString:NO] isEqual:@"20240229130456.123456"], @"Single DT uses explicit offset");
 
             dispatch_apply(64, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^(size_t index) {
                 @autoreleasepool

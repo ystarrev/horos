@@ -88,6 +88,28 @@ int HorosModernDCMTKWriteFileInTransferSyntax(const char* inputPath,
                                               const char* outputPath,
                                               const char* transferSyntaxUID,
                                               int quality);
+
+// One native raw frame. Pixel bytes are borrowed for the duration of the call.
+// Supports the raw-import panel's RGB8, mono8 and signed/unsigned mono16 formats.
+typedef struct HorosModernDCMTKRawImage {
+    const unsigned char* pixels;
+    unsigned long length;
+    unsigned short rows, columns, samplesPerPixel, bitsAllocated;
+    int isSigned, isBigEndian;
+    unsigned long instanceNumber;
+    double rowSpacing, columnSpacing, sliceThickness, slicePosition;
+    const char* patientName;
+    const char* patientID;
+    const char* studyDescription;
+    const char* studyInstanceUID;
+    const char* seriesInstanceUID;
+    const char* studyID;
+    const char* date;
+    const char* time;
+} HorosModernDCMTKRawImage;
+// The caller publishes the completed file. Free failureReason with FreeString.
+int HorosModernDCMTKWriteRawSecondaryCapture(const char* path,
+    const HorosModernDCMTKRawImage* image, char** failureReason);
 char* HorosModernDCMTKCopyStructuredReportHTML(const char* path);
 char* HorosModernDCMTKCopyStructuredReportXML(const char* path);
 char* HorosModernDCMTKCopyStructuredReportKeyObjectType(const char* path);

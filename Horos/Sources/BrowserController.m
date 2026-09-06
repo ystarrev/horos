@@ -74,6 +74,7 @@
 #import "BrowserController.h"
 #import "DicomFile.h"
 #import "DicomFileDCMTKCategory.h"
+#import "HorosDICOMMetadata.h"
 #import "NSSplitViewSave.h"
 #import "DicomDirParser.h"
 #import "MutableArrayCategory.h"
@@ -85,10 +86,7 @@
 #import "BurnerWindowController.h"
 #import "DCMTransferSyntax.h"
 #import "DCMAttributeTag.h"
-#import "DCMPixelDataAttribute.h"
 #import "DCMCalendarDate.h"
-#import "DCM.h"
-#import "DCMObject.h"
 #import "DCMAbstractSyntaxUID.h"
 #import "DCMNetServiceDelegate.h"
 #import "LogWindowController.h"
@@ -1822,7 +1820,6 @@ static NSConditionLock *threadLock = nil;
             
             [self.window display];
             
-            [DCMPix purgeCachedDictionaries];
             [self resetLogWindowController];
             
             [[AppController sharedAppController] closeAllViewers: self];
@@ -5445,9 +5442,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             }
             else
             {
-                /**********
-                 post notification of new selected item. Can be used by plugins to update RIS connection
-                 **********/
                 DicomStudy *studySelected = [[item valueForKey: @"type"] isEqualToString: @"Study"] ? item : [item valueForKey: @"study"];
                 
                 NSDictionary *userInfo = nil;
@@ -5822,13 +5816,19 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                             
                             NSMutableArray *params = [NSMutableArray arrayWithObjects:@"dcmodify", @"--ignore-errors", nil];
                             
-                            DCMObject *dcmObject = [DCMObject objectWithContentsOfFile: [[[destStudy paths] allObjects] objectAtIndex: 0] decodingPixelData: NO];
-                            
-                            NSString *originalPatientName = [dcmObject attributeValueWithName:@"PatientsName"];
-                            NSString *originalBirthDate = [dcmObject attributeValueWithName:@"PatientsBirthDate"];
-                            
-                            NSString *existingOtherPatientNames = [dcmObject attributeValueWithName:@"OtherPatientIDs"];
-                            NSString *existingOtherPatientIDs = [dcmObject attributeValueWithName:@"OtherPatientNames"];
+                            NSError *metadataError = nil;
+                            NSXMLElement *metadata = [DicomFile metadataDocumentForFile:[[destStudy paths] anyObject] error:&metadataError].rootElement;
+                            if (!metadata)
+                            {
+                                [wait close];
+                                HorosPresentInformationalAlert(NSLocalizedString(@"Unify Patient Identity", nil), @"%@", NSLocalizedString(@"OK", nil), nil, nil, metadataError.localizedDescription);
+                                return;
+                            }
+                            NSString *originalPatientName = HorosDICOMMetadataString(metadata, @"0010,0010");
+                            NSString *originalBirthDate = HorosDICOMMetadataString(metadata, @"0010,0030");
+
+                            NSString *existingOtherPatientNames = HorosDICOMMetadataString(metadata, @"0010,1001");
+                            NSString *existingOtherPatientIDs = HorosDICOMMetadataString(metadata, @"0010,1000");
                             
                             if( existingOtherPatientNames == nil)
                                 existingOtherPatientNames = @"";
@@ -6008,16 +6008,21 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                         {
                             NSMutableArray	*params = [NSMutableArray arrayWithObjects:@"dcmodify", @"--ignore-errors", nil];
                             
-                            DCMObject *dcmObject = [DCMObject objectWithContentsOfFile: [[[destStudy paths] allObjects] objectAtIndex: 0] decodingPixelData: NO];
-                            
-                            NSString *originalPatientName = [dcmObject attributeValueWithName:@"PatientsName"];
-                            NSString *originalBirthDate = [dcmObject attributeValueWithName:@"PatientsBirthDate"];
-                            NSString *originalStudyID = [dcmObject attributeValueWithName:@"StudyID"];
-                            NSString *originalStudyInstanceUID = [dcmObject attributeValueWithName:@"StudyInstanceUID"];
-                            NSString *originalStudyDescription = [dcmObject attributeValueWithName:@"StudyDescription"];
-                            
-                            NSString *existingOtherPatientNames = [dcmObject attributeValueWithName:@"OtherPatientIDs"];
-                            NSString *existingOtherPatientIDs = [dcmObject attributeValueWithName:@"OtherPatientNames"];
+                            NSError *metadataError = nil;
+                            NSXMLElement *metadata = [DicomFile metadataDocumentForFile:[[destStudy paths] anyObject] error:&metadataError].rootElement;
+                            if (!metadata)
+                            {
+                                HorosPresentInformationalAlert(NSLocalizedString(@"Merge Studies", nil), @"%@", NSLocalizedString(@"OK", nil), nil, nil, metadataError.localizedDescription);
+                                return;
+                            }
+                            NSString *originalPatientName = HorosDICOMMetadataString(metadata, @"0010,0010");
+                            NSString *originalBirthDate = HorosDICOMMetadataString(metadata, @"0010,0030");
+                            NSString *originalStudyID = HorosDICOMMetadataString(metadata, @"0020,0010");
+                            NSString *originalStudyInstanceUID = HorosDICOMMetadataString(metadata, @"0020,000d");
+                            NSString *originalStudyDescription = HorosDICOMMetadataString(metadata, @"0008,1030");
+
+                            NSString *existingOtherPatientNames = HorosDICOMMetadataString(metadata, @"0010,1001");
+                            NSString *existingOtherPatientIDs = HorosDICOMMetadataString(metadata, @"0010,1000");
                             
                             if( existingOtherPatientNames == nil)
                                 existingOtherPatientNames = @"";
@@ -7780,15 +7785,13 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                                              NSLocalizedString(@"Cancel",nil),
                                              nil) == HorosAlertResponseFirstButton)
             {
-                DCMObject *dcmObj = [DCMObject objectWithContentsOfFile: im.completePathResolved decodingPixelData: NO];
-                
                 DCMPix *pix = nil;
                 @synchronized( previewPixThumbnails)
                 {
                     pix = [previewPix objectAtIndex: 0];  // Should only be one DCMPix associated w/ an RTSTRUCT
                 }
                 
-                [pix createROIsFromRTSTRUCT: dcmObj];
+                [pix createROIsFromRTSTRUCTFile:im.completePathResolved];
                 
                 r = YES;
             }
@@ -13688,7 +13691,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 //
 //		@try
 //		{
-//			[DCMObject anonymizeContentsOfFile: file  tags:tags  writingToFile:destPath];
 //		}
 //		@catch (NSException * e)
 //		{
@@ -13818,7 +13820,6 @@ static volatile int numberOfThreadsForJPEG = 0;
                 [result addObject: [filesToExport objectAtIndex: i]];
         }
         
-        [DCMPix purgeCachedDictionaries];
         
         [_database initiateCompressFilesAtPaths:result];
     }
@@ -13848,7 +13849,6 @@ static volatile int numberOfThreadsForJPEG = 0;
                 [result addObject: [filesToExport objectAtIndex: i]];
         }
         
-        [DCMPix purgeCachedDictionaries];
         
         [_database initiateDecompressFilesAtPaths:result];
     }
@@ -15632,166 +15632,89 @@ static volatile int numberOfThreadsForJPEG = 0;
             
             NSNumber *offset = [[rdOffsetForm cellWithTag:0] objectValue];
             
-            int pixelType = [(NSCell *)[rdPixelTypeMatrix selectedCell] tag];
-            
-            NSUInteger spp;
-            NSUInteger highBit = 7;
-            NSUInteger bitsAllocated = 8;
-            NSUInteger numberBytes;
-            BOOL isSigned = YES;
-            BOOL isLittleEndian = YES;
-            NSString *photometricInterpretation = @"MONOCHROME2";
-            switch (pixelType)
+            NSInteger pixelType = [(NSCell *)[rdPixelTypeMatrix selectedCell] tag];
+            NSInteger rowCount = rows.integerValue, columnCount = columns.integerValue;
+            NSInteger sliceCount = slices.integerValue, byteOffset = offset.integerValue;
+            NSUInteger samples = pixelType == 0 ? 3 : 1;
+            NSUInteger bytesPerSample = pixelType < 2 ? 1 : 2;
+
+            BOOL valid = pixelType >= 0 && pixelType <= 5 &&
+                rowCount > 0 && rowCount <= UINT16_MAX && columnCount > 0 && columnCount <= UINT16_MAX &&
+                rowCount == rows.doubleValue && columnCount == columns.doubleValue &&
+                sliceCount > 0 && sliceCount == slices.doubleValue &&
+                byteOffset >= 0 && byteOffset == offset.doubleValue && (NSUInteger)byteOffset <= data.length &&
+                isfinite(width.doubleValue) && width.doubleValue > 0 &&
+                isfinite(height.doubleValue) && height.doubleValue > 0 &&
+                isfinite(depth.doubleValue) && depth.doubleValue > 0;
+            NSUInteger frameLength = valid ? (NSUInteger)rowCount * columnCount * samples * bytesPerSample : 0;
+            if (!valid || frameLength > 0xfffffffeUL ||
+                (NSUInteger)sliceCount > (data.length - byteOffset) / frameLength)
             {
-                case 0:  spp = 3;
-                    numberBytes = 1;
-                    photometricInterpretation = @"RGB";
-                    break;
-                case 1: spp = 1;
-                    numberBytes = 1;
-                    break;
-                case 2:	spp = 1;
-                    numberBytes = 2;
-                    highBit = 15;
-                    bitsAllocated = 16;
-                    isSigned = NO;
-                    break;
-                case 3:	spp = 1;
-                    numberBytes = 2;
-                    highBit = 15;
-                    bitsAllocated = 16;
-                    break;
-                case 4:	spp = 1;
-                    numberBytes = 2;
-                    highBit = 15;
-                    bitsAllocated = 16;
-                    isSigned = NO;
-                    isLittleEndian = NO;
-                    break;
-                case 5:	spp = 1;
-                    numberBytes = 2;
-                    highBit = 15;
-                    bitsAllocated = 16;
-                    isSigned = YES;
-                    isLittleEndian = NO;
-                    break;
-                case 6: spp = 1;
-                    numberBytes = 4;
-                    highBit = 31;
-                    bitsAllocated = 32;
-                    isSigned = YES;
-                    isLittleEndian = YES;
-                    break;
-                    
-                default:	spp = 1;
-                    numberBytes = 2;
+                HorosPresentInformationalAlert(NSLocalizedString(@"Import Raw Data", nil),
+                    NSLocalizedString(@"Check the dimensions, spacing and offset. The file must contain all requested slices.", nil),
+                    NSLocalizedString(@"OK", nil), nil, nil);
+                return;
             }
-            
-            NSUInteger subDataLength = spp  * numberBytes * [rows unsignedIntegerValue] * [columns unsignedIntegerValue];
-            
-            if ([data length] >= subDataLength * [slices unsignedIntegerValue]  + [offset unsignedIntegerValue])
+
+            NSString *studyUID = [DicomFile generatedDICOMUID];
+            NSString *seriesUID = [DicomFile generatedDICOMUID];
+            if (!studyUID || !seriesUID)
             {
-                NSUInteger s = [slices unsignedIntegerValue];
-                
-                //tmpObject for StudyUID andd SeriesUID
-                
-                DCMObject *tmpObject = [DCMObject secondaryCaptureObjectWithBitDepth:numberBytes * 8  samplesPerPixel:spp numberOfFrames:1];
-                NSString *studyUID = [tmpObject attributeValueWithName:@"StudyInstanceUID"];
-                NSString *seriesUID = [tmpObject attributeValueWithName:@"SeriesInstanceUID"];
-                int studyID = [[NSUserDefaults standardUserDefaults] integerForKey:@"SCStudyID"];
-                DCMCalendarDate *studyDate = [DCMCalendarDate date];
-                DCMCalendarDate *seriesDate = [DCMCalendarDate date];
-                [[NSUserDefaults standardUserDefaults] setInteger:(++studyID) forKey:@"SCStudyID"];
-                for(NSUInteger i = 0; i < s; i++)
+                HorosPresentInformationalAlert(NSLocalizedString(@"Import Raw Data", nil),
+                    NSLocalizedString(@"The DCMTK raw image writer is unavailable. Rebuild the bundled bridge.", nil),
+                    NSLocalizedString(@"OK", nil), nil, nil);
+                return;
+            }
+            NSInteger studyID = [[NSUserDefaults standardUserDefaults] integerForKey:@"SCStudyID"] + 1;
+            [[NSUserDefaults standardUserDefaults] setInteger:studyID forKey:@"SCStudyID"];
+            NSString *studyIdentifier = [NSString stringWithFormat:@"%ld", (long)studyID];
+            DCMCalendarDate *now = [DCMCalendarDate date];
+            NSString *date = now.dateString, *time = now.timeString;
+
+            HorosModernDCMTKRawImage image = {0};
+            image.rows = rowCount;
+            image.columns = columnCount;
+            image.samplesPerPixel = samples;
+            image.bitsAllocated = bytesPerSample * 8;
+            image.isSigned = pixelType == 3 || pixelType == 5;
+            image.isBigEndian = pixelType == 4 || pixelType == 5;
+            // The accessory's first spacing field is row height, then column width.
+            image.rowSpacing = width.doubleValue;
+            image.columnSpacing = height.doubleValue;
+            image.sliceThickness = depth.doubleValue;
+            image.patientName = patientName.UTF8String;
+            image.patientID = patientID.UTF8String;
+            image.studyDescription = studyDescription.UTF8String;
+            image.studyInstanceUID = studyUID.UTF8String;
+            image.seriesInstanceUID = seriesUID.UTF8String;
+            image.studyID = studyIdentifier.UTF8String;
+            image.date = date.UTF8String;
+            image.time = time.UTF8String;
+            image.length = frameLength;
+            for (NSInteger index = 0; index < sliceCount; ++index)
+            {
+                @autoreleasepool
                 {
-                    DCMObject *dcmObject = [DCMObject secondaryCaptureObjectWithBitDepth:numberBytes * 8  samplesPerPixel:spp numberOfFrames:1];
-                    DCMCalendarDate *aquisitionDate = [DCMCalendarDate date];
-                    //add attributes
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:studyUID] forName:@"StudyInstanceUID"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:seriesUID] forName:@"SeriesInstanceUID"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:patientName] forName:@"PatientsName"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:patientID] forName:@"PatientID"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:studyDescription] forName:@"StudyDescription"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:[NSString stringWithFormat:@"%d", (int) i]] forName:@"InstanceNumber"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:[NSString stringWithFormat:@"%d", studyID]] forName:@"StudyID"];
-                    
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:studyDate] forName:@"StudyDate"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:studyDate] forName:@"StudyTime"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:seriesDate] forName:@"SeriesDate"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:seriesDate] forName:@"SeriesTime"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:aquisitionDate] forName:@"AcquisitionDate"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:aquisitionDate] forName:@"AcquisitionTime"];
-                    
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:@"101"] forName:@"SeriesNumber"];
-                    
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:rows] forName:@"Rows"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:columns] forName:@"Columns"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:[NSNumber numberWithInt:spp]] forName:@"SamplesperPixel"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObjects:[NSString stringWithFormat:@"%f", [width floatValue]], [NSString stringWithFormat:@"%f",  [height floatValue]], nil] forName:@"PixelSpacing"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:[NSString stringWithFormat:@"%f", [depth floatValue]]] forName:@"SliceThickness"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:photometricInterpretation] forName:@"PhotometricInterpretation"];
-                    
-                    float slicePosition = i * [depth floatValue];
-                    NSMutableArray *positionArray = [NSMutableArray arrayWithObjects:[NSString stringWithFormat:@"%f", 0.0], [NSString stringWithFormat:@"%f", 0.0], [NSString stringWithFormat:@"%f", slicePosition], nil];
-                    NSMutableArray *orientationArray = [NSMutableArray arrayWithObjects:[NSString stringWithFormat:@"%f", 1.0], [NSString stringWithFormat:@"%f", 0.0], [NSString stringWithFormat:@"%f", 0.0], [NSString stringWithFormat:@"%f", 0.0], [NSString stringWithFormat:@"%f", 1.0], [NSString stringWithFormat:@"%f", 0.0], nil];
-                    
-                    [dcmObject setAttributeValues:positionArray forName:@"ImagePositionPatient"];
-                    [dcmObject setAttributeValues:orientationArray forName:@"ImageOrientationPatient"];
-                    
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:[NSNumber numberWithBool:isSigned]] forName:@"PixelRepresentation"];
-                    
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:[NSNumber numberWithInt:highBit]] forName:@"HighBit"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:[NSNumber numberWithInt:bitsAllocated]] forName:@"BitsAllocated"];
-                    [dcmObject setAttributeValues:[NSMutableArray arrayWithObject:[NSNumber numberWithInt:bitsAllocated]] forName:@"BitsStored"];
-                    
-                    //add Pixel data
-                    NSString *vr = @"OW";
-                    if (numberBytes < 2)
-                        vr = @"OB";
-                    
-                    NSRange range = NSMakeRange([offset unsignedIntegerValue] + subDataLength * i, subDataLength);
-                    
-                    NSMutableData *subdata = [NSMutableData dataWithData:[data subdataWithRange:range]];
-                    
-                    DCMTransferSyntax *ts = [DCMTransferSyntax ImplicitVRLittleEndianTransferSyntax];
-                    if (isLittleEndian == NO)
+                    image.pixels = (const unsigned char *)data.bytes + byteOffset + frameLength * index;
+                    image.instanceNumber = index;
+                    image.slicePosition = index * image.sliceThickness;
+                    NSString *destination = [_database.incomingDirPath stringByAppendingPathComponent:
+                        [NSUUID.UUID.UUIDString stringByAppendingPathExtension:@"dcm"]];
+                    NSError *error = nil;
+                    if (![DicomFile writeRawSecondaryCapture:&image toFile:destination error:&error])
                     {
-                        if( isSigned == NO)
-                        {
-                            unsigned short *ptr = (unsigned short*) [subdata mutableBytes];
-                            NSUInteger l = subDataLength/2;
-                            while( l-- > 0)
-                                ptr[ l] = EndianU16_BtoL( ptr[ l]);
-                        }
-                        else
-                        {
-                            short *ptr = ( short*) [subdata mutableBytes];
-                            NSUInteger l = subDataLength/2;
-                            while( l-- > 0)
-                                ptr[ l] = EndianS16_BtoL( ptr[ l]);
-                        }
+                        HorosPresentInformationalAlert(NSLocalizedString(@"Import Raw Data", nil),
+                            NSLocalizedString(@"Import stopped after %ld of %ld slices.\n\n%@", nil),
+                            NSLocalizedString(@"OK", nil), nil, nil, (long)index, (long)sliceCount, error.localizedDescription);
+                        return;
                     }
-                    
-                    DCMAttributeTag *tag = [DCMAttributeTag tagWithName:@"PixelData"];
-                    DCMPixelDataAttribute *attr = [[[DCMPixelDataAttribute alloc] initWithAttributeTag:tag 
-                                                                                                    vr:vr 
-                                                                                                length:numberBytes
-                                                                                                  data:nil 
-                                                                                  specificCharacterSet:nil
-                                                                                        transferSyntax:ts 
-                                                                                             dcmObject:dcmObject
-                                                                                            decodeData:NO] autorelease];
-                    
-                    [attr addFrame:subdata];
-                    [dcmObject setAttribute:attr];
-                    
-                    NSString *tempFilename = [_database.incomingDirPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%d.dcm", (int)i]];
-                    [dcmObject writeToFile:tempFilename withTransferSyntax:[DCMTransferSyntax ImplicitVRLittleEndianTransferSyntax] quality:DCMLosslessQuality atomically:YES];
-                } 
+                }
             }
-            else
-                NSLog(@"Not enough data");
         }
+        else
+            HorosPresentInformationalAlert(NSLocalizedString(@"Import Raw Data", nil),
+                NSLocalizedString(@"The selected raw data file could not be read.", nil),
+                NSLocalizedString(@"OK", nil), nil, nil);
     }
 }
 
@@ -15818,15 +15741,13 @@ static volatile int numberOfThreadsForJPEG = 0;
         NSString *modality = [[filesArray objectAtIndex: i] valueForKey: @"modality"];
         if( [modality isEqualToString: @"RTSTRUCT"])
         {
-            DCMObject *dcmObj = [DCMObject objectWithContentsOfFile: [filePaths objectAtIndex: i ] decodingPixelData: NO];
-            
             DCMPix *pix = nil;
             @synchronized( previewPixThumbnails)
             {
                 pix = [previewPix objectAtIndex: 0];  // Should only be one DCMPix associated w/ an RTSTRUCT
             }
             
-            [pix createROIsFromRTSTRUCT: dcmObj];
+            [pix createROIsFromRTSTRUCTFile:[filePaths objectAtIndex:i]];
         }
     }
 }

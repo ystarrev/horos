@@ -339,6 +339,15 @@ int spline(NSPoint *sourcePoints,
         [coder decodeObject];
     if (fileVersion >= 15)
         [coder decodeObject];
+    if (fileVersion >= 16)
+    {
+        // OsiriX v16 appended four object fields. Consume them even when nil
+        // so the unkeyed decoder reaches this ROI's end before the next ROI.
+        [coder decodeObject];
+        [coder decodeObject];
+        [coder decodeObject];
+        [coder decodeObject];
+    }
 
     if (name == nil)
         name = [@"" copy];
@@ -923,11 +932,6 @@ int spline(NSPoint *sourcePoints,
 {
     offsetTextBox_x = offset.x;
     offsetTextBox_y = offset.y;
-}
-
-- (void)setRoiView:(NSView *)view
-{
-    curView = view;
 }
 
 @end

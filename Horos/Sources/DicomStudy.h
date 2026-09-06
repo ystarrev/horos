@@ -110,7 +110,6 @@
 - (DicomSeries*) windowsStateSRSeries;
 - (DicomImage*) reportImage;
 - (DicomImage*) annotationsSRImage;
-- (void) archiveReportAsDICOMSR;
 - (void) archiveAnnotationsAsDICOMSR;
 - (void) archiveWindowsStateAsDICOMSR;
 - (NSArray*) allWindowsStateSRSeries;
@@ -143,4 +142,3 @@
 + (NSString*) scrambleString: (NSString*) t;
 
 @end
-

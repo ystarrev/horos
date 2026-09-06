@@ -125,7 +125,7 @@ DCMPix. Keep the Core Data schema and existing DICOM files unchanged.
   5760000/5750477.dcm, 5780000/5778823.dcm, 5790000/5783636.dcm,
   5860000/5850889.dcm, 5860000/5852632.dcm, 5860000/5850887.dcm.
 
-## Current Checkpoint: Meta-Data Reader
+## Meta-Data Reader Checkpoint
 
 - XMLController no longer constructs DCMObject or DCMAttribute instances. The
   modern bridge loads the file once and uses DCMTK's XML writer for the metadata
@@ -185,6 +185,147 @@ DCMPix. Keep the Core Data schema and existing DICOM files unchanged.
   Also test an identifier edit that creates a new series/study and a normal import.
   Previously overwritten dates cannot be recovered by this change.
 
+## Checkpoint: Anonymization Tag Menu and PDF Readers
+
+- Moved the shared metadata-reader entry point into DicomFile's DCMTK category;
+  XMLController delegates to it. Anonymization's File(s) tags menu now reads the
+  same DCMTK metadata tree, with one load and no legacy DCMObject/DCMAttribute.
+  Only top-level tags are listed. Numeric tag identities, legacy display aliases,
+  actual file VRs, custom tags and saved presets are preserved. Short scalar
+  previews exclude sequences, binary placeholders and long values.
+- Replaced BrowserController's three remaining embedded-PDF reads: opening in
+  Preview, the preview action, and PDF image extraction for QuickTime/HTML export.
+  A PDF-specific bridge entry point loads once, checks the storage class and PDF
+  header, checks a nonempty MIME type, and bounds-checks EncapsulatedDocumentLength
+  before removing a declared padding byte. Older files without that length keep
+  their original payload. Optional titles are converted to UTF-8 separately;
+  an invalid title charset does not prevent extracting the PDF itself.
+- Interactive PDF exports share one helper that writes atomically into a unique
+  temporary directory. Document titles are treated as leaf filenames, never paths;
+  repeated titles cannot overwrite earlier exports. Read/write failures are
+  reported instead of creating empty PDFs or claiming an absent file was opened.
+- The generic EncapsulatedDocument reader used by legacy ROI archives is unchanged.
+  Anonymization writes remain on their existing GDCM path; metadata writes,
+  report/PDF creation, SR rendering, pixel loading, database schema and patient
+  source files are unchanged. No new target, framework or resource is required.
+- Checks: all 60 DCM source/project checks pass. Syntax-only checks cover the
+  bridge, changed readers/controllers and expanded metadata harness. The harness
+  adds tag-menu previews and synthetic PDF payloads, including padded lengths,
+  legacy missing lengths, Latin-1 titles, malformed lengths, MIME/SOP mismatches,
+  missing payloads, source-byte preservation and unchanged generic SR extraction.
+  The compiled harness has not been run. No build or patient-data operation ran.
+- User gate: rebuild, open the anonymization tag picker on an existing DICOM,
+  inspect File(s) tags and a saved preset, and export only to disposable copies.
+  Open an existing encapsulated DICOM PDF in Preview; check its title and contents.
+  Check PDF inclusion in HTML/QuickTime export if that workflow is used. Ordinary
+  MR/CT, SR/SEG and legacy ROI viewing should remain unchanged. DCM.framework is
+  still needed for the remaining parser and writer consumers.
+
+## Current Checkpoint: Remove Report Authoring
+
+- Removed Report > Convert to PDF and Report > Convert to DICOM PDF, including
+  their action declarations, menu/toolbar validation and database import actions.
+  These commands required a separately attached report document (reportURL);
+  they did not operate on an SR report retrieved from PACS.
+- Removed automatic DICOM PDF creation on report validation and its checkbox in
+  both the Swift settings and legacy preference pane. Existing saved preferences
+  are not edited; the old key is simply no longer used. Saving status/comments
+  and archiving annotations as SR are unchanged.
+- Deleted the new PDF packaging bridge and adapter from the preceding checkpoint
+  rather than retaining unused code. Removed all PDF-to-DICOM methods from the
+  report category, plus the unused legacy DCMEncapsulatedPDF files, umbrella
+  import and Xcode build/header references. Removed packaging-only tests.
+- Removed the entire File > Report menu, Open/Delete actions and Report toolbar
+  item, including saved-toolbar cleanup, selection observers and the file-change
+  watcher. Removed the Word/Pages/TextEdit/LibreOffice editor preference.
+- Removed attached-document import/discovery, automatic archive-as-SR writers,
+  rebuild-time report consistency scans, file/URL report SR constructors and
+  their now-unused content-date override. Other SR writers keep their current
+  date/time behavior, with one timestamp shared by date and time fields.
+- Removed the Copy Reports to CD conversion option and DicomStudy+Report category,
+  the bundled OsiriX report template, unused RTF icon and associated project and
+  unpack-script references. Ordinary DICOM file export, including SR/PDF, remains.
+- Preserved PACS SR rendering through StructuredReportSupport, embedded PDF
+  extraction/opening/export and normal Print. Surgical procedure SRs, ROI and
+  annotation archives, key objects and viewer state are not report authoring and
+  remain supported. Existing legacy report archives can still be read.
+- No active dictation engine was found. Retained legacy reportURL/dictateURL
+  database fields and study-status/hotkey values to preserve database and saved
+  preference compatibility. No database files or stored reports are deleted.
+- Fixed database Print routing after a user test showed AppKit printing the
+  database table ("Documents DB"). MyOutlineView and BrowserMatrix now intercept
+  Print for selected SR/PDF records, render existing SR content through the shared
+  reader, and print all pages with PDFKit and a report-specific job title. Multiple
+  selected reports form one print job; read failures do not print a partial set
+  or fall through to the table. Image printing was subsequently added in the
+  Database Image Printing Follow-Up below.
+  Printing does not import files or alter database records; temporary SR PDFs are
+  removed when the print operation finishes or is cancelled.
+- Source checks cover removal of menus/actions, preferences, authoring entry
+  points, templates and project references, valid remaining XIB connections,
+  and retention of PACS viewing/printing, other SR uses and status saving.
+  The existing PDF reader tests remain in place; no app build has been run.
+- User gate: rebuild, confirm File > Report and the Report toolbar item are gone,
+  then retrieve/open/print an existing PACS SR report and an embedded PDF as usual.
+  Also check the Burn dialog layout and a surgical procedure / ROI. The earlier
+  instruction to test report conversion on a PACS SR was not applicable.
+
+### SR Print Pagination Follow-Up
+
+- Xcode stopped in AppKit pagination validation because WKPrintingView had not
+  initialized its frame when its page-range callback returned. The report had
+  already been read successfully as HTML; the failure was in PDF preparation.
+- The hidden SR-to-PDF operation now uses AppKit's document-modal API with
+  separate-thread printing enabled. The synchronous adapter services the main
+  run loop until completion so WebKit can calculate and render all pages. The
+  completion callback marshals its state back to the main thread, and the view
+  and window remain alive until printing finishes. Merely enabling the thread
+  flag while keeping runOperation would not spawn a printing thread.
+- Internal PDF preparation clears inherited page-range/selection-only settings.
+  The subsequent user-facing print dialog still controls the actual print job.
+  This changes neither the DICOM report nor the database.
+- Source checks cover the threading, completion/lifetime ordering and full-report
+  settings. Rebuild and retry the SR report; verify the last page of a long
+  report and cancellation. No app build or live print test was run here.
+
+### Database Image Printing Follow-Up
+
+- Database Print now handles image selections as well as SR/PDF reports. A
+  selected series (including a series thumbnail) contributes its full sorted
+  image list; individual image thumbnails contribute only their selected frames,
+  in displayed order. Overlapping study/series/image selections are deduplicated.
+  Single-object legacy multi-frame series expand only for whole-series selections;
+  already indexed frames and individual image selections are not expanded again.
+- Image pages use DCMPix's full-resolution display pixels, saved series window
+  settings with DICOM/automatic fallback, and pixel-aspect correction. Each image
+  occupies one PDF page in the standard print dialog. This is not a database-row
+  capture or an enlarged thumbnail. Existing SR/PDF pages remain paginated.
+- Multi-item preparation has progress and cancellation. Pixel decoding uses only
+  snapshotted paths/settings, without passing database objects through the nested
+  run loop, and releases each frame's raw buffers before preparing the next.
+  A failed image/report stops the entire job; cancellation or an empty selection
+  cannot fall back to printing the database table. No database writes are added.
+- Source checks cover selection routing, order, multi-frame handling, full-size
+  rendering and failure/cancellation. Rebuild and compare a small series' page
+  count with its image count, then select two image thumbnails and expect two
+  pages. Also recheck an SR report and cancel a larger preparation. No app build
+  or live print test was run here.
+
+### Printed Image Orientation And Annotations
+
+- Disable PDFKit's automatic page rotation so images retain their native orientation.
+- Use the same annotation drawing code as Metal Planar, including the configured
+  modality-specific corner fields and None/Graphics/Basic/Full setting. Database
+  annotation values, patient identity, acquisition date and series frame positions
+  are snapshotted before preparation starts servicing the run loop. The decoder
+  still receives no live database objects. There is no mouse-position annotation
+  for a printed image, or viewer-specific study ordinal for a database print job.
+- Each image page draws the full-resolution image with its pixel proportions and
+  vector text in a stable PDF coordinate space. No screenshot or thumbnail is used.
+- Recheck the axial CT orientation and configured acquisition-date placement in
+  print preview; also check individual frames, a multiframe series, and Basic/None
+  annotation modes. No app build or live print test was run here.
+
 ## Remaining Work
 
 1. Establish the DICOM behavioural baseline. The existing fixtures and expected
@@ -198,9 +339,10 @@ DCMPix. Keep the Core Data schema and existing DICOM files unchanged.
    archive payloads before changing its class identity or encoded representation.
 3. Extend ModernDCMTKBridge beyond the new bulk metadata display tree for typed
    attribute access and the remaining writers. Do not reopen a dataset per tag.
-4. Migrate metadata editing, anonymization UI, secondary capture,
-   PDF encapsulation, key-image metadata, and transfer conversion. Verify writes
-   on copies; preserve private data and unrelated attributes.
+4. Complete remaining metadata editing, secondary capture, key-image metadata,
+   and transfer conversion migration. The anonymization tag menu and report PDF
+   readers are migrated; the unused report PDF creation commands/writers are
+   removed. Verify writes on copies; preserve private data and unrelated attributes.
 5. Compare DCMPix's modern loader against the DCM fallback and migrate remaining
    metadata/format handling before deleting that fallback. Include RTSTRUCT,
    PET, ultrasound and ophthalmic geometry; do not silently drop support.

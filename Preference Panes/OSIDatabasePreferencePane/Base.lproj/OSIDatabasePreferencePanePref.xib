@@ -22,7 +22,6 @@
                 <outlet property="olderThanOpened" destination="288" id="310"/>
                 <outlet property="olderThanProduced" destination="271" id="309"/>
                 <outlet property="olderType" destination="269" id="307"/>
-                <outlet property="reportsMode" destination="535" id="546"/>
                 <outlet property="seriesOrderMatrix" destination="323" id="326"/>
             </connections>
         </customObject>
@@ -896,56 +895,6 @@ If a study is in an album, it will NOT be deleted.</string>
                                         <binding destination="-2" name="contentValues" keyPath="ListOfMediaSOPClassUIDStored" id="932"/>
                                     </connections>
                                 </popUpButton>
-                            </subviews>
-                        </view>
-                        <font key="titleFont" metaFont="system"/>
-                    </box>
-                    <box horizontalCompressionResistancePriority="1000" title="Reports" id="381">
-                        <rect key="frame" x="14" y="16" width="860" height="79"/>
-                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                        <view key="contentView" id="52e-Zg-SVT">
-                            <rect key="frame" x="3" y="3" width="854" height="58"/>
-                            <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-                            <subviews>
-                                <popUpButton verticalHuggingPriority="750" id="535">
-                                    <rect key="frame" x="228" y="29" width="147" height="22"/>
-                                    <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                    <popUpButtonCell key="cell" type="push" bezelStyle="rounded" alignment="left" controlSize="small" lineBreakMode="truncatingTail" borderStyle="borderAndBezel" inset="2" arrowPosition="arrowAtCenter" preferredEdge="maxY" id="786">
-                                        <behavior key="behavior" lightByBackground="YES" lightByGray="YES"/>
-                                        <font key="font" metaFont="smallSystem"/>
-                                        <menu key="menu" title="OtherViews" id="536">
-                                            <items>
-                                                <menuItem title="Pages (.pages)" tag="2" id="537"/>
-                                                <menuItem title="LibreOffice (.odt)" tag="5" id="828"/>
-                                                <menuItem title="TextEdit (.rtf)" tag="1" id="538"/>
-                                                <menuItem title="Microsoft Word (.doc)" id="539"/>
-                                            </items>
-                                        </menu>
-                                    </popUpButtonCell>
-                                    <connections>
-                                        <action selector="setReportMode:" target="-2" id="544"/>
-                                    </connections>
-                                </popUpButton>
-                                <textField verticalHuggingPriority="750" horizontalCompressionResistancePriority="991" id="545">
-                                    <rect key="frame" x="110" y="34" width="116" height="14"/>
-                                    <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                    <textFieldCell key="cell" controlSize="small" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" alignment="right" title="Create reports using:" id="787">
-                                        <font key="font" metaFont="smallSystem"/>
-                                        <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
-                                        <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
-                                    </textFieldCell>
-                                </textField>
-                                <button horizontalCompressionResistancePriority="991" id="919">
-                                    <rect key="frame" x="15" y="9" width="501" height="18"/>
-                                    <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                                    <buttonCell key="cell" type="check" title="Automatically create a DICOM PDF file of the report, when status is changed to &quot;validated&quot;" bezelStyle="regularSquare" imagePosition="left" alignment="left" controlSize="small" scrollable="YES" lineBreakMode="clipping" inset="2" id="920">
-                                        <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
-                                        <font key="font" metaFont="smallSystem"/>
-                                    </buttonCell>
-                                    <connections>
-                                        <binding destination="548" name="value" keyPath="values.generateDICOMPDFWhenValidated" id="922"/>
-                                    </connections>
-                                </button>
                             </subviews>
                         </view>
                         <font key="titleFont" metaFont="system"/>

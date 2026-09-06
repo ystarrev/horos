@@ -36,7 +36,6 @@
  ============================================================================*/
 
 #import "DicomStudy.h"
-#import "DicomStudy+Report.h"
 #import "DicomSeries.h"
 #import "DicomImage.h"
 #import "DicomAlbum.h"
@@ -708,130 +707,6 @@ static NSRecursiveLock *dbModifyLock = nil;
        generatedByOsiriX: YES];
 }
 
-- (void) archiveReportAsDICOMSR
-{
-    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"archiveReportsAndAnnotationsAsDICOMSR"] == NO)
-        return;
-    
-    static int avoidReentry = 0;
-    
-    if( avoidReentry)
-    {
-        NSLog( @"****** archiveReportAsDICOMSR avoidReentry");
-        return;
-    }
-    
-    avoidReentry++;
-    
-    if( [self.hasDICOM boolValue] == YES)
-    {
-        N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
-            @try
-            {
-            BOOL isMainDB = self.managedObjectContext.persistentStoreCoordinator == BrowserController.currentBrowser.database.managedObjectContext.persistentStoreCoordinator;
-            
-            // Report
-            NSString *zippedFile = @"/tmp/zippedReport.zip";
-            BOOL needToArchive = NO;
-            NSString *dstPath = nil;
-            DicomImage *reportImage = [self reportImage];
-            
-            dstPath = [reportImage valueForKey: @"completePathResolved"];
-            
-            if( dstPath == nil)
-                dstPath = isMainDB? [[DicomDatabase databaseForContext:self.managedObjectContext] uniquePathForNewDataFileWithExtension:@"dcm"] : [[NSFileManager defaultManager] tmpFilePathInTmp];
-            
-            if( [self.reportURL hasPrefix: @"http://"] || [self.reportURL hasPrefix: @"https://"])
-            {
-                SRAnnotation *r = [[[SRAnnotation alloc] initWithContentsOfFile: dstPath] autorelease];
-                if( [self.reportURL isEqualToString: [r reportURL]] == NO)
-                    needToArchive = YES;
-            }
-            else if( [[NSFileManager defaultManager] fileExistsAtPath: self.reportURL])
-            {
-                NSDate *storedModifDate = [reportImage valueForKey: @"date"];
-                NSDate *fileModifDate = [[[NSFileManager defaultManager] attributesOfItemAtPath: self.reportURL error: nil] valueForKey: NSFileModificationDate];
-                
-                if( reportImage == nil || [[storedModifDate description] isEqualToString: [fileModifDate description]] == NO) // We want to compare only date and time, without milliseconds
-                {
-                    [BrowserController encryptFileOrFolder: self.reportURL inZIPFile: zippedFile password: nil deleteSource: NO showGUI: NO];
-                    
-                    if( [[NSFileManager defaultManager] fileExistsAtPath: zippedFile])
-                    {
-                        SRAnnotation *r = [[[SRAnnotation alloc] initWithContentsOfFile: dstPath] autorelease];
-                        if( [[NSData dataWithContentsOfFile: zippedFile] isEqualToData: [r dataEncapsulated]] == NO)
-                            needToArchive = YES;
-                    }
-                }
-            }
-            else //empty or deleted report?
-            {
-                if( [reportImage valueForKey: @"completePath"] && [[NSFileManager defaultManager] fileExistsAtPath: [reportImage valueForKey: @"completePath"]])
-                {
-                    needToArchive = YES;
-                    zippedFile = nil;	//We will archive an empty NSData
-                }
-                
-                if( self.reportURL && [[NSFileManager defaultManager] fileExistsAtPath: self.reportURL])
-                    [[NSFileManager defaultManager] removeItemAtPath: self.reportURL error: nil];
-                
-                
-                [self willChangeValueForKey: @"reportURL"];
-                [self setPrimitiveValue: nil forKey: @"reportURL"];
-                [self didChangeValueForKey: @"reportURL"];
-            }
-            
-            if( needToArchive)
-            {
-                SRAnnotation *r = nil;
-                
-                NSLog( @"--- Report -> DICOM SR : %@", self.name);
-                
-                if( [self.reportURL hasPrefix: @"http://"] || [self.reportURL hasPrefix: @"https://"])
-                    r = [[[SRAnnotation alloc] initWithURLReport: self.reportURL path: dstPath forImage: [[[self.series anyObject] valueForKey:@"images"] anyObject]] autorelease];
-                else
-                {
-                    NSDate *modifDate = [[[NSFileManager defaultManager] attributesOfItemAtPath: self.reportURL error: nil] valueForKey: NSFileModificationDate];
-                    r = [[[SRAnnotation alloc] initWithFileReport: zippedFile path: dstPath forImage: [[[self.series anyObject] valueForKey:@"images"] anyObject] contentDate: modifDate] autorelease];
-                }
-                
-                [r writeToFileAtPath: dstPath];
-                
-                [self.managedObjectContext save: nil];
-                
-                DicomDatabase *idb = nil;
-                if( [[NSThread currentThread] isMainThread])
-                    idb = BrowserController.currentBrowser.database;
-                else
-                    idb = [BrowserController.currentBrowser.database independentDatabase];
-                
-                if( isMainDB)
-                    [idb addFilesAtPaths: [NSArray arrayWithObject: dstPath]
-                       postNotifications: YES
-                               dicomOnly: YES
-                     rereadExistingItems: YES
-                       generatedByOsiriX: YES];
-                else
-                    [[DicomDatabase databaseAtPath: @"/tmp"] addFilesAtPaths: [NSArray arrayWithObject: dstPath]
-                                                           postNotifications: YES
-                                                                   dicomOnly: YES
-                                                         rereadExistingItems: YES
-                                                           generatedByOsiriX: YES];
-            }
-            
-            if( zippedFile)
-                [[NSFileManager defaultManager] removeItemAtPath: zippedFile error: nil];
-            }
-            @catch (NSException* e) {
-                N2LogExceptionWithStackTrace(e);
-            }
-        });
-    }
-    
-    avoidReentry--;
-    
-}
-
 - (BOOL)validateForDelete:(NSError **)error
 {
     BOOL delete = [super validateForDelete: error];
@@ -1071,43 +946,6 @@ static NSRecursiveLock *dbModifyLock = nil;
                 [[ThreadsManager defaultManager] addThreadAndStart: t];
             }
         }
-        
-        if( [self.hasDICOM boolValue] == YES)
-        {
-            // Save as DICOM PDF
-            if( [[NSUserDefaults standardUserDefaults] boolForKey:@"generateDICOMPDFWhenValidated"] && [c intValue] == 4 && self.reportURL.length)
-            {
-                BOOL isMainDB = self.managedObjectContext.persistentStoreCoordinator == BrowserController.currentBrowser.database.managedObjectContext.persistentStoreCoordinator;
-                
-                NSString *filePath = isMainDB? [[[BrowserController currentBrowser] database] uniquePathForNewDataFileWithExtension:@"dcm"] : [[NSFileManager defaultManager] tmpFilePathInTmp];
-                
-                @try {
-                    [self saveReportAsDicomAtPath: filePath];
-                    
-                    DicomDatabase *idb = nil;
-                    if( [[NSThread currentThread] isMainThread])
-                        idb = BrowserController.currentBrowser.database;
-                    else
-                        idb = [BrowserController.currentBrowser.database independentDatabase];
-                    
-                    if( isMainDB)
-                        [idb addFilesAtPaths: [NSArray arrayWithObject: filePath]
-                           postNotifications: YES
-                                   dicomOnly: YES
-                         rereadExistingItems: YES
-                           generatedByOsiriX: YES];
-                    else
-                        [[DicomDatabase databaseAtPath: @"/tmp"] addFilesAtPaths: [NSArray arrayWithObject: filePath]
-                                                               postNotifications: YES
-                                                                       dicomOnly: YES
-                                                             rereadExistingItems: YES
-                                                               generatedByOsiriX: YES];
-                }
-                @catch (NSException *e) {
-                    N2LogExceptionWithStackTrace(e);
-                }
-            }
-        }
     }
     @catch (NSException * e)
     {
@@ -1153,7 +991,6 @@ static NSRecursiveLock *dbModifyLock = nil;
     [self setPrimitiveValue: url forKey: @"reportURL"];
     [self didChangeValueForKey: @"reportURL"];
     
-    [self archiveReportAsDICOMSR];
 }
 
 - (NSString*) reportURL

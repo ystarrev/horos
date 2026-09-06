@@ -147,8 +147,6 @@
 		594830CE118B0AC100D7E606 /* N2ImageView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 594830CC118B0AC100D7E606 /* N2ImageView.mm */; };
 		59526E9E1281896F0016F6C0 /* NSMutableString+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = 59526E9C1281896F0016F6C0 /* NSMutableString+N2.h */; };
 		59526E9F1281896F0016F6C0 /* NSMutableString+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = 59526E9D1281896F0016F6C0 /* NSMutableString+N2.mm */; };
-		596D30B61439BA17004EE9EC /* DicomStudy+Report.h in Headers */ = {isa = PBXBuildFile; fileRef = 596D30B41439BA17004EE9EC /* DicomStudy+Report.h */; };
-		596D30B71439BA17004EE9EC /* DicomStudy+Report.mm in Sources */ = {isa = PBXBuildFile; fileRef = 596D30B51439BA17004EE9EC /* DicomStudy+Report.mm */; };
 		596D30BA1439BABD004EE9EC /* NSAppleScript+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = 596D30B81439BABD004EE9EC /* NSAppleScript+N2.h */; };
 		596D30BC1439BABD004EE9EC /* NSAppleScript+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = 596D30B91439BABD004EE9EC /* NSAppleScript+N2.mm */; };
 		596EB3061189D9A600880192 /* NSPreferencePane+OsiriX.h in Headers */ = {isa = PBXBuildFile; fileRef = 596EB3041189D9A600880192 /* NSPreferencePane+OsiriX.h */; };
@@ -520,7 +518,6 @@
 		A9A80E3811F73E22009F54B9 /* Activity_Stop.tif in Resources */ = {isa = PBXBuildFile; fileRef = A9A80E3611F73E22009F54B9 /* Activity_Stop.tif */; };
 		A9A80E3911F73E22009F54B9 /* Activity_StopPressed.tif in Resources */ = {isa = PBXBuildFile; fileRef = A9A80E3711F73E22009F54B9 /* Activity_StopPressed.tif */; };
 		A9A9F4C10A74C9A9005A1CA7 /* QTExportStyle.css in Resources */ = {isa = PBXBuildFile; fileRef = A9A9F4C00A74C9A9005A1CA7 /* QTExportStyle.css */; };
-		A9ADBBD20ADE80E60022DFC7 /* ReportRTF.icns in Resources */ = {isa = PBXBuildFile; fileRef = A9ADBBCF0ADE80E60022DFC7 /* ReportRTF.icns */; };
 		A9B23D0315CFDF62000E47C3 /* Move.pdf in Resources */ = {isa = PBXBuildFile; fileRef = A9B23D0215CFDF62000E47C3 /* Move.pdf */; };
 		A9B23D0715CFDF76000E47C3 /* Stack.pdf in Resources */ = {isa = PBXBuildFile; fileRef = A9B23D0615CFDF76000E47C3 /* Stack.pdf */; };
 		A9B23D0A15CFDF81000E47C3 /* Zoom.pdf in Resources */ = {isa = PBXBuildFile; fileRef = A9B23D0915CFDF81000E47C3 /* Zoom.pdf */; };
@@ -806,8 +803,6 @@
 		BFD4BFFD06F2A96900EC9A90 /* RotateCursor.tif in Resources */ = {isa = PBXBuildFile; fileRef = BFD4BFF106F2A96900EC9A90 /* RotateCursor.tif */; };
 		BFD4BFFE06F2A96900EC9A90 /* StackCursor.tif in Resources */ = {isa = PBXBuildFile; fileRef = BFD4BFF206F2A96900EC9A90 /* StackCursor.tif */; };
 		BFD4BFFF06F2A96900EC9A90 /* ZoomCursor.tif in Resources */ = {isa = PBXBuildFile; fileRef = BFD4BFF306F2A96900EC9A90 /* ZoomCursor.tif */; };
-		BFDDE5C1091717F80033317B /* DCMEncapsulatedPDF.h in Headers */ = {isa = PBXBuildFile; fileRef = BFDDE5BF091717F80033317B /* DCMEncapsulatedPDF.h */; settings = {ATTRIBUTES = (Public, ); }; };
-		BFDDE5C2091717F80033317B /* DCMEncapsulatedPDF.m in Sources */ = {isa = PBXBuildFile; fileRef = BFDDE5C0091717F80033317B /* DCMEncapsulatedPDF.m */; };
 		BFEB763D0677FDA700F242F3 /* DCMTagDictionary.h in Headers */ = {isa = PBXBuildFile; fileRef = BFEB76370677FDA700F242F3 /* DCMTagDictionary.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		BFEB763E0677FDA700F242F3 /* DCMTagDictionary.mm in Sources */ = {isa = PBXBuildFile; fileRef = BFEB76380677FDA700F242F3 /* DCMTagDictionary.mm */; };
 		BFEB763F0677FDA700F242F3 /* DCMTagForNameDictionary.h in Headers */ = {isa = PBXBuildFile; fileRef = BFEB76390677FDA700F242F3 /* DCMTagForNameDictionary.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -1447,8 +1442,6 @@
 		594830CC118B0AC100D7E606 /* N2ImageView.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = N2ImageView.mm; path = Nitrogen/Sources/N2ImageView.mm; sourceTree = SOURCE_ROOT; };
 		59526E9C1281896F0016F6C0 /* NSMutableString+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "NSMutableString+N2.h"; path = "Nitrogen/Sources/NSMutableString+N2.h"; sourceTree = SOURCE_ROOT; };
 		59526E9D1281896F0016F6C0 /* NSMutableString+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "NSMutableString+N2.mm"; path = "Nitrogen/Sources/NSMutableString+N2.mm"; sourceTree = SOURCE_ROOT; };
-		596D30B41439BA17004EE9EC /* DicomStudy+Report.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "DicomStudy+Report.h"; path = "Horos/Sources/DicomStudy+Report.h"; sourceTree = SOURCE_ROOT; };
-		596D30B51439BA17004EE9EC /* DicomStudy+Report.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "DicomStudy+Report.mm"; path = "Horos/Sources/DicomStudy+Report.mm"; sourceTree = SOURCE_ROOT; };
 		596D30B81439BABD004EE9EC /* NSAppleScript+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "NSAppleScript+N2.h"; path = "Nitrogen/Sources/NSAppleScript+N2.h"; sourceTree = SOURCE_ROOT; };
 		596D30B91439BABD004EE9EC /* NSAppleScript+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "NSAppleScript+N2.mm"; path = "Nitrogen/Sources/NSAppleScript+N2.mm"; sourceTree = SOURCE_ROOT; };
 		596EB3041189D9A600880192 /* NSPreferencePane+OsiriX.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "NSPreferencePane+OsiriX.h"; path = "Horos/Sources/NSPreferencePane+OsiriX.h"; sourceTree = SOURCE_ROOT; };
@@ -1840,7 +1833,6 @@
 		A9A80E3611F73E22009F54B9 /* Activity_Stop.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Activity_Stop.tif; sourceTree = "<group>"; };
 		A9A80E3711F73E22009F54B9 /* Activity_StopPressed.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = Activity_StopPressed.tif; sourceTree = "<group>"; };
 		A9A9F4C00A74C9A9005A1CA7 /* QTExportStyle.css */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.css; path = QTExportStyle.css; sourceTree = "<group>"; };
-		A9ADBBCF0ADE80E60022DFC7 /* ReportRTF.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = ReportRTF.icns; sourceTree = "<group>"; };
 		A9B23D0215CFDF62000E47C3 /* Move.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Move.pdf; sourceTree = "<group>"; };
 		A9B23D0615CFDF76000E47C3 /* Stack.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Stack.pdf; sourceTree = "<group>"; };
 		A9B23D0915CFDF81000E47C3 /* Zoom.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Zoom.pdf; sourceTree = "<group>"; };
@@ -2134,8 +2126,6 @@
 		BFD4BFF106F2A96900EC9A90 /* RotateCursor.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = RotateCursor.tif; sourceTree = "<group>"; };
 		BFD4BFF206F2A96900EC9A90 /* StackCursor.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = StackCursor.tif; sourceTree = "<group>"; };
 		BFD4BFF306F2A96900EC9A90 /* ZoomCursor.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = ZoomCursor.tif; sourceTree = "<group>"; };
-		BFDDE5BF091717F80033317B /* DCMEncapsulatedPDF.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DCMEncapsulatedPDF.h; sourceTree = "<group>"; };
-		BFDDE5C0091717F80033317B /* DCMEncapsulatedPDF.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DCMEncapsulatedPDF.m; sourceTree = "<group>"; };
 		BFEB76370677FDA700F242F3 /* DCMTagDictionary.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DCMTagDictionary.h; sourceTree = "<group>"; };
 		BFEB76380677FDA700F242F3 /* DCMTagDictionary.mm */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.objcpp; name = DCMTagDictionary.mm; path = "DCM Framework/DCMTagDictionary.mm"; sourceTree = SOURCE_ROOT; };
 		BFEB76390677FDA700F242F3 /* DCMTagForNameDictionary.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DCMTagForNameDictionary.h; sourceTree = "<group>"; };
@@ -2789,8 +2779,6 @@
 				CE9DD280086B35050058DD2A /* DicomStudy.m */,
 				CE9DD282086B35050058DD2A /* DicomSeries.h */,
 				CE9DD283086B35050058DD2A /* DicomSeries.m */,
-				596D30B41439BA17004EE9EC /* DicomStudy+Report.h */,
-				596D30B51439BA17004EE9EC /* DicomStudy+Report.mm */,
 				59E379D6116B295B00E84FE3 /* DicomAlbum.h */,
 				59E379D7116B295B00E84FE3 /* DicomAlbum.m */,
 				BF26843B0A5CBB1C004EB838 /* DicomImageDCMTKCategory.h */,
@@ -3064,8 +3052,6 @@
 				BF61E58D06A5BB9E001C0B29 /* DCMCalendarDate.mm */,
 				7E8340D908E9F7C500E41C5E /* DCMPresentationState.h */,
 				7E8340DA08E9F7C500E41C5E /* DCMPresentationState.m */,
-				BFDDE5BF091717F80033317B /* DCMEncapsulatedPDF.h */,
-				BFDDE5C0091717F80033317B /* DCMEncapsulatedPDF.m */,
 				7E0B3A21067526A600908593 /* version.plist */,
 				7E0B3A40067526CD00908593 /* Info.plist */,
 				BFEB763C0677FDA700F242F3 /* DCMTagDictionaryCompatibility.json */,
@@ -3887,7 +3873,6 @@
 				A9B23D0F15CFE3EB000E47C3 /* Rectangle.pdf */,
 				7E9C6D2C066D2BE800D33966 /* redLight.tif */,
 				AB46648C09A331DF005A2766 /* Report.icns */,
-				A9ADBBCF0ADE80E60022DFC7 /* ReportRTF.icns */,
 				A9B23D3015CFEB36000E47C3 /* Repulsor.pdf */,
 				CE1F6C4907D715EB00165CBE /* Reset.pdf */,
 				CE4E00BE0830B72F008DAFAE /* Revert.tif */,
@@ -4360,7 +4345,6 @@
 				BFAEB41A06BF3BFA00C7EF1E /* DCMPixelDataAttributeJPEG16.h in Headers */,
 				7E82C63F08D9FF35000BAFF9 /* DCMLimitedObject.h in Headers */,
 				7E8340DB08E9F7C500E41C5E /* DCMPresentationState.h in Headers */,
-				BFDDE5C1091717F80033317B /* DCMEncapsulatedPDF.h in Headers */,
 				CE8D05CE0FD851F400165DDE /* DCMAbstractSyntaxUID.h in Headers */,
 				434499B21A1D70840047F0F2 /* options.h in Headers */,
 			);
@@ -4553,7 +4537,6 @@
 				CEB98C601335085D0083F3FD /* OSICDPreferencePanePref.h in Headers */,
 				CEB98C6C1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.h in Headers */,
 				59B696641337C957009356ED /* N2DirectoryEnumerator.h in Headers */,
-				596D30B61439BA17004EE9EC /* DicomStudy+Report.h in Headers */,
 				596D30BA1439BABD004EE9EC /* NSAppleScript+N2.h in Headers */,
 				59DB26FE14507ACA00E78E03 /* PrettyCell.h in Headers */,
 				59DB270414507ADF00E78E03 /* N2MutableUInteger.h in Headers */,
@@ -4906,7 +4889,6 @@
 				B7CDAD020AB30E7700068D70 /* page.tif in Resources */,
 				B7CDAD030AB30E7700068D70 /* pdf.tif in Resources */,
 				B78DA71C0ACEDA9A005C2C04 /* Shutter.tif in Resources */,
-				A9ADBBD20ADE80E60022DFC7 /* ReportRTF.icns in Resources */,
 				71AD675B1FC4248100A1E2F8 /* Rainbow2.plist in Resources */,
 				ABD559FE0AEE146900108895 /* SagSmall.tif in Resources */,
 				ABD559FF0AEE146900108895 /* CorSmall.tif in Resources */,
@@ -5538,7 +5520,6 @@
 				BFAEB41B06BF3BFA00C7EF1E /* DCMPixelDataAttributeJPEG16.m in Sources */,
 				7E82C64008D9FF35000BAFF9 /* DCMLimitedObject.m in Sources */,
 				7E8340DC08E9F7C500E41C5E /* DCMPresentationState.m in Sources */,
-				BFDDE5C2091717F80033317B /* DCMEncapsulatedPDF.m in Sources */,
 				CE79D9890FD84C350043DD73 /* DCMAbstractSyntaxUID.mm in Sources */,
 				434B461F1A19F640008CF8CF /* OPJSupport.cpp in Sources */,
 				F96AE60696721E2E41B890D5 /* ijg8_jcapimin.c in Sources */,
@@ -5966,7 +5947,6 @@
 				CEB98C6D1335086B0083F3FD /* OSIAutoroutingPreferencePanePref.m in Sources */,
 				CEB98C6F1335086B0083F3FD /* RoutesTableView.swift in Sources */,
 				59B696651337C957009356ED /* N2DirectoryEnumerator.mm in Sources */,
-				596D30B71439BA17004EE9EC /* DicomStudy+Report.mm in Sources */,
 				596D30BC1439BABD004EE9EC /* NSAppleScript+N2.mm in Sources */,
 				994FABF41CEBF25800980A15 /* OnOffSwitchControlCell.m in Sources */,
 				998309121BB62D4100CAB197 /* JRSwizzle.m in Sources */,

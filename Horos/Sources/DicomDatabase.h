@@ -193,8 +193,6 @@ extern NSString* const DicomDatabaseLogEntryEntityName;
 // some of these methods should be private, but is declared because called from deprecated api
 -(void)rebuild;
 -(void)rebuild:(BOOL)complete;
--(void)checkForExistingReportForStudy:(NSManagedObject*)study;
--(void)checkReportsConsistencyWithDICOMSR;
 -(void)rebuildSqlFile;
 -(void)checkForHtmlTemplates;
 

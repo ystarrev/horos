@@ -2000,7 +2000,6 @@ static BOOL firstCall = YES;
         return;
     }
     
-    [[BrowserController currentBrowser] syncReportsIfNecessary];
 	
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"] == NO) // Server mode
 	{

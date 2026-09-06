@@ -50,7 +50,6 @@
 #import "BrowserController.h"
 #import "DicomStudy.h"
 #import "DicomImage.h"
-#import "DicomStudy+Report.h"
 #import "Anonymization.h"
 #import "AnonymizationPanelController.h"
 #import "AnonymizationViewController.h"
@@ -1102,47 +1101,6 @@
                 }
             }
             
-            if( [[NSUserDefaults standardUserDefaults] boolForKey: @"copyReportsToCD"] == YES && [[NSUserDefaults standardUserDefaults] boolForKey:@"anonymizedBeforeBurning"] == NO && cancelled == NO)
-            {
-                thread.name = NSLocalizedString( @"Burning...", nil);
-                thread.status = NSLocalizedString( @"Adding Reports...", nil);
-                
-                NSMutableArray *studies = [NSMutableArray array];
-                
-                for( NSManagedObject *im in dbObjects)
-                {
-                    if( [im valueForKeyPath:@"series.study.reportURL"])
-                    {
-                        if( [studies containsObject: [im valueForKeyPath:@"series.study"]] == NO)
-                            [studies addObject: [im valueForKeyPath:@"series.study"]];
-                    }
-                }
-                
-                for( DicomStudy *study in studies)
-                {
-                    if( [[study valueForKey: @"reportURL"] hasPrefix: @"http://"] || [[study valueForKey: @"reportURL"] hasPrefix: @"https://"])
-                    {
-                        NSStringEncoding enc;
-                        NSString *urlContent = [NSString stringWithContentsOfURL: [NSURL URLWithString: [study valueForKey: @"reportURL"]] usedEncoding:&enc error:NULL];
-                        
-                        [urlContent writeToFile: [NSString stringWithFormat:@"%@/Report-%@ %@.%@", burnFolder, [self cleanStringForFile: [study valueForKey:@"modality"]], [self cleanStringForFile: [BrowserController DateTimeWithSecondsFormat: [study valueForKey:@"date"]]], [self cleanStringForFile: [[study valueForKey:@"reportURL"] pathExtension]]] atomically: YES encoding:enc error:NULL];
-                    }
-                    else
-                    {
-                        // Convert to PDF
-                        
-                        NSString *pdfPath = [study saveReportAsPdfInTmp];
-                        
-                        if( [manager fileExistsAtPath: pdfPath] == NO)
-                            [manager copyItemAtPath: [study valueForKey:@"reportURL"] toPath: [NSString stringWithFormat:@"%@/Report-%@ %@.%@", burnFolder, [self cleanStringForFile: [study valueForKey:@"modality"]], [self cleanStringForFile: [BrowserController DateTimeWithSecondsFormat: [study valueForKey:@"date"]]], [self cleanStringForFile: [[study valueForKey:@"reportURL"] pathExtension]]] error:NULL];
-                        else
-                            [manager copyItemAtPath: pdfPath toPath: [NSString stringWithFormat:@"%@/Report-%@ %@.pdf", burnFolder, [self cleanStringForFile: [study valueForKey:@"modality"]], [self cleanStringForFile: [BrowserController DateTimeWithSecondsFormat: [study valueForKey:@"date"]]]] error:NULL];
-                    }
-                    
-                    if( cancelled)
-                        break;
-                }
-            }
         }
         
         if( [[NSUserDefaults standardUserDefaults] boolForKey: @"EncryptCD"] && cancelled == NO)

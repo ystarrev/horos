@@ -469,8 +469,13 @@ final class MetalViewerPaneView: NSView {
 
     private final class AnnotationOverlayView: NSView {
         struct State {
-            let series: MetalViewerSeries
-            let overlaySeries: MetalViewerSeries?
+            let seriesTitle: String
+            let seriesNumber: String
+            let studyNumber: Int?
+            let overlayStudyDate: Date?
+            let patientName: String?
+            let patientID: String?
+            let acquisitionDate: Date?
             let pix: DCMPix
             let sliceGeometry: MetalViewerSliceGeometry?
             let sliceIndex: Int
@@ -710,11 +715,11 @@ final class MetalViewerPaneView: NSView {
             }
 
             if state.annotationLevel == .full,
-               let patientName = patientName(for: state.pix),
+               let patientName = state.patientName,
                patientName.isEmpty == false {
                 drawTopLeft(patientName)
             }
-            drawTopLeft(state.series.title)
+            drawTopLeft(state.seriesTitle)
 
             drawTopRightStudySeriesNumber()
             drawTopRight("WL: \(Self.formattedStateValue(state.windowLevel)) WW: \(Self.formattedStateValue(state.windowWidth))")
@@ -738,19 +743,12 @@ final class MetalViewerPaneView: NSView {
         }
 
         private func overlayDateString(state: State) -> String? {
-            guard let overlaySeries = state.overlaySeries else {
-                return nil
-            }
-
-            guard let studyDate = overlaySeries.studyDate else { return nil }
+            guard let studyDate = state.overlayStudyDate else { return nil }
             return Self.overlayDateFormatter.string(from: studyDate)
         }
 
         private func acquisitionDateString(state: State) -> String? {
-            guard let imageObject = state.pix.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSObject,
-                  let acquisitionDate = imageObject.value(forKey: "date") as? Date else {
-                return nil
-            }
+            guard let acquisitionDate = state.acquisitionDate else { return nil }
             return Self.acquisitionDateFormatter.string(from: acquisitionDate)
         }
 
@@ -825,9 +823,9 @@ final class MetalViewerPaneView: NSView {
                         primary += "Position: \(patientPosition)"
                     }
                 case "PatientName", "PatientsName":
-                    primary += patientName(for: state.pix) ?? ""
+                    primary += state.patientName ?? ""
                 case "PatientID":
-                    primary += patientID(for: state.pix) ?? ""
+                    primary += state.patientID ?? ""
                 case "Orientation":
                     break
                 default:
@@ -852,8 +850,8 @@ final class MetalViewerPaneView: NSView {
         }
 
         private func annotationItemContainsPatientIdentity(_ value: String, state: State) -> Bool {
-            let patientName = patientName(for: state.pix)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let patientID = patientID(for: state.pix)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let patientName = state.patientName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let patientID = state.patientID?.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
 
             if trimmedValue == "PatientName" || trimmedValue == "PatientsName" || trimmedValue == "PatientID" {
@@ -922,7 +920,7 @@ final class MetalViewerPaneView: NSView {
         }
 
         private func isSeriesNumber(_ text: String, state: State) -> Bool {
-            let seriesNumber = state.series.seriesNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+            let seriesNumber = state.seriesNumber.trimmingCharacters(in: .whitespacesAndNewlines)
             guard seriesNumber.isEmpty == false else {
                 return false
             }
@@ -930,14 +928,15 @@ final class MetalViewerPaneView: NSView {
         }
 
         private func studySeriesNumberString(state: State) -> NSAttributedString? {
-            let seriesNumber = state.series.seriesNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+            let seriesNumber = state.seriesNumber.trimmingCharacters(in: .whitespacesAndNewlines)
             let text = NSMutableAttributedString(
-                string: "\(state.series.studyNumber)",
+                string: state.studyNumber.map(String.init) ?? "",
                 attributes: Self.studyNumberTextAttributes
             )
 
             if seriesNumber.isEmpty == false {
-                text.append(NSAttributedString(string: "-\(seriesNumber)", attributes: Self.textAttributes))
+                let separator = text.length > 0 ? "-" : ""
+                text.append(NSAttributedString(string: "\(separator)\(seriesNumber)", attributes: Self.textAttributes))
             }
 
             return text
@@ -1003,20 +1002,6 @@ final class MetalViewerPaneView: NSView {
 
             string.draw(at: CGPoint(x: drawPoint.x + 1, y: drawPoint.y + 1), withAttributes: Self.shadowAttributes)
             string.draw(at: drawPoint, withAttributes: Self.overlayTextAttributes)
-        }
-
-        private func patientName(for pix: DCMPix) -> String? {
-            guard let imageObject = pix.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSObject else {
-                return nil
-            }
-            return imageObject.value(forKeyPath: "series.study.name") as? String
-        }
-
-        private func patientID(for pix: DCMPix) -> String? {
-            guard let imageObject = pix.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSObject else {
-                return nil
-            }
-            return imageObject.value(forKeyPath: "series.study.patientID") as? String
         }
 
         private func orientationText(for vector: [Float], inverted: Bool) -> String {
@@ -1095,6 +1080,62 @@ final class MetalViewerPaneView: NSView {
             formatter.dateFormat = "yyyy-MM-dd, HH:mm:ss"
             return formatter
         }()
+    }
+
+    private final class AnnotatedPrintImageView: NSView {
+        let image: NSImage
+
+        init(image: NSImage, size: NSSize) {
+            self.image = image
+            super.init(frame: NSRect(origin: .zero, size: size))
+        }
+
+        required init?(coder: NSCoder) { nil }
+        override var isFlipped: Bool { true }
+
+        override func draw(_ dirtyRect: NSRect) {
+            NSColor.black.setFill()
+            bounds.fill()
+            image.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1,
+                       respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high.rawValue])
+        }
+    }
+
+    @objc(printPDFForImage:pix:metadata:)
+    static func printPDF(for image: NSImage, pix: DCMPix, metadata: [String: Any]) -> Data? {
+        precondition(Thread.isMainThread)
+        guard image.size.width.isFinite, image.size.height.isFinite,
+              image.size.width > 0, image.size.height > 0 else { return nil }
+
+        // A stable page coordinate space keeps Planar's text legible at any source resolution.
+        // Drawing the original NSImage into PDF preserves its pixels and the annotation text.
+        let scale = 768 / max(image.size.width, image.size.height)
+        let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+        let pageView = AnnotatedPrintImageView(image: image, size: size)
+        let annotations = AnnotationOverlayView(frame: pageView.bounds)
+        annotations.overlayState = AnnotationOverlayView.State(
+            seriesTitle: metadata["title"] as? String ?? "",
+            seriesNumber: metadata["seriesNumber"] as? String ?? "",
+            studyNumber: nil,
+            overlayStudyDate: nil,
+            patientName: metadata["patientName"] as? String,
+            patientID: metadata["patientID"] as? String,
+            acquisitionDate: metadata["acquisitionDate"] as? Date,
+            pix: pix,
+            sliceGeometry: MetalViewerSliceGeometry(pix: pix),
+            sliceIndex: (metadata["sliceIndex"] as? NSNumber)?.intValue ?? 0,
+            sliceCount: (metadata["sliceCount"] as? NSNumber)?.intValue ?? 1,
+            zoomScale: Float(size.width / CGFloat(pix.pwidth)),
+            rotationAngleDegrees: 0,
+            windowLevel: pix.wl,
+            windowWidth: pix.ww,
+            mouseState: nil,
+            showsSliceOrientation: true,
+            showsGantryTiltCorrectionLabel: false,
+            annotationLevel: MetalViewerAnnotationLevel.current
+        )
+        pageView.addSubview(annotations)
+        return pageView.dataWithPDF(inside: pageView.bounds)
     }
 
     private final class MeasurementOverlayView: NSView {
@@ -2360,9 +2401,15 @@ final class MetalViewerPaneView: NSView {
             return
         }
 
+        let imageObject = pix.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSObject
         annotationOverlay.overlayState = AnnotationOverlayView.State(
-            series: series,
-            overlaySeries: overlaySeries,
+            seriesTitle: series.title,
+            seriesNumber: series.seriesNumber,
+            studyNumber: series.studyNumber,
+            overlayStudyDate: overlaySeries?.studyDate,
+            patientName: imageObject?.value(forKeyPath: "series.study.name") as? String,
+            patientID: imageObject?.value(forKeyPath: "series.study.patientID") as? String,
+            acquisitionDate: imageObject?.value(forKey: "date") as? Date,
             pix: pix,
             sliceGeometry: MetalViewerSliceGeometry(pix: pix),
             sliceIndex: metalView.renderer.currentSliceIndex,

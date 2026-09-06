@@ -54,8 +54,6 @@ extern NSString* const OsirixRecomputeROINotification;
 extern NSString* const OsirixStopPlayingNotification;
 extern NSString* const OsirixChatBroadcastNotification;
 extern NSString* const OsirixSyncSeriesNotification;
-extern NSString* const OsirixReportModeChangedNotification;
-extern NSString* const OsirixDeletedReportNotification;
 extern NSString* const OsirixStudyAnnotationsChangedNotification;
 extern NSString* const OsirixGLFontChangeNotification;
 extern NSString* const OsirixAddToDBNotification;

@@ -48,6 +48,17 @@
 
 @implementation BrowserMatrix
 
+- (void)print:(id)sender
+{
+    id controller = self.window.windowController;
+    if ([controller isKindOfClass:[BrowserController class]])
+    {
+        [controller printDatabaseSelection:self];
+        return;
+    }
+    [super print:sender];
+}
+
 - (BOOL)acceptsFirstMouse:(NSEvent *)theEvent
 {
 	return YES;

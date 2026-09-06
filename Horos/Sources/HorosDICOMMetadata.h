@@ -5,3 +5,5 @@ FOUNDATION_EXPORT NSXMLDocument *HorosDICOMMetadataDocument(NSString *xml, NSErr
 FOUNDATION_EXPORT NSXMLElement *HorosDICOMMetadataAttribute(NSString *tag, NSString *name,
                                                          NSString *vr, NSArray<NSString *> *values);
 FOUNDATION_EXPORT NSString *HorosDICOMMetadataText(NSXMLDocument *document);
+// Short scalar preview for tag menus; never returns binary placeholders or sequence content.
+FOUNDATION_EXPORT NSString *HorosDICOMMetadataShortValue(NSXMLElement *attribute);

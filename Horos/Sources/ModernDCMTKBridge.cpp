@@ -11,6 +11,7 @@
 #include <dcmtk/dcmdata/dcpixseq.h>
 #include <dcmtk/dcmdata/dcpxitem.h>
 #include <dcmtk/dcmdata/dcsequen.h>
+#include <dcmtk/dcmdata/dcspchrs.h>
 #include <dcmtk/dcmdata/dcuid.h>
 #include <dcmtk/dcmsr/dsrdoc.h>
 #include <dcmtk/dcmsr/dsrtypes.h>
@@ -2240,6 +2241,84 @@ int HorosModernDCMTKCopyEncapsulatedDocument(const char* path, unsigned char** b
     }
 
     return 0;
+}
+
+int HorosModernDCMTKCopyEncapsulatedPDF(const char* path, unsigned char** buffer, unsigned long* length,
+                                      char** title, char** failureReason)
+{
+    if (buffer) *buffer = nullptr;
+    if (length) *length = 0;
+    if (title) *title = nullptr;
+    if (failureReason) *failureReason = nullptr;
+    auto fail = [failureReason](const std::string& reason) {
+        return HorosModernDCMTKValidationFail(failureReason, reason);
+    };
+    if (!path || !path[0] || !buffer || !length)
+        return fail("No DICOM PDF file or output buffer was specified.");
+
+    try
+    {
+        HorosModernDCMTKEnsureDataDictionary();
+        DcmFileFormat file;
+        OFCondition status = file.loadFile(path, EXS_Unknown, EGL_noChange, DCM_MaxReadLength, ERM_autoDetect);
+        if (status.bad())
+            return fail(std::string("Cannot read DICOM PDF: ") + status.text());
+        DcmDataset* dataset = file.getDataset();
+        OFString sopClass, mimeType;
+        dataset->findAndGetOFString(DCM_SOPClassUID, sopClass, 0, OFFalse);
+        dataset->findAndGetOFString(DCM_MIMETypeOfEncapsulatedDocument, mimeType, 0, OFFalse);
+        OFStandard::toLower(mimeType);
+        if (sopClass != UID_EncapsulatedPDFStorage || (!mimeType.empty() && mimeType != "application/pdf"))
+            return fail("This DICOM file does not contain an encapsulated PDF.");
+
+        const Uint8* bytes = nullptr;
+        unsigned long byteCount = 0;
+        status = dataset->findAndGetUint8Array(DCM_EncapsulatedDocument, bytes, &byteCount, OFFalse);
+        if (status.bad() || !bytes || byteCount < 5)
+            return fail("The embedded PDF is missing or incomplete.");
+        if (dataset->tagExists(DCM_EncapsulatedDocumentLength, OFFalse))
+        {
+            Uint32 documentLength = 0;
+            if (dataset->findAndGetUint32(DCM_EncapsulatedDocumentLength, documentLength, 0, OFFalse).bad() ||
+                documentLength < 5 || documentLength > byteCount || byteCount - documentLength > 1 ||
+                (documentLength < byteCount && bytes[documentLength] != 0))
+                return fail("The embedded PDF length does not match its DICOM payload.");
+            byteCount = documentLength;
+        }
+        // Older files omit the original length. Keep their payload intact instead of guessing at padding.
+        if (std::memcmp(bytes, "%PDF-", 5) != 0)
+            return fail("The embedded document has no PDF header.");
+
+        std::unique_ptr<char, decltype(&std::free)> copiedTitle(nullptr, &std::free);
+        if (title)
+        {
+            OFString rawTitle, utf8Title;
+            dataset->findAndGetOFStringArray(DCM_DocumentTitle, rawTitle, OFFalse);
+            if (!rawTitle.empty())
+            {
+                DcmSpecificCharacterSet converter;
+                if (converter.selectCharacterSet(*dataset).good() && converter.convertString(rawTitle, utf8Title).bad())
+                    utf8Title.clear();
+            }
+            // An undecodable optional title must not prevent opening the PDF itself.
+            copiedTitle.reset(HorosModernDCMTKDuplicateCString(utf8Title.c_str()));
+            if (!copiedTitle)
+                return fail("Not enough memory for the PDF title.");
+        }
+        std::unique_ptr<unsigned char, decltype(&std::free)> copy(
+            static_cast<unsigned char*>(std::malloc(byteCount)), &std::free);
+        if (!copy)
+            return fail("Not enough memory for the embedded PDF.");
+        std::memcpy(copy.get(), bytes, byteCount);
+        *buffer = copy.release();
+        *length = byteCount;
+        if (title) *title = copiedTitle.release();
+        return 1;
+    }
+    catch (const std::exception& exception)
+    {
+        return fail(std::string("Cannot read DICOM PDF: ") + exception.what());
+    }
 }
 
 int HorosModernDCMTKWriteBufferByTag(const char* path, unsigned short group, unsigned short element, const unsigned char* buffer, unsigned long length)

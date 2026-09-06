@@ -527,53 +527,6 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 	return self;
 }
 
-- (id)initWithFileReport:(NSString *) file path:(NSString *) path forImage: (DicomImage*) im contentDate: (NSDate*) d
-{
-	if (self = [super init])
-	{
-		_seriesInstanceUID = nil;
-		_DICOMSRDescription =  @"OsiriX Report SR";
-		_DICOMSeriesNumber = @"5003";
-		
-		if( file)
-		{
-			_dataEncapsulated = [[NSData dataWithContentsOfFile: file] retain];
-			_contentDate = [d retain];
-		}
-		
-		[_DICOMSRDescription retain];
-		[_DICOMSeriesNumber retain];
-		
-		document = new DSRDocument();
-		_newSR = NO;
-		OFCondition status = EC_Normal;
-		
-		// load old SR and replace as needed
-		if ([[NSFileManager defaultManager] fileExistsAtPath: path])
-		{
-			status = HorosSRAnnotationReadDocumentFromPath(document, path) ? EC_Normal : EC_IllegalCall;
-			
-			//clear old content	Don't want to UIDs if already created
-			if (status.good()) 
-				document->getTree().clear();
-		}
-		
-		// create new Doc 
-		if (![[NSFileManager defaultManager] fileExistsAtPath: path] || !status.good())
-		{
-			_newSR = YES;
-			document->createNewDocument(DSRTypes::DT_BasicTextSR);	
-		}
-			
-		document->getTree().addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container);
-		document->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("1", "99HUG", [[NSString stringWithFormat: @"Study Report - %@ File Format", [file pathExtension]] UTF8String]));
-		
-		image = [im retain];
-	}
-	
-	return self;
-}
-
 - (id)initWithROIs:(NSArray *)ROIs path:(NSString *) path forImage: (DicomImage*) im
 {
 	if (self = [super init])
@@ -691,54 +644,10 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 	return _reportURL;
 }
 
-- (id)initWithURLReport:(NSString *) s path:(NSString *) path forImage: (DicomImage*) im
-{
-	if (self = [super init])
-	{
-		_seriesInstanceUID = nil;
-		_DICOMSRDescription =  @"OsiriX Report SR";
-		_DICOMSeriesNumber = @"5003";
-		
-		[_DICOMSRDescription retain];
-		[_DICOMSeriesNumber retain];
-		
-		_contentDate = [[NSDate date] retain];
-		
-		document = new DSRDocument();
-		_newSR = NO;
-		OFCondition status = EC_Normal;
-		
-		// load old SR and replace as needed
-		if ([[NSFileManager defaultManager] fileExistsAtPath: path])
-		{
-			status = HorosSRAnnotationReadDocumentFromPath(document, path) ? EC_Normal : EC_IllegalCall;
-			
-			//clear old content	Don't want to UIDs if already created
-			if (status.good()) 
-				document->getTree().clear();
-		}
-		
-		// create new Doc 
-		if (![[NSFileManager defaultManager] fileExistsAtPath: path] || !status.good())
-		{
-			_newSR = YES;
-			document->createNewDocument(DSRTypes::DT_BasicTextSR);	
-		}
-			
-		document->getTree().addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container);
-		document->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("1", "99HUG", [[NSString stringWithFormat: @"URL:%@", s] UTF8String]));
-		
-		image = [im retain];
-	}
-	
-	return self;
-}
-
 - (void)dealloc
 {
 	delete document;
 	[_DICOMSRDescription release];
-	[_contentDate release];
 	[_DICOMSeriesNumber release];
 	[image release];
 	[_dataEncapsulated release];
@@ -929,21 +838,11 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 	if( _DICOMSeriesNumber)
 		document->setSeriesNumber( [_DICOMSeriesNumber UTF8String]);
 	
-	if( _contentDate)
-	{
-		document->setContentDate( [[[DCMCalendarDate dicomDateWithDate: _contentDate] dateString] UTF8String]);
-		document->setContentTime( [[[DCMCalendarDate dicomTimeWithDate: _contentDate] timeString] UTF8String]);
-	}
-	else
-	{
-		if( [_DICOMSRDescription isEqualToString: @"OsiriX Report SR"] == NO)
-		{
-			document->setContentDate( [[[DCMCalendarDate date] dateString] UTF8String]);
-			document->setContentTime( [[[DCMCalendarDate date] timeString] UTF8String]);
-		}
-		else if( [_dataEncapsulated length] > 0)
-			NSLog( @"********** no date for Report SR ?");
-	}
+	DCMCalendarDate *contentDate = [DCMCalendarDate date];
+	NSString *contentDateString = [contentDate dateString];
+	NSString *contentTimeString = [contentDate timeString];
+	document->setContentDate(contentDateString.UTF8String);
+	document->setContentTime(contentTimeString.UTF8String);
 	
 	// Image Reference
 	OFString refsopClassUID = OFString([[image valueForKeyPath:@"series.seriesSOPClassUID"] UTF8String]);
@@ -963,8 +862,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 	BOOL isROISR = [_DICOMSRDescription isEqualToString:@"OsiriX ROI SR"];
 	BOOL isCompatibilityStructuredReport =
 		[_DICOMSRDescription isEqualToString:@"OsiriX Annotations SR"] ||
-		[_DICOMSRDescription isEqualToString:@"OsiriX WindowsState SR"] ||
-		[_DICOMSRDescription isEqualToString:@"OsiriX Report SR"];
+		[_DICOMSRDescription isEqualToString:@"OsiriX WindowsState SR"];
 	BOOL writeSucceeded = NO;
 	BOOL wroteViaBridge = NO;
 
@@ -997,18 +895,6 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 		if (resolvedPatientBirthDate.length == 0 && [study valueForKey:@"dateOfBirth"])
 			resolvedPatientBirthDate = HorosSRAnnotationDICOMStringFromDate([study valueForKey:@"dateOfBirth"]);
 		NSString *resolvedPatientSex = sourcePatientSex.length ? sourcePatientSex : [study valueForKey:@"patientSex"];
-		NSString *contentDateString = nil;
-		NSString *contentTimeString = nil;
-		if (_contentDate)
-		{
-			contentDateString = [[DCMCalendarDate dicomDateWithDate:_contentDate] dateString];
-			contentTimeString = [[DCMCalendarDate dicomTimeWithDate:_contentDate] timeString];
-		}
-		else
-		{
-			contentDateString = [[DCMCalendarDate date] dateString];
-			contentTimeString = [[DCMCalendarDate date] timeString];
-		}
 
 		if (writeROIFn != NULL)
 		{
@@ -1067,18 +953,6 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 		if (resolvedPatientBirthDate.length == 0 && [study valueForKey:@"dateOfBirth"])
 			resolvedPatientBirthDate = HorosSRAnnotationDICOMStringFromDate([study valueForKey:@"dateOfBirth"]);
 		NSString *resolvedPatientSex = sourcePatientSex.length ? sourcePatientSex : [study valueForKey:@"patientSex"];
-		NSString *contentDateString = nil;
-		NSString *contentTimeString = nil;
-		if (_contentDate)
-		{
-			contentDateString = [[DCMCalendarDate dicomDateWithDate:_contentDate] dateString];
-			contentTimeString = [[DCMCalendarDate dicomTimeWithDate:_contentDate] timeString];
-		}
-		else
-		{
-			contentDateString = [[DCMCalendarDate date] dateString];
-			contentTimeString = [[DCMCalendarDate date] timeString];
-		}
 		NSString *rootCodeMeaning = [NSString stringWithUTF8String:document->getTree().getCurrentContentItem().getConceptName().getCodeMeaning().c_str()];
 		NSString *childTextValue = nil;
 		if ([_DICOMSRDescription isEqualToString:@"OsiriX Annotations SR"])

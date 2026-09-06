@@ -491,7 +491,6 @@ final class DatabaseSettingsPaneViewController: HorosScrollableSettingsPaneViewC
 
         addCard(title: "Reports & Export", rows: [
             HorosDefaultsCheckbox(title: "Open encapsulated PDF reports in Preview", defaultsKey: "openPDFwithPreview"),
-            HorosDefaultsCheckbox(title: "Create a DICOM PDF when a report is validated", defaultsKey: "generateDICOMPDFWhenValidated"),
             HorosDefaultsCheckbox(title: "Use a DICOMDIR structure when exporting to the filesystem", defaultsKey: "AddDICOMDIRForExport"),
         ])
 

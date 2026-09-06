@@ -44,8 +44,8 @@
 #import "AnonymizationViewController.h"
 #import "AnonymizationSavePanelController.h"
 #import "DicomFile.h"
-#import "DCMObject.h"
-#import "DCMAttribute.h"
+#import "DicomFileDCMTKCategory.h"
+#import "HorosDICOMMetadata.h"
 #import "N2Debug.h"
 
 @implementation AnonymizationTagsPopUpButton
@@ -66,26 +66,20 @@ NSInteger CompareDCMAttributeTagStringValues(id lsp, id rsp, void* context) {
 
 + (NSArray*) tagsForFile: (NSString*) dicomFile
 {
-    if(dicomFile)
+    if (dicomFile.length == 0)
+        return nil;
+    NSError *error = nil;
+    NSXMLDocument *document = [DicomFile metadataDocumentForFile:dicomFile error:&error];
+    if (document == nil)
     {
-        if([DicomFile isDICOMFile: dicomFile])
-        {
-            DCMObject *dcmObject = [DCMObject objectWithContentsOfFile: dicomFile decodingPixelData:NO];
-            
-            NSArray *sortedKeys = [[[dcmObject attributes] allKeys] sortedArrayUsingSelector:@selector(caseInsensitiveCompare:)];
-            NSMutableArray *tags = [NSMutableArray arrayWithCapacity: [sortedKeys count]];
-
-            for( NSString *key in sortedKeys)
-            {
-                DCMAttribute *attr = [[dcmObject attributes] objectForKey: key];
-                if( attr)
-                    [tags addObject: attr];
-            }
-            
-            return tags;
-        }
+        NSLog(@"Cannot read anonymization template tags: %@", error.localizedDescription);
+        return nil;
     }
-	return nil;
+    // Top-level tags only: selecting a nested tag must not imply recursive anonymization.
+    return [document.rootElement.children sortedArrayUsingComparator:^NSComparisonResult(NSXMLElement *left, NSXMLElement *right) {
+        return [[[left attributeForName:@"attributeTag"] stringValue]
+            compare:[[right attributeForName:@"attributeTag"] stringValue]];
+    }];
 }
 
 +(NSMenu*)tagsMenuWithTarget:(id)obj action:(SEL)action {
@@ -98,27 +92,25 @@ NSInteger CompareDCMAttributeTagStringValues(id lsp, id rsp, void* context) {
 		NSMenuItem* tagsOfTheDICOMFileMenuItem = [[[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"File(s) tags", NULL) action:NULL keyEquivalent:@""] autorelease];
 		[tagsOfTheDICOMFileMenuItem setSubmenu:tagsOfTheDICOMFile];
 		[tagsMenu addItem:tagsOfTheDICOMFileMenuItem];
-		for (DCMAttribute* tag in tagsOfFile)
+		for (NSXMLElement *attribute in tagsOfFile)
 		{
 			@try
 			{
-				NSString* valDescription = @"";
-				
-				if( [tag valueLength] < 100)
-				{
-					for( id v in [tag values])
-						valDescription = [valDescription stringByAppendingFormat:@" %@", [v description]];
-				}
+				DCMAttributeTag *tag = [DCMAttributeTag tagWithTagString:[[attribute attributeForName:@"attributeTag"] stringValue]];
+                if (tag == nil)
+                    continue;
+                tag.vr = [[attribute attributeForName:@"vr"] stringValue];
+                NSString *valDescription = HorosDICOMMetadataShortValue(attribute);
 				
 				NSString *description;
 				
 				if( [valDescription length])
-					description = [NSString stringWithFormat:@"%@ - %@ -%@", [tag attrTag].stringValue, [tag attrTag].name, valDescription];
+					description = [NSString stringWithFormat:@"%@ - %@ - %@", tag.stringValue, tag.name, valDescription];
 				else
-					description = [NSString stringWithFormat:@"%@ - %@", [tag attrTag].stringValue, [tag attrTag].name];
+					description = [NSString stringWithFormat:@"%@ - %@", tag.stringValue, tag.name];
 
 				NSMenuItem* item = [[[NSMenuItem alloc] initWithTitle: description action:action keyEquivalent:@""] autorelease];
-				item.representedObject = [tag attrTag];
+				item.representedObject = tag;
 				item.target = obj;
 				[tagsOfTheDICOMFile addItem:item];
 			}

@@ -54,7 +54,6 @@ typedef char DSRDocument;
 	BOOL				_newSR;
 	NSString			*_seriesInstanceUID, *_DICOMSRDescription, *_DICOMSeriesNumber, *_reportURL;
 	NSData				*_dataEncapsulated;
-	NSDate				*_contentDate;
 }
 
 /** Extracts ROI as NSData from a DICOM SR
@@ -83,8 +82,6 @@ typedef char DSRDocument;
 - (id) initWithContentsOfFile:(NSString *)path;
 - (id) initWithDictionary:(NSDictionary *) dict path:(NSString *) path forImage: (DicomImage*) im;
 - (id) initWithWindowsState:(NSData *) dict path:(NSString *) path forImage: (DicomImage*) im;
-- (id) initWithFileReport:(NSString *) file path:(NSString *) path forImage: (DicomImage*) im contentDate: (NSDate*) d;
-- (id) initWithURLReport:(NSString *) s path:(NSString *) path forImage: (DicomImage*) im;
 - (void) addROIs:(NSArray *)someROIs;
 - (NSArray *) ROIs;
 - (BOOL) writeToFileAtPath:(NSString *)path;

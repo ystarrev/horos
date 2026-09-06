@@ -88,19 +88,6 @@ NSString* const HorosLegacyOsiriXBrushROIPredicateFormat = @"SUBQUERY(series, $s
 static const double HorosLegacyOsiriXBrushROIMarker = 987654.0;
 static const double HorosLegacyOsiriXVectorROIMarker = -987654.0;
 
-static NSString *ReportFilenameForStudy(id study)
-{
-    NSString *accessionNumber = [study valueForKey:@"accessionNumber"];
-    NSString *identifier = [accessionNumber length] > 0 ? accessionNumber : [study valueForKey:@"studyInstanceUID"];
-
-    return [DicomFile NSreplaceBadCharacter:[[study valueForKey:@"patientUID"] stringByAppendingFormat:@"-%@", identifier]];
-}
-
-static NSString *OldReportFilenameForStudy(id study)
-{
-    return [DicomFile NSreplaceBadCharacter:[[study valueForKey:@"patientUID"] stringByAppendingFormat:@"-%@", [study valueForKey:@"id"]]];
-}
-
 static NSUInteger HorosROIMetadataAtPath(NSString *path, BOOL *hasBrushMask, BOOL *readable)
 {
     if (hasBrushMask)
@@ -2746,8 +2733,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                 if ([curDict objectForKey: @"hasDICOM"])
                                     study.hasDICOM = [curDict objectForKey: @"hasDICOM"];
                                 
-                                if (newObject)
-                                    [self checkForExistingReportForStudy:study];
                             }
                             else
                             {
@@ -4541,7 +4526,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
             // remove empty studies
             thread.status = NSLocalizedString(@"Checking for empty studies...", nil);
             for (DicomStudy* study in [self objectsForEntity:self.studyEntity]) {
-                [self checkForExistingReportForStudy:study];
                 if (study.series.count == 0 || study.noFiles.intValue == 0)
                     [self.managedObjectContext deleteObject: study];
             }
@@ -4558,51 +4542,12 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
         
         [self save:NULL];
         
-        thread.status = NSLocalizedString(@"Checking reports consistency...", nil);
-        [self checkReportsConsistencyWithDICOMSR];
         } @catch (NSException* e) {
             N2LogExceptionWithStackTrace(e);
         } @finally {
             [_importFilesFromIncomingDirLock unlock];
         }
     });
-}
-
--(void)checkReportsConsistencyWithDICOMSR {
-    // Find all studies with reportURL
-    N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
-        @try {
-            NSPredicate *predicate = [NSPredicate predicateWithFormat:  @"reportURL != NIL"];
-            NSFetchRequest *dbRequest = [[[NSFetchRequest alloc] init] autorelease];
-            dbRequest.entity = [self.managedObjectModel.entitiesByName objectForKey:@"Study"];
-            dbRequest.predicate = predicate;
-
-            NSError	*error = nil;
-            NSArray *studiesArray = [self.managedObjectContext executeFetchRequest:dbRequest error:&error];
-
-            for (DicomStudy *s in studiesArray)
-                [s archiveReportAsDICOMSR];
-        } @catch (NSException* e) {
-            N2LogExceptionWithStackTrace(e);
-        }
-    });
-}
-
--(void)checkForExistingReportForStudy:(DicomStudy*)study {
-    @try { // is there a report?
-        NSArray* filenames = [NSArray arrayWithObjects: ReportFilenameForStudy(study), OldReportFilenameForStudy(study), NULL];
-        NSArray* extensions = [NSArray arrayWithObjects: @"pages", @"odt", @"doc", @"docx", @"rtf", NULL];
-        for (NSString* filename in filenames)
-            for (NSString* extension in extensions) {
-                NSString* reportPath = [self.reportsDirPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.%@", filename, extension]];
-                if ([NSFileManager.defaultManager fileExistsAtPath:reportPath]) {
-                    study.reportURL = reportPath;
-                    return;
-                }
-            }
-    } @catch ( NSException *e) {
-        N2LogExceptionWithStackTrace(e);
-    }
 }
 
 -(BOOL)allowAutoroutingWithPostNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems
@@ -4682,7 +4627,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
     
     self.managedObjectContext = [self contextAtPath:self.sqlFilePath];
     
-    [self checkReportsConsistencyWithDICOMSR];
     
     [_importFilesFromIncomingDirLock unlock];
 }

@@ -159,3 +159,15 @@ NSString *HorosDICOMMetadataText(NSXMLDocument *document)
     HorosAppendMetadataText(document.rootElement, @"", text);
     return text;
 }
+
+NSString *HorosDICOMMetadataShortValue(NSXMLElement *attribute)
+{
+    if ([[[attribute attributeForName:@"readOnly"] stringValue] boolValue] ||
+        [[[attribute attributeForName:@"len"] stringValue] integerValue] >= 100)
+        return @"";
+    NSMutableArray *values = [NSMutableArray array];
+    for (NSXMLElement *value in [attribute elementsForName:@"value"])
+        [values addObject:value.stringValue ?: @""];
+    NSString *preview = [values componentsJoinedByString:@" "];
+    return preview.length < 100 ? preview : @"";
+}

@@ -41,7 +41,6 @@
 #import "AnonymizationSavePanelController.h"
 #import "NSFileManager+N2.h"
 #import "NSDictionary+N2.h"
-#import "DCMObject.h"
 #import "DicomImage.h"
 #import "DCMCalendarDate.h"
 #import "DicomStudy.h"

@@ -58,6 +58,7 @@
 #import "SRAnnotation.h"
 #import <DiscRecording/DRDevice.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <Quartz/Quartz.h>
 #import "MyOutlineView.h"
 #import "PreviewView.h"
 #import "StructuredReportSupport.h"
@@ -66,7 +67,6 @@
 #import "DicomImage.h"
 #import "NSWindow+N2.h"
 #import "DicomStudy.h"
-#import "DicomStudy+Report.h"
 #import "DCMPix.h"
 #import "SRAnnotation.h"
 #import "AppController.h"
@@ -228,14 +228,6 @@ static int DefaultFolderSizeForDB = 0;
 static NSString *smartAlbumDistantArraySync = @"smartAlbumDistantArraySync";
 
 extern BOOL NEEDTOREBUILD;//, COMPLETEREBUILD;
-
-static NSString *ReportFilenameForStudy(id study)
-{
-    NSString *accessionNumber = [study valueForKey:@"accessionNumber"];
-    NSString *identifier = [accessionNumber length] > 0 ? accessionNumber : [study valueForKey:@"studyInstanceUID"];
-
-    return [DicomFile NSreplaceBadCharacter:[[study valueForKey:@"patientUID"] stringByAppendingFormat:@"-%@", identifier]];
-}
 
 #pragma deprecated(asciiString)
 NSString* asciiString(NSString* str)
@@ -473,7 +465,6 @@ static NSString*	QueryToolbarItemIdentifier			= @"QueryRetrieve.pdf";
 static NSString*	SendToolbarItemIdentifier			= @"Send.pdf";
 //static NSString*	CDRomToolbarItemIdentifier			= @"cd.icns";
 static NSString*	TrashToolbarItemIdentifier			= @"trash.icns";
-static NSString*	ReportToolbarItemIdentifier			= @"Report.icns";
 static NSString*	BurnerToolbarItemIdentifier			= @"Burner.icns";
 static NSString*	ToggleDrawerToolbarItemIdentifier   = @"StartupDisk.tif";
 static NSString*	SearchToolbarItemIdentifier			= @"Search";
@@ -890,14 +881,6 @@ static NSConditionLock *threadLock = nil;
     N2LogStackTrace( @"****** deprecated function");
     if( [NSThread isMainThread] == NO) N2LogStackTrace( @"********* We should be on MAIN thread for accessing objects from _database object");
     return [_database objectsWithIDs:[_database addFilesAtPaths:newFilesArray postNotifications:produceAddedFiles dicomOnly:onlyDICOM rereadExistingItems:parseExistingObject]];
-}
-
-#pragma deprecated (checkForExistingReport:dbFolder:)
-- (void) checkForExistingReport: (NSManagedObject*) study dbFolder: (NSString*) dbFolder
-{
-    N2LogStackTrace( @"****** deprecated function");
-    DicomDatabase* db = [DicomDatabase databaseForContext:study.managedObjectContext];
-    [db checkForExistingReportForStudy:study];
 }
 
 #pragma mark-
@@ -1833,7 +1816,6 @@ static NSConditionLock *threadLock = nil;
             
             [self willChangeContext];
             
-            [reportFilesToCheck removeAllObjects];
             
             if (_database)
                 [[NSNotificationCenter defaultCenter] removeObserver:self name:nil object:_database];
@@ -6162,7 +6144,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     
     NSMutableSet *seriesSet = [NSMutableSet set], *studiesSet = [NSMutableSet set];
     
-    [reportFilesToCheck removeAllObjects];
     
     @try
     {
@@ -7440,6 +7421,285 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     
 }
 
+- (void)printDatabaseSelection:(id)sender
+{
+    NSMutableArray *selection = [NSMutableArray array];
+    if (sender == oMatrix)
+    {
+        for (NSCell *cell in [[oMatrix selectedCells] sortedArrayUsingDescriptors:
+            @[[NSSortDescriptor sortDescriptorWithKey:@"tag" ascending:YES]]])
+            if (cell.isEnabled && cell.tag >= 0 && cell.tag < matrixViewArray.count)
+                [selection addObject:matrixViewArray[cell.tag]];
+    }
+    else
+        [selection addObjectsFromArray:[self databaseSelection]];
+
+    NSMutableOrderedSet *images = [NSMutableOrderedSet orderedSet];
+    NSMutableSet *wholeSeriesImages = [NSMutableSet set];
+    NSMutableDictionary *imagePositions = [NSMutableDictionary dictionary];
+    NSMutableSet *indexedSeries = [NSMutableSet set];
+    for (id selectedItem in selection)
+    {
+        id item = selectedItem;
+        if ([self isSurgicalProcedureItem:item])
+        {
+            NSString *xid = [item XID];
+            item = xid.length ? [self.database objectWithID:[NSManagedObject UidForXid:xid]] : nil;
+        }
+        NSArray *series = nil;
+        if ([item isKindOfClass:[DicomStudy class]])
+            series = [[(DicomStudy *)item series] allObjects];
+        else if ([item isKindOfClass:[DicomSeries class]])
+            series = @[item];
+        else if ([item isKindOfClass:[DicomImage class]] && [(DicomImage *)item series])
+            series = @[[item series]];
+
+        for (DicomSeries *candidate in [series sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"id" ascending:YES]]])
+        {
+            BOOL isSR = [DCMAbstractSyntaxUID isStructuredReport:candidate.seriesSOPClassUID];
+            BOOL isReport = isSR || [DCMAbstractSyntaxUID isPDF:candidate.seriesSOPClassUID] ||
+                [candidate.modality.lowercaseString isEqualToString:@"pdf"];
+            // Internal annotation archives are not clinical reports within a selected study.
+            if ([item isKindOfClass:[DicomStudy class]] && ([candidate.name hasPrefix:@"OsiriX "] ||
+                (!isReport && [DCMAbstractSyntaxUID isNonImageStorage:candidate.seriesSOPClassUID])))
+                continue;
+            if (!isReport && ![indexedSeries containsObject:candidate.objectID])
+            {
+                NSArray *seriesImages = candidate.sortedImages ?: @[];
+                [seriesImages enumerateObjectsUsingBlock:^(DicomImage *image, NSUInteger index, BOOL *stop) {
+                    imagePositions[image.objectID] = @{@"sliceIndex": @(index), @"sliceCount": @(seriesImages.count)};
+                }];
+                [indexedSeries addObject:candidate.objectID];
+            }
+            if ([item isKindOfClass:[DicomImage class]])
+                [images addObject:item];
+            else
+            {
+                NSArray *seriesImages = candidate.sortedImages ?: @[];
+                [images addObjectsFromArray:seriesImages];
+                [wholeSeriesImages addObjectsFromArray:seriesImages];
+            }
+        }
+    }
+    if (images.count == 0)
+    {
+        HorosPresentInformationalAlert(NSLocalizedString(@"Print", nil),
+            NSLocalizedString(@"No printable images or reports are selected.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        return;
+    }
+
+    // Snapshot paths, annotation fields and display settings before preparation services the run loop.
+    NSMutableArray *entries = [NSMutableArray array];
+    for (DicomImage *image in images)
+    {
+        @autoreleasepool
+        {
+            BOOL isReport = [DCMAbstractSyntaxUID isStructuredReport:image.series.seriesSOPClassUID] ||
+                [DCMAbstractSyntaxUID isPDF:image.series.seriesSOPClassUID] ||
+                [image.series.modality.lowercaseString isEqualToString:@"pdf"];
+            // Older indexes may represent an entire multi-frame series with one database image.
+            BOOL expandFrames = !isReport && [wholeSeriesImages containsObject:image] &&
+                image.series.images.count == 1 && image.numberOfFrames.integerValue > 1;
+            NSInteger frameCount = expandFrames ? image.numberOfFrames.integerValue : 1;
+            NSString *path = image.completePathResolved ?: @"";
+            NSString *title = image.series.name.length ? image.series.name : NSLocalizedString(@"Image", nil);
+            NSDictionary *annotationFields = @{};
+            NSString *yearOld = @"", *yearOldAcquisition = @"";
+            if (!isReport)
+            {
+                // This initializer snapshots the configured DB annotation fields without loading pixels.
+                DCMPix *metadataPix = [[[DCMPix alloc] initWithPath:path :0 :1 :nil
+                    :image.frameID.longValue :0 isBonjour:NO imageObj:image] autorelease];
+                annotationFields = metadataPix.annotationsDBFields ?: @{};
+                yearOld = metadataPix.yearOld ?: @"";
+                yearOldAcquisition = metadataPix.yearOldAcquisition ?: @"";
+            }
+            for (NSInteger frame = 0; frame < frameCount; ++frame)
+            {
+                NSMutableDictionary *metadata = [NSMutableDictionary dictionaryWithDictionary:imagePositions[image.objectID] ?: @{}];
+                metadata[@"title"] = title;
+                metadata[@"seriesNumber"] = image.series.id.stringValue ?: @"";
+                metadata[@"patientName"] = image.series.study.name ?: @"";
+                metadata[@"patientID"] = image.series.study.patientID ?: @"";
+                if (image.date) metadata[@"acquisitionDate"] = image.date;
+                if (expandFrames)
+                {
+                    metadata[@"sliceIndex"] = @(frame);
+                    metadata[@"sliceCount"] = @(frameCount);
+                }
+                [entries addObject:@{@"path": path,
+                                     @"sopClassUID": image.series.seriesSOPClassUID ?: @"",
+                                     @"isReport": @(isReport),
+                                     @"frame": expandFrames ? @(frame) : (image.frameID ?: @0),
+                                     @"windowWidth": image.series.windowWidth ?: @0,
+                                     @"windowLevel": image.series.windowLevel ?: @0,
+                                     @"title": title,
+                                     @"metadata": metadata,
+                                     @"annotationFields": annotationFields,
+                                     @"yearOld": yearOld,
+                                     @"yearOldAcquisition": yearOldAcquisition}];
+            }
+        }
+    }
+
+    NSString *directory = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    NSError *error = nil;
+    PDFDocument *document = [[[PDFDocument alloc] init] autorelease];
+    NSUInteger preparedEntries = 0;
+    Wait *wait = nil;
+    @try
+    {
+        if (entries.count > 1)
+        {
+            wait = [[Wait alloc] initWithString:NSLocalizedString(@"Preparing images and reports for printing...", nil) :YES];
+            [wait setCancel:YES];
+            [wait.progress setMaxValue:entries.count];
+            [wait showWindow:self];
+            [wait incrementBy:0];
+        }
+        for (NSDictionary *entry in entries)
+        {
+            if (wait.aborted) break;
+            NSUInteger previousPreparedEntries = preparedEntries;
+            @autoreleasepool
+            {
+                NSError *entryError = nil;
+                if ([entry[@"isReport"] boolValue])
+                {
+                    NSData *data = nil;
+                    if ([DCMAbstractSyntaxUID isPDF:entry[@"sopClassUID"]])
+                        data = [DicomFile encapsulatedPDFForFile:entry[@"path"] documentTitle:NULL error:&entryError];
+                    else if ([DCMAbstractSyntaxUID isStructuredReport:entry[@"sopClassUID"]])
+                    {
+                        NSString *path = [directory stringByAppendingPathComponent:@"report.pdf"];
+                        if ([[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&entryError] &&
+                            [StructuredReportSupport writePDFForDICOMAtPath:entry[@"path"] toPath:path error:&entryError])
+                            data = [NSData dataWithContentsOfFile:path options:0 error:&entryError];
+                    }
+                    else
+                        data = [NSData dataWithContentsOfFile:entry[@"path"] options:0 error:&entryError];
+
+                    PDFDocument *part = data ? [[[PDFDocument alloc] initWithData:data] autorelease] : nil;
+                    if (part.pageCount && part.allowsPrinting)
+                    {
+                        for (NSUInteger page = 0; page < part.pageCount; ++page)
+                            [document insertPage:[[[part pageAtIndex:page] copy] autorelease] atIndex:document.pageCount];
+                        ++preparedEntries;
+                    }
+                }
+                else
+                {
+                    DCMPix *pix = [[[DCMPix alloc] initWithPath:entry[@"path"] :0 :1 :nil
+                        :[entry[@"frame"] longValue] :0 isBonjour:NO imageObj:nil] autorelease];
+                    pix.annotationsDBFields = [[entry[@"annotationFields"] mutableCopy] autorelease];
+                    pix.yearOld = entry[@"yearOld"];
+                    pix.yearOldAcquisition = entry[@"yearOldAcquisition"];
+                    [pix CheckLoad];
+                    if (pix && !pix.notAbleToLoadImage && pix.fImage && pix.pwidth > 0 && pix.pheight > 0)
+                    {
+                        float width = [entry[@"windowWidth"] floatValue], level = [entry[@"windowLevel"] floatValue];
+                        if (!isfinite(width) || width <= 0 || !isfinite(level))
+                        {
+                            width = pix.savedWW;
+                            level = pix.savedWL;
+                        }
+                        if (!isfinite(width) || width <= 0 || !isfinite(level))
+                            width = level = 0; // Let DCMPix compute a display window if none is stored.
+                        [pix checkImageAvailble:width :level];
+                        NSImage *rendered = pix.baseAddr ? [pix image] : nil;
+                        double ratio = pix.pixelRatio;
+                        if (isfinite(ratio) && ratio > 0)
+                            rendered.size = NSMakeSize(pix.pwidth, pix.pheight * ratio);
+                        NSData *pageData = rendered ? [MetalViewerPaneView printPDFForImage:rendered pix:pix metadata:entry[@"metadata"]] : nil;
+                        PDFDocument *part = pageData ? [[[PDFDocument alloc] initWithData:pageData] autorelease] : nil;
+                        PDFPage *page = part.pageCount == 1 ? [part pageAtIndex:0] : nil;
+                        if (page)
+                        {
+                            [document insertPage:page atIndex:document.pageCount];
+                            ++preparedEntries;
+                        }
+                    }
+                }
+                if (preparedEntries == previousPreparedEntries && !entryError)
+                    entryError = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadCorruptFileError
+                        userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                            NSLocalizedString(@"\"%@\" could not be read or does not permit printing. Nothing was printed.", nil), entry[@"title"]]}];
+                error = [entryError retain];
+            }
+            if (error) break;
+            [wait incrementBy:1];
+        }
+        [wait close];
+        if (wait.aborted) return;
+
+        NSPrintInfo *printInfo = [[[NSPrintInfo sharedPrintInfo] copy] autorelease];
+        printInfo.jobDisposition = NSPrintSpoolJob;
+        NSPrintOperation *operation = !error && preparedEntries == entries.count && document.pageCount ?
+            [document printOperationForPrintInfo:printInfo scalingMode:kPDFPrintPageScaleDownToFit autoRotate:NO] : nil;
+        if (operation)
+        {
+            NSSet *titles = [NSSet setWithArray:[entries valueForKey:@"title"]];
+            operation.jobTitle = titles.count == 1 ? entries[0][@"title"] : NSLocalizedString(@"Selected Images and Reports", nil);
+            operation.showsPrintPanel = YES;
+            operation.showsProgressPanel = YES;
+            [operation runOperation];
+        }
+        else
+            HorosPresentCriticalAlert(NSLocalizedString(@"Print", nil), @"%@", NSLocalizedString(@"OK", nil), nil, nil,
+                error.localizedDescription ?: NSLocalizedString(@"No printable pages were found in the selection.", nil));
+    }
+    @catch (NSException *exception)
+    {
+        N2LogExceptionWithStackTrace(exception);
+        [wait close];
+        HorosPresentCriticalAlert(NSLocalizedString(@"Print", nil), @"%@", NSLocalizedString(@"OK", nil), nil, nil,
+            NSLocalizedString(@"The selection could not be prepared for printing.", nil));
+    }
+    @finally
+    {
+        [[NSFileManager defaultManager] removeItemAtPath:directory error:nil];
+        [wait release];
+        [error release];
+    }
+}
+
+- (NSString *)temporaryPDFForImage:(DicomImage *)image
+{
+    NSError *error = nil;
+    NSString *title = nil;
+    NSData *pdf = [DicomFile encapsulatedPDFForFile:image.completePathResolved documentTitle:&title error:&error];
+    if (pdf == nil)
+    {
+        HorosPresentCriticalAlert(NSLocalizedString(@"DICOM PDF", nil), @"%@",
+                                  NSLocalizedString(@"OK", nil), nil, nil, error.localizedDescription);
+        return nil;
+    }
+    // A DICOM title is a label, never a path. Isolate duplicate titles from other exports.
+    NSString *filename = [[title lastPathComponent] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    filename = [filename stringByReplacingOccurrencesOfString:@":" withString:@"-"];
+    if (filename.length == 0 || filename.length > 120 || [@[@".", @"..", @"/"] containsObject:filename])
+        filename = @"PDFFile.pdf";
+    if (![filename.pathExtension.lowercaseString isEqualToString:@"pdf"])
+        filename = [filename stringByAppendingPathExtension:@"pdf"];
+    NSString *directory = [self.database.tempDirPath stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    NSFileManager *manager = [NSFileManager defaultManager];
+    if (![manager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&error])
+    {
+        HorosPresentCriticalAlert(NSLocalizedString(@"DICOM PDF", nil), @"%@",
+                                  NSLocalizedString(@"OK", nil), nil, nil, error.localizedDescription);
+        return nil;
+    }
+    NSString *path = [directory stringByAppendingPathComponent:filename];
+    if (![pdf writeToFile:path options:NSDataWritingAtomic error:&error])
+    {
+        [manager removeItemAtPath:directory error:nil];
+        HorosPresentCriticalAlert(NSLocalizedString(@"DICOM PDF", nil), @"%@",
+                                  NSLocalizedString(@"OK", nil), nil, nil, error.localizedDescription);
+        return nil;
+    }
+    return path;
+}
+
 - (BOOL)isUsingExternalViewer: (NSManagedObject*) item
 {
     BOOL r = NO;
@@ -7484,23 +7744,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             
             if( [DCMAbstractSyntaxUID isPDF: [im valueForKeyPath: @"series.seriesSOPClassUID"]])
             {
-                DCMObject *dcmObject = [DCMObject objectWithContentsOfFile: [im valueForKey: @"completePath"] decodingPixelData:NO];
-                
-                if ([[dcmObject attributeValueWithName:@"SOPClassUID"] isEqualToString:[DCMAbstractSyntaxUID pdfStorageClassUID]])
-                {
-                    NSData *pdfData = [dcmObject attributeValueWithName:@"EncapsulatedDocument"];
-                    
-                    NSString *filename = [dcmObject attributeValueWithName:@"DocumentTitle"];
-                    if( [filename length] <= 0)
-                        filename = @"PDFFile.pdf";
-                    
-                    if( [[[filename pathExtension] lowercaseString] isEqualToString: @"pdf"] == NO)
-                        filename = [filename stringByAppendingPathExtension: @"pdf"];
-                    
-                    path = [self.database.tempDirPath stringByAppendingPathComponent:filename];
-                    [[NSFileManager defaultManager] removeItemAtPath: path error: nil];
-                    [pdfData writeToFile: path atomically: YES];
-                }
+                path = [self temporaryPDFForImage:im];
             }
             else if( [DCMAbstractSyntaxUID isStructuredReport: [im valueForKeyPath: @"series.seriesSOPClassUID"]])
             {
@@ -7519,7 +7763,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             }
             else path = [im valueForKey: @"completePath"];
             
-            if( path && [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:path]] == NO)
+            if( path == nil || [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:path]] == NO)
                 r = NO;
             else
                 r = YES;
@@ -9032,48 +9276,24 @@ static BOOL withReset = NO;
 - (void) pdfPreview:(id)sender
 {
     [self matrixPressed:sender];
-    
-    NSAutoreleasePool	*pool = [[NSAutoreleasePool alloc] init];
-    
-    NSLog(@"open pdf with Preview");
-    //check if the folder PDF exists in OsiriX document folder
-    NSString *pathToPDF = [[self.database baseDirPath] stringByAppendingPathComponent:@"PDF"];
-    if (!([[NSFileManager defaultManager] fileExistsAtPath:pathToPDF]))
-        [[NSFileManager defaultManager] createDirectoryAtPath:pathToPDF withIntermediateDirectories:YES attributes:nil error:NULL];
-    
-    //pathToPDF = /PDF/yyyymmdd.hhmmss.pdf
-    NSDateFormatter *datetimeFormatter = [[[NSDateFormatter alloc] init] autorelease];
-    datetimeFormatter.dateFormat = @"%Y%m%d.%H%M%S";
-    pathToPDF = [pathToPDF stringByAppendingPathComponent: [datetimeFormatter stringFromDate:[NSDate date]]];
-    pathToPDF = [pathToPDF stringByAppendingPathExtension:@"pdf"];
-    NSLog( @"%@", pathToPDF);
-    
-    //creating file and opening it with preview
-    NSManagedObject	*curObj = [matrixViewArray objectAtIndex: [[sender selectedCell] tag]];
-    NSLog( @"%@", [curObj valueForKey: @"type"]);
-    
-    
     @try
     {
+        NSInteger index = [[sender selectedCell] tag];
+        if (index < 0 || index >= matrixViewArray.count)
+            return;
+        NSManagedObject *curObj = [matrixViewArray objectAtIndex:index];
         if( [[curObj valueForKey:@"type"] isEqualToString: @"Series"])
-            curObj = [[self childrenArray: curObj] objectAtIndex: 0];
-        
+            curObj = [[self childrenArray: curObj] firstObject];
+        if (![curObj isKindOfClass:[DicomImage class]])
+            return;
+        NSString *path = [self temporaryPDFForImage:(DicomImage *)curObj];
+        if (path)
+            [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:path]];
     }
     @catch (NSException * e)
     {
         N2LogExceptionWithStackTrace(e);
     }
-    
-    
-    NSLog( @"%@", [curObj valueForKey: @"completePath"]);
-    
-    DCMObject *dcmObject = [DCMObject objectWithContentsOfFile:[curObj valueForKey: @"completePath"] decodingPixelData:NO];
-    NSData *encapsulatedPDF = [dcmObject attributeValueWithName:@"EncapsulatedDocument"];
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    if( [fileManager createFileAtPath:pathToPDF contents:encapsulatedPDF attributes:nil]) [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:pathToPDF]];
-    else NSLog( @"couldn't open pdf");
-    [NSThread sleepForTimeInterval: 1];
-    [pool release];
 }
 
 - (void)matrixDisplayIcons:(id) sender
@@ -11673,7 +11893,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         
         notFoundImage = [[NSImage imageNamed:@"FileNotFound.tif"] retain];
         
-        reportFilesToCheck = [[NSMutableDictionary dictionary] retain];
         
         pressedKeys = [[NSMutableString stringWithString:@""] retain];
         
@@ -11740,7 +11959,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         [NSTimer scheduledTimerWithTimeInterval: 1 target:self selector:@selector(refreshComparativeStudiesIfNeeded:) userInfo:self repeats:YES];
         
         loadPreviewIndex = 0;
-        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateReportToolbarIcon:) name:OsirixReportModeChangedNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(alternateButtonPressed:) name:OsirixAlternateButtonPressedNotification object:nil];
     }
     return self;
@@ -12039,8 +12257,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         
         [wait showWindow:self];
         
-        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateReportToolbarIcon:) name:NSOutlineViewSelectionDidChangeNotification object:databaseOutline];
-        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateReportToolbarIcon:) name:NSOutlineViewSelectionIsChangingNotification object:databaseOutline];
         
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(observeScrollerStyleDidChangeNotification:) name:@"NSPreferredScrollerStyleDidChangeNotification" object:nil];
         [self observeScrollerStyleDidChangeNotification:nil];
@@ -12441,7 +12657,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         
         //Something in the delete queue? Write it to the disk
         [self saveDeleteQueue];
-        [self syncReportsIfNecessary];
     }
     @catch (NSException * e)
     {
@@ -12712,10 +12927,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
            [menuItem action] == @selector(sendMail:) ||
            [menuItem action] == @selector(compressSelectedFiles:) ||
            [menuItem action] == @selector(decompressSelectedFiles:) ||
-           [menuItem action] == @selector(generateReport:) ||
-           [menuItem action] == @selector(deleteReport:) ||
-           [menuItem action] == @selector(convertReportToPDF:) ||
-           [menuItem action] == @selector(convertReportToDICOMSR:) ||
            [menuItem action] == @selector(delItem:) ||
            [menuItem action] == @selector(querySelectedStudy:) ||
            [menuItem action] == @selector(burnDICOM:) ||
@@ -12739,10 +12950,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     {
         if([menuItem action] == @selector(compressSelectedFiles:) ||
            [menuItem action] == @selector(decompressSelectedFiles:) ||
-           [menuItem action] == @selector(generateReport:) ||
-           [menuItem action] == @selector(deleteReport:) ||
-           [menuItem action] == @selector(convertReportToPDF:) ||
-           [menuItem action] == @selector(convertReportToDICOMSR:) ||
            [menuItem action] == @selector(delItem:) ||
            [menuItem action] == @selector(regenerateAutoComments:) ||
            [menuItem action] == @selector(copyToDBFolder:) ||
@@ -12774,24 +12981,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             return NO;
     }
     
-    if( [menuItem action] == @selector(convertReportToPDF:) || [menuItem action] == @selector(convertReportToDICOMSR:))
-    {
-        id item = [databaseOutline itemAtRow: [[databaseOutline selectedRowIndexes] firstIndex]];
-        
-        if( item)
-        {
-            DicomStudy *studySelected;
-            
-            if ([[item valueForKey: @"type"] isEqualToString:@"Study"])
-                studySelected = (DicomStudy*) item;
-            else
-                studySelected = [item valueForKey:@"study"];
-            
-            if( [studySelected valueForKey:@"reportURL"] == nil)
-                return NO;
-        }
-    }
-    else if( menuItem.menu == imageTileMenu)
+    if( menuItem.menu == imageTileMenu)
     {
         return NO;
     }
@@ -13999,25 +14189,21 @@ static volatile int numberOfThreadsForJPEG = 0;
             
             if( [DCMAbstractSyntaxUID isPDF: [curImage valueForKeyPath: @"series.seriesSOPClassUID"]])
             {
-                DCMObject *dcmObject = [DCMObject objectWithContentsOfFile: [curImage valueForKey: @"completePath"] decodingPixelData:NO];
-                
                 @try
                 {
-                    if ([[dcmObject attributeValueWithName:@"SOPClassUID"] isEqualToString:[DCMAbstractSyntaxUID pdfStorageClassUID]])
+                    NSError *pdfError = nil;
+                    NSData *pdfData = [DicomFile encapsulatedPDFForFile:[curImage valueForKey:@"completePathResolved"] documentTitle:NULL error:&pdfError];
+                    if (pdfData)
                     {
-                        NSData *pdfData = [dcmObject attributeValueWithName:@"EncapsulatedDocument"];
-                        
-                        if( pdfData)
+                        NSImage *im = [[[NSImage alloc] initWithData:pdfData] autorelease];
+                        if (im)
                         {
-                            NSImage *im = [[[NSImage alloc] initWithData: pdfData] autorelease];
-                            
-                            if( im)
-                            {
-                                [imagesArray addObject: im];
-                                [imagesArrayObjects addObject: curImage];
-                            }
+                            [imagesArray addObject:im];
+                            [imagesArrayObjects addObject:curImage];
                         }
                     }
+                    else
+                        NSLog(@"Cannot export embedded PDF: %@", pdfError.localizedDescription);
                 }
                 @catch (NSException * e)
                 {
@@ -14399,46 +14585,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     [mstr replaceOccurrencesOfString:@"%" withString:@"" options:0 range:mstr.range];
     
     return mstr;
-}
-
-- (void) importReport:(NSString*) path UID: (NSString*) uid
-{
-    if( [[NSFileManager defaultManager] fileExistsAtPath: path])
-    {
-        NSManagedObjectContext *context = self.database.managedObjectContext;
-        
-        N2PerformManagedObjectContextBlockAndWait(context, ^{
-            @try
-            {
-            NSFetchRequest	*dbRequest = [[[NSFetchRequest alloc] init] autorelease];
-            [dbRequest setEntity: [[self.database.managedObjectModel entitiesByName] objectForKey:@"Study"]];
-            [dbRequest setPredicate: [NSPredicate predicateWithFormat:  @"studyInstanceUID == %@", uid]];
-            
-            NSError *error = nil;
-            NSArray *studiesArray = [context executeFetchRequest:dbRequest error:&error];
-            
-            if( [studiesArray count])
-            {
-                DicomStudy *s = [studiesArray lastObject];
-                
-                NSString *reportURL = nil;
-                
-                if( [[path pathExtension] length])
-                    reportURL = [NSString stringWithFormat: @"%@/%@.%@", [self.database reportsDirPath], ReportFilenameForStudy(s), [path pathExtension]];
-                else
-                    reportURL = [NSString stringWithFormat: @"%@/%@", [self.database reportsDirPath], ReportFilenameForStudy(s)];
-                
-                [[NSFileManager defaultManager] removeItemAtPath: reportURL error:NULL];
-                [[NSFileManager defaultManager] copyItemAtPath:path toPath:reportURL error:NULL];
-                [s setValue: reportURL forKey: @"reportURL"];
-            }
-            }
-            @catch (NSException * e)
-            {
-                N2LogExceptionWithStackTrace(e);
-            }
-        });
-    }
 }
 
 - (NSArray*) exportDICOMFileInt: (NSString*) location files: (NSMutableArray*) filesToExport objects: (NSMutableArray*) dicomFiles2Export
@@ -15687,353 +15833,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
-#pragma mark -
-#pragma mark Report functions
-
-- (void) checkReportsDICOMSRConsistency // __deprecated
-{
-    [_database checkReportsConsistencyWithDICOMSR];
-}
-
-- (void) syncReportsIfNecessary
-{
-    NSEnumerator *enumerator = [reportFilesToCheck keyEnumerator];
-    NSString *key;
-    
-    while( (key = [enumerator nextObject]))
-    {
-        NSMutableDictionary *d = [reportFilesToCheck objectForKey: key];
-        NSDate *previousDate = [d objectForKey: @"date"];
-        DicomStudy *study = [d objectForKey: @"study"];
-        
-        NSString *file = [study valueForKey: @"reportURL"];
-        BOOL isDirectory;
-        
-        if( [[NSFileManager defaultManager] fileExistsAtPath: file isDirectory: &isDirectory])
-        {
-            NSDictionary *fattrs = [[NSFileManager defaultManager] attributesOfItemAtPath: file error: nil];
-            
-            if( [previousDate timeIntervalSinceDate: [fattrs objectForKey: NSFileModificationDate]] < 0)
-            {
-                NSLog( @"Report -> File Modified -> Sync %@ : \r %@ versus %@", key, [previousDate description], [[fattrs objectForKey:NSFileModificationDate] description]);
-                
-                [d setObject: [fattrs objectForKey: NSFileModificationDate] forKey: @"date"];
-                
-                [study archiveReportAsDICOMSR];
-                
-                NSLog( @"Report -> New Content Date: %@", [[study reportImage] valueForKey: @"date"]);
-            }
-        }
-    }
-}
-
-- (IBAction) convertReportToDICOMSR: (id)sender
-{
-    //    [checkBonjourUpToDateThreadLock lock]; // TODO: merge
-    
-    NSMutableArray *studies = [NSMutableArray array];
-    
-    for( NSManagedObject *o in [self databaseSelection])
-    {
-        DicomStudy *study = nil;
-        
-        if( [[o valueForKey:@"type"] isEqualToString:@"Series"])
-            study = [o valueForKey:@"study"];
-        else
-            study = (DicomStudy*) o;
-        
-        if( [studies containsObject: study] == NO)
-            [studies addObject: study];
-    }
-    
-    NSMutableArray *newDICOMPDFReports = [NSMutableArray array];
-    for( DicomStudy *study in studies)
-    {
-        @try 
-        {
-            NSString *filename = [_database uniquePathForNewDataFileWithExtension:@"dcm"];
-            
-            [study saveReportAsDicomAtPath: filename];
-            
-            [newDICOMPDFReports addObject: filename];
-        }
-        @catch (NSException * e) 
-        {
-            NSLog( @"***** exception in %s: %@", __PRETTY_FUNCTION__, e);
-            [e printStackTrace];
-        }
-        
-        [_database addFilesAtPaths: newDICOMPDFReports
-                 postNotifications: YES
-                         dicomOnly: YES
-               rereadExistingItems: YES
-                 generatedByOsiriX: YES];
-    }
-    
-    //    [checkBonjourUpToDateThreadLock unlock]; // TODO: merge
-    [self performSelector: @selector(updateReportToolbarIcon:) withObject: nil afterDelay: 0.1];
-}
-
-
-- (IBAction) convertReportToPDF: (id)sender
-{
-    NSIndexSet *index = [databaseOutline selectedRowIndexes];
-    NSManagedObject *item = [databaseOutline itemAtRow:[index firstIndex]];
-    
-    if( item)
-    {
-        DicomStudy *studySelected;
-        
-        //		[checkBonjourUpToDateThreadLock lock]; // TODO: merge
-        
-        @try 
-        {			
-            if ([[item valueForKey: @"type"] isEqualToString:@"Study"])
-                studySelected = (DicomStudy*) item;
-            else
-                studySelected = [item valueForKey:@"study"];
-            
-            NSSavePanel *panel = [NSSavePanel savePanel];
-            
-            [panel setCanSelectHiddenExtension:YES];
-            panel.allowedContentTypes = @[UTTypePDF];
-            
-            NSString *filename = [NSString stringWithFormat: NSLocalizedString( @"%@-Report.pdf", nil), studySelected.name];
-            
-            panel.nameFieldStringValue = filename;
-
-            if ([panel runModal] == NSModalResponseOK)
-            {
-                [studySelected saveReportAsPdfAtPath:panel.URL.path];
-            }
-        }
-        @catch (NSException * e)
-        {
-            NSLog( @"***** exception in %s: %@", __PRETTY_FUNCTION__, e);
-            [e printStackTrace];
-        }
-        
-        //		[checkBonjourUpToDateThreadLock unlock]; // TODO: merge
-        [self performSelector: @selector(updateReportToolbarIcon:) withObject: nil afterDelay: 0.1];
-    }
-}
-
-- (IBAction)deleteReport: (id)sender
-{
-    NSIndexSet			*index = [databaseOutline selectedRowIndexes];
-    NSManagedObject		*item = [databaseOutline itemAtRow:[index firstIndex]];
-    
-    if( item)
-    {
-        NSManagedObject *studySelected;
-        
-        //		[checkBonjourUpToDateThreadLock lock];
-        
-        @try 
-        {			
-            if ([[item valueForKey: @"type"] isEqualToString:@"Study"])
-                studySelected = item;
-            else
-                studySelected = [item valueForKey:@"study"];
-            
-            long result = HorosPresentInformationalAlert(NSLocalizedString(@"Delete report", nil), NSLocalizedString(@"Are you sure you want to delete the selected report?", nil), NSLocalizedString(@"OK",nil), NSLocalizedString(@"Cancel",nil), nil);
-            
-            if( result == HorosAlertResponseFirstButton)
-            {
-                if( [studySelected valueForKey:@"reportURL"] != nil)
-                {
-                    if( [[studySelected valueForKey:@"reportURL"] lastPathComponent])
-                        [reportFilesToCheck removeObjectForKey: [[studySelected valueForKey:@"reportURL"] lastPathComponent]];
-                    
-                    
-                    if( [studySelected valueForKey:@"reportURL"] && [[NSFileManager defaultManager] fileExistsAtPath: [studySelected valueForKey:@"reportURL"]])
-                        [[NSFileManager defaultManager] removeItemAtPath: [studySelected valueForKey:@"reportURL"] error:NULL];
-                    
-                    if (![_database isLocal])
-                        [(RemoteDicomDatabase*)_database object:studySelected setValue:nil forKey:@"reportURL"];
-                    
-                    [studySelected setValue: nil forKey:@"reportURL"];
-                    
-                    [databaseOutline reloadData];
-                }
-                [[NSNotificationCenter defaultCenter] postNotificationName:OsirixDeletedReportNotification object:nil userInfo:nil];
-            }
-        }
-        @catch (NSException * e) 
-        {
-            N2LogExceptionWithStackTrace(e);
-        }
-        
-        //		[checkBonjourUpToDateThreadLock unlock];
-        [self performSelector: @selector(updateReportToolbarIcon:) withObject: nil afterDelay: 0.1];
-    }
-}
-
-- (IBAction) generateReport: (id)sender
-{
-    NSIndexSet *index = [databaseOutline selectedRowIndexes];
-    NSManagedObject *item = [databaseOutline itemAtRow:[index firstIndex]];
-    
-    if ([item isKindOfClass:[DicomSeries class]])
-        item = [item valueForKey:@"study"];
-    
-    if( item)
-    {
-        DicomStudy *studySelected = nil;
-        
-        if ([[item valueForKey: @"type"] isEqualToString:@"Study"])
-            studySelected = (DicomStudy*) item;
-        else
-            studySelected = [item valueForKey:@"study"];
-        
-        if( [[item valueForKey: @"reportURL"] hasPrefix: @"http://"] || [[item valueForKey: @"reportURL"] hasPrefix: @"https://"])
-        {
-            [[NSWorkspace sharedWorkspace] openURL: [NSURL URLWithString: [item valueForKey: @"reportURL"]]];
-        }
-        else
-        {
-            @try
-            {
-                NSString *localReportFile = [studySelected valueForKey: @"reportURL"];
-
-                if( ![_database isLocal] && localReportFile)
-                {
-                    DicomImage *reportSR = [studySelected reportImage];
-
-                    if( reportSR)
-                    {
-                        if( [[reportSR valueForKey:@"inDatabaseFolder"] boolValue])
-                        {
-                            if( localReportFile)
-                                [[NSFileManager defaultManager] removeItemAtPath: localReportFile error: nil];
-
-                            if( [reportSR valueForKey: @"completePath"])
-                                [[NSFileManager defaultManager] removeItemAtPath: [reportSR valueForKey: @"completePath"] error: nil];
-                        }
-                    
-                        NSString *reportPath = [DicomDatabase extractReportSR: [reportSR completePathResolved] contentDate: [reportSR valueForKey: @"date"]];
-                    
-                        if( reportPath)
-                        {
-                            if( [reportPath length] > 8 && ([reportPath hasPrefix: @"http://"] || [reportPath hasPrefix: @"https://"]))
-                                NSLog( @"**** generateReport: We should not be here....");
-                            else
-                            {
-                                if( localReportFile)
-                                {
-                                    [[NSFileManager defaultManager] removeItemAtPath: localReportFile error: nil];
-                                    [[NSFileManager defaultManager] moveItemAtPath: reportPath toPath: localReportFile error: nil];
-                                }
-                            }
-                        }
-                    }
-                }
-                    
-                if( localReportFile)
-                {
-                    if( [[NSFileManager defaultManager] fileExistsAtPath: localReportFile])
-                    {
-                        [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:localReportFile]];
-                        [NSThread sleepForTimeInterval: 1];
-                    }
-                    else
-                    {
-                        NSLog( @"***** reportURL contains a path, but file doesnt exist.");
-                    }
-                }
-
-                if( [[NSFileManager defaultManager] fileExistsAtPath: localReportFile])
-                {
-                    NSString *resolvedReportPath = [[[NSURL fileURLWithPath:localReportFile] URLByResolvingSymlinksInPath] path];
-                    NSDictionary *fattrs = [[NSFileManager defaultManager] attributesOfItemAtPath:resolvedReportPath error:NULL];
-                    NSMutableDictionary *d = [NSMutableDictionary dictionaryWithObjectsAndKeys: studySelected, @"study", [fattrs objectForKey:NSFileModificationDate], @"date", nil];
-
-                    [reportFilesToCheck setObject: d forKey: [localReportFile lastPathComponent]];
-                }
-            }
-            @catch (NSException * e)
-            {
-                N2LogExceptionWithStackTrace(e);
-            }
-        }
-    }
-    
-    [self performSelector: @selector(updateReportToolbarIcon:) withObject: nil afterDelay: 0.1];	
-    [[NSNotificationCenter defaultCenter] postNotificationName: OsirixReportModeChangedNotification object: nil userInfo: nil];
-}
-
-- (NSImage*) reportIcon
-{
-    reportToolbarItemType = 3;
-    return [NSImage imageNamed:@"Report.icns"];
-}
-
-- (void)updateReportToolbarIcon: (NSNotification *)note
-{
-    int previousReportType = reportToolbarItemType;
-    
-    [self setToolbarReportIconForItem: nil];
-    
-    if( reportToolbarItemType != previousReportType)
-    {
-        NSToolbarItem *item;
-        NSArray *toolbarItems = [toolbar items];
-        
-        [AppController checkForPreferencesUpdate: NO];
-        
-        for( int i=0; i<[toolbarItems count]; i++)
-        {
-            item = [toolbarItems objectAtIndex:i];
-            if ([[item itemIdentifier] isEqualToString:ReportToolbarItemIdentifier])
-            {
-                [toolbar removeItemAtIndex:i];
-                [toolbar insertItemWithItemIdentifier:ReportToolbarItemIdentifier atIndex:i];
-            }
-        }
-        
-        [AppController checkForPreferencesUpdate: YES];
-    }
-}
-
-
-- (void)setToolbarReportIconForItem: (NSToolbarItem *)item
-{
-    @try
-    {
-        NSIndexSet* index = [databaseOutline selectedRowIndexes];
-        NSManagedObject	*selectedItem = [databaseOutline itemAtRow:[index firstIndex]];
-        DicomStudy* studySelected;
-        if ([[selectedItem valueForKey: @"type"] isEqualToString:@"Study"])
-            studySelected = (DicomStudy*)selectedItem;
-        else
-            studySelected = [selectedItem valueForKey:@"study"];
-        
-        NSImage* icon = nil;
-
-        if (studySelected.reportURL)
-        {
-            if ([studySelected.reportURL hasPrefix: @"http://"] || [studySelected.reportURL hasPrefix: @"https://"])
-                icon = [[NSWorkspace sharedWorkspace] iconForContentType:([UTType typeWithFilenameExtension:@"download"] ?: UTTypeData)];
-            else if ([[NSFileManager defaultManager] fileExistsAtPath:studySelected.reportURL])
-                icon = [[NSWorkspace sharedWorkspace] iconForFile:studySelected.reportURL];
-            if (icon)
-                reportToolbarItemType = [NSDate timeIntervalSinceReferenceDate];
-        }
-            
-        if (!icon)
-            icon = [self reportIcon];
-            
-        [item setImage:icon];
-    }
-    @catch (NSException * e)
-    {
-        N2LogExceptionWithStackTrace(e);
-    }
-}
-
-
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-
 #pragma mark-
 #pragma mark Toolbar functions
 
@@ -16347,15 +16146,6 @@ static volatile int numberOfThreadsForJPEG = 0;
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(delItem:)];
     }
-    else if ([itemIdent isEqualToString: ReportToolbarItemIdentifier])
-    {
-        [toolbarItem setLabel: NSLocalizedString(@"Report",nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"Report",nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"Create/Open a report for selected study",nil)];
-        [self setToolbarReportIconForItem: toolbarItem];
-        [toolbarItem setTarget: self];
-        [toolbarItem setAction: @selector(generateReport:)];
-    }
     else if ([itemIdent isEqualToString: OpenKeyImagesAndROIsToolbarItemIdentifier])
     {
         [toolbarItem setLabel: NSLocalizedString(@"ROIs & Keys", nil)];
@@ -16565,7 +16355,6 @@ static volatile int numberOfThreadsForJPEG = 0;
             TrashToolbarItemIdentifier,
             NSToolbarFlexibleSpaceItemIdentifier,
             OpenKeyImagesAndROIsToolbarItemIdentifier,
-            ReportToolbarItemIdentifier,
             NSToolbarFlexibleSpaceItemIdentifier,
             TimeIntervalToolbarItemIdentifier,
             ModalityFilterToolbarItemIdentifier,
@@ -16595,7 +16384,6 @@ static volatile int numberOfThreadsForJPEG = 0;
                              BurnerToolbarItemIdentifier,
                              XMLToolbarItemIdentifier,
                              TrashToolbarItemIdentifier,
-                             ReportToolbarItemIdentifier,
                              ToggleDrawerToolbarItemIdentifier,
                              ResetSplitViewsItemIdentifier,
                              nil];
@@ -16609,7 +16397,7 @@ static volatile int numberOfThreadsForJPEG = 0;
 
 - (void)removeForbiddenDatabaseToolbarItems
 {
-    NSArray *forbiddenItems = [NSArray arrayWithObjects:@"Cloud Dashboard", @"Cloud Report", @"Cloud Sharing", nil];
+    NSArray *forbiddenItems = [NSArray arrayWithObjects:@"Cloud Dashboard", @"Cloud Report", @"Cloud Sharing", @"Report.icns", nil];
 
     for( NSInteger i = [[toolbar items] count]-1; i >= 0; --i)
     {
@@ -16635,7 +16423,7 @@ static volatile int numberOfThreadsForJPEG = 0;
         toolbarSearchItem = [addedItem retain];
     }
 
-    if( [[NSArray arrayWithObjects:@"Cloud Dashboard", @"Cloud Report", @"Cloud Sharing", nil] containsObject:[addedItem itemIdentifier]] || [[NSArray arrayWithObjects:@"Cloud Dashboard", @"Cloud Report", @"Cloud Sharing", nil] containsObject:[addedItem label]] || [[NSArray arrayWithObjects:@"Cloud Dashboard", @"Cloud Report", @"Cloud Sharing", nil] containsObject:[addedItem paletteLabel]])
+    if( [[addedItem itemIdentifier] isEqualToString:@"Report.icns"] || [[NSArray arrayWithObjects:@"Cloud Dashboard", @"Cloud Report", @"Cloud Sharing", nil] containsObject:[addedItem itemIdentifier]] || [[NSArray arrayWithObjects:@"Cloud Dashboard", @"Cloud Report", @"Cloud Sharing", nil] containsObject:[addedItem label]] || [[NSArray arrayWithObjects:@"Cloud Dashboard", @"Cloud Report", @"Cloud Sharing", nil] containsObject:[addedItem paletteLabel]])
         [self performSelector:@selector(removeForbiddenDatabaseToolbarItems) withObject:nil afterDelay:0.0];
 }  
 
@@ -16867,7 +16655,6 @@ static volatile int numberOfThreadsForJPEG = 0;
         if ([toolbarItem.itemIdentifier isEqualToString:ImportToolbarItemIdentifier] || 
             [toolbarItem.itemIdentifier isEqualToString:AnonymizerToolbarItemIdentifier] || 
             [toolbarItem.itemIdentifier isEqualToString:TrashToolbarItemIdentifier] || 
-            [toolbarItem.itemIdentifier isEqualToString:ReportToolbarItemIdentifier] || // TODO: if report already exists, allow user to view it
             [toolbarItem.itemIdentifier isEqualToString:BurnerToolbarItemIdentifier] || 
             [toolbarItem.itemIdentifier isEqualToString:QueryToolbarItemIdentifier]
             )
@@ -16878,7 +16665,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     {
         if ([toolbarItem.itemIdentifier isEqualToString:AnonymizerToolbarItemIdentifier] ||
             [toolbarItem.itemIdentifier isEqualToString:TrashToolbarItemIdentifier] || 
-            [toolbarItem.itemIdentifier isEqualToString:ReportToolbarItemIdentifier] ||
             [toolbarItem.itemIdentifier isEqualToString:BurnerToolbarItemIdentifier]
             )
             return NO;
@@ -16903,10 +16689,6 @@ static volatile int numberOfThreadsForJPEG = 0;
            [toolbarItem action] == @selector(exportROIAndKeyImagesAsDICOMSeries:) ||
            [toolbarItem action] == @selector(compressSelectedFiles:) || 
            [toolbarItem action] == @selector(decompressSelectedFiles:) || 
-           [toolbarItem action] == @selector(generateReport:) || 
-           [toolbarItem action] == @selector(deleteReport:) || 
-           [toolbarItem action] == @selector(convertReportToPDF:) ||
-           [toolbarItem action] == @selector(convertReportToDICOMSR:) ||
            [toolbarItem action] == @selector(delItem:) || 
            [toolbarItem action] == @selector(querySelectedStudy:) || 
            [toolbarItem action] == @selector(burnDICOM:) || 

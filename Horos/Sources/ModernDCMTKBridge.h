@@ -75,6 +75,10 @@ int HorosModernDCMTKCopyImageGeometry(const char* path, double* origin3, double*
 int HorosModernDCMTKCopyFrameGeometry(const char* path, double** sliceLocations, int* sliceCount, double** triggerDelays, int* triggerCount);
 int HorosModernDCMTKCopyDecodedFrame(const char* path, unsigned long frameIndex, HorosModernDCMTKDecodedFrame* frame);
 int HorosModernDCMTKCopyEncapsulatedDocument(const char* path, unsigned char** buffer, unsigned long* length);
+// PDF-specific, read-only extraction. buffer/length are required; title is optional UTF-8.
+// Honors EncapsulatedDocumentLength when present. Free buffer with FreeBuffer and strings with FreeString.
+int HorosModernDCMTKCopyEncapsulatedPDF(const char* path, unsigned char** buffer, unsigned long* length,
+                                      char** title, char** failureReason);
 int HorosModernDCMTKCopyFileDataInTransferSyntax(const char* path,
                                                  const char* transferSyntaxUID,
                                                  int quality,

@@ -46,7 +46,6 @@
 #import "DCMTagDictionary.h"
 #import "DCMTagForNameDictionary.h"
 #import "ModernDCMTKBridge.h"
-#import "HorosDICOMMetadata.h"
 
 #include <dlfcn.h>
 
@@ -131,26 +130,7 @@ static BOOL HorosParseTagString(NSString *tagString, int *group, int *element)
 
 + (NSXMLDocument *)metadataDocumentForFile:(NSString *)path error:(NSError **)error
 {
-    typedef char* (*CopyMetadataFn)(const char*, char**);
-    typedef void (*FreeStringFn)(char*);
-    CopyMetadataFn copyMetadata = HorosModernDCMTKSymbol<CopyMetadataFn>("HorosModernDCMTKCopyMetadataXML");
-    FreeStringFn freeString = HorosModernDCMTKSymbol<FreeStringFn>("HorosModernDCMTKFreeString");
-    NSString *reason = @"The DCMTK metadata reader is unavailable. Rebuild the bundled bridge.";
-    if (copyMetadata && freeString)
-    {
-        char *failure = nullptr;
-        char *xml = copyMetadata(path.fileSystemRepresentation, &failure);
-        NSString *xmlString = xml ? [NSString stringWithUTF8String:xml] : nil;
-        reason = failure ? [NSString stringWithUTF8String:failure] : @"Cannot read DICOM metadata as UTF-8.";
-        freeString(xml);
-        freeString(failure);
-        if (xmlString != nil)
-            return HorosDICOMMetadataDocument(xmlString, error);
-    }
-    if (error != NULL)
-        *error = [NSError errorWithDomain:@"HorosDICOMMetadata" code:2
-                                userInfo:@{NSLocalizedDescriptionKey: reason ?: @"Cannot read DICOM metadata."}];
-    return nil;
+    return [DicomFile metadataDocumentForFile:path error:error];
 }
 
 

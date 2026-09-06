@@ -24,6 +24,91 @@ static NSXMLElement *Element(NSXMLDocument *document, NSString *tag)
     return [[document nodesForXPath:xpath error:nil] firstObject];
 }
 
+static void CheckPDFExtraction(void *bridge, NSString *directory)
+{
+    auto copyPDF = reinterpret_cast<int (*)(const char*, unsigned char**, unsigned long*, char**, char**)>(
+        dlsym(bridge, "HorosModernDCMTKCopyEncapsulatedPDF"));
+    auto copyDocument = reinterpret_cast<int (*)(const char*, unsigned char**, unsigned long*)>(
+        dlsym(bridge, "HorosModernDCMTKCopyEncapsulatedDocument"));
+    auto freeBuffer = reinterpret_cast<void (*)(void*)>(dlsym(bridge, "HorosModernDCMTKFreeBuffer"));
+    auto freeString = reinterpret_cast<void (*)(char*)>(dlsym(bridge, "HorosModernDCMTKFreeString"));
+    Check(copyPDF && copyDocument && freeBuffer && freeString, @"PDF bridge symbols exported");
+
+    // Extraction fixture, not a PDF renderer test. An odd byte count exercises DICOM OB padding.
+    std::string payload = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n";
+    if (payload.size() % 2 == 0) payload += '\n';
+    DcmFileFormat file;
+    DcmDataset *dataset = file.getDataset();
+    Check(dataset->putAndInsertString(DCM_SOPClassUID, UID_EncapsulatedPDFStorage).good(), @"PDF SOP class");
+    Check(dataset->putAndInsertString(DCM_SOPInstanceUID, "1.2.3.4.6").good(), @"PDF SOP instance");
+    Check(dataset->putAndInsertString(DCM_MIMETypeOfEncapsulatedDocument, "application/pdf").good(), @"PDF MIME type");
+    Check(dataset->putAndInsertString(DCM_SpecificCharacterSet, "ISO_IR 100").good(), @"PDF source charset");
+    Check(dataset->putAndInsertString(DCM_DocumentTitle, "R\xe9sum\xe9").good(), @"PDF Latin-1 title");
+    Check(dataset->putAndInsertUint8Array(DCM_EncapsulatedDocument,
+        reinterpret_cast<const Uint8*>(payload.data()), payload.size()).good(), @"PDF payload");
+    Check(dataset->putAndInsertUint32(DCM_EncapsulatedDocumentLength, payload.size()).good(), @"PDF unpadded length");
+    NSString *path = [directory stringByAppendingPathComponent:@"pdf.dcm"];
+    auto read = [&](BOOL expectedSuccess, unsigned long expectedLength, NSString *expectedTitle) {
+        NSData *before = [NSData dataWithContentsOfFile:path];
+        unsigned char *buffer = nullptr;
+        unsigned long length = 0;
+        char *title = nullptr, *failure = nullptr;
+        int success = copyPDF(path.fileSystemRepresentation, &buffer, &length, &title, &failure);
+        Check((success != 0) == expectedSuccess, @"PDF extraction status");
+        if (expectedSuccess)
+        {
+            Check(buffer && length == expectedLength && failure == nullptr, @"PDF extraction length");
+            Check(std::memcmp(buffer, payload.data(), payload.size()) == 0, @"PDF bytes unchanged");
+            Check(title && [[NSString stringWithUTF8String:title] isEqualToString:expectedTitle], @"PDF decoded title");
+        }
+        else
+            Check(!buffer && length == 0 && !title && failure, @"PDF failure has empty outputs and an error");
+        freeBuffer(buffer);
+        freeString(title);
+        freeString(failure);
+        Check([before isEqualToData:[NSData dataWithContentsOfFile:path]], @"PDF source DICOM unchanged");
+    };
+    for (E_TransferSyntax syntax : {EXS_LittleEndianExplicit, EXS_LittleEndianImplicit, EXS_BigEndianExplicit})
+    {
+        Check(file.saveFile(path.fileSystemRepresentation, syntax).good(), @"Save synthetic DICOM PDF");
+        read(YES, payload.size(), @"R\u00e9sum\u00e9");
+    }
+    Check(dataset->findAndDeleteElement(DCM_EncapsulatedDocumentLength).good(), @"Remove optional length");
+    Check(dataset->putAndInsertString(DCM_MIMETypeOfEncapsulatedDocument, "Application/PDF").good(), @"Case-insensitive MIME type");
+    Check(file.saveFile(path.fileSystemRepresentation, EXS_LittleEndianExplicit).good(), @"Save legacy PDF");
+    read(YES, payload.size() + 1, @"R\u00e9sum\u00e9");
+    Check(dataset->putAndInsertString(DCM_SpecificCharacterSet, "INVALID_CHARSET").good(), @"Invalid optional-title charset");
+    Check(file.saveFile(path.fileSystemRepresentation, EXS_LittleEndianExplicit).good(), @"Save invalid-title PDF");
+    read(YES, payload.size() + 1, @"");
+    Check(dataset->putAndInsertString(DCM_SpecificCharacterSet, "ISO_IR 100").good(), @"Restore charset");
+    for (Uint32 invalidLength : {Uint32(0), Uint32(payload.size() - 2), Uint32(payload.size() + 100)})
+    {
+        Check(dataset->putAndInsertUint32(DCM_EncapsulatedDocumentLength, invalidLength).good(), @"Invalid PDF length");
+        Check(file.saveFile(path.fileSystemRepresentation, EXS_LittleEndianExplicit).good(), @"Save invalid-length PDF");
+        read(NO, 0, nil);
+    }
+    Check(dataset->putAndInsertUint32(DCM_EncapsulatedDocumentLength, payload.size()).good(), @"Restore PDF length");
+    Check(dataset->putAndInsertString(DCM_MIMETypeOfEncapsulatedDocument, "text/xml").good(), @"Non-PDF MIME type");
+    Check(file.saveFile(path.fileSystemRepresentation, EXS_LittleEndianExplicit).good(), @"Save non-PDF MIME");
+    read(NO, 0, nil);
+    Check(dataset->putAndInsertString(DCM_MIMETypeOfEncapsulatedDocument, "application/pdf").good(), @"Restore MIME type");
+    Check(dataset->putAndInsertString(DCM_SOPClassUID, UID_BasicTextSRStorage).good(), @"Legacy ROI/SR SOP class");
+    Check(file.saveFile(path.fileSystemRepresentation, EXS_LittleEndianExplicit).good(), @"Save SR payload");
+    read(NO, 0, nil);
+    unsigned char *buffer = nullptr;
+    unsigned long length = 0;
+    Check(copyDocument(path.fileSystemRepresentation, &buffer, &length) && length == payload.size() + 1,
+          @"Generic legacy ROI/SR extraction remains unchanged");
+    freeBuffer(buffer);
+    Check(dataset->putAndInsertString(DCM_SOPClassUID, UID_EncapsulatedPDFStorage).good(), @"Restore PDF SOP class");
+    Check(dataset->findAndDeleteElement(DCM_EncapsulatedDocument).good(), @"Remove missing PDF payload");
+    Check(file.saveFile(path.fileSystemRepresentation, EXS_LittleEndianExplicit).good(), @"Save missing PDF");
+    read(NO, 0, nil);
+    char *failure = nullptr;
+    Check(!copyPDF(nullptr, &buffer, &length, nullptr, &failure) && failure && !buffer && length == 0, @"Missing path rejected");
+    freeString(failure);
+}
+
 int main(int argc, const char **argv)
 {
     @autoreleasepool
@@ -48,6 +133,13 @@ int main(int argc, const char **argv)
         Check([[[Element(document, @"0008,1115") attributeForName:@"readOnly"] stringValue] boolValue], @"Sequence writing remains disabled");
         Check([HorosDICOMMetadataText(document) containsString:@"(0008,1115)[0].(0008,1140)[0].(0008,1155)"], @"Nested item paths");
         Check([HorosDICOMMetadataText(document) containsString:@"(0002,0010)"], @"File meta information retained");
+        Check([HorosDICOMMetadataShortValue(Element(document, @"0010,0010")) isEqualToString:@"Test^J\u00e9r\u00f4me & Example"], @"Unicode tag-menu preview");
+        Check([HorosDICOMMetadataShortValue(Element(document, @"0020,0032")) isEqualToString:@"1.25 -2.5 0"], @"Multiple values in tag-menu preview");
+        Check(HorosDICOMMetadataShortValue(Element(document, @"0008,1115")).length == 0, @"No sequence menu preview");
+        Check(HorosDICOMMetadataShortValue(Element(document, @"7fe0,0010")).length == 0, @"No pixel menu preview");
+        Check(HorosDICOMMetadataShortValue(Element(document, @"0042,0011")).length == 0, @"No embedded document menu preview");
+        Check(HorosDICOMMetadataShortValue(HorosDICOMMetadataAttribute(@"0040,a160", @"TextValue", @"UT",
+            @[[ @"x" stringByPaddingToLength:100 withString:@"x" startingAtIndex:0]])).length == 0, @"Long preview omitted without a length attribute");
         Check(HorosDICOMMetadataAttribute(@"bad", @"Bad", @"LO", @[]) == nil, @"Invalid tag rejected");
         Check(HorosDICOMMetadataDocument(@"<wrong/>", &error) == nil && error != nil, @"Unexpected XML rejected");
         Check(HorosDICOMMetadataDocument(@"<data-set>", &error) == nil && error != nil, @"Malformed XML rejected");
@@ -67,6 +159,7 @@ int main(int argc, const char **argv)
         Check([[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:NO attributes:nil error:&error], @"Create synthetic test directory");
         @try
         {
+            CheckPDFExtraction(bridge, directory);
             DcmFileFormat file;
             DcmDataset *dataset = file.getDataset();
             Check(dataset->putAndInsertString(DCM_SOPClassUID, UID_SecondaryCaptureImageStorage).good(), @"SOP class");

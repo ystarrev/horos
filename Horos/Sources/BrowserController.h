@@ -83,7 +83,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     NSToolbar               *toolbar;
     
     NSMutableArray			*sendQueue;
-    NSMutableDictionary		*reportFilesToCheck;
     
     NSMutableArray          *previewPix, *previewPixThumbnails;
     
@@ -204,7 +203,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     
     NSMutableString					*pressedKeys;
     
-    int								reportToolbarItemType;
     
     NSImage							*notFoundImage;
     
@@ -343,6 +341,7 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (void) emptyDeleteQueueThread;
 - (void) emptyDeleteQueue:(id) sender;
 - (BOOL)isUsingExternalViewer: (NSManagedObject*) item;
+- (void)printDatabaseSelection:(id)sender;
 - (void) addFileToDeleteQueue:(NSString*) file;
 - (NSManagedObjectModel *) managedObjectModel __deprecated;
 
@@ -430,7 +429,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (IBAction)setSearchType: (id)sender;
 - (IBAction) saveDBListAs:(id) sender;
 - (IBAction) openDatabase:(id) sender;
-- (void) checkReportsDICOMSRConsistency __deprecated;
 - (void) openDatabaseIn:(NSString*) a Bonjour:(BOOL) isBonjour __deprecated;
 - (void) openDatabaseIn: (NSString*)a Bonjour: (BOOL)isBonjour refresh: (BOOL) refresh __deprecated;
 - (void) browserPrepareForClose;
@@ -444,7 +442,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (NSMutableArray *) filesForDatabaseOutlineSelection :(NSMutableArray*) correspondingManagedObjects onlyImages:(BOOL) onlyImages;
 - (NSMutableArray *) filesForDatabaseMatrixSelection :(NSMutableArray*) correspondingManagedObjects;
 - (NSMutableArray *) filesForDatabaseMatrixSelection :(NSMutableArray*) correspondingManagedObjects onlyImages:(BOOL) onlyImages;
-- (void)setToolbarReportIconForItem: (NSToolbarItem *)item;
 - (void) addFiles: (NSArray*) files withRule:(NSDictionary*) routingRule __deprecated;
 - (void) resetListenerTimer __deprecated;
 - (IBAction) albumTableDoublePressed: (id)sender;
@@ -490,7 +487,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (void) autoCleanDatabaseDate:(id) sender __deprecated;
 
 - (void) refreshDatabase:(id) sender;
-- (void) syncReportsIfNecessary;
 
 //bonjour
 -(NSManagedObjectContext*)bonjourManagedObjectContext __deprecated;
@@ -520,9 +516,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (NSString *)createFilterDescription;
 - (void) willChangeContext;
 
-- (IBAction) deleteReport: (id) sender;
-- (IBAction) convertReportToPDF: (id)sender;
-- (IBAction) convertReportToDICOMSR: (id)sender;
 
 - (IBAction) rebuildThumbnails:(id) sender;
 - (IBAction)selectNoAlbums:(id)sender;
@@ -530,14 +523,11 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (NSArray *)databaseSelection;
 
 - (void) refreshMatrix:(id) sender;
-- (void)updateReportToolbarIcon:(NSNotification *)note;
 
 - (IBAction) paste: (id)sender;
 - (IBAction) pasteImageForSourceFile: (NSString*) sourceFile;
 - (IBAction) compressSelectedFiles:(id) sender;
 - (IBAction) decompressSelectedFiles:(id) sender;
-- (void) importReport:(NSString*) path UID: (NSString*) uid;
-- (IBAction) generateReport: (id) sender;
 - (IBAction)importRawData:(id)sender;
 - (void) pdfPreview:(id)sender;
 - (IBAction) burnDICOM:(id) sender;

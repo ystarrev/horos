@@ -42,7 +42,6 @@
 	IBOutlet NSMatrix		*locationMatrix;
 	IBOutlet NSPathControl	*locationPathField;
 	IBOutlet NSMatrix		*seriesOrderMatrix;
-	IBOutlet NSPopUpButton	*reportsMode;
 	
 	NSArray					*DICOMFieldsArray;
 	IBOutlet NSPopUpButton	*dicomFieldsMenu;
@@ -77,7 +76,6 @@
 - (IBAction)setSeriesOrder:(id)sender;
 - (IBAction)setAutoComments:(id) sender;
 - (IBAction)regenerateAutoComments:(id) sender;
-- (IBAction)setReportMode:(id) sender;
 - (IBAction) resetDate:(id) sender;
 - (IBAction) resetDateOfBirth:(id) sender;
 - (IBAction) setDICOMFieldMenu: (id) sender;

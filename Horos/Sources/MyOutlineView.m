@@ -44,6 +44,17 @@
 
 @implementation MyOutlineView
 
+- (void)print:(id)sender
+{
+    id controller = self.window.windowController;
+    if ([controller isKindOfClass:[BrowserController class]])
+    {
+        [controller printDatabaseSelection:self];
+        return;
+    }
+    [super print:sender];
+}
+
 - (void)removeTableColumn:(NSTableColumn*)tableColumn {
     N2LogStackTrace(@"this is not allowed");
 }

@@ -233,16 +233,6 @@
     if( [[[NSUserDefaults standardUserDefaults] stringForKey: @"commentFieldForAutoFill"] isEqualToString: @"comment3"]) self.currentCommentsField = 3;
     if( [[[NSUserDefaults standardUserDefaults] stringForKey: @"commentFieldForAutoFill"] isEqualToString: @"comment4"]) self.currentCommentsField = 4;
 	
-	// REPORTS
-	NSInteger reportsModeValue = [defaults integerForKey:@"REPORTSMODE"];
-	if (reportsModeValue == 3)
-	{
-		reportsModeValue = 2;
-		[defaults setInteger:reportsModeValue forKey:@"REPORTSMODE"];
-		[defaults removeObjectForKey:@"REPORTSPLUGIN"];
-	}
-	[reportsMode selectItemWithTag:reportsModeValue];
-	
 	// DATABASE AUTO-CLEANING
 	
 	[older setState:[defaults boolForKey:@"AUTOCLEANINGDATE"]];
@@ -289,21 +279,6 @@
 		[DICOMFieldsMenu addItem:item];
 	}
 	[dicomFieldsMenu setMenu:DICOMFieldsMenu];
-}
-
-- (IBAction) setReportMode:(id) sender
-{
-	// report mode int value
-	// 0 : Microsoft Word
-	// 1 : TextEdit
-	// 2 : Pages
-	// 4 : DICOM SR
-	// 5 : OO
-	
-	NSUserDefaults	*defaults = [NSUserDefaults standardUserDefaults];
-	
-	[defaults setInteger:[[reportsMode selectedItem] tag] forKey:@"REPORTSMODE"];
-	[[NSNotificationCenter defaultCenter] postNotificationName:@"reportModeChanged" object:nil];
 }
 
 // - (IBAction) setDisplayAllStudiesAlbum:(id) sender

@@ -260,22 +260,6 @@
                             <binding destination="38" name="value" keyPath="values.SupplementaryBurnPath" id="117"/>
                         </connections>
                     </textField>
-                    <button horizontalCompressionResistancePriority="1000" misplaced="YES" translatesAutoresizingMaskIntoConstraints="NO" id="73">
-                        <rect key="frame" x="114" y="79" width="284" height="18"/>
-                        <buttonCell key="cell" type="check" title="Copy the associated Report(s), if available" bezelStyle="regularSquare" imagePosition="left" alignment="left" scrollable="YES" lineBreakMode="clipping" inset="2" id="74">
-                            <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
-                            <font key="font" metaFont="system"/>
-                        </buttonCell>
-                        <connections>
-                            <binding destination="-2" name="enabled" keyPath="buttonsDisabled" id="137">
-                                <dictionary key="options">
-                                    <string key="NSValueTransformerName">NSNegateBoolean</string>
-                                </dictionary>
-                            </binding>
-                            <binding destination="38" name="hidden" keyPath="values.anonymizedBeforeBurning" previousBinding="137" id="138"/>
-                            <binding destination="38" name="value" keyPath="values.copyReportsToCD" id="76"/>
-                        </connections>
-                    </button>
                     <popUpButton verticalHuggingPriority="750" horizontalCompressionResistancePriority="1000" misplaced="YES" translatesAutoresizingMaskIntoConstraints="NO" id="170">
                         <rect key="frame" x="241" y="144" width="75" height="26"/>
                         <popUpButtonCell key="cell" type="push" title="Item 1" bezelStyle="rounded" alignment="left" lineBreakMode="truncatingTail" state="on" borderStyle="borderAndBezel" imageScaling="proportionallyDown" inset="2" selectedItem="173" id="171">
@@ -336,7 +320,6 @@ DQ
                     <constraint firstItem="159" firstAttribute="top" secondItem="25" secondAttribute="bottom" constant="8" symbolic="YES" id="Kgo-x1-Jiq"/>
                     <constraint firstItem="159" firstAttribute="top" secondItem="157" secondAttribute="top" id="Nud-Yi-FJW"/>
                     <constraint firstItem="36" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="5" secondAttribute="leading" constant="16" id="RPP-Lp-Sd4"/>
-                    <constraint firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="73" secondAttribute="trailing" constant="16" id="SeH-Lx-Mm0"/>
                     <constraint firstItem="9" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="5" secondAttribute="leading" constant="16" id="TGa-Q4-bWl"/>
                     <constraint firstItem="36" firstAttribute="trailing" secondItem="9" secondAttribute="trailing" id="TH2-hy-av9"/>
                     <constraint firstAttribute="trailing" secondItem="14" secondAttribute="trailing" constant="28" id="VID-cf-YJG"/>
@@ -344,20 +327,18 @@ DQ
                     <constraint firstItem="37" firstAttribute="baseline" secondItem="36" secondAttribute="baseline" id="YWb-gh-hSn"/>
                     <constraint firstItem="37" firstAttribute="top" secondItem="34" secondAttribute="bottom" constant="17" id="aNo-ny-miZ"/>
                     <constraint firstItem="47" firstAttribute="top" secondItem="159" secondAttribute="bottom" constant="10" id="bOn-hz-6zG"/>
-                    <constraint firstItem="90" firstAttribute="top" secondItem="73" secondAttribute="bottom" constant="6" symbolic="YES" id="bVm-71-t9U"/>
+                    <constraint firstItem="90" firstAttribute="top" secondItem="47" secondAttribute="bottom" constant="6" symbolic="YES" id="bVm-71-t9U"/>
                     <constraint firstItem="32" firstAttribute="top" secondItem="10" secondAttribute="bottom" constant="3" id="bql-Ll-CpL"/>
                     <constraint firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="90" secondAttribute="trailing" constant="16" id="cIA-XS-ydT"/>
                     <constraint firstItem="25" firstAttribute="leading" secondItem="29" secondAttribute="trailing" constant="5" id="dQR-jP-WP2"/>
-                    <constraint firstItem="90" firstAttribute="leading" secondItem="73" secondAttribute="leading" id="eLJ-p5-hOD"/>
+                    <constraint firstItem="90" firstAttribute="leading" secondItem="47" secondAttribute="leading" id="eLJ-p5-hOD"/>
                     <constraint firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="48" secondAttribute="trailing" constant="16" id="eXw-nd-P4a"/>
                     <constraint firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="47" secondAttribute="trailing" constant="16" id="fWI-b8-OIE"/>
                     <constraint firstItem="170" firstAttribute="leading" secondItem="159" secondAttribute="trailing" constant="3" id="gBk-hb-1P5"/>
                     <constraint firstItem="10" firstAttribute="top" secondItem="5" secondAttribute="top" constant="20" symbolic="YES" id="gWu-Vc-sFt"/>
                     <constraint firstItem="29" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="5" secondAttribute="leading" constant="16" id="hIB-rD-bja"/>
                     <constraint firstItem="32" firstAttribute="centerX" secondItem="34" secondAttribute="centerX" id="iX9-ot-3ms"/>
-                    <constraint firstItem="47" firstAttribute="leading" secondItem="73" secondAttribute="leading" id="iof-uV-60D"/>
                     <constraint firstItem="10" firstAttribute="baseline" secondItem="9" secondAttribute="baseline" id="j2q-B7-nyU"/>
-                    <constraint firstItem="73" firstAttribute="top" secondItem="47" secondAttribute="bottom" constant="6" symbolic="YES" id="kXY-cs-f2a"/>
                     <constraint firstItem="29" firstAttribute="top" secondItem="36" secondAttribute="bottom" constant="8" symbolic="YES" id="m8K-hE-dSn"/>
                     <constraint firstItem="45" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="5" secondAttribute="leading" constant="16" id="ohd-28-35c"/>
                     <constraint firstItem="49" firstAttribute="top" secondItem="48" secondAttribute="bottom" constant="8" symbolic="YES" id="pra-rK-FHH"/>

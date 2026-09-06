@@ -177,6 +177,8 @@ static NSArray<NSDictionary<NSString *, id> *> *SurgicalProcedureDescriptorsForS
 @interface StructuredReportPDFLoadSession : NSObject <WKNavigationDelegate>
 @property(nonatomic) BOOL finished;
 @property(nonatomic, strong, nullable) NSError *error;
+@property(nonatomic) BOOL printFinished;
+@property(nonatomic) BOOL printSucceeded;
 @end
 
 @implementation StructuredReportPDFLoadSession
@@ -200,6 +202,15 @@ didFailProvisionalNavigation:(WKNavigation *)navigation
 {
     self.error = error;
     self.finished = YES;
+}
+
+- (void)printOperationDidRun:(NSPrintOperation *)operation success:(BOOL)success contextInfo:(void *)contextInfo
+{
+    // AppKit may deliver this callback on its printing thread.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.printSucceeded = success;
+        self.printFinished = YES;
+    });
 }
 
 @end
@@ -617,6 +628,10 @@ didFailProvisionalNavigation:(WKNavigation *)navigation
                 [NSMutableDictionary dictionaryWithDictionary:[NSPrintInfo sharedPrintInfo].dictionary];
             printDictionary[NSPrintJobDisposition] = NSPrintSaveJob;
             printDictionary[NSPrintJobSavingURL] = [NSURL fileURLWithPath:pdfPath];
+            printDictionary[NSPrintAllPages] = @YES;
+            printDictionary[NSPrintSelectionOnly] = @NO;
+            [printDictionary removeObjectForKey:NSPrintFirstPage];
+            [printDictionary removeObjectForKey:NSPrintLastPage];
 
             NSPrintInfo *printInfo = [[NSPrintInfo alloc] initWithDictionary:printDictionary];
             printInfo.bottomMargin = 30.0;
@@ -630,7 +645,22 @@ didFailProvisionalNavigation:(WKNavigation *)navigation
             NSPrintOperation *operation = [webView printOperationWithPrintInfo:printInfo];
             operation.showsPrintPanel = NO;
             operation.showsProgressPanel = NO;
-            succeeded = [operation runOperation] &&
+            operation.canSpawnSeparateThread = YES;
+            if (operation)
+            {
+                // WebKit computes page bounds asynchronously. runOperation on the main
+                // thread can return an unfinished page range to AppKit's paginator.
+                [operation runOperationModalForWindow:window
+                                             delegate:session
+                                       didRunSelector:@selector(printOperationDidRun:success:contextInfo:)
+                                          contextInfo:NULL];
+                while (!session.printFinished)
+                {
+                    [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                             beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+                }
+            }
+            succeeded = session.printSucceeded &&
                         [[NSFileManager defaultManager] fileExistsAtPath:pdfPath];
             if (!succeeded)
                 conversionError = StructuredReportError(3, @"The structured report PDF could not be written.");

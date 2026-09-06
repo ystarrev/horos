@@ -43,6 +43,7 @@
 #import "SRAnnotation.h"
 #import "N2Debug.h"
 #import "ModernDCMTKBridge.h"
+#import "HorosDICOMMetadata.h"
 
 #include <dlfcn.h>
 
@@ -272,6 +273,64 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
 }
 
 @implementation DicomFile (DicomFileDCMTKCategory)
+
++ (NSXMLDocument *)metadataDocumentForFile:(NSString *)path error:(NSError **)error
+{
+    if (error != NULL)
+        *error = nil;
+    typedef char* (*CopyMetadataFn)(const char*, char**);
+    CopyMetadataFn copyMetadata = HorosModernDCMTKSymbol<CopyMetadataFn>("HorosModernDCMTKCopyMetadataXML");
+    HorosModernDCMTKFreeStringFn freeString = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    NSString *reason = @"The DCMTK metadata reader is unavailable. Rebuild the bundled bridge.";
+    if (copyMetadata && freeString)
+    {
+        char *failure = nullptr;
+        char *xml = copyMetadata(path.fileSystemRepresentation, &failure);
+        NSString *xmlString = xml ? [NSString stringWithUTF8String:xml] : nil;
+        reason = failure ? [NSString stringWithUTF8String:failure] : @"Cannot read DICOM metadata as UTF-8.";
+        freeString(xml);
+        freeString(failure);
+        if (xmlString != nil)
+            return HorosDICOMMetadataDocument(xmlString, error);
+    }
+    if (error != NULL)
+        *error = [NSError errorWithDomain:@"HorosDICOMMetadata" code:2
+                                userInfo:@{NSLocalizedDescriptionKey: reason ?: @"Cannot read DICOM metadata."}];
+    return nil;
+}
+
++ (NSData *)encapsulatedPDFForFile:(NSString *)path documentTitle:(NSString **)title error:(NSError **)error
+{
+    if (title != NULL)
+        *title = nil;
+    if (error != NULL)
+        *error = nil;
+    typedef int (*CopyPDFFn)(const char*, unsigned char**, unsigned long*, char**, char**);
+    CopyPDFFn copyPDF = HorosModernDCMTKSymbol<CopyPDFFn>("HorosModernDCMTKCopyEncapsulatedPDF");
+    HorosModernDCMTKFreeBufferFn freeBuffer = HorosModernDCMTKSymbol<HorosModernDCMTKFreeBufferFn>("HorosModernDCMTKFreeBuffer");
+    HorosModernDCMTKFreeStringFn freeString = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    NSString *reason = @"The DCMTK PDF reader is unavailable. Rebuild the bundled bridge.";
+    if (copyPDF && freeBuffer && freeString)
+    {
+        unsigned char *buffer = nullptr;
+        unsigned long length = 0;
+        char *documentTitle = nullptr, *failure = nullptr;
+        int success = copyPDF(path.fileSystemRepresentation, &buffer, &length, title ? &documentTitle : nullptr, &failure);
+        NSData *data = success && buffer && length ? [NSData dataWithBytes:buffer length:length] : nil;
+        if (data && title != NULL && documentTitle != nullptr)
+            *title = [NSString stringWithUTF8String:documentTitle];
+        reason = failure ? [NSString stringWithUTF8String:failure] : @"Cannot read the embedded PDF.";
+        freeBuffer(buffer);
+        freeString(documentTitle);
+        freeString(failure);
+        if (data != nil)
+            return data;
+    }
+    if (error != NULL)
+        *error = [NSError errorWithDomain:@"HorosDICOMMetadata" code:3
+                                userInfo:@{NSLocalizedDescriptionKey: reason ?: @"Cannot read the embedded PDF."}];
+    return nil;
+}
 
 + (NSArray*) getEncodingArrayForFile: (NSString*) file
 {

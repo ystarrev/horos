@@ -50,6 +50,9 @@
 + (NSArray*) getEncodingArrayForFile: (NSString*) file;
 + (BOOL) isDICOMFileDCMTK:(NSString *) file; /**< Check for validity of DICOM using DCMTK */
 + (NSString*) getDicomField: (NSString*) field forFile: (NSString*) path;
+// Read-only, single-load metadata and embedded PDF access through the modern bridge.
++ (NSXMLDocument *)metadataDocumentForFile:(NSString *)path error:(NSError **)error;
++ (NSData *)encapsulatedPDFForFile:(NSString *)path documentTitle:(NSString **)title error:(NSError **)error;
 
 - (short) getDicomFileDCMTK; /**< Decode DICOM using DCMTK.  Returns 0 on success -1 on failure. */
 @end

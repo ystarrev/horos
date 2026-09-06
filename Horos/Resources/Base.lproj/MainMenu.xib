@@ -155,38 +155,6 @@
                             <menuItem isSeparatorItem="YES" id="1728">
                                 <modifierMask key="keyEquivalentModifierMask" command="YES"/>
                             </menuItem>
-                            <menuItem title="Report" id="12353">
-                                <menu key="submenu" title="Report" id="12354">
-                                    <items>
-                                        <menuItem title="Open report" keyEquivalent="O" id="12355">
-                                            <connections>
-                                                <action selector="generateReport:" target="898" id="12363"/>
-                                            </connections>
-                                        </menuItem>
-                                        <menuItem title="Delete report" keyEquivalent="D" id="12356">
-                                            <connections>
-                                                <action selector="deleteReport:" target="898" id="12365"/>
-                                            </connections>
-                                        </menuItem>
-                                        <menuItem isSeparatorItem="YES" id="14612"/>
-                                        <menuItem title="Convert to PDF..." id="14610">
-                                            <modifierMask key="keyEquivalentModifierMask"/>
-                                            <connections>
-                                                <action selector="convertReportToPDF:" target="898" id="14613"/>
-                                            </connections>
-                                        </menuItem>
-                                        <menuItem title="Convert to DICOM PDF" id="14611">
-                                            <modifierMask key="keyEquivalentModifierMask"/>
-                                            <connections>
-                                                <action selector="convertReportToDICOMSR:" target="898" id="14614"/>
-                                            </connections>
-                                        </menuItem>
-                                    </items>
-                                </menu>
-                            </menuItem>
-                            <menuItem isSeparatorItem="YES" id="12352">
-                                <modifierMask key="keyEquivalentModifierMask" command="YES"/>
-                            </menuItem>
                             <menuItem title="Import" id="11466">
                                 <menu key="submenu" title="Import" id="11467">
                                     <items>

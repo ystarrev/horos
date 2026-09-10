@@ -116,6 +116,13 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
     }
 
     func updateCurrentPix(_ pix: DCMPix?, at index: Int, resetWindowLevel: Bool) {
+        // A replacement thumbnail is not necessarily a slice of the cached volume.
+        if pix == nil || !pixList.indices.contains(index) || pixList[index] !== pix {
+            pixList = []
+            volumeEntry = nil
+            requestedVolumeKey = nil
+        }
+
         guard let pix else {
             currentIndex = max(0, index)
             displayedSliceIndex = currentIndex
@@ -124,17 +131,16 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
             return
         }
 
-        if pixList.indices.contains(index) {
-            if pixList[index] !== pix {
-                volumeEntry = nil
-                requestedVolumeKey = nil
-            }
-            pixList[index] = pix
-        }
-
         currentIndex = max(0, index)
         displayedSliceIndex = currentIndex
         loadPix(pix, resetWindowLevel: resetWindowLevel)
+    }
+
+    func updateSinglePix(_ pix: DCMPix?, at index: Int, resetWindowLevel: Bool) {
+        pixList = []
+        volumeEntry = nil
+        requestedVolumeKey = nil
+        updateCurrentPix(pix, at: index, resetWindowLevel: resetWindowLevel)
     }
 
     func setDisplayedSliceIndex(_ index: Int) {
@@ -238,6 +244,8 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
     private func canUseVolumeTexture(for pix: DCMPix?, at index: Int) -> Bool {
         guard let pix,
               let volumeEntry,
+              pixList.indices.contains(index),
+              pixList[index] === pix,
               index >= 0,
               index < volumeEntry.dimensions.z else {
             return false
@@ -521,6 +529,12 @@ final class MetalPreviewImageView: MTKView {
 
     @objc func updateCurrentPix(_ pix: DCMPix?, index: Int, resetWindowLevel: Bool) {
         previewRenderer.updateCurrentPix(pix, at: index, resetWindowLevel: resetWindowLevel)
+        refreshMouseStateForCurrentImage()
+        markOverlayDirty()
+    }
+
+    @objc func updateSinglePix(_ pix: DCMPix?, index: Int, resetWindowLevel: Bool) {
+        previewRenderer.updateSinglePix(pix, at: index, resetWindowLevel: resetWindowLevel)
         refreshMouseStateForCurrentImage()
         markOverlayDirty()
     }

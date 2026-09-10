@@ -44,6 +44,7 @@
 #import "BrowserController.h"
 #import "DicomDatabase.h"
 #import "DicomImage.h"
+#import "DicomSeries.h"
 #import "DicomStudy.h"
 #import "N2ManagedDatabase.h"
 #import "SRAnnotation.h"
@@ -135,40 +136,44 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 @synthesize syncRelativeDiff;
 @synthesize stringID;
 
-// previewPix can contain one representative from each visible series, so an
-// equal item count alone does not mean it is the selected series' image stack.
+// Study thumbnails can all have serieNo == 0. Only database series identity
+// and a matching image list establish that these are slices of one stack.
 - (BOOL)pixListRepresentsDisplayedFiles:(NSArray *)pixels
 {
-    if (pixels == nil || [pixels count] == 0)
+    if ([pixels count] < 2 || [pixels count] != [_dcmFilesList count])
         return NO;
 
-    id firstPixelObject = [pixels objectAtIndex:0];
-    if ([firstPixelObject isKindOfClass:[DCMPix class]] == NO)
-        return NO;
-    long seriesNumber = [(DCMPix *)firstPixelObject serieNo];
-    for (NSUInteger index = 0; index < [pixels count]; index++)
-    {
-        id pixelObject = [pixels objectAtIndex:index];
-        if ([pixelObject isKindOfClass:[DCMPix class]] == NO)
-            return NO;
-        if ([(DCMPix *)pixelObject serieNo] != seriesNumber)
-            return NO;
-    }
-
-    if (_dcmFilesList == nil || [_dcmFilesList count] == 0)
-        return YES;
-    if ([pixels count] != [_dcmFilesList count])
-        return NO;
-
+    NSManagedObjectID *seriesObjectID = nil;
+    long width = 0, height = 0;
     for (NSUInteger index = 0; index < [pixels count]; index++)
     {
         id pixelObject = [pixels objectAtIndex:index];
         id fileObject = [_dcmFilesList objectAtIndex:index];
-        if ([fileObject isKindOfClass:[NSManagedObject class]] == NO)
+        if ([pixelObject isKindOfClass:[DCMPix class]] == NO ||
+            [fileObject isKindOfClass:[DicomImage class]] == NO)
             return NO;
-        NSManagedObjectID *pixelObjectID = [(DCMPix *)pixelObject imageObjectID];
-        NSManagedObjectID *fileObjectID = [(NSManagedObject *)fileObject objectID];
-        if (pixelObjectID == nil || [pixelObjectID isEqual:fileObjectID] == NO)
+
+        DCMPix *pix = pixelObject;
+        DicomImage *image = fileObject;
+        if (image.isDeleted || image.managedObjectContext == nil ||
+            pix.imageObjectID == nil || [pix.imageObjectID isEqual:image.objectID] == NO)
+            return NO;
+
+        DicomSeries *series = image.series;
+        if (series == nil || series.isDeleted)
+            return NO;
+        if (seriesObjectID == nil)
+        {
+            if ([image.isImageStorage boolValue] == NO || [series.modality isEqualToString:@"SEG"])
+                return NO;
+            seriesObjectID = series.objectID;
+            width = [pix widthWithoutLoading];
+            height = [pix heightWithoutLoading];
+            if (width <= 0 || height <= 0)
+                return NO;
+        }
+        if ([seriesObjectID isEqual:series.objectID] == NO ||
+            [pix widthWithoutLoading] != width || [pix heightWithoutLoading] != height)
             return NO;
     }
 
@@ -255,7 +260,7 @@ static void* PreviewModernDCMTKSymbol(const char* name)
         DCMPix *pix = nil;
         if (firstImage >= 0 && firstImage < [safePixels count])
             pix = [safePixels objectAtIndex:firstImage];
-        [_metalView updateCurrentPix:pix index:firstImage resetWindowLevel:reset];
+        [_metalView updateSinglePix:pix index:firstImage resetWindowLevel:reset];
     }
 
     [self ensureAnnotationsForCurrentPix];
@@ -275,8 +280,10 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     BOOL canRefreshFullPixList = [self pixListRepresentsDisplayedFiles:_dcmPixList];
     if (pix && canRefreshFullPixList && [_dcmPixList count] != _metalView.currentPixListCount)
         [_metalView updatePixList:_dcmPixList firstImage:index resetWindowLevel:NO];
-    else
+    else if (canRefreshFullPixList)
         [_metalView updateCurrentPix:pix index:index resetWindowLevel:NO];
+    else
+        [_metalView updateSinglePix:pix index:index resetWindowLevel:NO];
     [self ensureAnnotationsForCurrentPix];
     [self refreshPreviewMode];
     [_annotationOverlay setNeedsDisplay:YES];
@@ -294,8 +301,10 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     BOOL canRefreshFullPixList = [self pixListRepresentsDisplayedFiles:_dcmPixList];
     if (pix && canRefreshFullPixList && [_dcmPixList count] != _metalView.currentPixListCount)
         [_metalView updatePixList:_dcmPixList firstImage:index resetWindowLevel:NO];
-    else
+    else if (canRefreshFullPixList)
         [_metalView updateCurrentPix:pix index:index resetWindowLevel:NO];
+    else
+        [_metalView updateSinglePix:pix index:index resetWindowLevel:NO];
     if (sizeToFit)
         [_metalView resetViewTransform];
     [self ensureAnnotationsForCurrentPix];
@@ -344,16 +353,20 @@ static void* PreviewModernDCMTKSymbol(const char* name)
 
 - (void)refreshMetalPixListIfNeeded
 {
-    if (_dcmPixList == nil || [_dcmPixList count] == 0)
-        return;
-
-    if ([self pixListRepresentsDisplayedFiles:_dcmPixList]
-        && [_dcmPixList count] != _metalView.currentPixListCount)
+    BOOL canRefreshFullPixList = [self pixListRepresentsDisplayedFiles:_dcmPixList];
+    if ((canRefreshFullPixList && [_dcmPixList count] != _metalView.currentPixListCount) ||
+        (canRefreshFullPixList == NO && _metalView.currentPixListCount > 0))
     {
         NSInteger index = _metalView.currentIndex;
         if (index < 0) index = 0;
-        if (index >= [_dcmPixList count]) index = [_dcmPixList count] - 1;
-        [_metalView updatePixList:_dcmPixList firstImage:index resetWindowLevel:NO];
+        if ([_dcmPixList count] > 0 && index >= [_dcmPixList count]) index = [_dcmPixList count] - 1;
+        if (canRefreshFullPixList)
+            [_metalView updatePixList:_dcmPixList firstImage:index resetWindowLevel:NO];
+        else
+        {
+            DCMPix *pix = index < [_dcmPixList count] ? [_dcmPixList objectAtIndex:index] : nil;
+            [_metalView updateSinglePix:pix index:index resetWindowLevel:NO];
+        }
         [self ensureAnnotationsForCurrentPix];
         [self refreshPreviewMode];
         [_annotationOverlay setNeedsDisplay:YES];

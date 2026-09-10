@@ -5,18 +5,14 @@ export PATH="$PATH:/opt/local/bin:/opt/local/sbin:/opt/homebrew/bin/"
 set -e; set -o xtrace
 
 source_dir="$PROJECT_DIR/$TARGET_NAME"
-patch_dir="$PROJECT_DIR/Horos/Scripts/DCMTK/Patches"
 cmake_dir="$TARGET_TEMP_DIR/CMake"
 install_dir="$TARGET_TEMP_DIR/Install"
 
-for patch_file in "$patch_dir"/*.patch; do
-    [ -e "$patch_file" ] || continue
-    if git -C "$source_dir" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
-        continue
-    fi
-    git -C "$source_dir" apply --check "$patch_file"
-    git -C "$source_dir" apply "$patch_file"
-done
+# Refuse stale local patches rather than silently shipping a modified toolkit.
+if ! git -C "$source_dir" diff --quiet HEAD --; then
+    echo "error: DCMTK has local source changes. Restore the submodule to its pinned upstream revision before building."
+    exit 1
+fi
 
 path="$( cd "$(dirname "${BASH_SOURCE[0]}")" && pwd )/$(basename "${BASH_SOURCE[0]}")"
 cd "$TARGET_NAME"; pwd

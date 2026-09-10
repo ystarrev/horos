@@ -27,4 +27,13 @@ The build process takes care of these dependencies, but you can invoke the steps
 - To unzip the binaries, you can build the target `Unzip Binaries`
 - To initialize the submodules: `git submodule update --init --recursive`
 
+DCMTK is pinned to unmodified upstream source. Horos-specific C-GET transfer
+selection lives in `Horos/Sources/HorosQueryRetrieveServer.cpp`, using DCMTK's
+public APIs. The dependency build refuses local DCMTK source edits, including
+patches left in an older checkout. Review and back up any wanted local edits
+before restoring that submodule to its pinned revision. Do not reapply the old
+C-GET patch.
+
+Listener verification is described in `Scripts/tests/HorosQueryRetrieveTests.md`.
+
 For more information on this code, visit [horosproject.org](https://horosproject.org/get-involved/)

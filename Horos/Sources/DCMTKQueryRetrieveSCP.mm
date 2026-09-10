@@ -91,7 +91,7 @@ END_EXTERN_C
 #include <dcmtk/dcmqrdb/dcmqropt.h>
 #include <dcmtk/dcmnet/dimse.h>
 #include <dcmtk/dcmqrdb/dcmqrcnf.h>
-#include <dcmtk/dcmqrdb/dcmqrsrv.h>
+#include "HorosQueryRetrieveServer.h"
 #include <dcmtk/dcmdata/dcdict.h>
 #include <dcmtk/dcmdata/dcxfer.h>
 #include <dcmtk/dcmdata/cmdlnarg.h>
@@ -144,8 +144,8 @@ END_EXTERN_C
 //OFBool      opt_checkMoveIdentifier = OFFalse;
 //OFCmdUnsignedInt opt_port = 0;
 
-DcmQueryRetrieveSCP *scp = nil;
-DcmQueryRetrieveSCP *scptls = nil;
+HorosQueryRetrieveServer *scp = nil;
+HorosQueryRetrieveServer *scptls = nil;
 
 static const char *HorosIncomingAssociationProfile = "HOROS_INCOMING";
 static const char *HorosIncomingPresentationContexts = "HOROS_INCOMING_CONTEXTS";
@@ -311,6 +311,7 @@ void errmsg(const char* msg, ...)
 
 	// DCMTK 3.7 defaults to INFO logging, which is noisy and expensive during C-MOVE receives.
 	DCM_dcmqrdbLogger.setLogLevel(OFLogger::WARN_LOG_LEVEL);
+	OFLog::getLogger("dcmtk.dcmqrdb.progress").setLogLevel(OFLogger::WARN_LOG_LEVEL);
 	
 	//single process
 	options.singleProcess_ = [[NSUserDefaults standardUserDefaults] boolForKey: @"SingleProcessMultiThreadedListener"];
@@ -647,37 +648,32 @@ DcmQueryRetrieveConfig config;
 		return;
 	}
 DcmAssociationConfiguration asccfg;
-DcmTLSOptions tlsOptions(NET_ACCEPTORREQUESTOR);
 
 	OFCondition profileCondition = HorosConfigureIncomingAssociationProfile(asccfg,
 	                                                                        options.networkTransferSyntax_);
 	if (profileCondition.good())
 		options.incomingProfile = HorosIncomingAssociationProfile;
 	else
-		NSLog(@"Warning: unable to configure Horos incoming DICOM transfer profile: %s",
-		      profileCondition.text());
+    {
+        NSString *message = [NSString stringWithFormat:@"Unable to configure DICOM listener: %s",
+                             profileCondition.text()];
+        [[AppController sharedAppController] performSelectorOnMainThread:@selector(displayListenerError:)
+                                                              withObject:message waitUntilDone:NO];
+        ASC_dropNetwork(&options.net_);
+#ifdef WITH_OPENSSL
+        delete tLayer;
+#endif
+        return;
+    }
 
-//#ifdef WITH_SQL_DATABASE
-    // use SQL database
     DcmQueryRetrieveOsiriXDatabaseHandleFactory factory;
-//#else
-    // use linear index database (index.dat)
-//    DcmQueryRetrieveIndexDatabaseHandleFactory factory(&config);
-//#endif
-	 //use if static scp rather than pointer
-    //DcmQueryRetrieveSCP scp(config, options, factory);
-	//scp.setDatabaseFlags(OFFalse, OFFalse, options.debug_);
-
-	DcmQueryRetrieveSCP *localSCP = nil;
-	
-	localSCP = new DcmQueryRetrieveSCP(config, options, factory, asccfg, tlsOptions);
+	HorosQueryRetrieveServer *localSCP = new HorosQueryRetrieveServer(config, options, factory, asccfg,
+        [[_params objectForKey:@"TLSEnabled"] boolValue]);
 	
 	if([[_params objectForKey:@"TLSEnabled"] boolValue])
 		scptls = localSCP;
 	else
 		scp = localSCP;
-	
-	localSCP->setDatabaseFlags(OFFalse, OFFalse);
 	
 	_abort = NO;
 	running = YES;

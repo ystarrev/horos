@@ -41,6 +41,9 @@ final class HorosPhoneVolumeExporter: NSObject {
               let studyObject = seriesObject.value(forKey: "study") as? NSManagedObject else {
             throw failure("Select exactly one CT or MRI volume to send to the iPhone.")
         }
+        guard let context = seriesObject.managedObjectContext else {
+            throw failure("The selected series is no longer available in its database.")
+        }
         let identity = MetalViewerPatientIdentity.fallback(title: "Horos image")
         let studyUID = studyObject.value(forKey: "studyInstanceUID") as? String ?? ""
         func makeSeries(_ object: NSManagedObject, images: [NSManagedObject]) -> MetalViewerSeries {
@@ -213,7 +216,7 @@ final class HorosPhoneVolumeExporter: NSObject {
             }
         }
         let sortedPixels = frames.map(\.pix)
-        for record in MetalLegacyROISRBridge.roiDictionaries(forPixList: sortedPixels) {
+        for record in MetalLegacyROISRBridge.roiDictionaries(forPixList: sortedPixels, context: context) {
             let index = (record["sliceIndex"] as? NSNumber)?.intValue ?? -1
             guard index >= 0, index < frames.count else { throw failure("An ROI refers to an unavailable image frame.") }
             let mesh = try legacyMesh(record, geometry: frames[index].geometry)

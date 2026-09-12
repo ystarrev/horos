@@ -100,7 +100,7 @@ extern "C"
 
 extern AppController* OsiriX;
 
-@interface AppController : NSObject	<NSNetServiceBrowserDelegate, NSNetServiceDelegate, NSSoundDelegate, NSMenuDelegate, NSMenuItemValidation >
+@interface AppController : NSObject	<NSNetServiceDelegate, NSSoundDelegate, NSMenuDelegate, NSMenuItemValidation >
 {
 	IBOutlet BrowserController		*browserController;
 
@@ -117,8 +117,6 @@ extern AppController* OsiriX;
     volatile BOOL					quitting;
 	BOOL							verboseUpdateCheck;
 	NSNetService					*BonjourDICOMService;
-    NSTask                          *BonjourDICOMRegisterTask;
-    NSDictionary                    *BonjourDICOMTXTRecord;
 	
 	NSTimer							*updateTimer;
 
@@ -137,8 +135,6 @@ extern AppController* OsiriX;
 + (BOOL) isFDACleared;
 
 +(NSString*)UID;
-+(void)registerBonjourDNSSDTask:(NSTask*)task role:(NSString*)role;
-+(void)unregisterBonjourDNSSDTask:(NSTask*)task;
 
 #pragma mark-
 #pragma mark initialization of the main event loop singleton

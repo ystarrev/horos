@@ -109,8 +109,6 @@ extern const char *GetPrivateIP(void);
     [dicomSendLock release];
     //	self.serviceName = NULL;
     
-    [self stopBonjourDNSRegistration];
-    [_bonjourTXTRecord release];
     [_bonjour release];
     
     [super dealloc];
@@ -124,7 +122,6 @@ extern const char *GetPrivateIP(void);
             return;
         } else
             if ([keyPath isEqualToString:OsirixBonjourSharingNameDefaultsKey]) {
-                [self stopBonjourDNSRegistration];
                 [_bonjour stop];
                 [_bonjour release];
                 _bonjour = nil;
@@ -142,79 +139,6 @@ extern const char *GetPrivateIP(void);
     [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
 }
 
-- (NSArray*)dnsSDTXTArgumentsForDictionary:(NSDictionary*)txtrec
-{
-    NSMutableArray *arguments = [NSMutableArray array];
-    NSArray *keys = [[txtrec allKeys] sortedArrayUsingSelector:@selector(compare:)];
-
-    for( id key in keys)
-    {
-        id value = [txtrec objectForKey: key];
-        NSString *keyString = [key description];
-        NSString *valueString = nil;
-
-        if( [value isKindOfClass: [NSString class]])
-            valueString = value;
-        else if( [value isKindOfClass: [NSData class]])
-            valueString = [[[NSString alloc] initWithData: value encoding: NSUTF8StringEncoding] autorelease];
-        else if( value)
-            valueString = [value description];
-
-        if( [keyString length] && [valueString length])
-            [arguments addObject: [NSString stringWithFormat: @"%@=%@", keyString, valueString]];
-    }
-
-    return arguments;
-}
-
-- (void)stopBonjourDNSRegistration
-{
-    if( _bonjourRegisterTask)
-    {
-        if( [_bonjourRegisterTask isRunning])
-            [_bonjourRegisterTask terminate];
-
-        [_bonjourRegisterTask release];
-        _bonjourRegisterTask = nil;
-    }
-}
-
-- (void)startBonjourDNSRegistrationForService:(NSNetService*)service
-{
-    [self stopBonjourDNSRegistration];
-
-    if( service == nil || _listener == nil)
-        return;
-
-    NSInteger port = [_listener port];
-    if( port <= 0)
-        return;
-
-    NSMutableArray *arguments = [NSMutableArray arrayWithObjects: @"-R", [service name], [service type], @"local", [NSString stringWithFormat: @"%ld", (long) port], nil];
-    [arguments addObjectsFromArray: [self dnsSDTXTArgumentsForDictionary: _bonjourTXTRecord]];
-
-    _bonjourRegisterTask = [[NSTask alloc] init];
-    [_bonjourRegisterTask setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/dns-sd"]];
-    [_bonjourRegisterTask setArguments: arguments];
-    [_bonjourRegisterTask setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
-    [_bonjourRegisterTask setStandardError: [NSFileHandle fileHandleWithNullDevice]];
-    [_bonjourRegisterTask setTerminationHandler:^(NSTask *task) {
-        [AppController unregisterBonjourDNSSDTask:task];
-    }];
-
-    @try
-    {
-        HorosLaunchTaskOrRaise(_bonjourRegisterTask);
-        [AppController registerBonjourDNSSDTask:_bonjourRegisterTask role:@"database publisher"];
-        NSLog( @"DNS-SD Horos Bonjour fallback publishing for %@ %@:%ld", [service name], [service type], (long) port);
-    }
-    @catch( NSException *exception)
-    {
-        NSLog( @"Warning: DNS-SD Horos Bonjour fallback publish failed: %@", exception);
-        [self stopBonjourDNSRegistration];
-    }
-}
-
 - (void)toggleSharing:(BOOL)activate
 {
     @try {
@@ -229,7 +153,6 @@ extern const char *GetPrivateIP(void);
         }
         
         if (!activate && _listener) {
-            [self stopBonjourDNSRegistration];
             [_listener release];
             _listener = nil;
         }
@@ -245,7 +168,6 @@ extern const char *GetPrivateIP(void);
     {
         if (_bonjour)
         {
-            [self stopBonjourDNSRegistration];
             [_bonjour stop];
             [_bonjour release];
             _bonjour = nil;
@@ -257,7 +179,6 @@ extern const char *GetPrivateIP(void);
 
     if (_bonjour && [_bonjour port] != [_listener port])
     {
-        [self stopBonjourDNSRegistration];
         [_bonjour stop];
         [_bonjour release];
         _bonjour = nil;
@@ -281,9 +202,6 @@ extern const char *GetPrivateIP(void);
     if( [_bonjour setTXTRecordData:[NSNetService dataFromTXTRecordDictionary:txtrec]] == NO)
         NSLog(@"Warning: Horos Bonjour net service setTXTRecordData FAILED");
 
-    [_bonjourTXTRecord release];
-    _bonjourTXTRecord = [txtrec copy];
-    
     [_bonjour publish];
 }
 
@@ -294,18 +212,15 @@ extern const char *GetPrivateIP(void);
 - (void)netService:(NSNetService*)sender didNotPublish:(NSDictionary*)errorDict
 {
     NSLog(@"Warning: Horos Bonjour net service did not publish, %@", errorDict);
-    [self startBonjourDNSRegistrationForService: sender];
 }
 
 - (void)netServiceDidPublish:(NSNetService *)sender
 {
-    [self stopBonjourDNSRegistration];
     NSLog(@"Horos Bonjour net service published: %@ %@:%ld", [sender name], [sender type], (long)[sender port]);
 }
 
 - (void) netServiceDidStop:(NSNetService *)sender
 {
-    [self stopBonjourDNSRegistration];
     NSLog(@"Horos Bonjour net service did stop");
 }
 

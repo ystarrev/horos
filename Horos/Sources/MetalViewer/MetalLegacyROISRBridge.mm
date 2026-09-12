@@ -16,11 +16,28 @@
 static NSString * const HorosMetalTumourSeedROIName = @"Horos Tumour Seed";
 static NSString * const HorosMetalTumourSeedCommentPrefix = @"HorosMetalTumourSeed:";
 
+@interface MetalLegacyROISRBridge ()
++ (NSArray<NSDictionary<NSString *, id> *> *)roiDictionariesForSourceRecords:(NSArray<NSDictionary<NSString *, id> *> *)sourceRecords;
++ (NSArray<NSDictionary<NSString *, id> *> *)sourceRecordsForPixList:(NSArray *)pixList context:(NSManagedObjectContext *)context;
+@end
+
 @implementation MetalLegacyROISRBridge
 
 + (NSArray<NSDictionary<NSString *, id> *> *)roiDictionariesForPixList:(NSArray *)pixList
 {
     NSArray<NSDictionary<NSString *, id> *> *sourceRecords = [self sourceRecordsForPixList:pixList];
+    return [self roiDictionariesForSourceRecords:sourceRecords];
+}
+
++ (NSArray<NSDictionary<NSString *, id> *> *)roiDictionariesForPixList:(NSArray *)pixList
+                                                            context:(NSManagedObjectContext *)context
+{
+    NSArray<NSDictionary<NSString *, id> *> *sourceRecords = [self sourceRecordsForPixList:pixList context:context];
+    return [self roiDictionariesForSourceRecords:sourceRecords];
+}
+
++ (NSArray<NSDictionary<NSString *, id> *> *)roiDictionariesForSourceRecords:(NSArray<NSDictionary<NSString *, id> *> *)sourceRecords
+{
     NSMutableArray<NSDictionary<NSString *, id> *> *result = [NSMutableArray array];
     NSMutableSet<NSString *> *seenROISignatures = [NSMutableSet set];
     for (NSDictionary<NSString *, id> *record in sourceRecords)
@@ -67,9 +84,16 @@ static NSString * const HorosMetalTumourSeedCommentPrefix = @"HorosMetalTumourSe
     }
 
     NSManagedObjectContext *context = firstImage.managedObjectContext;
-    if (context == nil)
+    return [self sourceRecordsForPixList:pixList context:context];
+}
+
++ (NSArray<NSDictionary<NSString *, id> *> *)sourceRecordsForPixList:(NSArray *)pixList context:(NSManagedObjectContext *)context
+{
+    if (pixList.count == 0 || context == nil)
         return @[];
 
+    // Resolve IDs and read relationships only on the supplied context's queue.
+    // Only file paths, dates and slice indexes leave it; ROI decoding stays on the caller.
     __block NSArray<NSDictionary<NSString *, id> *> *sourceRecords = nil;
     N2PerformManagedObjectContextBlockAndWait(context, ^{
         @try
@@ -83,7 +107,13 @@ static NSString * const HorosMetalTumourSeedCommentPrefix = @"HorosMetalTumourSe
             if (![pix isKindOfClass:DCMPix.class])
                 continue;
 
-            DicomImage *image = [self imageForPix:pix];
+            NSManagedObjectID *objectID = pix.imageObjectID;
+            if (objectID == nil || objectID.isTemporaryID)
+                continue;
+
+            DicomImage *image = (DicomImage *)[context existingObjectWithID:objectID error:nil];
+            if (image == nil || image.isDeleted)
+                continue;
             DicomStudy *imageStudy = image.series.study;
             NSString *sopInstanceUID = image.sopInstanceUID;
             if (imageStudy == nil || sopInstanceUID.length == 0)

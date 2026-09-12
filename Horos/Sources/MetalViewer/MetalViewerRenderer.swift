@@ -682,6 +682,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private let scrollSliceLoader = MetalStackSliceLoader()
     private var sliceRequestGeneration: UInt = 0
     private var requestedSliceIndex: Int?
+    private var failedSliceIndex: Int?
+    private(set) var sliceLoadFailureMessage: String?
     private(set) var currentSliceGeometry: MetalViewerSliceGeometry?
     private(set) var currentImageMetadata: MetalViewerImageMetadata?
     private(set) var currentSlicePixels: MetalStoredInt16PixelData?
@@ -1227,7 +1229,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     func stepSlice(by delta: Int) {
         guard pixList.isEmpty == false else { return }
-        let nextIndex = max(0, min(pixList.count - 1, (requestedSliceIndex ?? currentSliceIndex) - delta))
+        let nextIndex = max(0, min(pixList.count - 1, (requestedSliceIndex ?? failedSliceIndex ?? currentSliceIndex) - delta))
         setSliceIndex(nextIndex)
     }
 
@@ -1467,7 +1469,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         let previousSliceIndex = currentSliceIndex
         let previousPix = currentPix
-        let pendingPix = requestedSliceIndex.flatMap { pixList.indices.contains($0) ? pixList[$0] : nil }
+        let pendingPix = (requestedSliceIndex ?? failedSliceIndex).flatMap { pixList.indices.contains($0) ? pixList[$0] : nil }
         let pendingIndex = pendingPix.flatMap { requestedPix in
             newPixList.firstIndex { $0.srcFile == requestedPix.srcFile && $0.frameNo == requestedPix.frameNo }
         }
@@ -1525,6 +1527,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     func setDisplayMode(_ mode: MetalViewerDisplayMode) {
         guard displayMode != mode else { return }
         cancelPendingSliceLoads()
+        sliceLoadFailureMessage = nil
         displayMode = mode
         hoveredMPRPlane = nil
         mprPlaneDragState = nil
@@ -3090,13 +3093,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private func cancelPendingSliceLoads() {
         sliceRequestGeneration &+= 1
         requestedSliceIndex = nil
+        failedSliceIndex = nil
         scrollSliceLoader.cancel()
     }
 
     private func requestScrollSlice(at index: Int, reloadCurrent: Bool = false) {
         guard pixList.indices.contains(index), reloadCurrent || requestedSliceIndex != index else { return }
         cancelPendingSliceLoads()
-        guard reloadCurrent || index != currentSliceIndex else { return }
+        guard reloadCurrent || index != currentSliceIndex else {
+            sliceLoadFailureMessage = nil
+            stateDidChange?(stateDescription)
+            return
+        }
         requestedSliceIndex = index
         let generation = sliceRequestGeneration
         let pix = pixList[index]
@@ -3107,13 +3115,24 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                   self.pixList.indices.contains(index), self.pixList[index] === pix else { return }
             self.requestedSliceIndex = nil
             guard let prepared else {
+                // Keep the displayed frame truthful, but advance navigation past
+                // a failed request so the next wheel/key step can reach another slice.
+                self.failedSliceIndex = index
+                self.sliceLoadFailureMessage = String(format: NSLocalizedString(
+                    "Cannot load slice %ld. Still showing slice %ld.", comment: "Slice read failure"),
+                    index + 1, self.currentSliceIndex + 1)
                 NSLog("Metal Viewer: could not prepare slice %ld; retaining the displayed slice", index + 1)
+                self.stateDidChange?(self.stateDescription)
                 return
             }
             if self.overlayVolumeTexture != nil,
                let path = pix.srcFile,
                self.stackVolumeTextureEntry?.sourceRevisions[path] != prepared.pixels.fileRevision {
+                self.failedSliceIndex = index
+                self.sliceLoadFailureMessage = NSLocalizedString(
+                    "Source images changed. Reload this series to continue registered viewing.", comment: "")
                 NSLog("Metal Viewer: registered source changed while scrolling; reload the series before continuing")
+                self.stateDidChange?(self.stateDescription)
                 return
             }
             // The visible index changes only with a complete, matching snapshot.
@@ -3124,6 +3143,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func loadSlice(at index: Int, prepared: MetalPreparedStackSlice? = nil) {
         guard pixList.indices.contains(index) else { return }
+        failedSliceIndex = nil
+        sliceLoadFailureMessage = nil
         if prepared == nil { cancelPendingSliceLoads() }
         let benchmarkStarted = pendingRetrievalPresentation == nil ? nil : CACurrentMediaTime()
         defer {

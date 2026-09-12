@@ -3,7 +3,7 @@
 Scope: application-owned code, macOS 27 and Apple silicon. Keep upstream DCMTK
 unmodified and retain the ability to read existing patient data.
 
-## Current checkpoint
+## Completed drag/export checkpoint
 
 - Implemented: database outline and thumbnail file promises using
   `NSFilePromiseProvider`. No four-second main-thread wait. The dragged object
@@ -22,9 +22,47 @@ unmodified and retain the ability to read existing patient data.
 - Reviewed: unkeyed archive usage. Removed unused file-based helper methods.
   The remaining writers encode legacy ROI or Bonjour protocol data; retain them
   until an explicit format migration and peer negotiation are implemented.
-- Verification: source-contract tests only. No application build or live
-  JPEG/PDF drag-and-drop validation has been performed for this checkpoint. The user
-  confirmed ordinary study-row and thumbnail dragging works.
+- Verification: source-contract checks, plus the user's confirmation that the
+  usual thumbnail, study-row and Option-drag export workflows work. The full
+  edge-case checklist below remains useful for regression testing.
+
+## Current checkpoint: discovery and slice failures
+
+- Implemented: unreadable scrolling slices show a non-modal warning while the
+  previous image and its annotations stay intact. Subsequent navigation advances
+  from the failed request instead of repeatedly getting stuck on the same slice.
+- Implemented: Sources (DICOM, shared databases and iPhone destinations) and
+  Query/Retrieve use the same Swift `HorosBonjourBrowser`, backed by `NWBrowser`.
+  Full result snapshots aggregate interfaces by service name/type/domain. TXT or
+  interface changes refresh existing resolvers without removing/re-adding rows.
+  Generation checks reject callbacks after cancellation; transient network waits
+  keep the existing liveness policy. Delayed startup respects disabled discovery.
+- Removed at the user's request: DNS-SD subprocess browse/resolve/publication
+  fallbacks, output parsing, cached fallback TXT dictionaries, and orphan-helper
+  process registry/cleanup. Temporary waits recover on the native browser;
+  terminal failures report the original error and retry native discovery.
+- Retained deliberately: `NSNetService` address/TXT resolution and publication,
+  plus all transfer protocols, liveness checks and source reconciliation.
+  This is a discovery checkpoint, not completion of Bonjour modernization.
+- User validation before fallback removal: iPhonePlanner discovery and transfer
+  work. Laptop validation remains pending; the user elected not to retain the
+  fallbacks while waiting for that test.
+- Verification: 342 non-build source/project checks pass; Swift browser
+  type-checking passes with warnings treated as errors. No app build or live
+  network validation was run by the agent.
+
+### Next manual checks
+
+1. Confirm the laptop appears once in Sources and remains available in
+   Query/Retrieve; test a transfer in each direction and a query/retrieve.
+2. Quit/relaunch and exercise Xcode stop/relaunch on either peer. Check that
+   stale rows disappear and the returning peer becomes usable without rebooting.
+3. Check sleep/wake and switching Wi-Fi/Ethernet, including both interfaces active.
+4. Toggle DICOM Bonjour discovery off and back on; confirm no delayed restart
+   happens while disabled. Check an ordinary DICOM peer and the iPhone destination.
+5. If an unreadable slice is encountered, verify the warning, navigation past it,
+   reversal back to the previous image, and clearing the warning on a good image.
+   Do not damage or remove patient files just to induce this condition.
 
 ## Manual checks before the network pass
 
@@ -48,17 +86,16 @@ unmodified and retain the ability to read existing patient data.
 
 ## Remaining work
 
-### Bonjour discovery and publication
+### Bonjour resolution and publication
 
-Replace `NSNetServiceBrowser` discovery with Network.framework. Review resolution,
-TXT records, per-interface identities, removal/liveness handling, peer deduplication
-and the DNS-SD subprocess workaround together. Publication for an existing DICOM
+Discovery has moved to Network.framework and the DNS-SD subprocess workaround
+has been removed. Address remaining `NSNetService` resolution and publication,
+including TXT records. Publication for an existing DICOM
 listener cannot simply bind a second `NWListener` to the same port; preserve the
 actual listener and choose the appropriate advertisement API.
 
 Validate desktop/laptop discovery, abrupt Xcode termination, relaunch, sleep/wake,
 multiple interfaces, ordinary DICOM peers, and checked-in non-Bonjour peers.
-Do not remove the existing workaround until the replacement has passed these tests.
 
 ### Remaining stream-based remote database transport
 

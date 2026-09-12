@@ -50,7 +50,7 @@ class MetalScrollLoadingTests(unittest.TestCase):
 
     def test_scroll_accumulates_from_requested_not_last_displayed_index(self):
         step = method(RENDERER, "func stepSlice(by delta:")
-        self.assertIn("(requestedSliceIndex ?? currentSliceIndex) - delta", step)
+        self.assertIn("(requestedSliceIndex ?? failedSliceIndex ?? currentSliceIndex) - delta", step)
         self.assertIn("setSliceIndex(nextIndex)", step)
         self.assertNotIn("loadSlice(", step)
         select = method(RENDERER, "func setSliceIndex(_ index:")
@@ -59,7 +59,7 @@ class MetalScrollLoadingTests(unittest.TestCase):
     def test_old_image_remains_until_complete_latest_result(self):
         request = method(RENDERER, "private func requestScrollSlice(at index:")
         self.assertIn("cancelPendingSliceLoads()", request)
-        self.assertIn("guard reloadCurrent || index != currentSliceIndex else { return }", request)
+        self.assertIn("guard reloadCurrent || index != currentSliceIndex else {", request)
         for guard in ("self.sliceRequestGeneration == generation", "self.displayMode == .stack2D",
                       "self.pixList[index] === pix", "guard let prepared else"):
             self.assertLess(request.index(guard), request.index("self.currentSliceIndex = index"))
@@ -76,7 +76,7 @@ class MetalScrollLoadingTests(unittest.TestCase):
 
     def test_live_refresh_preserves_the_pending_source_frame(self):
         refresh = method(RENDERER, "func setPixList(_ newPixList:")
-        self.assertIn("let pendingPix = requestedSliceIndex.flatMap", refresh)
+        self.assertIn("let pendingPix = (requestedSliceIndex ?? failedSliceIndex).flatMap", refresh)
         self.assertIn("$0.srcFile == requestedPix.srcFile && $0.frameNo == requestedPix.frameNo", refresh)
         self.assertIn("requestScrollSlice(at: pendingIndex)", refresh)
 
@@ -89,6 +89,30 @@ class MetalScrollLoadingTests(unittest.TestCase):
         self.assertIn("[weak self, weak operation]", loader)
         self.assertIn("DispatchQueue.main.async", loader)
         self.assertGreaterEqual(loader.count("operation.isCancelled == false"), 3)
+
+    def test_failed_slice_keeps_displayed_index_but_advances_navigation(self):
+        request = method(RENDERER, "private func requestScrollSlice(at index:")
+        failure = request.split("guard let prepared else {", 1)[1].split("return", 1)[0]
+        self.assertIn("self.failedSliceIndex = index", failure)
+        self.assertIn("self.currentSliceIndex + 1", failure)
+        self.assertIn("self.sliceLoadFailureMessage =", failure)
+        self.assertIn("self.stateDidChange?(self.stateDescription)", failure)
+        self.assertNotIn("self.currentSliceIndex =", failure)
+        cancel = method(RENDERER, "private func cancelPendingSliceLoads()")
+        self.assertIn("failedSliceIndex = nil", cancel)
+        load = method(RENDERER, "private func loadSlice(at index: Int,")
+        self.assertIn("sliceLoadFailureMessage = nil", load)
+        self.assertIn("failedSliceIndex = nil", load)
+
+    def test_failure_warning_is_visible_independent_of_annotation_setting(self):
+        status = method(PANE, "private func updateSliceLoadStatus()")
+        self.assertIn("metalView?.renderer.sliceLoadFailureMessage", status)
+        self.assertIn("sliceLoadStatusLabel.isHidden = message == nil", status)
+        self.assertNotIn("annotationLevel", status)
+        self.assertIn("contentView.addSubview(sliceLoadStatusLabel", PANE)
+        self.assertIn("self.updateSliceLoadStatus()", PANE)
+        mode = method(RENDERER, "func setDisplayMode(_ mode:")
+        self.assertIn("sliceLoadFailureMessage = nil", mode)
 
     def test_worker_rechecks_file_after_pixels_and_annotations(self):
         prepare = method(MODELS, "private func prepare(pix:")

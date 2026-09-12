@@ -1341,6 +1341,17 @@ final class MetalViewerPaneView: NSView {
     private let measurementOverlay = MeasurementOverlayView()
     private let orientationOverlay = MetalOrientationOverlayView()
     private let registrationStatusView = RegistrationStatusView()
+    private let sliceLoadStatusLabel: NSTextField = {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 14, weight: .semibold)
+        label.textColor = .systemYellow
+        label.backgroundColor = .black
+        label.drawsBackground = true
+        label.alignment = .center
+        label.isHidden = true
+        return label
+    }()
     private let dynamicControls = DynamicControlsView(frame: .zero)
     private var metalView: MetalImageView?
     private var reportWebView: WKWebView?
@@ -1571,6 +1582,7 @@ final class MetalViewerPaneView: NSView {
         orientationOverlay.removeFromSuperview()
         annotationOverlay.removeFromSuperview()
         registrationStatusView.removeFromSuperview()
+        sliceLoadStatusLabel.removeFromSuperview()
 
         let structuredReportHTML = series.structuredReportHTML()
 
@@ -1647,6 +1659,7 @@ final class MetalViewerPaneView: NSView {
         }
         metalView.titleDidChange = { [weak self] state in
             guard let self else { return }
+            self.updateSliceLoadStatus()
             self.updateCurrentStateDescription(rendererState: state)
             self.updateReferenceLineOverlay()
             self.updateOrientationOverlay()
@@ -1703,6 +1716,7 @@ final class MetalViewerPaneView: NSView {
         contentView.addSubview(registrationStatusView, positioned: .above, relativeTo: orientationOverlay)
         contentView.addSubview(overlayBlendGlassView, positioned: .above, relativeTo: registrationStatusView)
         contentView.addSubview(dynamicControls, positioned: .above, relativeTo: overlayBlendGlassView)
+        contentView.addSubview(sliceLoadStatusLabel, positioned: .above, relativeTo: dynamicControls)
 
         NSLayoutConstraint.activate([
             metalView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -1733,9 +1747,14 @@ final class MetalViewerPaneView: NSView {
             registrationStatusView.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
             registrationStatusView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -78),
             registrationStatusView.widthAnchor.constraint(equalToConstant: 360),
+            sliceLoadStatusLabel.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            sliceLoadStatusLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            sliceLoadStatusLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 520),
+            sliceLoadStatusLabel.widthAnchor.constraint(lessThanOrEqualTo: contentView.widthAnchor, multiplier: 0.85),
         ])
 
         self.metalView = metalView
+        updateSliceLoadStatus()
         reloadTumourSeeds()
         metalView.setDisplayMode(displayMode)
         referenceLineOverlay.showsScales = displayMode == .stack2D && annotationLevel != .none
@@ -1857,6 +1876,12 @@ final class MetalViewerPaneView: NSView {
             for: pixList,
             device: device
         ) { _ in }
+    }
+
+    private func updateSliceLoadStatus() {
+        let message = metalView?.renderer.sliceLoadFailureMessage
+        sliceLoadStatusLabel.stringValue = message ?? ""
+        sliceLoadStatusLabel.isHidden = message == nil
     }
 
     private func updateCurrentStateDescription(rendererState: String) {

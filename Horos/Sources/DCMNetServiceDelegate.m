@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "DCMNetServiceDelegate.h"
+#import "HorosSwiftInterop.h"
 #import "SendController.h"
 #import "N2Debug.h"
 
@@ -80,6 +81,9 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
     return NO;
 }
 
+@interface DCMNetServiceDelegate () <HorosBonjourBrowserDelegate>
+@end
+
 @implementation DCMNetServiceDelegate
 
 + (id)sharedNetServiceDelegate
@@ -112,6 +116,11 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 
 - (void)update
 {
+    if (![NSThread isMainThread])
+    {
+        [self performSelectorOnMainThread:@selector(update) withObject:nil waitUntilDone:NO];
+        return;
+    }
 	if( [[NSUserDefaults standardUserDefaults] boolForKey:@"searchDICOMBonjour"])
 	{
         [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startDICOMBonjourSearch) object:nil];
@@ -119,10 +128,13 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 	}
     else
     {
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startDICOMBonjourSearch) object:nil];
         [_dicomNetBrowser setDelegate:nil];
         [_dicomNetBrowser stop];
         [_dicomNetBrowser release];
         _dicomNetBrowser = nil;
+        [_dicomServices removeAllObjects];
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"DCMNetServicesDidChange" object:nil];
     }
 }
 
@@ -133,10 +145,10 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 
 - (void)_startDICOMBonjourSearch
 {
-    if (_dicomNetBrowser)
+    if (_dicomNetBrowser || ![[NSUserDefaults standardUserDefaults] boolForKey:@"searchDICOMBonjour"])
         return;
 
-    _dicomNetBrowser = [[NSNetServiceBrowser alloc] init];
+    _dicomNetBrowser = [[HorosBonjourBrowser alloc] init];
     [_dicomNetBrowser setDelegate:self];
 
     NSLog(@"searchDICOMBonjour - searchForServicesOfType : _dicom._tcp");
@@ -183,11 +195,7 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 	return NSSwapBigShortToHost(aPort);
 }
 
-- (void)netServiceBrowser:(NSNetServiceBrowser *)aNetServiceBrowser didFindDomain:(NSString *)domainString moreComing:(BOOL)moreComing
-{
-}
-
-- (void)netServiceBrowser:(NSNetServiceBrowser *)aNetServiceBrowser didFindService:(NSNetService *)aNetService moreComing:(BOOL)moreComing
+- (void)netServiceBrowser:(HorosBonjourBrowser *)aNetServiceBrowser didFindService:(NSNetService *)aNetService moreComing:(BOOL)moreComing
 {
 	if( aNetService == publisher)
 	{
@@ -195,29 +203,32 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 	}
 	else if( [[NSUserDefaults standardUserDefaults] boolForKey:@"searchDICOMBonjour"])
     {    
-        [_dicomServices addObject: aNetService];
-        [aNetService resolveWithTimeout: 5];
+        if (![_dicomServices containsObject:aNetService])
+            [_dicomServices addObject: aNetService];
         [aNetService setDelegate: self];
+        [aNetService resolveWithTimeout: 5];
     }
 }
 
 //Bonjour Delegate methods
-- (void)netServiceBrowser:(NSNetServiceBrowser *)aNetServiceBrowser didNotSearch:(NSDictionary *)errorDict
+- (void)netServiceBrowser:(HorosBonjourBrowser *)aNetServiceBrowser didNotSearch:(NSDictionary *)errorDict
 {
 	NSLog(@"netServiceBrowser didNotSearch: %@", errorDict);
-    NSInteger errorCode = [[errorDict objectForKey:NSNetServicesErrorCode] integerValue];
     [_dicomNetBrowser setDelegate:nil];
     [_dicomNetBrowser stop];
     [_dicomNetBrowser release];
     _dicomNetBrowser = nil;
-    if (errorCode != NSNetServicesMissingRequiredConfigurationError)
-    {
-        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startDICOMBonjourSearch) object:nil];
-        [self performSelector:@selector(_startDICOMBonjourSearch) withObject:nil afterDelay:10.0];
-    }
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startDICOMBonjourSearch) object:nil];
+    [self performSelector:@selector(_startDICOMBonjourSearch) withObject:nil afterDelay:10.0];
 }
 
-- (void)netServiceBrowser:(NSNetServiceBrowser *)aNetServiceBrowser didRemoveService:(NSNetService *)aNetService moreComing:(BOOL)moreComing
+- (void)netServiceBrowser:(HorosBonjourBrowser *)aNetServiceBrowser didUpdateService:(NSNetService *)aNetService
+{
+    [aNetService stop];
+    [self netServiceBrowser:aNetServiceBrowser didFindService:aNetService moreComing:NO];
+}
+
+- (void)netServiceBrowser:(HorosBonjourBrowser *)aNetServiceBrowser didRemoveService:(NSNetService *)aNetService moreComing:(BOOL)moreComing
 {
 	[aNetService stop];
 	
@@ -228,12 +239,12 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 	}
 }
 
-- (void)netServiceBrowserDidStopSearch:(NSNetServiceBrowser *)aNetServiceBrowser{
+- (void)netServiceBrowserDidStopSearch:(HorosBonjourBrowser *)aNetServiceBrowser{
 	NSLog(@"Stopped DICOM bonjour search");
 	[_dicomServices removeAllObjects];
 }
 
-- (void)netServiceBrowserWillSearch:(NSNetServiceBrowser *)aNetServiceBrowser{
+- (void)netServiceBrowserWillSearch:(HorosBonjourBrowser *)aNetServiceBrowser{
 	NSLog(@"Start bonjour DICOM search");
 	if (_dicomServices)
 		[_dicomServices release];
@@ -622,6 +633,7 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 
 - (void)netServiceDidResolveAddress:(NSNetService *)aNetService
 {
+    if (!_dicomNetBrowser || ![_dicomServices containsObject:aNetService]) return;
     if( publisher && aNetService != publisher)
     {
         NSDictionary *serviceInfo = [DCMNetServiceDelegate DICOMNodeInfoFromTXTRecordData: [aNetService TXTRecordData]];

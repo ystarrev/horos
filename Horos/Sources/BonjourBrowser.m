@@ -65,7 +65,6 @@ static BonjourBrowser *currentBrowser = nil;
         
         currentBrowser = self;
         
-        browser = [[NSNetServiceBrowser alloc] init];
         services = [[NSMutableArray array] retain];
         
         [self buildFixedIPList];
@@ -75,13 +74,6 @@ static BonjourBrowser *currentBrowser = nil;
         [self arrangeServices];
         
         interfaceOsiriX = bC;
-        
-        //[browser setDelegate:self];
-        
-        //if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DoNotSearchForBonjourServices"] == NO)
-        //	[browser searchForServicesOfType:@"_osirixdb._tcp." inDomain:@""];
-        
-        //		[browser scheduleInRunLoop: [NSRunLoop currentRunLoop] forMode: NSDefaultRunLoopMode];
         
         [[NSUserDefaultsController sharedUserDefaultsController] addObserver:self forValuesKey:@"SERVERS" options:NSKeyValueObservingOptionInitial context:nil];
         
@@ -111,7 +103,6 @@ static BonjourBrowser *currentBrowser = nil;
     
     [[NSNotificationCenter defaultCenter] removeObserver: self];
     
-    [browser release];
     [services release];
     
     [super dealloc];

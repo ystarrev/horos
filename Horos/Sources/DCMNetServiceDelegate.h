@@ -42,12 +42,13 @@ enum
 };
 
 #import <Cocoa/Cocoa.h>
+@class HorosBonjourBrowser;
 
 // Horos-owned networking service. Keep the class name and node format stable
 // while retiring the unrelated DCM file-parsing framework.
-@interface DCMNetServiceDelegate : NSObject <NSNetServiceDelegate, NSNetServiceBrowserDelegate>
+@interface DCMNetServiceDelegate : NSObject <NSNetServiceDelegate>
 {
-	NSNetServiceBrowser *_dicomNetBrowser;
+	HorosBonjourBrowser *_dicomNetBrowser;
 	NSMutableArray *_dicomServices;
 	NSNetService *publisher;
 }

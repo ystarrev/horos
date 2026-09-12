@@ -3,6 +3,7 @@ import Foundation
 import Dispatch
 import Metal
 import MetalKit
+import QuartzCore
 import simd
 
 private let registrationHistogramBins = 64
@@ -47,7 +48,14 @@ struct MetalViewerRegistrationSupportInput {
 }
 
 private final class RegistrationJob: @unchecked Sendable {
+    enum WorkingBufferSlot: Hashable {
+        case histogram
+        case uniforms(Int)
+        case blockMatches
+    }
+
     let generation: UInt
+    private let device: MTLDevice
     private let refinementTranslationAnchor: SIMD3<Float>?
     private let refinementRotationAnchor: SIMD3<Float>?
     private let maximumRefinementTranslationMM: Float = 6
@@ -56,14 +64,47 @@ private final class RegistrationJob: @unchecked Sendable {
     private let cancellationLock = NSLock()
     private var cancelled = false
 
+    // Only the job's worker uses these buffers. Every dispatch completes and
+    // its results are consumed before reuse. Cancellation never clears them.
+    private var workingBuffers: [WorkingBufferSlot: MTLBuffer] = [:]
+
     init(
+        device: MTLDevice,
         generation: UInt,
         refinementTranslationAnchor: SIMD3<Float>? = nil,
         refinementRotationAnchor: SIMD3<Float>? = nil
     ) {
+        self.device = device
         self.generation = generation
         self.refinementTranslationAnchor = refinementTranslationAnchor
         self.refinementRotationAnchor = refinementRotationAnchor
+    }
+
+    func workingBuffer(for slot: WorkingBufferSlot, length: Int) -> MTLBuffer? {
+        guard length > 0, length <= device.maxBufferLength else { return nil }
+        if let buffer = workingBuffers[slot], buffer.length >= length {
+            return buffer
+        }
+        guard let buffer = device.makeBuffer(length: length, options: .storageModeShared) else {
+            return nil
+        }
+        workingBuffers[slot] = buffer
+        return buffer
+    }
+
+    func uniformBuffer(_ uniforms: [RegistrationUniforms], slot: Int) -> MTLBuffer? {
+        uniforms.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) -> MTLBuffer? in
+            guard let baseAddress = bytes.baseAddress,
+                  let buffer = workingBuffer(for: .uniforms(slot), length: bytes.count) else {
+                return nil
+            }
+            buffer.contents().copyMemory(from: baseAddress, byteCount: bytes.count)
+            return buffer
+        }
+    }
+
+    func releaseWorkingBuffers() {
+        workingBuffers.removeAll()
     }
 
     var isCancelled: Bool {
@@ -102,16 +143,6 @@ private enum MetalMPRPreviewLayoutDefaults {
     static let paneGap: CGFloat = 6
     static let minimumPreviewWidth: CGFloat = 170
     static let minimumMainWidth: CGFloat = 240
-}
-
-private func configureMPRAlphaBlending(_ attachment: MTLRenderPipelineColorAttachmentDescriptor) {
-    attachment.isBlendingEnabled = true
-    attachment.sourceRGBBlendFactor = .sourceAlpha
-    attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-    attachment.rgbBlendOperation = .add
-    attachment.sourceAlphaBlendFactor = .one
-    attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-    attachment.alphaBlendOperation = .add
 }
 
 private struct MetalUniforms {
@@ -495,7 +526,7 @@ struct MetalMPRPreviewOverlayLayout {
     let previewPanes: [MetalMPRPreviewOverlayPane]
 }
 
-struct MetalMPRROISliceGeometry {
+struct MetalMPRROISliceGeometry: Equatable {
     let planeRawValue: Int
     let imageRect: CGRect
     let topLeftWorld: SIMD3<Double>
@@ -648,21 +679,34 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var immediateStackSliceTextureEntry: MetalSeriesTextureCache.Entry?
     private var immediateStackSliceIndex: Int?
     private var immediateStackSlicePixels: MetalStoredInt16PixelData?
+    private let scrollSliceLoader = MetalStackSliceLoader()
+    private var sliceRequestGeneration: UInt = 0
+    private var requestedSliceIndex: Int?
+    private(set) var currentSliceGeometry: MetalViewerSliceGeometry?
+    private(set) var currentImageMetadata: MetalViewerImageMetadata?
+    private(set) var currentSlicePixels: MetalStoredInt16PixelData?
+    private var annotationPreferences = UserDefaults.standard.dictionary(forKey: "CUSTOM_IMAGE_ANNOTATIONS") as NSDictionary?
     private var requestedStackVolumeKey: String?
     private var requestedBasePreparedVolumeKey: String?
     private var overlaySourceTextureEntry: MetalSeriesTextureCache.Entry?
     private var requestedOverlayVolumeKey: String?
     private var requestedOverlayPreparedVolumeKey: String?
     private var overlayVolumeTexture: MTLTexture?
-    private var baseVolumeDimensions = SIMD3<Int>(repeating: 1)
+    private var baseVolumeDimensions = SIMD3<Int>(repeating: 1) {
+        didSet { invalidateMPRVolumeGeometryCaches() }
+    }
     private var overlayVolumeDimensions = SIMD3<Int>(repeating: 1)
     private var baseVolumeLevels: [VolumeLevel] = []
     private var overlayVolumeLevels: [VolumeLevel] = []
     private var imageAspectRatio: Float = 1
-    private var fixedVoxelToWorld = matrix_identity_float4x4
+    private var fixedVoxelToWorld = matrix_identity_float4x4 {
+        didSet { invalidateMPRVolumeGeometryCaches() }
+    }
     private var movingWorldToVoxel = matrix_identity_float4x4
     private var movingRotationCenterWorld = SIMD3<Float>(repeating: 0)
-    private var baseVolumeCenterWorld = SIMD3<Float>(repeating: 0)
+    private var baseVolumeCenterWorld = SIMD3<Float>(repeating: 0) {
+        didSet { invalidateMPRVolumeGeometryCaches() }
+    }
     private var overlayVolumeCenterWorld = SIMD3<Float>(repeating: 0)
     private var baseInformativeCenterWorld = SIMD3<Float>(repeating: 0)
     private var overlayInformativeCenterWorld = SIMD3<Float>(repeating: 0)
@@ -683,6 +727,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var registrationSupportGeneration: UInt = 0
 
     private(set) var currentSliceIndex = 0
+    private var pendingRetrievalPresentation: ((CFTimeInterval) -> Void)?
     private(set) var windowLevel: Float = 0
     private(set) var windowWidth: Float = 1
     private var defaultSeriesWindowLevel: MetalViewerWindowLevel?
@@ -717,6 +762,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var mprROISurfaceSources: [MetalMPRROISurfaceSource] = []
     private var mprROISurfaceOpacity = MetalViewerMPRROIOverlayPreferences.opacity
     private var mprROISurfaceBuffers: [MetalMPRROISurfaceBuffer] = []
+    private var cachedMPRDisplayScale: Float?
+    private var mprTumourSeedMesh: (buffer: MTLBuffer, vertexCount: Int)?
     private var mprPreviewWidthFraction: CGFloat = {
         let value = UserDefaults.standard.object(forKey: MetalMPRPreviewLayoutDefaults.widthFractionDefaultsKey) as? Double
         let fraction = CGFloat(value ?? Double(MetalMPRPreviewLayoutDefaults.defaultWidthFraction))
@@ -725,7 +772,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             MetalMPRPreviewLayoutDefaults.maximumWidthFraction
         )
     }()
-    private var tumourSeeds: [MetalViewerTumourSeed] = []
+    private var tumourSeeds: [MetalViewerTumourSeed] = [] {
+        didSet { mprTumourSeedMesh = nil }
+    }
     private var imageInterpolationMode = MetalViewerImageInterpolationMode.saved
     private var defaultsObserver: NSObjectProtocol?
     private var hoveredMPRPlane: MetalMPRPlane?
@@ -878,74 +927,33 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
         self.vertexBuffer = vertexBuffer
 
-        guard let library = device.makeDefaultLibrary(),
-              let vertexFunction = library.makeFunction(name: "metalViewerVertex"),
-              let fragmentFunction = library.makeFunction(name: "metalViewerFragment"),
-              let mprVertexFunction = library.makeFunction(name: "metalViewerMPRVertex"),
-              let mprFragmentFunction = library.makeFunction(name: "metalViewerMPRFragment"),
-              let mprROIVertexFunction = library.makeFunction(name: "metalViewerMPRROIVertex"),
-              let mprROIFragmentFunction = library.makeFunction(name: "metalViewerMPRROIFragment"),
-              let mprPlaneHighlightVertexFunction = library.makeFunction(name: "metalViewerMPRPlaneHighlightVertex"),
-              let mprPlaneHighlightFragmentFunction = library.makeFunction(name: "metalViewerMPRPlaneHighlightFragment"),
-              let mprBorderVertexFunction = library.makeFunction(name: "metalViewerMPRBorderVertex"),
-              let mprBorderFragmentFunction = library.makeFunction(name: "metalViewerMPRBorderFragment"),
-              let mprIntersectionFragmentFunction = library.makeFunction(name: "metalViewerMPRIntersectionFragment"),
-              let registrationFunction = library.makeFunction(name: "metalViewerRegistrationJointHistogram"),
-              let registrationBatchFunction = library.makeFunction(name: "metalViewerRegistrationJointHistogramsBatch"),
-              let registrationBlockMatchingFunction = library.makeFunction(name: "metalViewerRegistrationBlockMatching") else {
-            fatalError("Could not load Metal shader functions.")
-        }
-
-        let pipelineDescriptor = MTLRenderPipelineDescriptor()
-        pipelineDescriptor.vertexFunction = vertexFunction
-        pipelineDescriptor.fragmentFunction = fragmentFunction
-        pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
-
-        let mprPipelineDescriptor = MTLRenderPipelineDescriptor()
-        mprPipelineDescriptor.vertexFunction = mprVertexFunction
-        mprPipelineDescriptor.fragmentFunction = mprFragmentFunction
-        mprPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        mprPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
-
-        let mprROIPipelineDescriptor = MTLRenderPipelineDescriptor()
-        mprROIPipelineDescriptor.vertexFunction = mprROIVertexFunction
-        mprROIPipelineDescriptor.fragmentFunction = mprROIFragmentFunction
-        mprROIPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        configureMPRAlphaBlending(mprROIPipelineDescriptor.colorAttachments[0])
-        mprROIPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
-
-        let mprPlaneHighlightPipelineDescriptor = MTLRenderPipelineDescriptor()
-        mprPlaneHighlightPipelineDescriptor.vertexFunction = mprPlaneHighlightVertexFunction
-        mprPlaneHighlightPipelineDescriptor.fragmentFunction = mprPlaneHighlightFragmentFunction
-        mprPlaneHighlightPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        configureMPRAlphaBlending(mprPlaneHighlightPipelineDescriptor.colorAttachments[0])
-        mprPlaneHighlightPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
-
-        let mprBorderPipelineDescriptor = MTLRenderPipelineDescriptor()
-        mprBorderPipelineDescriptor.vertexFunction = mprBorderVertexFunction
-        mprBorderPipelineDescriptor.fragmentFunction = mprBorderFragmentFunction
-        mprBorderPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        configureMPRAlphaBlending(mprBorderPipelineDescriptor.colorAttachments[0])
-        mprBorderPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
-
-        let mprIntersectionPipelineDescriptor = MTLRenderPipelineDescriptor()
-        mprIntersectionPipelineDescriptor.vertexFunction = mprBorderVertexFunction
-        mprIntersectionPipelineDescriptor.fragmentFunction = mprIntersectionFragmentFunction
-        mprIntersectionPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        configureMPRAlphaBlending(mprIntersectionPipelineDescriptor.colorAttachments[0])
-        mprIntersectionPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
-
         do {
-            pipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
-            mprPipelineState = try device.makeRenderPipelineState(descriptor: mprPipelineDescriptor)
-            mprROIPipelineState = try device.makeRenderPipelineState(descriptor: mprROIPipelineDescriptor)
-            mprPlaneHighlightPipelineState = try device.makeRenderPipelineState(descriptor: mprPlaneHighlightPipelineDescriptor)
-            mprBorderPipelineState = try device.makeRenderPipelineState(descriptor: mprBorderPipelineDescriptor)
-            mprIntersectionPipelineState = try device.makeRenderPipelineState(descriptor: mprIntersectionPipelineDescriptor)
-            registrationPipelineState = try device.makeComputePipelineState(function: registrationFunction)
-            registrationBatchPipelineState = try device.makeComputePipelineState(function: registrationBatchFunction)
-            registrationBlockMatchingPipelineState = try device.makeComputePipelineState(function: registrationBlockMatchingFunction)
+            let pipelines = try MetalPipelineCache.shared(for: device)
+            pipelineState = try pipelines.renderPipeline(
+                vertex: "metalViewerVertex", fragment: "metalViewerFragment", depthPixelFormat: .depth32Float
+            )
+            mprPipelineState = try pipelines.renderPipeline(
+                vertex: "metalViewerMPRVertex", fragment: "metalViewerMPRFragment", depthPixelFormat: .depth32Float
+            )
+            mprROIPipelineState = try pipelines.renderPipeline(
+                vertex: "metalViewerMPRROIVertex", fragment: "metalViewerMPRROIFragment",
+                depthPixelFormat: .depth32Float, alphaBlending: true
+            )
+            mprPlaneHighlightPipelineState = try pipelines.renderPipeline(
+                vertex: "metalViewerMPRPlaneHighlightVertex", fragment: "metalViewerMPRPlaneHighlightFragment",
+                depthPixelFormat: .depth32Float, alphaBlending: true
+            )
+            mprBorderPipelineState = try pipelines.renderPipeline(
+                vertex: "metalViewerMPRBorderVertex", fragment: "metalViewerMPRBorderFragment",
+                depthPixelFormat: .depth32Float, alphaBlending: true
+            )
+            mprIntersectionPipelineState = try pipelines.renderPipeline(
+                vertex: "metalViewerMPRBorderVertex", fragment: "metalViewerMPRIntersectionFragment",
+                depthPixelFormat: .depth32Float, alphaBlending: true
+            )
+            registrationPipelineState = try pipelines.computePipeline(function: "metalViewerRegistrationJointHistogram")
+            registrationBatchPipelineState = try pipelines.computePipeline(function: "metalViewerRegistrationJointHistogramsBatch")
+            registrationBlockMatchingPipelineState = try pipelines.computePipeline(function: "metalViewerRegistrationBlockMatching")
         } catch {
             fatalError("Could not create Metal pipeline: \(error)")
         }
@@ -979,10 +987,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.refreshImageInterpolationMode()
+            self?.refreshAnnotationPreferences()
         }
     }
 
     deinit {
+        scrollSliceLoader.cancel()
         activeRegistrationJob?.cancel()
         if let defaultsObserver {
             NotificationCenter.default.removeObserver(defaultsObserver)
@@ -990,6 +1000,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     func resetAndLoadInitialSlice() {
+        pendingRetrievalPresentation = MetalViewerRetrievalBenchmark.firstPresentationHandler(frames: pixList)
         currentSliceIndex = Self.initialSliceIndex(for: pixList)
         loadSlice(at: currentSliceIndex)
         requestStackVolumeTexture()
@@ -1017,6 +1028,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         registrationStatusMessage = nil
 
         pixList = newPixList
+        pendingRetrievalPresentation = MetalViewerRetrievalBenchmark.firstPresentationHandler(frames: pixList)
         contrastInvariantMRSlabMatchingCache = nil
         minimumCranialCoverageFractionCache = nil
         suggestedRegistrationWorldTransform = nil
@@ -1118,6 +1130,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         stateDidChange?(stateDescription)
     }
 
+    private func refreshAnnotationPreferences() {
+        let preferences = UserDefaults.standard.dictionary(forKey: "CUSTOM_IMAGE_ANNOTATIONS") as NSDictionary?
+        guard preferences != annotationPreferences else { return }
+        annotationPreferences = preferences
+        if displayMode == .stack2D {
+            requestScrollSlice(at: requestedSliceIndex ?? currentSliceIndex, reloadCurrent: true)
+        } else {
+            currentPix?.reloadAnnotations()
+            loadSlice(at: currentSliceIndex)
+        }
+    }
+
     func setOverlayPixList(
         _ overlayPixList: [DCMPix],
         suggestedRegistrationWorldTransform: MetalViewerRegistrationWorldTransform? = nil,
@@ -1203,18 +1227,17 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     func stepSlice(by delta: Int) {
         guard pixList.isEmpty == false else { return }
-        let nextIndex = max(0, min(pixList.count - 1, currentSliceIndex - delta))
-        guard nextIndex != currentSliceIndex else { return }
-        currentSliceIndex = nextIndex
-        loadSlice(at: currentSliceIndex)
-        if displayMode.isMPRLike {
-            resetMPRPlaneToCurrentSlice()
-        }
+        let nextIndex = max(0, min(pixList.count - 1, (requestedSliceIndex ?? currentSliceIndex) - delta))
+        setSliceIndex(nextIndex)
     }
 
     func setSliceIndex(_ index: Int) {
         guard pixList.isEmpty == false else { return }
         let nextIndex = max(0, min(pixList.count - 1, index))
+        if displayMode == .stack2D {
+            requestScrollSlice(at: nextIndex)
+            return
+        }
         guard nextIndex != currentSliceIndex else {
             stateDidChange?(stateDescription)
             return
@@ -1439,23 +1462,32 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         DispatchQueue.main.async { request.completion(nil) }
     }
 
-    func setPixList(_ newPixList: [DCMPix], preservingSliceIndex: Bool = true) {
+    func setPixList(_ newPixList: [DCMPix], preservingSliceIndex: Bool = true, preservingDisplayedImage: Bool = false) {
         guard newPixList.isEmpty == false else { return }
 
         let previousSliceIndex = currentSliceIndex
+        let previousPix = currentPix
+        let pendingPix = requestedSliceIndex.flatMap { pixList.indices.contains($0) ? pixList[$0] : nil }
+        let pendingIndex = pendingPix.flatMap { requestedPix in
+            newPixList.firstIndex { $0.srcFile == requestedPix.srcFile && $0.frameNo == requestedPix.frameNo }
+        }
+        let matchingSliceIndex = preservingDisplayedImage ? newPixList.firstIndex {
+            $0.srcFile == previousPix?.srcFile && $0.frameNo == previousPix?.frameNo
+        } : nil
         invalidateActiveRegistrationJob()
         registrationInProgress = false
         registrationProgress = 0
         registrationStatusMessage = nil
 
         pixList = newPixList
+        pendingRetrievalPresentation = MetalViewerRetrievalBenchmark.firstPresentationHandler(frames: pixList)
         contrastInvariantMRSlabMatchingCache = nil
         minimumCranialCoverageFractionCache = nil
         suggestedRegistrationWorldTransform = nil
         resetRegistrationSupportVolumes()
-        currentSliceIndex = preservingSliceIndex
+        currentSliceIndex = matchingSliceIndex ?? (preservingSliceIndex
             ? min(max(previousSliceIndex, 0), newPixList.count - 1)
-            : Self.initialSliceIndex(for: newPixList)
+            : Self.initialSliceIndex(for: newPixList))
 
         baseVolumeTexture = nil
         stackVolumeTextureEntry = nil
@@ -1485,10 +1517,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             resetMPRPlaneToCurrentSlice()
         }
         stateDidChange?(stateDescription)
+        if preservingDisplayedImage, displayMode == .stack2D, let pendingIndex {
+            requestScrollSlice(at: pendingIndex)
+        }
     }
 
     func setDisplayMode(_ mode: MetalViewerDisplayMode) {
         guard displayMode != mode else { return }
+        cancelPendingSliceLoads()
         displayMode = mode
         hoveredMPRPlane = nil
         mprPlaneDragState = nil
@@ -2515,16 +2551,17 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     func stackScreenPoint(for pixelPoint: CGPoint, sliceIndex: Int, in bounds: CGRect) -> CGPoint? {
         guard displayMode == .stack2D,
               sliceIndex == currentSliceIndex,
-              let pix = currentPix,
-              pix.pwidth > 0,
-              pix.pheight > 0 else {
+              let pix = currentPix else {
             return nil
         }
+        let width = pix.widthWithoutLoading()
+        let height = pix.heightWithoutLoading()
+        guard width > 0, height > 0 else { return nil }
 
         let rect = imageRect(in: bounds)
         let unrotatedPoint = CGPoint(
-            x: rect.minX + (pixelPoint.x / CGFloat(pix.pwidth)) * rect.width,
-            y: rect.maxY - (pixelPoint.y / CGFloat(pix.pheight)) * rect.height
+            x: rect.minX + (pixelPoint.x / CGFloat(width)) * rect.width,
+            y: rect.maxY - (pixelPoint.y / CGFloat(height)) * rect.height
         )
         return rotatedStackPoint(unrotatedPoint, in: rect)
     }
@@ -3050,19 +3087,77 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return normalized
     }
 
-    private func loadSlice(at index: Int) {
+    private func cancelPendingSliceLoads() {
+        sliceRequestGeneration &+= 1
+        requestedSliceIndex = nil
+        scrollSliceLoader.cancel()
+    }
+
+    private func requestScrollSlice(at index: Int, reloadCurrent: Bool = false) {
+        guard pixList.indices.contains(index), reloadCurrent || requestedSliceIndex != index else { return }
+        cancelPendingSliceLoads()
+        guard reloadCurrent || index != currentSliceIndex else { return }
+        requestedSliceIndex = index
+        let generation = sliceRequestGeneration
+        let pix = pixList[index]
+        scrollSliceLoader.request(index: index, pixList: pixList, device: deviceRef,
+                                  volume: stackVolumeTextureEntry) { [weak self] prepared in
+            guard let self, self.sliceRequestGeneration == generation,
+                  self.displayMode == .stack2D,
+                  self.pixList.indices.contains(index), self.pixList[index] === pix else { return }
+            self.requestedSliceIndex = nil
+            guard let prepared else {
+                NSLog("Metal Viewer: could not prepare slice %ld; retaining the displayed slice", index + 1)
+                return
+            }
+            if self.overlayVolumeTexture != nil,
+               let path = pix.srcFile,
+               self.stackVolumeTextureEntry?.sourceRevisions[path] != prepared.pixels.fileRevision {
+                NSLog("Metal Viewer: registered source changed while scrolling; reload the series before continuing")
+                return
+            }
+            // The visible index changes only with a complete, matching snapshot.
+            self.currentSliceIndex = index
+            self.loadSlice(at: index, prepared: prepared)
+        }
+    }
+
+    private func loadSlice(at index: Int, prepared: MetalPreparedStackSlice? = nil) {
         guard pixList.indices.contains(index) else { return }
+        if prepared == nil { cancelPendingSliceLoads() }
+        let benchmarkStarted = pendingRetrievalPresentation == nil ? nil : CACurrentMediaTime()
+        defer {
+            if let benchmarkStarted {
+                MetalViewerRetrievalBenchmark.mark("first_slice_ready", frames: pixList, duration: CACurrentMediaTime() - benchmarkStarted)
+            }
+        }
         let pix = pixList[index]
 
-        let width = max(Int(pix.widthWithoutLoading()), 1)
-        let height = max(Int(pix.heightWithoutLoading()), 1)
-        let sliceGeometry = MetalViewerSliceGeometry(pix: pix)
-        let spacingX = Float(sliceGeometry?.spacingX ?? 1)
-        let spacingY = Float(sliceGeometry?.spacingY ?? 1)
+        currentSlicePixels = prepared?.pixels
+        let sliceGeometry: MetalViewerSliceGeometry?
+        if let prepared {
+            sliceGeometry = prepared.geometry
+        } else {
+            sliceGeometry = MetalViewerSliceGeometry(pix: pix)
+        }
+        currentSliceGeometry = sliceGeometry
+        currentImageMetadata = prepared?.metadata ?? MetalViewerImageMetadata(pix: pix)
+        let width = max(prepared?.pixels.width ?? Int(sliceGeometry?.width ?? Double(pix.widthWithoutLoading())), 1)
+        let height = max(prepared?.pixels.height ?? Int(sliceGeometry?.height ?? Double(pix.heightWithoutLoading())), 1)
+        // Establish source dimensions before selecting textures or publishing view state.
+        if pix.widthWithoutLoading() != width || pix.heightWithoutLoading() != height {
+            pix.setWidthWithoutLoading(width, heightWithoutLoading: height)
+        }
+        let spacingX = Float(sliceGeometry?.spacingX ?? Double(prepared?.pixels.pixelSpacing.x ?? 1))
+        let spacingY = Float(sliceGeometry?.spacingY ?? Double(prepared?.pixels.pixelSpacing.y ?? 1))
         imageAspectRatio = Float(width) * spacingX / max(Float(height) * spacingY, 0.0001)
 
-        var storedPixels: MetalStoredInt16PixelData?
-        if displayMode == .stack2D,
+        var storedPixels = prepared?.pixels
+        if let prepared {
+            immediateStackSliceTextureEntry = prepared.textureEntry
+            immediateStackSliceIndex = index
+            immediateStackSlicePixels = prepared.pixels
+        } else if displayMode == .stack2D,
            stackDisplayUsesCorrectedBaseVolume() == false,
            stackDisplayUsesSharedVolumeTexture(for: pix, at: index) == false {
             if immediateStackSliceIndex != index
@@ -3074,10 +3169,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
                 storedPixels = MetalStoredInt16PixelData(pix: pix)
                 if let storedPixels,
-                   let entry = makeImmediateStackSliceTextureEntry(
+                   let entry = Self.makeImmediateStackSliceTextureEntry(
                     from: storedPixels,
                     pix: pix,
-                    index: index
+                    index: index,
+                    device: deviceRef
                    ) {
                     immediateStackSliceTextureEntry = entry
                     immediateStackSliceIndex = index
@@ -3085,6 +3181,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 }
             }
         }
+        currentSlicePixels = storedPixels ?? (immediateStackSliceIndex == index ? immediateStackSlicePixels : nil)
 
         if let customWindow = customSeriesWindowLevel {
             applyBaseWindowLevel(customWindow)
@@ -3123,12 +3220,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         stateDidChange?(stateDescription)
+        if prepared == nil, displayMode == .stack2D, currentSlicePixels == nil {
+            requestScrollSlice(at: index, reloadCurrent: true)
+        }
     }
 
-    private func makeImmediateStackSliceTextureEntry(
+    static func makeImmediateStackSliceTextureEntry(
         from storedPixels: MetalStoredInt16PixelData,
         pix: DCMPix,
-        index: Int
+        index: Int,
+        device: MTLDevice
     ) -> MetalSeriesTextureCache.Entry? {
         let descriptor = MTLTextureDescriptor()
         descriptor.textureType = .type3D
@@ -3140,7 +3241,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         descriptor.storageMode = .shared
         descriptor.usage = [.shaderRead]
 
-        guard let texture = deviceRef.makeTexture(descriptor: descriptor),
+        guard let texture = device.makeTexture(descriptor: descriptor),
               storedPixels.data.count >= storedPixels.byteCount else {
             return nil
         }
@@ -3210,7 +3311,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func requestStackVolumeTexture() {
-        guard let key = MetalSeriesTextureCache.shared.key(
+        guard let request = MetalSeriesTextureCache.shared.makeRequest(
                   for: pixList,
                   device: deviceRef
               ) else {
@@ -3219,21 +3320,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             registrationPreparationDidFail("Could not read the base registration volume")
             return
         }
+        let key = request.key
 
-        if MetalSeriesTextureCache.shared.isEntryKnownUnavailable(
-               for: pixList,
-               device: deviceRef
-        ) {
+        if MetalSeriesTextureCache.shared.isEntryKnownUnavailable(for: request) {
             NSLog("%@", "Metal Viewer: unsupported stored-pixel encoding for volume \(key)")
             registrationPreparationDidFail("Unsupported base registration volume")
             return
         }
 
         requestedStackVolumeKey = key
-        if let entry = MetalSeriesTextureCache.shared.cachedEntry(
-            for: pixList,
-            device: deviceRef
-        ) {
+        if let entry = MetalSeriesTextureCache.shared.cachedEntry(for: request) {
             stackVolumeTextureEntry = entry
             stackVolumeTextureDidBecomeAvailable()
             return
@@ -3253,8 +3349,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             decodedSliceSeed = nil
         }
         MetalSeriesTextureCache.shared.requestEntry(
-            for: requestedPixList,
-            device: deviceRef,
+            for: request,
             decodedSliceSeed: decodedSliceSeed
         ) { [weak self] entry in
             guard let self,
@@ -3282,6 +3377,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func stackVolumeTextureDidBecomeAvailable() {
+        MetalViewerRetrievalBenchmark.mark("volume_ready", frames: pixList)
         if displayMode.isMPRLike || overlayPixList.isEmpty == false {
             publishRegistrationPreparationUpdate(
                 message: "Preparing base registration volume",
@@ -3294,7 +3390,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func requestOverlayVolumeTexture() {
         guard overlayPixList.isEmpty == false,
-              let key = MetalSeriesTextureCache.shared.key(
+              let request = MetalSeriesTextureCache.shared.makeRequest(
                 for: overlayPixList,
                 device: deviceRef
               ) else {
@@ -3303,12 +3399,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             registrationPreparationDidFail("Could not read the overlay registration volume")
             return
         }
+        let key = request.key
 
         requestedOverlayVolumeKey = key
-        if let entry = MetalSeriesTextureCache.shared.cachedEntry(
-            for: overlayPixList,
-            device: deviceRef
-        ) {
+        if let entry = MetalSeriesTextureCache.shared.cachedEntry(for: request) {
             overlaySourceTextureEntry = entry
             publishRegistrationPreparationUpdate(
                 message: "Preparing overlay registration volume",
@@ -3319,10 +3413,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         let requestedPixList = overlayPixList
-        MetalSeriesTextureCache.shared.requestEntry(
-            for: requestedPixList,
-            device: deviceRef
-        ) { [weak self] entry in
+        MetalSeriesTextureCache.shared.requestEntry(for: request) { [weak self] entry in
             guard let self,
                   self.requestedOverlayVolumeKey == key,
                   self.overlayPixList.count == requestedPixList.count,
@@ -5073,6 +5164,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         guard let initialGuess = initialGuesses.first else { return }
         invalidateActiveRegistrationJob()
         let job = RegistrationJob(
+            device: deviceRef,
             generation: registrationGeneration,
             refinementTranslationAnchor: searchMode == .refinement
                 ? initialGuess.translationWorld
@@ -5093,6 +5185,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             generation: job.generation
         )
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            defer { job.releaseWorkingBuffers() }
             guard let self, job.isCancelled == false else { return }
             let result = self.optimizeOverlayTransform(
                 startingAt: initialGuesses,
@@ -5190,14 +5283,15 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             (fixedDimensions.z + Int(blockStride.z) - 1) / Int(blockStride.z)
         )
         let resultCount = blockGrid.x * blockGrid.y * blockGrid.z
+        let resultBufferLength = resultCount * MemoryLayout<BlockMatchResult>.stride
         guard resultCount >= 8,
-              let resultBuffer = deviceRef.makeBuffer(
-                length: resultCount * MemoryLayout<BlockMatchResult>.stride,
-                options: .storageModeShared
+              let resultBuffer = job.workingBuffer(
+                for: .blockMatches,
+                length: resultBufferLength
               ) else {
             return nil
         }
-        memset(resultBuffer.contents(), 0, resultBuffer.length)
+        memset(resultBuffer.contents(), 0, resultBufferLength)
 
         let fixedToMovingTexture = registrationTextureCoordinateMatrix(
             for: initialState,
@@ -6579,7 +6673,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func registrationSampleGridSize(
-        for texture: MTLTexture,
+        for level: VolumeLevel,
         samplingStride requestedSamplingStride: SIMD3<Int>
     ) -> SIMD3<Int> {
         let samplingStride = SIMD3<Int>(
@@ -6588,9 +6682,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             max(requestedSamplingStride.z, 1)
         )
         return SIMD3<Int>(
-            (texture.width + samplingStride.x - 1) / samplingStride.x,
-            (texture.height + samplingStride.y - 1) / samplingStride.y,
-            (texture.depth + samplingStride.z - 1) / samplingStride.z
+            (level.textureDimensions.x + samplingStride.x - 1) / samplingStride.x,
+            (level.textureDimensions.y + samplingStride.y - 1) / samplingStride.y,
+            (level.textureDimensions.z + samplingStride.z - 1) / samplingStride.z
         )
     }
 
@@ -6655,37 +6749,26 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let overlayVolumeTexture = level.1.texture
         let samplingStride = normalizedRegistrationSamplingStride(requestedSamplingStride)
         let baseSampleGridSize = registrationSampleGridSize(
-            for: baseVolumeTexture,
+            for: level.0,
             samplingStride: samplingStride
         )
         let overlaySampleGridSize = registrationSampleGridSize(
-            for: overlayVolumeTexture,
+            for: level.1,
             samplingStride: samplingStride
         )
         let options = metricOptions(forLevelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)
-        let movingWorldToVoxel = simd_inverse(level.1.voxelToWorld)
-        let movingTextureSize = SIMD3<Int>(
-            overlayVolumeTexture.width,
-            overlayVolumeTexture.height,
-            overlayVolumeTexture.depth
-        )
-
         var uniforms = RegistrationUniforms(
             baseWindowLevel: baseRegistrationWindowLevel,
             baseWindowWidth: max(baseRegistrationWindowWidth, 1),
             overlayWindowLevel: overlayRegistrationWindowLevel,
             overlayWindowWidth: max(overlayRegistrationWindowWidth, 1),
             metricOptions: options,
-            baseTextureSize: SIMD3<UInt32>(
-                UInt32(baseVolumeTexture.width),
-                UInt32(baseVolumeTexture.height),
-                UInt32(baseVolumeTexture.depth)
-            ),
+            baseTextureSize: level.0.textureDimensionsUInt32,
             fixedVoxelToMovingTexture: registrationTextureCoordinateMatrix(
                 for: state,
                 fixedVoxelToWorld: level.0.voxelToWorld,
-                movingWorldToVoxel: movingWorldToVoxel,
-                movingTextureSize: movingTextureSize
+                movingWorldToVoxel: level.1.worldToVoxel,
+                movingTextureSize: level.1.textureDimensions
             ),
             samplingOptions: registrationSamplingOptions(samplingStride)
         )
@@ -6693,7 +6776,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let histogramEntryCount = registrationHistogramBins * registrationHistogramBins
         let histogramBufferLength = histogramEntryCount * MemoryLayout<UInt32>.stride
 
-        guard let histogramBuffer = deviceRef.makeBuffer(length: histogramBufferLength, options: .storageModeShared) else {
+        guard let histogramBuffer = job.workingBuffer(for: .histogram, length: histogramBufferLength) else {
             return .greatestFiniteMagnitude
         }
         memset(histogramBuffer.contents(), 0, histogramBufferLength)
@@ -6791,18 +6874,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 : (forward: 0, reverse: 1)
         }
 
-        func physicalCoverage(of volumeLevel: VolumeLevel) -> Float {
-            let spacing = voxelSpacing(from: volumeLevel.voxelToWorld)
-            let size = SIMD3<Float>(
-                Float(max(volumeLevel.dimensions.x, 1)) * spacing.x,
-                Float(max(volumeLevel.dimensions.y, 1)) * spacing.y,
-                Float(max(volumeLevel.dimensions.z, 1)) * spacing.z
-            )
-            return max(size.x * size.y * size.z, 0.0001)
-        }
-
-        let forwardCoverage = physicalCoverage(of: level.0)
-        let reverseCoverage = physicalCoverage(of: level.1)
+        let forwardCoverage = level.0.physicalCoverage
+        let reverseCoverage = level.1.physicalCoverage
         let coverageTotal = forwardCoverage + reverseCoverage
         // With unequal coverage, the smaller targeted volume is the better
         // fixed domain: nearly all of its samples can contribute to the metric.
@@ -6948,19 +7021,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let baseVolumeTexture = level.0.texture
         let overlayVolumeTexture = level.1.texture
         let effectiveSamplingStride = normalizedRegistrationSamplingStride(samplingStride)
+        let samplingOptions = registrationSamplingOptions(effectiveSamplingStride)
         let baseSampleGridSize = registrationSampleGridSize(
-            for: baseVolumeTexture,
+            for: level.0,
             samplingStride: effectiveSamplingStride
         )
         let overlaySampleGridSize = registrationSampleGridSize(
-            for: overlayVolumeTexture,
+            for: level.1,
             samplingStride: effectiveSamplingStride
-        )
-        let movingWorldToVoxel = simd_inverse(level.1.voxelToWorld)
-        let movingTextureSize = SIMD3<Int>(
-            overlayVolumeTexture.width,
-            overlayVolumeTexture.height,
-            overlayVolumeTexture.depth
         )
         let uniforms = states.map { state in
             RegistrationUniforms(
@@ -6969,18 +7037,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 overlayWindowLevel: overlayRegistrationWindowLevel,
                 overlayWindowWidth: max(overlayRegistrationWindowWidth, 1),
                 metricOptions: options,
-                baseTextureSize: SIMD3<UInt32>(
-                    UInt32(baseVolumeTexture.width),
-                    UInt32(baseVolumeTexture.height),
-                    UInt32(baseVolumeTexture.depth)
-                ),
+                baseTextureSize: level.0.textureDimensionsUInt32,
                 fixedVoxelToMovingTexture: registrationTextureCoordinateMatrix(
                     for: state,
                     fixedVoxelToWorld: level.0.voxelToWorld,
-                    movingWorldToVoxel: movingWorldToVoxel,
-                    movingTextureSize: movingTextureSize
+                    movingWorldToVoxel: level.1.worldToVoxel,
+                    movingTextureSize: level.1.textureDimensions
                 ),
-                samplingOptions: registrationSamplingOptions(effectiveSamplingStride)
+                samplingOptions: samplingOptions
             )
         }
         let reverseUniforms: [RegistrationUniforms] = usesBidirectionalMetric
@@ -6991,22 +7055,14 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     overlayWindowLevel: baseRegistrationWindowLevel,
                     overlayWindowWidth: max(baseRegistrationWindowWidth, 1),
                     metricOptions: options,
-                    baseTextureSize: SIMD3<UInt32>(
-                        UInt32(overlayVolumeTexture.width),
-                        UInt32(overlayVolumeTexture.height),
-                        UInt32(overlayVolumeTexture.depth)
-                    ),
+                    baseTextureSize: level.1.textureDimensionsUInt32,
                     fixedVoxelToMovingTexture: reverseRegistrationTextureCoordinateMatrix(
                         for: state,
                         fixedVoxelToWorld: level.1.voxelToWorld,
-                        movingWorldToVoxel: simd_inverse(level.0.voxelToWorld),
-                        movingTextureSize: SIMD3<Int>(
-                            baseVolumeTexture.width,
-                            baseVolumeTexture.height,
-                            baseVolumeTexture.depth
-                        )
+                        movingWorldToVoxel: level.0.worldToVoxel,
+                        movingTextureSize: level.0.textureDimensions
                     ),
-                    samplingOptions: registrationSamplingOptions(effectiveSamplingStride)
+                    samplingOptions: samplingOptions
                 )
             }
             : []
@@ -7014,25 +7070,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let histogramEntryCount = registrationHistogramBins * registrationHistogramBins
         let histogramPassLength = histogramEntryCount * states.count * MemoryLayout<UInt32>.stride
         let histogramBufferLength = histogramPassLength * (usesBidirectionalMetric ? 2 : 1)
-        guard let uniformBuffer = uniforms.withUnsafeBytes({ uniformBytes -> MTLBuffer? in
-            guard let baseAddress = uniformBytes.baseAddress else { return nil }
-            return deviceRef.makeBuffer(
-                bytes: baseAddress,
-                length: uniformBytes.count,
-                options: .storageModeShared
-            )
-        }),
+        guard let uniformBuffer = job.uniformBuffer(uniforms, slot: 0),
               let reverseUniformBuffer = usesBidirectionalMetric
-                ? reverseUniforms.withUnsafeBytes({ uniformBytes -> MTLBuffer? in
-                    guard let baseAddress = uniformBytes.baseAddress else { return nil }
-                    return deviceRef.makeBuffer(
-                        bytes: baseAddress,
-                        length: uniformBytes.count,
-                        options: .storageModeShared
-                    )
-                })
+                ? job.uniformBuffer(reverseUniforms, slot: 1)
                 : uniformBuffer,
-              let histogramBuffer = deviceRef.makeBuffer(length: histogramBufferLength, options: .storageModeShared) else {
+              let histogramBuffer = job.workingBuffer(for: .histogram, length: histogramBufferLength) else {
             return Array(repeating: .greatestFiniteMagnitude, count: states.count)
         }
         memset(histogramBuffer.contents(), 0, histogramBufferLength)
@@ -7194,6 +7236,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             useBoneOnly: useBoneOnly
         )
         let effectiveSamplingStride = normalizedRegistrationSamplingStride(samplingStride)
+        let samplingOptions = registrationSamplingOptions(effectiveSamplingStride)
         let histogramEntryCount = registrationHistogramBins * registrationHistogramBins
         let histogramPassEntryCount = histogramEntryCount * states.count
         let histogramBufferLength = histogramPassEntryCount
@@ -7207,28 +7250,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         fixedSampleGridSizes.reserveCapacity(pairs.count)
         movingSampleGridSizes.reserveCapacity(pairs.count)
 
-        for pair in pairs {
-            let fixedTexture = pair.fixedLevel.texture
-            let movingTexture = pair.movingLevel.texture
-            let movingWorldToVoxel = simd_inverse(pair.movingLevel.voxelToWorld)
-            let movingTextureSize = SIMD3<Int>(
-                movingTexture.width,
-                movingTexture.height,
-                movingTexture.depth
-            )
+        for (pairIndex, pair) in pairs.enumerated() {
             let uniforms = states.map { state in
                 let fixedVoxelToMovingTexture = pair.usesReverseTransform
                     ? reverseRegistrationTextureCoordinateMatrix(
                         for: state,
                         fixedVoxelToWorld: pair.fixedLevel.voxelToWorld,
-                        movingWorldToVoxel: movingWorldToVoxel,
-                        movingTextureSize: movingTextureSize
+                        movingWorldToVoxel: pair.movingLevel.worldToVoxel,
+                        movingTextureSize: pair.movingLevel.textureDimensions
                     )
                     : registrationTextureCoordinateMatrix(
                         for: state,
                         fixedVoxelToWorld: pair.fixedLevel.voxelToWorld,
-                        movingWorldToVoxel: movingWorldToVoxel,
-                        movingTextureSize: movingTextureSize
+                        movingWorldToVoxel: pair.movingLevel.worldToVoxel,
+                        movingTextureSize: pair.movingLevel.textureDimensions
                     )
                 return RegistrationUniforms(
                     baseWindowLevel: pair.fixedWindow.level,
@@ -7236,43 +7271,32 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     overlayWindowLevel: pair.movingWindow.level,
                     overlayWindowWidth: max(pair.movingWindow.width, 1),
                     metricOptions: options,
-                    baseTextureSize: SIMD3<UInt32>(
-                        UInt32(fixedTexture.width),
-                        UInt32(fixedTexture.height),
-                        UInt32(fixedTexture.depth)
-                    ),
+                    baseTextureSize: pair.fixedLevel.textureDimensionsUInt32,
                     fixedVoxelToMovingTexture: fixedVoxelToMovingTexture,
-                    samplingOptions: registrationSamplingOptions(effectiveSamplingStride)
+                    samplingOptions: samplingOptions
                 )
             }
-            guard let uniformBuffer = uniforms.withUnsafeBytes({ bytes -> MTLBuffer? in
-                guard let baseAddress = bytes.baseAddress else { return nil }
-                return deviceRef.makeBuffer(
-                    bytes: baseAddress,
-                    length: bytes.count,
-                    options: .storageModeShared
-                )
-            }) else {
+            guard let uniformBuffer = job.uniformBuffer(uniforms, slot: pairIndex) else {
                 return pairs.map { _ in Array(repeating: nil, count: states.count) }
             }
             uniformBuffers.append(uniformBuffer)
             fixedSampleGridSizes.append(
                 registrationSampleGridSize(
-                    for: fixedTexture,
+                    for: pair.fixedLevel,
                     samplingStride: effectiveSamplingStride
                 )
             )
             movingSampleGridSizes.append(
                 registrationSampleGridSize(
-                    for: movingTexture,
+                    for: pair.movingLevel,
                     samplingStride: effectiveSamplingStride
                 )
             )
         }
 
-        guard let histogramBuffer = deviceRef.makeBuffer(
-            length: histogramBufferLength,
-            options: .storageModeShared
+        guard let histogramBuffer = job.workingBuffer(
+            for: .histogram,
+            length: histogramBufferLength
         ),
               let commandBuffer = commandQueue.makeCommandBuffer(),
               let encoder = commandBuffer.makeComputeCommandEncoder() else {
@@ -7627,8 +7651,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func currentOverlayTranslationPixels(for translationWorld: SIMD3<Float>? = nil) -> SIMD2<Float> {
-        guard let currentPix,
-              let geometry = MetalViewerSliceGeometry(pix: currentPix) else {
+        guard let geometry = currentSliceGeometry else {
             return .zero
         }
         let translation = translationWorld ?? overlayTranslationWorld
@@ -7655,7 +7678,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
               let stackVolumeTextureEntry,
               let pix,
               index >= 0,
-              index < stackVolumeTextureEntry.dimensions.z else {
+              index < stackVolumeTextureEntry.dimensions.z,
+              stackVolumeTextureEntry.substitutedSliceIndexes.contains(index) == false else {
+            return false
+        }
+
+        if index == currentSliceIndex, let revision = currentSlicePixels?.fileRevision,
+           let path = pix.srcFile, stackVolumeTextureEntry.sourceRevisions[path] != revision {
             return false
         }
 
@@ -7750,7 +7779,33 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
     }
 
+    private func trackRetrievalPresentation(of drawable: MTLDrawable, commandBuffer: MTLCommandBuffer) {
+        guard let report = pendingRetrievalPresentation else { return }
+        pendingRetrievalPresentation = nil
+        MetalViewerRetrievalBenchmark.mark("first_submitted", frames: pixList)
+        let completed = MetalViewerRetrievalBenchmark.timestampHandler("first_command_completed", frames: pixList)
+        let failed = MetalViewerRetrievalBenchmark.timestampHandler("first_command_failed", frames: pixList)
+        let unpresented = MetalViewerRetrievalBenchmark.timestampHandler("first_unpresented_drawable", frames: pixList)
+        commandBuffer.addCompletedHandler { buffer in
+            let timestamp = CACurrentMediaTime()
+            let succeeded = buffer.status == .completed
+            DispatchQueue.main.async {
+                if succeeded { completed?(timestamp) } else { failed?(timestamp) }
+            }
+        }
+        drawable.addPresentedHandler { presented in
+            let timestamp = presented.presentedTime
+            let callbackTime = CACurrentMediaTime()
+            DispatchQueue.main.async {
+                if timestamp > 0 { report(timestamp) } else { unpresented?(callbackTime) }
+            }
+        }
+    }
+
     func draw(in view: MTKView) {
+        if pendingRetrievalPresentation != nil {
+            MetalViewerRetrievalBenchmark.mark("first_draw_attempt", frames: pixList)
+        }
         switch displayMode {
         case .mpr:
             drawMPR(in: view)
@@ -7763,6 +7818,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
 
         guard let displayVolumeTexture = stackDisplayVolumeTexture() else {
+            if pendingRetrievalPresentation != nil {
+                MetalViewerRetrievalBenchmark.mark("draw_waiting_for_texture", frames: pixList)
+            }
             failPendingFrameCapture()
             return
         }
@@ -7771,10 +7829,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let floatDisplayVolumeTexture = displayVolumeKind == .rescaledFloat ? displayVolumeTexture : nil
         let signedDisplayVolumeTexture = displayVolumeKind == .storedInt16Signed ? displayVolumeTexture : nil
         let unsignedDisplayVolumeTexture = displayVolumeKind == .storedInt16Unsigned ? displayVolumeTexture : nil
+        let drawableWaitStarted = pendingRetrievalPresentation == nil ? nil : CACurrentMediaTime()
         guard let renderPassDescriptor = view.currentRenderPassDescriptor,
               let drawable = view.currentDrawable else {
+            if pendingRetrievalPresentation != nil {
+                MetalViewerRetrievalBenchmark.mark("draw_waiting_for_drawable", frames: pixList)
+            }
             failPendingFrameCapture()
             return
+        }
+        if let drawableWaitStarted {
+            MetalViewerRetrievalBenchmark.mark("first_drawable_ready", frames: pixList,
+                                               duration: CACurrentMediaTime() - drawableWaitStarted)
         }
 
         let drawableAspect = max(Float(view.drawableSize.width / max(view.drawableSize.height, 1)), 0.0001)
@@ -7838,12 +7904,30 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
 
         encodePendingFrameCapture(from: drawable.texture, into: commandBuffer)
+        trackRetrievalPresentation(of: drawable, commandBuffer: commandBuffer)
         commandBuffer.present(drawable)
         commandBuffer.commit()
     }
 
     private func invalidateMPRROIVertexBuffer() {
         mprROISurfaceBuffers.removeAll(keepingCapacity: true)
+    }
+
+    private func invalidateMPRVolumeGeometryCaches() {
+        cachedMPRDisplayScale = nil
+        mprTumourSeedMesh = nil
+    }
+
+    private func prepareMPRTumourSeedMeshIfNeeded() {
+        guard mprTumourSeedMesh == nil, tumourSeeds.isEmpty == false else { return }
+        let vertices = makeMPRTumourSeedSphereVertices()
+        guard vertices.isEmpty == false,
+              let buffer = deviceRef.makeBuffer(
+                  bytes: vertices,
+                  length: MemoryLayout<MetalMPRVertex>.stride * vertices.count,
+                  options: .storageModeShared
+              ) else { return }
+        mprTumourSeedMesh = (buffer: buffer, vertexCount: vertices.count)
     }
 
     private func prepareMPRROIVertexBufferIfNeeded() {
@@ -7963,20 +8047,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             }
         }
 
-        let seedVertices = makeMPRTumourSeedSphereVertices()
-        if seedVertices.isEmpty == false {
+        prepareMPRTumourSeedMeshIfNeeded()
+        if let seedMesh = mprTumourSeedMesh {
             encoder.setRenderPipelineState(mprPlaneHighlightPipelineState)
             encoder.setDepthStencilState(mprDepthStencilState)
-            let vertexBufferLength = MemoryLayout<MetalMPRVertex>.stride * seedVertices.count
-            if let vertexBuffer = deviceRef.makeBuffer(
-                bytes: seedVertices,
-                length: vertexBufferLength,
-                options: .storageModeShared
-            ) {
-                encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
-                encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
-                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: seedVertices.count)
-            }
+            encoder.setVertexBuffer(seedMesh.buffer, offset: 0, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: seedMesh.vertexCount)
         }
 
         let highlightVertices = makeMPRPlaneHighlightVertices()
@@ -8016,6 +8093,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
 
         encodePendingFrameCapture(from: drawable.texture, into: commandBuffer)
+        trackRetrievalPresentation(of: drawable, commandBuffer: commandBuffer)
         commandBuffer.present(drawable)
         commandBuffer.commit()
     }
@@ -8107,6 +8185,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
 
         encodePendingFrameCapture(from: drawable.texture, into: commandBuffer)
+        trackRetrievalPresentation(of: drawable, commandBuffer: commandBuffer)
         commandBuffer.present(drawable)
         commandBuffer.commit()
     }
@@ -9933,6 +10012,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func mprDisplayScale() -> Float {
+        if let cachedMPRDisplayScale { return cachedMPRDisplayScale }
         let width = Float(max(baseVolumeDimensions.x - 1, 1))
         let height = Float(max(baseVolumeDimensions.y - 1, 1))
         let depth = Float(max(baseVolumeDimensions.z - 1, 1))
@@ -9949,7 +10029,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let maxDistance = corners
             .map { simd_length(mprDisplayWorldPosition(for: $0) - baseVolumeCenterWorld) }
             .max() ?? 1
-        return 0.92 / max(maxDistance, 0.0001)
+        let scale = 0.92 / max(maxDistance, 0.0001)
+        cachedMPRDisplayScale = scale
+        return scale
     }
 
     private func mprDisplayWorldPosition(for baseVoxel: SIMD3<Float>) -> SIMD3<Float> {

@@ -286,19 +286,6 @@
 		7188E85816301A61006105BE /* KBPopUpToolbarItem.m in Sources */ = {isa = PBXBuildFile; fileRef = 7188E85516301A61006105BE /* KBPopUpToolbarItem.m */; };
 		71A28B771637F0D200489F2A /* DCMWaveform.h in Headers */ = {isa = PBXBuildFile; fileRef = 71A28B751637F0D200489F2A /* DCMWaveform.h */; };
 		71A28B791637F0D200489F2A /* DCMWaveform.m in Sources */ = {isa = PBXBuildFile; fileRef = 71A28B761637F0D200489F2A /* DCMWaveform.m */; };
-		71AA5A2E1611F1EB006A6A5F /* JSON.h in Headers */ = {isa = PBXBuildFile; fileRef = 71AA5A211611F1EB006A6A5F /* JSON.h */; };
-		71AA5A2F1611F1EB006A6A5F /* NSObject+SBJSON.h in Headers */ = {isa = PBXBuildFile; fileRef = 71AA5A221611F1EB006A6A5F /* NSObject+SBJSON.h */; };
-		71AA5A301611F1EB006A6A5F /* NSObject+SBJSON.m in Sources */ = {isa = PBXBuildFile; fileRef = 71AA5A231611F1EB006A6A5F /* NSObject+SBJSON.m */; };
-		71AA5A311611F1EB006A6A5F /* NSString+SBJSON.h in Headers */ = {isa = PBXBuildFile; fileRef = 71AA5A241611F1EB006A6A5F /* NSString+SBJSON.h */; };
-		71AA5A321611F1EB006A6A5F /* NSString+SBJSON.m in Sources */ = {isa = PBXBuildFile; fileRef = 71AA5A251611F1EB006A6A5F /* NSString+SBJSON.m */; };
-		71AA5A331611F1EB006A6A5F /* SBJSON.h in Headers */ = {isa = PBXBuildFile; fileRef = 71AA5A261611F1EB006A6A5F /* SBJSON.h */; };
-		71AA5A341611F1EB006A6A5F /* SBJSON.m in Sources */ = {isa = PBXBuildFile; fileRef = 71AA5A271611F1EB006A6A5F /* SBJSON.m */; };
-		71AA5A351611F1EB006A6A5F /* SBJsonBase.h in Headers */ = {isa = PBXBuildFile; fileRef = 71AA5A281611F1EB006A6A5F /* SBJsonBase.h */; };
-		71AA5A361611F1EB006A6A5F /* SBJsonBase.m in Sources */ = {isa = PBXBuildFile; fileRef = 71AA5A291611F1EB006A6A5F /* SBJsonBase.m */; };
-		71AA5A371611F1EB006A6A5F /* SBJsonParser.h in Headers */ = {isa = PBXBuildFile; fileRef = 71AA5A2A1611F1EB006A6A5F /* SBJsonParser.h */; };
-		71AA5A381611F1EB006A6A5F /* SBJsonParser.m in Sources */ = {isa = PBXBuildFile; fileRef = 71AA5A2B1611F1EB006A6A5F /* SBJsonParser.m */; };
-		71AA5A391611F1EB006A6A5F /* SBJsonWriter.h in Headers */ = {isa = PBXBuildFile; fileRef = 71AA5A2C1611F1EB006A6A5F /* SBJsonWriter.h */; };
-		71AA5A3A1611F1EB006A6A5F /* SBJsonWriter.m in Sources */ = {isa = PBXBuildFile; fileRef = 71AA5A2D1611F1EB006A6A5F /* SBJsonWriter.m */; };
 		71AD67481FC4248100A1E2F8 /* BlackBody.plist in Resources */ = {isa = PBXBuildFile; fileRef = 71E6C0881FB5995100FF75B6 /* BlackBody.plist */; };
 		71AD67491FC4248100A1E2F8 /* Flow.plist in Resources */ = {isa = PBXBuildFile; fileRef = 71E6C0961FB5995300FF75B6 /* Flow.plist */; };
 		71AD674A1FC4248100A1E2F8 /* French.plist in Resources */ = {isa = PBXBuildFile; fileRef = 71E6C0911FB5995300FF75B6 /* French.plist */; };
@@ -548,8 +535,6 @@
 		AB10FAB411293378009EB238 /* N2Alignment.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAA611293378009EB238 /* N2Alignment.mm */; };
 		AB10FAB711293378009EB238 /* N2Shell.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAA911293378009EB238 /* N2Shell.h */; };
 		AB10FAB811293378009EB238 /* N2Shell.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAAA11293378009EB238 /* N2Shell.mm */; };
-		AB10FAB911293378009EB238 /* N2UserDefaults.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FAAB11293378009EB238 /* N2UserDefaults.h */; };
-		AB10FABA11293378009EB238 /* N2UserDefaults.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FAAC11293378009EB238 /* N2UserDefaults.mm */; };
 		AB10FB1F1129338A009EB238 /* N2ButtonCell.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FACA1129338A009EB238 /* N2ButtonCell.h */; };
 		AB10FB201129338A009EB238 /* N2ButtonCell.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FACB1129338A009EB238 /* N2ButtonCell.mm */; };
 		AB10FB211129338A009EB238 /* N2Button.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FACC1129338A009EB238 /* N2Button.h */; };
@@ -603,6 +588,7 @@
 		AB28B8D005B79D1000A9906C /* MyOutlineView.h in Headers */ = {isa = PBXBuildFile; fileRef = AB0813D6057C698900A72813 /* MyOutlineView.h */; };
 		AB28B8D605B79D1500A9906C /* XMLController.m in Sources */ = {isa = PBXBuildFile; fileRef = AB4A6DF4056EC14E009E6C6E /* XMLController.m */; };
 		C0DE26090500000000000001 /* HorosDICOMMetadata.m in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26090500000000000002 /* HorosDICOMMetadata.m */; };
+		C0DE26091000000000000001 /* HorosDCMTKBridgeLoader.m in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091000000000000002 /* HorosDCMTKBridgeLoader.m */; };
 		C0DE26090600000000000001 /* HorosJPEGCodecBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26090600000000000002 /* HorosJPEGCodecBridge.mm */; };
 		AB28B8E105B79D1E00A9906C /* XMLController.h in Headers */ = {isa = PBXBuildFile; fileRef = AB4A6DF3056EC14E009E6C6E /* XMLController.h */; };
 		AB28B8E205B79D1F00A9906C /* Wait.m in Sources */ = {isa = PBXBuildFile; fileRef = AB6F34FC0574081F00CDCA47 /* Wait.m */; };
@@ -933,6 +919,8 @@
 		F4A100000001000000000002 /* Horos/Sources/MetalViewer/MetalViewerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000002 /* Horos/Sources/MetalViewer/MetalViewerWindowController.swift */; };
 		F4A100000001000000000003 /* Horos/Sources/MetalViewer/MetalImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000003 /* Horos/Sources/MetalViewer/MetalImageView.swift */; };
 		F4A100000001000000000004 /* Horos/Sources/MetalViewer/MetalViewerRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000004 /* Horos/Sources/MetalViewer/MetalViewerRenderer.swift */; };
+		C0DE26091000000000000011 /* MetalPipelineCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091000000000000012 /* MetalPipelineCache.swift */; };
+		C0DE26091000000000000021 /* MetalViewerCachePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091000000000000022 /* MetalViewerCachePolicy.swift */; };
 		F4A100000001000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal */; };
 		F4A100000001000000000006 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000006 /* Metal.framework */; };
 		F4A100000001000000000007 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000007 /* MetalKit.framework */; };
@@ -1294,19 +1282,6 @@
 		719D3F251FB46738004CFB27 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		71A28B751637F0D200489F2A /* DCMWaveform.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DCMWaveform.h; path = Horos/Sources/DCMWaveform.h; sourceTree = SOURCE_ROOT; };
 		71A28B761637F0D200489F2A /* DCMWaveform.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = DCMWaveform.m; path = Horos/Sources/DCMWaveform.m; sourceTree = SOURCE_ROOT; };
-		71AA5A211611F1EB006A6A5F /* JSON.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = JSON.h; sourceTree = "<group>"; };
-		71AA5A221611F1EB006A6A5F /* NSObject+SBJSON.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSObject+SBJSON.h"; sourceTree = "<group>"; };
-		71AA5A231611F1EB006A6A5F /* NSObject+SBJSON.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSObject+SBJSON.m"; sourceTree = "<group>"; };
-		71AA5A241611F1EB006A6A5F /* NSString+SBJSON.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSString+SBJSON.h"; sourceTree = "<group>"; };
-		71AA5A251611F1EB006A6A5F /* NSString+SBJSON.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSString+SBJSON.m"; sourceTree = "<group>"; };
-		71AA5A261611F1EB006A6A5F /* SBJSON.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SBJSON.h; sourceTree = "<group>"; };
-		71AA5A271611F1EB006A6A5F /* SBJSON.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SBJSON.m; sourceTree = "<group>"; };
-		71AA5A281611F1EB006A6A5F /* SBJsonBase.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SBJsonBase.h; sourceTree = "<group>"; };
-		71AA5A291611F1EB006A6A5F /* SBJsonBase.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SBJsonBase.m; sourceTree = "<group>"; };
-		71AA5A2A1611F1EB006A6A5F /* SBJsonParser.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SBJsonParser.h; sourceTree = "<group>"; };
-		71AA5A2B1611F1EB006A6A5F /* SBJsonParser.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SBJsonParser.m; sourceTree = "<group>"; };
-		71AA5A2C1611F1EB006A6A5F /* SBJsonWriter.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SBJsonWriter.h; sourceTree = "<group>"; };
-		71AA5A2D1611F1EB006A6A5F /* SBJsonWriter.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SBJsonWriter.m; sourceTree = "<group>"; };
 		71BC461B1F272CA400FD6CCF /* Scripts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Scripts; sourceTree = "<group>"; };
 		71C99EA41D1A7E9F00208F3B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Horos/Info.plist; sourceTree = "<group>"; };
 		71CE3C18157F489C00AC0112 /* List.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = List.pdf; sourceTree = "<group>"; };
@@ -1588,8 +1563,6 @@
 		AB10FAA611293378009EB238 /* N2Alignment.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Alignment.mm; sourceTree = "<group>"; };
 		AB10FAA911293378009EB238 /* N2Shell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Shell.h; sourceTree = "<group>"; };
 		AB10FAAA11293378009EB238 /* N2Shell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = N2Shell.mm; path = Nitrogen/Sources/N2Shell.mm; sourceTree = SOURCE_ROOT; };
-		AB10FAAB11293378009EB238 /* N2UserDefaults.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2UserDefaults.h; sourceTree = "<group>"; };
-		AB10FAAC11293378009EB238 /* N2UserDefaults.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2UserDefaults.mm; sourceTree = "<group>"; };
 		AB10FACA1129338A009EB238 /* N2ButtonCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2ButtonCell.h; sourceTree = "<group>"; };
 		AB10FACB1129338A009EB238 /* N2ButtonCell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2ButtonCell.mm; sourceTree = "<group>"; };
 		AB10FACC1129338A009EB238 /* N2Button.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Button.h; sourceTree = "<group>"; };
@@ -1640,7 +1613,6 @@
 		AB142DFD05600D76008461A0 /* AppController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; lineEnding = 0; path = AppController.m; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objc; };
 		AB1CB35A0618A37E00CD966B /* MyPoint.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MyPoint.h; sourceTree = "<group>"; };
 		AB1CB35B0618A37E00CD966B /* MyPoint.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = MyPoint.m; sourceTree = "<group>"; };
-		AB38FC99057A9B050041FEBB /* AGL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AGL.framework; path = /System/Library/Frameworks/AGL.framework; sourceTree = "<absolute>"; };
 		AB425D72058FC58E00224020 /* QueryController.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = QueryController.h; sourceTree = "<group>"; };
 		AB425D73058FC58E00224020 /* QueryController.mm */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.objcpp; path = QueryController.mm; sourceTree = "<group>"; };
 		AB46648C09A331DF005A2766 /* Report.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Report.icns; sourceTree = "<group>"; };
@@ -1650,6 +1622,8 @@
 		AB4A6DF4056EC14E009E6C6E /* XMLController.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; path = XMLController.m; sourceTree = "<group>"; };
 		C0DE26090500000000000002 /* HorosDICOMMetadata.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HorosDICOMMetadata.m; sourceTree = "<group>"; };
 		C0DE26090500000000000003 /* HorosDICOMMetadata.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HorosDICOMMetadata.h; sourceTree = "<group>"; };
+		C0DE26091000000000000002 /* HorosDCMTKBridgeLoader.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HorosDCMTKBridgeLoader.m; sourceTree = "<group>"; };
+		C0DE26091000000000000003 /* HorosDCMTKBridgeLoader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HorosDCMTKBridgeLoader.h; sourceTree = "<group>"; };
 		C0DE26090600000000000002 /* HorosJPEGCodecBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = HorosJPEGCodecBridge.mm; sourceTree = "<group>"; };
 		C0DE26090600000000000003 /* HorosJPEGCodecBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HorosJPEGCodecBridge.h; sourceTree = "<group>"; };
 		AB4E3CAE05ADDE13001411D1 /* DicomDirParser.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DicomDirParser.h; sourceTree = "<group>"; };
@@ -1967,6 +1941,8 @@
 		F4A100000002000000000002 /* Horos/Sources/MetalViewer/MetalViewerWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerWindowController.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000003 /* Horos/Sources/MetalViewer/MetalImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalImageView.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000004 /* Horos/Sources/MetalViewer/MetalViewerRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerRenderer.swift; sourceTree = SOURCE_ROOT; };
+		C0DE26091000000000000012 /* MetalPipelineCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalPipelineCache.swift; sourceTree = SOURCE_ROOT; };
+		C0DE26091000000000000022 /* MetalViewerCachePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerCachePolicy.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Horos/Sources/MetalViewer/MetalShaders.metal; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000006 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		F4A100000002000000000007 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
@@ -2091,7 +2067,6 @@
 				9966A1A41AE09D5100F2D81A /* CoreMedia.framework */,
 				9966A1A21AE09D4800F2D81A /* AVFoundation.framework */,
 				AB5E1A300595697700C48BEB /* Accelerate.framework */,
-				AB38FC99057A9B050041FEBB /* AGL.framework */,
 				29B97324FDCFA39411CA2CEA /* AppKit.framework */,
 				ABFF0A95056D97800066794C /* ApplicationServices.framework */,
 				CEF0E6DA06AEF5CB001FF9E5 /* Carbon.framework */,
@@ -2261,8 +2236,6 @@
 		597BB95812A7FB8700D0A172 /* Deprecated */ = {
 			isa = PBXGroup;
 			children = (
-				AB10FAAB11293378009EB238 /* N2UserDefaults.h */,
-				AB10FAAC11293378009EB238 /* N2UserDefaults.mm */,
 			);
 			name = Deprecated;
 			sourceTree = "<group>";
@@ -2389,26 +2362,6 @@
 				B7CDAC730AB3003200068D70 /* PAGES */,
 			);
 			path = Resources;
-			sourceTree = "<group>";
-		};
-		71AA5A201611F1EB006A6A5F /* JSON */ = {
-			isa = PBXGroup;
-			children = (
-				71AA5A211611F1EB006A6A5F /* JSON.h */,
-				71AA5A221611F1EB006A6A5F /* NSObject+SBJSON.h */,
-				71AA5A231611F1EB006A6A5F /* NSObject+SBJSON.m */,
-				71AA5A241611F1EB006A6A5F /* NSString+SBJSON.h */,
-				71AA5A251611F1EB006A6A5F /* NSString+SBJSON.m */,
-				71AA5A261611F1EB006A6A5F /* SBJSON.h */,
-				71AA5A271611F1EB006A6A5F /* SBJSON.m */,
-				71AA5A281611F1EB006A6A5F /* SBJsonBase.h */,
-				71AA5A291611F1EB006A6A5F /* SBJsonBase.m */,
-				71AA5A2A1611F1EB006A6A5F /* SBJsonParser.h */,
-				71AA5A2B1611F1EB006A6A5F /* SBJsonParser.m */,
-				71AA5A2C1611F1EB006A6A5F /* SBJsonWriter.h */,
-				71AA5A2D1611F1EB006A6A5F /* SBJsonWriter.m */,
-			);
-			path = JSON;
 			sourceTree = "<group>";
 		};
 		71E6C0871FB5984200FF75B6 /* CLUTs */ = {
@@ -2794,7 +2747,6 @@
 				7188E85516301A61006105BE /* KBPopUpToolbarItem.m */,
 				AB10FB1D1129338A009EB238 /* ISO8601DateFormatter.h */,
 				AB10FB1E1129338A009EB238 /* ISO8601DateFormatter.m */,
-				71AA5A201611F1EB006A6A5F /* JSON */,
 			);
 			name = "3rd Party";
 			sourceTree = "<group>";
@@ -2828,6 +2780,8 @@
 				AB4A6DF4056EC14E009E6C6E /* XMLController.m */,
 				C0DE26090500000000000002 /* HorosDICOMMetadata.m */,
 				C0DE26090500000000000003 /* HorosDICOMMetadata.h */,
+				C0DE26091000000000000002 /* HorosDCMTKBridgeLoader.m */,
+				C0DE26091000000000000003 /* HorosDCMTKBridgeLoader.h */,
 				C0DE26090600000000000002 /* HorosJPEGCodecBridge.mm */,
 				C0DE26090600000000000003 /* HorosJPEGCodecBridge.h */,
 				CE96D0DB0BEE6F9800C4E397 /* XMLControllerDCMTKCategory.h */,
@@ -3542,6 +3496,8 @@
 				F4A100000002000000000003 /* Horos/Sources/MetalViewer/MetalImageView.swift */,
 				F4A100000002000000000014 /* Horos/Sources/MetalViewer/MetalPreviewImageView.swift */,
 				F4A100000002000000000004 /* Horos/Sources/MetalViewer/MetalViewerRenderer.swift */,
+				C0DE26091000000000000012 /* MetalPipelineCache.swift */,
+				C0DE26091000000000000022 /* MetalViewerCachePolicy.swift */,
 				F4A100000002000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal */,
 				F4A100000002000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm */,
 				F4A100000002000000000017 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.h */,
@@ -3672,7 +3628,6 @@
 				AB10FAB111293378009EB238 /* N2MinMax.h in Headers */,
 				AB10FAB311293378009EB238 /* N2Alignment.h in Headers */,
 				AB10FAB711293378009EB238 /* N2Shell.h in Headers */,
-				AB10FAB911293378009EB238 /* N2UserDefaults.h in Headers */,
 				AB10FB1F1129338A009EB238 /* N2ButtonCell.h in Headers */,
 				AB10FB211129338A009EB238 /* N2Button.h in Headers */,
 				AB10FB271129338A009EB238 /* N2ColorWell.h in Headers */,
@@ -3786,13 +3741,6 @@
 				840C2D5E1588CE4600C4FE09 /* CustomIntervalPanel.h in Headers */,
 				CEC0BFA015A597DB0012D879 /* ComparativeCell.h in Headers */,
 				CEA4F07915AEA5FE009584C7 /* OSIPACSOnDemandPreferencePane.h in Headers */,
-				71AA5A2E1611F1EB006A6A5F /* JSON.h in Headers */,
-				71AA5A2F1611F1EB006A6A5F /* NSObject+SBJSON.h in Headers */,
-				71AA5A311611F1EB006A6A5F /* NSString+SBJSON.h in Headers */,
-				71AA5A331611F1EB006A6A5F /* SBJSON.h in Headers */,
-				71AA5A351611F1EB006A6A5F /* SBJsonBase.h in Headers */,
-				71AA5A371611F1EB006A6A5F /* SBJsonParser.h in Headers */,
-				71AA5A391611F1EB006A6A5F /* SBJsonWriter.h in Headers */,
 				7188E85616301A61006105BE /* KBPopUpToolbarItem.h in Headers */,
 				71A28B771637F0D200489F2A /* DCMWaveform.h in Headers */,
 				71EB83C016DCB7FF00D48646 /* O2DicomPredicateEditor.h in Headers */,
@@ -4633,12 +4581,15 @@
 				F4A100000001000000000003 /* Horos/Sources/MetalViewer/MetalImageView.swift in Sources */,
 				F4A100000001000000000014 /* Horos/Sources/MetalViewer/MetalPreviewImageView.swift in Sources */,
 				F4A100000001000000000004 /* Horos/Sources/MetalViewer/MetalViewerRenderer.swift in Sources */,
+				C0DE26091000000000000011 /* MetalPipelineCache.swift in Sources */,
+				C0DE26091000000000000021 /* MetalViewerCachePolicy.swift in Sources */,
 				F4A100000001000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal in Sources */,
 				F4A100000001000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm in Sources */,
 				F4A100000001000000000018 /* Horos/Sources/MetalViewer/MetalTumourSeedSRBridge.mm in Sources */,
 				F4B300000001000000000001 /* Horos/Sources/MetalViewer/MetalLegacyROISRBridge.mm in Sources */,
 				AB28B8D605B79D1500A9906C /* XMLController.m in Sources */,
 				C0DE26090500000000000001 /* HorosDICOMMetadata.m in Sources */,
+				C0DE26091000000000000001 /* HorosDCMTKBridgeLoader.m in Sources */,
 				C0DE26090600000000000001 /* HorosJPEGCodecBridge.mm in Sources */,
 				AB28B8E205B79D1F00A9906C /* Wait.m in Sources */,
 				AB28B8E305B79D1F00A9906C /* AppController.m in Sources */,
@@ -4736,7 +4687,6 @@
 				AB10FAB211293378009EB238 /* N2MinMax.mm in Sources */,
 				AB10FAB411293378009EB238 /* N2Alignment.mm in Sources */,
 				AB10FAB811293378009EB238 /* N2Shell.mm in Sources */,
-				AB10FABA11293378009EB238 /* N2UserDefaults.mm in Sources */,
 				AB10FB201129338A009EB238 /* N2ButtonCell.mm in Sources */,
 				AB10FB221129338A009EB238 /* N2Button.mm in Sources */,
 				AB10FB281129338A009EB238 /* N2ColorWell.mm in Sources */,
@@ -4863,12 +4813,6 @@
 				840C2D601588CE4600C4FE09 /* CustomIntervalPanel.m in Sources */,
 				CEC0BFA215A597DB0012D879 /* ComparativeCell.mm in Sources */,
 				CEA4F07715AEA5FE009584C7 /* OSIPACSOnDemandPreferencePane.m in Sources */,
-				71AA5A301611F1EB006A6A5F /* NSObject+SBJSON.m in Sources */,
-				71AA5A321611F1EB006A6A5F /* NSString+SBJSON.m in Sources */,
-				71AA5A341611F1EB006A6A5F /* SBJSON.m in Sources */,
-				71AA5A361611F1EB006A6A5F /* SBJsonBase.m in Sources */,
-				71AA5A381611F1EB006A6A5F /* SBJsonParser.m in Sources */,
-				71AA5A3A1611F1EB006A6A5F /* SBJsonWriter.m in Sources */,
 				7188E85816301A61006105BE /* KBPopUpToolbarItem.m in Sources */,
 				71A28B791637F0D200489F2A /* DCMWaveform.m in Sources */,
 				71EB83C116DCB7FF00D48646 /* O2DicomPredicateEditor.m in Sources */,

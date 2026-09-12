@@ -8,31 +8,17 @@
 
 #import <WebKit/WebKit.h>
 #include <errno.h>
-#include <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static NSString * const StructuredReportSupportErrorDomain = @"org.horosproject.StructuredReportSupport";
 
-typedef char* (*HorosCopyStructuredReportHTMLFunction)(const char*);
-typedef char* (*HorosCopySurgicalProcedureRecordJSONFunction)(const char*);
-typedef int (*HorosWriteSurgicalProcedureStructuredReportFunction)(const char*,
-                                                                    const char*,
-                                                                    const char*,
-                                                                    const char*,
-                                                                    const char*,
-                                                                    const char*,
-                                                                    const char*,
-                                                                    const char*,
-                                                                    const char*,
-                                                                    const char*,
-                                                                    const char*,
-                                                                    const char*,
-                                                                    const char*,
-                                                                    const char*,
-                                                                    const char*);
-typedef void (*HorosFreeStringFunction)(char*);
+typedef __typeof__(&HorosModernDCMTKCopyStructuredReportHTML) HorosCopyStructuredReportHTMLFunction;
+typedef __typeof__(&HorosModernDCMTKCopySurgicalProcedureRecordJSON) HorosCopySurgicalProcedureRecordJSONFunction;
+typedef __typeof__(&HorosModernDCMTKWriteSurgicalProcedureStructuredReport) HorosWriteSurgicalProcedureStructuredReportFunction;
+typedef __typeof__(&HorosModernDCMTKFreeString) HorosFreeStringFunction;
 
 static NSString * const SurgicalProcedureStudyDescription = @"Surgical Procedure";
 static NSString * const SurgicalProcedureSeriesDescription = @"Horos Surgical Procedure SR";
@@ -48,46 +34,6 @@ static NSString * const SurgicalProcedurePayloadPatientIDKey = @"patientID";
 static NSString * const SurgicalProcedurePayloadContentDateKey = @"contentDate";
 static NSString * const SurgicalProcedurePayloadContentTimeKey = @"contentTime";
 static NSString * const SurgicalProcedurePayloadExistingPathKey = @"existingPath";
-
-static void* StructuredReportBridgeHandle(void)
-{
-    static void* handle = NULL;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSBundle *bundle = [NSBundle mainBundle];
-        NSArray<NSString *> *basePaths = @[
-            bundle.resourcePath ?: @"",
-            bundle.privateFrameworksPath ?: @"",
-            bundle.sharedFrameworksPath ?: @""
-        ];
-        NSArray<NSString *> *relativePaths = @[
-            @"libHorosModernDCMTKBridge.dylib",
-            @"DCMTK/libHorosModernDCMTKBridge.dylib"
-        ];
-
-        for (NSString *basePath in basePaths)
-        {
-            for (NSString *relativePath in relativePaths)
-            {
-                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
-                if (![[NSFileManager defaultManager] fileExistsAtPath:candidate])
-                    continue;
-
-                handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-                if (handle == NULL)
-                    NSLog(@"Modern DCMTK bridge failed to load at %@: %s", candidate, dlerror());
-                return;
-            }
-        }
-    });
-    return handle;
-}
-
-static void* StructuredReportBridgeSymbol(const char* name)
-{
-    void* handle = StructuredReportBridgeHandle();
-    return handle != NULL ? dlsym(handle, name) : NULL;
-}
 
 static NSError *StructuredReportError(NSInteger code, NSString *description)
 {
@@ -233,9 +179,9 @@ didFailProvisionalNavigation:(WKNavigation *)navigation
         return nil;
 
     HorosCopySurgicalProcedureRecordJSONFunction copyRecord =
-        (HorosCopySurgicalProcedureRecordJSONFunction)StructuredReportBridgeSymbol("HorosModernDCMTKCopySurgicalProcedureRecordJSON");
+        HorosDCMTKFunction(HorosModernDCMTKCopySurgicalProcedureRecordJSON);
     HorosFreeStringFunction freeString =
-        (HorosFreeStringFunction)StructuredReportBridgeSymbol("HorosModernDCMTKFreeString");
+        HorosDCMTKFunction(HorosModernDCMTKFreeString);
     if (copyRecord == NULL)
         return nil;
 
@@ -273,7 +219,7 @@ didFailProvisionalNavigation:(WKNavigation *)navigation
     }
 
     HorosWriteSurgicalProcedureStructuredReportFunction writeReport =
-        (HorosWriteSurgicalProcedureStructuredReportFunction)StructuredReportBridgeSymbol("HorosModernDCMTKWriteSurgicalProcedureStructuredReport");
+        HorosDCMTKFunction(HorosModernDCMTKWriteSurgicalProcedureStructuredReport);
     if (writeReport == NULL)
     {
         if (error != NULL)
@@ -559,9 +505,9 @@ didFailProvisionalNavigation:(WKNavigation *)navigation
         return nil;
 
     HorosCopyStructuredReportHTMLFunction render =
-        (HorosCopyStructuredReportHTMLFunction)StructuredReportBridgeSymbol("HorosModernDCMTKCopyStructuredReportHTML");
+        HorosDCMTKFunction(HorosModernDCMTKCopyStructuredReportHTML);
     HorosFreeStringFunction freeString =
-        (HorosFreeStringFunction)StructuredReportBridgeSymbol("HorosModernDCMTKFreeString");
+        HorosDCMTKFunction(HorosModernDCMTKFreeString);
     if (render == NULL)
         return nil;
 

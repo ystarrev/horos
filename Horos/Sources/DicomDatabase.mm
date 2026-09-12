@@ -74,6 +74,7 @@
 #import "ROI.h"
 #import "DicomDatabase+Clean.h"
 #import "DicomDatabase+Routing.h"
+#import <QuartzCore/QuartzCore.h>
 #include <copyfile.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -252,12 +253,54 @@ done:
 }
 
 
+// Temporary import timings complement QRVIEW without logging file or patient identifiers.
+static NSString *const HorosIncomingTraceKey = @"HorosIncomingTrace";
+static NSString *const HorosIncomingNotificationTimeKey = @"HorosIncomingNotificationTime";
+static NSString *const HorosIncomingInteractiveKey = @"HorosIncomingInteractive";
+
+@interface HorosIncomingImportTrace : NSObject
+@property(nonatomic, copy) NSString *token;
+@property(nonatomic) CFTimeInterval started;
+- (void)record:(NSString *)stage since:(CFTimeInterval)started count:(NSUInteger)count;
+- (void)record:(NSString *)stage duration:(CFTimeInterval)duration count:(NSUInteger)count;
+@end
+
+@implementation HorosIncomingImportTrace
+- (instancetype)init {
+    if ((self = [super init])) {
+        self.token = [[NSUUID UUID].UUIDString substringToIndex:8];
+        self.started = CACurrentMediaTime();
+    }
+    return self;
+}
+- (void)dealloc {
+    [_token release];
+    [super dealloc];
+}
+- (void)record:(NSString *)stage since:(CFTimeInterval)started count:(NSUInteger)count {
+    [self record:stage duration:CACurrentMediaTime() - started count:count];
+}
+- (void)record:(NSString *)stage duration:(CFTimeInterval)duration count:(NSUInteger)count {
+    CFTimeInterval now = CACurrentMediaTime();
+    NSLog(@"QRIMPORT %@ %@ t=%.3fs work=%.1fms files=%lu clock=%.6f",
+          self.token, stage, now - self.started, duration * 1000, (unsigned long)count, now);
+}
+@end
+
+static HorosIncomingImportTrace *HorosCurrentIncomingTrace(void) {
+    return [[NSThread currentThread].threadDictionary objectForKey:HorosIncomingTraceKey];
+}
+
 @interface DicomDatabase ()
 
 - (NSArray *)addFilesAtPathsOnContextQueue:(NSArray *)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray originalDatesAdded:(NSDictionary *)originalDatesAdded;
 - (NSArray *)addFilesDescribedInDictionariesOnContextQueue:(NSArray *)dicomFilesArray postNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray originalDatesAdded:(NSDictionary *)originalDatesAdded;
 - (NSInteger)importFilesFromIncomingDirOnContextQueue:(NSNumber *)showGUI listenerCompressionSettings:(int)listenerCompressionSettings;
 - (void)backfillLegacyROISidecarsThread;
+- (BOOL)hasInteractiveIncomingImport;
+- (void)runScheduledIncomingImport:(HorosIncomingImportTrace *)trace;
+- (void)importFilesFromIncomingDirUsingWorker:(DicomDatabase **)workerDatabase;
+- (HorosIncomingImportTrace *)incomingImportTrace;
 
 @property(readwrite,retain) NSString* baseDirPath;
 @property(readwrite,retain) NSString* dataBaseDirPath;
@@ -706,6 +749,7 @@ static NSString* const HorosActiveLocalDatabasePathDefaultsKey = @"HorosActiveLo
             _dataFileIndex = [[N2MutableUInteger alloc] initWithUInteger:0];
             _processFilesLock = [[NSRecursiveLock alloc] init];
             _importFilesFromIncomingDirLock = [[NSRecursiveLock alloc] init];
+            _incomingImportCondition = [[NSCondition alloc] init];
             
             _compressQueue = [[NSMutableArray alloc] init];
             _decompressQueue = [[NSMutableArray alloc] init];
@@ -825,6 +869,8 @@ static NSString* const HorosActiveLocalDatabasePathDefaultsKey = @"HorosActiveLo
         _importFilesFromIncomingDirLock = nil;
         [temp unlock];
         [temp release];
+
+        [_incomingImportCondition release];
         
         temp = _processFilesLock;
         [temp lock]; // if currently importing, wait until finished
@@ -857,6 +903,11 @@ static NSString* const HorosActiveLocalDatabasePathDefaultsKey = @"HorosActiveLo
         [self performSelectorOnMainThread:@selector(observeIndependentDatabaseNotification:) withObject:notification waitUntilDone:NO];
     else
     {
+        HorosIncomingImportTrace *trace = [notification.userInfo objectForKey:HorosIncomingTraceKey];
+        BOOL isEarlyAddNotification = [notification.name isEqualToString:_O2AddToDBAnywayNotification];
+        CFTimeInterval resolveStarted = CACurrentMediaTime();
+        [trace record:isEarlyAddNotification ? @"main_early_add_queue" : @"main_notification_queue"
+                since:[[notification.userInfo objectForKey:HorosIncomingNotificationTimeKey] doubleValue] count:0];
         NSMutableDictionary* userInfo = [NSMutableDictionary dictionary];
         
         @try
@@ -885,7 +936,13 @@ static NSString* const HorosActiveLocalDatabasePathDefaultsKey = @"HorosActiveLo
         @finally {
         }
         
+        [trace record:isEarlyAddNotification ? @"main_early_add_resolution" : @"main_object_resolution"
+                since:resolveStarted count:[[userInfo objectForKey:OsirixAddToDBNotificationImagesArray] count]];
+        CFTimeInterval observersStarted = CACurrentMediaTime();
+        if (trace) [userInfo setObject:trace forKey:HorosIncomingTraceKey];
         [NSNotificationCenter.defaultCenter postNotificationName:notification.name object:self userInfo:userInfo];
+        [trace record:isEarlyAddNotification ? @"main_early_add_observers" : @"main_observers"
+                since:observersStarted count:0];
     }
 }
 
@@ -1239,89 +1296,48 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
 }
 
 -(NSUInteger)computeDataFileIndex {
+    CFTimeInterval indexStarted = CACurrentMediaTime();
     @synchronized (_dataFileIndex) {
         DLog(@"In -[DicomDatabase computeDataFileIndex] for %@ initially %d", self.sqlFilePath, (int)_dataFileIndex.unsignedIntegerValue);
-        
-        BOOL hereBecauseZero = (_dataFileIndex.unsignedIntegerValue == 0);
-        @synchronized(_dataFileIndex) {
-            if (hereBecauseZero && _dataFileIndex.unsignedIntegerValue != 0)
-                return _dataFileIndex.unsignedIntegerValue += 1;
-            @try {
-                NSString* path = self.dataDirPath;
-                //			NSLog(@"Path is %@", path);
-                
-                // delete empty dirs and scan for files with number names
-                //			NSLog(@"Scanning %d dirs", fs.count);
-                for (NSString* f in [NSFileManager.defaultManager enumeratorAtPath:path filesOnly:NO recursive:NO]) {
-                    //				NSLog(@"Scanning dir %@", f);
-                    NSString* fpath = [path stringByAppendingPathComponent:f];
-                    //NSDictionary* fattr = [NSFileManager.defaultManager fileAttributesAtPath:fpath traverseLink:YES];
-                    //NSLog(@"Has %d attrs", fattr.count);
-                    
-                    // check if this folder is empty, and delete it if necessary
-                    BOOL isDir;
-                    if ([NSFileManager.defaultManager fileExistsAtPath:fpath isDirectory:&isDir] && isDir) {
-                        NSAutoreleasePool* pool = [NSAutoreleasePool new];
-                        @try {
-                            BOOL hasValidFiles = NO;
-                            
-                            //						NSLog(@"Content of %@", f);
-                            N2DirectoryEnumerator* n2de = [NSFileManager.defaultManager enumeratorAtPath:fpath filesOnly:NO recursive:NO];
-                            NSString* s;
-                            while (s = [n2de nextObject]) // [NSFileManager.defaultManager contentsOfDirectoryAtPath:fpath error:nil])
-                                if ([[s stringByDeletingPathExtension] integerValue] > 0) {
-                                    hasValidFiles = YES;
-                                    break;
-                                }
-                            
-                            if (!hasValidFiles)
-                                [NSFileManager.defaultManager removeItemAtPath:fpath error:nil];
-                            else {
-                                NSUInteger fi = [f integerValue];
-                                if (fi > _dataFileIndex.unsignedIntegerValue)
-                                    _dataFileIndex.unsignedIntegerValue = fi;
-                            }
-                        } @catch (NSException* e) {
-                            N2LogExceptionWithStackTrace(e);
-                        } @finally {
-                            [pool release];
-                        }
-                    }
+        @try {
+            NSString *path = self.dataDirPath;
+            NSArray *entries = [NSFileManager.defaultManager contentsOfDirectoryAtPath:path error:nil];
+            NSArray *descendingEntries = [entries sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+                NSInteger first = a.integerValue, second = b.integerValue;
+                if (first > second) return NSOrderedAscending;
+                if (first < second) return NSOrderedDescending;
+                return [a compare:b];
+            }];
+
+            // Buckets increase with file numbers. Only the highest bucket needs a file scan;
+            // walking (and cleaning) every old bucket delays the first incoming image.
+            for (NSString *entry in descendingEntries) {
+                NSInteger bucket = entry.integerValue;
+                if (bucket <= 0) break;
+                if (![entry isEqualToString:[NSString stringWithFormat:@"%ld", (long)bucket]]) continue;
+                NSString *bucketPath = [path stringByAppendingPathComponent:entry];
+                BOOL isDirectory = NO;
+                if (![NSFileManager.defaultManager fileExistsAtPath:bucketPath isDirectory:&isDirectory] || !isDirectory) continue;
+
+                NSUInteger folderSize = [BrowserController DefaultFolderSizeForDB];
+                NSUInteger index = (NSUInteger)bucket > folderSize ? (NSUInteger)bucket - folderSize : 0;
+                NSArray *files = [NSFileManager.defaultManager contentsOfDirectoryAtPath:bucketPath error:nil];
+                if (!files) index = (NSUInteger)bucket; // Do not allocate inside an unreadable bucket.
+                for (NSString *file in files) {
+                    NSInteger fileIndex = file.stringByDeletingPathExtension.integerValue;
+                    if (fileIndex > 0) index = MAX(index, (NSUInteger)fileIndex);
                 }
-                
-                // scan directories
-                
-                if (_dataFileIndex.unsignedIntegerValue > 0) {
-                    //				NSLog(@"datafileindex is %d", _dataFileIndex.unsignedIntegerValue);
-                    
-                    NSInteger t = _dataFileIndex.unsignedIntegerValue;
-                    t -= [BrowserController DefaultFolderSizeForDB];
-                    if (t < 0) t = 0;
-                    
-                    NSArray* paths = [[NSFileManager.defaultManager enumeratorAtPath:[path stringByAppendingPathComponent:[NSString stringWithFormat:@"%d", (int) _dataFileIndex.unsignedIntegerValue]] filesOnly:NO recursive:NO] allObjects]; // [NSFileManager.defaultManager contentsOfDirectoryAtPath:[path stringByAppendingPathComponent:[NSString stringWithFormat:@"%d", _dataFileIndex.unsignedIntegerValue]] error:nil];
-                    //				NSLog(@"contains %d files", paths.count);
-                    for (NSString* s in paths) {
-                        long si = [[s stringByDeletingPathExtension] integerValue];
-                        if (si > t)
-                            t = si;
-                    }
-                    
-                    _dataFileIndex.unsignedIntegerValue = t;
-                }
-                
-                if (!_dataFileIndex.unsignedIntegerValue)
-                    _dataFileIndex.unsignedIntegerValue = 1;
-                
-                DLog(@"   -[DicomDatabase computeDataFileIndex] for %@ computed %d", self.sqlFilePath, (int)_dataFileIndex.unsignedIntegerValue);
-            } @catch (NSException* e) {
-                N2LogExceptionWithStackTrace(e);
+                _dataFileIndex.unsignedIntegerValue = MAX(_dataFileIndex.unsignedIntegerValue, index);
+                break;
             }
+            _dataFileIndex.unsignedIntegerValue = MAX(_dataFileIndex.unsignedIntegerValue, (NSUInteger)1);
+            DLog(@"   -[DicomDatabase computeDataFileIndex] for %@ computed %d", self.sqlFilePath, (int)_dataFileIndex.unsignedIntegerValue);
+        } @catch (NSException* e) {
+            N2LogExceptionWithStackTrace(e);
         }
-        
+        [HorosCurrentIncomingTrace() record:@"filename_index" since:indexStarted count:0];
         return _dataFileIndex.unsignedIntegerValue;
     }
-    
-    return 0;
 }
 
 -(NSString*)uniquePathForNewDataFileWithExtension:(NSString*)ext {
@@ -3319,7 +3335,13 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
             @try {
                 if( returnArray)
                 {
-                    [NSNotificationCenter.defaultCenter postNotificationName:_O2AddToDBAnywayNotification object:self userInfo:[NSDictionary dictionaryWithObjectsAndKeys: addedImageObjects, OsirixAddToDBNotificationImagesArray, addedImagesPerCreatorUID, OsirixAddToDBNotificationImagesPerAETDictionary, nil]];
+                    NSMutableDictionary *earlyImportInfo = [NSMutableDictionary dictionaryWithObjectsAndKeys: addedImageObjects, OsirixAddToDBNotificationImagesArray, addedImagesPerCreatorUID, OsirixAddToDBNotificationImagesPerAETDictionary, nil];
+                    HorosIncomingImportTrace *trace = HorosCurrentIncomingTrace();
+                    if (trace) {
+                        [earlyImportInfo setObject:trace forKey:HorosIncomingTraceKey];
+                        [earlyImportInfo setObject:@(CACurrentMediaTime()) forKey:HorosIncomingNotificationTimeKey];
+                    }
+                    [NSNotificationCenter.defaultCenter postNotificationName:_O2AddToDBAnywayNotification object:self userInfo:earlyImportInfo];
                     
                     [NSNotificationCenter.defaultCenter postNotificationName:_O2AddToDBAnywayCompleteNotification object:self userInfo:[NSDictionary dictionaryWithObjectsAndKeys:completeAddedImageObjects, OsirixAddToDBNotificationImagesArray, completeAddedImagesPerCreatorUID, OsirixAddToDBNotificationImagesPerAETDictionary, nil]];
                 }
@@ -3331,7 +3353,14 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                         [NSNotificationCenter.defaultCenter postNotificationOnMainThreadName:OsirixAddNewStudiesDBNotification object:self userInfo: [NSDictionary dictionaryWithObject:newStudies forKey: OsirixAddToDBNotificationImagesArray]];
                     }
                     
-                    [NSNotificationCenter.defaultCenter postNotificationOnMainThreadName:OsirixAddToDBNotification object:self userInfo:[NSDictionary dictionaryWithObjectsAndKeys: addedImageObjects, OsirixAddToDBNotificationImagesArray, addedImagesPerCreatorUID, OsirixAddToDBNotificationImagesPerAETDictionary, nil]];
+                    NSMutableDictionary *importInfo = [NSMutableDictionary dictionaryWithObjectsAndKeys: addedImageObjects, OsirixAddToDBNotificationImagesArray, addedImagesPerCreatorUID, OsirixAddToDBNotificationImagesPerAETDictionary, nil];
+                    HorosIncomingImportTrace *trace = HorosCurrentIncomingTrace();
+                    if (trace) {
+                        [importInfo setObject:trace forKey:HorosIncomingTraceKey];
+                        [importInfo setObject:@(CACurrentMediaTime()) forKey:HorosIncomingNotificationTimeKey];
+                        [trace record:@"notification_enqueued" since:trace.started count:addedImageObjects.count];
+                    }
+                    [NSNotificationCenter.defaultCenter postNotificationOnMainThreadName:OsirixAddToDBNotification object:self userInfo:importInfo];
                     
                     [NSNotificationCenter.defaultCenter postNotificationOnMainThreadName:OsirixAddToDBCompleteNotification object:self userInfo:[NSDictionary dictionaryWithObjectsAndKeys: completeAddedImageObjects, OsirixAddToDBNotificationImagesArray, completeAddedImagesPerCreatorUID, OsirixAddToDBNotificationImagesPerAETDictionary, nil]];
                 }
@@ -3706,8 +3735,26 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
            listenerCompressionSettings: (int) listenerCompressionSettings
 {
     __block NSInteger result = 0;
+    HorosIncomingImportTrace *trace = HorosCurrentIncomingTrace();
+    NSNumber *interactive = [[NSThread currentThread].threadDictionary objectForKey:HorosIncomingInteractiveKey];
+    CFTimeInterval contextQueued = CACurrentMediaTime();
     N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
-        result = [self importFilesFromIncomingDirOnContextQueue:showGUI listenerCompressionSettings:listenerCompressionSettings];
+        NSMutableDictionary *threadInfo = [NSThread currentThread].threadDictionary;
+        id previousTrace = [[threadInfo objectForKey:HorosIncomingTraceKey] retain];
+        id previousInteractive = [[threadInfo objectForKey:HorosIncomingInteractiveKey] retain];
+        if (trace) [threadInfo setObject:trace forKey:HorosIncomingTraceKey];
+        if (interactive) [threadInfo setObject:interactive forKey:HorosIncomingInteractiveKey];
+        [trace record:@"context_queue" since:contextQueued count:0];
+        @try {
+            result = [self importFilesFromIncomingDirOnContextQueue:showGUI listenerCompressionSettings:listenerCompressionSettings];
+        } @finally {
+            [threadInfo removeObjectForKey:HorosIncomingTraceKey];
+            [threadInfo removeObjectForKey:HorosIncomingInteractiveKey];
+            if (previousTrace) [threadInfo setObject:previousTrace forKey:HorosIncomingTraceKey];
+            if (previousInteractive) [threadInfo setObject:previousInteractive forKey:HorosIncomingInteractiveKey];
+            [previousTrace release];
+            [previousInteractive release];
+        }
     });
     return result;
 }
@@ -3718,10 +3765,15 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
     NSThread* thread = [NSThread currentThread];
     NSUInteger addedFilesCount = 0;
     BOOL activityFeedbackShown = NO;
+    HorosIncomingImportTrace *trace = HorosCurrentIncomingTrace();
+    BOOL interactive = [[[NSThread currentThread].threadDictionary objectForKey:HorosIncomingInteractiveKey] boolValue] || [self hasInteractiveIncomingImport];
+    CFTimeInterval stageStarted = CACurrentMediaTime();
     
     [NSFileManager.defaultManager confirmNoIndexDirectoryAtPath:self.decompressionDirPath];
     
     [_importFilesFromIncomingDirLock lock];
+    [trace record:@"import_lock" since:stageStarted count:0];
+    stageStarted = CACurrentMediaTime();
     N2DirectoryEnumerator *enumer = nil;
     @try {
         if ([self isFileSystemFreeSizeLimitReached]) {
@@ -3735,6 +3787,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
         NSMutableArray *filesArray = [NSMutableArray array];
         
         [[NSFileManager defaultManager] confirmNoIndexDirectoryAtPath:self.dataDirPath];
+        [trace record:@"disk_preflight" since:stageStarted count:0];
         
         int maxNumberOfFiles = [[NSUserDefaults standardUserDefaults] integerForKey:@"maxNumberOfFilesForCheckIncoming"];
         if (maxNumberOfFiles < 100) maxNumberOfFiles = 100;
@@ -3742,7 +3795,8 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
 
         NSUInteger minBatchSize = MIN(HorosIncomingImportMinBatchSize(), (NSUInteger)maxNumberOfFiles);
         NSTimeInterval coalescingDelay = HorosIncomingImportCoalescingDelay();
-        if (showGUI.boolValue && coalescingDelay > 0 && minBatchSize > 1)
+        stageStarted = CACurrentMediaTime();
+        if (showGUI.boolValue && !interactive && coalescingDelay > 0 && minBatchSize > 1)
         {
             NSTimeInterval coalescingStart = [NSDate timeIntervalSinceReferenceDate];
             NSTimeInterval lastGrowthTime = coalescingStart;
@@ -3750,6 +3804,11 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
 
             while (thread.isCancelled == NO)
             {
+                // A view request can arrive while an ordinary import is already coalescing.
+                if ([self hasInteractiveIncomingImport]) {
+                    interactive = YES;
+                    break;
+                }
                 NSUInteger pendingCount = HorosIncomingDirectoryPendingFileCount(self.incomingDirPath, minBatchSize);
                 NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
 
@@ -3774,6 +3833,12 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                 [NSThread sleepForTimeInterval:0.1];
             }
         }
+        [trace record:@"coalescing" since:stageStarted count:0];
+
+        // Publish a useful first batch promptly, then drain the rest without a quiet-period wait.
+        if (interactive) maxNumberOfFiles = MIN(maxNumberOfFiles, 64);
+        NSTimeInterval batchTimeLimit = interactive ? 0.05 : MAX(0.1, [[NSUserDefaults standardUserDefaults] integerForKey:@"LISTENERCHECKINTERVAL"] * 3);
+        stageStarted = CACurrentMediaTime();
 
         enumer = [NSFileManager.defaultManager enumeratorAtPath:self.incomingDirPath limitTo:-1];
         
@@ -3782,9 +3847,10 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
         
         NSTimeInterval startTime = [NSDate timeIntervalSinceReferenceDate];
         NSTimeInterval start = startTime;
+        CFTimeInterval classificationTime = 0, pathAllocationTime = 0, relocationTime = 0;
         
         while([filesArray count] < maxNumberOfFiles &&
-              ([NSDate timeIntervalSinceReferenceDate]-startTime < ([[NSUserDefaults standardUserDefaults] integerForKey:@"LISTENERCHECKINTERVAL"]*3)) // don't let them wait more than (incomingdelay*3) seconds
+              (filesArray.count == 0 || [NSDate timeIntervalSinceReferenceDate]-startTime < batchTimeLimit)
               && (pathname = [enumer nextObject]))
         {
             if (thread.isCancelled)
@@ -3976,10 +4042,13 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                         BOOL isDicomFile, isJPEGCompressed, isImage;
                         NSString *dstPath = [self.dataDirPath stringByAppendingPathComponent: lastPathComponent];
                         
+                        CFTimeInterval fileStageStarted = CACurrentMediaTime();
                         isDicomFile = [DicomFile isDICOMFile:srcPath compressed: &isJPEGCompressed image: &isImage];
+                        classificationTime += CACurrentMediaTime() - fileStageStarted;
                         
                         if (isDicomFile == YES)
                         {
+                            fileStageStarted = CACurrentMediaTime();
                             if (isDicomFile && isImage)
                             {
                                 if ((isJPEGCompressed == YES && listenerCompressionSettings == 1) ||    // Decompress
@@ -4000,6 +4069,8 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                 dstPath = [self uniquePathForNewDataFileWithExtension:[[srcPath pathExtension] lowercaseString]];
                             }
                             
+                            pathAllocationTime += CACurrentMediaTime() - fileStageStarted;
+                            fileStageStarted = CACurrentMediaTime();
                             BOOL result;
                             
                             if (isAlias)
@@ -4014,6 +4085,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                                                                   error:NULL];
                             }
                             
+                            relocationTime += CACurrentMediaTime() - fileStageStarted;
                             if (result == YES)
                                 [filesArray addObject:dstPath];
                         }
@@ -4037,6 +4109,11 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
             }
         }
         
+        [trace record:@"scan_and_stage" since:stageStarted count:filesArray.count];
+        [trace record:@"file_classification" duration:classificationTime count:filesArray.count];
+        [trace record:@"path_allocation" duration:pathAllocationTime count:filesArray.count];
+        [trace record:@"file_relocation" duration:relocationTime count:filesArray.count];
+        stageStarted = CACurrentMediaTime();
         if( filesArray.count)
             thread.status = N2LocalizedSingularPluralCount( filesArray.count, NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));
         
@@ -4058,6 +4135,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                         returnArray: YES]; // these are IDs!
             
             addedFilesCount = addedFiles.count;
+            [trace record:@"parse_add_save_notify" since:stageStarted count:addedFilesCount];
             
             if (!addedFiles) // Add failed.... Keep these files: move them back to the INCOMING folder and try again later....
             {
@@ -4096,7 +4174,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
     }
     
     if (enumer.nextObject) // there is more data
-        [self performSelector:@selector(initiateImportFilesFromIncomingDirUnlessAlreadyImporting) withObject:nil afterDelay:0];
+        [self initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
     
     if ([compressedPathArray count] > 0) // there are files to compress/decompress in the decompression dir
     {
@@ -4241,18 +4319,48 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
 
 -(void)importFilesFromIncomingDirThread
 {
+    DicomDatabase *workerDatabase = nil;
+    @try {
+        [self importFilesFromIncomingDirUsingWorker:&workerDatabase];
+    } @finally {
+        [workerDatabase release];
+    }
+}
+
+-(void)importFilesFromIncomingDirUsingWorker:(DicomDatabase **)workerDatabase
+{
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
-    [_importFilesFromIncomingDirLock lock];
     @try
     {
+        HorosIncomingImportTrace *trace = HorosCurrentIncomingTrace();
+        CFTimeInterval stageStarted = CACurrentMediaTime();
         NSInteger importCount = 0;
-        if( [self hasFilesToImport])
+        BOOL hasFiles = [self hasFilesToImport];
+        [trace record:@"incoming_scan" since:stageStarted count:0];
+        if( hasFiles)
         {
             NSThread* thread = [NSThread currentThread];
             thread.name = NSLocalizedString(@"Adding incoming files...", nil);
             [thread enterOperation];
-            importCount = [self.independentDatabase importFilesFromIncomingDir: @YES];
-            [thread exitOperation];
+            @try {
+                stageStarted = CACurrentMediaTime();
+                if (!*workerDatabase) {
+                    DicomDatabase *database = self.isMainDatabase ? self : self.mainDatabase;
+                    *workerDatabase = [database.independentDatabase retain];
+                    [trace record:@"worker_database" since:stageStarted count:0];
+                } else {
+                    NSManagedObjectContext *context = (*workerDatabase).managedObjectContext;
+                    N2PerformManagedObjectContextBlockAndWait(context, ^{
+                        // Refault saved objects so edits/deletions elsewhere are seen by the next batch.
+                        // Unlike reset, this keeps objects in queued import notifications usable.
+                        if (!context.hasChanges) [context refreshAllObjects];
+                    });
+                    [trace record:@"worker_reuse" since:stageStarted count:0];
+                }
+                importCount = [*workerDatabase importFilesFromIncomingDir: @YES];
+            } @finally {
+                [thread exitOperation];
+            }
             thread.status = NSLocalizedString(@"Finishing...", nil);
             thread.progress = -1;
         }
@@ -4276,34 +4384,145 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
     @finally
     {
         [pool release];
-        [_importFilesFromIncomingDirLock unlock];
     }
 }
 
+-(BOOL)hasInteractiveIncomingImport {
+    DicomDatabase *database = self.isMainDatabase ? self : self.mainDatabase;
+    [database->_incomingImportCondition lock];
+    BOOL interactive = database->_interactiveIncomingImportCount > 0 || database->_interactiveIncomingImportDrain;
+    [database->_incomingImportCondition unlock];
+    return interactive;
+}
+
+-(void)beginInteractiveIncomingImport {
+    DicomDatabase *database = self.isMainDatabase ? self : self.mainDatabase;
+    [database->_incomingImportCondition lock];
+    database->_interactiveIncomingImportCount++;
+    [database->_incomingImportCondition unlock];
+    [database initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
+}
+
+-(void)endInteractiveIncomingImport {
+    DicomDatabase *database = self.isMainDatabase ? self : self.mainDatabase;
+    [database->_incomingImportCondition lock];
+    if (database->_interactiveIncomingImportCount > 0) database->_interactiveIncomingImportCount--;
+    database->_interactiveIncomingImportDrain = YES;
+    [database->_incomingImportCondition unlock];
+    // Keep the final import immediate even after the network request has finished.
+    [database initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
+}
+
+-(void)incomingFileDidBecomeAvailable {
+    if ([self hasInteractiveIncomingImport])
+        [self initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
+}
+
+-(void)runScheduledIncomingImport:(HorosIncomingImportTrace *)trace {
+    DicomDatabase *workerDatabase = nil;
+    BOOL firstPass = YES, again = YES;
+    @try {
+        do {
+            @autoreleasepool {
+                HorosIncomingImportTrace *passTrace = firstPass ? trace : [self incomingImportTrace];
+                NSMutableDictionary *threadInfo = [NSThread currentThread].threadDictionary;
+                if (passTrace) [threadInfo setObject:passTrace forKey:HorosIncomingTraceKey];
+                [_incomingImportCondition lock];
+                @try {
+                    [threadInfo setObject:@(_interactiveIncomingImportCount > 0 || _interactiveIncomingImportDrain)
+                                  forKey:HorosIncomingInteractiveKey];
+                } @finally {
+                    [_incomingImportCondition unlock];
+                }
+                [passTrace record:@"worker_queue" since:passTrace.started count:0];
+                @try {
+                    CFTimeInterval preflightStarted = CACurrentMediaTime();
+                    [_importFilesFromIncomingDirLock lock];
+                    @try {
+                        if ([self isFileSystemFreeSizeLimitReached]) {
+                            [NSFileManager.defaultManager removeItemAtPath:self.incomingDirPath error:nil];
+                            dispatch_async(dispatch_get_main_queue(), ^{
+                                [[AppController sharedAppController] notificationTitle:NSLocalizedString(@"Warning", nil) description:NSLocalizedString(@"The database volume is full! Incoming files are ignored.", nil) name:@"newfiles"];
+                            });
+                        }
+                    } @finally {
+                        [_importFilesFromIncomingDirLock unlock];
+                    }
+                    [passTrace record:@"scheduler_preflight" since:preflightStarted count:0];
+                    // Keep one private worker while draining, without holding the import lock across dispatch.
+                    [self importFilesFromIncomingDirUsingWorker:&workerDatabase];
+                } @catch (NSException *e) {
+                    N2LogExceptionWithStackTrace(e);
+                } @finally {
+                    [passTrace record:@"worker_finished" since:passTrace.started count:0];
+                    [threadInfo removeObjectForKey:HorosIncomingTraceKey];
+                    [threadInfo removeObjectForKey:HorosIncomingInteractiveKey];
+                    [_incomingImportCondition lock];
+                    @try {
+                        // Stay alive between packets for the whole interactive retrieve. Arrivals and
+                        // completion signal immediately; the timeout only checks thread cancellation.
+                        while (!_incomingImportRequested && _interactiveIncomingImportCount > 0 &&
+                               ![NSThread currentThread].isCancelled) {
+                            [_incomingImportCondition waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.5]];
+                        }
+                        again = _incomingImportRequested && ![NSThread currentThread].isCancelled;
+                        _incomingImportRequested = NO;
+                        if (!again) {
+                            _incomingImportScheduled = NO;
+                            _interactiveIncomingImportDrain = NO;
+                        }
+                    } @finally {
+                        [_incomingImportCondition unlock];
+                    }
+                }
+                firstPass = NO;
+            }
+        } while (again);
+    } @finally {
+        @autoreleasepool {
+            [workerDatabase release];
+        }
+    }
+}
+
+-(HorosIncomingImportTrace *)incomingImportTrace {
+    if ([self hasInteractiveIncomingImport] &&
+        ![[[NSUserDefaults standardUserDefaults] objectForKey:@"HorosQueryViewerBenchmark"] isEqual:@NO]) {
+        static NSUInteger traceCount = 0;
+        @synchronized ([HorosIncomingImportTrace class]) {
+            if (traceCount++ < 256) return [[[HorosIncomingImportTrace alloc] init] autorelease];
+        }
+    }
+    return nil;
+}
+
 -(void)initiateImportFilesFromIncomingDirUnlessAlreadyImporting {
-    //if ([[AppController sharedAppController] isSessionInactive])
-    //	return;
-    
-    if( [NSThread isMainThread] == NO)
-    {
-        [self performSelectorOnMainThread: @selector(initiateImportFilesFromIncomingDirUnlessAlreadyImporting) withObject: nil waitUntilDone: NO];
+    if (!self.isMainDatabase) {
+        [self.mainDatabase initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
         return;
     }
-    
-    if ([_importFilesFromIncomingDirLock tryLock])
-    {
-        if ([self isFileSystemFreeSizeLimitReached]) {
-            [NSFileManager.defaultManager removeItemAtPath:[self incomingDirPath] error:nil]; // Kill the incoming directory
-            [[AppController sharedAppController] notificationTitle:NSLocalizedString(@"Warning", nil) description: NSLocalizedString(@"The database volume is full! Incoming files are ignored.", nil) name:@"newfiles"];
+
+    // Coalesce wakeups, not completed files. Remember arrivals while a worker is busy.
+    [_incomingImportCondition lock];
+    @try {
+        if (_incomingImportScheduled) {
+            _incomingImportRequested = YES;
+            [_incomingImportCondition signal];
+            return;
         }
-        
-        @try {
-            [self performSelectorInBackground:@selector(importFilesFromIncomingDirThread) withObject:nil];
-        } @catch (NSException* e) {
-            N2LogExceptionWithStackTrace(e);
-        } @finally {
-            [_importFilesFromIncomingDirLock unlock];
-        }
+        _incomingImportScheduled = YES;
+        _incomingImportRequested = NO;
+    } @finally {
+        [_incomingImportCondition unlock];
+    }
+    HorosIncomingImportTrace *trace = [self incomingImportTrace];
+    @try {
+        [self performSelectorInBackground:@selector(runScheduledIncomingImport:) withObject:trace];
+    } @catch (NSException *e) {
+        [_incomingImportCondition lock];
+        _incomingImportScheduled = NO;
+        [_incomingImportCondition unlock];
+        N2LogExceptionWithStackTrace(e);
     }
 }
 

@@ -1903,12 +1903,8 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             let previousSeries = context.study.series.first(where: { $0.identifier == series.identifier })
                 ?? context.study.series.first(where: { $0.sharesSourceSeries(with: series) })
             if let previousSeries {
-                let automaticWindowNeedsRefresh =
-                    previousSeries.windowLevelPresetTitle == NSLocalizedString("Auto", comment: "")
-                    && series.imageCount != previousSeries.imageCount
-                series.windowLevelState = automaticWindowNeedsRefresh
-                    ? MetalViewerWindowLevelState()
-                    : previousSeries.windowLevelState
+                // Incoming batches must not change the contrast while the user is viewing.
+                series.windowLevelState = previousSeries.windowLevelState
                 series.windowLevelPresetTitle = previousSeries.windowLevelPresetTitle
                 series.transferFunctionState = previousSeries.transferFunctionState
             }

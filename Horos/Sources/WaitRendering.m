@@ -211,10 +211,6 @@
 			
 			[currentTimeText setStringValue:[NSString stringWithFormat: NSLocalizedString( @"Elapsed Time:\r%2.2ld:%2.2ld:%2.2ld", nil), hours, minutes, seconds]];
 			
-			#if __LP64__
-			#else
-			UpdateSystemActivity(UsrActivity);	// avoid sleep or screen saver mode
-			#endif
 		}
 	}
 	

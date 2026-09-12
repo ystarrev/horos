@@ -1304,6 +1304,9 @@ OFCondition DcmQueryRetrieveOsiriXDatabaseHandle::storeRequest(
 	}
 	
 	receivedStoreRequest = OFTrue;
+	// Only completed files reach INCOMING. Interactive viewing need not wait for association release.
+	if (forkedProcess == NO)
+		[[DicomDatabase activeLocalDatabase] incomingFileDidBecomeAvailable];
 	
 	[pool release];
 	return EC_Normal;
@@ -1379,5 +1382,4 @@ DcmQueryRetrieveDatabaseHandle *DcmQueryRetrieveOsiriXDatabaseHandleFactory::cre
 {
   return new DcmQueryRetrieveOsiriXDatabaseHandle( callingAETitle, result);
 }
-
 

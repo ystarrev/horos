@@ -40,7 +40,8 @@
 
 
 #import "LogArrayController.h"
-#import "browserController.h"
+#import "BrowserController.h"
+#import "DicomDatabase.h"
 
 extern BrowserController *browserWindow;
 
@@ -49,7 +50,7 @@ extern BrowserController *browserWindow;
 
 
 - (void)awakeFromNib{
-	[self setManagedObjectContext:[browserWindow managedObjectContext]];
+	[self setManagedObjectContext:browserWindow.database.managedObjectContext];
 	//NSLog(@"query ManagedObjectContext: %@", [[self managedObjectContext] description]);
 	[self fetch:nil];
 	//NSLog(@"filter Predicate: %@", [[self filterPredicate] description]);
@@ -58,7 +59,7 @@ extern BrowserController *browserWindow;
 }
 
 -(NSManagedObjectContext *)managedObjectContext{
-	return [browserWindow managedObjectContext];
+	return browserWindow.database.managedObjectContext;
 }
 
 - (IBAction)nothing:(id)sender{

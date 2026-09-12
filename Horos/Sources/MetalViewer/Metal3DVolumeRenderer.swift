@@ -308,6 +308,73 @@ private enum Metal3DDefaults {
     static let vrOpacity = NSLocalizedString("Logarithmic Inverse Table", comment: "")
 }
 
+private final class Metal3DPreparedRenderCache {
+    struct Key: Equatable {
+        let sourceTextureIdentifier: ObjectIdentifier
+        let deviceRegistryID: UInt64
+        let sourceVoxelToWorld: [SIMD4<Float>]
+        let outputDimensions: SIMD3<Int>
+        let outputVoxelToWorld: [SIMD4<Float>]
+        let voxelSpacing: SIMD3<Float>
+        let backgroundValue: Float
+        let histogramDomain: SIMD2<Float>
+        let histogramBinCount: Int
+    }
+
+    struct Entry {
+        let key: Key
+        // Retain the source even after resampling so its identity cannot be reused.
+        let sourceTexture: MTLTexture
+        let volume: MTLTexture
+        let gradient: MTLTexture
+        let brickMinMax: MTLTexture
+        let histogram: Metal3DHistogramModel
+
+        var byteCount: Int {
+            var seen = Set<ObjectIdentifier>()
+            var total = histogram.counts.count * MemoryLayout<Int>.stride
+            for texture in [sourceTexture, volume, gradient, brickMinMax] {
+                guard seen.insert(ObjectIdentifier(texture)).inserted else { continue }
+                let size = texture.allocatedSize
+                guard size > 0, size <= Int.max - total else { return Int.max }
+                total += size
+            }
+            return total
+        }
+    }
+
+    static let shared = Metal3DPreparedRenderCache()
+    private let lock = NSLock()
+    private var lastEntry: Entry?
+    private let maximumCachedBytes = MetalViewerCachePolicy.renderVolumeCacheBytes
+    private var isUnderMemoryPressure = false
+    private var memoryPressureObserver: MetalViewerCacheMemoryPressureObserver?
+
+    private init() {
+        memoryPressureObserver = MetalViewerCacheMemoryPressureObserver { [weak self] constrained in
+            guard let self else { return }
+            self.lock.lock()
+            defer { self.lock.unlock() }
+            self.isUnderMemoryPressure = constrained
+        }
+    }
+
+    func cachedEntry(for key: Key) -> Entry? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard lastEntry?.key == key else { return nil }
+        return lastEntry
+    }
+
+    func retain(_ entry: Entry) {
+        let byteCount = entry.byteCount
+        lock.lock()
+        defer { lock.unlock() }
+        guard isUnderMemoryPressure == false, byteCount <= maximumCachedBytes else { return }
+        lastEntry = entry
+    }
+}
+
 final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private let deviceRef: MTLDevice
     private let commandQueue: MTLCommandQueue
@@ -528,51 +595,20 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         }
         self.vertexBuffer = vertexBuffer
 
-        guard let library = device.makeDefaultLibrary(),
-              let vertexFunction = library.makeFunction(name: "metal3DVolumeVertex"),
-              let fragmentFunction = library.makeFunction(name: "metal3DVolumeFragment"),
-              let overlayVertexFunction = library.makeFunction(name: "metal3DOverlayVertexMain"),
-              let overlayFragmentFunction = library.makeFunction(name: "metal3DOverlayFragment"),
-              let resampleVolumeFunction = library.makeFunction(name: "metalViewerGantryTiltResample3D"),
-              let histogramFunction = library.makeFunction(name: "metal3DHistogram"),
-              let gradientFunction = library.makeFunction(name: "metal3DGradientVolume"),
-              let brickMinMaxFunction = library.makeFunction(name: "metal3DBrickMinMax"),
-              let surfaceCursorPickFunction = library.makeFunction(name: "metal3DSurfaceCursorPick") else {
-            fatalError("Could not load Metal 3D volume shader functions.")
-        }
-
-        let pipelineDescriptor = MTLRenderPipelineDescriptor()
-        pipelineDescriptor.vertexFunction = vertexFunction
-        pipelineDescriptor.fragmentFunction = fragmentFunction
-        pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
-
         do {
-            pipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
-        } catch {
-            fatalError("Could not create the 3D Metal pipeline: \(error)")
-        }
-
-        let overlayPipelineDescriptor = MTLRenderPipelineDescriptor()
-        overlayPipelineDescriptor.vertexFunction = overlayVertexFunction
-        overlayPipelineDescriptor.fragmentFunction = overlayFragmentFunction
-        overlayPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        overlayPipelineDescriptor.colorAttachments[0].isBlendingEnabled = true
-        overlayPipelineDescriptor.colorAttachments[0].rgbBlendOperation = .add
-        overlayPipelineDescriptor.colorAttachments[0].alphaBlendOperation = .add
-        overlayPipelineDescriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
-        overlayPipelineDescriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
-        overlayPipelineDescriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
-        overlayPipelineDescriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
-        overlayPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
-
-        do {
-            overlayPipelineState = try device.makeRenderPipelineState(descriptor: overlayPipelineDescriptor)
-            resampleVolumePipelineState = try device.makeComputePipelineState(function: resampleVolumeFunction)
-            histogramPipelineState = try device.makeComputePipelineState(function: histogramFunction)
-            gradientPipelineState = try device.makeComputePipelineState(function: gradientFunction)
-            brickMinMaxPipelineState = try device.makeComputePipelineState(function: brickMinMaxFunction)
-            surfaceCursorPickPipelineState = try device.makeComputePipelineState(function: surfaceCursorPickFunction)
+            let pipelines = try MetalPipelineCache.shared(for: device)
+            pipelineState = try pipelines.renderPipeline(
+                vertex: "metal3DVolumeVertex", fragment: "metal3DVolumeFragment", depthPixelFormat: .depth32Float
+            )
+            overlayPipelineState = try pipelines.renderPipeline(
+                vertex: "metal3DOverlayVertexMain", fragment: "metal3DOverlayFragment",
+                depthPixelFormat: .depth32Float, alphaBlending: true
+            )
+            resampleVolumePipelineState = try pipelines.computePipeline(function: "metalViewerGantryTiltResample3D")
+            histogramPipelineState = try pipelines.computePipeline(function: "metal3DHistogram")
+            gradientPipelineState = try pipelines.computePipeline(function: "metal3DGradientVolume")
+            brickMinMaxPipelineState = try pipelines.computePipeline(function: "metal3DBrickMinMax")
+            surfaceCursorPickPipelineState = try pipelines.computePipeline(function: "metal3DSurfaceCursorPick")
         } catch {
             fatalError("Could not create a 3D Metal pipeline: \(error)")
         }
@@ -2656,12 +2692,12 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func requestVolumeTexture() {
-        guard MetalSeriesTextureCache.shared.key(for: pixList, device: deviceRef) != nil else {
+        guard let request = MetalSeriesTextureCache.shared.makeRequest(for: pixList, device: deviceRef) else {
             NSLog("%@", "3D Metal viewer could not identify the selected volume")
             return
         }
 
-        if MetalSeriesTextureCache.shared.isEntryKnownUnavailable(for: pixList, device: deviceRef) {
+        if MetalSeriesTextureCache.shared.isEntryKnownUnavailable(for: request) {
             NSLog(
                 "%@",
                 "3D Metal viewer does not support the stored-pixel encoding for \(pixList.first?.srcFile ?? "unknown source")"
@@ -2669,18 +2705,12 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return
         }
 
-        if let sourceEntry = MetalSeriesTextureCache.shared.cachedEntry(
-            for: pixList,
-            device: deviceRef
-        ) {
+        if let sourceEntry = MetalSeriesTextureCache.shared.cachedEntry(for: request) {
             requestPreparedVolume(from: sourceEntry)
             return
         }
 
-        MetalSeriesTextureCache.shared.requestEntry(
-            for: pixList,
-            device: deviceRef
-        ) { [weak self] sourceEntry in
+        MetalSeriesTextureCache.shared.requestEntry(for: request) { [weak self] sourceEntry in
             guard let self else { return }
             guard let sourceEntry else {
                 NSLog(
@@ -2721,12 +2751,40 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func prepareVolumeTexture(from entry: MetalPreparedVolumeCache.Entry) {
-        guard entry.dimensions == sourceDimensions,
-              let commandBuffer = commandQueue.makeCommandBuffer() else {
+        guard entry.dimensions == sourceDimensions else {
             NSLog("%@", "3D Metal viewer received incompatible prepared-volume geometry")
             return
         }
 
+        let backgroundValue: Float = Self.isCTVolume(pixList) ? -1024 : 0
+        let histogramBinCount = 512
+        let histogramDomain = SIMD2<Float>(histogramDomainMin, histogramDomainMax)
+        let cacheKey = Metal3DPreparedRenderCache.Key(
+            sourceTextureIdentifier: ObjectIdentifier(entry.texture),
+            deviceRegistryID: deviceRef.registryID,
+            sourceVoxelToWorld: [
+                entry.voxelToWorld.columns.0, entry.voxelToWorld.columns.1,
+                entry.voxelToWorld.columns.2, entry.voxelToWorld.columns.3
+            ],
+            outputDimensions: volumeDimensions,
+            outputVoxelToWorld: [
+                referenceVoxelToPatientMatrix.columns.0, referenceVoxelToPatientMatrix.columns.1,
+                referenceVoxelToPatientMatrix.columns.2, referenceVoxelToPatientMatrix.columns.3
+            ],
+            voxelSpacing: voxelSpacing,
+            backgroundValue: backgroundValue,
+            histogramDomain: histogramDomain,
+            histogramBinCount: histogramBinCount
+        )
+        if let cached = Metal3DPreparedRenderCache.shared.cachedEntry(for: cacheKey) {
+            // Loading can begin in init, before the window installs its callbacks.
+            DispatchQueue.main.async { [weak self] in
+                self?.applyPreparedRenderVolume(cached, sourceEntry: entry)
+            }
+            return
+        }
+
+        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return }
         let threadsPerGroup = MTLSize(width: 4, height: 4, depth: 4)
         let preparedTexture: MTLTexture
         if volumeDimensions != entry.dimensions {
@@ -2743,7 +2801,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 ),
                 outputVoxelToWorld: referenceVoxelToPatientMatrix,
                 sourceWorldToVoxel: simd_inverse(entry.voxelToWorld),
-                backgroundValue: SIMD4<Float>(Self.isCTVolume(pixList) ? -1024 : 0, 0, 0, 0)
+                backgroundValue: SIMD4<Float>(backgroundValue, 0, 0, 0)
             )
             resampleEncoder.setComputePipelineState(resampleVolumePipelineState)
             resampleEncoder.setTexture(entry.texture, index: 0)
@@ -2796,7 +2854,6 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         )
         brickEncoder.endEncoding()
 
-        let histogramBinCount = 512
         let histogramByteCount = histogramBinCount * MemoryLayout<UInt32>.stride
         guard let histogramBuffer = deviceRef.makeBuffer(length: histogramByteCount, options: .storageModeShared),
               let histogramEncoder = commandBuffer.makeComputeCommandEncoder() else {
@@ -2814,7 +2871,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 UInt32(max(volumeDimensions.z, 1)),
                 0
             ),
-            domain: SIMD2<Float>(histogramDomainMin, histogramDomainMax),
+            domain: histogramDomain,
             binCount: UInt32(histogramBinCount)
         )
         histogramEncoder.setComputePipelineState(histogramPipelineState)
@@ -2838,32 +2895,49 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 capacity: histogramBinCount
             )
             let counts = (0..<histogramBinCount).map { Int(countsPointer[$0]) }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.volumeTexture = preparedTexture
-                self.gradientTexture = preparedGradientTexture
-                self.brickMinMaxTexture = preparedBrickMinMaxTexture
-                self.preparedDefaultWindow = entry.defaultWindow
-                self.preparedFullDynamicWindow = entry.fullDynamicWindow
-                if self.selectedWLPresetName == Metal3DDefaults.defaultWLWW
-                    || self.selectedWLPresetName == Metal3DDefaults.fullDynamic {
-                    self.applyWLPreset(named: self.selectedWLPresetName)
-                }
-                self.histogramModel = Metal3DHistogramModel(
+            let prepared = Metal3DPreparedRenderCache.Entry(
+                key: cacheKey,
+                sourceTexture: entry.texture,
+                volume: preparedTexture,
+                gradient: preparedGradientTexture,
+                brickMinMax: preparedBrickMinMaxTexture,
+                histogram: Metal3DHistogramModel(
                     counts: counts,
                     minimumHU: Int(self.histogramDomainMin),
                     maximumHU: Int(self.histogramDomainMax)
                 )
-                self.cachedCPUVolumeData = nil
-                if self.showSkin == false || self.showSkinSurface {
-                    self.ensureSkinMaskTexture(includeSurface: self.showSkinSurface)
-                }
-                self.startNextSurfaceCursorPickIfNeeded()
-                self.contentDidChange?()
+            )
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                Metal3DPreparedRenderCache.shared.retain(prepared)
+                self.applyPreparedRenderVolume(prepared, sourceEntry: entry)
             }
         }
         commandBuffer.commit()
     }
+
+    private func applyPreparedRenderVolume(
+        _ prepared: Metal3DPreparedRenderCache.Entry,
+        sourceEntry: MetalPreparedVolumeCache.Entry
+    ) {
+        volumeTexture = prepared.volume
+        gradientTexture = prepared.gradient
+        brickMinMaxTexture = prepared.brickMinMax
+        preparedDefaultWindow = sourceEntry.defaultWindow
+        preparedFullDynamicWindow = sourceEntry.fullDynamicWindow
+        if selectedWLPresetName == Metal3DDefaults.defaultWLWW
+            || selectedWLPresetName == Metal3DDefaults.fullDynamic {
+            applyWLPreset(named: selectedWLPresetName)
+        }
+        histogramModel = prepared.histogram
+        cachedCPUVolumeData = nil
+        if showSkin == false || showSkinSurface {
+            ensureSkinMaskTexture(includeSurface: showSkinSurface)
+        }
+        startNextSurfaceCursorPickIfNeeded()
+        contentDidChange?()
+    }
+
     private static func threadgroups(
         for dimensions: SIMD3<Int>,
         threadsPerGroup: MTLSize

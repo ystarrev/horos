@@ -40,69 +40,17 @@
 
 #undef verify
 
-#include <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 
-typedef char* (*HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn)(const char* path);
-typedef char* (*HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn)(const char* path);
-typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
-
-static void* HorosModernDCMTKBridgeHandle()
-{
-    static void* handle = nullptr;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSBundle *bundle = [NSBundle mainBundle];
-        NSArray<NSString *> *basePaths = @[
-            bundle.resourcePath ?: @"",
-            bundle.privateFrameworksPath ?: @"",
-            bundle.sharedFrameworksPath ?: @"",
-            bundle.builtInPlugInsPath ?: @""
-        ];
-        NSArray<NSString *> *relativePaths = @[
-            @"libHorosModernDCMTKBridge.dylib",
-            @"DCMTK/libHorosModernDCMTKBridge.dylib"
-        ];
-        NSString *resolvedPath = nil;
-        NSFileManager *fileManager = [NSFileManager defaultManager];
-        for (NSString *basePath in basePaths)
-        {
-            if (basePath.length == 0)
-                continue;
-            for (NSString *relativePath in relativePaths)
-            {
-                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
-                if ([fileManager fileExistsAtPath:candidate])
-                {
-                    resolvedPath = candidate;
-                    break;
-                }
-            }
-            if (resolvedPath)
-                break;
-        }
-
-        if (resolvedPath)
-            handle = dlopen(resolvedPath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-        if (handle == nullptr)
-            NSLog(@"Modern DCMTK bridge unavailable: %s", dlerror());
-    });
-    return handle;
-}
-
-template <typename FunctionType>
-static FunctionType HorosModernDCMTKSymbol(const char* name)
-{
-    void* handle = HorosModernDCMTKBridgeHandle();
-    if (handle == nullptr)
-        return nullptr;
-    return reinterpret_cast<FunctionType>(dlsym(handle, name));
-}
+typedef __typeof__(&HorosModernDCMTKCopyStructuredReportKeyObjectType) HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn;
+typedef __typeof__(&HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs) HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn;
+typedef __typeof__(&HorosModernDCMTKFreeString) HorosModernDCMTKFreeStringFn;
 
 static NSString* HorosModernDCMTKCopiedString(char* value)
 {
     if (value == nullptr)
         return nil;
-    HorosModernDCMTKFreeStringFn freeStringFn = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    HorosModernDCMTKFreeStringFn freeStringFn = HorosDCMTKFunction(HorosModernDCMTKFreeString);
     NSString *string = [NSString stringWithUTF8String:value];
     if (freeStringFn)
         freeStringFn(value);
@@ -114,7 +62,7 @@ static NSString* HorosModernDCMTKCopiedString(char* value)
 - (NSString*) keyObjectType
 {
     HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn bridgeFn =
-        HorosModernDCMTKSymbol<HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn>("HorosModernDCMTKCopyStructuredReportKeyObjectType");
+        HorosDCMTKFunction(HorosModernDCMTKCopyStructuredReportKeyObjectType);
     if (bridgeFn == nullptr)
         return nil;
     NSString *type = HorosModernDCMTKCopiedString(bridgeFn([[self completePath] UTF8String]));
@@ -124,7 +72,7 @@ static NSString* HorosModernDCMTKCopiedString(char* value)
 - (NSArray*) referencedObjects
 {
     HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn bridgeFn =
-        HorosModernDCMTKSymbol<HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn>("HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs");
+        HorosDCMTKFunction(HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs);
     if (bridgeFn == nullptr)
         return [NSArray array];
 

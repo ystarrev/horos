@@ -108,7 +108,6 @@ enum
     NSMutableArray							*queryFilters;
 	
 	NSString								*currentQueryKey, *queryArrayPrefs;
-	int										checkAndViewTry;
 	
 	NSImage									*Realised3, *Realised2;
 	NSTimer									*QueryTimer;

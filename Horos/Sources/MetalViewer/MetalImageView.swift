@@ -328,8 +328,6 @@ final class MetalImageView: MTKView {
 
     private struct StudyROIContourCache {
         let storeRevision: Int
-        let rendererState: String
-        let bounds: CGRect
         let roiIdentifier: UUID
         let slices: [MetalMPRROISliceGeometry]
         let segments: [MetalStudyROIContourSegment]
@@ -652,6 +650,14 @@ final class MetalImageView: MTKView {
 
     private static let preciseScrollPointsPerSlice: CGFloat = 18
     private static let momentumScrollPointsPerSlice: CGFloat = 60
+
+    private static func stackMomentumPointsPerSlice(sliceCount: Int) -> CGFloat {
+        // A flick covers the same fraction of typical stacks. Bound the gain
+        // so very short or exceptionally large series remain controllable.
+        let boundedSliceCount = CGFloat(min(max(sliceCount, 10), 1_000))
+        return momentumScrollPointsPerSlice * 100 / boundedSliceCount
+    }
+
     private static let measurementLabelFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
 
     let renderer: MetalViewerRenderer
@@ -673,8 +679,7 @@ final class MetalImageView: MTKView {
         }
     }
     private(set) var mouseAnnotationState: MouseAnnotationState?
-    private weak var mouseSamplePix: DCMPix?
-    private var mouseSampleStoredPixels: MetalStoredInt16PixelData?
+    private var mouseAnnotationPoint: CGPoint?
 
     init(
         frame frameRect: NSRect,
@@ -714,15 +719,20 @@ final class MetalImageView: MTKView {
         reloadLegacyROIs(for: pixList)
 
         renderer.stateDidChange = { [weak self] state in
-            self?.studyROIContourCache = nil
-            self?.titleDidChange?(state)
-            self?.needsDisplay = true
-            self?.mprPreviewOverlayView.needsDisplay = true
-            if let overlayView = self?.mprPreviewOverlayView {
-                overlayView.window?.invalidateCursorRects(for: overlayView)
+            guard let self else { return }
+            // Update the cursor value from the newly committed pixels before
+            // publishing any labels for that slice.
+            if self.renderer.displayMode == .stack2D, let point = self.mouseAnnotationPoint {
+                self.updateMouseAnnotationState(from: point, notify: false)
+            } else {
+                self.mouseAnnotationState = nil
             }
-            self?.publishMeasurementOverlays()
-            self?.annotationStateDidChange?()
+            self.titleDidChange?(state)
+            self.needsDisplay = true
+            self.mprPreviewOverlayView.needsDisplay = true
+            self.mprPreviewOverlayView.window?.invalidateCursorRects(for: self.mprPreviewOverlayView)
+            self.publishMeasurementOverlays()
+            self.annotationStateDidChange?()
         }
         renderer.mprRotationDidChange = { [weak self] rotation in
             self?.mprRotationDidChange?(rotation)
@@ -740,8 +750,8 @@ final class MetalImageView: MTKView {
 
     override var acceptsFirstResponder: Bool { true }
 
-    func display(pixList: [DCMPix], preservingSliceIndex: Bool = true) {
-        renderer.setPixList(pixList, preservingSliceIndex: preservingSliceIndex)
+    func display(pixList: [DCMPix], preservingSliceIndex: Bool = true, preservingDisplayedImage: Bool = false) {
+        renderer.setPixList(pixList, preservingSliceIndex: preservingSliceIndex, preservingDisplayedImage: preservingDisplayedImage)
         reloadLegacyROIs(for: pixList)
         needsDisplay = true
         mprPreviewOverlayView.needsDisplay = true
@@ -775,8 +785,7 @@ final class MetalImageView: MTKView {
         activeTumourSeedDeletion = false
         measurements.removeAll()
         mouseAnnotationState = nil
-        mouseSamplePix = nil
-        mouseSampleStoredPixels = nil
+        mouseAnnotationPoint = nil
         resetMPRLineCursor()
 
         renderer.replaceSeries(
@@ -797,7 +806,6 @@ final class MetalImageView: MTKView {
 
     override func layout() {
         super.layout()
-        studyROIContourCache = nil
         mprPreviewOverlayView.needsDisplay = true
         mprPreviewOverlayView.window?.invalidateCursorRects(for: mprPreviewOverlayView)
         publishMeasurementOverlays()
@@ -896,6 +904,7 @@ final class MetalImageView: MTKView {
     override func scrollWheel(with event: NSEvent) {
         interactionEventHandler?()
         let point = convert(event.locationInWindow, from: nil)
+        mouseAnnotationPoint = point
         let delta = event.scrollingDeltaY == 0 ? event.scrollingDeltaX : event.scrollingDeltaY
         let phase = event.momentumPhase.isEmpty ? event.phase : event.momentumPhase
 
@@ -913,7 +922,11 @@ final class MetalImageView: MTKView {
 
         if event.hasPreciseScrollingDeltas {
             preciseScrollSliceAccumulator += delta
-            let scrollPointsPerSlice = event.momentumPhase.isEmpty ? Self.preciseScrollPointsPerSlice : Self.momentumScrollPointsPerSlice
+            let momentumPointsPerSlice = renderer.displayMode == .stack2D
+                ? Self.stackMomentumPointsPerSlice(sliceCount: renderer.pixList.count)
+                : Self.momentumScrollPointsPerSlice
+            let scrollPointsPerSlice = event.momentumPhase.isEmpty
+                ? Self.preciseScrollPointsPerSlice : momentumPointsPerSlice
             let stepCount = Int(preciseScrollSliceAccumulator / scrollPointsPerSlice)
             if stepCount != 0 {
                 stepThroughCurrentMode(by: stepCount, event: event, at: point)
@@ -1714,8 +1727,7 @@ final class MetalImageView: MTKView {
             mouseAnnotationState = nil
             annotationStateDidChange?()
         }
-        mouseSamplePix = nil
-        mouseSampleStoredPixels = nil
+        mouseAnnotationPoint = nil
     }
 
     override func keyDown(with event: NSEvent) {
@@ -1772,8 +1784,7 @@ final class MetalImageView: MTKView {
     }
 
     var currentSliceGeometry: MetalViewerSliceGeometry? {
-        guard let pix = renderer.currentPix else { return nil }
-        return MetalViewerSliceGeometry(pix: pix)
+        renderer.currentSliceGeometry
     }
 
     var hasLegacyBrushROI: Bool {
@@ -2035,18 +2046,7 @@ final class MetalImageView: MTKView {
               let store = studyROIStore,
               let roi = store.selectedROI else { return nil }
 
-        let slices: [MetalMPRROISliceGeometry]
-        if let cache = studyROIContourCache,
-           cache.storeRevision == store.revision,
-           cache.rendererState == renderer.stateDescription,
-           cache.bounds == bounds,
-           cache.roiIdentifier == roi.id {
-            slices = cache.slices
-        } else {
-            slices = renderer.mprROISliceGeometries(in: bounds).map {
-                $0.applyingWorldTransform(studyROICurrentToCanonicalTransform)
-            }
-        }
+        let slices = studyROISliceGeometries()
 
         let hitRadius: CGFloat = 8
         var closest: (anchorIndex: Int, distance: CGFloat)?
@@ -2074,17 +2074,18 @@ final class MetalImageView: MTKView {
         guard renderer.displayMode == .stack2D,
               let rois = legacyROIsBySlice[renderer.currentSliceIndex],
               rois.isEmpty == false,
-              let pix = renderer.currentPix,
-              pix.pwidth > 0,
-              pix.pheight > 0 else {
+              let pix = renderer.currentPix else {
             return
         }
+        let width = pix.widthWithoutLoading()
+        let height = pix.heightWithoutLoading()
+        guard width > 0, height > 0 else { return }
 
         let imageCorners = [
             CGPoint(x: 0, y: 0),
-            CGPoint(x: CGFloat(pix.pwidth), y: 0),
-            CGPoint(x: CGFloat(pix.pwidth), y: CGFloat(pix.pheight)),
-            CGPoint(x: 0, y: CGFloat(pix.pheight)),
+            CGPoint(x: CGFloat(width), y: 0),
+            CGPoint(x: CGFloat(width), y: CGFloat(height)),
+            CGPoint(x: 0, y: CGFloat(height)),
         ].compactMap {
             legacyROIOverlayPoint(forPixelPoint: $0, sliceIndex: renderer.currentSliceIndex)
         }
@@ -2403,28 +2404,30 @@ final class MetalImageView: MTKView {
         )
     }
 
+    private func studyROISliceGeometries() -> [MetalMPRROISliceGeometry] {
+        renderer.mprROISliceGeometries(in: bounds).map {
+            $0.applyingWorldTransform(studyROICurrentToCanonicalTransform)
+        }
+    }
+
     fileprivate func drawStudyROIOverlay() {
         guard renderer.displayMode == .mpr3D,
               studyROIProjectionAvailable,
               let store = studyROIStore,
               let roi = store.selectedROI else { return }
 
+        // Compare the contour's inputs, not display-only state such as WL/WW.
+        let slices = studyROISliceGeometries()
         let cache: StudyROIContourCache
         if let existing = studyROIContourCache,
            existing.storeRevision == store.revision,
-           existing.rendererState == renderer.stateDescription,
-           existing.bounds == bounds,
+           existing.slices == slices,
            existing.roiIdentifier == roi.id {
             cache = existing
         } else {
-            let slices = renderer.mprROISliceGeometries(in: bounds).map {
-                $0.applyingWorldTransform(studyROICurrentToCanonicalTransform)
-            }
             let segments = slices.flatMap { MetalStudyROIContourBuilder.segments(for: roi, slice: $0) }
             cache = StudyROIContourCache(
                 storeRevision: store.revision,
-                rendererState: renderer.stateDescription,
-                bounds: bounds,
                 roiIdentifier: roi.id,
                 slices: slices,
                 segments: segments
@@ -2602,44 +2605,40 @@ final class MetalImageView: MTKView {
         mprLineCursor(for: pointer).set()
     }
 
-    private func updateMouseAnnotationState(from point: CGPoint) {
+    private func updateMouseAnnotationState(from point: CGPoint, notify: Bool = true) {
+        mouseAnnotationPoint = point
         guard renderer.displayMode == .stack2D else {
             renderer.updateMPRHover(at: point, in: bounds)
             if mouseAnnotationState != nil {
                 mouseAnnotationState = nil
-                annotationStateDidChange?()
+                if notify { annotationStateDidChange?() }
             }
             return
         }
 
-        guard let pix = renderer.currentPix else {
+        guard renderer.currentPix != nil else {
             if mouseAnnotationState != nil {
                 mouseAnnotationState = nil
-                annotationStateDidChange?()
+                if notify { annotationStateDidChange?() }
             }
             return
         }
 
         guard let normalizedImagePoint = renderer.normalizedImagePoint(for: point, in: bounds),
-              let nextMouseAnnotationState = mouseAnnotationState(for: pix, normalizedImagePoint: normalizedImagePoint) else {
+              let nextMouseAnnotationState = mouseAnnotationState(normalizedImagePoint: normalizedImagePoint) else {
             if mouseAnnotationState != nil {
                 mouseAnnotationState = nil
-                annotationStateDidChange?()
+                if notify { annotationStateDidChange?() }
             }
             return
         }
 
         mouseAnnotationState = nextMouseAnnotationState
-        annotationStateDidChange?()
+        if notify { annotationStateDidChange?() }
     }
 
-    private func mouseAnnotationState(for pix: DCMPix, normalizedImagePoint: CGPoint) -> MouseAnnotationState? {
-        if mouseSamplePix !== pix {
-            mouseSamplePix = pix
-            mouseSampleStoredPixels = MetalStoredInt16PixelData(pix: pix)
-        }
-
-        guard let storedPixels = mouseSampleStoredPixels else {
+    private func mouseAnnotationState(normalizedImagePoint: CGPoint) -> MouseAnnotationState? {
+        guard let storedPixels = renderer.currentSlicePixels else {
             return nil
         }
 
@@ -2654,7 +2653,7 @@ final class MetalImageView: MTKView {
             return nil
         }
 
-        guard let dicomPoint = MetalViewerSliceGeometry(pix: pix)?.dicomPoint(
+        guard let dicomPoint = renderer.currentSliceGeometry?.dicomPoint(
             pixelX: Double(pixelX),
             pixelY: Double(pixelY)
         ) else {

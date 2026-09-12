@@ -71,19 +71,9 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
         }
         self.vertexBuffer = vertexBuffer
 
-        guard let library = device.makeDefaultLibrary(),
-              let vertexFunction = library.makeFunction(name: "metalPreviewVertex"),
-              let fragmentFunction = library.makeFunction(name: "metalPreviewFragment") else {
-            fatalError("Could not load Metal preview shader functions.")
-        }
-
-        let pipelineDescriptor = MTLRenderPipelineDescriptor()
-        pipelineDescriptor.vertexFunction = vertexFunction
-        pipelineDescriptor.fragmentFunction = fragmentFunction
-        pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-
         do {
-            pipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+            let pipelines = try MetalPipelineCache.shared(for: device)
+            pipelineState = try pipelines.renderPipeline(vertex: "metalPreviewVertex", fragment: "metalPreviewFragment")
         } catch {
             fatalError("Could not create Metal preview pipeline: \(error)")
         }
@@ -203,16 +193,14 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
     }
 
     private func requestVolumeTexture(for pixList: [DCMPix]) {
-        guard let key = MetalSeriesTextureCache.shared.key(for: pixList, device: deviceRef) else {
+        guard let request = MetalSeriesTextureCache.shared.makeRequest(for: pixList, device: deviceRef) else {
             requestedVolumeKey = nil
             volumeEntry = nil
             return
         }
+        let key = request.key
 
-        if MetalSeriesTextureCache.shared.isEntryKnownUnavailable(
-                for: pixList,
-                device: deviceRef
-           ) {
+        if MetalSeriesTextureCache.shared.isEntryKnownUnavailable(for: request) {
             return
         }
 
@@ -222,13 +210,13 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
         }
         requestedVolumeKey = key
 
-        if let entry = MetalSeriesTextureCache.shared.cachedEntry(for: pixList, device: deviceRef) {
+        if let entry = MetalSeriesTextureCache.shared.cachedEntry(for: request) {
             volumeEntry = entry
             contentDidChange?()
             return
         }
 
-        MetalSeriesTextureCache.shared.requestEntry(for: pixList, device: deviceRef) { [weak self] entry in
+        MetalSeriesTextureCache.shared.requestEntry(for: request) { [weak self] entry in
             guard let self,
                   self.requestedVolumeKey == key else {
                 return

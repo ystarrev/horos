@@ -40,8 +40,6 @@
 #import "BrowserMatrix.h"
 #import "BrowserController.h"
 #import "DCMPix.h"
-#import "ThreadsManager.h"
-#import "NSThread+N2.h"
 #import "N2Stuff.h"
 #import "N2Debug.h"
 #import "DicomImage.h"
@@ -100,7 +98,10 @@
  
 	if( [self getRow: &row column: &column forPoint: [self convertPoint:[theEvent locationInWindow] fromView:nil]])
 	{
-		if( [theEvent modifierFlags] & NSEventModifierFlagShift )
+        NSButtonCell *cell = [self cellAtRow:row column:column];
+        if (cell.isTransparent || !cell.isEnabled)
+            return;
+		if( ([theEvent modifierFlags] & NSEventModifierFlagShift) && self.selectedCells.count > 0 )
 		{
 			NSInteger start = [[self cells] indexOfObject: [[self selectedCells] objectAtIndex: 0]];
 			NSInteger end = [[self cells] indexOfObject: [self cellAtRow:row column:column]];
@@ -120,7 +121,7 @@
 		}
 		else
 		{
-			if( [[self cellAtRow:row column:column] isHighlighted] == NO) [self selectCellAtRow: row column:column];
+			if( ![self.selectedCells containsObject:cell]) [self selectCellAtRow: row column:column];
 		}
 	}
 }
@@ -128,12 +129,6 @@
 - (void) startDrag:(NSEvent *) event
 {
 	@try {
-	
-	NSPoint event_location = [event locationInWindow];
-	NSPoint local_point = [self convertPoint:event_location fromView:nil];
-	
-	local_point.x -= 35;
-	local_point.y += 35;
 	
 	NSArray *cells = [self selectedCells];
 	
@@ -173,16 +168,18 @@
 			return YES;
 		}];
 		
-        NSPasteboardItem* pbi = [[[NSPasteboardItem alloc] init] autorelease];
-        [pbi setDataProvider:self forTypes:@[NSPasteboardTypeString, (NSString *)kPasteboardTypeFileURLPromise]];
-        [pbi setString:UTTypeImage.identifier forType:(id)kPasteboardTypeFilePromiseContent];
-        
         NSMutableArray* objects = [NSMutableArray array];
+        NSArray *matrixObjects = [[BrowserController currentBrowser] matrixViewArray];
         for( i = 0; i < [cells count]; i++)
-            [objects addObject:[[[BrowserController currentBrowser] matrixViewArray] objectAtIndex:[[cells objectAtIndex: i] tag]]];
-        [pbi setPropertyList:[NSPropertyListSerialization dataWithPropertyList:[objects valueForKey:@"XID"] format:NSPropertyListBinaryFormat_v1_0 options:0 error:NULL] forType:O2PasteboardTypeDatabaseObjectXIDs];
+        {
+            NSButtonCell *cell = [cells objectAtIndex:i];
+            if (cell.isEnabled && cell.tag >= 0 && cell.tag < matrixObjects.count)
+                [objects addObject:matrixObjects[cell.tag]];
+        }
+        id<NSPasteboardWriting> promise = [[BrowserController currentBrowser] filePromiseForDatabaseObjects:objects];
+        if (!promise) return;
         
-        NSDraggingItem* di = [[[NSDraggingItem alloc] initWithPasteboardWriter:pbi] autorelease];
+        NSDraggingItem* di = [[[NSDraggingItem alloc] initWithPasteboardWriter:promise] autorelease];
         NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
         [di setDraggingFrame:NSMakeRect(p.x-thumbnail.size.width/2, p.y-thumbnail.size.height/2, thumbnail.size.width, thumbnail.size.height) contents:thumbnail];
         
@@ -196,186 +193,104 @@
 }
 
 - (NSDragOperation)draggingSession:(NSDraggingSession *)session sourceOperationMaskForDraggingContext:(NSDraggingContext)context {
-    return NSDragOperationGeneric;
+    return context == NSDraggingContextOutsideApplication ? NSDragOperationCopy : NSDragOperationEvery;
 }
 
-- (void)pasteboard:(NSPasteboard *)pasteboard item:(NSPasteboardItem *)item provideDataForType:(NSString *)type {
-    if ([type isEqualToString:(id)kPasteboardTypeFileURLPromise]) {
-        PasteboardRef pboardRef = NULL;
-        PasteboardCreate((__bridge CFStringRef)[pasteboard name], &pboardRef);
-        if (!pboardRef)
-            return;
-        
-        PasteboardSynchronize(pboardRef);
-        
-        CFURLRef urlRef = NULL;
-        PasteboardCopyPasteLocation(pboardRef, &urlRef);
-        
-        if (urlRef) {
-            NSURL *dropDestination = (id)urlRef;
-            
-            // this method provides data for drags initiated both from startDrag: and startDragOriginalFrame:
-            // to distinguish, we know that only the startDrag: initiated drags provide a value for O2PasteboardTypeDatabaseObjectXIDs
-            
-            if ([item availableTypeFromArray:@[O2PasteboardTypeDatabaseObjectXIDs]]) { // this is from startDrag:
-                if( avoidRecursive == NO)
-                {
-                    avoidRecursive = YES;
-                    
-                    @try
-                    {
-                        if( [[[dropDestination path] lastPathComponent] isEqualToString:@".Trash"])
-                        {
-                            [[BrowserController currentBrowser] delItem: [[[[BrowserController currentBrowser] oMatrix] menu] itemAtIndex: 0]];
-                        }
-                        else
-                        {
-                            NSMutableArray *dicomFiles2Export = [NSMutableArray array];
-                            NSMutableArray *filesToExport = [[BrowserController currentBrowser] filesForDatabaseMatrixSelection: dicomFiles2Export];
-                            
-                            //				r = [[BrowserController currentBrowser] exportDICOMFileInt: [dropDestination path] files: filesToExport objects: dicomFiles2Export];
-                            
-                            NSMutableDictionary *d = [NSMutableDictionary dictionaryWithObjectsAndKeys: [dropDestination path], @"location", filesToExport, @"filesToExport", [dicomFiles2Export valueForKey: @"objectID"], @"dicomFiles2Export", nil];
-                            
-                            NSThread* t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:[BrowserController currentBrowser] selector:@selector(exportDICOMFileInt:) object:d] autorelease];
-                            t.name = NSLocalizedString( @"Exporting...", nil);
-                            t.supportsCancel = YES;
-                            t.status = N2LocalizedSingularPluralCount( [filesToExport count], NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));
-                            
-                            [[ThreadsManager defaultManager] addThreadAndStart: t];
-                            
-                            NSTimeInterval fourSeconds = [NSDate timeIntervalSinceReferenceDate] + 4.0;
-                            while( [[d objectForKey: @"result"] count] == 0 && [NSDate timeIntervalSinceReferenceDate] < fourSeconds)
-                                [NSThread sleepForTimeInterval: 0.1];
-                            
-                            @synchronized( d)
-                            {
-                                if ([[d objectForKey:@"result"] count]) {
-                                    [item setPropertyList:[[NSSet setWithArray:[d objectForKey:@"result"]] allObjects] forType:type];
-                                }
-                            }
-                        }
-                    }
-                    @catch ( NSException * e)
-                    {
-                        N2LogException( e);
-                    }
-                    avoidRecursive = NO;
-                }
-            }
-            else { // this is from startDragOriginalFrame:
-                NSButtonCell *selectedButtonCell = [[self selectedCells] objectAtIndex: 0];
-                DicomImage *selectedObject = [[[BrowserController currentBrowser] matrixViewArray] objectAtIndex: [selectedButtonCell tag]];
-                DCMPix *previewPix = [[BrowserController currentBrowser] previewPix:[selectedButtonCell tag]];
-                
-                NSURL *url = [dropDestination URLByAppendingPathComponent:[NSString stringWithFormat:@"%@.%d.jpg", selectedObject.completePath.lastPathComponent, previewPix.imageObj.frameID.intValue]];
-                size_t i = 0;
-                while ([url checkResourceIsReachableAndReturnError:NULL])
-                    url = [dropDestination URLByAppendingPathComponent:[NSString stringWithFormat:@"%@.%d (%lu).jpg", selectedObject.completePath.lastPathComponent, previewPix.imageObj.frameID.intValue, i]];
 
-                NSArray *representations = [[previewPix image] representations];
-                NSData *bitmapData = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:[NSDictionary dictionaryWithObject:[NSDecimalNumber numberWithFloat:0.9] forKey:NSImageCompressionFactor]];
-                [bitmapData writeToURL:url atomically:YES];
-                
-                [item setString:[url absoluteString] forType:type];
-            }
-            
-            CFRelease(urlRef);
-        }
-        
-        CFRelease(pboardRef);
-    }
-}
-
-- (void) startDragOriginalFrame:(NSEvent *) event
+- (void) startDragJPEG:(NSEvent *) event
 {
-	[self selectCellEvent: event];
-	[[BrowserController currentBrowser] matrixPressed:self];
-	NSButtonCell *selectedButtonCell = [[self selectedCells] objectAtIndex: 0];
-	NSManagedObject *selectedObject = [[[BrowserController currentBrowser] matrixViewArray] objectAtIndex: [selectedButtonCell tag]];
-	if ([[selectedObject valueForKey:@"type"] isEqualToString:@"Image"])
-	{
-		@try {
-            NSImage *image = [selectedButtonCell image];
-            int	thumbnailWidth = [image size].width + 6;
-            NSImage *thumbnail = [NSImage imageWithSize:NSMakeSize(thumbnailWidth, 70+6) flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
-                [[NSColor grayColor] set];
-                NSRectFill(destinationRect);
-                NSRectFill(NSMakeRect(3, 0, [image size].width, [image size].height));
-                [image drawAtPoint:NSMakePoint(3, 3) fromRect:NSMakeRect(0,0,[image size].width,[image size].height) operation:NSCompositingOperationCopy fraction:0.8];
-                return YES;
-            }];
-		
-            NSPasteboardItem* pbi = [[[NSPasteboardItem alloc] init] autorelease];
-            [pbi setDataProvider:self forTypes:@[NSPasteboardTypeString, (NSString *)kPasteboardTypeFileURLPromise]];
-            [pbi setString:UTTypeImage.identifier forType:(id)kPasteboardTypeFilePromiseContent];
-            
-            NSDraggingItem* di = [[[NSDraggingItem alloc] initWithPasteboardWriter:pbi] autorelease];
-            NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
-            [di setDraggingFrame:NSMakeRect(p.x-thumbnail.size.width/2, p.y-thumbnail.size.height/2, thumbnail.size.width, thumbnail.size.height) contents:thumbnail];
-            
-            NSDraggingSession* session = [self beginDraggingSessionWithItems:@[di] event:event source:self];
-            session.animatesToStartingPositionsOnCancelOrFail = YES;
-		
-		} @catch( NSException *e) {
-            N2LogException( e);
-		}
-	}
+    NSInteger row, column;
+    if (![self getRow:&row column:&column forPoint:[self convertPoint:event.locationInWindow fromView:nil]])
+        return;
+    NSButtonCell *selectedButtonCell = [self cellAtRow:row column:column];
+    NSArray *objects = [[BrowserController currentBrowser] matrixViewArray];
+    if (selectedButtonCell.isTransparent || !selectedButtonCell.isEnabled || selectedButtonCell.tag < 0 || selectedButtonCell.tag >= objects.count)
+        return;
+    [self selectCellAtRow:row column:column];
+    [[BrowserController currentBrowser] matrixPressed:self];
+    NSManagedObject *selectedObject = objects[selectedButtonCell.tag];
+    @try {
+        NSImage *image = [selectedButtonCell image];
+        int thumbnailWidth = [image size].width + 6;
+        NSImage *thumbnail = [NSImage imageWithSize:NSMakeSize(thumbnailWidth, 70+6) flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
+            [[NSColor grayColor] set];
+            NSRectFill(destinationRect);
+            NSRectFill(NSMakeRect(3, 0, [image size].width, [image size].height));
+            [image drawAtPoint:NSMakePoint(3, 3) fromRect:NSMakeRect(0,0,[image size].width,[image size].height) operation:NSCompositingOperationCopy fraction:0.8];
+            return YES;
+        }];
+
+        id<NSPasteboardWriting> promise = nil;
+        DicomImage *selectedImage = [selectedObject isKindOfClass:[DicomImage class]] ? (DicomImage *)selectedObject : nil;
+        if (selectedImage.isImageStorage.boolValue && ![BrowserController isReportSeriesForFileExport:selectedImage.series]) {
+            DCMPix *previewPix = [[BrowserController currentBrowser] previewPix:selectedButtonCell.tag];
+            if (!previewPix || previewPix.notAbleToLoadImage) return;
+            NSArray *representations = [[previewPix image] representations];
+            NSData *jpeg = [NSBitmapImageRep representationOfImageRepsInArray:representations usingType:NSBitmapImageFileTypeJPEG properties:@{NSImageCompressionFactor: @0.9}];
+            NSString *name = [NSString stringWithFormat:@"%@.%ld.jpg", [(DicomImage *)selectedObject completePath].lastPathComponent, (long)previewPix.frameNo];
+            promise = [[BrowserController currentBrowser] filePromiseForJPEGData:jpeg name:name];
+        } else
+            promise = [[BrowserController currentBrowser] filePromiseForDatabaseObjects:@[selectedObject] asJPEG:YES];
+        if (!promise) return;
+
+        NSDraggingItem *di = [[[NSDraggingItem alloc] initWithPasteboardWriter:promise] autorelease];
+        NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
+        [di setDraggingFrame:NSMakeRect(p.x-thumbnail.size.width/2, p.y-thumbnail.size.height/2, thumbnail.size.width, thumbnail.size.height) contents:thumbnail];
+
+        NSDraggingSession *session = [self beginDraggingSessionWithItems:@[di] event:event source:self];
+        session.animatesToStartingPositionsOnCancelOrFail = YES;
+    } @catch (NSException *e) {
+        N2LogException(e);
+    }
 }
 
 - (void) mouseDown:(NSEvent *)event
 {
-	if(([event modifierFlags]  & NSEventModifierFlagOption) && ([event modifierFlags] & NSEventModifierFlagShift))
-	{
-		[self startDragOriginalFrame: event];
-	}
-	else if ([event modifierFlags]  & NSEventModifierFlagOption)
-	{
-		[self startDrag: event];
-	}
-	else
-	{		
-		BOOL keepOn = YES;
-		
-		@try
-		{
-			[NSEvent stopPeriodicEvents];
-			[NSEvent startPeriodicEventsAfterDelay: 0 withPeriod:0.001];
-		}
-		@catch (NSException *e)
-		{
-			N2LogException( e);
-		}
-		NSDate	*start = [NSDate date];
-		NSEvent *ev = nil;
-		
-        @try
-		{
-		do
-		{
-			ev = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskPeriodic];
-			if (ev.type == NSEventTypeLeftMouseDragged || ev.type == NSEventTypeLeftMouseUp)
-				keepOn = NO;
-		}while (keepOn && [start timeIntervalSinceNow] >= -1);
-		
-		if( keepOn)
-		{
-			[self selectCellEvent: event];
-			[self startDrag: event];
-		}
-		else
-		{
-			[super mouseDown: ev];
-		}
-		
-		[NSEvent stopPeriodicEvents];
+    [self.window makeFirstResponder:self];
+    NSInteger row, column;
+    if (![self getRow:&row column:&column forPoint:[self convertPoint:event.locationInWindow fromView:nil]])
+    {
+        [super mouseDown:event];
+        return;
+    }
+    NSButtonCell *cell = [self cellAtRow:row column:column];
+    if (cell.isTransparent || !cell.isEnabled || event.clickCount > 1)
+    {
+        [super mouseDown:event];
+        return;
+    }
+
+    NSEventMask mask = NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged;
+    while (YES)
+    {
+        // Leave mouse-up queued so NSMatrix can handle ordinary/modifier clicks
+        // with the original mouse-down event, including its click count.
+        NSEvent *nextEvent = [self.window nextEventMatchingMask:mask untilDate:[NSDate distantFuture]
+                                                       inMode:NSEventTrackingRunLoopMode dequeue:NO];
+        if (!nextEvent)
+            return;
+        if (nextEvent.type == NSEventTypeLeftMouseUp)
+        {
+            [super mouseDown:event];
+            return;
         }
-        @catch ( NSException *e) {
-            N2LogException( e);
+        [self.window nextEventMatchingMask:mask untilDate:[NSDate distantPast]
+                                   inMode:NSEventTrackingRunLoopMode dequeue:YES];
+        CGFloat dx = nextEvent.locationInWindow.x - event.locationInWindow.x;
+        CGFloat dy = nextEvent.locationInWindow.y - event.locationInWindow.y;
+        if (dx * dx + dy * dy < 16.0)
+            continue;
+
+        if (event.modifierFlags & NSEventModifierFlagOption)
+            [self startDragJPEG:event];
+        else
+        {
+            if (![self.selectedCells containsObject:cell])
+                [self selectCellEvent:event];
+            [self startDrag:nextEvent];
         }
-	}
-	
-	[self.window makeFirstResponder: self];
+        return;
+    }
 }
 
 - (void) rightMouseDown:(NSEvent *)theEvent

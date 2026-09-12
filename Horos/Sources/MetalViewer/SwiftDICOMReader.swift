@@ -1,4 +1,19 @@
 import Foundation
+import Darwin
+
+// Database paths can be reused after deletion, and metadata edits can replace
+// files in place. A pathname alone is not a pixel/geometry cache identity.
+struct SwiftDICOMFileRevision: Equatable {
+    let cacheKey: String
+
+    init?(contentsOfFile path: String) {
+        var status = stat()
+        guard path.withCString({ Darwin.fstatat(AT_FDCWD, $0, &status, 0) }) == 0 else { return nil }
+        cacheKey = "\(path)|file=\(status.st_dev):\(status.st_ino):\(status.st_size)"
+            + ":\(status.st_mtimespec.tv_sec):\(status.st_mtimespec.tv_nsec)"
+            + ":\(status.st_ctimespec.tv_sec):\(status.st_ctimespec.tv_nsec)"
+    }
+}
 
 /// The normalized stored-value frame consumed by the Metal texture pipeline.
 /// Pixel samples are always little-endian UInt16 bit patterns; signedness and
@@ -119,6 +134,7 @@ final class SwiftDICOMReader {
     let transferSyntaxUID: String
     let numberOfFrames: Int
 
+    let fileRevision: SwiftDICOMFileRevision
     private let data: Data
     private let root: SwiftDICOMDataset
     private let fileMeta: SwiftDICOMDataset?
@@ -128,29 +144,44 @@ final class SwiftDICOMReader {
         let cache = NSCache<NSString, SwiftDICOMReader>()
         cache.name = "org.horos.swift-dicom-reader"
         cache.countLimit = 512
-        cache.totalCostLimit = 512 * 1_024 * 1_024
+        cache.totalCostLimit = MetalViewerCachePolicy.readerCacheBytes
         return cache
     }()
+    private static let readerCacheLock = NSLock()
+    private static var isReaderCacheUnderMemoryPressure = false
+    private static let readerCachePressureObserver = MetalViewerCacheMemoryPressureObserver { constrained in
+        readerCacheLock.lock()
+        defer { readerCacheLock.unlock() }
+        isReaderCacheUnderMemoryPressure = constrained
+    }
 
     init(contentsOfFile path: String, metadataForExternalDecoder: Bool = false) throws {
-        let mappedData: Data
+        guard let revision = SwiftDICOMFileRevision(contentsOfFile: path) else {
+            throw SwiftDICOMReaderError.invalidFile("could not inspect source file")
+        }
+        let fileData: Data
         do {
-            mappedData = try Data(contentsOf: URL(fileURLWithPath: path), options: [.mappedIfSafe])
+            // Keep an immutable snapshot even if another workflow edits the file.
+            fileData = try Data(contentsOf: URL(fileURLWithPath: path))
         } catch {
             throw SwiftDICOMReaderError.invalidFile(error.localizedDescription)
         }
-        guard mappedData.count >= 8 else {
+        guard revision == SwiftDICOMFileRevision(contentsOfFile: path) else {
+            throw SwiftDICOMReaderError.invalidFile("source file changed while being read")
+        }
+        guard fileData.count >= 8 else {
             throw SwiftDICOMReaderError.truncated("file header")
         }
 
-        var parser = SwiftDICOMParser(data: mappedData)
+        var parser = SwiftDICOMParser(data: fileData)
         let parsed = try parser.parse(allowExternalPixelSyntax: metadataForExternalDecoder)
         guard Self.supportedTransferSyntaxUIDs.contains(parsed.transferSyntaxUID) ||
               (metadataForExternalDecoder && Self.externalPixelSyntaxUIDs.contains(parsed.transferSyntaxUID)) else {
             throw SwiftDICOMReaderError.unsupportedTransferSyntax(parsed.transferSyntaxUID)
         }
 
-        data = mappedData
+        fileRevision = revision
+        data = fileData
         sourcePath = path
         transferSyntaxUID = parsed.transferSyntaxUID
         root = parsed.dataset
@@ -160,12 +191,19 @@ final class SwiftDICOMReader {
     }
 
     static func cached(contentsOfFile path: String) throws -> SwiftDICOMReader {
+        _ = readerCachePressureObserver
         let key = path as NSString
-        if let cached = readerCache.object(forKey: key) {
+        if let cached = readerCache.object(forKey: key),
+           cached.fileRevision == SwiftDICOMFileRevision(contentsOfFile: path) {
             return cached
         }
         let reader = try SwiftDICOMReader(contentsOfFile: path)
-        readerCache.setObject(reader, forKey: key, cost: reader.data.count)
+        readerCacheLock.lock()
+        if isReaderCacheUnderMemoryPressure == false,
+           reader.data.count <= MetalViewerCachePolicy.readerCacheBytes {
+            readerCache.setObject(reader, forKey: key, cost: reader.data.count)
+        }
+        readerCacheLock.unlock()
         return reader
     }
 
@@ -704,29 +742,46 @@ final class SwiftDICOMReader {
             throw SwiftDICOMReaderError.truncated("decoded pixel frame")
         }
 
+        let outputByteCount = pixelCount * MemoryLayout<UInt16>.size
+        // Full-width samples already have the required little-endian bit pattern,
+        // including negative Int16 values. Keep Data's copy-on-write storage.
+        if bitsAllocated == 16, bitsStored == 16, highBit == 15 {
+            if sourceData.count == outputByteCount, sourceData.startIndex == 0 {
+                return sourceData
+            }
+            // Callers index frames from zero; discard padding and rebase slices.
+            return Data(sourceData.prefix(outputByteCount))
+        }
+
         let lowBit = max(highBit - bitsStored + 1, 0)
         let mask = bitsStored == 16 ? UInt16.max : UInt16((1 << bitsStored) - 1)
         let signBit = UInt16(1 << max(bitsStored - 1, 0))
-        var output = [UInt16](repeating: 0, count: pixelCount)
+        var output = Data(count: outputByteCount)
 
-        sourceData.withUnsafeBytes { rawBuffer in
+        sourceData.withUnsafeBytes { (rawBuffer: UnsafeRawBufferPointer) in
             let bytes = rawBuffer.bindMemory(to: UInt8.self)
-            for index in 0..<pixelCount {
-                let rawValue: UInt16
-                if bitsAllocated == 16 {
-                    let byteOffset = index * 2
-                    rawValue = UInt16(bytes[byteOffset]) | (UInt16(bytes[byteOffset + 1]) << 8)
-                } else {
-                    rawValue = UInt16(bytes[index])
-                }
+            output.withUnsafeMutableBytes { (outputBuffer: UnsafeMutableRawBufferPointer) in
+                let outputBytes = outputBuffer.bindMemory(to: UInt8.self)
+                for index in 0..<pixelCount {
+                    let rawValue: UInt16
+                    if bitsAllocated == 16 {
+                        let byteOffset = index * 2
+                        rawValue = UInt16(bytes[byteOffset]) | (UInt16(bytes[byteOffset + 1]) << 8)
+                    } else {
+                        rawValue = UInt16(bytes[index])
+                    }
 
-                let storedValue = (rawValue >> UInt16(lowBit)) & mask
-                output[index] = isSigned && storedValue & signBit != 0
-                    ? storedValue | ~mask
-                    : storedValue
+                    let storedValue = (rawValue >> UInt16(lowBit)) & mask
+                    let normalizedValue = isSigned && storedValue & signBit != 0
+                        ? storedValue | ~mask
+                        : storedValue
+                    let byteOffset = index * 2
+                    outputBytes[byteOffset] = UInt8(truncatingIfNeeded: normalizedValue)
+                    outputBytes[byteOffset + 1] = UInt8(truncatingIfNeeded: normalizedValue >> 8)
+                }
             }
         }
-        return output.withUnsafeBytes { Data($0) }
+        return output
     }
 
     private static func nestedFloat(

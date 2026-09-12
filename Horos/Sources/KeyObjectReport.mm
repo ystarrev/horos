@@ -15,79 +15,12 @@
 #import "KeyObjectReport.h"
 #import "DicomStudy.h"
 #import "ModernDCMTKBridge.h"
-#include <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 
-typedef char* (*HorosModernDCMTKCopyGeneratedUIDFn)(void);
-typedef char* (*HorosModernDCMTKCopyStructuredReportHTMLFn)(const char* path);
-typedef int (*HorosModernDCMTKWriteKeyObjectReportFn)(const char* path,
-													  const char* sopInstanceUID,
-													  const char* seriesInstanceUID,
-													  const char* studyInstanceUID,
-													  const char* studyDescription,
-													  const char* patientName,
-													  const char* patientBirthDate,
-													  const char* patientSex,
-													  const char* patientID,
-													  const char* referringPhysician,
-													  const char* studyID,
-													  const char* accessionNumber,
-													  int titleCode,
-													  const char* keyDescription,
-													  const char* const* imagePaths,
-													  const char* const* imageSeriesInstanceUIDs,
-													  const char* const* imageSOPInstanceUIDs,
-													  int imageCount);
-typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
-
-static void* HorosKeyObjectBridgeHandle()
-{
-	static void* handle = NULL;
-	static dispatch_once_t onceToken;
-	dispatch_once(&onceToken, ^{
-		NSBundle *bundle = [NSBundle mainBundle];
-		NSArray<NSString *> *basePaths = @[
-			bundle.resourcePath ?: @"",
-			bundle.privateFrameworksPath ?: @"",
-			bundle.sharedFrameworksPath ?: @"",
-			bundle.builtInPlugInsPath ?: @""
-		];
-		NSArray<NSString *> *relativePaths = @[
-			@"libHorosModernDCMTKBridge.dylib",
-			@"DCMTK/libHorosModernDCMTKBridge.dylib"
-		];
-
-		NSFileManager *fileManager = [NSFileManager defaultManager];
-		for (NSString *basePath in basePaths)
-		{
-			if (basePath.length == 0)
-				continue;
-
-			for (NSString *relativePath in relativePaths)
-			{
-				NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
-				if ([fileManager fileExistsAtPath:candidate])
-				{
-					handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-					if (handle == NULL)
-						NSLog(@"Modern DCMTK bridge failed to load at %@: %s", candidate, dlerror());
-					return;
-				}
-			}
-		}
-
-		NSLog(@"Modern DCMTK bridge not found in bundle search paths.");
-	});
-	return handle;
-}
-
-template <typename FunctionType>
-static FunctionType HorosKeyObjectSymbol(const char* name)
-{
-	void* handle = HorosKeyObjectBridgeHandle();
-	if (handle == NULL)
-		return NULL;
-	return reinterpret_cast<FunctionType>(dlsym(handle, name));
-}
+typedef __typeof__(&HorosModernDCMTKCopyGeneratedUID) HorosModernDCMTKCopyGeneratedUIDFn;
+typedef __typeof__(&HorosModernDCMTKCopyStructuredReportHTML) HorosModernDCMTKCopyStructuredReportHTMLFn;
+typedef __typeof__(&HorosModernDCMTKWriteKeyObjectReport) HorosModernDCMTKWriteKeyObjectReportFn;
+typedef __typeof__(&HorosModernDCMTKFreeString) HorosModernDCMTKFreeStringFn;
 
 static NSString* HorosISODateStringFromDate(NSDate* date)
 {
@@ -144,8 +77,8 @@ static NSArray* HorosKeyObjectValidImageDictionaries(NSArray* keyImages)
 	[_sopInstanceUID release];
 	_sopInstanceUID = nil;
 
-	HorosModernDCMTKCopyGeneratedUIDFn generateUIDFn = HorosKeyObjectSymbol<HorosModernDCMTKCopyGeneratedUIDFn>("HorosModernDCMTKCopyGeneratedUID");
-	HorosModernDCMTKFreeStringFn freeStringFn = HorosKeyObjectSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+	HorosModernDCMTKCopyGeneratedUIDFn generateUIDFn = HorosDCMTKFunction(HorosModernDCMTKCopyGeneratedUID);
+	HorosModernDCMTKFreeStringFn freeStringFn = HorosDCMTKFunction(HorosModernDCMTKFreeString);
 	char* generatedUID = generateUIDFn ? generateUIDFn() : NULL;
 	if (generatedUID != NULL)
 	{
@@ -182,7 +115,7 @@ static NSArray* HorosKeyObjectValidImageDictionaries(NSArray* keyImages)
 		imageSOPInstanceUIDs[index] = [[row objectForKey:@"sopInstanceUID"] UTF8String];
 	}
 
-	HorosModernDCMTKWriteKeyObjectReportFn writeReportFn = HorosKeyObjectSymbol<HorosModernDCMTKWriteKeyObjectReportFn>("HorosModernDCMTKWriteKeyObjectReport");
+	HorosModernDCMTKWriteKeyObjectReportFn writeReportFn = HorosDCMTKFunction(HorosModernDCMTKWriteKeyObjectReport);
 	if (writeReportFn == NULL)
 	{
 		free(imagePaths);
@@ -228,8 +161,8 @@ static NSArray* HorosKeyObjectValidImageDictionaries(NSArray* keyImages)
 	if (![self writeFileAtPath:temporaryPath])
 		return NO;
 
-	HorosModernDCMTKCopyStructuredReportHTMLFn renderHTMLFn = HorosKeyObjectSymbol<HorosModernDCMTKCopyStructuredReportHTMLFn>("HorosModernDCMTKCopyStructuredReportHTML");
-	HorosModernDCMTKFreeStringFn freeStringFn = HorosKeyObjectSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+	HorosModernDCMTKCopyStructuredReportHTMLFn renderHTMLFn = HorosDCMTKFunction(HorosModernDCMTKCopyStructuredReportHTML);
+	HorosModernDCMTKFreeStringFn freeStringFn = HorosDCMTKFunction(HorosModernDCMTKFreeString);
 	char* html = renderHTMLFn ? renderHTMLFn([temporaryPath UTF8String]) : NULL;
 	[[NSFileManager defaultManager] removeItemAtPath:temporaryPath error:nil];
 	if (html == NULL)

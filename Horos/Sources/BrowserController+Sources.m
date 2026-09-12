@@ -2232,10 +2232,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 -(BOOL)tableView:(NSTableView*)tableView acceptDrop:(id<NSDraggingInfo>)info row:(NSInteger)row dropOperation:(NSTableViewDropOperation)operation
 {
     NSPasteboard* pb = [info draggingPasteboard];
-    NSArray* xids = [NSPropertyListSerialization propertyListWithData:[pb propertyListForType:[pb availableTypeFromArray:BrowserController.DatabaseObjectXIDsPasteboardTypes]]
-                                                               options:NSPropertyListImmutable
-                                                                format:NULL
-                                                                 error:NULL];
+    NSArray* xids = [BrowserController databaseObjectXIDsFromPasteboard:pb];
     NSMutableArray* items = [NSMutableArray array];
     for (NSString* xid in xids)
         [items addObject:[_browser.database objectWithID:[NSManagedObject UidForXid:xid]]];

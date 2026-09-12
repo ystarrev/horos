@@ -1,6 +1,6 @@
 #import "MetalStudyROISegBridge.h"
 
-#import <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -12,56 +12,8 @@
 #import "DicomDatabase.h"
 #import "DicomImage.h"
 
-typedef int (*HorosWriteBinarySegmentationFunction)(const char*,
-                                                     const char*,
-                                                     const char*,
-                                                     const char*,
-                                                     double,
-                                                     double,
-                                                     double,
-                                                     const char* const*,
-                                                     const unsigned char* const*,
-                                                     int,
-                                                     unsigned short,
-                                                     unsigned short,
-                                                     char**);
-typedef void (*HorosFreeStringFunction)(char*);
-
-static void *MetalStudyROIModernBridgeHandle(void)
-{
-    static void *handle = nullptr;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSArray<NSString *> *relativePaths = @[
-            @"libHorosModernDCMTKBridge.dylib",
-            @"DCMTK/libHorosModernDCMTKBridge.dylib"
-        ];
-        NSMutableArray<NSString *> *candidates = [NSMutableArray array];
-        for (NSString *relativePath in relativePaths)
-        {
-            NSString *privateFrameworkPath = [NSBundle.mainBundle.privateFrameworksPath stringByAppendingPathComponent:relativePath];
-            if (privateFrameworkPath.length)
-                [candidates addObject:privateFrameworkPath];
-            NSString *resourcePath = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:relativePath];
-            if (resourcePath.length)
-                [candidates addObject:resourcePath];
-        }
-        [candidates addObject:@"libHorosModernDCMTKBridge.dylib"];
-        for (NSString *candidate in candidates)
-        {
-            handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-            if (handle != nullptr)
-                break;
-        }
-    });
-    return handle;
-}
-
-static void *MetalStudyROIModernBridgeSymbol(const char *name)
-{
-    void *handle = MetalStudyROIModernBridgeHandle();
-    return handle != nullptr ? dlsym(handle, name) : nullptr;
-}
+typedef __typeof__(&HorosModernDCMTKWriteBinarySegmentation) HorosWriteBinarySegmentationFunction;
+typedef __typeof__(&HorosModernDCMTKFreeString) HorosFreeStringFunction;
 
 @implementation MetalStudyROISegBridge
 
@@ -86,9 +38,9 @@ static void *MetalStudyROIModernBridgeSymbol(const char *name)
         return @{ @"error": @"Cannot save DICOM SEG because its frame dimensions are invalid." };
 
     HorosWriteBinarySegmentationFunction writeFunction =
-        (HorosWriteBinarySegmentationFunction)MetalStudyROIModernBridgeSymbol("HorosModernDCMTKWriteBinarySegmentation");
+        HorosDCMTKFunction(HorosModernDCMTKWriteBinarySegmentation);
     HorosFreeStringFunction freeStringFunction =
-        (HorosFreeStringFunction)MetalStudyROIModernBridgeSymbol("HorosModernDCMTKFreeString");
+        HorosDCMTKFunction(HorosModernDCMTKFreeString);
     if (writeFunction == nullptr)
         return @{ @"error": @"Cannot save DICOM SEG because the modern DCMTK segmentation writer is unavailable." };
 

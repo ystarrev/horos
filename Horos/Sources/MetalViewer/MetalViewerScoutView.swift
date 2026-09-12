@@ -871,19 +871,12 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
     init?(view: MTKView) {
         guard let device = view.device,
               let commandQueue = device.makeCommandQueue(),
-              let library = device.makeDefaultLibrary(),
-              let vertexFunction = library.makeFunction(name: "metalViewerScoutROIVertex"),
-              let fragmentFunction = library.makeFunction(name: "metalViewerScoutROIFragment") else {
-            return nil
-        }
-
-        let pipelineDescriptor = MTLRenderPipelineDescriptor()
-        pipelineDescriptor.label = "Metal Planar ROI scout preview"
-        pipelineDescriptor.vertexFunction = vertexFunction
-        pipelineDescriptor.fragmentFunction = fragmentFunction
-        pipelineDescriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
-        pipelineDescriptor.depthAttachmentPixelFormat = view.depthStencilPixelFormat
-        guard let pipelineState = try? device.makeRenderPipelineState(descriptor: pipelineDescriptor) else {
+              let pipelines = try? MetalPipelineCache.shared(for: device),
+              let pipelineState = try? pipelines.renderPipeline(
+                vertex: "metalViewerScoutROIVertex", fragment: "metalViewerScoutROIFragment",
+                colorPixelFormat: view.colorPixelFormat, depthPixelFormat: view.depthStencilPixelFormat,
+                sampleCount: view.sampleCount, label: "Metal Planar ROI scout preview"
+              ) else {
             return nil
         }
 

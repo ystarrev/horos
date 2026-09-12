@@ -47,59 +47,9 @@
 #import "DCMTagForNameDictionary.h"
 #import "ModernDCMTKBridge.h"
 
-#include <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 
-typedef int (*HorosModernDCMTKReplaceTagValueFn)(const char* path, unsigned short group, unsigned short element, const char* value, int removeIfEmpty);
-
-static void* HorosModernDCMTKBridgeHandle()
-{
-    static void* handle = nullptr;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSBundle *bundle = [NSBundle mainBundle];
-        NSArray<NSString *> *basePaths = @[
-            bundle.resourcePath ?: @"",
-            bundle.privateFrameworksPath ?: @"",
-            bundle.sharedFrameworksPath ?: @"",
-            bundle.builtInPlugInsPath ?: @""
-        ];
-        NSArray<NSString *> *relativePaths = @[
-            @"libHorosModernDCMTKBridge.dylib",
-            @"DCMTK/libHorosModernDCMTKBridge.dylib"
-        ];
-
-        NSFileManager *fileManager = [NSFileManager defaultManager];
-        for (NSString *basePath in basePaths)
-        {
-            if (basePath.length == 0)
-                continue;
-
-            for (NSString *relativePath in relativePaths)
-            {
-                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
-                if ([fileManager fileExistsAtPath:candidate])
-                {
-                    handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-                    if (handle == nullptr)
-                        NSLog(@"Modern DCMTK bridge failed to load at %@: %s", candidate, dlerror());
-                    return;
-                }
-            }
-        }
-
-        NSLog(@"Modern DCMTK bridge not found in bundle search paths.");
-    });
-    return handle;
-}
-
-template <typename FunctionType>
-static FunctionType HorosModernDCMTKSymbol(const char* name)
-{
-    void* handle = HorosModernDCMTKBridgeHandle();
-    if (handle == nullptr)
-        return nullptr;
-    return reinterpret_cast<FunctionType>(dlsym(handle, name));
-}
+typedef __typeof__(&HorosModernDCMTKReplaceTagValue) HorosModernDCMTKReplaceTagValueFn;
 
 static BOOL HorosParseTagString(NSString *tagString, int *group, int *element)
 {
@@ -137,7 +87,7 @@ static BOOL HorosParseTagString(NSString *tagString, int *group, int *element)
 + (BOOL) modifyDicom:(NSArray*) tagAndValues dicomFiles:(NSArray*) dicomFiles
 {
     HorosModernDCMTKReplaceTagValueFn replaceTagValueFn =
-        HorosModernDCMTKSymbol<HorosModernDCMTKReplaceTagValueFn>("HorosModernDCMTKReplaceTagValue");
+        HorosDCMTKFunction(HorosModernDCMTKReplaceTagValue);
     if (replaceTagValueFn == nullptr)
         return NO;
 

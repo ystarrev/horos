@@ -64,12 +64,6 @@
 	return windowFrame.size.height-NSHeight([[self contentView] frame]);
 }
 
--(void)safelySetMovable:(BOOL)flag {
-	if ([self respondsToSelector:@selector(setMovable:)])
-		[self setMovable:flag];
-	else NSLog(@"Warning: -[NSWindow setMovable] is not available");
-}
-
 //-(void)safelySetUsesLightBottomGradient:(BOOL)flag {
 //    if ([self respondsToSelector:@selector(_setUsesLightBottomGradient:)]) {
 //        [self _setUsesLightBottomGradient:flag];

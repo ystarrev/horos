@@ -243,13 +243,8 @@ static const NSUInteger colWidth = 80, colSeparator = 1, rowHeight = 101, titleH
 //	[[self backgroundColor] setFill];
 //	[NSBezierPath fillRect:frame];
 	
-    if (@available(macOS 10.14, *)) {
-        [[NSColor alternatingContentBackgroundColors][1] setFill];
-        [[NSColor separatorColor] setStroke];
-    } else {
-        [[NSColor colorWithCalibratedWhite:.89 alpha:1] setFill];
-        [[NSColor colorWithCalibratedWhite:.80 alpha:1] setStroke];
-    }
+    [[NSColor alternatingContentBackgroundColors][1] setFill];
+    [[NSColor separatorColor] setStroke];
 
     [NSBezierPath setDefaultLineWidth:1];
 	for (NSUInteger r = 1; r < groups.count; r += 2) {
@@ -294,7 +289,6 @@ static const NSUInteger colWidth = 80, colSeparator = 1, rowHeight = 101, titleH
 }
 
 @end
-
 
 
 

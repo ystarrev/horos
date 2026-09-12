@@ -102,10 +102,13 @@ class PluginCleanupTests(unittest.TestCase):
                 self.assertNotIn(element.get(key), removed)
 
     def test_required_internal_bundle_loading_is_retained(self):
+        loader = (ROOT / "Horos/Sources/HorosDCMTKBridgeLoader.m").read_text()
+        self.assertIn("bundle.builtInPlugInsPath", loader)
         for name in ("DCMPix.m", "PreviewView.m", "DicomFileDCMTKCategory.mm",
                      "DicomImageDCMTKCategory.mm", "XMLControllerDCMTKCategory.mm",
                      "SRAnnotation.mm", "KeyObjectReport.mm", "DICOMExport.mm"):
-            self.assertIn("bundle.builtInPlugInsPath", (ROOT / "Horos/Sources" / name).read_text())
+            self.assertIn('#import "HorosDCMTKBridgeLoader.h"',
+                          (ROOT / "Horos/Sources" / name).read_text())
         preferences = (ROOT / "Horos/Sources/PreferencesWindowController.mm").read_text()
         self.assertIn("prefPane", preferences)
         self.assertIn("principalClass", preferences)

@@ -45,7 +45,6 @@
 
 -(CGFloat)toolbarHeight;
 
--(void)safelySetMovable:(BOOL)flag;
 //-(void)safelySetUsesLightBottomGradient:(BOOL)flag;
 
 @end

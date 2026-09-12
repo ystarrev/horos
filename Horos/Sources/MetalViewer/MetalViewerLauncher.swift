@@ -1,4 +1,113 @@
 import AppKit
+import QuartzCore
+
+// Temporary, bounded diagnostics for query-to-viewer latency. Never log patient identifiers.
+@objc(HorosMetalViewerRetrievalBenchmark)
+final class MetalViewerRetrievalBenchmark: NSObject {
+    private final class Session {
+        let token = String(UUID().uuidString.prefix(8))
+        let startedAt = CACurrentMediaTime()
+        let studyUID: String
+        let seriesUID: String?
+        var recordedStages = Set<String>()
+        var refreshCount = 0
+
+        init(studyUID: String, seriesUID: String?) {
+            self.studyUID = studyUID
+            self.seriesUID = seriesUID
+        }
+    }
+
+    private static var sessions: [Session] = []
+
+    @objc(beginWithStudyUID:seriesUID:)
+    class func begin(studyUID: String, seriesUID: String?) {
+        precondition(Thread.isMainThread)
+        guard (UserDefaults.standard.object(forKey: "HorosQueryViewerBenchmark") as? NSNumber)?.boolValue != false else { return }
+        prune()
+        sessions.removeAll { $0.studyUID == studyUID && $0.seriesUID == seriesUID }
+        if sessions.count >= 32 { sessions.removeFirst() }
+        let session = Session(studyUID: studyUID, seriesUID: seriesUID)
+        sessions.append(session)
+        record("click", session: session)
+    }
+
+    @objc(localImagesAvailableWithStudyUID:seriesUID:imageCount:lookupDuration:)
+    class func localImagesAvailable(studyUID: String, seriesUID: String?, imageCount: Int, lookupDuration: Double) {
+        for session in matching(studyUID: studyUID, seriesUID: seriesUID) {
+            record("local_images", session: session, duration: lookupDuration, imageCount: imageCount)
+        }
+    }
+
+    @objc(transferFinishedWithStudyUID:seriesUID:cancelled:)
+    class func transferFinished(studyUID: String, seriesUID: String?, cancelled: Bool) {
+        for session in matching(studyUID: studyUID, seriesUID: seriesUID) {
+            record(cancelled ? "transfer_cancelled" : "transfer_finished", session: session)
+        }
+        if cancelled {
+            sessions.removeAll { $0.studyUID == studyUID && $0.seriesUID == seriesUID }
+        }
+    }
+
+    static func mark(_ stage: String, frames: [DCMPix], duration: Double = 0) {
+        for session in matching(frames: frames) {
+            record(stage, session: session, duration: duration, imageCount: frames.count)
+        }
+    }
+
+    static func recordRefresh(frames: [DCMPix], imageCount: Int, buildDuration: Double, applyDuration: Double) {
+        for session in matching(frames: frames) where session.refreshCount < 120 {
+            session.refreshCount += 1
+            NSLog("QRVIEW %@ refresh=%ld t=%.3fs build=%.1fms apply=%.1fms images=%ld",
+                  session.token, session.refreshCount, CACurrentMediaTime() - session.startedAt,
+                  buildDuration * 1000, applyDuration * 1000, imageCount)
+        }
+    }
+
+    static func firstPresentationHandler(frames: [DCMPix]) -> ((CFTimeInterval) -> Void)? {
+        timestampHandler("first_presented", frames: frames)
+    }
+
+    static func timestampHandler(_ stage: String, frames: [DCMPix]) -> ((CFTimeInterval) -> Void)? {
+        let pending = matching(frames: frames).filter { !$0.recordedStages.contains(stage) }
+        guard !pending.isEmpty else { return nil }
+        let count = frames.count
+        return { presentedAt in
+            guard presentedAt > 0 else { return }
+            for session in pending {
+                record(stage, session: session, imageCount: count, at: presentedAt)
+            }
+        }
+    }
+
+    private static func matching(frames: [DCMPix]) -> [Session] {
+        guard !sessions.isEmpty,
+              let image = frames.first?.perform(NSSelectorFromString("imageObj"))?.takeUnretainedValue() as? NSManagedObject,
+              !image.isDeleted, image.managedObjectContext != nil,
+              let studyUID = image.value(forKeyPath: "series.study.studyInstanceUID") as? String else { return [] }
+        let seriesUID = image.value(forKeyPath: "series.seriesDICOMUID") as? String
+        return matching(studyUID: studyUID, seriesUID: seriesUID)
+    }
+
+    private static func matching(studyUID: String, seriesUID: String?) -> [Session] {
+        precondition(Thread.isMainThread)
+        prune()
+        return sessions.filter { $0.studyUID == studyUID && ($0.seriesUID == nil || $0.seriesUID == seriesUID) }
+    }
+
+    private static func prune() {
+        let cutoff = CACurrentMediaTime() - 900
+        sessions.removeAll { $0.startedAt < cutoff }
+    }
+
+    private static func record(_ stage: String, session: Session, duration: Double = 0, imageCount: Int = 0, at timestamp: CFTimeInterval? = nil) {
+        guard session.recordedStages.insert(stage).inserted else { return }
+        let recordedAt = timestamp ?? CACurrentMediaTime()
+        NSLog("QRVIEW %@ %@ t=%.3fs work=%.1fms images=%ld clock=%.6f",
+              session.token, stage, recordedAt - session.startedAt,
+              duration * 1000, imageCount, recordedAt)
+    }
+}
 
 enum MetalViewerScreenPlacement {
     private enum DefaultsKey {
@@ -208,7 +317,6 @@ final class MetalViewerLauncher: NSObject {
     }
 
     private enum DefaultsKey {
-        static let incomingImportCoalescingDelay = "HorosIncomingImportCoalescingDelay"
         static let databaseRefreshDelay = "HorosMetalViewerDatabaseRefreshDelay"
         static let databaseRefreshMaxDeferral = "HorosMetalViewerDatabaseRefreshMaxDeferral"
     }
@@ -331,6 +439,8 @@ final class MetalViewerLauncher: NSObject {
         }
         let forceDynamicInterpretation = (context["forceDynamicInterpretation"] as? NSNumber)?.boolValue ?? false
 
+        MetalViewerRetrievalBenchmark.mark("launcher_enter", frames: frames)
+
         let launchIdentifiers = refreshIdentifiers(from: frames)
         if let existingController = existingController(matching: launchIdentifiers) {
             upsertRefreshContext(ViewerRefreshContext(
@@ -341,28 +451,35 @@ final class MetalViewerLauncher: NSObject {
             ), for: existingController)
             ensureDatabaseAddObserver()
 
+            let buildStarted = CACurrentMediaTime()
             let fullStudy = buildStudy(
                 from: frames,
                 fallbackTitle: title,
                 forceDynamicInterpretation: forceDynamicInterpretation,
                 markScoutStudiesOpened: true
             )
+            MetalViewerRetrievalBenchmark.mark("initial_scout_build", frames: frames, duration: CACurrentMediaTime() - buildStarted)
+            let applyStarted = CACurrentMediaTime()
             existingController.updatePatientStudy(
                 fullStudy,
                 selectInitialSeries: true,
                 revealSelectedSeriesInScout: true
             )
+            MetalViewerRetrievalBenchmark.mark("initial_scout_apply", frames: frames, duration: CACurrentMediaTime() - applyStarted)
             existingController.window?.makeKeyAndOrderFront(NSApp)
+            MetalViewerRetrievalBenchmark.mark("window_shown", frames: frames)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
+        let windowStarted = CACurrentMediaTime()
         let study = buildInitialStudy(
             from: frames,
             fallbackTitle: title,
             forceDynamicInterpretation: forceDynamicInterpretation
         )
         let controller = MetalViewerWindowController(study: study)
+        MetalViewerRetrievalBenchmark.mark("window_created", frames: frames, duration: CACurrentMediaTime() - windowStarted)
         retainedControllers.append(controller)
         upsertRefreshContext(ViewerRefreshContext(
             frames: frames,
@@ -387,20 +504,26 @@ final class MetalViewerLauncher: NSObject {
 
         controller.window?.makeKeyAndOrderFront(NSApp)
 
+        MetalViewerRetrievalBenchmark.mark("window_shown", frames: frames)
+
         NSApp.activate(ignoringOtherApps: true)
 
         DispatchQueue.main.async {
+            let buildStarted = CACurrentMediaTime()
             let fullStudy = buildStudy(
                 from: frames,
                 fallbackTitle: title,
                 forceDynamicInterpretation: forceDynamicInterpretation,
                 markScoutStudiesOpened: true
             )
+            MetalViewerRetrievalBenchmark.mark("initial_scout_build", frames: frames, duration: CACurrentMediaTime() - buildStarted)
+            let applyStarted = CACurrentMediaTime()
             controller.updateStudy(
                 fullStudy,
                 selectInitialSeries: forceDynamicInterpretation,
                 revealSelectedSeriesInScout: true
             )
+            MetalViewerRetrievalBenchmark.mark("initial_scout_apply", frames: frames, duration: CACurrentMediaTime() - applyStarted)
         }
     }
 
@@ -486,11 +609,8 @@ final class MetalViewerLauncher: NSObject {
             return clampedRefreshInterval(configuredValue.doubleValue, minimum: 0.1, maximum: 30)
         }
 
-        if let configuredValue = defaults.object(forKey: DefaultsKey.incomingImportCoalescingDelay) as? NSNumber {
-            return clampedRefreshInterval(configuredValue.doubleValue + 0.2, minimum: 0.4, maximum: 30)
-        }
-
-        return 2.2
+        // Import already coalesces files; don't add another multi-second wait here.
+        return 0.5
     }
 
     private class func databaseRefreshMaxDeferral(forDelay delay: TimeInterval) -> TimeInterval {
@@ -499,7 +619,7 @@ final class MetalViewerLauncher: NSObject {
             return clampedRefreshInterval(configuredValue.doubleValue, minimum: delay, maximum: 120)
         }
 
-        return max(8, delay * 4)
+        return max(1, delay * 2)
     }
 
     private class func clampedRefreshInterval(_ value: TimeInterval, minimum: TimeInterval, maximum: TimeInterval) -> TimeInterval {
@@ -521,13 +641,21 @@ final class MetalViewerLauncher: NSObject {
                     continue
                 }
 
+                let buildStarted = CACurrentMediaTime()
                 let updatedStudy = buildStudy(
                     from: context.frames,
                     fallbackTitle: context.fallbackTitle,
                     forceDynamicInterpretation: context.forceDynamicInterpretation,
                     markScoutStudiesOpened: false
                 )
+                let applyStarted = CACurrentMediaTime()
                 controller.updatePatientStudy(updatedStudy)
+                MetalViewerRetrievalBenchmark.recordRefresh(
+                    frames: context.frames,
+                    imageCount: updatedStudy.series.reduce(0) { $0 + $1.imageCount },
+                    buildDuration: applyStarted - buildStarted,
+                    applyDuration: CACurrentMediaTime() - applyStarted
+                )
             }
         }
     }

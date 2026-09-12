@@ -42,64 +42,16 @@
 #import "DCMPix.h"
 #import "DICOMToNSString.h"
 #import "DicomDatabase+DCMTK.h"
-#include <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 
-typedef char* (*HorosModernDCMTKCopyGeneratedUIDFn)(void);
-typedef char* (*HorosModernDCMTKCopyFieldFn)(const char* path, const char* fieldName);
-typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
-
-static void* HorosDICOMExportBridgeHandle()
-{
-    static void* handle = NULL;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSBundle *bundle = [NSBundle mainBundle];
-        NSArray<NSString *> *basePaths = @[
-            bundle.resourcePath ?: @"",
-            bundle.privateFrameworksPath ?: @"",
-            bundle.sharedFrameworksPath ?: @"",
-            bundle.builtInPlugInsPath ?: @""
-        ];
-        NSArray<NSString *> *relativePaths = @[
-            @"libHorosModernDCMTKBridge.dylib",
-            @"DCMTK/libHorosModernDCMTKBridge.dylib"
-        ];
-
-        NSFileManager *fileManager = [NSFileManager defaultManager];
-        for (NSString *basePath in basePaths)
-        {
-            if (basePath.length == 0)
-                continue;
-
-            for (NSString *relativePath in relativePaths)
-            {
-                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
-                if ([fileManager fileExistsAtPath:candidate])
-                {
-                    handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-                    if (handle == NULL)
-                        NSLog(@"Modern DCMTK bridge failed to load at %@: %s", candidate, dlerror());
-                    return;
-                }
-            }
-        }
-    });
-    return handle;
-}
-
-template <typename FunctionType>
-static FunctionType HorosDICOMExportSymbol(const char* name)
-{
-    void* handle = HorosDICOMExportBridgeHandle();
-    if (handle == NULL)
-        return NULL;
-    return reinterpret_cast<FunctionType>(dlsym(handle, name));
-}
+typedef __typeof__(&HorosModernDCMTKCopyGeneratedUID) HorosModernDCMTKCopyGeneratedUIDFn;
+typedef __typeof__(&HorosModernDCMTKCopyField) HorosModernDCMTKCopyFieldFn;
+typedef __typeof__(&HorosModernDCMTKFreeString) HorosModernDCMTKFreeStringFn;
 
 static NSString* HorosDICOMExportGeneratedUID()
 {
     HorosModernDCMTKCopyGeneratedUIDFn copyUIDFn =
-        HorosDICOMExportSymbol<HorosModernDCMTKCopyGeneratedUIDFn>("HorosModernDCMTKCopyGeneratedUID");
+        HorosDCMTKFunction(HorosModernDCMTKCopyGeneratedUID);
     if (copyUIDFn == NULL)
         return nil;
 
@@ -109,7 +61,7 @@ static NSString* HorosDICOMExportGeneratedUID()
 
     NSString *string = [NSString stringWithUTF8String:value];
     HorosModernDCMTKFreeStringFn freeFn =
-        HorosDICOMExportSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+        HorosDCMTKFunction(HorosModernDCMTKFreeString);
     if (freeFn)
         freeFn(value);
     return string;
@@ -121,7 +73,7 @@ static NSString* HorosDICOMExportCopyField(NSString *path, NSString *fieldName)
         return nil;
 
     HorosModernDCMTKCopyFieldFn copyFieldFn =
-        HorosDICOMExportSymbol<HorosModernDCMTKCopyFieldFn>("HorosModernDCMTKCopyField");
+        HorosDCMTKFunction(HorosModernDCMTKCopyField);
     if (copyFieldFn == NULL)
         return nil;
 
@@ -131,7 +83,7 @@ static NSString* HorosDICOMExportCopyField(NSString *path, NSString *fieldName)
 
     NSString *string = [NSString stringWithUTF8String:value];
     HorosModernDCMTKFreeStringFn freeFn =
-        HorosDICOMExportSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+        HorosDCMTKFunction(HorosModernDCMTKFreeString);
     if (freeFn)
         freeFn(value);
 

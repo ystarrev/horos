@@ -45,46 +45,24 @@
 #import "N2Debug.h"
 #import "WaitRendering.h"
 
-#include <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 
 #define CHUNK_SUBPROCESS 200
 #define TIMEOUT 20UL
 
 // Maximum of 200 files: no more than 10 min...
 
-typedef int (*HorosModernDCMTKGetDecompressionInfoFn)(const char* path, int* isEncapsulated, unsigned short* rows, unsigned short* columns, char** modality, char** sopClassUID);
-typedef char* (*HorosModernDCMTKCopyFieldByTagFn)(const char* path, unsigned short group, unsigned short element);
-typedef int (*HorosModernDCMTKWriteFileInTransferSyntaxFn)(const char* inputPath, const char* outputPath, const char* transferSyntaxUID, int quality);
-typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
-
-static void* HorosModernDCMTKBridgeHandle()
-{
-    static void* handle = nullptr;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSString *bridgePath = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"libHorosModernDCMTKBridge.dylib"];
-        handle = dlopen(bridgePath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-        if (handle == nullptr)
-            NSLog(@"Modern DCMTK bridge unavailable at %@: %s", bridgePath, dlerror());
-    });
-    return handle;
-}
-
-template <typename FunctionType>
-static FunctionType HorosModernDCMTKSymbol(const char* name)
-{
-    void* handle = HorosModernDCMTKBridgeHandle();
-    if (handle == nullptr)
-        return nullptr;
-    return reinterpret_cast<FunctionType>(dlsym(handle, name));
-}
+typedef __typeof__(&HorosModernDCMTKGetDecompressionInfo) HorosModernDCMTKGetDecompressionInfoFn;
+typedef __typeof__(&HorosModernDCMTKCopyFieldByTag) HorosModernDCMTKCopyFieldByTagFn;
+typedef __typeof__(&HorosModernDCMTKWriteFileInTransferSyntax) HorosModernDCMTKWriteFileInTransferSyntaxFn;
+typedef __typeof__(&HorosModernDCMTKFreeString) HorosModernDCMTKFreeStringFn;
 
 static NSString* HorosModernDCMTKCopiedString(char* value)
 {
     if (value == nullptr)
         return nil;
 
-    HorosModernDCMTKFreeStringFn freeStringFn = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    HorosModernDCMTKFreeStringFn freeStringFn = HorosDCMTKFunction(HorosModernDCMTKFreeString);
     NSString *string = [NSString stringWithCString:value encoding:NSASCIIStringEncoding];
     if (freeStringFn)
         freeStringFn(value);
@@ -93,7 +71,7 @@ static NSString* HorosModernDCMTKCopiedString(char* value)
 
 static NSString* HorosModernDCMTKCopyTagString(NSString *sourcePath, unsigned short group, unsigned short element)
 {
-    HorosModernDCMTKCopyFieldByTagFn copyFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyFieldByTagFn>("HorosModernDCMTKCopyFieldByTag");
+    HorosModernDCMTKCopyFieldByTagFn copyFn = HorosDCMTKFunction(HorosModernDCMTKCopyFieldByTag);
     if (copyFn == nullptr)
         return nil;
 
@@ -102,7 +80,7 @@ static NSString* HorosModernDCMTKCopyTagString(NSString *sourcePath, unsigned sh
 
 static BOOL HorosModernDCMTKWriteTransferSyntax(NSString *sourcePath, NSString *destinationPath, NSString *transferSyntaxUID, int quality)
 {
-    HorosModernDCMTKWriteFileInTransferSyntaxFn writeFn = HorosModernDCMTKSymbol<HorosModernDCMTKWriteFileInTransferSyntaxFn>("HorosModernDCMTKWriteFileInTransferSyntax");
+    HorosModernDCMTKWriteFileInTransferSyntaxFn writeFn = HorosDCMTKFunction(HorosModernDCMTKWriteFileInTransferSyntax);
     if (writeFn == nullptr)
         return NO;
 
@@ -172,7 +150,7 @@ static BOOL HorosModernDCMTKProcessCompressedFile(NSString *sourcePath, NSString
     unsigned short columns = 0;
     char *modalityCString = nullptr;
     char *sopClassUIDCString = nullptr;
-    HorosModernDCMTKGetDecompressionInfoFn infoFn = HorosModernDCMTKSymbol<HorosModernDCMTKGetDecompressionInfoFn>("HorosModernDCMTKGetDecompressionInfo");
+    HorosModernDCMTKGetDecompressionInfoFn infoFn = HorosDCMTKFunction(HorosModernDCMTKGetDecompressionInfo);
     if (infoFn == nullptr || infoFn(sourcePath.fileSystemRepresentation, &isEncapsulated, &rows, &columns, &modalityCString, &sopClassUIDCString) == 0)
         return NO;
 
@@ -261,7 +239,7 @@ static BOOL HorosModernDCMTKDecompressFile(NSString *sourcePath, NSString *desti
 @implementation DicomDatabase (DCMTK)
 
 +(BOOL)fileNeedsDecompression:(NSString*)path {
-    HorosModernDCMTKGetDecompressionInfoFn bridgeFn = HorosModernDCMTKSymbol<HorosModernDCMTKGetDecompressionInfoFn>("HorosModernDCMTKGetDecompressionInfo");
+    HorosModernDCMTKGetDecompressionInfoFn bridgeFn = HorosDCMTKFunction(HorosModernDCMTKGetDecompressionInfo);
     if (bridgeFn)
     {
         int isEncapsulated = 0;

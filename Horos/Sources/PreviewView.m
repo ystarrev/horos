@@ -53,7 +53,7 @@
 #import <PreferencePanes/PreferencePanes.h>
 #import <UserNotifications/UserNotifications.h>
 #import "HorosSwiftInterop.h"
-#include <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 
 @class PreviewView;
 
@@ -61,64 +61,15 @@
 @property(nonatomic, assign) PreviewView *owner;
 @end
 
-typedef char* (*HorosModernDCMTKCopyStructuredReportHTMLFn)(const char* path);
-typedef char* (*HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn)(const char* path);
-typedef char* (*HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn)(const char* path);
-typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
+typedef __typeof__(&HorosModernDCMTKCopyStructuredReportHTML) HorosModernDCMTKCopyStructuredReportHTMLFn;
+typedef __typeof__(&HorosModernDCMTKCopyStructuredReportKeyObjectType) HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn;
+typedef __typeof__(&HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs) HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn;
+typedef __typeof__(&HorosModernDCMTKFreeString) HorosModernDCMTKFreeStringFn;
 
 static NSString * const PreviewROISeriesDescription = @"OsiriX ROI SR";
 static NSString * const PreviewTumourSeedROIName = @"Horos Tumour Seed";
 static NSString * const PreviewTumourSeedCommentPrefix = @"HorosMetalTumourSeed:";
 static NSString * const PreviewTumourSeedDisplayName = @"Tumour Seeds";
-
-static void* PreviewModernDCMTKBridgeHandle(void)
-{
-    static void* handle = NULL;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSBundle *bundle = [NSBundle mainBundle];
-        NSArray<NSString *> *basePaths = @[
-            bundle.resourcePath ?: @"",
-            bundle.privateFrameworksPath ?: @"",
-            bundle.sharedFrameworksPath ?: @"",
-            bundle.builtInPlugInsPath ?: @""
-        ];
-        NSArray<NSString *> *relativePaths = @[
-            @"libHorosModernDCMTKBridge.dylib",
-            @"DCMTK/libHorosModernDCMTKBridge.dylib"
-        ];
-
-        NSFileManager *fileManager = [NSFileManager defaultManager];
-        for (NSString *basePath in basePaths)
-        {
-            if (basePath.length == 0)
-                continue;
-
-            for (NSString *relativePath in relativePaths)
-            {
-                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
-                if ([fileManager fileExistsAtPath:candidate])
-                {
-                    handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-                    if (handle == NULL)
-                        NSLog(@"Modern DCMTK bridge failed to load at %@: %s", candidate, dlerror());
-                    return;
-                }
-            }
-        }
-
-        NSLog(@"Modern DCMTK bridge not found in bundle search paths.");
-    });
-    return handle;
-}
-
-static void* PreviewModernDCMTKSymbol(const char* name)
-{
-    void* handle = PreviewModernDCMTKBridgeHandle();
-    if (handle == NULL)
-        return NULL;
-    return dlsym(handle, name);
-}
 
 @implementation PreviewView
 {
@@ -616,8 +567,8 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     if (pix == nil || pix.srcFile.length == 0)
         return nil;
 
-    HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn copyTypeFn = (HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn)PreviewModernDCMTKSymbol("HorosModernDCMTKCopyStructuredReportKeyObjectType");
-    HorosModernDCMTKFreeStringFn freeFn = (HorosModernDCMTKFreeStringFn)PreviewModernDCMTKSymbol("HorosModernDCMTKFreeString");
+    HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn copyTypeFn = HorosDCMTKFunction(HorosModernDCMTKCopyStructuredReportKeyObjectType);
+    HorosModernDCMTKFreeStringFn freeFn = HorosDCMTKFunction(HorosModernDCMTKFreeString);
     if (copyTypeFn == NULL)
         return nil;
 
@@ -676,8 +627,8 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     if (pix == nil || pix.srcFile.length == 0)
         return @[];
 
-    HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn copyRefsFn = (HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn)PreviewModernDCMTKSymbol("HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs");
-    HorosModernDCMTKFreeStringFn freeFn = (HorosModernDCMTKFreeStringFn)PreviewModernDCMTKSymbol("HorosModernDCMTKFreeString");
+    HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn copyRefsFn = HorosDCMTKFunction(HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDs);
+    HorosModernDCMTKFreeStringFn freeFn = HorosDCMTKFunction(HorosModernDCMTKFreeString);
     if (copyRefsFn == NULL)
         return @[];
 
@@ -734,8 +685,8 @@ static void* PreviewModernDCMTKSymbol(const char* name)
     if (pix == nil || pix.srcFile.length == 0)
         return nil;
 
-    HorosModernDCMTKCopyStructuredReportHTMLFn renderFn = (HorosModernDCMTKCopyStructuredReportHTMLFn) PreviewModernDCMTKSymbol("HorosModernDCMTKCopyStructuredReportHTML");
-    HorosModernDCMTKFreeStringFn freeFn = (HorosModernDCMTKFreeStringFn) PreviewModernDCMTKSymbol("HorosModernDCMTKFreeString");
+    HorosModernDCMTKCopyStructuredReportHTMLFn renderFn = HorosDCMTKFunction(HorosModernDCMTKCopyStructuredReportHTML);
+    HorosModernDCMTKFreeStringFn freeFn = HorosDCMTKFunction(HorosModernDCMTKFreeString);
     if (renderFn == NULL)
         return nil;
 

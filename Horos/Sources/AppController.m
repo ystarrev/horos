@@ -2357,11 +2357,7 @@ static BOOL initialized = NO;
 				[[NSUserDefaults standardUserDefaults] setObject: NSLocalizedString( @"(Current User Documents folder)", nil) forKey:@"DefaultDatabasePath"];
 				#endif
 				
-				#ifdef __LP64__
 				[[NSUserDefaults standardUserDefaults] setBool:YES forKey: @"LP64bit"];
-				#else
-				[[NSUserDefaults standardUserDefaults] setBool:NO forKey: @"LP64bit"];
-				#endif
                 
 //                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_name"];
 //                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_id"];
@@ -2701,8 +2697,6 @@ static BOOL initialized = NO;
 		if( [[NSUserDefaults standardUserDefaults] boolForKey:@"RunListenerOnlyIfActive"])
 		{
 			NSLog( @"----- Horos : session activation: START DICOM LISTENER FOR THIS SESSION");
-			
-			// [[BrowserController currentBrowser] loadDatabase: [[BrowserController currentBrowser] currentDatabasePath]]; // TODO: hmm
 			
 			[self restartSTORESCP];
 		}

@@ -824,6 +824,7 @@ enum MetalSeriesTextureKind: UInt32 {
 }
 
 struct MetalStoredInt16PixelData {
+    let fileRevision: SwiftDICOMFileRevision?
     let data: Data
     let width: Int
     let height: Int
@@ -900,17 +901,21 @@ struct MetalStoredInt16PixelData {
 
     init?(pix: DCMPix) {
         guard let path = pix.srcFile?.trimmingCharacters(in: .whitespacesAndNewlines),
-              path.isEmpty == false,
-              let frame = SwiftDICOMReader.storedPixelFrame(
-                contentsOfFile: path,
-                frameIndex: max(Int(pix.frameNo), 0)
-              ) else {
+              path.isEmpty == false else {
             return nil
         }
-        self.init(dicomFrame: frame)
+        do {
+            let reader = try SwiftDICOMReader.cached(contentsOfFile: path)
+            let frame = try reader.storedPixelFrame(at: max(Int(pix.frameNo), 0))
+            self.init(dicomFrame: frame, fileRevision: reader.fileRevision)
+        } catch {
+            NSLog("SwiftDICOMReader: %@ (%@)", error.localizedDescription, path)
+            return nil
+        }
     }
 
-    fileprivate init(dicomFrame frame: SwiftDICOMStoredPixelFrame) {
+    fileprivate init(dicomFrame frame: SwiftDICOMStoredPixelFrame, fileRevision: SwiftDICOMFileRevision? = nil) {
+        self.fileRevision = fileRevision
         data = frame.data
         width = frame.width
         height = frame.height
@@ -933,8 +938,10 @@ struct MetalStoredInt16PixelData {
         rescaleIntercept: Float,
         isSigned: Bool,
         pixelSpacing: SIMD2<Float>,
-        defaultWindow: MetalViewerWindowLevel?
+        defaultWindow: MetalViewerWindowLevel?,
+        fileRevision: SwiftDICOMFileRevision? = nil
     ) {
+        self.fileRevision = fileRevision
         self.data = data
         self.width = width
         self.height = height
@@ -981,7 +988,137 @@ private final class MetalSwiftDICOMSeriesPixelDecoder {
               let frame = try? reader.storedPixelFrame(at: max(Int(pix.frameNo), 0)) else {
             return nil
         }
-        return MetalStoredInt16PixelData(dicomFrame: frame)
+        return MetalStoredInt16PixelData(dicomFrame: frame, fileRevision: reader.fileRevision)
+    }
+}
+
+struct MetalViewerImageMetadata {
+    let annotations: [String: Any]
+    let laterality: String?
+    let viewPosition: String?
+    let patientPosition: String?
+    let voiLUTApplied: Bool
+
+    init(pix: DCMPix) {
+        annotations = pix.preparedDisplayAnnotations() as? [String: Any] ?? [:]
+        let reader: SwiftDICOMReader?
+        if let path = pix.srcFile {
+            reader = try? SwiftDICOMReader.cached(contentsOfFile: path)
+        } else {
+            reader = nil
+        }
+        laterality = reader?.stringValue(forTag: "0020,0062")
+            ?? reader?.stringValue(forTag: "0020,0060") ?? pix.laterality
+        viewPosition = reader?.stringValue(forTag: "0018,5101") ?? pix.viewPosition
+        patientPosition = reader?.stringValue(forTag: "0018,5100") ?? pix.patientPosition
+        voiLUTApplied = (pix.value(forKey: "VOILUTApplied") as? Bool) ?? false
+    }
+}
+
+final class MetalPreparedStackSlice {
+    let pixels: MetalStoredInt16PixelData
+    let geometry: MetalViewerSliceGeometry?
+    let metadata: MetalViewerImageMetadata
+    let textureEntry: MetalSeriesTextureCache.Entry
+
+    init(pixels: MetalStoredInt16PixelData, geometry: MetalViewerSliceGeometry?,
+         metadata: MetalViewerImageMetadata, textureEntry: MetalSeriesTextureCache.Entry) {
+        self.pixels = pixels
+        self.geometry = geometry
+        self.metadata = metadata
+        self.textureEntry = textureEntry
+    }
+}
+
+// One worker per viewer; obsolete requests and speculative neighbours never
+// accumulate behind a fast scroll. All file checks and preparation run here.
+final class MetalStackSliceLoader: @unchecked Sendable {
+    // Accessed only by the serial worker; weak keys do not keep old series alive.
+    private let annotationRevisions = NSMapTable<DCMPix, NSString>.weakToStrongObjects()
+    private var annotationPreferences: NSDictionary?
+    private let queue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "org.horos.metalviewer.scroll-slices"
+        queue.qualityOfService = .userInitiated
+        queue.maxConcurrentOperationCount = 1
+        return queue
+    }()
+    private let cache: NSCache<NSString, MetalPreparedStackSlice> = {
+        let cache = NSCache<NSString, MetalPreparedStackSlice>()
+        cache.countLimit = 8
+        cache.totalCostLimit = 32 * 1_024 * 1_024
+        return cache
+    }()
+
+    func cancel() {
+        queue.cancelAllOperations()
+    }
+
+    func request(index: Int, pixList: [DCMPix], device: MTLDevice,
+                 volume: MetalSeriesTextureCache.Entry?,
+                 completion: @escaping (MetalPreparedStackSlice?) -> Void) {
+        cancel()
+        for offset in [0, 1, -1, 2, -2] {
+            let sliceIndex = index + offset
+            guard pixList.indices.contains(sliceIndex) else { continue }
+            let pix = pixList[sliceIndex]
+            let operation = BlockOperation()
+            operation.queuePriority = offset == 0 ? .veryHigh : .low
+            operation.addExecutionBlock { [weak self, weak operation] in
+                guard let self, let operation, operation.isCancelled == false else { return }
+                let prepared = autoreleasepool {
+                    self.prepare(pix: pix, index: sliceIndex, device: device, volume: volume)
+                }
+                guard offset == 0, operation.isCancelled == false else { return }
+                DispatchQueue.main.async {
+                    guard operation.isCancelled == false else { return }
+                    completion(prepared)
+                }
+            }
+            queue.addOperation(operation)
+        }
+    }
+
+    private func prepare(pix: DCMPix, index: Int, device: MTLDevice,
+                         volume: MetalSeriesTextureCache.Entry?) -> MetalPreparedStackSlice? {
+        guard let path = pix.srcFile,
+              let revision = SwiftDICOMFileRevision(contentsOfFile: path) else { return nil }
+        let frame = max(Int(pix.frameNo), 0)
+        let key = "\(ObjectIdentifier(pix))|\(revision.cacheKey)|frame=\(frame)|device=\(device.registryID)" as NSString
+        let cached = cache.object(forKey: key)
+        guard let reader = try? SwiftDICOMReader.cached(contentsOfFile: path),
+              reader.fileRevision == revision,
+              let width = reader.integerValue(forTag: "0028,0011"), width > 0,
+              let height = reader.integerValue(forTag: "0028,0010"), height > 0 else { return nil }
+        let geometry = cached?.geometry ?? MetalViewerSliceGeometry(pix: pix)
+        let volumePixels = cached == nil ? geometry.flatMap {
+            volume?.storedSlice(at: index, reader: reader, geometry: $0)
+        } : nil
+        guard let pixels = cached?.pixels ?? volumePixels
+                ?? MetalStoredInt16PixelData(pix: pix),
+              pixels.fileRevision == revision,
+              pixels.width == width, pixels.height == height,
+              let texture = cached?.textureEntry ?? MetalViewerRenderer.makeImmediateStackSliceTextureEntry(
+                from: pixels, pix: pix, index: index, device: device
+              ) else { return nil }
+
+        // Refresh the annotation snapshot even on a pixel-cache hit, so changes
+        // to the configured layout or DCMPix's annotation state are respected.
+        let preferences = UserDefaults.standard.dictionary(forKey: "CUSTOM_IMAGE_ANNOTATIONS") as NSDictionary?
+        if preferences != annotationPreferences {
+            annotationPreferences = preferences
+            annotationRevisions.removeAllObjects()
+        }
+        if annotationRevisions.object(forKey: pix) as String? != revision.cacheKey {
+            pix.reloadAnnotations()
+        }
+        let metadata = MetalViewerImageMetadata(pix: pix)
+        guard revision == SwiftDICOMFileRevision(contentsOfFile: path) else { return nil }
+        annotationRevisions.setObject(revision.cacheKey as NSString, forKey: pix)
+        let prepared = MetalPreparedStackSlice(pixels: pixels, geometry: geometry,
+                                               metadata: metadata, textureEntry: texture)
+        cache.setObject(prepared, forKey: key, cost: pixels.byteCount + texture.byteCount)
+        return prepared
     }
 }
 
@@ -1022,6 +1159,20 @@ final class MetalSeriesTextureCache {
         let pixels: MetalStoredInt16PixelData
     }
 
+    // Keep the identity, slice list, and device together throughout a lookup.
+    struct Request {
+        let key: String
+        fileprivate let pixList: [DCMPix]
+        fileprivate let device: MTLDevice
+        fileprivate let sourceRevisions: [String: SwiftDICOMFileRevision]
+
+        fileprivate var sourcesAreCurrent: Bool {
+            sourceRevisions.allSatisfy { path, revision in
+                revision == SwiftDICOMFileRevision(contentsOfFile: path)
+            }
+        }
+    }
+
     final class Entry {
         let key: String
         let texture: MTLTexture
@@ -1032,6 +1183,8 @@ final class MetalSeriesTextureCache {
         let rescaleIntercept: Float
         let defaultWindow: MetalViewerWindowLevel
         let fullDynamicWindow: MetalViewerWindowLevel
+        let sourceRevisions: [String: SwiftDICOMFileRevision]
+        let substitutedSliceIndexes: Set<Int>
 
         init(
             key: String,
@@ -1042,7 +1195,9 @@ final class MetalSeriesTextureCache {
             rescaleSlope: Float = 1,
             rescaleIntercept: Float = 0,
             defaultWindow: MetalViewerWindowLevel = MetalViewerWindowLevel(level: 0, width: 1),
-            fullDynamicWindow: MetalViewerWindowLevel = MetalViewerWindowLevel(level: 0, width: 1)
+            fullDynamicWindow: MetalViewerWindowLevel = MetalViewerWindowLevel(level: 0, width: 1),
+            sourceRevisions: [String: SwiftDICOMFileRevision] = [:],
+            substitutedSliceIndexes: Set<Int> = []
         ) {
             self.key = key
             self.texture = texture
@@ -1052,7 +1207,37 @@ final class MetalSeriesTextureCache {
             self.rescaleIntercept = rescaleIntercept
             self.defaultWindow = defaultWindow
             self.fullDynamicWindow = fullDynamicWindow
+            self.sourceRevisions = sourceRevisions
+            self.substitutedSliceIndexes = substitutedSliceIndexes
             self.byteCount = max(dimensions.x, 1) * max(dimensions.y, 1) * max(dimensions.z, 1) * max(bytesPerVoxel, 1)
+        }
+
+        // Published stored-pixel volumes are CPU-readable and immutable. Reuse
+        // their pixels for scrolling/readouts instead of decompressing again.
+        func storedSlice(at index: Int, reader: SwiftDICOMReader, geometry: MetalViewerSliceGeometry) -> MetalStoredInt16PixelData? {
+            guard sourceRevisions[reader.sourcePath] == reader.fileRevision,
+                  substitutedSliceIndexes.contains(index) == false,
+                  texture.storageMode == .shared,
+                  textureKind != .rescaledFloat,
+                  dimensions.x == Int(geometry.width), dimensions.y == Int(geometry.height),
+                  index >= 0, index < dimensions.z else { return nil }
+            let bytesPerRow = dimensions.x * MemoryLayout<UInt16>.stride
+            var data = Data(count: bytesPerRow * dimensions.y)
+            let byteCount = data.count
+            data.withUnsafeMutableBytes { buffer in
+                guard let address = buffer.baseAddress else { return }
+                texture.getBytes(address, bytesPerRow: bytesPerRow, bytesPerImage: byteCount,
+                                 from: MTLRegionMake3D(0, 0, index, dimensions.x, dimensions.y, 1),
+                                 mipmapLevel: 0, slice: 0)
+            }
+            return MetalStoredInt16PixelData(
+                data: data, width: dimensions.x, height: dimensions.y,
+                bitsStored: reader.integerValue(forTag: "0028,0101") ?? 16,
+                rescaleSlope: rescaleSlope, rescaleIntercept: rescaleIntercept,
+                isSigned: textureKind == .storedInt16Signed,
+                pixelSpacing: SIMD2<Float>(Float(geometry.spacingX), Float(geometry.spacingY)),
+                defaultWindow: defaultWindow, fileRevision: reader.fileRevision
+            )
         }
     }
 
@@ -1067,7 +1252,8 @@ final class MetalSeriesTextureCache {
         return queue
     }()
     private let maximumEntryCount = 3
-    private let maximumCachedBytes = 1_500_000_000
+    private let maximumCachedBytes = MetalViewerCachePolicy.volumeCacheBytes
+    private let maximumVolumeTextureBytes = 1_500_000_000
     private let maximumUnavailableStoredInt16Count = 128
     private var entries: [String: Entry] = [:]
     private var accessOrder: [String] = []
@@ -1075,16 +1261,28 @@ final class MetalSeriesTextureCache {
     private var unavailableStoredInt16Keys: Set<String> = []
     private var unavailableStoredInt16Order: [String] = []
     private var cachedByteCount = 0
+    private var isUnderMemoryPressure = false
+    private var memoryPressureObserver: MetalViewerCacheMemoryPressureObserver?
 
-    private init() {}
+    private init() {
+        memoryPressureObserver = MetalViewerCacheMemoryPressureObserver { [weak self] constrained in
+            self?.handleMemoryPressure(constrained)
+        }
+    }
 
-    func key(
+    private func handleMemoryPressure(_ constrained: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        isUnderMemoryPressure = constrained
+    }
+
+    func makeRequest(
         for pixList: [DCMPix],
         device: MTLDevice
-    ) -> String? {
-        guard pixList.isEmpty == false,
+    ) -> Request? {
+        guard let firstPix = pixList.first,
               pixList.contains(where: Self.isDICOMSegmentation) == false,
-              let dimensions = pixList.compactMap({ dimensionsWithoutLoading(for: $0) }).first else {
+              let dimensions = dimensionsWithoutLoading(for: firstPix) else {
             return nil
         }
 
@@ -1092,12 +1290,7 @@ final class MetalSeriesTextureCache {
         let height = dimensions.height
         guard width > 0, height > 0 else { return nil }
 
-        let deviceKey: String
-        if #available(macOS 10.13, *) {
-            deviceKey = "\(device.registryID)"
-        } else {
-            deviceKey = device.name
-        }
+        let deviceKey = "\(device.registryID)"
         var components: [String] = [
             "device=\(deviceKey)",
             "storage=stored-int16",
@@ -1105,15 +1298,20 @@ final class MetalSeriesTextureCache {
         ]
         components.reserveCapacity(pixList.count + 2)
 
+        var sourceRevisions: [String: SwiftDICOMFileRevision] = [:]
         for (index, pix) in pixList.enumerated() {
             let sourcePath = nonEmptyString(pix.value(forKey: "srcFile") as? String)
                 ?? nonEmptyString(pix.srcFile)
-                ?? "object:\(ObjectIdentifier(pix))"
+            guard let sourcePath,
+                  let revision = sourceRevisions[sourcePath]
+                    ?? SwiftDICOMFileRevision(contentsOfFile: sourcePath) else { return nil }
+            sourceRevisions[sourcePath] = revision
             let frameNumber = (pix.value(forKey: "frameNo") as? NSNumber)?.intValue ?? 0
-            components.append("\(index):\(sourcePath):f\(frameNumber)")
+            components.append("\(index):\(revision.cacheKey):f\(frameNumber)")
         }
 
-        return components.joined(separator: "|")
+        return Request(key: components.joined(separator: "|"), pixList: pixList, device: device,
+                       sourceRevisions: sourceRevisions)
     }
 
     private static func isDICOMSegmentation(_ pix: DCMPix) -> Bool {
@@ -1126,12 +1324,8 @@ final class MetalSeriesTextureCache {
             == "1.2.840.10008.5.1.4.1.1.66.4"
     }
 
-    func cachedEntry(
-        for pixList: [DCMPix],
-        device: MTLDevice
-    ) -> Entry? {
-        guard let key = key(for: pixList, device: device) else { return nil }
-
+    func cachedEntry(for request: Request) -> Entry? {
+        let key = request.key
         lock.lock()
         defer { lock.unlock() }
 
@@ -1140,17 +1334,10 @@ final class MetalSeriesTextureCache {
         return entry
     }
 
-    func isEntryKnownUnavailable(
-        for pixList: [DCMPix],
-        device: MTLDevice
-    ) -> Bool {
-        guard let key = key(for: pixList, device: device) else {
-            return false
-        }
-
+    func isEntryKnownUnavailable(for request: Request) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        return unavailableStoredInt16Keys.contains(key)
+        return unavailableStoredInt16Keys.contains(request.key)
     }
 
     func requestEntry(
@@ -1159,13 +1346,22 @@ final class MetalSeriesTextureCache {
         decodedSliceSeed: DecodedSliceSeed? = nil,
         completion: @escaping (Entry?) -> Void
     ) {
-        guard let key = key(for: pixList, device: device) else {
+        guard let request = makeRequest(for: pixList, device: device) else {
             DispatchQueue.main.async {
                 completion(nil)
             }
             return
         }
 
+        requestEntry(for: request, decodedSliceSeed: decodedSliceSeed, completion: completion)
+    }
+
+    func requestEntry(
+        for request: Request,
+        decodedSliceSeed: DecodedSliceSeed? = nil,
+        completion: @escaping (Entry?) -> Void
+    ) {
+        let key = request.key
         lock.lock()
         if unavailableStoredInt16Keys.contains(key) {
             lock.unlock()
@@ -1193,16 +1389,19 @@ final class MetalSeriesTextureCache {
         inFlightCompletions[key] = [completion]
         lock.unlock()
 
-        let buildPixList = pixList
         buildQueue.addOperation { [weak self] in
             guard let self else { return }
-            let entry = autoreleasepool {
-                self.buildEntry(
+            let entry = autoreleasepool { () -> Entry? in
+                guard request.sourcesAreCurrent else { return nil }
+                let entry = self.buildEntry(
                     key: key,
-                    pixList: buildPixList,
-                    device: device,
-                    decodedSliceSeed: decodedSliceSeed
+                    pixList: request.pixList,
+                    device: request.device,
+                    decodedSliceSeed: decodedSliceSeed,
+                    sourceRevisions: request.sourceRevisions
                 )
+                guard request.sourcesAreCurrent else { return nil }
+                return entry
             }
             self.finishRequest(key: key, entry: entry)
         }
@@ -1212,13 +1411,15 @@ final class MetalSeriesTextureCache {
         key: String,
         pixList: [DCMPix],
         device: MTLDevice,
-        decodedSliceSeed: DecodedSliceSeed?
+        decodedSliceSeed: DecodedSliceSeed?,
+        sourceRevisions: [String: SwiftDICOMFileRevision]
     ) -> Entry? {
         buildStoredInt16Entry(
             key: key,
             pixList: pixList,
             device: device,
-            decodedSliceSeed: decodedSliceSeed
+            decodedSliceSeed: decodedSliceSeed,
+            sourceRevisions: sourceRevisions
         )
     }
 
@@ -1226,12 +1427,16 @@ final class MetalSeriesTextureCache {
         key: String,
         pixList: [DCMPix],
         device: MTLDevice,
-        decodedSliceSeed: DecodedSliceSeed?
+        decodedSliceSeed: DecodedSliceSeed?,
+        sourceRevisions: [String: SwiftDICOMFileRevision]
     ) -> Entry? {
         let seriesDecoder = MetalSwiftDICOMSeriesPixelDecoder(pixList: pixList)
         let decodedSliceSeed = decodedSliceSeed.flatMap { seed -> DecodedSliceSeed? in
             guard pixList.indices.contains(seed.index),
-                  pixList[seed.index] === seed.pix else {
+                  pixList[seed.index] === seed.pix,
+                  let path = seed.pix.srcFile,
+                  let revision = seed.pixels.fileRevision,
+                  revision == SwiftDICOMFileRevision(contentsOfFile: path) else {
                 return nil
             }
             return seed
@@ -1292,6 +1497,7 @@ final class MetalSeriesTextureCache {
         }
 
         let remainingSlicesLoaded: Bool
+        var substitutedSliceIndexes = Set<Int>()
         if seriesDecoder == nil, pixList.count > 2 {
             remainingSlicesLoaded = loadStoredInt16SlicesConcurrently(
                 pixList: pixList,
@@ -1301,7 +1507,8 @@ final class MetalSeriesTextureCache {
                 width: width,
                 height: height,
                 bytesPerRow: bytesPerRow,
-                bytesPerImage: bytesPerImage
+                bytesPerImage: bytesPerImage,
+                substitutedSliceIndexes: &substitutedSliceIndexes
             )
         } else {
             remainingSlicesLoaded = loadStoredInt16SlicesSerially(
@@ -1327,7 +1534,9 @@ final class MetalSeriesTextureCache {
             rescaleSlope: firstSlice.rescaleSlope,
             rescaleIntercept: firstSlice.rescaleIntercept,
             defaultWindow: firstSlice.inferredWindow,
-            fullDynamicWindow: firstSlice.storedRangeWindow
+            fullDynamicWindow: firstSlice.storedRangeWindow,
+            sourceRevisions: sourceRevisions,
+            substitutedSliceIndexes: substitutedSliceIndexes
         )
     }
 
@@ -1379,7 +1588,8 @@ final class MetalSeriesTextureCache {
         width: Int,
         height: Int,
         bytesPerRow: Int,
-        bytesPerImage: Int
+        bytesPerImage: Int,
+        substitutedSliceIndexes: inout Set<Int>
     ) -> Bool {
         let sliceCount = pixList.count - 1
         let workerCount = min(
@@ -1516,6 +1726,7 @@ final class MetalSeriesTextureCache {
         }
 
         let missingSliceSet = Set(missingSliceIndexes)
+        substitutedSliceIndexes = missingSliceSet
         for missingSliceIndex in missingSliceIndexes {
             guard let replacement = nearestDecodableStoredInt16Slice(
                     to: missingSliceIndex,
@@ -1602,8 +1813,8 @@ final class MetalSeriesTextureCache {
         }
 
         let byteCount = width * height * depth * bytesPerVoxel
-        guard byteCount <= maximumCachedBytes else {
-            NSLog("%@", "MetalSeriesTextureCache: skipping stored-int16 \(width)x\(height)x\(depth) volume; \(byteCount) bytes exceeds the volume texture cache limit")
+        guard byteCount <= maximumVolumeTextureBytes else {
+            NSLog("%@", "MetalSeriesTextureCache: skipping stored-int16 \(width)x\(height)x\(depth) volume; \(byteCount) bytes exceeds the volume texture allocation limit")
             return false
         }
 
@@ -1611,6 +1822,13 @@ final class MetalSeriesTextureCache {
     }
 
     private func dimensionsWithoutLoading(for pix: DCMPix) -> SliceDimensions? {
+        if let path = pix.srcFile,
+           let reader = try? SwiftDICOMReader.cached(contentsOfFile: path),
+           let width = reader.integerValue(forTag: "0028,0011"),
+           let height = reader.integerValue(forTag: "0028,0010"),
+           width > 0, height > 0 {
+            return SliceDimensions(width: width, height: height)
+        }
         let width = Int(pix.widthWithoutLoading())
         let height = Int(pix.heightWithoutLoading())
         guard width > 0, height > 0 else { return nil }
@@ -1645,11 +1863,15 @@ final class MetalSeriesTextureCache {
     private func finishRequest(key: String, entry: Entry?) {
         lock.lock()
         if let entry {
-            entries[key] = entry
-            cachedByteCount += entry.byteCount
             clearStoredInt16UnavailableLocked(key)
-            markAccessedLocked(key)
-            trimLocked(keeping: key)
+            if isUnderMemoryPressure == false, entry.byteCount <= maximumCachedBytes {
+                if let previous = entries.updateValue(entry, forKey: key) {
+                    cachedByteCount -= previous.byteCount
+                }
+                cachedByteCount += entry.byteCount
+                markAccessedLocked(key)
+                trimLocked()
+            }
         } else {
             markStoredInt16UnavailableLocked(key)
         }
@@ -1684,12 +1906,9 @@ final class MetalSeriesTextureCache {
         unavailableStoredInt16Order.removeAll { $0 == key }
     }
 
-    private func trimLocked(keeping newestKey: String) {
-        while accessOrder.count > maximumEntryCount || (cachedByteCount > maximumCachedBytes && accessOrder.count > 1) {
+    private func trimLocked() {
+        while accessOrder.count > maximumEntryCount || cachedByteCount > maximumCachedBytes {
             guard let key = accessOrder.first else { return }
-            if key == newestKey, accessOrder.count == 1 {
-                return
-            }
             accessOrder.removeFirst()
             if let removed = entries.removeValue(forKey: key) {
                 cachedByteCount -= removed.byteCount
@@ -2729,6 +2948,8 @@ private struct MetalDICOMFrameGeometryMetadata {
     let row: SIMD3<Double>
     let column: SIMD3<Double>
     let normal: SIMD3<Double>
+    let width: Int
+    let height: Int
     let spacingX: Double
     let spacingY: Double
     let sliceThickness: Double
@@ -2748,9 +2969,10 @@ private final class MetalDICOMFrameGeometryCache {
     private init() {}
 
     func metadata(for pix: DCMPix) -> MetalDICOMFrameGeometryMetadata? {
-        guard let path = nonEmpty(pix.srcFile) else { return nil }
+        guard let path = nonEmpty(pix.srcFile),
+              let revision = SwiftDICOMFileRevision(contentsOfFile: path) else { return nil }
         let frameIndex = max(Int(pix.frameNo), 0)
-        let key = "\(path)|frame=\(frameIndex)"
+        let key = "\(revision.cacheKey)|frame=\(frameIndex)"
 
         lock.lock()
         if let entry = entries[key] {
@@ -2764,11 +2986,12 @@ private final class MetalDICOMFrameGeometryCache {
         lock.unlock()
 
         guard let reader = try? SwiftDICOMReader.cached(contentsOfFile: path),
+              reader.fileRevision == revision,
               let attributes = reader.frameGeometryAttributes(at: frameIndex),
               let metadata = Self.metadata(
             attributes: attributes,
-            width: max(Int(pix.widthWithoutLoading()), 1),
-            height: max(Int(pix.heightWithoutLoading()), 1)
+            width: max(reader.integerValue(forTag: "0028,0011") ?? Int(pix.widthWithoutLoading()), 1),
+            height: max(reader.integerValue(forTag: "0028,0010") ?? Int(pix.heightWithoutLoading()), 1)
         ) else {
             lock.lock()
             unavailableKeys.insert(key)
@@ -2826,6 +3049,8 @@ private final class MetalDICOMFrameGeometryCache {
             row: row,
             column: column,
             normal: normal,
+            width: width,
+            height: height,
             spacingX: attributes.spacingX,
             spacingY: attributes.spacingY,
             sliceThickness: attributes.sliceThickness,
@@ -2866,8 +3091,8 @@ struct MetalViewerSliceGeometry: Sendable {
         self.normal = metadata.normal
         self.spacingX = metadata.spacingX
         self.spacingY = metadata.spacingY
-        self.width = max(Double(pix.widthWithoutLoading()), 1)
-        self.height = max(Double(pix.heightWithoutLoading()), 1)
+        self.width = Double(metadata.width)
+        self.height = Double(metadata.height)
         self.origin = metadata.origin
         self.sliceThickness = metadata.sliceThickness
         self.spacingBetweenSlices = metadata.spacingBetweenSlices
@@ -3193,6 +3418,28 @@ struct MetalPreparedVolumeLevel {
     let texture: MTLTexture
     let dimensions: SIMD3<Int>
     let voxelToWorld: simd_float4x4
+    let worldToVoxel: simd_float4x4
+    let textureDimensions: SIMD3<Int>
+    let textureDimensionsUInt32: SIMD3<UInt32>
+    let physicalCoverage: Float
+
+    init(texture: MTLTexture, dimensions: SIMD3<Int>, voxelToWorld: simd_float4x4) {
+        self.texture = texture
+        self.dimensions = dimensions
+        self.voxelToWorld = voxelToWorld
+        self.worldToVoxel = simd_inverse(voxelToWorld)
+        self.textureDimensions = SIMD3<Int>(texture.width, texture.height, texture.depth)
+        self.textureDimensionsUInt32 = SIMD3<UInt32>(
+            UInt32(texture.width), UInt32(texture.height), UInt32(texture.depth)
+        )
+        let spacing = MetalViewerGantryTiltGeometry.voxelSpacing(from: voxelToWorld)
+        let size = SIMD3<Float>(
+            Float(max(dimensions.x, 1)) * spacing.x,
+            Float(max(dimensions.y, 1)) * spacing.y,
+            Float(max(dimensions.z, 1)) * spacing.z
+        )
+        self.physicalCoverage = max(size.x * size.y * size.z, 0.0001)
+    }
 }
 
 final class MetalPreparedVolumeCache {
@@ -3274,23 +3521,18 @@ final class MetalPreparedVolumeCache {
         let downsample: MTLComputePipelineState
 
         init?(device: MTLDevice) {
-            guard let commandQueue = device.makeCommandQueue(),
-                  let library = device.makeDefaultLibrary(),
-                  let convertSignedFunction = library.makeFunction(name: "metalViewerConvertStoredSigned3D"),
-                  let convertUnsignedFunction = library.makeFunction(name: "metalViewerConvertStoredUnsigned3D"),
-                  let resampleFunction = library.makeFunction(name: "metalViewerGantryTiltResample3D"),
-                  let gaussianBlurFunction = library.makeFunction(name: "metalViewerGaussianBlur3D"),
-                  let downsampleFunction = library.makeFunction(name: "metalViewerDownsample3D") else {
+            guard let commandQueue = device.makeCommandQueue() else {
                 return nil
             }
 
             do {
+                let pipelines = try MetalPipelineCache.shared(for: device)
                 self.commandQueue = commandQueue
-                self.convertSigned = try device.makeComputePipelineState(function: convertSignedFunction)
-                self.convertUnsigned = try device.makeComputePipelineState(function: convertUnsignedFunction)
-                self.resample = try device.makeComputePipelineState(function: resampleFunction)
-                self.gaussianBlur = try device.makeComputePipelineState(function: gaussianBlurFunction)
-                self.downsample = try device.makeComputePipelineState(function: downsampleFunction)
+                self.convertSigned = try pipelines.computePipeline(function: "metalViewerConvertStoredSigned3D")
+                self.convertUnsigned = try pipelines.computePipeline(function: "metalViewerConvertStoredUnsigned3D")
+                self.resample = try pipelines.computePipeline(function: "metalViewerGantryTiltResample3D")
+                self.gaussianBlur = try pipelines.computePipeline(function: "metalViewerGaussianBlur3D")
+                self.downsample = try pipelines.computePipeline(function: "metalViewerDownsample3D")
             } catch {
                 return nil
             }
@@ -3306,14 +3548,26 @@ final class MetalPreparedVolumeCache {
         return queue
     }()
     private let maximumEntryCount = 3
-    private let maximumCachedBytes = 1_500_000_000
+    private let maximumCachedBytes = MetalViewerCachePolicy.volumeCacheBytes
     private var pipelinesByDevice: [UInt64: Pipelines] = [:]
     private var entries: [String: Entry] = [:]
     private var accessOrder: [String] = []
     private var cachedByteCount = 0
     private var inFlightCompletions: [String: [(Entry?) -> Void]] = [:]
+    private var isUnderMemoryPressure = false
+    private var memoryPressureObserver: MetalViewerCacheMemoryPressureObserver?
 
-    private init() {}
+    private init() {
+        memoryPressureObserver = MetalViewerCacheMemoryPressureObserver { [weak self] constrained in
+            self?.handleMemoryPressure(constrained)
+        }
+    }
+
+    private func handleMemoryPressure(_ constrained: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        isUnderMemoryPressure = constrained
+    }
 
     func key(
         for sourceEntry: MetalSeriesTextureCache.Entry,
@@ -3765,13 +4019,13 @@ final class MetalPreparedVolumeCache {
                entry.hasRegistrationPyramid == false {
                 resolvedEntry = current
                 markAccessedLocked(key)
-            } else {
+            } else if isUnderMemoryPressure == false, entry.byteCount <= maximumCachedBytes {
                 if let previous = entries.updateValue(entry, forKey: key) {
                     cachedByteCount -= previous.byteCount
                 }
                 cachedByteCount += entry.byteCount
                 markAccessedLocked(key)
-                trimLocked(keeping: key)
+                trimLocked()
             }
         }
         let completions = inFlightCompletions.removeValue(forKey: requestKey) ?? []
@@ -3790,10 +4044,9 @@ final class MetalPreparedVolumeCache {
         accessOrder.append(key)
     }
 
-    private func trimLocked(keeping newestKey: String) {
-        while accessOrder.count > maximumEntryCount || (cachedByteCount > maximumCachedBytes && accessOrder.count > 1) {
+    private func trimLocked() {
+        while accessOrder.count > maximumEntryCount || cachedByteCount > maximumCachedBytes {
             guard let key = accessOrder.first else { return }
-            if key == newestKey, accessOrder.count == 1 { return }
             accessOrder.removeFirst()
             if let removed = entries.removeValue(forKey: key) {
                 cachedByteCount -= removed.byteCount

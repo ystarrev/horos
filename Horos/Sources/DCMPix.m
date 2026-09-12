@@ -56,7 +56,7 @@
 #import "HorosDICOMMetadata.h"
 #import "ModernDCMTKBridge.h"
 #include <signal.h>
-#include <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 #include <stdint.h>
 
 #ifdef OSIRIX_VIEWER
@@ -82,63 +82,11 @@
 #include "NSFileManager+N2.h"
 #import "math.h"
 
-typedef int (*HorosDCMPixModernDCMTKCopyDecodedFrameFunction)(const char*, unsigned long, HorosModernDCMTKDecodedFrame*);
-typedef void (*HorosDCMPixModernDCMTKFreeDecodedFrameFunction)(HorosModernDCMTKDecodedFrame*);
-typedef char* (*HorosDCMPixModernDCMTKCopyFieldByTagFunction)(const char*, unsigned short, unsigned short);
-typedef void (*HorosDCMPixModernDCMTKFreeStringFunction)(char*);
+typedef __typeof__(&HorosModernDCMTKCopyDecodedFrame) HorosDCMPixModernDCMTKCopyDecodedFrameFunction;
+typedef __typeof__(&HorosModernDCMTKFreeDecodedFrame) HorosDCMPixModernDCMTKFreeDecodedFrameFunction;
+typedef __typeof__(&HorosModernDCMTKCopyFieldByTag) HorosDCMPixModernDCMTKCopyFieldByTagFunction;
+typedef __typeof__(&HorosModernDCMTKFreeString) HorosDCMPixModernDCMTKFreeStringFunction;
 
-static void* HorosDCMPixModernDCMTKBridgeHandle(void)
-{
-    static void* handle = NULL;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSBundle *bundle = [NSBundle mainBundle];
-        NSArray<NSString *> *basePaths = @[
-            bundle.resourcePath ?: @"",
-            bundle.privateFrameworksPath ?: @"",
-            bundle.sharedFrameworksPath ?: @"",
-            bundle.builtInPlugInsPath ?: @""
-        ];
-        NSArray<NSString *> *relativePaths = @[
-            @"libHorosModernDCMTKBridge.dylib",
-            @"DCMTK/libHorosModernDCMTKBridge.dylib"
-        ];
-        NSString *resolvedPath = nil;
-        NSFileManager *fileManager = [NSFileManager defaultManager];
-        for (NSString *basePath in basePaths)
-        {
-            if (basePath.length == 0)
-                continue;
-            for (NSString *relativePath in relativePaths)
-            {
-                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
-                if ([fileManager fileExistsAtPath:candidate])
-                {
-                    resolvedPath = candidate;
-                    break;
-                }
-            }
-            if (resolvedPath)
-                break;
-        }
-
-        if (resolvedPath)
-        {
-            handle = dlopen(resolvedPath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-        }
-    });
-
-    return handle;
-}
-
-static void* HorosDCMPixModernDCMTKSymbol(const char* name)
-{
-    void* handle = HorosDCMPixModernDCMTKBridgeHandle();
-    if (handle == NULL)
-        return NULL;
-    void *symbol = dlsym(handle, name);
-    return symbol;
-}
 #import "DICOMToNSString.h"
 
 //#include "../Binaries/openjpeg/openjpeg.h"
@@ -3778,6 +3726,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     copy->viewPosition = [self->viewPosition retain];
     copy->patientPosition = [self->patientPosition retain];
     copy.annotationsDictionary = self.annotationsDictionary;
+    copy->customImageAnnotationsLoaded = self->customImageAnnotationsLoaded;
     copy.annotationsDBFields = self.annotationsDBFields;
     copy->usRegions = [self->usRegions retain];
     copy->waveform = [self->waveform retain];
@@ -4456,9 +4405,13 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 - (void) reloadAnnotations
 {
 #ifdef OSIRIX_VIEWER
-    [PapyrusLock lock];
-    [annotationsDictionary removeAllObjects];
-    [PapyrusLock unlock];
+    [checking lock];
+    @try
+    {
+        [annotationsDictionary removeAllObjects];
+        customImageAnnotationsLoaded = NO;
+    }
+    @finally { [checking unlock]; }
 #endif
 }
 
@@ -4501,7 +4454,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         for (int index = 0; index < 128 * 128; ++index) fImage[index] = index % 2;
     }
 #ifdef OSIRIX_VIEWER
-    [annotationsDictionary removeAllObjects];
     [self loadCustomImageAnnotations];
 #endif
     return fImage != NULL;
@@ -4510,9 +4462,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 - (BOOL)loadDICOMModernDCMTK
 {
     HorosDCMPixModernDCMTKCopyDecodedFrameFunction copyDecodedFrame =
-        (HorosDCMPixModernDCMTKCopyDecodedFrameFunction)HorosDCMPixModernDCMTKSymbol("HorosModernDCMTKCopyDecodedFrame");
+        HorosDCMTKFunction(HorosModernDCMTKCopyDecodedFrame);
     HorosDCMPixModernDCMTKFreeDecodedFrameFunction freeDecodedFrame =
-        (HorosDCMPixModernDCMTKFreeDecodedFrameFunction)HorosDCMPixModernDCMTKSymbol("HorosModernDCMTKFreeDecodedFrame");
+        HorosDCMTKFunction(HorosModernDCMTKFreeDecodedFrame);
 
     if (copyDecodedFrame == NULL || freeDecodedFrame == NULL)
         return NO;
@@ -4605,7 +4557,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     needToCompute8bitRepresentation = YES;
     VOILUTApplied = NO;
 #ifdef OSIRIX_VIEWER
-    [annotationsDictionary removeAllObjects];
     [self loadCustomImageAnnotations];
 #endif
     return YES;
@@ -7910,8 +7861,8 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     self.decayFactor = from.decayFactor;
     self.halflife = from.halflife;
     
-    [annotationsDictionary release];
-    annotationsDictionary = [from.annotationsDictionary retain];
+    self.annotationsDictionary = from.annotationsDictionary;
+    customImageAnnotationsLoaded = from->customImageAnnotationsLoaded;
     [self checkSUV];
 }
 
@@ -7974,9 +7925,9 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 - (NSString*)getDICOMFieldValueForGroup:(int)group element:(int)element encodings:(NSStringEncoding*)modernEncodings
 {
     HorosDCMPixModernDCMTKCopyFieldByTagFunction copyFieldByTag =
-        (HorosDCMPixModernDCMTKCopyFieldByTagFunction)HorosDCMPixModernDCMTKSymbol("HorosModernDCMTKCopyFieldByTag");
+        HorosDCMTKFunction(HorosModernDCMTKCopyFieldByTag);
     HorosDCMPixModernDCMTKFreeStringFunction freeString =
-        (HorosDCMPixModernDCMTKFreeStringFunction)HorosDCMPixModernDCMTKSymbol("HorosModernDCMTKFreeString");
+        HorosDCMTKFunction(HorosModernDCMTKFreeString);
 
     if( copyFieldByTag && freeString && self.srcFile)
     {
@@ -8110,8 +8061,11 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
 - (void)loadCustomImageAnnotations
 {
+    [checking lock];
     @try
     {
+        // Publish all positions together; a first draw must not see half a layout.
+        NSMutableDictionary *resolvedAnnotations = [NSMutableDictionary dictionary];
         NSDictionary *annotationsForModality = nil;
         @synchronized( gCUSTOM_IMAGE_ANNOTATIONS)
         {
@@ -8289,19 +8243,28 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 }
                 
                 if( annotationsOUT)
-                {
-                    @synchronized( annotationsDictionary)
-                    {
-                        [annotationsDictionary setObject:annotationsOUT forKey: key];
-                    }
-                }
+                    [resolvedAnnotations setObject:annotationsOUT forKey: key];
             }
         }
+        self.annotationsDictionary = resolvedAnnotations;
     }
     @catch( NSException *e)
     {
         NSLog(@"CustomImageAnnotations Exception: %@", e);
     }
+    @finally { [checking unlock]; }
+}
+
+- (NSDictionary*)preparedDisplayAnnotations
+{
+    [checking lock];
+    @try
+    {
+        if (!customImageAnnotationsLoaded)
+            [self loadCustomImageAnnotations];
+        return [[annotationsDictionary copy] autorelease];
+    }
+    @finally { [checking unlock]; }
 }
 
 - (NSMutableDictionary*) annotationsDBFields
@@ -8332,28 +8295,28 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
 - (NSMutableDictionary*) annotationsDictionary
 {
-    NSMutableDictionary *d = nil;
-    
-    @synchronized( annotationsDictionary)
+    [checking lock];
+    @try
     {
-        d = [[annotationsDictionary mutableCopy] autorelease];
+        return [[annotationsDictionary mutableCopy] autorelease];
     }
-    
-    return d;
+    @finally { [checking unlock]; }
 }
 
 - (void) setAnnotationsDictionary: (NSMutableDictionary*) d
 {
-    if( d != annotationsDictionary)
+    [checking lock];
+    @try
     {
-        @synchronized( annotationsDictionary)
+        if (d != annotationsDictionary)
         {
+            NSMutableDictionary *snapshot = [d mutableCopy];
             [annotationsDictionary release];
-            annotationsDictionary = nil;
+            annotationsDictionary = snapshot;
         }
-        
-        annotationsDictionary = [d retain];
+        customImageAnnotationsLoaded = d != nil;
     }
+    @finally { [checking unlock]; }
 }
 
 #endif

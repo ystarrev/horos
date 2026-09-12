@@ -372,20 +372,4 @@
 	[super rightMouseDown: theEvent];
 }
 
-/*- init
-{
-	self = [super init];
-	
-	[self registerForDraggedTypes:[NSArray arrayWithObjects:NSPasteboardTypeTIFF, NSFilenamesPboardType, nil]];
-	
-	return self;
-}*/
-
-/*-(void)resetCursorRects {
-	[super resetCursorRects];
-	
-	
-	
-}*/
-
 @end

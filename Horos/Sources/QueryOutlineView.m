@@ -39,6 +39,7 @@
 
 @interface NSObject (QueryOutlineViewHighlightEditing)
 - (void)queryOutlineView:(NSOutlineView *)outlineView toggleHighlightAtRow:(NSInteger)row;
+- (void)queryOutlineView:(NSOutlineView *)outlineView retrieveAndViewAtRow:(NSInteger)row;
 @end
 
 
@@ -59,6 +60,14 @@
     if( row >= 0 && NSPointInRect( point, [self frameOfOutlineCellAtRow: row]) == NO)
     {
         id controller = [[self window] windowController];
+
+        // Highlighting consumes mouseDown, so AppKit never sends the double action.
+        if( [event clickCount] == 2 && [controller respondsToSelector: @selector(queryOutlineView:retrieveAndViewAtRow:)])
+        {
+            [[self window] makeFirstResponder: self];
+            [controller queryOutlineView: self retrieveAndViewAtRow: row];
+            return;
+        }
 
         if( [controller respondsToSelector: @selector(queryOutlineView:toggleHighlightAtRow:)])
         {

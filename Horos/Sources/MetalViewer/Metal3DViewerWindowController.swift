@@ -87,9 +87,7 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
         window.delegate = self
         window.titleVisibility = .visible
         window.titlebarAppearsTransparent = false
-        if #available(macOS 11.0, *) {
-            window.toolbarStyle = .unified
-        }
+        window.toolbarStyle = .unified
     }
 
     private func configureToolbar() {

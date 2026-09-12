@@ -55,6 +55,11 @@ extern NSString* const HorosLegacyOsiriXBrushROIPredicateFormat;
 	NSString* _name;
 	NSRecursiveLock* _processFilesLock;
 	NSRecursiveLock* _importFilesFromIncomingDirLock;
+	NSCondition* _incomingImportCondition;
+	NSUInteger _interactiveIncomingImportCount;
+	BOOL _interactiveIncomingImportDrain;
+	BOOL _incomingImportScheduled;
+	BOOL _incomingImportRequested;
 	BOOL _legacyROISidecarBackfillStarted;
 	BOOL _isFileSystemFreeSizeLimitReached;
 	NSTimeInterval _timeOfLastIsFileSystemFreeSizeLimitReachedVerification;
@@ -174,6 +179,9 @@ extern NSString* const DicomDatabaseLogEntryEntityName;
 -(NSInteger)importFilesFromIncomingDir: (NSNumber*) showGUI listenerCompressionSettings: (int) listenerCompressionSettings;
 -(BOOL)waitForCompressThread;
 -(void)initiateImportFilesFromIncomingDirUnlessAlreadyImporting;
+-(void)beginInteractiveIncomingImport;
+-(void)endInteractiveIncomingImport;
+-(void)incomingFileDidBecomeAvailable;
 -(void)importFilesFromIncomingDirThread;
 +(void)syncImportFilesFromIncomingDirTimerWithUserDefaults; // called from deprecated API
 

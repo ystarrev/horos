@@ -42,23 +42,16 @@
 #import "WaitRendering.h"
 #import "DicomDatabase+DCMTK.h"
 #import "DicomFile.h"
-#import <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 
 
-typedef int (*HorosModernDCMTKCopyFileDataInTransferSyntaxFn)(const char*, const char*, int, unsigned char**, unsigned long*);
-typedef void (*HorosModernDCMTKFreeBufferFn)(void*);
-
-template <typename SymbolType>
-static SymbolType HorosBrowserControllerDCMTKSymbol(const char* name)
-{
-    static void* handle = dlopen("libHorosModernDCMTKBridge.dylib", RTLD_LAZY | RTLD_LOCAL);
-    return handle != NULL ? reinterpret_cast<SymbolType>(dlsym(handle, name)) : NULL;
-}
+typedef __typeof__(&HorosModernDCMTKCopyFileDataInTransferSyntax) HorosModernDCMTKCopyFileDataInTransferSyntaxFn;
+typedef __typeof__(&HorosModernDCMTKFreeBuffer) HorosModernDCMTKFreeBufferFn;
 
 static NSData* HorosBrowserControllerCopyFileDataInTransferSyntax(NSString* file, NSString* syntax, int quality)
 {
-    HorosModernDCMTKCopyFileDataInTransferSyntaxFn copyFn = HorosBrowserControllerDCMTKSymbol<HorosModernDCMTKCopyFileDataInTransferSyntaxFn>("HorosModernDCMTKCopyFileDataInTransferSyntax");
-    HorosModernDCMTKFreeBufferFn freeBufferFn = HorosBrowserControllerDCMTKSymbol<HorosModernDCMTKFreeBufferFn>("HorosModernDCMTKFreeBuffer");
+    HorosModernDCMTKCopyFileDataInTransferSyntaxFn copyFn = HorosDCMTKFunction(HorosModernDCMTKCopyFileDataInTransferSyntax);
+    HorosModernDCMTKFreeBufferFn freeBufferFn = HorosDCMTKFunction(HorosModernDCMTKFreeBuffer);
     if (copyFn == NULL || freeBufferFn == NULL)
         return nil;
 

@@ -59,6 +59,7 @@
 #import <DiscRecording/DRDevice.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <Quartz/Quartz.h>
+#import <QuartzCore/QuartzCore.h>
 #import "MyOutlineView.h"
 #import "PreviewView.h"
 #import "StructuredReportSupport.h"
@@ -225,6 +226,57 @@ static int DicomDirScanDepth = 0;
 static int DefaultFolderSizeForDB = 0;
 static NSString *smartAlbumDistantArraySync = @"smartAlbumDistantArraySync";
 
+// A row remains a database-object drag inside Horos and a file promise outside it.
+@interface BrowserFilePromise : NSFilePromiseProvider <NSFilePromiseProviderDelegate>
+@property(copy) NSString *exportName;
+@property(copy) NSData *objectXIDs;
+@property(copy) void (^writer)(NSURL *, void (^)(NSError *));
+@end
+
+@implementation BrowserFilePromise
+- (instancetype)init
+{
+    self = [super init];
+    if (self) {
+        self.fileType = UTTypeFolder.identifier;
+        self.delegate = self;
+    }
+    return self;
+}
+
+- (NSArray<NSPasteboardType> *)writableTypesForPasteboard:(NSPasteboard *)pasteboard
+{
+    NSArray *types = [super writableTypesForPasteboard:pasteboard];
+    return self.objectXIDs ? [types arrayByAddingObjectsFromArray:BrowserController.DatabaseObjectXIDsPasteboardTypes] : types;
+}
+
+- (id)pasteboardPropertyListForType:(NSPasteboardType)type
+{
+    if ([BrowserController.DatabaseObjectXIDsPasteboardTypes containsObject:type])
+        return self.objectXIDs;
+    return [super pasteboardPropertyListForType:type];
+}
+
+- (NSString *)filePromiseProvider:(NSFilePromiseProvider *)provider fileNameForType:(NSString *)type
+{
+    return self.exportName;
+}
+
+- (void)filePromiseProvider:(NSFilePromiseProvider *)provider writePromiseToURL:(NSURL *)url completionHandler:(void (^)(NSError *))completionHandler
+{
+    self.writer(url, completionHandler);
+}
+
+- (void)dealloc
+{
+    self.delegate = nil;
+    [_exportName release];
+    [_objectXIDs release];
+    [_writer release];
+    [super dealloc];
+}
+@end
+
 extern BOOL NEEDTOREBUILD;//, COMPLETEREBUILD;
 
 #pragma deprecated(asciiString)
@@ -254,6 +306,9 @@ NSString* asciiString(NSString* str)
 - (int)findObjectOnContextQueue:(NSString *)request table:(NSString *)table execute:(NSString *)execute elements:(NSString **)elements;
 - (NSArray *)subSearchForComparativeStudiesOnContextQueue:(id)studySelectedID database:(DicomDatabase *)database;
 - (NSArray *)exportDICOMFileIntOnContextQueue:(NSMutableDictionary *)parameters database:(DicomDatabase *)database;
+- (void)writeDatabaseFilePromise:(NSMutableDictionary *)parameters;
+- (NSError *)writeJPEGImages:(NSArray *)images paths:(NSArray *)paths wholeSeriesIDs:(NSSet *)wholeSeriesIDs directory:(NSURL *)directory reportExports:(NSMutableArray *)reportExports activityThread:(NSThread *)activityThread;
+- (NSError *)writeReportFileExports:(NSArray *)reports activityThread:(NSThread *)activityThread;
 - (NSArray *)relatedStudiesForStudyOnContextQueue:(id)study;
 
 -(void)setDBWindowTitle;
@@ -279,6 +334,8 @@ NSString* asciiString(NSString* str)
 -(NSPredicate*)createFilterPredicateIncludingSeriesDescriptions:(BOOL)includeSeriesDescriptions;
 -(BOOL)searchIncludesSeriesDescriptions;
 -(void)applyPendingSearchString:(id)sender;
+-(void)refreshAfterDatabaseImport;
+-(void)cancelPendingDatabaseImportRefresh;
 -(BOOL)seriesDescriptionSearchIsActive;
 -(BOOL)series:(id)series matchesSeriesDescriptionSearch:(NSString*)searchString;
 -(NSArray*)outlineChildrenArray:(id)item;
@@ -1447,21 +1504,6 @@ static NSConditionLock *threadLock = nil;
     }
 }
 
-- (NSTimeInterval) databaseLastModification // __deprecated
-{
-    return _database.timeOfLastModification;
-}
-
--(void)setDatabaseLastModification:(NSTimeInterval)t
-{
-    _database.timeOfLastModification = t;
-}
-
-- (NSManagedObjectModel*)managedObjectModel // __deprecated
-{
-    return self.database.managedObjectModel;
-}
-
 - (void)defaultAlbums:(id)sender
 {
     [self.database addDefaultAlbums];
@@ -1474,55 +1516,6 @@ static NSConditionLock *threadLock = nil;
     [self albumsInDatabase];
     
     [self refreshAlbums];
-}
-
-// ------------------
-
-- (NSManagedObjectContext*)localManagedObjectContextIndependentContext:(BOOL)independentContext // __deprecated
-{
-    return [[DicomDatabase activeLocalDatabase] independentContext:independentContext];
-}
-
-- (NSManagedObjectContext*)localManagedObjectContext // __deprecated
-{
-    return [self localManagedObjectContextIndependentContext:NO];
-}
-
-// ------------------
-
-- (NSManagedObjectContext*)defaultManagerObjectContext // __deprecated
-{
-    return [self defaultManagerObjectContextIndependentContext:NO];
-}
-
-- (NSManagedObjectContext*)defaultManagerObjectContextIndependentContext:(BOOL)independentContext // __deprecated
-{
-    return [[DicomDatabase defaultDatabase] independentContext:independentContext];
-}
-
-// ------------------
-
-- (NSManagedObjectContext*)managedObjectContext // __deprecated
-{
-    return [self managedObjectContextIndependentContext:NO];
-}
-
-- (NSManagedObjectContext*)managedObjectContextIndependentContext:(BOOL)independentContext // __deprecated
-{
-    return [self managedObjectContextIndependentContext:independentContext path:_database.baseDirPath];
-}
-
-- (NSManagedObjectContext*)managedObjectContextIndependentContext:(BOOL)independentContext path:(NSString*)path // __deprecated
-{
-    if (!path)
-        return nil;
-    
-    if ([path isEqualToString:_database.baseDirPath])
-        return [_database independentContext:independentContext];
-    
-    N2LogStackTrace( @"******* __deprecated BrowserController managedObjectContextIndependentContext : unknown DicomDatabase");
-    
-    return [[DicomDatabase existingDatabaseAtPath:path] independentContext:independentContext];
 }
 
 // ------------------
@@ -1674,7 +1667,7 @@ static NSConditionLock *threadLock = nil;
 
 -(void)_observeDatabaseAddNotification:(NSNotification*)notification
 {
-    if( self.database == nil)
+    if( self.database == nil || notification.object != self.database)
         return;
     
     if (![NSThread isMainThread])
@@ -1690,11 +1683,54 @@ static NSConditionLock *threadLock = nil;
         [lastKeyImagesSelectedFiles release]; lastKeyImagesSelectedFiles = nil;
 
         [self invalidateSmartAlbumFetch];
-        [self outlineViewRefresh];
-        [self refreshAlbums];
-        
-        [self checkIfLocalStudyHasMoreOrSameNumberOfImagesOfADistantStudy: [[notification.userInfo valueForKey: OsirixAddToDBNotificationImagesArray] valueForKeyPath: @"series.study"]];
+        if (!_pendingImportedStudyIDs) _pendingImportedStudyIDs = [[NSMutableSet alloc] init];
+        for (DicomImage *image in [notification.userInfo objectForKey:OsirixAddToDBNotificationImagesArray]) {
+            if (image.isDeleted || image.managedObjectContext != _database.managedObjectContext) continue;
+            DicomStudy *study = image.series.study;
+            if (study && !study.isDeleted) [_pendingImportedStudyIDs addObject:study.objectID];
+        }
+        _benchmarkDatabaseImportRefresh |= [notification.userInfo objectForKey:@"HorosIncomingTrace"] != nil;
+
+        // Bound list redraws, not imports. Do not restart this deadline as more files arrive.
+        if (!_databaseImportRefreshScheduled) {
+            _databaseImportRefreshScheduled = YES;
+            [self performSelector:@selector(refreshAfterDatabaseImport) withObject:nil afterDelay:0.5
+                          inModes:@[NSRunLoopCommonModes]];
+        }
     }
+}
+
+-(void)refreshAfterDatabaseImport
+{
+    _databaseImportRefreshScheduled = NO;
+    BOOL benchmark = _benchmarkDatabaseImportRefresh;
+    _benchmarkDatabaseImportRefresh = NO;
+    NSArray *studyIDs = [_pendingImportedStudyIDs allObjects];
+    [_pendingImportedStudyIDs removeAllObjects];
+    if (!_database) return;
+
+    CFTimeInterval started = CACurrentMediaTime();
+    [self invalidateSmartAlbumFetch];
+    [self outlineViewRefresh];
+    [self refreshAlbums];
+    [self checkIfLocalStudyHasMoreOrSameNumberOfImagesOfADistantStudy:[_database objectsWithIDs:studyIDs]];
+    if (benchmark) {
+        static NSUInteger benchmarkCount = 0;
+        if (benchmarkCount++ < 256) {
+            CFTimeInterval now = CACurrentMediaTime();
+            NSLog(@"QRBROWSER import_refresh work=%.1fms studies=%lu clock=%.6f",
+                  (now - started) * 1000, (unsigned long)studyIDs.count, now);
+        }
+    }
+}
+
+-(void)cancelPendingDatabaseImportRefresh
+{
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(refreshAfterDatabaseImport) object:nil];
+    _databaseImportRefreshScheduled = NO;
+    _benchmarkDatabaseImportRefresh = NO;
+    [_pendingImportedStudyIDs release];
+    _pendingImportedStudyIDs = nil;
 }
 
 -(void)_refreshDatabaseDisplay
@@ -1745,6 +1781,7 @@ static NSConditionLock *threadLock = nil;
 
 -(void) willChangeContext
 {
+    [self cancelPendingDatabaseImportRefresh];
     [self waitForRunningProcesses];
     
     @synchronized( previewPixThumbnails)
@@ -1798,6 +1835,7 @@ static NSConditionLock *threadLock = nil;
     
     if (_database != db)
     {
+        [self cancelPendingDatabaseImportRefresh];
         @try
         {
             [self invalidateSmartAlbumFetch];
@@ -7320,83 +7358,342 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     
 }
 
-- (NSArray *)outlineView:(NSOutlineView *)outlineView namesOfPromisedFilesDroppedAtDestination:(NSURL *)dropDestination forDraggedItems:(NSArray *)items
++ (BOOL)isReportSeriesForFileExport:(DicomSeries *)series
 {
-    NSArray *r = nil;
-    
-    if( avoidRecursive == NO)
+    // These SRs contain application state, not reports.
+    if ([@[@"OsiriX ROI SR", @"OsiriX Annotations SR", @"OsiriX WindowsState SR"] containsObject:series.name ?: @""])
+        return NO;
+    return [DCMAbstractSyntaxUID isStructuredReport:series.seriesSOPClassUID] ||
+        [DCMAbstractSyntaxUID isPDF:series.seriesSOPClassUID] ||
+        [series.modality.lowercaseString isEqualToString:@"pdf"];
+}
+
+- (id<NSPasteboardWriting>)outlineView:(NSOutlineView *)outlineView pasteboardWriterForItem:(id)item
+{
+    if ([item isDistant] || [[item XID] length] == 0)
+        return nil;
+    id parent = [outlineView parentForItem:item];
+    NSInteger parentRow = parent ? [outlineView rowForItem:parent] : -1;
+    if (parentRow >= 0 && [outlineView isRowSelected:parentRow])
+        return nil; // A selected study already includes its selected series.
+    return [self filePromiseForDatabaseObjects:@[item] asJPEG:(NSApp.currentEvent.modifierFlags & NSEventModifierFlagOption) != 0];
+}
+
+- (id<NSPasteboardWriting>)filePromiseForDatabaseObjects:(NSArray *)items
+{
+    return [self filePromiseForDatabaseObjects:items asJPEG:NO];
+}
+
+- (id<NSPasteboardWriting>)filePromiseForDatabaseObjects:(NSArray *)items asJPEG:(BOOL)jpeg
+{
+    NSMutableArray *objects = [NSMutableArray array];
+    NSMutableArray *xids = [NSMutableArray array];
+    for (id item in items) {
+        if ([item isDistant] || [[item XID] length] == 0)
+            return nil;
+        id object = [self isSurgicalProcedureItem:item] ? [self.database objectWithID:[NSManagedObject UidForXid:[item XID]]] : item;
+        if (![object isKindOfClass:[NSManagedObject class]] || [object isDeleted])
+            return nil;
+        if (![object isKindOfClass:[DicomStudy class]] && ![object isKindOfClass:[DicomSeries class]] && ![object isKindOfClass:[DicomImage class]])
+            return nil;
+        [objects addObject:object];
+        [xids addObject:[item XID]];
+    }
+    if (objects.count == 0)
+        return nil;
+
+    // Capture identities and settings now, not the selection/database at drop time.
+    NSDictionary *snapshot = @{
+        @"database": self.database,
+        @"jpeg": @(jpeg),
+        @"rootObjectIDs": [objects valueForKey:@"objectID"],
+        @"folderTreeTag": @([folderTree selectedTag]),
+        @"compressionTag": @([compressionMatrix selectedTag]),
+        @"addDICOMDIR": @([[NSUserDefaults standardUserDefaults] boolForKey:@"AddDICOMDIRForExport"]),
+        @"encrypt": @([[NSUserDefaults standardUserDefaults] boolForKey:@"encryptForExport"]),
+        @"password": self.passwordForExportEncryption ?: @""
+    };
+    id object = objects.firstObject;
+    NSString *defaultName = jpeg ? @"Image and Report Export" : @"DICOM Export";
+    NSString *name = objects.count > 1 ? defaultName :
+        ([object isKindOfClass:[DicomImage class]] ? [(DicomImage *)object series].name : [object valueForKey:@"name"]);
+    NSMutableString *fileName = [BrowserController replaceNotAdmitted:[NSMutableString stringWithString:name.length ? name : defaultName]];
+    if (fileName.length > 100)
     {
-        avoidRecursive = YES;
-        
-        @try
-        {
-            if( [[[dropDestination path] lastPathComponent] isEqualToString:@".Trash"])
-            {
-                [self delItem:  nil];
+        NSUInteger end = NSMaxRange([fileName rangeOfComposedCharacterSequenceAtIndex:99]);
+        [fileName deleteCharactersInRange:NSMakeRange(end, fileName.length - end)];
+    }
+    if ([fileName hasPrefix:@"."] || fileName.length == 0)
+        fileName = [NSMutableString stringWithFormat:@"%@ %@", jpeg ? @"Export" : @"DICOM", fileName];
+    if (jpeg) [fileName appendString:@" - Export"];
+
+    BrowserFilePromise *promise = [[[BrowserFilePromise alloc] init] autorelease];
+    promise.exportName = fileName;
+    if (!jpeg)
+        promise.objectXIDs = [NSPropertyListSerialization dataWithPropertyList:xids format:NSPropertyListBinaryFormat_v1_0 options:0 error:NULL];
+    promise.writer = ^(NSURL *url, void (^completion)(NSError *)) {
+        NSMutableDictionary *parameters = [NSMutableDictionary dictionaryWithDictionary:snapshot];
+        parameters[@"destinationURL"] = url;
+        parameters[@"completion"] = [[completion copy] autorelease];
+        NSThread *thread = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(writeDatabaseFilePromise:) object:parameters] autorelease];
+        thread.name = NSLocalizedString(@"Exporting...", nil);
+        thread.supportsCancel = YES;
+        [[ThreadsManager defaultManager] addThreadAndStart:thread];
+    };
+    return promise;
+}
+
+- (id<NSPasteboardWriting>)filePromiseForJPEGData:(NSData *)data name:(NSString *)name
+{
+    if (data.length == 0) return nil;
+    BrowserFilePromise *promise = [[[BrowserFilePromise alloc] init] autorelease];
+    promise.fileType = UTTypeJPEG.identifier;
+    promise.exportName = name;
+    promise.writer = ^(NSURL *url, void (^completion)(NSError *)) {
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            @autoreleasepool {
+                NSError *error = nil;
+                [data writeToURL:url options:NSDataWritingWithoutOverwriting error:&error];
+                completion(error);
             }
+        });
+    };
+    return promise;
+}
+
+- (NSError *)writeJPEGImages:(NSArray *)images paths:(NSArray *)paths wholeSeriesIDs:(NSSet *)wholeSeriesIDs directory:(NSURL *)directory reportExports:(NSMutableArray *)reportExports activityThread:(NSThread *)activityThread
+{
+    NSMutableDictionary *seriesDirectories = [NSMutableDictionary dictionary];
+    NSMutableSet *reportPaths = [NSMutableSet set];
+    NSUInteger completedImages = 0;
+    activityThread.progress = 0.0;
+    for (NSUInteger index = 0; index < images.count; ++index)
+    {
+        DicomImage *image = images[index];
+        BOOL isReport = [BrowserController isReportSeriesForFileExport:image.series];
+        if (isReport && [reportPaths containsObject:paths[index]])
+            continue; // Some indexes contain a database image for every PDF page.
+        BOOL expandFrames = !isReport && [wholeSeriesIDs containsObject:image.series.objectID] &&
+            image.series.images.count == 1 && image.numberOfFrames.integerValue > 1;
+        NSInteger frameCount = expandFrames ? image.numberOfFrames.integerValue : 1;
+        for (NSInteger frame = 0; frame < frameCount; ++frame)
+        {
+            if (activityThread.isCancelled)
+                return [NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil];
+            NSURL *seriesDirectory = seriesDirectories[image.series.objectID];
+            NSError *error = nil;
+            if (!seriesDirectory)
+            {
+                // Never pass a Core Data string to this legacy in-place sanitizer.
+                NSMutableString *name = [NSMutableString stringWithString:image.series.name ?: @"Series"];
+                [BrowserController replaceNotAdmitted:name];
+                if (name.length > 100)
+                {
+                    NSUInteger end = NSMaxRange([name rangeOfComposedCharacterSequenceAtIndex:99]);
+                    [name deleteCharactersInRange:NSMakeRange(end, name.length - end)];
+                }
+                seriesDirectory = [directory URLByAppendingPathComponent:
+                    [NSString stringWithFormat:@"%04lu - %@", (unsigned long)seriesDirectories.count + 1, name] isDirectory:YES];
+                if (![[NSFileManager defaultManager] createDirectoryAtURL:seriesDirectory withIntermediateDirectories:NO attributes:nil error:&error])
+                    return error;
+                seriesDirectories[image.series.objectID] = seriesDirectory;
+            }
+            if (isReport)
+            {
+                [reportPaths addObject:paths[index]];
+                [reportExports addObject:@{@"path": paths[index],
+                    @"sopClassUID": image.series.seriesSOPClassUID ?: @"",
+                    @"destination": [seriesDirectory URLByAppendingPathComponent:
+                        [NSString stringWithFormat:@"Report-%06lu.pdf", (unsigned long)index + 1]]}];
+                continue;
+            }
+            @autoreleasepool
+            {
+                NSInteger frameID = expandFrames ? frame : image.frameID.integerValue;
+                DCMPix *pix = [[[DCMPix alloc] initWithPath:paths[index] :0 :1 :nil :frameID
+                    :image.series.id.longValue isBonjour:NO imageObj:image] autorelease];
+                // Match Export to JPEG: saved series windowing, otherwise the DICOM defaults.
+                float ww = image.series.windowWidth.floatValue, wl = image.series.windowLevel.floatValue;
+                if (ww != 0 && ww != wl)
+                    [pix checkImageAvailble:ww :wl];
+                else
+                    [pix checkImageAvailble:pix.savedWW :pix.savedWL];
+                NSData *jpeg = nil;
+                if (pix && !pix.notAbleToLoadImage)
+                    jpeg = [NSBitmapImageRep representationOfImageRepsInArray:pix.image.representations
+                        usingType:NSBitmapImageFileTypeJPEG properties:@{NSImageCompressionFactor: @0.9}];
+                if (jpeg.length == 0)
+                    error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadCorruptFileError
+                        userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"A dragged image could not be converted to JPEG.", nil)}];
+                else {
+                    NSURL *destination = [seriesDirectory URLByAppendingPathComponent:
+                        [NSString stringWithFormat:@"IM-%06lu-%06ld.jpg", (unsigned long)index + 1, (long)frameID + 1]];
+                    [jpeg writeToURL:destination options:NSDataWritingWithoutOverwriting error:&error];
+                }
+                [error retain];
+            }
+            if (error) return [error autorelease];
+            activityThread.progress = (completedImages + (double)(frame + 1) / frameCount) / images.count;
+            activityThread.status = [NSString stringWithFormat:NSLocalizedString(@"JPEG %lu of %lu (frame %ld of %ld)", nil),
+                (unsigned long)index + 1, (unsigned long)images.count, (long)frame + 1, (long)frameCount];
+        }
+        if (!isReport) ++completedImages;
+    }
+    return nil;
+}
+
+- (NSError *)writeReportFileExports:(NSArray *)reports activityThread:(NSThread *)activityThread
+{
+    float startingProgress = activityThread.progress;
+    for (NSUInteger index = 0; index < reports.count; ++index)
+    {
+        if (activityThread.isCancelled)
+            return [NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil];
+        activityThread.status = [NSString stringWithFormat:NSLocalizedString(@"PDF report %lu of %lu", nil),
+            (unsigned long)index + 1, (unsigned long)reports.count];
+        NSError *error = nil;
+        @autoreleasepool
+        {
+            NSDictionary *report = reports[index];
+            NSURL *destination = report[@"destination"];
+            BOOL succeeded = NO;
+            if ([[NSFileManager defaultManager] fileExistsAtPath:destination.path])
+                error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteFileExistsError userInfo:nil];
+            else if ([DCMAbstractSyntaxUID isStructuredReport:report[@"sopClassUID"]])
+                succeeded = [StructuredReportSupport writePDFForDICOMAtPath:report[@"path"] toPath:destination.path error:&error];
             else
             {
-                NSMutableArray *dicomFiles2Export = [NSMutableArray array];
-                NSMutableArray *filesToExport = [self filesForDatabaseOutlineSelection: dicomFiles2Export onlyImages: NO];
-                
-                NSMutableDictionary *d = [NSMutableDictionary dictionaryWithObjectsAndKeys: [dropDestination path], @"location", filesToExport, @"filesToExport", [dicomFiles2Export valueForKey: @"objectID"], @"dicomFiles2Export", nil];
-                
-                NSThread* t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(exportDICOMFileInt:) object:d] autorelease];
-                t.name = NSLocalizedString( @"Exporting...", nil);
-                t.supportsCancel = YES;
-                t.status = N2LocalizedSingularPluralCount( [filesToExport count], NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));
-                
-                [[ThreadsManager defaultManager] addThreadAndStart: t];
-                
-                NSTimeInterval fourSeconds = [NSDate timeIntervalSinceReferenceDate] + 4.0;
-                while( [[d objectForKey: @"result"] count] == 0 && [NSDate timeIntervalSinceReferenceDate] < fourSeconds)
-                    [NSThread sleepForTimeInterval: 0.1];
-                
-                @synchronized( d)
-                {
-                    if( [[d objectForKey: @"result"] count])
-                        r = [NSArray arrayWithArray: [d objectForKey: @"result"]];
-                }
+                NSData *data = [DCMAbstractSyntaxUID isPDF:report[@"sopClassUID"]]
+                    ? [DicomFile encapsulatedPDFForFile:report[@"path"] documentTitle:NULL error:&error]
+                    : [NSData dataWithContentsOfFile:report[@"path"] options:0 error:&error];
+                PDFDocument *document = data ? [[[PDFDocument alloc] initWithData:data] autorelease] : nil;
+                if (document.pageCount > 0)
+                    succeeded = [data writeToURL:destination options:NSDataWritingWithoutOverwriting error:&error];
             }
+            if (!succeeded && !error)
+                error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadCorruptFileError
+                    userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"A dragged report could not be exported as PDF.", nil)}];
+            [error retain];
         }
-        @catch (NSException * e)
-        {
-        }
-        avoidRecursive = NO;
+        if (error) return [error autorelease];
+        activityThread.progress = startingProgress + (1.0 - startingProgress) * (index + 1) / reports.count;
     }
-    
-    if( r == nil)
-        r = [NSArray array];
-    
-    return r;
+    return nil;
 }
 
-// NSOutlineView's legacy file-promise callback still requires this deprecated
-// pasteboard type. Keep the suppression scoped to this compatibility path until
-// drag-out export is converted to NSFilePromiseProvider.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-- (BOOL)outlineView:(NSOutlineView *)olv writeItems:(NSArray *)pbItems toPasteboard:(NSPasteboard *)pboard
+- (void)writeDatabaseFilePromise:(NSMutableDictionary *)parameters
 {
-    for( id item in pbItems)
-    {
-        if( [item isDistant])
-            return NO;
-        if( [self isSurgicalProcedureItem:item] && [[item XID] length] == 0)
-            return NO;
+    @autoreleasepool {
+        NSURL *destination = parameters[@"destinationURL"];
+        NSThread *activityThread = [NSThread currentThread];
+        parameters[@"activityThread"] = activityThread;
+        __block NSError *resultError = nil;
+        NSMutableArray *reportExports = [NSMutableArray array];
+        @try {
+            DicomDatabase *database = [parameters[@"database"] independentDatabase];
+            N2PerformManagedObjectContextBlockAndWait(database.managedObjectContext, ^{
+                @try {
+                    BOOL jpeg = [parameters[@"jpeg"] boolValue];
+                    NSError *error = nil;
+                    NSArray *objects = [database objectsWithIDs:parameters[@"rootObjectIDs"]];
+                    if (objects.count != [parameters[@"rootObjectIDs"] count])
+                        error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadNoSuchFileError userInfo:nil];
+                    NSMutableOrderedSet *selectedImages = [NSMutableOrderedSet orderedSet];
+                    NSMutableSet *wholeSeriesIDs = [NSMutableSet set];
+                    for (NSManagedObject *object in objects) {
+                        if (object.isDeleted) {
+                            error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadNoSuchFileError userInfo:nil];
+                            break;
+                        }
+                        if ([object isKindOfClass:[DicomStudy class]])
+                            for (DicomSeries *series in [self childrenArray:object onlyImages:NO]) {
+                                [selectedImages addObjectsFromArray:[series sortedImages]];
+                                [wholeSeriesIDs addObject:series.objectID];
+                            }
+                        else if ([object isKindOfClass:[DicomSeries class]]) {
+                            [selectedImages addObjectsFromArray:[(DicomSeries *)object sortedImages]];
+                            [wholeSeriesIDs addObject:object.objectID];
+                        }
+                        else if ([object isKindOfClass:[DicomImage class]])
+                            [selectedImages addObject:object];
+                    }
+                    NSArray *images = selectedImages.array;
+                    if (jpeg)
+                        images = [images filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(DicomImage *image, NSDictionary *bindings) {
+                            return image.isImageStorage.boolValue || [BrowserController isReportSeriesForFileExport:image.series];
+                        }]];
+                    parameters[@"dicomFiles2Export"] = [images valueForKey:@"objectID"];
+                    NSMutableArray *paths = [NSMutableArray arrayWithCapacity:images.count];
+                    if (images.count == 0)
+                        error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadNoSuchFileError userInfo:@{NSLocalizedDescriptionKey:
+                            jpeg ? NSLocalizedString(@"The dragged selection contains no images or reports that can be exported.", nil)
+                                 : NSLocalizedString(@"The dragged images are no longer available.", nil)}];
+                    for (DicomImage *image in images) {
+                        if (error) break;
+                        if (activityThread.isCancelled) {
+                            error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil];
+                            break;
+                        }
+                        NSString *path = database.isLocal ? image.completePath : [(RemoteDicomDatabase *)database cacheDataForImage:image maxFiles:BONJOURPACKETS];
+                        if (path.length == 0 || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+                            error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadNoSuchFileError userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"A dragged image could not be read.", nil)}];
+                            break;
+                        }
+                        [paths addObject:path];
+                    }
+                    if (!error && !destination.isFileURL)
+                        error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnsupportedSchemeError userInfo:nil];
+                    if (!error && [[NSFileManager defaultManager] fileExistsAtPath:destination.path])
+                        error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteFileExistsError userInfo:nil];
+                    if (!error && !jpeg && [parameters[@"encrypt"] boolValue] && [parameters[@"password"] length] == 0)
+                        error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"Use Export to DICOM Files to set an encryption password before exporting encrypted files.", nil)}];
+                    NSURL *staging = !error ? [[NSFileManager defaultManager] URLForDirectory:NSItemReplacementDirectory inDomain:NSUserDomainMask appropriateForURL:destination create:YES error:&error] : nil;
+                    if (staging) {
+                        parameters[@"stagingURL"] = staging;
+                        parameters[@"location"] = staging.path;
+                        parameters[@"filesToExport"] = paths;
+                        if (jpeg)
+                            error = [self writeJPEGImages:images paths:paths wholeSeriesIDs:wholeSeriesIDs directory:staging reportExports:reportExports activityThread:activityThread];
+                        else {
+                            [self exportDICOMFileIntOnContextQueue:parameters database:database];
+                            error = parameters[@"exportError"];
+                        }
+                    }
+                    resultError = [error retain];
+                } @catch (NSException *exception) {
+                    // Exceptions must not unwind across Core Data's dispatch boundary.
+                    [resultError release];
+                    resultError = [[NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError
+                        userInfo:@{NSLocalizedDescriptionKey: exception.reason ?: @"Image export failed."}] retain];
+                }
+            });
+            // The SR renderer uses the main thread. Never wait for it while
+            // holding a managed-object context; pass only snapshotted file paths.
+            if (!resultError)
+                resultError = [[self writeReportFileExports:reportExports activityThread:activityThread] retain];
+            if (!resultError && activityThread.isCancelled)
+                resultError = [[NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil] retain];
+            if (!resultError)
+            {
+                NSError *error = nil;
+                NSURL *staging = parameters[@"stagingURL"];
+                [[NSFileManager defaultManager] moveItemAtURL:staging toURL:destination error:&error];
+                resultError = [error retain];
+                if (!resultError) activityThread.progress = 1.0;
+            }
+        } @catch (NSException *exception) {
+            [resultError release];
+            resultError = [[NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:@{NSLocalizedDescriptionKey: exception.reason ?: @"Image export failed."}] retain];
+        }
+        NSURL *staging = parameters[@"stagingURL"];
+        if (staging)
+            [[NSFileManager defaultManager] removeItemAtURL:staging error:NULL];
+        [parameters removeObjectForKey:@"activityThread"];
+        void (^completion)(NSError *) = parameters[@"completion"];
+        completion(resultError);
+        [resultError release];
     }
-
-    [pboard declareTypes:@[NSFilesPromisePboardType, NSPasteboardTypeString] owner:self];
-    [pboard setPropertyList:@[@"dcm"] forType:NSFilesPromisePboardType];
-    
-    id plist = [NSPropertyListSerialization dataWithPropertyList:[pbItems valueForKey:@"XID"] format:NSPropertyListBinaryFormat_v1_0 options:0 error:NULL];
-    for (NSString *pasteboardType in BrowserController.DatabaseObjectXIDsPasteboardTypes)
-        [pboard setPropertyList:plist forType:pasteboardType];
-    
-    
-    return YES;
 }
-#pragma clang diagnostic pop
 
 - (void)outlineViewItemWillCollapse:(NSNotification *)notification
 {
@@ -9739,18 +10036,6 @@ static BOOL withReset = NO;
     }
 }
 
-+(NSInteger)_scrollerStyle:(NSScroller*)scroller {
-    if ([scroller respondsToSelector:@selector(scrollerStyle)]) {
-        NSInvocation* inv = [NSInvocation invocationWithMethodSignature:[scroller methodSignatureForSelector:@selector(scrollerStyle)]];
-        [inv setSelector:@selector(scrollerStyle)];
-        [inv invokeWithTarget:scroller];
-        NSInteger r; [inv getReturnValue:&r];
-        return r;
-    }
-    
-    return 0; // NSScrollerStyleLegacy is 0
-}
-
 - (CGFloat)splitView:(NSSplitView*)sender
 constrainSplitPosition:(CGFloat)proposedPosition
          ofSubviewAt:(NSInteger)offset
@@ -9768,7 +10053,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
         if ([thumbnailsScrollView isKindOfClass:[NSScrollView class]])
         {
             NSScroller* scroller = [thumbnailsScrollView verticalScroller];
-            if ([[self class] _scrollerStyle:scroller] != 1)
+            if (scroller.scrollerStyle != NSScrollerStyleOverlay)
                 if ([thumbnailsScrollView hasVerticalScroller] && ![scroller isHidden])
                     scrollbarWidth = [scroller frame].size.width;
         }
@@ -9812,7 +10097,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 -(void)observeScrollerStyleDidChangeNotification:(NSNotification*)n {
     NSRect frame = [thumbnailsScrollView.superview bounds];
-    if ([[self class] _scrollerStyle:thumbnailsScrollView.verticalScroller] == 1) { // overlay
+    if (thumbnailsScrollView.verticalScroller.scrollerStyle == NSScrollerStyleOverlay) {
         frame.origin.x += 2; frame.size.width -= 2;
         [thumbnailsScrollView setFrame:frame];
     } else {
@@ -10884,6 +11169,23 @@ constrainSplitPosition:(CGFloat)proposedPosition
     return @[O2PasteboardTypeDatabaseObjectXIDs];
 }
 
++ (NSArray<NSString *> *)databaseObjectXIDsFromPasteboard:(NSPasteboard *)pasteboard
+{
+    NSMutableOrderedSet *xids = [NSMutableOrderedSet orderedSet];
+    for (NSPasteboardItem *item in pasteboard.pasteboardItems) {
+        NSString *type = [item availableTypeFromArray:self.DatabaseObjectXIDsPasteboardTypes];
+        id values = type ? [item propertyListForType:type] : nil;
+        // BrowserMatrix wraps the plist in NSData; file promises may expose it directly.
+        if ([values isKindOfClass:[NSData class]])
+            values = [NSPropertyListSerialization propertyListWithData:values options:NSPropertyListImmutable format:NULL error:NULL];
+        if (![values isKindOfClass:[NSArray class]]) continue;
+        for (id value in values)
+            if ([value isKindOfClass:[NSString class]] && [value length])
+                [xids addObject:value];
+    }
+    return xids.array;
+}
+
 - (BOOL)tableView:(NSTableView *)tableView acceptDrop:(id <NSDraggingInfo>)info row:(NSInteger)row dropOperation:(NSTableViewDropOperation)operation
 {
     if ([tableView isEqual:albumTable])
@@ -10898,7 +11200,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
         DicomAlbum* album = [albumArray objectAtIndex:row];
         
         NSPasteboard* pb = [info draggingPasteboard];
-        NSArray* xids = [NSPropertyListSerialization propertyListWithData:[pb propertyListForType:[pb availableTypeFromArray:BrowserController.DatabaseObjectXIDsPasteboardTypes]] options:NSPropertyListImmutable format:NULL error:NULL];
+        NSArray* xids = [BrowserController databaseObjectXIDsFromPasteboard:pb];
         NSMutableArray* items = [NSMutableArray array];
         for (NSString* xid in xids)
             [items addObject:[_database objectWithID:[NSManagedObject UidForXid:xid]]];
@@ -11811,11 +12113,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
     HorosPresentCriticalAlert(NSLocalizedString(@"Search", nil), NSLocalizedString(@"The search field is currently not displayed in the toolbar. Customize your toolbar to add it.", nil), NSLocalizedString(@"OK", nil), nil, nil);
 }
 
-+ (long) computeDATABASEINDEXforDatabase:(NSString*)path // __deprecated
-{
-    return [[DicomDatabase databaseAtPath:path] computeDataFileIndex];
-}
-
 static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 {
     NSString *path = [source valueForKey:@"Path"];
@@ -12583,6 +12880,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 
 -(void)dealloc
 {
+    [self cancelPendingDatabaseImportRefresh];
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(applyPendingSearchString:) object:nil];
     [[NSNotificationCenter defaultCenter] removeObserver:self name:NSOutlineViewColumnDidMoveNotification object:databaseOutline];
     [[NSNotificationCenter defaultCenter] removeObserver:self name:NSOutlineViewColumnDidResizeNotification object:databaseOutline];
@@ -14628,12 +14926,28 @@ static volatile int numberOfThreadsForJPEG = 0;
         NSString *location = [parameters objectForKey: @"location"];
         NSMutableArray *filesToExport = [parameters objectForKey: @"filesToExport"];
         NSMutableArray *dicomFiles2Export = [NSMutableArray arrayWithArray: [idatabase objectsWithIDs: [parameters objectForKey: @"dicomFiles2Export"]]];
+        NSThread *activityThread = parameters[@"activityThread"] ?: [NSThread currentThread];
         
         [filesToExport removeDuplicatedStringsInSyncWithThisArray: dicomFiles2Export];
         
         NSString			*dest = nil, *path = location;
         Wait                *splash = nil;
-        BOOL				addDICOMDIR = [[NSUserDefaults standardUserDefaults] boolForKey:@"AddDICOMDIRForExport"];
+        BOOL addDICOMDIR = parameters[@"addDICOMDIR"] ? [parameters[@"addDICOMDIR"] boolValue] : [[NSUserDefaults standardUserDefaults] boolForKey:@"AddDICOMDIRForExport"];
+        BOOL encrypt = parameters[@"encrypt"] ? [parameters[@"encrypt"] boolValue] : [[NSUserDefaults standardUserDefaults] boolForKey:@"encryptForExport"];
+        NSString *exportPassword = parameters[@"password"] ?: self.passwordForExportEncryption;
+        __block NSInteger folderTreeSelectedTag = 0;
+        __block NSInteger compressionMatrixSelectedTag = 0;
+        if (parameters[@"folderTreeTag"] && parameters[@"compressionTag"]) {
+            folderTreeSelectedTag = [parameters[@"folderTreeTag"] integerValue];
+            compressionMatrixSelectedTag = [parameters[@"compressionTag"] integerValue];
+        } else {
+            void (^readSettings)(void) = ^{
+                folderTreeSelectedTag = [folderTree selectedTag];
+                compressionMatrixSelectedTag = [compressionMatrix selectedTag];
+            };
+            if ([NSThread isMainThread]) readSettings();
+            else dispatch_sync(dispatch_get_main_queue(), readSettings);
+        }
         long				previousSeries = -1, serieCount = 0;
         
         if( [NSThread isMainThread])
@@ -14654,6 +14968,10 @@ static volatile int numberOfThreadsForJPEG = 0;
         {
             for( int i = 0; i < [filesToExport count]; i++)
             {
+                if (activityThread.isCancelled) {
+                    exportAborted = YES;
+                    break;
+                }
                 NSManagedObject	*curImage = [dicomFiles2Export objectAtIndex:i];
                 NSString		*extension = [[filesToExport objectAtIndex:i] pathExtension];
                 
@@ -14739,19 +15057,6 @@ static volatile int numberOfThreadsForJPEG = 0;
                 }
                 
                 NSString *studyPath = nil;
-                
-                //Workaround for UI calls from background UI (runtime warnings) - Binding could be the definitive resolution for this
-                __block NSInteger folderTreeSelectedTag = 0;
-                if ([NSThread isMainThread])
-                {
-                    folderTreeSelectedTag = [folderTree selectedTag];
-                }
-                else
-                {
-                    dispatch_sync(dispatch_get_main_queue(), ^(void) {
-                        folderTreeSelectedTag = [folderTree selectedTag];
-                    });
-                }
                 
                 if(folderTreeSelectedTag == 0)
                 {
@@ -14883,23 +15188,13 @@ static volatile int numberOfThreadsForJPEG = 0;
                     NSLog( @"***** %@", error);
                     NSLog( @"***** src = %@", [filesToExport objectAtIndex:i]);
                     NSLog( @"***** dst = %@", dest);
+                    parameters[@"exportError"] = error ?: [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil];
+                    exportAborted = YES;
+                    break;
                 }
                 
                 if( [[curImage valueForKey: @"fileType"] hasPrefix:@"DICOM"])
                 {
-                    //Workaround for UI calls from background UI (runtime warnings) - Binding could be the definitive resolution for this
-                    __block NSInteger compressionMatrixSelectedTag = 1;
-                    if ([NSThread isMainThread])
-                    {
-                        compressionMatrixSelectedTag = [compressionMatrix selectedTag];
-                    }
-                    else
-                    {
-                        dispatch_sync(dispatch_get_main_queue(), ^(void) {
-                            compressionMatrixSelectedTag = [compressionMatrix selectedTag];
-                        });
-                    }
-                    
                     switch(compressionMatrixSelectedTag)
                     {
                         case 1: // compress
@@ -14914,15 +15209,19 @@ static volatile int numberOfThreadsForJPEG = 0;
                 
                 if( [extension isEqualToString:@"hdr"])		// ANALYZE -> COPY IMG
                 {
-                    [[NSFileManager defaultManager] copyItemAtPath:[[[filesToExport objectAtIndex:i] stringByDeletingPathExtension] stringByAppendingPathExtension:@"img"] toPath:[[dest stringByDeletingPathExtension] stringByAppendingPathExtension:@"img"] error:NULL];
+                    if (![[NSFileManager defaultManager] copyItemAtPath:[[[filesToExport objectAtIndex:i] stringByDeletingPathExtension] stringByAppendingPathExtension:@"img"] toPath:[[dest stringByDeletingPathExtension] stringByAppendingPathExtension:@"img"] error:&error]) {
+                        parameters[@"exportError"] = error;
+                        exportAborted = YES;
+                        break;
+                    }
                 }
                 
                 [splash incrementBy:1];
                 
-                [NSThread currentThread].progress = (float) i / (float) [filesToExport count];
-                [NSThread currentThread].status = N2LocalizedSingularPluralCount( [filesToExport count]-i, NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));
+                activityThread.progress = (float) (i + 1) / (float) [filesToExport count];
+                activityThread.status = N2LocalizedSingularPluralCount( [filesToExport count]-i-1, NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));
                 
-                if( [splash aborted] || [NSThread currentThread].isCancelled)
+                if( [splash aborted] || activityThread.isCancelled)
                 {
                     i = [filesToExport count];
                     exportAborted = YES;
@@ -14932,6 +15231,8 @@ static volatile int numberOfThreadsForJPEG = 0;
         @catch (NSException * e)
         {
             N2LogExceptionWithStackTrace(e);
+            parameters[@"exportError"] = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:@{NSLocalizedDescriptionKey: e.reason ?: @"DICOM export failed."}];
+            exportAborted = YES;
         }
         
         [[DicomStudy dbModifyLock] unlock];
@@ -14949,27 +15250,14 @@ static volatile int numberOfThreadsForJPEG = 0;
             //		[[waitCompressionWindow progress] setMaxValue: [files2Compress count]];
             
             
-            //Workaround for UI calls from background UI (runtime warnings) - Binding could be the definitive resolution for this
-            __block NSInteger compressionMatrixSelectedTag = 1;
-            if ([NSThread isMainThread])
-            {
-                compressionMatrixSelectedTag = [compressionMatrix selectedTag];
-            }
-            else
-            {
-                dispatch_sync(dispatch_get_main_queue(), ^(void) {
-                    compressionMatrixSelectedTag = [compressionMatrix selectedTag];
-                });
-            }
-            
             switch(compressionMatrixSelectedTag)
             {
                 case 1:
-                    [_database processFilesAtPaths:files2Compress intoDirAtPath:nil mode:Compress];
+                    [idatabase processFilesAtPaths:files2Compress intoDirAtPath:nil mode:Compress];
                     break;
                     
                 case 2:
-                    [_database processFilesAtPaths:files2Compress intoDirAtPath:nil mode:Decompress];
+                    [idatabase processFilesAtPaths:files2Compress intoDirAtPath:nil mode:Decompress];
                     break;
             }
             
@@ -15004,12 +15292,17 @@ static volatile int numberOfThreadsForJPEG = 0;
                 
                 if( [[NSFileManager defaultManager] fileExistsAtPath: [tempPath stringByAppendingPathComponent:@"DICOMDIR"]] == NO)
                 {
-                    [NSThread currentThread].status = NSLocalizedString( @"Writing DICOMDIR...", nil);
+                    activityThread.status = NSLocalizedString( @"Writing DICOMDIR...", nil);
                     [DicomDir createDicomDirAtDir: tempPath];
+                    if (![[NSFileManager defaultManager] fileExistsAtPath:[tempPath stringByAppendingPathComponent:@"DICOMDIR"]]) {
+                        parameters[@"exportError"] = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"The DICOM directory could not be written.", nil)}];
+                        exportAborted = YES;
+                        break;
+                    }
                 }
             }
         }
-        if( [[NSUserDefaults standardUserDefaults] boolForKey: @"encryptForExport"] == YES && exportAborted == NO)
+        if( encrypt && exportAborted == NO)
         {
             for( int i = 0; i < [filesToExport count]; i++)
             {
@@ -15073,7 +15366,13 @@ static volatile int numberOfThreadsForJPEG = 0;
                 
                 if( [[NSFileManager defaultManager] fileExistsAtPath: [tempPath stringByAppendingPathExtension: @"zip"]] == NO)
                 {
-                    [BrowserController encryptFileOrFolder: tempPath inZIPFile: [tempPath stringByAppendingPathExtension: @"zip"] password: passwordForExportEncryption];
+                    [BrowserController encryptFileOrFolder: tempPath inZIPFile: [tempPath stringByAppendingPathExtension: @"zip"] password: exportPassword];
+                    if ([[NSFileManager defaultManager] fileExistsAtPath:tempPath] ||
+                        ![[NSFileManager defaultManager] fileExistsAtPath:[tempPath stringByAppendingPathExtension:@"zip"]]) {
+                        parameters[@"exportError"] = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"The encrypted export could not be completed.", nil)}];
+                        exportAborted = YES;
+                        break;
+                    }
                 }
             }
         }
@@ -15081,9 +15380,11 @@ static volatile int numberOfThreadsForJPEG = 0;
     @catch (NSException * e)
     {
         N2LogExceptionWithStackTrace(e);
+        parameters[@"exportError"] = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:@{NSLocalizedDescriptionKey: e.reason ?: @"DICOM export failed."}];
     }
     
-    self.passwordForExportEncryption = @"";
+    if (!parameters[@"password"])
+        self.passwordForExportEncryption = @"";
     
     [pool release];
     
@@ -15888,8 +16189,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     
     // Attach the toolbar to the document window 
     [self.window setToolbar: toolbar];
-    if( [self.window respondsToSelector: @selector(setTitleVisibility:)] )
-        [self.window setTitleVisibility: NSWindowTitleHidden];
+    [self.window setTitleVisibility: NSWindowTitleHidden];
     [self.window setShowsToolbarButton:NO];
     [[self.window toolbar] setVisible: YES];
     [self performSelector:@selector(removeForbiddenDatabaseToolbarItems) withObject:nil afterDelay:0.0];
@@ -16654,11 +16954,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 #pragma mark-
 #pragma mark Bonjour
 
-- (void)setBonjourDatabaseValue:(NSManagedObject*) obj value:(id) value forKey:(NSString*) key // __deprecated
-{
-    [(RemoteDicomDatabase*)_database object:obj setValue:value forKey:key];
-}
-
 -(NSString*)askPassword
 {
     [password setStringValue:@""];
@@ -16715,10 +17010,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 }
 
 
-- (NSString*) localDatabasePath { // deprecated
-    return [[DicomDatabase activeLocalDatabase] sqlFilePath];
-}
-
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 - (void)setNetworkLogs
@@ -16729,82 +17020,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 - (BOOL)isNetworkLogsActive
 {
     return isNetworkLogsActive;
-}
-
-#pragma deprecated (setFixedDocumentsDirectory)
-- (NSString *)setFixedDocumentsDirectory // __deprecated
-{
-    NSLog(@"%s IS NOT AVAILABLE ANYMORE, moved to DicomDatabase.. This message should never appear!", __PRETTY_FUNCTION__);
-    return nil;
-    
-    //	[fixedDocumentsDirectory release];
-    //	fixedDocumentsDirectory = [[self documentsDirectory] retain];
-    //	
-    //	if( fixedDocumentsDirectory == nil)
-    //	{
-    //		HorosPresentAlert( NSLocalizedString(@"Database Location Error", nil), NSLocalizedString(@"Cannot locate Database path.", nil), nil, nil, nil);
-    //		exit(0);
-    //	}
-    //	
-    //	strcpy( cfixedDocumentsDirectory, [fixedDocumentsDirectory UTF8String]);
-    //	
-    //	if( [[NSUserDefaults standardUserDefaults] boolForKey: OsirixCanActivateDefaultDatabaseOnlyDefaultsKey])
-    //	{
-    //		NSString *defaultPath = [self documentsDirectoryFor: [[NSUserDefaults standardUserDefaults] integerForKey: @"DEFAULT_DATABASELOCATION"] url: [[NSUserDefaults standardUserDefaults] stringForKey: @"DEFAULT_DATABASELOCATIONURL"]];
-    //		
-    //		strcpy( cfixedIncomingDirectory, [defaultPath UTF8String]);
-    //	}
-    //	else strcpy( cfixedIncomingDirectory, [fixedDocumentsDirectory UTF8String]);
-    //	
-    //	NSString *r;
-    //	
-    //	r = [[NSFileManager defaultManager] destinationOfSymbolicLinkAtPath: [NSString stringWithFormat:@"%s/%s", cfixedIncomingDirectory, "TEMP.noindex"] error: nil];
-    //	if( r == nil)
-    //		r = [NSString stringWithFormat:@"%s/%s", cfixedIncomingDirectory, "TEMP.noindex"];
-    //	strcpy( cfixedTempNoIndexDirectory, [r UTF8String]);
-    //	
-    //	r = [[NSFileManager defaultManager] destinationOfSymbolicLinkAtPath: [NSString stringWithFormat:@"%s/%s", cfixedIncomingDirectory, "INCOMING.noindex"] error: nil];
-    //	if( r == nil)
-    //	{
-    //		r = [NSString stringWithFormat:@"%s/%s", cfixedIncomingDirectory, "INCOMING.noindex"];
-    //		r = [self folderPathResolvingAliasAndSymLink: r];
-    //	}
-    //	strcpy( cfixedIncomingNoIndexDirectory, [r UTF8String]);
-    //	
-    //	return fixedDocumentsDirectory;
-}
-
-- (NSString *) localDocumentsDirectory // __deprecated
-{
-    return [[DicomDatabase activeLocalDatabase] baseDirPath];
-}
-
-- (NSString *) fixedDocumentsDirectory // __deprecated
-{
-    return [[DicomDatabase activeLocalDatabase] baseDirPath];
-}
-
-- (const char *) cfixedDocumentsDirectory // __deprecated
-{ return [[DicomDatabase activeLocalDatabase] baseDirPathC]; }
-
-- (const char *) cfixedIncomingDirectory // __deprecated
-{ return [[DicomDatabase activeLocalDatabase] incomingDirPathC]; }
-
-- (const char *) cfixedTempNoIndexDirectory // __deprecated
-{ return [[DicomDatabase activeLocalDatabase] tempDirPathC]; }
-
-- (const char *) cfixedIncomingNoIndexDirectory // __deprecated
-{ return [[DicomDatabase activeLocalDatabase] incomingDirPathC]; }
-
-+ (NSString *) defaultDocumentsDirectory // __deprecated
-{
-    //	NSString *dir = documentsDirectory();
-    return [[DicomDatabase defaultDatabase] baseDirPath];
-}
-
-- (NSString*) TEMPPATH // __deprecated
-{
-    return [_database tempDirPath];
 }
 
 - (IBAction)showLogWindow: (id)sender
@@ -17954,18 +18169,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 -(BOOL)isCurrentDatabaseBonjour
 {
     return ![_database isLocal];
-}
-
--(NSString*)currentDatabasePath
-{
-    return [_database baseDirPath];
-}
-
--(NSManagedObjectContext*)bonjourManagedObjectContext
-{
-    if (![_database isLocal])
-        return [_database managedObjectContext];
-    return nil;
 }
 
 @end

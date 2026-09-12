@@ -52,6 +52,7 @@
 #import "DCMTKStudyQueryNode.h"
 #import "DCMTKSeriesQueryNode.h"
 #import "BrowserController.h"
+#import "HorosSwiftInterop.h"
 #import "DCMTKQueryRetrieveSCP.h"
 #import "DICOMToNSString.h"
 #import "ThreadsManager.h"
@@ -324,7 +325,11 @@ extern "C"
 
 - (void)addStudyIfNotAvailableOnContextQueue:(id)item toArray:(NSMutableArray *)selectedItems context:(NSManagedObjectContext *)context;
 - (BOOL)openAvailableLocalImagesForQueryItem:(id)item;
-- (void)addPendingRetrieveAndViewItem:(id)item;
+- (BOOL)addPendingRetrieveAndViewItem:(id)item;
+- (void)retrieveAndViewItem:(id)item;
+- (void)performRetrieveForViewing:(NSArray *)items;
+- (void)viewQueryItem:(id)item;
+- (void)checkAndView:(NSDictionary *)request;
 - (void)removePendingRetrieveAndViewItem:(id)item;
 - (void)openPendingRetrieveAndViewItemsIfPossible;
 - (void)configureQueryWindowMinimumContentSize;
@@ -347,6 +352,7 @@ extern "C"
 - (IBAction)seriesIgnoreMPRChanged:(id)sender;
 - (IBAction)retrieveSelectedSeries:(id)sender;
 - (void)queryOutlineView:(NSOutlineView *)outlineView toggleHighlightAtRow:(NSInteger)row;
+- (void)queryOutlineView:(NSOutlineView *)outlineView retrieveAndViewAtRow:(NSInteger)row;
 - (void)rebuildVisibleTopLevelQueryItems;
 - (NSArray *)visibleTopLevelQueryItems;
 - (NSArray *)visibleQueryChildrenForItem:(DCMTKQueryNode *)item;
@@ -3523,8 +3529,6 @@ extern "C"
 
 - (void) performQuery:(NSNumber*) showErrors
 {
-	checkAndViewTry = -1;
-	
     if( [NSThread isMainThread] == NO)
         showErrors = [NSNumber numberWithBool: NO];
     
@@ -4026,6 +4030,14 @@ extern "C"
     if( [NSThread isMainThread] == NO)
         showGUI = NO;
     
+	// Validate before recording any item as already in transfer.
+	if( forViewing && [sendToPopup indexOfSelectedItem] != 0)
+	{
+		if( showGUI)
+			HorosPresentCriticalAlert(NSLocalizedString(@"DICOM Query & Retrieve", nil), NSLocalizedString(@"To retrieve and view these images, select this computer in the 'retrieve to' menu.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+		return;
+	}
+
 	if([items count])
 	{
 		for( id item in items)
@@ -4146,39 +4158,33 @@ extern "C"
 		
 		if( [selectedItems count] > 0)
 		{
-			if( [sendToPopup indexOfSelectedItem] != 0 && forViewing == YES)
+			WaitRendering *wait = nil;
+
+			if( showGUI && !forViewing)
 			{
-				if( showGUI)
-					HorosPresentCriticalAlert(NSLocalizedString( @"DICOM Query & Retrieve",nil), NSLocalizedString( @"If you want to retrieve & view these images, change the destination to this computer ('retrieve to' menu).",nil),NSLocalizedString( @"OK",nil), nil, nil);
+				wait = [[WaitRendering alloc] init: NSLocalizedString(@"Starting Retrieving...", nil)];
+				[wait showWindow:self];
 			}
-			else
+
+			SEL retrieveSelector = forViewing ? @selector(performRetrieveForViewing:) : @selector(performRetrieve:);
+			NSThread *t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:retrieveSelector object:selectedItems] autorelease];
+			DicomDatabase *viewingDatabase = [DicomDatabase activeLocalDatabase];
+			if( forViewing && viewingDatabase)
+				[t.threadDictionary setObject:viewingDatabase forKey:@"HorosViewingImportDatabase"];
+			t.name = NSLocalizedString( @"Retrieving images...", nil);
+			t.status = N2LocalizedSingularPluralCount(selectedItems.count, NSLocalizedString(@"study", nil), NSLocalizedString(@"studies", nil));
+			if ([selectedItems count] > 1)
+				t.progress = 0;
+
+			t.supportsCancel = YES;
+			[[ThreadsManager defaultManager] addThreadAndStart: t];
+
+			if( wait)
 			{
-				WaitRendering *wait = nil;
-				
-				if( showGUI)
-				{
-					wait = [[WaitRendering alloc] init: NSLocalizedString(@"Starting Retrieving...", nil)];
-					[wait showWindow:self];
-				}
-				
-				checkAndViewTry = -1;
-				
-				NSThread *t = [[[ThreadsManager defaultManager] newActivityThreadWithTarget:self selector:@selector(performRetrieve:) object:selectedItems] autorelease];
-				t.name = NSLocalizedString( @"Retrieving images...", nil);
-                t.status = N2LocalizedSingularPluralCount(selectedItems.count, NSLocalizedString(@"study", nil), NSLocalizedString(@"studies", nil));
-                if ([selectedItems count] > 1)
-                    t.progress = 0;
-				
-				t.supportsCancel = YES;
-				[[ThreadsManager defaultManager] addThreadAndStart: t];
-				
-				if( showGUI)
-				{
-					[NSThread sleepForTimeInterval: 0.2];
-				
-					[wait close];
-					[wait autorelease];
-				}
+				[NSThread sleepForTimeInterval: 0.2];
+
+				[wait close];
+				[wait autorelease];
 			}
 		}
 	}
@@ -4214,7 +4220,29 @@ extern "C"
 - (IBAction) retrieveAndView: (id) sender
 {
 	[self retrieve: self onlyIfNotAvailable: YES forViewing: YES];
-	[self view: self];
+	if( [sendToPopup indexOfSelectedItem] == 0)
+		[self view: self];
+}
+
+- (void)retrieveAndViewItem:(id)item
+{
+    if( [item isKindOfClass: [DCMTKStudyQueryNode class]] == NO &&
+        [item isKindOfClass: [DCMTKSeriesQueryNode class]] == NO)
+        return;
+
+    if( [sendToPopup indexOfSelectedItem] == 0)
+        [HorosMetalViewerRetrievalBenchmark beginWithStudyUID: [item isKindOfClass: [DCMTKSeriesQueryNode class]] ? [item studyInstanceUID] : [item uid]
+                                                  seriesUID: [item isKindOfClass: [DCMTKSeriesQueryNode class]] ? [item uid] : nil];
+
+    [self retrieve: self onlyIfNotAvailable: YES forViewing: YES items: @[item] showGUI: YES];
+    if( [sendToPopup indexOfSelectedItem] == 0)
+        [self viewQueryItem: item];
+}
+
+- (void)queryOutlineView:(NSOutlineView *)sender retrieveAndViewAtRow:(NSInteger)row
+{
+    if( sender == outlineView && row >= 0 && row < [outlineView numberOfRows])
+        [self retrieveAndViewItem: [outlineView itemAtRow: row]];
 }
 
 - (IBAction) retrieveAndViewClick: (id) sender
@@ -4227,7 +4255,7 @@ extern "C"
 	   
 	if( [outlineView clickedRow] >= 0)
 	{
-		[self retrieveAndView: sender];
+		[self queryOutlineView: outlineView retrieveAndViewAtRow: [outlineView clickedRow]];
 	}
 }
 
@@ -4247,12 +4275,24 @@ extern "C"
 	[yearOldBirth setStringValue:[DicomStudy yearOldFromDateOfBirth:[searchBirth dateValue]]];
 }
 
+- (void)performRetrieveForViewing:(NSArray *)items
+{
+    @autoreleasepool {
+        DicomDatabase *database = [[NSThread currentThread].threadDictionary objectForKey:@"HorosViewingImportDatabase"];
+        [database beginInteractiveIncomingImport];
+        @try {
+            [self performRetrieve:items];
+        } @finally {
+            [database endInteractiveIncomingImport];
+            [[NSThread currentThread].threadDictionary removeObjectForKey:@"HorosViewingImportDatabase"];
+        }
+    }
+}
+
 - (void) performRetrieve:(NSArray*) array
 {
     if ( [[BrowserController currentBrowser] database] == nil) // During SB rebuild
         return;
-    
-	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 	
     [NSThread currentThread].name = NSLocalizedString( @"Retrieving images...", nil);
     
@@ -4262,6 +4302,7 @@ extern "C"
 		return;
 	}
 	
+	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 	NSMutableArray *moveArray = [NSMutableArray array];
 	
 	@synchronized( self)
@@ -4570,7 +4611,8 @@ extern "C"
 		CFAbsoluteTime retrieveMoveEndTime = CFAbsoluteTimeGetCurrent();
 		NSLog( @"Retrieve MOVE PHASE END after %.3f s", retrieveMoveEndTime - retrieveStartTime);
 
-		[NSThread sleepForTimeInterval: 0.5];	// To allow errorMessage on the main thread...
+		if( [[NSThread currentThread].threadDictionary objectForKey:@"HorosViewingImportDatabase"] == nil)
+			[NSThread sleepForTimeInterval: 0.5];	// Legacy retrieve-only error presentation.
 		
 		__block BOOL windowVisible = NO;
 		dispatch_sync(dispatch_get_main_queue(), ^{
@@ -4596,6 +4638,24 @@ extern "C"
 		N2LogExceptionWithStackTrace( e);
 	}
 	
+	BOOL cancelled = [NSThread currentThread].isCancelled;
+	dispatch_async(dispatch_get_main_queue(), ^{
+		for( id item in array)
+			[HorosMetalViewerRetrievalBenchmark transferFinishedWithStudyUID: [item isKindOfClass: [DCMTKSeriesQueryNode class]] ? [item studyInstanceUID] : [item uid]
+			                                                    seriesUID: [item isKindOfClass: [DCMTKSeriesQueryNode class]] ? [item uid] : nil
+			                                                    cancelled: cancelled];
+		if( cancelled)
+		{
+			for( id item in array)
+				[self removePendingRetrieveAndViewItem: item];
+		}
+		else
+		{
+			[[DicomDatabase activeLocalDatabase] initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
+			[self openPendingRetrieveAndViewItemsIfPossible];
+		}
+	});
+
 	[array release];
 	
 	@synchronized( self)
@@ -4606,13 +4666,12 @@ extern "C"
 	[pool release];
 }
 
-- (void) checkAndView:(id) item
+- (void) checkAndView:(NSDictionary *)request
 {
 	if( [[self window] isVisible] == NO)
 		return;
-	
-	if( checkAndViewTry < 0)
-		return;
+
+	id item = [request objectForKey: @"item"];
 
 	@synchronized( self)
 	{
@@ -4621,84 +4680,79 @@ extern "C"
 	}
 	
     DicomDatabase *db = [DicomDatabase activeLocalDatabase];
-    [[BrowserController currentBrowser] setDatabase:db];
 	[db initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
 
 	BOOL success = [self openAvailableLocalImagesForQueryItem: item];
 
 	if( !success)
 	{
-		[db initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
-
-		if( checkAndViewTry-- > 0 && [sendToPopup indexOfSelectedItem] == 0)
-			[self performSelector:@selector(checkAndView:) withObject:item afterDelay:1.0];
-		else if( [sendToPopup indexOfSelectedItem] != 0)
-			[self removePendingRetrieveAndViewItem: item];
+		NSUInteger attempts = [[request objectForKey: @"remainingAttempts"] unsignedIntegerValue];
+		if( attempts > 0)
+			[self performSelector: @selector(checkAndView:)
+			           withObject: @{@"item": item, @"remainingAttempts": @(attempts - 1)}
+			           afterDelay: 1.0];
 	}
 }
 
 - (BOOL) openAvailableLocalImagesForQueryItem:(id) item
 {
+	NSAssert([NSThread isMainThread], @"Retrieve-and-view must open on the main thread");
 	if( item == nil || [[self window] isVisible] == NO)
 		return NO;
 
-    DicomDatabase *db = [DicomDatabase activeLocalDatabase];
-    [[BrowserController currentBrowser] setDatabase:db];
+    @synchronized( self)
+    {
+        if( [pendingRetrieveAndViewItems containsObject: item] == NO)
+            return NO;
+    }
 
-	__block NSError *error = nil;
+    DicomDatabase *db = [DicomDatabase activeLocalDatabase];
+	BrowserController *browser = [BrowserController currentBrowser];
 	NSFetchRequest *request = [[[NSFetchRequest alloc] init] autorelease];
-	NSManagedObjectContext *context = [[DicomDatabase activeLocalDatabase] managedObjectContext];
-	
-	__block BOOL success = NO;
+	NSManagedObjectContext *context = [db managedObjectContext];
+	CFAbsoluteTime lookupStarted = CFAbsoluteTimeGetCurrent();
+	__block NSArray *imagesToOpen = nil;
 	
 	N2PerformManagedObjectContextBlockAndWait(context, ^{
 		@try
 		{
-		if( [item isMemberOfClass:[DCMTKStudyQueryNode class]] == YES)
-		{
-			NSPredicate	*predicate = [NSPredicate predicateWithFormat: @"(studyInstanceUID == %@)", [item valueForKey:@"uid"]];
-			
-			[request setEntity: [NSEntityDescription entityForName: @"Study" inManagedObjectContext: context]];
-			[request setPredicate: predicate];
-			
-			NSArray *studyArray = [context executeFetchRequest:request error:&error];
-			if( [studyArray count] > 0)
+			BOOL isStudy = [item isKindOfClass: [DCMTKStudyQueryNode class]];
+			if( !isStudy && [item isKindOfClass: [DCMTKSeriesQueryNode class]] == NO)
+				return;
+
+			[request setEntity: [NSEntityDescription entityForName: isStudy ? @"Study" : @"Series" inManagedObjectContext: context]];
+			[request setPredicate: isStudy
+			    ? [NSPredicate predicateWithFormat: @"studyInstanceUID == %@", [item uid]]
+			    : [NSPredicate predicateWithFormat: @"seriesDICOMUID == %@ AND study.studyInstanceUID == %@", [item uid], [item studyInstanceUID]]];
+			[request setFetchLimit: 1];
+			NSError *error = nil;
+			NSManagedObject *localItem = [[context executeFetchRequest: request error: &error] firstObject];
+			if( error)
+				NSLog(@"Retrieve and view lookup failed: %@", error);
+
+			// The viewer's database observer adds subsequent incoming images in place.
+			if( localItem == nil)
+				return;
+
+			NSMutableArray *loadList = [NSMutableArray array];
+			if( isStudy)
 			{
-				NSManagedObject	*study = [studyArray objectAtIndex: 0];
-				NSArray *studySeriesArray = [[BrowserController currentBrowser] childrenArray: study onlyImages: YES];
-				NSMutableArray *loadList = [NSMutableArray array];
-
-				for( NSManagedObject *series in studySeriesArray)
-					[loadList addObjectsFromArray:[[BrowserController currentBrowser] childrenArray: series onlyImages: YES]];
-
-				if( [loadList count])
+				for( NSManagedObject *series in [browser childrenArray: localItem onlyImages: YES])
 				{
-					[[BrowserController currentBrowser] openMetalViewerForImages: loadList];
-					success = YES;
+					// Start with one series; the launcher's scout refresh discovers the rest.
+					if( [[series valueForKey: @"seriesSOPClassUID"] isEqualToString: @"1.2.840.10008.5.1.4.1.1.66.4"])
+						continue;
+					NSArray *images = [browser childrenArray: series onlyImages: YES];
+					if( [images count])
+					{
+						[loadList addObjectsFromArray: images];
+						break;
+					}
 				}
 			}
-		}
-		
-		if( [item isMemberOfClass:[DCMTKSeriesQueryNode class]] == YES)
-		{
-			NSPredicate	*predicate = [NSPredicate predicateWithFormat:  @"(seriesDICOMUID == %@)", [item valueForKey:@"uid"]];
-			
-			[request setEntity: [NSEntityDescription entityForName: @"Series" inManagedObjectContext: context]];
-			[request setPredicate: predicate];
-			
-			NSArray *seriesArray = [context executeFetchRequest:request error:&error];
-			if( [seriesArray count] > 0)
-			{
-				NSManagedObject	*series = [seriesArray objectAtIndex: 0];
-				NSArray *images = [[BrowserController currentBrowser] childrenArray:series];
-
-				if( [images count])
-				{
-					[[BrowserController currentBrowser] openMetalViewerForImages: images];
-					success = YES;
-				}
-			}
-		}
+			else
+				[loadList addObjectsFromArray: [browser childrenArray: localItem onlyImages: YES]];
+			imagesToOpen = [loadList copy];
 		}
 		@catch (NSException * e)
 		{
@@ -4706,16 +4760,27 @@ extern "C"
 		}
 	});
 
+	BOOL success = [imagesToOpen count] > 0;
 	if( success)
+	{
+		[HorosMetalViewerRetrievalBenchmark localImagesAvailableWithStudyUID: [item isKindOfClass: [DCMTKSeriesQueryNode class]] ? [item studyInstanceUID] : [item uid]
+			                                                         seriesUID: [item isKindOfClass: [DCMTKSeriesQueryNode class]] ? [item uid] : nil
+			                                                        imageCount: [imagesToOpen count]
+			                                                    lookupDuration: CFAbsoluteTimeGetCurrent() - lookupStarted];
+		// Remove first: opening a viewer can itself trigger database notifications.
 		[self removePendingRetrieveAndViewItem: item];
+		[browser setDatabase: db];
+		[browser openMetalViewerForImages: imagesToOpen];
+	}
+	[imagesToOpen release];
 
 	return success;
 }
 
-- (void) addPendingRetrieveAndViewItem:(id) item
+- (BOOL) addPendingRetrieveAndViewItem:(id) item
 {
 	if( item == nil)
-		return;
+		return NO;
 
 	@synchronized( self)
 	{
@@ -4723,8 +4788,12 @@ extern "C"
 			pendingRetrieveAndViewItems = [[NSMutableArray array] retain];
 
 		if( [pendingRetrieveAndViewItems containsObject: item] == NO)
+		{
 			[pendingRetrieveAndViewItems addObject: item];
+			return YES;
+		}
 	}
+	return NO;
 }
 
 - (void) removePendingRetrieveAndViewItem:(id) item
@@ -4753,16 +4822,15 @@ extern "C"
 
 - (IBAction) view:(id) sender
 {
-	id item = [outlineView itemAtRow: [outlineView selectedRow]];
-	
-	{
-		checkAndViewTry = 20;
-		if( item)
-		{
-			[self addPendingRetrieveAndViewItem: item];
-            [self checkAndView: item];
-		}
-	}
+	NSInteger row = [outlineView selectedRow];
+	if( row >= 0)
+		[self viewQueryItem: [outlineView itemAtRow: row]];
+}
+
+- (void)viewQueryItem:(id)item
+{
+	if( [self addPendingRetrieveAndViewItem: item])
+		[self checkAndView: @{@"item": item, @"remainingAttempts": @20}];
 }
 
 - (QueryFilter*) getModalityQueryFilter:(NSArray*) modalityArray
@@ -7060,6 +7128,10 @@ extern "C"
 
 - (void)windowWillClose:(NSNotification *)notification
 {
+    @synchronized( self)
+    {
+        [pendingRetrieveAndViewItems removeAllObjects];
+    }
     [self saveQueryWindowFramePreference];
 
     [self saveTableColumns];

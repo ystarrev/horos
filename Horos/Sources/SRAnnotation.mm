@@ -48,122 +48,26 @@
 #import "N2Debug.h"
 #import "DICOMToNSString.h"
 
-#include <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 #include <dcmtk/config/osconfig.h>   /* make sure OS specific configuration is included first */
 #define DicomImage DCMTKDicomImage
 #include <dcmtk/dcmsr/dsrdoc.h>
 #include <dcmtk/dcmsr/dsrtypes.h>
 #undef DicomImage
 
-typedef char* (*HorosModernDCMTKCopyFieldFn)(const char* path, const char* fieldName);
-typedef int (*HorosModernDCMTKCopyEncapsulatedDocumentFn)(const char* path, unsigned char** buffer, unsigned long* length);
-typedef char* (*HorosModernDCMTKCopyStructuredReportXMLFn)(const char* path);
-typedef int (*HorosModernDCMTKWriteStructuredReportFromXMLFn)(const char* xmlPath, const char* dicomPath);
-typedef char* (*HorosModernDCMTKCopyStructuredReportKeyObjectTypeFn)(const char* path);
-typedef char* (*HorosModernDCMTKCopyStructuredReportReferencedSOPInstanceUIDsFn)(const char* path);
-typedef char* (*HorosModernDCMTKCopyStructuredReportRootCodeMeaningFn)(const char* path);
-typedef char* (*HorosModernDCMTKCopyStructuredReportPrimaryReferenceFn)(const char* path);
-typedef int (*HorosModernDCMTKCopyBufferByTagFn)(const char* path, unsigned short group, unsigned short element, unsigned char** buffer, unsigned long* length);
-typedef int (*HorosModernDCMTKWriteBufferByTagFn)(const char* path, unsigned short group, unsigned short element, const unsigned char* buffer, unsigned long length);
-typedef int (*HorosModernDCMTKReplaceTagValueFn)(const char* path, unsigned short group, unsigned short element, const char* value, int removeIfEmpty);
-typedef int (*HorosModernDCMTKWriteCompatibilityROIStructuredReportFn)(const char* path,
-                                                                       const char* sopInstanceUID,
-                                                                       const char* seriesInstanceUID,
-                                                                       const char* studyInstanceUID,
-                                                                       const char* studyDescription,
-                                                                       const char* patientName,
-                                                                       const char* patientBirthDate,
-                                                                       const char* patientSex,
-                                                                       const char* patientID,
-                                                                       const char* referringPhysician,
-                                                                       const char* studyID,
-                                                                       const char* accessionNumber,
-                                                                       const char* seriesDescription,
-                                                                       const char* seriesNumber,
-                                                                       const char* manufacturer,
-                                                                       const char* contentDate,
-                                                                       const char* contentTime,
-                                                                       const char* referencedSOPClassUID,
-                                                                       const char* referencedSOPInstanceUID,
-                                                                       const char* referencedFrameNumber,
-                                                                       const unsigned char* roiArchiveBytes,
-                                                                       unsigned long roiArchiveLength);
-typedef int (*HorosModernDCMTKWriteCompatibilityStructuredReportFn)(const char* path,
-                                                                    const char* sopInstanceUID,
-                                                                    const char* seriesInstanceUID,
-                                                                    const char* studyInstanceUID,
-                                                                    const char* studyDescription,
-                                                                    const char* patientName,
-                                                                    const char* patientBirthDate,
-                                                                    const char* patientSex,
-                                                                    const char* patientID,
-                                                                    const char* referringPhysician,
-                                                                    const char* studyID,
-                                                                    const char* accessionNumber,
-                                                                    const char* seriesDescription,
-                                                                    const char* seriesNumber,
-                                                                    const char* manufacturer,
-                                                                    const char* contentDate,
-                                                                    const char* contentTime,
-                                                                    const char* referencedSOPClassUID,
-                                                                    const char* referencedSOPInstanceUID,
-                                                                    const char* referencedFrameNumber,
-                                                                    const char* rootCodeMeaning,
-                                                                    const char* childTextValue,
-                                                                    const unsigned char* encapsulatedBytes,
-                                                                    unsigned long encapsulatedLength);
-typedef void (*HorosModernDCMTKFreeBufferFn)(void* buffer);
-typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
-
-static void* HorosSRAnnotationBridgeHandle()
-{
-	static void* handle = NULL;
-	static dispatch_once_t onceToken;
-	dispatch_once(&onceToken, ^{
-		NSBundle *bundle = [NSBundle mainBundle];
-		NSArray<NSString *> *basePaths = @[
-			bundle.resourcePath ?: @"",
-			bundle.privateFrameworksPath ?: @"",
-			bundle.sharedFrameworksPath ?: @"",
-			bundle.builtInPlugInsPath ?: @""
-		];
-		NSArray<NSString *> *relativePaths = @[
-			@"libHorosModernDCMTKBridge.dylib",
-			@"DCMTK/libHorosModernDCMTKBridge.dylib"
-		];
-
-		NSFileManager *fileManager = [NSFileManager defaultManager];
-		for (NSString *basePath in basePaths)
-		{
-			if (basePath.length == 0)
-				continue;
-
-			for (NSString *relativePath in relativePaths)
-			{
-				NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
-				if ([fileManager fileExistsAtPath:candidate])
-				{
-					handle = dlopen(candidate.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-					if (handle == NULL)
-						NSLog(@"Modern DCMTK bridge failed to load at %@: %s", candidate, dlerror());
-					return;
-				}
-			}
-		}
-
-		NSLog(@"Modern DCMTK bridge not found in bundle search paths.");
-	});
-	return handle;
-}
-
-template <typename FunctionType>
-static FunctionType HorosSRAnnotationSymbol(const char* name)
-{
-	void* handle = HorosSRAnnotationBridgeHandle();
-	if (handle == NULL)
-		return NULL;
-	return reinterpret_cast<FunctionType>(dlsym(handle, name));
-}
+typedef __typeof__(&HorosModernDCMTKCopyField) HorosModernDCMTKCopyFieldFn;
+typedef __typeof__(&HorosModernDCMTKCopyEncapsulatedDocument) HorosModernDCMTKCopyEncapsulatedDocumentFn;
+typedef __typeof__(&HorosModernDCMTKCopyStructuredReportXML) HorosModernDCMTKCopyStructuredReportXMLFn;
+typedef __typeof__(&HorosModernDCMTKWriteStructuredReportFromXML) HorosModernDCMTKWriteStructuredReportFromXMLFn;
+typedef __typeof__(&HorosModernDCMTKCopyStructuredReportRootCodeMeaning) HorosModernDCMTKCopyStructuredReportRootCodeMeaningFn;
+typedef __typeof__(&HorosModernDCMTKCopyStructuredReportPrimaryReference) HorosModernDCMTKCopyStructuredReportPrimaryReferenceFn;
+typedef __typeof__(&HorosModernDCMTKCopyBufferByTag) HorosModernDCMTKCopyBufferByTagFn;
+typedef __typeof__(&HorosModernDCMTKWriteBufferByTag) HorosModernDCMTKWriteBufferByTagFn;
+typedef __typeof__(&HorosModernDCMTKReplaceTagValue) HorosModernDCMTKReplaceTagValueFn;
+typedef __typeof__(&HorosModernDCMTKWriteCompatibilityROIStructuredReport) HorosModernDCMTKWriteCompatibilityROIStructuredReportFn;
+typedef __typeof__(&HorosModernDCMTKWriteCompatibilityStructuredReport) HorosModernDCMTKWriteCompatibilityStructuredReportFn;
+typedef __typeof__(&HorosModernDCMTKFreeBuffer) HorosModernDCMTKFreeBufferFn;
+typedef __typeof__(&HorosModernDCMTKFreeString) HorosModernDCMTKFreeStringFn;
 
 static NSDateFormatter* HorosSRAnnotationDICOMDateFormatter()
 {
@@ -217,7 +121,7 @@ static NSString* HorosSRAnnotationBridgeString(char* value)
 	if (value == NULL)
 		return nil;
 	NSString* string = [NSString stringWithUTF8String:value];
-	HorosModernDCMTKFreeStringFn freeFn = HorosSRAnnotationSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+	HorosModernDCMTKFreeStringFn freeFn = HorosDCMTKFunction(HorosModernDCMTKFreeString);
 	if (freeFn)
 		freeFn(value);
 	return string;
@@ -229,7 +133,7 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 		return nil;
 
 	HorosModernDCMTKCopyEncapsulatedDocumentFn copyDocumentFn =
-		HorosSRAnnotationSymbol<HorosModernDCMTKCopyEncapsulatedDocumentFn>("HorosModernDCMTKCopyEncapsulatedDocument");
+		HorosDCMTKFunction(HorosModernDCMTKCopyEncapsulatedDocument);
 	if (copyDocumentFn == NULL)
 		return nil;
 
@@ -239,7 +143,7 @@ static NSData* HorosSRAnnotationBridgeEncapsulatedDocument(NSString* path)
 		return nil;
 
 	NSData* data = [NSData dataWithBytes: buffer length: (NSUInteger) length];
-	HorosModernDCMTKFreeBufferFn freeBufferFn = HorosSRAnnotationSymbol<HorosModernDCMTKFreeBufferFn>("HorosModernDCMTKFreeBuffer");
+	HorosModernDCMTKFreeBufferFn freeBufferFn = HorosDCMTKFunction(HorosModernDCMTKFreeBuffer);
 	if (freeBufferFn)
 		freeBufferFn(buffer);
 	else
@@ -266,7 +170,7 @@ static NSString* HorosSRAnnotationCopyField(NSString* path, NSString* fieldName)
 		return nil;
 
 	HorosModernDCMTKCopyFieldFn copyFieldFn =
-		HorosSRAnnotationSymbol<HorosModernDCMTKCopyFieldFn>("HorosModernDCMTKCopyField");
+		HorosDCMTKFunction(HorosModernDCMTKCopyField);
 	if (copyFieldFn == NULL)
 		return nil;
 
@@ -279,7 +183,7 @@ static BOOL HorosSRAnnotationReadDocumentFromPath(DSRDocument* document, NSStrin
 		return NO;
 
 	HorosModernDCMTKCopyStructuredReportXMLFn copyXMLFn =
-		HorosSRAnnotationSymbol<HorosModernDCMTKCopyStructuredReportXMLFn>("HorosModernDCMTKCopyStructuredReportXML");
+		HorosDCMTKFunction(HorosModernDCMTKCopyStructuredReportXML);
 	if (copyXMLFn == NULL)
 		return NO;
 
@@ -302,7 +206,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 		return NO;
 
 	HorosModernDCMTKWriteStructuredReportFromXMLFn writeFn =
-		HorosSRAnnotationSymbol<HorosModernDCMTKWriteStructuredReportFromXMLFn>("HorosModernDCMTKWriteStructuredReportFromXML");
+		HorosDCMTKFunction(HorosModernDCMTKWriteStructuredReportFromXML);
 	if (writeFn == NULL)
 		return NO;
 
@@ -326,7 +230,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 		return HorosSRAnnotationArchiveDataByRemovingDICOMPadding(archiveData);
 
 	HorosModernDCMTKCopyBufferByTagFn copyBufferFn =
-		HorosSRAnnotationSymbol<HorosModernDCMTKCopyBufferByTagFn>("HorosModernDCMTKCopyBufferByTag");
+		HorosDCMTKFunction(HorosModernDCMTKCopyBufferByTag);
 	if (copyBufferFn != NULL)
 	{
 		unsigned char *buffer = NULL;
@@ -334,7 +238,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 		if (copyBufferFn(path.fileSystemRepresentation, 0x0071, 0x0011, &buffer, &length) && buffer != NULL && length > 0)
 		{
 			NSData *data = HorosSRAnnotationArchiveDataByRemovingDICOMPadding([NSData dataWithBytes:buffer length:(NSUInteger)length]);
-			HorosModernDCMTKFreeBufferFn freeBufferFn = HorosSRAnnotationSymbol<HorosModernDCMTKFreeBufferFn>("HorosModernDCMTKFreeBuffer");
+			HorosModernDCMTKFreeBufferFn freeBufferFn = HorosDCMTKFunction(HorosModernDCMTKFreeBuffer);
 			if (freeBufferFn)
 				freeBufferFn(buffer);
 			else
@@ -370,7 +274,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 		return nil;
 
 	HorosModernDCMTKCopyStructuredReportPrimaryReferenceFn bridgeFn =
-		HorosSRAnnotationSymbol<HorosModernDCMTKCopyStructuredReportPrimaryReferenceFn>("HorosModernDCMTKCopyStructuredReportPrimaryReference");
+		HorosDCMTKFunction(HorosModernDCMTKCopyStructuredReportPrimaryReference);
 	if (bridgeFn != NULL)
 	{
 		NSString *value = HorosSRAnnotationBridgeString(bridgeFn([path UTF8String]));
@@ -386,7 +290,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 	if (path == nil || ![[NSFileManager defaultManager] fileExistsAtPath:path])
 		return nil;
 
-	HorosModernDCMTKCopyFieldFn copyFieldFn = HorosSRAnnotationSymbol<HorosModernDCMTKCopyFieldFn>("HorosModernDCMTKCopyField");
+	HorosModernDCMTKCopyFieldFn copyFieldFn = HorosDCMTKFunction(HorosModernDCMTKCopyField);
 	if (copyFieldFn == NULL)
 		return nil;
 
@@ -586,7 +490,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 		if ([[NSFileManager defaultManager] fileExistsAtPath:path])
 		{
 			HorosModernDCMTKCopyStructuredReportRootCodeMeaningFn rootMeaningFn =
-				HorosSRAnnotationSymbol<HorosModernDCMTKCopyStructuredReportRootCodeMeaningFn>("HorosModernDCMTKCopyStructuredReportRootCodeMeaning");
+				HorosDCMTKFunction(HorosModernDCMTKCopyStructuredReportRootCodeMeaning);
 
 			status = HorosSRAnnotationReadDocumentFromPath(document, path) ? EC_Normal : EC_IllegalCall;
 
@@ -869,7 +773,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 	if (isROISR)
 	{
 		HorosModernDCMTKWriteCompatibilityROIStructuredReportFn writeROIFn =
-			HorosSRAnnotationSymbol<HorosModernDCMTKWriteCompatibilityROIStructuredReportFn>("HorosModernDCMTKWriteCompatibilityROIStructuredReport");
+			HorosDCMTKFunction(HorosModernDCMTKWriteCompatibilityROIStructuredReport);
 		NSString *studyInstanceUID = [study valueForKey:@"studyInstanceUID"];
 		NSString *seriesInstanceUID = _seriesInstanceUID ?: [self seriesInstanceUID];
 		OFString generatedSOPInstanceUIDStorage;
@@ -928,7 +832,7 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 	else if (isCompatibilityStructuredReport)
 	{
 		HorosModernDCMTKWriteCompatibilityStructuredReportFn writeCompatibilityFn =
-			HorosSRAnnotationSymbol<HorosModernDCMTKWriteCompatibilityStructuredReportFn>("HorosModernDCMTKWriteCompatibilityStructuredReport");
+			HorosDCMTKFunction(HorosModernDCMTKWriteCompatibilityStructuredReport);
 		NSString *studyInstanceUID = [study valueForKey:@"studyInstanceUID"];
 		NSString *seriesInstanceUID = _seriesInstanceUID ?: [self seriesInstanceUID];
 		OFString generatedSOPInstanceUIDStorage;
@@ -999,9 +903,9 @@ static BOOL HorosSRAnnotationWriteDocumentToPath(DSRDocument* document, NSString
 	if (writeSucceeded && wroteViaBridge && !isROISR && !isCompatibilityStructuredReport)
 	{
 		HorosModernDCMTKReplaceTagValueFn replaceTagFn =
-			HorosSRAnnotationSymbol<HorosModernDCMTKReplaceTagValueFn>("HorosModernDCMTKReplaceTagValue");
+			HorosDCMTKFunction(HorosModernDCMTKReplaceTagValue);
 		HorosModernDCMTKWriteBufferByTagFn writeBufferFn =
-			HorosSRAnnotationSymbol<HorosModernDCMTKWriteBufferByTagFn>("HorosModernDCMTKWriteBufferByTag");
+			HorosDCMTKFunction(HorosModernDCMTKWriteBufferByTag);
 		OFString generatedSOPInstanceUIDStorage;
 		document->getSOPInstanceUID(generatedSOPInstanceUIDStorage);
 		const char *generatedSOPInstanceUID = generatedSOPInstanceUIDStorage.c_str();

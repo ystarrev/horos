@@ -117,7 +117,7 @@ class DCMMetadataTests(DCMExtractionTests):
         editor = (SOURCES / "XMLControllerDCMTKCategory.mm").read_text()
         self.assertIn("[DicomFile metadataDocumentForFile:path error:error]", editor)
         category = (SOURCES / "DicomFileDCMTKCategory.mm").read_text()
-        self.assertIn('"HorosModernDCMTKCopyMetadataXML"', category)
+        self.assertIn("HorosDCMTKFunction(HorosModernDCMTKCopyMetadataXML)", category)
         self.assertIn("freeString(xml)", category)
         self.assertIn("freeString(failure)", category)
         self.assertIn("HorosDICOMMetadataDocument(xmlString, error)", category)
@@ -159,7 +159,7 @@ class DCMMetadataTests(DCMExtractionTests):
         self.assertNotIn('attributeValueWithName:@"EncapsulatedDocument"', source)
         self.assertIn("[self temporaryPDFForImage:im]", source)
         self.assertIn("[self temporaryPDFForImage:(DicomImage *)curObj]", source)
-        self.assertEqual(source.count("[DicomFile encapsulatedPDFForFile:"), 3)
+        self.assertEqual(source.count("[DicomFile encapsulatedPDFForFile:"), 4)  # Includes Option-drag report export.
         helper = source.split('- (NSString *)temporaryPDFForImage:', 1)[1].split(
             '- (BOOL)isUsingExternalViewer:', 1)[0]
         for required in ("lastPathComponent", "NSUUID.UUID.UUIDString", "NSDataWritingAtomic", "filename.length > 120"):

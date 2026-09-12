@@ -47,7 +47,7 @@
 #import "DicomDatabase.h"
 #import "N2Debug.h"
 #import "N2Stuff.h"
-#import <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 #undef verify
 #include <dcmtk/config/osconfig.h> /* make sure OS specific configuration is included first */
 
@@ -89,18 +89,11 @@ END_EXTERN_C
 #include <dcmtk/dcmnet/dcasccff.h>  /* for class DcmAssociationConfigurationFile */
 
 #ifdef ON_THE_FLY_COMPRESSION
-typedef int (*HorosModernDCMTKWriteFileInTransferSyntaxFn)(const char*, const char*, const char*, int);
-
-template <typename SymbolType>
-static SymbolType HorosStoreSCUSymbol(const char* name)
-{
-    static void* handle = dlopen("libHorosModernDCMTKBridge.dylib", RTLD_LAZY | RTLD_LOCAL);
-    return handle != NULL ? reinterpret_cast<SymbolType>(dlsym(handle, name)) : NULL;
-}
+typedef __typeof__(&HorosModernDCMTKWriteFileInTransferSyntax) HorosModernDCMTKWriteFileInTransferSyntaxFn;
 
 static BOOL HorosStoreSCUWriteFileInTransferSyntax(const char* inputPath, const char* outputPath, E_TransferSyntax syntax, int quality)
 {
-    HorosModernDCMTKWriteFileInTransferSyntaxFn writeFn = HorosStoreSCUSymbol<HorosModernDCMTKWriteFileInTransferSyntaxFn>("HorosModernDCMTKWriteFileInTransferSyntax");
+    HorosModernDCMTKWriteFileInTransferSyntaxFn writeFn = HorosDCMTKFunction(HorosModernDCMTKWriteFileInTransferSyntax);
     if (writeFn == NULL)
         return NO;
 

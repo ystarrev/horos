@@ -1865,9 +1865,8 @@ private final class MetalStudyROIGPUSolver: @unchecked Sendable {
     private init?() {
         guard let device = MTLCreateSystemDefaultDevice(),
               let commandQueue = device.makeCommandQueue(),
-              let library = device.makeDefaultLibrary(),
-              let function = library.makeFunction(name: "metalStudyROIRedBlackRelaxation"),
-              let pipeline = try? device.makeComputePipelineState(function: function) else {
+              let pipelines = try? MetalPipelineCache.shared(for: device),
+              let pipeline = try? pipelines.computePipeline(function: "metalStudyROIRedBlackRelaxation") else {
             return nil
         }
         self.device = device

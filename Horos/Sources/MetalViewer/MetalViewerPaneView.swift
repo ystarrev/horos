@@ -468,6 +468,8 @@ final class MetalViewerPaneView: NSView {
     }
 
     private final class AnnotationOverlayView: NSView {
+        typealias ImageMetadata = MetalViewerImageMetadata
+
         struct State {
             let seriesTitle: String
             let seriesNumber: String
@@ -476,7 +478,7 @@ final class MetalViewerPaneView: NSView {
             let patientName: String?
             let patientID: String?
             let acquisitionDate: Date?
-            let pix: DCMPix
+            let imageMetadata: ImageMetadata
             let sliceGeometry: MetalViewerSliceGeometry?
             let sliceIndex: Int
             let sliceCount: Int
@@ -543,7 +545,7 @@ final class MetalViewerPaneView: NSView {
         }
 
         private func drawAnnotations(state: State) {
-            let annotationsDictionary = state.pix.annotationsDictionary as? [String: Any] ?? [:]
+            let annotationsDictionary = state.imageMetadata.annotations
             guard annotationsDictionary.isEmpty == false else {
                 drawDefaultAnnotations(state: state)
                 drawOverlayDateAtFallbackLocation(state: state)
@@ -815,11 +817,11 @@ final class MetalViewerPaneView: NSView {
                         } else {
                             primary += String(format: "Thickness: %0.2f mm Location: %0.2f mm", geometry.sliceThickness, geometry.sliceLocation)
                         }
-                    } else if let viewPosition = state.pix.viewPosition, let patientPosition = state.pix.patientPosition {
+                    } else if let viewPosition = state.imageMetadata.viewPosition, let patientPosition = state.imageMetadata.patientPosition {
                         primary += "Position: \(viewPosition) \(patientPosition)"
-                    } else if let viewPosition = state.pix.viewPosition {
+                    } else if let viewPosition = state.imageMetadata.viewPosition {
                         primary += "Position: \(viewPosition)"
-                    } else if let patientPosition = state.pix.patientPosition {
+                    } else if let patientPosition = state.imageMetadata.patientPosition {
                         primary += "Position: \(patientPosition)"
                     }
                 case "PatientName", "PatientsName":
@@ -867,12 +869,12 @@ final class MetalViewerPaneView: NSView {
         }
 
         private func drawOrientation(state: State, in rect: CGRect) {
-            let vectors = orientationVector(for: state.pix)
+            guard let geometry = state.sliceGeometry else { return }
 
-            let left = orientationText(for: Array(vectors[0...2]), inverted: true)
-            let right = orientationText(for: Array(vectors[0...2]), inverted: false)
-            let top = orientationText(for: Array(vectors[3...5]), inverted: true)
-            let bottom = orientationText(for: Array(vectors[3...5]), inverted: false)
+            let left = orientationText(for: geometry.row, inverted: true)
+            let right = orientationText(for: geometry.row, inverted: false)
+            let top = orientationText(for: geometry.column, inverted: true)
+            let bottom = orientationText(for: geometry.column, inverted: false)
 
             if left.isEmpty == false {
                 drawString(left, atX: rect.origin.x + 6, y: rect.origin.y + 2 + rect.height / 2, align: .left)
@@ -887,12 +889,12 @@ final class MetalViewerPaneView: NSView {
                 yPosition += Self.lineHeight + 3
             }
 
-            if let laterality = state.pix.laterality, laterality.isEmpty == false {
+            if let laterality = state.imageMetadata.laterality, laterality.isEmpty == false {
                 drawString(laterality, atX: rect.origin.x + rect.width / 2, y: yPosition, align: .center)
                 yPosition += Self.lineHeight + 3
             }
 
-            if voiLUTApplied(for: state.pix) {
+            if state.imageMetadata.voiLUTApplied {
                 drawString("VOI LUT Applied", atX: rect.origin.x + rect.width / 2, y: yPosition, align: .center)
             }
 
@@ -1004,11 +1006,7 @@ final class MetalViewerPaneView: NSView {
             string.draw(at: drawPoint, withAttributes: Self.overlayTextAttributes)
         }
 
-        private func orientationText(for vector: [Float], inverted: Bool) -> String {
-            guard vector.count == 3 else {
-                return ""
-            }
-
+        private func orientationText(for vector: SIMD3<Double>, inverted: Bool) -> String {
             var absX = abs(vector[0])
             var absY = abs(vector[1])
             var absZ = abs(vector[2])
@@ -1033,20 +1031,6 @@ final class MetalViewerPaneView: NSView {
             }
 
             return result
-        }
-
-        private func orientationVector(for pix: DCMPix) -> [Float] {
-            var vector = Array(repeating: Float(0), count: 9)
-            let selector = NSSelectorFromString("orientation:")
-            typealias OrientationIMP = @convention(c) (AnyObject, Selector, UnsafeMutablePointer<Float>?) -> Void
-            let implementation = pix.method(for: selector)
-            let function = unsafeBitCast(implementation, to: OrientationIMP.self)
-            function(pix, selector, &vector)
-            return vector
-        }
-
-        private func voiLUTApplied(for pix: DCMPix) -> Bool {
-            (pix.value(forKey: "VOILUTApplied") as? Bool) ?? false
         }
 
         private static let mainFont = NSFont.systemFont(ofSize: 12, weight: .medium)
@@ -1121,7 +1105,7 @@ final class MetalViewerPaneView: NSView {
             patientName: metadata["patientName"] as? String,
             patientID: metadata["patientID"] as? String,
             acquisitionDate: metadata["acquisitionDate"] as? Date,
-            pix: pix,
+            imageMetadata: AnnotationOverlayView.ImageMetadata(pix: pix),
             sliceGeometry: MetalViewerSliceGeometry(pix: pix),
             sliceIndex: (metadata["sliceIndex"] as? NSNumber)?.intValue ?? 0,
             sliceCount: (metadata["sliceCount"] as? NSNumber)?.intValue ?? 1,
@@ -1460,7 +1444,7 @@ final class MetalViewerPaneView: NSView {
         copyAnimatedGIFButton.action = #selector(copyAnimatedGIFPressed(_:))
         copyAnimatedGIFButton.isEnabled = false
 
-        overlayBlendControls.frame = NSRect(x: 0, y: 0, width: 246, height: 44)
+        overlayBlendControls.frame = NSRect(x: 0, y: 0, width: 240, height: 44)
         overlayBlendControls.autoresizingMask = [.width, .height]
         overlayBlendControls.orientation = .horizontal
         overlayBlendControls.alignment = .centerY
@@ -1505,7 +1489,6 @@ final class MetalViewerPaneView: NSView {
 
             overlayBlendGlassView.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
             overlayBlendGlassView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
-            overlayBlendGlassView.widthAnchor.constraint(equalToConstant: 246),
             overlayBlendGlassView.heightAnchor.constraint(equalToConstant: 44),
 
             overlayBlendSlider.widthAnchor.constraint(equalToConstant: 180),
@@ -1665,7 +1648,6 @@ final class MetalViewerPaneView: NSView {
         metalView.titleDidChange = { [weak self] state in
             guard let self else { return }
             self.updateCurrentStateDescription(rendererState: state)
-            self.updateAnnotationOverlay()
             self.updateReferenceLineOverlay()
             self.updateOrientationOverlay()
         }
@@ -1956,6 +1938,22 @@ final class MetalViewerPaneView: NSView {
             overlayImageCountChanged = false
         }
 
+        // Model snapshots are replaced even when only a different scout gained images.
+        metalView?.renderer.windowLevelStateDidChange = { [weak updatedSeries] state in
+            updatedSeries?.windowLevelState = state
+        }
+        metalView?.renderer.transferFunctionStateDidChange = { [weak updatedSeries] state in
+            updatedSeries?.transferFunctionState = state
+        }
+        if let overlayForRefresh {
+            metalView?.renderer.overlayWindowLevelStateDidChange = { [weak overlayForRefresh] state in
+                overlayForRefresh?.windowLevelState = state
+            }
+            metalView?.renderer.overlayTransferFunctionStateDidChange = { [weak overlayForRefresh] state in
+                overlayForRefresh?.transferFunctionState = state
+            }
+        }
+
         guard primaryImageCountChanged || overlayImageCountChanged else {
             updatedSeries.retainLoadedPixelCache(from: series)
             series = updatedSeries
@@ -1968,7 +1966,24 @@ final class MetalViewerPaneView: NSView {
             updateAnnotationOverlay()
             updateReferenceLineOverlay()
             updateOrientationOverlay()
+            if dynamicSequence == nil {
+                detectDynamicSequence(for: updatedSeries)
+            }
             return false
+        }
+
+        // A growing 2D stack does not need a new pane, tool state, or window/level.
+        if displayMode == .stack2D, dynamicSequence == nil,
+           overlaySeries == nil, overlayForRefresh == nil, let metalView {
+            series = updatedSeries
+            metalView.display(pixList: updatedSeries.loadedPixList(), preservingDisplayedImage: true)
+            displayedSeriesDidChange?()
+            reloadTumourSeeds()
+            updateAnnotationOverlay()
+            updateReferenceLineOverlay()
+            updateOrientationOverlay()
+            detectDynamicSequence(for: updatedSeries)
+            return true
         }
 
         let preservedDisplayMode = displayMode
@@ -2396,7 +2411,8 @@ final class MetalViewerPaneView: NSView {
     }
 
     private func updateAnnotationOverlay() {
-        guard let metalView, let pix = metalView.renderer.currentPix else {
+        guard let metalView, let pix = metalView.renderer.currentPix,
+              let metadata = metalView.renderer.currentImageMetadata else {
             annotationOverlay.overlayState = nil
             return
         }
@@ -2410,8 +2426,8 @@ final class MetalViewerPaneView: NSView {
             patientName: imageObject?.value(forKeyPath: "series.study.name") as? String,
             patientID: imageObject?.value(forKeyPath: "series.study.patientID") as? String,
             acquisitionDate: imageObject?.value(forKey: "date") as? Date,
-            pix: pix,
-            sliceGeometry: MetalViewerSliceGeometry(pix: pix),
+            imageMetadata: metadata,
+            sliceGeometry: metalView.renderer.currentSliceGeometry,
             sliceIndex: metalView.renderer.currentSliceIndex,
             sliceCount: metalView.renderer.pixList.count,
             zoomScale: metalView.renderer.zoomScale,

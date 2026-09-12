@@ -196,6 +196,7 @@ extern "C"
     
     /** custom annotations */
     NSMutableDictionary *annotationsDictionary, *annotationsDBFields;
+    BOOL customImageAnnotationsLoaded;
     NSString            *yearOld, *yearOldAcquisition;
     
     unsigned char		*LUT12baseAddr;
@@ -686,6 +687,10 @@ extern "C"
 
 - (NSString*)getDICOMFieldValueForGroup:(int)group element:(int)element;
 #endif
+
+/** Resolves annotation metadata without loading or changing the pixel buffer.
+    Visible to Swift, which does not inherit OSIRIX_VIEWER from prefix.pch. */
+- (NSDictionary*)preparedDisplayAnnotations;
 
 @end
 

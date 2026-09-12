@@ -56,7 +56,7 @@
 #include "NSFileManager+N2.h"
 
 #import "HorosAVAssetLoading.h"
-#import <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 
 #include "Analyze.h"
 #include "nifti1.h"
@@ -80,22 +80,15 @@ static NSDateFormatter *DicomFileDateFormatter(void)
     return formatter;
 }
 
-typedef int (*HorosModernDCMTKIsDICOMFileFn)(const char*);
-typedef char* (*HorosModernDCMTKCopyFieldFn)(const char*, const char*);
-typedef void (*HorosModernDCMTKFreeStringFn)(char*);
-
-template <typename SymbolType>
-static SymbolType HorosDicomFileSymbol(const char* name)
-{
-    static void* handle = dlopen("libHorosModernDCMTKBridge.dylib", RTLD_LAZY | RTLD_LOCAL);
-    return handle != NULL ? reinterpret_cast<SymbolType>(dlsym(handle, name)) : NULL;
-}
+typedef __typeof__(&HorosModernDCMTKIsDICOMFile) HorosModernDCMTKIsDICOMFileFn;
+typedef __typeof__(&HorosModernDCMTKCopyField) HorosModernDCMTKCopyFieldFn;
+typedef __typeof__(&HorosModernDCMTKFreeString) HorosModernDCMTKFreeStringFn;
 
 static NSString* HorosDicomFileBridgeString(char* value)
 {
     if (value == NULL)
         return nil;
-    HorosModernDCMTKFreeStringFn freeFn = HorosDicomFileSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    HorosModernDCMTKFreeStringFn freeFn = HorosDCMTKFunction(HorosModernDCMTKFreeString);
     NSString* string = [NSString stringWithUTF8String:value];
     if (freeFn)
         freeFn(value);
@@ -679,7 +672,7 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     //////////////////////////////////////////////////////////
     
     BOOL isDicom = NO;
-    HorosModernDCMTKIsDICOMFileFn isDICOMFn = HorosDicomFileSymbol<HorosModernDCMTKIsDICOMFileFn>("HorosModernDCMTKIsDICOMFile");
+    HorosModernDCMTKIsDICOMFileFn isDICOMFn = HorosDCMTKFunction(HorosModernDCMTKIsDICOMFile);
     if (isDICOMFn)
         isDicom = isDICOMFn(filePath.UTF8String) != 0;
     else
@@ -711,7 +704,7 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
         @try
         {
             NSString *sopClassUID = nil;
-            HorosModernDCMTKCopyFieldFn copyFieldFn = HorosDicomFileSymbol<HorosModernDCMTKCopyFieldFn>("HorosModernDCMTKCopyField");
+            HorosModernDCMTKCopyFieldFn copyFieldFn = HorosDCMTKFunction(HorosModernDCMTKCopyField);
             if (copyFieldFn)
                 sopClassUID = HorosDicomFileBridgeString(copyFieldFn(filePath.UTF8String, "SOPClassUID"));
             if (sopClassUID == nil)

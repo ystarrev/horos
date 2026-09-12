@@ -45,23 +45,23 @@
 #import "ModernDCMTKBridge.h"
 #import "HorosDICOMMetadata.h"
 
-#include <dlfcn.h>
+#import "HorosDCMTKBridgeLoader.h"
 
 #include <string.h>
 #include <array>
 #include <string>
 
-typedef int (*HorosModernDCMTKIsDICOMFileFn)(const char* path);
-typedef char* (*HorosModernDCMTKCopySpecificCharacterSetFn)(const char* path);
-typedef char* (*HorosModernDCMTKCopyFieldFn)(const char* path, const char* fieldName);
-typedef char* (*HorosModernDCMTKCopyFieldByTagFn)(const char* path, unsigned short group, unsigned short element);
-typedef int (*HorosModernDCMTKGetBasicMetadataFn)(const char* path, HorosModernDCMTKBasicMetadata* metadata);
-typedef int (*HorosModernDCMTKCopyImageGeometryFn)(const char* path, double* origin3, double* orientation9);
-typedef int (*HorosModernDCMTKCopyFrameGeometryFn)(const char* path, double** sliceLocations, int* sliceCount, double** triggerDelays, int* triggerCount);
-typedef int (*HorosModernDCMTKCopyEncapsulatedDocumentFn)(const char* path, unsigned char** buffer, unsigned long* length);
-typedef void (*HorosModernDCMTKFreeBasicMetadataFn)(HorosModernDCMTKBasicMetadata* metadata);
-typedef void (*HorosModernDCMTKFreeStringFn)(char* value);
-typedef void (*HorosModernDCMTKFreeBufferFn)(void* buffer);
+typedef __typeof__(&HorosModernDCMTKIsDICOMFile) HorosModernDCMTKIsDICOMFileFn;
+typedef __typeof__(&HorosModernDCMTKCopySpecificCharacterSet) HorosModernDCMTKCopySpecificCharacterSetFn;
+typedef __typeof__(&HorosModernDCMTKCopyField) HorosModernDCMTKCopyFieldFn;
+typedef __typeof__(&HorosModernDCMTKCopyFieldByTag) HorosModernDCMTKCopyFieldByTagFn;
+typedef __typeof__(&HorosModernDCMTKGetBasicMetadata) HorosModernDCMTKGetBasicMetadataFn;
+typedef __typeof__(&HorosModernDCMTKCopyImageGeometry) HorosModernDCMTKCopyImageGeometryFn;
+typedef __typeof__(&HorosModernDCMTKCopyFrameGeometry) HorosModernDCMTKCopyFrameGeometryFn;
+typedef __typeof__(&HorosModernDCMTKCopyEncapsulatedDocument) HorosModernDCMTKCopyEncapsulatedDocumentFn;
+typedef __typeof__(&HorosModernDCMTKFreeBasicMetadata) HorosModernDCMTKFreeBasicMetadataFn;
+typedef __typeof__(&HorosModernDCMTKFreeString) HorosModernDCMTKFreeStringFn;
+typedef __typeof__(&HorosModernDCMTKFreeBuffer) HorosModernDCMTKFreeBufferFn;
 
 static NSDateFormatter *HorosDICOMDateFormatter(NSString *format)
 {
@@ -91,70 +91,12 @@ static NSDate *HorosDICOMFallbackDate(void)
     return [[NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian] dateFromComponents:components];
 }
 
-static void* HorosModernDCMTKBridgeHandle()
-{
-    static void* handle = nullptr;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSBundle *bundle = [NSBundle mainBundle];
-        NSArray<NSString *> *basePaths = @[
-            bundle.resourcePath ?: @"",
-            bundle.privateFrameworksPath ?: @"",
-            bundle.sharedFrameworksPath ?: @"",
-            bundle.builtInPlugInsPath ?: @""
-        ];
-        NSArray<NSString *> *relativePaths = @[
-            @"libHorosModernDCMTKBridge.dylib",
-            @"DCMTK/libHorosModernDCMTKBridge.dylib"
-        ];
-        NSString *resolvedPath = nil;
-        NSFileManager *fileManager = [NSFileManager defaultManager];
-        for (NSString *basePath in basePaths)
-        {
-            if (basePath.length == 0)
-                continue;
-            for (NSString *relativePath in relativePaths)
-            {
-                NSString *candidate = [basePath stringByAppendingPathComponent:relativePath];
-                if ([fileManager fileExistsAtPath:candidate])
-                {
-                    resolvedPath = candidate;
-                    break;
-                }
-            }
-            if (resolvedPath)
-                break;
-        }
-
-        if (resolvedPath)
-        {
-            handle = dlopen(resolvedPath.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
-            if (handle == nullptr)
-                NSLog(@"Modern DCMTK bridge failed to load at %@: %s", resolvedPath, dlerror());
-        }
-        else
-        {
-            NSLog(@"Modern DCMTK bridge not found in bundle search paths.");
-        }
-    });
-    return handle;
-}
-
-template <typename FunctionType>
-static FunctionType HorosModernDCMTKSymbol(const char* name)
-{
-    void* handle = HorosModernDCMTKBridgeHandle();
-    if (handle == nullptr)
-        return nullptr;
-    return reinterpret_cast<FunctionType>(dlsym(handle, name));
-}
-
 static NSString* HorosModernDCMTKCopiedString(char* value)
 {
     if (value == nullptr)
         return nil;
 
-    HorosModernDCMTKFreeStringFn freeStringFn = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    HorosModernDCMTKFreeStringFn freeStringFn = HorosDCMTKFunction(HorosModernDCMTKFreeString);
     NSString *string = [NSString stringWithCString:value encoding:NSISOLatin1StringEncoding];
     if (freeStringFn)
         freeStringFn(value);
@@ -276,15 +218,15 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
 
 + (NSString *)generatedDICOMUID
 {
-    auto generate = HorosModernDCMTKSymbol<decltype(&HorosModernDCMTKCopyGeneratedUID)>("HorosModernDCMTKCopyGeneratedUID");
+    auto generate = HorosDCMTKFunction(HorosModernDCMTKCopyGeneratedUID);
     return generate ? HorosModernDCMTKCopiedString(generate()) : nil;
 }
 
 + (BOOL)writeRawSecondaryCapture:(const HorosModernDCMTKRawImage *)image toFile:(NSString *)path error:(NSError **)error
 {
     if (error) *error = nil;
-    auto write = HorosModernDCMTKSymbol<decltype(&HorosModernDCMTKWriteRawSecondaryCapture)>("HorosModernDCMTKWriteRawSecondaryCapture");
-    auto freeString = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    auto write = HorosDCMTKFunction(HorosModernDCMTKWriteRawSecondaryCapture);
+    auto freeString = HorosDCMTKFunction(HorosModernDCMTKFreeString);
     // Keep incomplete files hidden from the incoming-directory scanner.
     NSString *temporary = [path.stringByDeletingLastPathComponent stringByAppendingPathComponent:
         [@"." stringByAppendingString:NSUUID.UUID.UUIDString]];
@@ -309,9 +251,9 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
 {
     if (error != NULL)
         *error = nil;
-    typedef char* (*CopyMetadataFn)(const char*, char**);
-    CopyMetadataFn copyMetadata = HorosModernDCMTKSymbol<CopyMetadataFn>("HorosModernDCMTKCopyMetadataXML");
-    HorosModernDCMTKFreeStringFn freeString = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    typedef __typeof__(&HorosModernDCMTKCopyMetadataXML) CopyMetadataFn;
+    CopyMetadataFn copyMetadata = HorosDCMTKFunction(HorosModernDCMTKCopyMetadataXML);
+    HorosModernDCMTKFreeStringFn freeString = HorosDCMTKFunction(HorosModernDCMTKFreeString);
     NSString *reason = @"The DCMTK metadata reader is unavailable. Rebuild the bundled bridge.";
     if (copyMetadata && freeString)
     {
@@ -336,10 +278,10 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
         *title = nil;
     if (error != NULL)
         *error = nil;
-    typedef int (*CopyPDFFn)(const char*, unsigned char**, unsigned long*, char**, char**);
-    CopyPDFFn copyPDF = HorosModernDCMTKSymbol<CopyPDFFn>("HorosModernDCMTKCopyEncapsulatedPDF");
-    HorosModernDCMTKFreeBufferFn freeBuffer = HorosModernDCMTKSymbol<HorosModernDCMTKFreeBufferFn>("HorosModernDCMTKFreeBuffer");
-    HorosModernDCMTKFreeStringFn freeString = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
+    typedef __typeof__(&HorosModernDCMTKCopyEncapsulatedPDF) CopyPDFFn;
+    CopyPDFFn copyPDF = HorosDCMTKFunction(HorosModernDCMTKCopyEncapsulatedPDF);
+    HorosModernDCMTKFreeBufferFn freeBuffer = HorosDCMTKFunction(HorosModernDCMTKFreeBuffer);
+    HorosModernDCMTKFreeStringFn freeString = HorosDCMTKFunction(HorosModernDCMTKFreeString);
     NSString *reason = @"The DCMTK PDF reader is unavailable. Rebuild the bundled bridge.";
     if (copyPDF && freeBuffer && freeString)
     {
@@ -365,7 +307,7 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
 
 + (NSArray*) getEncodingArrayForFile: (NSString*) file
 {
-    HorosModernDCMTKCopySpecificCharacterSetFn bridgeFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopySpecificCharacterSetFn>("HorosModernDCMTKCopySpecificCharacterSet");
+    HorosModernDCMTKCopySpecificCharacterSetFn bridgeFn = HorosDCMTKFunction(HorosModernDCMTKCopySpecificCharacterSet);
     if (bridgeFn)
     {
         NSString *characterSet = HorosModernDCMTKCopiedString(bridgeFn(file.UTF8String));
@@ -377,7 +319,7 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
 }
 
 + (BOOL) isDICOMFileDCMTK:(NSString *) file{
-    HorosModernDCMTKIsDICOMFileFn bridgeFn = HorosModernDCMTKSymbol<HorosModernDCMTKIsDICOMFileFn>("HorosModernDCMTKIsDICOMFile");
+    HorosModernDCMTKIsDICOMFileFn bridgeFn = HorosDCMTKFunction(HorosModernDCMTKIsDICOMFile);
     if (bridgeFn)
         return bridgeFn(file.UTF8String) != 0;
     return NO;
@@ -388,7 +330,7 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     if( field.length <= 0)
         return nil;
 
-    HorosModernDCMTKCopyFieldFn bridgeFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyFieldFn>("HorosModernDCMTKCopyField");
+    HorosModernDCMTKCopyFieldFn bridgeFn = HorosDCMTKFunction(HorosModernDCMTKCopyField);
     if (bridgeFn)
     {
         NSString *value = HorosModernDCMTKCopiedString(bridgeFn(path.UTF8String, field.UTF8String));
@@ -420,18 +362,18 @@ static NSString* HorosModernDCMTKCopyFieldByTagString(const char* path,
     HorosModernDCMTKBasicMetadata bridgeMetadata;
     memset(&bridgeMetadata, 0, sizeof(bridgeMetadata));
     BOOL hasBridgeMetadata = NO;
-    HorosModernDCMTKGetBasicMetadataFn bridgeFn = HorosModernDCMTKSymbol<HorosModernDCMTKGetBasicMetadataFn>("HorosModernDCMTKGetBasicMetadata");
-    HorosModernDCMTKFreeBasicMetadataFn freeBridgeMetadataFn = HorosModernDCMTKSymbol<HorosModernDCMTKFreeBasicMetadataFn>("HorosModernDCMTKFreeBasicMetadata");
+    HorosModernDCMTKGetBasicMetadataFn bridgeFn = HorosDCMTKFunction(HorosModernDCMTKGetBasicMetadata);
+    HorosModernDCMTKFreeBasicMetadataFn freeBridgeMetadataFn = HorosDCMTKFunction(HorosModernDCMTKFreeBasicMetadata);
     if (bridgeFn)
         hasBridgeMetadata = bridgeFn(filePath.UTF8String, &bridgeMetadata) != 0;
     
-    HorosModernDCMTKCopyFieldFn copyFieldFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyFieldFn>("HorosModernDCMTKCopyField");
-    HorosModernDCMTKCopyFieldByTagFn copyFieldByTagFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyFieldByTagFn>("HorosModernDCMTKCopyFieldByTag");
-    HorosModernDCMTKCopyImageGeometryFn copyGeometryFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyImageGeometryFn>("HorosModernDCMTKCopyImageGeometry");
-    HorosModernDCMTKCopyFrameGeometryFn copyFrameGeometryFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyFrameGeometryFn>("HorosModernDCMTKCopyFrameGeometry");
-    HorosModernDCMTKCopyEncapsulatedDocumentFn copyEncapsulatedDocumentFn = HorosModernDCMTKSymbol<HorosModernDCMTKCopyEncapsulatedDocumentFn>("HorosModernDCMTKCopyEncapsulatedDocument");
-    HorosModernDCMTKFreeStringFn freeStringFn = HorosModernDCMTKSymbol<HorosModernDCMTKFreeStringFn>("HorosModernDCMTKFreeString");
-    HorosModernDCMTKFreeBufferFn freeBufferFn = HorosModernDCMTKSymbol<HorosModernDCMTKFreeBufferFn>("HorosModernDCMTKFreeBuffer");
+    HorosModernDCMTKCopyFieldFn copyFieldFn = HorosDCMTKFunction(HorosModernDCMTKCopyField);
+    HorosModernDCMTKCopyFieldByTagFn copyFieldByTagFn = HorosDCMTKFunction(HorosModernDCMTKCopyFieldByTag);
+    HorosModernDCMTKCopyImageGeometryFn copyGeometryFn = HorosDCMTKFunction(HorosModernDCMTKCopyImageGeometry);
+    HorosModernDCMTKCopyFrameGeometryFn copyFrameGeometryFn = HorosDCMTKFunction(HorosModernDCMTKCopyFrameGeometry);
+    HorosModernDCMTKCopyEncapsulatedDocumentFn copyEncapsulatedDocumentFn = HorosDCMTKFunction(HorosModernDCMTKCopyEncapsulatedDocument);
+    HorosModernDCMTKFreeStringFn freeStringFn = HorosDCMTKFunction(HorosModernDCMTKFreeString);
+    HorosModernDCMTKFreeBufferFn freeBufferFn = HorosDCMTKFunction(HorosModernDCMTKFreeBuffer);
     
     if (hasBridgeMetadata == NO && copyFieldFn == NULL && copyFieldByTagFn == NULL)
     {

@@ -859,7 +859,10 @@ private struct MetalViewerScoutROIUniforms {
 
 private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
-    private let commandQueue: MTLCommandQueue
+    private let renderQueue: MTL4CommandQueue
+    private let renderCommandBuffer: MTL4CommandBuffer
+    private let renderFrames: [MetalViewerRenderFrame]
+    private var pendingRender = false
     private let pipelineState: MTLRenderPipelineState
     private let depthStencilState: MTLDepthStencilState
     private let stateLock = NSLock()
@@ -870,7 +873,9 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
 
     init?(view: MTKView) {
         guard let device = view.device,
-              let commandQueue = device.makeCommandQueue(),
+              let renderQueue = device.makeMTL4CommandQueue(),
+              let renderCommandBuffer = device.makeCommandBuffer(),
+              let renderFrames = try? (0..<2).map({ _ in try MetalViewerRenderFrame(device: device) }),
               let pipelines = try? MetalPipelineCache.shared(for: device),
               let pipelineState = try? pipelines.renderPipeline(
                 vertex: "metalViewerScoutROIVertex", fragment: "metalViewerScoutROIFragment",
@@ -888,7 +893,9 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
         }
 
         self.device = device
-        self.commandQueue = commandQueue
+        self.renderQueue = renderQueue
+        self.renderCommandBuffer = renderCommandBuffer
+        self.renderFrames = renderFrames
         self.pipelineState = pipelineState
         self.depthStencilState = depthStencilState
         super.init()
@@ -925,6 +932,14 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
+        precondition(Thread.isMainThread)
+        let performanceStartedAt = MetalPerformanceTrace.begin()
+        guard let frame = renderFrames.first(where: { !$0.inFlight }) else {
+            pendingRender = true
+            return
+        }
+        pendingRender = false
+
         stateLock.lock()
         let vertexBuffer = self.vertexBuffer
         let vertexCount = self.vertexCount
@@ -936,10 +951,10 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
 
         guard let vertexBuffer,
               vertexCount > 0,
-              let renderPassDescriptor = view.currentRenderPassDescriptor,
+              let renderPassDescriptor = view.currentMTL4RenderPassDescriptor,
               let drawable = view.currentDrawable,
-              let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+              let encoder = frame.makeRenderEncoder(commandBuffer: renderCommandBuffer,
+                                                      descriptor: renderPassDescriptor, drawable: drawable, view: view) else {
             return
         }
 
@@ -947,21 +962,39 @@ private final class MetalViewerScoutROIRenderer: NSObject, MTKViewDelegate {
         encoder.setRenderPipelineState(pipelineState)
         encoder.setDepthStencilState(depthStencilState)
         encoder.setCullMode(.none)
-        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
-        encoder.setVertexBytes(
-            &uniforms,
-            length: MemoryLayout<MetalViewerScoutROIUniforms>.stride,
-            index: 1
-        )
-        encoder.setFragmentBytes(
-            &uniforms,
-            length: MemoryLayout<MetalViewerScoutROIUniforms>.stride,
-            index: 1
-        )
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertexCount)
+        frame.setVertexBuffer(vertexBuffer)
+        guard frame.setUniforms(&uniforms, fragmentIndex: 1) else {
+            encoder.endEncoding()
+            renderCommandBuffer.endCommandBuffer()
+            frame.releaseCompletedResources()
+            NSLog("Could not allocate Metal 4 ROI scout display data.")
+            return
+        }
+        encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: vertexCount)
         encoder.endEncoding()
-        commandBuffer.present(drawable)
-        commandBuffer.commit()
+        frame.residency.commit()
+        renderCommandBuffer.useResidencySet(frame.residency)
+        if let residency = frame.drawableResidency { renderCommandBuffer.useResidencySet(residency) }
+        renderCommandBuffer.endCommandBuffer()
+
+        let options = MTL4CommitOptions()
+        // Keep the submitted mesh and pipeline alive even if the scout is replaced.
+        options.addFeedbackHandler { [self, frame, weak view] feedback in
+            if let error = feedback.error { NSLog("Metal 4 ROI scout display failed: %@", error.localizedDescription) }
+            DispatchQueue.main.async { [self, frame, weak view] in
+                frame.releaseCompletedResources()
+                if pendingRender {
+                    pendingRender = false
+                    view?.needsDisplay = true
+                }
+            }
+        }
+        MetalPerformanceTrace.track(options, operation: "draw.scoutROI", since: performanceStartedAt, drawable: drawable)
+        frame.inFlight = true
+        renderQueue.waitForDrawable(drawable)
+        renderQueue.commit([renderCommandBuffer], options: options)
+        renderQueue.signalDrawable(drawable)
+        drawable.present()
     }
 
     private static func makeSurfaceVertices(for roi: MetalStudyROI) -> [MetalStudyROISurfaceVertex] {

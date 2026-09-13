@@ -49,7 +49,6 @@
 #import "DICOMToNSString.h"
 #import "MutableArrayCategory.h"
 #import "N2Debug.h"
-#import "N2Connection.h"
 #import "DicomDatabase.h"
 #import "NSThread+N2.h"
 #import "LogManager.h"

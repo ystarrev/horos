@@ -21,8 +21,51 @@ private struct MetalPreviewUniforms {
 }
 
 private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
+    private final class FrameResources {
+        let allocator: MTL4CommandAllocator
+        let uniforms: MTLBuffer
+        let residency: MTLResidencySet
+        var inFlight = false
+        var sampledTextures: [MTLTexture] = []
+        var drawable: CAMetalDrawable?
+        var renderPass: MTL4RenderPassDescriptor?
+        var drawableResidency: MTLResidencySet?
+
+        init(device: MTLDevice, vertexBuffer: MTLBuffer) throws {
+            guard let allocator = device.makeCommandAllocator(),
+                  let uniforms = device.makeBuffer(length: MemoryLayout<MetalPreviewUniforms>.stride,
+                                                   options: .storageModeShared) else {
+                throw NSError(domain: "MetalPreviewRenderer", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "Could not allocate Metal preview frame resources."])
+            }
+            self.allocator = allocator
+            self.uniforms = uniforms
+            let descriptor = MTLResidencySetDescriptor()
+            descriptor.initialCapacity = 6
+            residency = try device.makeResidencySet(descriptor: descriptor)
+            residency.addAllocation(vertexBuffer)
+            residency.addAllocation(uniforms)
+            residency.commit()
+        }
+
+        func releaseCompletedResources() {
+            for texture in sampledTextures { residency.removeAllocation(texture) }
+            residency.commit()
+            sampledTextures.removeAll(keepingCapacity: true)
+            drawable = nil
+            renderPass = nil
+            drawableResidency = nil
+            inFlight = false
+        }
+    }
+
     private let deviceRef: MTLDevice
-    private let commandQueue: MTLCommandQueue
+    private let commandQueue: MTL4CommandQueue
+    private let commandBuffer: MTL4CommandBuffer
+    private let vertexArguments: MTL4ArgumentTable
+    private let fragmentArguments: MTL4ArgumentTable
+    private let frames: [FrameResources]
+    private var pendingRedraw = false
     private let pipelineState: MTLRenderPipelineState
     private let vertexBuffer: MTLBuffer
 
@@ -33,13 +76,13 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
     private var imageTexture: MTLTexture?
     private var volumeEntry: MetalSeriesTextureCache.Entry?
     private var requestedVolumeKey: String?
-    private var textureSize: SIMD2<Int> = .zero
+    private var imageTexturePool: [MTLTexture] = []
     private var imageTextureKind: MetalSeriesTextureKind = .rescaledFloat
     private var imageRescaleSlope: Float = 1
     private var imageRescaleIntercept: Float = 0
     private var imagePixelSpacing = SIMD2<Float>(repeating: 1)
-    private var imageDefaultWindowLevel: Float?
-    private var imageDefaultWindowWidth: Float?
+    private var windowSeriesKey: String?
+    private var needsDefaultWindow = true
     private(set) var imageAspectRatio: Float = 1
     private(set) var windowLevel: Float = 0
     private(set) var windowWidth: Float = 1
@@ -50,10 +93,12 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
     init(device: MTLDevice) {
         self.deviceRef = device
 
-        guard let commandQueue = device.makeCommandQueue() else {
+        guard let commandQueue = device.makeMTL4CommandQueue(),
+              let commandBuffer = device.makeCommandBuffer() else {
             fatalError("Could not create Metal command queue.")
         }
         self.commandQueue = commandQueue
+        self.commandBuffer = commandBuffer
 
         let vertices: [MetalPreviewVertex] = [
             MetalPreviewVertex(position: [-1, -1], texCoord: [0, 1]),
@@ -74,6 +119,17 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
         do {
             let pipelines = try MetalPipelineCache.shared(for: device)
             pipelineState = try pipelines.renderPipeline(vertex: "metalPreviewVertex", fragment: "metalPreviewFragment")
+            frames = try (0..<3).map { _ in try FrameResources(device: device, vertexBuffer: vertexBuffer) }
+            let vertexDescriptor = MTL4ArgumentTableDescriptor()
+            vertexDescriptor.maxBufferBindCount = 2
+            vertexDescriptor.initializeBindings = true
+            vertexArguments = try device.makeArgumentTable(descriptor: vertexDescriptor)
+            vertexArguments.setAddress(vertexBuffer.gpuAddress, index: 0)
+            let fragmentDescriptor = MTL4ArgumentTableDescriptor()
+            fragmentDescriptor.maxBufferBindCount = 1
+            fragmentDescriptor.maxTextureBindCount = 6
+            fragmentDescriptor.initializeBindings = true
+            fragmentArguments = try device.makeArgumentTable(descriptor: fragmentDescriptor)
         } catch {
             fatalError("Could not create Metal preview pipeline: \(error)")
         }
@@ -138,6 +194,13 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
     }
 
     func setWindowLevel(_ wl: Float, width ww: Float) {
+        guard wl.isFinite, ww.isFinite else { return }
+        guard ww > 0 else {
+            needsDefaultWindow = true
+            if let currentPix { loadPix(currentPix, resetWindowLevel: true) }
+            return
+        }
+        needsDefaultWindow = false
         windowLevel = wl
         windowWidth = max(ww, 1)
     }
@@ -164,31 +227,50 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
 
     private func loadPix(_ pix: DCMPix, resetWindowLevel: Bool) {
         let usingVolumeTexture = canUseVolumeTexture(for: pix, at: volumeSliceIndex)
+        let reader = pix.srcFile.flatMap { try? SwiftDICOMReader.cached(contentsOfFile: $0) }
+        let seriesUID = reader?.stringValue(forTag: "0020,000E")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let seriesKey = seriesUID?.isEmpty == false ? seriesUID : pix.srcFile
+        if resetWindowLevel || currentPix == nil || seriesKey != windowSeriesKey {
+            needsDefaultWindow = true
+        }
+        windowSeriesKey = seriesKey
 
         currentPix = pix
         let width = max(Int(pix.widthWithoutLoading()), 1)
         let height = max(Int(pix.heightWithoutLoading()), 1)
+        // A published volume is immutable. Only decode again for a new window,
+        // not for every slice scroll or when its asynchronous upload arrives.
+        let storedPixels = usingVolumeTexture && !needsDefaultWindow ? nil : MetalStoredInt16PixelData(pix: pix)
         if usingVolumeTexture == false {
-            if let texture = makeTexture(for: pix) {
+            if let storedPixels, storedPixels.width == width, storedPixels.height == height,
+               let texture = makeStoredInt16Texture(storedPixels) {
                 imageTexture = texture
             } else {
                 resetImageTextureState()
             }
         }
+        if let storedPixels {
+            imageRescaleSlope = storedPixels.rescaleSlope
+            imageRescaleIntercept = storedPixels.rescaleIntercept
+            imagePixelSpacing = storedPixels.pixelSpacing
+        }
         let spacingX = max(imagePixelSpacing.x, 0.0001)
         let spacingY = max(imagePixelSpacing.y, 0.0001)
         imageAspectRatio = Float(width) * spacingX / max(Float(height) * spacingY, 1)
 
-        if resetWindowLevel {
-            if let defaultWindowWidth = imageDefaultWindowWidth,
-               let defaultWindowLevel = imageDefaultWindowLevel {
-                windowWidth = max(defaultWindowWidth, 1)
-                windowLevel = defaultWindowLevel
-            } else {
-                let fallback = MetalStoredInt16PixelData(pix: pix)?.inferredWindow
-                windowWidth = max(fallback?.width ?? 1, 1)
-                windowLevel = fallback?.level ?? 0
+        if needsDefaultWindow, let storedPixels {
+            let modality = reader?.stringValue(forTag: "0008,0060") ?? pix.modalityString
+            let dicomWindow = storedPixels.defaultWindow.flatMap { window in
+                window.level.isFinite && window.width.isFinite && window.width > 0 ? window : nil
             }
+            let useAutomaticWindow = modality?.uppercased() == "MR" || dicomWindow == nil
+            let automaticWindow = useAutomaticWindow
+                ? MetalViewerAutomaticWindowLevel.window(for: storedPixels, modality: modality)
+                : nil
+            let window = automaticWindow ?? dicomWindow ?? storedPixels.storedRangeWindow
+            windowWidth = max(window.width, 1)
+            windowLevel = window.level
+            needsDefaultWindow = false
         }
     }
 
@@ -212,6 +294,7 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
 
         if let entry = MetalSeriesTextureCache.shared.cachedEntry(for: request) {
             volumeEntry = entry
+            if needsDefaultWindow { loadCurrentPix(resetWindowLevel: true) }
             contentDidChange?()
             return
         }
@@ -225,6 +308,7 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
             guard let entry else { return }
 
             self.volumeEntry = entry
+            if self.needsDefaultWindow { self.loadCurrentPix(resetWindowLevel: true) }
             self.contentDidChange?()
         }
     }
@@ -253,25 +337,24 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
 
     private func resetImageTextureState() {
         imageTexture = nil
-        textureSize = .zero
+        imageTexturePool.removeAll()
         imageTextureKind = .rescaledFloat
         imageRescaleSlope = 1
         imageRescaleIntercept = 0
         imagePixelSpacing = SIMD2<Float>(repeating: 1)
-        imageDefaultWindowLevel = nil
-        imageDefaultWindowWidth = nil
-    }
-
-    private func makeTexture(for pix: DCMPix) -> MTLTexture? {
-        let width = max(Int(pix.widthWithoutLoading()), 1)
-        let height = max(Int(pix.heightWithoutLoading()), 1)
-        return makeStoredInt16Texture(for: pix, width: width, height: height)
+        needsDefaultWindow = true
     }
 
     private func texture(width: Int, height: Int, pixelFormat: MTLPixelFormat, kind: MetalSeriesTextureKind) -> MTLTexture? {
-        let requiredSize = SIMD2<Int>(width, height)
+        precondition(Thread.isMainThread)
+        imageTexturePool.removeAll { $0.width != width || $0.height != height || $0.pixelFormat != pixelFormat }
         let texture: MTLTexture
-        if let existingTexture = imageTexture, textureSize == requiredSize, imageTextureKind == kind {
+        // CPU uploads must not overwrite a texture sampled by an outstanding frame.
+        if let existingTexture = imageTexturePool.first(where: { candidate in
+            !frames.contains { frame in
+                frame.inFlight && frame.sampledTextures.contains { $0 === candidate }
+            }
+        }) {
             texture = existingTexture
         } else {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
@@ -281,25 +364,22 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
                 mipmapped: false
             )
             descriptor.usage = [.shaderRead]
+            descriptor.storageMode = .shared
 
             guard let newTexture = deviceRef.makeTexture(descriptor: descriptor) else {
                 return nil
             }
-            imageTexture = newTexture
-            textureSize = requiredSize
-            imageTextureKind = kind
+            imageTexturePool.append(newTexture)
             texture = newTexture
         }
+        imageTexture = texture
+        imageTextureKind = kind
         return texture
     }
 
-    private func makeStoredInt16Texture(for pix: DCMPix, width: Int, height: Int) -> MTLTexture? {
-        guard let storedPixels = MetalStoredInt16PixelData(pix: pix),
-              storedPixels.width == width,
-              storedPixels.height == height else {
-            return nil
-        }
-
+    private func makeStoredInt16Texture(_ storedPixels: MetalStoredInt16PixelData) -> MTLTexture? {
+        let width = storedPixels.width
+        let height = storedPixels.height
         guard let texture = texture(
             width: width,
             height: height,
@@ -308,13 +388,6 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
         ) else {
             return nil
         }
-
-        imageRescaleSlope = storedPixels.rescaleSlope
-        imageRescaleIntercept = storedPixels.rescaleIntercept
-        imagePixelSpacing = storedPixels.pixelSpacing
-        let defaultWindow = storedPixels.inferredWindow
-        imageDefaultWindowLevel = defaultWindow.level
-        imageDefaultWindowWidth = defaultWindow.width
 
         storedPixels.data.withUnsafeBytes { bytes in
             guard let baseAddress = bytes.baseAddress else { return }
@@ -331,9 +404,17 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
-        guard let renderPassDescriptor = view.currentRenderPassDescriptor,
+        precondition(Thread.isMainThread)
+        let performanceStartedAt = MetalPerformanceTrace.begin()
+        guard let frame = frames.first(where: { !$0.inFlight }) else {
+            // Coalesce while busy. Completion requests the latest state, not a stale slice.
+            pendingRedraw = true
+            return
+        }
+        pendingRedraw = false
+        guard let renderPassDescriptor = view.currentMTL4RenderPassDescriptor,
               let drawable = view.currentDrawable,
-              let commandBuffer = commandQueue.makeCommandBuffer() else {
+              let layer = view.layer as? CAMetalLayer else {
             return
         }
 
@@ -342,19 +423,10 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
         let sampledTextureKind = sampledVolumeEntry?.textureKind.rawValue ?? imageTextureKind.rawValue
         let sampledRescaleSlope = sampledVolumeEntry?.rescaleSlope ?? imageRescaleSlope
         let sampledRescaleIntercept = sampledVolumeEntry?.rescaleIntercept ?? imageRescaleIntercept
-        let signedImageTexture = imageTextureKind == .storedInt16Signed ? imageTexture : nil
-        let unsignedImageTexture = imageTextureKind == .storedInt16Unsigned ? imageTexture : nil
+        let signedImageTexture = sampledVolumeEntry == nil && imageTextureKind == .storedInt16Signed ? imageTexture : nil
+        let unsignedImageTexture = sampledVolumeEntry == nil && imageTextureKind == .storedInt16Unsigned ? imageTexture : nil
         let signedVolumeTexture = sampledVolumeEntry?.textureKind == .storedInt16Signed ? sampledVolumeEntry?.texture : nil
         let unsignedVolumeTexture = sampledVolumeEntry?.textureKind == .storedInt16Unsigned ? sampledVolumeEntry?.texture : nil
-        guard imageTexture != nil || sampledVolumeEntry != nil else {
-            guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
-                return
-            }
-            encoder.endEncoding()
-            commandBuffer.present(drawable)
-            commandBuffer.commit()
-            return
-        }
 
         let drawableAspect = max(Float(view.drawableSize.width / max(view.drawableSize.height, 1)), 0.0001)
         var scale = SIMD2<Float>(repeating: 1)
@@ -383,23 +455,61 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
             padding: 0
         )
 
+        frame.allocator.reset()
+        commandBuffer.beginCommandBuffer(allocator: frame.allocator)
+        frame.drawable = drawable
+        frame.renderPass = renderPassDescriptor
+        frame.drawableResidency = layer.residencySet
+        let textures = [signedVolumeTexture, unsignedVolumeTexture, signedImageTexture, unsignedImageTexture]
+        frame.sampledTextures = textures.compactMap { $0 }
+        for texture in frame.sampledTextures { frame.residency.addAllocation(texture) }
+        frame.residency.commit()
+        commandBuffer.useResidencySet(frame.residency)
+        commandBuffer.useResidencySet(layer.residencySet)
+
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+            commandBuffer.endCommandBuffer()
+            frame.releaseCompletedResources()
+            NSLog("Could not create Metal 4 preview render encoder.")
             return
         }
 
-        encoder.setRenderPipelineState(pipelineState)
-        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
-        encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalPreviewUniforms>.stride, index: 1)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<MetalPreviewUniforms>.stride, index: 0)
-        encoder.setFragmentTexture(signedVolumeTexture, index: 2)
-        encoder.setFragmentTexture(unsignedVolumeTexture, index: 3)
-        encoder.setFragmentTexture(signedImageTexture, index: 4)
-        encoder.setFragmentTexture(unsignedImageTexture, index: 5)
-        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        if imageTexture != nil || sampledVolumeEntry != nil {
+            withUnsafeBytes(of: &uniforms) { bytes in
+                frame.uniforms.contents().copyMemory(from: bytes.baseAddress!, byteCount: bytes.count)
+            }
+            vertexArguments.setAddress(frame.uniforms.gpuAddress, index: 1)
+            fragmentArguments.setAddress(frame.uniforms.gpuAddress, index: 0)
+            for (index, texture) in textures.enumerated() {
+                fragmentArguments.setTexture(texture?.gpuResourceID ?? MTLResourceID(), index: index + 2)
+            }
+            encoder.setRenderPipelineState(pipelineState)
+            encoder.setArgumentTable(vertexArguments, stages: .vertex)
+            encoder.setArgumentTable(fragmentArguments, stages: .fragment)
+            encoder.drawPrimitives(primitiveType: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        }
         encoder.endEncoding()
+        commandBuffer.endCommandBuffer()
 
-        commandBuffer.present(drawable)
-        commandBuffer.commit()
+        let options = MTL4CommitOptions()
+        // Metal 4 does not retain resources. Keep this renderer and its frame alive
+        // even if the preview view closes before the GPU completes the submission.
+        options.addFeedbackHandler { [self, frame, weak view] feedback in
+            if let error = feedback.error { NSLog("Metal 4 preview failed: %@", error.localizedDescription) }
+            DispatchQueue.main.async { [self, frame, weak view] in
+                frame.releaseCompletedResources()
+                if pendingRedraw {
+                    pendingRedraw = false
+                    view?.needsDisplay = true
+                }
+            }
+        }
+        MetalPerformanceTrace.track(options, operation: "draw.preview", since: performanceStartedAt, drawable: drawable)
+        frame.inFlight = true
+        commandQueue.waitForDrawable(drawable)
+        commandQueue.commit([commandBuffer], options: options)
+        commandQueue.signalDrawable(drawable)
+        drawable.present()
     }
 }
 

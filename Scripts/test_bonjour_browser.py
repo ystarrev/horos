@@ -26,7 +26,7 @@ class BonjourBrowserTests(unittest.TestCase):
             if path.suffix in (".h", ".m", ".mm", ".swift"):
                 self.assertNotIn("NSNetServiceBrowser", path.read_text(), str(path))
         self.assertIn("HorosBonjourBrowserDelegate", SOURCE_LIST)
-        self.assertIn("<HorosBonjourBrowserDelegate>", QUERY)
+        self.assertIn("<HorosBonjourBrowserDelegate, HorosBonjourServiceDelegate>", QUERY)
         self.assertIn('import Network', BROWSER)
         self.assertIn(".bonjourWithTXTRecord(type: type", BROWSER)
         self.assertIn("parameters.includePeerToPeer = true", BROWSER)
@@ -63,34 +63,30 @@ class BonjourBrowserTests(unittest.TestCase):
 
     def test_refreshes_existing_resolvers_and_rejects_late_resolve_results(self):
         for source in (SOURCE_LIST, QUERY):
-            self.assertIn("didUpdateService:(NSNetService*)service" if source == SOURCE_LIST
-                          else "didUpdateService:(NSNetService *)aNetService", source)
+            self.assertIn("didUpdateService:(HorosBonjourService*)service" if source == SOURCE_LIST
+                          else "didUpdateService:(HorosBonjourService *)aNetService", source)
         self.assertIn("if (_invalidated) return;", SOURCE_LIST)
         self.assertIn("if (!_dicomNetBrowser || ![_dicomServices containsObject:aNetService]) return;", QUERY)
         self.assertNotIn("if (!source.location && address.count >= 2)", SOURCE_LIST)
         start = QUERY.split("- (void)_startDICOMBonjourSearch", 1)[1].split("- (void)observeValue", 1)[0]
         self.assertIn('![[NSUserDefaults standardUserDefaults] boolForKey:@"searchDICOMBonjour"]', start)
 
-    def test_native_resolvers_publication_and_peer_checks_remain(self):
-        self.assertIn("NetService(domain: domain, type: type, name: name)", BROWSER)
-        self.assertIn("service.includesPeerToPeer = true", BROWSER)
+    def test_native_resolvers_and_peer_checks_remain(self):
+        self.assertIn("HorosBonjourService(domain: domain, type: type, name: name)", BROWSER)
+        self.assertIn("service.interfaceIndexes = interfaceIndexes(in: observations)", BROWSER)
         self.assertIn("[service resolveWithTimeout:30]", SOURCE_LIST)
         self.assertIn("_verifyBonjourSource:", SOURCE_LIST)
         self.assertIn("reconcileHorosDirectSources", SOURCE_LIST)
         self.assertIn("_resolvedBonjourServiceIsThisHorosType:serviceType", SOURCE_LIST)
         self.assertEqual(SOURCE_LIST.count('@"BonjourServiceKey"'), 2)
         self.assertNotIn("workaround may be removable", SOURCE_LIST)
-        self.assertIn('type:@"_osirixdb._tcp" name:[NSUserDefaults bonjourSharingName] port:[_listener port]', PUBLISHER)
-        self.assertIn("[NSNetService dataFromTXTRecordDictionary:txtrec]", PUBLISHER)
-        self.assertIn("[_bonjour publish]", PUBLISHER)
+        self.assertIn('type:@"_osirixdb._tcp" port:[_listener port]', PUBLISHER)
+        self.assertIn("[_bonjour publishWithTXTRecord:txtrec]", PUBLISHER)
         self.assertIn("[_bonjour stop]", PUBLISHER)
         self.assertIn('type:@"_dicom._tcp"', APP)
-        self.assertIn("[BonjourDICOMService publish]", APP)
+        self.assertIn("[BonjourDICOMService publishWithTXTRecord:dict]", APP)
         self.assertIn("[BonjourDICOMService stop]", APP)
         self.assertIn('@"HorosDirectTransferToken"', APP)
-        for publisher in (PUBLISHER, APP):
-            self.assertIn("didNotPublish:", publisher)
-            self.assertIn("did not publish", publisher)
         self.assertNotIn("NWListener", BROWSER)
 
     def test_no_subprocess_fallback_or_orphan_helper_bookkeeping_remains(self):
@@ -105,8 +101,8 @@ class BonjourBrowserTests(unittest.TestCase):
         self.assertNotIn("import dnssd", BROWSER)
 
     def test_terminal_failures_report_original_error_and_retry_native_browser(self):
-        self.assertIn("NetService.errorCode: nsError.code", BROWSER)
-        self.assertIn("NetService.errorDomain: nsError.domain", BROWSER)
+        self.assertIn('"code": nsError.code', BROWSER)
+        self.assertIn('"domain": nsError.domain', BROWSER)
         self.assertIn("NSLocalizedDescriptionKey: nsError.localizedDescription", BROWSER)
         for source in (BROWSER, SOURCE_LIST, QUERY):
             self.assertNotIn("MissingRequiredConfigurationError", source)
@@ -126,12 +122,12 @@ class BonjourBrowserTests(unittest.TestCase):
             self.assertIn(service, info["NSBonjourServices"])
         self.assertTrue(info["NSLocalNetworkUsageDescription"])
 
-    def test_swift_browser_is_compiled_once_in_application(self):
+    def test_swift_bonjour_helpers_are_compiled_once_in_application(self):
         project = subprocess.check_output([
             "plutil", "-convert", "xml1", "-o", "-", str(ROOT / "Horos.xcodeproj/project.pbxproj")
         ])
         objects = plistlib.loads(project)["objects"]
-        owners = []
+        owners = {"HorosBonjourBrowser.swift": [], "HorosBonjourAdvertisement.swift": [], "HorosBonjourService.swift": []}
         for target in objects.values():
             if target.get("isa") != "PBXNativeTarget":
                 continue
@@ -141,11 +137,13 @@ class BonjourBrowserTests(unittest.TestCase):
                     continue
                 for build_id in phase["files"]:
                     file = objects[objects[build_id]["fileRef"]]
-                    if file.get("path", "").endswith("HorosBonjourBrowser.swift"):
+                    name = Path(file.get("path", "")).name
+                    if name in owners:
                         self.assertEqual(file["sourceTree"], "SOURCE_ROOT")
                         self.assertTrue((ROOT / file["path"]).is_file())
-                        owners.append(target["name"])
-        self.assertEqual(owners, ["Horos"])
+                        owners[name].append(target["name"])
+        for name, targets in owners.items():
+            self.assertEqual(targets, ["Horos"], name)
 
 
 if __name__ == "__main__":

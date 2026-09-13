@@ -920,7 +920,11 @@
 		F4A100000001000000000003 /* Horos/Sources/MetalViewer/MetalImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000003 /* Horos/Sources/MetalViewer/MetalImageView.swift */; };
 		F4A100000001000000000004 /* Horos/Sources/MetalViewer/MetalViewerRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000004 /* Horos/Sources/MetalViewer/MetalViewerRenderer.swift */; };
 		C0DE26091000000000000011 /* MetalPipelineCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091000000000000012 /* MetalPipelineCache.swift */; };
+		C0DE26091200000000000009 /* MetalPerformanceTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE2609120000000000000A /* MetalPerformanceTrace.swift */; };
 		C0DE26091200000000000001 /* HorosBonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091200000000000002 /* HorosBonjourBrowser.swift */; };
+		C0DE26091200000000000003 /* HorosBonjourAdvertisement.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091200000000000004 /* HorosBonjourAdvertisement.swift */; };
+		C0DE26091200000000000005 /* HorosBonjourService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091200000000000006 /* HorosBonjourService.swift */; };
+		C0DE26091200000000000007 /* HorosDatabaseTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091200000000000008 /* HorosDatabaseTransport.swift */; };
 		C0DE26091000000000000021 /* MetalViewerCachePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091000000000000022 /* MetalViewerCachePolicy.swift */; };
 		F4A100000001000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal */; };
 		F4A100000001000000000006 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000006 /* Metal.framework */; };
@@ -1943,7 +1947,11 @@
 		F4A100000002000000000003 /* Horos/Sources/MetalViewer/MetalImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalImageView.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000004 /* Horos/Sources/MetalViewer/MetalViewerRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerRenderer.swift; sourceTree = SOURCE_ROOT; };
 		C0DE26091000000000000012 /* MetalPipelineCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalPipelineCache.swift; sourceTree = SOURCE_ROOT; };
+		C0DE2609120000000000000A /* MetalPerformanceTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalPerformanceTrace.swift; sourceTree = SOURCE_ROOT; };
 		C0DE26091200000000000002 /* HorosBonjourBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosBonjourBrowser.swift; sourceTree = SOURCE_ROOT; };
+		C0DE26091200000000000004 /* HorosBonjourAdvertisement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosBonjourAdvertisement.swift; sourceTree = SOURCE_ROOT; };
+		C0DE26091200000000000006 /* HorosBonjourService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosBonjourService.swift; sourceTree = SOURCE_ROOT; };
+		C0DE26091200000000000008 /* HorosDatabaseTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosDatabaseTransport.swift; sourceTree = SOURCE_ROOT; };
 		C0DE26091000000000000022 /* MetalViewerCachePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerCachePolicy.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Horos/Sources/MetalViewer/MetalShaders.metal; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000006 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
@@ -3499,7 +3507,11 @@
 				F4A100000002000000000014 /* Horos/Sources/MetalViewer/MetalPreviewImageView.swift */,
 				F4A100000002000000000004 /* Horos/Sources/MetalViewer/MetalViewerRenderer.swift */,
 				C0DE26091000000000000012 /* MetalPipelineCache.swift */,
+				C0DE2609120000000000000A /* MetalPerformanceTrace.swift */,
 				C0DE26091200000000000002 /* HorosBonjourBrowser.swift */,
+				C0DE26091200000000000004 /* HorosBonjourAdvertisement.swift */,
+				C0DE26091200000000000006 /* HorosBonjourService.swift */,
+				C0DE26091200000000000008 /* HorosDatabaseTransport.swift */,
 				C0DE26091000000000000022 /* MetalViewerCachePolicy.swift */,
 				F4A100000002000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal */,
 				F4A100000002000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm */,
@@ -4585,7 +4597,11 @@
 				F4A100000001000000000014 /* Horos/Sources/MetalViewer/MetalPreviewImageView.swift in Sources */,
 				F4A100000001000000000004 /* Horos/Sources/MetalViewer/MetalViewerRenderer.swift in Sources */,
 				C0DE26091000000000000011 /* MetalPipelineCache.swift in Sources */,
+				C0DE26091200000000000009 /* MetalPerformanceTrace.swift in Sources */,
 				C0DE26091200000000000001 /* HorosBonjourBrowser.swift in Sources */,
+				C0DE26091200000000000003 /* HorosBonjourAdvertisement.swift in Sources */,
+				C0DE26091200000000000005 /* HorosBonjourService.swift in Sources */,
+				C0DE26091200000000000007 /* HorosDatabaseTransport.swift in Sources */,
 				C0DE26091000000000000021 /* MetalViewerCachePolicy.swift in Sources */,
 				F4A100000001000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal in Sources */,
 				F4A100000001000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm in Sources */,

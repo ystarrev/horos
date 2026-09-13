@@ -48,7 +48,7 @@ class RegistrationWorkingBufferTests(unittest.TestCase):
         support = method("private func registrationSupportMetricValues(")
         self.assertIn("for (pairIndex, pair) in pairs.enumerated()", support)
         self.assertIn("job.uniformBuffer(uniforms, slot: pairIndex)", support)
-        self.assertIn("encoder.setBuffer(uniformBuffers[pairIndex], offset: 0, index: 0)", support)
+        self.assertIn("gpu.setBuffer(uniformBuffers[pairIndex], index: 0)", support)
 
     def test_accumulators_are_cleared_for_each_pass_not_only_on_allocation(self):
         for signature in ("private func directionalMetricValue(", "private func primaryMetricValues(",
@@ -58,7 +58,7 @@ class RegistrationWorkingBufferTests(unittest.TestCase):
                 self.assertIn("for: .histogram", body)
                 self.assertNotIn("makeBuffer(", body)
                 self.assertIn("memset(histogramBuffer.contents(), 0, histogramBufferLength)", body)
-                self.assertLess(body.index("memset("), body.index("commandBuffer.commit()"))
+                self.assertLess(body.index("memset("), body.index("job.performCompute("))
                 self.assertNotIn("histogramBuffer.length", body)
         # The overload with fixedLevel owns the actual block-matching dispatch.
         block = method("fixedLevel: VolumeLevel,\n        movingLevel: VolumeLevel,")
@@ -77,10 +77,9 @@ class RegistrationWorkingBufferTests(unittest.TestCase):
         for signature, readback in signatures:
             with self.subTest(method=signature):
                 body = method(signature)
-                self.assertEqual(body.count("commandBuffer.commit()"), 1)
-                self.assertLess(body.index("commandBuffer.commit()"), body.index("commandBuffer.waitUntilCompleted()"))
-                self.assertLess(body.index("commandBuffer.waitUntilCompleted()"), body.index("commandBuffer.status == .completed"))
-                self.assertLess(body.index("commandBuffer.status == .completed"), body.index(readback))
+                self.assertEqual(body.count("job.performCompute("), 1)
+                self.assertLess(body.index("job.performCompute("), body.index("guard completed, job.isCancelled == false"))
+                self.assertLess(body.index("guard completed, job.isCancelled == false"), body.index(readback))
                 self.assertNotRegex(body, r"concurrentPerform|addCompletedHandler|\.async\b")
         metrics = method("private func metricValues(")
         self.assertLess(metrics.index("let primaryMetrics = primaryMetricValues("),
@@ -103,7 +102,7 @@ class RegistrationWorkingBufferTests(unittest.TestCase):
     def test_histogram_offsets_and_active_counts_are_preserved(self):
         primary = method("private func primaryMetricValues(")
         self.assertIn("histogramPassLength * (usesBidirectionalMetric ? 2 : 1)", primary)
-        self.assertIn("encoder.setBuffer(histogramBuffer, offset: histogramPassLength, index: 1)", primary)
+        self.assertIn("gpu.setBuffer(histogramBuffer, offset: histogramPassLength, index: 1)", primary)
         self.assertIn("histogramEntryCount * states.count * (usesBidirectionalMetric ? 2 : 1)", primary)
         support = method("private func registrationSupportMetricValues(")
         self.assertIn("offset: pairIndex * histogramPassEntryCount * MemoryLayout<UInt32>.stride", support)

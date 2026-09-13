@@ -750,6 +750,12 @@ final class MetalImageView: MTKView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    override func printView(_ sender: Any?) {
+        // NSView's print: intercepts File > Print before the window can render
+        // the image. A Metal layer cannot be printed by AppKit's view drawing.
+        window?.printWindow(sender)
+    }
+
     func display(pixList: [DCMPix], preservingSliceIndex: Bool = true, preservingDisplayedImage: Bool = false) {
         renderer.setPixList(pixList, preservingSliceIndex: preservingSliceIndex, preservingDisplayedImage: preservingDisplayedImage)
         reloadLegacyROIs(for: pixList)

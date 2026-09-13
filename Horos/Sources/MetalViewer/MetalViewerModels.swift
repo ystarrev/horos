@@ -3512,8 +3512,92 @@ final class MetalPreparedVolumeCache {
         var factor: UInt32
     }
 
+    // A single preparation owns this storage until GPU feedback. Each dispatch
+    // needs distinct uniforms even though its argument-table bindings are copied.
+    private final class PreparationResources {
+        let allocator: MTL4CommandAllocator
+        let arguments: MTL4ArgumentTable
+        let residency: MTLResidencySet
+        private let uniformBuffer: MTLBuffer
+        private let uniformStride = 256
+        private var uniformOffset = 0
+        private var retainedResources: [ObjectIdentifier: MTLResource] = [:]
+
+        init?(device: MTLDevice) {
+            // Conversion + correction + three four-dispatch pyramid levels fit
+            // in 14 slots. Leave room for 16 and fail safely if that changes.
+            guard let allocator = device.makeCommandAllocator(),
+                  let uniformBuffer = device.makeBuffer(length: 4096, options: .storageModeShared) else {
+                return nil
+            }
+            self.allocator = allocator
+            self.uniformBuffer = uniformBuffer
+            let descriptor = MTL4ArgumentTableDescriptor()
+            descriptor.maxBufferBindCount = 2
+            descriptor.maxTextureBindCount = 2
+            descriptor.initializeBindings = true
+            do {
+                arguments = try device.makeArgumentTable(descriptor: descriptor)
+                residency = try device.makeResidencySet(descriptor: MTLResidencySetDescriptor())
+            } catch {
+                return nil
+            }
+        }
+
+        func begin() {
+            precondition(retainedResources.isEmpty)
+            allocator.reset()
+            uniformOffset = 0
+            retain(uniformBuffer)
+        }
+
+        private func retain(_ resource: MTLResource) {
+            if retainedResources.updateValue(resource, forKey: ObjectIdentifier(resource)) == nil {
+                residency.addAllocation(resource)
+            }
+        }
+
+        func releaseResources() {
+            residency.removeAllAllocations()
+            residency.commit()
+            retainedResources.removeAll(keepingCapacity: true)
+        }
+
+        func encode<T>(
+            pipeline: MTLComputePipelineState,
+            encoder: MTL4ComputeCommandEncoder,
+            source: MTLTexture,
+            destination: MTLTexture,
+            uniforms: T,
+            dimensions: SIMD3<Int>,
+            kernel: MTLBuffer? = nil
+        ) -> Bool {
+            guard MemoryLayout<T>.stride <= uniformStride,
+                  uniformOffset + uniformStride <= uniformBuffer.length else { return false }
+            uniformBuffer.contents().advanced(by: uniformOffset).storeBytes(of: uniforms, as: T.self)
+            retain(source)
+            retain(destination)
+            if let kernel { retain(kernel) }
+            // Every preparation step consumes the preceding step's output.
+            if uniformOffset > 0 {
+                encoder.barrier(afterEncoderStages: .dispatch, beforeEncoderStages: .dispatch,
+                                visibilityOptions: .device)
+            }
+            encoder.setComputePipelineState(pipeline)
+            arguments.setTexture(source.gpuResourceID, index: 0)
+            arguments.setTexture(destination.gpuResourceID, index: 1)
+            arguments.setAddress(uniformBuffer.gpuAddress + UInt64(uniformOffset), index: 0)
+            arguments.setAddress(kernel?.gpuAddress ?? 0, index: 1)
+            MetalPreparedVolumeCache.dispatch3D(encoder: encoder, dimensions: dimensions)
+            uniformOffset += uniformStride
+            return true
+        }
+    }
+
     private final class Pipelines {
-        let commandQueue: MTLCommandQueue
+        let commandQueue: MTL4CommandQueue
+        let commandBuffer: MTL4CommandBuffer
+        let resources: PreparationResources
         let convertSigned: MTLComputePipelineState
         let convertUnsigned: MTLComputePipelineState
         let resample: MTLComputePipelineState
@@ -3521,13 +3605,17 @@ final class MetalPreparedVolumeCache {
         let downsample: MTLComputePipelineState
 
         init?(device: MTLDevice) {
-            guard let commandQueue = device.makeCommandQueue() else {
+            guard let commandQueue = device.makeMTL4CommandQueue(),
+                  let commandBuffer = device.makeCommandBuffer(),
+                  let resources = PreparationResources(device: device) else {
                 return nil
             }
 
             do {
                 let pipelines = try MetalPipelineCache.shared(for: device)
                 self.commandQueue = commandQueue
+                self.commandBuffer = commandBuffer
+                self.resources = resources
                 self.convertSigned = try pipelines.computePipeline(function: "metalViewerConvertStoredSigned3D")
                 self.convertUnsigned = try pipelines.computePipeline(function: "metalViewerConvertStoredUnsigned3D")
                 self.resample = try pipelines.computePipeline(function: "metalViewerGantryTiltResample3D")
@@ -3540,13 +3628,13 @@ final class MetalPreparedVolumeCache {
     }
 
     private let lock = NSLock()
-    private let preparationQueue: OperationQueue = {
-        let queue = OperationQueue()
-        queue.name = "org.horos.metalviewer.prepared-volume-cache"
-        queue.qualityOfService = .userInitiated
-        queue.maxConcurrentOperationCount = 1
-        return queue
-    }()
+    private let preparationQueue = DispatchQueue(
+        label: "org.horos.metalviewer.prepared-volume-cache", qos: .userInitiated
+    )
+    // Queue-confined: keep only one scratch volume/pyramid in flight without
+    // occupying a worker thread while the GPU completes it.
+    private var pendingPreparations: [() -> Void] = []
+    private var isPreparing = false
     private let maximumEntryCount = 3
     private let maximumCachedBytes = MetalViewerCachePolicy.volumeCacheBytes
     private var pipelinesByDevice: [UInt64: Pipelines] = [:]
@@ -3622,19 +3710,29 @@ final class MetalPreparedVolumeCache {
         lock.unlock()
 
         let requestedPixList = pixList
-        preparationQueue.addOperation { [weak self] in
-            guard let self else { return }
-            self.encodeEntry(
-                key: key,
-                requestKey: requestKey,
-                pixList: requestedPixList,
-                sourceEntry: sourceEntry,
-                existingEntry: self.existingPreparedEntry(forKey: key),
-                device: device,
-                correctGantryTilt: correctGantryTilt,
-                includeRegistrationPyramid: includeRegistrationPyramid
-            )
+        preparationQueue.async { [self] in
+            pendingPreparations.append { [self] in
+                encodeEntry(
+                    key: key,
+                    requestKey: requestKey,
+                    pixList: requestedPixList,
+                    sourceEntry: sourceEntry,
+                    existingEntry: existingPreparedEntry(forKey: key),
+                    device: device,
+                    correctGantryTilt: correctGantryTilt,
+                    includeRegistrationPyramid: includeRegistrationPyramid
+                )
+            }
+            startNextPreparationIfNeeded()
         }
+    }
+
+    private func startNextPreparationIfNeeded() {
+        dispatchPrecondition(condition: .onQueue(preparationQueue))
+        guard isPreparing == false, pendingPreparations.isEmpty == false else { return }
+        isPreparing = true
+        let preparation = pendingPreparations.removeFirst()
+        preparation()
     }
 
     private func existingPreparedEntry(forKey key: String) -> Entry? {
@@ -3653,6 +3751,8 @@ final class MetalPreparedVolumeCache {
         correctGantryTilt: Bool,
         includeRegistrationPyramid: Bool
     ) {
+        dispatchPrecondition(condition: .onQueue(preparationQueue))
+        let preparationStartedAt = MetalPerformanceTrace.begin()
         guard let pipelines = pipelines(for: device),
               sourceEntry.textureKind == .storedInt16Signed || sourceEntry.textureKind == .storedInt16Unsigned,
               pixList.isEmpty == false else {
@@ -3671,9 +3771,25 @@ final class MetalPreparedVolumeCache {
             ? geometry.correctedVoxelToPatientMatrix
             : geometry.sourceVoxelToPatientMatrix
 
-        guard let commandBuffer = pipelines.commandQueue.makeCommandBuffer() else {
+        let commandBuffer = pipelines.commandBuffer
+        let resources = pipelines.resources
+        resources.begin()
+        commandBuffer.beginCommandBuffer(allocator: resources.allocator)
+        guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            commandBuffer.endCommandBuffer()
+            resources.releaseResources()
             finish(requestKey: requestKey, key: key, entry: nil)
             return
+        }
+        encoder.label = "Metal 4 shared volume preparation"
+        encoder.setArgumentTable(resources.arguments)
+        var submitted = false
+        defer {
+            if submitted == false {
+                encoder.endEncoding()
+                commandBuffer.endCommandBuffer()
+                resources.releaseResources()
+            }
         }
 
         let primaryTexture: MTLTexture
@@ -3689,7 +3805,7 @@ final class MetalPreparedVolumeCache {
                 sourceEntry: sourceEntry,
                 destination: convertedTexture,
                 pipelines: pipelines,
-                commandBuffer: commandBuffer
+                encoder: encoder
             ) else {
                 finish(requestKey: requestKey, key: key, entry: nil)
                 return
@@ -3707,7 +3823,7 @@ final class MetalPreparedVolumeCache {
                     sourceVoxelToWorld: geometry.sourceVoxelToPatientMatrix,
                     backgroundValue: Self.isCTVolume(pixList) ? -1024 : 0,
                     pipelines: pipelines,
-                    commandBuffer: commandBuffer
+                    encoder: encoder
                 ) else {
                     finish(requestKey: requestKey, key: key, entry: nil)
                     return
@@ -3730,7 +3846,7 @@ final class MetalPreparedVolumeCache {
                 voxelToWorld: outputVoxelToWorld,
                 device: device,
                 pipelines: pipelines,
-                commandBuffer: commandBuffer
+                encoder: encoder
             ) else {
                 finish(requestKey: requestKey, key: key, entry: nil)
                 return
@@ -3751,23 +3867,40 @@ final class MetalPreparedVolumeCache {
             fullDynamicWindow: sourceEntry.fullDynamicWindow
         )
 
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        guard commandBuffer.status == .completed else {
-            finish(requestKey: requestKey, key: key, entry: nil)
-            return
+        encoder.barrier(afterStages: .dispatch, beforeQueueStages: [.dispatch, .fragment, .blit],
+                        visibilityOptions: .device)
+        encoder.endEncoding()
+        resources.residency.commit()
+        commandBuffer.useResidencySet(resources.residency)
+        commandBuffer.endCommandBuffer()
+        let options = MTL4CommitOptions()
+        options.addFeedbackHandler { [self, pipelines] feedback in
+            preparationQueue.async { [self, pipelines] in
+                pipelines.resources.releaseResources()
+                if let error = feedback.error {
+                    NSLog("Metal 4 shared volume preparation failed: %@", error.localizedDescription)
+                    finish(requestKey: requestKey, key: key, entry: nil)
+                } else {
+                    finish(requestKey: requestKey, key: key, entry: entry)
+                }
+            }
         }
-        finish(requestKey: requestKey, key: key, entry: entry)
+        MetalPerformanceTrace.track(
+            options,
+            operation: includeRegistrationPyramid ? "prepare.sharedVolume.pyramid" : "prepare.sharedVolume.display",
+            since: preparationStartedAt
+        )
+        submitted = true
+        pipelines.commandQueue.commit([commandBuffer], options: options)
     }
 
     private func encodeStoredConversion(
         sourceEntry: MetalSeriesTextureCache.Entry,
         destination: MTLTexture,
         pipelines: Pipelines,
-        commandBuffer: MTLCommandBuffer
+        encoder: MTL4ComputeCommandEncoder
     ) -> Bool {
-        guard let encoder = commandBuffer.makeComputeCommandEncoder() else { return false }
-        var uniforms = StoredConversionUniforms(
+        let uniforms = StoredConversionUniforms(
             sourceSize: SIMD4<UInt32>(
                 UInt32(max(sourceEntry.dimensions.x, 1)),
                 UInt32(max(sourceEntry.dimensions.y, 1)),
@@ -3776,17 +3909,13 @@ final class MetalPreparedVolumeCache {
             ),
             rescale: SIMD4<Float>(sourceEntry.rescaleSlope, sourceEntry.rescaleIntercept, 0, 0)
         )
-        encoder.setComputePipelineState(
-            sourceEntry.textureKind == .storedInt16Signed
+        return pipelines.resources.encode(
+            pipeline: sourceEntry.textureKind == .storedInt16Signed
                 ? pipelines.convertSigned
-                : pipelines.convertUnsigned
+                : pipelines.convertUnsigned,
+            encoder: encoder, source: sourceEntry.texture, destination: destination,
+            uniforms: uniforms, dimensions: sourceEntry.dimensions
         )
-        encoder.setTexture(sourceEntry.texture, index: 0)
-        encoder.setTexture(destination, index: 1)
-        encoder.setBytes(&uniforms, length: MemoryLayout<StoredConversionUniforms>.stride, index: 0)
-        Self.dispatch3D(encoder: encoder, dimensions: sourceEntry.dimensions)
-        encoder.endEncoding()
-        return true
     }
 
     private func encodeResample(
@@ -3797,10 +3926,9 @@ final class MetalPreparedVolumeCache {
         sourceVoxelToWorld: simd_float4x4,
         backgroundValue: Float,
         pipelines: Pipelines,
-        commandBuffer: MTLCommandBuffer
+        encoder: MTL4ComputeCommandEncoder
     ) -> Bool {
-        guard let encoder = commandBuffer.makeComputeCommandEncoder() else { return false }
-        var uniforms = ResampleUniforms(
+        let uniforms = ResampleUniforms(
             outputSize: SIMD4<UInt32>(
                 UInt32(max(outputDimensions.x, 1)),
                 UInt32(max(outputDimensions.y, 1)),
@@ -3811,13 +3939,10 @@ final class MetalPreparedVolumeCache {
             sourceWorldToVoxel: simd_inverse(sourceVoxelToWorld),
             backgroundValue: SIMD4<Float>(backgroundValue, 0, 0, 0)
         )
-        encoder.setComputePipelineState(pipelines.resample)
-        encoder.setTexture(source, index: 0)
-        encoder.setTexture(destination, index: 1)
-        encoder.setBytes(&uniforms, length: MemoryLayout<ResampleUniforms>.stride, index: 0)
-        Self.dispatch3D(encoder: encoder, dimensions: outputDimensions)
-        encoder.endEncoding()
-        return true
+        return pipelines.resources.encode(
+            pipeline: pipelines.resample, encoder: encoder, source: source, destination: destination,
+            uniforms: uniforms, dimensions: outputDimensions
+        )
     }
 
     private func encodeRegistrationPyramid(
@@ -3826,7 +3951,7 @@ final class MetalPreparedVolumeCache {
         voxelToWorld: simd_float4x4,
         device: MTLDevice,
         pipelines: Pipelines,
-        commandBuffer: MTLCommandBuffer
+        encoder: MTL4ComputeCommandEncoder
     ) -> [MetalPreparedVolumeLevel]? {
         var fineToCoarse = [MetalPreparedVolumeLevel(
             texture: source,
@@ -3847,7 +3972,7 @@ final class MetalPreparedVolumeCache {
                 voxelSpacing: spacing,
                 device: device,
                 pipelines: pipelines,
-                commandBuffer: commandBuffer
+                encoder: encoder
             ) else {
                 return nil
             }
@@ -3874,7 +3999,7 @@ final class MetalPreparedVolumeCache {
         voxelSpacing: SIMD3<Float>,
         device: MTLDevice,
         pipelines: Pipelines,
-        commandBuffer: MTLCommandBuffer
+        encoder: MTL4ComputeCommandEncoder
     ) -> MTLTexture? {
         let sigmaMM: Float = 1
         let sigma = SIMD3<Float>(
@@ -3888,9 +4013,9 @@ final class MetalPreparedVolumeCache {
               let blurX = makeWritableFloatTexture(device: device, dimensions: dimensions),
               let blurY = makeWritableFloatTexture(device: device, dimensions: dimensions),
               let blurZ = makeWritableFloatTexture(device: device, dimensions: dimensions),
-              encodeBlur(source: source, destination: blurX, dimensions: dimensions, axis: 0, kernel: xKernel, pipelines: pipelines, commandBuffer: commandBuffer),
-              encodeBlur(source: blurX, destination: blurY, dimensions: dimensions, axis: 1, kernel: yKernel, pipelines: pipelines, commandBuffer: commandBuffer),
-              encodeBlur(source: blurY, destination: blurZ, dimensions: dimensions, axis: 2, kernel: zKernel, pipelines: pipelines, commandBuffer: commandBuffer) else {
+              encodeBlur(source: source, destination: blurX, dimensions: dimensions, axis: 0, kernel: xKernel, pipelines: pipelines, encoder: encoder),
+              encodeBlur(source: blurX, destination: blurY, dimensions: dimensions, axis: 1, kernel: yKernel, pipelines: pipelines, encoder: encoder),
+              encodeBlur(source: blurY, destination: blurZ, dimensions: dimensions, axis: 2, kernel: zKernel, pipelines: pipelines, encoder: encoder) else {
             return nil
         }
 
@@ -3899,11 +4024,10 @@ final class MetalPreparedVolumeCache {
             max((dimensions.y + 1) / 2, 1),
             max((dimensions.z + 1) / 2, 1)
         )
-        guard let output = makeWritableFloatTexture(device: device, dimensions: outputDimensions),
-              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+        guard let output = makeWritableFloatTexture(device: device, dimensions: outputDimensions) else {
             return nil
         }
-        var uniforms = DownsampleUniforms(
+        let uniforms = DownsampleUniforms(
             sourceSize: SIMD3<UInt32>(
                 UInt32(max(dimensions.x, 1)),
                 UInt32(max(dimensions.y, 1)),
@@ -3911,12 +4035,10 @@ final class MetalPreparedVolumeCache {
             ),
             factor: 2
         )
-        encoder.setComputePipelineState(pipelines.downsample)
-        encoder.setTexture(blurZ, index: 0)
-        encoder.setTexture(output, index: 1)
-        encoder.setBytes(&uniforms, length: MemoryLayout<DownsampleUniforms>.stride, index: 0)
-        Self.dispatch3D(encoder: encoder, dimensions: outputDimensions)
-        encoder.endEncoding()
+        guard pipelines.resources.encode(
+            pipeline: pipelines.downsample, encoder: encoder, source: blurZ, destination: output,
+            uniforms: uniforms, dimensions: outputDimensions
+        ) else { return nil }
         return output
     }
 
@@ -3927,10 +4049,9 @@ final class MetalPreparedVolumeCache {
         axis: UInt32,
         kernel: MTLBuffer,
         pipelines: Pipelines,
-        commandBuffer: MTLCommandBuffer
+        encoder: MTL4ComputeCommandEncoder
     ) -> Bool {
-        guard let encoder = commandBuffer.makeComputeCommandEncoder() else { return false }
-        var uniforms = BlurUniforms(
+        let uniforms = BlurUniforms(
             sourceSize: SIMD3<UInt32>(
                 UInt32(max(dimensions.x, 1)),
                 UInt32(max(dimensions.y, 1)),
@@ -3939,14 +4060,10 @@ final class MetalPreparedVolumeCache {
             axis: axis,
             radius: UInt32(max((kernel.length / MemoryLayout<Float>.stride - 1) / 2, 0))
         )
-        encoder.setComputePipelineState(pipelines.gaussianBlur)
-        encoder.setTexture(source, index: 0)
-        encoder.setTexture(destination, index: 1)
-        encoder.setBytes(&uniforms, length: MemoryLayout<BlurUniforms>.stride, index: 0)
-        encoder.setBuffer(kernel, offset: 0, index: 1)
-        Self.dispatch3D(encoder: encoder, dimensions: dimensions)
-        encoder.endEncoding()
-        return true
+        return pipelines.resources.encode(
+            pipeline: pipelines.gaussianBlur, encoder: encoder, source: source, destination: destination,
+            uniforms: uniforms, dimensions: dimensions, kernel: kernel
+        )
     }
 
     private func makeKernelBuffer(device: MTLDevice, sigma: Float) -> MTLBuffer? {
@@ -4011,6 +4128,7 @@ final class MetalPreparedVolumeCache {
     }
 
     private func finish(requestKey: String, key: String, entry: Entry?) {
+        dispatchPrecondition(condition: .onQueue(preparationQueue))
         lock.lock()
         var resolvedEntry = entry
         if let entry {
@@ -4037,6 +4155,9 @@ final class MetalPreparedVolumeCache {
                 completion(deliveredEntry)
             }
         }
+        isPreparing = false
+        // Defer the next job until an encoding failure has unwound its cleanup.
+        preparationQueue.async { [self] in startNextPreparationIfNeeded() }
     }
 
     private func markAccessedLocked(_ key: String) {
@@ -4055,7 +4176,7 @@ final class MetalPreparedVolumeCache {
     }
 
     private static func dispatch3D(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         dimensions: SIMD3<Int>
     ) {
         let threads = MTLSize(width: 4, height: 4, depth: 4)
@@ -4064,7 +4185,7 @@ final class MetalPreparedVolumeCache {
             height: (max(dimensions.y, 1) + threads.height - 1) / threads.height,
             depth: (max(dimensions.z, 1) + threads.depth - 1) / threads.depth
         )
-        encoder.dispatchThreadgroups(groups, threadsPerThreadgroup: threads)
+        encoder.dispatchThreadgroups(threadgroupsPerGrid: groups, threadsPerThreadgroup: threads)
     }
 
     private static func scaleMatrix(factor: Int) -> simd_float4x4 {

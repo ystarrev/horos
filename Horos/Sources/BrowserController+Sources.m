@@ -175,7 +175,7 @@ static NSDictionary* HorosSourceTXTDictionaryFromRecordData(NSData *recordData)
     if (!recordData.length)
         return [NSDictionary dictionary];
 
-    NSDictionary *raw = [NSNetService dictionaryFromTXTRecordData:recordData];
+    NSDictionary *raw = [HorosBonjourService dictionaryFromTXTRecordData:recordData];
     NSMutableDictionary *decoded = [NSMutableDictionary dictionaryWithCapacity:raw.count];
     for (NSString *key in raw)
     {
@@ -211,7 +211,7 @@ static NSString* HorosPeerUIDFromDictionary(NSDictionary *dictionary)
     return [uid length] ? [uid lowercaseString] : nil;
 }
 
-@interface BrowserSourcesHelper : NSObject<HorosBonjourBrowserDelegate, NSNetServiceDelegate>/*<NSTableViewDelegate,NSTableViewDataSource>*/
+@interface BrowserSourcesHelper : NSObject<HorosBonjourBrowserDelegate, HorosBonjourServiceDelegate>/*<NSTableViewDelegate,NSTableViewDataSource>*/
 {
     BrowserController* _browser;
     HorosBonjourBrowser* _nsbOsirix;
@@ -253,17 +253,6 @@ static NSString* HorosPeerUIDFromDictionary(NSDictionary *dictionary)
 +(DefaultLocalDatabaseNodeIdentifier*)identifier;
 
 @end
-
-/*@interface BonjourDataNodeIdentifier : DataNodeIdentifier
- {
-	NSNetService* _service;
- }
-
- @property(retain) NSNetService* service;
-
- -(NSInteger)port;
-
- @end*/
 
 @interface UnavaliableDataNodeException : NSException
 @end
@@ -1369,13 +1358,13 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     }
 }
 
--(void)netServiceDidResolveAddress:(NSNetService*)service
+-(void)netServiceDidResolveAddress:(HorosBonjourService*)service
 {
     if (_invalidated) return;
     @try
     {
         [service retain];
-        [service stop]; //Technical Q&A QA1297
+        [service stop];
 
         DataNodeIdentifier* source0 = nil;
         @synchronized (_bonjourSources)
@@ -1418,58 +1407,14 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         }
 
         @try {
-            // we're now back in the main thread
-            NSMutableArray* addresses = [NSMutableArray array];
-            // Prefer IP4
-            for (NSData* address in service.addresses)
-            {
-                struct sockaddr* sockAddr = (struct sockaddr*)address.bytes;
-                if (sockAddr->sa_family == AF_INET)
-                {
-                    struct sockaddr_in* sockAddrIn = (struct sockaddr_in*)sockAddr;
-                    char *str = inet_ntoa(sockAddrIn->sin_addr);
-                    if( str)
-                    {
-                        NSString* host = [NSString stringWithUTF8String:str];
-                        NSInteger port = ntohs(sockAddrIn->sin_port);
-                        [addresses addObject:[NSArray arrayWithObjects: host, [NSNumber numberWithInteger:port], NULL]];
-                    }
-                }
-            }
-            // And search IPv6
-            for (NSData* address in service.addresses)
-            {
-                struct sockaddr* sockAddr = (struct sockaddr*)address.bytes;
-                if (sockAddr->sa_family == AF_INET6)
-                {
-                    struct sockaddr_in6* sockAddrIn6 = (struct sockaddr_in6*)sockAddr;
-                    char buffer[INET6_ADDRSTRLEN];
-                    if( inet_ntop(AF_INET6, &sockAddrIn6->sin6_addr, buffer, INET6_ADDRSTRLEN))
-                    {
-                        NSString* host = [NSString stringWithUTF8String:buffer];
-                        NSInteger port = ntohs(sockAddrIn6->sin6_port);
-                        [addresses addObject:[NSArray arrayWithObjects: host, [NSNumber numberWithInteger:port], NULL]];
-                    }
-                }
-            }
-
             NSString *serviceType = nil;
             if ([source0 isKindOfClass:[RemoteDatabaseNodeIdentifier class]])
                 serviceType = HorosOsiriXDatabaseBonjourType;
             else if ([source0 isKindOfClass:[DicomNodeIdentifier class]])
                 serviceType = HorosDicomBonjourType;
 
-            NSString *resolvedHost = service.hostName;
+            NSString *resolvedHost = service.resolvedAddress;
             NSInteger resolvedPort = service.port;
-            if ([addresses count])
-            {
-                NSArray *address = [addresses objectAtIndex:0];
-                if ([address count] >= 2)
-                {
-                    resolvedHost = [address objectAtIndex:0];
-                    resolvedPort = [[address objectAtIndex:1] integerValue];
-                }
-            }
 
             if (serviceType && [self _resolvedBonjourServiceIsThisHorosType:serviceType name:service.name host:resolvedHost port:resolvedPort txt:resolvedTXTDictionary])
             {
@@ -1490,17 +1435,12 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
             DataNodeIdentifier* source = source0;
 
-            for (NSArray* address in addresses)
+            if (resolvedHost.length && resolvedPort > 0)
             {
-                if (address.count >= 2)
+                if ([source isKindOfClass:[RemoteDatabaseNodeIdentifier class]] || [source isKindOfClass:[DicomNodeIdentifier class]] || [source isKindOfClass:[PhoneVolumeRenderNodeIdentifier class]])
                 {
-                    if ([source isKindOfClass:[RemoteDatabaseNodeIdentifier class]] || [source isKindOfClass:[DicomNodeIdentifier class]] || [source isKindOfClass:[PhoneVolumeRenderNodeIdentifier class]])
-                    {
-                        source.location = [address objectAtIndex:0];
-                        source.port = [[address objectAtIndex:1] integerValue];
-                        break;
-                    }
-
+                    source.location = resolvedHost;
+                    source.port = resolvedPort;
                 }
             }
 
@@ -1558,16 +1498,16 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     }
 }
 
--(void)netService:(NSNetService*)service didNotResolve:(NSDictionary*)errorDict
+-(void)netService:(HorosBonjourService*)service didNotResolve:(NSDictionary*)errorDict
 {
     if (_invalidated) return;
     NSLog(@"Warning: Bonjour service did not resolve: %@ error=%@", service, errorDict);
     [service stop];
 
-    NSNetService* bsk = nil;
+    HorosBonjourService* bsk = nil;
 
     @synchronized (_bonjourSources) {
-        for (NSNetService* ibsk in _bonjourServices) {
+        for (HorosBonjourService* ibsk in _bonjourServices) {
             if ([ibsk isEqual: service]) {
                 bsk = ibsk;
                 break;
@@ -1594,7 +1534,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     [_browser reconcileHorosDirectSources];
 }
 
--(void)netServiceBrowser:(HorosBonjourBrowser*)nsb didUpdateService:(NSNetService*)service
+-(void)netServiceBrowser:(HorosBonjourBrowser*)nsb didUpdateService:(HorosBonjourService*)service
 {
     if (_invalidated) return;
     [service stop];
@@ -1607,7 +1547,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     [service resolveWithTimeout:30];
 }
 
--(void)netServiceBrowser:(HorosBonjourBrowser*)nsb didFindService:(NSNetService*)service moreComing:(BOOL)moreComing
+-(void)netServiceBrowser:(HorosBonjourBrowser*)nsb didFindService:(HorosBonjourService*)service moreComing:(BOOL)moreComing
 {
     if (_invalidated || [_bonjourServices containsObject:service]) return;
     //NSLog(@"Bonjour service found: %@", service);
@@ -1628,20 +1568,20 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     }
     NSLog( @"Find Service: %@", service);
 
-    // resolve the address and port for this NSNetService
+    // resolve the address and port for this HorosBonjourService
     [service setDelegate:self];
     [service resolveWithTimeout:30];
 }
 
--(void)netServiceBrowser:(HorosBonjourBrowser*)nsb didRemoveService:(NSNetService*)service moreComing:(BOOL)moreComing
+-(void)netServiceBrowser:(HorosBonjourBrowser*)nsb didRemoveService:(HorosBonjourService*)service moreComing:(BOOL)moreComing
 {
     NSLog(@"Bonjour service gone: %@", service);
 
     DataNodeIdentifier* dni;
 
-    NSNetService *bsk = nil;
+    HorosBonjourService *bsk = nil;
     @synchronized (_bonjourSources) {
-        for (NSNetService* ibsk in _bonjourServices) {
+        for (HorosBonjourService* ibsk in _bonjourServices) {
             if ([ibsk isEqual: service]) {
                 bsk = ibsk;
                 break;

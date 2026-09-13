@@ -115,6 +115,9 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
         toolbarController.shadingHandler = { [weak self] isEnabled in
             self?.volumeView.shadingEnabled = isEnabled
         }
+        toolbarController.highQualityHandler = { [weak self] isEnabled in
+            self?.volumeView.highQualityEnabled = isEnabled
+        }
         toolbarController.skinHandler = { [weak self] isEnabled in
             self?.volumeView.showSkin = isEnabled
         }
@@ -187,6 +190,7 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
         toolbar.allowsUserCustomization = true
         toolbar.autosavesConfiguration = true
         window?.toolbar = toolbar
+        toolbarController.installHighQualityItemIfNeeded(in: toolbar)
     }
 
     private func configureContent() {

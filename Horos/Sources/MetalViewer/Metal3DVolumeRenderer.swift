@@ -255,6 +255,83 @@ private struct Metal3DSurfaceCursorPickResult: Sendable {
     var normal: SIMD4<Float> = .zero
 }
 
+// One reusable pick slot. The renderer coalesces requests and only reuses this
+// storage after feedback has copied the result and released the input textures.
+private final class Metal3DSurfaceCursorPickResources {
+    let queue: MTL4CommandQueue
+    let commandBuffer: MTL4CommandBuffer
+    let allocator: MTL4CommandAllocator
+    let arguments: MTL4ArgumentTable
+    let residency: MTLResidencySet
+    let resultBuffer: MTLBuffer
+    private let volumeUniformBuffer: MTLBuffer
+    private let pickUniformBuffer: MTLBuffer
+    private var retainedTextures: [MTLTexture] = []
+
+    init(device: MTLDevice) throws {
+        guard let queue = device.makeMTL4CommandQueue(),
+              let commandBuffer = device.makeCommandBuffer(),
+              let allocator = device.makeCommandAllocator(),
+              let volumeUniformBuffer = device.makeBuffer(
+                length: MemoryLayout<Metal3DVolumeUniforms>.stride, options: .storageModeShared),
+              let pickUniformBuffer = device.makeBuffer(
+                length: MemoryLayout<Metal3DSurfaceCursorPickUniforms>.stride, options: .storageModeShared),
+              let resultBuffer = device.makeBuffer(
+                length: MemoryLayout<Metal3DSurfaceCursorPickResult>.stride, options: .storageModeShared) else {
+            throw NSError(domain: "Metal3DVolumeRenderer", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Could not allocate Metal 4 surface cursor resources."])
+        }
+        self.queue = queue
+        self.commandBuffer = commandBuffer
+        self.allocator = allocator
+        self.volumeUniformBuffer = volumeUniformBuffer
+        self.pickUniformBuffer = pickUniformBuffer
+        self.resultBuffer = resultBuffer
+        let descriptor = MTL4ArgumentTableDescriptor()
+        descriptor.maxBufferBindCount = 3
+        descriptor.maxTextureBindCount = 6
+        descriptor.maxSamplerStateBindCount = 2
+        descriptor.initializeBindings = true
+        arguments = try device.makeArgumentTable(descriptor: descriptor)
+        arguments.setAddress(volumeUniformBuffer.gpuAddress, index: 0)
+        arguments.setAddress(pickUniformBuffer.gpuAddress, index: 1)
+        arguments.setAddress(resultBuffer.gpuAddress, index: 2)
+        residency = try device.makeResidencySet(descriptor: MTLResidencySetDescriptor())
+    }
+
+    func prepare(
+        volumeUniforms: Metal3DVolumeUniforms,
+        pickUniforms: Metal3DSurfaceCursorPickUniforms,
+        textures: [MTLTexture?],
+        sampler: MTLSamplerState,
+        maskSampler: MTLSamplerState
+    ) {
+        precondition(Thread.isMainThread && textures.count == 6)
+        allocator.reset()
+        volumeUniformBuffer.contents().storeBytes(of: volumeUniforms, as: Metal3DVolumeUniforms.self)
+        pickUniformBuffer.contents().storeBytes(of: pickUniforms, as: Metal3DSurfaceCursorPickUniforms.self)
+        resultBuffer.contents().storeBytes(of: Metal3DSurfaceCursorPickResult(), as: Metal3DSurfaceCursorPickResult.self)
+        for buffer in [volumeUniformBuffer, pickUniformBuffer, resultBuffer] {
+            residency.addAllocation(buffer)
+        }
+        retainedTextures = textures.compactMap { $0 }
+        for (index, texture) in textures.enumerated() {
+            if let texture { residency.addAllocation(texture) }
+            arguments.setTexture(texture?.gpuResourceID ?? MTLResourceID(), index: index)
+        }
+        arguments.setSamplerState(sampler.gpuResourceID, index: 0)
+        arguments.setSamplerState(maskSampler.gpuResourceID, index: 1)
+        residency.commit()
+    }
+
+    func releaseCompletedResources() {
+        precondition(Thread.isMainThread)
+        residency.removeAllAllocations()
+        residency.commit()
+        retainedTextures.removeAll(keepingCapacity: true)
+    }
+}
+
 private struct Metal3DSurfaceCursorHit: Sendable {
     let position: SIMD3<Float>
     let normal: SIMD3<Float>
@@ -306,6 +383,34 @@ private enum Metal3DDefaults {
     static let otherWLWW = NSLocalizedString("Other", comment: "")
     static let vrBonesCLUT = NSLocalizedString("VR Muscles-Bones", comment: "")
     static let vrOpacity = NSLocalizedString("Logarithmic Inverse Table", comment: "")
+}
+
+// Readback has a separate queue: it can be requested while a display encoder is
+// open, and must never wait behind that display's drawable/presentation work.
+private final class Metal3DVolumeReadbackResources {
+    let queue: MTL4CommandQueue
+    let commandBuffer: MTL4CommandBuffer
+    let allocator: MTL4CommandAllocator
+    let residency: MTLResidencySet
+
+    // The semaphore publishes the feedback result to the synchronous caller.
+    final class Completion {
+        let semaphore = DispatchSemaphore(value: 0)
+        var succeeded = false
+    }
+
+    init?(device: MTLDevice) {
+        guard let queue = device.makeMTL4CommandQueue(),
+              let commandBuffer = device.makeCommandBuffer(),
+              let allocator = device.makeCommandAllocator(),
+              let residency = try? device.makeResidencySet(descriptor: MTLResidencySetDescriptor()) else {
+            return nil
+        }
+        self.queue = queue
+        self.commandBuffer = commandBuffer
+        self.allocator = allocator
+        self.residency = residency
+    }
 }
 
 private final class Metal3DPreparedRenderCache {
@@ -377,7 +482,10 @@ private final class Metal3DPreparedRenderCache {
 
 final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private let deviceRef: MTLDevice
-    private let commandQueue: MTLCommandQueue
+    private var volumeReadbackResources: Metal3DVolumeReadbackResources?
+    private let renderQueue: MTL4CommandQueue
+    private let renderCommandBuffer: MTL4CommandBuffer
+    private let renderFrames: [MetalViewerRenderFrame]
     private let pipelineState: MTLRenderPipelineState
     private let overlayPipelineState: MTLRenderPipelineState
     private let resampleVolumePipelineState: MTLComputePipelineState
@@ -472,6 +580,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var orbitRadius: Float
     private var orthographicZoomScale: Float = 1.0
     private var preIntegrationEnabled = false
+    private var highQualityEnabled = false
+    private var shouldLogQualityFrame = false
     private var showSkin = true
     private var showSkinSurface = false
     private var showMetal = true
@@ -488,6 +598,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var surfaceCursorHit: Metal3DSurfaceCursorHit?
     private var pendingSurfaceCursorPick: (point: CGPoint, bounds: CGRect, generation: UInt64)?
     private var surfaceCursorPickInFlight = false
+    private var surfaceCursorPickResources: Metal3DSurfaceCursorPickResources?
     private var surfaceCursorPickGeneration: UInt64 = 0
     var surfaceCursorDidChange: (() -> Void)?
 
@@ -574,10 +685,12 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         self.cameraRotation = simd_normalize(yaw * pitch)
         self.orbitRadius = max(simd_length(self.boxMax - self.boxMin) * 1.8, 1.8)
         self.superSampling = max(UserDefaults.standard.float(forKey: "superSampling"), 1.0)
-        guard let commandQueue = device.makeCommandQueue() else {
-            fatalError("Could not create a Metal command queue for the 3D viewer.")
+        guard let renderQueue = device.makeMTL4CommandQueue(),
+              let renderCommandBuffer = device.makeCommandBuffer() else {
+            fatalError("Could not create the Metal 4 volume display queue.")
         }
-        self.commandQueue = commandQueue
+        self.renderQueue = renderQueue
+        self.renderCommandBuffer = renderCommandBuffer
 
         let vertices: [Metal3DVertex] = [
             Metal3DVertex(position: [-1, -1], uv: [0, 0]),
@@ -596,6 +709,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         self.vertexBuffer = vertexBuffer
 
         do {
+            renderFrames = try (0..<2).map { _ in try MetalViewerRenderFrame(device: device) }
             let pipelines = try MetalPipelineCache.shared(for: device)
             pipelineState = try pipelines.renderPipeline(
                 vertex: "metal3DVolumeVertex", fragment: "metal3DVolumeFragment", depthPixelFormat: .depth32Float
@@ -620,6 +734,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         samplerDescriptor.sAddressMode = .clampToEdge
         samplerDescriptor.tAddressMode = .clampToEdge
         samplerDescriptor.rAddressMode = .clampToEdge
+        samplerDescriptor.supportArgumentBuffers = true
         guard let samplerState = device.makeSamplerState(descriptor: samplerDescriptor) else {
             fatalError("Could not create the 3D viewer sampler state.")
         }
@@ -632,6 +747,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         maskSamplerDescriptor.sAddressMode = .clampToEdge
         maskSamplerDescriptor.tAddressMode = .clampToEdge
         maskSamplerDescriptor.rAddressMode = .clampToEdge
+        maskSamplerDescriptor.supportArgumentBuffers = true
         guard let maskSamplerState = device.makeSamplerState(descriptor: maskSamplerDescriptor) else {
             fatalError("Could not create the 3D viewer mask sampler state.")
         }
@@ -669,6 +785,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     func draw(in view: MTKView) {
+        precondition(Thread.isMainThread)
+        let performanceStartedAt = MetalPerformanceTrace.begin()
         let requestedDrawableSize = view.drawableSize
         let camera = currentCameraState(for: requestedDrawableSize)
         let requestedRenderTargetSize = CGSize(
@@ -689,15 +807,17 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         }
 
         var frameWasCommitted = false
+        let frame = renderFrames.first(where: { !$0.inFlight })
         defer {
             if frameWasCommitted == false {
+                frame?.releaseCompletedResources()
                 completeScheduledFrame(in: view)
             }
         }
 
-        guard let renderPassDescriptor = view.currentRenderPassDescriptor,
+        guard let frame,
+              let renderPassDescriptor = view.currentMTL4RenderPassDescriptor,
               let drawable = view.currentDrawable,
-              let commandBuffer = commandQueue.makeCommandBuffer(),
               let volumeTexture,
               let gradientTexture,
               let brickMinMaxTexture,
@@ -707,10 +827,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return
         }
 
-        renderPassDescriptor.depthAttachment.loadAction = .clear
-        renderPassDescriptor.depthAttachment.storeAction = .dontCare
-        renderPassDescriptor.depthAttachment.clearDepth = 1.0
-        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+        guard let encoder = frame.makeRenderEncoder(commandBuffer: renderCommandBuffer,
+                                                     descriptor: renderPassDescriptor, drawable: drawable, view: view) else {
             return
         }
 
@@ -718,26 +836,19 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
         encoder.setRenderPipelineState(pipelineState)
         encoder.setDepthStencilState(depthStencilState)
-        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Metal3DVolumeUniforms>.stride, index: 0)
-        encoder.setFragmentTexture(volumeTexture, index: 0)
-        encoder.setFragmentTexture(clutTexture, index: 1)
-        encoder.setFragmentTexture(opacityTexture, index: 2)
-        encoder.setFragmentTexture(preIntegratedTransferTexture ?? clutTexture, index: 3)
-        encoder.setFragmentTexture(skinMaskTexture ?? emptySkinMaskTexture, index: 4)
-        encoder.setFragmentTexture(gradientTexture, index: 5)
-        encoder.setFragmentTexture(brickMinMaxTexture, index: 6)
-        encoder.setFragmentTexture(opacityRangeTexture, index: 7)
-        encoder.setFragmentSamplerState(samplerState, index: 0)
-        encoder.setFragmentSamplerState(maskSamplerState, index: 1)
+        frame.setVertexBuffer(vertexBuffer)
+        frame.setTextures([volumeTexture, clutTexture, opacityTexture,
+                           preIntegratedTransferTexture ?? clutTexture, skinMaskTexture ?? emptySkinMaskTexture,
+                           gradientTexture, brickMinMaxTexture, opacityRangeTexture, nil],
+                          sampler: samplerState, maskSampler: maskSamplerState)
         let renderTargetSize = CGSize(
             width: CGFloat(drawable.texture.width),
             height: CGFloat(drawable.texture.height)
         )
         let rayMarchScissorRect = volumeScissorRect(for: renderTargetSize, camera: camera)
-        if let volumeScissorRect = rayMarchScissorRect {
+        if let volumeScissorRect = rayMarchScissorRect, frame.setUniforms(&uniforms) {
             encoder.setScissorRect(volumeScissorRect)
-            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            encoder.drawPrimitives(primitiveType: .triangleStrip, vertexStart: 0, vertexCount: 4)
             encoder.setScissorRect(
                 MTLScissorRect(
                     x: 0,
@@ -749,25 +860,60 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         }
 
         if showSkinSurface {
-            drawSkinSurfaceOverlay(with: encoder, camera: camera)
+            drawSkinSurfaceOverlay(with: encoder, frame: frame, camera: camera)
         }
 
-        drawTumorSurfaceOverlays(with: encoder, camera: camera)
-        drawTumourSeedSpheres(with: encoder, camera: camera)
-        drawSurgicalTrajectoryOverlay(with: encoder, camera: camera)
+        drawTumorSurfaceOverlays(with: encoder, frame: frame, camera: camera)
+        drawTumourSeedSpheres(with: encoder, frame: frame, camera: camera)
+        drawSurgicalTrajectoryOverlay(with: encoder, frame: frame, camera: camera)
         if cropOverlayVisible {
-            drawCropOverlay(with: encoder, camera: camera)
+            drawCropOverlay(with: encoder, frame: frame, camera: camera)
         }
 
         encoder.endEncoding()
 
-        commandBuffer.present(drawable)
-        commandBuffer.addCompletedHandler { [weak self, weak view] _ in
-            guard let self else { return }
-            self.completeScheduledFrame(in: view)
+        frame.residency.commit()
+        renderCommandBuffer.useResidencySet(frame.residency)
+        if let residency = frame.drawableResidency { renderCommandBuffer.useResidencySet(residency) }
+        renderCommandBuffer.endCommandBuffer()
+        guard !frame.encodingFailed else {
+            NSLog("Could not allocate Metal 4 volume display data.")
+            return
         }
-        commandBuffer.commit()
+
+        // Capture the submitted state, not mutable UI state read at GPU completion.
+        let qualityDetails: String? = shouldLogQualityFrame && rayMarchScissorRect != nil
+            ? String(format: "%@ step=%.3f voxels pixels=%ldx%ld preintegrated=%u",
+                     highQualityEnabled ? "high" : "normal",
+                     uniforms.stepSize / minimumNormalizedVoxelSpacing(),
+                     drawable.texture.width, drawable.texture.height, uniforms.usePreIntegratedTransfer)
+            : nil
+        let options = MTL4CommitOptions()
+        // Own the pipelines, samplers and every frame resource until GPU completion.
+        options.addFeedbackHandler { [self, frame, weak view] feedback in
+            if let error = feedback.error { NSLog("Metal 4 volume display failed: %@", error.localizedDescription) }
+            if let qualityDetails {
+                let start = feedback.gpuStartTime
+                let end = feedback.gpuEndTime
+                if feedback.error == nil, start.isFinite, end.isFinite, start > 0, end >= start {
+                    NSLog("VRQUALITY %@ gpu=%.3fms", qualityDetails, (end - start) * 1000)
+                } else {
+                    NSLog("VRQUALITY %@ GPU timing unavailable", qualityDetails)
+                }
+            }
+            DispatchQueue.main.async { [self, frame, weak view] in
+                frame.releaseCompletedResources()
+                completeScheduledFrame(in: view)
+            }
+        }
+        MetalPerformanceTrace.track(options, operation: "draw.volume", since: performanceStartedAt, drawable: drawable)
+        frame.inFlight = true
         frameWasCommitted = true
+        if qualityDetails != nil { shouldLogQualityFrame = false }
+        renderQueue.waitForDrawable(drawable)
+        renderQueue.commit([renderCommandBuffer], options: options)
+        renderQueue.signalDrawable(drawable)
+        drawable.present()
     }
 
     private func beginScheduledFrame(concurrencyLimit: Int) -> Bool {
@@ -1258,7 +1404,9 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             : 0
         let hideMetalFlag: UInt32 = showMetal ? 0 : metal3DRenderingFlagHideMetal
         let rayLength = simd_length((cropEnabled ? cropBoxMax - cropBoxMin : boxMax - boxMin))
-        let maxSteps = UInt32(min(max(Int(ceil(rayLength / max(stepSize, 0.0001))) + 8, 256), 8192))
+        // The positive minimum step already bounds this loop. Cover the full box
+        // even with half-voxel steps instead of truncating the back of the volume.
+        let maxSteps = UInt32(max(Int(ceil(rayLength / stepSize)) + 8, 256))
 
         return Metal3DVolumeUniforms(
             cameraPosition: camera.position,
@@ -1353,7 +1501,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         )
     }
 
-    private func drawCropOverlay(with encoder: MTLRenderCommandEncoder, camera: CameraState) {
+    private func drawCropOverlay(with encoder: MTL4RenderCommandEncoder, frame: MetalViewerRenderFrame, camera: CameraState) {
         var overlayUniforms = Metal3DOverlayUniforms(
             viewProjectionMatrix: camera.viewProjectionMatrix,
             color: SIMD4<Float>(0.15, 1.0, 0.25, 1.0)
@@ -1361,29 +1509,20 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
         encoder.setRenderPipelineState(overlayPipelineState)
         encoder.setDepthStencilState(depthStencilState)
-        encoder.setVertexBytes(&overlayUniforms, length: MemoryLayout<Metal3DOverlayUniforms>.stride, index: 1)
-        encoder.setFragmentBytes(&overlayUniforms, length: MemoryLayout<Metal3DOverlayUniforms>.stride, index: 1)
+        guard frame.setUniforms(&overlayUniforms, fragmentIndex: 1) else { return }
 
         let edgeVertices = makeCropEdgeVertices()
-        if edgeVertices.isEmpty == false {
-            let edgeLength = MemoryLayout<Metal3DOverlayVertex>.stride * edgeVertices.count
-            if let edgeBuffer = deviceRef.makeBuffer(bytes: edgeVertices, length: edgeLength, options: .storageModeShared) {
-                encoder.setVertexBuffer(edgeBuffer, offset: 0, index: 0)
-                encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: edgeVertices.count)
-            }
+        if frame.setVertices(edgeVertices) {
+            encoder.drawPrimitives(primitiveType: .line, vertexStart: 0, vertexCount: edgeVertices.count)
         }
 
         let sphereVertices = makeCropHandleSphereVertices()
-        if sphereVertices.isEmpty == false {
-            let sphereLength = MemoryLayout<Metal3DOverlayVertex>.stride * sphereVertices.count
-            if let sphereBuffer = deviceRef.makeBuffer(bytes: sphereVertices, length: sphereLength, options: .storageModeShared) {
-                encoder.setVertexBuffer(sphereBuffer, offset: 0, index: 0)
-                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: sphereVertices.count)
-            }
+        if frame.setVertices(sphereVertices) {
+            encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: sphereVertices.count)
         }
     }
 
-    private func drawSkinSurfaceOverlay(with encoder: MTLRenderCommandEncoder, camera: CameraState) {
+    private func drawSkinSurfaceOverlay(with encoder: MTL4RenderCommandEncoder, frame: MetalViewerRenderFrame, camera: CameraState) {
         ensureSkinMaskTexture(includeSurface: true)
         guard let skinSurfaceVertexBuffer, skinSurfaceVertexCount > 0 else { return }
 
@@ -1394,13 +1533,12 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
         encoder.setRenderPipelineState(overlayPipelineState)
         encoder.setDepthStencilState(depthStencilState)
-        encoder.setVertexBuffer(skinSurfaceVertexBuffer, offset: 0, index: 0)
-        encoder.setVertexBytes(&overlayUniforms, length: MemoryLayout<Metal3DOverlayUniforms>.stride, index: 1)
-        encoder.setFragmentBytes(&overlayUniforms, length: MemoryLayout<Metal3DOverlayUniforms>.stride, index: 1)
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: skinSurfaceVertexCount)
+        frame.setVertexBuffer(skinSurfaceVertexBuffer)
+        guard frame.setUniforms(&overlayUniforms, fragmentIndex: 1) else { return }
+        encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: skinSurfaceVertexCount)
     }
 
-    private func drawTumorSurfaceOverlays(with encoder: MTLRenderCommandEncoder, camera: CameraState) {
+    private func drawTumorSurfaceOverlays(with encoder: MTL4RenderCommandEncoder, frame: MetalViewerRenderFrame, camera: CameraState) {
         guard showTumorSegmentation, tumorSurfaces.isEmpty == false else { return }
 
         encoder.setRenderPipelineState(overlayPipelineState)
@@ -1414,14 +1552,13 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 viewProjectionMatrix: camera.viewProjectionMatrix,
                 color: tumorColor(for: surface.label)
             )
-            encoder.setVertexBuffer(surface.vertexBuffer, offset: 0, index: 0)
-            encoder.setVertexBytes(&overlayUniforms, length: MemoryLayout<Metal3DOverlayUniforms>.stride, index: 1)
-            encoder.setFragmentBytes(&overlayUniforms, length: MemoryLayout<Metal3DOverlayUniforms>.stride, index: 1)
-            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: surface.vertexCount)
+            frame.setVertexBuffer(surface.vertexBuffer)
+            guard frame.setUniforms(&overlayUniforms, fragmentIndex: 1) else { return }
+            encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: surface.vertexCount)
         }
     }
 
-    private func drawTumourSeedSpheres(with encoder: MTLRenderCommandEncoder, camera: CameraState) {
+    private func drawTumourSeedSpheres(with encoder: MTL4RenderCommandEncoder, frame: MetalViewerRenderFrame, camera: CameraState) {
         guard let tumourSeedSphereVertexBuffer, tumourSeedSphereVertexCount > 0 else {
             return
         }
@@ -1433,13 +1570,12 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
         encoder.setRenderPipelineState(overlayPipelineState)
         encoder.setDepthStencilState(depthStencilState)
-        encoder.setVertexBuffer(tumourSeedSphereVertexBuffer, offset: 0, index: 0)
-        encoder.setVertexBytes(&overlayUniforms, length: MemoryLayout<Metal3DOverlayUniforms>.stride, index: 1)
-        encoder.setFragmentBytes(&overlayUniforms, length: MemoryLayout<Metal3DOverlayUniforms>.stride, index: 1)
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: tumourSeedSphereVertexCount)
+        frame.setVertexBuffer(tumourSeedSphereVertexBuffer)
+        guard frame.setUniforms(&overlayUniforms, fragmentIndex: 1) else { return }
+        encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: tumourSeedSphereVertexCount)
     }
 
-    private func drawSurgicalTrajectoryOverlay(with encoder: MTLRenderCommandEncoder, camera: CameraState) {
+    private func drawSurgicalTrajectoryOverlay(with encoder: MTL4RenderCommandEncoder, frame: MetalViewerRenderFrame, camera: CameraState) {
         guard let surgicalTrajectory else { return }
 
         var overlayUniforms = Metal3DOverlayUniforms(
@@ -1449,17 +1585,16 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
         encoder.setRenderPipelineState(overlayPipelineState)
         encoder.setDepthStencilState(depthStencilState)
-        encoder.setVertexBuffer(surgicalTrajectory.vertexBuffer, offset: 0, index: 0)
-        encoder.setVertexBytes(&overlayUniforms, length: MemoryLayout<Metal3DOverlayUniforms>.stride, index: 1)
-        encoder.setFragmentBytes(&overlayUniforms, length: MemoryLayout<Metal3DOverlayUniforms>.stride, index: 1)
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: surgicalTrajectory.vertexCount)
+        frame.setVertexBuffer(surgicalTrajectory.vertexBuffer)
+        guard frame.setUniforms(&overlayUniforms, fragmentIndex: 1) else { return }
+        encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: surgicalTrajectory.vertexCount)
 
         if showSkinSurface,
            let projectedOutlineVertexBuffer = surgicalTrajectory.projectedOutlineVertexBuffer,
            surgicalTrajectory.projectedOutlineVertexCount > 0 {
-            encoder.setVertexBuffer(projectedOutlineVertexBuffer, offset: 0, index: 0)
+            frame.setVertexBuffer(projectedOutlineVertexBuffer)
             encoder.drawPrimitives(
-                type: .triangle,
+                primitiveType: .triangle,
                 vertexStart: 0,
                 vertexCount: surgicalTrajectory.projectedOutlineVertexCount
             )
@@ -1653,6 +1788,13 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         shadingEnabled = enabled
     }
 
+    func setHighQualityEnabled(_ enabled: Bool) {
+        guard highQualityEnabled != enabled else { return }
+        highQualityEnabled = enabled
+        shouldLogQualityFrame = true
+        rebuildTransferTextures()
+    }
+
     func setPreIntegrationEnabled(_ enabled: Bool) {
         guard preIntegrationEnabled != enabled else { return }
         preIntegrationEnabled = enabled
@@ -1678,6 +1820,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     func updateSurfaceCursor(at point: CGPoint, in bounds: CGRect) {
+        precondition(Thread.isMainThread)
         guard bounds.width > 0, bounds.height > 0, bounds.contains(point) else {
             clearSurfaceCursor()
             return
@@ -1689,6 +1832,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     func clearSurfaceCursor() {
+        precondition(Thread.isMainThread)
         surfaceCursorPickGeneration &+= 1
         pendingSurfaceCursorPick = nil
         guard surfaceCursorHit != nil else { return }
@@ -1697,6 +1841,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func startNextSurfaceCursorPickIfNeeded() {
+        precondition(Thread.isMainThread)
         guard surfaceCursorPickInFlight == false,
               let request = pendingSurfaceCursorPick,
               let volumeTexture,
@@ -1708,53 +1853,77 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
         pendingSurfaceCursorPick = nil
         surfaceCursorPickInFlight = true
+        var submitted = false
+        defer {
+            if !submitted {
+                surfaceCursorPickInFlight = false
+                if request.generation == surfaceCursorPickGeneration, surfaceCursorHit != nil {
+                    surfaceCursorHit = nil
+                    surfaceCursorDidChange?()
+                }
+            }
+        }
+        let performanceStartedAt = MetalPerformanceTrace.begin()
+        if surfaceCursorPickResources == nil {
+            do {
+                surfaceCursorPickResources = try Metal3DSurfaceCursorPickResources(device: deviceRef)
+            } catch {
+                NSLog("Metal 4 surface cursor allocation failed: %@", error.localizedDescription)
+                return
+            }
+        }
+        guard let frame = surfaceCursorPickResources else { return }
 
         let camera = currentCameraState(for: request.bounds.size)
-        var volumeUniforms = makeUniforms(for: request.bounds.size, camera: camera)
-        var pickUniforms = Metal3DSurfaceCursorPickUniforms(
+        let volumeUniforms = makeUniforms(for: request.bounds.size, camera: camera)
+        let pickUniforms = Metal3DSurfaceCursorPickUniforms(
             ndcPosition: SIMD2<Float>(
                 Float((request.point.x - request.bounds.minX) / request.bounds.width) * 2.0 - 1.0,
                 Float((request.point.y - request.bounds.minY) / request.bounds.height) * 2.0 - 1.0
             )
         )
-        var initialResult = Metal3DSurfaceCursorPickResult()
-        guard let resultBuffer = deviceRef.makeBuffer(
-            bytes: &initialResult,
-            length: MemoryLayout<Metal3DSurfaceCursorPickResult>.stride,
-            options: .storageModeShared
-        ), let commandBuffer = commandQueue.makeCommandBuffer(),
-           let encoder = commandBuffer.makeComputeCommandEncoder() else {
-            surfaceCursorPickInFlight = false
-            if request.generation == surfaceCursorPickGeneration, surfaceCursorHit != nil {
-                surfaceCursorHit = nil
-                surfaceCursorDidChange?()
-            }
+        frame.prepare(
+            volumeUniforms: volumeUniforms,
+            pickUniforms: pickUniforms,
+            textures: [volumeTexture, nil, opacityTexture, preIntegratedTransferTexture ?? clutTexture,
+                       skinMaskTexture, gradientTexture],
+            sampler: samplerState,
+            maskSampler: maskSamplerState
+        )
+        // Keep this queue independent of display's drawable waits. All input
+        // textures are complete before publication and retained for this pick.
+        frame.commandBuffer.beginCommandBuffer(allocator: frame.allocator)
+        guard let encoder = frame.commandBuffer.makeComputeCommandEncoder() else {
+            frame.commandBuffer.endCommandBuffer()
+            frame.releaseCompletedResources()
             return
         }
 
+        encoder.label = "Metal 4 surface cursor pick"
         encoder.setComputePipelineState(surfaceCursorPickPipelineState)
-        encoder.setBytes(&volumeUniforms, length: MemoryLayout<Metal3DVolumeUniforms>.stride, index: 0)
-        encoder.setBytes(&pickUniforms, length: MemoryLayout<Metal3DSurfaceCursorPickUniforms>.stride, index: 1)
-        encoder.setBuffer(resultBuffer, offset: 0, index: 2)
-        encoder.setTexture(volumeTexture, index: 0)
-        encoder.setTexture(opacityTexture, index: 2)
-        encoder.setTexture(preIntegratedTransferTexture ?? clutTexture, index: 3)
-        encoder.setTexture(skinMaskTexture, index: 4)
-        encoder.setTexture(gradientTexture, index: 5)
-        encoder.setSamplerState(samplerState, index: 0)
-        encoder.setSamplerState(maskSamplerState, index: 1)
+        encoder.setArgumentTable(frame.arguments)
         encoder.dispatchThreads(
-            MTLSize(width: 1, height: 1, depth: 1),
+            threadsPerGrid: MTLSize(width: 1, height: 1, depth: 1),
             threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1)
         )
         encoder.endEncoding()
+        frame.commandBuffer.useResidencySet(frame.residency)
+        frame.commandBuffer.endCommandBuffer()
 
         let requestGeneration = request.generation
-        commandBuffer.addCompletedHandler { [weak self] completedBuffer in
-            let result = resultBuffer.contents().load(as: Metal3DSurfaceCursorPickResult.self)
-            let completedSuccessfully = completedBuffer.status == .completed
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
+        let options = MTL4CommitOptions()
+        // Own the pipeline, samplers and bound resources until the result has
+        // been copied. Only the main-thread callback makes the slot reusable.
+        options.addFeedbackHandler { [self, frame] feedback in
+            let completedSuccessfully = feedback.error == nil
+            if let error = feedback.error {
+                NSLog("Metal 4 surface cursor pick failed: %@", error.localizedDescription)
+            }
+            let result = completedSuccessfully
+                ? frame.resultBuffer.contents().load(as: Metal3DSurfaceCursorPickResult.self)
+                : Metal3DSurfaceCursorPickResult()
+            DispatchQueue.main.async { [self, frame] in
+                frame.releaseCompletedResources()
                 self.surfaceCursorPickInFlight = false
                 if requestGeneration == self.surfaceCursorPickGeneration,
                    completedSuccessfully,
@@ -1786,7 +1955,9 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 self.startNextSurfaceCursorPickIfNeeded()
             }
         }
-        commandBuffer.commit()
+        MetalPerformanceTrace.track(options, operation: "pick.surface", since: performanceStartedAt)
+        submitted = true
+        frame.queue.commit([frame.commandBuffer], options: options)
     }
 
     func setSkinClipDepthMM(_ depthMM: Float) {
@@ -1838,40 +2009,88 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func cpuVolumeData() -> Data? {
+        precondition(Thread.isMainThread)
         if let cachedCPUVolumeData {
             return cachedCPUVolumeData
         }
 
-        guard let volumeTexture else { return nil }
-        let width = max(volumeDimensions.x, 1)
-        let height = max(volumeDimensions.y, 1)
-        let depth = max(volumeDimensions.z, 1)
+        guard let volumeTexture,
+              volumeTexture.textureType == .type3D,
+              volumeTexture.pixelFormat == .r32Float,
+              volumeTexture.width == volumeDimensions.x,
+              volumeTexture.height == volumeDimensions.y,
+              volumeTexture.depth == volumeDimensions.z,
+              MetalTextureLimits.supports3DTexture(
+                width: volumeDimensions.x, height: volumeDimensions.y, depth: volumeDimensions.z
+              ) else { return nil }
+        let performanceStartedAt = MetalPerformanceTrace.begin()
+        let width = volumeDimensions.x
+        let height = volumeDimensions.y
+        let depth = volumeDimensions.z
         let bytesPerRow = width * MemoryLayout<Float>.stride
-        let bytesPerImage = width * height * MemoryLayout<Float>.stride
+        let bytesPerImage = bytesPerRow * height
         let byteCount = bytesPerImage * depth
-        guard let buffer = deviceRef.makeBuffer(length: byteCount, options: .storageModeShared),
-              let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeBlitCommandEncoder() else {
+        guard byteCount <= deviceRef.maxBufferLength,
+              let buffer = deviceRef.makeBuffer(length: byteCount, options: .storageModeShared) else {
             return nil
         }
+        if volumeReadbackResources == nil {
+            volumeReadbackResources = Metal3DVolumeReadbackResources(device: deviceRef)
+        }
+        guard let frame = volumeReadbackResources else { return nil }
+        frame.allocator.reset()
+        let resources: [MTLResource] = [volumeTexture, buffer]
+        for resource in resources { frame.residency.addAllocation(resource) }
+        frame.residency.commit()
+        defer {
+            frame.residency.removeAllAllocations()
+            frame.residency.commit()
+            withExtendedLifetime(resources) {}
+        }
+        frame.commandBuffer.beginCommandBuffer(allocator: frame.allocator)
+        frame.commandBuffer.useResidencySet(frame.residency)
+        guard let encoder = frame.commandBuffer.makeComputeCommandEncoder() else {
+            frame.commandBuffer.endCommandBuffer()
+            return nil
+        }
+        encoder.label = "Metal 4 CPU volume readback"
 
         encoder.copy(
-            from: volumeTexture,
+            sourceTexture: volumeTexture,
             sourceSlice: 0,
             sourceLevel: 0,
             sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
             sourceSize: MTLSize(width: width, height: height, depth: depth),
-            to: buffer,
+            destinationBuffer: buffer,
             destinationOffset: 0,
             destinationBytesPerRow: bytesPerRow,
-            destinationBytesPerImage: bytesPerImage
+            destinationBytesPerImage: depth > 1 ? bytesPerImage : 0
         )
         encoder.endEncoding()
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        guard commandBuffer.status == .completed else { return nil }
+        frame.commandBuffer.endCommandBuffer()
+        let completion = Metal3DVolumeReadbackResources.Completion()
+        let options = MTL4CommitOptions()
+        options.addFeedbackHandler { feedback in
+            completion.succeeded = feedback.error == nil
+            if let error = feedback.error {
+                NSLog("Metal 4 CPU volume readback failed: %@", error.localizedDescription)
+            }
+            completion.semaphore.signal()
+        }
+        MetalPerformanceTrace.track(options, operation: "readback.volume", since: performanceStartedAt)
+        frame.queue.commit([frame.commandBuffer], options: options)
+        // Skin extraction and segmentation still have synchronous input APIs.
+        // Feedback runs on Metal's internal queue, never on this waiting thread.
+        let waitStartedAt = MetalPerformanceTrace.begin()
+        completion.semaphore.wait()
+        MetalPerformanceTrace.end("readback.volume.cpu_wait", since: waitStartedAt)
+        guard completion.succeeded else { return nil }
 
-        let data = Data(bytes: buffer.contents(), count: byteCount)
+        // Hand off this allocation to Data rather than duplicating the volume.
+        // Never reuse it for later readbacks: segmentation may still retain it.
+        let data = Data(bytesNoCopy: buffer.contents(), count: byteCount, deallocator: .custom { [buffer] _, _ in
+            withExtendedLifetime(buffer) {}
+        })
         cachedCPUVolumeData = data
         return data
     }
@@ -2659,7 +2878,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private func makeGradientTexture(dimensions: SIMD3<Int>) -> MTLTexture? {
         let descriptor = MTLTextureDescriptor()
         descriptor.textureType = .type3D
-        descriptor.pixelFormat = .rg8Snorm
+        // Cartesian normals can be interpolated directly; octahedral coordinates cannot.
+        descriptor.pixelFormat = .rgba8Snorm
         descriptor.width = max(dimensions.x, 1)
         descriptor.height = max(dimensions.y, 1)
         descriptor.depth = max(dimensions.z, 1)
@@ -2751,6 +2971,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func prepareVolumeTexture(from entry: MetalPreparedVolumeCache.Entry) {
+        precondition(Thread.isMainThread)
+        let performanceStartedAt = MetalPerformanceTrace.begin()
         guard entry.dimensions == sourceDimensions else {
             NSLog("%@", "3D Metal viewer received incompatible prepared-volume geometry")
             return
@@ -2784,15 +3006,68 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return
         }
 
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return }
+        // Preparation runs once on a cache miss. Its allocator and bindings must
+        // remain independent of display frames that may be in flight.
+        let uniformStride = 256
+        let histogramByteCount = histogramBinCount * MemoryLayout<UInt32>.stride
+        guard let allocator = deviceRef.makeCommandAllocator(),
+              let uniformBuffer = deviceRef.makeBuffer(length: 3 * uniformStride, options: .storageModeShared),
+              let histogramBuffer = deviceRef.makeBuffer(length: histogramByteCount, options: .storageModeShared),
+              let preparedGradientTexture = makeGradientTexture(dimensions: volumeDimensions),
+              let preparedBrickMinMaxTexture = makeBrickMinMaxTexture(dimensions: volumeDimensions) else {
+            return
+        }
+        let arguments: MTL4ArgumentTable
+        let residency: MTLResidencySet
+        do {
+            let argumentDescriptor = MTL4ArgumentTableDescriptor()
+            argumentDescriptor.maxBufferBindCount = 2
+            argumentDescriptor.maxTextureBindCount = 2
+            argumentDescriptor.initializeBindings = true
+            arguments = try deviceRef.makeArgumentTable(descriptor: argumentDescriptor)
+            residency = try deviceRef.makeResidencySet(descriptor: MTLResidencySetDescriptor())
+        } catch {
+            NSLog("Metal 4 volume preparation allocation failed: %@", error.localizedDescription)
+            return
+        }
+
+        func storeUniforms<T>(_ value: T, slot: Int) -> UInt64 {
+            precondition((0..<3).contains(slot) && MemoryLayout<T>.stride <= uniformStride)
+            let offset = slot * uniformStride
+            uniformBuffer.contents().advanced(by: offset).storeBytes(of: value, as: T.self)
+            return uniformBuffer.gpuAddress + UInt64(offset)
+        }
+
         let threadsPerGroup = MTLSize(width: 4, height: 4, depth: 4)
         let preparedTexture: MTLTexture
         if volumeDimensions != entry.dimensions {
-            guard let resampledTexture = makeWritableFloatTexture(dimensions: volumeDimensions),
-                  let resampleEncoder = commandBuffer.makeComputeCommandEncoder() else {
+            guard let resampledTexture = makeWritableFloatTexture(dimensions: volumeDimensions) else {
                 return
             }
-            var resampleUniforms = Metal3DResampleUniforms(
+            preparedTexture = resampledTexture
+        } else {
+            preparedTexture = entry.texture
+        }
+        _ = histogramBuffer.contents().initializeMemory(
+            as: UInt32.self,
+            repeating: 0,
+            count: histogramBinCount
+        )
+        var resources: [MTLResource] = [entry.texture, preparedGradientTexture,
+                                       preparedBrickMinMaxTexture, uniformBuffer, histogramBuffer]
+        if preparedTexture !== entry.texture { resources.append(preparedTexture) }
+        for resource in resources { residency.addAllocation(resource) }
+        residency.commit()
+
+        renderCommandBuffer.beginCommandBuffer(allocator: allocator)
+        guard let encoder = renderCommandBuffer.makeComputeCommandEncoder() else {
+            renderCommandBuffer.endCommandBuffer()
+            return
+        }
+        encoder.label = "Metal 4 volume preparation"
+        encoder.setArgumentTable(arguments)
+        if volumeDimensions != entry.dimensions {
+            let resampleUniforms = Metal3DResampleUniforms(
                 outputSize: SIMD4<UInt32>(
                     UInt32(max(volumeDimensions.x, 1)),
                     UInt32(max(volumeDimensions.y, 1)),
@@ -2803,68 +3078,42 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 sourceWorldToVoxel: simd_inverse(entry.voxelToWorld),
                 backgroundValue: SIMD4<Float>(backgroundValue, 0, 0, 0)
             )
-            resampleEncoder.setComputePipelineState(resampleVolumePipelineState)
-            resampleEncoder.setTexture(entry.texture, index: 0)
-            resampleEncoder.setTexture(resampledTexture, index: 1)
-            resampleEncoder.setBytes(
-                &resampleUniforms,
-                length: MemoryLayout<Metal3DResampleUniforms>.stride,
-                index: 0
-            )
-            resampleEncoder.dispatchThreadgroups(
-                Self.threadgroups(for: volumeDimensions, threadsPerGroup: threadsPerGroup),
+            encoder.setComputePipelineState(resampleVolumePipelineState)
+            arguments.setTexture(entry.texture.gpuResourceID, index: 0)
+            arguments.setTexture(preparedTexture.gpuResourceID, index: 1)
+            arguments.setAddress(storeUniforms(resampleUniforms, slot: 0), index: 0)
+            encoder.dispatchThreadgroups(
+                threadgroupsPerGrid: Self.threadgroups(for: volumeDimensions, threadsPerGroup: threadsPerGroup),
                 threadsPerThreadgroup: threadsPerGroup
             )
-            resampleEncoder.endEncoding()
-            preparedTexture = resampledTexture
-        } else {
-            preparedTexture = entry.texture
+            // All following kernels read the resampled voxels. Metal 4 does not
+            // supply the implicit texture hazard tracking of the old encoders.
+            encoder.barrier(afterEncoderStages: .dispatch, beforeEncoderStages: .dispatch,
+                            visibilityOptions: .device)
         }
 
-        guard let preparedGradientTexture = makeGradientTexture(dimensions: volumeDimensions),
-              let preparedBrickMinMaxTexture = makeBrickMinMaxTexture(dimensions: volumeDimensions),
-              let gradientEncoder = commandBuffer.makeComputeCommandEncoder() else {
-            return
-        }
-        var gradientUniforms = Metal3DGradientUniforms(
+        let gradientUniforms = Metal3DGradientUniforms(
             voxelSpacing: SIMD4<Float>(voxelSpacing.x, voxelSpacing.y, voxelSpacing.z, 0)
         )
-        gradientEncoder.setComputePipelineState(gradientPipelineState)
-        gradientEncoder.setTexture(preparedTexture, index: 0)
-        gradientEncoder.setTexture(preparedGradientTexture, index: 1)
-        gradientEncoder.setBytes(
-            &gradientUniforms,
-            length: MemoryLayout<Metal3DGradientUniforms>.stride,
-            index: 0
-        )
-        gradientEncoder.dispatchThreadgroups(
-            Self.threadgroups(for: volumeDimensions, threadsPerGroup: threadsPerGroup),
+        encoder.setComputePipelineState(gradientPipelineState)
+        arguments.setTexture(preparedTexture.gpuResourceID, index: 0)
+        arguments.setTexture(preparedGradientTexture.gpuResourceID, index: 1)
+        arguments.setAddress(storeUniforms(gradientUniforms, slot: 1), index: 0)
+        encoder.dispatchThreadgroups(
+            threadgroupsPerGrid: Self.threadgroups(for: volumeDimensions, threadsPerGroup: threadsPerGroup),
             threadsPerThreadgroup: threadsPerGroup
         )
-        gradientEncoder.endEncoding()
-
-        guard let brickEncoder = commandBuffer.makeComputeCommandEncoder() else { return }
+        // These three consumers write separate outputs, so they need no barrier
+        // between one another. Argument tables are snapshotted at each dispatch.
         let brickDimensions = brickGridDimensions(for: volumeDimensions)
-        brickEncoder.setComputePipelineState(brickMinMaxPipelineState)
-        brickEncoder.setTexture(preparedTexture, index: 0)
-        brickEncoder.setTexture(preparedBrickMinMaxTexture, index: 1)
-        brickEncoder.dispatchThreadgroups(
-            Self.threadgroups(for: brickDimensions, threadsPerGroup: threadsPerGroup),
+        encoder.setComputePipelineState(brickMinMaxPipelineState)
+        arguments.setTexture(preparedBrickMinMaxTexture.gpuResourceID, index: 1)
+        arguments.setAddress(0, index: 0)
+        encoder.dispatchThreadgroups(
+            threadgroupsPerGrid: Self.threadgroups(for: brickDimensions, threadsPerGroup: threadsPerGroup),
             threadsPerThreadgroup: threadsPerGroup
         )
-        brickEncoder.endEncoding()
-
-        let histogramByteCount = histogramBinCount * MemoryLayout<UInt32>.stride
-        guard let histogramBuffer = deviceRef.makeBuffer(length: histogramByteCount, options: .storageModeShared),
-              let histogramEncoder = commandBuffer.makeComputeCommandEncoder() else {
-            return
-        }
-        _ = histogramBuffer.contents().initializeMemory(
-            as: UInt32.self,
-            repeating: 0,
-            count: histogramBinCount
-        )
-        var histogramUniforms = Metal3DHistogramUniforms(
+        let histogramUniforms = Metal3DHistogramUniforms(
             sourceSize: SIMD4<UInt32>(
                 UInt32(max(volumeDimensions.x, 1)),
                 UInt32(max(volumeDimensions.y, 1)),
@@ -2874,22 +3123,29 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             domain: histogramDomain,
             binCount: UInt32(histogramBinCount)
         )
-        histogramEncoder.setComputePipelineState(histogramPipelineState)
-        histogramEncoder.setTexture(preparedTexture, index: 0)
-        histogramEncoder.setBuffer(histogramBuffer, offset: 0, index: 0)
-        histogramEncoder.setBytes(
-            &histogramUniforms,
-            length: MemoryLayout<Metal3DHistogramUniforms>.stride,
-            index: 1
-        )
-        histogramEncoder.dispatchThreadgroups(
-            Self.threadgroups(for: volumeDimensions, threadsPerGroup: threadsPerGroup),
+        encoder.setComputePipelineState(histogramPipelineState)
+        arguments.setTexture(MTLResourceID(), index: 1)
+        arguments.setAddress(histogramBuffer.gpuAddress, index: 0)
+        arguments.setAddress(storeUniforms(histogramUniforms, slot: 2), index: 1)
+        encoder.dispatchThreadgroups(
+            threadgroupsPerGrid: Self.threadgroups(for: volumeDimensions, threadsPerGroup: threadsPerGroup),
             threadsPerThreadgroup: threadsPerGroup
         )
-        histogramEncoder.endEncoding()
+        encoder.barrier(afterStages: .dispatch, beforeQueueStages: [.fragment, .dispatch, .blit],
+                        visibilityOptions: .device)
+        encoder.endEncoding()
+        renderCommandBuffer.useResidencySet(residency)
+        renderCommandBuffer.endCommandBuffer()
 
-        commandBuffer.addCompletedHandler { [weak self] completedBuffer in
-            guard let self, completedBuffer.status == .completed else { return }
+        let options = MTL4CommitOptions()
+        options.addFeedbackHandler { [self, allocator, arguments, residency, resources] feedback in
+            // Metal 4 does not retain indirectly bound resources. Keep the whole
+            // job (and its pipelines) alive even if the viewer closes meanwhile.
+            defer { withExtendedLifetime((self, allocator, arguments, residency, resources)) {} }
+            if let error = feedback.error {
+                NSLog("Metal 4 volume preparation failed: %@", error.localizedDescription)
+                return
+            }
             let countsPointer = histogramBuffer.contents().bindMemory(
                 to: UInt32.self,
                 capacity: histogramBinCount
@@ -2913,7 +3169,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 self.applyPreparedRenderVolume(prepared, sourceEntry: entry)
             }
         }
-        commandBuffer.commit()
+        MetalPerformanceTrace.track(options, operation: "prepare.volume", since: performanceStartedAt)
+        renderQueue.commit([renderCommandBuffer], options: options)
     }
 
     private func applyPreparedRenderVolume(
@@ -4368,10 +4625,10 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         )
         let opacity = min(max(baseOpacity, 0), 1) / superSampling
         let factor = opacityCorrectionFactor()
-        guard opacity > 0.0001, abs(factor - 1.0) > 0.0001 else {
-            return opacity
-        }
-        return Float(1.0 - pow(1.0 - Double(opacity), Double(factor)))
+        let correctedOpacity = opacity > 0.0001 && abs(factor - 1.0) > 0.0001
+            ? Float(1.0 - pow(1.0 - Double(opacity), Double(factor)))
+            : opacity
+        return opacityForRayStep(correctedOpacity)
     }
 
     private func baseOpacityForScalar(
@@ -4462,20 +4719,31 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
     private func applyCompositeOpacityCorrection(to values: inout [Float]) {
         let factor = opacityCorrectionFactor()
-        guard abs(factor - 1.0) > 0.0001 else { return }
+        let needsCorrection = abs(factor - 1.0) > 0.0001
+        guard needsCorrection || highQualityEnabled else { return }
 
         for index in values.indices {
             let opacity = min(max(values[index], 0), 1)
-            if opacity > 0.0001 {
+            if opacity > 0.0001 && needsCorrection {
                 values[index] = Float(1.0 - pow(1.0 - Double(opacity), Double(factor)))
             } else {
                 values[index] = opacity
             }
+            values[index] = opacityForRayStep(values[index])
         }
     }
 
+    private func opacityForRayStep(_ opacity: Float) -> Float {
+        guard highQualityEnabled else { return opacity }
+        let alpha = min(max(opacity, 0), 1)
+        // Two half steps must have the same transmission as one normal step.
+        // This form of 1 - sqrt(1 - alpha) preserves very small opacities.
+        return alpha / (1 + sqrt(1 - alpha))
+    }
+
     private func rayMarchStepSize() -> Float {
-        max(minimumNormalizedVoxelSpacing(), 0.000125)
+        let normalStep = max(minimumNormalizedVoxelSpacing(), 0.000125)
+        return highQualityEnabled ? normalStep * 0.5 : normalStep
     }
 
     private func opacityCorrectionFactor() -> Float {

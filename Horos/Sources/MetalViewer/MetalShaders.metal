@@ -1289,7 +1289,7 @@ static inline float3 metal3DGradient(
     float3 voxelSpacing
 ) {
     float3 sampleRadius = float3(1.5, 1.5, 2.75);
-    float3 delta = sampleRadius / max(float3(dimensions - uint3(1)), float3(1.0));
+    float3 delta = sampleRadius / max(float3(dimensions), float3(1.0));
     float sampleX1 = volumeTexture.sample(volumeSampler, clamp(texCoord + float3(delta.x, 0.0, 0.0), 0.0, 1.0)).r;
     float sampleX0 = volumeTexture.sample(volumeSampler, clamp(texCoord - float3(delta.x, 0.0, 0.0), 0.0, 1.0)).r;
     float sampleY1 = volumeTexture.sample(volumeSampler, clamp(texCoord + float3(0.0, delta.y, 0.0), 0.0, 1.0)).r;
@@ -1299,38 +1299,15 @@ static inline float3 metal3DGradient(
     return float3(sampleX1 - sampleX0, sampleY1 - sampleY0, sampleZ1 - sampleZ0) / max(sampleRadius * voxelSpacing, float3(0.0001));
 }
 
-static inline float2 metal3DEncodeNormal(float3 normal) {
-    normal /= max(abs(normal.x) + abs(normal.y) + abs(normal.z), 1.0e-6f);
-    float2 encoded = normal.xy;
-    if (normal.z < 0.0f) {
-        const float2 signs = select(float2(-1.0f), float2(1.0f), encoded >= 0.0f);
-        encoded = (1.0f - abs(encoded.yx)) * signs;
-    }
-    // Reserve the zero code for a genuinely flat voxel.
-    if (max(abs(encoded.x), abs(encoded.y)) < (2.0f / 127.0f)) {
-        encoded.x = 2.0f / 127.0f;
-    }
-    return encoded;
-}
-
-static inline float3 metal3DDecodeNormal(float2 encoded) {
-    if (max(abs(encoded.x), abs(encoded.y)) < (0.5f / 127.0f)) {
-        return float3(0.0f);
-    }
-    float3 normal = float3(encoded, 1.0f - abs(encoded.x) - abs(encoded.y));
-    if (normal.z < 0.0f) {
-        const float2 signs = select(float2(-1.0f), float2(1.0f), normal.xy >= 0.0f);
-        normal.xy = (1.0f - abs(normal.yx)) * signs;
-    }
-    return normalize(normal);
-}
-
 static inline float3 metal3DGradient(
     float3 texCoord,
     texture3d<float> gradientTexture,
     sampler volumeSampler
 ) {
-    return metal3DDecodeNormal(gradientTexture.sample(volumeSampler, texCoord).rg);
+    // Filter directions in Cartesian space, including across the negative-Z hemisphere.
+    const float3 normal = gradientTexture.sample(volumeSampler, texCoord).xyz;
+    const float magnitudeSquared = dot(normal, normal);
+    return magnitudeSquared > 1.0e-10f ? normal * rsqrt(magnitudeSquared) : float3(0.0f);
 }
 
 static inline float metal3DSpecularPower15(float value) {
@@ -1524,7 +1501,10 @@ fragment Metal3DFragmentOutput metal3DVolumeFragment(
                 max(activeBrickExitT - t, 0.0f),
                 max(tMax - t, 0.0f)
             );
-            t += max(remainingBrickDistance - uniforms.stepSize, 0.0f);
+            // Keep the original jittered sampling lattice when skipping empty bricks.
+            // Landing exactly on each brick face reintroduces coherent surface bands.
+            const float skippedSteps = max(ceil(remainingBrickDistance / uniforms.stepSize), 1.0f);
+            t += (skippedSteps - 1.0f) * uniforms.stepSize;
             previousT = t;
             havePreviousScalar = false;
             continue;
@@ -2828,7 +2808,7 @@ kernel void metal3DGradientVolume(
     }
 
     constexpr sampler volumeSampler(coord::normalized, address::clamp_to_edge, filter::linear);
-    const float3 texCoord = float3(gid) / max(float3(dimensions - uint3(1)), float3(1.0f));
+    const float3 texCoord = (float3(gid) + 0.5f) / float3(dimensions);
     const float3 gradient = metal3DGradient(
         texCoord,
         sourceTexture,
@@ -2837,10 +2817,10 @@ kernel void metal3DGradientVolume(
         uniforms.voxelSpacing.xyz
     );
     const float gradientLength = length(gradient);
-    const float2 encodedNormal = gradientLength > 1.0e-5f
-        ? metal3DEncodeNormal(gradient / gradientLength)
-        : float2(0.0f);
-    gradientTexture.write(float4(encodedNormal, 0.0f, 0.0f), gid);
+    const float3 normal = gradientLength > 1.0e-5f
+        ? gradient / gradientLength
+        : float3(0.0f);
+    gradientTexture.write(float4(normal, 0.0f), gid);
 }
 
 kernel void metal3DBrickMinMax(

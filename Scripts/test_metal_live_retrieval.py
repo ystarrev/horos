@@ -86,7 +86,9 @@ class MetalLiveRetrievalTests(unittest.TestCase):
         self.assertIn("presented.presentedTime", track)
         self.assertIn("DispatchQueue.main.async", track)
         self.assertIn("if timestamp > 0 { report(timestamp) }", track)
-        self.assertEqual(self.renderer.count("trackRetrievalPresentation(of: drawable, commandBuffer: commandBuffer)"), 3)
+        self.assertEqual(self.renderer.count("trackRetrievalPresentation(of: drawable, options: options)"), 1)
+        for operation in ("draw.planar", "draw.mpr", "draw.mpr3D"):
+            self.assertIn(f'submitDisplayFrame(frame, drawable: drawable, view: view, operation: "{operation}"', self.renderer)
         self.assertIn('session.recordedStages.insert(stage).inserted', self.benchmark)
 
     def test_benchmark_separates_draw_scheduling_from_gpu_completion_and_presentation(self):
@@ -95,8 +97,8 @@ class MetalLiveRetrievalTests(unittest.TestCase):
                       "first_command_failed", "first_unpresented_drawable"):
             self.assertIn(f'"{stage}"', self.renderer)
         track = self.renderer.split("private func trackRetrievalPresentation", 1)[1].split("func draw(in", 1)[0]
-        self.assertIn("commandBuffer.addCompletedHandler", track)
-        self.assertIn("buffer.status == .completed", track)
+        self.assertIn("options.addFeedbackHandler", track)
+        self.assertIn("feedback.error == nil", track)
         self.assertNotIn("waitUntilCompleted", track)
         self.assertIn('timestampHandler("first_presented", frames: frames)', self.benchmark)
 

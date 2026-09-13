@@ -1281,9 +1281,15 @@ void exceptionHandler(NSException *exception)
 
 - (void) startDICOMBonjour:(NSTimer*) t
 {
+	if (t != dicomBonjourStartTimer || ![[NSUserDefaults standardUserDefaults] boolForKey:@"publishDICOMBonjour"])
+		return;
+	dicomBonjourStartTimer = nil;
 	NSLog( @"startDICOMBonjour");
-
-	BonjourDICOMService = [[NSNetService alloc] initWithDomain:@"" type:@"_dicom._tcp" name: [[NSUserDefaults standardUserDefaults] stringForKey: @"AETITLE"] port:[[[NSUserDefaults standardUserDefaults] stringForKey: @"AEPORT"] intValue]];
+	[BonjourDICOMService stop];
+	BonjourDICOMService = [[HorosBonjourAdvertisement alloc]
+        initWithName:[[NSUserDefaults standardUserDefaults] stringForKey:@"AETITLE"] ?: @""
+        type:@"_dicom._tcp"
+        port:[[[NSUserDefaults standardUserDefaults] stringForKey:@"AEPORT"] intValue]];
 	
 	NSString* description = [NSUserDefaults bonjourSharingName];
 	NSMutableDictionary *dict = [NSMutableDictionary dictionary];
@@ -1335,28 +1341,7 @@ void exceptionHandler(NSException *exception)
 		break;
 	}
 	
-	[BonjourDICOMService setTXTRecordData: [NSNetService dataFromTXTRecordDictionary: dict]];
-		
-	[BonjourDICOMService setDelegate: self];
-	[BonjourDICOMService publish];
-	
-	[[DCMNetServiceDelegate sharedNetServiceDelegate] setPublisher: BonjourDICOMService];
-}
-
-- (void)netServiceDidPublish:(NSNetService *)sender
-{
-    if( sender == BonjourDICOMService)
-    {
-        NSLog( @"Horos DICOM Bonjour service published: %@ %@:%ld", [sender name], [sender type], (long)[sender port]);
-    }
-}
-
-- (void)netService:(NSNetService *)sender didNotPublish:(NSDictionary *)errorDict
-{
-    if( sender == BonjourDICOMService)
-    {
-        NSLog( @"Warning: Horos DICOM Bonjour service did not publish: %@ %@:%ld error=%@", [sender name], [sender type], (long)[sender port], errorDict);
-    }
+	[BonjourDICOMService publishWithTXTRecord:dict];
 }
 
 
@@ -1364,6 +1349,15 @@ void exceptionHandler(NSException *exception)
 
 -(void) restartSTORESCP
 {
+	if (![NSThread isMainThread])
+	{
+		[self performSelectorOnMainThread:@selector(restartSTORESCP) withObject:nil waitUntilDone:NO];
+		return;
+	}
+	[dicomBonjourStartTimer invalidate];
+	dicomBonjourStartTimer = nil;
+	[BonjourDICOMService stop];
+	BonjourDICOMService = nil;
 	NSLog(@"restartSTORESCP");
 	[[HorosDirectTransferService sharedService] start];
 	
@@ -1443,13 +1437,10 @@ void exceptionHandler(NSException *exception)
             HorosPresentAlert( NSLocalizedString( @"Database", nil), @"%@", NSLocalizedString( @"OK", nil), nil, nil, e.reason);
 	}
 	
-	[BonjourDICOMService stop];
-	BonjourDICOMService = nil;
-	
 	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"publishDICOMBonjour"])
 	{
 		//Start DICOM Bonjour 
-		[NSTimer scheduledTimerWithTimeInterval: 5 target: self selector: @selector(startDICOMBonjour:) userInfo: nil repeats: NO];
+		dicomBonjourStartTimer = [NSTimer scheduledTimerWithTimeInterval:5 target:self selector:@selector(startDICOMBonjour:) userInfo:nil repeats:NO];
 	}
 }
 
@@ -1820,7 +1811,8 @@ static BOOL firstCall = YES;
 
 	[ROI saveDefaultSettings];
 	
-	[BonjourDICOMService setDelegate:nil];
+	[dicomBonjourStartTimer invalidate];
+	dicomBonjourStartTimer = nil;
 	[BonjourDICOMService stop];
 	BonjourDICOMService = nil;
 	[_bonjourPublisher toggleSharing:NO];

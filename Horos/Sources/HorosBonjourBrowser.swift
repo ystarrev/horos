@@ -5,17 +5,16 @@ import Network
     @objc optional func netServiceBrowserWillSearch(_ browser: HorosBonjourBrowser)
     @objc optional func netServiceBrowserDidStopSearch(_ browser: HorosBonjourBrowser)
     @objc(netServiceBrowser:didFindService:moreComing:)
-    optional func netServiceBrowser(_ browser: HorosBonjourBrowser, didFind service: NetService, moreComing: Bool)
+    optional func netServiceBrowser(_ browser: HorosBonjourBrowser, didFind service: HorosBonjourService, moreComing: Bool)
     @objc(netServiceBrowser:didRemoveService:moreComing:)
-    optional func netServiceBrowser(_ browser: HorosBonjourBrowser, didRemove service: NetService, moreComing: Bool)
+    optional func netServiceBrowser(_ browser: HorosBonjourBrowser, didRemove service: HorosBonjourService, moreComing: Bool)
     @objc(netServiceBrowser:didUpdateService:)
-    optional func netServiceBrowser(_ browser: HorosBonjourBrowser, didUpdate service: NetService)
+    optional func netServiceBrowser(_ browser: HorosBonjourBrowser, didUpdate service: HorosBonjourService)
     @objc(netServiceBrowser:didNotSearch:)
     optional func netServiceBrowser(_ browser: HorosBonjourBrowser, didNotSearch error: [String: Any])
 }
 
-// Network.framework owns discovery. NetService is retained only as the address/TXT
-// resolver expected by the existing Sources and Query/Retrieve consumers.
+// Network.framework owns discovery; each stable service resolves through native DNS-SD.
 @objc(HorosBonjourBrowser)
 final class HorosBonjourBrowser: NSObject {
     private struct Identity: Hashable {
@@ -31,7 +30,7 @@ final class HorosBonjourBrowser: NSObject {
     }
 
     private struct Discovery {
-        let service: NetService
+        let service: HorosBonjourService
         let results: Set<NWBrowser.Result>
     }
 
@@ -119,24 +118,35 @@ final class HorosBonjourBrowser: NSObject {
             guard generation == currentGeneration else { return }
             if let existing = discoveries[identity] {
                 guard existing.results != observations else { continue }
+                existing.service.interfaceIndexes = interfaceIndexes(in: observations)
                 discoveries[identity] = Discovery(service: existing.service, results: observations)
                 delegate?.netServiceBrowser?(self, didUpdate: existing.service)
             } else {
                 guard let result = observations.first,
                       case let .service(name, type, domain, _) = result.endpoint else { continue }
-                let service = NetService(domain: domain, type: type, name: name)
-                service.includesPeerToPeer = true
+                let service = HorosBonjourService(domain: domain, type: type, name: name)
+                service.interfaceIndexes = interfaceIndexes(in: observations)
                 discoveries[identity] = Discovery(service: service, results: observations)
                 delegate?.netServiceBrowser?(self, didFind: service, moreComing: false)
             }
         }
     }
 
+    private func interfaceIndexes(in results: Set<NWBrowser.Result>) -> Set<UInt32> {
+        Set(results.flatMap { result in
+            var interfaces = result.interfaces
+            if case let .service(_, _, _, interface) = result.endpoint, let interface {
+                interfaces.append(interface)
+            }
+            return interfaces.compactMap { UInt32(exactly: $0.index) }
+        })
+    }
+
     private func fail(_ error: NWError) {
         let nsError = error as NSError
         let errorInfo: [String: Any] = [
-            NetService.errorCode: nsError.code,
-            NetService.errorDomain: nsError.domain,
+            "code": nsError.code,
+            "domain": nsError.domain,
             NSLocalizedDescriptionKey: nsError.localizedDescription
         ]
         let currentGeneration = generation
@@ -150,9 +160,13 @@ final class HorosBonjourBrowser: NSObject {
         browser?.stateUpdateHandler = nil
         browser?.browseResultsChangedHandler = nil
         browser?.cancel()
-        for discovery in discoveries.values {
-            discovery.service.delegate = nil
-            discovery.service.stop()
+        let services = discoveries.values.map(\.service)
+        let cleanup = {
+            for service in services {
+                service.delegate = nil
+                service.stop()
+            }
         }
+        if Thread.isMainThread { cleanup() } else { DispatchQueue.main.async(execute: cleanup) }
     }
 }

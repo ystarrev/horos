@@ -17,7 +17,6 @@ private let registrationMINDOverlapCountIndex = 3
 // sample and mask decision across nearby transform candidates.
 private let registrationCandidateTileSize = 4
 private let maximumMPRPlaneTiltRadians = Float.pi / 4
-private let maximumInlineMetalVertexBytes = 4 * 1024
 
 private enum RegistrationSamplingMode: String {
     case fast
@@ -47,6 +46,125 @@ struct MetalViewerRegistrationSupportInput {
     let weight: Float
 }
 
+// One worker owns this state for one registration job. A completed submission
+// publishes its feedback through the semaphore before any storage can be reused.
+private final class RegistrationGPUResources {
+    private let queue: MTL4CommandQueue
+    private let commandBuffer: MTL4CommandBuffer
+    private let allocator: MTL4CommandAllocator
+    private let arguments: MTL4ArgumentTable
+    private let residency: MTLResidencySet
+    private let inlineBuffer: MTLBuffer
+    private let completion = DispatchSemaphore(value: 0)
+    private var feedback: MTL4CommitFeedback?
+    private var resources: [ObjectIdentifier: MTLResource] = [:]
+
+    init(device: MTLDevice) throws {
+        guard let queue = device.makeMTL4CommandQueue(),
+              let commandBuffer = device.makeCommandBuffer(),
+              let allocator = device.makeCommandAllocator(),
+              let inlineBuffer = device.makeBuffer(length: 512, options: .storageModeShared) else {
+            throw NSError(domain: "MetalRegistration", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Could not allocate Metal 4 registration resources."])
+        }
+        self.queue = queue
+        self.commandBuffer = commandBuffer
+        self.allocator = allocator
+        self.inlineBuffer = inlineBuffer
+        let descriptor = MTL4ArgumentTableDescriptor()
+        descriptor.maxBufferBindCount = 3
+        descriptor.maxTextureBindCount = 2
+        descriptor.initializeBindings = true
+        arguments = try device.makeArgumentTable(descriptor: descriptor)
+        residency = try device.makeResidencySet(descriptor: MTLResidencySetDescriptor())
+    }
+
+    private func retain(_ resource: MTLResource) {
+        if resources.updateValue(resource, forKey: ObjectIdentifier(resource)) == nil {
+            residency.addAllocation(resource)
+        }
+    }
+
+    func setTexture(_ texture: MTLTexture, index: Int) {
+        retain(texture)
+        arguments.setTexture(texture.gpuResourceID, index: index)
+    }
+
+    func setBuffer(_ buffer: MTLBuffer, offset: Int = 0, index: Int) {
+        retain(buffer)
+        arguments.setAddress(buffer.gpuAddress + UInt64(offset), index: index)
+    }
+
+    func setUniforms<T>(_ uniforms: T) {
+        precondition(MemoryLayout<T>.stride <= 256)
+        inlineBuffer.contents().storeBytes(of: uniforms, as: T.self)
+        setBuffer(inlineBuffer, index: 0)
+    }
+
+    func setCandidateCount(_ count: UInt32) {
+        inlineBuffer.contents().advanced(by: 256).storeBytes(of: count, as: UInt32.self)
+        setBuffer(inlineBuffer, offset: 256, index: 2)
+    }
+
+    func performCompute(
+        pipeline: MTLComputePipelineState,
+        operation: String,
+        since startedAt: CFTimeInterval?,
+        isCancelled: () -> Bool,
+        encode: (MTL4ComputeCommandEncoder) -> Void
+    ) -> Bool {
+        precondition(!Thread.isMainThread && resources.isEmpty)
+        guard !isCancelled() else { return false }
+        feedback = nil
+        allocator.reset()
+        // Clear bindings unused by the next kernel, not just those it replaces.
+        for index in 0..<3 { arguments.setAddress(0, index: index) }
+        for index in 0..<2 { arguments.setTexture(MTLResourceID(), index: index) }
+        defer {
+            residency.removeAllAllocations()
+            residency.commit()
+            resources.removeAll(keepingCapacity: true)
+            feedback = nil
+            withExtendedLifetime((self, pipeline)) {}
+        }
+        commandBuffer.beginCommandBuffer(allocator: allocator)
+        guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            commandBuffer.endCommandBuffer()
+            return false
+        }
+        encoder.label = operation
+        encoder.setComputePipelineState(pipeline)
+        encoder.setArgumentTable(arguments)
+        encode(encoder)
+        encoder.endEncoding()
+        residency.commit()
+        commandBuffer.useResidencySet(residency)
+        commandBuffer.endCommandBuffer()
+        guard !isCancelled() else { return false }
+        // Metal consumes the registered feedback handlers when committing.
+        // Reuse GPU storage, but register completion afresh for every submission.
+        let options = MTL4CommitOptions()
+        options.addFeedbackHandler { [self] feedback in
+            self.feedback = feedback
+            self.completion.signal()
+        }
+        let submittedAt = MetalPerformanceTrace.begin()
+        queue.commit([commandBuffer], options: options)
+        let waitStartedAt = MetalPerformanceTrace.begin()
+        // Never abandon submitted work on cancellation: the GPU still owns the
+        // mutable histograms, uniforms and allocator until this signal arrives.
+        completion.wait()
+        guard let feedback else { return false }
+        MetalPerformanceTrace.completed(feedback, operation: operation, since: startedAt,
+                                        submittedAt: submittedAt, waitStartedAt: waitStartedAt)
+        if let error = feedback.error {
+            NSLog("Metal 4 %@ failed: %@", operation, error.localizedDescription)
+            return false
+        }
+        return !isCancelled()
+    }
+}
+
 private final class RegistrationJob: @unchecked Sendable {
     enum WorkingBufferSlot: Hashable {
         case histogram
@@ -67,6 +185,7 @@ private final class RegistrationJob: @unchecked Sendable {
     // Only the job's worker uses these buffers. Every dispatch completes and
     // its results are consumed before reuse. Cancellation never clears them.
     private var workingBuffers: [WorkingBufferSlot: MTLBuffer] = [:]
+    private var gpuResources: RegistrationGPUResources?
 
     init(
         device: MTLDevice,
@@ -103,8 +222,27 @@ private final class RegistrationJob: @unchecked Sendable {
         }
     }
 
+    func performCompute(
+        pipeline: MTLComputePipelineState,
+        operation: String,
+        since startedAt: CFTimeInterval?,
+        encode: (RegistrationGPUResources, MTL4ComputeCommandEncoder) -> Void
+    ) -> Bool {
+        precondition(!Thread.isMainThread)
+        guard !isCancelled else { return false }
+        if gpuResources == nil {
+            gpuResources = try? RegistrationGPUResources(device: device)
+        }
+        guard let gpuResources else { return false }
+        return gpuResources.performCompute(pipeline: pipeline, operation: operation, since: startedAt,
+                                           isCancelled: { self.isCancelled }) { encoder in
+            encode(gpuResources, encoder)
+        }
+    }
+
     func releaseWorkingBuffers() {
         workingBuffers.removeAll()
+        gpuResources = nil
     }
 
     var isCancelled: Bool {
@@ -645,11 +783,198 @@ private struct MetalViewerFrameCaptureRequest {
     let completion: (MetalPrintFrame?) -> Void
 }
 
+// One slot owns every mutable allocation used by a submitted render frame.
+// Only the main thread touches a slot, and only after GPU feedback can it be reused.
+final class MetalViewerRenderFrame {
+    let allocator: MTL4CommandAllocator
+    let residency: MTLResidencySet
+    let vertexArguments: MTL4ArgumentTable
+    let fragmentArguments: MTL4ArgumentTable
+    var inFlight = false
+    private(set) var encodingFailed = false
+    var drawable: CAMetalDrawable?
+    var renderPass: MTL4RenderPassDescriptor?
+    var drawableResidency: MTLResidencySet?
+    private let device: MTLDevice
+    private var resources: [ObjectIdentifier: MTLResource] = [:]
+    private var uploadBuffers: [MTLBuffer] = []
+    private var uploadBufferIndex = 0
+    private var uploadOffset = 0
+    private var depthTexture: MTLTexture?
+
+    init(device: MTLDevice) throws {
+        self.device = device
+        guard let allocator = device.makeCommandAllocator() else {
+            throw NSError(domain: "MetalViewerRenderer", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Could not allocate Metal display frame."])
+        }
+        self.allocator = allocator
+        let residencyDescriptor = MTLResidencySetDescriptor()
+        residencyDescriptor.initialCapacity = 32
+        residency = try device.makeResidencySet(descriptor: residencyDescriptor)
+        let vertexDescriptor = MTL4ArgumentTableDescriptor()
+        vertexDescriptor.maxBufferBindCount = 2
+        vertexDescriptor.initializeBindings = true
+        vertexArguments = try device.makeArgumentTable(descriptor: vertexDescriptor)
+        let fragmentDescriptor = MTL4ArgumentTableDescriptor()
+        fragmentDescriptor.maxBufferBindCount = 2
+        fragmentDescriptor.maxTextureBindCount = 9
+        fragmentDescriptor.maxSamplerStateBindCount = 2
+        fragmentDescriptor.initializeBindings = true
+        fragmentArguments = try device.makeArgumentTable(descriptor: fragmentDescriptor)
+    }
+
+    func begin() {
+        precondition(Thread.isMainThread && !inFlight)
+        allocator.reset()
+        uploadBufferIndex = 0
+        uploadOffset = 0
+        encodingFailed = false
+    }
+
+    func retainResource(_ resource: MTLResource) {
+        if resources.updateValue(resource, forKey: ObjectIdentifier(resource)) == nil {
+            residency.addAllocation(resource)
+        }
+    }
+
+    func setTextures(_ textures: [MTLTexture?], sampler: MTLSamplerState, maskSampler: MTLSamplerState? = nil) {
+        precondition(textures.count == 9)
+        for (index, texture) in textures.enumerated() {
+            if let texture { retainResource(texture) }
+            fragmentArguments.setTexture(texture?.gpuResourceID ?? MTLResourceID(), index: index)
+        }
+        fragmentArguments.setSamplerState(sampler.gpuResourceID, index: 0)
+        fragmentArguments.setSamplerState(maskSampler?.gpuResourceID ?? MTLResourceID(), index: 1)
+    }
+
+    func setVertexBuffer(_ buffer: MTLBuffer) {
+        retainResource(buffer)
+        vertexArguments.setAddress(buffer.gpuAddress, index: 0)
+    }
+
+    func setVertices<T>(_ vertices: [T]) -> Bool {
+        guard !vertices.isEmpty else { return false }
+        return vertices.withUnsafeBytes { bytes in
+            guard let address = upload(bytes) else { return false }
+            vertexArguments.setAddress(address, index: 0)
+            return true
+        }
+    }
+
+    @discardableResult
+    func setUniforms<T>(_ value: inout T, fragmentIndex: Int? = 0) -> Bool {
+        withUnsafeBytes(of: &value) { bytes in
+            guard let address = upload(bytes) else { return false }
+            vertexArguments.setAddress(address, index: 1)
+            if let fragmentIndex { fragmentArguments.setAddress(address, index: fragmentIndex) }
+            return true
+        }
+    }
+
+    private func upload(_ bytes: UnsafeRawBufferPointer) -> UInt64? {
+        guard !encodingFailed else { return nil }
+        guard let source = bytes.baseAddress, bytes.count > 0 else { return nil }
+        // Every draw gets distinct bytes, including all ROIs and inset planes.
+        // Grow in chunks without relocating any data already referenced this frame.
+        var offset = (uploadOffset + 255) & ~255
+        if uploadBufferIndex < uploadBuffers.count,
+           offset + bytes.count > uploadBuffers[uploadBufferIndex].length {
+            uploadBufferIndex += 1
+            offset = 0
+        }
+        if uploadBufferIndex == uploadBuffers.count || uploadBuffers[uploadBufferIndex].length < bytes.count {
+            guard let buffer = device.makeBuffer(length: max(64 * 1024, bytes.count), options: .storageModeShared) else {
+                encodingFailed = true
+                return nil
+            }
+            if uploadBufferIndex == uploadBuffers.count { uploadBuffers.append(buffer) }
+            else { uploadBuffers[uploadBufferIndex] = buffer }
+        }
+        let buffer = uploadBuffers[uploadBufferIndex]
+        buffer.contents().advanced(by: offset).copyMemory(from: source, byteCount: bytes.count)
+        uploadOffset = offset + bytes.count
+        retainResource(buffer)
+        return buffer.gpuAddress + UInt64(offset)
+    }
+
+    func prepareDepth(width: Int, height: Int, sampleCount: Int) -> MTLTexture? {
+        if depthTexture?.width != width || depthTexture?.height != height || depthTexture?.sampleCount != sampleCount {
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .depth32Float, width: width, height: height, mipmapped: false
+            )
+            descriptor.textureType = sampleCount > 1 ? .type2DMultisample : .type2D
+            descriptor.sampleCount = sampleCount
+            descriptor.storageMode = .private
+            descriptor.usage = .renderTarget
+            depthTexture = device.makeTexture(descriptor: descriptor)
+        }
+        guard let depthTexture else {
+            encodingFailed = true
+            return nil
+        }
+        retainResource(depthTexture)
+        return depthTexture
+    }
+
+    func makeRenderEncoder(
+        commandBuffer: MTL4CommandBuffer,
+        descriptor: MTL4RenderPassDescriptor,
+        drawable: CAMetalDrawable,
+        view: MTKView
+    ) -> MTL4RenderCommandEncoder? {
+        guard let layer = view.layer as? CAMetalLayer else { return nil }
+        begin()
+        guard let depth = prepareDepth(width: drawable.texture.width, height: drawable.texture.height,
+                                       sampleCount: view.sampleCount) else {
+            releaseCompletedResources()
+            return nil
+        }
+        descriptor.depthAttachment.texture = depth
+        descriptor.depthAttachment.clearDepth = 1
+        descriptor.depthAttachment.loadAction = .clear
+        descriptor.depthAttachment.storeAction = .dontCare
+        self.drawable = drawable
+        renderPass = descriptor
+        drawableResidency = layer.residencySet
+        for index in 0..<8 {
+            if let texture = descriptor.colorAttachments[index].texture { retainResource(texture) }
+            if let texture = descriptor.colorAttachments[index].resolveTexture { retainResource(texture) }
+        }
+        commandBuffer.beginCommandBuffer(allocator: allocator)
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
+            commandBuffer.endCommandBuffer()
+            releaseCompletedResources()
+            return nil
+        }
+        encoder.setArgumentTable(vertexArguments, stages: .vertex)
+        encoder.setArgumentTable(fragmentArguments, stages: .fragment)
+        return encoder
+    }
+
+    func releaseCompletedResources() {
+        precondition(Thread.isMainThread)
+        residency.removeAllAllocations()
+        residency.commit()
+        resources.removeAll(keepingCapacity: true)
+        drawable = nil
+        renderPass = nil
+        drawableResidency = nil
+        inFlight = false
+    }
+}
+
 final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private static let mprPlanes: [MetalMPRPlane] = [.axial, .coronal, .sagittal]
 
     private let deviceRef: MTLDevice
-    private let commandQueue: MTLCommandQueue
+    // Registration compute remains separate from Metal 4 rendering.
+    private let renderQueue: MTL4CommandQueue
+    private let renderCommandBuffer: MTL4CommandBuffer
+    private let renderFrames: [MetalViewerRenderFrame]
+    private var pendingRender = false
+    private var printRenderFrame: MetalViewerRenderFrame?
+    private var printOutputTexture: MTLTexture?
     private let pipelineState: MTLRenderPipelineState
     private let mprPipelineState: MTLRenderPipelineState
     private let mprROIPipelineState: MTLRenderPipelineState
@@ -908,10 +1233,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         self.usesAutomaticBaseWindowLevel = usesAutomaticWindowLevel
         self.baseTransferFunctionState = transferFunctionState
 
-        guard let commandQueue = device.makeCommandQueue() else {
-            fatalError("Could not create Metal command queue.")
+        guard let renderQueue = device.makeMTL4CommandQueue(),
+              let renderCommandBuffer = device.makeCommandBuffer() else {
+            fatalError("Could not create Metal 4 display queue.")
         }
-        self.commandQueue = commandQueue
+        self.renderQueue = renderQueue
+        self.renderCommandBuffer = renderCommandBuffer
 
         let vertices: [MetalVertex] = [
             MetalVertex(position: [-1, -1], texCoord: [0, 1]),
@@ -930,6 +1257,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         self.vertexBuffer = vertexBuffer
 
         do {
+            renderFrames = try (0..<3).map { _ in try MetalViewerRenderFrame(device: device) }
             let pipelines = try MetalPipelineCache.shared(for: device)
             pipelineState = try pipelines.renderPipeline(
                 vertex: "metalViewerVertex", fragment: "metalViewerFragment", depthPixelFormat: .depth32Float
@@ -973,6 +1301,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         samplerDescriptor.magFilter = .linear
         samplerDescriptor.sAddressMode = .clampToEdge
         samplerDescriptor.tAddressMode = .clampToEdge
+        samplerDescriptor.supportArgumentBuffers = true
         guard let samplerState = device.makeSamplerState(descriptor: samplerDescriptor) else {
             fatalError("Could not create Metal sampler state.")
         }
@@ -996,6 +1325,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     deinit {
         scrollSliceLoader.cancel()
         activeRegistrationJob?.cancel()
+        failPendingFrameCapture()
         if let defaultsObserver {
             NotificationCenter.default.removeObserver(defaultsObserver)
         }
@@ -1251,8 +1581,22 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    func makePrintFrame(at index: Int) -> MetalPrintFrame? {
-        guard pixList.indices.contains(index) else { return nil }
+    func makePrintFrame(at index: Int, completion: @escaping (MetalPrintFrame?) -> Void) {
+        precondition(Thread.isMainThread)
+        let performanceStartedAt = MetalPerformanceTrace.begin()
+        var submitted = false
+        defer {
+            if !submitted { DispatchQueue.main.async { completion(nil) } }
+        }
+        guard pixList.indices.contains(index) else { return }
+        if printRenderFrame == nil {
+            printRenderFrame = try? MetalViewerRenderFrame(device: deviceRef)
+        }
+        guard let frame = printRenderFrame, !frame.inFlight else { return }
+        frame.begin()
+        defer {
+            if !submitted { frame.releaseCompletedResources() }
+        }
 
         let previousSliceIndex = currentSliceIndex
         currentSliceIndex = index
@@ -1266,7 +1610,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         guard let currentPix,
               let displayVolumeTexture = stackDisplayVolumeTexture() else {
-            return nil
+            return
         }
         let displayVolumeEntry = stackDisplayVolumeEntry()
         let displayVolumeKind = displayVolumeEntry?.textureKind ?? .rescaledFloat
@@ -1285,21 +1629,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let width = max(Int((CGFloat(sourceWidth) / reduction).rounded()), 1)
         let height = max(Int((CGFloat(sourceHeight) / reduction).rounded()), 1)
 
-        let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm,
-            width: width,
-            height: height,
-            mipmapped: false
-        )
-        textureDescriptor.storageMode = .shared
-        textureDescriptor.usage = [.renderTarget, .shaderRead]
-
-        guard let outputTexture = deviceRef.makeTexture(descriptor: textureDescriptor),
-              let commandBuffer = commandQueue.makeCommandBuffer() else {
-            return nil
+        if printOutputTexture?.width != width || printOutputTexture?.height != height {
+            let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .bgra8Unorm,
+                width: width,
+                height: height,
+                mipmapped: false
+            )
+            textureDescriptor.storageMode = .shared
+            textureDescriptor.usage = [.renderTarget, .shaderRead]
+            printOutputTexture = deviceRef.makeTexture(descriptor: textureDescriptor)
         }
+        guard let outputTexture = printOutputTexture else { return }
 
-        let renderPassDescriptor = MTLRenderPassDescriptor()
+        let renderPassDescriptor = MTL4RenderPassDescriptor()
         renderPassDescriptor.colorAttachments[0].texture = outputTexture
         renderPassDescriptor.colorAttachments[0].loadAction = .clear
         renderPassDescriptor.colorAttachments[0].storeAction = .store
@@ -1341,43 +1684,67 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             baseVolumePadding: 0
         )
 
-        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
-            return nil
+        frame.retainResource(outputTexture)
+        frame.renderPass = renderPassDescriptor
+        renderCommandBuffer.beginCommandBuffer(allocator: frame.allocator)
+        guard let encoder = renderCommandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+            renderCommandBuffer.endCommandBuffer()
+            return
         }
+        encoder.label = "Metal Planar print image"
         encoder.setRenderPipelineState(pipelineState)
-        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
-        encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalUniforms>.stride, index: 1)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<MetalUniforms>.stride, index: 0)
-        encoder.setFragmentTexture(overlayVolumeTexture, index: 1)
-        encoder.setFragmentTexture(floatDisplayVolumeTexture, index: 2)
-        setTransferTextures(on: encoder)
-        encoder.setFragmentTexture(signedDisplayVolumeTexture, index: 7)
-        encoder.setFragmentTexture(unsignedDisplayVolumeTexture, index: 8)
-        encoder.setFragmentSamplerState(samplerState, index: 0)
-        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-        encoder.endEncoding()
-
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        guard commandBuffer.status == .completed else { return nil }
-
-        let bytesPerRow = width * 4
-        var bgraPixels = [UInt8](repeating: 0, count: bytesPerRow * height)
-        bgraPixels.withUnsafeMutableBytes { bytes in
-            guard let baseAddress = bytes.baseAddress else { return }
-            outputTexture.getBytes(
-                baseAddress,
-                bytesPerRow: bytesPerRow,
-                from: MTLRegionMake2D(0, 0, width, height),
-                mipmapLevel: 0
-            )
+        encoder.setArgumentTable(frame.vertexArguments, stages: .vertex)
+        encoder.setArgumentTable(frame.fragmentArguments, stages: .fragment)
+        frame.setVertexBuffer(vertexBuffer)
+        frame.setTextures([nil, overlayVolumeTexture, floatDisplayVolumeTexture,
+                           baseCLUTTexture, baseOpacityTexture, overlayCLUTTexture, overlayOpacityTexture,
+                           signedDisplayVolumeTexture, unsignedDisplayVolumeTexture], sampler: samplerState)
+        guard frame.setUniforms(&uniforms) else {
+            encoder.endEncoding()
+            renderCommandBuffer.endCommandBuffer()
+            return
         }
+        encoder.drawPrimitives(primitiveType: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
+        frame.residency.commit()
+        renderCommandBuffer.useResidencySet(frame.residency)
+        renderCommandBuffer.endCommandBuffer()
 
-        return MetalPrintFrame(
-            bgraPixels: Data(bgraPixels),
-            width: width,
-            height: height
-        )
+        let options = MTL4CommitOptions()
+        // Keep the pipeline, sampler and frame alive through GPU completion and
+        // readback. The print slot cannot be reused until its pixels are copied.
+        options.addFeedbackHandler { [self, frame, outputTexture] feedback in
+            let result: MetalPrintFrame?
+            if let error = feedback.error {
+                NSLog("Metal 4 print rendering failed: %@", error.localizedDescription)
+                result = nil
+            } else {
+                let readbackStartedAt = MetalPerformanceTrace.begin()
+                let bytesPerRow = width * 4
+                var bgraPixels = Data(count: bytesPerRow * height)
+                bgraPixels.withUnsafeMutableBytes { bytes in
+                    guard let baseAddress = bytes.baseAddress else { return }
+                    outputTexture.getBytes(
+                        baseAddress,
+                        bytesPerRow: bytesPerRow,
+                        from: MTLRegionMake2D(0, 0, width, height),
+                        mipmapLevel: 0
+                    )
+                }
+                result = MetalPrintFrame(bgraPixels: bgraPixels, width: width, height: height)
+                MetalPerformanceTrace.end("render.print.readback", since: readbackStartedAt)
+            }
+            DispatchQueue.main.async { [self, frame] in
+                withExtendedLifetime(self) {
+                    frame.releaseCompletedResources()
+                    completion(result)
+                }
+            }
+        }
+        MetalPerformanceTrace.track(options, operation: "render.print", since: performanceStartedAt)
+        frame.inFlight = true
+        submitted = true
+        renderQueue.commit([renderCommandBuffer], options: options)
     }
 
     func captureCurrentFrame(
@@ -1396,7 +1763,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func encodePendingFrameCapture(
         from texture: MTLTexture,
-        into commandBuffer: MTLCommandBuffer
+        into commandBuffer: MTL4CommandBuffer,
+        frame: MetalViewerRenderFrame,
+        options: MTL4CommitOptions
     ) {
         guard let request = pendingFrameCapture else { return }
         pendingFrameCapture = nil
@@ -1412,26 +1781,30 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 length: bufferLength,
                 options: .storageModeShared
               ),
-              let blitEncoder = commandBuffer.makeBlitCommandEncoder() else {
+              let copyEncoder = commandBuffer.makeComputeCommandEncoder() else {
             DispatchQueue.main.async { request.completion(nil) }
             return
         }
 
-        blitEncoder.copy(
-            from: texture,
+        frame.retainResource(texture)
+        frame.retainResource(captureBuffer)
+        // The drawable's render attachment must be stored before the readback copy.
+        copyEncoder.barrier(afterQueueStages: .fragment, beforeStages: .blit, visibilityOptions: .device)
+        copyEncoder.copy(
+            sourceTexture: texture,
             sourceSlice: 0,
             sourceLevel: 0,
             sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
             sourceSize: MTLSize(width: width, height: height, depth: 1),
-            to: captureBuffer,
+            destinationBuffer: captureBuffer,
             destinationOffset: 0,
             destinationBytesPerRow: alignedBytesPerRow,
-            destinationBytesPerImage: bufferLength
+            destinationBytesPerImage: 0
         )
-        blitEncoder.endEncoding()
+        copyEncoder.endEncoding()
 
-        commandBuffer.addCompletedHandler { completedBuffer in
-            guard completedBuffer.status == .completed else {
+        options.addFeedbackHandler { feedback in
+            guard feedback.error == nil else {
                 DispatchQueue.main.async { request.completion(nil) }
                 return
             }
@@ -3678,13 +4051,6 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return texture
     }
 
-    private func setTransferTextures(on encoder: MTLRenderCommandEncoder) {
-        encoder.setFragmentTexture(baseCLUTTexture, index: 3)
-        encoder.setFragmentTexture(baseOpacityTexture, index: 4)
-        encoder.setFragmentTexture(overlayCLUTTexture, index: 5)
-        encoder.setFragmentTexture(overlayOpacityTexture, index: 6)
-    }
-
     private func resetRegistrationSupportVolumes(
         primaryWeight: Float = 1,
         inputs: [MetalViewerRegistrationSupportInput] = []
@@ -5268,6 +5634,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         job: RegistrationJob
     ) -> RigidTransformState? {
         guard job.isCancelled == false else { return nil }
+        let performanceStartedAt = MetalPerformanceTrace.begin()
         let fixedSpacing = voxelSpacing(from: fixedLevel.voxelToWorld)
         let movingSpacing = voxelSpacing(from: movingLevel.voxelToWorld)
 
@@ -5320,7 +5687,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             movingWorldToVoxel: simd_inverse(movingLevel.voxelToWorld),
             movingTextureSize: movingLevel.dimensions
         )
-        var uniforms = BlockMatchingUniforms(
+        let uniforms = BlockMatchingUniforms(
             windows: SIMD4<Float>(
                 fixedWindow.level,
                 max(fixedWindow.width, 1),
@@ -5350,25 +5717,20 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             fixedVoxelToMovingTexture: fixedToMovingTexture
         )
 
-        guard let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeComputeCommandEncoder() else {
-            return nil
+        let completed = job.performCompute(
+            pipeline: registrationBlockMatchingPipelineState,
+            operation: "registration.blockMatch", since: performanceStartedAt
+        ) { gpu, encoder in
+            gpu.setTexture(fixedLevel.texture, index: 0)
+            gpu.setTexture(movingLevel.texture, index: 1)
+            gpu.setUniforms(uniforms)
+            gpu.setBuffer(resultBuffer, index: 1)
+            encoder.dispatchThreads(
+                threadsPerGrid: MTLSize(width: blockGrid.x, height: blockGrid.y, depth: blockGrid.z),
+                threadsPerThreadgroup: MTLSize(width: 4, height: 4, depth: 2)
+            )
         }
-        encoder.setComputePipelineState(registrationBlockMatchingPipelineState)
-        encoder.setTexture(fixedLevel.texture, index: 0)
-        encoder.setTexture(movingLevel.texture, index: 1)
-        encoder.setBytes(&uniforms, length: MemoryLayout<BlockMatchingUniforms>.stride, index: 0)
-        encoder.setBuffer(resultBuffer, offset: 0, index: 1)
-        encoder.dispatchThreads(
-            MTLSize(width: blockGrid.x, height: blockGrid.y, depth: blockGrid.z),
-            threadsPerThreadgroup: MTLSize(width: 4, height: 4, depth: 2)
-        )
-        encoder.endEncoding()
-        guard job.isCancelled == false else { return nil }
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        guard job.isCancelled == false,
-              commandBuffer.status == .completed else { return nil }
+        guard completed, job.isCancelled == false else { return nil }
 
         let results = resultBuffer.contents().bindMemory(
             to: BlockMatchResult.self,
@@ -6766,6 +7128,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         job: RegistrationJob
     ) -> Float {
         guard job.isCancelled == false else { return .greatestFiniteMagnitude }
+        let performanceStartedAt = MetalPerformanceTrace.begin()
         let baseVolumeTexture = level.0.texture
         let overlayVolumeTexture = level.1.texture
         let samplingStride = normalizedRegistrationSamplingStride(requestedSamplingStride)
@@ -6778,7 +7141,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             samplingStride: samplingStride
         )
         let options = metricOptions(forLevelIndex: levelIndex, totalLevels: totalLevels, useBoneOnly: useBoneOnly)
-        var uniforms = RegistrationUniforms(
+        let uniforms = RegistrationUniforms(
             baseWindowLevel: baseRegistrationWindowLevel,
             baseWindowWidth: max(baseRegistrationWindowWidth, 1),
             overlayWindowLevel: overlayRegistrationWindowLevel,
@@ -6802,32 +7165,23 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
         memset(histogramBuffer.contents(), 0, histogramBufferLength)
 
-        guard let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeComputeCommandEncoder() else {
-            return .greatestFiniteMagnitude
-        }
-
         let threadsPerGroup = MTLSize(width: 8, height: 8, depth: 4)
         let threadgroups = MTLSize(
             width: (baseSampleGridSize.x + threadsPerGroup.width - 1) / threadsPerGroup.width,
             height: (baseSampleGridSize.y + threadsPerGroup.height - 1) / threadsPerGroup.height,
             depth: (baseSampleGridSize.z + threadsPerGroup.depth - 1) / threadsPerGroup.depth
         )
-        encoder.setComputePipelineState(registrationPipelineState)
-        encoder.setTexture(baseVolumeTexture, index: 0)
-        encoder.setTexture(overlayVolumeTexture, index: 1)
-        encoder.setBytes(&uniforms, length: MemoryLayout<RegistrationUniforms>.stride, index: 0)
-        encoder.setBuffer(histogramBuffer, offset: 0, index: 1)
-        encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerGroup)
-        encoder.endEncoding()
-
-        guard job.isCancelled == false else { return .greatestFiniteMagnitude }
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        guard job.isCancelled == false else { return .greatestFiniteMagnitude }
-        guard commandBuffer.status == .completed else {
-            return .greatestFiniteMagnitude
+        let completed = job.performCompute(
+            pipeline: registrationPipelineState,
+            operation: "registration.directional", since: performanceStartedAt
+        ) { gpu, encoder in
+            gpu.setTexture(baseVolumeTexture, index: 0)
+            gpu.setTexture(overlayVolumeTexture, index: 1)
+            gpu.setUniforms(uniforms)
+            gpu.setBuffer(histogramBuffer, index: 1)
+            encoder.dispatchThreadgroups(threadgroupsPerGrid: threadgroups, threadsPerThreadgroup: threadsPerGroup)
         }
+        guard completed, job.isCancelled == false else { return .greatestFiniteMagnitude }
 
         let histogram = histogramBuffer.contents().bindMemory(to: UInt32.self, capacity: histogramEntryCount)
         let metricMode = Int(options.x.rounded())
@@ -7039,6 +7393,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             }
         }
 
+        let performanceStartedAt = MetalPerformanceTrace.begin()
         let baseVolumeTexture = level.0.texture
         let overlayVolumeTexture = level.1.texture
         let effectiveSamplingStride = normalizedRegistrationSamplingStride(samplingStride)
@@ -7100,12 +7455,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
         memset(histogramBuffer.contents(), 0, histogramBufferLength)
 
-        guard let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeComputeCommandEncoder() else {
-            return Array(repeating: .greatestFiniteMagnitude, count: states.count)
-        }
-
-        var candidateCount = UInt32(states.count)
+        let candidateCount = UInt32(states.count)
         let candidateTileCount = (states.count + registrationCandidateTileSize - 1) / registrationCandidateTileSize
         let threadsPerGroup = MTLSize(width: 8, height: 8, depth: 4)
         let threadgroups = MTLSize(
@@ -7113,40 +7463,34 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             height: (baseSampleGridSize.y + threadsPerGroup.height - 1) / threadsPerGroup.height,
             depth: (baseSampleGridSize.z * candidateTileCount + threadsPerGroup.depth - 1) / threadsPerGroup.depth
         )
-        encoder.setComputePipelineState(registrationBatchPipelineState)
-        encoder.setBytes(&candidateCount, length: MemoryLayout<UInt32>.stride, index: 2)
-        if evaluatesForwardDirection {
-            encoder.setTexture(baseVolumeTexture, index: 0)
-            encoder.setTexture(overlayVolumeTexture, index: 1)
-            encoder.setBuffer(uniformBuffer, offset: 0, index: 0)
-            encoder.setBuffer(histogramBuffer, offset: 0, index: 1)
-            encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerGroup)
-        }
+        let completed = job.performCompute(
+            pipeline: registrationBatchPipelineState,
+            operation: "registration.batch", since: performanceStartedAt
+        ) { gpu, encoder in
+            gpu.setCandidateCount(candidateCount)
+            // Forward and reverse passes write disjoint histogram ranges.
+            if evaluatesForwardDirection {
+                gpu.setTexture(baseVolumeTexture, index: 0)
+                gpu.setTexture(overlayVolumeTexture, index: 1)
+                gpu.setBuffer(uniformBuffer, index: 0)
+                gpu.setBuffer(histogramBuffer, index: 1)
+                encoder.dispatchThreadgroups(threadgroupsPerGrid: threadgroups, threadsPerThreadgroup: threadsPerGroup)
+            }
 
-        if evaluatesReverseDirection {
-            let reverseThreadgroups = MTLSize(
-                width: (overlaySampleGridSize.x + threadsPerGroup.width - 1) / threadsPerGroup.width,
-                height: (overlaySampleGridSize.y + threadsPerGroup.height - 1) / threadsPerGroup.height,
-                depth: (overlaySampleGridSize.z * candidateTileCount + threadsPerGroup.depth - 1) / threadsPerGroup.depth
-            )
-            encoder.setTexture(overlayVolumeTexture, index: 0)
-            encoder.setTexture(baseVolumeTexture, index: 1)
-            encoder.setBuffer(reverseUniformBuffer, offset: 0, index: 0)
-            encoder.setBuffer(histogramBuffer, offset: histogramPassLength, index: 1)
-            encoder.dispatchThreadgroups(reverseThreadgroups, threadsPerThreadgroup: threadsPerGroup)
+            if evaluatesReverseDirection {
+                let reverseThreadgroups = MTLSize(
+                    width: (overlaySampleGridSize.x + threadsPerGroup.width - 1) / threadsPerGroup.width,
+                    height: (overlaySampleGridSize.y + threadsPerGroup.height - 1) / threadsPerGroup.height,
+                    depth: (overlaySampleGridSize.z * candidateTileCount + threadsPerGroup.depth - 1) / threadsPerGroup.depth
+                )
+                gpu.setTexture(overlayVolumeTexture, index: 0)
+                gpu.setTexture(baseVolumeTexture, index: 1)
+                gpu.setBuffer(reverseUniformBuffer, index: 0)
+                gpu.setBuffer(histogramBuffer, offset: histogramPassLength, index: 1)
+                encoder.dispatchThreadgroups(threadgroupsPerGrid: reverseThreadgroups, threadsPerThreadgroup: threadsPerGroup)
+            }
         }
-        encoder.endEncoding()
-
-        guard job.isCancelled == false else {
-            return Array(repeating: .greatestFiniteMagnitude, count: states.count)
-        }
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        guard job.isCancelled == false else {
-            return Array(repeating: .greatestFiniteMagnitude, count: states.count)
-        }
-        guard job.isCancelled == false,
-              commandBuffer.status == .completed else {
+        guard completed, job.isCancelled == false else {
             return Array(repeating: .greatestFiniteMagnitude, count: states.count)
         }
 
@@ -7251,6 +7595,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             return pairs.map { _ in Array(repeating: nil, count: states.count) }
         }
 
+        let performanceStartedAt = MetalPerformanceTrace.begin()
         let options = metricOptions(
             forLevelIndex: levelIndex,
             totalLevels: totalLevels,
@@ -7318,47 +7663,41 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         guard let histogramBuffer = job.workingBuffer(
             for: .histogram,
             length: histogramBufferLength
-        ),
-              let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+        ) else {
             return pairs.map { _ in Array(repeating: nil, count: states.count) }
         }
         memset(histogramBuffer.contents(), 0, histogramBufferLength)
 
-        var candidateCount = UInt32(states.count)
+        let candidateCount = UInt32(states.count)
         let candidateTileCount = (states.count + registrationCandidateTileSize - 1)
             / registrationCandidateTileSize
         let threadsPerGroup = MTLSize(width: 8, height: 8, depth: 4)
-        encoder.setComputePipelineState(registrationBatchPipelineState)
-        encoder.setBytes(&candidateCount, length: MemoryLayout<UInt32>.stride, index: 2)
-
-        for (pairIndex, pair) in pairs.enumerated() {
-            let fixedGridSize = fixedSampleGridSizes[pairIndex]
-            let threadgroups = MTLSize(
-                width: (fixedGridSize.x + threadsPerGroup.width - 1) / threadsPerGroup.width,
-                height: (fixedGridSize.y + threadsPerGroup.height - 1) / threadsPerGroup.height,
-                depth: (fixedGridSize.z * candidateTileCount + threadsPerGroup.depth - 1)
-                    / threadsPerGroup.depth
-            )
-            encoder.setTexture(pair.fixedLevel.texture, index: 0)
-            encoder.setTexture(pair.movingLevel.texture, index: 1)
-            encoder.setBuffer(uniformBuffers[pairIndex], offset: 0, index: 0)
-            encoder.setBuffer(
-                histogramBuffer,
-                offset: pairIndex * histogramPassEntryCount * MemoryLayout<UInt32>.stride,
-                index: 1
-            )
-            encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerGroup)
+        let completed = job.performCompute(
+            pipeline: registrationBatchPipelineState,
+            operation: "registration.support", since: performanceStartedAt
+        ) { gpu, encoder in
+            gpu.setCandidateCount(candidateCount)
+            // Each pair has separate uniforms and a nonoverlapping output range.
+            for (pairIndex, pair) in pairs.enumerated() {
+                let fixedGridSize = fixedSampleGridSizes[pairIndex]
+                let threadgroups = MTLSize(
+                    width: (fixedGridSize.x + threadsPerGroup.width - 1) / threadsPerGroup.width,
+                    height: (fixedGridSize.y + threadsPerGroup.height - 1) / threadsPerGroup.height,
+                    depth: (fixedGridSize.z * candidateTileCount + threadsPerGroup.depth - 1)
+                        / threadsPerGroup.depth
+                )
+                gpu.setTexture(pair.fixedLevel.texture, index: 0)
+                gpu.setTexture(pair.movingLevel.texture, index: 1)
+                gpu.setBuffer(uniformBuffers[pairIndex], index: 0)
+                gpu.setBuffer(
+                    histogramBuffer,
+                    offset: pairIndex * histogramPassEntryCount * MemoryLayout<UInt32>.stride,
+                    index: 1
+                )
+                encoder.dispatchThreadgroups(threadgroupsPerGrid: threadgroups, threadsPerThreadgroup: threadsPerGroup)
+            }
         }
-        encoder.endEncoding()
-
-        guard job.isCancelled == false else {
-            return pairs.map { _ in Array(repeating: nil, count: states.count) }
-        }
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        guard job.isCancelled == false,
-              commandBuffer.status == .completed else {
+        guard completed, job.isCancelled == false else {
             return pairs.map { _ in Array(repeating: nil, count: states.count) }
         }
 
@@ -7800,16 +8139,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
     }
 
-    private func trackRetrievalPresentation(of drawable: MTLDrawable, commandBuffer: MTLCommandBuffer) {
+    private func trackRetrievalPresentation(of drawable: MTLDrawable, options: MTL4CommitOptions) {
         guard let report = pendingRetrievalPresentation else { return }
         pendingRetrievalPresentation = nil
         MetalViewerRetrievalBenchmark.mark("first_submitted", frames: pixList)
         let completed = MetalViewerRetrievalBenchmark.timestampHandler("first_command_completed", frames: pixList)
         let failed = MetalViewerRetrievalBenchmark.timestampHandler("first_command_failed", frames: pixList)
         let unpresented = MetalViewerRetrievalBenchmark.timestampHandler("first_unpresented_drawable", frames: pixList)
-        commandBuffer.addCompletedHandler { buffer in
+        options.addFeedbackHandler { feedback in
             let timestamp = CACurrentMediaTime()
-            let succeeded = buffer.status == .completed
+            let succeeded = feedback.error == nil
             DispatchQueue.main.async {
                 if succeeded { completed?(timestamp) } else { failed?(timestamp) }
             }
@@ -7823,21 +8162,79 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
+    private func makeDisplayEncoder(
+        descriptor: MTL4RenderPassDescriptor,
+        drawable: CAMetalDrawable,
+        frame: MetalViewerRenderFrame,
+        view: MTKView
+    ) -> MTL4RenderCommandEncoder? {
+        frame.makeRenderEncoder(commandBuffer: renderCommandBuffer, descriptor: descriptor, drawable: drawable, view: view)
+    }
+
+    private func submitDisplayFrame(
+        _ frame: MetalViewerRenderFrame,
+        drawable: CAMetalDrawable,
+        view: MTKView,
+        operation: String,
+        since startedAt: CFTimeInterval?
+    ) {
+        guard !frame.encodingFailed else {
+            renderCommandBuffer.endCommandBuffer()
+            frame.releaseCompletedResources()
+            failPendingFrameCapture()
+            NSLog("Could not allocate Metal 4 display data.")
+            return
+        }
+        let options = MTL4CommitOptions()
+        encodePendingFrameCapture(from: drawable.texture, into: renderCommandBuffer, frame: frame, options: options)
+        frame.residency.commit()
+        renderCommandBuffer.useResidencySet(frame.residency)
+        if let residency = frame.drawableResidency { renderCommandBuffer.useResidencySet(residency) }
+        renderCommandBuffer.endCommandBuffer()
+        // Completion owns the renderer, pipelines, sampler and slot even after a window closes.
+        options.addFeedbackHandler { [self, frame, weak view] feedback in
+            if let error = feedback.error { NSLog("Metal 4 display failed: %@", error.localizedDescription) }
+            DispatchQueue.main.async { [self, frame, weak view] in
+                frame.releaseCompletedResources()
+                if pendingRender {
+                    pendingRender = false
+                    view?.needsDisplay = true
+                    if view?.window?.isVisible != true { failPendingFrameCapture() }
+                }
+            }
+        }
+        trackRetrievalPresentation(of: drawable, options: options)
+        MetalPerformanceTrace.track(options, operation: operation, since: startedAt, drawable: drawable)
+        frame.inFlight = true
+        renderQueue.waitForDrawable(drawable)
+        renderQueue.commit([renderCommandBuffer], options: options)
+        renderQueue.signalDrawable(drawable)
+        drawable.present()
+    }
+
     func draw(in view: MTKView) {
+        precondition(Thread.isMainThread)
+        // Never block scrolling for a busy GPU, or capture an old selection in a retry.
+        guard let frame = renderFrames.first(where: { !$0.inFlight }) else {
+            pendingRender = true
+            return
+        }
+        pendingRender = false
         if pendingRetrievalPresentation != nil {
             MetalViewerRetrievalBenchmark.mark("first_draw_attempt", frames: pixList)
         }
         switch displayMode {
         case .mpr:
-            drawMPR(in: view)
+            drawMPR(in: view, frame: frame)
             return
         case .mpr3D:
-            drawMPR3D(in: view)
+            drawMPR3D(in: view, frame: frame)
             return
         case .stack2D:
             break
         }
 
+        let performanceStartedAt = MetalPerformanceTrace.begin()
         guard let displayVolumeTexture = stackDisplayVolumeTexture() else {
             if pendingRetrievalPresentation != nil {
                 MetalViewerRetrievalBenchmark.mark("draw_waiting_for_texture", frames: pixList)
@@ -7851,7 +8248,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         let signedDisplayVolumeTexture = displayVolumeKind == .storedInt16Signed ? displayVolumeTexture : nil
         let unsignedDisplayVolumeTexture = displayVolumeKind == .storedInt16Unsigned ? displayVolumeTexture : nil
         let drawableWaitStarted = pendingRetrievalPresentation == nil ? nil : CACurrentMediaTime()
-        guard let renderPassDescriptor = view.currentRenderPassDescriptor,
+        guard let renderPassDescriptor = view.currentMTL4RenderPassDescriptor,
               let drawable = view.currentDrawable else {
             if pendingRetrievalPresentation != nil {
                 MetalViewerRetrievalBenchmark.mark("draw_waiting_for_drawable", frames: pixList)
@@ -7905,29 +8302,22 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             baseVolumePadding: 0
         )
 
-        guard let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+        guard let encoder = makeDisplayEncoder(descriptor: renderPassDescriptor, drawable: drawable, frame: frame, view: view) else {
             failPendingFrameCapture()
             return
         }
 
         encoder.setRenderPipelineState(pipelineState)
-        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
-        encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalUniforms>.stride, index: 1)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<MetalUniforms>.stride, index: 0)
-        encoder.setFragmentTexture(overlayVolumeTexture, index: 1)
-        encoder.setFragmentTexture(floatDisplayVolumeTexture, index: 2)
-        setTransferTextures(on: encoder)
-        encoder.setFragmentTexture(signedDisplayVolumeTexture, index: 7)
-        encoder.setFragmentTexture(unsignedDisplayVolumeTexture, index: 8)
-        encoder.setFragmentSamplerState(samplerState, index: 0)
-        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        frame.setVertexBuffer(vertexBuffer)
+        frame.setTextures([nil, overlayVolumeTexture, floatDisplayVolumeTexture,
+                           baseCLUTTexture, baseOpacityTexture, overlayCLUTTexture, overlayOpacityTexture,
+                           signedDisplayVolumeTexture, unsignedDisplayVolumeTexture], sampler: samplerState)
+        if frame.setUniforms(&uniforms) {
+            encoder.drawPrimitives(primitiveType: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        }
         encoder.endEncoding()
 
-        encodePendingFrameCapture(from: drawable.texture, into: commandBuffer)
-        trackRetrievalPresentation(of: drawable, commandBuffer: commandBuffer)
-        commandBuffer.present(drawable)
-        commandBuffer.commit()
+        submitDisplayFrame(frame, drawable: drawable, view: view, operation: "draw.planar", since: performanceStartedAt)
     }
 
     private func invalidateMPRROIVertexBuffer() {
@@ -7994,22 +8384,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    private func drawMPR(in view: MTKView) {
+    private func drawMPR(in view: MTKView, frame: MetalViewerRenderFrame) {
+        let performanceStartedAt = MetalPerformanceTrace.begin()
         prepareBaseVolumeIfNeeded()
-        guard let renderPassDescriptor = view.currentRenderPassDescriptor,
+        guard let renderPassDescriptor = view.currentMTL4RenderPassDescriptor,
               let drawable = view.currentDrawable,
               let baseVolumeTexture else {
             failPendingFrameCapture()
             return
         }
-        renderPassDescriptor.depthAttachment.clearDepth = 1.0
-        renderPassDescriptor.depthAttachment.loadAction = .clear
-        renderPassDescriptor.depthAttachment.storeAction = .dontCare
-
         let vertices = makeMPRVertices()
         guard vertices.isEmpty == false,
-              let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+              let encoder = makeDisplayEncoder(descriptor: renderPassDescriptor, drawable: drawable, frame: frame, view: view) else {
             failPendingFrameCapture()
             return
         }
@@ -8032,14 +8418,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         encoder.setRenderPipelineState(mprPipelineState)
         encoder.setDepthStencilState(mprDepthStencilState)
-        if setMPRVertexData(vertices, on: encoder) {
-            encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
-            encoder.setFragmentBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 0)
-            encoder.setFragmentTexture(baseVolumeTexture, index: 0)
-            encoder.setFragmentTexture(overlayVolumeTexture, index: 1)
-            setTransferTextures(on: encoder)
-            encoder.setFragmentSamplerState(samplerState, index: 0)
-            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
+        frame.setTextures([baseVolumeTexture, overlayVolumeTexture, nil,
+                           baseCLUTTexture, baseOpacityTexture, overlayCLUTTexture, overlayOpacityTexture,
+                           nil, nil], sampler: samplerState)
+        if frame.setVertices(vertices), frame.setUniforms(&uniforms) {
+            encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: vertices.count)
         }
 
         prepareMPRROIVertexBufferIfNeeded()
@@ -8053,18 +8436,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                     viewProjectionMatrix: viewProjectionMatrix,
                     color: SIMD4<Float>(surface.color, mprROISurfaceOpacity)
                 )
-                encoder.setVertexBuffer(surface.vertexBuffer, offset: 0, index: 0)
-                encoder.setVertexBytes(
-                    &roiUniforms,
-                    length: MemoryLayout<MetalMPRROIUniforms>.stride,
-                    index: 1
-                )
-                encoder.setFragmentBytes(
-                    &roiUniforms,
-                    length: MemoryLayout<MetalMPRROIUniforms>.stride,
-                    index: 1
-                )
-                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: surface.vertexCount)
+                frame.setVertexBuffer(surface.vertexBuffer)
+                if frame.setUniforms(&roiUniforms, fragmentIndex: 1) {
+                    encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: surface.vertexCount)
+                }
             }
         }
 
@@ -8072,51 +8447,47 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         if let seedMesh = mprTumourSeedMesh {
             encoder.setRenderPipelineState(mprPlaneHighlightPipelineState)
             encoder.setDepthStencilState(mprDepthStencilState)
-            encoder.setVertexBuffer(seedMesh.buffer, offset: 0, index: 0)
-            encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
-            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: seedMesh.vertexCount)
+            frame.setVertexBuffer(seedMesh.buffer)
+            if frame.setUniforms(&uniforms, fragmentIndex: nil) {
+                encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: seedMesh.vertexCount)
+            }
         }
 
         let highlightVertices = makeMPRPlaneHighlightVertices()
         if highlightVertices.isEmpty == false {
             encoder.setRenderPipelineState(mprPlaneHighlightPipelineState)
             encoder.setDepthStencilState(mprDepthStencilState)
-            if setMPRVertexData(highlightVertices, on: encoder) {
-                encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
-                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: highlightVertices.count)
+            if frame.setVertices(highlightVertices), frame.setUniforms(&uniforms, fragmentIndex: nil) {
+                encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: highlightVertices.count)
             }
         }
 
         let borderVertices = makeMPRBorderVertices()
         encoder.setRenderPipelineState(mprBorderPipelineState)
         encoder.setDepthStencilState(mprDepthStencilState)
-        if setMPRVertexData(borderVertices, on: encoder) {
-            encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
-            encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: borderVertices.count)
+        if frame.setVertices(borderVertices), frame.setUniforms(&uniforms, fragmentIndex: nil) {
+            encoder.drawPrimitives(primitiveType: .line, vertexStart: 0, vertexCount: borderVertices.count)
         }
 
         let intersectionVertices = makeMPRIntersectionVertices()
         encoder.setRenderPipelineState(mprIntersectionPipelineState)
         encoder.setDepthStencilState(mprDepthStencilState)
-        if setMPRVertexData(intersectionVertices, on: encoder) {
-            encoder.setVertexBytes(&uniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
-            encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: intersectionVertices.count)
+        if frame.setVertices(intersectionVertices), frame.setUniforms(&uniforms, fragmentIndex: nil) {
+            encoder.drawPrimitives(primitiveType: .line, vertexStart: 0, vertexCount: intersectionVertices.count)
         }
 
         if let renderLayout {
             drawMPRPreviewPanes(
                 renderLayout.previewPanes,
                 encoder: encoder,
+                frame: frame,
                 uniforms: uniforms,
                 baseVolumeTexture: baseVolumeTexture
             )
         }
         encoder.endEncoding()
 
-        encodePendingFrameCapture(from: drawable.texture, into: commandBuffer)
-        trackRetrievalPresentation(of: drawable, commandBuffer: commandBuffer)
-        commandBuffer.present(drawable)
-        commandBuffer.commit()
+        submitDisplayFrame(frame, drawable: drawable, view: view, operation: "draw.mpr", since: performanceStartedAt)
     }
 
     private func makeMPRUniforms(
@@ -8146,49 +8517,17 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         )
     }
 
-    private func setMPRVertexData(
-        _ vertices: [MetalMPRVertex],
-        on encoder: MTLRenderCommandEncoder
-    ) -> Bool {
-        let byteCount = vertices.count * MemoryLayout<MetalMPRVertex>.stride
-        guard byteCount > 0 else { return false }
-
-        if byteCount <= maximumInlineMetalVertexBytes {
-            return vertices.withUnsafeBytes { vertexBytes in
-                guard let vertexBaseAddress = vertexBytes.baseAddress else {
-                    return false
-                }
-                encoder.setVertexBytes(vertexBaseAddress, length: vertexBytes.count, index: 0)
-                return true
-            }
-        }
-
-        guard let vertexBuffer = deviceRef.makeBuffer(
-            bytes: vertices,
-            length: byteCount,
-            options: .storageModeShared
-        ) else {
-            return false
-        }
-        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
-        return true
-    }
-
-    private func drawMPR3D(in view: MTKView) {
+    private func drawMPR3D(in view: MTKView, frame: MetalViewerRenderFrame) {
+        let performanceStartedAt = MetalPerformanceTrace.begin()
         prepareBaseVolumeIfNeeded()
-        guard let renderPassDescriptor = view.currentRenderPassDescriptor,
+        guard let renderPassDescriptor = view.currentMTL4RenderPassDescriptor,
               let drawable = view.currentDrawable,
               let baseVolumeTexture,
               let panes = mpr3DRenderPanes(for: view) else {
             failPendingFrameCapture()
             return
         }
-        renderPassDescriptor.depthAttachment.clearDepth = 1.0
-        renderPassDescriptor.depthAttachment.loadAction = .clear
-        renderPassDescriptor.depthAttachment.storeAction = .dontCare
-
-        guard let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+        guard let encoder = makeDisplayEncoder(descriptor: renderPassDescriptor, drawable: drawable, frame: frame, view: view) else {
             failPendingFrameCapture()
             return
         }
@@ -8200,15 +8539,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         drawMPRPreviewPanes(
             panes,
             encoder: encoder,
+            frame: frame,
             uniforms: uniforms,
             baseVolumeTexture: baseVolumeTexture
         )
         encoder.endEncoding()
 
-        encodePendingFrameCapture(from: drawable.texture, into: commandBuffer)
-        trackRetrievalPresentation(of: drawable, commandBuffer: commandBuffer)
-        commandBuffer.present(drawable)
-        commandBuffer.commit()
+        submitDisplayFrame(frame, drawable: drawable, view: view, operation: "draw.mpr3D", since: performanceStartedAt)
     }
 
     private func mprRenderLayout(for view: MTKView) -> MetalMPRRenderLayout? {
@@ -8416,12 +8753,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private func drawMPRPreviewPanes(
         _ panes: [MetalMPRPreviewPane],
-        encoder: MTLRenderCommandEncoder,
+        encoder: MTL4RenderCommandEncoder,
+        frame: MetalViewerRenderFrame,
         uniforms: MetalMPRUniforms,
         baseVolumeTexture: MTLTexture
     ) {
         var previewUniforms = uniforms
         previewUniforms.viewProjectionMatrix = matrix_identity_float4x4
+        frame.setTextures([baseVolumeTexture, overlayVolumeTexture, nil,
+                           baseCLUTTexture, baseOpacityTexture, overlayCLUTTexture, overlayOpacityTexture,
+                           nil, nil], sampler: samplerState)
 
         for pane in panes {
             let vertices = makePlanarMPRPreviewVertices(for: pane.plane, viewport: pane.viewport, unitScale: pane.unitScale)
@@ -8433,23 +8774,16 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             encoder.setScissorRect(pane.scissor)
             encoder.setRenderPipelineState(mprPipelineState)
             encoder.setDepthStencilState(mprDepthStencilState)
-            if setMPRVertexData(vertices, on: encoder) {
-                encoder.setVertexBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
-                encoder.setFragmentBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 0)
-                encoder.setFragmentTexture(baseVolumeTexture, index: 0)
-                encoder.setFragmentTexture(overlayVolumeTexture, index: 1)
-                setTransferTextures(on: encoder)
-                encoder.setFragmentSamplerState(samplerState, index: 0)
-                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
+            if frame.setVertices(vertices), frame.setUniforms(&previewUniforms) {
+                encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: vertices.count)
             }
 
             let sliceThicknessVertices = makePlanarMPRPreviewSliceThicknessVertices(for: pane.plane, viewport: pane.viewport, unitScale: pane.unitScale)
             if sliceThicknessVertices.isEmpty == false {
                 encoder.setRenderPipelineState(mprPlaneHighlightPipelineState)
                 encoder.setDepthStencilState(mprDepthStencilState)
-                if setMPRVertexData(sliceThicknessVertices, on: encoder) {
-                    encoder.setVertexBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
-                    encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: sliceThicknessVertices.count)
+                if frame.setVertices(sliceThicknessVertices), frame.setUniforms(&previewUniforms, fragmentIndex: nil) {
+                    encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: sliceThicknessVertices.count)
                 }
             }
 
@@ -8457,15 +8791,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             if seedVertices.isEmpty == false {
                 encoder.setRenderPipelineState(mprPlaneHighlightPipelineState)
                 encoder.setDepthStencilState(mprDepthStencilState)
-                let vertexBufferLength = MemoryLayout<MetalMPRVertex>.stride * seedVertices.count
-                if let vertexBuffer = deviceRef.makeBuffer(
-                    bytes: seedVertices,
-                    length: vertexBufferLength,
-                    options: .storageModeShared
-                ) {
-                    encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
-                    encoder.setVertexBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
-                    encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: seedVertices.count)
+                if frame.setVertices(seedVertices), frame.setUniforms(&previewUniforms, fragmentIndex: nil) {
+                    encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: seedVertices.count)
                 }
             }
 
@@ -8473,9 +8800,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             if intersectionVertices.isEmpty == false {
                 encoder.setRenderPipelineState(mprIntersectionPipelineState)
                 encoder.setDepthStencilState(mprDepthStencilState)
-                if setMPRVertexData(intersectionVertices, on: encoder) {
-                    encoder.setVertexBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
-                    encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: intersectionVertices.count)
+                if frame.setVertices(intersectionVertices), frame.setUniforms(&previewUniforms, fragmentIndex: nil) {
+                    encoder.drawPrimitives(primitiveType: .line, vertexStart: 0, vertexCount: intersectionVertices.count)
                 }
             }
 
@@ -8486,9 +8812,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 }
                 encoder.setRenderPipelineState(mprBorderPipelineState)
                 encoder.setDepthStencilState(mprDepthStencilState)
-                if setMPRVertexData(borderVertices, on: encoder) {
-                    encoder.setVertexBytes(&previewUniforms, length: MemoryLayout<MetalMPRUniforms>.stride, index: 1)
-                    encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: borderVertices.count)
+                if frame.setVertices(borderVertices), frame.setUniforms(&previewUniforms, fragmentIndex: nil) {
+                    encoder.drawPrimitives(primitiveType: .line, vertexStart: 0, vertexCount: borderVertices.count)
                 }
             }
         }

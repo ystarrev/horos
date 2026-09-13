@@ -2268,9 +2268,12 @@ final class MetalViewerPaneView: NSView {
         metalView?.renderer.displayMode == .stack2D
     }
 
-    func makePrintFrame() -> MetalPrintFrame? {
-        guard let renderer = metalView?.renderer else { return nil }
-        return renderer.makePrintFrame(at: renderer.currentSliceIndex)
+    func makePrintFrame(completion: @escaping (MetalPrintFrame?) -> Void) {
+        guard let renderer = metalView?.renderer else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
+        renderer.makePrintFrame(at: renderer.currentSliceIndex, completion: completion)
     }
 
     func setDisplayMode(_ mode: MetalViewerDisplayMode) {

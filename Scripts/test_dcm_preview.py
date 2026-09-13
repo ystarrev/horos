@@ -78,6 +78,54 @@ class DICOMPreviewTests(unittest.TestCase):
         self.assertLess(request.index("self.requestedVolumeKey == key"),
                         request.index("self.volumeEntry = entry"))
 
+    def test_window_resets_for_new_series_not_for_every_slice(self):
+        method = renderer_method("private func loadPix(")
+        self.assertIn('reader?.stringValue(forTag: "0020,000E")', method)
+        self.assertIn("resetWindowLevel || currentPix == nil || seriesKey != windowSeriesKey", method)
+        self.assertLess(method.index("seriesKey != windowSeriesKey"), method.index("currentPix = pix"))
+        self.assertIn("if needsDefaultWindow, let storedPixels", method)
+        self.assertIn("needsDefaultWindow = false", method)
+        self.assertNotIn("imageObj", method)
+
+    def test_mr_uses_planar_auto_window_and_ct_keeps_valid_dicom_window(self):
+        method = renderer_method("private func loadPix(")
+        self.assertIn('reader?.stringValue(forTag: "0008,0060") ?? pix.modalityString', method)
+        self.assertIn('modality?.uppercased() == "MR" || dicomWindow == nil', method)
+        self.assertIn("MetalViewerAutomaticWindowLevel.window(for: storedPixels, modality: modality)", method)
+        self.assertIn("automaticWindow ?? dicomWindow ?? storedPixels.storedRangeWindow", method)
+        self.assertIn("window.level.isFinite && window.width.isFinite && window.width > 0", method)
+        self.assertNotIn("storedPixels.inferredWindow", method)
+
+    def test_manual_adjustments_survive_async_volume_completion(self):
+        setter = renderer_method("func setWindowLevel(")
+        self.assertIn("needsDefaultWindow = false", setter)
+        request = renderer_method("private func requestVolumeTexture(")
+        self.assertIn("if needsDefaultWindow { loadCurrentPix(resetWindowLevel: true) }", request)
+        self.assertIn("if self.needsDefaultWindow { self.loadCurrentPix(resetWindowLevel: true) }", request)
+        load = renderer_method("private func loadPix(")
+        self.assertIn("usingVolumeTexture && !needsDefaultWindow ? nil : MetalStoredInt16PixelData(pix: pix)", load)
+
+    def test_zero_width_requests_auto_and_invalid_windows_are_rejected(self):
+        setter = renderer_method("func setWindowLevel(")
+        self.assertIn("guard wl.isFinite, ww.isFinite else { return }", setter)
+        self.assertIn("guard ww > 0 else", setter)
+        self.assertIn("loadPix(currentPix, resetWindowLevel: true)", setter)
+        self.assertLess(setter.index("guard ww > 0"), setter.index("windowLevel = wl"))
+
+    def test_pixel_decode_is_reused_for_upload_and_window_calculation(self):
+        load = renderer_method("private func loadPix(")
+        self.assertEqual(load.count("MetalStoredInt16PixelData(pix: pix)"), 1)
+        self.assertIn("makeStoredInt16Texture(storedPixels)", load)
+        upload = renderer_method("private func makeStoredInt16Texture(")
+        self.assertNotIn("MetalStoredInt16PixelData(pix:", upload)
+        self.assertIn("storedPixels.data.withUnsafeBytes", upload)
+
+    def test_empty_or_failed_pixels_leave_the_next_window_pending(self):
+        reset = renderer_method("private func resetImageTextureState()")
+        self.assertIn("needsDefaultWindow = true", reset)
+        self.assertNotIn("imageDefaultWindowLevel", METAL)
+        self.assertNotIn("imageDefaultWindowWidth", METAL)
+
 
 if __name__ == "__main__":
     unittest.main()

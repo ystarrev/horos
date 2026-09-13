@@ -298,6 +298,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     private let scoutHeightConstraint: NSLayoutConstraint
 
     private var paneViews: [MetalViewerPaneView] = []
+    private var isPreparingImagePrint = false
     private weak var activePaneView: MetalViewerPaneView?
     private var isRestoringSplitPosition = true
     private var selectedWLWWTitle = NSLocalizedString("Default WL & WW", comment: "")
@@ -2938,6 +2939,7 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
     }
 
     private func printActiveImage() {
+        guard !isPreparingImagePrint else { return }
         guard let pane = activePaneView ?? paneViews.first else {
             NSSound.beep()
             return
@@ -2949,30 +2951,37 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             ))
             return
         }
-        guard let image = pane.makePrintFrame()?.makeImage() else {
-            presentPrintAlert(NSLocalizedString(
-                "Horos could not render the active image for printing.",
-                comment: ""
-            ))
-            return
-        }
+        let jobTitle = pane.series.title
+        isPreparingImagePrint = true
+        pane.makePrintFrame { [weak self] frame in
+            guard let self else { return }
+            defer { self.isPreparingImagePrint = false }
+            guard self.window?.isVisible == true else { return }
+            guard let image = frame?.makeImage() else {
+                self.presentPrintAlert(NSLocalizedString(
+                    "Horos could not render the active image for printing.",
+                    comment: ""
+                ))
+                return
+            }
 
-        guard let printInfo = NSPrintInfo.shared.copy() as? NSPrintInfo else {
-            NSSound.beep()
-            return
-        }
-        printInfo.horizontalPagination = .fit
-        printInfo.verticalPagination = .fit
-        printInfo.isHorizontallyCentered = true
-        printInfo.isVerticallyCentered = true
+            guard let printInfo = NSPrintInfo.shared.copy() as? NSPrintInfo else {
+                NSSound.beep()
+                return
+            }
+            printInfo.horizontalPagination = .fit
+            printInfo.verticalPagination = .fit
+            printInfo.isHorizontallyCentered = true
+            printInfo.isVerticallyCentered = true
 
-        let printView = MetalImagePrintView(image: image, printInfo: printInfo)
-        let operation = NSPrintOperation(view: printView, printInfo: printInfo)
-        operation.jobTitle = pane.series.title
-        operation.showsPrintPanel = true
-        operation.showsProgressPanel = true
-        operation.canSpawnSeparateThread = true
-        _ = operation.run()
+            let printView = MetalImagePrintView(image: image, printInfo: printInfo)
+            let operation = NSPrintOperation(view: printView, printInfo: printInfo)
+            operation.jobTitle = jobTitle
+            operation.showsPrintPanel = true
+            operation.showsProgressPanel = true
+            operation.canSpawnSeparateThread = true
+            _ = operation.run()
+        }
     }
 
     private func presentPrintAlert(_ message: String) {

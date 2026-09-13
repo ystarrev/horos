@@ -56,7 +56,12 @@ class MetalPipelineCacheTests(unittest.TestCase):
             source = (SOURCES / filename).read_text()
             with self.subTest(consumer=filename):
                 self.assertIn("MetalPipelineCache.shared(for: device)", source)
-                self.assertIn("device.makeCommandQueue()", source)
+                queue_factory = ("device.makeMTL4CommandQueue()"
+                                 if filename in ("MetalPreviewImageView.swift", "MetalViewerScoutView.swift",
+                                                 "MetalViewerModels.swift", "Metal3DVolumeRenderer.swift",
+                                                 "MetalViewerRenderer.swift")
+                                 else "device.makeCommandQueue()")
+                self.assertIn(queue_factory, source)
         for path in SOURCES.glob("*.swift"):
             if path.name != "MetalPipelineCache.swift":
                 self.assertNotRegex(path.read_text(), r"\bmake(?:DefaultLibrary|RenderPipelineState|ComputePipelineState)\(")
@@ -75,8 +80,8 @@ class MetalPipelineCacheTests(unittest.TestCase):
     def test_concurrent_misses_compile_once_and_failures_do_not_poison_cache(self):
         methods = (
             ("static func shared(", "devicesLock", "if let cache = devices[", "try MetalPipelineCache(device: device)", "devices[device.registryID] = cache"),
-            ("func renderPipeline(", "lock", "if let pipeline = renderPipelines[", "try device.makeRenderPipelineState", "renderPipelines[key] = pipeline"),
-            ("func computePipeline(", "lock", "if let pipeline = computePipelines[", "try device.makeComputePipelineState", "computePipelines[name] = pipeline"),
+            ("func renderPipeline(", "lock", "if let pipeline = renderPipelines[", "try compiler.makeRenderPipelineState", "renderPipelines[key] = pipeline"),
+            ("func computePipeline(", "lock", "if let pipeline = computePipelines[", "try compiler.makeComputePipelineState", "computePipelines[name] = pipeline"),
         )
         for signature, lock, hit, create, insert in methods:
             method = CACHE.split(signature, 1)[1].split("\n    }", 1)[0]
@@ -86,20 +91,51 @@ class MetalPipelineCacheTests(unittest.TestCase):
             self.assertLess(method.index(create), method.index(insert))
             self.assertNotIn("catch", method)
 
+    def test_metal4_compiler_and_library_are_owned_by_the_device_cache(self):
+        self.assertIn("private let compiler: MTL4Compiler", CACHE)
+        self.assertEqual(CACHE.count("try device.makeCompiler(descriptor: MTL4CompilerDescriptor())"), 1)
+        self.assertIn("let descriptor = MTL4RenderPipelineDescriptor()", CACHE)
+        self.assertIn("let descriptor = MTL4ComputePipelineDescriptor()", CACHE)
+        self.assertIn("functionNames = Set(library.functionNames)", CACHE)
+        self.assertIn("guard functionNames.contains(name)", CACHE)
+        self.assertIn("throw CacheError.missingFunction(name)", CACHE)
+        self.assertIn("let descriptor = MTL4LibraryFunctionDescriptor()", CACHE)
+        self.assertIn("descriptor.name = name", CACHE)
+        self.assertIn("descriptor.library = library", CACHE)
+        self.assertIn("descriptor.vertexFunctionDescriptor = try functionDescriptor(named: vertex)", CACHE)
+        self.assertIn("descriptor.fragmentFunctionDescriptor = try functionDescriptor(named: fragment)", CACHE)
+        self.assertIn("descriptor.computeFunctionDescriptor = try functionDescriptor(named: name)", CACHE)
+        self.assertNotRegex(CACHE, r"device\.make(?:Render|Compute)PipelineState|library\.makeFunction")
+        self.assertNotRegex(CACHE, r"MTL(?:Render|Compute)PipelineDescriptor\(\)|MTLCompileOptions|fastMath")
+        # Do not add dispatch-size promises that existing kernels do not make.
+        self.assertNotIn("threadGroupSizeIsMultipleOfThreadExecutionWidth = true", CACHE)
+        self.assertNotIn("requiredThreadsPerThreadgroup =", CACHE)
+
     def test_descriptor_defaults_and_transparency_are_unchanged(self):
         for setting in ("colorPixelFormat: MTLPixelFormat = .bgra8Unorm",
                         "depthPixelFormat: MTLPixelFormat = .invalid",
                         "sampleCount: Int = 1", "alphaBlending: Bool = false",
-                        "descriptor.colorAttachments[0].pixelFormat = colorPixelFormat",
-                        "descriptor.depthAttachmentPixelFormat = depthPixelFormat",
+                        "attachment.pixelFormat = colorPixelFormat",
+                        "descriptor.colorAttachments[0] = attachment",
                         "descriptor.rasterSampleCount = sampleCount"):
             self.assertIn(setting, CACHE)
+        # Metal 4 has no pipeline depth-format property; render pass depth textures
+        # and depth stencil state remain configured by the existing renderers.
+        self.assertNotIn("descriptor.depthAttachmentPixelFormat", CACHE)
         blend = CACHE.split("if alphaBlending {", 1)[1].split("\n        }", 1)[0]
-        for setting in ("isBlendingEnabled = true", "sourceRGBBlendFactor = .sourceAlpha",
+        for setting in ("blendingState = .enabled", "sourceRGBBlendFactor = .sourceAlpha",
                         "destinationRGBBlendFactor = .oneMinusSourceAlpha", "rgbBlendOperation = .add",
                         "sourceAlphaBlendFactor = .one", "destinationAlphaBlendFactor = .oneMinusSourceAlpha",
                         "alphaBlendOperation = .add"):
             self.assertIn("attachment." + setting, blend)
+
+    def test_compile_measurements_are_only_for_cache_misses(self):
+        for signature, cache in (("func renderPipeline(", "renderPipelines"),
+                                 ("func computePipeline(", "computePipelines")):
+            method = CACHE.split(signature, 1)[1].split("\n    }", 1)[0]
+            self.assertLess(method.index(f"if let pipeline = {cache}["),
+                            method.index("MetalPerformanceTrace.begin()"))
+            self.assertLess(method.index("try compiler.make"), method.index("MetalPerformanceTrace.end("))
 
     def test_absent_debug_label_is_not_assigned_to_metal(self):
         self.assertIn("label: String? = nil", CACHE)

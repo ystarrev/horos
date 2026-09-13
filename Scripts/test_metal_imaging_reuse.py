@@ -132,8 +132,8 @@ class MetalImagingReuseTests(unittest.TestCase):
         self.assertIn("mprTumourSeedMesh = (buffer: buffer, vertexCount: vertices.count)", prepare)
         draw = method(RENDERER, "private func drawMPR(in view:")
         seed_draw = draw.split("prepareMPRTumourSeedMeshIfNeeded()", 1)[1].split("let highlightVertices", 1)[0]
-        self.assertIn("encoder.setVertexBuffer(seedMesh.buffer", seed_draw)
-        self.assertIn("encoder.setVertexBytes(&uniforms", seed_draw)
+        self.assertIn("frame.setVertexBuffer(seedMesh.buffer", seed_draw)
+        self.assertIn("frame.setUniforms(&uniforms", seed_draw)
         self.assertIn("vertexCount: seedMesh.vertexCount", seed_draw)
         self.assertNotIn("makeBuffer", seed_draw)
         self.assertNotIn("makeMPRTumourSeedSphereVertices", draw)

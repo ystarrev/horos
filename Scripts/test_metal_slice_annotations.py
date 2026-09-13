@@ -126,8 +126,9 @@ class MetalSliceAnnotationTests(unittest.TestCase):
     def test_unsuccessful_presentation_wait_is_removed(self):
         self.assertNotIn("presentsWithTransaction = true", VIEW)
         self.assertNotIn("waitUntilScheduled()", RENDERER)
-        self.assertEqual(RENDERER.count("commandBuffer.present(drawable)"), 3)
-        self.assertEqual(RENDERER.count("trackRetrievalPresentation(of: drawable, commandBuffer: commandBuffer)"), 3)
+        self.assertEqual(RENDERER.count("drawable.present()"), 1)
+        self.assertEqual(RENDERER.count("trackRetrievalPresentation(of: drawable, options: options)"), 1)
+        self.assertEqual(RENDERER.count("submitDisplayFrame(frame, drawable: drawable"), 3)
 
 
 if __name__ == "__main__":

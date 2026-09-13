@@ -52,8 +52,8 @@ class MetalPreprocessingReuseTests(unittest.TestCase):
                 self.assertIn(".worldToVoxel", body)
                 self.assertIn(".textureDimensionsUInt32", body)
                 self.assertIn(".textureDimensions", body)
-                self.assertIn("commandBuffer.waitUntilCompleted()", body)
-                self.assertIn("commandBuffer.status == .completed", body)
+                self.assertIn("job.performCompute(", body)
+                self.assertIn("guard completed, job.isCancelled == false", body)
                 self.assertIn("smoothedNormalizedMutualInformation(", body)
 
     def test_reverse_metric_still_uses_fixed_volume_inverse(self):
@@ -102,13 +102,13 @@ class MetalPreprocessingReuseTests(unittest.TestCase):
         self.assertIn("DispatchQueue.main.async { [weak self] in", hit)
         self.assertLess(hit.index("DispatchQueue.main.async"), hit.index("applyPreparedRenderVolume("))
         self.assertIn("return", hit)
-        self.assertLess(prepare.index("if let cached ="), prepare.index("makeCommandBuffer()"))
-        self.assertLess(prepare.index("makeCommandBuffer()"), prepare.index("makeGradientTexture("))
+        self.assertLess(prepare.index("if let cached ="), prepare.index("makeCommandAllocator()"))
+        self.assertLess(prepare.index("makeCommandAllocator()"), prepare.index("makeGradientTexture("))
 
     def test_only_completed_gpu_results_are_cached_and_applied(self):
         prepare = method(VOLUME, "private func prepareVolumeTexture(from entry:")
-        completion = prepare.split("commandBuffer.addCompletedHandler", 1)[1]
-        self.assertLess(completion.index("completedBuffer.status == .completed"),
+        completion = prepare.split("options.addFeedbackHandler", 1)[1]
+        self.assertLess(completion.index("if let error = feedback.error"),
                         completion.index("histogramBuffer.contents()"))
         self.assertLess(completion.index("DispatchQueue.main.async"), completion.index(".retain(prepared)"))
         self.assertIn("self.applyPreparedRenderVolume(prepared, sourceEntry: entry)", completion)

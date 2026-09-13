@@ -40,7 +40,7 @@
 #import "N2Debug.h"
 #import "NSFileManager+N2.h"
 #import "N2ManagedDatabase.h"
-#import "N2Connection.h"
+#import "HorosSwiftInterop.h"
 #import "NSThread+N2.h"
 #import "ThreadsManager.h"
 #import "BrowserController.h" // TODO: awwww
@@ -55,6 +55,30 @@
 #import "DCMTKStoreSCU.h"
 #import "DataNodeIdentifier.h"
 
+typedef NSInteger (^HorosDatabaseResponseHandler)(NSData *data);
+
+static NSData *HorosSendDatabaseRequest(NSData *request, NSString *address, NSInteger port,
+                                       HorosDatabaseResponseHandler handler)
+{
+    NSThread *thread = NSThread.currentThread;
+    NSError *error = nil;
+    NSData *response = [HorosDatabaseTransport sendRequest:request toHost:address ?: @"" port:port
+        receiving:handler ? ^NSInteger(NSData *data, NSError **handlerError) {
+            // Keep Objective-C exceptions out of the Swift/network callback stack.
+            @try { return handler(data); }
+            @catch (NSException *exception) {
+                *handlerError = [NSError errorWithDomain:@"HorosDatabaseResponse" code:1
+                    userInfo:@{NSLocalizedDescriptionKey: exception.reason ?: exception.name}];
+                return -1;
+            }
+        } : (NSInteger (^)(NSData *, NSError **))nil
+        cancelled:^BOOL { return thread.isCancelled; } error:&error];
+    if (!response)
+        [NSException raise:NSObjectInaccessibleException format:@"%@",
+            error.localizedDescription ?: NSLocalizedString(@"The shared-database request failed.", nil)];
+    return response;
+}
+
 @interface RemoteDicomDatabase ()
 
 @property(readwrite,retain) NSString* address, *password;
@@ -62,6 +86,8 @@
 @property(readwrite,retain) NSHost* host;
 
 -(void)update;
+-(NSInteger)handleData_fetchDatabaseIndex:(NSData*)data context:(NSArray*)context;
+-(NSInteger)handleData_fetchDataForImage:(NSData*)data context:(NSMutableArray*)context expectedPaths:(NSArray*)expectedPaths;
 
 @end
 
@@ -275,32 +301,28 @@
 
 #pragma mark Communication
 
--(NSData*)synchronousRequest:(NSData*)request urgent:(BOOL)urgent dataHandlerTarget:(id)target selector:(SEL)sel context:(void*)context {
-    OSStatus waitOnSemaphoreStatus = 0;
-    if (urgent)
-        waitOnSemaphoreStatus = -1; // to avoid MPSignalSemaphore
-    else if (_connectionsSemaphoreId)
-        waitOnSemaphoreStatus = dispatch_semaphore_wait(_connectionsSemaphoreId, DISPATCH_TIME_FOREVER); // this limits the number of simultaneous connections to this remote database
+-(NSData*)synchronousRequest:(NSData*)request urgent:(BOOL)urgent receiving:(HorosDatabaseResponseHandler)handler {
+    BOOL acquired = NO;
+    if (!urgent && _connectionsSemaphoreId) {
+        while (!acquired) {
+            if (NSThread.currentThread.isCancelled)
+                [NSException raise:NSGenericException format:@"Shared-database request cancelled."];
+            acquired = dispatch_semaphore_wait(_connectionsSemaphoreId,
+                dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC)) == 0;
+        }
+    }
     @try {
-        NSInteger retries;
-        for (retries = 0; retries < 5; ++retries)
-            @try {
-                return [N2Connection sendSynchronousRequest:request toAddress:self.host port:self.port dataHandlerTarget:target selector:sel context:context];
-            } @catch (NSException* e) {
-                N2LogExceptionWithStackTrace(e);
-                [NSThread sleepForTimeInterval:0.1*(retries+1)*(retries+1)];
-            }
-    } @catch (NSException* e) {
+        // Requests may mutate the remote database or have already written local files.
+        // Do not replay them automatically after an ambiguous connection failure.
+        return HorosSendDatabaseRequest(request, self.address, self.port, handler);
     } @finally {
-        if (_connectionsSemaphoreId && waitOnSemaphoreStatus == noErr)
+        if (acquired)
             dispatch_semaphore_signal(_connectionsSemaphoreId);
     }
-    
-    return nil;
 }
 
 -(NSData*)synchronousRequest:(NSData*)request urgent:(BOOL)now {
-    return [self synchronousRequest:request urgent:now dataHandlerTarget:nil selector:nil context:nil];
+    return [self synchronousRequest:request urgent:now receiving:nil];
 }
 
 +(void)_data:(NSMutableData*)data appendInt:(unsigned int)i {
@@ -384,28 +406,35 @@
 	
 	NSString *path = [NSFileManager.defaultManager tmpFilePathInDir:self.baseDirPath];
 	NSOutputStream *fileStream = [NSOutputStream outputStreamToFileAtPath:path append:NO];
-	[fileStream open];
-	
-	NSData* request = [NSMutableData dataWithBytes:"DATAB" length:6];
-	NSArray* context = [NSArray arrayWithObjects: thread, [NSNumber numberWithUnsignedInteger:databaseIndexSize], fileStream, [N2MutableUInteger mutableUIntegerWithUInteger:0], nil];
-	[self synchronousRequest:request urgent:YES dataHandlerTarget:self selector:@selector(_connection:handleData_fetchDatabaseIndex:context:) context:context];
-	
-    [fileStream close];
-	[thread exitOperation];
-	
-	if (thread.isCancelled)
-		return nil;
+	BOOL completed = NO;
+    @try {
+        [fileStream open];
+        NSData *request = [NSData dataWithBytes:"DATAB" length:6];
+        NSArray *context = @[thread, @(databaseIndexSize), fileStream,
+                             [N2MutableUInteger mutableUIntegerWithUInteger:0]];
+        [self synchronousRequest:request urgent:YES receiving:^NSInteger(NSData *data) {
+            return [self handleData_fetchDatabaseIndex:data context:context];
+        }];
+        completed = YES;
+    } @finally {
+        [fileStream close];
+        [thread exitOperation];
+        if (!completed)
+            [NSFileManager.defaultManager removeItemAtPath:path error:NULL];
+    }
 	
 	thread.status = NSLocalizedString(@"Done.", nil);
 	
 	return path;
 }
 
--(NSInteger)_connection:(N2Connection*)connection handleData_fetchDatabaseIndex:(NSData*)data context:(NSArray*)context {
+-(NSInteger)handleData_fetchDatabaseIndex:(NSData*)data context:(NSArray*)context {
 	NSThread* thread = [context objectAtIndex:0];
 	NSInteger databaseIndexSize = [[context objectAtIndex:1] unsignedIntegerValue];
 	NSOutputStream* fileStream = [context objectAtIndex:2];
 	N2MutableUInteger* obtainedSize = [context objectAtIndex:3];
+	if (!data && !obtainedSize.unsignedIntegerValue)
+		[NSException raise:NSInvalidArgumentException format:@"The shared database returned an empty index."];
 	
 	NSInteger size = data.length, start = 0;
 	while (size > 0) {
@@ -417,7 +446,8 @@
 		} else [NSException raise:NSGenericException format:@"%@", fileStream.streamError.localizedDescription];
 	}
 		
-	thread.progress = 1.0*obtainedSize.unsignedIntegerValue/databaseIndexSize;
+	// DBSIZ and DATAB are separate snapshots; the index can grow between requests.
+	thread.progress = databaseIndexSize ? MIN(1.0, 1.0*obtainedSize.unsignedIntegerValue/databaseIndexSize) : 0;
 	thread.progressDetails = [NSString stringWithFormat:NSLocalizedString(@"Received %lu of %lu bytes", nil), (unsigned long)obtainedSize.unsignedIntegerValue, (unsigned long)databaseIndexSize];
 	
 	return data.length;
@@ -434,7 +464,7 @@
 +(NSDictionary*)fetchDicomDestinationInfoForAddress:(NSString*)address port:(NSInteger)port {
 	if (!port) port = 8780;
 	NSMutableData* request = [NSMutableData dataWithBytes:"GETDI" length:6];
-	NSData* response = [N2Connection sendSynchronousRequest:request toAddress:address port:port];
+	NSData* response = HorosSendDatabaseRequest(request, address, port, nil);
 	if (!response.length) [NSException raise:NSObjectInaccessibleException format:@"%@", NSLocalizedString(@"Failed to connect to the remote host. Is database sharing activated on the distant computer?", nil)];
 	return HorosUnarchiveUnkeyedObject(response);
 }
@@ -748,15 +778,24 @@ enum RemoteDicomDatabaseStudiesAlbumAction { RemoteDicomDatabaseStudiesAlbumActi
 		[RemoteDicomDatabase _data:request appendStringUTF8:localPath];
 	
 	NSMutableArray* context = [NSMutableArray arrayWithObjects: [N2MutableUInteger mutableUIntegerWithUInteger:0], nil];
-
-    [self synchronousRequest:request urgent:YES dataHandlerTarget:self selector:@selector(_connection:handleData_fetchDataForImage:context:) context:context];
+    @try {
+        [self synchronousRequest:request urgent:YES receiving:^NSInteger(NSData *data) {
+            return [self handleData_fetchDataForImage:data context:context expectedPaths:localPaths];
+        }];
+    } @finally {
+        // Completed images stay cached; only the current incomplete file is removed.
+        if (context.count > 5)
+            [[context objectAtIndex:5] close];
+        if (context.count > 4)
+            [NSFileManager.defaultManager removeItemAtPath:[context objectAtIndex:4] error:NULL];
+    }
     
     return localPath;
 }
 
--(NSInteger)_connection:(N2Connection*)connection handleData_fetchDataForImage:(NSData*)data context:(NSMutableArray*)context {
+-(NSInteger)handleData_fetchDataForImage:(NSData*)data context:(NSMutableArray*)context expectedPaths:(NSArray*)expectedPaths {
 	N2MutableUInteger* state = [context objectAtIndex:0];
-	int readSize = 0;
+	NSUInteger readSize = 0;
 	
 	// context[0] state
 	// context[1] number of files in response
@@ -766,6 +805,12 @@ enum RemoteDicomDatabaseStudiesAlbumAction { RemoteDicomDatabaseStudiesAlbumActi
 	// context[5] output stream to temporary file
 	// context[6] total size written to temporary file
 	// context[7] size of filename
+	if (!data) {
+		if (state.unsignedIntegerValue != 1 || context.count != 3 ||
+			[[context objectAtIndex:2] unsignedIntegerValue] != expectedPaths.count)
+			[NSException raise:NSInvalidArgumentException format:@"The shared-database image download was incomplete."];
+		return 0;
+	}
 	
 	while (data.length > readSize) {
 		// DLog(@"_handleData_fetchDataForImage state %d", state.unsignedIntegerValue);
@@ -775,6 +820,8 @@ enum RemoteDicomDatabaseStudiesAlbumAction { RemoteDicomDatabaseStudiesAlbumActi
 					unsigned int big;
 					[data getBytes:&big range:NSMakeRange(readSize, 4)];
 					unsigned int n = NSSwapBigIntToHost(big);
+					if (n != expectedPaths.count)
+						[NSException raise:NSInvalidArgumentException format:@"The shared database returned an unexpected image count."];
 					[context addObject:[NSNumber numberWithUnsignedInt:n]]; // [1]
 					[context addObject:[N2MutableUInteger mutableUIntegerWithUInteger:0]]; // [2]
 					//DLog(@"RDD receiving %d files", n);
@@ -783,10 +830,14 @@ enum RemoteDicomDatabaseStudiesAlbumAction { RemoteDicomDatabaseStudiesAlbumActi
 				} else return readSize;
 			} break;
 			case 1: { // expecting size of next file
+				if ([[context objectAtIndex:2] unsignedIntegerValue] == expectedPaths.count)
+					[NSException raise:NSInvalidArgumentException format:@"Unexpected data after the shared-database images."];
 				if (data.length-readSize >= 4) {
 					unsigned int big;
 					[data getBytes:&big range:NSMakeRange(readSize, 4)];
 					unsigned int l = NSSwapBigIntToHost(big);
+					if (!l)
+						[NSException raise:NSObjectInaccessibleException format:@"An image is missing or unreadable on the shared database."];
 					[context addObject:[NSNumber numberWithUnsignedInt:l]]; // [3]
 					//DLog(@"RDD next file is %d bytes", l);
 					
@@ -823,6 +874,9 @@ enum RemoteDicomDatabaseStudiesAlbumAction { RemoteDicomDatabaseStudiesAlbumActi
 					unsigned int big;
 					[data getBytes:&big range:NSMakeRange(readSize, 4)];
 					unsigned int l = NSSwapBigIntToHost(big);
+					NSString *expectedPath = [expectedPaths objectAtIndex:[[context objectAtIndex:2] unsignedIntegerValue]];
+					if (l != [expectedPath lengthOfBytesUsingEncoding:NSUTF8StringEncoding] + 1)
+						[NSException raise:NSInvalidArgumentException format:@"Invalid image destination length in shared-database response."];
 					[context addObject:[NSNumber numberWithUnsignedInt:l]]; // [7]
 					//DLog(@"RDD next path is %d bytes", l);
 					readSize += 4;
@@ -832,29 +886,26 @@ enum RemoteDicomDatabaseStudiesAlbumAction { RemoteDicomDatabaseStudiesAlbumActi
 			case 4: {
 				unsigned int pathSize = [[context objectAtIndex:7] unsignedIntValue];
 				if (data.length-readSize >= pathSize) {
-					NSString* path = [NSString stringWithUTF8String:(char*)data.bytes+readSize];
+					const char *pathBytes = (const char*)data.bytes + readSize;
+					NSString *path = [[[NSString alloc] initWithBytes:pathBytes length:pathSize-1 encoding:NSUTF8StringEncoding] autorelease];
+					NSString *expectedPath = [expectedPaths objectAtIndex:[[context objectAtIndex:2] unsignedIntegerValue]];
+					if (pathBytes[pathSize-1] != '\0' || ![path isEqualToString:expectedPath])
+						[NSException raise:NSInvalidArgumentException format:@"Invalid image destination in shared-database response."];
 					readSize += pathSize;
-					//DLog(@"RDD path is %@", path);
-					[context removeLastObject]; // rm [7]
-					[context removeLastObject]; // rm [6]
 					[[context objectAtIndex:5] close];
-					[context removeLastObject]; // rm [5]
-					
-					if ([NSFileManager.defaultManager fileExistsAtPath:path]) {
-						NSLog(@"Notice: strange, we seem to have redownloaded a remote image (%@)", path);
-						[NSFileManager.defaultManager removeItemAtPath:path error:NULL];
+					NSString *temporaryPath = [context objectAtIndex:4];
+					NSError *moveError = nil;
+					if (![NSFileManager.defaultManager moveItemAtPath:temporaryPath toPath:path error:&moveError]) {
+						// Another request may have finished the same image while this one was in flight.
+						if (moveError.code != NSFileWriteFileExistsError || ![moveError.domain isEqualToString:NSCocoaErrorDomain])
+							[NSException raise:NSGenericException format:@"%@", moveError.localizedDescription];
+						[NSFileManager.defaultManager removeItemAtPath:temporaryPath error:NULL];
 					}
-					
-					[NSFileManager.defaultManager moveItemAtPath:[context objectAtIndex:4] toPath:path error:NULL];
-					
-					[context removeLastObject]; // rm [4]
-					[context removeLastObject]; // rm [3]
+					[context removeObjectsInRange:NSMakeRange(3, context.count-3)];
 					state.unsignedIntegerValue = 1;
                     
                     N2MutableUInteger* counter = [context objectAtIndex:2];
                     [counter increment];
-                    if (counter.unsignedIntegerValue == [[context objectAtIndex:1] unsignedIntegerValue])
-                        [connection close];
 				} else return readSize;
 			} break;
 		}

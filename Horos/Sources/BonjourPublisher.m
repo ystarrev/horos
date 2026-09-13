@@ -37,6 +37,7 @@
  ============================================================================*/
 
 #import "BonjourPublisher.h"
+#import "HorosSwiftInterop.h"
 #import "BonjourBrowser.h"
 #import "DCMPix.h"
 #import "DCMTKStoreSCU.h"
@@ -107,14 +108,18 @@ extern const char *GetPrivateIP(void);
     [[NSUserDefaultsController sharedUserDefaultsController] removeObserver:self forValuesKey:OsirixBonjourSharingPasswordDefaultsKey];
     
     [dicomSendLock release];
-    //	self.serviceName = NULL;
-    
     [_bonjour release];
     
     [super dealloc];
 }
 
 -(void)observeValueForKeyPath:(NSString*)keyPath ofObject:(id)object change:(NSDictionary*)change context:(void*)context {
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+        });
+        return;
+    }
     if (object == [NSUserDefaultsController sharedUserDefaultsController]) {
         keyPath = [keyPath substringFromIndex:7];
         if ([keyPath isEqualToString:OsirixBonjourSharingIsActiveDefaultsKey]) {
@@ -141,6 +146,10 @@ extern const char *GetPrivateIP(void);
 
 - (void)toggleSharing:(BOOL)activate
 {
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self toggleSharing:activate]; });
+        return;
+    }
     @try {
         if (activate && !_listener) {
             _listener = [[N2ConnectionListener alloc] initWithPort:8780 connectionClass:[O2DatabaseConnection class]];
@@ -185,10 +194,8 @@ extern const char *GetPrivateIP(void);
     }
 
     if (!_bonjour) {
-        // lazily instantiate the NSNetService object that will advertise on our behalf.  Passing in "" for the domain causes the service
-        // to be registered in the default registration domain, which will currently always be "local"
-        _bonjour = [[NSNetService alloc] initWithDomain:@"" type:@"_osirixdb._tcp" name:[NSUserDefaults bonjourSharingName] port:[_listener port]];
-        _bonjour.delegate = self;
+        _bonjour = [[HorosBonjourAdvertisement alloc] initWithName:[NSUserDefaults bonjourSharingName] ?: @""
+                                                            type:@"_osirixdb._tcp" port:[_listener port]];
     }
     
     NSMutableDictionary* txtrec = [NSMutableDictionary dictionary];
@@ -199,40 +206,12 @@ extern const char *GetPrivateIP(void);
     if ([AppController UID])
         [txtrec setObject:[AppController UID] forKey:@"UID"];
     
-    if( [_bonjour setTXTRecordData:[NSNetService dataFromTXTRecordDictionary:txtrec]] == NO)
-        NSLog(@"Warning: Horos Bonjour net service setTXTRecordData FAILED");
-
-    [_bonjour publish];
+    [_bonjour publishWithTXTRecord:txtrec];
 }
-
-- (NSNetService*)netService { // __deprecated
-    return _bonjour;
-}
-
-- (void)netService:(NSNetService*)sender didNotPublish:(NSDictionary*)errorDict
-{
-    NSLog(@"Warning: Horos Bonjour net service did not publish, %@", errorDict);
-}
-
-- (void)netServiceDidPublish:(NSNetService *)sender
-{
-    NSLog(@"Horos Bonjour net service published: %@ %@:%ld", [sender name], [sender type], (long)[sender port]);
-}
-
-- (void) netServiceDidStop:(NSNetService *)sender
-{
-    NSLog(@"Horos Bonjour net service did stop");
-}
-
-
-//- (void)connectionOpened:(NSNotification*)notification {
-//	N2Connection* connection = [[notification userInfo] objectForKey:N2ConnectionListenerOpenedConnection];
-//	[connection setDelegate:self];
-//}
 
 +(NSDictionary*)dictionaryFromXTRecordData:(NSData*)data {
     NSMutableDictionary* d = [NSMutableDictionary dictionary];
-    NSDictionary* dict = [NSNetService dictionaryFromTXTRecordData:data];
+    NSDictionary* dict = [HorosBonjourService dictionaryFromTXTRecordData:data];
     
     for (NSString* key in dict) {
         NSData* data = [dict objectForKey:key];

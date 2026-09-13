@@ -96,11 +96,11 @@ extern "C"
 *
 */
 
-@class AppController, BonjourPublisher;
+@class AppController, BonjourPublisher, HorosBonjourAdvertisement;
 
 extern AppController* OsiriX;
 
-@interface AppController : NSObject	<NSNetServiceDelegate, NSSoundDelegate, NSMenuDelegate, NSMenuItemValidation >
+@interface AppController : NSObject	<NSSoundDelegate, NSMenuDelegate, NSMenuItemValidation >
 {
 	IBOutlet BrowserController		*browserController;
 
@@ -116,7 +116,8 @@ extern AppController* OsiriX;
 	
     volatile BOOL					quitting;
 	BOOL							verboseUpdateCheck;
-	NSNetService					*BonjourDICOMService;
+	HorosBonjourAdvertisement		*BonjourDICOMService;
+	NSTimer							*dicomBonjourStartTimer;
 	
 	NSTimer							*updateTimer;
 
@@ -129,7 +130,7 @@ extern AppController* OsiriX;
 
 @property BOOL checkAllWindowsAreVisibleIsOff, isSessionInactive;
 @property (readonly) NSMenu *recentStudiesMenu, *windowsTilingMenuRows, *windowsTilingMenuColumns;
-@property(readonly) NSNetService* dicomBonjourPublisher;
+@property(readonly) HorosBonjourAdvertisement* dicomBonjourPublisher;
 @property(readonly) BonjourPublisher* bonjourPublisher;
 
 + (BOOL) isFDACleared;

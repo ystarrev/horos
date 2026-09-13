@@ -36,6 +36,7 @@
  ============================================================================*/
 
 #import "DCMNetServiceDelegate.h"
+#import "AppController.h"
 #import "HorosSwiftInterop.h"
 #import "SendController.h"
 #import "N2Debug.h"
@@ -81,7 +82,7 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
     return NO;
 }
 
-@interface DCMNetServiceDelegate () <HorosBonjourBrowserDelegate>
+@interface DCMNetServiceDelegate () <HorosBonjourBrowserDelegate, HorosBonjourServiceDelegate>
 @end
 
 @implementation DCMNetServiceDelegate
@@ -92,11 +93,6 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 		_netServiceDelegate = [[DCMNetServiceDelegate alloc] init];
 	
 	return _netServiceDelegate;
-}
-
-- (void) setPublisher: (NSNetService*) p
-{
-	publisher = p;
 }
 
 - (id)init
@@ -179,29 +175,9 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 	return [NSArray arrayWithArray: _dicomServices];
 }
 
-- (int)portForNetService:(NSNetService *)netService
-{		
-	//NSArray *addresses = [[_dicomServices objectAtIndex:0] addresses];
-	NSArray *addresses = [netService addresses];
-	NSLog( @"portForNetService addresses:%d", (int) [addresses count]);
-	struct sockaddr *addr = ( struct sockaddr *) [[addresses objectAtIndex:0]  bytes];
-	int aPort = -1;
-	if(addr->sa_family == AF_INET)		
-		aPort = ((struct sockaddr_in *)addr)->sin_port;
-	
-	else if(addr->sa_family == AF_INET6)		
-		aPort = ((struct sockaddr_in6 *)addr)->sin6_port;
-			
-	return NSSwapBigShortToHost(aPort);
-}
-
-- (void)netServiceBrowser:(HorosBonjourBrowser *)aNetServiceBrowser didFindService:(NSNetService *)aNetService moreComing:(BOOL)moreComing
+- (void)netServiceBrowser:(HorosBonjourBrowser *)aNetServiceBrowser didFindService:(HorosBonjourService *)aNetService moreComing:(BOOL)moreComing
 {
-	if( aNetService == publisher)
-	{
-	
-	}
-	else if( [[NSUserDefaults standardUserDefaults] boolForKey:@"searchDICOMBonjour"])
+	if( [[NSUserDefaults standardUserDefaults] boolForKey:@"searchDICOMBonjour"])
     {    
         if (![_dicomServices containsObject:aNetService])
             [_dicomServices addObject: aNetService];
@@ -222,13 +198,13 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
     [self performSelector:@selector(_startDICOMBonjourSearch) withObject:nil afterDelay:10.0];
 }
 
-- (void)netServiceBrowser:(HorosBonjourBrowser *)aNetServiceBrowser didUpdateService:(NSNetService *)aNetService
+- (void)netServiceBrowser:(HorosBonjourBrowser *)aNetServiceBrowser didUpdateService:(HorosBonjourService *)aNetService
 {
     [aNetService stop];
     [self netServiceBrowser:aNetServiceBrowser didFindService:aNetService moreComing:NO];
 }
 
-- (void)netServiceBrowser:(HorosBonjourBrowser *)aNetServiceBrowser didRemoveService:(NSNetService *)aNetService moreComing:(BOOL)moreComing
+- (void)netServiceBrowser:(HorosBonjourBrowser *)aNetServiceBrowser didRemoveService:(HorosBonjourService *)aNetService moreComing:(BOOL)moreComing
 {
 	[aNetService stop];
 	
@@ -251,10 +227,10 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 	_dicomServices = [[NSMutableArray array] retain];
 }
 
-//NetService delegate
-- (void)netService:(NSNetService *)sender didNotResolve:(NSDictionary *)errorDict
+// Service resolution
+- (void)netService:(HorosBonjourService *)sender didNotResolve:(NSDictionary *)errorDict
 {
-    NSLog( @"There was an error while attempting to resolve address for %@", [sender name]);
+    NSLog( @"There was an error while attempting to resolve address for %@: %@", [sender name], errorDict);
     
     [sender stop];
 }
@@ -286,7 +262,7 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 }
 
 +(NSMutableDictionary*)DICOMNodeInfoFromTXTRecordData:(NSData*)data {
-	NSDictionary *dict = [NSNetService dictionaryFromTXTRecordData: data];
+	NSDictionary *dict = [HorosBonjourService dictionaryFromTXTRecordData: data];
 	NSString *description = DCMNetServiceTXTString(dict, @"serverDescription");
 	NSString *preferredSyntax = DCMNetServiceTXTString(dict, @"preferredSyntax");
 	int transferSyntax = SendExplicitLittleEndian;
@@ -435,7 +411,7 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
             
             if( [[NSUserDefaults standardUserDefaults] boolForKey:@"searchDICOMBonjour"])
             {
-                for( NSNetService* aServer in [[DCMNetServiceDelegate sharedNetServiceDelegate] dicomServices])
+                for( HorosBonjourService* aServer in [[DCMNetServiceDelegate sharedNetServiceDelegate] dicomServices])
                 {
                     NSString *hostname;
                     int port;
@@ -577,67 +553,21 @@ static BOOL DCMNetServiceHostIsLocal(NSString *host)
 	return nil;
 }
 
-+ (NSString*) gethostnameAndPort: (int*) port forService:(NSNetService*) sender
++ (NSString*) gethostnameAndPort: (int*) port forService:(HorosBonjourService*) sender
 {
-	struct sockaddr		*result;
-	char				buffer[256];
-	NSString			*hostname = nil;
-	NSString			*portString = nil;
-	
-    // IPv4
-	for( NSData *addr in [sender addresses])
-	{
-		result = (struct sockaddr *)[addr bytes];
-	
-		int family = result->sa_family;
-		if (family == AF_INET)
-		{
-			if (inet_ntop(AF_INET, &((struct sockaddr_in *)result)->sin_addr, buffer, sizeof(buffer)))
-			{
-				hostname = [NSString stringWithCString:buffer encoding: NSISOLatin1StringEncoding];
-				portString = [NSString stringWithFormat:@"%d", ntohs(((struct sockaddr_in *)result)->sin_port)];
-				
-				if(port) *port = [portString intValue];
-                
-                break;
-			}
-		}
-    }
-    
-    if( hostname == nil)
-    {
-        // IPv6
-        for( NSData *addr in [sender addresses])
-        {
-            result = (struct sockaddr *)[addr bytes];
-            
-            int family = result->sa_family;
-            
-            if (family == AF_INET6)
-            {
-                if (inet_ntop(AF_INET6, &((struct sockaddr_in6 *)result)->sin6_addr, buffer, sizeof(buffer)))
-                {
-                    hostname = [NSString stringWithCString:buffer encoding: NSISOLatin1StringEncoding];
-                    portString = [NSString stringWithFormat:@"%d", ntohs(((struct sockaddr_in6 *)result)->sin6_port)];
-                    
-                    if(port) *port = [portString intValue];
-                    
-                    break;
-                }
-            }
-        }
-    }
-    
-	return hostname;
+    NSString *hostname = [sender resolvedAddress];
+    if (port) *port = hostname.length ? (int)[sender port] : 0;
+    return hostname;
 }
 
-- (void)netServiceDidResolveAddress:(NSNetService *)aNetService
+- (void)netServiceDidResolveAddress:(HorosBonjourService *)aNetService
 {
     if (!_dicomNetBrowser || ![_dicomServices containsObject:aNetService]) return;
-    if( publisher && aNetService != publisher)
+    HorosBonjourAdvertisement *publisher = [[AppController sharedAppController] dicomBonjourPublisher];
+    if( publisher)
     {
         NSDictionary *serviceInfo = [DCMNetServiceDelegate DICOMNodeInfoFromTXTRecordData: [aNetService TXTRecordData]];
-        NSDictionary *publisherInfo = [DCMNetServiceDelegate DICOMNodeInfoFromTXTRecordData: [publisher TXTRecordData]];
+        NSDictionary *publisherInfo = [publisher txtRecord];
         NSString *serviceUID = [serviceInfo objectForKey: @"UID"];
         NSString *publisherUID = [publisherInfo objectForKey: @"UID"];
         BOOL isThisHoros = [serviceUID length] && [serviceUID isEqualToString: publisherUID];

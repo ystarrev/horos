@@ -32,8 +32,9 @@ final class MetalPipelineCache {
         return cache
     }
 
-    private let device: MTLDevice
+    private let compiler: MTL4Compiler
     private let library: MTLLibrary
+    private let functionNames: Set<String>
     private let lock = NSLock()
     private var renderPipelines: [RenderKey: MTLRenderPipelineState] = [:]
     private var computePipelines: [String: MTLComputePipelineState] = [:]
@@ -42,8 +43,9 @@ final class MetalPipelineCache {
         guard let library = device.makeDefaultLibrary() else {
             throw CacheError.missingDefaultLibrary
         }
-        self.device = device
+        compiler = try device.makeCompiler(descriptor: MTL4CompilerDescriptor())
         self.library = library
+        functionNames = Set(library.functionNames)
     }
 
     func renderPipeline(
@@ -71,19 +73,21 @@ final class MetalPipelineCache {
 
         // Keep creation under the lock so concurrent viewers cannot compile
         // the same pipeline twice. Failed creations are not cached.
-        let descriptor = MTLRenderPipelineDescriptor()
+        let startedAt = MetalPerformanceTrace.begin()
+        let descriptor = MTL4RenderPipelineDescriptor()
         // Metal validation rejects setting a nil label; leave the default untouched.
         if let label {
             descriptor.label = label
         }
-        descriptor.vertexFunction = try function(named: vertex)
-        descriptor.fragmentFunction = try function(named: fragment)
-        descriptor.colorAttachments[0].pixelFormat = colorPixelFormat
-        descriptor.depthAttachmentPixelFormat = depthPixelFormat
+        descriptor.vertexFunctionDescriptor = try functionDescriptor(named: vertex)
+        descriptor.fragmentFunctionDescriptor = try functionDescriptor(named: fragment)
+        let attachment = MTL4RenderPipelineColorAttachmentDescriptor()
+        attachment.pixelFormat = colorPixelFormat
+        // Metal 4 takes depth/stencil formats from the render pass attachments.
+        // Keep depth in the cache key and leave the renderers' depth state unchanged.
         descriptor.rasterSampleCount = sampleCount
         if alphaBlending {
-            let attachment: MTLRenderPipelineColorAttachmentDescriptor = descriptor.colorAttachments[0]
-            attachment.isBlendingEnabled = true
+            attachment.blendingState = .enabled
             attachment.sourceRGBBlendFactor = .sourceAlpha
             attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
             attachment.rgbBlendOperation = .add
@@ -91,8 +95,10 @@ final class MetalPipelineCache {
             attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
             attachment.alphaBlendOperation = .add
         }
-        let pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+        descriptor.colorAttachments[0] = attachment
+        let pipeline = try compiler.makeRenderPipelineState(descriptor: descriptor, compilerTaskOptions: nil)
         renderPipelines[key] = pipeline
+        MetalPerformanceTrace.end("compile.render.\(vertex).\(fragment)", since: startedAt)
         return pipeline
     }
 
@@ -102,15 +108,22 @@ final class MetalPipelineCache {
         if let pipeline = computePipelines[name] {
             return pipeline
         }
-        let pipeline = try device.makeComputePipelineState(function: function(named: name))
+        let startedAt = MetalPerformanceTrace.begin()
+        let descriptor = MTL4ComputePipelineDescriptor()
+        descriptor.computeFunctionDescriptor = try functionDescriptor(named: name)
+        let pipeline = try compiler.makeComputePipelineState(descriptor: descriptor, compilerTaskOptions: nil)
         computePipelines[name] = pipeline
+        MetalPerformanceTrace.end("compile.compute.\(name)", since: startedAt)
         return pipeline
     }
 
-    private func function(named name: String) throws -> MTLFunction {
-        guard let function = library.makeFunction(name: name) else {
+    private func functionDescriptor(named name: String) throws -> MTL4LibraryFunctionDescriptor {
+        guard functionNames.contains(name) else {
             throw CacheError.missingFunction(name)
         }
-        return function
+        let descriptor = MTL4LibraryFunctionDescriptor()
+        descriptor.name = name
+        descriptor.library = library
+        return descriptor
     }
 }

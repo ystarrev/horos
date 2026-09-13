@@ -41,36 +41,21 @@
 
 /** \brief  Shares DB with Bonjour */
 
-@class N2ConnectionListener;
+@class N2ConnectionListener, HorosBonjourAdvertisement;
 
-@interface BonjourPublisher : NSObject <NSNetServiceDelegate>
+@interface BonjourPublisher : NSObject
 {
     N2ConnectionListener* _listener;
 	
-    NSNetService* _bonjour;
+    HorosBonjourAdvertisement* _bonjour;
     
 	NSLock* dicomSendLock;
 }
 
 @property(nonatomic, readonly) NSInteger port;
 
-//@property(retain) NSString* serviceName;
-//@property(retain, readonly) NSNetService* netService;
-
 - (void)toggleSharing:(BOOL)activate;
 
-// for now, we will only share the name of the shared database
-//- (void)connectionReceived:(NSNotification *)aNotification;
-
-// work as a delegate of the NSNetService
-//- (void)netServiceWillPublish:(NSNetService *)sender;
-//- (void)netService:(NSNetService *)sender didNotPublish:(NSDictionary *)errorDict;
-//- (void)netServiceDidStop:(NSNetService *)sender;
-
-- (NSNetService*)netService __deprecated;
-
-//- (void)setServiceName:(NSString *) newName;
-//- (NSString *) serviceName;
 + (BonjourPublisher*) currentPublisher __deprecated; // use -[[AppController sharedAppController] bonjourPublisher]
 
 + (NSDictionary*)dictionaryFromXTRecordData:(NSData*)data;

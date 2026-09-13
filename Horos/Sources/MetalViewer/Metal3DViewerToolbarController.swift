@@ -53,6 +53,7 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
     enum ItemIdentifier {
         static let crop = NSToolbarItem.Identifier("com.horos.metal3d.crop")
         static let shading = NSToolbarItem.Identifier("com.horos.metal3d.shading")
+        static let highQuality = NSToolbarItem.Identifier("com.horos.metal3d.highQuality")
         static let visibility = NSToolbarItem.Identifier("com.horos.metal3d.visibility")
         static let tumorActions = NSToolbarItem.Identifier("com.horos.metal3d.tumorActions")
         static let tumorLabel = NSToolbarItem.Identifier("com.horos.metal3d.tumorLabel")
@@ -64,6 +65,7 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
 
     var cropHandler: ((Bool) -> Void)?
     var shadingHandler: ((Bool) -> Void)?
+    var highQualityHandler: ((Bool) -> Void)?
     var skinHandler: ((Bool) -> Void)?
     var skinSurfaceHandler: ((Bool) -> Void)?
     var metalVisibilityHandler: ((Bool) -> Void)?
@@ -90,6 +92,9 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
     private var wlwwPresetNames = [String]()
     private var cropEnabled = false
     private var shadingEnabled = true
+    private var highQualityEnabled = false
+    private weak var highQualityButton: NSButton?
+    private weak var highQualityMenuItem: NSMenuItem?
     private var skinEnabled = true
     private var skinSurfaceEnabled = false
     private var metalVisible = true
@@ -164,6 +169,7 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
         var identifiers: [NSToolbarItem.Identifier] = [
             ItemIdentifier.crop,
             ItemIdentifier.shading,
+            ItemIdentifier.highQuality,
         ]
         if contentCapabilities.hasVisibilityOptions {
             identifiers.append(ItemIdentifier.visibility)
@@ -188,6 +194,7 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
         var identifiers: [NSToolbarItem.Identifier] = [
             ItemIdentifier.crop,
             ItemIdentifier.shading,
+            ItemIdentifier.highQuality,
             ItemIdentifier.wlww,
             ItemIdentifier.clut,
             ItemIdentifier.opacity,
@@ -231,6 +238,35 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
             item.target = self
             item.action = #selector(toggleShading(_:))
             item.image = NSImage(systemSymbolName: shadingEnabled ? "lightbulb.max.fill" : "lightbulb.slash", accessibilityDescription: item.label)
+            return item
+
+        case ItemIdentifier.highQuality:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = NSLocalizedString("High Quality", comment: "")
+            item.paletteLabel = item.label
+            item.visibilityPriority = .high
+            let button = NSButton(title: "", target: self, action: #selector(toggleHighQuality(_:)))
+            button.setButtonType(.pushOnPushOff)
+            button.bezelStyle = .toolbar
+            button.imagePosition = .imageOnly
+            button.image = NSImage(systemSymbolName: "sparkle.magnifyingglass", accessibilityDescription: item.label)
+            button.setAccessibilityLabel(item.label)
+            button.state = highQualityEnabled ? .on : .off
+            button.toolTip = NSLocalizedString("Toggle finer volume sampling (slower rendering)", comment: "")
+            button.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                button.widthAnchor.constraint(equalToConstant: 36),
+                button.heightAnchor.constraint(equalToConstant: 28),
+            ])
+            item.view = button
+            let menuItem = NSMenuItem(title: item.label, action: #selector(toggleHighQuality(_:)), keyEquivalent: "")
+            menuItem.target = self
+            menuItem.state = button.state
+            item.menuFormRepresentation = menuItem
+            if flag {
+                highQualityButton = button
+                highQualityMenuItem = menuItem
+            }
             return item
 
         case ItemIdentifier.visibility:
@@ -322,6 +358,26 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
             )
         }
         shadingHandler?(shadingEnabled)
+    }
+
+    @objc
+    private func toggleHighQuality(_ sender: Any?) {
+        highQualityEnabled.toggle()
+        highQualityButton?.state = highQualityEnabled ? .on : .off
+        highQualityMenuItem?.state = highQualityEnabled ? .on : .off
+        highQualityHandler?(highQualityEnabled)
+    }
+
+    func installHighQualityItemIfNeeded(in toolbar: NSToolbar) {
+        // Add the new control once without replacing an existing customized layout.
+        let key = toolbar.identifier + ".highQualityItemInstalled"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        if !toolbar.items.contains(where: { $0.itemIdentifier == ItemIdentifier.highQuality }) {
+            let index = toolbar.items.firstIndex { $0.itemIdentifier == ItemIdentifier.shading }
+                .map { $0 + 1 } ?? 0
+            toolbar.insertItem(withItemIdentifier: ItemIdentifier.highQuality, at: index)
+        }
+        UserDefaults.standard.set(true, forKey: key)
     }
 
     @objc

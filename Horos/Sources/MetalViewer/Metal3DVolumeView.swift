@@ -240,6 +240,15 @@ final class Metal3DVolumeView: NSView {
         }
     }
 
+    var highQualityEnabled = false {
+        didSet {
+            guard highQualityEnabled != oldValue else { return }
+            renderer?.setHighQualityEnabled(highQualityEnabled)
+            refreshSurfaceCursor()
+            metalView.setNeedsDisplay(metalView.bounds)
+        }
+    }
+
     var showSkin = true {
         didSet {
             renderer?.setShowSkin(showSkin)
@@ -581,6 +590,7 @@ final class Metal3DVolumeView: NSView {
         renderer.setCropEnabled(cropApplied || cropEnabled)
         renderer.setCropOverlayVisible(cropEnabled)
         renderer.setShadingEnabled(shadingEnabled)
+        renderer.setHighQualityEnabled(highQualityEnabled)
         renderer.setPreIntegrationEnabled(preIntegrationEnabled)
         self.renderer = renderer
         gantryTiltCorrectionLabel.isHidden = !renderer.isGantryTiltCorrected

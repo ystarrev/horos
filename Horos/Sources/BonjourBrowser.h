@@ -42,7 +42,7 @@
 
 /** \brief  Searches and retrieves Bonjour shared databases */
 
-@interface BonjourBrowser : NSObject <NSNetServiceDelegate>
+@interface BonjourBrowser : NSObject
 {
 	NSMutableArray* services;
 	BrowserController* interfaceOsiriX;

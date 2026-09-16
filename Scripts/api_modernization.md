@@ -3,6 +3,46 @@
 Scope: application-owned code, macOS 27 and Apple silicon. Keep upstream DCMTK
 unmodified and retain the ability to read existing patient data.
 
+## Pinned NIfTI reader
+
+- Replaced the old 2.0.0 snapshot with unmodified upstream NIfTI-1/znzlib files
+  from commit `8f72d1165aa62320cc6982d6ddd71a7f6b9924c5` (December 20, 2024),
+  including the required version headers and original public-domain licence.
+- Retained the existing NIfTI-1 API and Xcode source membership. Horos's import
+  routing, pixel conversion, orientation handling and compile definitions are
+  unchanged. This does not add NIfTI-2 or direct compressed-file import support.
+- `NIfTI_Library/UPSTREAM.json` records the exact revision, upstream paths and
+  SHA-256 hashes. `README.horos.md` documents validation and future updates.
+  No dependency downloads or new build steps are needed on another computer.
+- Offline checks cover checksums, project membership, source syntax and the
+  APIs/layouts used by the Objective-C/Objective-C++ callers. Runtime image
+  comparison remains a post-build smoke test; no app build was run.
+
+## DICOM TLS helper organization
+
+- Moved DDKeychain.h/m from the otherwise retired cocoahttpserver directory to
+  Horos/Sources, beside DICOMTLS in Xcode's Network group. The helper's source,
+  public class name, imports, target membership and memory-management mode are
+  unchanged; DICOM TLS certificate selection and export still use it.
+- Preserved the original BSD licence as Horos/Sources/DDKeychain.LICENSE.txt,
+  visible beside the helper in Xcode. Removed the old directory and its redundant
+  Debug/Release header and compiler search paths. Horos/Sources already supplies
+  the header search path.
+- Regression checks cover the new paths, single source/header membership, licence
+  retention and the existing caller imports. This is organization only, not a
+  TLS or Keychain API migration. No app build or live certificate changes.
+
+## Retired disc launcher
+
+- Removed the abandoned Horos Launcher folder (only Info.plist remained), the
+  stamp-only Zip Horos Launcher build phase and the commented-out disc packaging
+  code. No launcher target, executable or archive was part of the current build.
+- Removed the unused BurnOsirixApplication default and its 8 MB allowance in the
+  disc size estimate. Actual file sizes and supplementary-folder accounting are
+  unchanged, as are DICOMDIR creation, HTML export and the Metal viewer launchers.
+- Source/project checks guard the removal and retained export/viewer entry points.
+  No app build, export job or saved-preference changes were performed.
+
 ## Nitrogen Foundation cleanup
 
 - Trash operations use `NSFileManager.trashItemAtURL`, preserving existing Trash

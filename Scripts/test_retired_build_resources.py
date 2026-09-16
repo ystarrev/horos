@@ -46,6 +46,37 @@ class RetiredBuildResourceTests(unittest.TestCase):
         for filename in ("DicomDatabase.h", "DicomDatabase.mm"):
             self.assertNotIn("pagesDirPath", (ROOT / "Horos/Sources" / filename).read_text())
 
+    def test_obsolete_disc_launcher_and_build_phase_are_removed(self):
+        self.assertFalse(any((ROOT / "Horos Launcher").rglob("*")))
+        retired = re.compile(r"Horos Launcher|ZipHorosLauncher|BurnOsirixApplication")
+        project = (ROOT / "Horos.xcodeproj/project.pbxproj").read_text()
+        self.assertNotRegex(project, retired)
+        for path in (ROOT / "Horos").rglob("*"):
+            if path.suffix in (".h", ".m", ".mm", ".swift", ".xib", ".sh", ".plist"):
+                with self.subTest(path=str(path.relative_to(ROOT))):
+                    self.assertNotRegex(path.read_text(), retired)
+
+    def test_disc_export_and_metal_launchers_are_retained(self):
+        burner = (ROOT / "Horos/Sources/BurnerWindowController.m").read_text()
+        self.assertIn("[self addDICOMDIRUsingDCMTK_forFilesAtPaths:newFiles dicomImages:dbObjects]", burner)
+        self.assertIn("[self produceHtml: burnFolder dicomObjects: originalDbObjects]", burner)
+        estimate = burner.split("- (IBAction) estimateFolderSize:", 1)[1].split("#pragma mark", 1)[0]
+        self.assertIn("size += [fattrs fileSize]/1024", estimate)
+        self.assertIn("BurnSupplementaryFolder", estimate)
+        self.assertIn("getSizeOfDirectory:", estimate)
+        self.assertNotRegex(estimate, r"8\s*\*\s*1024")
+
+        objects = project_objects("Horos.xcodeproj/project.pbxproj")
+        target = next(obj for obj in objects.values()
+                      if obj.get("isa") == "PBXNativeTarget" and obj.get("name") == "Horos")
+        sources = [objects[objects[file]["fileRef"]]["path"]
+                   for key in target["buildPhases"]
+                   if objects[key]["isa"] == "PBXSourcesBuildPhase" for file in objects[key]["files"]]
+        for name in ("MetalViewerLauncher", "Metal3DViewerLauncher"):
+            path = f"Horos/Sources/MetalViewer/{name}.swift"
+            self.assertEqual(sources.count(path), 1)
+            self.assertTrue((ROOT / path).is_file())
+
     def test_obsolete_options_and_their_callers_are_removed(self):
         self.assertFalse((ROOT / "Horos/Sources/options.h").exists())
         retired = re.compile(r"options\.h|\b(?:OPTIONS_H_INCLUDED|WITH_IMPORTANT_NOTICE|"
@@ -65,8 +96,7 @@ class RetiredBuildResourceTests(unittest.TestCase):
         group = next(obj for obj in objects.values()
                      if obj.get("isa") == "PBXGroup" and obj.get("name") == "Other Sources")
         paths = {objects[key]["path"] for key in group["children"]}
-        self.assertEqual(paths, {"Horos/Sources/main.m", "Horos/Sources/url.h",
-                                 "cocoahttpserver/DDKeychain.h", "cocoahttpserver/DDKeychain.m"})
+        self.assertEqual(paths, {"Horos/Sources/main.m", "Horos/Sources/url.h"})
         for path in paths:
             self.assertTrue((ROOT / path).is_file(), path)
 
@@ -77,7 +107,44 @@ class RetiredBuildResourceTests(unittest.TestCase):
             phase = objects[key]
             if phase["isa"] == "PBXSourcesBuildPhase":
                 sources.update(objects[objects[file]["fileRef"]]["path"] for file in phase["files"])
-        self.assertTrue({"Horos/Sources/main.m", "cocoahttpserver/DDKeychain.m"} <= sources)
+        self.assertIn("Horos/Sources/main.m", sources)
+
+    def test_keychain_helper_is_retained_with_network_sources(self):
+        objects = project_objects("Horos.xcodeproj/project.pbxproj")
+        group = next(obj for obj in objects.values()
+                     if obj.get("isa") == "PBXGroup" and obj.get("name") == "Network")
+        paths = {objects[key].get("path") for key in group["children"]}
+        retained = {"Horos/Sources/DDKeychain.h", "Horos/Sources/DDKeychain.m",
+                    "Horos/Sources/DDKeychain.LICENSE.txt"}
+        self.assertTrue(retained <= paths)
+        for path in retained:
+            self.assertTrue((ROOT / path).is_file(), path)
+
+        target = next(obj for obj in objects.values()
+                      if obj.get("isa") == "PBXNativeTarget" and obj.get("name") == "Horos")
+        for phase_type, filename in (("PBXSourcesBuildPhase", "DDKeychain.m"),
+                                     ("PBXHeadersBuildPhase", "DDKeychain.h")):
+            files = [objects[objects[file]["fileRef"]]["path"]
+                     for key in target["buildPhases"]
+                     if objects[key]["isa"] == phase_type for file in objects[key]["files"]]
+            self.assertEqual(files.count(f"Horos/Sources/{filename}"), 1)
+
+        for key in objects[target["buildConfigurationList"]]["buildConfigurations"]:
+            config = objects[key]
+            with self.subTest(configuration=config["name"]):
+                self.assertIn("$(PROJECT_DIR)/Horos/Sources",
+                              config["buildSettings"]["HEADER_SEARCH_PATHS"])
+        for filename in ("DICOMTLS.h", "DCMTKStoreSCU.h", "DCMTKServiceClassUser.h"):
+            self.assertIn('#import "DDKeychain.h"', (ROOT / "Horos/Sources" / filename).read_text())
+
+    def test_retired_http_server_directory_and_paths_are_removed(self):
+        self.assertFalse(any((ROOT / "cocoahttpserver").rglob("*")))
+        self.assertNotIn("cocoahttpserver", (ROOT / "Horos.xcodeproj/project.pbxproj").read_text())
+        license_text = (ROOT / "Horos/Sources/DDKeychain.LICENSE.txt").read_text()
+        for notice in ("Software License Agreement (BSD License)",
+                       "Copyright (c) 2006, Deusty Designs, LLC", "All rights reserved.",
+                       "Redistribution and use", "THIS SOFTWARE IS PROVIDED"):
+            self.assertIn(notice, license_text)
 
 
 if __name__ == "__main__":

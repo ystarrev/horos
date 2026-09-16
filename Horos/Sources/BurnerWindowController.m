@@ -1044,29 +1044,6 @@
             thread.name = NSLocalizedString( @"Burning...", nil);
             thread.status = NSLocalizedString( @"Writing DICOMDIR...", nil);
             [self addDICOMDIRUsingDCMTK_forFilesAtPaths:newFiles dicomImages:dbObjects];
-            /*
-             
-            FAUZE - 24-Mar-2018 - Light viewer does not exist.
-             
-            if( [[NSUserDefaults standardUserDefaults] boolForKey: @"BurnOsirixApplication"] && cancelled == NO)
-            {
-                thread.name = NSLocalizedString( @"Burning...", nil);
-                thread.status = NSLocalizedString( @"Adding Horos Lite...", nil);
-                // unzip the file
-                NSTask *unzipTask = [[NSTask alloc] init];
-                [unzipTask setExecutableURL:[NSURL fileURLWithPath:@"/usr/bin/unzip"]];
-                [unzipTask setCurrentDirectoryURL:[NSURL fileURLWithPath:burnFolder isDirectory:YES]];
-                [unzipTask setArguments: [NSArray arrayWithObjects: @"-o", [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent: @"Horos Launcher.zip"], nil]]; // -o to override existing report w/ same name
-                HorosLaunchTaskOrRaise(unzipTask);
-                
-                while( [unzipTask isRunning])
-                    [NSThread sleepForTimeInterval: 0.1];
-                
-                //[unzipTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
-                
-                [unzipTask release];
-            }
-            */
             
             if(  [[NSUserDefaults standardUserDefaults] boolForKey: @"BurnHtml"] == YES && [[NSUserDefaults standardUserDefaults] boolForKey:@"anonymizedBeforeBurning"] == NO && cancelled == NO)
             {
@@ -1145,11 +1122,6 @@
 	{
 		fattrs = [manager attributesOfItemAtPath:file error:NULL];
 		size += [fattrs fileSize]/1024;
-	}
-	
-	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"BurnOsirixApplication"])
-	{
-		size += 8 * 1024; // About 8MB
 	}
 	
     if( [[NSUserDefaults standardUserDefaults] stringForKey: @"SupplementaryBurnPath"].length <= 1)

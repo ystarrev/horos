@@ -591,6 +591,8 @@
 		AB87FA7C0C06BEB200CD2976 /* nifti1_io.h in Headers */ = {isa = PBXBuildFile; fileRef = AB87FA770C06BEB200CD2976 /* nifti1_io.h */; };
 		AB87FA7D0C06BEB200CD2976 /* znzlib.c in Sources */ = {isa = PBXBuildFile; fileRef = AB87FA780C06BEB200CD2976 /* znzlib.c */; };
 		AB87FA7E0C06BEB200CD2976 /* znzlib.h in Headers */ = {isa = PBXBuildFile; fileRef = AB87FA790C06BEB200CD2976 /* znzlib.h */; };
+		A61F71000000000000000001 /* nifti1_io_version.h in Headers */ = {isa = PBXBuildFile; fileRef = A61F71000000000000000003 /* nifti1_io_version.h */; };
+		A61F71000000000000000002 /* znzlib_version.h in Headers */ = {isa = PBXBuildFile; fileRef = A61F71000000000000000004 /* znzlib_version.h */; };
 		AB91224E10DA7199006E0AAB /* BonjourPublisher.h in Headers */ = {isa = PBXBuildFile; fileRef = A99B7E5008858D31004328C0 /* BonjourPublisher.h */; };
 		AB9139B906839830006F3936 /* PIC.icns in Resources */ = {isa = PBXBuildFile; fileRef = AB9139B706839830006F3936 /* PIC.icns */; };
 		AB92A3A90642B32D0048DC15 /* SmallLogo.tif in Resources */ = {isa = PBXBuildFile; fileRef = AB92A3A70642B32D0048DC15 /* SmallLogo.tif */; };
@@ -1288,8 +1290,9 @@
 		840C2D5B1588CE4600C4FE09 /* CustomIntervalPanel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CustomIntervalPanel.h; sourceTree = "<group>"; };
 		840C2D5C1588CE4600C4FE09 /* CustomIntervalPanel.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CustomIntervalPanel.m; sourceTree = "<group>"; };
 		841524C4113D6BDB008250E6 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = /System/Library/Frameworks/QuartzCore.framework; sourceTree = "<absolute>"; };
-		841722AE10D90595001A833F /* DDKeychain.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DDKeychain.h; path = cocoahttpserver/DDKeychain.h; sourceTree = SOURCE_ROOT; };
-		841722AF10D90595001A833F /* DDKeychain.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = DDKeychain.m; path = cocoahttpserver/DDKeychain.m; sourceTree = SOURCE_ROOT; };
+		841722AE10D90595001A833F /* DDKeychain.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DDKeychain.h; path = Horos/Sources/DDKeychain.h; sourceTree = SOURCE_ROOT; };
+		841722AF10D90595001A833F /* DDKeychain.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = DDKeychain.m; path = Horos/Sources/DDKeychain.m; sourceTree = SOURCE_ROOT; };
+		C0C0A0000000000000000001 /* DDKeychain.LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = DDKeychain.LICENSE.txt; path = Horos/Sources/DDKeychain.LICENSE.txt; sourceTree = SOURCE_ROOT; };
 		844003990E8CF99500A00EBD /* dciodvfy */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = dciodvfy; path = ../../Binaries/dciodvfy; sourceTree = "<group>"; };
 		848327AA15ED08F3003BAEEB /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/CustomIntervalPanel.xib; sourceTree = "<group>"; };
 		8483ABA50E1BE33900C21B31 /* crossCursor.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; name = crossCursor.tif; path = Cursors/crossCursor.tif; sourceTree = "<group>"; };
@@ -1561,6 +1564,11 @@
 		AB87FA770C06BEB200CD2976 /* nifti1_io.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = nifti1_io.h; sourceTree = "<group>"; };
 		AB87FA780C06BEB200CD2976 /* znzlib.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = znzlib.c; sourceTree = "<group>"; };
 		AB87FA790C06BEB200CD2976 /* znzlib.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = znzlib.h; sourceTree = "<group>"; };
+		A61F71000000000000000003 /* nifti1_io_version.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = nifti1_io_version.h; sourceTree = "<group>"; };
+		A61F71000000000000000004 /* znzlib_version.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = znzlib_version.h; sourceTree = "<group>"; };
+		A61F71000000000000000005 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
+		A61F71000000000000000006 /* UPSTREAM.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = UPSTREAM.json; sourceTree = "<group>"; };
+		A61F71000000000000000007 /* README.horos.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.horos.md; sourceTree = "<group>"; };
 		AB9139B706839830006F3936 /* PIC.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = PIC.icns; sourceTree = "<group>"; };
 		AB92A3A70642B32D0048DC15 /* SmallLogo.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = SmallLogo.tif; sourceTree = "<group>"; };
 		AB932A950EA38DEF0006DF1B /* CobbAngle.tif */ = {isa = PBXFileReference; lastKnownFileType = image.tiff; path = CobbAngle.tif; sourceTree = "<group>"; };
@@ -2035,8 +2043,6 @@
 			children = (
 				4307C62B1A2091900083877C /* url.h */,
 				29B97316FDCFA39411CA2CEA /* main.m */,
-				841722AE10D90595001A833F /* DDKeychain.h */,
-				841722AF10D90595001A833F /* DDKeychain.m */,
 			);
 			name = "Other Sources";
 			sourceTree = "<group>";
@@ -2608,11 +2614,16 @@
 		AB87FA740C06BEB200CD2976 /* NIfTI_Library */ = {
 			isa = PBXGroup;
 			children = (
+				A61F71000000000000000007 /* README.horos.md */,
+				A61F71000000000000000006 /* UPSTREAM.json */,
+				A61F71000000000000000005 /* LICENSE */,
 				AB87FA750C06BEB200CD2976 /* nifti1.h */,
 				AB87FA760C06BEB200CD2976 /* nifti1_io.c */,
 				AB87FA770C06BEB200CD2976 /* nifti1_io.h */,
+				A61F71000000000000000003 /* nifti1_io_version.h */,
 				AB87FA780C06BEB200CD2976 /* znzlib.c */,
 				AB87FA790C06BEB200CD2976 /* znzlib.h */,
+				A61F71000000000000000004 /* znzlib_version.h */,
 			);
 			path = NIfTI_Library;
 			sourceTree = SOURCE_ROOT;
@@ -3059,6 +3070,9 @@
 				F4CTXCL0000000000000002 /* ContextCleaner.mm */,
 				A9C5496310FF2C9F0026EA70 /* DICOMTLS.h */,
 				A9C5496410FF2C9F0026EA70 /* DICOMTLS.m */,
+				841722AE10D90595001A833F /* DDKeychain.h */,
+				841722AF10D90595001A833F /* DDKeychain.m */,
+				C0C0A0000000000000000001 /* DDKeychain.LICENSE.txt */,
 			);
 			name = Network;
 			sourceTree = "<group>";
@@ -3491,6 +3505,8 @@
 				AB87FA7A0C06BEB200CD2976 /* nifti1.h in Headers */,
 				AB87FA7C0C06BEB200CD2976 /* nifti1_io.h in Headers */,
 				AB87FA7E0C06BEB200CD2976 /* znzlib.h in Headers */,
+				A61F71000000000000000001 /* nifti1_io_version.h in Headers */,
+				A61F71000000000000000002 /* znzlib_version.h in Headers */,
 				ABB230BD0C2F95DD00B38596 /* JPEGExif.h in Headers */,
 				CED2CF980C9B288C0047F123 /* Horos/Sources/CIADICOMField.h in Headers */,
 				CE4700FF0CC51A6600ECF78A /* WindowLayoutManager.h in Headers */,
@@ -3636,7 +3652,6 @@
 			buildPhases = (
 				AB28B42A05B7921E00A9906C /* Headers */,
 				AB28B42B05B7921E00A9906C /* Resources */,
-				59BDEE70117CB3A6007F1F2C /* Zip Horos Launcher into Resources */,
 				AB28B42C05B7921E00A9906C /* Sources */,
 				AB28B42D05B7921E00A9906C /* Frameworks */,
 				710EF2861FD148E7000B555B /* Copy Executables */,
@@ -4063,28 +4078,6 @@
 			shellPath = /bin/sh;
 			shellScript = (
 				"sh \"Horos/Scripts/Horos/Unzip.sh\"",
-				"",
-			);
-		};
-		59BDEE70117CB3A6007F1F2C /* Zip Horos Launcher into Resources */ = {
-			isa = PBXShellScriptBuildPhase;
-			name = "Zip Horos Launcher into Resources";
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/ZipHorosLauncherIntoResources.stamp",
-			);
-			shellPath = /bin/sh;
-			shellScript = (
-				"#cd \"${BUILT_PRODUCTS_DIR}\"",
-				"#product=\"Horos Launcher.app\"",
-				"#dest=\"${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Horos Launcher.zip\"",
-				"#rm -f \"$dest\"",
-				"#zip -qr \"$dest\" \"$product\"",
-				"",
-				"#product=\"$SRCROOT/Binaries/Horos Launcher.zip\"",
-				"#cp \"$product\" \"${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"",
-				"",
-				"mkdir -p \"$DERIVED_FILE_DIR\"",
-				"touch \"$DERIVED_FILE_DIR/ZipHorosLauncherIntoResources.stamp\"",
 				"",
 			);
 		};
@@ -5045,7 +5038,6 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/Horos/Sources",
 					"$(PROJECT_DIR)/Nitrogen/Sources",
-					"$(PROJECT_DIR)/cocoahttpserver",
 					"$(PROJECT_DIR)/LetsMoveAndDock",
 					"$(PROJECT_DIR)/DCMTK/config/include",
 					"$(PROJECT_DIR)/DCMTK/dcmdata/include",
@@ -5080,14 +5072,12 @@
 					"-fvisibility=default",
 					"-I$(PROJECT_DIR)/Horos/Sources",
 					"-I$(PROJECT_DIR)/Nitrogen/Sources",
-					"-I$(PROJECT_DIR)/cocoahttpserver",
 					"-I$(PROJECT_DIR)/LetsMoveAndDock",
 				);
 				OTHER_CPLUSPLUSFLAGS = (
 					"$(inherited)",
 					"-I$(PROJECT_DIR)/Horos/Sources",
 					"-I$(PROJECT_DIR)/Nitrogen/Sources",
-					"-I$(PROJECT_DIR)/cocoahttpserver",
 					"-I$(PROJECT_DIR)/LetsMoveAndDock",
 				);
 				OTHER_LDFLAGS = (
@@ -5140,7 +5130,6 @@
 				);
 				USER_HEADER_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/cocoahttpserver",
 					"$(PROJECT_DIR)/Nitrogen/Sources",
 					"$(PROJECT_DIR)/LetsMoveAndDock",
 				);
@@ -5312,7 +5301,6 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/Horos/Sources",
 					"$(PROJECT_DIR)/Nitrogen/Sources",
-					"$(PROJECT_DIR)/cocoahttpserver",
 					"$(PROJECT_DIR)/LetsMoveAndDock",
 					"$(PROJECT_DIR)/DCMTK/config/include",
 					"$(PROJECT_DIR)/DCMTK/dcmdata/include",
@@ -5346,14 +5334,12 @@
 					"-fvisibility=default",
 					"-I$(PROJECT_DIR)/Horos/Sources",
 					"-I$(PROJECT_DIR)/Nitrogen/Sources",
-					"-I$(PROJECT_DIR)/cocoahttpserver",
 					"-I$(PROJECT_DIR)/LetsMoveAndDock",
 				);
 				OTHER_CPLUSPLUSFLAGS = (
 					"$(inherited)",
 					"-I$(PROJECT_DIR)/Horos/Sources",
 					"-I$(PROJECT_DIR)/Nitrogen/Sources",
-					"-I$(PROJECT_DIR)/cocoahttpserver",
 					"-I$(PROJECT_DIR)/LetsMoveAndDock",
 				);
 				OTHER_LDFLAGS = (
@@ -5407,7 +5393,6 @@
 				);
 				USER_HEADER_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/cocoahttpserver",
 					"$(PROJECT_DIR)/Nitrogen/Sources",
 					"$(PROJECT_DIR)/LetsMoveAndDock",
 				);

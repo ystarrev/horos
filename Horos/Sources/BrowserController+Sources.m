@@ -1456,6 +1456,8 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
 
             if ([source isKindOfClass:[PhoneVolumeRenderNodeIdentifier class]])
                 source.description = NSLocalizedString(HorosPhoneVolumeRenderDisplayName, nil);
+            else if ([source isKindOfClass:[RemoteDatabaseNodeIdentifier class]] && service.name.length)
+                source.description = service.name;
             else if ([source isKindOfClass:[DicomNodeIdentifier class]])
             {
                 NSString *resolvedAETitle = [resolvedTXTDictionary objectForKey:@"AETitle"];

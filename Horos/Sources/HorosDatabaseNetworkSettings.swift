@@ -42,6 +42,12 @@ private final class HorosDefaultsCheckbox: NSButton {
     }
 
     @objc private func valueChanged(_ sender: NSButton) {
+        if let editor = window?.firstResponder as? NSTextView, editor.isFieldEditor {
+            guard window?.makeFirstResponder(nil) == true else {
+                sender.state = UserDefaults.standard.bool(forKey: defaultsKey) ? .on : .off
+                return
+            }
+        }
         let value = sender.state == .on
         UserDefaults.standard.set(value, forKey: defaultsKey)
         changeHandler?(value)
@@ -566,6 +572,26 @@ private final class ListenerSettingsViewController: HorosScrollableSettingsPaneV
             tlsUsesDefaultAETitle,
             labeledRow("TLS port", control: HorosDefaultsTextField(defaultsKey: "TLSStoreSCPAEPORT", valueKind: .integer)),
             NSTextField(wrappingLabelWithString: "The existing Keychain identity and cipher-suite configuration are preserved. Certificate selection remains in macOS Keychain Access."),
+        ])
+
+        let sharing = HorosDefaultsCheckbox(title: "Share this database with other Horos computers", defaultsKey: "bonjourSharing")
+        let sharingName = HorosDefaultsTextField(defaultsKey: "bonjourServiceName")
+        sharingName.placeholderString = "This Mac's name"
+        let passwordProtected = HorosDefaultsCheckbox(title: "Require a password", defaultsKey: "bonjourPasswordProtected")
+        let sharingPassword = NSSecureTextField(frame: .zero)
+        sharingPassword.font = .systemFont(ofSize: 13)
+        sharingPassword.bind(.value, to: NSUserDefaultsController.shared, withKeyPath: "values.bonjourPassword", options: nil)
+
+        sharingPassword.isEnabled = passwordProtected.state == .on
+        passwordProtected.changeHandler = { enabled in
+            sharingPassword.isEnabled = enabled
+        }
+
+        addCard(title: "Database Sharing", rows: [
+            sharing,
+            labeledRow("Shared database name", control: sharingName),
+            passwordProtected,
+            labeledRow("Password", control: sharingPassword),
         ])
 
         addCard(title: "Services & Diagnostics", rows: [

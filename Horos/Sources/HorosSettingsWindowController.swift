@@ -2092,7 +2092,7 @@ private final class ViewersSettingsPaneViewController: HorosSettingsPaneViewCont
 }
 
 @objc(HorosModernSettingsWindowController)
-final class HorosSettingsWindowController: NSWindowController {
+final class HorosSettingsWindowController: NSWindowController, NSWindowDelegate {
     private enum Layout {
         static let windowSize = NSSize(width: 1280, height: 820)
         static let minWindowSize = NSSize(width: 1120, height: 720)
@@ -2133,6 +2133,7 @@ final class HorosSettingsWindowController: NSWindowController {
         super.init(window: window)
 
         window.title = "Horos Settings"
+        window.delegate = self
         window.minSize = Layout.minWindowSize
         window.setFrameAutosaveName("HorosModernSettingsWindow")
         window.center()
@@ -2143,6 +2144,10 @@ final class HorosSettingsWindowController: NSWindowController {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        sender.makeFirstResponder(nil)
     }
 
     private func buildInterface() {

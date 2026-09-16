@@ -31,10 +31,6 @@
 		B4F3364F1611A97900E46F7F /* N2ButtonCell.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F335961611A97800E46F7F /* N2ButtonCell.mm */; };
 		B4F336521611A97900E46F7F /* N2ColorWell.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F335991611A97800E46F7F /* N2ColorWell.h */; };
 		B4F336531611A97900E46F7F /* N2ColorWell.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F3359A1611A97800E46F7F /* N2ColorWell.mm */; };
-		B4F336561611A97900E46F7F /* N2Connection.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F3359D1611A97800E46F7F /* N2Connection.h */; };
-		B4F336571611A97900E46F7F /* N2Connection.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F3359E1611A97800E46F7F /* N2Connection.mm */; };
-		B4F336581611A97900E46F7F /* N2ConnectionListener.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F3359F1611A97800E46F7F /* N2ConnectionListener.h */; };
-		B4F336591611A97900E46F7F /* N2ConnectionListener.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F335A01611A97800E46F7F /* N2ConnectionListener.mm */; };
 		B4F3365C1611A97900E46F7F /* N2CustomTitledPopUpButtonCell.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F335A31611A97800E46F7F /* N2CustomTitledPopUpButtonCell.h */; };
 		B4F3365D1611A97900E46F7F /* N2CustomTitledPopUpButtonCell.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F335A41611A97800E46F7F /* N2CustomTitledPopUpButtonCell.mm */; };
 		B4F3365E1611A97900E46F7F /* N2Debug.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F335A51611A97800E46F7F /* N2Debug.h */; };
@@ -167,10 +163,6 @@
 		B4F335961611A97800E46F7F /* N2ButtonCell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2ButtonCell.mm; sourceTree = "<group>"; };
 		B4F335991611A97800E46F7F /* N2ColorWell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2ColorWell.h; sourceTree = "<group>"; };
 		B4F3359A1611A97800E46F7F /* N2ColorWell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2ColorWell.mm; sourceTree = "<group>"; };
-		B4F3359D1611A97800E46F7F /* N2Connection.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Connection.h; sourceTree = "<group>"; };
-		B4F3359E1611A97800E46F7F /* N2Connection.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2Connection.mm; sourceTree = "<group>"; };
-		B4F3359F1611A97800E46F7F /* N2ConnectionListener.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2ConnectionListener.h; sourceTree = "<group>"; };
-		B4F335A01611A97800E46F7F /* N2ConnectionListener.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2ConnectionListener.mm; sourceTree = "<group>"; };
 		B4F335A31611A97800E46F7F /* N2CustomTitledPopUpButtonCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2CustomTitledPopUpButtonCell.h; sourceTree = "<group>"; };
 		B4F335A41611A97800E46F7F /* N2CustomTitledPopUpButtonCell.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = N2CustomTitledPopUpButtonCell.mm; sourceTree = "<group>"; };
 		B4F335A51611A97800E46F7F /* N2Debug.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = N2Debug.h; sourceTree = "<group>"; };

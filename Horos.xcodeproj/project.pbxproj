@@ -109,10 +109,6 @@
 		5926825111CF62DA00CFA81F /* ThreadsManager.mm in Sources */ = {isa = PBXBuildFile; fileRef = 5926824311CF62DA00CFA81F /* ThreadsManager.mm */; };
 		592BA51D12966ABD00179C27 /* NSError+OsiriX.h in Headers */ = {isa = PBXBuildFile; fileRef = 592BA51B12966ABD00179C27 /* NSError+OsiriX.h */; };
 		592BA51E12966ABD00179C27 /* NSError+OsiriX.mm in Sources */ = {isa = PBXBuildFile; fileRef = 592BA51C12966ABD00179C27 /* NSError+OsiriX.mm */; };
-		592CFF081212F84F00176E39 /* N2Connection.h in Headers */ = {isa = PBXBuildFile; fileRef = 592CFEF01212F84F00176E39 /* N2Connection.h */; };
-		592CFF091212F84F00176E39 /* N2Connection.mm in Sources */ = {isa = PBXBuildFile; fileRef = 592CFEF11212F84F00176E39 /* N2Connection.mm */; };
-		592CFF0A1212F84F00176E39 /* N2ConnectionListener.h in Headers */ = {isa = PBXBuildFile; fileRef = 592CFEF21212F84F00176E39 /* N2ConnectionListener.h */; };
-		592CFF0B1212F84F00176E39 /* N2ConnectionListener.mm in Sources */ = {isa = PBXBuildFile; fileRef = 592CFEF31212F84F00176E39 /* N2ConnectionListener.mm */; };
 		594830CD118B0AC100D7E606 /* N2ImageView.h in Headers */ = {isa = PBXBuildFile; fileRef = 594830CB118B0AC100D7E606 /* N2ImageView.h */; };
 		594830CE118B0AC100D7E606 /* N2ImageView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 594830CC118B0AC100D7E606 /* N2ImageView.mm */; };
 		59526E9E1281896F0016F6C0 /* NSMutableString+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = 59526E9C1281896F0016F6C0 /* NSMutableString+N2.h */; };
@@ -886,6 +882,7 @@
 		C0DE26091200000000000003 /* HorosBonjourAdvertisement.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091200000000000004 /* HorosBonjourAdvertisement.swift */; };
 		C0DE26091200000000000005 /* HorosBonjourService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091200000000000006 /* HorosBonjourService.swift */; };
 		C0DE26091200000000000007 /* HorosDatabaseTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091200000000000008 /* HorosDatabaseTransport.swift */; };
+		C0DE26091600000000000001 /* HorosDatabaseServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091600000000000002 /* HorosDatabaseServer.swift */; };
 		C0DE26091000000000000021 /* MetalViewerCachePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE26091000000000000022 /* MetalViewerCachePolicy.swift */; };
 		F4A100000001000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal */; };
 		F4A100000001000000000006 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4A100000002000000000006 /* Metal.framework */; };
@@ -1064,10 +1061,6 @@
 		5926824311CF62DA00CFA81F /* ThreadsManager.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ThreadsManager.mm; path = Horos/Sources/ThreadsManager.mm; sourceTree = SOURCE_ROOT; };
 		592BA51B12966ABD00179C27 /* NSError+OsiriX.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "NSError+OsiriX.h"; path = "Horos/Sources/NSError+OsiriX.h"; sourceTree = SOURCE_ROOT; };
 		592BA51C12966ABD00179C27 /* NSError+OsiriX.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "NSError+OsiriX.mm"; path = "Horos/Sources/NSError+OsiriX.mm"; sourceTree = SOURCE_ROOT; };
-		592CFEF01212F84F00176E39 /* N2Connection.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = N2Connection.h; path = Nitrogen/Sources/N2Connection.h; sourceTree = SOURCE_ROOT; };
-		592CFEF11212F84F00176E39 /* N2Connection.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = N2Connection.mm; path = Nitrogen/Sources/N2Connection.mm; sourceTree = SOURCE_ROOT; };
-		592CFEF21212F84F00176E39 /* N2ConnectionListener.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = N2ConnectionListener.h; path = Nitrogen/Sources/N2ConnectionListener.h; sourceTree = SOURCE_ROOT; };
-		592CFEF31212F84F00176E39 /* N2ConnectionListener.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = N2ConnectionListener.mm; path = Nitrogen/Sources/N2ConnectionListener.mm; sourceTree = SOURCE_ROOT; };
 		592D333512F2C71A00C7C002 /* NSException+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "NSException+N2.h"; path = "Nitrogen/Sources/NSException+N2.h"; sourceTree = SOURCE_ROOT; };
 		592D333612F2C71A00C7C002 /* NSException+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = "NSException+N2.mm"; path = "Nitrogen/Sources/NSException+N2.mm"; sourceTree = SOURCE_ROOT; };
 		594830CB118B0AC100D7E606 /* N2ImageView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = N2ImageView.h; path = Nitrogen/Sources/N2ImageView.h; sourceTree = SOURCE_ROOT; };
@@ -1864,6 +1857,7 @@
 		C0DE26091200000000000004 /* HorosBonjourAdvertisement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosBonjourAdvertisement.swift; sourceTree = SOURCE_ROOT; };
 		C0DE26091200000000000006 /* HorosBonjourService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosBonjourService.swift; sourceTree = SOURCE_ROOT; };
 		C0DE26091200000000000008 /* HorosDatabaseTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosDatabaseTransport.swift; sourceTree = SOURCE_ROOT; };
+		C0DE26091600000000000002 /* HorosDatabaseServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosDatabaseServer.swift; sourceTree = SOURCE_ROOT; };
 		C0DE26091000000000000022 /* MetalViewerCachePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerCachePolicy.swift; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Horos/Sources/MetalViewer/MetalShaders.metal; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000006 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
@@ -2111,10 +2105,6 @@
 		592CFEEF1212F84F00176E39 /* Networking */ = {
 			isa = PBXGroup;
 			children = (
-				592CFEF01212F84F00176E39 /* N2Connection.h */,
-				592CFEF11212F84F00176E39 /* N2Connection.mm */,
-				592CFEF21212F84F00176E39 /* N2ConnectionListener.h */,
-				592CFEF31212F84F00176E39 /* N2ConnectionListener.mm */,
 				714943D014D3008B008BCC08 /* NSHost+N2.h */,
 				714943D114D3008B008BCC08 /* NSHost+N2.mm */,
 			);
@@ -3370,6 +3360,7 @@
 				C0DE26091200000000000004 /* HorosBonjourAdvertisement.swift */,
 				C0DE26091200000000000006 /* HorosBonjourService.swift */,
 				C0DE26091200000000000008 /* HorosDatabaseTransport.swift */,
+				C0DE26091600000000000002 /* HorosDatabaseServer.swift */,
 				C0DE26091000000000000022 /* MetalViewerCachePolicy.swift */,
 				F4A100000002000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal */,
 				F4A100000002000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm */,
@@ -3580,8 +3571,6 @@
 				5926825011CF62DA00CFA81F /* ThreadsManager.h in Headers */,
 				59F5F3F911F476030047A90D /* N2ImageButtonCell.h in Headers */,
 				59F5F4EC11F485CC0047A90D /* BrowserController+Activity.h in Headers */,
-				592CFF081212F84F00176E39 /* N2Connection.h in Headers */,
-				592CFF0A1212F84F00176E39 /* N2ConnectionListener.h in Headers */,
 				59526E9E1281896F0016F6C0 /* NSMutableString+N2.h in Headers */,
 				592BA51D12966ABD00179C27 /* NSError+OsiriX.h in Headers */,
 				597BB93112A7E0F200D0A172 /* NSUserDefaults+OsiriX.h in Headers */,
@@ -4409,6 +4398,7 @@
 				C0DE26091200000000000003 /* HorosBonjourAdvertisement.swift in Sources */,
 				C0DE26091200000000000005 /* HorosBonjourService.swift in Sources */,
 				C0DE26091200000000000007 /* HorosDatabaseTransport.swift in Sources */,
+				C0DE26091600000000000001 /* HorosDatabaseServer.swift in Sources */,
 				C0DE26091000000000000021 /* MetalViewerCachePolicy.swift in Sources */,
 				F4A100000001000000000005 /* Horos/Sources/MetalViewer/MetalShaders.metal in Sources */,
 				F4A100000001000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm in Sources */,
@@ -4572,8 +4562,6 @@
 				84CD254C11ECB49A004669D6 /* OsiriXDB_DataModel.xcdatamodel in Sources */,
 				59F5F3FA11F476030047A90D /* N2ImageButtonCell.mm in Sources */,
 				59F5F4ED11F485CC0047A90D /* BrowserController+Activity.mm in Sources */,
-				592CFF091212F84F00176E39 /* N2Connection.mm in Sources */,
-				592CFF0B1212F84F00176E39 /* N2ConnectionListener.mm in Sources */,
 				59526E9F1281896F0016F6C0 /* NSMutableString+N2.mm in Sources */,
 				592BA51E12966ABD00179C27 /* NSError+OsiriX.mm in Sources */,
 				597BB93212A7E0F200D0A172 /* NSUserDefaults+OsiriX.mm in Sources */,

@@ -49,32 +49,27 @@
 #import "DicomDatabase.h"
 #import "DicomImage.h"
 #import "AppController.h"
-#import "N2ConnectionListener.h"
-#import "N2Connection.h"
 #import "NSFileManager+N2.h"
+#include <limits.h>
 
-// imports required for socket initialization
-#import <sys/socket.h>
-#import <netinet/in.h>
-#import <unistd.h>
-
-// BY DEFAULT OSIRIX USES 8780 PORT
-
-#include <netdb.h>
-#include <unistd.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-
-extern const char *GetPrivateIP(void);
-
-
-@interface O2DatabaseConnection : N2Connection {
+@interface O2DatabaseConnection : NSObject {
     int _mode, _hdi;
     NSMutableArray* _stack;
+    NSMutableData* _readBuffer;
+    HorosDatabasePeer* _peer;
 }
-
+@property(nonatomic, readonly) NSUInteger availableSize;
+@property(nonatomic, readonly) NSMutableData* readBuffer;
+- (instancetype)initWithPeer:(HorosDatabasePeer*)peer;
+- (void)run;
+- (NSData*)readData:(NSUInteger)length;
+- (void)readData:(NSUInteger)length toBuffer:(void*)buffer;
+- (void)writeData:(NSData*)data;
 @end
 
+@interface BonjourPublisher () <HorosDatabaseServerDelegate>
+- (void)updateBonjour;
+@end
 
 @implementation BonjourPublisher
 
@@ -108,6 +103,10 @@ extern const char *GetPrivateIP(void);
     [[NSUserDefaultsController sharedUserDefaultsController] removeObserver:self forValuesKey:OsirixBonjourSharingPasswordDefaultsKey];
     
     [dicomSendLock release];
+    _listener.delegate = nil;
+    [_listener stop];
+    [_listener release];
+    [_bonjour stop];
     [_bonjour release];
     
     [super dealloc];
@@ -152,16 +151,19 @@ extern const char *GetPrivateIP(void);
     }
     @try {
         if (activate && !_listener) {
-            _listener = [[N2ConnectionListener alloc] initWithPort:8780 connectionClass:[O2DatabaseConnection class]];
-            //            [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(connectionOpened:) name:N2ConnectionListenerOpenedConnectionNotification object:_listener];
-            [_listener setThreadPerConnection:YES];
-            if (_listener)
-                NSLog(@"Horos database shared on port %d", [_listener port]);
-            else
-                NSLog(@"Warning: unable to share Horos database");
+            _listener = [[HorosDatabaseServer alloc] initWithPort:8780 handler:^(HorosDatabasePeer* peer) {
+                O2DatabaseConnection* connection = [[O2DatabaseConnection alloc] initWithPeer:peer];
+                @try { [connection run]; }
+                @finally { [connection release]; }
+            }];
+            _listener.delegate = self;
         }
+        if (activate)
+            [_listener start];
         
         if (!activate && _listener) {
+            _listener.delegate = nil;
+            [_listener stop];
             [_listener release];
             _listener = nil;
         }
@@ -172,8 +174,20 @@ extern const char *GetPrivateIP(void);
     }
 }
 
+- (void)databaseServerDidStart:(HorosDatabaseServer*)server {
+    if (server != _listener) return;
+    NSLog(@"Horos database shared on port %ld", (long)server.port);
+    [self updateBonjour];
+}
+
+- (void)databaseServer:(HorosDatabaseServer*)server didFail:(NSError*)error {
+    if (server != _listener) return;
+    NSLog(@"Warning: unable to share Horos database: %@", error);
+    [self updateBonjour];
+}
+
 - (void)updateBonjour {
-    if (!_listener)
+    if (!_listener || !_listener.port)
     {
         if (_bonjour)
         {
@@ -182,7 +196,8 @@ extern const char *GetPrivateIP(void);
             _bonjour = nil;
         }
 
-        NSLog(@"Horos database Bonjour sharing is disabled");
+        if (!_listener)
+            NSLog(@"Horos database Bonjour sharing is disabled");
         return;
     }
 
@@ -271,16 +286,19 @@ extern const char *GetPrivateIP(void);
 
 @implementation O2DatabaseConnection
 
-- (id)initWithAddress:(NSString*)address port:(NSInteger)port tls:(BOOL)tlsFlag is:(NSInputStream*)is os:(NSOutputStream*)os {
-    if ((self = [super initWithAddress:address port:port tls:tlsFlag is:is os:os])) {
-        //		[self setCloseOnRemoteClose:YES];
+- (instancetype)initWithPeer:(HorosDatabasePeer*)peer {
+    if ((self = [super init])) {
+        _peer = [peer retain];
         _stack = [[NSMutableArray alloc] init];
+        _readBuffer = [[NSMutableData alloc] init];
     }
     
     return self;
 }
 
 - (void)dealloc {
+    [_peer release];
+    [_readBuffer release];
     [_stack release];
     [super dealloc];
 }
@@ -307,6 +325,53 @@ enum Modes {
 
 static NSString* const O2NotEnoughData = @"O2NotEnoughData";
 
+- (void)run {
+    // Keep incremental parser state and its independent database on this worker.
+    @try {
+        while (_mode != DONE) {
+            @autoreleasepool {
+                NSError* error = nil;
+                NSData* data = [_peer receiveDataWithError:&error];
+                if (error)
+                    [NSException raise:NSGenericException format:@"Database receive failed: %@", error];
+                if (!data.length) {
+                    if (_mode == NONE && !_readBuffer.length) return; // Availability probe.
+                    [NSException raise:NSGenericException format:@"Incomplete shared-database request"];
+                }
+                [_readBuffer appendData:data];
+                [self handleData:_readBuffer];
+            }
+        }
+        NSError* error = nil;
+        if (![_peer finishWithError:&error])
+            [NSException raise:NSGenericException format:@"Database response failed: %@", error];
+    } @catch (NSException* exception) {
+        // Objective-C exceptions must not escape into the Swift network worker.
+        NSLog(@"Shared-database request from %@ failed: %@", _peer.address, exception.reason);
+    }
+}
+
+- (NSUInteger)availableSize { return _readBuffer.length; }
+- (NSMutableData*)readBuffer { return _readBuffer; }
+
+- (NSData*)readData:(NSUInteger)length {
+    NSData* data = [_readBuffer subdataWithRange:NSMakeRange(0, length)];
+    [_readBuffer replaceBytesInRange:NSMakeRange(0, length) withBytes:NULL length:0];
+    return data;
+}
+
+- (void)readData:(NSUInteger)length toBuffer:(void*)buffer {
+    [_readBuffer getBytes:buffer length:length];
+    [_readBuffer replaceBytesInRange:NSMakeRange(0, length) withBytes:NULL length:0];
+}
+
+- (void)writeData:(NSData*)data {
+    if (!data.length) return;
+    NSError* error = nil;
+    if (![_peer writeData:data error:&error])
+        [NSException raise:NSGenericException format:@"Database send failed: %@", error];
+}
+
 - (void)handleData:(NSMutableData*)data {
     _hdi = 0;
     
@@ -316,6 +381,8 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
                 return;
             char command[6];
             [self readData:6 toBuffer:command];
+            if (command[5] != '\0')
+                [NSException raise:NSInvalidArgumentException format:@"Invalid shared-database command"];
             
             if (strcmp(command, "DATAB") == 0)
                 _mode = DATAB;
@@ -351,7 +418,7 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
                 _mode = DICOM;
             
             if (_mode == NONE)
-                [self close];
+                [NSException raise:NSInvalidArgumentException format:@"Unknown shared-database command"];
         }
         
         switch (_mode) {
@@ -392,19 +459,7 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
         if ([e.name isEqualToString:O2NotEnoughData])
             return;
         @throw e;
-    } @finally {
-        if (_mode == DONE)
-        {
-            if (self.writeBufferSize)
-                self.closeWhenDoneSending = YES;
-            else [self close];
-        }
     }
-}
-
-- (void)connectionFinishedSendingData {
-    [[self class] cancelPreviousPerformRequestsWithTarget:self selector:@selector(handleData:) object:nil];
-    [self performSelector:@selector(handleData:) withObject:nil afterDelay:0]; // fill send buffer, maybe...
 }
 
 - (void)_stackObject:(id)o {
@@ -423,6 +478,8 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
 }
 
 - (void)_requireDataSize:(int)size {
+    if (size < 0)
+        [NSException raise:NSInvalidArgumentException format:@"Negative shared-database data size"];
     if (self.availableSize < size)
         [NSException raise:O2NotEnoughData format:@""];
 }
@@ -444,6 +501,8 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
         return [[self _stackedObject] intValue];
     }
     int value = [self _readInt];
+    if (value < 0)
+        [NSException raise:NSInvalidArgumentException format:@"Negative shared-database count or size"];
     
     [self _stackObject:[NSNumber numberWithInt:value]];
     
@@ -456,25 +515,35 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
     int length;
     [self.readBuffer getBytes:&length length:4];
     length = NSSwapBigIntToHost(length);
+    if (length < 0 || length > INT_MAX - 4)
+        [NSException raise:NSInvalidArgumentException format:@"Invalid shared-database string length"];
     
     [self _requireDataSize:length+4];
     
     [self readData:4];
+    if (!length) return nil; // The existing protocol uses zero length for null.
     
     NSData* data = [self readData:length];
     
-    return [NSString stringWithUTF8String:data.bytes];
+    const char* bytes = data.bytes;
+    if (bytes[length-1] != '\0')
+        [NSException raise:NSInvalidArgumentException format:@"Unterminated shared-database string"];
+    NSString* value = [[[NSString alloc] initWithBytes:bytes length:length-1 encoding:NSUTF8StringEncoding] autorelease];
+    if (!value)
+        [NSException raise:NSInvalidArgumentException format:@"Invalid UTF-8 in shared-database string"];
+    return value;
 }
 
 - (NSString*)_stackReadString {
     if (_stack.count > _hdi)
     {
         //        N2LogStackTrace( @"_stack.count > _hdi");
-        return [self _stackedObject];
+        id value = [self _stackedObject];
+        return value == NSNull.null ? nil : value;
     }
     NSString* value = [self _readString];
     
-    [self _stackObject:value];
+    [self _stackObject:value ?: NSNull.null];
     
     return value;
 }
@@ -509,11 +578,14 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
         N2LogExceptionWithStackTrace(e);
     }
 
-    if (representationToSend)
-        [self writeData:representationToSend];
-    [representationToSend release];
+    @try {
+        if (representationToSend)
+            [self writeData:representationToSend];
+    } @finally {
+        [representationToSend release];
+    }
     
-    NSLog(@"Bonjour connection received from %@", _address);
+    NSLog(@"Bonjour connection received from %@", _peer.address);
     
     _mode = DONE;
 }
@@ -833,7 +905,7 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
     
     if( [Address isEqualToString: @"127.0.0.1"])
     {
-        Address = _address;
+        Address = _peer.address;
     }
     
     NSDictionary *todo = [NSDictionary dictionaryWithObjectsAndKeys: Address, @"Address", TransferSyntax, @"TransferSyntax", Port, @"Port", AETitle, @"AETitle", localPaths, @"Files", nil];

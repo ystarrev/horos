@@ -100,7 +100,7 @@ class NitrogenCleanupTests(unittest.TestCase):
                                for file in phase["files"])
         retained = {path.name for path in (ROOT / "Nitrogen/Sources").iterdir()
                     if path.suffix in (".m", ".mm")}
-        self.assertTrue({"N2ManagedDatabase.mm", "N2Connection.mm", "N2ConnectionListener.mm",
+        self.assertTrue({"N2ManagedDatabase.mm",
                          "NSThread+N2.mm", "N2DirectoryEnumerator.mm", "N2AdaptiveBox.mm"} <= retained)
         for name in retained:
             self.assertEqual(sources[name], 1, name)

@@ -136,12 +136,13 @@ still pending.
   iPhonePlanner, including its disappearance and return on a new port. Laptop
   integration validation remains pending.
 
-## Parked checkpoint: shared-database request client
+## Shared-database request client
 
-Status: pause further network changes until the user has the laptop available
-for shared-database testing. The implementation remains in the working tree;
-source/type checks do not replace peer testing. Resume with the checklist below
-before changing the inbound server.
+Status: the user confirmed on 2026-09-16 that the laptop can browse the shared
+database, separately from the DICOM transfer destination. Continue the remaining
+checks below; uncached image loading, refresh, album/upload operations and
+interrupted transfers still need explicit validation, including the new inbound
+server checkpoint below.
 
 - Shared-database requests in `RemoteDicomDatabase` now use Swift
   `HorosDatabaseTransport` and `NWConnection`, including the `GETDI` destination
@@ -162,15 +163,57 @@ before changing the inbound server.
   completed cached images are not deleted when another request downloads them.
   Index transfer failure also closes/removes its temporary file. The separately
   requested index size is only a progress estimate, not an exact-size invariant.
-- The inbound `O2DatabaseConnection`/`N2ConnectionListener` server is unchanged
-  in this checkpoint. Fast `HorosDirectTransfer` and DICOM/DCMTK transport are
+- The inbound server was unchanged at the client checkpoint; its migration is
+  described below. Fast `HorosDirectTransfer` and DICOM/DCMTK transport are
   untouched. This change alone is not a measured throughput improvement.
 - Verification: 374 non-build checks pass. The Swift helper type-checks with
   warnings treated as errors; its generated Objective-C interface, the request
   bridge, both response handlers and project syntax were checked. No app build
   or live shared-database request was run by the agent.
 
+## Shared-database inbound server
+
+- Replaced the NSStream/CFSocket listener with `HorosDatabaseServer` using
+  `NWListener`/`NWConnection` on the same TCP port 8780. Kept the existing
+  Objective-C command handlers, byte order, archives, password exchange and
+  EOF-delimited responses. This remains the existing plaintext protocol, not a
+  new security or authentication design. DICOM and direct transfer are untouched.
+- Listener lifecycle and Bonjour publication stay on the main queue. The
+  database is advertised only once the listener is ready; waiting/failure removes
+  the advertisement, and stale callbacks cannot republish a stopped listener.
+- Requests run on bounded background workers, with one worker owning each
+  incremental parser and independent database for the whole request. Network
+  callbacks only publish locked state. Up to eight handlers execute concurrently,
+  with at most 32 active/queued connections. Network I/O is chunked at 128 KiB;
+  existing SQL snapshot and upload-file buffering in the handlers is unchanged.
+- Writes wait for native content processing, not a remote acknowledgment per
+  file. A final TCP message closes a completed response. Stop cancels active and
+  queued connections and wakes blocked waits; the 45-second idle timeout reports
+  failure. Empty availability probes remain quiet, while truncated commands,
+  invalid lengths, unterminated strings and invalid UTF-8 are rejected. Null
+  string values from the existing SETVA protocol remain distinct from empty text.
+- Removed the now-unused N2Connection/N2ConnectionListener files, including the
+  synchronous client/delegate adapter, and references in both Xcode projects.
+- Verification: focused source-contract tests, Swift type-checking with warnings
+  treated as errors, and isolated syntax checking of the actual Objective-C
+  publisher/parser against its generated Swift header. Application declarations
+  are stubbed in the isolated check; no app build or live socket test was run.
+  No throughput improvement is claimed without measurement.
+
 ### Shared-database manual checks
+
+On the host, open **Network > Listener > Database Sharing** in Preferences.
+Set a recognizable shared database name and optional password before enabling
+sharing. These controls use the existing sharing/name/password preferences and
+do not enable sharing automatically. Name and password settings remain editable
+with sharing off; toggling sharing or committing a name change takes effect
+without restarting Horos.
+Pending field edits are committed before toggling sharing and when closing
+Preferences. Bonjour resolution refreshes a reused database source's displayed
+name without merging it with the separate DICOM transfer destination.
+The host should log `Horos database shared on port ...` and publish
+`_osirixdb._tcp`. Publishing only `_dicom._tcp` exposes a transfer destination,
+not a browsable database; its Sources row intentionally rejects browsing.
 
 1. Open a peer's shared database from Sources and view an uncached series. Check
    the index, image loading and refreshing after the peer's database changes.
@@ -227,15 +270,14 @@ Validate this resolution checkpoint against desktop/laptop discovery, abrupt
 Xcode termination, relaunch, sleep/wake, multiple interfaces, ordinary DICOM peers,
 the iPhone destination, and checked-in non-Bonjour peers.
 
-### Remaining stream-based remote database transport
+### Shared-database integration validation
 
-The request client is migrated in the current checkpoint. Next migrate the
-inbound O2DatabaseConnection/N2ConnectionListener server off NSStream/CFSocket,
-then remove the unused N2 client APIs and delegate adapter. Preserve command
-framing, partial reads/writes, EOF, backpressure, timeout, cancellation, subclass
-callbacks and callback-thread ownership.
-The fast HorosDirectTransfer transport already uses Network.framework and is not
-part of this legacy transport rewrite.
+Both the request client and inbound server now use Network.framework, and the
+unused N2 connection classes are removed. Complete the shared-database manual
+checks above, particularly uncached images, album/upload operations, partial
+transfers, sharing off/on and peer relaunch. The fast HorosDirectTransfer transport
+is separate from this rewrite. Repeated M1 disappearance needs further investigation
+only if it occurs while both peers are idle, without restarts or network changes.
 
 ### Metal 4
 

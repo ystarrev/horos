@@ -15,9 +15,69 @@ ADVERTISEMENT = (SOURCES / "HorosBonjourAdvertisement.swift").read_text()
 APP = (SOURCES / "AppController.m").read_text()
 PUBLISHER = (SOURCES / "BonjourPublisher.m").read_text()
 QUERY = (SOURCES / "DCMNetServiceDelegate.m").read_text()
+SETTINGS = (SOURCES / "HorosDatabaseNetworkSettings.swift").read_text()
+SETTINGS_WINDOW = (SOURCES / "HorosSettingsWindowController.swift").read_text()
+SOURCE_BROWSER = (SOURCES / "BrowserController+Sources.m").read_text()
 
 
 class BonjourAdvertisementTests(unittest.TestCase):
+    def test_pending_name_edit_is_committed_before_sharing_is_enabled(self):
+        checkbox = SETTINGS.split("private final class HorosDefaultsCheckbox", 1)[1].split(
+            "private final class HorosDefaultsTextField", 1)[0]
+        action = checkbox.split("@objc private func valueChanged(_ sender: NSButton)", 1)[1]
+        self.assertIn("editor.isFieldEditor", action)
+        self.assertLess(action.index("window?.makeFirstResponder(nil)"), action.index("UserDefaults.standard.set("))
+        self.assertIn("sender.state = UserDefaults.standard.bool(forKey: defaultsKey) ? .on : .off", action)
+        controller = SETTINGS_WINDOW.split("final class HorosSettingsWindowController:", 1)[1]
+        self.assertIn("NSWindowDelegate", controller)
+        self.assertIn("window.delegate = self", controller)
+        self.assertIn("func windowShouldClose(_ sender: NSWindow) -> Bool {\n        sender.makeFirstResponder(nil)", controller)
+
+    def test_reused_database_source_refreshes_its_advertised_name(self):
+        resolve = SOURCE_BROWSER.split("-(void)netServiceDidResolveAddress:", 1)[1].split(
+            "-(void)netService:", 1)[0]
+        reuse = resolve.index("source = [_browser.sources.content objectAtIndex:i]")
+        rename = resolve.index("source.description = service.name;")
+        self.assertLess(reuse, rename)
+        self.assertIn("else if ([source isKindOfClass:[RemoteDatabaseNodeIdentifier class]] && service.name.length)", resolve)
+        self.assertIn("source.aetitle = [resolvedAETitle length] ? resolvedAETitle : service.name;", resolve)
+        identifiers = (SOURCES / "DataNodeIdentifier.m").read_text()
+        remote = identifiers.split("@implementation RemoteDatabaseNodeIdentifier", 1)[1].split("@end", 1)[0]
+        self.assertIn("if (![dni isKindOfClass:[RemoteDatabaseNodeIdentifier class]])\n        return NO;", remote)
+
+    def test_network_settings_expose_database_sharing_separately_from_dicom(self):
+        listener = SETTINGS.split("private final class ListenerSettingsViewController", 1)[1].split(
+            "private final class DICOMNodeEditorView", 1)[0]
+        for key in ("bonjourSharing", "bonjourServiceName", "bonjourPasswordProtected", "publishDICOMBonjour"):
+            self.assertIn(f'defaultsKey: "{key}"', listener)
+        self.assertIn('addCard(title: "Database Sharing"', listener)
+        self.assertIn("let sharingPassword = NSSecureTextField", listener)
+        self.assertIn('sharingPassword.bind(.value, to: NSUserDefaultsController.shared, withKeyPath: "values.bonjourPassword"', listener)
+        self.assertNotIn("UserDefaults.standard.set(", listener)
+
+    def test_sharing_can_be_configured_before_enabling_network_access(self):
+        sharing = SETTINGS.split("let sharing = HorosDefaultsCheckbox", 1)[1].split(
+            'addCard(title: "Services & Diagnostics"', 1)[0]
+        self.assertNotIn("sharingName.isEnabled", sharing)
+        self.assertNotIn("passwordProtected.isEnabled", sharing)
+        self.assertNotIn("sharing.state", sharing)
+        self.assertIn("sharingPassword.isEnabled = passwordProtected.state == .on", sharing)
+        self.assertIn("passwordProtected.changeHandler = { enabled in", sharing)
+        self.assertIn("sharingPassword.isEnabled = enabled", sharing)
+
+    def test_sharing_and_name_changes_take_effect_without_restarting(self):
+        observation = PUBLISHER.split("-(void)observeValueForKeyPath:", 1)[1].split(
+            "- (void)toggleSharing:", 1)[0]
+        self.assertIn("[self toggleSharing:NSUserDefaults.bonjourSharingIsActive]", observation)
+        rename = observation.split("OsirixBonjourSharingNameDefaultsKey", 1)[1].split("return;", 1)[0]
+        self.assertIn("[_bonjour stop]", rename)
+        self.assertIn("[self updateBonjour]", rename)
+        toggle = PUBLISHER.split("- (void)toggleSharing:", 1)[1].split("- (void)updateBonjour", 1)[0]
+        self.assertIn("if (activate && !_listener)", toggle)
+        self.assertIn("if (!activate && _listener)", toggle)
+        self.assertIn("[_listener release]", toggle)
+        self.assertIn("[self updateBonjour]", toggle)
+
     def test_existing_ports_are_advertised_without_another_listener(self):
         self.assertIn("DNSServiceRegister(&reference, 0, 0, requestedName, type, nil, nil", ADVERTISEMENT)
         self.assertIn("UInt16(exactly: port)", ADVERTISEMENT)

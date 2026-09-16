@@ -2,6 +2,7 @@
 
 import json
 import re
+import shutil
 import subprocess
 import sys
 import unittest
@@ -14,6 +15,73 @@ def source(name):
 
 
 class NitrogenFoundationTests(unittest.TestCase):
+    def test_directory_handles_close_once_when_popped_without_worker_threads(self):
+        body = source("N2DirectoryEnumerator.mm")
+        pop = body.split("-(void)popDIR {", 1)[1].split("@end", 1)[0]
+        self.assertIn("if (DIRs.count)", pop)
+        self.assertLess(pop.index("DIR* dir = self.DIR;"), pop.index("[DIRs removeLastObject];"))
+        self.assertLess(pop.index("[DIRs removeLastObject];"), pop.index("closedir(dir);"))
+        self.assertEqual(body.count("closedir("), 1)
+        for old in ("N2DirectoryEnumeratorReleaser", "NSThread", "dispatch_async", "releaseDIR:"):
+            self.assertNotIn(old, body)
+        dealloc = body.split("-(void)dealloc", 1)[1].split("#pragma mark", 1)[0]
+        self.assertIn("while (DIRs.count)\n\t\t[self popDIR];", dealloc)
+        self.assertLess(dealloc.index("[self popDIR];"), dealloc.index("[DIRs release];"))
+
+    def test_directory_scanning_retains_traversal_and_cleanup_paths(self):
+        body = source("N2DirectoryEnumerator.mm")
+        next_object = body.split("-(id)nextObject", 1)[1].split("#pragma mark", 1)[0]
+        for retained in ("if (counter >= max)", "readdir(dir)", "dirp->d_type == DT_DIR",
+                         "dirp->d_type == DT_UNKNOWN", "if (_recursive)", "if (_filesOnly) continue;",
+                         "if (sdir) [self pushDIR:sdir subpath:currpath];", "return currpath;"):
+            self.assertIn(retained, next_object)
+        self.assertIn("} else\n\t\t\t[self popDIR];", next_object)
+        self.assertIn("-(void)skipDescendents {\n\t[self popDIR];", body)
+        self.assertIn("if (dir) [self pushDIR:dir subpath:NULL];", body)
+
+    @unittest.skipUnless(sys.platform == "darwin" and shutil.which("xcrun"), "Requires macOS SDK")
+    def test_cleanup_helpers_pass_sdk_syntax_check(self):
+        sdk = subprocess.check_output(["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip()
+        for name in ("N2DirectoryEnumerator.mm", "NSThread+N2.mm", "NSArray+N2.mm", "NSDictionary+N2.mm"):
+            with self.subTest(name=name):
+                result = subprocess.run([
+                    "xcrun", "clang++", "-fsyntax-only", "-fblocks", "-fno-objc-arc", "-std=c++17",
+                    "-target", "arm64-apple-macos27.0", "-isysroot", sdk, "-Werror",
+                    str(ROOT / "Nitrogen/Sources" / name),
+                ], capture_output=True, text=True, timeout=90)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_background_threads_use_foundation_and_keep_the_exception_boundary(self):
+        body = source("NSThread+N2.mm")
+        helper = body.split("+(NSThread*)performBlockInBackground:", 1)[1].split("-(NSComparisonResult)compare:", 1)[0]
+        for token in ("[[[NSThread alloc] initWithBlock:^{", "@autoreleasepool", "@try",
+                      "block();", "@catch (NSException* e)", "N2LogExceptionWithStackTrace(e)",
+                      "}] autorelease]", "[thread start];", "return thread;"):
+            self.assertIn(token, helper)
+        self.assertLess(helper.index("@autoreleasepool"), helper.index("block();"))
+        self.assertLess(helper.index("[thread start];"), helper.index("return thread;"))
+        for old in ("N2BlockThread", "_block", "dispatch_async", "detachNewThread"):
+            self.assertNotIn(old, body)
+
+    def test_unused_subthread_aliases_are_removed_but_operation_api_remains(self):
+        for name in ("NSThread+N2.h", "NSThread+N2.mm"):
+            with self.subTest(name=name):
+                body = source(name)
+                for old in ("enterSubthreadWithRange", "exitSubthread"):
+                    self.assertNotIn(old, body)
+                for retained in ("enterOperationWithRange:", "exitOperation", "subthreadsAwareProgress"):
+                    self.assertIn(retained, body)
+
+    def test_progress_detail_updates_compare_details_not_the_main_status(self):
+        body = source("NSThread+N2.mm").split("-(void)setProgressDetails:", 1)[1].split("@end", 1)[0]
+        self.assertIn("NSString* previousProgressDetails = self.progressDetails;", body)
+        self.assertNotIn("self.status", body)
+        self.assertIn("previousProgressDetails == progressDetails || [progressDetails isEqualToString:previousProgressDetails]", body)
+        self.assertLess(body.index("@synchronized (self)"), body.index("previousProgressDetails ="))
+        self.assertLess(body.index("willChangeValueForKey:NSThreadProgressDetailsKey"), body.index("setObject:"))
+        self.assertIn("removeObjectForKey:NSThreadProgressDetailsKey", body)
+        self.assertLess(body.index("removeObjectForKey:"), body.index("didChangeValueForKey:NSThreadProgressDetailsKey"))
+
     def test_shell_only_keeps_the_native_serial_number_lookup(self):
         body = source("N2Shell.mm")
         self.assertEqual(re.findall(r"^\+\([^)]*\)(\w+)", body, re.MULTILINE), ["serialNumber"])

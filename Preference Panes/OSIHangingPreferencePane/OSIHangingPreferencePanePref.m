@@ -38,7 +38,7 @@
 
 #import "WindowLayoutManager.h"
 #import "OSIHangingPreferencePanePref.h"
-#import "NSArray+N2.h"
+#import <CoreFoundation/CoreFoundation.h>
 #import "NSPreferencePane+OsiriX.h"
 #import "Notifications.h"
 #import "AppController.h"
@@ -440,7 +440,13 @@
 
 -(void) willSelect
 {
-	hangingProtocols = [[[NSUserDefaults standardUserDefaults] objectForKey:@"HANGINGPROTOCOLS"] deepMutableCopy];
+    NSDictionary *savedProtocols = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"HANGINGPROTOCOLS"];
+    NSMutableDictionary *editableProtocols = savedProtocols
+        ? (NSMutableDictionary *)CFPropertyListCreateDeepCopy(kCFAllocatorDefault,
+            (CFPropertyListRef)savedProtocols, kCFPropertyListMutableContainers)
+        : nil;
+    [hangingProtocols release];
+    hangingProtocols = editableProtocols;
 	
     for( NSString *modality in hangingProtocols)
     {

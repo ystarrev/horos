@@ -99,8 +99,6 @@
 		B4F336D31611A97900E46F7F /* NSInvocation+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F3361A1611A97800E46F7F /* NSInvocation+N2.mm */; };
 		B4F336D41611A97900E46F7F /* NSManagedObject+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F3361B1611A97800E46F7F /* NSManagedObject+N2.h */; };
 		B4F336D51611A97900E46F7F /* NSManagedObject+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F3361C1611A97800E46F7F /* NSManagedObject+N2.mm */; };
-		B4F336D61611A97900E46F7F /* NSMutableDictionary+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F3361D1611A97800E46F7F /* NSMutableDictionary+N2.h */; };
-		B4F336D71611A97900E46F7F /* NSMutableDictionary+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F3361E1611A97800E46F7F /* NSMutableDictionary+N2.mm */; };
 		B4F336D81611A97900E46F7F /* NSMutableString+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F3361F1611A97800E46F7F /* NSMutableString+N2.h */; };
 		B4F336D91611A97900E46F7F /* NSMutableString+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = B4F336201611A97800E46F7F /* NSMutableString+N2.mm */; };
 		B4F336DA1611A97900E46F7F /* NSNotificationCenter+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = B4F336211611A97800E46F7F /* NSNotificationCenter+N2.h */; };
@@ -231,8 +229,6 @@
 		B4F3361A1611A97800E46F7F /* NSInvocation+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = "NSInvocation+N2.mm"; sourceTree = "<group>"; };
 		B4F3361B1611A97800E46F7F /* NSManagedObject+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSManagedObject+N2.h"; sourceTree = "<group>"; };
 		B4F3361C1611A97800E46F7F /* NSManagedObject+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = "NSManagedObject+N2.mm"; sourceTree = "<group>"; };
-		B4F3361D1611A97800E46F7F /* NSMutableDictionary+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSMutableDictionary+N2.h"; sourceTree = "<group>"; };
-		B4F3361E1611A97800E46F7F /* NSMutableDictionary+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = "NSMutableDictionary+N2.mm"; sourceTree = "<group>"; };
 		B4F3361F1611A97800E46F7F /* NSMutableString+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSMutableString+N2.h"; sourceTree = "<group>"; };
 		B4F336201611A97800E46F7F /* NSMutableString+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = "NSMutableString+N2.mm"; sourceTree = "<group>"; };
 		B4F336211611A97800E46F7F /* NSNotificationCenter+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSNotificationCenter+N2.h"; sourceTree = "<group>"; };

@@ -26,9 +26,97 @@ unmodified and retain the ability to read existing patient data.
   exercise Foundation counterparts, not compiled Horos methods. No app build,
   live database migration or live Trash operation was performed.
 
-Directory-enumeration performance, networking, database/progress helpers and
-larger UI replacements remain separate work; laptop networking validation is
-still pending.
+Full replacement of database/progress helpers and larger UI replacements remain separate work.
+Networking checkpoints and their validation are recorded below.
+
+### Preference collection copies
+
+- Startup filtering of saved localDatabasePaths now makes only a mutable copy
+  of the outer array, since it removes entries without changing their contents.
+  ARC owns and releases the copy, fixing the previous retained-copy leak. The existing
+  temporary-path rules and conditional write back to preferences are unchanged.
+- Hanging-protocol preferences still need independently editable nested values.
+  They now use CFPropertyListCreateDeepCopy with mutable containers instead of
+  the two duplicated recursive collection copiers. Re-entering the pane releases
+  its previous snapshot; the new owned snapshot is released on deallocation.
+  No serialization round trip or preference-format change is introduced.
+- Removed deepMutableCopy from NSArray/NSDictionary, the unused dictionary
+  class-check accessor, and the unused NSMutableDictionary category and both
+  projects' references. Kept identity-based keyForObject lookup: replacing it
+  with equality-based lookup would change its two remaining callers.
+- Verification: project/source contracts, actual remaining collection-file SDK
+  syntax checks, isolated syntax checks of both changed copy call sites, and
+  native Core Foundation fixtures with synthetic settings. The fixtures cover
+  mutable nested containers, isolation from the original, empty dictionaries,
+  scalar/data/date preservation and shallow array copying. They do not execute
+  the unbuilt Horos methods. No app build or live-preference edits were performed.
+  The copy call sites are checked separately with their project-specific ARC/MRC
+  flags; the initial combined MRC-only check missed an invalid autorelease in the
+  ARC-compiled AppController, which has now been removed.
+  Recheck saved database locations after relaunch and edit/reopen Preferences >
+  Protocols to confirm saved layout settings persist.
+
+### Directory handle cleanup
+
+- Removed the dedicated NSThread subclass that created a new thread for every
+  directory closed by N2DirectoryEnumerator. Each popped handle now closes on
+  the scanning thread, before popDIR returns, without deferred work retaining
+  descriptors. Exhaustion, skipping descendants and deallocation use that same
+  ownership path; early-abandoned scans still close their handles on deallocation.
+- Traversal order, recursion, files-only filtering, limits, relative paths and
+  stat/attribute lookup are unchanged. The custom scanner remains in use by
+  incoming-file import, folder scanning and startup recovery.
+- Verification covers source lifetime contracts and warnings-as-errors SDK
+  syntax checking of the actual Objective-C++ file. No app build, runtime
+  import test or performance measurement was performed. Recheck a normal import
+  and a nested-folder import after rebuilding.
+- User validation: rebuilt and reported that the checkpoint works.
+
+### Background thread helper
+
+- Replaced N2BlockThread with Foundation's `NSThread initWithBlock:` behind the
+  existing `performBlockInBackground:` API. Still starts immediately, returns an
+  autoreleased NSThread and wraps the work in an autorelease pool and the same
+  Objective-C exception logger. Callers retain their existing cancellation,
+  thread-dictionary, isExecuting/isFinished and progress-monitoring behavior.
+  No dispatch-queue substitution, association-count or scheduling-policy change.
+- Removed unused deprecated enterSubthreadWithRange/exitSubthread aliases.
+  The active nested-operation progress API and its observers are unchanged.
+- Fixed setProgressDetails comparing against the main status instead of the
+  previous detail text. Identical details now avoid redundant notifications;
+  a new detail matching the main status is no longer incorrectly suppressed.
+- Verification: source contracts and warnings-as-errors SDK syntax checking of
+  the actual Objective-C++ helper. No app build, live-thread test or measured
+  performance improvement is claimed. Recheck a PACS retrieve, progress/cancel,
+  and an import from media; also shared-database download progress details.
+- API reference: [NSThread block initializer](https://developer.apple.com/documentation/foundation/thread/init(block:)).
+- User validation: rebuilt and reported that the checkpoint works.
+
+### Export image resizing
+
+- The Lanczos resizer used by the two movie/HTML export frame-sizing paths now
+  renders directly to a bitmap. Removed its TIFF encode/decode round trip,
+  deferred AppKit drawing, and class-wide NSImage lock. A reusable CIContext
+  keeps compiled kernels but does not cache each frame's intermediate images.
+  Filters are local to each request; only source snapshot acquisition is locked.
+- Target dimensions specify output pixels (rounded up for fractional sizes),
+  independent of the main screen's backing scale. Scaling uses the actual source
+  bitmap dimensions while retaining the NSImage's logical aspect ratio. Same-size
+  requests no longer apply a zero scale. Invalid dimensions return nil.
+- Keeps centered aspect fitting, transparent padding and alpha. RGB source
+  profiles are retained; monochrome input is color-converted to sRGB for RGBA
+  output. The helper no longer performs a second AppKit resampling pass.
+  Planar/volume rendering, DICOM pixels, window/level, and Option-drag JPEG/PDF
+  exports are unchanged.
+- Verification: actual Objective-C++ file passes SDK syntax checking. Eight
+  synthetic native Core Image fixtures check identity, up/downscaling, padding,
+  alpha, Retina bitmap sizing, logical/pixel aspect differences and grayscale.
+  These exercise the framework pipeline, not the unbuilt Horos category. No app
+  build or measured throughput improvement is claimed. Recheck movie/HTML export
+  on a series requiring frame resizing, including orientation and framing.
+- User validation: movie export works after rebuilding.
+- API references: [CIContext](https://developer.apple.com/documentation/coreimage/cicontext)
+  and [Lanczos scaling](https://developer.apple.com/library/archive/documentation/GraphicsImaging/Reference/CoreImageFilterReference/index.html#//apple_ref/doc/filter/ci/CILanczosScaleTransform).
 
 ## Completed drag/export checkpoint
 
@@ -139,10 +227,9 @@ still pending.
 ## Shared-database request client
 
 Status: the user confirmed on 2026-09-16 that the laptop can browse the shared
-database, separately from the DICOM transfer destination. Continue the remaining
-checks below; uncached image loading, refresh, album/upload operations and
-interrupted transfers still need explicit validation, including the new inbound
-server checkpoint below.
+database, separately from the DICOM transfer destination, and subsequently
+reported that the inbound-server checkpoint works well. Keep the manual checks
+below as a regression checklist; individual edge cases have not all been reported.
 
 - Shared-database requests in `RemoteDicomDatabase` now use Swift
   `HorosDatabaseTransport` and `NWConnection`, including the `GETDI` destination
@@ -199,6 +286,7 @@ server checkpoint below.
   publisher/parser against its generated Swift header. Application declarations
   are stubbed in the isolated check; no app build or live socket test was run.
   No throughput improvement is claimed without measurement.
+- User validation: reported that everything works after this checkpoint.
 
 ### Shared-database manual checks
 

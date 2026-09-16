@@ -48,15 +48,6 @@
 @end
 
 
-@interface N2DirectoryEnumeratorReleaser : NSThread {
-    DIR* _dir;
-}
-
-+ (void)releaseDIR:(DIR*)dir;
-
-@end
-
-
 @implementation N2DirectoryEnumerator
 
 @synthesize filesOnly = _filesOnly;
@@ -211,31 +202,8 @@
 	if (DIRs.count) {
 		DIR* dir = self.DIR;
 		[DIRs removeLastObject];
-		[N2DirectoryEnumeratorReleaser releaseDIR:dir];
+		closedir(dir);
 	}
 }
 
 @end
-
-@implementation N2DirectoryEnumeratorReleaser
-
-+ (void)releaseDIR:(DIR*)dir {
-    [[[[self alloc] initWithDIR:dir] autorelease] start];
-}
-
-- (id)initWithDIR:(DIR*)dir {
-    if ((self = [super init])) {
-        _dir = dir;
-    }
-    
-    return self;
-}
-
-- (void)main {
-    @autoreleasepool {
-        closedir(_dir);
-    }
-}
-
-@end
-

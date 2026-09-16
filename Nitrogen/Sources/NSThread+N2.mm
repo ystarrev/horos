@@ -38,22 +38,22 @@
 
 #import "NSThread+N2.h"
 #import "N2Debug.h"
-//#import "NSException+N2.h"
-
-@interface N2BlockThread : NSThread {
-    void (^_block)();
-}
-
--(id)initWithBlock:(void(^)())block;
-
-@end
 
 @implementation NSThread (N2)
 
-+(NSThread*)performBlockInBackground:(void(^)())block {
-    N2BlockThread* bt = [[[N2BlockThread alloc] initWithBlock:block] autorelease];
-    [bt start];
-    return bt;
++(NSThread*)performBlockInBackground:(void(^)(void))block {
+    NSThread* thread = [[[NSThread alloc] initWithBlock:^{
+        @autoreleasepool {
+            @try {
+                block();
+            }
+            @catch (NSException* e) {
+                N2LogExceptionWithStackTrace(e);
+            }
+        }
+    }] autorelease];
+    [thread start];
+    return thread;
 }
 
 -(NSComparisonResult)compare:(id)obj {
@@ -200,16 +200,6 @@ static NSString* const SuperThreadNameKey = @"SuperThreadName";
         }
 		self.progress = 1;
 	}
-}
-
--(void)enterSubthreadWithRange:(CGFloat)rangeLoc :(CGFloat)rangeLen { // __deprecated
-	@synchronized (self) {
-		[self enterOperationWithRange:rangeLoc:rangeLen];
-	}
-}
-
--(void)exitSubthread { // __deprecated
-	[self exitOperation];
 }
 
 #pragma mark Properties
@@ -404,7 +394,7 @@ NSString* const NSThreadProgressDetailsKey = @"progressDetails";
 //    	return nil;
     
 	@synchronized (self) {
-		NSString* previousProgressDetails = self.status;
+		NSString* previousProgressDetails = self.progressDetails;
 		if (previousProgressDetails == progressDetails || [progressDetails isEqualToString:previousProgressDetails])
 			return;
 		
@@ -418,47 +408,3 @@ NSString* const NSThreadProgressDetailsKey = @"progressDetails";
 }
 
 @end
-
-@implementation N2BlockThread
-
--(id)initWithBlock:(void(^)())block
-{
-    if ((self = [super init]))
-    {
-        _block = [block copy];
-    }
-    
-    return self;
-}
-
--(void)main
-{
-    @autoreleasepool
-    {
-        @try
-        {
-            _block();
-        }
-        @catch (NSException* e)
-        {
-            N2LogExceptionWithStackTrace(e);
-        }
-        @finally
-        {
-            [_block release];
-            _block = nil;
-        }
-    }
-}
-
-
--(void)dealloc
-{
-    [_block release];
-    _block = nil;
-    
-    [super dealloc];
-}
-
-@end
-

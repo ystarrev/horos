@@ -11,7 +11,7 @@ from test_macos_baseline import ROOT, project_objects
 
 PROJECTS = ("Horos.xcodeproj/project.pbxproj",
             "Nitrogen/Nitrogen.xcodeproj/project.pbxproj")
-RETIRED = ("N2CSV", "N2Pair", "N2SingletonObject", "N2Task", "NSURL+N2")
+RETIRED = ("N2CSV", "N2Pair", "N2SingletonObject", "N2Task", "NSURL+N2", "NSMutableDictionary+N2")
 
 
 class NitrogenCleanupTests(unittest.TestCase):

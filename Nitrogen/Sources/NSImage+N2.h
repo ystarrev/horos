@@ -50,6 +50,7 @@
 
 -(NSSize)sizeByScalingProportionallyToSize:(NSSize)targetSize;
 -(NSSize)sizeByScalingDownProportionallyToSize:(NSSize)targetSize;
+// Eager export bitmap: pixel dimensions round up, aspect fit with transparent padding.
 -(NSImage*)imageByScalingProportionallyToSize:(NSSize)targetSize;
 -(NSImage*)imageByScalingProportionallyToSizeUsingNSImage:(NSSize)targetSize;
 -(NSImage*)imageByScalingProportionallyUsingNSImage:(float)ratio;

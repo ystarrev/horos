@@ -37,11 +37,24 @@
 
 #import "NSImage+N2.h"
 #include <algorithm>
+#include <cmath>
 #import <Accelerate/Accelerate.h>
 #import "N2Operators.h"
 #import "NSColor+N2.h"
 #import "N2Debug.h"
 #import <QuartzCore/QuartzCore.h>
+#import <CoreImage/CIFilterBuiltins.h>
+
+static CIContext* N2ExportImageContext()
+{
+    static CIContext* context = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        // Reuse compiled kernels without retaining intermediates from every movie frame.
+        context = [[CIContext alloc] initWithOptions:@{kCIContextCacheIntermediates: @NO}];
+    });
+    return context;
+}
 
 @implementation N2Image
 @synthesize inchSize = _inchSize, portion = _portion;
@@ -342,111 +355,69 @@ end_size_y:
 
 - (NSImage*)imageByScalingProportionallyToSize:(NSSize)targetSize
 {
-	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-	NSImage* sourceImage = self;
-	NSImage* newImage = nil;
-	
-	@synchronized( [NSImage class])
-	{
-		if( [sourceImage isValid])
-		{
-			NSSize imageSize = [sourceImage size];
-			float width  = imageSize.width;
-			float height = imageSize.height;
-			
-			if( width <= 0 || height <= 0)
-				NSLog( @"***** imageByScalingProportionallyToSize : width == 0 || height == 0");
-			
-			float targetWidth  = targetSize.width;
-			float targetHeight = targetSize.height;
-			
-			if( targetWidth <= 0 || targetHeight <= 0)
-				NSLog( @"***** imageByScalingProportionallyToSize : targetWidth == 0 || targetHeight == 0");
-			
-			float scaleFactor  = 0.0;
+    if (!std::isfinite(targetSize.width) || !std::isfinite(targetSize.height) ||
+        targetSize.width <= 0 || targetSize.height <= 0)
+        return nil;
 
-			
-			NSPoint thumbnailPoint = NSZeroPoint;
-			
-			if( NSEqualSizes( imageSize, targetSize) == NO)
-			{
-                float scaledWidth  = targetWidth;
-                float scaledHeight = targetHeight;
-				float widthFactor  = targetWidth / width;
-				float heightFactor = targetHeight / height;
-				
-				if ( widthFactor < heightFactor )
-					scaleFactor = widthFactor;
-				else
-					scaleFactor = heightFactor;
-				
-				scaledWidth  = width  * scaleFactor;
-				scaledHeight = height * scaleFactor;
-				
-				if ( widthFactor < heightFactor )
-					thumbnailPoint.y = (targetHeight - scaledHeight) * 0.5;
-				
-				else if ( widthFactor > heightFactor )
-					thumbnailPoint.x = (targetWidth - scaledWidth) * 0.5;
-			}
-			
-			//***** QuartzCore
-			
-			//if( thumbnailPoint.x < 1 && thumbnailPoint.y < 1)
-			{
-				NSSize size = [sourceImage size];
-				
-				NSRect sourceRect = NSMakeRect(0, 0, size.width, size.height);
-				CGImageRef sourceCGImage = [sourceImage CGImageForProposedRect:&sourceRect context:nil hints:nil];
-				NSBitmapImageRep* rep = sourceCGImage ? [[NSBitmapImageRep alloc] initWithCGImage:sourceCGImage] : nil;
-				if (rep == nil)
-					return nil;
-				CIImage *bitmap = [[CIImage alloc] initWithBitmapImageRep: rep];
-				
-				CIFilter *scaleTransformFilter = [CIFilter filterWithName:@"CILanczosScaleTransform"];
-				
-				[scaleTransformFilter setDefaults];
-				[scaleTransformFilter setValue: bitmap forKey:@"inputImage"];
-				[scaleTransformFilter setValue:[NSNumber numberWithFloat: scaleFactor / [[NSScreen mainScreen] backingScaleFactor]] forKey:@"inputScale"];
-				
-				CIImage *outputCIImage = [scaleTransformFilter valueForKey:@"outputImage"];
-				
-				CGRect extent = [outputCIImage extent];
-				if (CGRectIsInfinite(extent))
-				{
-					NSLog( @"****** imageByScalingProportionallyToSize : OUTPUT IMAGE HAS INFINITE EXTENT");
-				}
-				else
-				{
-					NSRect thumbnailRect;
-					thumbnailRect.origin = thumbnailPoint;
-					thumbnailRect.size.width = extent.size.width;
-					thumbnailRect.size.height = extent.size.height;
-					newImage = [NSImage imageWithSize:targetSize flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
-						[[NSGraphicsContext currentContext] setImageInterpolation:NSImageInterpolationHigh];
-						[outputCIImage drawInRect:thumbnailRect
-										 fromRect:NSMakeRect(extent.origin.x, extent.origin.y, extent.size.width, extent.size.height)
-										operation:NSCompositingOperationCopy
-										 fraction:1.0];
-						return YES;
-					}];
-				}
-				
-				[rep release];
-				[bitmap release];
-			}
-		}
-	}
-	
-	NSImage *returnImage = nil;
-	
-	if( newImage)
-		returnImage = [[NSImage alloc] initWithData: [newImage TIFFRepresentation]];
-	
-	[pool release];
-	
-		
-	return [returnImage autorelease];
+    NSImage* result = nil;
+    @autoreleasepool {
+        CGImageRef sourceCGImage = nil;
+        CGImageRef outputCGImage = nil;
+        CGColorSpaceRef colorSpace = nil;
+        @try {
+            NSSize imageSize;
+            // Only snapshot acquisition needs the source-image lock, not GPU rendering.
+            @synchronized(self) {
+                if (!self.isValid) return nil;
+                imageSize = self.size;
+                if (!std::isfinite(imageSize.width) || !std::isfinite(imageSize.height) ||
+                    imageSize.width <= 0 || imageSize.height <= 0)
+                    return nil;
+                NSRect sourceRect = NSMakeRect(0, 0, imageSize.width, imageSize.height);
+                sourceCGImage = CGImageRetain([self CGImageForProposedRect:&sourceRect context:nil hints:nil]);
+            }
+            if (!sourceCGImage) return nil;
+
+            // Export dimensions are pixels, independent of the display's backing scale.
+            NSSize pixelSize = NSMakeSize(std::ceil(targetSize.width), std::ceil(targetSize.height));
+            CGFloat fit = std::min(pixelSize.width / imageSize.width, pixelSize.height / imageSize.height);
+            NSSize contentSize = NSMakeSize(imageSize.width * fit, imageSize.height * fit);
+            CGFloat scaleY = contentSize.height / CGImageGetHeight(sourceCGImage);
+            CGFloat scaleX = contentSize.width / CGImageGetWidth(sourceCGImage);
+            float scale = scaleY;
+            float aspectRatio = scaleX / scaleY;
+            if (!std::isfinite(scale) || !std::isfinite(aspectRatio) || scale <= 0 || aspectRatio <= 0)
+                return nil;
+
+            CIFilter<CILanczosScaleTransform>* filter = [CIFilter lanczosScaleTransformFilter];
+            filter.inputImage = [[CIImage imageWithCGImage:sourceCGImage] imageByClampingToExtent];
+            filter.scale = scale;
+            filter.aspectRatio = aspectRatio;
+            CGRect contentRect = CGRectMake(0, 0, contentSize.width, contentSize.height);
+            CIImage* content = [filter.outputImage imageByCroppingToRect:contentRect];
+            content = [content imageByApplyingTransform:CGAffineTransformMakeTranslation(
+                (pixelSize.width - contentSize.width) * 0.5, (pixelSize.height - contentSize.height) * 0.5)];
+            if (!content) return nil;
+
+            CGRect canvasRect = CGRectMake(0, 0, pixelSize.width, pixelSize.height);
+            CIImage* background = [[CIImage imageWithColor:CIColor.clearColor] imageByCroppingToRect:canvasRect];
+            CIImage* output = [content imageByCompositingOverImage:background];
+            CGColorSpaceRef sourceColorSpace = CGImageGetColorSpace(sourceCGImage);
+            colorSpace = sourceColorSpace && CGColorSpaceGetModel(sourceColorSpace) == kCGColorSpaceModelRGB
+                ? CGColorSpaceRetain(sourceColorSpace) : CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+            outputCGImage = [N2ExportImageContext() createCGImage:output fromRect:canvasRect
+                                                         format:kCIFormatRGBA8 colorSpace:colorSpace deferred:NO];
+            if (outputCGImage)
+                result = [[NSImage alloc] initWithCGImage:outputCGImage size:targetSize];
+        } @catch (NSException* exception) {
+            N2LogException(exception);
+        } @finally {
+            CGImageRelease(outputCGImage);
+            CGImageRelease(sourceCGImage);
+            CGColorSpaceRelease(colorSpace);
+        }
+    }
+    return [result autorelease];
 }
 
 @end

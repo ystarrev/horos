@@ -37,7 +37,6 @@
 
 #import "N2ManagedDatabase.h"
 #import <AppKit/AppKit.h>
-#import "NSMutableDictionary+N2.h"
 #import "N2Debug.h"
 #import "NSFileManager+N2.h"
 #import "NSException+N2.h"

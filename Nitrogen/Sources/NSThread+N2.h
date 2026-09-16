@@ -56,8 +56,6 @@ extern NSString* const NSThreadIsCancelledKey;
 -(void)enterOperationIgnoringLowerLevels;
 -(void)enterOperationWithRange:(CGFloat)rangeLoc :(CGFloat)rangeLen;
 -(void)exitOperation;
--(void)enterSubthreadWithRange:(CGFloat)rangeLoc :(CGFloat)rangeLen __deprecated;
--(void)exitSubthread __deprecated;
 
 extern NSString* const NSThreadSupportsCancelKey;
 -(BOOL)supportsCancel;
@@ -83,4 +81,3 @@ extern NSString* const NSThreadSubthreadsAwareProgressKey;
 -(CGFloat)subthreadsAwareProgress;
 
 @end
-

@@ -2631,9 +2631,9 @@ static BOOL initialized = NO;
 //		[[NSFileManager defaultManager] createDirectoryAtPath: @"/tmp/" attributes: nil];
 	
     
-    NSMutableArray *dbArray = [[[NSUserDefaults standardUserDefaults] arrayForKey: @"localDatabasePaths"] deepMutableCopy];
+    NSMutableArray *dbArray = [[[NSUserDefaults standardUserDefaults] arrayForKey: @"localDatabasePaths"] mutableCopy];
     NSMutableArray *toBeRemoved = [NSMutableArray array];
-    for( NSMutableDictionary *d in dbArray)
+    for( NSDictionary *d in dbArray)
 	{
 		if( [[d valueForKey:@"Path"] hasPrefix: @"/tmp/"] || [[d valueForKey:@"Path"] hasPrefix: @"/private/tmp/"] || [[d valueForKey:@"Path"] hasPrefix: @"/private/var/tmp/"])
 			[toBeRemoved addObject: d];

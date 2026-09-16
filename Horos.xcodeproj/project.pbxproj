@@ -529,8 +529,6 @@
 		AB10FB5C1129338A009EB238 /* NS(Attributed)String+Geometrics.m in Sources */ = {isa = PBXBuildFile; fileRef = AB10FB0D1129338A009EB238 /* NS(Attributed)String+Geometrics.m */; };
 		AB10FB5D1129338A009EB238 /* NSDictionary+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FB0E1129338A009EB238 /* NSDictionary+N2.h */; };
 		AB10FB5E1129338A009EB238 /* NSDictionary+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FB0F1129338A009EB238 /* NSDictionary+N2.mm */; };
-		AB10FB5F1129338A009EB238 /* NSMutableDictionary+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FB101129338A009EB238 /* NSMutableDictionary+N2.h */; };
-		AB10FB601129338A009EB238 /* NSMutableDictionary+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FB111129338A009EB238 /* NSMutableDictionary+N2.mm */; };
 		AB10FB611129338A009EB238 /* NSInvocation+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FB121129338A009EB238 /* NSInvocation+N2.h */; };
 		AB10FB621129338A009EB238 /* NSInvocation+N2.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB10FB131129338A009EB238 /* NSInvocation+N2.mm */; };
 		AB10FB651129338A009EB238 /* NSPanel+N2.h in Headers */ = {isa = PBXBuildFile; fileRef = AB10FB161129338A009EB238 /* NSPanel+N2.h */; };
@@ -1510,8 +1508,6 @@
 		AB10FB0D1129338A009EB238 /* NS(Attributed)String+Geometrics.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NS(Attributed)String+Geometrics.m"; sourceTree = "<group>"; };
 		AB10FB0E1129338A009EB238 /* NSDictionary+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSDictionary+N2.h"; sourceTree = "<group>"; };
 		AB10FB0F1129338A009EB238 /* NSDictionary+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = "NSDictionary+N2.mm"; sourceTree = "<group>"; };
-		AB10FB101129338A009EB238 /* NSMutableDictionary+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSMutableDictionary+N2.h"; sourceTree = "<group>"; };
-		AB10FB111129338A009EB238 /* NSMutableDictionary+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = "NSMutableDictionary+N2.mm"; sourceTree = "<group>"; };
 		AB10FB121129338A009EB238 /* NSInvocation+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSInvocation+N2.h"; sourceTree = "<group>"; };
 		AB10FB131129338A009EB238 /* NSInvocation+N2.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = "NSInvocation+N2.mm"; sourceTree = "<group>"; };
 		AB10FB161129338A009EB238 /* NSPanel+N2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSPanel+N2.h"; sourceTree = "<group>"; };
@@ -2562,8 +2558,6 @@
 				AB10FB0F1129338A009EB238 /* NSDictionary+N2.mm */,
 				AB10FB121129338A009EB238 /* NSInvocation+N2.h */,
 				AB10FB131129338A009EB238 /* NSInvocation+N2.mm */,
-				AB10FB101129338A009EB238 /* NSMutableDictionary+N2.h */,
-				AB10FB111129338A009EB238 /* NSMutableDictionary+N2.mm */,
 				59526E9C1281896F0016F6C0 /* NSMutableString+N2.h */,
 				59526E9D1281896F0016F6C0 /* NSMutableString+N2.mm */,
 				AB10FB001129338A009EB238 /* NSString+N2.h */,
@@ -3530,7 +3524,6 @@
 				AB10FB591129338A009EB238 /* NSButton+N2.h in Headers */,
 				AB10FB5B1129338A009EB238 /* NS(Attributed)String+Geometrics.h in Headers */,
 				AB10FB5D1129338A009EB238 /* NSDictionary+N2.h in Headers */,
-				AB10FB5F1129338A009EB238 /* NSMutableDictionary+N2.h in Headers */,
 				AB10FB611129338A009EB238 /* NSInvocation+N2.h in Headers */,
 				AB10FB651129338A009EB238 /* NSPanel+N2.h in Headers */,
 				AB10FB671129338A009EB238 /* NSView+N2.h in Headers */,
@@ -4518,7 +4511,6 @@
 				AB10FB5A1129338A009EB238 /* NSButton+N2.mm in Sources */,
 				AB10FB5C1129338A009EB238 /* NS(Attributed)String+Geometrics.m in Sources */,
 				AB10FB5E1129338A009EB238 /* NSDictionary+N2.mm in Sources */,
-				AB10FB601129338A009EB238 /* NSMutableDictionary+N2.mm in Sources */,
 				AB10FB621129338A009EB238 /* NSInvocation+N2.mm in Sources */,
 				AB10FB661129338A009EB238 /* NSPanel+N2.mm in Sources */,
 				AB10FB681129338A009EB238 /* NSView+N2.mm in Sources */,

@@ -1,0 +1,84 @@
+"""Guard obsolete build resource removal without building the application."""
+
+import re
+import subprocess
+import unittest
+
+from test_macos_baseline import ROOT, project_objects
+
+
+class RetiredBuildResourceTests(unittest.TestCase):
+    def test_unused_archives_and_resource_references_are_removed(self):
+        for name in ("PAGES", "Ming"):
+            self.assertFalse((ROOT / "Binaries" / f"{name}.zip").exists())
+        project = (ROOT / "Horos.xcodeproj/project.pbxproj").read_text()
+        self.assertNotIn("PAGES", project)
+        self.assertNotIn("Ming", project)
+        # Keep ignoring old unpacked directories on other existing checkouts.
+        ignored = (ROOT / ".gitignore").read_text()
+        self.assertIn("Binaries/PAGES/", ignored)
+        self.assertIn("Binaries/Ming/", ignored)
+
+    def test_unpack_script_only_prepares_the_retained_validator(self):
+        path = ROOT / "Horos/Scripts/Horos/Unzip.sh"
+        script = path.read_text()
+        self.assertEqual(re.findall(r"^unzip -uo (.+)$", script, re.M), ["dciodvfy.zip"])
+        self.assertNotRegex(script, r"PAGES|Ming|rm ")
+        self.assertIn('touch "$DERIVED_FILE_DIR/UnzipBinaries.stamp"', script)
+        result = subprocess.run(["/bin/sh", "-n", str(path)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_validator_stays_in_app_resources_and_metadata_action(self):
+        objects = project_objects("Horos.xcodeproj/project.pbxproj")
+        target = next(obj for obj in objects.values()
+                      if obj.get("isa") == "PBXNativeTarget" and obj.get("name") == "Horos")
+        resources = []
+        for key in target["buildPhases"]:
+            phase = objects[key]
+            if phase["isa"] == "PBXResourcesBuildPhase":
+                resources += [objects[objects[file]["fileRef"]].get("name") for file in phase["files"]]
+        self.assertEqual(resources.count("dciodvfy"), 1)
+        self.assertTrue((ROOT / "Binaries/dciodvfy.zip").is_file())
+        controller = (ROOT / "Horos/Sources/XMLController.m").read_text()
+        self.assertIn('stringByAppendingPathComponent:@"/dciodvfy"', controller)
+
+    def test_unused_pages_database_accessor_is_removed(self):
+        for filename in ("DicomDatabase.h", "DicomDatabase.mm"):
+            self.assertNotIn("pagesDirPath", (ROOT / "Horos/Sources" / filename).read_text())
+
+    def test_obsolete_options_and_their_callers_are_removed(self):
+        self.assertFalse((ROOT / "Horos/Sources/options.h").exists())
+        retired = re.compile(r"options\.h|\b(?:OPTIONS_H_INCLUDED|WITH_IMPORTANT_NOTICE|"
+                             r"WITH_OS_VALIDATION|WITH_RED_CAPTION|WITH_CODE_SIGNING|"
+                             r"displayImportantNotice)\b")
+        project = (ROOT / "Horos.xcodeproj/project.pbxproj").read_text()
+        self.assertNotRegex(project, retired)
+        for path in (ROOT / "Horos").rglob("*"):
+            if path.suffix in (".h", ".m", ".mm", ".swift", ".pch", ".xib"):
+                with self.subTest(path=str(path.relative_to(ROOT))):
+                    self.assertNotRegex(path.read_text(), retired)
+        controller = (ROOT / "Horos/Sources/AppController.m").read_text()
+        self.assertIn("#ifdef NDEBUG\n    PFMoveToApplicationsFolderIfNecessary();\n#endif", controller)
+
+    def test_active_other_sources_are_retained(self):
+        objects = project_objects("Horos.xcodeproj/project.pbxproj")
+        group = next(obj for obj in objects.values()
+                     if obj.get("isa") == "PBXGroup" and obj.get("name") == "Other Sources")
+        paths = {objects[key]["path"] for key in group["children"]}
+        self.assertEqual(paths, {"Horos/Sources/main.m", "Horos/Sources/url.h",
+                                 "cocoahttpserver/DDKeychain.h", "cocoahttpserver/DDKeychain.m"})
+        for path in paths:
+            self.assertTrue((ROOT / path).is_file(), path)
+
+        target = next(obj for obj in objects.values()
+                      if obj.get("isa") == "PBXNativeTarget" and obj.get("name") == "Horos")
+        sources = set()
+        for key in target["buildPhases"]:
+            phase = objects[key]
+            if phase["isa"] == "PBXSourcesBuildPhase":
+                sources.update(objects[objects[file]["fileRef"]]["path"] for file in phase["files"])
+        self.assertTrue({"Horos/Sources/main.m", "cocoahttpserver/DDKeychain.m"} <= sources)
+
+
+if __name__ == "__main__":
+    unittest.main()

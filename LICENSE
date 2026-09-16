@@ -37,28 +37,4 @@ Program:   OsiriX
     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
     PURPOSE.
 
-============================================================================
-
-This version of Horos is linked against the Grok JPEG 2000 library, for fast
-viewing of JPEG 2000 images.
-
-https://github.com/GrokImageCompression/grok
-
-The Grok JPEG 2000 library is licensed under the terms of the
-GNU Affero General Public License as follows
-
-*    Copyright (C) 2016 Grok Image Compression Inc.
-
-*    This program is free software: you can redistribute it and/or  modify
-*    it under the terms of the GNU Affero General Public License, version 3,
-*    as published by the Free Software Foundation.
-
-*    This program is distributed in the hope that it will be useful,
-*    but WITHOUT ANY WARRANTY; without even the implied warranty of
-*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*    GNU Affero General Public License for more details.
-*
-*    You should have received a copy of the GNU Affero General Public License
-*    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 */

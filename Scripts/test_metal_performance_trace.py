@@ -4,6 +4,7 @@ from pathlib import Path
 import unittest
 
 from test_macos_baseline import project_objects
+from test_metal4_scout import declaration
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -123,6 +124,63 @@ class MetalPerformanceTraceTests(unittest.TestCase):
         self.assertLess(submit.index("MetalPerformanceTrace.track(options, operation: operation"),
                         submit.index("renderQueue.commit([renderCommandBuffer], options: options)"))
         self.assertIn("since: startedAt, drawable: drawable", submit)
+
+    def test_skin_cpu_stage_timings_bracket_the_existing_work(self):
+        source = (SOURCES / "Metal3DVolumeRenderer.swift").read_text()
+        extract = declaration("private static func prepareSkinEnvelope(", source)
+        extract += declaration("private static func makeSkinDistanceMask(", source)
+        extract += declaration("private func ensureSkinMaskTexture(", source)
+        stages = (
+            ("foreground", "skin.foreground.cpu", "var foreground = [UInt8]", "foregroundVoxelCount += 1"),
+            ("envelopeForeground", "skin.envelopeForeground.cpu", "Self.skinEnvelopeForegroundMask(", "rejectHighDensity: isCT"),
+            ("envelope", "skin.envelope.cpu", "Self.externalAirReconstructedEnvelopeMask(", "exteriorAir: Self.invertedMask(fallbackEnvelope.mask)"),
+            ("exteriorSurface", "skin.exteriorSurface.cpu", "Self.exteriorForegroundSurfaceMask(", "Self.largestConnectedSurfaceComponentMask("),
+            ("vertexBuffer", "skin.vertexBuffer.cpu", "makeSkinSurfaceVertexBuffer(vertexFloatData:", "makeSkinSurfaceVertexBuffer(vertexFloatData:"),
+            ("distance", "skin.distanceMask.cpu", "var mask = Self.invertedMask(preparation.envelope)", "maximumDistanceMM: shellThicknessMM"),
+        )
+        for variable, label, first, last in stages:
+            with self.subTest(stage=label):
+                begin = f"let {variable}StartedAt = MetalPerformanceTrace.begin()"
+                end = f'MetalPerformanceTrace.end("{label}", since: {variable}StartedAt)'
+                self.assertLess(extract.index(begin), extract.index(first))
+                self.assertLessEqual(extract.index(first), extract.index(last))
+                self.assertLess(extract.index(last), extract.index(end))
+                self.assertEqual(extract.count(end), 1)
+
+    def test_skin_worker_timings_separate_cached_work_and_main_thread_request(self):
+        source = (SOURCES / "Metal3DVolumeRenderer.swift").read_text()
+        wrapper = declaration("private static func makeSkinShellMask(", source)
+        self.assertLess(wrapper.index("MetalPerformanceTrace.begin()"), wrapper.index("volumeData.withUnsafeBytes"))
+        for label in ("skin.shellWithSurface.total", "skin.shellMaskOnly.total", "skin.shellMaskCached.total"):
+            self.assertIn(label, declaration("defer {", wrapper))
+        self.assertNotIn("cpuVolumeData()", wrapper)
+        ensure = declaration("private func ensureSkinMaskTexture(", source)
+        self.assertLess(ensure.index("guard needsMask || buildSurface"), ensure.index("let requestStartedAt"))
+        self.assertLess(ensure.index("let requestStartedAt"), ensure.index("cpuVolumeData()"))
+        self.assertIn('MetalPerformanceTrace.end("skin.request.cpu", since: requestStartedAt)', ensure)
+        upload = declaration("if maskGeneration == self.skinMaskGeneration", ensure)
+        self.assertLess(upload.index("MetalPerformanceTrace.begin()"), upload.index("makeSkinMaskTexture(mask:"))
+        self.assertLess(upload.index("makeSkinMaskTexture(mask:"), upload.index('MetalPerformanceTrace.end("skin.maskTexture.cpu"'))
+
+    def test_surface_calls_measure_host_totals_even_on_failure_not_fake_gpu_time(self):
+        source = (SOURCES / "Metal3DVolumeRenderer.swift").read_text()
+        surface = declaration("private static func extractSkinSurface(", source)
+        for name, call, check in (
+            ("mesh", "Metal3DSurfaceExtractor.extractSkinSurface(", "guard let extractedSurface = extractedSurfaceResult"),
+            ("visibility", "Metal3DSurfaceExtractor.filterSurfaceVertexFloatData(", "guard let filteredSurfaceData = filteredSurfaceResult"),
+        ):
+            end = f'MetalPerformanceTrace.end("skin.{name}.total", since: {name}StartedAt)'
+            self.assertLess(surface.index(f"let {name}StartedAt = MetalPerformanceTrace.begin()"), surface.index(call))
+            self.assertLess(surface.index(call), surface.index(end))
+            self.assertLess(surface.index(end), surface.index(check))
+        self.assertNotRegex(surface, r"\.gpu\"|MetalPerformanceTrace.track|addFeedbackHandler|\.wait\(")
+
+    def test_world_point_conversion_timing_covers_early_returns_without_identifiers(self):
+        source = (SOURCES / "Metal3DVolumeRenderer.swift").read_text()
+        points = declaration("private func worldPositions(fromSurfaceVertexFloatData", source)
+        self.assertIn('MetalPerformanceTrace.end("surface.worldPoints.cpu", since: startedAt)', declaration("defer {", points))
+        self.assertLess(points.index("MetalPerformanceTrace.begin()"), points.index("guard vertexFloatData.count"))
+        self.assertNotIn("NSLog", points)
 
 
 if __name__ == "__main__":

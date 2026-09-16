@@ -70,10 +70,8 @@ fi
 args+=(-DOPENJPEG_LIBRARIES="$openjpeg_install/lib/libopenjp2.a")
 args+=(-DOPENJPEG_INCLUDE_DIRS="$openjpeg_include")
 
-# currently, GDCM 2.8.3 uses CharLS 1.1, using our CharLS 2.0.0 won't compile
-#args+=(-DGDCM_USE_SYSTEM_CHARLS=ON)
-#cfs+=( -framework CharLS -F"$TARGET_BUILD_DIR" )
-#cxxfs+=( -framework CharLS -F"$TARGET_BUILD_DIR" )
+# Keep JPEG-LS self-contained using GDCM's bundled codec.
+args+=(-DGDCM_USE_SYSTEM_CHARLS=OFF)
 
 args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
 args+=(-DCMAKE_OSX_ARCHITECTURES="$archs")

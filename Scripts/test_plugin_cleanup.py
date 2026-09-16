@@ -1,11 +1,9 @@
 """Check retired plugin scaffolding without building or opening patient data."""
 
-import os
 from pathlib import Path
 import plistlib
 import re
 import subprocess
-import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -39,37 +37,14 @@ class PluginCleanupTests(unittest.TestCase):
         names = [phase.get("name") for phase in phases]
         self.assertNotIn("Copy Horos Framework", names)
         self.assertNotIn("API", names)
-        self.assertLess(names.index("Remove Retired Frameworks"), names.index("CodeSigning"))
-        cleanup = phases[names.index("Remove Retired Frameworks")]
-        self.assertEqual(str(cleanup["alwaysOutOfDate"]), "1")
-        self.assertIn("RemoveRetiredFrameworks.sh", "\n".join(cleanup["shellScript"]))
 
-    def test_incremental_cleanup_only_removes_retired_frameworks(self):
-        with tempfile.TemporaryDirectory(prefix="horos plugin cleanup ") as directory:
-            products = Path(directory) / "Build Products"
-            relative = "Horos.app/Contents/Frameworks"
-            frameworks = products / relative
-            for name in RETIRED_FRAMEWORKS:
-                (frameworks / f"{name}.framework").mkdir(parents=True)
-            retained = [frameworks / "DCMTK.framework", frameworks / "libHorosDCMTK.dylib",
-                        products / "Horos.app/Contents/PlugIns/Viewer.prefPane"]
-            for path in retained:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.touch()
-            env = dict(os.environ, TARGET_BUILD_DIR=str(products), FRAMEWORKS_FOLDER_PATH=relative)
-            for _ in range(2):
-                subprocess.run(["/bin/sh", str(CLEANUP)], env=env, check=True)
-                for name in RETIRED_FRAMEWORKS:
-                    self.assertFalse((frameworks / f"{name}.framework").exists())
-                for path in retained:
-                    self.assertTrue(path.exists())
-
-            for missing in ("TARGET_BUILD_DIR", "FRAMEWORKS_FOLDER_PATH"):
-                invalid_env = dict(env, **{missing: ""})
-                result = subprocess.run(["/bin/sh", str(CLEANUP)], env=invalid_env,
-                                        capture_output=True, text=True)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertTrue(all(path.exists() for path in retained))
+    def test_transitional_framework_cleanup_is_removed(self):
+        self.assertFalse(CLEANUP.exists())
+        for obj in self.objects.values():
+            self.assertNotEqual(obj.get("name"), "Remove Retired Frameworks")
+        project = (ROOT / "Horos.xcodeproj/project.pbxproj").read_text()
+        self.assertNotIn("RemoveRetiredFrameworks.sh", project)
+        self.assertNotIn("59F69A4E1056328D008585F5", project)
 
     def test_unused_plugin_hooks_have_no_remaining_callers(self):
         retired = re.compile(r"\b(?:setRoiView|isLUT12Bit|LUT12toRGB|canDisplay12Bit|"

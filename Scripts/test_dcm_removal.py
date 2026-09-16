@@ -82,7 +82,7 @@ class DCMRemovalTests(DCMExtractionTests):
             configuration = self.project[configuration_id]
             flags = configuration["buildSettings"]["OTHER_LDFLAGS"]
             with self.subTest(configuration=configuration["name"]):
-                # Grok also installs libopenjp2.a, but with a different exported API.
+                # Keep codec selection independent of unrelated library search paths.
                 self.assertEqual(flags.count(
                     "$(CONFIGURATION_TEMP_DIR)/OpenJPEG.build/Install/lib/libopenjp2.a"), 1)
                 self.assertNotIn("-lopenjp2", flags)

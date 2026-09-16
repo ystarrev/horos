@@ -1,12 +1,7 @@
 #!/bin/sh
 
 cd "$SRCROOT/Binaries"
-unzip -uo PAGES.zip
 unzip -uo dciodvfy.zip
-unzip -uo Ming.zip
-
-cd "$SRCROOT/Binaries/PAGES"
-rm ._*
 
 mkdir -p "$DERIVED_FILE_DIR"
 touch "$DERIVED_FILE_DIR/UnzipBinaries.stamp"

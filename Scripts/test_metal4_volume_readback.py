@@ -39,7 +39,7 @@ class Metal4VolumeReadbackTests(unittest.TestCase):
                           "return cachedCPUVolumeData", "guard let volumeTexture", "MetalPerformanceTrace.begin()",
                           "deviceRef.makeBuffer(", "frame.allocator.reset()")
         apply = declaration("private func applyPreparedRenderVolume(")
-        self.assert_order(apply, "volumeTexture = prepared.volume", "cachedCPUVolumeData = nil", "ensureSkinMaskTexture(")
+        self.assert_order(apply, "volumeTexture = prepared.volume", "cachedCPUVolumeData = nil", "resumeSkinPreparationIfNeeded()")
 
     def test_float_volume_geometry_is_validated_before_allocating_or_copying(self):
         for check in ("volumeTexture.textureType == .type3D", "volumeTexture.pixelFormat == .r32Float",
@@ -113,7 +113,7 @@ class Metal4VolumeReadbackTests(unittest.TestCase):
                       "sourceSpacing: sourceVoxelSpacing", "float32VolumeData: data",
                       "sourceVoxelToVolumeVoxelMatrix: sourceVoxelToVolumeVoxelMatrix()"):
             self.assertIn(value, segmentation)
-        self.assertIn("guard let volumeData = cpuVolumeData()", declaration("private func makeSkinShellMask(includeSurface:"))
+        self.assertIn("guard let volumeData = cpuVolumeData()", declaration("private func ensureSkinMaskTexture("))
 
     @unittest.skipUnless(platform.system() == "Darwin" and shutil.which("xcrun"), "Requires the macOS Metal SDK")
     def test_actual_resource_owner_readback_and_data_handoff_typecheck(self):

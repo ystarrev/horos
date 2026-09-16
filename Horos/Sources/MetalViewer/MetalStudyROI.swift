@@ -1833,17 +1833,40 @@ private final class MetalStudyROIGPUSolver: @unchecked Sendable {
         fileprivate let probability: MTLBuffer
         fileprivate let fixed: MTLBuffer
         fileprivate let initial: MTLBuffer
+        fileprivate let phaseUniforms: MTLBuffer
+        fileprivate let commandBuffer: MTL4CommandBuffer
+        fileprivate let allocator: MTL4CommandAllocator
+        fileprivate let arguments: MTL4ArgumentTable
+        fileprivate let residency: MTLResidencySet
+        fileprivate let completion = DispatchSemaphore(value: 0)
+        fileprivate var feedback: MTL4CommitFeedback?
 
-        fileprivate init(
-            count: Int,
-            probability: MTLBuffer,
-            fixed: MTLBuffer,
-            initial: MTLBuffer
-        ) {
+        // ROIState.lock covers uploads, submission, completion and CPU readback.
+        // Different ROIs never share this mutable encoding state.
+        fileprivate init?(count: Int, device: MTLDevice) {
+            let byteCount = count * MemoryLayout<Float>.stride
+            let descriptor = MTL4ArgumentTableDescriptor()
+            descriptor.maxBufferBindCount = 7
+            descriptor.initializeBindings = true
+            guard let probability = device.makeBuffer(length: byteCount, options: .storageModeShared),
+                  let fixed = device.makeBuffer(length: byteCount, options: .storageModeShared),
+                  let initial = device.makeBuffer(length: byteCount, options: .storageModeShared),
+                  let phaseUniforms = device.makeBuffer(length: 512, options: .storageModeShared),
+                  let commandBuffer = device.makeCommandBuffer(),
+                  let allocator = device.makeCommandAllocator(),
+                  let arguments = try? device.makeArgumentTable(descriptor: descriptor),
+                  let residency = try? device.makeResidencySet(descriptor: MTLResidencySetDescriptor()) else {
+                return nil
+            }
             self.count = count
             self.probability = probability
             self.fixed = fixed
             self.initial = initial
+            self.phaseUniforms = phaseUniforms
+            self.commandBuffer = commandBuffer
+            self.allocator = allocator
+            self.arguments = arguments
+            self.residency = residency
         }
     }
 
@@ -1859,12 +1882,12 @@ private final class MetalStudyROIGPUSolver: @unchecked Sendable {
     static let shared: MetalStudyROIGPUSolver? = MetalStudyROIGPUSolver()
 
     private let device: MTLDevice
-    private let commandQueue: MTLCommandQueue
+    private let commandQueue: MTL4CommandQueue
     private let pipeline: MTLComputePipelineState
 
     private init?() {
         guard let device = MTLCreateSystemDefaultDevice(),
-              let commandQueue = device.makeCommandQueue(),
+              let commandQueue = device.makeMTL4CommandQueue(),
               let pipelines = try? MetalPipelineCache.shared(for: device),
               let pipeline = try? pipelines.computePipeline(function: "metalStudyROIRedBlackRelaxation") else {
             return nil
@@ -1903,25 +1926,7 @@ private final class MetalStudyROIGPUSolver: @unchecked Sendable {
 
     func makeWorkspace(count: Int) -> Workspace? {
         guard count > 0 else { return nil }
-        let byteCount = count * MemoryLayout<Float>.stride
-        guard let probability = device.makeBuffer(
-            length: byteCount,
-            options: .storageModeShared
-        ),
-              let fixed = device.makeBuffer(
-                length: byteCount,
-                options: .storageModeShared
-              ),
-              let initial = device.makeBuffer(
-                length: byteCount,
-                options: .storageModeShared
-              ) else { return nil }
-        return Workspace(
-            count: count,
-            probability: probability,
-            fixed: fixed,
-            initial: initial
-        )
+        return Workspace(count: count, device: device)
     }
 
     private func copy(_ values: [Float], to buffer: MTLBuffer) {
@@ -1948,6 +1953,8 @@ private final class MetalStudyROIGPUSolver: @unchecked Sendable {
         workspace: Workspace,
         sweepCount: Int
     ) -> Bool {
+        precondition(!Thread.isMainThread)
+        let startedAt = MetalPerformanceTrace.begin()
         let count = dimensions.voxelCount
         guard count > 0,
               fixedValues.count == count,
@@ -1957,7 +1964,16 @@ private final class MetalStudyROIGPUSolver: @unchecked Sendable {
            initialValues?.count != count {
             return false
         }
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return false }
+        let commandBuffer = workspace.commandBuffer
+        let arguments = workspace.arguments
+        workspace.allocator.reset()
+        workspace.feedback = nil
+        defer {
+            workspace.residency.removeAllAllocations()
+            workspace.residency.commit()
+            workspace.feedback = nil
+            withExtendedLifetime((self, workspace, edgeBuffers)) {}
+        }
 
         // The workspace belongs to the prepared image/ROI pair. Reusing these
         // shared buffers removes three full-volume Metal allocations from every
@@ -1989,34 +2005,63 @@ private final class MetalStudyROIGPUSolver: @unchecked Sendable {
             phase: 0
         )
 
-        guard let encoder = commandBuffer.makeComputeCommandEncoder() else { return false }
+        // Both phases execute after encoding finishes. Give each immutable,
+        // aligned storage so updating the binding cannot overwrite phase zero.
+        precondition(MemoryLayout<Uniforms>.stride <= 256)
+        for phase in UInt32(0)...UInt32(1) {
+            uniforms.phase = phase
+            workspace.phaseUniforms.contents().advanced(by: Int(phase) * 256)
+                .storeBytes(of: uniforms, as: Uniforms.self)
+        }
+        let buffers = [workspace.probability, workspace.fixed, workspace.initial,
+                       edgeBuffers.x, edgeBuffers.y, edgeBuffers.z, workspace.phaseUniforms]
+        for (index, buffer) in buffers.enumerated() {
+            workspace.residency.addAllocation(buffer)
+            arguments.setAddress(buffer.gpuAddress, index: index)
+        }
+        commandBuffer.beginCommandBuffer(allocator: workspace.allocator)
+        guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            commandBuffer.endCommandBuffer()
+            return false
+        }
+        encoder.label = "roi.refinement"
         encoder.setComputePipelineState(pipeline)
-        encoder.setBuffer(workspace.probability, offset: 0, index: 0)
-        encoder.setBuffer(workspace.fixed, offset: 0, index: 1)
-        encoder.setBuffer(workspace.initial, offset: 0, index: 2)
-        encoder.setBuffer(edgeBuffers.x, offset: 0, index: 3)
-        encoder.setBuffer(edgeBuffers.y, offset: 0, index: 4)
-        encoder.setBuffer(edgeBuffers.z, offset: 0, index: 5)
+        encoder.setArgumentTable(arguments)
 
         let sweepCount = max(sweepCount, 1)
         for sweep in 0..<sweepCount {
             for phase in UInt32(0)...UInt32(1) {
-                uniforms.phase = phase
-                encoder.setBytes(
-                    &uniforms,
-                    length: MemoryLayout<Uniforms>.stride,
-                    index: 6
-                )
-                encoder.dispatchThreads(threads, threadsPerThreadgroup: threadsPerThreadgroup)
+                arguments.setAddress(workspace.phaseUniforms.gpuAddress + UInt64(phase) * 256, index: 6)
+                encoder.dispatchThreads(threadsPerGrid: threads, threadsPerThreadgroup: threadsPerThreadgroup)
                 if sweep + 1 < sweepCount || phase == 0 {
-                    encoder.memoryBarrier(scope: .buffers)
+                    encoder.barrier(afterEncoderStages: .dispatch, beforeEncoderStages: .dispatch,
+                                    visibilityOptions: .device)
                 }
             }
         }
         encoder.endEncoding()
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        return commandBuffer.status == .completed
+        workspace.residency.commit()
+        commandBuffer.useResidencySet(workspace.residency)
+        commandBuffer.endCommandBuffer()
+        // Feedback handlers are consumed at commit, so options must be fresh
+        // even though the command buffer, allocator and semaphore are reused.
+        let options = MTL4CommitOptions()
+        options.addFeedbackHandler { [workspace] feedback in
+            workspace.feedback = feedback
+            workspace.completion.signal()
+        }
+        let submittedAt = MetalPerformanceTrace.begin()
+        commandQueue.commit([commandBuffer], options: options)
+        let waitStartedAt = MetalPerformanceTrace.begin()
+        workspace.completion.wait()
+        guard let feedback = workspace.feedback else { return false }
+        MetalPerformanceTrace.completed(feedback, operation: "roi.refinement", since: startedAt,
+                                        submittedAt: submittedAt, waitStartedAt: waitStartedAt)
+        if let error = feedback.error {
+            NSLog("Metal 4 ROI refinement failed: %@", error.localizedDescription)
+            return false
+        }
+        return true
     }
 
     func quantizedProbabilities(in workspace: Workspace) -> ([UInt8], Int) {

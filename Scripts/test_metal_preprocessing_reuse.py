@@ -123,7 +123,7 @@ class MetalPreprocessingReuseTests(unittest.TestCase):
                            "cachedCPUVolumeData = nil"):
             self.assertIn(assignment, apply)
         self.assertIn("applyWLPreset(named: selectedWLPresetName)", apply)
-        self.assertIn("ensureSkinMaskTexture(includeSurface: showSkinSurface)", apply)
+        self.assertIn("resumeSkinPreparationIfNeeded()", apply)
         self.assertIn("startNextSurfaceCursorPickIfNeeded()", apply)
         self.assertIn("contentDidChange?()", apply)
         for viewer_state in ("skinMask", "ROI", "rotation", "selectedWLPresetName", "opacityRangeTexture"):

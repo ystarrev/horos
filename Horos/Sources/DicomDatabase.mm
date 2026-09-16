@@ -1090,10 +1090,6 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
     return [[self.dataBaseDirPath stringByAppendingPathComponent:@"REPORTS"] stringByResolvingSymlinksAndAliases];
 }
 
--(NSString*)pagesDirPath {
-    return [[self.dataBaseDirPath stringByAppendingPathComponent:@"PAGES"] stringByResolvingSymlinksAndAliases];
-}
-
 -(NSString*)roisDirPath {
     return [[self.dataBaseDirPath stringByAppendingPathComponent:@"ROIs"] stringByResolvingSymlinksAndAliases];
 }

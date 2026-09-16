@@ -37,7 +37,6 @@
 
 #include <stdio.h>
 
-#include "options.h"
 #include "url.h"
 #import "DCMTransferSyntax.h"
 

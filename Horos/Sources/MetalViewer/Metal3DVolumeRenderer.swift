@@ -542,6 +542,13 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     private var skinSurfaceVertexCount = 0
     private var skinSurfaceVertexFloatData: Data?
     private var skinSurfaceWorldPoints = [SIMD3<Float>]()
+    private var skinEnvelopePreparation: SkinEnvelopePreparation?
+    private var skinWorkCancellation: SkinWorkCancellation?
+    private var skinWorkInFlight = false
+    private var skinWorkStopped = false
+    private var skinVolumeGeneration: UInt64 = 0
+    private var skinMaskGeneration: UInt64 = 0
+    private var pendingTrajectoryCompletion: ((String?) -> Void)?
     private var tumourSeedSphereVertexBuffer: MTLBuffer?
     private var tumourSeedSphereVertexCount = 0
     private var tumourSeeds = [MetalViewerTumourSeed]()
@@ -1961,16 +1968,16 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     func setSkinClipDepthMM(_ depthMM: Float) {
+        precondition(Thread.isMainThread)
         let clampedDepth = min(max(depthMM, 0), 20)
         guard abs(currentSkinClipDepthMM - clampedDepth) > 0.01 else { return }
 
         currentSkinClipDepthMM = clampedDepth
         UserDefaults.standard.set(clampedDepth, forKey: Self.skinClipDepthPreferenceKey)
+        // Removal depth changes the mask, not the image-derived mesh or its world points.
         skinMaskTexture = nil
-        skinSurfaceVertexBuffer = nil
-        skinSurfaceVertexCount = 0
-        skinSurfaceVertexFloatData = nil
-        skinSurfaceWorldPoints = []
+        skinMaskGeneration &+= 1
+        pendingTrajectoryCompletion = nil
         surgicalTrajectory = nil
         trajectoryHandleHovered = false
         suppressProjectedTrajectoryOutline = false
@@ -2110,6 +2117,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
 
     @discardableResult
     func setTumorSegmentationLabelmap(_ labelmap: Data) -> Metal3DTumorSegmentationStatistics {
+        pendingTrajectoryCompletion = nil
         let expectedVoxelCount = max(volumeDimensions.x * volumeDimensions.y * volumeDimensions.z, 0)
         guard expectedVoxelCount > 0, labelmap.count == expectedVoxelCount else {
             NSLog(
@@ -2210,6 +2218,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     func clearTumorSegmentation() {
+        pendingTrajectoryCompletion = nil
         tumorSurfaces = []
         tumorLabelFilter = nil
         tumorCentroidWorldPosition = nil
@@ -2219,12 +2228,31 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         suppressProjectedTrajectoryOutline = false
     }
 
-    func showInitialSurgicalTrajectory() -> String? {
+    func showInitialSurgicalTrajectory(completion: @escaping (String?) -> Void) {
+        precondition(Thread.isMainThread)
+        guard skinWorkStopped == false else { return }
+        guard tumorCentroidWorldPosition != nil else {
+            completion(NSLocalizedString("No enhancing tumour label is available for trajectory planning.", comment: ""))
+            return
+        }
+        pendingTrajectoryCompletion = completion
+        ensureSkinMaskTexture(includeSurface: true, includeSurfacePoints: true)
+        finishPendingSurgicalTrajectory()
+    }
+
+    private func finishPendingSurgicalTrajectory() {
+        guard let completion = pendingTrajectoryCompletion else { return }
+        if skinSurfaceWorldPoints.isEmpty && (skinWorkInFlight || volumeTexture == nil) { return }
+        pendingTrajectoryCompletion = nil
+        completion(makeInitialSurgicalTrajectory())
+        contentDidChange?()
+    }
+
+    private func makeInitialSurgicalTrajectory() -> String? {
         guard let tumorCentroidWorldPosition else {
             return NSLocalizedString("No enhancing tumour label is available for trajectory planning.", comment: "")
         }
 
-        ensureSkinMaskTexture(includeSurface: true, includeSurfacePoints: true)
         guard skinSurfaceWorldPoints.isEmpty == false else {
             return NSLocalizedString("The outer skin surface is not available yet.", comment: "")
         }
@@ -3177,6 +3205,9 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         _ prepared: Metal3DPreparedRenderCache.Entry,
         sourceEntry: MetalPreparedVolumeCache.Entry
     ) {
+        precondition(Thread.isMainThread)
+        guard skinWorkStopped == false else { return }
+        invalidateSkinPreparation()
         volumeTexture = prepared.volume
         gradientTexture = prepared.gradient
         brickMinMaxTexture = prepared.brickMinMax
@@ -3188,9 +3219,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         }
         histogramModel = prepared.histogram
         cachedCPUVolumeData = nil
-        if showSkin == false || showSkinSurface {
-            ensureSkinMaskTexture(includeSurface: showSkinSurface)
-        }
+        resumeSkinPreparationIfNeeded()
         startNextSurfaceCursorPickIfNeeded()
         contentDidChange?()
     }
@@ -3206,15 +3235,78 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         )
     }
 
+    private struct SkinEnvelopePreparation {
+        let threshold: Float
+        let envelope: [UInt8]
+        let exteriorSurface: [UInt8]
+    }
+
+    private final class SkinWorkCancellation {
+        private let lock = NSLock()
+        private var cancelled = false
+
+        var isCancelled: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return cancelled
+        }
+
+        func cancel() {
+            lock.lock()
+            cancelled = true
+            lock.unlock()
+        }
+    }
+
     private struct SkinShellExtractionResult {
-        let mask: [UInt8]
+        let preparation: SkinEnvelopePreparation
+        let mask: [UInt8]?
         let surfaceVertexFloatData: Data?
-        let surfaceVertexBuffer: MTLBuffer?
-        let surfaceVertexCount: Int
+    }
+
+    deinit {
+        skinWorkCancellation?.cancel()
+    }
+
+    func stopSkinPreparation() {
+        precondition(Thread.isMainThread)
+        skinWorkStopped = true
+        pendingTrajectoryCompletion = nil
+        invalidateSkinPreparation()
+        cachedCPUVolumeData = nil
+    }
+
+    private func invalidateSkinPreparation() {
+        skinVolumeGeneration &+= 1
+        skinMaskGeneration &+= 1
+        skinWorkCancellation?.cancel()
+        skinEnvelopePreparation = nil
+        skinMaskTexture = nil
+        skinSurfaceVertexBuffer = nil
+        skinSurfaceVertexCount = 0
+        skinSurfaceVertexFloatData = nil
+        skinSurfaceWorldPoints = []
+        skinMaskExtractionAttempted = false
+        skinSurfaceExtractionAttempted = false
+        surgicalTrajectory = nil
+        trajectoryHandleHovered = false
+        suppressProjectedTrajectoryOutline = false
+    }
+
+    private func resumeSkinPreparationIfNeeded() {
+        let needsTrajectory = pendingTrajectoryCompletion != nil
+        if showSkin == false || showSkinSurface || needsTrajectory {
+            ensureSkinMaskTexture(
+                includeSurface: showSkinSurface || needsTrajectory,
+                includeSurfacePoints: needsTrajectory
+            )
+        }
+        finishPendingSurgicalTrajectory()
     }
 
     private func ensureSkinMaskTexture(includeSurface: Bool = false, includeSurfacePoints: Bool = false) {
-        guard volumeTexture != nil else { return }
+        precondition(Thread.isMainThread)
+        guard skinWorkStopped == false, volumeTexture != nil, skinWorkInFlight == false else { return }
         let hasSurface = skinSurfaceVertexBuffer != nil &&
             skinSurfaceVertexCount > 0 &&
             skinSurfaceVertexFloatData != nil
@@ -3223,63 +3315,130 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let needsSurfacePoints = includeSurfacePoints && skinSurfaceWorldPoints.isEmpty
         let buildSurface = needsSurface ||
             (needsSurfacePoints && skinSurfaceVertexFloatData == nil && skinSurfaceExtractionAttempted == false)
-        guard needsMask || buildSurface || (needsSurfacePoints && skinSurfaceVertexFloatData != nil) else { return }
-
-        if buildSurface == false,
-           needsMask == false,
-           needsSurfacePoints,
-           let vertexFloatData = skinSurfaceVertexFloatData {
+        if needsSurfacePoints, let vertexFloatData = skinSurfaceVertexFloatData {
             skinSurfaceWorldPoints = worldPositions(fromSurfaceVertexFloatData: vertexFloatData)
-            return
         }
+        guard needsMask || buildSurface else { return }
+        let requestStartedAt = MetalPerformanceTrace.begin()
+        defer { MetalPerformanceTrace.end("skin.request.cpu", since: requestStartedAt) }
 
-        if needsMask {
-            skinMaskExtractionAttempted = true
-        }
-        if buildSurface {
-            skinSurfaceExtractionAttempted = true
-        }
+        if needsMask { skinMaskExtractionAttempted = true }
+        if buildSurface { skinSurfaceExtractionAttempted = true }
+        // Snapshot UI-owned state before dispatch. Workers never access DCMPix or the renderer.
+        guard let volumeData = cpuVolumeData() else { return }
+        let dimensions = volumeDimensions
+        let spacing = voxelSpacing
+        let thresholdResult = skinForegroundThreshold()
+        let isCT = Self.isCTVolume(pixList)
+        let depth = skinShellThicknessMM()
+        let volumeGeneration = skinVolumeGeneration
+        let maskGeneration = skinMaskGeneration
+        let cachedPreparation = skinEnvelopePreparation?.threshold == thresholdResult.threshold
+            ? skinEnvelopePreparation : nil
+        let cancellation = SkinWorkCancellation()
+        skinWorkCancellation = cancellation
+        skinWorkInFlight = true
 
-        guard let result = makeSkinShellMask(includeSurface: buildSurface) else {
-            return
-        }
-
-        if skinMaskTexture == nil {
-            skinMaskTexture = makeSkinMaskTexture(mask: result.mask)
-        }
-        if buildSurface {
-            skinSurfaceVertexBuffer = result.surfaceVertexBuffer
-            skinSurfaceVertexCount = result.surfaceVertexCount
-            skinSurfaceVertexFloatData = result.surfaceVertexFloatData
-        }
-        if needsSurfacePoints,
-           skinSurfaceWorldPoints.isEmpty,
-           let vertexFloatData = skinSurfaceVertexFloatData {
-            skinSurfaceWorldPoints = worldPositions(fromSurfaceVertexFloatData: vertexFloatData)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = autoreleasepool {
+                Self.makeSkinShellMask(
+                    volumeData: volumeData, volumeDimensions: dimensions, voxelSpacing: spacing,
+                    thresholdResult: thresholdResult, isCT: isCT, shellThicknessMM: depth,
+                    cachedPreparation: cachedPreparation, includeMask: needsMask,
+                    includeSurface: buildSurface, cancellation: cancellation
+                )
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.skinWorkInFlight = false
+                self.skinWorkCancellation = nil
+                guard self.skinWorkStopped == false else { return }
+                if volumeGeneration == self.skinVolumeGeneration, let result {
+                    // Keep one bounded envelope, not one copy for every removal depth.
+                    if result.preparation.envelope.count <= MetalViewerCachePolicy.renderVolumeCacheBytes / 2 {
+                        self.skinEnvelopePreparation = result.preparation
+                    }
+                    if maskGeneration == self.skinMaskGeneration, let mask = result.mask {
+                        let uploadStartedAt = MetalPerformanceTrace.begin()
+                        self.skinMaskTexture = self.makeSkinMaskTexture(mask: mask)
+                        MetalPerformanceTrace.end("skin.maskTexture.cpu", since: uploadStartedAt)
+                    }
+                    // A depth change cannot invalidate the image-derived surface.
+                    if buildSurface, let vertexFloatData = result.surfaceVertexFloatData {
+                        let vertexBufferStartedAt = MetalPerformanceTrace.begin()
+                        let surface = self.makeSkinSurfaceVertexBuffer(vertexFloatData: vertexFloatData)
+                        MetalPerformanceTrace.end("skin.vertexBuffer.cpu", since: vertexBufferStartedAt)
+                        self.skinSurfaceVertexBuffer = surface?.buffer
+                        self.skinSurfaceVertexCount = surface?.count ?? 0
+                        self.skinSurfaceVertexFloatData = vertexFloatData
+                    }
+                }
+                // Only the latest settings are scheduled after this job; never queue slider history.
+                self.resumeSkinPreparationIfNeeded()
+                self.contentDidChange?()
+            }
         }
     }
 
-    private func makeSkinShellMask(includeSurface: Bool) -> SkinShellExtractionResult? {
-        guard let volumeData = cpuVolumeData() else { return nil }
-        return volumeData.withUnsafeBytes { rawBuffer -> SkinShellExtractionResult? in
-            let values = rawBuffer.bindMemory(to: Float.self)
-            return makeSkinShellMask(
-                values: values,
-                volumeData: volumeData,
-                includeSurface: includeSurface
+    private static func makeSkinShellMask(
+        volumeData: Data,
+        volumeDimensions: SIMD3<Int>,
+        voxelSpacing: SIMD3<Float>,
+        thresholdResult: (threshold: Float, method: String),
+        isCT: Bool,
+        shellThicknessMM: Float,
+        cachedPreparation: SkinEnvelopePreparation?,
+        includeMask: Bool,
+        includeSurface: Bool,
+        cancellation: SkinWorkCancellation
+    ) -> SkinShellExtractionResult? {
+        let startedAt = MetalPerformanceTrace.begin()
+        defer {
+            MetalPerformanceTrace.end(
+                includeSurface ? "skin.shellWithSurface.total" :
+                    (cachedPreparation == nil ? "skin.shellMaskOnly.total" : "skin.shellMaskCached.total"),
+                since: startedAt
             )
         }
+        guard cancellation.isCancelled == false else { return nil }
+        let preparation = cachedPreparation ?? volumeData.withUnsafeBytes { rawBuffer in
+            prepareSkinEnvelope(
+                values: rawBuffer.bindMemory(to: Float.self),
+                volumeDimensions: volumeDimensions, voxelSpacing: voxelSpacing,
+                thresholdResult: thresholdResult, isCT: isCT, cancellation: cancellation
+            )
+        }
+        guard let preparation, cancellation.isCancelled == false else { return nil }
+        var surfaceVertexFloatData: Data?
+        if includeSurface {
+            surfaceVertexFloatData = extractSkinSurface(
+                volumeData: volumeData, volumeDimensions: volumeDimensions,
+                voxelSpacing: voxelSpacing, thresholdResult: thresholdResult,
+                cancellation: cancellation
+            )
+        }
+        guard cancellation.isCancelled == false else { return nil }
+        let mask = includeMask ? makeSkinDistanceMask(
+            preparation: preparation, volumeDimensions: volumeDimensions,
+            voxelSpacing: voxelSpacing, shellThicknessMM: shellThicknessMM
+        ) : nil
+        return SkinShellExtractionResult(
+            preparation: preparation, mask: mask, surfaceVertexFloatData: surfaceVertexFloatData
+        )
     }
 
-    private func makeSkinShellMask(
+    private static func prepareSkinEnvelope(
         values: UnsafeBufferPointer<Float>,
-        volumeData: Data,
-        includeSurface: Bool
-    ) -> SkinShellExtractionResult? {
+        volumeDimensions: SIMD3<Int>,
+        voxelSpacing: SIMD3<Float>,
+        thresholdResult: (threshold: Float, method: String),
+        isCT: Bool,
+        cancellation: SkinWorkCancellation
+    ) -> SkinEnvelopePreparation? {
         let voxelCount = values.count
         guard voxelCount > 0 else { return nil }
 
-        let thresholdResult = skinForegroundThreshold()
+        let foregroundStartedAt = MetalPerformanceTrace.begin()
         var foreground = [UInt8](repeating: 0, count: voxelCount)
         var foregroundVoxelCount = 0
         for index in values.indices {
@@ -3288,6 +3447,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             foreground[index] = 1
             foregroundVoxelCount += 1
         }
+        MetalPerformanceTrace.end("skin.foreground.cpu", since: foregroundStartedAt)
 
         let foregroundFraction = Float(foregroundVoxelCount) / Float(max(voxelCount, 1))
         guard foregroundFraction > 0.01, foregroundFraction < 0.98 else {
@@ -3299,13 +3459,13 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return nil
         }
 
-        let isCT = Self.isCTVolume(pixList)
-        let shellThicknessMM = skinShellThicknessMM()
+        let envelopeForegroundStartedAt = MetalPerformanceTrace.begin()
         let envelopeForeground = Self.skinEnvelopeForegroundMask(
             foreground: foreground,
             values: values,
             rejectHighDensity: isCT
         )
+        MetalPerformanceTrace.end("skin.envelopeForeground.cpu", since: envelopeForegroundStartedAt)
         guard envelopeForeground.count > 0 else {
             NSLog(
                 "Metal3DVolumeRenderer skinExtraction found no envelope foreground threshold %.3f",
@@ -3314,6 +3474,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return nil
         }
 
+        guard cancellation.isCancelled == false else { return nil }
+        let envelopeStartedAt = MetalPerformanceTrace.begin()
         let envelopeRadiusMM = Self.skinExternalAirProbeRadiusMM(isCT: isCT)
         var envelope = Self.externalAirReconstructedEnvelopeMask(
             foreground: envelopeForeground.mask,
@@ -3332,6 +3494,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 exteriorAir: Self.invertedMask(fallbackEnvelope.mask)
             )
         }
+        MetalPerformanceTrace.end("skin.envelope.cpu", since: envelopeStartedAt)
         let envelopeFraction = Float(envelope.count) / Float(max(voxelCount, 1))
         guard envelopeFraction > 0.01, envelopeFraction < 0.995 else {
             NSLog(
@@ -3342,6 +3505,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             return nil
         }
 
+        guard cancellation.isCancelled == false else { return nil }
+        let exteriorSurfaceStartedAt = MetalPerformanceTrace.begin()
         let exteriorForegroundSurface = Self.exteriorForegroundSurfaceMask(
             foreground: envelopeForeground.mask,
             exteriorAirMask: envelope.exteriorAir,
@@ -3355,76 +3520,91 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             uncappedExteriorSurface,
             dimensions: volumeDimensions
         )
-        var surfaceVertexBuffer: MTLBuffer?
-        var surfaceVertexCount = 0
-        var surfaceVertexFloatData: Data?
+        MetalPerformanceTrace.end("skin.exteriorSurface.cpu", since: exteriorSurfaceStartedAt)
+        return SkinEnvelopePreparation(
+            threshold: thresholdResult.threshold, envelope: envelope.mask, exteriorSurface: exteriorSurface
+        )
+    }
 
-        if includeSurface {
-            // Contour the actual image intensities, then let the rotating visibility pass remove
-            // internal cut-surface clutter without flattening reachable facial detail.
-            let extractedSurfaceResult = Metal3DSurfaceExtractor.extractSkinSurface(
-                fromVolume: volumeData,
-                width: volumeDimensions.x,
-                height: volumeDimensions.y,
-                depth: volumeDimensions.z,
-                spacingX: voxelSpacing.x,
-                spacingY: voxelSpacing.y,
-                spacingZ: voxelSpacing.z,
-                threshold: thresholdResult.threshold,
-                openMinimumZCap: true
+    private static func extractSkinSurface(
+        volumeData: Data,
+        volumeDimensions: SIMD3<Int>,
+        voxelSpacing: SIMD3<Float>,
+        thresholdResult: (threshold: Float, method: String),
+        cancellation: SkinWorkCancellation
+    ) -> Data? {
+        let voxelCount = volumeData.count / MemoryLayout<Float>.stride
+        // Contour the actual image intensities, then let the rotating visibility pass remove
+        // internal cut-surface clutter without flattening reachable facial detail.
+        let meshStartedAt = MetalPerformanceTrace.begin()
+        let extractedSurfaceResult = Metal3DSurfaceExtractor.extractSkinSurface(
+            fromVolume: volumeData,
+            width: volumeDimensions.x,
+            height: volumeDimensions.y,
+            depth: volumeDimensions.z,
+            spacingX: voxelSpacing.x,
+            spacingY: voxelSpacing.y,
+            spacingZ: voxelSpacing.z,
+            threshold: thresholdResult.threshold,
+            openMinimumZCap: true
+        )
+        MetalPerformanceTrace.end("skin.mesh.total", since: meshStartedAt)
+        guard let extractedSurface = extractedSurfaceResult else {
+            NSLog(
+                "Metal3DVolumeRenderer skinExtraction produced no outer surface threshold %.3f",
+                Double(thresholdResult.threshold)
             )
-            guard let extractedSurface = extractedSurfaceResult else {
-                NSLog(
-                    "Metal3DVolumeRenderer skinExtraction produced no outer surface threshold %.3f",
-                    Double(thresholdResult.threshold)
-                )
-                return nil
-            }
-
-            guard extractedSurface.surfaceVoxelMask.count == voxelCount else {
-                NSLog(
-                    "Metal3DVolumeRenderer skinExtraction surface mask size mismatch %ld != %ld",
-                    extractedSurface.surfaceVoxelMask.count,
-                    voxelCount
-                )
-                return nil
-            }
-
-            guard let filteredSurfaceData = Metal3DSurfaceExtractor.filterSurfaceVertexFloatData(
-                byRotatingVisibility: extractedSurface.vertexFloatData,
-                spacingX: voxelSpacing.x,
-                spacingY: voxelSpacing.y,
-                spacingZ: voxelSpacing.z,
-                vertexCount: nil,
-                triangleCount: nil
-            ) else {
-                NSLog("Metal3DVolumeRenderer skinExtraction Metal visibility filter unavailable")
-                return nil
-            }
-
-            let overlaySurfaceVertexBuffer = makeSkinSurfaceVertexBuffer(vertexFloatData: filteredSurfaceData)
-            surfaceVertexBuffer = overlaySurfaceVertexBuffer?.buffer
-            surfaceVertexCount = overlaySurfaceVertexBuffer?.count ?? 0
-            surfaceVertexFloatData = filteredSurfaceData
+            return nil
         }
 
-        var mask = Self.invertedMask(envelope.mask)
+        guard extractedSurface.surfaceVoxelMask.count == voxelCount else {
+            NSLog(
+                "Metal3DVolumeRenderer skinExtraction surface mask size mismatch %ld != %ld",
+                extractedSurface.surfaceVoxelMask.count,
+                voxelCount
+            )
+            return nil
+        }
+
+        guard cancellation.isCancelled == false else { return nil }
+        let visibilityStartedAt = MetalPerformanceTrace.begin()
+        let filteredSurfaceResult = Metal3DSurfaceExtractor.filterSurfaceVertexFloatData(
+            byRotatingVisibility: extractedSurface.vertexFloatData,
+            spacingX: voxelSpacing.x,
+            spacingY: voxelSpacing.y,
+            spacingZ: voxelSpacing.z,
+            vertexCount: nil,
+            triangleCount: nil
+        )
+        MetalPerformanceTrace.end("skin.visibility.total", since: visibilityStartedAt)
+        guard let filteredSurfaceData = filteredSurfaceResult else {
+            NSLog("Metal3DVolumeRenderer skinExtraction Metal visibility filter unavailable")
+            return nil
+        }
+
+        return filteredSurfaceData
+    }
+
+    private static func makeSkinDistanceMask(
+        preparation: SkinEnvelopePreparation,
+        volumeDimensions: SIMD3<Int>,
+        voxelSpacing: SIMD3<Float>,
+        shellThicknessMM: Float
+    ) -> [UInt8] {
+        let distanceStartedAt = MetalPerformanceTrace.begin()
+        var mask = Self.invertedMask(preparation.envelope)
 
         Self.markObjectWithinPhysicalDistance(
-            object: envelope.mask,
-            surface: exteriorSurface,
+            object: preparation.envelope,
+            surface: preparation.exteriorSurface,
             mask: &mask,
             dimensions: volumeDimensions,
             spacing: voxelSpacing,
             maximumDistanceMM: shellThicknessMM
         )
+        MetalPerformanceTrace.end("skin.distanceMask.cpu", since: distanceStartedAt)
 
-        return SkinShellExtractionResult(
-            mask: mask,
-            surfaceVertexFloatData: surfaceVertexFloatData,
-            surfaceVertexBuffer: surfaceVertexBuffer,
-            surfaceVertexCount: surfaceVertexCount
-        )
+        return mask
     }
 
     private static func exteriorForegroundSurfaceMask(
@@ -3754,6 +3934,8 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private func worldPositions(fromSurfaceVertexFloatData vertexFloatData: Data) -> [SIMD3<Float>] {
+        let startedAt = MetalPerformanceTrace.begin()
+        defer { MetalPerformanceTrace.end("surface.worldPoints.cpu", since: startedAt) }
         let floatStride = MemoryLayout<Float>.stride
         guard vertexFloatData.count >= floatStride * 6,
               vertexFloatData.count % (floatStride * 6) == 0 else {

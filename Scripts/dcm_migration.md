@@ -8,7 +8,8 @@ DCMPix. Keep the Core Data schema and existing DICOM files unchanged.
 - Following the user's workflow testing with no further fallback warnings,
   removed the DCM target, scheme, link/embed steps, headers, legacy parser and
   codec sources, and DCM-only in-target JPEG compilation. The maintained DCMTK,
-  OpenJPEG, GDCM and Grok dependencies remain unchanged.
+  OpenJPEG and GDCM dependencies remain. The unused Grok and standalone CharLS
+  dependencies were subsequently removed as described below.
 - DCMPix now has one DCMTK image-loading path, plus its existing non-DICOM image
   support. Removed the DCM loader, its metadata helpers and caches, the no-op
   Papyrus retry path, and the temporary fallback warning. Annotation callers
@@ -20,9 +21,9 @@ DCMPix. Keep the Core Data schema and existing DICOM files unchanged.
 - SwiftDICOMReader's JPEG frame decoder is retained as HorosJPEGCodecBridge
   inside the app target. It calls DCMTK directly; the Swift bridging header no
   longer imports the deleted framework header. Frame decoding is unchanged.
-- Debug and Release explicitly link OpenJPEG's own static archive. Grok's
-  installation also contains a libopenjp2.a, but it lacks the opj_* API used by
-  OPJSupport; relying on library search order selected that file in Debug.
+- Debug and Release explicitly link OpenJPEG's own static archive. This avoids
+  the former Grok archive-name collision that selected a library without the
+  opj_* API used by OPJSupport. The obsolete Grok search paths are now removed.
 - Removed the unused standalone Spotlight DicomImporter project and DCM Doxygen
   configuration. The predicate editor owns its two-byte VR constants and no
   longer imports parser types.
@@ -30,12 +31,52 @@ DCMPix. Keep the Core Data schema and existing DICOM files unchanged.
   public-header export, API framework aliases, unused ROI/display hooks and
   plugin notification constants. Removed the obsolete display preference and
   annotation chooser entry; existing saved annotation layouts remain readable.
-  Incremental packaging removes DCM.framework and the five retired API
-  frameworks from the app. DCMTK bundle lookup and built-in preferences remain.
+  The transitional incremental-packaging cleanup phase has also been removed;
+  no current build phase embeds those frameworks. DCMTK bundle lookup and
+  built-in preferences remain.
 - No Core Data schema, patient records, DICOM files or database contents changed.
 - Source/fixture and project tests are in `Scripts/test_dcm_*.py`. This step
   uses syntax-only checks, not an application or dependency build. Rebuild in
   the existing Xcode build location and repeat the workflows below.
+
+### Unused codec dependency cleanup
+
+Removed the Grok and standalone CharLS submodules, aggregate targets, owned
+build phases/configurations/dependency proxies, shell scripts, and Debug/Release
+search paths. Removed the standalone `-lCharLS` flag, the empty DCMTK/Patches
+directory and obsolete Grok About/licence claims. Other existing changes in the
+working tree were preserved.
+
+JPEG-LS support remains: DCMTK's dcmjpls links its bundled dcmtkcharls, and GDCM
+builds its own gdcmcharls. The GDCM configuration now explicitly selects that
+bundled codec. No upstream toolkit source was changed. OpenJPEG remains the
+JPEG 2000 implementation and its explicit static-library link is unchanged.
+
+Evidence before removal: both existing Debug and Release GDCM CMake caches had
+GDCM_USE_SYSTEM_CHARLS=OFF; the toolkit source confirmed internal codec targets;
+symbol inspection of 281 existing Debug application objects found no direct
+standalone CharLS API references (only Objective-C JPEG-LS transfer-syntax
+messages). Both removed submodule worktrees, including Grok's nested submodules,
+were clean. Git retains their repository objects for recovery but no longer
+tracks or initializes their working copies.
+
+Verification uses project/manifest/source checks and shell syntax checking only,
+not a build. On the next incremental build, the GDCM configuration-script change
+may trigger its dependency rebuild. Check JPEG-LS and JPEG 2000 image viewing or
+retrieval, and anonymization, after rebuilding.
+
+### Retired build resources
+
+Removed PAGES.zip and Ming.zip, the PAGES resource entry, their unpacking steps
+and the unused DicomDatabase pagesDirPath accessor. Local unpacked copies were
+verified against the archives before deletion; no database directories or patient
+files were touched. Ignore rules remain for stale unpacked copies on other clones.
+The active dciodvfy archive, resource entry and metadata validation action remain.
+Removed the transitional RemoveRetiredFrameworks.sh script and its always-run
+build phase. It only deleted obsolete frameworks from reused app bundles; it was
+not a runtime dependency. Old app bundles from before the framework removal may
+need those frameworks removed once. Built-in preference panes and the DCMTK
+bridge loader are intentionally retained.
 
 The checkpoints below are a historical record of the migration. References to
 retaining the framework or warning describe those earlier checkpoints only.

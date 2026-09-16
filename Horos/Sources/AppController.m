@@ -523,13 +523,6 @@ void exceptionHandler(NSException *exception)
 	}
 }
 
-#ifdef WITH_IMPORTANT_NOTICE
-+ (void) displayImportantNotice:(id) sender
-{
-	
-}
-#endif
-
 + (void) checkForPreferencesUpdate: (BOOL) b
 {
 	checkForPreferencesUpdate = b;
@@ -2492,10 +2485,6 @@ static BOOL initialized = NO;
 //	if ([[NSUserDefaultsController sharedUserDefaultsController] boolForKey: @"ActivityWindowVisibleFlag"])
 //		[[[ActivityWindowController defaultController] window] makeKeyAndOrderFront:self];
 
-//#ifdef WITH_IMPORTANT_NOTICE
-//	[AppController displayImportantNotice: self];
-//#endif
-    
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SingleProcessMultiThreadedListener"] == NO)
 		NSLog( @"----- %@", NSLocalizedString( @"DICOM Listener is multi-processes mode.", nil));
 	
@@ -2537,37 +2526,6 @@ static BOOL initialized = NO;
     
 #ifdef NDEBUG
     PFMoveToApplicationsFolderIfNecessary();
-    
-#ifdef WITH_CODE_SIGNING
-    SecRequirementRef requirement = 0;
-    SecStaticCodeRef code = 0;
-    
-    OSStatus status = SecRequirementCreateWithString( (CFStringRef) @"anchor trusted and certificate leaf [subject.OU] = \"66HE7FMBC4\"", kSecCSDefaultFlags, &requirement);
-    
-    if( status == noErr)
-        status = SecStaticCodeCreateWithPath( (CFURLRef) [[NSBundle mainBundle] bundleURL], kSecCSDefaultFlags, &code);
-    
-    NSError *errors = nil;
-    
-    if( status == noErr)
-    {
-        if( code && requirement)
-            status = SecStaticCodeCheckValidityWithErrors(code, kSecCSDefaultFlags, requirement, (CFErrorRef*) &errors);
-        else
-            status = -1;
-    }
-    
-    if(status != noErr)
-    {
-        NSLog( @"SecStaticCodeCheckValidity: %d", (int) status);
-        NSLog( @"%@", errors);
-        
-        HorosPresentCriticalAlert( NSLocalizedString( @"Code signing and Certificate", nil), NSLocalizedString( @"Invalid code signing or certificate. You should re-download Horos from the web site\r\rAre you using an utility such as CleanMyMac or CCleaner? Turn it off for Horos.", nil), NSLocalizedString( @"Continue", nil) , nil, nil);
-
-    }
-    CFRelease( requirement);
-    CFRelease( code);
-#endif // WITH_CODE_SIGNING
 #endif // NDEBUG
     
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SyncPreferencesFromURL"])

@@ -45,7 +45,6 @@
 #define __OsiriX_Lion__OPJSupport__
 
 #include <iostream>
-#include "options.h"
 
 class OPJSupport {
     

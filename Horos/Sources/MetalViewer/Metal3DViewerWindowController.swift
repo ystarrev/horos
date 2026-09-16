@@ -647,8 +647,9 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
     }
 
     private func showInitialSurgicalTrajectory() {
-        if let message = volumeView.showInitialSurgicalTrajectory() {
-            showTumorSegmentationAlert(
+        volumeView.showInitialSurgicalTrajectory { [weak self] message in
+            guard let self, let message else { return }
+            self.showTumorSegmentationAlert(
                 message: NSLocalizedString("Surgical trajectory unavailable.", comment: ""),
                 informativeText: message
             )
@@ -656,6 +657,7 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
     }
 
     func windowWillClose(_ notification: Notification) {
+        volumeView.stopSkinPreparation()
         tumorSegmentationTask?.cancel()
         tumorSegmentationTask = nil
         tumorInputPreviewTask?.cancel()

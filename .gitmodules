@@ -1,7 +1,3 @@
-[submodule "CharLS"]
-	path = CharLS
-	url = https://github.com/team-charls/charls.git
-	ignore=dirty
 [submodule "GDCM"]
 	path = GDCM
 	url = https://github.com/malaterre/GDCM.git
@@ -13,10 +9,6 @@
 [submodule "OpenSSL"]
 	path = OpenSSL
 	url = https://github.com/openssl/openssl.git
-	ignore=dirty
-[submodule "Grok"]
-	path = Grok
-	url = https://github.com/GrokImageCompression/grok.git
 	ignore=dirty
 [submodule "DCMTK"]
 	path = DCMTK

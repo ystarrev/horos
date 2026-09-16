@@ -132,7 +132,6 @@ extern NSString* const DicomDatabaseLogEntryEntityName;
 -(NSString*)roisDirPath;
 -(NSString*)tempDirPath;
 -(NSString*)dumpDirPath;
--(NSString*)pagesDirPath;
 -(NSString*)htmlTemplatesDirPath;
 - (NSString *)statesDirPath;
 - (NSString *)clutsDirPath;

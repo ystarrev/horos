@@ -73,144 +73,29 @@ NSString* N2NonNullString(NSString* s) {
 	else return self;
 }
 
--(NSString*)markedString {
-	NSString* str = [self stringByReplacingOccurrencesOfString:@"\n" withString:@"\\n"];
-	str = [str stringByReplacingOccurrencesOfString:@"\r" withString:@"\\r"];
-	str = [str stringByReplacingOccurrencesOfString:@"\t" withString:@"\\t"];
-	return str;
-}
-
-+(NSString*)sizeString:(unsigned long long)size { // from http://snippets.dzone.com/posts/show/3038 with slight modifications
-    if (size<1023)
-        return [NSString stringWithFormat:NSLocalizedString(@"%llu bytes", nil), size];
-    float floatSize = float(size) / 1024;
-    if (floatSize<1023)
-        return [NSString stringWithFormat:NSLocalizedString(@"%1.2f KB", @"KB = kilo bytes"), floatSize];
-    floatSize = floatSize / 1024;
-    if (floatSize<1023)
-        return [NSString stringWithFormat:NSLocalizedString(@"%1.2f MB", @"MB = mega bytes"), floatSize];
-    floatSize = floatSize / 1024;
-    return [NSString stringWithFormat:NSLocalizedString(@"%1.2f GB", @"GB = giga bytes"), floatSize];
-}
-
 +(NSString*)timeString:(NSTimeInterval)time {
 	return [self timeString:time maxUnits:1];
 }
 
 +(NSString*)timeString:(NSTimeInterval)time maxUnits:(NSInteger)maxUnits {
-	NSMutableArray* rs = [NSMutableArray array];
-	
-	do {
-		NSString* unit; NSString* units; unsigned value;
-		if (time < 60) {
-			unit = NSLocalizedString(@"second", nil);
-			units = NSLocalizedString(@"seconds", nil);
-			value = std::floor(time);
-			time -= value;
-		} else if (time < 3600) {
-			unit = NSLocalizedString(@"minute", nil);
-			units = NSLocalizedString(@"minutes", nil);
-			value = std::floor(time/60);
-			time -= value*60;
-		} else {
-			unit = NSLocalizedString(@"hour", nil);
-			units = NSLocalizedString(@"hours", nil);
-			value = std::floor(time/3600);
-			time -= value*3600;
-		}
-		
-		NSString* s = [NSString stringWithFormat:@"%d %@", value, value==1? unit : units];
-		[rs addObject:s];
-	} while (rs.count < maxUnits && time >= 1);
-	
-	NSMutableString* s = [NSMutableString string];
-	for (NSInteger i = 0; i < rs.count; ++i)
-    {
-		if (i > 0)
-        {
-			if (i == (long)rs.count-1) 
-				[s appendString:NSLocalizedString(@" and ", nil)];
-			else
-                [s appendString:@", "];
-        }
-        
-		[s appendString:[rs objectAtIndex:i]];
-	}
-	
-	return s;
-}
+    NSInteger unitCount = MAX(1, MIN(3, maxUnits));
+    time = std::isfinite(time) ? MAX(0.0, std::floor(time)) : 0.0;
 
-+(NSString*)dateString:(NSTimeInterval)date {
-	return [[NSDate dateWithTimeIntervalSinceReferenceDate:date] n2_descriptionWithCalendarFormat:@"le %d.%m.%Y à %Hh%M" timeZone:NULL locale:[[NSUserDefaults standardUserDefaults] dictionaryRepresentation]];
-}
+    // Keep the old truncation of omitted units instead of rounding the estimate up.
+    if (unitCount == 1 && time >= 60.0) {
+        double unitSeconds = time >= 3600.0 ? 3600.0 : 60.0;
+        time = std::floor(time / unitSeconds) * unitSeconds;
+    } else if (unitCount == 2 && time >= 3600.0 && std::fmod(time, 3600.0) >= 60.0) {
+        time = std::floor(time / 60.0) * 60.0;
+    }
 
--(NSString*)stringByTrimmingStartAndEnd {
-	NSCharacterSet* whitespaceAndNewline = [NSCharacterSet whitespaceAndNewlineCharacterSet];
-	unsigned i;
-	for (i = 0; i < [self length] && [whitespaceAndNewline characterIsMember:[self characterAtIndex:i]]; ++i);
-	if (i == [self length]) return @"";
-	unsigned start = i;
-	for (i = [self length]-1; i > start && [whitespaceAndNewline characterIsMember:[self characterAtIndex:i]]; --i);
-	return [self substringWithRange:NSMakeRange(start, i-start+1)];
-}
-
--(NSString*)urlEncodedString /* deprecated */ {
-	static const NSDictionary* chars = [[NSDictionary dictionaryWithObjectsAndKeys:
-											@"%3B", @";",
-											@"%2F", @"/",
-											@"%3F", @"?",
-											@"%3A", @":",
-											@"%40", @"@",
-											@"%26", @"&",
-											@"%3D", @"=",
-											@"%2B", @"+",
-											@"%24", @"$",
-											@"%2C", @",",
-											@"%5B", @"[",
-											@"%5D", @"]",
-											@"%23", @"#",
-											@"%21", @"!",
-											@"%27", @"'",
-											@"%28", @"(",
-											@"%29", @")",
-											@"%2A", @"*",
-										NULL] retain];
-	
-	NSMutableString* temp = [[self mutableCopy] autorelease];
-	for (NSString* k in chars)
-		[temp replaceOccurrencesOfString:k withString:[chars objectForKey:k] options:NSLiteralSearch range:temp.range];
-	return [NSString stringWithString: temp];
-}
-
--(NSString*)xmlEscapedString:(BOOL)unescape {
-	static const NSDictionary* chars = [[NSDictionary dictionaryWithObjectsAndKeys:
-										 @"&lt;", @"<",
-										 @"&gt;", @">",
-									/*	 @"&amp;", @"&",	*/
-										 @"&#39;", @"'", // &#39; &apos;
-										 @"&quot;", @"\"",
-										 NULL] retain];
-	
-	NSMutableString* temp = [self.mutableCopy autorelease];
-	// amp first!!
-	if (!unescape)
-		[temp replaceOccurrencesOfString:@"&" withString:@"&amp;"];
-	else [temp replaceOccurrencesOfString:@"&amp;" withString:@"&"];
-	// other chars
-	for (NSString* k in chars)
-		if (!unescape)
-			[temp replaceOccurrencesOfString:k withString:[chars objectForKey:k]];
-		else [temp replaceOccurrencesOfString:[chars objectForKey:k] withString:k];
-	
-	return [NSString stringWithString:temp];
-}
-
--(NSString*)xmlEscapedString {
-	return [self xmlEscapedString:NO];
-}
-
--(NSString*)xmlUnescapedString {
-	return [self xmlEscapedString:YES];
+    NSDateComponentsFormatter *formatter = [[[NSDateComponentsFormatter alloc] init] autorelease];
+    formatter.unitsStyle = NSDateComponentsFormatterUnitsStyleFull;
+    formatter.allowedUnits = NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond;
+    formatter.maximumUnitCount = unitCount;
+    formatter.zeroFormattingBehavior = NSDateComponentsFormatterZeroFormattingBehaviorDropAll;
+    formatter.allowsFractionalUnits = NO;
+    return [formatter stringFromTimeInterval:time] ?: @"";
 }
 
 -(NSString*)ASCIIString {

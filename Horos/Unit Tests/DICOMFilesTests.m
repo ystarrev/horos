@@ -40,8 +40,6 @@
 #import "DicomFile.h"
 #import "DDData.h"
 
-#include "options.h"
-
 @implementation DICOMFilesTests
 
 - (void)setUp

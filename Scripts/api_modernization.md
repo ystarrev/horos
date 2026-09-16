@@ -3,6 +3,33 @@
 Scope: application-owned code, macOS 27 and Apple silicon. Keep upstream DCMTK
 unmodified and retain the ability to read existing patient data.
 
+## Nitrogen Foundation cleanup
+
+- Trash operations use `NSFileManager.trashItemAtURL`, preserving existing Trash
+  contents and reporting failures without a destructive fallback.
+- Temporary-file reservations still use atomic `mkstemp`, but now size paths by
+  their filesystem encoding, check failures and close the returned descriptor.
+- Exception logging uses the original exception's `callStackSymbols`. Duration
+  estimates use `NSDateComponentsFormatter`, retaining truncated h/m/s values.
+- Removed unused custom Base64, URL parsing and Objective-C ISO-8601 formatting
+  implementations and their project references. The Swift Foundation ISO-8601
+  formatter, legacy hex/MD5 identifiers and existing date helpers remain intact.
+- Corrected reversed `.noindex` suffix handling. Existing suffixed directories
+  win without merging or deleting an unsuffixed sibling; missing destinations
+  can be renamed from the legacy directory. A conflicting file raises an error
+  rather than being deleted. The database-relocation directory hook is retained.
+- Pruned unused shell/network-identity methods, string formatting/escaping helpers
+  and old bitmap color-conversion/mask/smoothing routines. The IOKit serial-number
+  lookup and its caller are unchanged; retained image methods are not modified.
+- Checks cover source contracts, project references and native Foundation
+  duration formatting and temporary filesystem fixtures. Native smoke checks
+  exercise Foundation counterparts, not compiled Horos methods. No app build,
+  live database migration or live Trash operation was performed.
+
+Directory-enumeration performance, networking, database/progress helpers and
+larger UI replacements remain separate work; laptop networking validation is
+still pending.
+
 ## Completed drag/export checkpoint
 
 - Implemented: database outline and thumbnail file promises using
@@ -634,14 +661,245 @@ second fill completed (independently confirmed with a shared GPU event). Fresh
 options restored callbacks on successive submissions. The fix creates options
 and registers completion inside each submission, preserving reusable GPU storage
 and all registration mathematics. Regression guards now prohibit retaining
-completion options across submissions. End-to-end registration awaits retesting.
+completion options across submissions. User retesting confirmed registration
+works normally after this fix.
+
+### ROI refinement submissions
+
+`MetalStudyROIGPUSolver` now submits its red/black relaxation phases through
+Metal 4. Each cached ROI workspace owns a reusable command buffer, allocator,
+argument table, residency set, phase-uniform buffer and completion semaphore.
+The existing per-ROI lock covers uploads, submission, completion, warm-solution
+state and CPU quantization. Only the immutable pipeline and command queue are
+shared between different ROI workspaces.
+
+Both phase parameters are written before encoding into separate 256-byte-aligned
+slots. Every dispatch binds its own phase slot, and an explicit device-visible
+dispatch barrier separates consecutive phases and sweeps. All seven buffers are
+resident and strongly retained until completion. Each submission creates fresh
+completion options, preserving the registration hang fix. The worker waits for
+feedback before inspecting results or reusing resources; no main-thread wait or
+additional GPU submission is introduced. Encoder failure ends recording without
+submission, and GPU errors propagate through the existing refinement error UI.
+
+The shader, uniform layout, edge preparation, quantization, and all ROI code
+outside the GPU solver are unchanged from the preceding checkpoint. Landmark
+constraints, prior weights, relaxation factor, sweep counts, warm starts and
+foreground cleanup are preserved. Optional `roi.refinement` timing uses the
+existing completion feedback. No measured performance gain is claimed.
+
+Verification: 508 non-build checks pass, including ten ROI submission checks and
+an isolated macOS 27 SDK type-check of the complete solver (only pipeline-cache
+construction is stubbed). Swift parsing and whitespace checks pass. No app build
+or live GPU result comparison was run. After rebuilding, use Option-Command-R
+several times, adjust landmarks to exercise interactive refinement and warm
+starts, and switch between ROIs. Compare boundary placement and volumes with the
+previous build, including the established landmarks that must remain pinned.
+
+User validation: ROI refinement works normally.
+
+### Surface extraction submissions
+
+`Metal3DSurfaceExtractor.mm` now uses the Metal 4 compiler for its five compute
+pipelines, retaining its existing once-only cache. Each extraction owns a
+reusable command buffer, allocator, argument table, uniform buffer, residency set
+and completion semaphore. Only the cached device, pipeline states and command
+queue are shared. The three extraction stages reuse that submission state, but
+still wait for completion before CPU surface counting, prefix sums, output
+allocation and mesh readback. The public synchronous contract is unchanged,
+including existing callers on the main thread.
+
+The visibility filter now records all depth and marking chunks in one compute
+encoder rather than opening an encoder for each chunk. Each chunk has a distinct
+256-byte-aligned uniform slot, written before submission and reused unchanged by
+its depth and marking dispatches. Depth chunks atomically accumulate into the
+shared map; a device-visible dispatch barrier completes all depth work before
+marking reads that map. Marking chunks write disjoint triangle-flag ranges.
+The 72 views, chunk size, grids and tolerances remain unchanged.
+
+All bound buffers are retained and resident until completion. Fresh commit
+options register feedback on every submission; the callback signals the existing
+wait without hopping to the caller's queue. Encoder failure ends recording
+without submission. GPU errors stop CPU result consumption, with resources
+released only after completion. This removes repeated encoding setup, not the
+CPU/GPU dependencies themselves; no measured speedup is claimed. These
+Objective-C++ passes have operation labels but do not yet feed the Swift
+`MetalPerformanceTrace` summaries.
+
+Verification: 520 non-build checks pass, including twelve new surface-extraction
+guards and a syntax-only check of the complete Objective-C++ file against the
+macOS 27 SDK with ARC and warnings treated as errors. Source comparison confirms
+the shaders, public header, geometry calculations, volume padding, CPU counts,
+prefix sums, crop-cap removal and final filtering/output are unchanged.
+Whitespace checks pass. No app build or live GPU output comparison was run.
+
+User validation exposed a memory-ownership crash in `surface.maskCount`.
+Xcode stopped in `objc_msgSend` when reading `_feedback.error` after the callback
+had signalled completion. The session assumes ARC, but this source entry had
+inherited the Horos target's manual memory management. Its callback assignment
+therefore did not retain the feedback object. Inspection of the existing compiled
+object confirmed the absence of ARC retain/release operations. The initial
+syntax check explicitly enabled ARC and missed this project-setting mismatch.
+
+The source entry now explicitly sets `-fobjc-arc`, scoped to this file for both
+configurations, and the source rejects compilation without ARC. This preserves
+feedback, bound-buffer and result-data ownership without changing GPU work.
+Regression checks read the actual project source-entry flags for the syntax
+check and verify that manual-memory compilation fails. Both new guards failed
+before the fix; all 522 non-build checks now pass. No app build was run.
+User validation: Show Surface works after the ARC fix.
+
+After rebuilding, open a fresh CT volume and enable Show Surface, checking facial
+detail and crop edges while rotating. Check tumour-label surfaces where available,
+repeat extraction on another volume, and close/reopen to exercise independent
+sessions. Compare geometry and counts with the previous build. Source scanning
+now finds no legacy Metal command queues, command buffers or compute encoders
+in `MetalViewer`; end-to-end surface validation and performance benchmarking
+remain separate checkpoints.
+
+### Surface staging copies
+
+Surface extraction now fills the padded volume directly in its shared Metal
+buffer, explicitly zeroing the border before copying the source rows. The CPU
+prefix sum likewise writes straight into the shared triangle-offset buffer.
+This removes two large intermediate `NSMutableData` allocations and their
+full-buffer copies. Buffer allocation failures are checked before accessing
+contents, and the existing session retains and makes both buffers resident
+through GPU completion.
+
+Padding and prefix-sum loops, thresholds, spacing, overflow checks, shader
+bindings, three submissions/waits, output copies, crop-cap removal and visibility
+filtering are unchanged. This is a memory-traffic reduction, not a claim that
+CPU/GPU waits have disappeared or that an end-to-end speedup has been measured.
+The synchronous public interface, including existing main-thread callers, is
+unchanged.
+
+Verification: all 524 non-build checks pass, including two new direct-storage
+regression guards and the full-file SDK syntax check using the actual project
+ARC flags. Source comparison confirms unchanged padding, prefix sums,
+submission-session code, geometry uniforms, crop-cap removal and visibility
+filtering; the shaders and public header are untouched. No app build or live
+GPU comparison was run. Recheck Show Surface on a fresh volume and repeat on a
+second volume; surface detail and crop boundaries should remain identical.
+
+User validation: the direct shared-buffer staging change works normally.
+
+### Reuse skin surfaces across removal-depth changes
+
+Changing the skin-removal depth now invalidates only the removal mask, retaining
+the image-derived surface mesh and its cached world points. The mesh depends on
+image intensities, threshold and fixed volume geometry, not shell thickness.
+The existing `ensureSkinMaskTexture` checks consequently rebuild the depth-dependent
+mask without repeating marching-cubes extraction, rotating visibility filtering,
+vertex conversion or world-point conversion for an already valid surface.
+No additional cache or synchronization mechanism was introduced in that checkpoint.
+
+Depth limits, preference storage, lazy generation when hidden, retry of previously
+failed extraction and trajectory/hover resets are unchanged. The CPU mask work
+still ran synchronously at that checkpoint; the background-preparation change below
+addresses that remaining UI wait.
+
+Verification: five new source guards cover mesh retention, mask invalidation,
+retry behavior, depth-independent extraction and renderer-local geometry. The
+retention guard failed before the fix and passes afterward. Swift parsing and
+the full non-build suite pass. No app build or live timing was run. With Show
+Surface enabled, change the skin-removal depth, then hide/show skin and surface;
+the removal depth should change without altering or rebuilding the mesh.
+
+User validation: mesh reuse across removal-depth changes works normally.
+
+### Skin-processing timing checkpoint
+
+The existing opt-in `HorosMetalPerformanceLogging` now also measures foreground
+thresholding, density filtering, envelope reconstruction (including its fallback),
+exterior-surface preparation, mesh extraction, visibility filtering, vertex-buffer
+conversion, depth-mask calculation, mask-texture creation and world-point conversion.
+`skin.shellWithSurface.total` and `skin.shellMaskOnly.total` separate first surface
+creation from mask-only changes. At the original timing checkpoint both included
+CPU volume acquisition/readback. After the background change below, these are
+worker totals; request/readback, texture upload and world-point conversion are
+measured separately.
+
+The `.cpu` stages are host-side calculations/allocation. `skin.mesh.total` and
+`skin.visibility.total` include CPU work, GPU execution and existing waits inside
+the Objective-C++ calls; they are not GPU-only timings. Outer totals are nested
+measurements and include diagnostic overhead, so do not add them to stage times.
+Failed calls record elapsed time too; missing stages may have been skipped by an
+early return or the existing cache. The first/every-60 sample policy is unchanged.
+
+For a first benchmark, launch with `-HorosMetalPerformanceLogging YES`, open a
+fresh volume, enable Show Surface, then change the skin-removal depth once.
+Capture the `METALPERF` lines, including both shell totals. Subsequent calls may
+not emit another line until the 60-sample summary; use a fresh launch for another
+first-sample comparison. No patient or series identifiers are added to timing
+labels. Logging remains off by default, with no extra command buffers or waits.
+
+Verification: all 533 non-build checks pass, including four new timing-boundary
+guards. Swift parsing and whitespace checks pass. Source comparison after
+removing timing calls confirms the extraction, cache installation and world-point
+calculations are unchanged. No app build, live timing or measured speedup is claimed.
+
+User validation: the timing-instrumented build runs normally. The supplied mask-only
+benchmark measured 795.635 ms total: envelope reconstruction 511.676 ms,
+exterior-surface preparation 124.515 ms and distance-mask calculation 130.483 ms.
+Readback waited 7.904 ms (0.180 ms GPU); mask upload took 2.681 ms. Surface extraction
+and visibility filtering were not exercised in that log. These are first samples,
+not steady-state averages.
+The database toolbar's 3D Metal button is now labelled Volume, including its
+customization label and tooltip. Its identifier, icon, launch action and saved
+toolbar placement are unchanged.
+
+### Background skin preparation and envelope reuse
+
+Skin foreground/envelope/surface-mask preparation, distance-mask calculation and
+optional mesh extraction/visibility filtering now run on a background queue.
+Workers receive immutable volume data, geometry, threshold and removal depth;
+they never access DCMPix, Core Data or mutable renderer/UI state. Final texture
+upload and mesh/world-point installation remain on the main thread. The existing
+initial CPU volume readback contract is unchanged, including its short wait.
+
+One depth-independent envelope and exterior-surface mask are cached per renderer,
+subject to the existing render-volume cache byte budget (two bytes per voxel).
+Changing removal depth retains these and the existing mesh/world points, so the
+envelope work is skipped on subsequent mask calculations. A surface-only request
+also skips recalculating an already available removal mask.
+
+Only one skin job runs per renderer. Settings changed during a job are coalesced;
+completion schedules the latest request rather than replaying slider history.
+Volume-generation checks reject old geometry, and a separate mask generation
+rejects outdated removal depths while retaining valid depth-independent results.
+Volume replacement clears the caches. Closing/reconfiguring a viewer cancels the
+job between expensive stages, drops pending trajectory requests and cached input,
+and prevents later installation. Workers do not keep a closed viewer alive.
+Trajectory creation now completes after the surface is ready instead of treating
+asynchronous preparation as a missing-surface failure.
+
+`skin.request.cpu` measures main-thread request setup, including initial readback.
+`skin.shellMaskOnly.total` measures uncached worker preparation;
+`skin.shellMaskCached.total` measures worker mask calculation using a cached
+envelope. Surface jobs retain `skin.shellWithSurface.total`. These totals exclude
+queue delay and final main-thread installation. Logging remains opt-in.
+
+Verification: Swift parsing, isolated SDK type-checking of the actual scheduler,
+CPU algorithms and Objective-C surface bridge, and non-build regression checks
+cover cache lifetime, coalescing, cancellation, failed jobs and trajectory flow.
+Source comparison confirms the morphology, connected-component, distance and
+coordinate-conversion helpers are unchanged. No app build or new live speedup
+measurement has been performed.
+
+Recheck a fresh volume: hide skin, then adjust removal depth several times,
+including while rotating. Enable Show Surface, request a trajectory where
+available, and close/reopen a viewer during preparation. Check that the latest
+depth wins, surface geometry stays unchanged, and the UI remains responsive.
+Capture the request, uncached and cached `METALPERF` totals for comparison.
 
 ### Timing and remaining sequence
 
 Optional timing now covers cold pipeline compilation, database preview drawing,
 Planar/MPR and ROI scout drawing, offscreen printing, volume drawing/preparation,
 shared viewing/registration volume preparation, CPU volume readback, surface picking,
-and block-match/directional/batched/support registration submissions. This is the first measurement checkpoint, not
+block-match/directional/batched/support registration submissions, and ROI
+refinement, plus the skin-processing host stages described above. This is a measurement checkpoint, not
 an end-to-end startup profiler or evidence of a speedup. Full startup includes
 file reads, decoding, CPU volume work and UI updates outside these measurements.
 The pre-migration compiler baseline has not been collected.
@@ -660,9 +918,9 @@ affect these per-command-buffer measurements.
   not pure command-encoder overhead or a measure of asynchronous image loading.
 - `submit_to_gpu`: submission/driver/queue latency up to GPU start.
 - `gpu`: actual command-buffer GPU start/end timestamps, not callback duration.
-- `cpu_wait`: time in the synchronous registration or CPU volume readback wait,
-  excluding diagnostic output. Registration uses no extra completion handler or
-  wait for measurement.
+- `cpu_wait`: time in the synchronous registration, ROI refinement or CPU volume
+  readback wait, excluding diagnostic output. Registration and ROI refinement use
+  no extra completion handler or wait for measurement.
 - `submit_to_observed` and `gpu_to_observed`: when the host observes completion,
   either in a callback or after an existing wait. These include host scheduling
   and earlier completion-handler work, not just GPU execution.
@@ -691,14 +949,20 @@ Proposed sequence:
    completion-driven scheduling, and is user-validated. CPU volume readback now
    uses Metal 4 and transfers buffer ownership without an extra full-volume copy;
    it retains the synchronous input contract and is user-validated.
-   Registration submissions now use per-job reusable Metal 4 resources and await
-   user validation. Candidate batching and working-buffer reuse are preserved.
+   Registration submissions now use per-job reusable Metal 4 resources and are
+   user-validated after the completion-options fix. Candidate batching and working-buffer reuse are preserved.
    CPU histogram reductions require completed GPU output, so wait removal or
    further batching is a separate measured change, not an automatic consequence
-   of Metal 4 adoption. The remaining legacy GPU queue in `MetalViewer` belongs
-   to `MetalStudyROIGPUSolver` in `MetalStudyROI.swift`; its dependent red/black
-   relaxation phases are the next candidate, preserving their barriers, workspace
-   ownership and refinement results.
+   of Metal 4 adoption. ROI relaxation now uses reusable per-workspace Metal 4
+   resources with explicit phase barriers and is user-validated. Objective-C++
+   surface extraction and visibility filtering now also use Metal 4 and are
+   user-validated after the ARC fix. Direct shared-buffer staging is also
+   user-validated, as is mesh reuse across skin-removal depth changes. Host-stage
+   skin-processing timings identified envelope preparation as the main measured
+   bottleneck. Background preparation and depth-independent envelope caching are
+   implemented; app validation and the next benchmark remain pending.
+   No legacy command submission remains in `MetalViewer`;
+   output comparisons and CPU/GPU performance measurements are the next checkpoint.
 5. Consider the ML encoder/tensor APIs when integrating a trained segmentation
    model. This is GPU inference, not a new direct Neural Engine training API.
    Keep MetalFX frame generation, upscaling and denoising out of diagnostic image,

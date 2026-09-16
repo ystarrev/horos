@@ -1,4 +1,3 @@
-#import "NSDate+N2.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -40,7 +39,11 @@
 #import "NSFileManager+N2.h"
 #import "NSString+N2.h"
 #import "NSString+SymlinksAndAliases.h"
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 #import <sys/stat.h>
+#include <unistd.h>
 
 static NSUInteger N2FileSizeAtURL(NSURL *url)
 {
@@ -56,15 +59,12 @@ static NSUInteger N2FileSizeAtURL(NSURL *url)
 
 - (void)moveItemAtPathToTrash: (NSString*) path
 {
-	NSString *trashPath = [[@"~/.Trash/" stringByExpandingTildeInPath] stringByAppendingPathComponent:[path lastPathComponent]];
-	NSError *error = nil;
-    [[NSFileManager defaultManager] removeItemAtPath: trashPath error: nil];
-    NSString *originalTrashPath = trashPath;
-    int i = 2;
-    while( [[NSFileManager defaultManager] fileExistsAtPath: trashPath])
-        trashPath = [originalTrashPath stringByAppendingFormat: @" %d", i++];
-        
-    [[NSFileManager defaultManager] moveItemAtPath:path toPath:trashPath error:&error];
+    if (path.length == 0)
+        return;
+
+    NSError *error = nil;
+    if (![self trashItemAtURL:[NSURL fileURLWithPath:path] resultingItemURL:NULL error:&error])
+        NSLog(@"Could not move %@ to Trash: %@", path, error.localizedDescription);
 }
 
 -(NSString*)userApplicationSupportFolderForApp {
@@ -75,20 +75,29 @@ static NSUInteger N2FileSizeAtURL(NSURL *url)
 }
 
 -(NSString*)tmpFilePathInDir:(NSString*)dirPath {
-    NSString *pre = [dirPath stringByAppendingPathComponent:[NSString stringWithFormat:@"%@_%@_%u_%lu_XXXXXX", [[NSBundle mainBundle] objectForInfoDictionaryKey:(NSString*)kCFBundleNameKey], [[NSDate date] n2_descriptionWithCalendarFormat:@"%Y%m%d%H%M%S" timeZone:NULL locale:NULL], getpid(), (long)[NSThread currentThread]]];
-    
-    NSUInteger len = pre.length+1;
-    char *temp = (char *)malloc(len + 1);
+    if (dirPath.length == 0)
+        return nil;
+
+    NSString *templatePath = [dirPath stringByAppendingPathComponent:@"Horos_XXXXXX"];
+    const char *fileSystemPath = templatePath.fileSystemRepresentation;
+    char *temp = fileSystemPath ? strdup(fileSystemPath) : NULL;
     if (temp == NULL)
         return nil;
-    [pre getBytes:temp maxLength:len usedLength:&len encoding:NSUTF8StringEncoding options:0 range:NSMakeRange(0, pre.length) remainingRange:NULL];
-    temp[len] = 0;
-    
-    mkstemp(temp);
-    
-	NSString *result = [NSString stringWithUTF8String:temp];
+
+    // Reserve the name atomically; callers need the path, not an open descriptor.
+    int descriptor = mkstemp(temp);
+    if (descriptor == -1) {
+        int errorCode = errno;
+        free(temp);
+        NSLog(@"Could not create temporary file in %@: %@", dirPath,
+              [NSError errorWithDomain:NSPOSIXErrorDomain code:errorCode userInfo:nil].localizedDescription);
+        return nil;
+    }
+    close(descriptor);
+
+    NSString *result = [self stringWithFileSystemRepresentation:temp length:strlen(temp)];
     free(temp);
-	return result;
+    return result;
 }
 
 -(NSString*)tmpDirPath {
@@ -153,32 +162,34 @@ static NSUInteger N2FileSizeAtURL(NSURL *url)
 }
 
 -(NSString*)confirmNoIndexDirectoryAtPath:(NSString*)path {
+	if (path.length == 0)
+		return nil;
+
 	NSString* pathWithExt;
 	NSString* pathWithoutExt;
 	NSString* const ext = @".noindex";
 	
 	if ([path hasSuffix:ext]) {
 		pathWithExt = path;
-		pathWithoutExt = [path stringByAppendingString:ext];
+		pathWithoutExt = [path substringToIndex:path.length-ext.length];
 	} else {
 		pathWithoutExt = path;
-		pathWithExt = [path substringToIndex:path.length-ext.length];
+		pathWithExt = [path stringByAppendingString:ext];
 	}
 	
 	BOOL pathWithoutExtIsDir = YES, pathWithoutExtExists = [self fileExistsAtPath:pathWithoutExt isDirectory:&pathWithoutExtIsDir];
 	BOOL pathWithExtIsDir = YES, pathWithExtExists = [self fileExistsAtPath:pathWithExt isDirectory:&pathWithExtIsDir];
 	
 	if (pathWithExtExists && !pathWithExtIsDir) {
-		[self removeItemAtPath:pathWithExt error:NULL];
-		pathWithExtExists = [self fileExistsAtPath:pathWithExt isDirectory:&pathWithExtIsDir];
-		if (pathWithExtExists) [NSException raise:NSGenericException format:@"Could not delete file at %@", pathWithExt];
+		[NSException raise:NSGenericException format:@"Cannot create directory at %@: a file already exists", pathWithExt];
 	}
 	
 	if (!pathWithExtExists && pathWithoutExtExists && pathWithoutExtIsDir) {
-		[self moveItemAtPath:pathWithoutExt toPath:pathWithExt error:NULL];
-		pathWithoutExtExists = [self fileExistsAtPath:pathWithoutExt isDirectory:&pathWithoutExtIsDir];
+		NSError *error = nil;
+		[self moveItemAtPath:pathWithoutExt toPath:pathWithExt error:&error];
 		pathWithExtExists = [self fileExistsAtPath:pathWithExt isDirectory:&pathWithExtIsDir];
-		if (!pathWithExtExists) [NSException raise:NSGenericException format:@"Could not rename directory at %@ to %@", pathWithoutExt, pathWithExt];
+		if (!pathWithExtExists || !pathWithExtIsDir)
+			[NSException raise:NSGenericException format:@"Could not rename directory at %@ to %@: %@", pathWithoutExt, pathWithExt, error.localizedDescription];
 	}
 	
 	return [self confirmDirectoryAtPath:pathWithExt];

@@ -36,7 +36,6 @@
  ============================================================================*/
 
 #import <Cocoa/Cocoa.h>
-#import "options.h"
 
 // WARNING: These identifiers are persisted in user defaults and ROI archives.
 

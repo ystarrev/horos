@@ -45,8 +45,6 @@
 #include <objc/runtime.h>
 #include <math.h>
 
-#include "options.h"
-
 #import "DicomDatabase.h"
 #import "DicomDatabase+Routing.h"
 #import "DicomDatabase+Clean.h"
@@ -16265,9 +16263,9 @@ static volatile int numberOfThreadsForJPEG = 0;
     }
     else if ([itemIdent isEqualToString: Metal3DToolbarItemIdentifier])
     {
-        [toolbarItem setLabel: NSLocalizedString(@"3D Metal", nil)];
-        [toolbarItem setPaletteLabel: NSLocalizedString(@"3D Metal", nil)];
-        [toolbarItem setToolTip: NSLocalizedString(@"3D Metal", nil)];
+        [toolbarItem setLabel: NSLocalizedString(@"Volume", nil)];
+        [toolbarItem setPaletteLabel: NSLocalizedString(@"Volume", nil)];
+        [toolbarItem setToolTip: NSLocalizedString(@"Volume", nil)];
         NSImage *metalImage = [NSImage imageNamed: MetalToolbarItemIdentifier];
         if (metalImage == nil)
         {

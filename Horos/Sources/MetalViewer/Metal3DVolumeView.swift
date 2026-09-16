@@ -573,6 +573,7 @@ final class Metal3DVolumeView: NSView {
 
     func configure(pixList: [DCMPix]) {
         guard let device = metalView.device else { return }
+        renderer?.stopSkinPreparation()
         let renderer = Metal3DVolumeRenderer(device: device, pixList: pixList)
         renderer.contentDidChange = { [weak self] in
             guard let self else { return }
@@ -688,15 +689,20 @@ final class Metal3DVolumeView: NSView {
         metalView.setNeedsDisplay(metalView.bounds)
     }
 
-    func showInitialSurgicalTrajectory() -> String? {
+    func stopSkinPreparation() {
+        renderer?.stopSkinPreparation()
+    }
+
+    func showInitialSurgicalTrajectory(completion: @escaping (String?) -> Void) {
         guard let renderer else {
-            return NSLocalizedString("The 3D renderer is not ready.", comment: "")
+            completion(NSLocalizedString("The 3D renderer is not ready.", comment: ""))
+            return
         }
-        guard let message = renderer.showInitialSurgicalTrajectory() else {
-            metalView.setNeedsDisplay(metalView.bounds)
-            return nil
+        renderer.showInitialSurgicalTrajectory { [weak self] message in
+            guard let self else { return }
+            self.metalView.setNeedsDisplay(self.metalView.bounds)
+            completion(message)
         }
-        return message
     }
 
     func setOpacityControlPoints(_ points: [SIMD2<Float>]) {

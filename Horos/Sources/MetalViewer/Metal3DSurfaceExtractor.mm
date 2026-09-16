@@ -1,5 +1,9 @@
 #import "Metal3DSurfaceExtractor.h"
 
+#if !__has_feature(objc_arc)
+#error Metal3DSurfaceExtractor requires ARC (-fobjc-arc).
+#endif
+
 #import <Metal/Metal.h>
 
 #include <algorithm>
@@ -106,8 +110,21 @@ static NSData *Metal3DVertexFloatDataByRemovingZCropCaps(NSData *vertexFloatData
     return filteredData;
 }
 
+static id<MTLComputePipelineState> Metal3DSurfaceComputePipeline(id<MTL4Compiler> compiler,
+                                                               id<MTLLibrary> library,
+                                                               NSString *functionName,
+                                                               NSError **error)
+{
+    MTL4LibraryFunctionDescriptor *function = [[MTL4LibraryFunctionDescriptor alloc] init];
+    function.library = library;
+    function.name = functionName;
+    MTL4ComputePipelineDescriptor *descriptor = [[MTL4ComputePipelineDescriptor alloc] init];
+    descriptor.computeFunctionDescriptor = function;
+    return [compiler newComputePipelineStateWithDescriptor:descriptor compilerTaskOptions:nil error:error];
+}
+
 static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
-                                                       id<MTLCommandQueue> *commandQueueOut,
+                                                       id<MTL4CommandQueue> *commandQueueOut,
                                                        id<MTLComputePipelineState> *surfaceMaskCountPipelineOut,
                                                        id<MTLComputePipelineState> *marchingCubesCountPipelineOut,
                                                        id<MTLComputePipelineState> *marchingCubesEmitPipelineOut,
@@ -115,7 +132,7 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
                                                        id<MTLComputePipelineState> *visibilityMarkPipelineOut)
 {
     static id<MTLDevice> cachedDevice = nil;
-    static id<MTLCommandQueue> cachedCommandQueue = nil;
+    static id<MTL4CommandQueue> cachedCommandQueue = nil;
     static id<MTLComputePipelineState> cachedSurfaceMaskCountPipeline = nil;
     static id<MTLComputePipelineState> cachedMarchingCubesCountPipeline = nil;
     static id<MTLComputePipelineState> cachedMarchingCubesEmitPipeline = nil;
@@ -126,53 +143,51 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
 
     dispatch_once(&onceToken, ^{
         cachedDevice = MTLCreateSystemDefaultDevice();
-        cachedCommandQueue = [cachedDevice newCommandQueue];
+        cachedCommandQueue = [cachedDevice newMTL4CommandQueue];
         id<MTLLibrary> library = [cachedDevice newDefaultLibrary];
         if (cachedDevice == nil || cachedCommandQueue == nil || library == nil) {
             initializationFailure = @"Metal device, command queue, or default library unavailable";
             return;
         }
 
-        id<MTLFunction> surfaceMaskCountFunction = [library newFunctionWithName:@"metal3DCountSurfaceFaces"];
-        id<MTLFunction> marchingCubesCountFunction = [library newFunctionWithName:@"metal3DCountSurfaceMarchingCubes"];
-        id<MTLFunction> marchingCubesEmitFunction = [library newFunctionWithName:@"metal3DEmitSurfaceMarchingCubes"];
-        if (surfaceMaskCountFunction == nil || marchingCubesCountFunction == nil || marchingCubesEmitFunction == nil) {
-            initializationFailure = @"Metal surface extraction functions unavailable";
+        NSError *error = nil;
+        id<MTL4Compiler> compiler = [cachedDevice newCompilerWithDescriptor:[[MTL4CompilerDescriptor alloc] init]
+                                                                    error:&error];
+        if (compiler == nil) {
+            initializationFailure = [[NSString alloc] initWithFormat:@"Metal 4 surface compiler unavailable: %@", error];
             return;
         }
 
-        NSError *error = nil;
-        cachedSurfaceMaskCountPipeline = [cachedDevice newComputePipelineStateWithFunction:surfaceMaskCountFunction error:&error];
+        cachedSurfaceMaskCountPipeline = Metal3DSurfaceComputePipeline(compiler, library, @"metal3DCountSurfaceFaces", &error);
         if (cachedSurfaceMaskCountPipeline == nil) {
             initializationFailure = [[NSString alloc] initWithFormat:@"Metal surface-mask pipeline unavailable: %@", error];
             return;
         }
 
         error = nil;
-        cachedMarchingCubesCountPipeline = [cachedDevice newComputePipelineStateWithFunction:marchingCubesCountFunction error:&error];
+        cachedMarchingCubesCountPipeline = Metal3DSurfaceComputePipeline(compiler, library, @"metal3DCountSurfaceMarchingCubes", &error);
         if (cachedMarchingCubesCountPipeline == nil) {
             initializationFailure = [[NSString alloc] initWithFormat:@"Metal marching-cubes count pipeline unavailable: %@", error];
             return;
         }
 
         error = nil;
-        cachedMarchingCubesEmitPipeline = [cachedDevice newComputePipelineStateWithFunction:marchingCubesEmitFunction error:&error];
+        cachedMarchingCubesEmitPipeline = Metal3DSurfaceComputePipeline(compiler, library, @"metal3DEmitSurfaceMarchingCubes", &error);
         if (cachedMarchingCubesEmitPipeline == nil) {
             initializationFailure = [[NSString alloc] initWithFormat:@"Metal marching-cubes emit pipeline unavailable: %@", error];
             return;
         }
 
-        id<MTLFunction> visibilityDepthFunction = [library newFunctionWithName:@"metal3DSplatSurfaceVisibilityDepth"];
-        id<MTLFunction> visibilityMarkFunction = [library newFunctionWithName:@"metal3DMarkSurfaceVisibility"];
-        if (visibilityDepthFunction != nil && visibilityMarkFunction != nil) {
+        if ([library.functionNames containsObject:@"metal3DSplatSurfaceVisibilityDepth"] &&
+            [library.functionNames containsObject:@"metal3DMarkSurfaceVisibility"]) {
             error = nil;
-            cachedVisibilityDepthPipeline = [cachedDevice newComputePipelineStateWithFunction:visibilityDepthFunction error:&error];
+            cachedVisibilityDepthPipeline = Metal3DSurfaceComputePipeline(compiler, library, @"metal3DSplatSurfaceVisibilityDepth", &error);
             if (cachedVisibilityDepthPipeline == nil) {
                 NSLog(@"Metal3DSurfaceExtractor Metal visibility-depth pipeline unavailable: %@", error);
             }
 
             error = nil;
-            cachedVisibilityMarkPipeline = [cachedDevice newComputePipelineStateWithFunction:visibilityMarkFunction error:&error];
+            cachedVisibilityMarkPipeline = Metal3DSurfaceComputePipeline(compiler, library, @"metal3DMarkSurfaceVisibility", &error);
             if (cachedVisibilityMarkPipeline == nil) {
                 NSLog(@"Metal3DSurfaceExtractor Metal visibility-mark pipeline unavailable: %@", error);
             }
@@ -220,6 +235,114 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
     }
     return YES;
 }
+
+// One synchronous extraction owns this state. Completed passes can reuse it,
+// while simultaneous extractions share only the immutable pipelines and queue.
+@interface Metal3DSurfaceComputeSession : NSObject {
+    id<MTLDevice> _device;
+    id<MTL4CommandQueue> _queue;
+    id<MTL4CommandBuffer> _commandBuffer;
+    id<MTL4CommandAllocator> _allocator;
+    id<MTL4ArgumentTable> _arguments;
+    id<MTLResidencySet> _residency;
+    id<MTLBuffer> _uniformBuffer;
+    NSArray<id<MTLBuffer>> *_buffers;
+    dispatch_semaphore_t _completion;
+    id<MTL4CommitFeedback> _feedback;
+}
+
+- (instancetype)initWithDevice:(id<MTLDevice>)device queue:(id<MTL4CommandQueue>)queue;
+- (BOOL)performWithBuffers:(NSArray<id<MTLBuffer>> *)buffers
+                  uniforms:(const void *)uniforms
+                    length:(NSUInteger)length
+                 operation:(NSString *)operation
+                    encode:(void (^)(id<MTL4ComputeCommandEncoder>, id<MTL4ArgumentTable>, id<MTLBuffer>))encode;
+
+@end
+
+@implementation Metal3DSurfaceComputeSession
+
+- (instancetype)initWithDevice:(id<MTLDevice>)device queue:(id<MTL4CommandQueue>)queue
+{
+    self = [super init];
+    if (self) {
+        _device = device;
+        _queue = queue;
+        _commandBuffer = [device newCommandBuffer];
+        _allocator = [device newCommandAllocator];
+        MTL4ArgumentTableDescriptor *descriptor = [[MTL4ArgumentTableDescriptor alloc] init];
+        descriptor.maxBufferBindCount = 5;
+        descriptor.initializeBindings = YES;
+        _arguments = [device newArgumentTableWithDescriptor:descriptor error:nil];
+        _residency = [device newResidencySetWithDescriptor:[[MTLResidencySetDescriptor alloc] init] error:nil];
+        _completion = dispatch_semaphore_create(0);
+        if (_commandBuffer == nil || _allocator == nil || _arguments == nil || _residency == nil) {
+            return nil;
+        }
+    }
+    return self;
+}
+
+- (BOOL)performWithBuffers:(NSArray<id<MTLBuffer>> *)buffers
+                  uniforms:(const void *)uniforms
+                    length:(NSUInteger)length
+                 operation:(NSString *)operation
+                    encode:(void (^)(id<MTL4ComputeCommandEncoder>, id<MTL4ArgumentTable>, id<MTLBuffer>))encode
+{
+    if (_uniformBuffer.length < length) {
+        _uniformBuffer = [_device newBufferWithLength:std::max<NSUInteger>(length, 256)
+                                             options:MTLResourceStorageModeShared];
+    }
+    if (_uniformBuffer == nil) {
+        return NO;
+    }
+    std::memcpy(_uniformBuffer.contents, uniforms, length);
+    [_allocator reset];
+    _feedback = nil;
+    for (NSUInteger index = 0; index < 5; index++) {
+        [_arguments setAddress:0 atIndex:index];
+    }
+    [_commandBuffer beginCommandBufferWithAllocator:_allocator];
+    id<MTL4ComputeCommandEncoder> encoder = [_commandBuffer computeCommandEncoder];
+    if (encoder == nil) {
+        [_commandBuffer endCommandBuffer];
+        return NO;
+    }
+    _buffers = buffers;
+    for (id<MTLBuffer> buffer in _buffers) {
+        [_residency addAllocation:buffer];
+    }
+    [_residency addAllocation:_uniformBuffer];
+    encoder.label = operation;
+    [encoder setArgumentTable:_arguments];
+    encode(encoder, _arguments, _uniformBuffer);
+    [encoder endEncoding];
+    [_residency commit];
+    [_commandBuffer useResidencySet:_residency];
+    [_commandBuffer endCommandBuffer];
+
+    // Feedback handlers are consumed at commit. Never reuse their options.
+    MTL4CommitOptions *options = [[MTL4CommitOptions alloc] init];
+    [options addFeedbackHandler:^(id<MTL4CommitFeedback> feedback) {
+        self->_feedback = feedback;
+        dispatch_semaphore_signal(self->_completion);
+    }];
+    id<MTL4CommandBuffer> commandBuffers[] = {_commandBuffer};
+    [_queue commit:commandBuffers count:1 options:options];
+    // Keep buffers resident and alive until the GPU finishes, including failures.
+    dispatch_semaphore_wait(_completion, DISPATCH_TIME_FOREVER);
+    const BOOL succeeded = _feedback != nil && _feedback.error == nil;
+    if (!succeeded) {
+        NSLog(@"Metal3DSurfaceExtractor %@ failed: %@", operation, _feedback.error);
+    }
+    [_residency removeAllAllocations];
+    [_residency commit];
+    _buffers = nil;
+    _feedback = nil;
+    return succeeded;
+}
+
+@end
 
 @interface Metal3DSurfaceExtractor ()
 
@@ -387,7 +510,7 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
     };
 
     id<MTLDevice> device = nil;
-    id<MTLCommandQueue> commandQueue = nil;
+    id<MTL4CommandQueue> commandQueue = nil;
     id<MTLComputePipelineState> visibilityDepthPipeline = nil;
     id<MTLComputePipelineState> visibilityMarkPipeline = nil;
     if (!Metal3DSurfaceExtractorGetComputeResources(&device,
@@ -413,55 +536,58 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
     std::memset(depthBuffer.contents, 0, (NSUInteger)totalDepthCount64 * sizeof(uint32_t));
     std::memset(visibleBuffer.contents, 0, sourceTriangleCount * sizeof(uint32_t));
 
-    id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
-    if (commandBuffer == nil) {
+    Metal3DSurfaceComputeSession *session = [[Metal3DSurfaceComputeSession alloc] initWithDevice:device queue:commandQueue];
+    if (session == nil) {
         return nil;
     }
 
     const NSUInteger trianglesPerDispatch = 262144;
+    const NSUInteger uniformStride = 256;
+    static_assert(sizeof(VisibilityUniforms) <= uniformStride, "Visibility uniforms exceed their aligned slot");
+    const NSUInteger chunkCount = (sourceTriangleCount + trianglesPerDispatch - 1) / trianglesPerDispatch;
+    NSMutableData *chunkUniformData = [NSMutableData dataWithLength:chunkCount * uniformStride];
+    // Every dispatch reads its own immutable parameters after encoding ends.
+    // Depth and marking reuse the same slot for the same triangle chunk.
+    for (NSUInteger chunk = 0; chunk < chunkCount; chunk++) {
+        VisibilityUniforms chunkUniforms = uniforms;
+        chunkUniforms.triangleBase = (uint32_t)(chunk * trianglesPerDispatch);
+        std::memcpy((uint8_t *)chunkUniformData.mutableBytes + chunk * uniformStride,
+                    &chunkUniforms, sizeof(chunkUniforms));
+    }
     const NSUInteger depthThreadWidth = std::max<NSUInteger>(visibilityDepthPipeline.threadExecutionWidth, 1);
     const MTLSize depthThreadgroup = MTLSizeMake(std::min<NSUInteger>(depthThreadWidth, 256), 1, 1);
-    for (NSUInteger triangleBase = 0; triangleBase < sourceTriangleCount; triangleBase += trianglesPerDispatch) {
-        const NSUInteger chunkTriangleCount = std::min<NSUInteger>(trianglesPerDispatch, sourceTriangleCount - triangleBase);
-        VisibilityUniforms chunkUniforms = uniforms;
-        chunkUniforms.triangleBase = (uint32_t)triangleBase;
-        id<MTLComputeCommandEncoder> depthEncoder = [commandBuffer computeCommandEncoder];
-        if (depthEncoder == nil) {
-            return nil;
-        }
-        [depthEncoder setComputePipelineState:visibilityDepthPipeline];
-        [depthEncoder setBuffer:vertexBuffer offset:0 atIndex:0];
-        [depthEncoder setBuffer:depthBuffer offset:0 atIndex:1];
-        [depthEncoder setBytes:&chunkUniforms length:sizeof(chunkUniforms) atIndex:2];
-        const MTLSize depthThreads = MTLSizeMake(chunkTriangleCount, viewCount, 1);
-        [depthEncoder dispatchThreads:depthThreads threadsPerThreadgroup:depthThreadgroup];
-        [depthEncoder endEncoding];
-    }
-
     const NSUInteger markThreadWidth = std::max<NSUInteger>(visibilityMarkPipeline.threadExecutionWidth, 1);
     const MTLSize markThreadgroup = MTLSizeMake(std::min<NSUInteger>(markThreadWidth, 256), 1, 1);
-    for (NSUInteger triangleBase = 0; triangleBase < sourceTriangleCount; triangleBase += trianglesPerDispatch) {
-        const NSUInteger chunkTriangleCount = std::min<NSUInteger>(trianglesPerDispatch, sourceTriangleCount - triangleBase);
-        VisibilityUniforms chunkUniforms = uniforms;
-        chunkUniforms.triangleBase = (uint32_t)triangleBase;
-        id<MTLComputeCommandEncoder> markEncoder = [commandBuffer computeCommandEncoder];
-        if (markEncoder == nil) {
-            return nil;
+    if (![session performWithBuffers:@[vertexBuffer, depthBuffer, visibleBuffer]
+                            uniforms:chunkUniformData.bytes
+                              length:chunkUniformData.length
+                           operation:@"surface.visibility"
+                              encode:^(id<MTL4ComputeCommandEncoder> encoder, id<MTL4ArgumentTable> arguments, id<MTLBuffer> uniformBuffer) {
+        [arguments setAddress:vertexBuffer.gpuAddress atIndex:0];
+        [arguments setAddress:depthBuffer.gpuAddress atIndex:1];
+        [encoder setComputePipelineState:visibilityDepthPipeline];
+        for (NSUInteger triangleBase = 0; triangleBase < sourceTriangleCount; triangleBase += trianglesPerDispatch) {
+            const NSUInteger chunkTriangleCount = std::min<NSUInteger>(trianglesPerDispatch, sourceTriangleCount - triangleBase);
+            const NSUInteger offset = (triangleBase / trianglesPerDispatch) * uniformStride;
+            [arguments setAddress:uniformBuffer.gpuAddress + offset atIndex:2];
+            const MTLSize depthThreads = MTLSizeMake(chunkTriangleCount, viewCount, 1);
+            [encoder dispatchThreads:depthThreads threadsPerThreadgroup:depthThreadgroup];
         }
-        [markEncoder setComputePipelineState:visibilityMarkPipeline];
-        [markEncoder setBuffer:vertexBuffer offset:0 atIndex:0];
-        [markEncoder setBuffer:depthBuffer offset:0 atIndex:1];
-        [markEncoder setBuffer:visibleBuffer offset:0 atIndex:2];
-        [markEncoder setBytes:&chunkUniforms length:sizeof(chunkUniforms) atIndex:3];
-        const MTLSize markThreads = MTLSizeMake(chunkTriangleCount, viewCount, 1);
-        [markEncoder dispatchThreads:markThreads threadsPerThreadgroup:markThreadgroup];
-        [markEncoder endEncoding];
-    }
 
-    [commandBuffer commit];
-    [commandBuffer waitUntilCompleted];
-    if (commandBuffer.status == MTLCommandBufferStatusError) {
-        NSLog(@"Metal3DSurfaceExtractor visibility filter failed: %@", commandBuffer.error);
+        // Depth chunks atomically accumulate into a shared map. Marking must
+        // see the completed map from all chunks; mark chunks write disjoint flags.
+        [encoder barrierAfterEncoderStages:MTLStageDispatch beforeEncoderStages:MTLStageDispatch
+                         visibilityOptions:MTL4VisibilityOptionDevice];
+        [encoder setComputePipelineState:visibilityMarkPipeline];
+        [arguments setAddress:visibleBuffer.gpuAddress atIndex:2];
+        for (NSUInteger triangleBase = 0; triangleBase < sourceTriangleCount; triangleBase += trianglesPerDispatch) {
+            const NSUInteger chunkTriangleCount = std::min<NSUInteger>(trianglesPerDispatch, sourceTriangleCount - triangleBase);
+            const NSUInteger offset = (triangleBase / trianglesPerDispatch) * uniformStride;
+            [arguments setAddress:uniformBuffer.gpuAddress + offset atIndex:3];
+            const MTLSize markThreads = MTLSizeMake(chunkTriangleCount, viewCount, 1);
+            [encoder dispatchThreads:markThreads threadsPerThreadgroup:markThreadgroup];
+        }
+    }]) {
         return nil;
     }
 
@@ -555,7 +681,7 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
     };
 
     id<MTLDevice> device = nil;
-    id<MTLCommandQueue> commandQueue = nil;
+    id<MTL4CommandQueue> commandQueue = nil;
     id<MTLComputePipelineState> surfaceMaskCountPipeline = nil;
     id<MTLComputePipelineState> marchingCubesCountPipeline = nil;
     id<MTLComputePipelineState> marchingCubesEmitPipeline = nil;
@@ -582,26 +708,26 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
     std::memset(faceCountBuffer.contents, 0, (NSUInteger)voxelCount * sizeof(uint32_t));
     std::memset(surfaceMaskBuffer.contents, 0, (NSUInteger)voxelCount * sizeof(uint8_t));
 
-    id<MTLCommandBuffer> countCommandBuffer = [commandQueue commandBuffer];
-    id<MTLComputeCommandEncoder> countEncoder = [countCommandBuffer computeCommandEncoder];
-    if (countCommandBuffer == nil || countEncoder == nil) {
+    Metal3DSurfaceComputeSession *session = [[Metal3DSurfaceComputeSession alloc] initWithDevice:device queue:commandQueue];
+    if (session == nil) {
         return nil;
     }
 
-    [countEncoder setComputePipelineState:surfaceMaskCountPipeline];
-    [countEncoder setBuffer:volumeBuffer offset:0 atIndex:0];
-    [countEncoder setBuffer:faceCountBuffer offset:0 atIndex:1];
-    [countEncoder setBuffer:surfaceMaskBuffer offset:0 atIndex:2];
-    [countEncoder setBytes:&maskUniforms length:sizeof(maskUniforms) atIndex:3];
     const NSUInteger countThreadWidth = std::max<NSUInteger>(surfaceMaskCountPipeline.threadExecutionWidth, 1);
     const MTLSize countThreads = MTLSizeMake((NSUInteger)voxelCount, 1, 1);
     const MTLSize countThreadgroup = MTLSizeMake(std::min<NSUInteger>(countThreadWidth, 256), 1, 1);
-    [countEncoder dispatchThreads:countThreads threadsPerThreadgroup:countThreadgroup];
-    [countEncoder endEncoding];
-    [countCommandBuffer commit];
-    [countCommandBuffer waitUntilCompleted];
-    if (countCommandBuffer.status == MTLCommandBufferStatusError) {
-        NSLog(@"Metal3DSurfaceExtractor Metal count failed: %@", countCommandBuffer.error);
+    if (![session performWithBuffers:@[volumeBuffer, faceCountBuffer, surfaceMaskBuffer]
+                            uniforms:&maskUniforms
+                              length:sizeof(maskUniforms)
+                           operation:@"surface.maskCount"
+                              encode:^(id<MTL4ComputeCommandEncoder> encoder, id<MTL4ArgumentTable> arguments, id<MTLBuffer> uniformBuffer) {
+        [encoder setComputePipelineState:surfaceMaskCountPipeline];
+        [arguments setAddress:volumeBuffer.gpuAddress atIndex:0];
+        [arguments setAddress:faceCountBuffer.gpuAddress atIndex:1];
+        [arguments setAddress:surfaceMaskBuffer.gpuAddress atIndex:2];
+        [arguments setAddress:uniformBuffer.gpuAddress atIndex:3];
+        [encoder dispatchThreads:countThreads threadsPerThreadgroup:countThreadgroup];
+    }]) {
         return nil;
     }
 
@@ -630,9 +756,15 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
         return nil;
     }
 
-    NSMutableData *paddedVolumeData = [NSMutableData dataWithLength:(NSUInteger)paddedVoxelCount * sizeof(float)];
+    // Fill shared GPU storage directly, avoiding a second full padded volume.
+    id<MTLBuffer> paddedVolumeBuffer = [device newBufferWithLength:(NSUInteger)paddedVoxelCount * sizeof(float)
+                                                          options:MTLResourceStorageModeShared];
+    if (paddedVolumeBuffer == nil) {
+        return nil;
+    }
+    std::memset(paddedVolumeBuffer.contents, 0, (NSUInteger)paddedVoxelCount * sizeof(float));
     const float *sourceVoxels = (const float *)volumeData.bytes;
-    float *paddedVoxels = (float *)paddedVolumeData.mutableBytes;
+    float *paddedVoxels = (float *)paddedVolumeBuffer.contents;
     const NSInteger sourceSliceCount = width * height;
     for (NSInteger z = 0; z < depth; z++) {
         const NSInteger sourceSliceOffset = z * sourceSliceCount;
@@ -659,41 +791,37 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
         threshold
     };
 
-    id<MTLBuffer> paddedVolumeBuffer = [device newBufferWithBytes:paddedVolumeData.bytes
-                                                           length:(NSUInteger)paddedVoxelCount * sizeof(float)
-                                                          options:MTLResourceStorageModeShared];
     id<MTLBuffer> triangleCountBuffer = [device newBufferWithLength:(NSUInteger)cubeCellCount * sizeof(uint32_t)
                                                             options:MTLResourceStorageModeShared];
-    if (paddedVolumeBuffer == nil || triangleCountBuffer == nil) {
+    if (triangleCountBuffer == nil) {
         return nil;
     }
     std::memset(triangleCountBuffer.contents, 0, (NSUInteger)cubeCellCount * sizeof(uint32_t));
 
-    id<MTLCommandBuffer> marchingCubesCountCommandBuffer = [commandQueue commandBuffer];
-    id<MTLComputeCommandEncoder> marchingCubesCountEncoder = [marchingCubesCountCommandBuffer computeCommandEncoder];
-    if (marchingCubesCountCommandBuffer == nil || marchingCubesCountEncoder == nil) {
-        return nil;
-    }
-
-    [marchingCubesCountEncoder setComputePipelineState:marchingCubesCountPipeline];
-    [marchingCubesCountEncoder setBuffer:paddedVolumeBuffer offset:0 atIndex:0];
-    [marchingCubesCountEncoder setBuffer:triangleCountBuffer offset:0 atIndex:1];
-    [marchingCubesCountEncoder setBytes:&marchingCubesUniforms length:sizeof(marchingCubesUniforms) atIndex:2];
     const NSUInteger marchingCubesCountThreadWidth = std::max<NSUInteger>(marchingCubesCountPipeline.threadExecutionWidth, 1);
     const MTLSize marchingCubesCountThreads = MTLSizeMake((NSUInteger)cubeCellCount, 1, 1);
     const MTLSize marchingCubesCountThreadgroup = MTLSizeMake(std::min<NSUInteger>(marchingCubesCountThreadWidth, 256), 1, 1);
-    [marchingCubesCountEncoder dispatchThreads:marchingCubesCountThreads threadsPerThreadgroup:marchingCubesCountThreadgroup];
-    [marchingCubesCountEncoder endEncoding];
-    [marchingCubesCountCommandBuffer commit];
-    [marchingCubesCountCommandBuffer waitUntilCompleted];
-    if (marchingCubesCountCommandBuffer.status == MTLCommandBufferStatusError) {
-        NSLog(@"Metal3DSurfaceExtractor Metal marching-cubes count failed: %@", marchingCubesCountCommandBuffer.error);
+    if (![session performWithBuffers:@[paddedVolumeBuffer, triangleCountBuffer]
+                            uniforms:&marchingCubesUniforms
+                              length:sizeof(marchingCubesUniforms)
+                           operation:@"surface.triangleCount"
+                              encode:^(id<MTL4ComputeCommandEncoder> encoder, id<MTL4ArgumentTable> arguments, id<MTLBuffer> uniformBuffer) {
+        [encoder setComputePipelineState:marchingCubesCountPipeline];
+        [arguments setAddress:paddedVolumeBuffer.gpuAddress atIndex:0];
+        [arguments setAddress:triangleCountBuffer.gpuAddress atIndex:1];
+        [arguments setAddress:uniformBuffer.gpuAddress atIndex:2];
+        [encoder dispatchThreads:marchingCubesCountThreads threadsPerThreadgroup:marchingCubesCountThreadgroup];
+    }]) {
         return nil;
     }
 
     const uint32_t *triangleCounts = (const uint32_t *)triangleCountBuffer.contents;
-    NSMutableData *triangleOffsetData = [NSMutableData dataWithLength:(NSUInteger)cubeCellCount * sizeof(uint32_t)];
-    uint32_t *triangleOffsets = (uint32_t *)triangleOffsetData.mutableBytes;
+    id<MTLBuffer> triangleOffsetBuffer = [device newBufferWithLength:(NSUInteger)cubeCellCount * sizeof(uint32_t)
+                                                            options:MTLResourceStorageModeShared];
+    if (triangleOffsetBuffer == nil) {
+        return nil;
+    }
+    uint32_t *triangleOffsets = (uint32_t *)triangleOffsetBuffer.contents;
     uint64_t triangleCount64 = 0;
     for (uint64_t index = 0; index < cubeCellCount; index++) {
         triangleOffsets[index] = (uint32_t)triangleCount64;
@@ -714,36 +842,28 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
         return nil;
     }
 
-    id<MTLBuffer> triangleOffsetBuffer = [device newBufferWithBytes:triangleOffsets
-                                                             length:(NSUInteger)cubeCellCount * sizeof(uint32_t)
-                                                            options:MTLResourceStorageModeShared];
     id<MTLBuffer> vertexBuffer = [device newBufferWithLength:(NSUInteger)vertexByteCount64
                                                      options:MTLResourceStorageModeShared];
-    if (triangleOffsetBuffer == nil || vertexBuffer == nil) {
+    if (vertexBuffer == nil) {
         return nil;
     }
 
-    id<MTLCommandBuffer> emitCommandBuffer = [commandQueue commandBuffer];
-    id<MTLComputeCommandEncoder> emitEncoder = [emitCommandBuffer computeCommandEncoder];
-    if (emitCommandBuffer == nil || emitEncoder == nil) {
-        return nil;
-    }
-
-    [emitEncoder setComputePipelineState:marchingCubesEmitPipeline];
-    [emitEncoder setBuffer:paddedVolumeBuffer offset:0 atIndex:0];
-    [emitEncoder setBuffer:triangleCountBuffer offset:0 atIndex:1];
-    [emitEncoder setBuffer:triangleOffsetBuffer offset:0 atIndex:2];
-    [emitEncoder setBuffer:vertexBuffer offset:0 atIndex:3];
-    [emitEncoder setBytes:&marchingCubesUniforms length:sizeof(marchingCubesUniforms) atIndex:4];
     const NSUInteger emitThreadWidth = std::max<NSUInteger>(marchingCubesEmitPipeline.threadExecutionWidth, 1);
     const MTLSize emitThreads = MTLSizeMake((NSUInteger)cubeCellCount, 1, 1);
     const MTLSize emitThreadgroup = MTLSizeMake(std::min<NSUInteger>(emitThreadWidth, 256), 1, 1);
-    [emitEncoder dispatchThreads:emitThreads threadsPerThreadgroup:emitThreadgroup];
-    [emitEncoder endEncoding];
-    [emitCommandBuffer commit];
-    [emitCommandBuffer waitUntilCompleted];
-    if (emitCommandBuffer.status == MTLCommandBufferStatusError) {
-        NSLog(@"Metal3DSurfaceExtractor Metal emit failed: %@", emitCommandBuffer.error);
+    if (![session performWithBuffers:@[paddedVolumeBuffer, triangleCountBuffer, triangleOffsetBuffer, vertexBuffer]
+                            uniforms:&marchingCubesUniforms
+                              length:sizeof(marchingCubesUniforms)
+                           operation:@"surface.emit"
+                              encode:^(id<MTL4ComputeCommandEncoder> encoder, id<MTL4ArgumentTable> arguments, id<MTLBuffer> uniformBuffer) {
+        [encoder setComputePipelineState:marchingCubesEmitPipeline];
+        [arguments setAddress:paddedVolumeBuffer.gpuAddress atIndex:0];
+        [arguments setAddress:triangleCountBuffer.gpuAddress atIndex:1];
+        [arguments setAddress:triangleOffsetBuffer.gpuAddress atIndex:2];
+        [arguments setAddress:vertexBuffer.gpuAddress atIndex:3];
+        [arguments setAddress:uniformBuffer.gpuAddress atIndex:4];
+        [encoder dispatchThreads:emitThreads threadsPerThreadgroup:emitThreadgroup];
+    }]) {
         return nil;
     }
 

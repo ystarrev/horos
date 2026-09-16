@@ -56,12 +56,7 @@ class MetalPipelineCacheTests(unittest.TestCase):
             source = (SOURCES / filename).read_text()
             with self.subTest(consumer=filename):
                 self.assertIn("MetalPipelineCache.shared(for: device)", source)
-                queue_factory = ("device.makeMTL4CommandQueue()"
-                                 if filename in ("MetalPreviewImageView.swift", "MetalViewerScoutView.swift",
-                                                 "MetalViewerModels.swift", "Metal3DVolumeRenderer.swift",
-                                                 "MetalViewerRenderer.swift")
-                                 else "device.makeCommandQueue()")
-                self.assertIn(queue_factory, source)
+                self.assertIn("device.makeMTL4CommandQueue()", source)
         for path in SOURCES.glob("*.swift"):
             if path.name != "MetalPipelineCache.swift":
                 self.assertNotRegex(path.read_text(), r"\bmake(?:DefaultLibrary|RenderPipelineState|ComputePipelineState)\(")

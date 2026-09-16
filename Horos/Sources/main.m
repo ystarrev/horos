@@ -38,8 +38,6 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "options.h"
-
 int main(int argc, const char *argv[])
 {	
     return NSApplicationMain(argc, argv);

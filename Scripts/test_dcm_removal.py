@@ -56,6 +56,34 @@ class DCMRemovalTests(DCMExtractionTests):
                     self.assertNotRegex(source, retired)
                     self.assertNotIn('#import "DCM.h"', source)
 
+    def test_unused_papyrus_toolkit_is_removed(self):
+        self.assertFalse(any(path.is_file() for path in (ROOT / "Papyrus3").rglob("*")))
+        for project_path in (ROOT / "Horos.xcodeproj/project.pbxproj",
+                             ROOT / "Nitrogen/Nitrogen.xcodeproj/project.pbxproj"):
+            with self.subTest(project=project_path.name):
+                self.assertNotRegex(project_path.read_text(), re.compile(r"papy", re.IGNORECASE))
+        # Upstream format dictionaries and optional tools are not toolkit dependencies.
+        for directory in ("Horos", "Nitrogen/Sources", "Preference Panes"):
+            for path in (ROOT / directory).rglob("*"):
+                if path.suffix not in (".h", ".c", ".m", ".mm", ".swift"):
+                    continue
+                with self.subTest(path=str(path.relative_to(ROOT))):
+                    self.assertNotRegex(path.read_text(), re.compile(r"papy", re.IGNORECASE))
+
+    def test_papyrus_cleanup_preserves_store_locks_and_color_codes(self):
+        app = (ROOT / "Horos/Sources/AppController.m").read_text()
+        for lock in ("STORESCP", "STORESCPTLS"):
+            self.assertIn(f"*{lock} = nil", app)
+            self.assertIn(f"{lock} = [[NSRecursiveLock alloc] init];", app)
+        pix = (ROOT / "Horos/Sources/DCMPix.m").read_text()
+        codes = re.search(r"enum EPhoto_Interpret\s*\{([^}]+)\}", pix)
+        self.assertIsNotNone(codes)
+        self.assertEqual([code.strip() for code in codes.group(1).split(",")], [
+            "MONOCHROME1", "MONOCHROME2", "PALETTE", "RGB", "HSV", "ARGB", "CMYK",
+            "YBR_FULL", "YBR_FULL_422", "YBR_PARTIAL_422", "YBR_RCT", "YBR_ICT",
+            "YUV_RCT", "UNKNOWN_COLOR",
+        ])
+
     def test_swift_jpeg_codec_is_wired_into_horos(self):
         bridge = ROOT / "Horos/Horos-Bridging-Header.h"
         imports = re.findall(r'^#import "([^"]+)"', bridge.read_text(), re.MULTILINE)

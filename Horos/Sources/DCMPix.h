@@ -201,7 +201,7 @@ extern "C"
     
     BOOL				needToCompute8bitRepresentation;
     
-    /** Papyrus Loading variables */
+    /** Image metadata and palette lookup tables */
     
     NSString			*modalityString;
     unsigned short		clutEntryR, clutEntryG, clutEntryB;
@@ -666,9 +666,6 @@ extern "C"
 
 /** Returns flag for protected mode */
 + (BOOL) isRunOsiriXInProtectedModeActivated;
-
-/** Clears the papyrus group cache */
-
 
 + (double) moment: (float *) x length:(long) length mean: (double) mean order: (int) order;
 + (double) skewness: (float*) data length: (long) length mean: (double) mean;

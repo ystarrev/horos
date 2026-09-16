@@ -97,8 +97,7 @@ typedef __typeof__(&HorosModernDCMTKFreeString) HorosDCMPixModernDCMTKFreeString
 #define PREVIEWSIZE 68
 #endif
 
-/* From PapyTypeDef3.h
- Definition of the photometric interpretation */
+/* Photometric interpretation codes used by the YBR conversion routines. */
 enum EPhoto_Interpret    {MONOCHROME1, MONOCHROME2, PALETTE, RGB, HSV, ARGB, CMYK,
     YBR_FULL, YBR_FULL_422, YBR_PARTIAL_422, YBR_RCT, YBR_ICT, YUV_RCT, UNKNOWN_COLOR};
 
@@ -191,16 +190,6 @@ struct NSPointInt
 typedef struct NSPointInt NSPointInt;
 
 NSString* filenameWithDate( NSString *inputfile);
-
-extern NSRecursiveLock *PapyrusLock;
-
-void PapyrusLockFunction( int lock)
-{
-    if( lock)
-        [PapyrusLock lock];
-    else
-        [PapyrusLock unlock];
-}
 
 void ConvertFloatToNative (float *theFloat)
 {

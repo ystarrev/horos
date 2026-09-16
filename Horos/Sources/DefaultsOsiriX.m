@@ -927,9 +927,7 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"0" forKey:@"ROUTINGACTIVATED"];
 	[defaultValues setObject: @"1" forKey: @"KeepStudiesOfSamePatientTogether"];
 	[defaultValues setObject: @"1" forKey: @"KeepStudiesOfSamePatientTogetherAndGrouped"];
-	[defaultValues setObject: @"1" forKey: @"USEPAPYRUSDCMPIX4"];
 	[defaultValues setObject: @"2" forKey: @"TOOLKITPARSER4"];	// Retained preference value for DCMTK.
-	[defaultValues setObject: @"1" forKey: @"PREFERPAPYRUSFORCD"];
     [defaultValues setObject: @"20" forKey: @"maximumNumberOfConcurrentDICOMAssociations"];
     [defaultValues setObject: @"10000" forKey: @"maximumNumberOfCFindObjects"];
     [defaultValues setObject: @"0" forKey: @"TryIMAGELevelDICOMRetrieveIfLocalImages"];

@@ -39,6 +39,20 @@ DCMPix. Keep the Core Data schema and existing DICOM files unchanged.
   uses syntax-only checks, not an application or dependency build. Rebuild in
   the existing Xcode build location and repeat the workflows below.
 
+### Unused Papyrus toolkit cleanup
+
+Removed the 29 unused files in the root Papyrus3 directory. None were referenced
+by the active Xcode projects or application imports. Removed the unused global
+Papyrus lock, its allocation and wrapper function, stale extern declarations,
+the two obsolete preference defaults and outdated cache/loading comments.
+The photometric interpretation codes used by DCMPix's YBR conversion routines,
+DICOM receiver locks and active Horos DicomDir implementation remain unchanged.
+No saved preferences or patient data were modified. Upstream DCMTK/GDCM format
+dictionaries, optional Papyrus tooling and test data were left untouched.
+
+Source/project regression checks in test_dcm_removal.py guard the removal and
+preserved receiver locks and color codes. No application or dependency build.
+
 ### Unused codec dependency cleanup
 
 Removed the Grok and standalone CharLS submodules, aggregate targets, owned

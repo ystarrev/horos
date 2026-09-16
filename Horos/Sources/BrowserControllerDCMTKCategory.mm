@@ -65,8 +65,6 @@ static NSData* HorosBrowserControllerCopyFileDataInTransferSyntax(NSString* file
     return data;
 }
 
-extern NSRecursiveLock *PapyrusLock;
-
 @implementation BrowserController (BrowserControllerDCMTKCategory)
 
 + (NSString*) compressionString: (NSString*) string

@@ -111,7 +111,7 @@ BOOL					NEEDTOREBUILD = NO;
 BOOL					COMPLETEREBUILD = NO;
 AppController			*appController = nil;
 DCMTKQueryRetrieveSCP   *dcmtkQRSCP = nil, *dcmtkQRSCPTLS = nil;
-NSRecursiveLock			*PapyrusLock = nil, *STORESCP = nil, *STORESCPTLS = nil;			// Papyrus is NOT thread-safe
+NSRecursiveLock			*STORESCP = nil, *STORESCPTLS = nil;
 NSMutableArray			*recentStudies = nil;
 NSMutableDictionary     *recentStudiesAlbums = nil;
 
@@ -1939,7 +1939,6 @@ static BOOL firstCall = YES;
         
     //  NSLog(@"%@ -> %d", [[[[NSFileManager defaultManager] findSystemFolderOfType:kApplicationSupportFolderType forDomain:kLocalDomain] stringByAppendingPathComponent:[[NSBundle mainBundle] objectForInfoDictionaryKey:(NSString*)kCFBundleNameKey]] stringByAppendingPathComponent:@"DLog.enable"], [N2Debug isActive]);
         
-        PapyrusLock = [[NSRecursiveLock alloc] init];
         STORESCP = [[NSRecursiveLock alloc] init];
         STORESCPTLS = [[NSRecursiveLock alloc] init];
         

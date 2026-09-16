@@ -3,6 +3,22 @@
 Scope: application-owned code, macOS 27 and Apple silicon. Keep upstream DCMTK
 unmodified and retain the ability to read existing patient data.
 
+## Retired root utilities
+
+- Removed the unreferenced LocalizationExtract.sh and LocalizationGenerate.sh
+  scripts for manually translating compiled nibs. Existing XIB sources and
+  localized resources are unchanged.
+- Removed the root README.txt pointer, empty To-Do.txt and unused ramDiskScript.txt
+  command snippet. None was referenced by the application or build project.
+
+## Retired documentation target
+
+- Removed the stale OsiriX 3.0 Doxyfile-horos configuration and the standalone
+  Documentation target, shared scheme, shell phase and build configurations.
+  The Horos application did not depend on this developer-documentation target.
+- Kept upstream dependencies' documentation tooling and source comments intact.
+  Regression checks guard against stale project/scheme references. No build run.
+
 ## Pinned NIfTI reader
 
 - Replaced the old 2.0.0 snapshot with unmodified upstream NIfTI-1/znzlib files

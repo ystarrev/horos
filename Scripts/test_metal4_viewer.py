@@ -92,8 +92,11 @@ class Metal4ViewerTests(unittest.TestCase):
         self.assertIn("texture?.gpuResourceID ?? MTLResourceID()", FRAME)
         self.assertIn("[nil, overlayVolumeTexture, floatDisplayVolumeTexture,", DRAW)
         self.assertIn("signedDisplayVolumeTexture, unsignedDisplayVolumeTexture]", DRAW)
-        for body in (MPR, INSETS):
-            self.assertIn("[baseVolumeTexture, overlayVolumeTexture, nil,", body)
+        for body, binding in (
+            (MPR, "[baseMPRTexture, overlayMPRTexture, nil,"),
+            (INSETS, "[basePreparedVolume?.sourceTexture ?? baseVolumeTexture, overlayMPRTexture, nil,"),
+        ):
+            self.assertIn(binding, body)
             self.assertIn("baseCLUTTexture, baseOpacityTexture, overlayCLUTTexture, overlayOpacityTexture,", body)
             self.assertIn("nil, nil], sampler: samplerState", body)
 

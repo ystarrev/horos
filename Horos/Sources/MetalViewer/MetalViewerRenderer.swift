@@ -322,10 +322,12 @@ private struct MetalMPRUniforms {
     var fixedVolumeSize: SIMD3<UInt32>
     var movingInverseRotation: simd_float4x4
     var fixedVoxelToWorld: simd_float4x4
+    var fixedVoxelToSourceVoxel: simd_float4x4
     var movingWorldToVoxel: simd_float4x4
     var hasOverlay: UInt32
     var baseHasCustomCLUT: UInt32
     var overlayHasCustomCLUT: UInt32
+    var baseBackgroundValue: Float
 }
 
 private struct RegistrationUniforms {
@@ -991,7 +993,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     private(set) var pixList: [DCMPix]
     private var overlayPixList: [DCMPix] = []
-    private var baseVolumeTexture: MTLTexture?
+    private var basePreparedVolume: MetalPreparedVolumeCache.Entry?
+    private var baseVolumeTexture: MTLTexture? {
+        didSet { if baseVolumeTexture == nil { basePreparedVolume = nil } }
+    }
+    private var baseMPRTexture: MTLTexture? { basePreparedVolume?.sourceTexture ?? baseVolumeTexture }
     private var baseCLUTTexture: MTLTexture?
     private var baseOpacityTexture: MTLTexture?
     private var overlayCLUTTexture: MTLTexture?
@@ -1018,7 +1024,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var overlaySourceTextureEntry: MetalSeriesTextureCache.Entry?
     private var requestedOverlayVolumeKey: String?
     private var requestedOverlayPreparedVolumeKey: String?
-    private var overlayVolumeTexture: MTLTexture?
+    private var overlayPreparedVolume: MetalPreparedVolumeCache.Entry?
+    private var overlayVolumeTexture: MTLTexture? {
+        didSet { if overlayVolumeTexture == nil { overlayPreparedVolume = nil } }
+    }
+    private var overlayMPRTexture: MTLTexture? { overlayPreparedVolume?.sourceTexture ?? overlayVolumeTexture }
     private var baseVolumeDimensions = SIMD3<Int>(repeating: 1) {
         didSet { invalidateMPRVolumeGeometryCaches() }
     }
@@ -4301,6 +4311,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         fixedVoxelToWorld = entry.voxelToWorld
         baseVolumeDimensions = entry.dimensions
         baseVolumeTexture = entry.texture
+        basePreparedVolume = entry
         baseUsesGantryTiltCorrectedVolume = entry.isGantryTiltCorrected
         baseVolumeLevels = entry.levels
         let baseRegistrationWindow = defaultSeriesWindowLevel ?? entry.defaultWindow
@@ -4332,6 +4343,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         overlayVolumeDimensions = entry.dimensions
         overlayUsesGantryTiltCorrectedVolume = entry.isGantryTiltCorrected
         overlayVolumeTexture = entry.texture
+        overlayPreparedVolume = entry
         overlayVolumeLevels = entry.levels
         let overlayRegistrationWindow = overlayDefaultSeriesWindowLevel ?? entry.defaultWindow
         overlayRegistrationWindowLevel = overlayRegistrationWindow.level
@@ -8418,7 +8430,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
         encoder.setRenderPipelineState(mprPipelineState)
         encoder.setDepthStencilState(mprDepthStencilState)
-        frame.setTextures([baseVolumeTexture, overlayVolumeTexture, nil,
+        frame.setTextures([baseMPRTexture, overlayMPRTexture, nil,
                            baseCLUTTexture, baseOpacityTexture, overlayCLUTTexture, overlayOpacityTexture,
                            nil, nil], sampler: samplerState)
         if frame.setVertices(vertices), frame.setUniforms(&uniforms) {
@@ -8510,10 +8522,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             ),
             movingInverseRotation: inverseRotationMatrix(for: overlayRotationRadians),
             fixedVoxelToWorld: fixedVoxelToWorld,
-            movingWorldToVoxel: movingWorldToVoxel,
+            fixedVoxelToSourceVoxel: basePreparedVolume?.voxelToSourceVoxel ?? matrix_identity_float4x4,
+            movingWorldToVoxel: overlayPreparedVolume?.sourceWorldToVoxel ?? movingWorldToVoxel,
             hasOverlay: overlayVolumeTexture == nil ? 0 : 1,
             baseHasCustomCLUT: baseHasCustomCLUT ? 1 : 0,
-            overlayHasCustomCLUT: overlayHasCustomCLUT ? 1 : 0
+            overlayHasCustomCLUT: overlayHasCustomCLUT ? 1 : 0,
+            baseBackgroundValue: baseUsesGantryTiltCorrectedVolume ? -1024 : 0
         )
     }
 
@@ -8760,7 +8774,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     ) {
         var previewUniforms = uniforms
         previewUniforms.viewProjectionMatrix = matrix_identity_float4x4
-        frame.setTextures([baseVolumeTexture, overlayVolumeTexture, nil,
+        frame.setTextures([basePreparedVolume?.sourceTexture ?? baseVolumeTexture, overlayMPRTexture, nil,
                            baseCLUTTexture, baseOpacityTexture, overlayCLUTTexture, overlayOpacityTexture,
                            nil, nil], sampler: samplerState)
 

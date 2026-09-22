@@ -748,6 +748,10 @@ private final class AnnotationsSettingsPaneViewController: HorosSettingsPaneView
     private let addButton = NSButton(title: "Add", target: nil, action: nil)
     private let removeButton = NSButton(title: "Remove", target: nil, action: nil)
     private let orientationButton = NSButton(checkboxWithTitle: "Orientation", target: nil, action: nil)
+    private let annotationFontSizeLabel = NSTextField(labelWithString: "Text size:")
+    private let annotationFontSizeField = NSTextField(frame: .zero)
+    private let annotationFontSizeStepper = NSStepper(frame: .zero)
+    private let annotationFontSizeUnitLabel = NSTextField(labelWithString: "pt")
     private let canvasView = AnnotationsCanvasView(frame: .zero)
     private let titleField = NSTextField(frame: .zero)
     private let contentTokenField = NSTokenField(frame: .zero)
@@ -814,6 +818,8 @@ private final class AnnotationsSettingsPaneViewController: HorosSettingsPaneView
         orientationButton.action = #selector(toggleOrientationWidgets(_:))
         view.addSubview(orientationButton)
 
+        configureAnnotationSizeControls()
+
         canvasView.selectionHandler = { [weak self] selection in
             self?.apply(selection: selection)
         }
@@ -856,6 +862,44 @@ private final class AnnotationsSettingsPaneViewController: HorosSettingsPaneView
         configureTokenControls()
     }
 
+    private func configureAnnotationSizeControls() {
+        let range = MetalViewerAnnotationPreferences.fontSizeRange
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.allowsFloats = false
+        formatter.minimum = NSNumber(value: Double(range.lowerBound))
+        formatter.maximum = NSNumber(value: Double(range.upperBound))
+        annotationFontSizeField.formatter = formatter
+        annotationFontSizeField.alignment = .right
+        annotationFontSizeField.doubleValue = Double(MetalViewerAnnotationPreferences.fontSize)
+        annotationFontSizeField.target = self
+        annotationFontSizeField.action = #selector(annotationFontSizeChanged(_:))
+        annotationFontSizeField.setAccessibilityLabel("Planar annotation text size")
+        annotationFontSizeField.toolTip = "Planar annotation text size in points"
+
+        annotationFontSizeStepper.minValue = Double(range.lowerBound)
+        annotationFontSizeStepper.maxValue = Double(range.upperBound)
+        annotationFontSizeStepper.increment = 1
+        annotationFontSizeStepper.valueWraps = false
+        annotationFontSizeStepper.doubleValue = annotationFontSizeField.doubleValue
+        annotationFontSizeStepper.target = self
+        annotationFontSizeStepper.action = #selector(annotationFontSizeChanged(_:))
+        annotationFontSizeStepper.setAccessibilityLabel("Planar annotation text size")
+        annotationFontSizeStepper.toolTip = annotationFontSizeField.toolTip
+
+        for control in [annotationFontSizeLabel, annotationFontSizeField,
+                        annotationFontSizeStepper, annotationFontSizeUnitLabel] {
+            view.addSubview(control)
+        }
+    }
+
+    @objc private func annotationFontSizeChanged(_ sender: NSControl) {
+        MetalViewerAnnotationPreferences.setFontSize(CGFloat(sender.doubleValue))
+        let size = Double(MetalViewerAnnotationPreferences.fontSize)
+        annotationFontSizeField.doubleValue = size
+        annotationFontSizeStepper.doubleValue = size
+    }
+
     private func layoutControls() {
         let bounds = view.bounds
         let sideInset: CGFloat = 34
@@ -865,9 +909,15 @@ private final class AnnotationsSettingsPaneViewController: HorosSettingsPaneView
         modalityPopUp.frame = NSRect(x: sideInset + 86, y: topY, width: 160, height: 28)
         resetButton.frame = NSRect(x: sideInset + 256, y: topY, width: 84, height: 28)
         sameAsDefaultButton.frame = NSRect(x: sideInset + 354, y: topY + 6, width: 138, height: 18)
-        addButton.frame = NSRect(x: bounds.midX - 70, y: topY, width: 64, height: 28)
-        removeButton.frame = NSRect(x: bounds.midX + 2, y: topY, width: 84, height: 28)
-        orientationButton.frame = NSRect(x: bounds.maxX - sideInset - 136, y: topY + 6, width: 136, height: 18)
+        addButton.frame = NSRect(x: sideInset + 504, y: topY, width: 64, height: 28)
+        removeButton.frame = NSRect(x: sideInset + 576, y: topY, width: 84, height: 28)
+        orientationButton.frame = NSRect(x: sideInset + 676, y: topY + 6, width: 136, height: 18)
+
+        let fontSizeX = bounds.maxX - sideInset - 176
+        annotationFontSizeLabel.frame = NSRect(x: fontSizeX, y: topY + 6, width: 68, height: 20)
+        annotationFontSizeField.frame = NSRect(x: fontSizeX + 72, y: topY + 2, width: 48, height: 24)
+        annotationFontSizeStepper.frame = NSRect(x: fontSizeX + 124, y: topY, width: 19, height: 28)
+        annotationFontSizeUnitLabel.frame = NSRect(x: fontSizeX + 150, y: topY + 6, width: 26, height: 20)
 
         let canvasTop = topY + 48
         let editorHeight: CGFloat = 312

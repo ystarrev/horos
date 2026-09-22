@@ -514,6 +514,8 @@ final class MetalViewerPaneView: NSView {
             didSet { needsDisplay = true }
         }
 
+        private var textStyle = TextStyle(fontSize: MetalViewerAnnotationPreferences.fontSize)
+
         override var isFlipped: Bool { true }
 
         override func hitTest(_ point: NSPoint) -> NSView? {
@@ -529,6 +531,11 @@ final class MetalViewerPaneView: NSView {
 
             guard overlayState.annotationLevel != .none else {
                 return
+            }
+
+            let fontSize = MetalViewerAnnotationPreferences.fontSize
+            if textStyle.fontSize != fontSize {
+                textStyle = TextStyle(fontSize: fontSize)
             }
 
             if overlayState.annotationLevel == .graphics {
@@ -553,7 +560,7 @@ final class MetalViewerPaneView: NSView {
                 return
             }
 
-            let lineHeight = ceil(Self.mainFont.ascender - Self.mainFont.descender + 2)
+            let lineHeight = textStyle.lineHeight
             let size = bounds
 
             let xRasterInit: [String: CGFloat] = [
@@ -680,7 +687,7 @@ final class MetalViewerPaneView: NSView {
         }
 
         private func drawDefaultAnnotations(state: State) {
-            let lineHeight = Self.lineHeight
+            let lineHeight = textStyle.lineHeight
             let leftX = bounds.minX + 6
             let rightX = bounds.maxX - 2
             var topLeftY = bounds.minY + lineHeight + 2
@@ -759,7 +766,7 @@ final class MetalViewerPaneView: NSView {
             drawOverlayString(
                 overlayDate,
                 atX: bounds.maxX - 2,
-                y: bounds.maxY - 2 - Self.lineHeight * 2,
+                y: bounds.maxY - 2 - textStyle.lineHeight * 2,
                 align: .right
             )
         }
@@ -883,15 +890,15 @@ final class MetalViewerPaneView: NSView {
                 drawString(right, atX: rect.origin.x + rect.width - 2, y: rect.origin.y + 2 + rect.height / 2, align: .right)
             }
 
-            var yPosition = rect.origin.y + Self.lineHeight + 3
+            var yPosition = rect.origin.y + textStyle.lineHeight + 3
             if top.isEmpty == false {
                 drawString(top, atX: rect.origin.x + rect.width / 2, y: yPosition, align: .center)
-                yPosition += Self.lineHeight + 3
+                yPosition += textStyle.lineHeight + 3
             }
 
             if let laterality = state.imageMetadata.laterality, laterality.isEmpty == false {
                 drawString(laterality, atX: rect.origin.x + rect.width / 2, y: yPosition, align: .center)
-                yPosition += Self.lineHeight + 3
+                yPosition += textStyle.lineHeight + 3
             }
 
             if state.imageMetadata.voiLUTApplied {
@@ -902,7 +909,7 @@ final class MetalViewerPaneView: NSView {
                 drawString(
                     bottom,
                     atX: rect.origin.x + rect.width / 2,
-                    y: rect.maxY - Self.lineHeight - 2,
+                    y: rect.maxY - textStyle.lineHeight - 2,
                     align: .center
                 )
             }
@@ -916,7 +923,7 @@ final class MetalViewerPaneView: NSView {
             drawString(
                 NSLocalizedString("Gantry Tilt Corrected", comment: ""),
                 atX: bounds.maxX - 6,
-                y: bounds.maxY - Self.lineHeight * 2 - 6,
+                y: bounds.maxY - textStyle.lineHeight * 2 - 6,
                 align: .right
             )
         }
@@ -933,12 +940,12 @@ final class MetalViewerPaneView: NSView {
             let seriesNumber = state.seriesNumber.trimmingCharacters(in: .whitespacesAndNewlines)
             let text = NSMutableAttributedString(
                 string: state.studyNumber.map(String.init) ?? "",
-                attributes: Self.studyNumberTextAttributes
+                attributes: textStyle.redTextAttributes
             )
 
             if seriesNumber.isEmpty == false {
                 let separator = text.length > 0 ? "-" : ""
-                text.append(NSAttributedString(string: "\(separator)\(seriesNumber)", attributes: Self.textAttributes))
+                text.append(NSAttributedString(string: "\(separator)\(seriesNumber)", attributes: textStyle.textAttributes))
             }
 
             return text
@@ -950,7 +957,7 @@ final class MetalViewerPaneView: NSView {
             }
 
             let string = text as NSString
-            let size = string.size(withAttributes: Self.textAttributes)
+            let size = string.size(withAttributes: textStyle.textAttributes)
             let drawPoint: CGPoint
             switch align {
             case .left:
@@ -961,8 +968,8 @@ final class MetalViewerPaneView: NSView {
                 drawPoint = CGPoint(x: x - size.width / 2, y: y)
             }
 
-            string.draw(at: CGPoint(x: drawPoint.x + 1, y: drawPoint.y + 1), withAttributes: Self.shadowAttributes)
-            string.draw(at: drawPoint, withAttributes: Self.textAttributes)
+            string.draw(at: CGPoint(x: drawPoint.x + 1, y: drawPoint.y + 1), withAttributes: textStyle.shadowAttributes)
+            string.draw(at: drawPoint, withAttributes: textStyle.textAttributes)
         }
 
         private func drawAttributedString(_ text: NSAttributedString, atX x: CGFloat, y: CGFloat, align: TextAlign) {
@@ -981,7 +988,7 @@ final class MetalViewerPaneView: NSView {
                 drawPoint = CGPoint(x: x - size.width / 2, y: y)
             }
 
-            (text.string as NSString).draw(at: CGPoint(x: drawPoint.x + 1, y: drawPoint.y + 1), withAttributes: Self.shadowAttributes)
+            (text.string as NSString).draw(at: CGPoint(x: drawPoint.x + 1, y: drawPoint.y + 1), withAttributes: textStyle.shadowAttributes)
             text.draw(at: drawPoint)
         }
 
@@ -991,7 +998,7 @@ final class MetalViewerPaneView: NSView {
             }
 
             let string = text as NSString
-            let size = string.size(withAttributes: Self.overlayTextAttributes)
+            let size = string.size(withAttributes: textStyle.redTextAttributes)
             let drawPoint: CGPoint
             switch align {
             case .left:
@@ -1002,8 +1009,8 @@ final class MetalViewerPaneView: NSView {
                 drawPoint = CGPoint(x: x - size.width / 2, y: y)
             }
 
-            string.draw(at: CGPoint(x: drawPoint.x + 1, y: drawPoint.y + 1), withAttributes: Self.shadowAttributes)
-            string.draw(at: drawPoint, withAttributes: Self.overlayTextAttributes)
+            string.draw(at: CGPoint(x: drawPoint.x + 1, y: drawPoint.y + 1), withAttributes: textStyle.shadowAttributes)
+            string.draw(at: drawPoint, withAttributes: textStyle.redTextAttributes)
         }
 
         private func orientationText(for vector: SIMD3<Double>, inverted: Bool) -> String {
@@ -1033,25 +1040,25 @@ final class MetalViewerPaneView: NSView {
             return result
         }
 
-        private static let mainFont = NSFont.systemFont(ofSize: 12, weight: .medium)
-        private static let lineHeight = ceil(mainFont.ascender - mainFont.descender + 2)
-        private static let textColor = NSColor(calibratedRed: 0.18, green: 1.0, blue: 0.28, alpha: 1.0)
-        private static let textAttributes: [NSAttributedString.Key: Any] = [
-            .font: mainFont,
-            .foregroundColor: textColor,
-        ]
-        private static let studyNumberTextAttributes: [NSAttributedString.Key: Any] = [
-            .font: mainFont,
-            .foregroundColor: NSColor.systemRed,
-        ]
-        private static let shadowAttributes: [NSAttributedString.Key: Any] = [
-            .font: mainFont,
-            .foregroundColor: NSColor.black.withAlphaComponent(0.85),
-        ]
-        private static let overlayTextAttributes: [NSAttributedString.Key: Any] = [
-            .font: mainFont,
-            .foregroundColor: NSColor.systemRed,
-        ]
+        private struct TextStyle {
+            let fontSize: CGFloat
+            let lineHeight: CGFloat
+            let textAttributes: [NSAttributedString.Key: Any]
+            let redTextAttributes: [NSAttributedString.Key: Any]
+            let shadowAttributes: [NSAttributedString.Key: Any]
+
+            init(fontSize: CGFloat) {
+                self.fontSize = fontSize
+                let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+                lineHeight = ceil(font.ascender - font.descender + 2)
+                textAttributes = [
+                    .font: font,
+                    .foregroundColor: NSColor(calibratedRed: 0.18, green: 1.0, blue: 0.28, alpha: 1.0),
+                ]
+                redTextAttributes = [.font: font, .foregroundColor: NSColor.systemRed]
+                shadowAttributes = [.font: font, .foregroundColor: NSColor.black.withAlphaComponent(0.85)]
+            }
+        }
         private static let acquisitionDateFormatter: DateFormatter = {
             let formatter = DateFormatter()
             formatter.dateStyle = .short

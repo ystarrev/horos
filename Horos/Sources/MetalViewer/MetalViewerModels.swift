@@ -363,6 +363,30 @@ enum MetalViewerScoutPlacement: Int, CaseIterable {
     }
 }
 
+enum MetalViewerAnnotationPreferences {
+    static let fontSizeDefaultsKey = "HorosMetalViewerAnnotationFontSize"
+    static let defaultFontSize: CGFloat = 12
+    static let fontSizeRange: ClosedRange<CGFloat> = 10...24
+
+    static var fontSize: CGFloat {
+        guard let value = UserDefaults.standard.object(forKey: fontSizeDefaultsKey) as? NSNumber else {
+            return defaultFontSize
+        }
+        return normalizedFontSize(CGFloat(value.doubleValue))
+    }
+
+    static func setFontSize(_ size: CGFloat) {
+        let size = normalizedFontSize(size)
+        guard size != fontSize else { return }
+        UserDefaults.standard.set(Double(size), forKey: fontSizeDefaultsKey)
+    }
+
+    private static func normalizedFontSize(_ size: CGFloat) -> CGFloat {
+        guard size.isFinite else { return defaultFontSize }
+        return min(max(size.rounded(), fontSizeRange.lowerBound), fontSizeRange.upperBound)
+    }
+}
+
 enum MetalViewerMPRROIOverlayPreferences {
     static let didChangeNotification = Notification.Name("HorosMetalViewerMPRROIOverlayDidChange")
     private static let opacityDefaultsKey = "HorosMetalViewerMPRROIOverlayOpacity"
@@ -3447,6 +3471,11 @@ final class MetalPreparedVolumeCache {
         let key: String
         let sourceKey: String
         let texture: MTLTexture
+        // MPR samples the original grid, combining gantry correction with display resampling.
+        let sourceTexture: MTLTexture
+        let sourceVoxelToWorld: simd_float4x4
+        let sourceWorldToVoxel: simd_float4x4
+        let voxelToSourceVoxel: simd_float4x4
         let dimensions: SIMD3<Int>
         let voxelToWorld: simd_float4x4
         let isGantryTiltCorrected: Bool
@@ -3460,6 +3489,8 @@ final class MetalPreparedVolumeCache {
             key: String,
             sourceKey: String,
             texture: MTLTexture,
+            sourceTexture: MTLTexture,
+            sourceVoxelToWorld: simd_float4x4,
             dimensions: SIMD3<Int>,
             voxelToWorld: simd_float4x4,
             isGantryTiltCorrected: Bool,
@@ -3471,6 +3502,12 @@ final class MetalPreparedVolumeCache {
             self.key = key
             self.sourceKey = sourceKey
             self.texture = texture
+            self.sourceTexture = sourceTexture
+            self.sourceVoxelToWorld = sourceVoxelToWorld
+            let sourceInverse = simd_inverse(sourceVoxelToWorld)
+            self.sourceWorldToVoxel = sourceInverse
+            self.voxelToSourceVoxel = isGantryTiltCorrected
+                ? sourceInverse * voxelToWorld : matrix_identity_float4x4
             self.dimensions = dimensions
             self.voxelToWorld = voxelToWorld
             self.isGantryTiltCorrected = isGantryTiltCorrected
@@ -3478,7 +3515,9 @@ final class MetalPreparedVolumeCache {
             self.hasRegistrationPyramid = hasRegistrationPyramid
             self.defaultWindow = defaultWindow
             self.fullDynamicWindow = fullDynamicWindow
-            self.byteCount = levels.reduce(0) { partial, level in
+            let sourceByteCount = sourceTexture === texture ? 0
+                : sourceTexture.width * sourceTexture.height * sourceTexture.depth * MemoryLayout<Float>.stride
+            self.byteCount = sourceByteCount + levels.reduce(0) { partial, level in
                 partial + max(level.dimensions.x, 1)
                     * max(level.dimensions.y, 1)
                     * max(level.dimensions.z, 1)
@@ -3793,10 +3832,13 @@ final class MetalPreparedVolumeCache {
         }
 
         let primaryTexture: MTLTexture
+        let sourceTexture: MTLTexture
         if let existingEntry,
            existingEntry.dimensions == outputDimensions,
-           Self.matricesMatch(existingEntry.voxelToWorld, outputVoxelToWorld) {
+           Self.matricesMatch(existingEntry.voxelToWorld, outputVoxelToWorld),
+           Self.matricesMatch(existingEntry.sourceVoxelToWorld, geometry.sourceVoxelToPatientMatrix) {
             primaryTexture = existingEntry.texture
+            sourceTexture = existingEntry.sourceTexture
         } else {
             guard let convertedTexture = makeWritableFloatTexture(
                 device: device,
@@ -3811,6 +3853,7 @@ final class MetalPreparedVolumeCache {
                 return
             }
 
+            sourceTexture = convertedTexture
             if appliesGantryCorrection {
                 guard let correctedTexture = makeWritableFloatTexture(
                     device: device,
@@ -3858,6 +3901,8 @@ final class MetalPreparedVolumeCache {
             key: key,
             sourceKey: sourceEntry.key,
             texture: primaryTexture,
+            sourceTexture: sourceTexture,
+            sourceVoxelToWorld: geometry.sourceVoxelToPatientMatrix,
             dimensions: outputDimensions,
             voxelToWorld: outputVoxelToWorld,
             isGantryTiltCorrected: appliesGantryCorrection,

@@ -81,10 +81,12 @@ struct MetalMPRUniforms {
     uint3 fixedVolumeSize;
     float4x4 movingInverseRotation;
     float4x4 fixedVoxelToWorld;
+    float4x4 fixedVoxelToSourceVoxel;
     float4x4 movingWorldToVoxel;
     uint hasOverlay;
     uint baseHasCustomCLUT;
     uint overlayHasCustomCLUT;
+    float baseBackgroundValue;
 };
 
 struct MetalPreviewUniforms {
@@ -2007,34 +2009,49 @@ static float metalViewerCubicWeight(float x) {
 
 static float metalViewerMPRSample(
     texture3d<float> volumeTexture,
-    sampler imageSampler,
-    float3 normalizedCoord
+    float3 voxelPosition
 ) {
-    const float depth = float(volumeTexture.get_depth());
-    if (depth < 4.0) {
-        return volumeTexture.sample(imageSampler, normalizedCoord).r;
+    const int3 maximum = int3(volumeTexture.get_width(), volumeTexture.get_height(), volumeTexture.get_depth()) - 1;
+    float3 position = clamp(voxelPosition, float3(0.0), float3(maximum));
+    // Remove only floating-point transform noise at voxel centres, not subvoxel detail.
+    const float3 nearest = round(position);
+    position = select(position, nearest, abs(position - nearest) < 0.0001f);
+    if (all(position == nearest)) {
+        return volumeTexture.read(uint3(nearest)).r;
     }
 
-    const float z = normalizedCoord.z * depth - 0.5;
-    const float zBase = floor(z);
-    const float zFraction = z - zBase;
+    const int3 base = int3(floor(position));
+    const float3 fraction = position - float3(base);
+    float3 weights[4];
+    for (int i = 0; i < 4; ++i) {
+        const float offset = float(i - 1);
+        weights[i] = float3(
+            metalViewerCubicWeight(offset - fraction.x),
+            metalViewerCubicWeight(offset - fraction.y),
+            metalViewerCubicWeight(offset - fraction.z)
+        );
+    }
     float weightedValue = 0.0;
     float totalWeight = 0.0;
     float minimumSample = 3.402823466e+38F;
     float maximumSample = -3.402823466e+38F;
 
-    for (int offset = -1; offset <= 2; ++offset) {
-        const float sampleZ = clamp(zBase + float(offset), 0.0, depth - 1.0);
-        const float weight = metalViewerCubicWeight(float(offset) - zFraction);
-        const float3 sampleCoord = float3(
-            normalizedCoord.xy,
-            (sampleZ + 0.5) / depth
-        );
-        const float sampleValue = volumeTexture.sample(imageSampler, sampleCoord).r;
-        weightedValue += sampleValue * weight;
-        totalWeight += weight;
-        minimumSample = min(minimumSample, sampleValue);
-        maximumSample = max(maximumSample, sampleValue);
+    for (int z = 0; z < 4; ++z) {
+        if (weights[z].z == 0.0f) { continue; }
+        for (int y = 0; y < 4; ++y) {
+            const float yzWeight = weights[z].z * weights[y].y;
+            if (yzWeight == 0.0f) { continue; }
+            for (int x = 0; x < 4; ++x) {
+                const float weight = yzWeight * weights[x].x;
+                if (weight == 0.0f) { continue; }
+                const uint3 samplePosition = uint3(clamp(base + int3(x, y, z) - 1, int3(0), maximum));
+                const float sampleValue = volumeTexture.read(samplePosition).r;
+                weightedValue += sampleValue * weight;
+                totalWeight += weight;
+                minimumSample = min(minimumSample, sampleValue);
+                maximumSample = max(maximumSample, sampleValue);
+            }
+        }
     }
 
     return clamp(weightedValue / max(totalWeight, 0.0001), minimumSample, maximumSample);
@@ -2052,7 +2069,7 @@ fragment float4 metalViewerMPRFragment(
     sampler imageSampler [[sampler(0)]]
 ) {
     const float3 baseSize = float3(baseTexture.get_width(), baseTexture.get_height(), baseTexture.get_depth());
-    const float3 baseCoord = (in.baseVoxel + 0.5) / baseSize;
+    const float3 baseCoord = (in.baseVoxel + 0.5) / max(float3(uniforms.fixedVolumeSize), float3(1.0));
 
     if (baseCoord.x < 0.0 || baseCoord.x > 1.0 ||
         baseCoord.y < 0.0 || baseCoord.y > 1.0 ||
@@ -2060,7 +2077,12 @@ fragment float4 metalViewerMPRFragment(
         discard_fragment();
     }
 
-    const float basePixelValue = metalViewerMPRSample(baseTexture, imageSampler, baseCoord);
+    // Geometry remains gantry-corrected; fetch original voxels through the combined transform.
+    const float3 sourceVoxel = (uniforms.fixedVoxelToSourceVoxel * float4(in.baseVoxel, 1.0)).xyz;
+    const float3 sourceCoord = (sourceVoxel + 0.5) / baseSize;
+    const bool insideSource = all(sourceCoord >= 0.0f) && all(sourceCoord <= 1.0f);
+    const float basePixelValue = insideSource
+        ? metalViewerMPRSample(baseTexture, sourceVoxel) : uniforms.baseBackgroundValue;
     const float baseMinValue = uniforms.baseWindowLevel - uniforms.baseWindowWidth * 0.5;
     const float baseNormalized = clamp((basePixelValue - baseMinValue) / uniforms.baseWindowWidth, 0.0, 1.0);
     const float baseMapped = metalViewerApplyOpacity(baseNormalized, baseOpacityTexture, imageSampler);
@@ -2091,7 +2113,7 @@ fragment float4 metalViewerMPRFragment(
         return float4(baseFusionColor, 1.0);
     }
 
-    const float overlayPixelValue = metalViewerMPRSample(overlayTexture, imageSampler, overlayCoord);
+    const float overlayPixelValue = metalViewerMPRSample(overlayTexture, movingVoxel.xyz);
     const float overlayMinValue = uniforms.overlayWindowLevel - uniforms.overlayWindowWidth * 0.5;
     const float overlayNormalized = clamp((overlayPixelValue - overlayMinValue) / uniforms.overlayWindowWidth, 0.0, 1.0);
     const float overlayMapped = metalViewerApplyOpacity(overlayNormalized, overlayOpacityTexture, imageSampler);

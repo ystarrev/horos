@@ -119,6 +119,8 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     NSThread                *_smartAlbumActivityThread;
     
     NSArray							*outlineViewArray, *originalOutlineViewArray;
+    NSSet                           *_originalOutlineStudies;
+    NSCache                         *_databaseAgeDisplayCache;
     NSArray							*matrixViewArray;
     
     NSString						*_searchString;

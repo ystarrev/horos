@@ -3653,6 +3653,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         outlineViewArray = [outlineViewArray sortedArrayUsingDescriptors: sortDescriptors];
     }
 
+    [_originalOutlineStudies release];
+    _originalOutlineStudies = originalOutlineViewArray ? [[NSSet alloc] initWithArray:originalOutlineViewArray] : nil;
+
     outlineViewArray = [self arrayByPresentingSurgicalProcedureStudies:outlineViewArray
                                                               sortDescriptors:sortDescriptors
                                                                presentEvents:smartAlbumName == nil && [self seriesDescriptionSearchIsActive] == NO];
@@ -6938,12 +6941,21 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             if( [item valueForKey:@"reportURL"])
             {
                 DicomStudy *study = (DicomStudy*) item;
-                DicomImage *report = [study reportImage];
-                
-                if( [report valueForKey: @"date"])
-                    return [report valueForKey: @"date"];
-                else
-                    return nil;
+                // reportImage/reportSRSeries may merge duplicate series. Drawing must be read-only.
+                NSDate *latestDate = nil;
+                for (DicomSeries *series in study.series)
+                {
+                    if (series.id.intValue != 5003 || ![series.name isEqualToString:@"OsiriX Report SR"] ||
+                        ![DCMAbstractSyntaxUID isStructuredReport:series.seriesSOPClassUID])
+                        continue;
+                    for (DicomImage *image in series.images)
+                    {
+                        NSDate *date = [image valueForKey:@"date"];
+                        if (date && (!latestDate || [date compare:latestDate] == NSOrderedDescending))
+                            latestDate = date;
+                    }
+                }
+                return latestDate;
             }
             else return nil;
         }
@@ -7000,14 +7012,34 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     
     if( [[tableColumn identifier] isEqualToString:@"yearOld"])
     {
-        switch ( [[NSUserDefaults standardUserDefaults] integerForKey: @"yearOldDatabaseDisplay"])
+        NSInteger mode = [[NSUserDefaults standardUserDefaults] integerForKey:@"yearOldDatabaseDisplay"];
+        NSCalendar *calendar = [NSCalendar currentCalendar];
+        NSDate *birthDate = [item valueForKey:@"dateOfBirth"];
+        NSDate *studyDate = [item valueForKey:@"date"];
+        // NSArray hashes collide for these equal-length tuples, making scrolling cache lookups linear.
+        NSString *cacheKey = [NSString stringWithFormat:@"%@|%@|%ld|%.0f|%@|%@|%@",
+                              birthDate ? @(birthDate.timeIntervalSinceReferenceDate) : [NSNull null],
+                              studyDate ? @(studyDate.timeIntervalSinceReferenceDate) : [NSNull null], (long)mode,
+                              [calendar startOfDayForDate:[NSDate date]].timeIntervalSinceReferenceDate,
+                              calendar.calendarIdentifier, calendar.timeZone.name,
+                              [NSLocale currentLocale].localeIdentifier];
+        if (!_databaseAgeDisplayCache)
+        {
+            _databaseAgeDisplayCache = [[NSCache alloc] init];
+            _databaseAgeDisplayCache.countLimit = 2048;
+        }
+        NSString *cachedAge = [_databaseAgeDisplayCache objectForKey:cacheKey];
+        if (cachedAge)
+            return cachedAge;
+        NSString *displayAge = nil;
+        switch (mode)
         {
             case 0:
-                return [item valueForKey: @"yearOld"];
+                displayAge = [item valueForKey: @"yearOld"];
                 break;
                 
             case 1:
-                return [item valueForKey: @"yearOldAcquisition"];
+                displayAge = [item valueForKey: @"yearOldAcquisition"];
                 break;
                 
             case 2:
@@ -7017,26 +7049,35 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                 NSString *yearOldAcquisition = [item valueForKey: @"yearOldAcquisition"];
                 
                 if( [yearOld isEqualToString: yearOldAcquisition])
-                    return yearOld;
+                    displayAge = yearOld;
                 else
                 {
                     if( [yearOld hasSuffix: NSLocalizedString( @" y", @"y = year")] && [yearOldAcquisition hasSuffix: NSLocalizedString( @" y", @"y = year")])
-                        return [NSString stringWithFormat: @"%@/%@%@", [yearOld substringToIndex: yearOld.length-[NSLocalizedString( @" y", @"y = year") length]], [yearOldAcquisition substringToIndex: yearOldAcquisition.length-[NSLocalizedString( @" y", @"y = year") length]], NSLocalizedString( @" y", @"y = year")];
+                        displayAge = [NSString stringWithFormat: @"%@/%@%@", [yearOld substringToIndex: yearOld.length-[NSLocalizedString( @" y", @"y = year") length]], [yearOldAcquisition substringToIndex: yearOldAcquisition.length-[NSLocalizedString( @" y", @"y = year") length]], NSLocalizedString( @" y", @"y = year")];
                     else
-                        return [NSString stringWithFormat: @"%@/%@", yearOld, yearOldAcquisition];
+                        displayAge = [NSString stringWithFormat: @"%@/%@", yearOld, yearOldAcquisition];
                 }
             }
                 break;
         }
-        
+        if (displayAge)
+            [_databaseAgeDisplayCache setObject:displayAge forKey:cacheKey];
+        return displayAge;
     }
     
     if( [[tableColumn identifier] isEqualToString:@"noSeries"])
     {
-        if( [item valueForKey:@"imageSeries"])
-            return [NSString stringWithFormat: @"%d", (int) [[item valueForKey:@"imageSeries"] count]];
-        else
-            return @"";
+        if ([item isKindOfClass:[DicomStudy class]] && ![item isDistant])
+        {
+            NSUInteger count = 0;
+            for (DicomSeries *series in [(DicomStudy *)item series])
+                if ([DicomStudy displaySeriesWithSOPClassUID:series.seriesSOPClassUID
+                                      andSeriesDescription:series.name])
+                    count++;
+            return [NSString stringWithFormat:@"%lu", (unsigned long)count];
+        }
+        NSArray *series = [item valueForKey:@"imageSeries"];
+        return series ? [NSString stringWithFormat:@"%lu", (unsigned long)series.count] : @"";
     }
     
     id value = nil;
@@ -7237,7 +7278,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             }
             else if( originalOutlineViewArray)
             {
-                if( [originalOutlineViewArray containsObject: item]) [cell setFont: [NSFont boldSystemFontOfSize: [self fontSize: @"dbFont"]]];
+                if( [_originalOutlineStudies containsObject: item]) [cell setFont: [NSFont boldSystemFontOfSize: [self fontSize: @"dbFont"]]];
                 else [cell setFont: [NSFont systemFontOfSize: [self fontSize: @"dbFont"]]];
             }
             else [cell setFont: [NSFont boldSystemFontOfSize: [self fontSize: @"dbFont"]]];
@@ -7284,28 +7325,24 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             
             if( [[tableColumn identifier] isEqualToString: @"reportURL"])
             {
-                if( (![_database isLocal] && [item valueForKey:@"reportURL"] != nil) || [[NSFileManager defaultManager] fileExistsAtPath: [item valueForKey:@"reportURL"]] == YES)
+                // Display the recorded link; availability is checked when opening, not while scrolling.
+                NSString *reportURL = [item valueForKey:@"reportURL"];
+                if (reportURL.length)
                 {
-                    NSImage	*reportIcon = [NSImage imageNamed:@"Report.icns"];
-                    [reportIcon setSize: NSMakeSize(16, 16)];
-                    
-                    [(ImageAndTextCell*) cell setImage: reportIcon];
-                }
-                else if( [[item valueForKey: @"reportURL"] hasPrefix: @"http://"] || [[item valueForKey: @"reportURL"] hasPrefix: @"https://"])
-                {
-                    UTType *downloadType = [UTType typeWithFilenameExtension:@"download"] ?: UTTypeData;
-                    NSImage	*reportIcon = [[NSWorkspace sharedWorkspace] iconForContentType:downloadType];
-                    
-                    if( reportIcon == nil) reportIcon = [NSImage imageNamed:@"Report.icns"];
-                    
-                    [reportIcon setSize: NSMakeSize(16, 16)];
-                    
-                    [(ImageAndTextCell*) cell setImage: reportIcon];
-                }
-                else
-                {
-                    if( [item valueForKey:@"reportURL"] != nil)
-                        [item setValue: nil forKey: @"reportURL"];
+                    static NSImage *localReportIcon = nil;
+                    static NSImage *webReportIcon = nil;
+                    static dispatch_once_t onceToken;
+                    dispatch_once(&onceToken, ^{
+                        localReportIcon = [[NSImage imageNamed:@"Report.icns"] copy];
+                        localReportIcon.size = NSMakeSize(16, 16);
+                        UTType *downloadType = [UTType typeWithFilenameExtension:@"download"] ?: UTTypeData;
+                        webReportIcon = [[[NSWorkspace sharedWorkspace] iconForContentType:downloadType] copy];
+                        if (!webReportIcon) webReportIcon = [localReportIcon retain];
+                        webReportIcon.size = NSMakeSize(16, 16);
+                    });
+                    BOOL webLink = [_database isLocal] &&
+                        ([reportURL hasPrefix:@"http://"] || [reportURL hasPrefix:@"https://"]);
+                    [(ImageAndTextCell *)cell setImage:webLink ? webReportIcon : localReportIcon];
                 }
             }
         }
@@ -12878,6 +12915,8 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 
 -(void)dealloc
 {
+    [_originalOutlineStudies release];
+    [_databaseAgeDisplayCache release];
     [self cancelPendingDatabaseImportRefresh];
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(applyPendingSearchString:) object:nil];
     [[NSNotificationCenter defaultCenter] removeObserver:self name:NSOutlineViewColumnDidMoveNotification object:databaseOutline];

@@ -44,6 +44,14 @@
 
 @implementation MyOutlineView
 
+- (void)awakeFromNib
+{
+    [super awakeFromNib];
+    // Keep the scrolling viewport composited instead of repainting the window backing store.
+    self.enclosingScrollView.wantsLayer = YES;
+    self.wantsLayer = YES;
+}
+
 - (void)print:(id)sender
 {
     id controller = self.window.windowController;

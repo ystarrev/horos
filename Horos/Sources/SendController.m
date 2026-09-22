@@ -438,7 +438,6 @@ static BOOL HorosServerSupportsFastStore(NSDictionary *server)
 
 - (IBAction)selectServer: (id)sender
 {
-	//NSLog(@"select server: %@", [sender description]);
 	_serverIndex = [sender indexOfSelectedItem];
 	
 	[[NSUserDefaults standardUserDefaults] setInteger:_serverIndex forKey:@"lastSendServer"];
@@ -573,7 +572,6 @@ static BOOL HorosServerSupportsFastStore(NSDictionary *server)
 	
     NSMutableArray *arraysOfFiles = [NSMutableArray array];
     NSMutableArray *arrayOfPatientNames = [NSMutableArray array];
-//    DicomDatabase *database = nil;
     
 	@try
 	{
@@ -724,7 +722,6 @@ static NSArray *HorosFlattenFileArrays(NSArray *arraysOfFiles)
         while( loc < files.count);
     }
     
-//    NSUInteger initialOpCount = queue.operationCount;
     while (queue.operationCount)
     {
         if( [[NSThread currentThread] isCancelled])

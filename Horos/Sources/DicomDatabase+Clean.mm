@@ -470,11 +470,6 @@ static BOOL _cleanForFreeSpaceLimitSoonReachedDisplayed = NO;
         
 		unsigned long long free = [[fsattrs objectForKey:NSFileSystemFreeSize] unsignedLongLongValue]/1024/1024; // megabytes
 
-/*		if (_lastFreeSpace != free && ([NSDate timeIntervalSinceReferenceDate] - _lastFreeSpaceLogTime) > 60*10) { // not more often than every ten minutes, log about the disk's free space
-			_lastFreeSpace = free;
-			_lastFreeSpaceLogTime = [NSDate timeIntervalSinceReferenceDate];
-			NSLog(@"Info: database free space is %ld MB", (long)free);
-		}*/
 		
 		if (free >= freeMemoryRequested)
         {
@@ -496,7 +491,6 @@ static BOOL _cleanForFreeSpaceLimitSoonReachedDisplayed = NO;
         
         NSMutableArray* studiesDates = [NSMutableArray array];
         
-//        BOOL dontDeleteStudiesIfInAlbum = [[NSUserDefaults standardUserDefaults] boolForKey:@"dontDeleteStudiesIfInAlbum"];
         BOOL flagDoNotDeleteIfComments = [[NSUserDefaults standardUserDefaults] boolForKey:@"dontDeleteStudiesWithComments"];
         NSInteger autocleanSpaceMode = [[[NSUserDefaults standardUserDefaults] objectForKey:@"AutocleanSpaceMode"] intValue];
         

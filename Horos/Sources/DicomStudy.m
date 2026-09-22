@@ -342,7 +342,6 @@ static NSRecursiveLock *dbModifyLock = nil;
     
     return s;
     
-    //    return [DicomStudy scrambleString: [self primitiveValueForKey: @"name"]];
 }
 
 - (BOOL) isDistant
@@ -494,10 +493,8 @@ static NSRecursiveLock *dbModifyLock = nil;
                                     [i didChangeValueForKey: @"storedIsKeyImage"];
                                 }
                             }
-                            //							else NSLog( @"----- applyAnnotationsFromDictionary : image not found : %@", [image valueForKey: @"sopInstanceUID"]);
                         }
                     }
-                    //					else NSLog( @"----- applyAnnotationsFromDictionary : series not found : %@", [series valueForKey: @"seriesInstanceUID"]);
                 }
             }
         }
@@ -1204,8 +1201,6 @@ static NSRecursiveLock *dbModifyLock = nil;
 - (void) setNumberOfImages:(NSNumber *) n
 {
     @synchronized (self) {
-        //        [cachedRawNoFiles release];
-        //        cachedRawNoFiles = nil;
         
         [cachedModalites release];
         cachedModalites = nil;

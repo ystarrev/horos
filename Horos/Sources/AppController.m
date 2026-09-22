@@ -105,7 +105,6 @@ NSString *HorosDirectTransferInstanceUID(void)
 static NSMenu *mainMenuCLUTMenu = nil, *mainMenuWLWWMenu = nil, *mainMenuConvMenu = nil, *mainOpacityMenu = nil;
 static NSDictionary *previousWLWWKeys = nil, *previousCLUTKeys = nil, *previousConvKeys = nil, *previousOpacityKeys = nil;
 static BOOL checkForPreferencesUpdate = YES;
-//static NSString *appStartingDate = nil;
 
 BOOL					NEEDTOREBUILD = NO;
 BOOL					COMPLETEREBUILD = NO;
@@ -744,25 +743,6 @@ void exceptionHandler(NSException *exception)
 	[[NSUserDefaults standardUserDefaults] setObject: c forKey:@"AETITLE"];
 }
 
-//- (void) checkForRestartStoreSCPOrder: (NSTimer*) t
-//{
-//	if( [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/RESTARTOSIRIXSTORESCP"])
-//	{
-//		[NSThread sleepForTimeInterval: 1];
-//		[[NSFileManager defaultManager] removeItemAtPath: @"/tmp/RESTARTOSIRIXSTORESCP" error: nil];
-//		
-//		if ([[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"]) // Only for server mode
-//		{
-//			NSLog( @"******* RESTARTOSIRIXSTORESCP : killDICOMListenerWait");
-//			[self killDICOMListenerWait: YES];
-//			
-//			[NSThread sleepForTimeInterval: 1];
-//						
-//			NSLog( @"******* RESTARTOSIRIXSTORESCP : restartSTORESCP");
-//			[self restartSTORESCP];
-//		}
-//	}
-//}
 
 - (void) runPreferencesUpdateCheck:(NSTimer*) timer
 {
@@ -1385,7 +1365,6 @@ void exceptionHandler(NSException *exception)
 				[aTask setArguments:theArguments];		
 				HorosLaunchTaskOrRaise(aTask);
                 while( [aTask isRunning]) [NSThread sleepForTimeInterval: 0.01];
-//				[aTask waitUntilExit];
 				[aTask interrupt];
 				aTask = nil;
 			}
@@ -1620,7 +1599,6 @@ void exceptionHandler(NSException *exception)
 					{
 						NSString *sopclassuid = [components objectAtIndex: 0];
 						NSString *sopinstanceuid = [components objectAtIndex: 1];
-//						int frame = [[urlParameters objectForKey: @"frames"] intValue];
 						
 						BOOL succeeded = NO;
 						
@@ -1812,14 +1790,6 @@ static BOOL firstCall = YES;
 
     quitting = YES;
 	
-//	if (BUILTIN_DCMTK == YES)
-//	{
-//		[dcmtkQRSCP release];
-//		dcmtkQRSCP = nil;
-//
-//		[dcmtkQRSCPTLS release];
-//		dcmtkQRSCPTLS = nil;
-//	}
 	
 	[self destroyDCMTK];
 	
@@ -1937,7 +1907,6 @@ static BOOL firstCall = YES;
         if ([[NSFileManager defaultManager] fileExistsAtPath:[[[[[[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSLocalDomainMask] firstObject] path] stringByAppendingPathComponent:[[NSBundle mainBundle] objectForInfoDictionaryKey:(NSString*)kCFBundleNameKey]] stringByAppendingPathComponent:@"DLog.enable"]])
             [N2Debug setActive:YES];
         
-    //  NSLog(@"%@ -> %d", [[[[NSFileManager defaultManager] findSystemFolderOfType:kApplicationSupportFolderType forDomain:kLocalDomain] stringByAppendingPathComponent:[[NSBundle mainBundle] objectForInfoDictionaryKey:(NSString*)kCFBundleNameKey]] stringByAppendingPathComponent:@"DLog.enable"], [N2Debug isActive]);
         
         STORESCP = [[NSRecursiveLock alloc] init];
         STORESCPTLS = [[NSRecursiveLock alloc] init];
@@ -1959,30 +1928,6 @@ static BOOL firstCall = YES;
 static BOOL initialized = NO;
 + (void) initialize
 {
-//	int test = NSSwapHostIntToBig( 19191919);
-//	unsigned char *ptr = (unsigned char*) &test;
-//	long result;
-//	
-//	EXTRACT_LONG_BIG2( ptr, result);
-//	NSLog(@"%d", result);
-//	
-//	EXTRACT_LONG_BIG( ptr, result);
-//	NSLog(@"%d", result);
-
-//	@try 
-//	{
-//		NSException *e = [NSException exceptionWithName: @"hallo" reason: @"prout" userInfo: nil];
-//		[e raise];
-//	}
-//	@catch (NSException * e) 
-//	{
-//    N2LogExceptionWithStackTrace(e);
-//	}
-	
-//	NSSetUncaughtExceptionHandler( exceptionHandler);
-//	
-//	NSException *e = [NSException exceptionWithName: @"hallo" reason: @"prout" userInfo: nil];
-//	[e raise];
 	
 	@try
 	{
@@ -2056,7 +2001,6 @@ static BOOL initialized = NO;
                 
                 
                 
-//				[[NSUserDefaults standardUserDefaults] addSuiteNamed: @BUNDLE_IDENTIFIER]; // Backward compatibility
                 [[NSUserDefaults standardUserDefaults] setInteger:200 forKey:@"NSInitialToolTipDelay"];
                 [[NSUserDefaults standardUserDefaults] setBool: NO forKey: @"DontUseUndoQueueForROIs"];
                 [[NSUserDefaults standardUserDefaults] setInteger: 20 forKey: @"UndoQueueSize"];
@@ -2077,7 +2021,6 @@ static BOOL initialized = NO;
 				[[NSUserDefaults standardUserDefaults] setInteger: [[NSUserDefaults standardUserDefaults] integerForKey: @"DEFAULT_DATABASELOCATION"] forKey: @"DATABASELOCATION"];
 				[[NSUserDefaults standardUserDefaults] setObject: [[NSUserDefaults standardUserDefaults] stringForKey: @"DEFAULT_DATABASELOCATIONURL"] forKey: @"DATABASELOCATIONURL"];
 				
-//				[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"DONTCOPYWLWWSETTINGS"];
 				[[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"ROITEXTNAMEONLY"];
 				
 				if( [[NSUserDefaults standardUserDefaults] objectForKey: @"copyHideListenerError"])
@@ -2093,23 +2036,6 @@ static BOOL initialized = NO;
 				#endif
 				
 				[[NSUserDefaults standardUserDefaults] setBool:YES forKey: @"LP64bit"];
-                
-//                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_name"];
-//                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_id"];
-//                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_accession_number"];
-//                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_birthdate"];
-//                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_description"];
-//                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_referring_physician"];
-//                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_comments"];
-//                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_institution"];
-//                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_status"];
-//                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_study_date"];
-//                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_modality"];
-//                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_blank_query"];
-//                [[NSUserDefaults standardUserDefaults] setObject:@"1" forKey:@"allow_qr_custom_dicom_field"];
-				
-                
-                
                 
                 // if we are loading a database that isn't on the root volume, then we must wait for it to load - if it doesn't become available after a few minutes, then we'll just let osirix switch to the db at ~/Documents as it would do anyway
                 
@@ -2326,36 +2252,6 @@ static BOOL initialized = NO;
                 
                 [path writeToFile:path atomically:NO encoding: NSUTF8StringEncoding error: nil];
 				
-				// CHECK FOR THE HTML TEMPLATES DIRECTORY
-//				
-//				NSString *htmlTemplatesDirectory = [[DicomDatabase defaultBaseDirPath] stringByAppendingPathComponent:@"/HTML_TEMPLATES/"];
-//				if ([[NSFileManager defaultManager] fileExistsAtPath:htmlTemplatesDirectory] == NO)
-//					[[NSFileManager defaultManager] createDirectoryAtPath:htmlTemplatesDirectory attributes:nil];
-//				
-//				// CHECK FOR THE HTML TEMPLATES
-//				
-//				NSString *templateFile;
-//				
-//				templateFile = [htmlTemplatesDirectory stringByAppendingPathComponent:@"QTExportPatientsTemplate.html"];
-//				NSLog(templateFile);
-//				if ([[NSFileManager defaultManager] fileExistsAtPath:templateFile] == NO)
-//					[[NSFileManager defaultManager] copyPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/QTExportPatientsTemplate.html"] toPath:templateFile handler:nil];
-//
-//				templateFile = [htmlTemplatesDirectory stringByAppendingPathComponent:@"QTExportStudiesTemplate.html"];
-//				NSLog(templateFile);
-//				if ([[NSFileManager defaultManager] fileExistsAtPath:templateFile] == NO)
-//					[[NSFileManager defaultManager] copyPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/QTExportStudiesTemplate.html"] toPath:templateFile handler:nil];
-//					
-//				// CHECK FOR THE HTML EXTRA DIRECTORY
-//				
-//				NSString *htmlExtraDirectory = [htmlTemplatesDirectory stringByAppendingPathComponent:@"html-extra/"];
-//				if ([[NSFileManager defaultManager] fileExistsAtPath:htmlExtraDirectory] == NO)
-//					[[NSFileManager defaultManager] createDirectoryAtPath:htmlExtraDirectory attributes:nil];
-//					
-//				// CSS file
-//				NSString *cssFile = [htmlExtraDirectory stringByAppendingPathComponent:@"style.css"];
-//				if ([[NSFileManager defaultManager] fileExistsAtPath:cssFile] == NO)
-//					[[NSFileManager defaultManager] copyPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"/QTExportStyle.css"] toPath:cssFile handler:nil];				
 			}
 		}
 	}
@@ -2481,8 +2377,6 @@ static BOOL initialized = NO;
     [HorosNotificationService configure];
     [SurgicalProcedureImportController installMenuItem];
     
-//	if ([[NSUserDefaultsController sharedUserDefaultsController] boolForKey: @"ActivityWindowVisibleFlag"])
-//		[[[ActivityWindowController defaultController] window] makeKeyAndOrderFront:self];
 
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SingleProcessMultiThreadedListener"] == NO)
 		NSLog( @"----- %@", NSLocalizedString( @"DICOM Listener is multi-processes mode.", nil));
@@ -2511,13 +2405,6 @@ static BOOL initialized = NO;
 
 	
 	
-//	NSBitmapImageRep *rep = [NSBitmapImageRep imageRepWithData: [NSData dataWithContentsOfFile: @"/tmp/test.jp2"]];
-//	
-//	NSUInteger pix;
-//	
-//	[rep getPixel: &pix atX: 2 y: 2];
-//	
-//	NSLog( @"%@", rep);
 
 	[self testMenus];
     
@@ -2622,12 +2509,9 @@ static BOOL initialized = NO;
     
     [AppController cleanOsiriXSubProcesses];
     
-//    NSWindow.allowsAutomaticWindowTabbing = NO;
     
 	BOOL dialog = NO;
     
-//	if( [[NSFileManager defaultManager] fileExistsAtPath: @"/tmp/"] == NO)
-//		[[NSFileManager defaultManager] createDirectoryAtPath: @"/tmp/" attributes: nil];
 	
     
     NSMutableArray *dbArray = [[[NSUserDefaults standardUserDefaults] arrayForKey: @"localDatabasePaths"] mutableCopy];
@@ -2647,8 +2531,6 @@ static BOOL initialized = NO;
 	{
 		if( [[NSUserDefaults standardUserDefaults] integerForKey: @"timeZone"] != [[NSTimeZone localTimeZone] secondsFromGMT])
 		{
-		//	NSLog( @"***** Time zone has changed: this modification can affect study dates, study times and birth dates!");
-		//	[NSTimeZone setDefaultTimeZone: [NSTimeZone timeZoneForSecondsFromGMT: [[NSUserDefaults standardUserDefaults] integerForKey: @"timeZone"]]];
 		}
 	}
 	else [[NSUserDefaults standardUserDefaults] setInteger: [[NSTimeZone localTimeZone] secondsFromGMT] forKey: @"timeZone"];
@@ -2656,71 +2538,17 @@ static BOOL initialized = NO;
     if ([[[NSUserDefaults standardUserDefaults] valueForKey:@"COPYDATABASEMODE"] intValue] == 1) // tag 1 "if on CD", disappeared after new CD/DVD import system
         [[NSUserDefaults standardUserDefaults] setInteger:2 forKey:@"COPYDATABASEMODE"];
         
-//	NSLog(@"%s", __PRETTY_FUNCTION__, nil);
 	
 	if( dialog == NO)
 	{
 		
 	}
 	
-    /*
-		#ifndef MACAPPSTORE
-    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"] == NO)
-    {
-        @try
-        {
-            ILCrashReporter *reporter = [ILCrashReporter defaultReporter];
-            
-            NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-            
-            
-            if( [d valueForKey: @"crashReporterSMTPServer"])
-            {
-                reporter.SMTPServer = [d valueForKey: @"crashReporterSMTPServer"];
-                int port = [d integerForKey: @"crashReporterSMTPPort"];
-                reporter.SMTPPort = port? port : 25;
-                // if these are empty, set them to empty
-                reporter.SMTPUsername = [d valueForKey: @"crashReporterSMTPUsername"];
-                reporter.SMTPPassword = [d valueForKey: @"crashReporterSMTPPassword"];
-            }
-            
-            if( [d valueForKey: @"crashReporterFromAddress"])
-            {
-                reporter.fromAddress = [d valueForKey: @"crashReporterFromAddress"];
-            }
-            
-            NSString *reportAddr = @"horoscrashreport@gmail.com";
-            
-            if( [d valueForKey: @"crashReporterToAddress"])
-            {
-                reportAddr = [d valueForKey: @"crashReporterToAddress"];
-            }
-            
-            reporter.automaticReport = [d boolForKey: @"crashReporterAutomaticReport"];
-            
-            
-            NSLog(@"%@",reporter.SMTPServer);
-            NSLog(@"%@",reporter.SMTPUsername);
-            NSLog(@"%@",reporter.SMTPPassword);
-            NSLog(@"%@",reporter.fromAddress);
-            
-            
-            [reporter launchReporterForCompany:@"Horos Developers" reportAddr: reportAddr];
-        }
-        @catch (NSException *e)
-        {
-            NSLog( @"**** Exception ILCrashReporter: %@", e);
-        }
-    }
-	#endif
-	#endif
-	*/
      
 	appController = self;
 	[self initDCMTK];
 	[self restartSTORESCP];
 	
-//	[NSTimer scheduledTimerWithTimeInterval: 2 target: self selector: @selector(checkForRestartStoreSCPOrder:) userInfo: nil repeats: YES];
 	
 	[DicomDatabase initializeDicomDatabaseClass];
 	[BrowserController initializeBrowserControllerClass];
@@ -2773,33 +2601,9 @@ static BOOL initialized = NO;
 	{
 		if (![[NSUserDefaults standardUserDefaults] boolForKey: @"SURVEYDONE5"])
 		{
-//			if ([[NSUserDefaults standardUserDefaults] integerForKey: @"STARTCOUNT2"] > 20)
-//			{
-//				switch( HorosPresentInformationalAlert(@"Horos", @"Thank you for using Horos!\rDo you agree to answer a small survey to improve Horos?", @"Yes, sure!", @"Maybe next time", nil))
-//				{
-//					case 1:
-//					{
-//						Survey		*survey = [[Survey alloc] initWithWindowNibName:@"Survey"];
-//						[[survey window] center];
-//						[survey showWindow:self];
-//					}
-//						break;
-//				}
-//			}
-			
-//			if( [[NSDate n2_dateWithYear:2009 month:10 day:14 hour:12 minute:0 second:0 timeZone:[NSTimeZone timeZoneWithAbbreviation:@"EST"]] timeIntervalSinceNow] > 0 &&
-//				[[NSDate n2_dateWithYear:2009 month:9 day:1 hour:12 minute:0 second:0 timeZone:[NSTimeZone timeZoneWithAbbreviation:@"EST"]] timeIntervalSinceNow] < 0)
-//			{
-//				Survey *survey = [[Survey alloc] initWithWindowNibName:@"Survey"];
-//				[[survey window] center];
-//				[survey showWindow: self];
-//			}
 		}
 		else
 		{
-//			[self about:self];
-//			//fade out Splash window automatically 
-//			[NSTimer scheduledTimerWithTimeInterval:2.0 target:splashController selector:@selector(windowShouldClose:) userInfo:nil repeats:0]; 
 		}
 	}
 	
@@ -2847,7 +2651,6 @@ static BOOL initialized = NO;
     	
 	[self initTilingWindows];
     
-    //if ([NSUserDefaults.standardUserDefaults boolForKey:@"DoNotEmptyIncomingDir"]) // move temp & decompress to incoming
     {
         NSString* inc = [[DicomDatabase activeLocalDatabase] incomingDirPath];
         for (NSString* path in [NSArray arrayWithObjects: [[DicomDatabase activeLocalDatabase] tempDirPath], [[DicomDatabase activeLocalDatabase] decompressionDirPath], nil])
@@ -2855,11 +2658,6 @@ static BOOL initialized = NO;
                 [[NSFileManager defaultManager] moveItemAtPath:[path stringByAppendingPathComponent:f] toPath:[inc stringByAppendingPathComponent:f] error:NULL];
     }
 	
-//	[self checkForOsirixMimeType];
-	
-// 	*(long*)0 = 0xDEADBEEF;	// Test for ILCrashReporter
-	
-//	[html2pdf pdfFromURL: @"http://zimbra.latour.ch"];
 
     }
 
@@ -2869,92 +2667,6 @@ static BOOL initialized = NO;
         [window.contentView setNeedsDisplay:YES];
 }
 
-	// CONVERT OLD LUT FILES TO XML - PLEASE DONT DELETE THESE LINES!!! THANKS!!!!!
-	//	{
-	//		FILE*			fp;
-	//		long			c, i;
-	//		long			nb,r,g,b;
-	//		long			red[ 256], green[ 256], blue[ 256];
-	//		NSOpenPanel		*oPanel = [NSOpenPanel openPanel];
-	//		
-	//		for (i =0; i < 8; i++)
-	//		{
-	//		
-	//		
-	//		[oPanel setAllowsMultipleSelection:NO];
-	//		[oPanel setCanChooseDirectories:NO];
-	//	
-	//		[oPanel runModalForDirectory:nil file:nil types:nil];
-	//		
-	//		fp = fopen ([[[oPanel filenames] objectAtIndex:0] UTF8String], "r");
-	//		
-	//		c = ' ';
-	//		 while ((c = fgetc (fp)) != EOF) 
-	//		  {
-	//			switch (c) {
-	//			  case 'S' : // rgb specified by a multiple of 256
-	//					 fscanf (fp, "%li %li %li %li", &nb, &r, &g, &b);
-	//				 
-	//				 if (nb >= nil && nb < 256L &&
-	//					 r >= nil && r < 256L &&
-	//					 g >= nil && g < 256L &&
-	//					 b >= nil && b < 256L) 
-	//				{
-	//				   red[nb] = (int) (r );
-	//				   green[nb] = (int) (g );
-	//				   blue[nb] = (int) (b);
-	//				 } // if
-	//			  break;
-	//
-	//			  case 'L' : // rgb specified by real values
-	//					 fscanf (fp, "%li %li %li %li", &nb, &r, &g, &b);
-	//				 
-	//				 if (nb >= nil && nb < 256L &&
-	//					 r >= nil && r <= 65535L &&
-	//					 g >= nil && g <= 65535L &&
-	//					 b >= nil && b <= 65535L) 
-	//				{
-	//				   red[nb] = (int) r / 256;
-	//				   green[nb] = (int) g / 256;
-	//				   blue[nb] = (int) b / 256;
-	//				 } // if
-	//						 break;
-	//
-	//			} // switch
-	//
-	//			// read until the end of line or eof
-	//			while (((c = fgetc (fp)) != EOF) && (c != '\n') && (c!= '\r')) {}
-	//
-	//		  } // while ...not eof
-	//		  
-	//			NSMutableDictionary *xaCLUTFilter = [NSMutableDictionary dictionary];
-	//			NSMutableArray		*xrArray = [NSMutableArray array];
-	//			for( i = 0; i < 256; i++)
-	//			{
-	//				[xrArray addObject: [NSNumber numberWithLong: red[ i]]];
-	//			}
-	//			[xaCLUTFilter setObject:xrArray forKey:@"Red"];
-	//			
-	//			NSMutableArray		*xgArray = [NSMutableArray array];
-	//			for( i = 0; i < 256; i++)
-	//			{
-	//				[xgArray addObject: [NSNumber numberWithLong: green[ i]]];
-	//			}
-	//			[xaCLUTFilter setObject:xgArray forKey:@"Green"];
-	//			
-	//			NSMutableArray		*xbArray = [NSMutableArray array];
-	//			for( i = 0; i < 256; i++)
-	//			{
-	//				[xbArray addObject: [NSNumber numberWithLong: blue[ i]]];
-	//			}
-	//			[xaCLUTFilter setObject:xbArray forKey:@"Blue"];
-	//			
-	//			[xaCLUTFilter writeToFile:[[[oPanel filenames] objectAtIndex:0] stringByAppendingPathExtension:@"plist"] atomically:YES];
-	//			}
-	//	}
-	
-
-//———————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
 
 #pragma mark-

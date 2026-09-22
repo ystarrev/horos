@@ -67,17 +67,6 @@
 + (NSImage*)certificateIconForLabel:(NSString*)label;
 + (void)openCertificatePanelForLabel:(NSString*)label;
 
-//+ (SecIdentityRef)DICOMTLSIdentityForLabel:(NSString*)label;
-//+ (NSString*)DICOMTLSCertificateNameForLabel:(NSString*)label;
-//+ (NSImage*)DICOMTLSCertificateIconForLabel:(NSString*)label;
-//+ (void)DICOMTLSOpenCertificatePanelForLabel:(NSString*)label;
-//+ (void)DICOMTLSGenerateCertificateAndKeyForLabel:(NSString*)label;
-//+ (void)DICOMTLSGenerateCertificateAndKeyForServerAddress:(NSString*)address port:(int)port AETitle:(NSString*)aetitle;
-//+ (NSString*)DICOMTLSUniqueLabelForServerAddress:(NSString*)address port:(NSString*)port AETitle:(NSString*)aetitle;
-//+ (NSString*)DICOMTLSKeyPathForLabel:(NSString*)label;
-//+ (NSString*)DICOMTLSKeyPathForServerAddress:(NSString*)address port:(int)port AETitle:(NSString*)aetitle;
-//+ (NSString*)DICOMTLSCertificatePathForLabel:(NSString*)label;
-//+ (NSString*)DICOMTLSCertificatePathForServerAddress:(NSString*)address port:(int)port AETitle:(NSString*)aetitle;
 
 + (void)generatePseudoRandomFileToPath:(NSString*)path;
 + (void)lockFile:(NSString*)path;

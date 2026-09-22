@@ -516,7 +516,6 @@ static NSString*	ExportROIAndKeyImagesToolbarItemIdentifier	= @"ExportROIAndKeyI
 static NSString*	AnonymizerToolbarItemIdentifier		= @"Anonymizer.pdf";
 static NSString*	QueryToolbarItemIdentifier			= @"QueryRetrieve.pdf";
 static NSString*	SendToolbarItemIdentifier			= @"Send.pdf";
-//static NSString*	CDRomToolbarItemIdentifier			= @"cd.icns";
 static NSString*	TrashToolbarItemIdentifier			= @"trash.icns";
 static NSString*	BurnerToolbarItemIdentifier			= @"Burner.icns";
 static NSString*	ToggleDrawerToolbarItemIdentifier   = @"StartupDisk.tif";
@@ -542,9 +541,6 @@ static volatile BOOL waitForRunningProcess = NO;
 {
     decimalNumberFormatter = [[NSNumberFormatter alloc] init];
     [decimalNumberFormatter setNumberStyle:NSNumberFormatterDecimalStyle];
-    //	[decimalNumberFormatter setLocale: [NSLocale currentLocale]];
-    //	[decimalNumberFormatter setFormat:@"0"];
-    //	[decimalNumberFormatter setHasThousandSeparators: YES];
 }
 
 - (void) setTableViewRowHeight
@@ -1426,7 +1422,6 @@ static NSConditionLock *threadLock = nil;
         }
         else
         {
-            //            NSMutableArray *objects = [NSMutableArray array];
             NSMutableArray *selectedStudies = [NSMutableArray array];
             
             NSIndexSet *selectedRows = [databaseOutline selectedRowIndexes];
@@ -1467,7 +1462,6 @@ static NSConditionLock *threadLock = nil;
         }
         else
         {
-            //            NSMutableArray *objects = [NSMutableArray array];
             NSMutableArray *selectedSeries = [NSMutableArray array];
             
             NSIndexSet *selectedRows = [databaseOutline selectedRowIndexes];
@@ -2311,8 +2305,6 @@ static NSConditionLock *threadLock = nil;
     if( [options objectForKey: @"COPYDATABASEMODE"])
         COPYDATABASEMODE = [[options objectForKey: @"COPYDATABASEMODE"] integerValue];
     
-    //	if( DICOMDIRCDMODE)
-    //		COPYDATABASE = NO;
     
     NSMutableArray *newFilesToCopyList = [NSMutableArray arrayWithCapacity: [filesInput count]];
     NSString *INpath = [_database dataDirPath];
@@ -3237,8 +3229,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         index = [selectedRowIndexes indexGreaterThanIndex:index];
     }
     
-    //	if( displayEmptyDatabase)
-    //		predicate = [NSPredicate predicateWithValue:NO];
     
     if( [_sourcesTableView selectedRow] >= 0)
     {
@@ -3976,7 +3966,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 {
     if( [[AppController sharedAppController] isSessionInactive] || waitForRunningProcess) return;
     if( _database == nil) return;
-    //	if( bonjourDownloading) return;
     if( DatabaseIsEdited) return;
     if( [databaseOutline editedRow] != -1) return;
     
@@ -5003,7 +4992,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     {
         NSMutableArray *mergedStudies = nil;
         
-        //[NSNotificationCenter.defaultCenter postNotificationOnMainThreadName:O2SearchForComparativeStudiesStartedNotification object:self userInfo:[NSDictionary dictionaryWithObjectsAndKeys: studySelectedID, @"study", nil]];
         
         DicomStudy *studySelected = nil;
         
@@ -5477,7 +5465,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             if( [item isDistant])
             {
                 // Check to see if already in retrieving mode, if not download it
-                // [self retrieveComparativeStudy: item select: YES open: NO]; -- Only when double-clicking
+                // Retrieve comparative studies only on double-click.
             }
             else
             {
@@ -5886,7 +5874,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                             
                             if( originalPatientName)
                             {
-                                //                                NSString *logLine = [NSString stringWithFormat: @"---- Patient Unify: %@ %@ -> %@ %@", study.name, study.patientID, destStudy.name, destStudy.patientID, nil];
                                 
                                 [params addObjectsFromArray: [NSArray arrayWithObjects: @"-i", [NSString stringWithFormat: @"%@=%@", @"(0010,0020)", destStudy.patientID], @"-i", [NSString stringWithFormat: @"%@=%@", @"(0010,0010)", originalPatientName], @"-i", [NSString stringWithFormat: @"%@=%@", @"(0010,0030)", originalBirthDate], nil]];
                                 [params addObjectsFromArray: [NSArray arrayWithObjects: @"-i", [NSString stringWithFormat: @"%@=%@", @"(0010,1000)", existingOtherPatientIDs], @"-i", [NSString stringWithFormat: @"%@=%@", @"(0010,1001)", existingOtherPatientNames], nil]];
@@ -5911,8 +5898,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                                     
                                     @try
                                     {
-                                        //NSStringEncoding encoding = [NSString encodingForDICOMCharacterSet: [[DicomFile getEncodingArrayForFile: [files lastObject]] objectAtIndex: 0]];
-                                        //[XMLController modifyDicom: params encoding: encoding];
                                         
                                         [XMLController modifyDicom:tagAndValues dicomFiles:files];
                                         
@@ -6080,7 +6065,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                             
                             if( originalPatientName)
                             {
-                                //                                NSString *logLine = [NSString stringWithFormat: @"---- Study Unify: %@ %@ -> %@ %@", study.name, study.patientID, destStudy.name, destStudy.patientID, nil];
                                 
                                 NSMutableArray* tagAndValues = [NSMutableArray array];
                                 
@@ -6116,8 +6100,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                                     
                                     @try
                                     {
-                                        //NSStringEncoding encoding = [NSString encodingForDICOMCharacterSet: [[DicomFile getEncodingArrayForFile: [files lastObject]] objectAtIndex: 0]];
-                                        //[XMLController modifyDicom: params encoding: encoding];
                                         
                                         [XMLController modifyDicom:tagAndValues dicomFiles:files];
                                         
@@ -6509,11 +6491,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     NSManagedObjectContext	*context = self.database.managedObjectContext;
     BOOL					matrixThumbnails = YES;
     
-    //	if( DICOMDIRCDMODE)
-    //	{
-    //		HorosPresentInformationalAlert(NSLocalizedString(@"OsiriX CD/DVD", nil), NSLocalizedString(@"OsiriX is running in read-only mode, from a CD/DVD.", nil), NSLocalizedString(@"OK",nil), nil, nil);
-    //		return;
-    //	}*/
     
     
     if( sender == nil)
@@ -6921,7 +6898,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         else
             if ([[item valueForKey:@"type"] isEqualToString:@"Image"]) returnVal = 0;
             else if ([[item valueForKey:@"type"] isEqualToString:@"Series"]) returnVal = [[item valueForKey:@"noFiles"] intValue];
-        //else if ([[item valueForKey:@"type"] isEqualToString:@"Study"]) returnVal = [[item valueForKey:@"series"] count];
             else if ([[item valueForKey:@"type"] isEqualToString:@"Study"]) returnVal = [[self outlineChildrenArray:item] count];
     }
     
@@ -7274,7 +7250,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             if( [item isDistant])
             {
                 [cell setFont: [NSFont fontWithName: DISTANTSTUDYFONT size: [self fontSize: @"dbFont"]]];
-                //                [cell setTextColor: [NSColor grayColor]];
             }
             else if( originalOutlineViewArray)
             {
@@ -8301,7 +8276,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                 if( [databaseOutline isItemExpanded: [curObj valueForKeyPath:@"series.study"]])
                     [databaseOutline collapseItem: [curObj valueForKeyPath:@"series.study"]];
                 
-                //	[self findAndSelectFile:nil image:[dicomFiles objectAtIndex: 0] shouldExpand:NO];
             }
             else
             {
@@ -8857,19 +8831,6 @@ static BOOL withReset = NO;
         }
         
         
-//        [cell setLineBreakMode: NSLineBreakByCharWrapping];
-//        [cell setFont:[NSFont systemFontOfSize: [self fontSize: @"dbMatrixFont"]]];
-//        
-//        [cell setImagePosition: NSImageBelow];
-//        [cell setTransparent:NO];
-//        [cell setEnabled:YES];
-//        
-//        [cell setButtonType:NSButtonTypePushOnPushOff];
-//        [cell setBezelStyle:NSBezelStyleShadowlessSquare];
-//        [cell setShowsStateBy:NSPushInCellMask];
-//        [cell setHighlightsBy:NSContentsCellMask];
-//        [cell setImageScaling:NSImageScaleProportionallyDown];
-//        [cell setBordered:YES];
         
         
         
@@ -8899,7 +8860,6 @@ static BOOL withReset = NO;
         }
         else if([[aFile valueForKey:@"type"] isEqualToString:@"Study"])
         {
-            //            id item = [matrixViewArray objectAtIndex: [cell tag]];
             
             NSArray *images = matrixViewArray.count? [self imagesArray: [matrixViewArray objectAtIndex: [cell tag]]] : nil;
             
@@ -9125,24 +9085,6 @@ static BOOL withReset = NO;
     }
 }
 
-//- (void) test:(id) s
-//{
-//    NSLog( @"--");
-//
-//    [NSThread sleepForTimeInterval: 2];
-//}
-//
-//- (void) createThread
-//{
-//    NSAutoreleasePool *n = [NSAutoreleasePool new];
-//
-//    NSThread* t = [[[NSThread alloc] initWithTarget:self selector:@selector( test:) object: nil] autorelease];
-//    t.name = NSLocalizedString( @"Test very small thread...", nil);
-//    t.supportsCancel = YES;
-//    [[ThreadsManager defaultManager] addThreadAndStart: t];
-//
-//    [n release];
-//}
 
 - (void)scrollWheel: (NSEvent *)theEvent
 {
@@ -9238,24 +9180,6 @@ static BOOL withReset = NO;
     {
         NSManagedObject *dcmFile = [databaseOutline itemAtRow:[databaseOutline selectedRow]];
         
-//        if (dcmFile)
-//        {
-//            [theCell setLineBreakMode: NSLineBreakByCharWrapping];
-//            [theCell setFont:[NSFont systemFontOfSize: [self fontSize: @"dbMatrixFont"]]];
-//            
-////            [theCell setRepresentedObject: [dcmFile objectID]];
-//            
-//            [theCell setImagePosition: NSImageBelow];
-//            [theCell setTransparent:NO];
-//            [theCell setEnabled:YES];
-//            
-//            [theCell setButtonType:NSButtonTypePushOnPushOff];
-//            [theCell setBezelStyle:NSBezelStyleShadowlessSquare];
-//            //[theCell setShowsStateBy:NSPushInCellMask];
-//            [theCell setHighlightsBy:NSContentsCellMask];
-//            [theCell setImageScaling:NSImageScaleProportionallyDown];
-//            [theCell setBordered:YES];
-//        }
         
         
         if( [[dcmFile valueForKey:@"type"] isEqualToString: @"Series"] && [[[dcmFile valueForKey:@"images"] allObjects] count] > 1)
@@ -9281,21 +9205,6 @@ static BOOL withReset = NO;
         
         if (dcmFile)
         {
-//            [theCell setLineBreakMode: NSLineBreakByCharWrapping];
-//            [theCell setFont:[NSFont systemFontOfSize: [self fontSize: @"dbMatrixFont"]]];
-//            
-//            [theCell setRepresentedObject: [dcmFile objectID]];
-//            
-//            [theCell setImagePosition: NSImageBelow];
-//            [theCell setTransparent:NO];
-//            [theCell setEnabled:YES];
-//            
-//            [theCell setButtonType:NSButtonTypePushOnPushOff];
-//            [theCell setBezelStyle:NSBezelStyleShadowlessSquare];
-//            [theCell setShowsStateBy:NSPushInCellMask];
-//            [theCell setHighlightsBy:NSContentsCellMask];
-//            [theCell setImageScaling:NSImageScaleProportionallyDown];
-//            [theCell setBordered:YES];
         }
         
         if( [[dcmFile valueForKey:@"type"] isEqualToString: @"Study"] == NO)
@@ -9359,7 +9268,6 @@ static BOOL withReset = NO;
 
 - (void) matrixNewIcon:(long) index :(NSManagedObject*)curFile
 {
-    //	if( shouldDie == NO)
     {
         long i = index;
         NSImage *img = nil;
@@ -9426,8 +9334,6 @@ static BOOL withReset = NO;
 
                 [cell setButtonType:NSButtonTypePushOnPushOff];
                 [cell setBezelStyle:NSBezelStyleShadowlessSquare];
-//                [cell setShowsStateBy:NSPushInCellMask];
-//                [cell setHighlightsBy:NSContentsCellMask];
                 [cell setImageScaling:NSImageScaleProportionallyDown];
                 [cell setBordered:YES];
                 
@@ -9526,15 +9432,12 @@ static BOOL withReset = NO;
                 {
                     case -1:
                         [cell setImage: [img imageByScalingProportionallyUsingNSImage: 0.6]];
-//                        [cell setAlternateImage: [img imageByScalingProportionallyUsingNSImage: 0.6]];
                         break;
                     case 0:
                         [cell setImage: img];
-//                        [cell setAlternateImage:img];
                         break;
                     case 1:
                         [cell setImage: [img imageByScalingProportionallyUsingNSImage: 1.3]];
-//                        [cell setAlternateImage:[img imageByScalingProportionallyUsingNSImage: 1.3]];
                         break;
                 }
                 
@@ -9583,8 +9486,6 @@ static BOOL withReset = NO;
                 
                 [cell setButtonType:NSButtonTypePushOnPushOff];
                 [cell setBezelStyle:NSBezelStyleShadowlessSquare];
-//                [cell setShowsStateBy:NSPushInCellMask];
-//                [cell setHighlightsBy:NSContentsCellMask];
                 [cell setImageScaling:NSImageScaleProportionallyDown];
                 [cell setBordered:YES];
                 
@@ -9633,7 +9534,6 @@ static BOOL withReset = NO;
 
 - (void)matrixDisplayIcons:(id) sender
 {
-    //	if( bonjourDownloading) return;
     if( _database == nil) return;
     if( [[AppController sharedAppController] isSessionInactive] || waitForRunningProcess) return;
     
@@ -9710,7 +9610,6 @@ static BOOL withReset = NO;
     NSString *recoveryPath = [[[[BrowserController currentBrowser] database] baseDirPath] stringByAppendingPathComponent:@"ThumbnailPath"];
     if( [[NSFileManager defaultManager] fileExistsAtPath: recoveryPath])
     {
-        //	displayEmptyDatabase = YES;
         [self outlineViewRefresh];
         [self refreshMatrix: self];
         NSString *uri = [NSString stringWithContentsOfFile:recoveryPath usedEncoding:NULL error:NULL];
@@ -9756,7 +9655,6 @@ static BOOL withReset = NO;
             }
         }
         
-        //	displayEmptyDatabase = NO;
     }
     
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"hideListenerError"] == NO)
@@ -10075,8 +9973,6 @@ static BOOL withReset = NO;
 constrainSplitPosition:(CGFloat)proposedPosition
          ofSubviewAt:(NSInteger)offset
 {
-    //    if( starting)
-    //        return proposedPosition;
     
     if (sender == splitViewVert)
     {
@@ -10198,8 +10094,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 -(void)splitView:(NSSplitView*)sender resizeSubviewsWithOldSize:(NSSize)oldSize
 {
-    //    if( starting)
-    //        return;
     
     if (sender == splitDrawer)
     {
@@ -10339,8 +10233,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 - (void)splitViewDidResizeSubviews: (NSNotification *)notification
 {
-    //    if( starting)
-    //        return;
     
     if ([notification object] == splitViewVert)
     {
@@ -10968,10 +10860,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
                         
                         [album setValue:name forKey:@"name"];
                         
-                        //						@synchronized( [BrowserController currentBrowser])
-                        //						{
-                        //							cachedAlbumsManagedObjectContext = nil;
-                        //						}
                         
                         [_database save:NULL];
                         
@@ -11636,12 +11524,6 @@ constrainSplitPosition:(CGFloat)proposedPosition
                 
                 if( study && dontSelectStudyFromComparativeStudies == NO)
                 {
-                    //                    if( [study isDistant]) // distant study -> download it, and select it
-                    //                    {
-                    //                        [self retrieveComparativeStudy: study select: YES open: NO]; -- Only when double-clicking
-                    //                    }
-                    //                    else // local study -> select it
-                    //                    #endif
                     {
                         if( [self selectThisStudy: study] && [[self window] firstResponder] != searchField && [[self window] firstResponder] != searchField.currentEditor)
                             [[self window] makeFirstResponder: databaseOutline];
@@ -12169,7 +12051,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 
 - (id)initWithWindow: (NSWindow *)window
 {
-    //displayEmptyDatabase = YES;
     
     [AppController initialize];
     
@@ -12263,13 +12144,9 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
         @try
         {
-            //thread.name = NSLocalizedString(@"Opening database...", nil);
-            //ThreadModalForWindowController* tmfwc = [[ThreadModalForWindowController alloc] initWithThread:thread window:nil]; // sorry but this window is really ugly at startup...
             
             theDatabase = [[DicomDatabase activeLocalDatabase] retain]; // explicitly released later
             
-            //[tmfwc invalidate];
-            //[tmfwc release];
         }
         @catch (NSException* e)
         {
@@ -12538,18 +12415,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 {
     @try
     {
-        //[self window].appearance = [NSAppearance appearanceNamed:NSAppearanceNameVibrantDark];;
-        //[[self window] invalidateShadow];
-        
-        //	dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
-        //
-        //	dispatch_apply(count, queue,
-        //	^(size_t i)
-        //	{
-        //		printf("%u\n",i);
-        //	});
-        
-        //    NSLog( @"%@", [[NSFontManager sharedFontManager] availableFonts]);
         
         NSRect r = NSMakeRect(0, 0, 0, 0);
         
@@ -12584,8 +12449,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         
         WaitRendering *wait = [[AppController sharedAppController] splashScreen];
         
-        //	waitCompressionWindow  = [[Wait alloc] initWithString: NSLocalizedString( @"File Conversion", nil) :NO];
-        //	[waitCompressionWindow setCancel:YES];
         
         
         [oMatrix setIntercellSpacing:NSMakeSize(-1, -1)];
@@ -12598,9 +12461,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         
         @try
         {
-            //            [self.window safelySetUsesLightBottomGradient:YES];
-            
-            //  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(previewMatrixFrameDidChange:) name:NSViewFrameDidChangeNotification object:oMatrix];
             [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(previewMatrixScrollViewFrameDidChange:) name:NSViewFrameDidChangeNotification object:thumbnailsScrollView];
             [self previewMatrixScrollViewFrameDidChange:nil];
             
@@ -12617,14 +12477,9 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             [oMatrix setDoubleAction:@selector(matrixDoublePressed:)];
             [oMatrix setFocusRingType: NSFocusRingTypeExterior];
             [oMatrix renewRows:0 columns: 0];
-            //[oMatrix sizeToCells];
             
             [imageView setTheMatrix:oMatrix];
             
-            // Bug for segmentedControls...
-            //NSRect f = [segmentedAlbumButton frame];
-            //f.size.height = 25;
-            //[segmentedAlbumButton setFrame: f];
             
             [databaseOutline setAction:@selector(databasePressed:)];
             [databaseOutline setDoubleAction:@selector(databaseDoublePressed:)];
@@ -12635,8 +12490,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             [databaseOutline setAllowsTypeSelect: NO];
             
             [self setupToolbar];
-            //		[self showDatabase: self];
-            
             // NSMenu for DatabaseOutline
             NSMenu* menu = [[[NSMenu alloc] initWithTitle:@""] autorelease];
             [menu setDelegate:self];
@@ -12650,10 +12503,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             [albumTable setDelegate:self];
             [albumTable registerForDraggedTypes:BrowserController.DatabaseObjectXIDsPasteboardTypes];
 
-            //		[customStart setDateValue: [NSDate n2_dateWithYear:[[NSCalendarDate date] yearOfCommonEra] month:[[NSCalendarDate date] monthOfYear] day:[[NSCalendarDate date] dayOfMonth] hour:0 minute:0 second:0 timeZone: nil]];
-            //		[customStart2 setDateValue: [NSDate n2_dateWithYear:[[NSCalendarDate date] yearOfCommonEra] month:[[NSCalendarDate date] monthOfYear] day:[[NSCalendarDate date] dayOfMonth] hour:0 minute:0 second:0 timeZone: nil]];
-            //		[customEnd setDateValue: [NSDate n2_dateWithYear:[[NSCalendarDate date] yearOfCommonEra] month:[[NSCalendarDate date] monthOfYear] day:[[NSCalendarDate date] dayOfMonth] hour:0 minute:0 second:0 timeZone: nil]];
-            //		[customEnd2 setDateValue: [NSDate n2_dateWithYear:[[NSCalendarDate date] yearOfCommonEra] month:[[NSCalendarDate date] monthOfYear] day:[[NSCalendarDate date] dayOfMonth] hour:0 minute:0 second:0 timeZone: nil]];
             
             statesArray = [[NSArray arrayWithObjects:NSLocalizedString(@"empty", nil), NSLocalizedString(@"unread", nil), NSLocalizedString(@"reviewed", nil), NSLocalizedString(@"dictated", nil), NSLocalizedString(@"validated", nil), nil] retain];
             
@@ -12709,10 +12558,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             activeReceives = [[NSMutableDictionary dictionary] retain];
             receiveLog = [[NSMutableArray array] retain];
             
-            //	sendQueue = [[NSMutableArray alloc] init];
-            //	queueLock = [[NSConditionLock alloc] initWithCondition: QueueEmpty];
-            //	[NSThread detachNewThreadSelector:@selector(runSendQueue:) toTarget:self withObject:nil];
-            
             // bonjour
             bonjourBrowser = [[BonjourBrowser alloc] initWithBrowserController:self];
             [self displayBonjourServices];
@@ -12746,11 +12591,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
                     [self drawerToggle: self];
             }
             
-            // database : gray background
-            //	[databaseOutline setUsesAlternatingRowBackgroundColors:NO];
-            //	[databaseOutline setBackgroundColor:[NSColor lightGrayColor]];
-            //	[databaseOutline setGridColor:[NSColor darkGrayColor]];
-            //	[databaseOutline setGridStyleMask:NSTableViewSolidHorizontalGridLineMask];
             
             [[albumTable tableColumnWithIdentifier:@"Source"] setDataCell: [[[PrettyCell alloc] init] autorelease]];
             
@@ -12763,7 +12603,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             [LogManager currentLogManager];
             
             // SCAN FOR AN IPOD!
-            //[self loadDICOMFromiPod]; now we do this in AppController+Mount
+            // Mounted-media loading is handled by AppController+Mount.
         }
         
         @catch( NSException *ne)
@@ -12818,7 +12658,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         CGFloat position = bannerSplit.frame.size.height - (banner.image.size.height+3);
         [bannerSplit setPosition: position ofDividerAtIndex: 0];
 #else
-       // [[[bannerSplit subviews] objectAtIndex:1] setHidden:YES];
 #endif
         
         [[self window] setAnimationBehavior: NSWindowAnimationBehaviorNone];
@@ -12836,23 +12675,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
             savedSearchType = [databaseSearchMenu itemWithTag:0];
         [self setSearchType:savedSearchType];
         
-        //	NSFetchRequest	*dbRequest = [[[NSFetchRequest alloc] init] autorelease];
-        //	[dbRequest setEntity: [[self.database.managedObjectModel entitiesByName] objectForKey:@"LogEntry"]];
-        //	[dbRequest setPredicate: [NSPredicate predicateWithValue:YES]];
-        //
-        //	NSError *error = nil;
-        //	NSArray *logArray = [self.database.managedObjectContext executeFetchRequest:dbRequest error: &error];
-        //
-        //	if( error)
-        //		NSLog( @"%@", error);
-        //	NSLog( @"%@", logArray);
-        //
-        //	for( id log in logArray)
-        //	{
-        //		NSLog( @"%@", [log valueForKey: @"type"]);
-        //	}
-        //
-        //	for( id log in logArray) [self.database.managedObjectContext deleteObject: log];
     }
     @catch (NSException *e) {
         N2LogException( e);
@@ -13011,7 +12833,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 
 - (void) browserPrepareForClose
 {
-    //	[IncomingTimer invalidate];
     
     [self saveDatabaseWindowFramePreference];
     
@@ -13032,9 +12853,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     
     self.database = nil;
     
-    //	[self removeAllMounted];
-    
-    //	newFilesInIncoming = NO;
     
     [splitViewVert saveDefault:@"SplitVert2"];
     [splitViewHorz saveDefault:@"SplitHorz2"];
@@ -13553,13 +13371,10 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     NSMenu *helpMenu = [[NSMenu alloc] initWithTitle:NSLocalizedString(@"Help", nil)];
     [helpItem setSubmenu:helpMenu];
     
-    //[helpMenu addItemWithTitle: NSLocalizedString(@"TBD", nil) action: @selector(help:) keyEquivalent: @""];
     [helpMenu addItemWithTitle: NSLocalizedString(@"Professional support", nil) action: @selector(openHorosSupport:) keyEquivalent: @""];
     [helpMenu addItemWithTitle: NSLocalizedString(@"Community support", nil) action: @selector(openCommunityPage:) keyEquivalent: @""];
     [helpMenu addItem: [NSMenuItem separatorItem]];
     [helpMenu addItemWithTitle: NSLocalizedString(@"Report a bug", nil) action: @selector(openBugReportPage:) keyEquivalent: @""];
-    //[helpMenu addItem: [NSMenuItem separatorItem]];
-    //[helpMenu addItemWithTitle: NSLocalizedString(@"Send an email to Horos support", nil) action: @selector(sendEmail:) keyEquivalent: @""];
     
     [helpMenu release];
 }
@@ -13859,7 +13674,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         while( [t isRunning])
             [NSThread sleepForTimeInterval: 0.1];
         
-        //[t waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
+        // Avoid waitUntilExit here: it allows the main run loop to continue.
     }
     @catch ( NSException *e)
     {
@@ -14013,30 +13828,6 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     return NO;
 }
 
-//- (void)listenerAnonymizeFiles: (NSArray*)files
-//{
-//	NSArray				*array = [NSArray arrayWithObjects: [DCMAttributeTag tagWithName:@"PatientsName"], @"**anonymized**", [DCMAttributeTag tagWithName:@"PatientID"], @"00000",nil];
-//	NSMutableArray		*tags = [NSMutableArray array];
-//
-//	[tags addObject:array];
-//
-//	for( NSString *file in files)
-//	{
-//		NSString *destPath = [file stringByAppendingString:@"temp"];
-//
-//		@try
-//		{
-//		}
-//		@catch (NSException * e)
-//		{
-//            N2LogExceptionWithStackTrace(e);
-//		}
-//
-//		[[NSFileManager defaultManager] removeItemAtPath: file error:NULL];
-//		[[NSFileManager defaultManager] movePath:destPath toPath: file handler: nil];
-//	}
-//#endif
-//}
 
 - (IBAction)revealInFinder: (id)sender
 {
@@ -14061,7 +13852,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 {
     int processors =  [[NSProcessInfo processInfo] processorCount];
     
-    //	processors--;
     if( processors < 1)
         processors = 1;
     
@@ -15164,10 +14954,6 @@ static volatile int numberOfThreadsForJPEG = 0;
                     else
                     {
                         NSMutableString *name;
-                        //				if ([[curImage valueForKeyPath: @"series.name"] length] > 8)
-                        //					name = [NSMutableString stringWithString:[[[curImage valueForKeyPath: @"series.name"] substringToIndex:7] uppercaseString]];
-                        //				else
-                        //					name = [NSMutableString stringWithString:[[curImage valueForKeyPath: @"series.name"] uppercaseString]];
                         
                         name = [NSMutableString stringWithString: [[seriesId stringValue] uppercaseString]];
                         
@@ -15283,8 +15069,6 @@ static volatile int numberOfThreadsForJPEG = 0;
         
         if( [files2Compress count] > 0 && exportAborted == NO)
         {
-            //		[waitCompressionWindow showWindow:self];
-            //		[[waitCompressionWindow progress] setMaxValue: [files2Compress count]];
             
             
             switch(compressionMatrixSelectedTag)
@@ -15298,7 +15082,6 @@ static volatile int numberOfThreadsForJPEG = 0;
                     break;
             }
             
-            //		[waitCompressionWindow close];
         }
         
         // ANR - I had to create this loop, otherwise, if I export a folder on the desktop, the dcmkdir will scan all files and folders available on the desktop.... not only the exported folder.
@@ -15480,7 +15263,6 @@ static volatile int numberOfThreadsForJPEG = 0;
                 
                 [t setArguments: args];
                 HorosLaunchTaskOrRaise(t);
-                //				[t waitUntilExit];
                 while( [t isRunning]) [NSThread sleepForTimeInterval: 0.01];
                 
                 free( objs);
@@ -15547,7 +15329,7 @@ static volatile int numberOfThreadsForJPEG = 0;
                 while( [t isRunning])
                     [NSThread sleepForTimeInterval: 0.1];
                 
-                //[t waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
+                // Avoid waitUntilExit here: it allows the main run loop to continue.
                 
                 if( [t terminationStatus] == 0 && deleteSource == YES)
                 {
@@ -15866,11 +15648,6 @@ static volatile int numberOfThreadsForJPEG = 0;
 
 - (IBAction)querySelectedStudy: (id)sender
 {
-    //	if( DICOMDIRCDMODE)
-    //	{
-    //		HorosPresentInformationalAlert(NSLocalizedString(@"OsiriX CD/DVD", nil), NSLocalizedString(@"OsiriX is running in read-only mode, from a CD/DVD.", nil), NSLocalizedString(@"OK",nil), nil, nil);
-    //		return;
-    //	}
     
     [self.window makeKeyAndOrderFront:sender];
     
@@ -15897,17 +15674,11 @@ static volatile int numberOfThreadsForJPEG = 0;
 
 - (void)queryDICOM: (id) sender
 {
-    //	if( DICOMDIRCDMODE)
-    //	{
-    //		HorosPresentInformationalAlert(NSLocalizedString(@"OsiriX CD/DVD", nil), NSLocalizedString(@"OsiriX is running in read-only mode, from a CD/DVD.", nil), NSLocalizedString(@"OK",nil), nil, nil);
-    //		return;
-    //	}
     
     if ([[[NSApplication sharedApplication] currentEvent] modifierFlags]  & NSEventModifierFlagShift)	// Query selected patient
         [self querySelectedStudy: self];
     else
     {
-        //		[self.window makeKeyAndOrderFront:sender];
         
         if ([sender tag] == 0 && [QueryController currentQueryController] == nil)
             [[QueryController alloc] initAutoQuery: NO];
@@ -16218,8 +15989,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     
     // Set up toolbar properties: Allow customization, give a default display mode.
     [toolbar setAllowsUserCustomization: YES];
-    //    [toolbar setDisplayMode: NSToolbarDisplayModeIconOnly];
-    
     // We are the delegate
     [toolbar setDelegate: self];
     [toolbar setAutosavesConfiguration: YES];
@@ -16231,7 +16000,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     [[self.window toolbar] setVisible: YES];
     [self performSelector:@selector(removeForbiddenDatabaseToolbarItems) withObject:nil afterDelay:0.0];
     
-    //    [self.window makeKeyAndOrderFront:nil];
     
 #ifdef EXPORTTOOLBARITEM
     NSLog(@"************** WARNING EXPORTTOOLBARITEM ACTIVATED");
@@ -16384,16 +16152,6 @@ static volatile int numberOfThreadsForJPEG = 0;
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(export2PACS:)];
     }
-    //	else if ([itemIdent isEqualToString: CDRomToolbarItemIdentifier])
-    //	{
-    //        
-    //		[toolbarItem setLabel: NSLocalizedString(@"CD-Rom",nil)];
-    //		[toolbarItem setPaletteLabel: NSLocalizedString(@"CD-Rom",nil)];
-    //        [toolbarItem setToolTip: NSLocalizedString(@"Load images from current DICOM CD-Rom",nil)];
-    //		[toolbarItem setImage: [NSImage imageNamed: CDRomToolbarItemIdentifier]];
-    //		[toolbarItem setTarget: self];
-    //		[toolbarItem setAction: @selector(ReadDicomCDRom:)];
-    //    }
     else if ([itemIdent isEqualToString: TrashToolbarItemIdentifier])
     {
         
@@ -16551,49 +16309,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     [splitComparative saveDefault: @"SplitComparative"];
     [splitViewVert saveDefault: @"SplitVert2"];
     
-    /*
-    [splitDrawer restoreDefault: @"SplitDrawer"];
-    [splitAlbums restoreDefault: @"SplitAlbums"];
-    [splitViewHorz restoreDefault: @"SplitHorz2"];
-    [splitComparative restoreDefault: @"SplitComparative"];
-    [splitViewVert restoreDefault: @"SplitVert2"];
-    
-    for (NSView* _view in [splitDrawer subviews])
-    {
-        [_view setHidden:NO];
-        [splitDrawer resizeSubviewsWithOldSize:splitDrawer.bounds.size];
-    }
-    
-    for (NSView* _view in [splitAlbums subviews])
-    {
-        [_view setHidden:NO];
-        [splitAlbums resizeSubviewsWithOldSize:splitAlbums.bounds.size];
-    }
-
-    for (NSView* _view in [splitViewHorz subviews])
-    {
-        [_view setHidden:NO];
-        [splitViewHorz resizeSubviewsWithOldSize:splitViewHorz.bounds.size];
-    }
-    
-    for (NSView* _view in [splitComparative subviews])
-    {
-        [_view setHidden:NO];
-        [splitComparative resizeSubviewsWithOldSize:splitComparative.bounds.size];
-    }
-    
-    for (NSView* _view in [splitViewVert subviews])
-    {
-        [_view setHidden:NO];
-        [splitViewVert resizeSubviewsWithOldSize:splitViewVert.bounds.size];
-    }
-    
-    [splitDrawer saveDefault: @"SplitDrawer"];
-    [splitAlbums saveDefault: @"SplitAlbums"];
-    [splitViewHorz saveDefault: @"SplitHorz2"];
-    [splitComparative saveDefault: @"SplitComparative"];
-    [splitViewVert saveDefault: @"SplitVert2"];
-     */
 }
 
 - (NSArray *)toolbarDefaultItemIdentifiers: (NSToolbar *)toolbar

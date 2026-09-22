@@ -677,9 +677,6 @@ static NSString* const HorosActiveLocalDatabasePathDefaultsKey = @"HorosActiveLo
 @synthesize hasPotentiallySlowDataAccess = _hasPotentiallySlowDataAccess;
 @synthesize compressQueue = _compressQueue, decompressQueue = _decompressQueue, compressDecompressThread = _compressDecompressThread;
 
-/*- (void)setIsReadOnly:(BOOL)isReadOnly {
- _isReadOnly = isReadOnly;
- }*/
 
 -(DataNodeIdentifier*)dataNodeIdentifier {
     return [LocalDatabaseNodeIdentifier localDatabaseNodeIdentifierWithPath:self.baseDirPath];
@@ -706,12 +703,6 @@ static NSString* const HorosActiveLocalDatabasePathDefaultsKey = @"HorosActiveLo
     return managedObjectModel;
 }
 
-/*-(NSMutableDictionary*)persistentStoreCoordinatorsDictionary {
-	static NSMutableDictionary* dict = NULL;
-	if (!dict)
- dict = [[NSMutableDictionary alloc] initWithCapacity:4];
-	return dict;
- }*/
 
 -(id)initWithPath:(NSString*)p context:(NSManagedObjectContext*)c mainDatabase:(N2ManagedDatabase*)mainDbReference // reminder: context may be nil (assigned in -[N2ManagedDatabase initWithPath:] after calling this method)
 {
@@ -1054,9 +1045,6 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
     return [basePath stringByAppendingPathComponent:SqlFileName];
 }
 
-/*-(NSString*)sqlFilePath {
-	return [DicomDatabase sqlFilePathForBasePath:self.baseDirPath];
- }*/
 
 -(NSString*)dataDirPath {
     return [[self.dataBaseDirPath stringByAppendingPathComponent:@"DATABASE.noindex"] stringByResolvingSymlinksAndAliases];
@@ -1795,30 +1783,6 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
 
 
 
-//- (void)listenerAnonymizeFiles: (NSArray*)files
-//{
-//	NSArray* array = [NSArray arrayWithObjects: [DCMAttributeTag tagWithName:@"PatientsName"], @"**anonymized**", nil];
-//	NSMutableArray* tags = [NSMutableArray array];
-//
-//	[tags addObject:array];
-//
-//	for( NSString *file in files)
-//	{
-//		NSString *destPath = [file stringByAppendingString:@"temp"];
-//
-//		@try
-//		{
-//		}
-//		@catch (NSException * e)
-//		{
-//          N2LogExceptionWithStackTrace(e);
-//		}
-//
-//		[[NSFileManager defaultManager] removeItemAtPath: file error:NULL];
-//		[[NSFileManager defaultManager] movePath:destPath toPath: file handler: nil];
-//	}
-//#endif
-//}
 
 -(BOOL)compressFilesAtPaths:(NSArray*)paths
 {
@@ -1902,7 +1866,6 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
     @finally
     {
         [_processFilesLock unlock];
-        //		[thread popLevel];
     }
 }
 
@@ -2037,7 +2000,6 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
 {
     NSThread* thread = [NSThread currentThread];
     
-    //#define RANDOMFILES
 #ifdef RANDOMFILES
     NSMutableArray* randomArray = [NSMutableArray array];
     for( int i = 0; i < 50000; i++)
@@ -2053,7 +2015,6 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
     NSString* errorsDirPath = self.errorsDirPath;
     NSString* dataDirPath = self.dataDirPath;
     NSString* reportsDirPath = self.reportsDirPath;
-    //NSString* tempDirPath = self.tempDirPath;
     
     [thread enterOperation];
     thread.status = [NSString stringWithFormat:NSLocalizedString(@"Scanning %@", nil), N2LocalizedSingularPluralCount(paths.count, NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil))];
@@ -2160,8 +2121,6 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
         
         [thread enterOperationIgnoringLowerLevels];
         thread.status = [NSString stringWithFormat:NSLocalizedString(@"Adding %@", nil), N2LocalizedSingularPluralCount(dicomFilesArray.count, NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil))];
-        //        NSLog(@"before: %X", self.managedObjectContext);
-        //      NSArray* addedImagesArray = [self addFilesInDictionaries:dicomFilesArray postNotifications:postNotifications rereadExistingItems:rereadExistingItems generatedByOsiriX:generatedByOsiriX];
         
         NSArray* objectIDs = [self addFilesDescribedInDictionariesOnContextQueue:dicomFilesArray
                                                  postNotifications:postNotifications
@@ -2173,7 +2132,7 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
         
         [thread exitOperation];
         
-        //	[[NSFileManager defaultManager] removeItemAtPath: @"/tmp/dicomsr_osirix" error:NULL]; // nooooooo because other threads may be using it
+        // Other threads may still be using the temporary DICOM SR directory.
         
         if (addFailed)
         {
@@ -2322,7 +2281,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
     
     BOOL newStudy = NO;
     
-    //  NSLog(@"Add: %@", dicomFilesArray);
     
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init]; // It has to be done after the NSMutableArray autorelease: we will return it.
     
@@ -2474,7 +2432,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                 @try
                 {
                     NSMutableDictionary *curDict = [dicomFilesArray objectAtIndex:i];
-                    //				NSLog(@"curDict: %@", curDict);
                     
                     newFile = [curDict objectForKey:@"filePath"];
                     NSDictionary *sourceDates = originalDatesAdded && newFile ? [originalDatesAdded objectForKey:newFile.stringByStandardizingPath] : nil;
@@ -2587,7 +2544,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                             if( supportedSOPClass == NO)
                             {
                                 NSLog( @"unsupported DICOM SOP CLASS (%@)-> for the file : %@", SOPClassUID, newFile);
-                                //                                curDict = nil;
                             }
                         }
                     }
@@ -2595,7 +2551,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                     if ([curDict objectForKey:@"SOPClassUID"] == nil && [[curDict objectForKey: @"fileType"] hasPrefix:@"DICOM"] == YES)
                     {
                         NSLog(@"no DICOM SOP CLASS -> for the file: %@", newFile);
-                        //                        curDict = nil;
                     }
                     
                     if (curDict != nil)
@@ -3147,7 +3102,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                         
                                         if (reportUpToDate == NO)
                                         {
-                                            //                                            NSString *reportURL = nil; // <- For an empty DICOM SR File
                                             
                                             DicomImage *reportSR = [study reportImage];
                                             
@@ -3165,9 +3119,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                                     {
                                                         NSString *reportFilePath = nil;
                                                         
-                                                        //														if (isBonjour)
-                                                        //															reportFilePath = [tempDirPath stringByAppendingPathComponent: [reportPath lastPathComponent]];
-                                                        //														else
                                                         reportFilePath = [reportsDirPath stringByAppendingPathComponent: [reportPath lastPathComponent]];
                                                         
                                                         [[NSFileManager defaultManager] removeItemAtPath: reportFilePath error: nil];
@@ -3197,8 +3148,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                     
                                     [addedImagesForImageCreator addObject:image];
                                     
-                                    //								if(seriesTable && [addedSeries containsObject: seriesTable] == NO)
-                                    //									[addedSeries addObject: seriesTable];
                                     
                                     if (DICOMSR == NO && [curDict valueForKey:@"album"] !=nil)
                                     {
@@ -3213,9 +3162,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                         
                                         if (album == nil)
                                         {
-                                            //NSString *name = [curDict valueForKey:@"album"];
-                                            //album = [NSEntityDescription insertNewObjectForEntityForName:@"Album" inManagedObjectContext: context];
-                                            //[album setValue:name forKey:@"name"];
                                             
                                             for (album in albumArray)
                                             {
@@ -3839,7 +3785,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
         enumer = [NSFileManager.defaultManager enumeratorAtPath:self.incomingDirPath limitTo:-1];
         
         NSString *pathname;
-        // NSDirectoryEnumerator *enumer = [NSFileManager.defaultManager enumeratorAtPath:self.incomingDirPath];
         
         NSTimeInterval startTime = [NSDate timeIntervalSinceReferenceDate];
         NSTimeInterval start = startTime;
@@ -3868,11 +3813,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                 continue;
             }
             
-            //            if ([[lastPathComponent uppercaseString] hasSuffix:@".APP"]) // We don't want to scan MacOS applications
-            //			{
-            //				[[NSFileManager defaultManager] removeItemAtPath: srcPath error: nil];
-            //				continue;
-            //			}
             
             if ([lastPathComponent length] > 0 && [lastPathComponent characterAtIndex: 0] == '.')
             {
@@ -3901,8 +3841,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                 activityFeedbackShown = YES;
             }
             
-            // Is it a real file? Is it writable (transfer done)?
-            //					if ([[NSFileManager defaultManager] isWritableFileAtPath:srcPath] == YES)	<- Problems with CD : read-only files, but valid files
+            // Imported files may be read-only (for example, on a CD); do not require writability.
             {
                 NSDictionary *fattrs = [enumer fileAttributes];	//[[NSFileManager defaultManager] fileAttributesAtPath:srcPath traverseLink: YES];
                 
@@ -4115,8 +4054,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
         
         if ([filesArray count] > 0)
         {
-            //				if ( [[NSUserDefaults standardUserDefaults] boolForKey:@"ANONYMIZELISTENER"] == YES)
-            //					[self listenerAnonymizeFiles: filesArray];
             
             thread.status = [NSString stringWithFormat:NSLocalizedString(@"Processing %@...", nil), N2LocalizedSingularPluralCount(filesArray.count, NSLocalizedString(@"file", nil),NSLocalizedString(@"files", nil))];
             
@@ -4176,7 +4113,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
     {
         if (listenerCompressionSettings == 1 || listenerCompressionSettings == 0) // decompress, listenerCompressionSettings == 0 for zip support!
         {
-            //            [self performSelectorInBackground:@selector(_threadDecompressToIncoming:) withObject:compressedPathArray];
             
             @synchronized (_decompressQueue) {
                 [_decompressQueue addObjectsFromArray:compressedPathArray];
@@ -4184,11 +4120,9 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
             
             [self kickstartCompressDecompress];
             
-            //            [self initiateDecompressFilesAtPaths: compressedPathArray intoDirAtPath: self.incomingDirPath];
         }
         else if (listenerCompressionSettings == 2) // compress
         {
-            //            [self performSelectorInBackground:@selector(_threadCompressToIncoming:) withObject:compressedPathArray];
             
             @synchronized (_decompressQueue) {
                 [_compressQueue addObjectsFromArray:compressedPathArray];
@@ -4196,7 +4130,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
             
             [self kickstartCompressDecompress];
             
-            //            [self initiateCompressFilesAtPaths: compressedPathArray intoDirAtPath: self.incomingDirPath];
         }
     }
     
@@ -4283,35 +4216,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
     }
 }
 
-//-(void)_threadDecompressToIncoming:(NSArray*)compressedPathArray {
-//    NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
-//    @try {
-//        NSThread* thread = [NSThread currentThread];
-//        thread.name = NSLocalizedString(@"DICOM Decompression...", nil);
-//        thread.status = [NSString stringWithFormat:NSLocalizedString(@"Decompressing %d %@", nil), compressedPathArray.count, compressedPathArray.count == 1? NSLocalizedString(@"file", nil) : NSLocalizedString(@"files", nil)];
-//        [ThreadsManager.defaultManager addThreadAndStart:thread];
-//        [self decompressFilesAtPaths:compressedPathArray intoDirAtPath:self.incomingDirPath];
-//    } @catch (NSException* e) {
-//        N2LogExceptionWithStackTrace(e);
-//    } @finally {
-//        [pool release];
-//    }
-//}
-
-//-(void)_threadCompressToIncoming:(NSArray*)compressedPathArray {
-//    NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
-//    @try {
-//        NSThread* thread = [NSThread currentThread];
-//        thread.name = NSLocalizedString(@"DICOM Compression...", nil);
-//        thread.status = [NSString stringWithFormat:NSLocalizedString(@"Compressing %d %@", nil), compressedPathArray.count, compressedPathArray.count == 1? NSLocalizedString(@"file", nil) : NSLocalizedString(@"files", nil)];
-//        [ThreadsManager.defaultManager addThreadAndStart:thread];
-//        [self compressFilesAtPaths:compressedPathArray intoDirAtPath:self.incomingDirPath];
-//    } @catch (NSException* e) {
-//        N2LogExceptionWithStackTrace(e);
-//    } @finally {
-//        [pool release];
-//    }
-//}
 
 -(void)importFilesFromIncomingDirThread
 {
@@ -4589,11 +4493,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                     if( uid)
                         study.patientUID = uid;
                     
-                    //				DicomImage* o = [[[[study valueForKey:@"series"] anyObject] valueForKey:@"images"] anyObject];
-                    //				DicomFile* dcm = [[DicomFile alloc] init:o.completePath];
-                    //				if (dcm && [dcm elementForKey:@"patientUID"])
-                    //					study.patientUID = [dcm elementForKey:@"patientUID"];
-                    //				[dcm release];
                     
                 } @catch (NSException* e) {
                     N2LogExceptionWithStackTrace(e);
@@ -4775,8 +4674,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
 }
 
 -(void)dumpSqlFile {
-    //WaitRendering *splash = [[WaitRendering alloc] init:NSLocalizedString(@"Dumping SQL Index file...", nil)]; // TODO: status
-    //[splash showWindow:self];
     
     @try {
         NSString* repairedDBFile = [self.sqlFilePath stringByAppendingPathExtension:@"dump"];
@@ -4794,7 +4691,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
         while( [theTask isRunning])
             [NSThread sleepForTimeInterval: 0.1];
         
-        //[theTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
+        // Avoid waitUntilExit here: it allows the main run loop to continue.
         
         int dumpStatus = [theTask terminationStatus];
         [theTask release];
@@ -4812,7 +4709,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
             while( [theTask isRunning])
                 [NSThread sleepForTimeInterval: 0.1];
             
-            //[theTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
+            // Avoid waitUntilExit here: it allows the main run loop to continue.
             
             if ([theTask terminationStatus] == 0) {
                 [[NSFileManager defaultManager] trashItemAtURL:[NSURL fileURLWithPath:self.sqlFilePath] resultingItemURL:NULL error:NULL];
@@ -4827,8 +4724,6 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
         N2LogExceptionWithStackTrace(e);
     }
     
-    //	[splash close];
-    //	[splash autorelease];
 }
 
 -(void)rebuildSqlFile {
@@ -4855,17 +4750,14 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
     NSString *templateFile;
     
     templateFile = [htmlTemplatesDirectory stringByAppendingPathComponent:@"QTExportPatientsTemplate.html"];
-    //	NSLog( @"%@", templateFile);
     if ([[NSFileManager defaultManager] fileExistsAtPath:templateFile] == NO)
         [[NSFileManager defaultManager] copyItemAtPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"QTExportPatientsTemplate.html"] toPath:templateFile error:NULL];
     
     templateFile = [htmlTemplatesDirectory stringByAppendingPathComponent:@"QTExportStudiesTemplate.html"];
-    //	NSLog( @"%@", templateFile);
     if ([[NSFileManager defaultManager] fileExistsAtPath:templateFile] == NO)
         [[NSFileManager defaultManager] copyItemAtPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"QTExportStudiesTemplate.html"] toPath:templateFile error:NULL];
     
     templateFile = [htmlTemplatesDirectory stringByAppendingPathComponent:@"QTExportSeriesTemplate.html"];
-    //	NSLog( @"%@", templateFile);
     if ([[NSFileManager defaultManager] fileExistsAtPath:templateFile] == NO)
         [[NSFileManager defaultManager] copyItemAtPath:[[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"QTExportSeriesTemplate.html"] toPath:templateFile error:NULL];
     

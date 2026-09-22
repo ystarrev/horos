@@ -47,7 +47,6 @@
 #import "DCMCalendarDate.h"
 #import "DCMNetServiceDelegate.h"
 #import "QueryArrayController.h"
-//#import "AdvancedQuerySubview.h"
 #import "DCMTKRootQueryNode.h"
 #import "DCMTKStudyQueryNode.h"
 #import "DCMTKSeriesQueryNode.h"
@@ -442,7 +441,6 @@ extern "C"
                     
                     array = [qm queries];
                     
-//                    NSLog( @"date: %@ time: %@ count: %d", date, studyTime, array.count);
                     
                     NSMutableDictionary *dictionary = [NSMutableDictionary dictionaryWithDictionary: [qm parameters]];
                     
@@ -488,7 +486,6 @@ extern "C"
 	
 	@try
 	{
-		// aServer = [[QueryController currentQueryController] TLSAskPrivateKeyPasswordForServer:aServer];
 		qm = [[[QueryArrayController alloc] initWithCallingAET:[NSUserDefaults defaultAETitle] distantServer:aServer] autorelease];
 		
 		NSString *filterValue = [an stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -526,7 +523,6 @@ extern "C"
 	
 	@try
 	{
-		// aServer = [[QueryController currentQueryController] TLSAskPrivateKeyPasswordForServer:aServer];
 		qm = [[QueryArrayController alloc] initWithCallingAET:[NSUserDefaults defaultAETitle] distantServer:aServer];
 		
 		NSString *filterValue = [an stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -912,7 +908,6 @@ extern "C"
 			[theTask setStandardError:[NSFileHandle fileHandleWithNullDevice]];
 		}
 		
-		//NSArray *args = [NSArray arrayWithObjects: address, [NSString stringWithFormat:@"%d", port], @"-aet", [[NSUserDefaults standardUserDefaults] stringForKey: @"AETITLE"], @"-aec", aet, @"-to", [[NSUserDefaults standardUserDefaults] stringForKey:@"DICOMTimeout"], @"-ta", [[NSUserDefaults standardUserDefaults] stringForKey:@"DICOMTimeout"], @"-td", [[NSUserDefaults standardUserDefaults] stringForKey:@"DICOMTimeout"], nil];
 		
 		NSMutableArray *args = [NSMutableArray array];
 		[args addObject: address];
@@ -930,8 +925,6 @@ extern "C"
 		
 		if([[serverParameters objectForKey:@"TLSEnabled"] boolValue])
 		{
-			//[DDKeychain lockTmpFiles];
-			
 			// TLS support. Options listed here http://support.dcmtk.org/docs/echoscu.html
 			
 			if([[serverParameters objectForKey:@"TLSAuthenticated"] boolValue])
@@ -983,7 +976,7 @@ extern "C"
 				[DDKeychain KeychainAccessExportTrustedCertificatesToDirectory:trustedCertificatesDir];
 				NSArray *trustedCertificates = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:trustedCertificatesDir error:nil];
 				
-				//[args addObject:@"--add-cert-dir"]; // add certificates in d to list of certificates  .... needs to use OpenSSL & rename files (see http://forum.dicom-cd.de/viewtopic.php?p=3237&sid=bd17bd76876a8fd9e7fdf841b90cf639 )
+				// Certificate-directory support would require OpenSSL-compatible certificate filenames.
 				for (NSString *cert in trustedCertificates)
 				{
 					[args addObject:@"--add-cert-file"];
@@ -1029,7 +1022,6 @@ extern "C"
         
 		if([[serverParameters objectForKey:@"TLSEnabled"] boolValue])
 		{
-			//[DDKeychain unlockTmpFiles];
 			[[NSFileManager defaultManager] removeItemAtPath:[DICOMTLS keyPathForServerAddress:address port:[port intValue] AETitle:aet withStringID:uniqueStringID] error:NULL];
 			[[NSFileManager defaultManager] removeItemAtPath:[DICOMTLS certificatePathForServerAddress:address port:[port intValue] AETitle:aet withStringID:uniqueStringID] error:NULL];
 			[[NSFileManager defaultManager] removeItemAtPath:[NSString stringWithFormat:@"%@%@", TLS_TRUSTED_CERTIFICATES_DIR, uniqueStringID] error:NULL];
@@ -1435,19 +1427,6 @@ extern "C"
 				[src setValue: [NSNumber numberWithBool: NO] forKey: @"activated"];
 			}
 			
-//			if( [r count] == 1)
-//			{
-//				for( id src in sourcesArray)
-//				{
-//					if( [[src valueForKey: @"AddressAndPort"] isEqualToString: [r lastObject]])
-//					{
-//						[sourcesTable selectRowIndexes: [NSIndexSet indexSetWithIndex: [sourcesArray indexOfObject: src]] byExtendingSelection: NO];
-//						[sourcesTable scrollRowToVisible: [sourcesArray indexOfObject: src]];
-//					}
-//				}
-//			}
-//			else
-//			{
 				BOOL first = YES;
 				
                 for( int i = 0; i < r.count; i++)
@@ -1473,7 +1452,6 @@ extern "C"
                         }
                     }
                 }
-//			}
 			
 			[self didChangeValueForKey:@"sourcesArray"];
 		}
@@ -2011,16 +1989,6 @@ extern "C"
 {
 	@try
 	{
-//		if( [[tableColumn identifier] isEqualToString:@"comment"])
-//		{
-//			DatabaseIsEdited = YES;
-//			return YES;
-//		}
-//		else
-//		{
-//			DatabaseIsEdited = NO;
-//			return NO;
-//		}
 	}
 	@catch (NSException * e)
 	{
@@ -3254,16 +3222,10 @@ extern "C"
                 {
                     if( showError && [NSThread isMainThread])
                     {
-//                        if ([defaults boolForKey:alertSuppress])
-//                        {
-//                            doit = YES;
-//                        }
-//                        else
                         {
                             NSAlert* alert = [[NSAlert new] autorelease];
                             [alert setMessageText: NSLocalizedString(@"Query", nil)];
                             [alert setInformativeText: NSLocalizedString(@"No query parameters provided. The query may take a long time.", nil)];
-//                            [alert setShowsSuppressionButton:YES];
                             [alert addButtonWithTitle: NSLocalizedString(@"Continue", nil)];
                             [alert addButtonWithTitle: NSLocalizedString(@"Cancel", nil)];
                             
@@ -3319,14 +3281,6 @@ extern "C"
                     }
                 }
             }
-//				else
-//				{
-//					NSString	*response = [NSString stringWithFormat: @"%@  /  %@:%d\r\r", theirAET, hostname, [port intValue]];
-//				
-//					response = [response stringByAppendingString:NSLocalizedString(@"Connection failed to this DICOM node (c-echo failed)", nil)];
-//					
-//					HorosPresentCriticalAlert( NSLocalizedString(@"Query Error", nil), response, NSLocalizedString(@"Continue", nil), nil, nil) ;
-//				}
         
             
         }
@@ -4046,62 +4000,6 @@ extern "C"
 			
 			if( onlyIfNotAvailable)
 			{
-//				if( [[NSUserDefaults standardUserDefaults] boolForKey: @"RetrieveOnlyMissingUID"])
-//				{
-//					DicomStudy *localStudy = nil;
-//					
-//					// Local Study
-//					if( [item isMemberOfClass: [DCMTKSeriesQueryNode class]])
-//					{
-//						array = [self localSeries: item context: nil];
-//						
-//						if( [array count])
-//							localStudy = [[array lastObject] valueForKey: @"study"];
-//					}
-//					else
-//					{
-//						array = [self localStudy: item context: nil];
-//						
-//						if( [array count])
-//							localStudy = [array lastObject];
-//					}
-//					
-//					if( localStudy)
-//					{
-//						NSArray *localImagesUIDs = [[localStudy valueForKeyPath: @"series.images.sopInstanceUID"] allObjects];
-//						
-//						DcmDataset *dataset = new DcmDataset();
-//						
-//						dataset-> insertEmptyElement(DCM_StudyInstanceUID, OFTrue);
-//						dataset-> insertEmptyElement(DCM_SeriesInstanceUID, OFTrue);
-//						dataset-> insertEmptyElement(DCM_SOPInstanceUID, OFTrue);
-//						
-//						if( [item isMemberOfClass:[DCMTKStudyQueryNode class]]) // Study Level
-//							dataset-> putAndInsertString(DCM_StudyInstanceUID, [[item uid] UTF8String], OFTrue);
-//						else													// Series Level
-//							dataset-> putAndInsertString(DCM_SeriesInstanceUID, [[item uid] UTF8String], OFTrue);
-//							
-//						dataset-> putAndInsertString(DCM_QueryRetrieveLevel, "IMAGE", OFTrue);
-//						
-//						[self queryWithValues: nil dataset: dataset];
-//						
-//						for( DCMTKImageQueryNode *image in [self children])
-//						{
-//							if( [image uid])
-//							{
-//								if( [localImagesUIDs containsObject: [image uid]])
-//								{
-//									// already here
-//								}
-//								else
-//								{
-//									// not here
-//								}
-//							}
-//						}
-//					}
-//				}
-//				else
 				{
 					int localNumber = 0;
 					NSArray *array = 0L;
@@ -7054,13 +6952,6 @@ extern "C"
 	//set up Query Keys
 	currentQueryKey = PatientName;
 	
-//	dateQueryFilter = [[QueryFilter queryFilterWithObject:nil ofSearchType:searchExactMatch forKey:@"StudyDate"] retain];
-//	timeQueryFilter = [[QueryFilter queryFilterWithObject:nil ofSearchType:searchExactMatch forKey:@"StudyTime"] retain];
-    
-//    if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SupportQRModalitiesinStudy"])
-//        modalityQueryFilter = [[QueryFilter queryFilterWithObject:nil ofSearchType:searchExactMatch forKey:@"ModalitiesinStudy"] retain];
-//	else
-//        modalityQueryFilter = [[QueryFilter queryFilterWithObject:nil ofSearchType:searchExactMatch forKey:@"Modality"] retain];
     
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshSources) name:@"DCMNetServicesDidChange"  object:nil];
     
@@ -7171,10 +7062,6 @@ extern "C"
 
 - (IBAction) verify:(id)sender
 {
-//	int selectedRow = [sourcesTable selectedRow];
-//    
-//    [NSThread detachNewThreadSelector: @selector( queryTest:) toTarget: [QueryController class] withObject: [[sourcesArray objectAtIndex: selectedRow] valueForKey:@"server"]];
-//    
     
 	int status, selectedRow = [sourcesTable selectedRow];
 

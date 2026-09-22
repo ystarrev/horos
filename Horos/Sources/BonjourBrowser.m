@@ -70,7 +70,6 @@ static BonjourBrowser *currentBrowser = nil;
         [self buildFixedIPList];
         [self buildLocalPathsList];
         [self buildDICOMDestinationsList];
-        //		[[BrowserController currentBrowser] loadDICOMFromiPod];
         [self arrangeServices];
         
         interfaceOsiriX = bC;
@@ -231,7 +230,6 @@ static BonjourBrowser *currentBrowser = nil;
 {
     [self buildFixedIPList];
     [self buildLocalPathsList];
-    //[[BrowserController currentBrowser] loadDICOMFromiPod];
     [self buildDICOMDestinationsList];
     [self arrangeServices];
 }

@@ -53,8 +53,6 @@
 
 #import "url.h"
 
-//static BOOL isHcugeCh = NO, isUnigeCh = NO, testIsHugDone = NO, testIsUniDone = NO;
-//static NSString *hostName = @"";
 static NSHost *currentHost = nil;
 
 @implementation DefaultsOsiriX
@@ -69,106 +67,6 @@ static NSHost *currentHost = nil;
 	return currentHost;
 }
 
-// Test if the computer is in the HUG (domain name == hcuge.ch)
-//+ (NSString*) hostName
-//{
-//	return hostName;
-//}
-
-//+ (BOOL) isHUG
-//{
-//	if( testIsHugDone == NO)
-//	{
-////		NSArray	*names = [[DefaultsOsiriX currentHost] names];
-////		int i;
-////		for( i = 0; i < [names count] && !isHcugeCh; i++)
-////		{
-////			int len = [[names objectAtIndex: i] length];
-////			if ( len < 8 ) continue;  // Fixed out of bounds error in following line when domainname is short.
-////			NSString *domainName = [[names objectAtIndex: i] substringFromIndex: len - 8];
-////
-////			if([domainName isEqualToString: @"hcuge.ch"])
-////			{
-////				isHcugeCh = YES;
-////				hostName = [[names objectAtIndex: i] retain];
-////			}
-////		}
-//		
-//		char s[_POSIX_HOST_NAME_MAX+1];
-//		gethostname(s,_POSIX_HOST_NAME_MAX);
-//		NSString *c = [NSString stringWithUTF8String:s encoding:NSUTF8StringEncoding];
-//		
-//		if( [c length] > 8 )
-//		{
-//			NSString *domainName = [c substringFromIndex: [c length] - 8];
-//
-//			if([domainName isEqualToString: @"hcuge.ch"])
-//			{
-//				isHcugeCh = YES;
-//				hostName = [c retain];
-//			}
-//		}
-//		
-//		testIsHugDone = YES;
-//	}
-//	return isHcugeCh;
-//}
-
-//+ (BOOL) isUniGE
-//{
-//	if( testIsUniDone == NO)
-//	{
-////		NSArray	*names = [[DefaultsOsiriX currentHost] names];
-////		int i;
-////		for( i = 0; i < [names count] && !isUnigeCh; i++)
-////		{
-////			int len = [[names objectAtIndex: i] length];
-////			if ( len < 8 ) continue;  // Fixed out of bounds error in following line when domainname is short.
-////			NSString *domainName = [[names objectAtIndex: i] substringFromIndex: len - 8];
-////
-////			if([domainName isEqualToString: @"unige.ch"])
-////			{
-////				isUnigeCh = YES;
-////				hostName = [[names objectAtIndex: i] retain];
-////			}
-////		}
-//		
-//		char s[_POSIX_HOST_NAME_MAX+1];
-//		gethostname(s,_POSIX_HOST_NAME_MAX);
-//		NSString *c = [NSString stringWithUTF8String:s encoding:NSUTF8StringEncoding];
-//		
-//		if( [c length] > 8 )
-//		{
-//			NSString *domainName = [c substringFromIndex: [c length] - 8];
-//
-//			if([domainName isEqualToString: @"unige.ch"])
-//			{
-//				isUnigeCh = YES;
-//				hostName = [c retain];
-//			}
-//		}
-//		
-//		testIsUniDone = YES;
-//	}
-//	return isUnigeCh;
-//}
-
-//+ (BOOL) isLAVIM
-//{
-//	#ifdef OSIRIX_VIEWER
-//	if( [self isHUG])
-//	{
-//		int i;
-//		
-//	}
-//	else if([self isUniGE])
-//	{
-//		if ([hostName isEqualToString:@"lavimcmu1.unige.ch"]) return YES;
-//	}
-//	#endif
-//	
-//	return NO;
-//}
 
 + (void) addCLUT: (NSString*) filename dictionary: (NSMutableDictionary*) clutValues
 {
@@ -472,29 +370,6 @@ static NSHost *currentHost = nil;
 	
 	// --
 	{
-	//    NSMutableDictionary *aCLUTFilter = [NSMutableDictionary dictionary];
-	//	NSMutableArray		*rArray = [NSMutableArray array];
-	//	for( i = 0; i < 256; i++)
-	//	{
-	//		[rArray addObject: [NSNumber numberWithLong:i]];
-	//	}
-	//	[aCLUTFilter setObject:rArray forKey:@"Red"];
-	//	
-	//	NSMutableArray		*gArray = [NSMutableArray array];
-	//	for( i = 0; i < 256; i++)
-	//	{
-	//		[gArray addObject: [NSNumber numberWithLong:0]];
-	//	}
-	//	[aCLUTFilter setObject:gArray forKey:@"Green"];
-	//	
-	//	NSMutableArray		*bArray = [NSMutableArray array];
-	//	for( i = 0; i < 256; i++)
-	//	{
-	//		[bArray addObject: [NSNumber numberWithLong:0]];
-	//	}
-	//	[aCLUTFilter setObject:bArray forKey:@"Blue"];
-	//	
-	//	[clutValues setObject:aCLUTFilter forKey:@"Red CLUT"];
 	}
 	
 	// --
@@ -816,8 +691,6 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject:@"0" forKey:@"DEFAULTLEFTTOOL"];	// WL TOOL
 	[defaultValues setObject:@"2" forKey:@"DEFAULTRIGHTTOOL"];	// ZOOM TOOL
 	[defaultValues setObject:@"1" forKey:@"AUTOCLEANINGSPACE"];
-//	[defaultValues setObject:@"1" forKey:@"AUTOCLEANINGSPACEPRODUCED"];
-//	[defaultValues setObject:@"1" forKey:@"AUTOCLEANINGSPACEOPENED"];
     [defaultValues setObject:@"2" forKey:@"AutocleanSpaceMode"];
 	[defaultValues setObject:@"1024" forKey:@"AUTOCLEANINGSPACESIZE"];
 	[defaultValues setObject:@"0" forKey:@"PETMinimumValue"];
@@ -860,12 +733,6 @@ static NSHost *currentHost = nil;
     [defaultValues setObject:@"comment" forKey:@"commentFieldForAutoFill"];
     [defaultValues setObject:@"4" forKey:@"DefaultModeForNonVolumicSeries"];
 	[defaultValues setObject:@"2" forKey:@"drawerState"]; // NSDrawerOpenState
-    /*
-    if( [[NSProcessInfo processInfo] processorCount] >= 4)
-        [defaultValues setObject:@"2.0" forKey:@"superSampling"];
-    else
-        [defaultValues setObject:@"1.4" forKey:@"superSampling"];
-    */
      
     [defaultValues setObject:@"3.5" forKey:@"superSampling"];
     float superSampling = [[NSUserDefaults standardUserDefaults] floatForKey: @"superSampling"];
@@ -884,7 +751,6 @@ static NSHost *currentHost = nil;
 	long	pVRAM;
 //
 	pVRAM = [self vramSize]  / (1024L * 1024L);
-//	NSLog(@"VRAM: %d MB", pVRAM);
 	
 	// ** MAX3DTEXTURE
 	// ** MAX3DTEXTURESHADING
@@ -935,7 +801,6 @@ static NSHost *currentHost = nil;
 	[defaultValues setObject: @"0" forKey: @"AUTHENTICATION"];
 	[defaultValues setObject: @"-1" forKey:@"MOUNT"];
 	[defaultValues setObject: @"1" forKey:@"CDDVDEjectAfterAutoCopy"];
-//	[defaultValues setObject: @"1" forKey:@"UNMOUNT"];
 	[defaultValues setObject: @"1" forKey: @"UseDICOMDIRFileCD"];
 	[defaultValues setObject: @"1" forKey: @"SAVEROIS"];
 	[defaultValues setObject: @"1" forKey: @"NOLOCALIZER"];
@@ -1219,368 +1084,9 @@ static NSHost *currentHost = nil;
 	{
 		stringValue = [array objectAtIndex:x];
 		[hotkeys setObject:[NSNumber numberWithInt:x] forKey:stringValue];
-//		[hotkeysModifiers setObject:[NSNumber numberWithInt:0] forKey:stringValue];
 	}
 	[defaultValues setObject:hotkeys forKey:@"HOTKEYS"];
 	
-	// Comparison Body Regions
-//	NSArray *headRegions = [NSArray arrayWithObjects: 
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"HEAD", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"BRAIN", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"FACE", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"ORBIT", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"ORBITS", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"IAC", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"PITUITARY", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"SINUS", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"MAXILLOFACIAL", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"TEMPORAL BONE", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"MANDIBLE", nil), @"region",
-//									nil],
-//								nil];
-//								
-//		NSArray *neckRegions = [NSArray arrayWithObjects: 
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"NECK", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"CERVICAL", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"CAROTID", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"THYROID", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"C SPINE", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"BRACHIAL", nil), @"region",
-//									nil],
-//								nil];
-//								
-//		NSArray *chestRegions = [NSArray arrayWithObjects: 
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"CHEST", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"LUNG", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"THORAX", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"THORACIC", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"PULMONARY", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"MEDIASTINUM", nil), @"region",
-//									[NSNumber numberWithBool:YES], @"isLeaf",
-//									[NSNumber numberWithInt:0], @"count",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"HEART", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"CARDIAC", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"T SPINE", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"STERNUM", nil), @"region",
-//									nil],
-//								nil];
-//								
-//		NSArray *abdomenRegions = [NSArray arrayWithObjects: 
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"ABDOMEN", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"ABD", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"LIVER", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"PANCREAS", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"KIDNEY", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"RENAL", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"ADRENAL", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"IVP", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"L SPINE", nil), @"region",
-//									nil],
-//								nil];
-//								
-//			NSArray *pelvisRegions = [NSArray arrayWithObjects: 
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"PELVIS", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"PELVIC", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"BLADDER", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"APPENDIX", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"HIP", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"HIPS", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"UTERUS", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"OVARY", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"OVARIES", nil), @"region",
-//									nil],
-//								[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"PROSTATE", nil), @"region",
-//									nil],
-//								nil];
-//			
-//			NSArray *thighRegions = [NSArray arrayWithObjects:	
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"THIGH", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"FEMUR", nil), @"region",
-//									nil],
-//							nil];
-//			NSArray *kneeRegions = [NSArray arrayWithObjects:	
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"KNEE", nil), @"region",
-//									nil],
-//							nil];
-//			NSArray *lowerLegRegions = [NSArray arrayWithObjects:	
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"LOWER LEG", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"TIBIA", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"FIBULA", nil), @"region",
-//									nil],
-//							nil];
-//			NSArray *footRegions = [NSArray arrayWithObjects:	
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"FOOT", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"ANKLE", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"TOE", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"TOES", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"HEEL", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"CALCANEUS", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"OS CALCIS", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"TALUS", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"HALLUX", nil), @"region",
-//									nil],
-//							nil];
-//							
-//			NSArray *shoulderRegions = [NSArray arrayWithObjects:	
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"SHOULDER", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"CLAVICLE", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"AC JOINT", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"ACROMIAL", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"SCAPULA", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"BICEPS", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"ROTATOR CUFF", nil), @"region",
-//									nil],
-//							nil];
-//			NSArray *armRegions = [NSArray arrayWithObjects:	
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"HUMERUS", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"UPPER ARM", nil), @"region",
-//									nil],
-//							nil];
-//			NSArray *elbowRegions = [NSArray arrayWithObjects:	
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"ELBOW", nil), @"region",
-//									nil],
-//							nil];
-//			NSArray *forearmRegions = [NSArray arrayWithObjects:	
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"FOREARM", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"RADIUS", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"ULNA", nil), @"region",
-//									nil],
-//							nil];
-//		
-//			NSArray *handRegions = [NSArray arrayWithObjects:	
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"HAND", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"WRIST", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"THUMB", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"FINGER", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"CARPAL", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"NAVICULAR", nil), @"region",
-//									nil],
-//							[NSDictionary dictionaryWithObjectsAndKeys:
-//									NSLocalizedString(@"SCAPHOID", nil), @"region",
-//									nil],
-//							nil];									
-//												
-//	
-//	 NSDictionary *headRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"HEAD", nil), @"region",
-//				headRegions, @"keywords",
-//				nil];
-//	NSDictionary *neckRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"NECK", nil), @"region",
-//				neckRegions, @"keywords",
-//				nil];
-//	NSDictionary *chestRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"CHEST", nil), @"region",
-//				chestRegions, @"keywords",
-//				nil];
-//	NSDictionary *abdomenRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"ABDOMEN", nil), @"region",
-//				abdomenRegions, @"keywords",
-//				nil];
-//	NSDictionary *pelvisRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"PELVIS", nil), @"region",
-//				pelvisRegions, @"keywords",
-//				nil];
-//	NSDictionary *thighRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"THIGH", nil), @"region",
-//				thighRegions, @"keywords",
-//				nil];
-//	NSDictionary *kneeRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"KNEE", nil), @"region",
-//				kneeRegions, @"keywords",
-//				nil];
-//	NSDictionary *lowerLegRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"LOWER LEG", nil), @"region",
-//				lowerLegRegions, @"keywords",
-//				nil];
-//	NSDictionary *footRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"FOOT", nil), @"region",
-//				footRegions, @"keywords",
-//				nil];
-//	NSDictionary *shoulderRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"SHOULDER", nil), @"region",
-//				shoulderRegions, @"keywords",
-//				nil];
-//	NSDictionary *armRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"UPPER ARM", nil), @"region",
-//				armRegions, @"keywords",
-//				nil];
-//	NSDictionary *elbowRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"ELBOW", nil), @"region",
-//				elbowRegions, @"keywords",
-//				nil];
-//	NSDictionary *forearmRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"FOREARM", nil), @"region",
-//				forearmRegions, @"keywords",
-//				nil];
-//	NSDictionary *handRegion = [NSDictionary dictionaryWithObjectsAndKeys:
-//				NSLocalizedString(@"HAND", nil), @"region",
-//				handRegions, @"keywords",
-//				nil];
-//	
-//	NSArray *bodyRegions = [NSArray arrayWithObjects:
-//				headRegion,
-//				neckRegion,
-//				chestRegion,
-//				abdomenRegion,
-//				pelvisRegion,
-//				shoulderRegion,
-//				armRegion,
-//				elbowRegion,
-//				forearmRegion,
-//				handRegion,
-//				thighRegion,
-//				kneeRegion,
-//				lowerLegRegion,
-//				footRegion,
-//				nil];
-//	
-//	[defaultValues setObject:bodyRegions forKey:@"bodyRegions"];
 	
     [defaultValues setObject: @YES forKey: @"defaultShading"];
     [defaultValues setObject: @YES forKey: @"dontDeleteStudiesIfInAlbum"];

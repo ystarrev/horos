@@ -38,7 +38,6 @@
 	NSArray *selection;
     NSInteger srcRow, srcCol, dstRow, dstCol;
 } 
-//- (void) setController:(id)controller;
 // Private
 - (NSEvent*) downEvent; 
 - (void) setDownEvent:(NSEvent *)event; 
@@ -46,4 +45,3 @@
 -(NSArray *)selection;
 
 @end
-

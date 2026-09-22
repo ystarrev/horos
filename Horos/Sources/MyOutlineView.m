@@ -265,8 +265,6 @@
 	
 		if (fileURLs.count == 0)
 		{
-//			NSRunAlertPanel(NSLocalizedString(@"Drag Error",nil), NSLocalizedString(@"Sorry, but the past operation failed",nil), 
-//            nil, nil, nil);
 			return NO;
 		}
 		else
@@ -274,8 +272,6 @@
         //the pasteboard was able to give us some meaningful data
 			return YES;
 		}
-//		[self setNeedsDisplay:YES];    //redraw us with the new image
-//		return YES;
 	}
 	return NO;
 }
@@ -327,9 +323,6 @@
 	
     if (fileURLs.count == 0)
     {
-//        //the operation failed for some reason
-//        NSRunAlertPanel(NSLocalizedString(@"Drag Error",nil), NSLocalizedString(@"Sorry, but the past operation failed",nil), 
-//            nil, nil, nil);
         return;
     }
     else

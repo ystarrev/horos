@@ -76,7 +76,6 @@
 #import "HorosSwiftInterop.h"
 #import "HorosDirectTransferBridge.h"
 #import "NSUserDefaults+OsiriX.h"
-//#include "cmdlnarg.h"
 #include <dcmtk/ofstd/ofconapp.h>
 #include <dcmtk/dcmdata/dcuid.h>     /* for dcmtk version name */
 #include <dcmtk/dcmnet/dicom.h>     /* for DICOM_APPLICATION_REQUESTOR */
@@ -470,184 +469,11 @@ static OFCondition HorosPublishCGetFiles(DicomDatabase *database,
     return EC_Normal;
 }
 
-//static OFCondition
-//acceptSubAssoc(T_ASC_Network * aNet, T_ASC_Association ** assoc)
-//{
-//    const char* knownAbstractSyntaxes[] = {
-//        UID_VerificationSOPClass
-//    };
-//    const char* transferSyntaxes[] = { NULL, NULL, NULL, NULL };
-//    int numTransferSyntaxes;
-//	
-//	OFCmdUnsignedInt  opt_maxPDU = ASC_DEFAULTMAXPDU;
-//	E_TransferSyntax opt_in_networkTransferSyntax = EXS_JPEGProcess14SV1TransferSyntax;
-//	
-//    OFCondition cond = ASC_receiveAssociation(aNet, assoc, opt_maxPDU);
-//    if (cond.good())
-//    {
-//      switch (opt_in_networkTransferSyntax)
-//      {
-//        case EXS_LittleEndianImplicit:
-//          /* we only support Little Endian Implicit */
-//          transferSyntaxes[0]  = UID_LittleEndianImplicitTransferSyntax;
-//          numTransferSyntaxes = 1;
-//          break;
-//        case EXS_LittleEndianExplicit:
-//          /* we prefer Little Endian Explicit */
-//          transferSyntaxes[0] = UID_LittleEndianExplicitTransferSyntax;
-//          transferSyntaxes[1] = UID_BigEndianExplicitTransferSyntax;
-//          transferSyntaxes[2]  = UID_LittleEndianImplicitTransferSyntax;
-//          numTransferSyntaxes = 3;
-//          break;
-//        case EXS_BigEndianExplicit:
-//          /* we prefer Big Endian Explicit */
-//          transferSyntaxes[0] = UID_BigEndianExplicitTransferSyntax;
-//          transferSyntaxes[1] = UID_LittleEndianExplicitTransferSyntax;
-//          transferSyntaxes[2]  = UID_LittleEndianImplicitTransferSyntax;
-//          numTransferSyntaxes = 3;
-//          break;
-//        case EXS_JPEGProcess14SV1TransferSyntax:
-//          /* we prefer JPEGLossless:Hierarchical-1stOrderPrediction (default lossless) */
-//          transferSyntaxes[0] = UID_JPEGProcess14SV1TransferSyntax;
-//          transferSyntaxes[1] = UID_LittleEndianExplicitTransferSyntax;
-//          transferSyntaxes[2] = UID_BigEndianExplicitTransferSyntax;
-//          transferSyntaxes[3] = UID_LittleEndianImplicitTransferSyntax;
-//          numTransferSyntaxes = 4;
-//          break;
-//        case EXS_JPEGProcess1TransferSyntax:
-//          /* we prefer JPEGBaseline (default lossy for 8 bit images) */
-//          transferSyntaxes[0] = UID_JPEGProcess1TransferSyntax;
-//          transferSyntaxes[1] = UID_LittleEndianExplicitTransferSyntax;
-//          transferSyntaxes[2] = UID_BigEndianExplicitTransferSyntax;
-//          transferSyntaxes[3] = UID_LittleEndianImplicitTransferSyntax;
-//          numTransferSyntaxes = 4;
-//          break;
-//        case EXS_JPEGProcess2_4TransferSyntax:
-//          /* we prefer JPEGExtended (default lossy for 12 bit images) */
-//          transferSyntaxes[0] = UID_JPEGProcess2_4TransferSyntax;
-//          transferSyntaxes[1] = UID_LittleEndianExplicitTransferSyntax;
-//          transferSyntaxes[2] = UID_BigEndianExplicitTransferSyntax;
-//          transferSyntaxes[3] = UID_LittleEndianImplicitTransferSyntax;
-//          numTransferSyntaxes = 4;
-//          break;
-//        case EXS_RLELossless:
-//          /* we prefer RLE Lossless */
-//          transferSyntaxes[0] = UID_RLELosslessTransferSyntax;
-//          transferSyntaxes[1] = UID_LittleEndianExplicitTransferSyntax;
-//          transferSyntaxes[2] = UID_BigEndianExplicitTransferSyntax;
-//          transferSyntaxes[3] = UID_LittleEndianImplicitTransferSyntax;
-//          numTransferSyntaxes = 4;
-//          break;
-//        default:
-//          /* We prefer explicit transfer syntaxes.
-//           * If we are running on a Little Endian machine we prefer
-//           * LittleEndianExplicitTransferSyntax to BigEndianTransferSyntax.
-//           */
-//          if (gLocalByteOrder == EBO_LittleEndian)  /* defined in dcxfer.h */
-//          {
-//            transferSyntaxes[0] = UID_LittleEndianExplicitTransferSyntax;
-//            transferSyntaxes[1] = UID_BigEndianExplicitTransferSyntax;
-//          } else {
-//            transferSyntaxes[0] = UID_BigEndianExplicitTransferSyntax;
-//            transferSyntaxes[1] = UID_LittleEndianExplicitTransferSyntax;
-//          }
-//          transferSyntaxes[2] = UID_LittleEndianImplicitTransferSyntax;
-//          numTransferSyntaxes = 3;
-//          break;
-//
-//        }
-//
-//        /* accept the Verification SOP Class if presented */
-//        cond = ASC_acceptContextsWithPreferredTransferSyntaxes(
-//            (*assoc)->params,
-//            knownAbstractSyntaxes, DIM_OF(knownAbstractSyntaxes),
-//            transferSyntaxes, numTransferSyntaxes);
-//
-//        if (cond.good())
-//        {
-//            /* the array of Storage SOP Class UIDs comes from dcuid.h */
-//            cond = ASC_acceptContextsWithPreferredTransferSyntaxes(
-//                (*assoc)->params,
-//                dcmAllStorageSOPClassUIDs, numberOfAllDcmStorageSOPClassUIDs,
-//                transferSyntaxes, numTransferSyntaxes);
-//        }
-//    }
-//    if (cond.good()) cond = ASC_acknowledgeAssociation(*assoc);
-//    if (cond.bad()) {
-//        ASC_dropAssociation(*assoc);
-//        ASC_destroyAssociation(assoc);
-//    }
-//    return cond;
-//}
-
-//static OFCondition
-//subOpSCP(T_ASC_Association **subAssoc)
-//{
-//    T_DIMSE_Message     msg;
-//    T_ASC_PresentationContextID presID;
-//
-//    if (!ASC_dataWaiting(*subAssoc, 0)) /* just in case */
-//        return DIMSE_NODATAAVAILABLE;
-//
-//    OFCondition cond = DIMSE_receiveCommand(*subAssoc, DIMSE_BLOCKING, 0, &presID,
-//            &msg, NULL);
-//
-//    if (cond == EC_Normal) {
-//        switch (msg.CommandField) {
-//        case DIMSE_C_STORE_RQ:
-//            cond = storeSCP(*subAssoc, &msg, presID);
-//            break;
-//        case DIMSE_C_ECHO_RQ:
-//            cond = echoSCP(*subAssoc, &msg, presID);
-//            break;
-//        default:
-//            cond = DIMSE_BADCOMMANDTYPE;
-//            break;
-//        }
-//    }
-//    /* clean up on association termination */
-//    if (cond == DUL_PEERREQUESTEDRELEASE)
-//    {
-//        cond = ASC_acknowledgeRelease(*subAssoc);
-//        ASC_dropSCPAssociation(*subAssoc);
-//        ASC_destroyAssociation(subAssoc);
-//        return cond;
-//    }
-//    else if (cond == DUL_PEERABORTEDASSOCIATION)
-//    {
-//    }
-//    else if (cond != EC_Normal)
-//    {
-//        errmsg("DIMSE Failure (aborting sub-association):\n");
-//        HorosLogDIMSECondition(cond);
-//        /* some kind of error so abort the association */
-//        cond = ASC_abortAssociation(*subAssoc);
-//    }
-//
-//    if (cond != EC_Normal)
-//    {
-//        ASC_dropAssociation(*subAssoc);
-//        ASC_destroyAssociation(subAssoc);
-//    }
-//    return cond;
-//}
 
 static void
 subOpCallback(void * /*subOpCallbackData*/ ,
         T_ASC_Network *aNet, T_ASC_Association **subAssoc)
 {
-//	if (aNet == NULL) return;   /* help no net ! */
-//
-//	if (*subAssoc == NULL)
-//	{
-//        /* negotiate association */
-//		acceptSubAssoc(aNet, subAssoc);
-//	}
-//	else
-//	{
-//        /* be a service class provider */
-//		//subOpSCP(subAssoc);
-//	}
 }
 
 @interface NSURLRequest (DummyInterface)
@@ -1041,12 +867,6 @@ extern "C" BOOL HorosRetrieveDICOMQueryItems(
             
             dataset->putAndInsertString(DCM_SpecificCharacterSet, [stringEncoding UTF8String]);
             
-        //	const char *queryLevel;
-        //	if (dataset->findAndGetString(DCM_QueryRetrieveLevel, queryLevel).good())
-        //	{
-        //		const char *string = [[NSString stringWithUTF8String: queryLevel] cStringUsingEncoding: encoding];
-        //		dataset->putAndInsertString(DCM_QueryRetrieveLevel, string);
-        //	}
             
             if( values)
             {
@@ -1739,7 +1559,6 @@ extern "C" BOOL HorosRetrieveDICOMQueryItems(
 		transferSyntaxes[5] = UID_JPEGProcess14SV1TransferSyntax;				//jpeg lossless
 		transferSyntaxes[6] = UID_JPEGProcess1TransferSyntax;					//jpeg 8
 		transferSyntaxes[7] = UID_JPEGProcess2_4TransferSyntax;					//jpeg 12
-//		transferSyntaxes[8] = UID_DeflatedExplicitVRLittleEndianTransferSyntax;	//bzip
 		transferSyntaxes[8] = UID_RLELosslessTransferSyntax;					//RLE
 		transferSyntaxes[9] = UID_MPEG2MainProfileAtMainLevelTransferSyntax;
 		
@@ -1755,7 +1574,6 @@ extern "C" BOOL HorosRetrieveDICOMQueryItems(
 		transferSyntaxes[4] = UID_JPEGProcess14SV1TransferSyntax;				//jpeg lossless
 		transferSyntaxes[5] = UID_JPEGProcess1TransferSyntax;					//jpeg 8
 		transferSyntaxes[6] = UID_JPEGProcess2_4TransferSyntax;					//jpeg 12
-//		transferSyntaxes[7] = UID_DeflatedExplicitVRLittleEndianTransferSyntax;	//bzip
 		transferSyntaxes[7] = UID_RLELosslessTransferSyntax;					//RLE
         numTransferSyntaxes = 8;
         break;
@@ -1834,23 +1652,6 @@ extern "C" BOOL HorosRetrieveDICOMQueryItems(
             numTransferSyntaxes = 5;
             break;
             
-//#ifdef WITH_ZLIB
-//      case EXS_DeflatedLittleEndianExplicit:
-//        /* we prefer deflated transmission */
-//        transferSyntaxes[0] = UID_DeflatedExplicitVRLittleEndianTransferSyntax;
-//        transferSyntaxes[1] = UID_LittleEndianExplicitTransferSyntax;
-//        transferSyntaxes[2] = UID_LittleEndianImplicitTransferSyntax;
-//        transferSyntaxes[3] = UID_BigEndianExplicitTransferSyntax;
-//		transferSyntaxes[4] = UID_JPEG2000TransferSyntax;
-//		transferSyntaxes[5] = UID_JPEGProcess14SV1TransferSyntax;
-//		transferSyntaxes[6] = UID_JPEGProcess2_4TransferSyntax;		
-//		transferSyntaxes[7] = UID_JPEGProcess1TransferSyntax;
-//		transferSyntaxes[8] = UID_RLELosslessTransferSyntax;					//RLE
-//        transferSyntaxes[9] = UID_MPEG2MainProfileAtMainLevelTransferSyntax;
-//		
-//        numTransferSyntaxes = 10;
-//        break;
-//#endif
       case EXS_RLELossless:
         /* we prefer RLE Lossless */
         transferSyntaxes[0] = UID_RLELosslessTransferSyntax;
@@ -1861,7 +1662,6 @@ extern "C" BOOL HorosRetrieveDICOMQueryItems(
 		transferSyntaxes[5] = UID_JPEGProcess14SV1TransferSyntax;
 		transferSyntaxes[6] = UID_JPEGProcess2_4TransferSyntax;		
 		transferSyntaxes[7] = UID_JPEGProcess1TransferSyntax;
-//		transferSyntaxes[8] = UID_DeflatedExplicitVRLittleEndianTransferSyntax;
         transferSyntaxes[8] = UID_MPEG2MainProfileAtMainLevelTransferSyntax;
 		
         numTransferSyntaxes = 9;
@@ -2129,21 +1929,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
                 }
                 
 #ifdef WITH_OPENSSL
-                /*
-                 if (tLayer && opt_writeSeedFile)
-                 {
-                 if (tLayer->canWriteRandomSeed())
-                 {
-                 if (!tLayer->writeRandomSeed(opt_writeSeedFile))
-                 {
-                 CERR << "Error while writing random seed file '" << opt_writeSeedFile << "', ignoring." << endl;
-                 }
-                 } else {
-                 CERR << "Warning: cannot write random seed, ignoring." << endl;
-                 }
-                 }
-                 delete tLayer;
-                 */
                 if( tLayer)
                     delete tLayer;
 #endif
@@ -2185,19 +1970,11 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 		DIC_NODENAME peerHost;
 		T_ASC_Association *assoc = NULL;
 	   
-	//	NSLog(@"hostname: %@ calledAET %@", _hostname, _calledAET);
 		
 		opt_peer = [_hostname UTF8String];
 		opt_port = _port;
 		_abortAssociation = NO;
 		
-	//
-	//	
-	//	//debug code activated for now
-	//	_debug = OFTrue;
-	//	DUL_Debug(OFTrue);
-	//	DIMSE_debug(OFTrue);
-	//	SetDebugLevel(3);
 		
 		if( strcmp(abstractSyntax, UID_GETPatientRootQueryRetrieveInformationModel) == 0 ||
 			strcmp(abstractSyntax, UID_GETStudyRootQueryRetrieveInformationModel) == 0 ||
@@ -2220,8 +1997,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 		DcmTLSTransportLayer *tLayer = NULL;
 		NSString *uniqueStringID = [NSString stringWithFormat:@"%d.%d.%d", getpid(), inc++, (int) random()];
 		
-	//	if (_secureConnection)
-	//		[DDKeychain lockTmpFiles];
         
 		@try
 		{
@@ -2305,21 +2080,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 							[[NSException exceptionWithName:@"DICOM Network Failure (TLS query)" reason:[NSString stringWithFormat:@"Unable to load certificate file %@", [trustedCertificatesDir stringByAppendingPathComponent:cert]] userInfo:nil] raise];
 						}
 					}
-							//--add-cert-dir //// add certificates in d to list of certificates
-							//.... needs to use OpenSSL & rename files (see http://forum.dicom-cd.de/viewtopic.php?p=3237&sid=bd17bd76876a8fd9e7fdf841b90cf639 )
-							
-							//			if (cmd.findOption("--add-cert-dir", 0, OFCommandLine::FOM_First))
-							//			{
-							//				const char *current = NULL;
-							//				do
-							//				{
-							//					app.checkValue(cmd.getValue(current));
-							//					if (tLayer->addTrustedCertificateDir(current, opt_keyFileFormat))
-							//					{
-							//						CERR << "warning unable to load certificates from directory '" << current << "', ignoring" << endl;
-							//					}
-							//				} while (cmd.findOption("--add-cert-dir", 0, OFCommandLine::FOM_Next));
-							//			}
 				}		
 				
 				if (_dhparam && ! (tLayer->setTempDHParameters(_dhparam)))
@@ -2382,7 +2142,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 			
 		/* initialize asscociation parameters, i.e. create an instance of T_ASC_Parameters*. */
 			cond = ASC_createAssociationParameters(&params, _maxReceivePDULength, dcmConnectionTimeout.get());
-	//		HorosLogDIMSECondition(cond);
 			if (cond.bad()) {
                 if (_verbose)
                     HorosLogDIMSECondition(cond);
@@ -2407,7 +2166,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 			/* corresponding values into the association parameters.*/
 			gethostname(localHost, sizeof(localHost) - 1);
 			snprintf(peerHost, sizeof(peerHost), "%s:%d", opt_peer, (int)opt_port);
-			//NSLog(@"peer host: %s", peerHost);
 			ASC_setPresentationAddresses(params, localHost, peerHost);	//localHost
 			
 			/* Set the presentation contexts which will be negotiated */
@@ -2446,7 +2204,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 			if (_verbose)
 				printf("Requesting Association\n");
 			
-//			if( [NSThread isMainThread] == YES && [[NSUserDefaults standardUserDefaults] boolForKey: @"dontUseThreadForAssociationAndCFind"] == NO)
 			{
 				NSRecursiveLock *lock = [[NSRecursiveLock alloc] init];
 				NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithObjectsAndKeys: lock, @"lock", [NSValue valueWithPointer: net], @"net", [NSValue valueWithPointer: params], @"params", nil];
@@ -2490,7 +2247,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				
 				[lock release];
 			}
-//			else cond = ASC_requestAssociation(net, params, &assoc);
 			
 			if (cond.bad())
 			{
@@ -2523,8 +2279,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 				strcmp(abstractSyntax, UID_GETStudyRootQueryRetrieveInformationModel) == 0 ||
 				strcmp(abstractSyntax, UID_GETPatientStudyOnlyQueryRetrieveInformationModel) == 0)
 				{
-	//				printf("Association Parameters Negotiated:\n");
-	//				HorosLogAssociationParameters(params, ASC_ASSOC_AC);
 				}
 				else
 				{
@@ -2740,51 +2494,12 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
             [releaseNetworkVariablesDictionaries addObject: [NSDictionary dictionaryWithObjectsAndKeys: [NSDate date], @"date", [NSValue valueWithPointer: assoc], @"assoc", [NSValue valueWithPointer: net], @"net", [NSValue valueWithPointer: tLayer], @"tLayer", nil]];
         }
         
-//		// CLEANUP
-//		
-//		/* destroy the association, i.e. free memory of T_ASC_Association* structure. This */
-//		/* call is the counterpart of ASC_requestAssociation(...) which was called above. */
-//		if( assoc)
-//		{
-//			cond = ASC_destroyAssociation(&assoc);
-//			if (cond.bad())
-//				HorosLogDIMSECondition(cond);
-//		}
-//		
-//		/* drop the network, i.e. free memory of T_ASC_Network* structure. This call */
-//		/* is the counterpart of ASC_initializeNetwork(...) which was called above. */
-//		if( net)
-//		{
-//			cond = ASC_dropNetwork(&net);
-//			if (cond.bad())
-//				HorosLogDIMSECondition(cond);
-//		}
-//
-//	#ifdef WITH_OPENSSL
-//	/*
-//		if (tLayer && opt_writeSeedFile)
-//		{
-//		  if (tLayer->canWriteRandomSeed())
-//		  {
-//			if (!tLayer->writeRandomSeed(opt_writeSeedFile))
-//			{
-//			  CERR << "Error while writing random seed file '" << opt_writeSeedFile << "', ignoring." << endl;
-//			}
-//		  } else {
-//			CERR << "Warning: cannot write random seed, ignoring." << endl;
-//		  }
-//		}
-//		delete tLayer;
-//	*/
-//		if( tLayer)
-//			delete tLayer;
 	
 		
 	#ifdef WITH_OPENSSL
 		// cleanup
 		if (_secureConnection)
 		{
-	//		[DDKeychain unlockTmpFiles];
 			[[NSFileManager defaultManager] removeItemAtPath:[DICOMTLS keyPathForServerAddress:_hostname port:_port AETitle:_calledAET withStringID:uniqueStringID] error:NULL];
 			[[NSFileManager defaultManager] removeItemAtPath:[DICOMTLS certificatePathForServerAddress:_hostname port:_port AETitle:_calledAET withStringID:uniqueStringID] error:NULL];
 			[[NSFileManager defaultManager] removeItemAtPath:[NSString stringWithFormat:@"%@%@", TLS_TRUSTED_CERTIFICATES_DIR, uniqueStringID] error:NULL];
@@ -2912,7 +2627,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
         if (_verbose) {
             [HorosDCMTKVerboseLogLock() lock];
             errmsg("Find Failed\n Condition:\n");
-            //dataset->print(COUT);
             HorosLogDIMSECondition(cond);
             NSLog(@"Dimse Status: %@", [NSString stringWithUTF8String: DU_cfindStatusString(rsp.DimseStatus)]);
             [HorosDCMTKVerboseLogLock() unlock];
@@ -2947,7 +2661,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
     OFCondition cond = EC_Normal;
 
     /* opt_repeatCount specifies how many times a certain file shall be processed */
-    //int n = (int)_repeatCount;
 	int n = 1;
     /* as long as no error occured and the counter does not equal 0 */
     while (cond == EC_Normal && n--) {
@@ -2967,7 +2680,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 - (OFCondition) cmove:(T_ASC_Association *)assoc network:(T_ASC_Network *)net dataset:(DcmDataset *)dataset destination: (char*) destination
 {
     /* opt_repeatCount specifies how many times a certain file shall be processed */
-    //int n = (int)_repeatCount;
 	int n = 1;
 	OFCondition cond = EC_Normal;
     /* as long as no error occured and the counter does not equal 0 */
@@ -2985,7 +2697,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 - (OFCondition) cget:(T_ASC_Association *)assoc network:(T_ASC_Network *)net dataset:(DcmDataset *)dataset
 {
     /* opt_repeatCount specifies how many times a certain file shall be processed */
-    //int n = (int)_repeatCount;
 	int n = 1;
 	OFCondition cond = EC_Normal;
     /* as long as no error occured and the counter does not equal 0 */
@@ -3016,8 +2727,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
     MyCallbackInfo      callbackData;
 	OFCondition			cond = EC_Normal;
 	
-   // sopClass = querySyntax[opt_queryModel].moveSyntax;
-
     /* which presentation context should be used */
     presId = ASC_findAcceptedPresentationContextID(assoc, UID_MOVEStudyRootQueryRetrieveInformationModel);
     if (presId == 0) return DIMSE_NOVALIDPRESENTATIONCONTEXTID;
@@ -3141,8 +2850,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 	bzero((char *)&rsp, sizeof(rsp));
 	bzero((char *)&callbackData, sizeof(callbackData));
 		
-   // sopClass = querySyntax[opt_queryModel].moveSyntax;
-
     /* which presentation context should be used */
     presId = ASC_findAcceptedPresentationContextID(assoc, UID_GETStudyRootQueryRetrieveInformationModel); //UID_GETStudyRootQueryRetrieveInformationModel UID_GETPatientStudyOnlyQueryRetrieveInformationModel
     if (presId == 0) return DIMSE_NOVALIDPRESENTATIONCONTEXTID;
@@ -3166,15 +2873,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
     req.Priority = DIMSE_PRIORITY_MEDIUM;
     req.DataSetType = DIMSE_DATASET_PRESENT;
  
-//	if( destination)
-//	{
-//		strcpy(req.MoveDestination, destination);
-//	}
-//	else
-//	{
-//		/* set the destination to be me */
-//		ASC_getAPTitles(assoc->params, req.MoveDestination, sizeof(req.MoveDestination), NULL, 0, NULL, 0);
-//	}
 	
 	OFCondition cond = EC_Normal;
 	DicomDatabase *database = [[DicomDatabase activeLocalDatabase] retain];
@@ -3294,7 +2992,6 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 #pragma mark Max simultaneous auto-retrieve requests
 
 static NSMutableDictionary* semaphores = [[NSMutableDictionary alloc] init];
-//static const MPSemaphoreCount virtualLimit = 1000; // this value must higher that the maximum possible number of allowed simultaneous retrieves... the GUI limit is currently 9
 
 + (dispatch_semaphore_t)semaphoreForServerHostAndPort:(NSString*)key { // this method can lock the thread (that happens when the user has diminished the limit and requests are already past the limit)
     dispatch_semaphore_t mpsid = nil;

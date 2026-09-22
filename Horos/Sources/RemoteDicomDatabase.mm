@@ -380,10 +380,8 @@ static NSData *HorosSendDatabaseRequest(NSData *request, NSString *address, NSIn
 	if (![version isEqualToString:CurrentDatabaseVersion])
 		[NSException raise:NSDestinationInvalidException format:NSLocalizedString(@"Invalid remote database model %@. When sharing databases, make sure both ends are running the same software versions.", nil), version];
 	
-//	DLog(@"RDD version: %@", version);
 
 	BOOL isPasswordProtected = [self fetchIsPasswordProtected];
-	// if (isPasswordProtected) DLog(@"RDD is password protected", version);
     
 	if (isPasswordProtected)
     {
@@ -399,7 +397,6 @@ static NSData *HorosSendDatabaseRequest(NSData *request, NSString *address, NSIn
 	}
 	
 	NSUInteger databaseIndexSize = [self fetchDatabaseIndexSize];
-//	DLog(@"RDD index size is %d", databaseIndexSize);
 	
 	[thread enterOperation];
 	thread.status = NSLocalizedString(@"Transferring database index...", nil);
@@ -553,7 +550,6 @@ static NSData *HorosSendDatabaseRequest(NSData *request, NSString *address, NSIn
 }
 
 -(NSThread*)initiateUpdate {
-//	if( DatabaseIsEdited) return;
 	
 	if ([_updateLock tryLock])
 		@try {
@@ -731,7 +727,6 @@ enum RemoteDicomDatabaseStudiesAlbumAction { RemoteDicomDatabaseStudiesAlbumActi
     
     NSInteger size = 0, i = [images indexOfObject:image];
 	
-//    if( 1) // Multiple files download
     {
         while (i < images.count)
         {
@@ -750,24 +745,9 @@ enum RemoteDicomDatabaseStudiesAlbumAction { RemoteDicomDatabaseStudiesAlbumActi
                 break;
         }
     }
-//    else
-//    {
-//        DicomImage* iImage = image;
-//        NSString* iLocalPath = [self localPathForImage:iImage];
-//        
-//        if( [iLocalPath isEqualToString: localPath] == NO)
-//            NSLog( @"( [iLocalPath isEqualToString: localPath] == NO)");
-//        
-//        if ([NSFileManager.defaultManager fileExistsAtPath:iLocalPath])
-//            return localPath;
-//
-//        [localPaths addObject:iLocalPath];
-//        [remotePaths addObject:iImage.path];
-//	}
 	if (!localPaths.count)
 		return nil;
 	
-	// DLog(@"RDD requesting images: %@", localPaths.description);
 	
 	NSMutableData* request = [NSMutableData dataWithBytes:"DICOM" length:6];
 	
@@ -813,7 +793,6 @@ enum RemoteDicomDatabaseStudiesAlbumAction { RemoteDicomDatabaseStudiesAlbumActi
 	}
 	
 	while (data.length > readSize) {
-		// DLog(@"_handleData_fetchDataForImage state %d", state.unsignedIntegerValue);
 		switch (state.unsignedIntegerValue) {
 			case 0: { // expecting number of files in response
 				if (data.length-readSize >= 4) {
@@ -824,7 +803,6 @@ enum RemoteDicomDatabaseStudiesAlbumAction { RemoteDicomDatabaseStudiesAlbumActi
 						[NSException raise:NSInvalidArgumentException format:@"The shared database returned an unexpected image count."];
 					[context addObject:[NSNumber numberWithUnsignedInt:n]]; // [1]
 					[context addObject:[N2MutableUInteger mutableUIntegerWithUInteger:0]]; // [2]
-					//DLog(@"RDD receiving %d files", n);
 					readSize += 4;
 					state.unsignedIntegerValue = 1;
 				} else return readSize;
@@ -839,7 +817,6 @@ enum RemoteDicomDatabaseStudiesAlbumAction { RemoteDicomDatabaseStudiesAlbumActi
 					if (!l)
 						[NSException raise:NSObjectInaccessibleException format:@"An image is missing or unreadable on the shared database."];
 					[context addObject:[NSNumber numberWithUnsignedInt:l]]; // [3]
-					//DLog(@"RDD next file is %d bytes", l);
 					
 					NSString* path = [NSFileManager.defaultManager tmpFilePathInDir:self.tempDirPath];
 					[context addObject:path]; // [4]
@@ -878,7 +855,6 @@ enum RemoteDicomDatabaseStudiesAlbumAction { RemoteDicomDatabaseStudiesAlbumActi
 					if (l != [expectedPath lengthOfBytesUsingEncoding:NSUTF8StringEncoding] + 1)
 						[NSException raise:NSInvalidArgumentException format:@"Invalid image destination length in shared-database response."];
 					[context addObject:[NSNumber numberWithUnsignedInt:l]]; // [7]
-					//DLog(@"RDD next path is %d bytes", l);
 					readSize += 4;
 					state.unsignedIntegerValue = 4;
 				} else return readSize;

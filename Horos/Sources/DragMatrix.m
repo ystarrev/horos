@@ -127,9 +127,7 @@ NSString *pasteBoardTypeCover = @"KeyImages";
 	{
         NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
 		NSDictionary *dict;
-		//[arrayController setSelectedObjects:[NSArray arrayWithObject:[[arrayController content] objectAtIndex:srcCol]]];
 		NSArray *array = [[sender draggingSource] selection];
-		//NSLog(@"Selection: 
         dict = [NSDictionary dictionaryWithObject:array forKey:@"images"];
         [nc postNotificationName:OsirixDragMatrixImageMovedNotification object:self userInfo:dict];
     }
@@ -266,12 +264,9 @@ NSString *pasteBoardTypeCover = @"KeyImages";
     
     pt = [self convertPoint:[event locationInWindow] fromView:nil];
     [self getRow:&srcRow column:&srcCol forPoint:pt]; 
-    // Note: _scaledImage is function we add to NSImageCell in our category.
-    //scaledImage = [[self cellAtRow:srcRow column:srcCol] _scaledImage]; 
     scaledImage = [[self cellAtRow:srcRow column:srcCol] image]; 
 	[self selectCellAtRow:srcRow column:srcCol];
 	[arrayController setSelectionIndex:srcCol];
-	//[arrayController setSelectedObjects:[NSArray arrayWithObject:[[arrayController content] objectAtIndex:srcCol]]];
     theDraggedCellFrame = [self cellFrameAtRow:srcRow column:srcCol]; 
     size = [scaledImage size];
     dragPoint.x = theDraggedCellFrame.origin.x 

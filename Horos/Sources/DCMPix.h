@@ -599,9 +599,6 @@ extern "C"
 /** create an NSImage from the current pix using the current ww/wl. Full size*/
 - (NSImage*) image;
 
-/** reeturns the current image. returns nil if no image has be previously created */
-// - (NSImage*) getImage;
-
 /** A pointer to the orientation.  9 values in length. 3 for each axis. */
 - (void) orientation:(float*) c;
 

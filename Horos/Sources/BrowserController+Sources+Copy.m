@@ -689,7 +689,6 @@ static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread 
 
             [SendController sendFiles:dicomImages toNode:node usingSyntax:[[node objectForKey:@"TransferSyntax"] intValue]];
             return YES;
-            // [_database storeScuImages:dicomImages toDestinationAETitle:(NSString*)aet address:(NSString*)address port:(NSInteger)port transferSyntax:(int)exsTransferSyntax];
 		}
 	}
     else

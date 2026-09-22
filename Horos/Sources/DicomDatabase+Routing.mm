@@ -122,7 +122,6 @@
 		} @finally {
 			[_routingLock unlock];
 		}
-	//else NSLog(@"Warning: couldn't initiate routing"); // who cares
 }
 
 -(void)_routingErrorMessage:(NSDictionary*)dict {
@@ -460,14 +459,10 @@
                                 
                                 // did we already send these studies ? If no, send them !
                                 
-                                //								if (autoroutingPreviousStudies == nil) autoroutingPreviousStudies = [[NSMutableDictionary dictionary] retain];
-                                
                                 int previousNumber = [[routingRule valueForKey:@"previousStudies"] intValue];
                                 
                                 for( id s in studiesArray)
                                 {
-                                    //NSString *key = [NSString stringWithFormat:@"%@ -> %@", [s valueForKey: @"studyInstanceUID"], [routingRule objectForKey:@"server"]];
-                                    //									NSDate *when = [autoroutingPreviousStudies objectForKey: key];
                                     
                                     BOOL found = YES;
                                     
@@ -493,13 +488,7 @@
                                     {
                                         previousNumber--;
                                         
-                                        // If we sent it more than 3 hours ago, re-send it
-                                        //if( when == nil || [when timeIntervalSinceNow] < -60*60*3*/)
                                         {
-                                            //											[autoroutingPreviousStudies setObject: [NSDate date] forKey: key];
-                                            
-                                            //for( NSManagedObject *series in [[s valueForKey:@"series"] allObjects])
-                                            //	newImages = [newImages arrayByAddingObjectsFromArray: [[series valueForKey:@"images"] allObjects]];
                                         }
                                     }
                                 }
@@ -577,21 +566,6 @@
                 [self addImages:newImages toSendQueueForRoutingRule:routingRule];
         }
     
-    // Do some cleaning
-    
-    /*	if( autoroutingPreviousStudies)
-     {
-     for( NSString *key in [autoroutingPreviousStudies allKeys])
-     {
-     if( [[autoroutingPreviousStudies objectForKey: key] timeIntervalSinceNow] < -60*60*3)
-     {
-     [autoroutingPreviousStudies removeObjectForKey: key];
-     }
-     }
-     }
-     
-     [splash close];
-     [splash autorelease];*/
 }
 
 
@@ -625,27 +599,22 @@
                          [routingRule valueForKey:@"toTime"])
                 {
                     NSDateFormatter *dateFormatter = [[[NSDateFormatter alloc] init] autorelease];
-                    //[dateFormatter setDefaultDate:[NSDate date]];
                     [dateFormatter setDateFormat: @"EEEE, dd MMMM yyyy HH:mm:ss zzzzzzzzz"];
                     
                     NSString* fromTimeString = [routingRule valueForKey:@"fromTime"];
-                    //NSLog(@"fromTimeString = %@", fromTimeString);
                     NSDate* fromTime = [dateFormatter dateFromString:fromTimeString];
                     //  throwing out the year information (in fact, it is coming with 31 Dec 1969...)
                     [dateFormatter setDateFormat: @"HH:mm:ss"];
                     NSString *fromTimeString_justHHmm = [dateFormatter stringFromDate:fromTime];
-                    //NSLog(@"fromTimeString_justHHmm = %@", fromTimeString_justHHmm);
                     fromTime = [dateFormatter dateFromString:fromTimeString_justHHmm];
                     
                     [dateFormatter setDateFormat: @"EEEE, dd MMMM yyyy HH:mm:ss zzzzzzzzz"];
                     
                     NSString* toTimeString = [routingRule valueForKey:@"toTime"];
-                    //NSLog(@"toTimeString = %@", toTimeString);
                     NSDate* toTime = [dateFormatter dateFromString:toTimeString];
                     //  throwing out the year information (in fact, it is coming with 31 Dec 1969...)
                     [dateFormatter setDateFormat: @"HH:mm:ss"];
                     NSString *toTimeString_justHHmm = [dateFormatter stringFromDate:toTime];
-                    //NSLog(@"toTimeString_justHHmm = %@", toTimeString_justHHmm);
                     toTime = [dateFormatter dateFromString:toTimeString_justHHmm];
                     
                     NSCalendar *calendar = [NSCalendar currentCalendar];
@@ -654,7 +623,6 @@
                     NSInteger currentMinute = [components minute];
                     NSInteger currentSecond = [components second];
                     NSDate* currentTime = [dateFormatter dateFromString:[NSString stringWithFormat:@"%2ld:%2ld:%2ld",currentHour,currentMinute,currentSecond]];
-                    //NSLog(@"currentTime = %@", [dateFormatter stringFromDate:currentTime]);
                     
                     int64_t delayInSeconds = 0;
 
@@ -668,7 +636,6 @@
                     if ([currentTime timeIntervalSinceDate:fromTime] <= 0)
                     {
                         delayInSeconds = fabs([fromTime timeIntervalSinceDate:currentTime]);
-                        //NSLog(@"We are ahead of time. delayInSeconds = %lld", delayInSeconds);
                     }
                     else
                     {
@@ -681,7 +648,6 @@
                         {
                             //Add 1 day
                             delayInSeconds = (long long) fabs([fromTime timeIntervalSinceDate:currentTime]) + 60*60*24*1;
-                            //NSLog(@"Time passed. Tomorrow we autoroute. delayInSeconds = %lld", delayInSeconds);
                         }
                     }
                     

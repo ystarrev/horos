@@ -206,7 +206,6 @@ NSRect DKCenterRect(NSRect smallRect, NSRect bigRect)
 // NOTE(dk): Center the text (as able) in the provided frame and draw it.
 - (void)drawText:(NSString *)text withFrame:(NSRect)textFrame {
 	CGFloat fontSize = [NSFont systemFontSizeForControlSize:[self controlSize]];
-	//[NSFont fontWithName: @"HelveticaNeue-Bold" size:fontSize];
 	NSFont *sysFont = [NSFont boldSystemFontOfSize:fontSize];
 	NSDictionary *attributes = [NSDictionary dictionaryWithObjectsAndKeys:
 								sysFont, NSFontAttributeName, 
@@ -230,7 +229,6 @@ NSRect DKCenterRect(NSRect smallRect, NSRect bigRect)
 	NSRect rightFrame;
 	CGFloat offsetWidth = thumbCenterX;
 	NSDivideRect(cellFrame, &leftFrame, &rightFrame, offsetWidth - cellFrame.origin.x, NSMinXEdge);
-	//NSLog(@"OffsetWidth is: %f / %f; left: %f; right: %f", offsetWidth, cellFrame.origin.x, leftFrame.size.width, rightFrame.size.width);
 	
 	NSColor *onStartColor;
 	NSColor *onEndColor;

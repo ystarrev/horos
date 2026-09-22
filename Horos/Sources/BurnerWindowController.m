@@ -92,7 +92,7 @@
     while( [makeImageTask isRunning])
         [NSThread sleepForTimeInterval: 0.1];
     
-    //[aTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
+    // Avoid waitUntilExit here: it allows the main run loop to continue.
 }
 
 
@@ -218,11 +218,9 @@
     BOOL isDir;
 
     NSMutableArray *fileNames = [[[NSMutableArray alloc] init] autorelease];
-	//NSLog(@"Extract");
     for (fname in filenames)
 	{ 
 		NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-		//NSLog(@"fname %@", fname);
         NSFileManager *manager = [NSFileManager defaultManager];
         if( [manager fileExistsAtPath:fname isDirectory:&isDir] && isDir)
 		{
@@ -498,8 +496,6 @@
 	if( title)
 	{
 		[cdName release];
-		//if( [title length] > 8)
-		//	title = [title substringToIndex:8];
 		cdName = [[[title uppercaseString] filenameString] retain];
 		[nameField setStringValue: cdName];
 	}
@@ -552,7 +548,7 @@
     while( [t isRunning])
         [NSThread sleepForTimeInterval: 0.1];
     
-    //[aTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
+    // Avoid waitUntilExit here: it allows the main run loop to continue.
     
     [NSThread sleepForTimeInterval: 1];
     
@@ -567,7 +563,7 @@
         while( [t isRunning])
             [NSThread sleepForTimeInterval: 0.1];
         
-        //[t waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
+        // Avoid waitUntilExit here: it allows the main run loop to continue.
         
         [NSThread sleepForTimeInterval: 1];
         
@@ -580,7 +576,7 @@
             while( [t isRunning])
                 [NSThread sleepForTimeInterval: 0.1];
             
-            //[aTask waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
+            // Avoid waitUntilExit here: it allows the main run loop to continue.
             
             [NSThread sleepForTimeInterval: 1];
         }
@@ -770,7 +766,6 @@
 
 - (void)setup:(id)sender
 {
-	//NSLog(@"Set up burn");
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 	runBurnAnimation = NO;
 	[burnButton setEnabled:NO];
@@ -808,33 +803,6 @@
 //------------------------------------------------------------------------------------------------------------------------------------
 #pragma mark•
 
-/*+(void)image:(NSImage*)image writePGMToPath:(NSString*)ppmpath {
-    NSSize scaledDownSize = [image sizeByScalingDownProportionallyToSize:NSMakeSize(128,128)];
-    NSInteger width = scaledDownSize.width, height = scaledDownSize.height;
-    
-    static CGColorSpaceRef grayColorSpace = nil;
-    if( !grayColorSpace) grayColorSpace = CGColorSpaceCreateDeviceGray();
-    
-    CGContextRef cgContext = CGBitmapContextCreate(NULL, width, height, 8, width, grayColorSpace, 0);
-    uint8* data = CGBitmapContextGetData(cgContext);
-    
-    NSGraphicsContext* nsContext = [NSGraphicsContext graphicsContextWithGraphicsPort:cgContext flipped:NO];
-    
-    NSGraphicsContext* savedContext = [NSGraphicsContext currentContext];
-    [NSGraphicsContext setCurrentContext:nsContext];
-    [image drawInRect:NSMakeRect(0,0,width,height) fromRect:NSMakeRect(0,0,image.size.width,image.size.height) operation:NSCompositingOperationCopy fraction:1];
-    [NSGraphicsContext setCurrentContext:savedContext];
-    
-    NSMutableData* out = [NSMutableData data];
-    
-    [out appendData:[[NSString stringWithFormat:@"P5\n%d %d\n255\n", width, height] dataUsingEncoding:NSUTF8StringEncoding]];
-    [out appendBytes:data length:width*height];
-    
-    [[NSFileManager defaultManager] confirmDirectoryAtPath:[ppmpath stringByDeletingLastPathComponent]];
-    [out writeToFile:ppmpath atomically:YES];
-    
-    CGContextRelease(cgContext);
-}*/
 
 - (void)addDICOMDIRUsingDCMTK_forFilesAtPaths:(NSArray*/*NSString*/)paths dicomImages:(NSArray*/*DicomImage*/)dimages
 {
@@ -883,7 +851,7 @@
         while( [duTool isRunning])
             [NSThread sleepForTimeInterval: 0.1];
         
-        //[duTool waitUntilExit];		// <- This is VERY DANGEROUS : the main runloop is continuing...
+        // Avoid waitUntilExit here: it allows the main run loop to continue.
 		
 		duOutput = [[fromPipe fileHandleForReading] availableData];
 		NSUInteger bytesToCopy = MIN(duOutput.length, sizeof(aBuffer) - 1);
@@ -938,7 +906,6 @@
         
         NSString *file;
         NSString *burnFolder = [self folderToBurn];
-        //NSString *dicomdirPath = [NSString stringWithFormat:@"%@/DICOMDIR",burnFolder];
         NSString *subFolder = [NSString stringWithFormat:@"%@/DICOM",burnFolder];
         NSFileManager *manager = [NSFileManager defaultManager];
         int i = 0;
@@ -950,14 +917,7 @@
         if( ![manager fileExistsAtPath:subFolder])
             [manager createDirectoryAtPath:subFolder withIntermediateDirectories:YES attributes:nil error:NULL];
         
-        /*
-        
-        FAUZE - 24-Mar-2018: Not clear why the statement below is needed. Causing abortion of thread because DICOMDIR resource not present
-         
-        if( ![manager fileExistsAtPath:dicomdirPath]);
-        [manager copyItemAtPath:[[NSBundle mainBundle] pathForResource:@"DICOMDIR" ofType:nil] toPath:dicomdirPath error:NULL];
-        
-        */
+        // The bundled DICOMDIR template is absent; do not copy it.
             
         NSMutableArray *newFiles = [NSMutableArray array];
         NSMutableArray *compressedArray = [NSMutableArray array];

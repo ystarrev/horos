@@ -69,7 +69,6 @@ static NSString  *pasteBoardTypeCover = @"KeyImages";
 
 - (void)mouseUp:(NSEvent *)event{
 	[super mouseUp:event];
-//	[arrayController select:self];
 }
 
 /*****************************************************************************
@@ -91,9 +90,7 @@ static NSString  *pasteBoardTypeCover = @"KeyImages";
 	NSDictionary *dict;
     if ([types indexOfObject:pasteBoardTypeCover] != NSNotFound)
 	{
-		//[arrayController setSelectedObjects:[NSArray arrayWithObject:[[arrayController content] objectAtIndex:srcCol]]];
 		NSArray *array = [[sender draggingSource] selection];
-		//NSLog(@"Selection: 
         dict = [NSDictionary dictionaryWithObject:array forKey:@"images"];
         [nc postNotificationName:OsirixDragMatrixImageMovedNotification object:self userInfo:dict];
     }

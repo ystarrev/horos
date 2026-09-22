@@ -50,7 +50,6 @@
 
 #include "url.h"
 
-//static NSMutableDictionary *paneBundles = nil;
 
 @interface PreferencesWindowController (Dummy)
 
@@ -80,7 +79,6 @@
 
 -(void) dealloc
 {
-	//NSLog(@"[PreferencesWindowContext dealloc], title %@", self.title);
 	self.title = NULL;
 	self.parentBundle = NULL;
 	self.resourceName = NULL;
@@ -151,25 +149,6 @@ static NSMutableDictionary *prefPanes = nil;
 
 -(id)init
 {
-//	AuthorizationRef authRef = nil;
-//	OSStatus err = AuthorizationCreate(NULL, NULL, 0, &authRef);
-//    if( authRef)
-//    {
-//        if (err == noErr)
-//        {
-//            char* rightName = (char*)"BUNDLE_IDENTIFIER.preferences.allowalways";
-//            if (AuthorizationRightGet(rightName, NULL) == errAuthorizationDenied)
-//            {
-//                if ((err = AuthorizationRightSet(authRef, rightName, CFSTR(kAuthorizationRuleClassAllow), CFSTR("You are always authorized."), NULL, NULL)) != noErr)
-//                {
-//                    #ifndef NDEBUG
-//                    NSLog(@"Could not create default right (error %d)", (int) err);
-//                    #endif
-//                }
-//            }
-//        }
-//        AuthorizationFree(authRef, kAuthorizationFlagDefaults);
-//	}
     
 	self = [super initWithWindowNibName:@"PreferencesWindow"];
 	animations = [[NSMutableArray alloc] init];
@@ -267,7 +246,6 @@ static NSMutableDictionary *prefPanes = nil;
 	
 	[self didChangeValueForKey:@"isUnlocked"];
 
-//	[self view:pane.mainView recursiveEnable:enable];
 	
 	if ([pane respondsToSelector:@selector(enableControls:)])
     {
@@ -476,7 +454,6 @@ static NSMutableDictionary *prefPanes = nil;
         [self synchronizeSizeWithContent:newSize];
         [self didChangeValueForKey:@"currentContext"];
 		
-//		[oldview release];
 	}
 
 }

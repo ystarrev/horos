@@ -58,7 +58,6 @@ static OSStatus SSLSecPolicyCopy(SecPolicyRef *ret_policy)
 	
 	*ret_policy = NULL;
 	status = SecPolicySearchCreate(CSSM_CERT_X_509v3, &CSSMOID_APPLE_TP_SSL, NULL, &policy_search);
-	//status = SecPolicySearchCreate(CSSM_CERT_X_509v3, &CSSMOID_APPLE_X509_BASIC, NULL, &policy_search);
     if (status == errSecSuccess) {
         status = SecPolicySearchCopyNext(policy_search, &policy);
         
@@ -704,8 +703,6 @@ static OSStatus SSLSecPolicyCopy(SecPolicyRef *ret_policy)
 		if(n==0)
 		{
 			[lockedFiles removeObjectForKey:path];
-			//[[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
-			//NSLog(@"removeItemAtPath: %@", path);
 		}
 	}
 }
@@ -720,8 +717,6 @@ static OSStatus SSLSecPolicyCopy(SecPolicyRef *ret_policy)
 + (void)unlockTmpFiles;
 {
 	[lockFile unlock];
-	//NSString *cmd = [NSString stringWithFormat:@"rm %@* %@*", TLS_PRIVATE_KEY_FILE, TLS_CERTIFICATE_FILE];
-	//system([cmd cStringUsingEncoding:NSUTF8StringEncoding]);
 }
 
 #pragma clang diagnostic pop

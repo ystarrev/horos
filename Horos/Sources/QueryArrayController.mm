@@ -206,7 +206,6 @@ static void HorosShowQueryError(NSString *message)
                 [rootNode setShowErrorMessage: showError];
                 [rootNode queryWithValues:filterArray];
                 
-        //		NSLog( @"Query values: %@", filterArray);
                 
                 if( [[NSThread currentThread] isCancelled] == NO)
                 {

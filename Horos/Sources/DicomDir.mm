@@ -50,7 +50,6 @@
     try {
         @try {
             DicomDirInterface ddir;
-        //  ddir.enableVerboseMode();
             ddir.disableConsistencyCheck(); // -W
             ddir.disableTransferSyntaxCheck(); // -Nxc
             ddir.enableInventMode(OFTrue); // +I

@@ -56,7 +56,6 @@
 
 - (id) initWithObject:(id)object ofSearchType:(int)searchType  forKey:(id)key
 {
-	//NSLog(@"object: %@", [object description]);
 	if (self = [super init])
     {
 		_object = [object retain];

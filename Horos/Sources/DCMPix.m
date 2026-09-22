@@ -89,7 +89,6 @@ typedef __typeof__(&HorosModernDCMTKFreeString) HorosDCMPixModernDCMTKFreeString
 
 #import "DICOMToNSString.h"
 
-//#include "../Binaries/openjpeg/openjpeg.h"
 
 #ifdef STATIC_DICOM_LIB
 #define PREVIEWSIZE 512
@@ -208,32 +207,6 @@ void SwitchFloat (float *theFloat)
 }
 
 
-//void ConvertDoubleToNative (double *theFloat)
-//{
-//	unsigned long long		*myLongPtr;
-//
-//	myLongPtr = (unsigned long long*)theFloat;
-//	*myLongPtr = EndianU64_LtoN(*myLongPtr);
-//}
-
-//uint64_t	MyGetTime( void)
-//{
-//	AbsoluteTime theTime = UpTime();
-//
-//	return ((uint64_t*) &theTime)[0];
-//}
-//
-//double MySubtractTime( uint64_t endTime, uint64_t startTime)
-//{
-//	union
-//	{
-//		Nanoseconds	ns;
-//		u_int64_t	i;
-//	}time;
-//
-//	time.ns = AbsoluteToNanoseconds( SubAbsoluteFromAbsolute( ((AbsoluteTime*) &endTime)[0], ((AbsoluteTime*) &startTime)[0]));
-//	return time.i * 1e-9;
-//}
 
 unsigned char* CreateIconFrom16 (float* image,  unsigned char*icon,  int height, int width, int iconWidth, long wl, long ww, BOOL isRGB)
 // create an icon from an 12 or 16 bit image
@@ -452,8 +425,6 @@ void CLIP_Polygon(NSPointInt *inPoly, long inCount, NSPointInt *outPoly, long *o
             if(d==inCount)d=0;
             CLIP_Left( TmpPoly, &TmpCount, inPoly[v],inPoly[d], UpLeft);
             
-            //            if( v > MAXVERTICAL || d > MAXVERTICAL)
-            //                NSLog( @"( v || d > MAXVERTICAL)");
         }
         for( int v=0; v<TmpCount; v++)
         {
@@ -461,8 +432,6 @@ void CLIP_Polygon(NSPointInt *inPoly, long inCount, NSPointInt *outPoly, long *o
             if(d==TmpCount)d=0;
             CLIP_Right(outPoly, outCount, TmpPoly[v],TmpPoly[d], DownRight);
             
-            //            if( v > MAXVERTICAL || d > MAXVERTICAL)
-            //                NSLog( @"( v || d > MAXVERTICAL)");
         }
         TmpCount=0;
         for( int v=0; v<*outCount; v++)
@@ -471,8 +440,6 @@ void CLIP_Polygon(NSPointInt *inPoly, long inCount, NSPointInt *outPoly, long *o
             if(d==*outCount)d=0;
             CLIP_Top( TmpPoly, &TmpCount, outPoly[v],outPoly[d], UpLeft);
             
-            //            if( v > MAXVERTICAL || d > MAXVERTICAL)
-            //                NSLog( @"( v || d > MAXVERTICAL)");
         }
         *outCount=0;
         for( int v=0; v<TmpCount; v++)
@@ -481,8 +448,6 @@ void CLIP_Polygon(NSPointInt *inPoly, long inCount, NSPointInt *outPoly, long *o
             if(d==TmpCount)d=0;
             CLIP_Bottom(outPoly, outCount, TmpPoly[v],TmpPoly[d], DownRight);
             
-            //            if( v > MAXVERTICAL || d > MAXVERTICAL)
-            //                NSLog( @"( v || d > MAXVERTICAL)");
         }
     }
 }
@@ -980,15 +945,6 @@ void ras_FillPolygon( NSPointInt *p,
     struct edge *active = nil;
     long curY = 0;
     
-    //	float test;
-    //
-    //	test = -FLT_MAX;
-    //	if( test != -FLT_MAX)
-    //		NSLog( @"******* test != -FLT_MAX");
-    //
-    //	test = FLT_MAX;
-    //	if( test != FLT_MAX)
-    //		NSLog( @"******* test != FLT_MAX");
     
     if( edgeTable == nil)
         return;
@@ -1225,16 +1181,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     }
 }
 
-//void (*signal(int signum, void (*sighandler)(int)))(int);
-//
-//static sigjmp_buf mark;
-//
-//void signal_EXC_ARITHMETIC(int sig_num)
-//{
-//    NSLog( @"******** Signal %d - DCMPix / EXC_ARITHMETIC / divide by zero exception in JPEG decoder? Catch the exception and resume function", sig_num);
-//
-//    siglongjmp( mark, -1 );
-//}
 
 @interface PixThread : NSObject
 {
@@ -1639,12 +1585,10 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 }
                 
                 NSImage *compositingImage = [NSImage imageWithSize:imageRect.size flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
-                    //		[[NSGraphicsContext currentContext] setImageInterpolation: NSImageInterpolationDefault];
                     [currentImage drawInRect:destinationRect fromRect:sourceRect operation:NSCompositingOperationCopy fraction:1.0];
                     return YES;
                 }];
                 
-                //				NSLog( @"New Size: %f %f", [compositingImage size].width, [compositingImage size].height);
                 
                 return compositingImage;
             }
@@ -1821,9 +1765,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                 for (loop = 0, pYBR = ybrImage; loop < size; loop++, pYBR += 3)
                 {
                     // get the Y, B and R channels from the original image
-                    //            y = (int) pYBR [0];
-                    //            b = (int) pYBR [1];
-                    //            r = (int) pYBR [2];
                     
                     a = (int) pYBR [0];
                     b = (int) pYBR [1];
@@ -1879,16 +1820,12 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                         *(rr+1) = b;
                         *(rr+2) = r;
                         
-                        //				*(rr2) = y;
-                        //				*(rr2+1) = b;
-                        //				*(rr2+2) = r;
                         
                         pYBR += 3;
                         rr += 3;
                         rr2 += 3;
                     }
                     
-                    //			pRGB += 2*w*3;
                     pRGB += w*3;
                 }
                 break;
@@ -2017,8 +1954,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     for( long i = 0; i < no; i++)
     {
         pts[ i] = [[ptsTemp objectAtIndex: i] point];
-        //	pts[ i].x+=1.5;
-        //	pts[ i].y+=1.5;
     }
     
     upleft = downright = [[ptsTemp objectAtIndex:0] point];
@@ -2245,20 +2180,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                             pts = pTemp;
                             no = newNo;
                             
-                            //                            // Need to clip?
-                            //                            NSPointInt *pTemp;
-                            //                            BOOL clip = NO;
-                            //
-                            //                            for( int i = 0; i < no && clip == NO; i++)
-                            //                            {
-                            //                                if( pts[ i].x < 0) clip = YES;
-                            //                                if( pts[ i].y < 0) clip = YES;
-                            //                                if( pts[ i].x >= width) clip = YES;
-                            //                                if( pts[ i].y >= height) clip = YES;
-                            //                            }
-                            //
-                            //                            if( clip)
-                            //                                NSLog( @"arggg");
                         }
                         else
                             no = 0;
@@ -2971,12 +2892,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         }
     }
     
-    //	for( DCMPix* pix in pixArray)
-    //	{
-    //		[self computePixMinPixMax];
-    //		pix.minValueOfSeries = 0;
-    //		pix.maxValueOfSeries = 0;
-    //	}
     
     if( roi) free( ptsInt);
 }
@@ -3090,9 +3005,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
 - (void) computeROI:(ROI*) roi :(float*) mean :(float *)total :(float *)dev :(float *)min :(float *)max :(float *)skewness :(float*) kurtosis
 {
-    //    if( total)
-    //        *total = rand();
-    //    return;
     
     if( [[NSUserDefaults standardUserDefaults] boolForKey: @"ROIComputeSkewnessAndKurtosis"] == NO)
     {
@@ -3117,9 +3029,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     
     float *values = [self getROIValue: &count :roi :nil];
     
-    //    if( total)
-    //        *total = rand();
-    //    return;
     
     for( long i = 0; i < count; i++)
     {
@@ -3450,7 +3359,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
 - (id) initWithData :(float*) im :(short) pixelSize :(long) xDim :(long) yDim :(float) xSpace :(float) ySpace :(float) oX :(float) oY :(float) oZ :(BOOL) volSize
 {
-    //if( pixelSize != 32) NSLog( @"Only floating images are supported...");
     if( self = [super init])
     {
         [self initParameters];
@@ -3498,7 +3406,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                         {
                             if( xDim != width)
                             {
-                                //	NSLog(@"Allocate a new fImage");
                                 for( i =0; i < height; i++)
                                 {
                                     memcpy( fImage + i*width, im + i*xDim, width*sizeof(float));
@@ -3586,11 +3493,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     if( hello == NO && s != nil)
         if( [[NSFileManager defaultManager] fileExistsAtPath:s] == NO) return nil;
     
-    //#if NDEBUG
-    //#else
-    //    if( [NSThread isMainThread] == NO)
-    //        NSLog( @"***** Warning: DCMPix initWithPath should be created in the main thread");
-    //#endif
     
     if( self = [super init])
     {
@@ -3760,7 +3662,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     FILE		*fp = fopen(self.srcFile.UTF8String, "r");
     long		i;
     
-    //NSLog(@"Handling Biorad PIC File in CheckLoad");
     if( fp)
     {
         long					totSize, maxImage;
@@ -3838,7 +3739,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             unsigned char   *bufPtr;
             short			*ptr;
             long			loop;
-            //NSLog(@"Reading 8 bit PIC file");
             // GJ: Fetch the data from an offset given by header + frame *bytes per frame
             
             fseek(fp, BIORAD_HEADER_LENGTH +frameNo*(height * width), SEEK_SET);
@@ -3857,10 +3757,7 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         
         
         // FIND THICKNESS AND PIXEL SIZE
-        // NSLog(@"Entering Biorad PIC File footer");
-        
-        // GJ: This isn't strictly necessary and some files don't have this flag set.
-        //if( header.notesAvailable || 1) {
+        // Read notes even when notesAvailable is unset; some files omit the flag.
         
         long numBytes = height*width*maxImage*bytesPerPixel;
         
@@ -3883,14 +3780,10 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             bnote.noteText[ BIORAD_NOTE_TEXT_LENGTH-1] = 0;
             
             NSString *noteText = [NSString stringWithCString:bnote.noteText encoding: NSISOLatin1StringEncoding];
-            //NSLog(@"noteText %@",noteText);
-            
             //Remove any illegal characters
             noteCleaner = [NSScanner scannerWithString:noteText];
             if([noteCleaner scanCharactersFromSet:goodSet intoString:&aLine])
             {
-                //NSLog(@"aLine %@",aLine);
-                
                 // now try and see if we can find any indication of axis information
                 if([aLine rangeOfString:@"AXIS_"].location!=NSNotFound)
                 {
@@ -3938,12 +3831,8 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             curPos+=BIORAD_NOTE_LENGTH;
         }
         // GJ: implement Z correction for air/oil/sample refractive index mismatch
-        //NSLog(@"zCorrection factor = %f",zCorrection);
-        //NSLog(@"sliceInterval factor = %f, sliceThickness = %f",sliceInterval,sliceThickness);
         sliceInterval/=zCorrection; sliceThickness/=zCorrection;
         sliceLocation = frameNo * sliceInterval;
-        //NSLog(@"After Z correction: sliceInterval factor = %f, sliceThickness = %f",sliceInterval,sliceThickness);
-        
         // END OF READING FOOTER
         
         // CONVERSION TO FLOAT
@@ -4830,7 +4719,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                         sliceThickness = sliceInterval = NIfTI->pixdim[ 3];
                         
                         totSize = height * width * 2;
-                        //NSLog(@"totSize:  %d", totSize);
                         oImage = malloc( totSize);
                         
                         // Transformation matrix
@@ -4873,7 +4761,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                                 {
                                     *ptr++ = *bufPtr++;
                                 }
-                                //NSLog(@"Loop is done for frame number %i \n", (int) frameNo);
                             }
                                 break;
                                 
@@ -5356,8 +5243,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                                         break;
                                         
                                     case 128:
-                                        //								fi.fileType = FileInfo.RGB_PLANAR; 		// DT_RGB
-                                        //								bitsallocated = 24;
                                         NSLog(@"unsupported... please send me this file");
                                         break;
                                 }
@@ -6699,8 +6584,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
 -(void) imageArithmeticSubtraction:(DCMPix*) sub absolute:(BOOL) abs
 {
-    //	float   *temp = [sub fImage];
-    //	vDSP_vsub (temp,1,fImage,1,fImage,1,height * width * sizeof(float));
     float   *temp;	
     temp = [self arithmeticSubtractImages: fImage :[sub fImage] absolute: abs];
     memcpy( fImage, temp, height * width * sizeof(float));	
@@ -7070,7 +6953,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
 
 - (float*) computeThickSlabRGB
 {
-    //	long			diff;
     float			*fNext = NULL;
     float			*fResult = malloc( height * width * sizeof(float));
     long			next;
@@ -7090,7 +6972,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
     
     min = iwl - iww / 2; 
     max = iwl + iww / 2;
-    //	diff = max - min;
     
     switch( stackMode)
     {
@@ -7462,8 +7343,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
             
             if( newWL - newWW/2 == 0)
             {
-                //				newWW = (int) newWW;
-                //				newWL = (int) newWL;
                 
                 newWL = newWW/2;
             }
@@ -7979,16 +7858,12 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
         if(![key isEqualToString:@"sameAsDefault"])
         {
             NSArray *annotations = [annotationsForModality objectForKey: key];
-//            NSMutableArray *annotationsOUT = [NSMutableArray array];
             
             @try
             {
                 for ( NSDictionary *annot in annotations)
                 {
                     NSArray *content = [annot objectForKey:@"fullContent"];
-//                    NSMutableArray *contentOUT = [NSMutableArray array];
-                    
-//                    BOOL contentForLine = NO;
                     
                     for ( int f=0; f<[content count]; f++)
                     {
@@ -8163,7 +8038,6 @@ void erase_outside_circle(char *buf, int width, int height, int cx, int cy, int 
                                         
                                         if( [value isKindOfClass: [NSDate class]])
                                         {
-                                            //value = [value description];
                                             
                                             if([fieldName isEqualToString:@"dateOfBirth"])
                                                 value = [[NSUserDefaults dateFormatter] stringFromDate:(NSDate*)value];

@@ -177,8 +177,6 @@ static BOOL protectedReentryWindowDidResize = NO;
 				}
 				
 				// Add the current screen ONLY
-	//			e = [[NSScreen screens] objectEnumerator];
-	//			while (screen = [e nextObject])
 				{
 					NSRect frame = [AppController usefullRectForScreen: [[self window] screen]];
                     
@@ -358,8 +356,6 @@ static BOOL protectedReentryWindowDidResize = NO;
 			}
 			
 			// Add the current screen ONLY
-	//		e = [[NSScreen screens] objectEnumerator];
-	//		while (screen = [e nextObject])
 			{
 				NSRect frame = [AppController usefullRectForScreen: [[self window] screen]];
                 
@@ -445,8 +441,6 @@ static BOOL protectedReentryWindowDidResize = NO;
 							
 							dontEnterMagneticFunctions = NO;
 							
-		//					[window makeKeyAndOrderFront: self];
-		//					[theWindow makeKeyAndOrderFront: self];
                             
 							return;
 						}

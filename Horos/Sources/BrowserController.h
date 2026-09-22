@@ -432,7 +432,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 - (void) addFiles: (NSArray*) files withRule:(NSDictionary*) routingRule __deprecated;
 - (void) resetListenerTimer __deprecated;
 - (IBAction) albumTableDoublePressed: (id)sender;
-//- (IBAction) smartAlbumHelpButton:(id) sender;
 - (IBAction) regenerateAutoComments:(id) sender;
 - (DCMPix *)previewPix:(int)i;
 - (NSArray*) addFilesToDatabase:(NSArray*) newFilesArray __deprecated;
@@ -540,7 +539,6 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 
 - (int) findObject:(NSString*) request table:(NSString*) table execute: (NSString*) execute elements:(NSString**) elements __deprecated;
 
-// - (void) executeSend :(NSArray*) samePatientArray server:(NSDictionary*) server dictionary:(NSDictionary*) dict __deprecated;
 
 - (void)writeMovie:(NSArray*)imagesArray name:(NSString*)fileName;
 - (void) buildThumbnail:(NSManagedObject*) series;

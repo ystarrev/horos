@@ -87,7 +87,6 @@
 #include <dcmtk/dcmdata/dcuid.h>
 #include <dcmtk/dcmdata/cmdlnarg.h>
 #include <dcmtk/ofstd/ofconapp.h>
-//#include <dcmtk/dcmdata/dcuid.h>    /* for dcmtk version name */
 
 #ifdef WITH_OPENSSL
 #include <dcmtk/dcmtls/tlstrans.h>
@@ -196,20 +195,9 @@ static const char* transferSyntaxes[] = {
     DIC_NODENAME peerHost;
     T_ASC_Association *assoc = NULL;
    
-//	NSLog(@"hostname: %@ calledAET %@", _hostname, _calledAET);
 
 	opt_peer = [_hostname UTF8String];
 	opt_port = _port;
-	
-//	//verbose option set to true for now
-//	_verbose=OFTrue;
-//
-//	
-//	//debug code activated for now
-//	_debug = OFTrue;
-//	DUL_Debug(OFTrue);
-//	DIMSE_debug(OFFalse);
-//	SetDebugLevel(3);
 	
 	//Use Little Endian TS
 	_networkTransferSyntax = EXS_LittleEndianExplicit;
@@ -222,75 +210,6 @@ static const char* transferSyntaxes[] = {
 	//disable TLS
 	_secureConnection = OFFalse;
 	
-	//enable TLS
-	//        _secureConnection = OFTrue;
-	//_doAuthenticate = OFTrue;
-	//app.checkValue(cmd.getValue(opt_privateKeyFile));
-	//app.checkValue(cmd.getValue(opt_certificateFile));
-	
-	//anonymous-tls
-	// _secureConnection = OFTrue;
-	
-	//Password
-	//opt_passwd
-	
-	//pem-keys 
-	//_keyFileFormat = SSL_FILETYPE_PEM;
-	
-	/*
-	 if (cmd.findOption("--dhparam"))
-      {
-        app.checkValue(cmd.getValue(_dhparam));
-      }
-
-      if (cmd.findOption("--seed"))
-      {
-        app.checkValue(cmd.getValue(_readSeedFile));
-      }
-
-      cmd.beginOptionBlock();
-      if (cmd.findOption("--write-seed"))
-      {
-        if (_readSeedFile == NULL) app.printError("--write-seed only with --seed");
-        _writeSeedFile = _readSeedFile;
-      }
-      if (cmd.findOption("--write-seed-file"))
-      {
-        if (_readSeedFile == NULL) app.printError("--write-seed-file only with --seed");
-        app.checkValue(cmd.getValue(_writeSeedFile));
-      }
-      cmd.endOptionBlock();
-
-      cmd.beginOptionBlock();
-      if (cmd.findOption("--require-peer-cert")) _certVerification = DCV_requireCertificate;
-      if (cmd.findOption("--verify-peer-cert"))  _certVerification = DCV_checkCertificate;
-      if (cmd.findOption("--ignore-peer-cert"))  _certVerification = DCV_ignoreCertificate;
-      cmd.endOptionBlock();
-
-      const char *current = NULL;
-      const char *currentOpenSSL;
-      if (cmd.findOption("--cipher", 0, OFCommandLine::FOM_First))
-      {
-        opt_ciphersuites.clear();
-        do
-        {
-          app.checkValue(cmd.getValue(current));
-          if (NULL == (currentOpenSSL = DcmTLSTransportLayer::findOpenSSLCipherSuiteName(current)))
-          {
-            CERR << "ciphersuite '" << current << "' is unknown. Known ciphersuites are:" << endl;
-            unsigned long numSuites = DcmTLSTransportLayer::getNumberOfCipherSuites();
-            for (unsigned long cs=0; cs < numSuites; cs++)
-            {
-              CERR << "    " << DcmTLSTransportLayer::getTLSCipherSuiteName(cs) << endl;
-            }
-            return 1;
-          } else {
-            if (opt_ciphersuites.length() > 0) opt_ciphersuites += ":";
-            opt_ciphersuites += currentOpenSSL;
-          }
-        } while (cmd.findOption("--cipher", 0, OFCommandLine::FOM_Next));
-      }
-	*/
 #endif
 
     /* make sure data dictionary is loaded */
@@ -305,7 +224,6 @@ static const char* transferSyntaxes[] = {
         HorosLogDIMSECondition(cond);
 		verifyException = [NSException exceptionWithName:@"DICOM Network Failure (verifyscu)" reason:[NSString stringWithFormat: @"ASC_initializeNetwork %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil];
 		[verifyException raise];
-        //return;
     }
 	
 #ifdef WITH_OPENSSL
@@ -324,7 +242,6 @@ static const char* transferSyntaxes[] = {
         HorosLogDIMSECondition(cond);
 		verifyException = [NSException exceptionWithName:@"DICOM Network Failure (verifyscu)" reason:[NSString stringWithFormat: @"ASC_createAssociationParameters %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil];
 		[verifyException raise];
-		//return;
     }
 	
 	/* sets this application's title and the called application's title in the params */
@@ -339,14 +256,12 @@ static const char* transferSyntaxes[] = {
 		HorosLogDIMSECondition(cond);
 		verifyException = [NSException exceptionWithName:@"DICOM Network Failure (findscu)" reason:[NSString stringWithFormat: @"ASC_setTransportLayerType %04x:%04x %s", cond.module(), cond.code(), cond.text()] userInfo:nil];
 		[verifyException raise];
-		//return;
 	}
 	
 	/* Figure out the presentation addresses and copy the */
 	/* corresponding values into the association parameters.*/
 	gethostname(localHost, sizeof(localHost) - 1);
 	snprintf(peerHost, sizeof(peerHost), "%s:%d", opt_peer, (int)opt_port);
-	//NSLog(@"peer host: %s", peerHost);
 	ASC_setPresentationAddresses(params, localHost, peerHost);
 	
 	/* Set the presentation contexts which will be negotiated */
@@ -406,7 +321,6 @@ static const char* transferSyntaxes[] = {
 		errmsg("No Acceptable Presentation Contexts");
 		verifyException = [NSException exceptionWithName:@"DICOM Network Failure (qrscu)" reason:@"No acceptable presentation contexts" userInfo:nil];
 		[verifyException raise];
-		//return;
 	}
 	
 	    /* dump general information concerning the establishment of the network connection if required */
@@ -419,8 +333,6 @@ static const char* transferSyntaxes[] = {
     /* this application is connected with and handle corresponding C-ECHO-RSP messages. */
 	if (!cond.bad()) 
 		cond = [self cecho: assoc repeat:1];
-		//cond = cecho(assoc, 1);
-
 		/* tear down association, i.e. terminate network connection to SCP */
     if (cond == EC_Normal)
     {
@@ -507,28 +419,10 @@ static const char* transferSyntaxes[] = {
 	
 
 #ifdef WITH_OPENSSL
-/*
-    if (tLayer && opt_writeSeedFile)
-    {
-      if (tLayer->canWriteRandomSeed())
-      {
-        if (!tLayer->writeRandomSeed(opt_writeSeedFile))
-        {
-          CERR << "Error while writing random seed file '" << opt_writeSeedFile << "', ignoring." << endl;
-        }
-      } else {
-        CERR << "Warning: cannot write random seed, ignoring." << endl;
-      }
-    }
-    delete tLayer;
-*/
 #endif
 
 
 
-//#ifdef DEBUG
-//    dcmDataDict.clear();  /* useful for debugging with dmalloc */
-//#endif
  
 	[pool release];
 	return connection_Status;

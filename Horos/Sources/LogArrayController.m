@@ -51,10 +51,7 @@ extern BrowserController *browserWindow;
 
 - (void)awakeFromNib{
 	[self setManagedObjectContext:browserWindow.database.managedObjectContext];
-	//NSLog(@"query ManagedObjectContext: %@", [[self managedObjectContext] description]);
 	[self fetch:nil];
-	//NSLog(@"filter Predicate: %@", [[self filterPredicate] description]);
-	//NSLog(@"Content: %@", [[self content] description]);
 	
 }
 

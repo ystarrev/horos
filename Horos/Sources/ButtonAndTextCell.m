@@ -60,7 +60,6 @@
 		[buttonCell  setControlSize:NSControlSizeMini];
 		[buttonCell setState:NSControlStateValueOn];
 		
-		//textCell = [[NSTextFieldCell alloc] initTextCell:@""];
 		[self setBezeled:YES];
 		[self setBezelStyle:NSTextFieldSquareBezel];
 		[self setDrawsBackground:YES];
@@ -81,46 +80,15 @@
 
 
 - (void)drawInteriorWithFrame:(NSRect)cellFrame inView:(NSView *)controlView{
-//	NSRect buttonFrame = NSMakeRect(cellFrame.origin.x, cellFrame.origin.y, cellFrame.size.width/2- 10 , cellFrame.size.height);
-//	NSRect textFrame = NSMakeRect(cellFrame.size.width/2 + 10, cellFrame.origin.y, cellFrame.size.width/2 - 10, cellFrame.size.height);
-//	NSLog(@"draw Interior x:%f y:%f, width %f height %f", cellFrame.origin.x,cellFrame.origin.y, cellFrame.size.width, cellFrame.size.height);
-	//NSLog(@"drawInteriorWithFrame:");
 	[super drawInteriorWithFrame:cellFrame inView:controlView];
-//	[textCell drawInteriorWithFrame:textFrame inView:controlView];
 }
 
 - (void)drawWithFrame:(NSRect)cellFrame inView:(NSView *)controlView{
 	NSRect textFrame = NSMakeRect(cellFrame.origin.x + cellFrame.size.width - 120, cellFrame.origin.y, 120 , cellFrame.size.height);
 	NSLog(@"drawWithFrame:");
-	//[super drawWithFrame:buttonFrame inView:controlView];
 	[textCell drawWithFrame:textFrame inView:controlView];
 }
 
 - (IBAction) peformAction:(id)sender{
-/*
-	if ([self state] == NSControlStateValueOn)
-		[textCell setEnabled:YES];
-	else
-		[textCell setEnabled:NO];
-
-	NSLog(@"State:%d", [self state]);
-*/
 }
-/*
-- (void)setState:(int)value{
-	[super setState:value];
-	if ([self state] == NSControlStateValueOn)
-		[textCell setEnabled:YES];
-	else
-		[textCell setEnabled:NO];
-}
-
-- (BOOL)refusesFirstResponder{
-	return NO;
-}
-
-- (BOOL)acceptsFirstResponder{
-	return [textCell acceptsFirstResponder];
-}
-*/	
 @end

@@ -497,7 +497,6 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
 - (int)_stackReadInt {
     if (_stack.count > _hdi)
     {
-        //        N2LogStackTrace( @"_stack.count > _hdi");
         return [[self _stackedObject] intValue];
     }
     int value = [self _readInt];
@@ -537,7 +536,6 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
 - (NSString*)_stackReadString {
     if (_stack.count > _hdi)
     {
-        //        N2LogStackTrace( @"_stack.count > _hdi");
         id value = [self _stackedObject];
         return value == NSNull.null ? nil : value;
     }
@@ -551,7 +549,6 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
 - (DicomDatabase*)_stackIndependentDatabase {
     if (_stack.count > _hdi)
     {
-        //        N2LogStackTrace( @"_stack.count > _hdi");
         return [self _stackedObject];
     }
     DicomDatabase* database = [[DicomDatabase defaultDatabase] independentDatabase];
@@ -817,7 +814,6 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
         {
         NSManagedObject* item = [idatabase objectWithID:objectId]; // [context objectWithID: [[context persistentStoreCoordinator] managedObjectIDForURIRepresentation: [NSURL URLWithString: object]]];
         
-        //NSLog(@"URL:%@", object);
         if( item)
         {
             if( [[item valueForKeyPath: key] isKindOfClass: [NSNumber class]]) [item setValue: [NSNumber numberWithInt: [value intValue]] forKeyPath: key];
@@ -956,19 +952,6 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
             
             [localPaths addObject: path];
             
-            //				if([[path pathExtension] isEqualToString:@"zip"])
-            //				{
-            //					// it is a ZIP
-            //					NSLog(@"BONJOUR ZIP");
-            //					NSString *xmlPath = [[path stringByDeletingPathExtension] stringByAppendingPathExtension:@"xml"];
-            //					NSLog(@"xmlPath : %@", xmlPath);
-            //					if([[NSFileManager defaultManager] fileExistsAtPath:xmlPath])
-            //					{
-            //						// it has an XML descriptor with it
-            //						NSLog(@"BONJOUR XML");
-            //						[localPaths addObject:xmlPath];
-            //					}
-            //				}
             
             [self _unstack]; // the string
         }
@@ -979,19 +962,6 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
             
             [dstPaths addObject: path];
             
-            //				if([[path pathExtension] isEqualToString:@"zip"])
-            //				{
-            //					// it is a ZIP
-            //					NSLog(@"BONJOUR ZIP");
-            //					NSString *xmlPath = [[path stringByDeletingPathExtension] stringByAppendingPathExtension:@"xml"];
-            //					NSLog(@"xmlPath : %@", xmlPath);
-            //					if([[NSFileManager defaultManager] fileExistsAtPath:xmlPath])
-            //					{
-            //						// it has an XML descriptor with it
-            //						NSLog(@"BONJOUR XML");
-            //						[dstPaths addObject:xmlPath];
-            //					}
-            //				}
             
             [self _unstack]; // the string
         }
@@ -1002,8 +972,6 @@ static NSString* const O2NotEnoughData = @"O2NotEnoughData";
         {
             NSString* path = [localPaths objectAtIndex: i];
             
-            //						if ([[NSFileManager defaultManager] fileExistsAtPath: path] == NO)
-            //							NSLog( @"Bonjour Publisher - File doesn't exist at path: %@", path);
             
             NSData *content = [NSData dataWithContentsOfURL:[NSURL fileURLWithPath:path] options:NSDataReadingMappedIfSafe error:nil];
             int size = NSSwapHostIntToBig([content length]);

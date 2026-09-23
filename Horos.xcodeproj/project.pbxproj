@@ -911,6 +911,8 @@
 		F4CDA0010000000000000003 /* SmartAlbumEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4CDA0020000000000000003 /* SmartAlbumEditor.swift */; };
 		F4E700010000000000000001 /* SurgicalProcedureImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E700020000000000000001 /* SurgicalProcedureImporter.swift */; };
 		F4E700010000000000000002 /* SurgicalProcedureTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E700020000000000000002 /* SurgicalProcedureTimeline.swift */; };
+		F4E709230001000000000001 /* ClinicAlbumMatching.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E709230002000000000001 /* ClinicAlbumMatching.swift */; };
+		F4E709230001000000000002 /* ClinicAlbumImportController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E709230002000000000002 /* ClinicAlbumImportController.swift */; };
 		F4CF00000000000000000001 /* CFNetwork.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4CF00000000000000000002 /* CFNetwork.framework */; };
 		F4CF00000000000000000003 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4CF00000000000000000004 /* CoreFoundation.framework */; };
 		F4CTXCL0000000000000001 /* ContextCleaner.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4CTXCL0000000000000002 /* ContextCleaner.mm */; };
@@ -1897,6 +1899,8 @@
 		F4CDA0020000000000000003 /* SmartAlbumEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SmartAlbumEditor.swift; path = Horos/Sources/SmartAlbumEditor.swift; sourceTree = SOURCE_ROOT; };
 		F4E700020000000000000001 /* SurgicalProcedureImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SurgicalProcedureImporter.swift; path = Horos/Sources/SurgicalProcedureImporter.swift; sourceTree = SOURCE_ROOT; };
 		F4E700020000000000000002 /* SurgicalProcedureTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SurgicalProcedureTimeline.swift; path = Horos/Sources/SurgicalProcedureTimeline.swift; sourceTree = SOURCE_ROOT; };
+		F4E709230002000000000001 /* ClinicAlbumMatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClinicAlbumMatching.swift; path = Horos/Sources/ClinicAlbumMatching.swift; sourceTree = SOURCE_ROOT; };
+		F4E709230002000000000002 /* ClinicAlbumImportController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClinicAlbumImportController.swift; path = Horos/Sources/ClinicAlbumImportController.swift; sourceTree = SOURCE_ROOT; };
 		F4CF00000000000000000002 /* CFNetwork.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CFNetwork.framework; path = System/Library/Frameworks/CFNetwork.framework; sourceTree = SDKROOT; };
 		F4CF00000000000000000004 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		F4CTXCL0000000000000002 /* ContextCleaner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ContextCleaner.mm; sourceTree = "<group>"; };
@@ -2986,6 +2990,8 @@
 				F4CDA0020000000000000003 /* SmartAlbumEditor.swift */,
 				F4E700020000000000000001 /* SurgicalProcedureImporter.swift */,
 				F4E700020000000000000002 /* SurgicalProcedureTimeline.swift */,
+				F4E709230002000000000001 /* ClinicAlbumMatching.swift */,
+				F4E709230002000000000002 /* ClinicAlbumImportController.swift */,
 				F4A100000002000000000015 /* Horos/Sources/HorosSettingsWindowController.swift */,
 				F4A100000002000000000020 /* Horos/Sources/HorosDatabaseNetworkSettings.swift */,
 				AB142DFC05600D76008461A0 /* AppController.h */,
@@ -4338,6 +4344,8 @@
 				F4CDA0010000000000000003 /* SmartAlbumEditor.swift in Sources */,
 				F4E700010000000000000001 /* SurgicalProcedureImporter.swift in Sources */,
 				F4E700010000000000000002 /* SurgicalProcedureTimeline.swift in Sources */,
+				F4E709230001000000000001 /* ClinicAlbumMatching.swift in Sources */,
+				F4E709230001000000000002 /* ClinicAlbumImportController.swift in Sources */,
 				F4A100000001000000000001 /* Horos/Sources/MetalViewer/MetalViewerLauncher.swift in Sources */,
 				F4A10000000100000000000C /* Horos/Sources/MetalViewer/Metal3DViewerLauncher.swift in Sources */,
 				F4A100000001000000000010 /* Horos/Sources/MetalViewer/Metal3DVolumeRenderer.swift in Sources */,

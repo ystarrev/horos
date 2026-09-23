@@ -158,6 +158,7 @@ enum
 @property(readonly) SFHorosAuthorizationView* authView;
 
 + (QueryController*) currentQueryController;
++ (BOOL)openPatientQueryWithID:(NSString*)patientID name:(NSString*)name NS_SWIFT_NAME(openPatientQuery(patientID:name:));
 + (QueryController*) currentAutoQueryController;
 + (NSString*) stringIDForStudy:(id) item;
 + (BOOL) echo: (NSString*) address port:(int) port AET:(NSString*) aet;

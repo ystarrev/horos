@@ -2655,6 +2655,33 @@ extern "C"
     [self saveModalityFilterSettings];
 }
 
++ (BOOL)openPatientQueryWithID:(NSString*)patientID name:(NSString*)name
+{
+    NSAssert([NSThread isMainThread], @"Patient queries must be opened on the main thread");
+    patientID = [patientID stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    name = [name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if( patientID.length == 0 && name.length == 0)
+        return NO;
+
+    QueryController *controller = [self currentQueryController];
+    if( controller == nil)
+        controller = [[self alloc] initAutoQuery:NO];
+    [controller showWindow:nil];
+    if( controller == nil || controller->performingCFind)
+        return NO;
+
+    // Keep the chosen servers, but do not hide older studies behind clinic-unrelated filters.
+    [controller emptyPreset:controller];
+    [controller->searchCustomField setStringValue:@""];
+    [controller->PatientModeMatrix selectTabViewItemAtIndex:patientID.length ? 1 : 0];
+    if( patientID.length)
+        [controller->searchFieldID setStringValue:patientID];
+    else
+        [controller->searchFieldName setStringValue:name];
+    [controller query:controller];
+    return YES;
+}
+
 - (NSArray*) queryPatientID:(NSString*) ID
 {
     NSDictionary *savedSettings = [self savePresetInDictionaryWithDICOMNodes: NO];

@@ -2,6 +2,7 @@
 #import "DicomFile.h"
 #import "Sources/HorosJPEGCodecBridge.h"
 #import "BrowserController.h"
+#import "QueryController.h"
 #import "DicomStudy.h"
 #import "DicomDatabase.h"
 #import "NSThread+N2.h"

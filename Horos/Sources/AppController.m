@@ -2376,6 +2376,7 @@ static BOOL initialized = NO;
     
     [HorosNotificationService configure];
     [SurgicalProcedureImportController installMenuItem];
+    [ClinicAlbumImportController installMenuItem];
     
 
 	if( [[NSUserDefaults standardUserDefaults] boolForKey: @"SingleProcessMultiThreadedListener"] == NO)

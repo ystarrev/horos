@@ -19,4 +19,18 @@ void *HorosDCMTKBridgeSymbol(const char *name);
 #define HorosDCMTKFunction(function) \
     ((__typeof__(&(function)))HorosDCMTKBridgeSymbol(#function))
 
+// Typed accessors allow Swift clients to use the dynamically loaded SR API.
+static inline __typeof__(&HorosModernDCMTKWriteCompatibilityStructuredReport) HorosSRWriter(void) {
+    return HorosDCMTKFunction(HorosModernDCMTKWriteCompatibilityStructuredReport);
+}
+static inline __typeof__(&HorosModernDCMTKCopyStructuredReportNamedTextValue) HorosSRTextReader(void) {
+    return HorosDCMTKFunction(HorosModernDCMTKCopyStructuredReportNamedTextValue);
+}
+static inline __typeof__(&HorosModernDCMTKFreeString) HorosSRFreeString(void) {
+    return HorosDCMTKFunction(HorosModernDCMTKFreeString);
+}
+static inline __typeof__(&HorosModernDCMTKReplaceTagValue) HorosDICOMTagWriter(void) {
+    return HorosDCMTKFunction(HorosModernDCMTKReplaceTagValue);
+}
+
 #endif

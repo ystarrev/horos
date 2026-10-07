@@ -123,6 +123,7 @@ static NSArray<NSWindow *> *HorosVisibleViewerWindows(void)
     NSMutableArray<NSWindow *> *windows = [NSMutableArray array];
     [windows addObjectsFromArray:[HorosMetalViewerLauncher visibleWindows]];
     [windows addObjectsFromArray:[HorosMetal3DViewerLauncher visibleWindows]];
+    [windows addObjectsFromArray:[HorosFrameViewerLauncher visibleWindows]];
     return windows;
 }
 
@@ -130,6 +131,7 @@ static void HorosCloseAllViewerWindows(void)
 {
     [HorosMetalViewerLauncher closeAllWindows];
     [HorosMetal3DViewerLauncher closeAllWindows];
+    [HorosFrameViewerLauncher closeAllWindows];
 }
 
 enum	{kSuccess = 0,
@@ -1865,6 +1867,7 @@ static BOOL firstCall = YES;
 
 - (void) terminate :(id) sender
 {
+    if (![HorosFrameViewerLauncher savePlansBeforeClosing]) return;
 	if( [[BrowserController currentBrowser] shouldTerminate: sender] == NO) return;
 
     [[NSUserDefaults standardUserDefaults] setBool: [[[QueryController currentQueryController] window] isVisible] forKey: @"isQueryControllerVisible"];

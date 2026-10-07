@@ -79,7 +79,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
+#include <sys/mount.h>
 #include <unistd.h>
 
 NSString* const CurrentDatabaseVersion = @"2.5";
@@ -172,6 +174,29 @@ static NSString *HorosROIReferencedSOPInstanceUID(NSString *reference, NSNumber 
     if (frameID && frameValue > 0)
         *frameID = [NSNumber numberWithInteger:frameValue];
     return [reference substringToIndex:dashRange.location];
+}
+
+static BOOL HorosIsDICOMCopyCandidate(NSString *path)
+{
+    // This is a copy filter, not validation. Indexing still parses the local copy.
+    // Part 10 files need only their preamble and magic; raw datasets use DCMTK.
+    unsigned char header[132];
+    size_t count = 0;
+    int fd = open(path.fileSystemRepresentation, O_RDONLY);
+    if (fd >= 0)
+    {
+        while (count < sizeof(header))
+        {
+            ssize_t n = read(fd, header + count, sizeof(header) - count);
+            if (n < 0 && errno == EINTR) continue;
+            if (n <= 0) break;
+            count += (size_t)n;
+        }
+        close(fd);
+        if (count == sizeof(header) && memcmp(header + 128, "DICM", 4) == 0)
+            return YES;
+    }
+    return [DicomFile isDICOMFile:path];
 }
 
 static BOOL HorosCopyFileDataWithLargeBuffer(const char *sourcePath, const char *destinationPath, int *failureErrno)
@@ -2454,6 +2479,14 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
 
                     if ([DCMAbstractSyntaxUID isStructuredReport: SOPClassUID])
                     {
+                        // Frame plans are local annotations, not newly acquired images.
+                        // Retain their own series UID so separate planning series stay separate.
+                        if ([[curDict valueForKey:@"seriesDescription"] isEqualToString:@"Horos Frame Plan SR"])
+                        {
+                            inParseExistingObject = YES;
+                            DICOMSR = YES;
+                        }
+
                         // Check if it is an OsiriX Annotations SR
                         if ([[curDict valueForKey:@"seriesDescription"] isEqualToString: @"OsiriX Annotations SR"])
                         {
@@ -3362,15 +3395,36 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
         
         BOOL onlyDICOM = [[dict objectForKey: @"onlyDICOM"] boolValue], copyFiles = [[dict objectForKey: @"copyFiles"] boolValue];
         BOOL mountedVolume = [[dict objectForKey: @"mountedVolume"] boolValue];
-        BOOL preferLargerIndexingBatches = copyFiles && mountedVolume;
         BOOL preserveFileInputOrder = [[dict objectForKey: @"preserveFileInputOrder"] boolValue];
         NSDictionary *dicomDictionariesByPath = [dict objectForKey: @"dicomDictionariesByPath"];
+        NSSet *dicomdirReferencedPaths = [dict objectForKey:@"dicomdirReferencedPaths"];
         __block BOOL studySelected = NO;
         NSArray *filesInput = [dict objectForKey: @"filesInput"];
+        // Folder imports may not supply mountedVolume. Detect optical filesystems once
+        // per volume, without scanning the disc again or querying AppKit from this worker.
+        NSMutableSet *opticalVolumes = [NSMutableSet set];
+        NSMutableSet *checkedVolumes = [NSMutableSet set];
+        for (NSString *path in filesInput)
+        {
+            NSArray *components = path.pathComponents;
+            if (components.count < 3 || ![components[1] isEqualToString:@"Volumes"])
+                continue;
+            NSString *volume = [NSString pathWithComponents:[components subarrayWithRange:NSMakeRange(0, 3)]];
+            if ([checkedVolumes containsObject:volume]) continue;
+            [checkedVolumes addObject:volume];
+            struct statfs info;
+            if (statfs(volume.fileSystemRepresentation, &info) == 0 &&
+                (strcmp(info.f_fstypename, "cd9660") == 0 || strcmp(info.f_fstypename, "udf") == 0))
+                [opticalVolumes addObject:volume];
+        }
+        mountedVolume |= opticalVolumes.count > 0;
+        BOOL preferLargerIndexingBatches = copyFiles && mountedVolume;
+        // DICOMDIR references and recursive enumeration can include the same path.
+        filesInput = [[NSOrderedSet orderedSetWithArray:filesInput] array];
         if( preserveFileInputOrder == NO)
             filesInput = [filesInput sortedArrayUsingSelector:@selector(compare:)]; // sorting the array should make the data access faster on optical media
         if( mountedVolume && preserveFileInputOrder == NO)
-            filesInput = [[dict objectForKey: @"filesInput"] sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
+            filesInput = [filesInput sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
 
         NSString *confirmedDataDirPath = nil;
         NSMutableSet *confirmedSubFolderPaths = nil;
@@ -3408,6 +3462,22 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                         }
                         
                         NSString *srcPath = [filesInput objectAtIndex: i], *dstPath = nil;
+                        BOOL opticalSource = NO;
+                        for (NSString *volume in opticalVolumes)
+                            if ([srcPath hasPrefix:[volume stringByAppendingString:@"/"]])
+                            {
+                                opticalSource = YES;
+                                break;
+                            }
+                        // Test before copying, not after: bundled viewers can dwarf the images.
+                        // Use DICOM content, not extensions, so SR/PDF and extensionless files survive.
+                        if (copyFiles && opticalSource &&
+                            ([srcPath.lastPathComponent.uppercaseString isEqualToString:@"DICOMDIR"] ||
+                             [srcPath.lastPathComponent.uppercaseString isEqualToString:@"DICOMDIR."] ||
+                             (![dicomDictionariesByPath objectForKey:srcPath.stringByStandardizingPath] &&
+                              ![dicomdirReferencedPaths containsObject:srcPath] &&
+                              !HorosIsDICOMCopyCandidate(srcPath))))
+                            continue;
                         
                         if( copyFiles)
                         {

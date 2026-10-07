@@ -213,6 +213,21 @@ private final class MetalMPRPreviewOverlayView: NSView {
         }
 
         owner.drawStudyROIOverlay()
+        if let drawOverlay = owner.sliceOverlayDrawHandler {
+            // Slice geometry uses the unflipped MTKView; annotation drawing is flipped.
+            let flip = owner.isFlipped != isFlipped
+            let slices = owner.renderer.mprROISliceGeometries(in: owner.bounds).map { slice in
+                MetalMPRROISliceGeometry(
+                    planeRawValue: slice.planeRawValue,
+                    imageRect: convert(slice.imageRect, from: owner),
+                    topLeftWorld: flip ? slice.bottomLeftWorld : slice.topLeftWorld,
+                    topRightWorld: flip ? slice.bottomRightWorld : slice.topRightWorld,
+                    bottomLeftWorld: flip ? slice.topLeftWorld : slice.bottomLeftWorld,
+                    bottomRightWorld: flip ? slice.topRightWorld : slice.bottomRightWorld
+                )
+            }
+            drawOverlay(slices)
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -661,6 +676,11 @@ final class MetalImageView: MTKView {
     private static let measurementLabelFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
 
     let renderer: MetalViewerRenderer
+    var patientPointPlacementHandler: ((SIMD3<Double>) -> Void)? {
+        didSet { updateMouseToolCursor(modifierFlags: NSEvent.modifierFlags) }
+    }
+    var sliceOverlayDrawHandler: (([MetalMPRROISliceGeometry]) -> Void)?
+    private var isPlacingPatientPoint = false
     var titleDidChange: ((String) -> Void)?
     var activateHandler: (() -> Void)?
     var interactionEventHandler: (() -> Void)?
@@ -890,6 +910,10 @@ final class MetalImageView: MTKView {
 
     override func resetCursorRects() {
         super.resetCursorRects()
+        if patientPointPlacementHandler != nil {
+            addCursorRect(bounds, cursor: .crosshair)
+            return
+        }
         if studyROIEditingMode == .translate {
             addCursorRect(bounds, cursor: .openHand)
             return
@@ -987,6 +1011,15 @@ final class MetalImageView: MTKView {
         window?.makeFirstResponder(self)
         dragAnchor = convert(event.locationInWindow, from: nil)
         activeMouseButton = button
+        if button == .left, let place = patientPointPlacementHandler,
+           event.modifierFlags.intersection([.shift, .option, .control, .command]).isEmpty {
+            isPlacingPatientPoint = true
+            if let point = renderer.mprPlacementWorldPoint(at: dragAnchor, in: bounds) {
+                place(point)
+            }
+            // A miss leaves placement armed; it must not start rotating the scene.
+            return
+        }
         activeMouseTool = mouseTool(for: button, event: event)
         MetalViewerMouseToolArtwork.cursor(for: activeMouseTool).set()
         if beginStudyROIInteraction(
@@ -1052,6 +1085,7 @@ final class MetalImageView: MTKView {
     }
 
     private func dragMouseInteraction(with event: NSEvent, button: MetalViewerMouseButton) {
+        if isPlacingPatientPoint { return }
         guard button == activeMouseButton else {
             return
         }
@@ -1137,6 +1171,13 @@ final class MetalImageView: MTKView {
     }
 
     private func endMouseInteraction(with event: NSEvent, button: MetalViewerMouseButton) {
+        if isPlacingPatientPoint {
+            if button == .left {
+                isPlacingPatientPoint = false
+                updatePointerCursor(at: convert(event.locationInWindow, from: nil), event: event)
+            }
+            return
+        }
         guard button == activeMouseButton else {
             return
         }
@@ -2563,6 +2604,11 @@ final class MetalImageView: MTKView {
         at point: CGPoint,
         modifierFlags: NSEvent.ModifierFlags
     ) {
+        if patientPointPlacementHandler != nil {
+            resetMPRLineCursor()
+            NSCursor.crosshair.set()
+            return
+        }
         if renderer.displayMode == .mpr3D,
            studyROIProjectionAvailable,
            studyROIEditingMode == .translate,

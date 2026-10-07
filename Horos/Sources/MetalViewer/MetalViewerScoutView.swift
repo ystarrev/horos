@@ -803,11 +803,6 @@ private final class MetalViewerScoutStudyGroupView: NSView {
     }
 }
 
-struct MetalStudyROISurfaceVertex {
-    var position: SIMD3<Float>
-    var normal: SIMD3<Float>
-}
-
 func metalStudyROISurfaceVertices(for roi: MetalStudyROI) -> [MetalStudyROISurfaceVertex] {
     MetalStudyROISurfaceMeshCache.shared.vertices(for: roi)
 }

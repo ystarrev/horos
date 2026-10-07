@@ -84,6 +84,17 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+        B4A120260001000000000001 /* MRIBrainVolume.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4A120260002000000000001; };
+        B4A120260001000000000002 /* MRIBrainExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4A120260002000000000002; };
+        B4A120260001000000000003 /* MRIBrainDICOMLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4A120260002000000000003; };
+        B4A120260001000000000004 /* MetalBrainVolume.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4A120260002000000000004; };
+        F4F202600001000000000001 /* FramePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F202600002000000000001; };
+        F4F202600001000000000002 /* FrameElectrodeGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F202600002000000000002; };
+        F4F202600001000000000003 /* FrameViewerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F202600002000000000003; };
+        F4F202600001000000000004 /* MetalViewerSceneSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F202600002000000000004; };
+        F4F202600001000000000005 /* FrameElectrodes in Resources */ = {isa = PBXBuildFile; fileRef = F4F202600002000000000005; };
+        F4F202600001000000000006 /* FramePlanSRStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F202600002000000000006; };
+        F4F202600001000000000007 /* LeksellFrameReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F202600002000000000007; };
 		A11C0DE10000000000000002 /* HorosToolMode.h in Headers */ = {isa = PBXBuildFile; fileRef = A11C0DE10000000000000001 /* HorosToolMode.h */; };
 		4307C62C1A2091900083877C /* url.h in Headers */ = {isa = PBXBuildFile; fileRef = 4307C62B1A2091900083877C /* url.h */; };
 		434B461D1A19F631008CF8CF /* OPJSupport.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 434B461B1A19F631008CF8CF /* OPJSupport.cpp */; };
@@ -1035,6 +1046,17 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+        B4A120260002000000000001 /* MRIBrainVolume.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/ImageProcessing/MRIBrainVolume.swift; sourceTree = SOURCE_ROOT; };
+        B4A120260002000000000002 /* MRIBrainExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/ImageProcessing/MRIBrainExtractor.swift; sourceTree = SOURCE_ROOT; };
+        B4A120260002000000000003 /* MRIBrainDICOMLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/ImageProcessing/MRIBrainDICOMLoader.swift; sourceTree = SOURCE_ROOT; };
+        B4A120260002000000000004 /* MetalBrainVolume.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalBrainVolume.swift; sourceTree = SOURCE_ROOT; };
+        F4F202600002000000000001 /* FramePlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/FrameViewer/FramePlan.swift; sourceTree = SOURCE_ROOT; };
+        F4F202600002000000000002 /* FrameElectrodeGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/FrameViewer/FrameElectrodeGeometry.swift; sourceTree = SOURCE_ROOT; };
+        F4F202600002000000000003 /* FrameViewerWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/FrameViewer/FrameViewerWindowController.swift; sourceTree = SOURCE_ROOT; };
+        F4F202600002000000000004 /* MetalViewerSceneSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/MetalViewerSceneSurface.swift; sourceTree = SOURCE_ROOT; };
+        F4F202600002000000000005 /* FrameElectrodes */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Horos/Resources/FrameElectrodes; sourceTree = SOURCE_ROOT; };
+        F4F202600002000000000006 /* FramePlanSRStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/FrameViewer/FramePlanSRStore.swift; sourceTree = SOURCE_ROOT; };
+        F4F202600002000000000007 /* LeksellFrameReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/FrameViewer/LeksellFrameReader.swift; sourceTree = SOURCE_ROOT; };
 		A11C0DE10000000000000001 /* HorosToolMode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HorosToolMode.h; sourceTree = "<group>"; };
 		1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = /System/Library/Frameworks/Cocoa.framework; sourceTree = "<absolute>"; };
 		29B97316FDCFA39411CA2CEA /* main.m */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.objc; name = main.m; path = Horos/Sources/main.m; sourceTree = SOURCE_ROOT; };
@@ -1961,6 +1983,29 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+        B4A120260003000000000001 /* Image Processing */ = {
+            isa = PBXGroup;
+            children = (
+                B4A120260002000000000001 /* MRIBrainVolume.swift */,
+                B4A120260002000000000002 /* MRIBrainExtractor.swift */,
+                B4A120260002000000000003 /* MRIBrainDICOMLoader.swift */,
+            );
+            name = "Image Processing";
+            sourceTree = "<group>";
+        };
+        F4F202600003000000000001 /* Frame Viewer */ = {
+            isa = PBXGroup;
+            children = (
+                F4F202600002000000000001 /* FramePlan.swift */,
+                F4F202600002000000000002 /* FrameElectrodeGeometry.swift */,
+                F4F202600002000000000003 /* FrameViewerWindowController.swift */,
+                F4F202600002000000000005 /* FrameElectrodes */,
+                F4F202600002000000000006 /* FramePlanSRStore.swift */,
+                F4F202600002000000000007 /* LeksellFrameReader.swift */,
+            );
+            name = "Frame Viewer";
+            sourceTree = "<group>";
+        };
 		1058C7A0FEA54F0111CA2CBB /* Linked Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -3339,6 +3384,10 @@
 			children = (
 				F4A100000002000000000001 /* Horos/Sources/MetalViewer/MetalViewerLauncher.swift */,
 				F4A10000000200000000000C /* Horos/Sources/MetalViewer/Metal3DViewerLauncher.swift */,
+                F4F202600003000000000001 /* Frame Viewer */,
+                B4A120260003000000000001 /* Image Processing */,
+                B4A120260002000000000004 /* MetalBrainVolume.swift */,
+                F4F202600002000000000004 /* MetalViewerSceneSurface.swift */,
 				F4A100000002000000000010 /* Horos/Sources/MetalViewer/Metal3DVolumeRenderer.swift */,
 				F4A100000002000000000013 /* Horos/Sources/MetalViewer/Metal3DHistogramPanelController.swift */,
 				F4A100000002000000000012 /* Horos/Sources/MetalViewer/Metal3DHistogramView.swift */,
@@ -3764,6 +3813,7 @@
 				71AD674D1FC4248100A1E2F8 /* HotGreen.plist in Resources */,
 				998B52E41AE0893D00D317CF /* Horos.icns in Resources */,
 				59C0DE0219E4A11C00A42447 /* Assets.xcassets in Resources */,
+                F4F202600001000000000005 /* FrameElectrodes in Resources */,
 				ABBB64AD063587B200D9531F /* 2DBlending.tif in Resources */,
 				ABBB64AE063587B200D9531F /* 3D.tif in Resources */,
 				ABBB64B2063587B200D9531F /* Axial.tif in Resources */,
@@ -4348,6 +4398,16 @@
 				F4E709230001000000000002 /* ClinicAlbumImportController.swift in Sources */,
 				F4A100000001000000000001 /* Horos/Sources/MetalViewer/MetalViewerLauncher.swift in Sources */,
 				F4A10000000100000000000C /* Horos/Sources/MetalViewer/Metal3DViewerLauncher.swift in Sources */,
+                F4F202600001000000000001 /* FramePlan.swift in Sources */,
+                F4F202600001000000000002 /* FrameElectrodeGeometry.swift in Sources */,
+                F4F202600001000000000003 /* FrameViewerWindowController.swift in Sources */,
+                F4F202600001000000000006 /* FramePlanSRStore.swift in Sources */,
+                F4F202600001000000000007 /* LeksellFrameReader.swift in Sources */,
+                F4F202600001000000000004 /* MetalViewerSceneSurface.swift in Sources */,
+                B4A120260001000000000001 /* MRIBrainVolume.swift in Sources */,
+                B4A120260001000000000002 /* MRIBrainExtractor.swift in Sources */,
+                B4A120260001000000000003 /* MRIBrainDICOMLoader.swift in Sources */,
+                B4A120260001000000000004 /* MetalBrainVolume.swift in Sources */,
 				F4A100000001000000000010 /* Horos/Sources/MetalViewer/Metal3DVolumeRenderer.swift in Sources */,
 				F4A100000001000000000013 /* Horos/Sources/MetalViewer/Metal3DHistogramPanelController.swift in Sources */,
 				F4A100000001000000000012 /* Horos/Sources/MetalViewer/Metal3DHistogramView.swift in Sources */,

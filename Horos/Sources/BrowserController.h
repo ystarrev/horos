@@ -227,6 +227,7 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     BOOL                            ROIsAndKeyImagesCacheSameSeries, ROIsImagesCacheSameSeries;
     NSMutableSet                    *_pendingImportedStudyIDs;
     BOOL                            _databaseImportRefreshScheduled;
+    NSTimeInterval                  _databaseImportRefreshDelay;
     BOOL                            _benchmarkDatabaseImportRefresh;
     
     BOOL                            _computingNumberOfStudiesForAlbums;

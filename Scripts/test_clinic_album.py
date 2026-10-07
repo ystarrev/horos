@@ -64,6 +64,7 @@ class ClinicAlbumIntegrationTests(unittest.TestCase):
         self.assertIn("ULI not found; matched by name", MATCHING)
 
     def test_pacs_search_and_refresh(self):
+        self.assertIn("let name = ClinicAlbumMatching.searchName(parsed?.name ?? row.query)", CONTROLLER)
         self.assertIn("QueryController.openPatientQuery(patientID: id, name: name)", CONTROLLER)
         self.assertIn("parsed?.patientID ?? numericID", CONTROLLER)
         self.assertIn("ids.count == 1", CONTROLLER)

@@ -1403,6 +1403,31 @@ final class MetalViewerPaneView: NSView {
     var studyROIEditingModeDidChange: ((MetalStudyROIEditingMode) -> Void)?
     var studyROIRefinementHandler: ((Bool) -> Void)?
     var mprRotationDidChange: ((simd_quatf) -> Void)?
+    var patientPointPlacementHandler: ((SIMD3<Double>) -> Void)? {
+        didSet { metalView?.patientPointPlacementHandler = patientPointPlacementHandler }
+    }
+    var sliceOverlayDrawHandler: (([MetalMPRROISliceGeometry]) -> Void)? {
+        didSet { metalView?.sliceOverlayDrawHandler = sliceOverlayDrawHandler }
+    }
+
+    func setSceneSurfaces(_ surfaces: [MetalViewerSceneSurface]) {
+        metalView?.renderer.setSceneSurfaces(surfaces)
+        metalView?.refreshStudyROIOverlay()
+    }
+
+    func setBrainVolume(_ volume: MetalBrainVolume?) {
+        metalView?.renderer.setBrainVolume(volume)
+        metalView?.refreshStudyROIOverlay()
+    }
+
+    func setSceneLines(_ lines: [MetalViewerSceneLine]) {
+        metalView?.renderer.setSceneLines(lines)
+        metalView?.refreshStudyROIOverlay()
+    }
+
+    func focusMPR(on point: SIMD3<Double>) {
+        metalView?.renderer.focusMPR(on: point)
+    }
     var canClose: Bool = true {
         didSet { updateCloseButtonVisibility() }
     }
@@ -1651,6 +1676,8 @@ final class MetalViewerPaneView: NSView {
         }
         metalView.translatesAutoresizingMaskIntoConstraints = false
         metalView.mouseToolAssignments = mouseToolAssignments
+        metalView.patientPointPlacementHandler = patientPointPlacementHandler
+        metalView.sliceOverlayDrawHandler = sliceOverlayDrawHandler
         metalView.activateHandler = { [weak self] in
             self?.activateHandler?()
         }

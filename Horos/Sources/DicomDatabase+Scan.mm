@@ -39,6 +39,7 @@
 #import "NSThread+N2.h"
 #import "NSDate+N2.h"
 #include <dcmtk/dcmdata/dcdicdir.h>
+#include <dcmtk/dcmdata/dctk.h>
 #import "NSString+N2.h"
 #import "NSFileManager+N2.h"
 #import "DicomImage.h"
@@ -98,6 +99,63 @@
 
 
 @implementation DicomDatabase (Scan)
+
++(NSArray*)referencedFilesInDICOMDIR:(NSString*)path
+{
+    DcmFileFormat file;
+    if (file.loadFile(path.fileSystemRepresentation).bad()) return nil;
+    DcmSequenceOfItems *records = nullptr;
+    if (file.getDataset()->findAndGetSequence(DCM_DirectoryRecordSequence, records).bad() || !records)
+        return nil;
+    NSString *root = path.stringByDeletingLastPathComponent.stringByResolvingSymlinksInPath;
+    NSString *rootPrefix = [root stringByAppendingString:@"/"];
+    NSMutableOrderedSet *files = [NSMutableOrderedSet orderedSet];
+    NSMutableDictionary *directoryEntries = [NSMutableDictionary dictionary];
+    for (unsigned long i = 0; i < records->card(); ++i)
+    {
+        if (NSThread.currentThread.isCancelled) return nil;
+        DcmItem *record = records->getItem(i);
+        Uint16 inUse = 0xffff;
+        record->findAndGetUint16(DCM_RecordInUseFlag, inUse);
+        if (inUse == 0) continue;
+        OFString reference;
+        if (record->findAndGetOFStringArray(DCM_ReferencedFileID, reference).bad() || reference.empty()) continue;
+        NSString *relative = [NSString stringWithUTF8String:reference.c_str()];
+        if (!relative.length) return nil;
+        NSString *resolved = root;
+        for (NSString *component in [relative componentsSeparatedByString:@"\\"])
+        {
+            if (!component.length || [component isEqualToString:@"."] || [component isEqualToString:@".."] ||
+                [component containsString:@"/"]) return nil;
+            NSString *candidate = [resolved stringByAppendingPathComponent:component];
+            if (![NSFileManager.defaultManager fileExistsAtPath:candidate])
+            {
+                NSArray *entries = directoryEntries[resolved];
+                if (!entries)
+                {
+                    entries = [NSFileManager.defaultManager contentsOfDirectoryAtPath:resolved error:nil];
+                    if (!entries) return nil;
+                    directoryEntries[resolved] = entries;
+                }
+                NSString *match = nil;
+                for (NSString *entry in entries)
+                    if ([entry caseInsensitiveCompare:component] == NSOrderedSame)
+                    {
+                        if (match) return nil; // Ambiguous names must not select an arbitrary image.
+                        match = entry;
+                    }
+                if (!match) return nil;
+                candidate = [resolved stringByAppendingPathComponent:match];
+            }
+            resolved = candidate.stringByResolvingSymlinksInPath;
+            if (![resolved hasPrefix:rootPrefix]) return nil;
+        }
+        BOOL directory = NO;
+        if (![NSFileManager.defaultManager fileExistsAtPath:resolved isDirectory:&directory] || directory) return nil;
+        [files addObject:resolved];
+    }
+    return files.count ? files.array : nil;
+}
 
 
 static NSString* _dcmElementKey(Uint16 group, Uint16 element) {

@@ -50,6 +50,7 @@ The Horos Project was based originally upon the OsiriX Project which at the time
 
     CGFloat _lastDisplayedProgress;
     BOOL KVOObserving;
+    BOOL _isTrackingCopy;
 }
 
 @property(retain) NSProgressIndicator* progressIndicator;

@@ -44,5 +44,7 @@
 
 -(BOOL)scanAtPath:(NSString*)path;
 +(NSString*)_findDicomdirIn:(NSArray*)allpaths;
+// nil means missing, invalid, or unresolved references: caller must scan normally.
++(NSArray*)referencedFilesInDICOMDIR:(NSString*)path;
 
 @end

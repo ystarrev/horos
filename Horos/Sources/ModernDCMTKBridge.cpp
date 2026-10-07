@@ -1683,6 +1683,12 @@ int HorosModernDCMTKReplaceTagValue(const char* path, unsigned short group, unsi
     if (status.bad())
         return 0;
 
+    // Large values may still refer to offsets in the source file. Materialize them
+    // before saveFile truncates that same file, including SR text and pixel data.
+    status = fileformat.loadAllDataIntoMemory();
+    if (status.bad())
+        return 0;
+
     DcmDataset* dataset = fileformat.getDataset();
     if (dataset == nullptr)
         return 0;

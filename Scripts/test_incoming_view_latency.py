@@ -199,7 +199,8 @@ class DatabaseImportRefreshTests(unittest.TestCase):
 
     def test_refresh_deadline_is_bounded_not_postponed_by_continuing_arrivals(self):
         self.assertIn("if (!_databaseImportRefreshScheduled)", self.observe)
-        self.assertIn("afterDelay:0.5", self.observe)
+        self.assertIn("afterDelay:MAX(0.5, _databaseImportRefreshDelay)", self.observe)
+        self.assertIn("MIN(5.0, MAX(0.5, 2.0 *", self.refresh)
         self.assertIn("NSRunLoopCommonModes", self.observe)
         self.assertNotIn("cancelPreviousPerformRequests", self.observe)
         self.assertIn("_databaseImportRefreshScheduled = NO", self.refresh)

@@ -78,8 +78,23 @@
 	return self;
 }
 
+-(id)copyWithZone:(NSZone*)zone
+{
+    ThreadCell *copy = [super copyWithZone:zone];
+    // AppKit copies cells during mouse tracking. Only the original owns KVO and view cleanup.
+    copy->_isTrackingCopy = YES;
+    copy->KVOObserving = NO;
+    copy->_thread = [_thread retain];
+    copy->_retainedThreadDictionary = [_retainedThreadDictionary retain];
+    copy->_progressIndicator = [_progressIndicator retain];
+    copy->_cancelButton = [_cancelButton retain];
+    return copy;
+}
+
 -(void)cleanup
 {
+    if( _isTrackingCopy)
+        return;
     if( _progressIndicator == nil && _cancelButton == nil && KVOObserving == NO)
         return;
     
@@ -96,16 +111,13 @@
         [_cancelButton removeFromSuperview];
         [_cancelButton autorelease]; _cancelButton = nil;
         
-        [self.view reloadData];
-        [self.view setNeedsDisplay: YES];
-        
         if( KVOObserving)
         {
+            KVOObserving = NO;
             [_thread removeObserver:self forKeyPath:NSThreadSupportsCancelKey];
             [_thread removeObserver:self forKeyPath:NSThreadProgressKey];
             [_thread removeObserver:self forKeyPath:NSThreadStatusKey];
             [_thread removeObserver:self forKeyPath:NSThreadIsCancelledKey];
-            KVOObserving = NO;
         }
     }
 }
@@ -113,6 +125,11 @@
 -(void)dealloc
 {
 	[self cleanup];
+    if( _isTrackingCopy)
+    {
+        [_progressIndicator release];
+        [_cancelButton release];
+    }
     
     [_thread autorelease];
     [_retainedThreadDictionary autorelease];

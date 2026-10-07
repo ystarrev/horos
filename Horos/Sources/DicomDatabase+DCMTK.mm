@@ -238,6 +238,72 @@ static BOOL HorosModernDCMTKDecompressFile(NSString *sourcePath, NSString *desti
 
 @implementation DicomDatabase (DCMTK)
 
++(BOOL)exportDicomFileAtPath:(NSString*)source toPath:(NSString*)destination compressionTag:(NSInteger)mode activityThread:(NSThread*)thread error:(NSError**)error
+{
+    if (error) *error = nil;
+    NSFileManager *manager = [NSFileManager defaultManager];
+    if (!source.length || !destination.length || [source isEqualToString:destination]) {
+        if (error) *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteInvalidFileNameError userInfo:nil];
+        return NO;
+    }
+    NSString *syntax = nil;
+    int quality = 100;
+    if (mode == 2)
+        syntax = @"1.2.840.10008.1.2.1";
+    else if (mode == 1) {
+        int encapsulated = 0;
+        unsigned short rows = 0, columns = 0;
+        char *modalityValue = nullptr, *sopValue = nullptr;
+        auto info = HorosDCMTKFunction(HorosModernDCMTKGetDecompressionInfo);
+        BOOL readable = info && info(source.fileSystemRepresentation, &encapsulated, &rows, &columns, &modalityValue, &sopValue);
+        NSString *modality = HorosModernDCMTKCopiedString(modalityValue) ?: @"OT";
+        NSString *sop = HorosModernDCMTKCopiedString(sopValue) ?: @"";
+        if (!readable) {
+            if (error) *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadCorruptFileError userInfo:@{NSLocalizedDescriptionKey: @"Cannot read the DICOM file for export."}];
+            return NO;
+        }
+        // Preserve existing compressed images and non-image records, matching database compression policy.
+        if (!encapsulated && [DCMAbstractSyntaxUID isImageStorage:sop] &&
+            ![DCMAbstractSyntaxUID isStructuredReport:sop] &&
+            ![sop isEqualToString:[DCMAbstractSyntaxUID pdfStorageClassUID]] &&
+            ![sop isEqualToString:[DCMAbstractSyntaxUID EncapsulatedCDAStorage]]) {
+            int resolution = rows;
+            if (resolution == 0 || resolution > columns) resolution = columns;
+            quality = 0;
+            int compression = [BrowserController compressionForModality:modality quality:&quality resolution:resolution];
+            syntax = HorosModernDCMTKCompressionTransferSyntax(compression, quality);
+        }
+    }
+    if (thread.isCancelled) {
+        if (error) *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil];
+        return NO;
+    }
+
+    // Write only the final representation to the target volume. A same-directory rename
+    // publishes the finished file without a second data copy or touching the source.
+    NSString *staging = [destination.stringByDeletingLastPathComponent stringByAppendingPathComponent:
+                         [NSString stringWithFormat:@".%@.export", NSUUID.UUID.UUIDString]];
+    if (![manager createDirectoryAtPath:staging withIntermediateDirectories:NO attributes:nil error:error])
+        return NO;
+    NSString *temporary = [staging stringByAppendingPathComponent:@"image.dcm"];
+    @try {
+        BOOL written = syntax ? HorosModernDCMTKWriteTransferSyntax(source, temporary, syntax, quality) :
+                                [manager copyItemAtPath:source toPath:temporary error:error];
+        if (!written) {
+            if (error && !*error) *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:@{NSLocalizedDescriptionKey: @"DICOM conversion failed during export."}];
+            return NO;
+        }
+        if (thread.isCancelled) {
+            if (error) *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil];
+            return NO;
+        }
+        // Do not overwrite an existing export if another writer created the name meanwhile.
+        return [manager moveItemAtPath:temporary toPath:destination error:error];
+    } @finally {
+        [manager removeItemAtPath:staging error:nil];
+    }
+}
+
 +(BOOL)fileNeedsDecompression:(NSString*)path {
     HorosModernDCMTKGetDecompressionInfoFn bridgeFn = HorosDCMTKFunction(HorosModernDCMTKGetDecompressionInfo);
     if (bridgeFn)

@@ -318,6 +318,8 @@ NSString* asciiString(NSString* str)
 -(void)observeScrollerStyleDidChangeNotification:(NSNotification*)n;
 -(void)removeAlbumObject:(DicomAlbum*)album;
 -(void)openMetalViewerForDatabaseObject:(NSManagedObject*)item;
+-(void)openVolumeImages:(NSArray*)loadList launcherName:(NSString*)launcherName;
+-(IBAction)openFrameViewer:(id)sender;
 -(void)addDatabaseObjectToCurrentMetalViewer:(id)sender;
 -(void)addMetalViewerPatientForDatabaseObject:(NSManagedObject*)item;
 -(void)addMetalViewerPatientForImages:(NSArray*)loadList;
@@ -525,6 +527,7 @@ static NSString*    ModalityFilterToolbarItemIdentifier = @"ModalityFilter";
 static NSString*	XMLToolbarItemIdentifier			= @"XML.icns";
 static NSString*	MetalToolbarItemIdentifier			= @"MetalToolbar.png";
 static NSString*	Metal3DToolbarItemIdentifier			= @"Metal3DToolbarItem";
+static NSString* FrameToolbarItemIdentifier = @"FrameToolbarItem";
 static NSString*	OpenKeyImagesAndROIsToolbarItemIdentifier	= @"ROIsAndKeys.tif";
 static NSString*	OpenKeyImagesToolbarItemIdentifier	= @"Keys.tif";
 static NSString*	OpenROIsToolbarItemIdentifier	= @"ROIs.tif";
@@ -1024,6 +1027,7 @@ static NSConditionLock *threadLock = nil;
     BOOL				isDirectory = NO;
     
     filesArray = [[[NSMutableArray alloc] initWithCapacity:0] autorelease];
+    NSMutableSet *dicomdirReferencedPaths = [NSMutableSet set];
     
     for( NSString *filename in filenames)
     {
@@ -1037,6 +1041,18 @@ static NSConditionLock *threadLock = nil;
                 {
                     if( isDirectory && [[filename pathExtension] isEqualToString: @"pages"] == NO && [[filename pathExtension] isEqualToString: @"app"] == NO)
                     {
+                        // A root index is authoritative for this selected folder. Do not
+                        // append the bundled viewer and then inspect every file again.
+                        NSArray *children = [defaultManager contentsOfDirectoryAtPath:filename error:nil];
+                        NSString *index = [DicomDatabase _findDicomdirIn:[filename stringsByAppendingPaths:children]];
+                        NSArray *references = index ? [DicomDatabase referencedFilesInDICOMDIR:index] : nil;
+                        if (references.count)
+                        {
+                            [filesArray addObjectsFromArray:references];
+                            [dicomdirReferencedPaths addObjectsFromArray:references];
+                            [pool release];
+                            continue;
+                        }
                         NSString    *pathname;
                         NSString	*folderSkip = nil;
                         NSDirectoryEnumerator *enumer = [[NSFileManager defaultManager] enumeratorAtPath: filename];
@@ -1113,7 +1129,16 @@ static NSConditionLock *threadLock = nil;
                             [[NSFileManager defaultManager] moveItemAtPath: unzipPath toPath: [self.database.incomingDirPath stringByAppendingPathComponent: uniqueFolder] error: nil];
                         }
                         else if( [[[filename lastPathComponent] uppercaseString] isEqualToString:@"DICOMDIR"] || [[[filename lastPathComponent] uppercaseString] isEqualToString:@"DICOMDIR."])
-                            [self addDICOMDIR: filename :filesArray];
+                        {
+                            NSArray *references = [DicomDatabase referencedFilesInDICOMDIR:filename];
+                            if (references.count)
+                            {
+                                [filesArray addObjectsFromArray:references];
+                                [dicomdirReferencedPaths addObjectsFromArray:references];
+                            }
+                            else
+                                [self addDICOMDIR: filename :filesArray];
+                        }
                         else if( [[filename pathExtension] isEqualToString: @"app"])
                         {
                         }
@@ -1133,6 +1158,7 @@ static NSConditionLock *threadLock = nil;
     NSMutableDictionary *copyOptions = [NSMutableDictionary dictionaryWithObjectsAndKeys: [[NSUserDefaults standardUserDefaults] objectForKey: @"onlyDICOM"], @"onlyDICOM", [NSNumber numberWithBool: YES], @"async", [NSNumber numberWithBool: YES], @"addToAlbum",  [NSNumber numberWithBool: YES], @"selectStudy", nil];
     if( options)
         [copyOptions addEntriesFromDictionary: options];
+    [copyOptions setObject:dicomdirReferencedPaths forKey:@"dicomdirReferencedPaths"];
 
     [self copyFilesIntoDatabaseIfNeeded: filesArray options: copyOptions];
 }
@@ -1686,7 +1712,7 @@ static NSConditionLock *threadLock = nil;
         // Bound list redraws, not imports. Do not restart this deadline as more files arrive.
         if (!_databaseImportRefreshScheduled) {
             _databaseImportRefreshScheduled = YES;
-            [self performSelector:@selector(refreshAfterDatabaseImport) withObject:nil afterDelay:0.5
+            [self performSelector:@selector(refreshAfterDatabaseImport) withObject:nil afterDelay:MAX(0.5, _databaseImportRefreshDelay)
                           inModes:@[NSRunLoopCommonModes]];
         }
     }
@@ -1706,6 +1732,8 @@ static NSConditionLock *threadLock = nil;
     [self outlineViewRefresh];
     [self refreshAlbums];
     [self checkIfLocalStudyHasMoreOrSameNumberOfImagesOfADistantStudy:[_database objectsWithIDs:studyIDs]];
+    // Leave breathing room on large databases while retaining a bounded final refresh.
+    _databaseImportRefreshDelay = MIN(5.0, MAX(0.5, 2.0 * (CACurrentMediaTime() - started)));
     if (benchmark) {
         static NSUInteger benchmarkCount = 0;
         if (benchmarkCount++ < 256) {
@@ -1718,6 +1746,7 @@ static NSConditionLock *threadLock = nil;
 
 -(void)cancelPendingDatabaseImportRefresh
 {
+    _databaseImportRefreshDelay = 0;
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(refreshAfterDatabaseImport) object:nil];
     _databaseImportRefreshScheduled = NO;
     _benchmarkDatabaseImportRefresh = NO;
@@ -10546,6 +10575,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     // ****************
     
     if ( contextual == nil) contextual	= [[NSMenu alloc] initWithTitle: NSLocalizedString(@"Tools", nil)];
+    [contextual addItemWithTitle:NSLocalizedString(@"Open in Frame", nil) action:@selector(openFrameViewer:) keyEquivalent:@""];
     
     [contextual addItemWithTitle: NSLocalizedString(@"Export to DICOM Network Node", nil) action:@selector(export2PACS:) keyEquivalent:@""];
     [contextual addItemWithTitle: NSLocalizedString(@"Export to Movie", nil) action:@selector(exportQuicktime:) keyEquivalent:@""];
@@ -11582,6 +11612,29 @@ constrainSplitPosition:(CGFloat)proposedPosition
 
 - (void)openMetal3DViewerForImages:(NSArray*)loadList
 {
+    [self openVolumeImages:loadList launcherName:@"HorosMetal3DViewerLauncher"];
+}
+
+- (IBAction)openFrameViewer:(id)sender
+{
+    NSMutableArray *images = [NSMutableArray array];
+    if (([sender isKindOfClass:[NSMenuItem class]] && [sender menu] == [oMatrix menu]) || [[self window] firstResponder] == oMatrix)
+        [self filesForDatabaseMatrixSelection:images onlyImages:YES];
+    else
+        [self filesForDatabaseOutlineSelection:images onlyImages:YES];
+    if (images.count == 0) { NSBeep(); return; }
+    NSManagedObject *series = [[images objectAtIndex:0] valueForKey:@"series"];
+    for (NSManagedObject *image in images)
+        if (![[image valueForKey:@"series"] isEqual:series])
+        {
+            HorosPresentCriticalAlert(@"Frame", @"Select one MRI or CT series for Frame planning.", @"OK", nil, nil);
+            return;
+        }
+    [self openVolumeImages:images launcherName:@"HorosFrameViewerLauncher"];
+}
+
+- (void)openVolumeImages:(NSArray*)loadList launcherName:(NSString*)launcherName
+{
     if ([loadList count] == 0)
         return;
 
@@ -11645,7 +11698,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     NSString *title = [NSString stringWithFormat:@"%@ - %@", patientName, seriesName];
     NSDictionary *context = [NSDictionary dictionaryWithObjectsAndKeys:viewerPix, @"pixList", title, @"title", nil];
     
-    Class launcherClass = NSClassFromString(@"HorosMetal3DViewerLauncher");
+    Class launcherClass = NSClassFromString(launcherName);
     if (launcherClass)
     {
         [self markImagesAsOpened:correspondingObjects];
@@ -11653,7 +11706,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     }
     else
     {
-        HorosPresentCriticalAlert(NSLocalizedString(@"3D Metal", nil), NSLocalizedString(@"The 3D Metal viewer is not available in this build.", nil), NSLocalizedString(@"OK", nil), nil, nil);
+        HorosPresentCriticalAlert(NSLocalizedString(@"Viewer unavailable", nil), NSLocalizedString(@"The requested viewer is not available in this build.", nil), NSLocalizedString(@"OK", nil), nil, nil);
     }
     
     [viewerPix release];
@@ -12320,6 +12373,7 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     [menu addItemWithTitle: NSLocalizedString(@"Display only this patient", nil) action: @selector(searchForCurrentPatient:) keyEquivalent:@""];
     [menu addItemWithTitle: NSLocalizedString(@"Query Selected Patient from Q&R Window...", nil) action: @selector(querySelectedStudy:) keyEquivalent:@""];
     Class metalLauncherClass = NSClassFromString(@"HorosMetalViewerLauncher");
+    [menu addItemWithTitle:NSLocalizedString(@"Open in Frame", nil) action:@selector(openFrameViewer:) keyEquivalent:@""];
     if (metalLauncherClass && [metalLauncherClass canAddPatientToCurrentViewer])
         [menu addItemWithTitle: NSLocalizedString(@"Add to Current Metal Planar Viewer", nil) action: @selector(addDatabaseObjectToCurrentMetalViewer:) keyEquivalent:@""];
     [menu addItemWithTitle: NSLocalizedString(@"Export to DICOM File(s)", nil) action: @selector(exportDICOMFile:) keyEquivalent:@""];
@@ -14780,7 +14834,6 @@ static volatile int numberOfThreadsForJPEG = 0;
         if( [NSThread isMainThread])
             splash = [[Wait alloc] initWithString:NSLocalizedString( @"Exporting...", nil) :YES];
         
-        NSMutableArray		*files2Compress = [NSMutableArray array];
         DicomStudy			*previousStudy = nil;
         BOOL				exportAborted = NO;
         NSMutableArray		*renameArray = [NSMutableArray array];
@@ -15006,8 +15059,16 @@ static volatile int numberOfThreadsForJPEG = 0;
                 }
                 
                 NSError *error = nil;
-                if( dest == nil || [[NSFileManager defaultManager] copyItemAtPath:[filesToExport objectAtIndex:i] toPath:dest error: &error] == NO)
+                BOOL isDICOM = [[curImage valueForKey: @"fileType"] hasPrefix:@"DICOM"];
+                BOOL written = dest && (isDICOM ?
+                    [DicomDatabase exportDicomFileAtPath:[filesToExport objectAtIndex:i] toPath:dest compressionTag:compressionMatrixSelectedTag activityThread:activityThread error:&error] :
+                    [[NSFileManager defaultManager] copyItemAtPath:[filesToExport objectAtIndex:i] toPath:dest error:&error]);
+                if( !written)
                 {
+                    if (activityThread.isCancelled) {
+                        exportAborted = YES;
+                        break;
+                    }
                     NSLog( @"***** %@", error);
                     NSLog( @"***** src = %@", [filesToExport objectAtIndex:i]);
                     NSLog( @"***** dst = %@", dest);
@@ -15016,19 +15077,6 @@ static volatile int numberOfThreadsForJPEG = 0;
                     break;
                 }
                 
-                if( [[curImage valueForKey: @"fileType"] hasPrefix:@"DICOM"])
-                {
-                    switch(compressionMatrixSelectedTag)
-                    {
-                        case 1: // compress
-                            [files2Compress addObject: dest];
-                            break;
-                            
-                        case 2: // decompress
-                            [files2Compress addObject: dest];
-                            break;
-                    }
-                }
                 
                 if( [extension isEqualToString:@"hdr"])		// ANALYZE -> COPY IMG
                 {
@@ -15067,22 +15115,6 @@ static volatile int numberOfThreadsForJPEG = 0;
         [splash close];
         [splash autorelease];
         
-        if( [files2Compress count] > 0 && exportAborted == NO)
-        {
-            
-            
-            switch(compressionMatrixSelectedTag)
-            {
-                case 1:
-                    [idatabase processFilesAtPaths:files2Compress intoDirAtPath:nil mode:Compress];
-                    break;
-                    
-                case 2:
-                    [idatabase processFilesAtPaths:files2Compress intoDirAtPath:nil mode:Decompress];
-                    break;
-            }
-            
-        }
         
         // ANR - I had to create this loop, otherwise, if I export a folder on the desktop, the dcmkdir will scan all files and folders available on the desktop.... not only the exported folder.
         
@@ -15995,6 +16027,16 @@ static volatile int numberOfThreadsForJPEG = 0;
     
     // Attach the toolbar to the document window 
     [self.window setToolbar: toolbar];
+    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"FrameToolbarIntroduced"])
+    {
+        NSArray *identifiers = [[toolbar items] valueForKey:@"itemIdentifier"];
+        if (![identifiers containsObject:FrameToolbarItemIdentifier])
+        {
+            NSUInteger index = [identifiers indexOfObject:MetalToolbarItemIdentifier];
+            [toolbar insertItemWithItemIdentifier:FrameToolbarItemIdentifier atIndex:index == NSNotFound ? 0 : index + 1];
+        }
+        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"FrameToolbarIntroduced"];
+    }
     [self.window setTitleVisibility: NSWindowTitleHidden];
     [self.window setShowsToolbarButton:NO];
     [[self.window toolbar] setVisible: YES];
@@ -16067,6 +16109,15 @@ static volatile int numberOfThreadsForJPEG = 0;
         [toolbarItem setImage: [NSImage imageNamed: QTSaveToolbarItemIdentifier]];
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(exportQuicktime:)];
+    }
+    else if ([itemIdent isEqualToString: FrameToolbarItemIdentifier])
+    {
+        [toolbarItem setLabel:@"Frame"];
+        [toolbarItem setPaletteLabel:@"Frame"];
+        [toolbarItem setToolTip:NSLocalizedString(@"Plan electrodes on the selected MRI or CT series", nil)];
+        [toolbarItem setImage:[NSImage imageNamed:@"FrameViewer"]];
+        [toolbarItem setTarget:self];
+        [toolbarItem setAction:@selector(openFrameViewer:)];
     }
     else if ([itemIdent isEqualToString: Metal3DToolbarItemIdentifier])
     {
@@ -16318,6 +16369,7 @@ static volatile int numberOfThreadsForJPEG = 0;
             ImportToolbarItemIdentifier,
             ExportToolbarItemIdentifier,
             Metal3DToolbarItemIdentifier,
+            FrameToolbarItemIdentifier,
             MetalToolbarItemIdentifier,
             QTSaveToolbarItemIdentifier,
             QueryToolbarItemIdentifier,
@@ -16346,6 +16398,7 @@ static volatile int numberOfThreadsForJPEG = 0;
                              ImportToolbarItemIdentifier,
                              //			 CDRomToolbarItemIdentifier,
                              Metal3DToolbarItemIdentifier,
+                             FrameToolbarItemIdentifier,
                              MetalToolbarItemIdentifier,
                              QTSaveToolbarItemIdentifier,
                              QueryToolbarItemIdentifier,
@@ -16652,7 +16705,8 @@ static volatile int numberOfThreadsForJPEG = 0;
            [toolbarItem action] == @selector(searchForCurrentPatient:) || 
            [toolbarItem action] == @selector(viewerDICOM:) || 
 [toolbarItem action] == @selector(openMetalViewer:) || 
-[toolbarItem action] == @selector(openMetal3DViewer:) || 
+[toolbarItem action] == @selector(openMetal3DViewer:) ||
+[toolbarItem action] == @selector(openFrameViewer:) ||
            [toolbarItem action] == @selector(revealInFinder:) || 
            [toolbarItem action] == @selector(export2PACS:) || 
            [toolbarItem action] == @selector(exportQuicktime:) || 
@@ -16680,6 +16734,9 @@ static volatile int numberOfThreadsForJPEG = 0;
     }
     
     if ([[toolbarItem itemIdentifier] isEqualToString: Metal3DToolbarItemIdentifier])
+        return [self canOpenMetal3DForCurrentSelection];
+
+    if ([[toolbarItem itemIdentifier] isEqualToString: FrameToolbarItemIdentifier])
         return [self canOpenMetal3DForCurrentSelection];
 
     if ([[toolbarItem itemIdentifier] isEqualToString: OpenKeyImagesAndROIsToolbarItemIdentifier])
@@ -17588,9 +17645,10 @@ static volatile int numberOfThreadsForJPEG = 0;
         return NO;
 
     NSString *modality = [self samePatientMatchingStringValueForKey:@"modality" item:item];
+    if (!modality.length || [modality caseInsensitiveCompare:@"SR"] != NSOrderedSame)
+        return NO;
     NSString *studyDescription = [self samePatientMatchingStringValueForKey:@"studyName" item:item];
-    return modality.length && studyDescription.length &&
-        [modality caseInsensitiveCompare:@"SR"] == NSOrderedSame &&
+    return studyDescription.length &&
         [studyDescription caseInsensitiveCompare:[StructuredReportSupport surgicalProcedureStudyDescription]] == NSOrderedSame;
 }
 

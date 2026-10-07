@@ -531,8 +531,8 @@ private final class ClinicAlbumReviewController: NSWindowController, NSWindowDel
         let typedID = row.query.trimmingCharacters(in: .whitespacesAndNewlines)
         let numericID = !typedID.isEmpty && typedID.allSatisfy(\.isNumber) ? typedID : nil
         let id = parsed?.patientID ?? numericID ?? (ids.count == 1 ? ids.first : nil) ?? ""
-        let name = parsed?.name ?? row.query
-        guard !id.isEmpty || !ClinicAlbumMatching.searchName(name).isEmpty else { return }
+        let name = ClinicAlbumMatching.searchName(parsed?.name ?? row.query)
+        guard !id.isEmpty || !name.isEmpty else { return }
         if !QueryController.openPatientQuery(patientID: id, name: name) {
             ClinicAlbumImportController.showError("The Query/Retrieve window is busy. Finish or cancel its current query, then try again.", window: window)
         }

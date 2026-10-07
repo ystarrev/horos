@@ -537,12 +537,6 @@ private struct MetalMPRROIUniforms {
     var color: SIMD4<Float>
 }
 
-private struct MetalMPRROISurfaceSource {
-    let vertices: [MetalStudyROISurfaceVertex]
-    let canonicalToCurrentTransform: simd_float4x4
-    let color: SIMD3<Float>
-}
-
 private struct MetalMPRROISurfaceBuffer {
     let vertexBuffer: MTLBuffer
     let vertexCount: Int
@@ -683,6 +677,25 @@ struct MetalMPRROISliceGeometry: Equatable {
     }
 
     func screenPoint(for worldPoint: SIMD3<Double>, planeToleranceMM: Double = 0.35) -> CGPoint? {
+        guard let projection = projection(for: worldPoint),
+              projection.distance <= planeToleranceMM,
+              projection.horizontal >= 0, projection.horizontal <= 1,
+              projection.vertical >= 0, projection.vertical <= 1 else { return nil }
+        return screenPoint(horizontal: projection.horizontal, vertical: projection.vertical)
+    }
+
+    /// Unbounded projection for callers that clip their drawing to imageRect.
+    func projectedScreenPoint(for worldPoint: SIMD3<Double>) -> CGPoint? {
+        guard let projection = projection(for: worldPoint) else { return nil }
+        return screenPoint(horizontal: projection.horizontal, vertical: projection.vertical)
+    }
+
+    private func screenPoint(horizontal: Double, vertical: Double) -> CGPoint {
+        CGPoint(x: imageRect.minX + CGFloat(horizontal) * imageRect.width,
+                y: imageRect.minY + CGFloat(vertical) * imageRect.height)
+    }
+
+    private func projection(for worldPoint: SIMD3<Double>) -> (horizontal: Double, vertical: Double, distance: Double)? {
         let horizontalAxis = topRightWorld - topLeftWorld
         let verticalAxis = bottomLeftWorld - topLeftWorld
         let offset = worldPoint - topLeftWorld
@@ -696,13 +709,7 @@ struct MetalMPRROISliceGeometry: Equatable {
         let horizontal = (offsetHorizontal * verticalSquared - offsetVertical * cross) / determinant
         let vertical = (offsetVertical * horizontalSquared - offsetHorizontal * cross) / determinant
         let projected = topLeftWorld + horizontalAxis * horizontal + verticalAxis * vertical
-        guard simd_distance(projected, worldPoint) <= planeToleranceMM,
-              horizontal >= 0, horizontal <= 1,
-              vertical >= 0, vertical <= 1 else { return nil }
-        return CGPoint(
-            x: imageRect.minX + CGFloat(horizontal) * imageRect.width,
-            y: imageRect.minY + CGFloat(vertical) * imageRect.height
-        )
+        return (horizontal, vertical, simd_distance(projected, worldPoint))
     }
 
     func applyingWorldTransform(_ transform: simd_float4x4) -> MetalMPRROISliceGeometry {
@@ -980,6 +987,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private let pipelineState: MTLRenderPipelineState
     private let mprPipelineState: MTLRenderPipelineState
     private let mprROIPipelineState: MTLRenderPipelineState
+    private let brainVolumePipelineState: MTLRenderPipelineState
+    private var brainVolume: MetalBrainVolume?
     private let mprPlaneHighlightPipelineState: MTLRenderPipelineState
     private let mprBorderPipelineState: MTLRenderPipelineState
     private let mprIntersectionPipelineState: MTLRenderPipelineState
@@ -1096,7 +1105,9 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private var mprAxialTiltPivot = SIMD2<Float>(repeating: 0)
     private var mprCoronalTiltPivot = SIMD2<Float>(repeating: 0)
     private var mprSagittalTiltPivot = SIMD2<Float>(repeating: 0)
-    private var mprROISurfaceSources: [MetalMPRROISurfaceSource] = []
+    private var mprROISurfaceSources: [MetalViewerSceneSurface] = []
+    private var sceneSurfaces: [MetalViewerSceneSurface] = []
+    private var sceneLines: [MetalViewerSceneLine] = []
     private var mprROISurfaceOpacity = MetalViewerMPRROIOverlayPreferences.opacity
     private var mprROISurfaceBuffers: [MetalMPRROISurfaceBuffer] = []
     private var cachedMPRDisplayScale: Float?
@@ -1277,6 +1288,10 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             )
             mprROIPipelineState = try pipelines.renderPipeline(
                 vertex: "metalViewerMPRROIVertex", fragment: "metalViewerMPRROIFragment",
+                depthPixelFormat: .depth32Float, alphaBlending: true
+            )
+            brainVolumePipelineState = try pipelines.renderPipeline(
+                vertex: "metalBrainVolumeVertex", fragment: "metalBrainVolumeFragment",
                 depthPixelFormat: .depth32Float, alphaBlending: true
             )
             mprPlaneHighlightPipelineState = try pipelines.renderPipeline(
@@ -2394,6 +2409,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         return SIMD3<Double>(Double(world.x), Double(world.y), Double(world.z))
     }
 
+    func mprPlacementWorldPoint(at point: CGPoint, in bounds: CGRect) -> SIMD3<Double>? {
+        prepareBaseVolumeIfNeeded()
+        guard displayMode.isMPRLike else { return nil }
+        if let preview = mprROIWorldPoint(at: point, in: bounds) { return preview }
+        // Scene picking uses the same transformed plane corners and depth order as rendering.
+        guard displayMode == .mpr,
+              let hit = mprPlaneHit(at: point, in: bounds),
+              hit.depth >= 0, hit.depth <= 1 else { return nil }
+        let world = mprDisplayWorldPosition(for: hit.baseVoxel)
+        return SIMD3<Double>(Double(world.x), Double(world.y), Double(world.z))
+    }
+
     func mprROISliceGeometries(in bounds: CGRect) -> [MetalMPRROISliceGeometry] {
         prepareBaseVolumeIfNeeded()
         guard displayMode.isMPRLike,
@@ -2802,7 +2829,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     func setStudyROISurfaces(_ projections: [MetalStudyROISurfaceProjection]) {
         mprROISurfaceSources = projections.map { projection in
-            MetalMPRROISurfaceSource(
+            MetalViewerSceneSurface(
                 vertices: metalStudyROISurfaceVertices(for: projection.roi),
                 canonicalToCurrentTransform: simd_inverse(projection.currentToCanonicalTransform),
                 color: SIMD3<Float>(
@@ -2817,6 +2844,27 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
     func setStudyROISurfaceOpacity(_ opacity: Float) {
         mprROISurfaceOpacity = min(max(opacity, 0), 1)
+    }
+
+    func setSceneSurfaces(_ surfaces: [MetalViewerSceneSurface]) {
+        sceneSurfaces = surfaces
+        invalidateMPRROIVertexBuffer()
+    }
+
+    func setBrainVolume(_ volume: MetalBrainVolume?) { brainVolume = volume }
+    func setSceneLines(_ lines: [MetalViewerSceneLine]) { sceneLines = lines }
+
+    func focusMPR(on point: SIMD3<Double>) {
+        guard baseVolumeTexture != nil else { return }
+        let voxel = simd_inverse(fixedVoxelToWorld) * SIMD4<Float>(Float(point.x), Float(point.y), Float(point.z), 1)
+        mprPlaneVoxel = simd_clamp(SIMD3<Float>(voxel.x, voxel.y, voxel.z), .zero,
+                                 SIMD3<Float>(Float(max(baseVolumeDimensions.x - 1, 0)),
+                                              Float(max(baseVolumeDimensions.y - 1, 0)),
+                                              Float(max(baseVolumeDimensions.z - 1, 0))))
+        mprAxialTilt = .zero
+        mprCoronalTilt = .zero
+        mprSagittalTilt = .zero
+        stateDidChange?(stateDescription)
     }
 
     func imageRect(in bounds: CGRect) -> CGRect {
@@ -8354,9 +8402,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     }
 
     private func prepareMPRROIVertexBufferIfNeeded() {
-        guard mprROISurfaceBuffers.isEmpty, mprROISurfaceSources.isEmpty == false else { return }
+        guard mprROISurfaceBuffers.isEmpty else { return }
+        let sources = mprROISurfaceSources + sceneSurfaces
+        guard sources.isEmpty == false else { return }
 
-        mprROISurfaceBuffers = mprROISurfaceSources.compactMap { surface -> MetalMPRROISurfaceBuffer? in
+        mprROISurfaceBuffers = sources.compactMap { surface -> MetalMPRROISurfaceBuffer? in
             let transform = surface.canonicalToCurrentTransform
             let linearTransform = simd_float3x3(columns: (
                 SIMD3<Float>(transform.columns.0.x, transform.columns.0.y, transform.columns.0.z),
@@ -8393,6 +8443,40 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
                 vertexCount: vertices.count,
                 color: surface.color
             )
+        }
+    }
+
+    private func drawBrainVolume(encoder: MTL4RenderCommandEncoder, frame: MetalViewerRenderFrame,
+                                 viewProjectionMatrix: simd_float4x4) {
+        guard let brainVolume else { return }
+        let scale = mprDisplayScale()
+        var patientToDisplay = matrix_identity_float4x4
+        patientToDisplay.columns.0.x = scale
+        patientToDisplay.columns.1.y = scale
+        patientToDisplay.columns.2.z = scale
+        patientToDisplay.columns.3 = SIMD4(-baseVolumeCenterWorld * scale, 1)
+        let voxelToDisplay = patientToDisplay * brainVolume.voxelToPatient
+        let voxelToClip = viewProjectionMatrix * voxelToDisplay
+        let displayToVoxel = simd_inverse(voxelToDisplay)
+        func plane(_ axis: MetalMPRPlane) -> MetalBrainClipPlane {
+            let corners = mprPlaneCorners(for: axis).map {
+                displayToVoxel * SIMD4(mprDisplayPosition(for: $0), 1)
+            }
+            return MetalBrainClipPlane(origin: corners[0], u: corners[1] - corners[0], v: corners[3] - corners[0])
+        }
+        let texture = brainVolume.texture
+        let spacing = brainVolume.spacing
+        var uniforms = MetalBrainVolumeUniforms(clipToVoxel: simd_inverse(voxelToClip), voxelToClip: voxelToClip,
+            dimensions: SIMD4(Float(texture.width), Float(texture.height), Float(texture.depth), 0),
+            spacingAndStep: SIMD4(spacing, max(0.05, min(spacing.x, min(spacing.y, spacing.z)) * 0.5)),
+            range: SIMD4(brainVolume.displayRange.x, brainVolume.displayRange.y, 0, 0),
+            axial: plane(.axial), coronal: plane(.coronal), sagittal: plane(.sagittal))
+        encoder.setRenderPipelineState(brainVolumePipelineState)
+        encoder.setCullMode(.none)
+        encoder.setDepthStencilState(mprDepthStencilState)
+        frame.setTextures([texture, nil, nil, nil, nil, nil, nil, nil, nil], sampler: samplerState)
+        if frame.setUniforms(&uniforms) {
+            encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: 3)
         }
     }
 
@@ -8437,6 +8521,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: vertices.count)
         }
 
+        drawBrainVolume(encoder: encoder, frame: frame, viewProjectionMatrix: viewProjectionMatrix)
         prepareMPRROIVertexBufferIfNeeded()
         if mprROISurfaceOpacity > 0,
            mprROISurfaceBuffers.isEmpty == false {
@@ -8455,6 +8540,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             }
         }
 
+        if !sceneLines.isEmpty {
+            let lineVertices = sceneLines.flatMap { line in
+                [line.start, line.end].map {
+                    MetalMPRVertex(position: mprDisplayPosition(forWorld: $0), baseVoxel: .zero, color: SIMD4(line.color, 1))
+                }
+            }
+            encoder.setRenderPipelineState(mprBorderPipelineState)
+            encoder.setDepthStencilState(mprDepthStencilState)
+            if frame.setVertices(lineVertices), frame.setUniforms(&uniforms, fragmentIndex: nil) {
+                encoder.drawPrimitives(primitiveType: .line, vertexStart: 0, vertexCount: lineVertices.count)
+            }
+        }
         prepareMPRTumourSeedMeshIfNeeded()
         if let seedMesh = mprTumourSeedMesh {
             encoder.setRenderPipelineState(mprPlaneHighlightPipelineState)

@@ -59,6 +59,110 @@ struct MetalMPRVertex {
     float4 color;
 };
 
+struct MetalBrainClipPlane {
+    float4 origin;
+    float4 u;
+    float4 v;
+};
+
+struct MetalBrainVolumeUniforms {
+    float4x4 clipToVoxel;
+    float4x4 voxelToClip;
+    float4 dimensions;
+    float4 spacingAndStep;
+    float4 range;
+    MetalBrainClipPlane axial;
+    MetalBrainClipPlane coronal;
+    MetalBrainClipPlane sagittal;
+};
+
+struct MetalBrainRaster {
+    float4 position [[position]];
+    float2 ndc;
+};
+
+struct MetalBrainOutput {
+    float4 color [[color(0)]];
+    float depth [[depth(any)]];
+};
+
+vertex MetalBrainRaster metalBrainVolumeVertex(uint id [[vertex_id]]) {
+    const float2 corners[3] = { float2(-1, -1), float2(3, -1), float2(-1, 3) };
+    MetalBrainRaster out;
+    out.position = float4(corners[id], 0, 1);
+    out.ndc = corners[id];
+    return out;
+}
+
+static float metalBrainPlaneDistance(float3 origin, float3 direction, constant MetalBrainClipPlane &plane) {
+    float3 u = plane.u.xyz, v = plane.v.xyz;
+    float3 normal = cross(u, v);
+    float denominator = dot(normal, direction);
+    if (abs(denominator) < 1e-8) return INFINITY;
+    float t = dot(normal, plane.origin.xyz - origin) / denominator;
+    if (t < 0) return INFINITY;
+    float3 p = origin + direction * t - plane.origin.xyz;
+    float uu = dot(u, u), uv = dot(u, v), vv = dot(v, v);
+    float determinant = uu * vv - uv * uv;
+    if (abs(determinant) < 1e-12) return INFINITY;
+    float a = (dot(p, u) * vv - dot(p, v) * uv) / determinant;
+    float b = (dot(p, v) * uu - dot(p, u) * uv) / determinant;
+    return (a >= 0 && a <= 1 && b >= 0 && b <= 1) ? t : INFINITY;
+}
+
+fragment MetalBrainOutput metalBrainVolumeFragment(
+    MetalBrainRaster in [[stage_in]], constant MetalBrainVolumeUniforms &u [[buffer(0)]],
+    texture3d<float> volume [[texture(0)]]) {
+    float4 nearH = u.clipToVoxel * float4(in.ndc, 0, 1);
+    float4 farH = u.clipToVoxel * float4(in.ndc, 1, 1);
+    float3 origin = nearH.xyz / nearH.w;
+    float3 delta = farH.xyz / farH.w - origin;
+    float distanceMM = length(delta * u.spacingAndStep.xyz);
+    if (distanceMM < 1e-6) discard_fragment();
+    float3 direction = delta / distanceMM; // voxels per physical millimetre
+    float enter = 0, exit = distanceMM;
+    for (uint axis = 0; axis < 3; ++axis) {
+        if (abs(direction[axis]) < 1e-8) {
+            if (origin[axis] < -0.5 || origin[axis] > u.dimensions[axis] - 0.5) discard_fragment();
+        } else {
+            float a = (-0.5 - origin[axis]) / direction[axis];
+            float b = (u.dimensions[axis] - 0.5 - origin[axis]) / direction[axis];
+            enter = max(enter, min(a, b)); exit = min(exit, max(a, b));
+        }
+    }
+    // The finite image planes are opaque: never integrate tissue behind them.
+    exit = min(exit, metalBrainPlaneDistance(origin, direction, u.axial));
+    exit = min(exit, metalBrainPlaneDistance(origin, direction, u.coronal));
+    exit = min(exit, metalBrainPlaneDistance(origin, direction, u.sagittal));
+    if (exit <= enter) discard_fragment();
+    constexpr sampler linearSampler(coord::normalized, address::clamp_to_zero, filter::linear);
+    float4 accumulated = float4(0);
+    float first = -1;
+    float step = u.spacingAndStep.w;
+    for (float t = enter + step * 0.5; t < exit && accumulated.a < 0.995; t += step) {
+        float3 position = origin + direction * t;
+        float2 sample = volume.sample(linearSampler, (position + 0.5) / u.dimensions.xyz).rg;
+        if (sample.y < 1e-5) continue;
+        float intensity = sample.x / sample.y;
+        float x = saturate((intensity - u.range.x) / max(u.range.y - u.range.x, 1e-6));
+        // Tactics displaySurfaceVolume: RGB + scalar opacity, with shading off.
+        float4 color;
+        if (x <= 0.07) color = mix(float4(0), float4(0.4, 0, 0.1, 0), x / 0.07);
+        else if (x <= 0.48) color = mix(float4(0.4, 0, 0.1, 0), float4(1, 0.7, 0.6, 0.2), (x - 0.07) / 0.41);
+        else color = mix(float4(1, 0.7, 0.6, 0.2), float4(1, 1, 0.9, 0.8), (x - 0.48) / 0.52);
+        float alpha = 1 - pow(max(1 - color.a * sample.y, 1e-6), step);
+        if (alpha > 0.001 && first < 0) first = t;
+        accumulated.rgb += (1 - accumulated.a) * alpha * color.rgb;
+        accumulated.a += (1 - accumulated.a) * alpha;
+    }
+    if (first < 0 || accumulated.a < 0.001) discard_fragment();
+    float4 clip = u.voxelToClip * float4(origin + direction * first, 1);
+    MetalBrainOutput out;
+    out.depth = saturate(clip.z / clip.w);
+    out.color = float4(accumulated.rgb / accumulated.a, accumulated.a);
+    return out;
+}
+
 struct MetalMPRROIVertex {
     float3 position;
     float3 normal;

@@ -2439,7 +2439,7 @@ final class MetalViewerSeries {
     private var dynamicDetectionInProgress = false
     private var dynamicDetectionCompletions: [(MetalDynamicSequence?) -> Void] = []
     var windowLevelState = MetalViewerWindowLevelState()
-    var windowLevelPresetTitle = NSLocalizedString("Default WL & WW", comment: "")
+    var windowLevelPresetTitle = NSLocalizedString("Auto", comment: "")
     var transferFunctionState = MetalViewerTransferFunctionState()
 
     var isMagneticResonance: Bool {
@@ -2603,9 +2603,6 @@ final class MetalViewerSeries {
         self.dynamicTimePointCountHint = dynamicTimePointCountHint
         self.cachedPixList = initialPixList
         self.cachedStructuredReportHTML = nil
-        if isMagneticResonance {
-            self.windowLevelPresetTitle = NSLocalizedString("Auto", comment: "")
-        }
     }
 
     func sharesSourceSeries(with other: MetalViewerSeries) -> Bool {

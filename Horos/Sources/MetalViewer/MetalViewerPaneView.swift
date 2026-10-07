@@ -1658,7 +1658,7 @@ final class MetalViewerPaneView: NSView {
                 pixList: pixList,
                 windowLevelState: series.windowLevelState,
                 windowLevelStateDidChange: windowLevelStateDidChange,
-                usesAutomaticWindowLevel: series.isMagneticResonance,
+                usesAutomaticWindowLevel: true,
                 transferFunctionState: series.transferFunctionState,
                 transferFunctionStateDidChange: transferFunctionStateDidChange
             )
@@ -1669,7 +1669,7 @@ final class MetalViewerPaneView: NSView {
                 pixList: pixList,
                 windowLevelState: series.windowLevelState,
                 windowLevelStateDidChange: windowLevelStateDidChange,
-                usesAutomaticWindowLevel: series.isMagneticResonance,
+                usesAutomaticWindowLevel: true,
                 transferFunctionState: series.transferFunctionState,
                 transferFunctionStateDidChange: transferFunctionStateDidChange
             )
@@ -1970,7 +1970,7 @@ final class MetalViewerPaneView: NSView {
                 windowLevelStateDidChange: { state in
                     series.windowLevelState = state
                 },
-                usesAutomaticWindowLevel: series.isMagneticResonance,
+                usesAutomaticWindowLevel: true,
                 transferFunctionState: series.transferFunctionState,
                 transferFunctionStateDidChange: { state in
                     series.transferFunctionState = state

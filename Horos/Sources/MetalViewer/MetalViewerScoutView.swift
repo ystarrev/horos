@@ -2397,12 +2397,10 @@ private final class MetalViewerScoutItemView: NSView {
         let width = storedPixels.width
         let height = storedPixels.height
         let defaultWindow = storedPixels.inferredWindow
-        let displayWindow = series.isMagneticResonance
-            ? (MetalViewerAutomaticWindowLevel.window(
+        let displayWindow = MetalViewerAutomaticWindowLevel.window(
                 for: storedPixels,
                 modality: pix.modalityString
-            ) ?? defaultWindow)
-            : defaultWindow
+            ) ?? defaultWindow
         let windowWidth = displayWindow.width
         let windowLevel = displayWindow.level
         let low = windowLevel - windowWidth * 0.5

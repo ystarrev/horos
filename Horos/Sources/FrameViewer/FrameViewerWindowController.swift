@@ -103,6 +103,7 @@ final class FrameViewerWindowController: NSWindowController, NSWindowDelegate, N
     private var savedPlan: FramePlan
     private let store: FramePlanSRStore
     private var isReady = false
+    private var isClosed = false
     private var pendingSaves = 0
     private var closeAfterSaving = false
     private let saveStatus = NSTextField(labelWithString: "Loading saved plan...")
@@ -115,7 +116,8 @@ final class FrameViewerWindowController: NSWindowController, NSWindowDelegate, N
     private var brainVolume: MetalBrainVolume?
     private let brainButton = NSButton(title: "Brain", target: nil, action: nil)
     private let brainStatus = NSTextField(labelWithString: "")
-    private let frameStatus = NSTextField(labelWithString: "No frame detected")
+    private var frameDetectionMessage = "Frame not checked"
+    private let frameStatus = NSTextField(labelWithString: "Frame not checked")
     private let readFrameButton = NSButton(title: "Read Frame", target: nil, action: nil)
     private let acceptFrameButton = NSButton(title: "Accept Frame", target: nil, action: nil)
     private let table = NSTableView()
@@ -179,7 +181,7 @@ final class FrameViewerWindowController: NSWindowController, NSWindowDelegate, N
         buildInterface(in: window)
         refresh()
         store.load { [weak self] result in
-            guard let self else { return }
+            guard let self, !self.isClosed else { return }
             switch result {
             case .success(let restored):
                 if let restored { self.plan = restored; self.savedPlan = restored }
@@ -187,6 +189,9 @@ final class FrameViewerWindowController: NSWindowController, NSWindowDelegate, N
                 self.isReady = true
                 self.saveStatus.stringValue = restored == nil ? "Autosave ready" : "Saved to DICOM SR"
                 self.refresh()
+                if self.plan.frameFit == nil {
+                    self.startFrameDetection(automatic: true)
+                }
             case .failure(let error):
                 NSAlert(error: error).runModal()
                 self.window?.close()
@@ -199,12 +204,15 @@ final class FrameViewerWindowController: NSWindowController, NSWindowDelegate, N
 
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { edits }
     func windowWillClose(_ notification: Notification) {
+        isClosed = true
         detectionProgress?.cancel()
         brainProgress?.cancel()
         onClose?()
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard sender.makeFirstResponder(nil) else { return false }
+        detectionProgress?.cancel()
+        detectionProgress = nil
         if pendingSaves > 0 { closeAfterSaving = true; return false }
         guard plan != savedPlan else { return true }
         closeAfterSaving = true
@@ -486,7 +494,7 @@ final class FrameViewerWindowController: NSWindowController, NSWindowDelegate, N
             if let fit = plan.frameFit {
                 frameStatus.stringValue = String(format: "%@ - RMS %.2f mm, max %.2f mm\n%d samples",
                     fit.reviewed ? "Frame accepted" : "Review detected rods", fit.rmsMM, fit.maximumErrorMM, fit.sampleCount)
-            } else { frameStatus.stringValue = "No frame detected" }
+            } else { frameStatus.stringValue = frameDetectionMessage }
         }
         if let fit = plan.frameFit, fit.reviewed, let electrode {
             let p = fit.coordinates(of: electrode.targetLPS)
@@ -591,7 +599,12 @@ final class FrameViewerWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     @objc private func readFrame() {
-        guard isReady, detectionProgress == nil, window?.makeFirstResponder(nil) == true else { return }
+        startFrameDetection(automatic: false)
+    }
+
+    private func startFrameDetection(automatic: Bool) {
+        guard isReady, !isClosed, detectionProgress == nil,
+              window?.makeFirstResponder(nil) == true else { return }
         let progress = Progress(totalUnitCount: Int64(frameInputs.count))
         detectionProgress = progress
         frameStatus.stringValue = "Reading frame..."
@@ -637,10 +650,14 @@ final class FrameViewerWindowController: NSWindowController, NSWindowDelegate, N
                 case .success(let fit):
                     guard self.window?.makeFirstResponder(nil) == true else { self.refreshEditor(); return }
                     var next = self.plan
-                    next.frameFit = fit
+                    var acceptedFit = fit
+                    // read() has already validated geometry, coverage and maximum error.
+                    acceptedFit.reviewed = fit.rmsMM < 1.0
+                    next.frameFit = acceptedFit
                     self.apply(next, action: "Read Leksell Frame")
                 case .failure(let error):
-                    NSAlert(error: error).runModal()
+                    self.frameDetectionMessage = "Frame not found: \(error.localizedDescription)"
+                    if !automatic { NSAlert(error: error).runModal() }
                 }
                 self.refreshEditor()
             }
@@ -658,6 +675,7 @@ final class FrameViewerWindowController: NSWindowController, NSWindowDelegate, N
         guard window?.makeFirstResponder(nil) == true else { return }
         detectionProgress?.cancel()
         detectionProgress = nil
+        frameDetectionMessage = "Frame cleared"
         var next = plan
         next.frameFit = nil
         apply(next, action: "Clear Leksell Frame")
@@ -868,6 +886,8 @@ final class FrameViewerWindowController: NSWindowController, NSWindowDelegate, N
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let next = try FramePlan.read(from: url, image: plan.image)
+            detectionProgress?.cancel()
+            detectionProgress = nil
             cancelPlacement()
             planURL = url
             selectedID = next.electrodes.first?.id

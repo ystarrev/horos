@@ -143,7 +143,7 @@
 #define DISTANTSTUDYFONT @"Helvetica-BoldOblique"
 
 static NSString * const HorosSuppressDeleteImagesConfirmationKey = @"HorosSuppressDeleteImagesConfirmation";
-enum { HorosSeriesDescriptionSearchType = 11 };
+enum { HorosSeriesDescriptionSearchType = 11, HorosSurgerySearchType = 12 };
 
 static BOOL HorosStringContainsStandaloneSearchTerm(NSString *value, NSString *searchTerm)
 {
@@ -318,6 +318,7 @@ NSString* asciiString(NSString* str)
 -(void)observeScrollerStyleDidChangeNotification:(NSNotification*)n;
 -(void)removeAlbumObject:(DicomAlbum*)album;
 -(void)openMetalViewerForDatabaseObject:(NSManagedObject*)item;
+-(void)openMetalViewerForSurgicalProcedure:(SurgicalProcedureEvent*)event;
 -(void)openVolumeImages:(NSArray*)loadList launcherName:(NSString*)launcherName;
 -(IBAction)openFrameViewer:(id)sender;
 -(void)addDatabaseObjectToCurrentMetalViewer:(id)sender;
@@ -2691,7 +2692,7 @@ static NSConditionLock *threadLock = nil;
     [self setSearchString:nil];
     [databaseOutline scrollRowToVisible: [databaseOutline selectedRow]];
     
-    if( searchType != HorosSeriesDescriptionSearchType && (_searchString.length > 2 || (_searchString.length >= 2 && searchType == 5)))
+    if( searchType != HorosSeriesDescriptionSearchType && searchType != HorosSurgerySearchType && (_searchString.length > 2 || (_searchString.length >= 2 && searchType == 5)))
     {
         @synchronized( self)
         {
@@ -2711,7 +2712,7 @@ static NSConditionLock *threadLock = nil;
             distantSearchThread = nil;
         }
         
-        if( albumTable.selectedRow == 0 && searchType != HorosSeriesDescriptionSearchType)
+        if( albumTable.selectedRow == 0 && searchType != HorosSeriesDescriptionSearchType && searchType != HorosSurgerySearchType)
             [NSThread detachNewThreadSelector: @selector(searchForTimeIntervalFromTo:) toTarget:self withObject: [NSDictionary dictionaryWithObjectsAndKeys: timeIntervalStart, @"from", timeIntervalEnd, @"to", nil]];
     }
     else
@@ -2809,11 +2810,11 @@ static NSConditionLock *threadLock = nil;
                 distantSearchThread = nil;
             }
             
-            if( albumTable.selectedRow == 0 && searchType != HorosSeriesDescriptionSearchType)
+        if( albumTable.selectedRow == 0 && searchType != HorosSeriesDescriptionSearchType && searchType != HorosSurgerySearchType)
                 [NSThread detachNewThreadSelector: @selector(searchForTimeIntervalFromTo:) toTarget:self withObject: [NSDictionary dictionaryWithObjectsAndKeys: timeIntervalStart, @"from", timeIntervalEnd, @"to", nil]];
         }
     }
-    else if( searchType != HorosSeriesDescriptionSearchType && (_searchString.length > 2 || (_searchString.length >= 2 && searchType == 5)))
+    else if( searchType != HorosSeriesDescriptionSearchType && searchType != HorosSurgerySearchType && (_searchString.length > 2 || (_searchString.length >= 2 && searchType == 5)))
         [self setSearchString: _searchString];
     else
     {
@@ -3397,7 +3398,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             {
                 outlineViewArray = [albumArrayContent filteredArrayUsingPredicate:predicate];
                 
-                if( self.filterPredicate)
+                if( self.filterPredicate && searchType != HorosSurgerySearchType)
                 {
                     // Entire DB Result
                     
@@ -3419,7 +3420,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                         [self refreshEntireDBResult];
                 }
             }
-            else if( ([self searchIncludesSeriesDescriptions] ||
+            else if( (searchType == HorosSurgerySearchType || [self searchIncludesSeriesDescriptions] ||
                       (searchType == 0 && [[_searchString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] length] > 0)) &&
                      testPredicate == nil)
             {
@@ -3459,7 +3460,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                     useDistantArray = YES;
             }
             
-            if( useDistantArray)
+            if( useDistantArray && searchType != HorosSurgerySearchType)
             {
                 NSMutableArray *distantStudies = [NSMutableArray array];
                 
@@ -3587,7 +3588,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     // patient cohort. Broad surname/prefix results should display immediately
     // instead of resolving dozens of unrelated patient groups.
     static const NSUInteger samePatientAutoExpansionLimit = 50;
-    if( filtered == YES && albumTable.selectedRow <= 0 && smartAlbumName == nil && [self searchIncludesSeriesDescriptions] == NO && [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesOfSamePatientTogether"] && outlineViewArray.count > 0 && outlineViewArray.count <= samePatientAutoExpansionLimit)
+    if( searchType != HorosSurgerySearchType && filtered == YES && albumTable.selectedRow <= 0 && smartAlbumName == nil && [self searchIncludesSeriesDescriptions] == NO && [[NSUserDefaults standardUserDefaults] boolForKey: @"KeepStudiesOfSamePatientTogether"] && outlineViewArray.count > 0 && outlineViewArray.count <= samePatientAutoExpansionLimit)
     {
         @try
         {
@@ -4645,7 +4646,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     int curSearchType = [[dict objectForKey: @"searchType"] intValue];
     NSString *curSearchString = [dict objectForKey: @"searchString"];
 
-    if( curSearchType == HorosSeriesDescriptionSearchType)
+    if( curSearchType == HorosSeriesDescriptionSearchType || curSearchType == HorosSurgerySearchType)
     {
         [pool release];
         return;
@@ -7260,12 +7261,6 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 
         if( [[tableColumn identifier] isEqualToString:@"lockedStudy"] && [cell respondsToSelector:@selector(setTransparent:)])
             [cell setTransparent:YES];
-        if( [[tableColumn identifier] isEqualToString:@"name"] && [cell isKindOfClass:[ImageAndTextCell class]])
-        {
-            NSImage *icon = [NSImage imageWithSystemSymbolName:@"cross.case.fill" accessibilityDescription:NSLocalizedString(@"Surgical Procedure", nil)];
-            [icon setSize:NSMakeSize(16, 16)];
-            [(ImageAndTextCell *)cell setImage:icon];
-        }
         return;
     }
     
@@ -8231,7 +8226,10 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             item = [databaseOutline itemAtRow:[databaseOutline selectedRow]];
 
         if( [self isSurgicalProcedureItem:item])
+        {
+            [self openMetalViewerForSurgicalProcedure:item];
             return;
+        }
 
         NSManagedObject *artifactStudy = [self localStudyContainingNonPixelViewerItem:item];
         if( artifactStudy)
@@ -11946,6 +11944,41 @@ constrainSplitPosition:(CGFloat)proposedPosition
     [self addMetalViewerPatientForImages:loadList];
 }
 
+- (void)openMetalViewerForSurgicalProcedure:(SurgicalProcedureEvent *)event
+{
+    NSManagedObject *backingStudy = event.backingStudyXID.length
+        ? [self.database objectWithID:[NSManagedObject UidForXid:event.backingStudyXID]] : nil;
+    NSMutableOrderedSet *images = [NSMutableOrderedSet orderedSet];
+    NSManagedObject *firstImagingStudy = nil;
+    if (backingStudy && !backingStudy.isDeleted)
+    {
+        for (NSManagedObject *study in [self studiesForDisplayOnlyThisPatientMatchingStudy:backingStudy])
+        {
+            for (NSManagedObject *series in [self childrenArray:study onlyImages:YES])
+            {
+                if ([self isDICOMSegmentationSeries:series])
+                    continue;
+                NSArray *seriesImages = [self childrenArray:series onlyImages:YES];
+                if (seriesImages.count)
+                {
+                    if (firstImagingStudy == nil)
+                        firstImagingStudy = study;
+                    [images addObjectsFromArray:seriesImages];
+                }
+            }
+        }
+    }
+    if (images.count)
+    {
+        [[AppController sharedAppController] addStudyToRecentStudiesMenu:firstImagingStudy.objectID];
+        [self openMetalViewerForImages:images.array];
+    }
+    else
+        HorosPresentCriticalAlert(NSLocalizedString(@"No associated images", nil),
+            NSLocalizedString(@"No imaging studies are available in this database for this surgical procedure's patient.", nil),
+            NSLocalizedString(@"OK", nil), nil, nil);
+}
+
 - (void)openMetalViewerForDatabaseObject:(NSManagedObject*)item
 {
     NSMutableArray *loadList = [NSMutableArray array];
@@ -12371,7 +12404,10 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     }
     
     [menu addItemWithTitle: NSLocalizedString(@"Display only this patient", nil) action: @selector(searchForCurrentPatient:) keyEquivalent:@""];
-    [menu addItemWithTitle: NSLocalizedString(@"Query Selected Patient from Q&R Window...", nil) action: @selector(querySelectedStudy:) keyEquivalent:@""];
+    NSMenuItem *patientQueryItem = [menu addItemWithTitle: NSLocalizedString(@"Query Selected Patient from Q&R Window...", nil) action: @selector(querySelectedStudy:) keyEquivalent:@""];
+    NSInteger patientQueryRow = databaseOutline.clickedRow;
+    if (patientQueryRow >= 0)
+        patientQueryItem.representedObject = [databaseOutline itemAtRow:patientQueryRow];
     Class metalLauncherClass = NSClassFromString(@"HorosMetalViewerLauncher");
     [menu addItemWithTitle:NSLocalizedString(@"Open in Frame", nil) action:@selector(openFrameViewer:) keyEquivalent:@""];
     if (metalLauncherClass && [metalLauncherClass canAddPatientToCurrentViewer])
@@ -12724,6 +12760,15 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
         [searchField setNextKeyView: databaseOutline];
         
         NSMenu *databaseSearchMenu = [[searchField cell] searchMenuTemplate];
+        if ([databaseSearchMenu itemWithTag:HorosSurgerySearchType] == nil)
+        {
+            NSMenuItem *surgerySearch = [[[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Surgeries", nil)
+                action:@selector(setSearchType:) keyEquivalent:@""] autorelease];
+            surgerySearch.tag = HorosSurgerySearchType;
+            surgerySearch.target = self;
+            [databaseSearchMenu addItem:surgerySearch];
+            [[searchField cell] setSearchMenuTemplate:databaseSearchMenu];
+        }
         NSMenuItem *savedSearchType = [databaseSearchMenu itemWithTag:[[NSUserDefaults standardUserDefaults] integerForKey:@"searchType"]];
         if( savedSearchType == nil)
             savedSearchType = [databaseSearchMenu itemWithTag:0];
@@ -15680,6 +15725,32 @@ static volatile int numberOfThreadsForJPEG = 0;
 
 - (IBAction)querySelectedStudy: (id)sender
 {
+    id item = [sender isKindOfClass:[NSMenuItem class]] ? [sender representedObject] : nil;
+    if (item == nil && databaseOutline.selectedRow >= 0)
+        item = [databaseOutline itemAtRow:databaseOutline.selectedRow];
+    if (item == nil)
+        return;
+
+    if ([self isSurgicalProcedureItem:item])
+    {
+        SurgicalProcedureEvent *event = item;
+        NSString *patientID = [event.patientID stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        NSString *name = [[[event.name stringByReplacingOccurrencesOfString:@"^" withString:@" "]
+            stringByReplacingOccurrencesOfString:@"," withString:@" "] uppercaseString];
+        name = [name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if (patientID.length == 0 && name.length == 0)
+        {
+            HorosPresentCriticalAlert(NSLocalizedString(@"Patient details unavailable", nil),
+                NSLocalizedString(@"This surgery has no patient ID or name to query.", nil),
+                NSLocalizedString(@"OK", nil), nil, nil);
+            return;
+        }
+        if (![QueryController openPatientQueryWithID:patientID name:name])
+            HorosPresentCriticalAlert(NSLocalizedString(@"Query/Retrieve", nil),
+                NSLocalizedString(@"The Query/Retrieve window is busy. Finish or cancel its current query, then try again.", nil),
+                NSLocalizedString(@"OK", nil), nil, nil);
+        return;
+    }
     
     [self.window makeKeyAndOrderFront:sender];
     
@@ -15689,8 +15760,6 @@ static volatile int numberOfThreadsForJPEG = 0;
     
     // *****
     
-    NSIndexSet			*index = [databaseOutline selectedRowIndexes];
-    NSManagedObject		*item = [databaseOutline itemAtRow:[index firstIndex]];
     NSManagedObject		*studySelected;
     
     if (item)
@@ -16889,7 +16958,7 @@ static volatile int numberOfThreadsForJPEG = 0;
     [self outlineViewRefresh];
     [databaseOutline scrollRowToVisible: [databaseOutline selectedRow]];
     
-    if( searchType != HorosSeriesDescriptionSearchType && (_searchString.length > 2 || (_searchString.length >= 2 && searchType == 5)))
+    if( searchType != HorosSeriesDescriptionSearchType && searchType != HorosSurgerySearchType && (_searchString.length > 2 || (_searchString.length >= 2 && searchType == 5)))
     {
         @synchronized( self)
         {
@@ -16909,7 +16978,7 @@ static volatile int numberOfThreadsForJPEG = 0;
             distantSearchThread = nil;
         }
         
-        if( albumTable.selectedRow == 0 && searchType != HorosSeriesDescriptionSearchType)
+        if( albumTable.selectedRow == 0 && searchType != HorosSeriesDescriptionSearchType && searchType != HorosSurgerySearchType)
             [NSThread detachNewThreadSelector: @selector(searchForTimeIntervalFromTo:) toTarget:self withObject: [NSDictionary dictionaryWithObjectsAndKeys: timeIntervalStart, @"from", timeIntervalEnd, @"to", nil]];
     }
     else
@@ -17025,6 +17094,8 @@ static volatile int numberOfThreadsForJPEG = 0;
 
 - (NSString *)createFilterDescription
 {
+    if (searchType == HorosSurgerySearchType)
+        return [NSString stringWithFormat:NSLocalizedString(@" / Search: Surgeries = %@", nil), _searchString ?: @""];
     NSString *description = nil;
     
     if( [_searchString length] > 0)
@@ -17408,6 +17479,8 @@ static volatile int numberOfThreadsForJPEG = 0;
 
 - (void)invalidateSamePatientStudyGroupCache
 {
+    [_surgerySearchEvents release];
+    _surgerySearchEvents = nil;
     [_samePatientStudyGroupCache release];
     _samePatientStudyGroupCache = nil;
     _samePatientStudyGroupDatabaseModification = 0;
@@ -17668,6 +17741,32 @@ static volatile int numberOfThreadsForJPEG = 0;
                                        sortDescriptors:(NSArray *)sortDescriptors
                                         presentEvents:(BOOL)presentEvents
 {
+    if (searchType == HorosSurgerySearchType)
+    {
+        NSTimeInterval modification = self.database.timeOfLastModification;
+        if (_surgerySearchEvents == nil || modification != _surgerySearchDatabaseModification)
+        {
+            [_surgerySearchEvents release];
+            _surgerySearchEvents = [[NSMutableDictionary alloc] init];
+            _surgerySearchDatabaseModification = modification;
+        }
+        NSMutableArray *events = [NSMutableArray array];
+        for (id study in items)
+        {
+            if (![self isSurgicalProcedureStudy:study])
+                continue;
+            NSString *key = [study XID];
+            NSArray *studyEvents = [_surgerySearchEvents objectForKey:key];
+            if (studyEvents == nil)
+            {
+                studyEvents = [SurgicalProcedureTimelineStore eventsForSurgicalProcedureStudies:@[study]];
+                [_surgerySearchEvents setObject:studyEvents forKey:key];
+            }
+            [events addObjectsFromArray:studyEvents];
+        }
+        return [[SurgicalProcedureTimelineStore events:events matchingWords:_searchString ?: @""]
+            sortedArrayUsingDescriptors:sortDescriptors];
+    }
     if( items.count == 0)
         return items ?: [NSArray array];
 
@@ -17799,6 +17898,9 @@ static volatile int numberOfThreadsForJPEG = 0;
 
 - (NSPredicate *)createFilterPredicateIncludingSeriesDescriptions:(BOOL)includeSeriesDescriptions
 {
+    if (searchType == HorosSurgerySearchType)
+        return [NSPredicate predicateWithFormat:@"modality ==[c] %@ AND studyName ==[c] %@",
+            @"SR", [StructuredReportSupport surgicalProcedureStudyDescription]];
     NSPredicate *predicate = nil;
     NSString *s = nil;
     

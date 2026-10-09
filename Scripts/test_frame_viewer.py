@@ -9,6 +9,28 @@ CATALOGUE = ROOT / "Horos/Resources/FrameElectrodes"
 
 
 class FrameViewerChecks(unittest.TestCase):
+    def test_automatic_frame_detection_and_acceptance(self):
+        viewer = (ROOT / "Horos/Sources/FrameViewer/FrameViewerWindowController.swift").read_text()
+        restoration = viewer.split("store.load {", 1)[1].split("@available", 1)[0]
+        self.assertIn("!self.isClosed", restoration)
+        self.assertIn("if self.plan.frameFit == nil", restoration)
+        self.assertIn("self.startFrameDetection(automatic: true)", restoration)
+        self.assertIn("acceptedFit.reviewed = fit.rmsMM < 1.0", viewer)
+        self.assertIn('self.apply(next, action: "Read Leksell Frame")', viewer)
+        self.assertIn("if !automatic { NSAlert(error: error).runModal() }", viewer)
+        reader = (ROOT / "Horos/Sources/FrameViewer/LeksellFrameReader.swift").read_text()
+        self.assertIn("try result.validate()", reader)
+        self.assertIn("maximumErrorMM <= 2", reader)
+
+    def test_frame_detection_cancels_on_close_or_plan_import(self):
+        viewer = (ROOT / "Horos/Sources/FrameViewer/FrameViewerWindowController.swift").read_text()
+        closing = viewer.split("func windowShouldClose", 1)[1].split("private func button", 1)[0]
+        importing = viewer.split("@objc private func openPlan()", 1)[1]
+        for section in (closing, importing):
+            self.assertIn("detectionProgress?.cancel()", section)
+            self.assertIn("detectionProgress = nil", section)
+        self.assertIn("self.detectionProgress === progress, !progress.isCancelled", viewer)
+
     def test_catalogue(self):
         entries = list(CATALOGUE.glob("*.txt"))
         self.assertEqual(len(entries), 33)

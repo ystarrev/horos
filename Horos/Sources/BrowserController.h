@@ -98,6 +98,8 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
     long					loadPreviewIndex, previousNoOfFiles;
     NSManagedObject			*previousItem;
     NSCache                 *_samePatientStudyGroupCache;
+    NSMutableDictionary     *_surgerySearchEvents;
+    NSTimeInterval          _surgerySearchDatabaseModification;
     NSTimeInterval          _samePatientStudyGroupDatabaseModification;
     
     long					previousBonjourIndex;

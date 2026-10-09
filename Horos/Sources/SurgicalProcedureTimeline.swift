@@ -117,7 +117,7 @@ final class SurgicalProcedureEvent: NSObject {
     var modality: String { "SURG" }
     var displayTitle: String { operation.isEmpty ? "Surgery" : "Surgery: \(operation)" }
     var studyInstanceUID: String { "procedure:\(identifier)" }
-    var studyName: String { diagnosis }
+    var studyName: String { operation }
     var noFiles: NSNumber { NSNumber(value: 0) }
     var rawNoFiles: NSNumber { NSNumber(value: 0) }
     var numberOfImages: NSNumber { NSNumber(value: 0) }
@@ -140,12 +140,18 @@ final class SurgicalProcedureEvent: NSObject {
     @objc(displayValueForColumnIdentifier:)
     func displayValue(forColumnIdentifier identifier: String) -> Any {
         switch identifier {
-        case "name": return displayTitle
+        case "name":
+            if UserDefaults.standard.bool(forKey: "HIDEPATIENTNAME") {
+                return NSLocalizedString("Name hidden", comment: "")
+            }
+            let patientName = name.replacingOccurrences(of: "^", with: " ")
+                .trimmingCharacters(in: .whitespaces)
+            return UserDefaults.standard.bool(forKey: "CapitalizedString") ? patientName.capitalized : patientName
         case "date": return date
         case "dateOfBirth": return dateOfBirth ?? ""
         case "patientID": return patientID
         case "modality": return modality
-        case "studyName", "seriesDescription": return diagnosis
+        case "studyName", "seriesDescription": return studyName
         case "noFiles", "numberOfImages": return 0
         default: return ""
         }
@@ -209,6 +215,17 @@ final class SurgicalProcedureEvent: NSObject {
 
 @objcMembers
 final class SurgicalProcedureTimelineStore: NSObject {
+    @objc(events:matchingWords:)
+    class func events(_ events: [SurgicalProcedureEvent], matchingWords query: String) -> [SurgicalProcedureEvent] {
+        let words = query.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        return events.filter { event in
+            words.allSatisfy { word in
+                event.operation.range(of: word, options: [.caseInsensitive, .diacriticInsensitive]) != nil ||
+                event.diagnosis.range(of: word, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+            }
+        }
+    }
+
     @objc(eventsForSurgicalProcedureStudies:)
     class func events(forSurgicalProcedureStudies studies: [Any]) -> [SurgicalProcedureEvent] {
         StructuredReportSupport

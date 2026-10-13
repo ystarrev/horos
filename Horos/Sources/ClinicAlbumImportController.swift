@@ -345,7 +345,9 @@ private final class ClinicAlbumReviewController: NSWindowController, NSWindowDel
         task = Task { [weak self] in
             do {
                 let start = ProcessInfo.processInfo.systemUptime
-                let names = try await Self.recognize(data)
+                let names = try await Self.recognize(data) { [weak self] message in
+                    self?.status.stringValue = message
+                }
                 let recognized = ProcessInfo.processInfo.systemUptime
                 guard !Task.isCancelled, let self, let browser = self.browser else { return }
                 self.rows = names.map { Row(source: $0, query: $0.searchQuery, studies: [], included: false) }
@@ -374,7 +376,27 @@ private final class ClinicAlbumReviewController: NSWindowController, NSWindowDel
         }
     }
 
-    private nonisolated static func recognize(_ data: Data) async throws -> [ClinicName] {
+    private nonisolated static func recognize(_ data: Data,
+        progress: @MainActor @Sendable (String) -> Void) async throws -> [ClinicName] {
+        try Task.checkCancellation()
+        await progress("Recognizing patient names...")
+        // VNImageRequestHandler is synchronous; keep image preparation and OCR
+        // off the main actor and discard results if the review window closes.
+        let worker = Task.detached(priority: .userInitiated) {
+            try recognizeImage(data)
+        }
+        return try await withTaskCancellationHandler {
+            let names = try await worker.value
+            try Task.checkCancellation()
+            return names
+        } onCancel: {
+            worker.cancel()
+        }
+    }
+
+    private nonisolated static func recognizeImage(_ data: Data) throws -> [ClinicName] {
+        try Task.checkCancellation()
+        let start = ProcessInfo.processInfo.systemUptime
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -383,23 +405,35 @@ private final class ClinicAlbumReviewController: NSWindowController, NSWindowDel
               ] as CFDictionary) else {
             throw ClinicAlbumError.message("The clipboard image could not be read.")
         }
-        var request = RecognizeTextRequest()
+        let prepared = ProcessInfo.processInfo.systemUptime
+        let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
-        request.recognitionLanguages = [Locale.Language(identifier: "en-US")]
+        request.recognitionLanguages = ["en-US"]
         request.automaticallyDetectsLanguage = false
-        let observations = try await request.perform(on: image)
+        try Task.checkCancellation()
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        try Task.checkCancellation()
+        let observations = request.results ?? []
+        let names = recognizedNames(observations)
+        NSLog("CLINICALBUM mode=VN-accurate prepare=%.0fms OCR=%.0fms observations=%ld names=%ld pixels=%ldx%ld",
+              (prepared - start) * 1000, (ProcessInfo.processInfo.systemUptime - prepared) * 1000,
+              observations.count, names.count, image.width, image.height)
+        return names
+    }
+
+    private nonisolated static func recognizedNames(_ observations: [VNRecognizedTextObservation]) -> [ClinicName] {
         // Join OCR fragments on the same baseline before pairing names with age/sex lines.
-        let ordered = observations.sorted { $0.boundingBox.cgRect.midY > $1.boundingBox.cgRect.midY }
-        var lines: [[RecognizedTextObservation]] = []
+        let ordered = observations.sorted { $0.boundingBox.midY > $1.boundingBox.midY }
+        var lines: [[VNRecognizedTextObservation]] = []
         for observation in ordered {
             if let last = lines.last, let first = last.first,
-               abs(first.boundingBox.cgRect.midY - observation.boundingBox.cgRect.midY) < min(first.boundingBox.height, observation.boundingBox.height) * 0.45 {
+               abs(first.boundingBox.midY - observation.boundingBox.midY) < min(first.boundingBox.height, observation.boundingBox.height) * 0.45 {
                 lines[lines.count - 1].append(observation)
             } else { lines.append([observation]) }
         }
         return ClinicAlbumMatching.names(from: lines.map { line in
-            let texts = line.sorted { $0.boundingBox.cgRect.minX < $1.boundingBox.cgRect.minX }.compactMap { $0.topCandidates(1).first }
+            let texts = line.sorted { $0.boundingBox.minX < $1.boundingBox.minX }.compactMap { $0.topCandidates(1).first }
             return (texts.map(\.string).joined(separator: " "), texts.map(\.confidence).min() ?? 0)
         })
     }

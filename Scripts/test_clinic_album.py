@@ -17,9 +17,19 @@ class ClinicAlbumIntegrationTests(unittest.TestCase):
     def test_local_clipboard_ocr(self):
         self.assertIn("clipboard.data(forType: .png)", CONTROLLER)
         self.assertIn("kCGImageSourceThumbnailMaxPixelSize: 3000", CONTROLLER)
-        self.assertIn("RecognizeTextRequest()", CONTROLLER)
+        self.assertIn("VNRecognizeTextRequest()", CONTROLLER)
         self.assertIn("request.usesLanguageCorrection = false", CONTROLLER)
         self.assertNotIn("URLSession", CONTROLLER)
+
+    def test_accurate_ocr_stays_off_main_actor(self):
+        self.assertIn("request.recognitionLevel = .accurate", CONTROLLER)
+        self.assertNotIn(".RecognitionLevel.fast", CONTROLLER)
+        self.assertIn("Task.detached(priority: .userInitiated)", CONTROLLER)
+        self.assertIn("withTaskCancellationHandler", CONTROLLER)
+        self.assertIn("worker.cancel()", CONTROLLER)
+        self.assertIn("VNImageRequestHandler(cgImage: image).perform([request])", CONTROLLER)
+        self.assertIn("let names = recognizedNames(observations)", CONTROLLER)
+        self.assertIn("observations=%ld names=%ld", CONTROLLER)
 
     def test_isolated_and_revalidated_commit(self):
         self.assertIn(".privateQueueConcurrencyType", CONTROLLER)

@@ -1,4 +1,5 @@
 #import "HorosDCMTKCondition.h"
+#import "HorosActivityScope.h"
 /*
  *
  *  Copyright (C) 1994-2005, OFFIS
@@ -175,6 +176,7 @@ static const char* transferSyntaxes[] = {
 
 
 - (BOOL)echo{
+    HorosActivityScope activity;
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 	BOOL connection_Status = NO;
 	OFCondition cond;

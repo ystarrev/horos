@@ -218,6 +218,8 @@ public final class HorosDirectTransferService: NSObject {
         activityThread: Thread?
     ) -> Bool {
 
+        let activity = HorosActivityToken.begin()
+        defer { activity.stop() }
         let connection = NWConnection(
             host: NWEndpoint.Host(host),
             port: NWEndpoint.Port(rawValue: UInt16(port))!,
@@ -282,6 +284,8 @@ public final class HorosDirectTransferService: NSObject {
     }
 
     private func receiveConnection(over connection: NWConnection) {
+        let activity = HorosActivityToken.begin()
+        defer { activity.stop() }
         do {
             try waitUntilReady(connection, timeout: 8, thread: nil)
             let magic = try receiveExactly(Self.magic.count, from: connection, timeout: 30, thread: nil)
@@ -357,6 +361,8 @@ public final class HorosDirectTransferService: NSObject {
               let requestData = try? JSONSerialization.data(withJSONObject: items),
               requestData.count <= 4 * 1_024 * 1_024 else { return false }
         guard let session = stateQueue.sync(execute: { serverSessions[sessionID] }) else { return false }
+        let activity = HorosActivityToken.begin()
+        defer { activity.stop() }
 
         do {
             let started = CFAbsoluteTimeGetCurrent()
@@ -441,6 +447,7 @@ public final class HorosDirectTransferService: NSObject {
               capability.controlConnection == nil else { return }
 
         capability.isConnecting = true
+        let activity = HorosActivityToken.begin()
         let connection = makeConnection(host: capability.host, port: capability.directPort)
         let connectionToken = capability.token
         capability.controlConnection = connection
@@ -458,6 +465,7 @@ public final class HorosDirectTransferService: NSObject {
         }
         connection.start(queue: Self.ioQueue)
         Self.ioQueue.async { [weak self, weak connection] in
+            defer { activity.stop() }
             guard let self, let connection else { return }
             do {
                 try self.waitUntilReady(connection, timeout: 8, thread: nil)
@@ -486,6 +494,9 @@ public final class HorosDirectTransferService: NSObject {
                     capability.isConnecting = false
                 }
                 NSLog("Horos direct check-in connected to %@ as session %@", capability.host, sessionID)
+                // The control socket stays open while idle; only its handshake
+                // and subsequent commands are pending network operations.
+                activity.stop()
                 self.runControlLoop(connection, capability: capability, key: key)
             } catch {
                 NSLog("Horos direct check-in to %@ failed: %@", capability.host, error.localizedDescription)
@@ -522,6 +533,8 @@ public final class HorosDirectTransferService: NSObject {
         do {
             while connection.state == .ready {
                 let header = try receiveExactly(8, from: connection, timeout: 45, thread: nil)
+                let activity = HorosActivityToken.begin()
+                defer { activity.stop() }
                 guard let command = HorosDirectControlCommand(rawValue: header.networkUInt32(at: 0)) else {
                     throw DirectTransferError.invalidProtocol
                 }
@@ -696,6 +709,8 @@ public final class HorosDirectTransferService: NSObject {
                 guard let self else { return }
                 do {
                     try session.sendQueue.sync {
+                        let activity = HorosActivityToken.begin()
+                        defer { activity.stop() }
                         try self.sendControlCommand(.ping, data: Data(), over: session.connection)
                         let acknowledgement = try self.receiveExactly(4, from: session.connection, timeout: 10, thread: nil)
                         guard acknowledgement.networkUInt32(at: 0) == 0 else {

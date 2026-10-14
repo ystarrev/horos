@@ -31,6 +31,13 @@ class ClinicAlbumIntegrationTests(unittest.TestCase):
         self.assertIn("let names = recognizedNames(observations)", CONTROLLER)
         self.assertIn("observations=%ld names=%ld", CONTROLLER)
 
+    def test_accurate_ocr_uses_supported_cpu_devices(self):
+        self.assertIn("try request.supportedComputeStageDevices", CONTROLLER)
+        self.assertIn("if case .cpu = $0", CONTROLLER)
+        self.assertIn("request.setComputeDevice(cpu, for: stage)", CONTROLLER)
+        self.assertIn("mode=VN-accurate-CPU", CONTROLLER)
+        self.assertNotIn("request.usesCPUOnly", CONTROLLER)
+
     def test_isolated_and_revalidated_commit(self):
         self.assertIn(".privateQueueConcurrencyType", CONTROLLER)
         self.assertIn("study(object) == expected", CONTROLLER)

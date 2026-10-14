@@ -42,6 +42,7 @@
 #import "DCMTKImageQueryNode.h"
 #import "DicomStudy.h"
 #import "WaitRendering.h"
+#import "HorosActivityScope.h"
 #import "DCMTKQueryNode.h"
 #import "DCMCalendarDate.h"
 #import "DCMNetServiceDelegate.h"
@@ -1758,6 +1759,7 @@ extern "C" BOOL HorosRetrieveDICOMQueryItems(
 
 - (void) requestAssociationThread: (NSMutableDictionary*) dict
 {
+    HorosActivityScope activity;
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 	
 	T_ASC_Network *net = (T_ASC_Network*) [[dict objectForKey: @"net"] pointerValue];
@@ -1809,6 +1811,7 @@ extern "C" BOOL HorosRetrieveDICOMQueryItems(
 
 - (void) cFindThread: (NSMutableDictionary*) dict
 {
+    HorosActivityScope activity;
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 	
     [NSThread currentThread].name = @"CFind Thread";
@@ -1947,6 +1950,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 //common network code for move and query
 - (BOOL)setupNetworkWithSyntax:(const char *)abstractSyntax dataset:(DcmDataset *)dataset destination:(NSString*) destination
 {
+    HorosActivityScope activity;
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 	BOOL succeed = YES;
 	

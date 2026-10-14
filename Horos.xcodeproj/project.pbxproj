@@ -1904,6 +1904,7 @@
 		F4A100000002000000000020 /* Horos/Sources/HorosDatabaseNetworkSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/HorosDatabaseNetworkSettings.swift; sourceTree = SOURCE_ROOT; };
 		F4AC70010002000000000001 /* HorosActivityTaskCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HorosActivityTaskCoordinator.swift; path = Horos/Sources/HorosActivityTaskCoordinator.swift; sourceTree = SOURCE_ROOT; };
 		F4AC70010003000000000001 /* HorosSwiftInterop.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = HorosSwiftInterop.h; path = Horos/Sources/HorosSwiftInterop.h; sourceTree = SOURCE_ROOT; };
+		F4AC70010003000000000002 /* HorosActivityScope.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = HorosActivityScope.h; path = Horos/Sources/HorosActivityScope.h; sourceTree = SOURCE_ROOT; };
 		F4D1EC700002000000000001 /* HorosDirectTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HorosDirectTransfer.swift; path = Horos/Sources/HorosDirectTransfer.swift; sourceTree = SOURCE_ROOT; };
 		F4D1EC700002000000000002 /* HorosDirectTransferDICOM.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = HorosDirectTransferDICOM.h; path = Horos/Sources/HorosDirectTransferDICOM.h; sourceTree = SOURCE_ROOT; };
 		F4A100000002000000000016 /* Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Horos/Sources/MetalViewer/Metal3DSurfaceExtractor.mm; sourceTree = SOURCE_ROOT; };
@@ -2132,6 +2133,7 @@
 			children = (
 				F4AC70010002000000000001 /* HorosActivityTaskCoordinator.swift */,
 				F4AC70010003000000000001 /* HorosSwiftInterop.h */,
+				F4AC70010003000000000002 /* HorosActivityScope.h */,
 				59F5F4EA11F485CC0047A90D /* BrowserController+Activity.h */,
 				59F5F4EB11F485CC0047A90D /* BrowserController+Activity.mm */,
 				5926823E11CF62DA00CFA81F /* ThreadCell.h */,

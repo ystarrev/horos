@@ -1,4 +1,5 @@
 #import "HorosDCMTKCondition.h"
+#include "HorosActivityScope.h"
 /*=========================================================================
  This file is part of the Horos Project (www.horosproject.org)
  
@@ -813,6 +814,7 @@ static OFCondition cstore(T_ASC_Association * assoc, const OFString& fname)
 	
 - (void)run:(NSOperation*) operation
 {
+    HorosActivityScope activity;
 	NSException* localException = nil;
 	
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
@@ -1659,6 +1661,7 @@ static NSString *HorosFastStoreFailure(NSString *stage, const OFCondition &condi
 
 - (void)run:(NSOperation *)operation
 {
+    HorosActivityScope activity;
     if ([operation isCancelled] || [_filesToSend count] == 0)
         return;
 

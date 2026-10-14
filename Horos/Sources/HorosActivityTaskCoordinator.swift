@@ -1,5 +1,60 @@
 import AppKit
 
+/// An operation owns its token until completion, including failure and cancellation.
+/// The registry retains identifiers, never tokens, so deinit is a final safety net.
+@objc(HorosActivityToken)
+final class HorosActivityToken: NSObject, @unchecked Sendable {
+    private final class Registry: @unchecked Sendable {
+        let lock = NSLock()
+        var identifiers = Set<UUID>()
+    }
+    private static let registry = Registry()
+    private let identifier = UUID()
+
+    @objc(beginActivity)
+    static func begin() -> HorosActivityToken {
+        let token = HorosActivityToken()
+        registry.lock.lock()
+        let wasIdle = registry.identifiers.isEmpty
+        registry.identifiers.insert(token.identifier)
+        registry.lock.unlock()
+        if wasIdle { refreshIcon() }
+        return token
+    }
+
+    @objc func stop() {
+        Self.registry.lock.lock()
+        let removed = Self.registry.identifiers.remove(identifier) != nil
+        let becameIdle = removed && Self.registry.identifiers.isEmpty
+        Self.registry.lock.unlock()
+        if becameIdle { Self.refreshIcon() }
+    }
+
+    fileprivate static var hasActiveOperations: Bool {
+        registry.lock.lock()
+        defer { registry.lock.unlock() }
+        return !registry.identifiers.isEmpty
+    }
+
+    private static func refreshIcon() {
+        // Read current state on the main queue, not a possibly stale snapshot
+        // captured by competing begin/stop calls on different network queues.
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                HorosActivityTaskCoordinator.shared.updateActivityDockIcon()
+            }
+        } else {
+            RunLoop.main.perform(inModes: [.common]) {
+                MainActor.assumeIsolated {
+                    HorosActivityTaskCoordinator.shared.updateActivityDockIcon()
+                }
+            }
+        }
+    }
+
+    deinit { stop() }
+}
+
 @objc(HorosActivityTask)
 final class HorosActivityTask: NSObject {
     @objc let thread: Thread
@@ -40,7 +95,6 @@ final class HorosActivityTaskCoordinator: NSObject {
     func register(thread: Thread) -> HorosActivityTask {
         let activity = activity(for: thread, createIfNeeded: true)!
         activity.isListed = true
-        updateActivityDockIcon()
         return activity
     }
 
@@ -81,7 +135,6 @@ final class HorosActivityTaskCoordinator: NSObject {
         for handler in handlers {
             handler()
         }
-        updateActivityDockIcon()
     }
 
     @objc(completeThread:)
@@ -106,9 +159,8 @@ final class HorosActivityTaskCoordinator: NSObject {
         return activity
     }
 
-    private func updateActivityDockIcon() {
-        let hasListedActivities = activities.values.contains(where: \.isListed)
-        if !hasListedActivities {
+    fileprivate func updateActivityDockIcon() {
+        if !HorosActivityToken.hasActiveOperations {
             guard dockIconTimer != nil else { return }
             dockIconTimer?.invalidate()
             dockIconTimer = nil

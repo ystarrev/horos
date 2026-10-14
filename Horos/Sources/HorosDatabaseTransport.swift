@@ -14,6 +14,8 @@ final class HorosDatabaseTransport: NSObject {
             throw transportError("Invalid shared-database address or port.")
         }
         let session = Session(host: host, port: endpointPort, cancelled: cancelled)
+        let activity = HorosActivityToken.begin()
+        defer { activity.stop() }
         defer { session.connection.cancel() }
         try session.start()
         try session.send(request)

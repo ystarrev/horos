@@ -91,10 +91,12 @@ final class HorosDatabaseServer: NSObject {
         let peer = HorosDatabasePeer(connection: connection)
         peers[identifier] = peer
         let handler = handler
+        let activity = HorosActivityToken.begin()
         workers.addOperation { [weak self] in
             autoreleasepool {
                 defer {
                     peer.cancel()
+                    activity.stop()
                     DispatchQueue.main.async { [weak self] in
                         self?.peers.removeValue(forKey: identifier)
                     }

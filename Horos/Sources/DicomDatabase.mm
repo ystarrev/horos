@@ -37,6 +37,7 @@
  ============================================================================*/
 
 #import "DicomDatabase.h"
+#import "HorosActivityScope.h"
 #import "NSString+N2.h"
 #import "NSString+SymlinksAndAliases.h"
 #import "Notifications.h"
@@ -1991,6 +1992,7 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
 
 -(NSArray*)addFilesAtPaths:(NSArray*)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles: (BOOL) importedFiles returnArray: (BOOL) returnArray
 {
+    HorosActivityScope activity;
     __block NSArray *result = nil;
     N2PerformManagedObjectContextBlockAndWait(self.managedObjectContext, ^{
         result = [[self addFilesAtPathsOnContextQueue:paths
@@ -3388,6 +3390,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
 
 -(void)copyFilesThread:(NSDictionary*)dict
 {
+    HorosActivityScope activity;
     @autoreleasepool
     {
         NSOperationQueue* queue = [[[NSOperationQueue alloc] init] autorelease];
@@ -4309,6 +4312,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
         [trace record:@"incoming_scan" since:stageStarted count:0];
         if( hasFiles)
         {
+            HorosActivityScope activity;
             NSThread* thread = [NSThread currentThread];
             thread.name = NSLocalizedString(@"Adding incoming files...", nil);
             [thread enterOperation];

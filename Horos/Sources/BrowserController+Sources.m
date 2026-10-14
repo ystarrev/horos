@@ -105,6 +105,8 @@ static BOOL HorosCanOpenTCPConnection(NSString *host, NSUInteger port, NSTimeInt
     if (![host length] || port == 0)
         return NO;
 
+    HorosActivityToken *activity = [HorosActivityToken beginActivity];
+    @try {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
@@ -168,6 +170,9 @@ static BOOL HorosCanOpenTCPConnection(NSString *host, NSUInteger port, NSTimeInt
 
     freeaddrinfo(addresses);
     return connected;
+    } @finally {
+        [activity stop];
+    }
 }
 
 static NSDictionary* HorosSourceTXTDictionaryFromRecordData(NSData *recordData)

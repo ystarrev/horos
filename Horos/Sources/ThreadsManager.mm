@@ -37,6 +37,21 @@
 
 #import "ThreadsManager.h"
 #import "HorosSwiftInterop.h"
+#import "HorosActivityScope.h"
+
+void *HorosBeginActivity(void)
+{
+    @autoreleasepool {
+        return (void *)[[HorosActivityToken beginActivity] retain];
+    }
+}
+
+void HorosEndActivity(void *token)
+{
+    HorosActivityToken *activity = (HorosActivityToken *)token;
+    [activity stop];
+    [activity release];
+}
 
 @interface ThreadsManager ()
 

@@ -1556,7 +1556,13 @@ static NSConditionLock *threadLock = nil;
     
     for( NSURL *url in URLs)
     {
-        NSData *data = [NSData dataWithContentsOfURL: url];
+        HorosActivityToken *activity = url.isFileURL ? nil : [HorosActivityToken beginActivity];
+        NSData *data = nil;
+        @try {
+            data = [NSData dataWithContentsOfURL: url];
+        } @finally {
+            [activity stop];
+        }
         
         if( data)
         {
@@ -12819,7 +12825,9 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
 {
 #ifdef WITH_BANNER
     NSURLRequest *request = [[[NSURLRequest alloc] initWithURL: [NSURL URLWithString:URL_HOROS_BANNER] cachePolicy:NSURLRequestReloadIgnoringLocalAndRemoteCacheData timeoutInterval: 30] autorelease];
+    HorosActivityToken *activity = [HorosActivityToken beginActivity];
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *imageData, NSURLResponse *response, NSError *error) {
+        @try {
         @autoreleasepool
         {
             if( imageData && error == nil && [response.MIMEType isEqualToString:@"image/png"])
@@ -12828,6 +12836,9 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
                 if( bannerImage)
                     [self performSelectorOnMainThread:@selector(installBanner:) withObject:bannerImage waitUntilDone:NO modes:@[NSRunLoopCommonModes]];
             }
+        }
+        } @finally {
+            [activity stop];
         }
     }];
     [task resume];

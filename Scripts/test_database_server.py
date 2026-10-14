@@ -120,10 +120,13 @@ class DatabaseServerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="horos-server-check-") as folder:
             folder = Path(folder)
             swift_header = folder / "Server-Swift.h"
+            swift_source = folder / "Server.swift"
+            swift_source.write_text((SOURCES / "HorosActivityTaskCoordinator.swift").read_text() +
+                                    "\n" + SERVER)
             result = subprocess.run([
                 "xcrun", "swiftc", "-typecheck", "-swift-version", "5", "-warnings-as-errors",
                 "-module-name", "ServerCheck", "-module-cache-path", str(folder / "cache"),
-                "-emit-objc-header-path", str(swift_header), str(SOURCES / "HorosDatabaseServer.swift"),
+                "-emit-objc-header-path", str(swift_header), str(swift_source),
             ], capture_output=True, text=True, timeout=90)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             declarations = swift_header.read_text()

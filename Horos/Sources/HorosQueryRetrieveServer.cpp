@@ -1,4 +1,5 @@
 #include "HorosQueryRetrieveServer.h"
+#include "HorosActivityScope.h"
 
 #include <dcmtk/dcmdata/dctk.h>
 #include <dcmtk/dcmnet/scpthrd.h>
@@ -23,6 +24,10 @@
 class HorosAssociationProcesses
 {
 public:
+    ~HorosAssociationProcesses()
+    {
+        for (const Process& process : processes_) HorosEndActivity(process.activity);
+    }
     size_t countChildProcesses() const { return processes_.size(); }
 
     bool haveProcessWithWriteAccess(const char* calledAE) const
@@ -43,7 +48,7 @@ public:
                 context.acceptedRole != ASC_SC_ROLE_SCP)
                 canStore = true;
         }
-        processes_.push_back({pid, association->params->DULparams.calledAPTitle, canStore});
+        processes_.push_back({pid, association->params->DULparams.calledAPTitle, canStore, HorosBeginActivity()});
     }
 
     void cleanChildren()
@@ -53,12 +58,14 @@ public:
         processes_.erase(std::remove_if(processes_.begin(), processes_.end(), [](const Process& process) {
             int status = 0;
             const pid_t result = waitpid(process.id, &status, WNOHANG);
-            return result == process.id || (result < 0 && errno == ECHILD);
+            const bool finished = result == process.id || (result < 0 && errno == ECHILD);
+            if (finished) HorosEndActivity(process.activity);
+            return finished;
         }), processes_.end());
     }
 
 private:
-    struct Process { pid_t id; OFString calledAE; bool canStore; };
+    struct Process { pid_t id; OFString calledAE; bool canStore; void *activity; };
     std::vector<Process> processes_;
 };
 
@@ -584,6 +591,9 @@ OFCondition HorosQueryRetrieveServer::waitForAssociation(T_ASC_Network* network)
 {
     processes_->cleanChildren();
     if (!ASC_associationWaiting(network, 1)) return EC_Normal;
+    // Begin in the parent only. Forked workers never call the UI bridge; their
+    // tokens are released by the parent's existing child-process cleanup.
+    HorosActivityScope activity;
 
     T_ASC_Association* association = NULL;
     OFCondition result = ASC_receiveAssociation(network, &association, options_.maxPDU_, NULL, NULL,

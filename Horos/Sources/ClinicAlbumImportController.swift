@@ -411,12 +411,23 @@ private final class ClinicAlbumReviewController: NSWindowController, NSWindowDel
         request.usesLanguageCorrection = false
         request.recognitionLanguages = ["en-US"]
         request.automaticallyDetectsLanguage = false
+        // Small clinic screenshots do not need accelerator setup. Explicit CPU
+        // execution avoids the TextRecognition E5RT initialization failures.
+        for (stage, devices) in try request.supportedComputeStageDevices {
+            guard let cpu = devices.first(where: {
+                if case .cpu = $0 { return true }
+                return false
+            }) else {
+                throw ClinicAlbumError.message("Accurate text recognition is unavailable on the CPU. Please restart Horos and try again.")
+            }
+            request.setComputeDevice(cpu, for: stage)
+        }
         try Task.checkCancellation()
         try VNImageRequestHandler(cgImage: image).perform([request])
         try Task.checkCancellation()
         let observations = request.results ?? []
         let names = recognizedNames(observations)
-        NSLog("CLINICALBUM mode=VN-accurate prepare=%.0fms OCR=%.0fms observations=%ld names=%ld pixels=%ldx%ld",
+        NSLog("CLINICALBUM mode=VN-accurate-CPU prepare=%.0fms OCR=%.0fms observations=%ld names=%ld pixels=%ldx%ld",
               (prepared - start) * 1000, (ProcessInfo.processInfo.systemUptime - prepared) * 1000,
               observations.count, names.count, image.width, image.height)
         return names

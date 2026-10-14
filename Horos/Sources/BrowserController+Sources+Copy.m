@@ -406,6 +406,7 @@ static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread 
 -(void)copyImagesToPhoneVolumeRenderThread:(NSArray*)io
 {
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
+    HorosActivityToken *activity = [[HorosActivityToken beginActivity] retain];
     NSThread* thread = [NSThread currentThread];
     int socketFD = -1;
     NSURL* packageDirectory = nil;
@@ -510,6 +511,8 @@ static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread 
         if (socketFD >= 0) close(socketFD);
         if (packageDirectory) [[NSFileManager defaultManager] removeItemAtURL:packageDirectory error:nil];
         [exporter release];
+        [activity stop];
+        [activity release];
         [pool release];
     }
 }

@@ -73,6 +73,8 @@
 + (BOOL) isDICOMFile:(NSString *) file; /**< Test for DICOM file format */
 + (BOOL) isDICOMFile:(NSString *) file compressed:(BOOL*) compressed; /**< Test for DICOM file format, returns YES for compressed BOOL if Transfer syntax is compressed. */
 + (BOOL) isDICOMFile:(NSString *) file compressed:(BOOL*) compressed image:(BOOL*) image;
+// Classify metadata already read by an importer without reopening the file.
++ (void)classifySOPClassUID:(NSString *)sopClassUID transferSyntaxUID:(NSString *)transferSyntaxUID compressed:(BOOL *)compressed image:(BOOL *)image;
 + (BOOL) isXMLDescriptedFile:(NSString *) file; /**< Test for XML descripted  file format */
 + (BOOL) isXMLDescriptorFile:(NSString *) file; /**< Test for XML descriptor file format. Fake DICOM for other files with XML descriptor*/
 + (void) setDefaults;  /**< Set DEFAULTSSET flag to NO */

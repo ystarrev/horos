@@ -316,31 +316,25 @@ static BOOL HorosModernDCMTKDecompressFile(NSString *sourcePath, NSString *desti
 
         if (bridgeFn(path.UTF8String, &isEncapsulated, &rows, &columns, &modalityCString, &sopClassUIDCString))
         {
-            if (isEncapsulated)
-                return NO;
-
             NSString *modality = HorosModernDCMTKCopiedString(modalityCString) ?: @"OT";
             NSString *SOPClassUID = HorosModernDCMTKCopiedString(sopClassUIDCString) ?: @"";
-
-            if( [DCMAbstractSyntaxUID isImageStorage: SOPClassUID] == YES &&
-               [SOPClassUID isEqualToString:[DCMAbstractSyntaxUID pdfStorageClassUID]] == NO &&
-               [SOPClassUID isEqualToString:[DCMAbstractSyntaxUID EncapsulatedCDAStorage]] == NO &&
-               [DCMAbstractSyntaxUID isStructuredReport: SOPClassUID] == NO)
-            {
-                int resolution = 0;
-                if( resolution == 0 || resolution > rows)
-                    resolution = rows;
-                if( resolution == 0 || resolution > columns)
-                    resolution = columns;
-
-                int quality, compression = [BrowserController compressionForModality: modality quality: &quality resolution: resolution];
-                return compression != compression_none;
-            }
-
-            return NO;
+            return [self shouldCompressSOPClassUID:SOPClassUID modality:modality rows:rows columns:columns
+                                   isEncapsulated:isEncapsulated != 0];
         }
     }
     return NO;
+}
+
++(BOOL)shouldCompressSOPClassUID:(NSString *)sopClassUID modality:(NSString *)modality rows:(NSInteger)rows columns:(NSInteger)columns isEncapsulated:(BOOL)isEncapsulated {
+    if (isEncapsulated || ![DCMAbstractSyntaxUID isImageStorage:sopClassUID] ||
+        [sopClassUID isEqualToString:[DCMAbstractSyntaxUID pdfStorageClassUID]] ||
+        [sopClassUID isEqualToString:[DCMAbstractSyntaxUID EncapsulatedCDAStorage]] ||
+        [DCMAbstractSyntaxUID isStructuredReport:sopClassUID]) return NO;
+
+    NSInteger resolution = rows;
+    if (resolution == 0 || resolution > columns) resolution = columns;
+    int quality;
+    return [BrowserController compressionForModality:modality quality:&quality resolution:(int)resolution] != compression_none;
 }
 
 

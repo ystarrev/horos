@@ -1,8 +1,10 @@
 #include "HorosQueryRetrieveServer.h"
 #include "HorosActivityScope.h"
+#include "HorosDICOMStoreValidation.h"
 
 #include <dcmtk/dcmdata/dctk.h>
 #include <dcmtk/dcmnet/scpthrd.h>
+#include <dcmtk/dcmnet/diutil.h>
 #include <dcmtk/dcmqrdb/dcmqrcbf.h>
 #include <dcmtk/dcmqrdb/dcmqrcbm.h>
 #include <dcmtk/dcmqrdb/dcmqrcbs.h>
@@ -11,10 +13,15 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
+#include <future>
 #include <fcntl.h>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <sys/file.h>
 #include <sys/param.h>
 #include <sys/wait.h>
@@ -29,6 +36,18 @@ public:
         for (const Process& process : processes_) HorosEndActivity(process.activity);
     }
     size_t countChildProcesses() const { return processes_.size(); }
+
+    bool reserveThreadStorage(const OFString& calledAE)
+    {
+        std::lock_guard<std::mutex> lock(storageMutex_);
+        return threadWriters_.insert(calledAE).second;
+    }
+
+    void releaseThreadStorage(const OFString& calledAE)
+    {
+        std::lock_guard<std::mutex> lock(storageMutex_);
+        threadWriters_.erase(calledAE);
+    }
 
     bool haveProcessWithWriteAccess(const char* calledAE) const
     {
@@ -67,9 +86,65 @@ public:
 private:
     struct Process { pid_t id; OFString calledAE; bool canStore; void *activity; };
     std::vector<Process> processes_;
+    std::mutex storageMutex_;
+    std::set<OFString> threadWriters_;
+};
+
+// Only the acceptor accesses the futures. Each future owns one association;
+// completed workers are reaped here and all remaining workers drain on shutdown.
+class HorosAssociationThreads
+{
+public:
+    explicit HorosAssociationThreads(size_t limit) : limit_(limit) { workers_.reserve(limit); }
+    ~HorosAssociationThreads() { wait(); }
+
+    bool start(std::function<void()> operation)
+    {
+        reap();
+        if (workers_.size() >= limit_) return false;
+        workers_.push_back(std::async(std::launch::async, std::move(operation)));
+        return true;
+    }
+
+    void reap()
+    {
+        workers_.erase(std::remove_if(workers_.begin(), workers_.end(), [](std::future<void>& worker) {
+            if (worker.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return false;
+            finish(worker);
+            return true;
+        }), workers_.end());
+    }
+
+    void wait()
+    {
+        for (auto& worker : workers_) finish(worker);
+        workers_.clear();
+    }
+
+private:
+    static void finish(std::future<void>& worker)
+    {
+        try { worker.get(); }
+        catch (const std::exception& error) { DCMQRDB_ERROR("Horos listener worker: " << error.what()); }
+        catch (...) { DCMQRDB_ERROR("Horos listener worker failed with an unknown exception"); }
+    }
+
+    size_t limit_;
+    std::vector<std::future<void>> workers_;
 };
 
 namespace {
+
+struct AssociationDeleter
+{
+    void operator()(T_ASC_Association* association) const
+    {
+        if (!association) return;
+        ASC_dropAssociation(association);
+        ASC_destroyAssociation(&association);
+    }
+};
+using IncomingAssociation = std::unique_ptr<T_ASC_Association, AssociationDeleter>;
 
 class ScopedFileLock
 {
@@ -336,6 +411,54 @@ void storeCallback(void* data, T_DIMSE_StoreProgress* progress, T_DIMSE_C_StoreR
         progress, request, path, dataset, response, detail);
 }
 
+class StreamedStoreContext
+{
+public:
+    StreamedStoreContext(DcmQueryRetrieveDatabaseHandle& database, const DcmQueryRetrieveOptions& options,
+                         const char* path, E_TransferSyntax syntax, DIC_US status)
+        : database_(database), options_(options), path_(path), syntax_(syntax), status_(status) {}
+
+    DIC_US status() const { return status_; }
+
+    static void callback(void* data, T_DIMSE_StoreProgress* progress, T_DIMSE_C_StoreRQ* request,
+                         char*, DcmDataset**, T_DIMSE_C_StoreRSP* response, DcmDataset** detail)
+    {
+        if (progress->state == DIMSE_StoreEnd)
+            static_cast<StreamedStoreContext*>(data)->complete(*request, *response, detail);
+    }
+
+    void complete(const T_DIMSE_C_StoreRQ& request, T_DIMSE_C_StoreRSP& response, DcmDataset** detail)
+    {
+        *detail = NULL;
+        if (response.DimseStatus == STATUS_Success) response.DimseStatus = status_;
+        if (response.DimseStatus == STATUS_Success && !options_.ignoreStoreData_)
+        {
+            response.DimseStatus = HorosValidateReceivedStore(path_, request, syntax_, options_.correctUIDPadding_);
+            if (response.DimseStatus == STATUS_Success)
+            {
+                // DIMSE_storeProvider has closed and checked the stream before this callback.
+                DcmQueryRetrieveDatabaseStatus dbStatus(STATUS_Success);
+                OFCondition result = database_.storeRequest(request.AffectedSOPClassUID,
+                    request.AffectedSOPInstanceUID, path_, &dbStatus);
+                response.DimseStatus = dbStatus.status();
+                if (result.bad() && response.DimseStatus == STATUS_Success)
+                    response.DimseStatus = STATUS_STORE_Refused_OutOfResources;
+                *detail = dbStatus.extractStatusDetail();
+            }
+        }
+        status_ = response.DimseStatus;
+        if (status_ != STATUS_Success)
+            DCMQRDB_WARN("Horos streamed C-STORE failed: " << DU_cstoreStatusString(status_));
+    }
+
+private:
+    DcmQueryRetrieveDatabaseHandle& database_;
+    const DcmQueryRetrieveOptions& options_;
+    const char* path_;
+    E_TransferSyntax syntax_;
+    DIC_US status_;
+};
+
 class QueryRetrieveAssociation : public DcmThreadSCP
 {
 public:
@@ -350,15 +473,23 @@ public:
         setRespondWithCalledAETitle(OFTrue);
         forceAssociationRefuse(options_.refuse_);
         setACSETimeout(options_.acse_timeout_);
-        setDIMSEBlockingMode(DIMSE_BLOCKING);
+        setDIMSEBlockingMode(options_.blockMode_);
+        setDIMSETimeout(options_.dimse_timeout_);
         setProgressNotificationMode(OFFalse);
+    }
+
+    ~QueryRetrieveAssociation() override
+    {
+        database_.reset();
+        if (!storageWriterAE_.empty()) processes_.releaseThreadStorage(storageWriterAE_);
     }
 
 protected:
     void notifyAssociationRequest(const T_ASC_Parameters& parameters, DcmSCPActionType& action) override
     {
         if ((options_.rejectWhenNoImplementationClassUID_ && !parameters.theirImplementationClassUID[0]) ||
-            processes_.countChildProcesses() >= static_cast<size_t>(options_.maxAssociations_))
+            (!options_.singleProcess_ &&
+             processes_.countChildProcesses() >= static_cast<size_t>(options_.maxAssociations_)))
             action = DCMSCP_ACTION_REFUSE_ASSOCIATION;
     }
 
@@ -409,8 +540,27 @@ protected:
         if (result.bad()) return result;
 
         const char* calledAE = association_->params->DULparams.calledAPTitle;
-        const bool refuseStorage = !config_.writableStorageArea(calledAE) ||
-            (options_.refuseMultipleStorageAssociations_ && processes_.haveProcessWithWriteAccess(calledAE));
+        bool refuseStorage = !config_.writableStorageArea(calledAE);
+        if (!refuseStorage && options_.refuseMultipleStorageAssociations_)
+        {
+            if (!options_.singleProcess_)
+                refuseStorage = processes_.haveProcessWithWriteAccess(calledAE);
+            else if (storageWriterAE_.empty())
+            {
+                for (int index = 0; index < ASC_countPresentationContexts(association_->params); ++index)
+                {
+                    T_ASC_PresentationContext context;
+                    if (ASC_getPresentationContext(association_->params, index, &context).good() &&
+                        context.resultReason == ASC_P_ACCEPTANCE && dcmIsaStorageSOPClassUID(context.abstractSyntax) &&
+                        context.acceptedRole != ASC_SC_ROLE_SCP)
+                    {
+                        if (processes_.reserveThreadStorage(calledAE)) storageWriterAE_ = calledAE;
+                        else refuseStorage = true;
+                        break;
+                    }
+                }
+            }
+        }
         for (int index = 0; index < ASC_countPresentationContexts(association_->params); ++index)
         {
             T_ASC_PresentationContext context;
@@ -533,35 +683,61 @@ private:
 
     OFCondition store(T_DIMSE_C_StoreRQ& request, T_ASC_PresentationContextID id)
     {
-        DcmFileFormat file;
-        DcmQueryRetrieveStoreContext context(*database_, options_, STATUS_Success, &file, options_.correctUIDPadding_);
+        DIC_US status = STATUS_Success;
         char path[MAXPATHLEN + 1] = {};
         if (!dcmIsaStorageSOPClassUID(request.AffectedSOPClassUID))
-            context.setStatus(STATUS_STORE_Refused_SOPClassNotSupported);
+            status = STATUS_STORE_Refused_SOPClassNotSupported;
         else if (!options_.ignoreStoreData_ && database_->makeNewStoreFileName(request.AffectedSOPClassUID,
             request.AffectedSOPInstanceUID, path, sizeof(path)).bad())
-            context.setStatus(STATUS_STORE_Refused_OutOfResources);
-        if (!path[0] || context.getStatus() != STATUS_Success)
+            status = STATUS_STORE_Refused_OutOfResources;
+        if (!options_.ignoreStoreData_ && !path[0] && status == STATUS_Success)
+            status = STATUS_STORE_Refused_OutOfResources;
+        const OFString stagingPath(path);
+        if (!path[0] || status != STATUS_Success)
             OFStandard::strlcpy(path, NULL_DEVICE_NAME, sizeof(path));
 
-        ScopedFileLock lock(path, true);
-        if (!lock.valid())
+        std::unique_ptr<ScopedFileLock> lock;
+        if (strcmp(path, NULL_DEVICE_NAME) != 0)
         {
-            context.setStatus(STATUS_STORE_Refused_OutOfResources);
-            OFStandard::strlcpy(path, NULL_DEVICE_NAME, sizeof(path));
+            lock.reset(new ScopedFileLock(path, true));
+            if (!lock->valid())
+            {
+                status = STATUS_STORE_Refused_OutOfResources;
+                OFStandard::strlcpy(path, NULL_DEVICE_NAME, sizeof(path));
+            }
         }
-        context.setFileName(path);
-        file.getMetaInfo()->putAndInsertString(DCM_SourceApplicationEntityTitle,
-            association_->params->DULparams.callingAPTitle);
-        DcmDataset* dataset = file.getDataset();
-        // Even a refused store must consume the incoming dataset before replying.
-        OFCondition result = DIMSE_storeProvider(association_, id, &request,
-            options_.bitPreserving_ ? path : NULL, options_.useMetaheader_,
-            options_.bitPreserving_ ? NULL : &dataset, storeCallback, &context,
-            options_.blockMode_, options_.dimse_timeout_);
-        if (!options_.ignoreStoreData_ && (result.bad() || context.getStatus() != STATUS_Success))
+
+        OFCondition result;
+        if (options_.bitPreserving_)
         {
-            if (strcmp(path, NULL_DEVICE_NAME) != 0) OFStandard::deleteFile(path);
+            T_ASC_PresentationContext accepted;
+            result = ASC_findAcceptedPresentationContext(association_->params, id, &accepted);
+            if (result.good())
+            {
+                StreamedStoreContext context(*database_, options_, path,
+                    DcmXfer(accepted.acceptedTransferSyntax).getXfer(), status);
+                // Even a refused store must consume the dataset before sending its response.
+                result = DIMSE_storeProvider(association_, id, &request, path, options_.useMetaheader_,
+                    NULL, StreamedStoreContext::callback, &context, options_.blockMode_, options_.dimse_timeout_);
+                status = context.status();
+            }
+        }
+        else
+        {
+            // Retain DCMTK's dataset writer for callers explicitly requesting normalization.
+            DcmFileFormat file;
+            DcmQueryRetrieveStoreContext context(*database_, options_, status, &file, options_.correctUIDPadding_);
+            context.setFileName(path);
+            file.getMetaInfo()->putAndInsertString(DCM_SourceApplicationEntityTitle,
+                association_->params->DULparams.callingAPTitle);
+            DcmDataset* dataset = file.getDataset();
+            result = DIMSE_storeProvider(association_, id, &request, NULL, options_.useMetaheader_,
+                &dataset, storeCallback, &context, options_.blockMode_, options_.dimse_timeout_);
+            status = context.getStatus();
+        }
+        if (!options_.ignoreStoreData_ && (result.bad() || status != STATUS_Success))
+        {
+            if (!stagingPath.empty() && stagingPath != NULL_DEVICE_NAME) OFStandard::deleteFile(stagingPath.c_str());
             database_->pruneInvalidRecords();
         }
         return result;
@@ -575,6 +751,35 @@ private:
     HorosAssociationProcesses& processes_;
     OFBool secureConnection_;
     std::unique_ptr<DcmQueryRetrieveDatabaseHandle> database_;
+    OFString storageWriterAE_;
+};
+
+struct ThreadedAssociationRequest
+{
+    ThreadedAssociationRequest(IncomingAssociation incoming, const DcmQueryRetrieveConfig& config,
+        const DcmQueryRetrieveOptions& options, const DcmQueryRetrieveDatabaseHandleFactory& factory,
+        const DcmAssociationConfiguration& profiles, HorosAssociationProcesses& processes, OFBool secure)
+        : association(std::move(incoming)), config(config), options(options), factory(factory),
+          profiles(profiles), processes(processes), secureConnection(secure) {}
+
+    IncomingAssociation association;
+    const DcmQueryRetrieveConfig& config;
+    const DcmQueryRetrieveOptions& options;
+    const DcmQueryRetrieveDatabaseHandleFactory& factory;
+    const DcmAssociationConfiguration& profiles;
+    HorosAssociationProcesses& processes;
+    OFBool secureConnection;
+    HorosActivityScope activity;
+
+    static void run(void* context)
+    {
+        auto& request = *static_cast<ThreadedAssociationRequest*>(context);
+        QueryRetrieveAssociation worker(request.association.get(), request.config, request.options,
+            request.factory, request.profiles, request.processes, request.secureConnection);
+        // DcmThreadSCP takes ownership before negotiation. The worker and its
+        // database handle are destroyed inside the Cocoa autorelease pool.
+        worker.run(request.association.release());
+    }
 };
 
 } // namespace
@@ -583,12 +788,21 @@ HorosQueryRetrieveServer::HorosQueryRetrieveServer(const DcmQueryRetrieveConfig&
     const DcmQueryRetrieveOptions& options, const DcmQueryRetrieveDatabaseHandleFactory& factory,
     const DcmAssociationConfiguration& associations, OFBool secureConnection)
     : config_(config), options_(options), factory_(factory), associations_(associations),
-      secureConnection_(secureConnection), processes_(new HorosAssociationProcesses) {}
+      secureConnection_(secureConnection), processes_(new HorosAssociationProcesses),
+      // The legacy process limit is 800 in Horos. Bound simultaneous worker
+      // stacks and receive buffers while still allowing parallel PACS transfers.
+      threads_(new HorosAssociationThreads(std::max(1, std::min(16, options.maxAssociations_)))) {}
 
 HorosQueryRetrieveServer::~HorosQueryRetrieveServer() = default;
 
+void HorosQueryRetrieveServer::waitForWorkers()
+{
+    threads_->wait();
+}
+
 OFCondition HorosQueryRetrieveServer::waitForAssociation(T_ASC_Network* network)
 {
+    threads_->reap();
     processes_->cleanChildren();
     if (!ASC_associationWaiting(network, 1)) return EC_Normal;
     // Begin in the parent only. Forked workers never call the UI bridge; their
@@ -598,15 +812,29 @@ OFCondition HorosQueryRetrieveServer::waitForAssociation(T_ASC_Network* network)
     T_ASC_Association* association = NULL;
     OFCondition result = ASC_receiveAssociation(network, &association, options_.maxPDU_, NULL, NULL,
         secureConnection_, DUL_BLOCK, options_.acse_timeout_);
-    if (result.bad())
+    IncomingAssociation incoming(association);
+    if (result.bad()) return result;
+    if (options_.singleProcess_)
     {
-        if (association)
+        auto request = std::make_shared<ThreadedAssociationRequest>(
+            std::move(incoming), config_, options_, factory_, associations_, *processes_, secureConnection_);
+        try
         {
-            ASC_dropAssociation(association);
-            ASC_destroyAssociation(&association);
+            if (threads_->start([request]() mutable {
+                // Release activity on return or exception, before the future is reaped.
+                auto activeRequest = std::move(request);
+                HorosRunListenerWorker(ThreadedAssociationRequest::run, activeRequest.get());
+            })) return EC_Normal;
         }
-        return result;
+        catch (const std::exception& error)
+        {
+            DCMQRDB_ERROR("Horos listener: cannot start association worker: " << error.what());
+        }
+        T_ASC_RejectParameters rejection = {ASC_RESULT_REJECTEDTRANSIENT,
+            ASC_SOURCE_SERVICEPROVIDER_PRESENTATION_RELATED, ASC_REASON_SP_PRES_LOCALLIMITEXCEEDED};
+        ASC_rejectAssociation(request->association.get(), &rejection);
+        return EC_Normal;
     }
     QueryRetrieveAssociation worker(association, config_, options_, factory_, associations_, *processes_, secureConnection_);
-    return worker.run(association);
+    return worker.run(incoming.release());
 }

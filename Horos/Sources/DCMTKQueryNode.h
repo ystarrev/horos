@@ -67,11 +67,13 @@
 	NSUInteger _countOfSuboperations, _countOfSuccessfulSuboperations;
 	NSArray *_batchQueryNodes;
 	volatile NSUInteger _batchQueryCompleted;
+	BOOL _queryCompletedSuccessfully;
 }
 
 @property BOOL dontCatchExceptions;
 @property BOOL isAutoRetrieve;
 @property BOOL noSmartMode;
+@property (readonly) BOOL queryCompletedSuccessfully;
 @property NSUInteger countOfSuboperations, countOfSuccessfulSuboperations;
 
 + (id)queryNodeWithDataset:(DcmDataset *)dataset

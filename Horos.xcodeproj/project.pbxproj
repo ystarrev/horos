@@ -1938,6 +1938,7 @@
 		F4QRDBQ000000000000002 /* dcmqrdbq.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = dcmqrdbq.mm; sourceTree = "<group>"; };
 		F4DC37010001000000000002 /* HorosQueryRetrieveServer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = HorosQueryRetrieveServer.cpp; sourceTree = "<group>"; };
 		F4DC37010001000000000003 /* HorosQueryRetrieveServer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HorosQueryRetrieveServer.h; sourceTree = "<group>"; };
+		F4DC37010001000000000004 /* HorosDICOMStoreValidation.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HorosDICOMStoreValidation.h; sourceTree = "<group>"; };
 		F4B700000002000000000001 /* Horos/Sources/MetalViewer/HorosPhoneVolumeExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Horos/Sources/MetalViewer/HorosPhoneVolumeExporter.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -3104,6 +3105,7 @@
 				F4QRDBQ000000000000002 /* dcmqrdbq.mm */,
 				F4DC37010001000000000002 /* HorosQueryRetrieveServer.cpp */,
 				F4DC37010001000000000003 /* HorosQueryRetrieveServer.h */,
+				F4DC37010001000000000004 /* HorosDICOMStoreValidation.h */,
 				BF9201E90883667800A3D77B /* OsiriXSCPDataHandler.mm */,
 				BFBCD8A509E4C2E40078ABB6 /* DCMTKServiceClassUser.h */,
 				BFBCD8A609E4C2E40078ABB6 /* DCMTKServiceClassUser.mm */,

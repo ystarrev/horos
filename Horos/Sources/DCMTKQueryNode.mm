@@ -73,6 +73,7 @@
 #include <dcmtk/dcmdata/dcfilefo.h>
 #include <dcmtk/dcmdata/dcdict.h>
 #include "DCMTKTagCompatibility.h"
+#include "HorosDICOMStoreValidation.h"
 #include "HorosDirectTransferDICOM.h"
 #import "HorosSwiftInterop.h"
 #import "HorosDirectTransferBridge.h"
@@ -81,6 +82,9 @@
 #include <dcmtk/dcmdata/dcuid.h>     /* for dcmtk version name */
 #include <dcmtk/dcmnet/dicom.h>     /* for DICOM_APPLICATION_REQUESTOR */
 #include <dcmtk/dcmdata/dcostrmz.h>  /* for dcmZlibCompressionLevel */
+#include <cerrno>
+#include <stdio.h>
+#include <unistd.h>
 
 #ifdef WITH_OPENSSL
 #include <dcmtk/dcmtls/tlstrans.h>
@@ -275,6 +279,49 @@ getCallback(void *callbackData, T_DIMSE_C_GetRQ *request,
 	return;
 }
 
+struct HorosCGetStoreContext
+{
+    DicomDatabase *database;
+    NSString *filename;
+    NSString *incomingDirectory;
+    E_TransferSyntax syntax;
+    OFBool correctUIDPadding;
+    DIC_US status = STATUS_Success;
+    bool published = false;
+    bool retainStagedFile = false;
+
+    static void callback(void *data, T_DIMSE_StoreProgress *progress, T_DIMSE_C_StoreRQ *request,
+                         char*, DcmDataset**, T_DIMSE_C_StoreRSP *response, DcmDataset**)
+    {
+        if (progress->state != DIMSE_StoreEnd)
+            return;
+
+        auto& context = *static_cast<HorosCGetStoreContext*>(data);
+        if (response->DimseStatus == STATUS_Success)
+            response->DimseStatus = HorosValidateReceivedStore(context.filename.fileSystemRepresentation,
+                *request, context.syntax, context.correctUIDPadding);
+
+        if (response->DimseStatus == STATUS_Success)
+        {
+            NSString *destination = [context.incomingDirectory stringByAppendingPathComponent:context.filename.lastPathComponent];
+            // Never expose a copy in progress, cross a filesystem, or overwrite another arrival.
+            if (renamex_np(context.filename.fileSystemRepresentation, destination.fileSystemRepresentation, RENAME_EXCL) == 0)
+            {
+                context.published = true;
+                [context.database incomingFileDidBecomeAvailable];
+            }
+            else
+            {
+                int error = errno;
+                context.retainStagedFile = true;
+                response->DimseStatus = STATUS_STORE_Refused_OutOfResources;
+                NSLog(@"C-GET could not publish completed file %@: %s; retained for recovery", context.filename, strerror(error));
+            }
+        }
+        context.status = response->DimseStatus;
+    }
+};
+
 // DCMTK's legacy DIMSE_getUser cannot receive the same-association C-STORE
 // requests used by C-GET. Keep Horos's configured association and handle the
 // GET/STORE command sequence the same way as DCMTK's current DcmSCU API.
@@ -289,11 +336,14 @@ static OFCondition HorosReceiveCGet(T_ASC_Association *assoc,
                                     T_DIMSE_C_GetRSP *response,
                                     DcmDataset **statusDetail,
                                     DcmDataset **responseIdentifiers,
+                                    DicomDatabase *database,
                                     NSString *stagingDirectory,
+                                    NSString *incomingDirectory,
+                                    OFBool correctUIDPadding,
                                     NSUInteger *receivedObjectCount)
 {
     if (assoc == NULL || request == NULL || requestIdentifiers == NULL ||
-        response == NULL || stagingDirectory.length == 0)
+        response == NULL || database == nil || stagingDirectory.length == 0 || incomingDirectory.length == 0)
         return DIMSE_NULLKEY;
 
     if (statusDetail != NULL)
@@ -322,8 +372,19 @@ static OFCondition HorosReceiveCGet(T_ASC_Association *assoc,
 
     int responseCount = 0;
     BOOL receivedFinalResponse = NO;
+    BOOL cancelSent = NO;
+    OFCondition storeFailure = EC_Normal;
     while (condition == EC_Normal && receivedFinalResponse == NO)
     {
+        MyCallbackInfo *info = static_cast<MyCallbackInfo*>(callbackData);
+        if (!cancelSent && ([NSThread currentThread].isCancelled || (info && [info->node _abortAssociation])))
+        {
+            condition = DIMSE_sendCancelRequest(assoc, getPresentationContext, request->MessageID);
+            if (condition != EC_Normal)
+                break;
+            cancelSent = YES;
+        }
+
         T_DIMSE_Message incomingMessage;
         memset(&incomingMessage, 0, sizeof(incomingMessage));
         T_ASC_PresentationContextID incomingPresentationContext = 0;
@@ -344,7 +405,7 @@ static OFCondition HorosReceiveCGet(T_ASC_Association *assoc,
         if (incomingMessage.CommandField == DIMSE_C_GET_RSP)
         {
             *response = incomingMessage.msg.CGetRSP;
-            if (response->MessageIDBeingRespondedTo != request->MessageID)
+            if (incomingPresentationContext != getPresentationContext || response->MessageIDBeingRespondedTo != request->MessageID)
             {
                 char errorText[256];
                 OFStandard::snprintf(errorText,
@@ -394,25 +455,33 @@ static OFCondition HorosReceiveCGet(T_ASC_Association *assoc,
         else if (incomingMessage.CommandField == DIMSE_C_STORE_RQ)
         {
             delete commandStatusDetail;
-            NSString *filename = [[stagingDirectory stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]]
-                                  stringByAppendingPathExtension:@"dcm"];
-            condition = DIMSE_storeProvider(assoc,
-                                            incomingPresentationContext,
-                                            &incomingMessage.msg.CStoreRQ,
-                                            filename.fileSystemRepresentation,
-                                            OFTrue,
-                                            NULL,
-                                            NULL,
-                                            NULL,
-                                            blockMode,
-                                            timeout);
-            if (condition == EC_Normal)
+            @autoreleasepool
             {
-                if (receivedObjectCount != NULL)
+                T_ASC_PresentationContext accepted;
+                condition = ASC_findAcceptedPresentationContext(assoc->params, incomingPresentationContext, &accepted);
+                if (condition != EC_Normal)
+                    break;
+                if (!dcmIsaStorageSOPClassUID(incomingMessage.msg.CStoreRQ.AffectedSOPClassUID) ||
+                    strcmp(accepted.abstractSyntax, incomingMessage.msg.CStoreRQ.AffectedSOPClassUID) != 0)
+                {
+                    condition = DIMSE_BADMESSAGE;
+                    break;
+                }
+
+                NSString *filename = [[stagingDirectory stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]]
+                                      stringByAppendingPathExtension:@"dcm"];
+                HorosCGetStoreContext context = { database, filename, incomingDirectory,
+                    DcmXfer(accepted.acceptedTransferSyntax).getXfer(), correctUIDPadding };
+                condition = DIMSE_storeProvider(assoc, incomingPresentationContext,
+                    &incomingMessage.msg.CStoreRQ, filename.fileSystemRepresentation, OFTrue, NULL,
+                    HorosCGetStoreContext::callback, &context, blockMode, timeout);
+                if (context.published && receivedObjectCount != NULL)
                     ++(*receivedObjectCount);
+                if (!context.published && !context.retainStagedFile)
+                    [[NSFileManager defaultManager] removeItemAtPath:filename error:nil];
+                if (context.status != STATUS_Success && storeFailure == EC_Normal)
+                    storeFailure = context.status == STATUS_STORE_Refused_OutOfResources ? DIMSE_OUTOFRESOURCES : DIMSE_BADDATA;
             }
-            else
-                [[NSFileManager defaultManager] removeItemAtPath:filename error:nil];
         }
         else
         {
@@ -426,48 +495,7 @@ static OFCondition HorosReceiveCGet(T_ASC_Association *assoc,
         }
     }
 
-    return condition;
-}
-
-static OFCondition HorosPublishCGetFiles(DicomDatabase *database,
-                                         NSString *stagingDirectory,
-                                         NSUInteger receivedObjectCount)
-{
-    if (database == nil || stagingDirectory.length == 0)
-        return receivedObjectCount == 0 ? EC_Normal : DIMSE_OUTOFRESOURCES;
-
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    if (receivedObjectCount == 0)
-    {
-        [fileManager removeItemAtPath:stagingDirectory error:nil];
-        return EC_Normal;
-    }
-
-    NSError *error = nil;
-    NSString *incomingDirectory = database.incomingDirPath;
-    if (![fileManager createDirectoryAtPath:incomingDirectory
-                withIntermediateDirectories:YES
-                                 attributes:nil
-                                      error:&error])
-    {
-        NSLog(@"C-GET received %lu objects but could not prepare the incoming directory: %@",
-              (unsigned long)receivedObjectCount, error);
-        return DIMSE_OUTOFRESOURCES;
-    }
-
-    NSString *batchDirectory = [incomingDirectory stringByAppendingPathComponent:
-                                [NSString stringWithFormat:@"HorosCGet-%@", [[NSUUID UUID] UUIDString]]];
-    if (![fileManager moveItemAtPath:stagingDirectory toPath:batchDirectory error:&error])
-    {
-        NSLog(@"C-GET received %lu objects but could not publish them for import: %@",
-              (unsigned long)receivedObjectCount, error);
-        return DIMSE_OUTOFRESOURCES;
-    }
-
-    NSLog(@"C-GET received %lu object(s) into %@",
-          (unsigned long)receivedObjectCount, database.name);
-    [database initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
-    return EC_Normal;
+    return condition == EC_Normal ? storeFailure : condition;
 }
 
 
@@ -590,6 +618,7 @@ extern "C" BOOL HorosRetrieveDICOMQueryItems(
 @synthesize noSmartMode = _noSmartMode;
 
 @synthesize countOfSuboperations = _countOfSuboperations, countOfSuccessfulSuboperations = _countOfSuccessfulSuboperations;
+@synthesize queryCompletedSuccessfully = _queryCompletedSuccessfully;
 
 + (id)queryNodeWithDataset:(DcmDataset *)dataset
 			callingAET:(NSString *)myAET
@@ -852,6 +881,7 @@ extern "C" BOOL HorosRetrieveDICOMQueryItems(
 	{
         @try
         {
+            _queryCompletedSuccessfully = NO;
             [self purgeChildren];
             
             BOOL localAllocatedDataset = NO;
@@ -1020,6 +1050,8 @@ extern "C" BOOL HorosRetrieveDICOMQueryItems(
         [_batchQueryNodes release];
         _batchQueryNodes = [nodes copy];
         _batchQueryCompleted = 0;
+        for( DCMTKQueryNode *node in nodes)
+            node->_queryCompletedSuccessfully = NO;
 
         @try
         {
@@ -1042,7 +1074,14 @@ extern "C" BOOL HorosRetrieveDICOMQueryItems(
         NSLog( @"DICOM series expand: completed %lu/%lu study queries in %.3f s using one association batch",
                (unsigned long)completedQueries, (unsigned long)[nodes count], CFAbsoluteTimeGetCurrent() - startedAt);
 
-        return succeeded;
+        if( succeeded == NO || completedQueries != [nodes count])
+            return NO;
+
+        for( DCMTKQueryNode *node in nodes)
+            if( node.queryCompletedSuccessfully == NO)
+                return NO;
+
+        return YES;
     }
 }
 
@@ -1858,7 +1897,7 @@ extern "C" BOOL HorosRetrieveDICOMQueryItems(
 
 				_batchQueryCompleted++;
 
-				if( cond != EC_Normal)
+				if( cond != EC_Normal || node.queryCompletedSuccessfully == NO)
 					break;
 			}
 		}
@@ -2537,10 +2576,11 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
      *   fname - [in] Name of the file which shall be processed.
      */
 {
+    _queryCompletedSuccessfully = NO;
     DIC_US msgId = assoc->nextMsgID++;
     T_ASC_PresentationContextID presId;
     T_DIMSE_C_FindRQ req;
-    T_DIMSE_C_FindRSP rsp;
+    T_DIMSE_C_FindRSP rsp = {};
     DcmDataset *statusDetail = NULL;
     MyCallbackInfo callbackData;
     
@@ -2647,6 +2687,8 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
         }
         delete statusDetail;
     }
+
+    _queryCompletedSuccessfully = cond == EC_Normal && rsp.DimseStatus == STATUS_Success && _abortAssociation == NO;
 
     /* return */
     return cond;
@@ -2839,9 +2881,9 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 
 - (OFCondition)getSCU:(T_ASC_Association *)assoc  network:(T_ASC_Network *)net dataset:( DcmDataset *)dataset
 {
-	//add self to list of moves. Prevents deallocating  the move if a new query is done
-	[[MoveManager sharedManager] addMove:self];
 	(void)net;
+    self.countOfSuboperations = 0;
+    self.countOfSuccessfulSuboperations = 0;
 
 	T_ASC_PresentationContextID presId;
     T_DIMSE_C_GetRQ    req;
@@ -2858,6 +2900,9 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
     presId = ASC_findAcceptedPresentationContextID(assoc, UID_GETStudyRootQueryRetrieveInformationModel); //UID_GETStudyRootQueryRetrieveInformationModel UID_GETPatientStudyOnlyQueryRetrieveInformationModel
     if (presId == 0) return DIMSE_NOVALIDPRESENTATIONCONTEXTID;
 
+    [[MoveManager sharedManager] addMove:self];
+    @try
+    {
     if (_verbose)
 	{
         [HorosDCMTKVerboseLogLock() lock];
@@ -2879,49 +2924,53 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
  
 	
 	OFCondition cond = EC_Normal;
-	DicomDatabase *database = [[DicomDatabase activeLocalDatabase] retain];
+	DicomDatabase *database = [[NSThread currentThread].threadDictionary objectForKey:@"HorosViewingImportDatabase"];
+	database = [(database ?: [DicomDatabase activeLocalDatabase]) retain];
 	NSString *stagingDirectory = nil;
+	NSString *incomingDirectory = [database.incomingDirPath copy];
 	NSUInteger receivedObjectCount = 0;
-	if (database != nil)
+	@try
 	{
-		stagingDirectory = [[[database tempDirPath] stringByAppendingPathComponent:
-		                     [NSString stringWithFormat:@"HorosCGet-%@", [[NSUUID UUID] UUIDString]]] copy];
-		NSError *directoryError = nil;
-		if (![[NSFileManager defaultManager] createDirectoryAtPath:stagingDirectory
-		                                      withIntermediateDirectories:YES
-		                                                       attributes:nil
-		                                                            error:&directoryError])
+		if (database != nil && incomingDirectory.length > 0)
 		{
-			NSLog(@"Unable to create C-GET staging directory: %@", directoryError);
-			cond = DIMSE_OUTOFRESOURCES;
+			stagingDirectory = [[[database tempDirPath] stringByAppendingPathComponent:
+			                     [NSString stringWithFormat:@"HorosCGet-%@", [[NSUUID UUID] UUIDString]]] copy];
+			NSError *directoryError = nil;
+			NSFileManager *fileManager = [NSFileManager defaultManager];
+			if (![fileManager createDirectoryAtPath:incomingDirectory withIntermediateDirectories:YES attributes:nil error:&directoryError] ||
+			    ![fileManager createDirectoryAtPath:stagingDirectory withIntermediateDirectories:YES attributes:nil error:&directoryError])
+			{
+				NSLog(@"Unable to prepare C-GET receive directories: %@", directoryError);
+				cond = DIMSE_OUTOFRESOURCES;
+			}
 		}
+		else
+			cond = DIMSE_OUTOFRESOURCES;
+
+		if (cond == EC_Normal)
+			cond = HorosReceiveCGet(assoc, presId, &req, dataset, getCallback, &callbackData,
+			    _blockMode, _dimse_timeout, &rsp, &statusDetail, &rspIds, database,
+			    stagingDirectory, incomingDirectory, OFFalse, &receivedObjectCount);
+
+		if (receivedObjectCount > 0)
+			NSLog(@"C-GET published %lu completed object(s) into %@ during retrieval", (unsigned long)receivedObjectCount, database.name);
 	}
-	else
-		cond = DIMSE_OUTOFRESOURCES;
-
-	if (cond == EC_Normal)
-		cond = HorosReceiveCGet(assoc,
-		                            presId,
-		                            &req,
-		                            dataset,
-		                            getCallback,
-		                            &callbackData,
-		                            _blockMode,
-		                            _dimse_timeout,
-		                            &rsp,
-		                            &statusDetail,
-		                            &rspIds,
-		                            stagingDirectory,
-		                            &receivedObjectCount);
-
-	OFCondition publishCondition = HorosPublishCGetFiles(database, stagingDirectory, receivedObjectCount);
-	if (cond == EC_Normal && publishCondition != EC_Normal)
-		cond = publishCondition;
-	[stagingDirectory release];
-	[database release];
+	@finally
+	{
+		// Only remove an empty session directory. Keep any failed publication for recovery.
+		if (stagingDirectory.length > 0)
+			rmdir(stagingDirectory.fileSystemRepresentation);
+		if (receivedObjectCount > 0)
+			[database initiateImportFilesFromIncomingDirUnlessAlreadyImporting];
+		[stagingDirectory release];
+		[incomingDirectory release];
+		[database release];
+	}
 	
+    BOOL cancelled = [NSThread currentThread].isCancelled || _abortAssociation;
+    if (cancelled) _abortAssociation = YES;
     self.countOfSuboperations = rsp.NumberOfCompletedSubOperations+rsp.NumberOfFailedSubOperations+rsp.NumberOfWarningSubOperations+rsp.NumberOfRemainingSubOperations;
-    self.countOfSuccessfulSuboperations = rsp.NumberOfCompletedSubOperations;
+    self.countOfSuccessfulSuboperations = MIN((NSUInteger)rsp.NumberOfCompletedSubOperations, receivedObjectCount);
     
     if (cond == EC_Normal)
 	{
@@ -2937,7 +2986,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 		{
 			DIMSE_printCGetRSP(stdout, &rsp);
 			
-            if( showErrorMessage)
+            if( showErrorMessage && !cancelled)
                 [DCMTKQueryNode performSelectorOnMainThread:@selector(errorMessage:) withObject:[NSArray arrayWithObjects: NSLocalizedString(@"Get Failed", nil), [NSString stringWithUTF8String: DU_cgetStatusString(rsp.DimseStatus)], NSLocalizedString(@"Continue", nil), nil] waitUntilDone:NO];
 		}
 		
@@ -2955,7 +3004,7 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
     }
 	else
 	{
-        if( showErrorMessage)
+        if( showErrorMessage && !cancelled)
             [DCMTKQueryNode performSelectorOnMainThread:@selector(errorMessage:) withObject:[NSArray arrayWithObjects: NSLocalizedString(@"Get Failed", nil), [NSString stringWithUTF8String: cond.text()], NSLocalizedString(@"Continue", nil), nil] waitUntilDone:NO];
         if (_verbose) {
             errmsg("Get Failed:");
@@ -2967,14 +3016,16 @@ static NSString *releaseNetworkVariablesSync = @"releaseNetworkVariablesSync";
 	{
         printf("  Status Detail:\n");
         statusDetail->print(COUT);
-        delete statusDetail;
     }
 	
-    if (rspIds != NULL) delete rspIds;
-	
-	[[MoveManager sharedManager] removeMove:self];
-	
     return cond;
+    }
+    @finally
+    {
+        delete statusDetail;
+        delete rspIds;
+        [[MoveManager sharedManager] removeMove:self];
+    }
 }
 
 - (NSManagedObject *)logEntry{

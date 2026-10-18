@@ -50,4 +50,5 @@
 - (NSNumber*) numberOfImages;// Match DicomStudy
 - (NSDate*) dateOfBirth; // Match DicomStudy
 - (NSNumber*) noFiles; // Match DicomStudy
+- (DCMTKStudyQueryNode *)queryNodeForSeriesDiscovery;
 @end

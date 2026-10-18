@@ -8,9 +8,14 @@
 #include <memory>
 
 class HorosAssociationProcesses;
+class HorosAssociationThreads;
+
+// Enter Cocoa with an autorelease pool on each C++ association worker.
+extern "C" void HorosRunListenerWorker(void (*operation)(void*), void* context);
 
 // Application integration over stock DCMTK. DCMTK owns association/DIMSE
-// processing; Horos supplies database access and per-image C-GET selection.
+// processing; Horos supplies database access, streamed-store validation and
+// per-image C-GET selection.
 class HorosQueryRetrieveServer
 {
 public:
@@ -22,6 +27,7 @@ public:
     ~HorosQueryRetrieveServer();
 
     OFCondition waitForAssociation(T_ASC_Network* network);
+    void waitForWorkers();
 
 private:
     const DcmQueryRetrieveConfig& config_;
@@ -30,6 +36,7 @@ private:
     const DcmAssociationConfiguration& associations_;
     OFBool secureConnection_;
     std::unique_ptr<HorosAssociationProcesses> processes_;
+    std::unique_ptr<HorosAssociationThreads> threads_;
 
     HorosQueryRetrieveServer(const HorosQueryRetrieveServer&) = delete;
     HorosQueryRetrieveServer& operator=(const HorosQueryRetrieveServer&) = delete;

@@ -42,6 +42,7 @@
 @interface DicomDatabase (DCMTK)
 
 +(BOOL)fileNeedsDecompression:(NSString*)path;
++(BOOL)shouldCompressSOPClassUID:(NSString *)sopClassUID modality:(NSString *)modality rows:(NSInteger)rows columns:(NSInteger)columns isEncapsulated:(BOOL)isEncapsulated;
 // Export mode: 0 preserves the source representation, 1 compresses, 2 decompresses.
 +(BOOL)exportDicomFileAtPath:(NSString*)source toPath:(NSString*)destination compressionTag:(NSInteger)mode activityThread:(NSThread*)thread error:(NSError**)error;
 +(BOOL)compressDicomFilesAtPaths:(NSArray*)paths;

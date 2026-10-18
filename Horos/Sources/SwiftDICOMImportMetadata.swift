@@ -57,7 +57,7 @@ enum SwiftDICOMImportMetadata {
         }
     }
 
-    private static func buildDictionary(
+    static func buildDictionary(
         reader: SwiftDICOMReader,
         path: String,
         settings: SwiftDICOMImportSettings

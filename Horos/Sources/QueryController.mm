@@ -217,6 +217,43 @@ static NSInteger HorosQRSeriesRetrieveConcurrencyLimit(NSUInteger itemCount)
     return limit;
 }
 
+static NSArray *HorosQRMoveStudyIdentifier(NSDictionary *job)
+{
+    DCMTKQueryNode *node = [job objectForKey: @"query"];
+    NSString *studyUID = [node isKindOfClass: [DCMTKSeriesQueryNode class]] ? [(DCMTKSeriesQueryNode *)node studyInstanceUID] : [node uid];
+    return @[[node callingAET] ?: @"", [node calledAET] ?: @"", [node _hostname] ?: @"", @([node _port]),
+             studyUID ?: @"", [job objectForKey: @"retrieveMode"] ?: @0, [job objectForKey: @"moveDestination"] ?: @""];
+}
+
+static NSArray *HorosQRCompleteSeriesForStudy(DCMTKStudyQueryNode *study, DCMTKStudyQueryNode *query)
+{
+    if( query.queryCompletedSuccessfully == NO)
+        return nil;
+
+    NSMutableArray *series = [NSMutableArray array];
+    NSMutableSet *seriesUIDs = [NSMutableSet set];
+    BOOL allCountsKnown = YES;
+    NSUInteger imageCount = 0;
+    for( DCMTKSeriesQueryNode *node in [query children])
+    {
+        if( [node isKindOfClass: [DCMTKSeriesQueryNode class]] == NO || node.uid.length == 0 ||
+            [node.studyInstanceUID isEqualToString: study.uid] == NO)
+            return nil;
+
+        if( [seriesUIDs containsObject: node.uid])
+            continue;
+        [seriesUIDs addObject: node.uid];
+        [series addObject: node];
+        allCountsKnown = allCountsKnown && node.numberImages != nil;
+        imageCount += node.numberImages.unsignedIntegerValue;
+    }
+
+    if( series.count == 0 || (allCountsKnown && study.numberImages.unsignedIntegerValue > 0 && imageCount != study.numberImages.unsignedIntegerValue))
+        return nil;
+
+    return series;
+}
+
 static NSString *HorosQRRetrieveStatusForObject(id object, NSUInteger itemCount)
 {
     NSString *status = nil;
@@ -327,6 +364,7 @@ extern "C"
 - (BOOL)addPendingRetrieveAndViewItem:(id)item;
 - (void)retrieveAndViewItem:(id)item;
 - (void)performRetrieveForViewing:(NSArray *)items;
+- (NSArray *)retrieveJobsByExpandingStudies:(NSArray *)jobs;
 - (void)viewQueryItem:(id)item;
 - (void)checkAndView:(NSDictionary *)request;
 - (void)removePendingRetrieveAndViewItem:(id)item;
@@ -4214,6 +4252,98 @@ extern "C"
     }
 }
 
+- (NSArray *)retrieveJobsByExpandingStudies:(NSArray *)jobs
+{
+    NSMutableDictionary *studies = [NSMutableDictionary dictionary];
+    NSMutableDictionary *queriesByEndpoint = [NSMutableDictionary dictionary];
+    for( NSDictionary *job in jobs)
+    {
+        DCMTKQueryNode *node = [job objectForKey: @"query"];
+        if( [node isKindOfClass: [DCMTKStudyQueryNode class]] == NO || node.uid.length == 0)
+            continue;
+
+        NSArray *identifier = HorosQRMoveStudyIdentifier(job);
+        if( [studies objectForKey: identifier])
+            continue;
+
+        DCMTKStudyQueryNode *query = [(DCMTKStudyQueryNode *)node queryNodeForSeriesDiscovery];
+        [studies setObject: query forKey: identifier];
+        NSString *endpoint = [self queryEndpointIdentifierForItem: query];
+        NSMutableArray *queries = [queriesByEndpoint objectForKey: endpoint];
+        if( queries == nil)
+        {
+            queries = [NSMutableArray array];
+            [queriesByEndpoint setObject: queries forKey: endpoint];
+        }
+        [queries addObject: query];
+    }
+
+    CFAbsoluteTime startedAt = CFAbsoluteTimeGetCurrent();
+    for( NSArray *queries in [queriesByEndpoint allValues])
+    {
+        if( [NSThread currentThread].isCancelled)
+            return @[];
+
+        [NSThread currentThread].status = NSLocalizedString(@"Loading series for retrieval...", nil);
+        @try
+        {
+            [[queries firstObject] queryNodesWithSingleAssociation: queries];
+        }
+        @catch( NSException *exception)
+        {
+            N2LogExceptionWithStackTrace(exception);
+        }
+    }
+
+    if( [NSThread currentThread].isCancelled)
+        return @[];
+
+    NSMutableArray *result = [NSMutableArray array];
+    NSMutableSet *scheduled = [NSMutableSet set];
+    for( NSDictionary *job in jobs)
+    {
+        DCMTKQueryNode *node = [job objectForKey: @"query"];
+        NSArray *identifier = HorosQRMoveStudyIdentifier(job);
+        if( [node isKindOfClass: [DCMTKSeriesQueryNode class]])
+        {
+            // A selected parent study already covers this series, even if discovery failed.
+            if( [studies objectForKey: identifier])
+                continue;
+            identifier = [identifier arrayByAddingObject: node.uid ?: @""];
+        }
+        if( [scheduled containsObject: identifier])
+            continue;
+        [scheduled addObject: identifier];
+
+        DCMTKStudyQueryNode *query = [studies objectForKey: identifier];
+        NSArray *series = query ? HorosQRCompleteSeriesForStudy((DCMTKStudyQueryNode *)node, query) : nil;
+        if( series == nil)
+        {
+            [result addObject: job];
+            if( query)
+                NSLog(@"Retrieve STUDY %@: series discovery incomplete; retaining whole-study request", node.uid);
+            continue;
+        }
+
+        // Each pending series contributes one unfinished operation until its result is known.
+        node.countOfSuboperations = series.count;
+        node.countOfSuccessfulSuboperations = 0;
+        for( DCMTKSeriesQueryNode *child in series)
+        {
+            child.study = (DCMTKStudyQueryNode *)node;
+            NSMutableDictionary *seriesJob = [[job mutableCopy] autorelease];
+            [seriesJob setObject: child forKey: @"query"];
+            [seriesJob setObject: node forKey: @"studyQuery"];
+            [result addObject: seriesJob];
+        }
+    }
+
+    if( studies.count)
+        NSLog(@"Retrieve STUDY expansion: %lu studies into %lu request(s) in %.3f s", (unsigned long)studies.count,
+              (unsigned long)result.count, CFAbsoluteTimeGetCurrent() - startedAt);
+    return result;
+}
+
 - (void) performRetrieve:(NSArray*) array
 {
     if ( [[BrowserController currentBrowser] database] == nil) // During SB rebuild
@@ -4330,22 +4460,26 @@ extern "C"
 		[dictionary release];
 		[subPool release];
 
-        BOOL canRetrieveSeriesConcurrently = allowNonCMOVE && moveArray.count > 1;
+        BOOL canRetrieveConcurrently = allowNonCMOVE && HorosQRSeriesRetrieveConcurrencyLimit(2) > 1;
         for( NSDictionary *d in moveArray)
         {
             id object = [d objectForKey: @"query"];
-            if( [object isMemberOfClass: [DCMTKSeriesQueryNode class]] == NO || [[d objectForKey: @"retrieveMode"] intValue] != CMOVERetrieveMode)
+            if( ([object isMemberOfClass: [DCMTKSeriesQueryNode class]] == NO && [object isMemberOfClass: [DCMTKStudyQueryNode class]] == NO) ||
+                [[d objectForKey: @"retrieveMode"] intValue] != CMOVERetrieveMode)
             {
-                canRetrieveSeriesConcurrently = NO;
+                canRetrieveConcurrently = NO;
                 break;
             }
         }
 
-        NSInteger concurrentRetrieveCount = canRetrieveSeriesConcurrently ? HorosQRSeriesRetrieveConcurrencyLimit( moveArray.count) : 1;
+        if( canRetrieveConcurrently)
+            moveArray = [NSMutableArray arrayWithArray: [self retrieveJobsByExpandingStudies: moveArray]];
+
+        NSInteger concurrentRetrieveCount = canRetrieveConcurrently ? HorosQRSeriesRetrieveConcurrencyLimit( moveArray.count) : 1;
 
         if( concurrentRetrieveCount > 1)
         {
-            NSLog( @"Retrieve SERIES concurrency: %ld association(s) for %lu series", (long) concurrentRetrieveCount, (unsigned long) moveArray.count);
+            NSLog( @"Retrieve concurrency: %ld association(s) for %lu request(s)", (long) concurrentRetrieveCount, (unsigned long) moveArray.count);
 
             NSMutableArray *moveQueue = [[NSMutableArray alloc] initWithArray: moveArray];
             NSMutableArray *threads = [NSMutableArray array];
@@ -4379,6 +4513,7 @@ extern "C"
                                 break;
 
                             DCMTKQueryNode *object = [[d objectForKey: @"query"] retain];
+                            DCMTKQueryNode *studyQuery = [d objectForKey: @"studyQuery"];
                             [retrieveThread setStatus: HorosQRRetrieveStatusForObject( object, moveArray.count)];
 
                             CFAbsoluteTime itemRetrieveStartTime = CFAbsoluteTimeGetCurrent();
@@ -4402,19 +4537,27 @@ extern "C"
                                 NSLog( @"Retrieve ITEM FAILED: %@ %@ after %.3f s", NSStringFromClass( [object class]), [object uid], CFAbsoluteTimeGetCurrent() - itemRetrieveStartTime);
                             }
 
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                [outlineView reloadItem: object];
-                            });
-
-                            @synchronized( previousAutoRetrieve)
+                            if( studyQuery == nil)
                             {
-                                [previousAutoRetrieve removeObjectForKey: [QueryController stringIDForStudy: object]];
+                                @synchronized( previousAutoRetrieve)
+                                {
+                                    [previousAutoRetrieve removeObjectForKey: [QueryController stringIDForStudy: object]];
+                                }
                             }
 
                             [progressLock lock];
+                            if( studyQuery)
+                            {
+                                studyQuery.countOfSuboperations += MAX((NSUInteger)1, object.countOfSuboperations) - 1;
+                                studyQuery.countOfSuccessfulSuboperations += object.countOfSuccessfulSuboperations;
+                            }
                             completedRetrieveCount++;
                             retrieveThread.progress = (float) completedRetrieveCount / (float) [moveArray count];
                             [progressLock unlock];
+
+                            dispatch_async(dispatch_get_main_queue(), ^{
+                                [outlineView reloadItem: studyQuery ?: object];
+                            });
 
                             [object release];
                             [d release];
@@ -4469,7 +4612,10 @@ extern "C"
             int i = 0;
             for( NSDictionary *d in moveArray)
             {
+                if( [NSThread currentThread].isCancelled)
+                    break;
                 DCMTKQueryNode *object = [d objectForKey: @"query"];
+                DCMTKQueryNode *studyQuery = [d objectForKey: @"studyQuery"];
                 [NSThread currentThread].status = HorosQRRetrieveStatusForObject( object, moveArray.count);
 
                 CFAbsoluteTime itemRetrieveStartTime = CFAbsoluteTimeGetCurrent();
@@ -4498,14 +4644,15 @@ extern "C"
                     NSLog( @"Retrieve ITEM FAILED: %@ %@ after %.3f s", NSStringFromClass( [object class]), [object uid], CFAbsoluteTimeGetCurrent() - itemRetrieveStartTime);
                 }
 
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [outlineView reloadItem: object];
-                });
-
-                @synchronized( previousAutoRetrieve)
+                if( studyQuery)
                 {
-                    [previousAutoRetrieve removeObjectForKey: [QueryController stringIDForStudy: object]];
+                    studyQuery.countOfSuboperations += MAX((NSUInteger)1, object.countOfSuboperations) - 1;
+                    studyQuery.countOfSuccessfulSuboperations += object.countOfSuccessfulSuboperations;
                 }
+
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [outlineView reloadItem: studyQuery ?: object];
+                });
 
                 [NSThread currentThread].progress = (float) ++i / (float) [moveArray count];
                 if( [NSThread currentThread].isCancelled)
@@ -4517,21 +4664,6 @@ extern "C"
                 }
             }
         }
-		
-		@synchronized( previousAutoRetrieve)
-		{
-			for( DCMTKQueryNode *object in [moveArray valueForKey: @"query"])
-			{
-				@try
-				{
-					[previousAutoRetrieve removeObjectForKey: [QueryController stringIDForStudy: object]];
-				}
-				@catch (NSException * e)
-				{
-					NSLog( @"performRetrieve previousAutoRetrieve removeObjectForKey exception: %@", e);
-				}
-			}
-		}
 		
 		CFAbsoluteTime retrieveMoveEndTime = CFAbsoluteTimeGetCurrent();
 		NSLog( @"Retrieve MOVE PHASE END after %.3f s", retrieveMoveEndTime - retrieveStartTime);
@@ -4563,8 +4695,16 @@ extern "C"
 		N2LogExceptionWithStackTrace( e);
 	}
 	
+	@synchronized( previousAutoRetrieve)
+	{
+		for( DCMTKQueryNode *object in array)
+			[previousAutoRetrieve removeObjectForKey: [QueryController stringIDForStudy: object]];
+	}
+
 	BOOL cancelled = [NSThread currentThread].isCancelled;
 	dispatch_async(dispatch_get_main_queue(), ^{
+		for( id item in array)
+			[outlineView reloadItem: item];
 		for( id item in array)
 			[HorosMetalViewerRetrievalBenchmark transferFinishedWithStudyUID: [item isKindOfClass: [DCMTKSeriesQueryNode class]] ? [item studyInstanceUID] : [item uid]
 			                                                    seriesUID: [item isKindOfClass: [DCMTKSeriesQueryNode class]] ? [item uid] : nil

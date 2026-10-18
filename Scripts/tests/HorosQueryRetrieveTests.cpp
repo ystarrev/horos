@@ -6,6 +6,14 @@
 #include <dcmtk/dcmdata/dcrledrg.h>
 #include <fstream>
 #include <iterator>
+#include <atomic>
+#include <stdexcept>
+#include <thread>
+
+// This fixture has no AppKit process or activity icon.
+extern "C" void* HorosBeginActivity() { return NULL; }
+extern "C" void HorosEndActivity(void*) {}
+extern "C" void HorosRunListenerWorker(void (*operation)(void*), void* context) { operation(context); }
 
 static void Check(bool condition, const char* message)
 {
@@ -14,6 +22,58 @@ static void Check(bool condition, const char* message)
         fprintf(stderr, "FAIL: %s\n", message);
         exit(EXIT_FAILURE);
     }
+}
+
+static void TestConcurrentWorkers()
+{
+    HorosAssociationThreads workers(2);
+    std::promise<void> release, firstStarted, secondStarted;
+    auto gate = release.get_future().share();
+    auto first = firstStarted.get_future(), second = secondStarted.get_future();
+    std::atomic<unsigned> completed{0};
+    Check(workers.start([&] { firstStarted.set_value(); gate.wait(); ++completed; }), "First worker admitted");
+    Check(first.wait_for(std::chrono::seconds(2)) == std::future_status::ready, "First worker starts independently");
+    Check(workers.start([&] { secondStarted.set_value(); gate.wait(); ++completed; }), "Second worker admitted");
+    Check(second.wait_for(std::chrono::seconds(2)) == std::future_status::ready,
+          "Second association starts while first association remains pending");
+    Check(!workers.start([] {}), "Excess association refused instead of queuing without a bound");
+
+    auto drain = std::async(std::launch::async, [&] { workers.wait(); });
+    Check(drain.wait_for(std::chrono::milliseconds(20)) == std::future_status::timeout,
+          "Shutdown waits for pending associations");
+    release.set_value();
+    drain.get();
+    Check(completed == 2, "Both associations finish before shutdown returns");
+    Check(workers.start([] { throw std::runtime_error("Synthetic association failure"); }), "Failure worker admitted");
+    workers.wait();
+    Check(workers.start([&] { ++completed; }), "Capacity recovers after worker failure");
+    workers.wait();
+    Check(completed == 3, "Subsequent association runs after a failure");
+}
+
+static void TestConcurrentStorageReservation()
+{
+    HorosAssociationProcesses processes;
+    std::promise<void> release;
+    auto gate = release.get_future().share();
+    std::atomic<unsigned> entered{0}, reserved{0};
+    auto attempt = [&] {
+        const bool owns = processes.reserveThreadStorage("HOROS");
+        if (owns) ++reserved;
+        ++entered;
+        gate.wait();
+        if (owns) processes.releaseThreadStorage("HOROS");
+    };
+    auto first = std::async(std::launch::async, attempt);
+    auto second = std::async(std::launch::async, attempt);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (entered != 2 && std::chrono::steady_clock::now() < deadline) std::this_thread::yield();
+    Check(entered == 2 && reserved == 1, "Optional single-writer policy admits only one concurrent storage association");
+    release.set_value();
+    first.get();
+    second.get();
+    Check(processes.reserveThreadStorage("HOROS"), "Storage reservation released when association finishes");
+    processes.releaseThreadStorage("HOROS");
 }
 
 struct TestAssociation
@@ -176,6 +236,153 @@ public:
     OFCondition pruneInvalidRecords() override { return EC_Normal; }
     void setIdentifierChecking(OFBool, OFBool) override {}
 };
+
+class StoreDatabase : public TestDatabase
+{
+public:
+    unsigned stores = 0;
+    OFCondition storeResult = EC_Normal;
+    DIC_US storeStatus = STATUS_Success;
+    OFString storedPath;
+
+    OFCondition storeRequest(const char*, const char*, const char* path,
+                             DcmQueryRetrieveDatabaseStatus* status, OFBool) override
+    {
+        ++stores;
+        storedPath = path;
+        status->setStatus(storeStatus);
+        return storeResult;
+    }
+};
+
+static T_DIMSE_C_StoreRQ StoreRequest(const char* sopClass = UID_MRImageStorage, const char* instance = "2.25.101")
+{
+    T_DIMSE_C_StoreRQ request = {};
+    OFStandard::strlcpy(request.AffectedSOPClassUID, sopClass, sizeof(request.AffectedSOPClassUID));
+    OFStandard::strlcpy(request.AffectedSOPInstanceUID, instance, sizeof(request.AffectedSOPInstanceUID));
+    return request;
+}
+
+static T_DIMSE_C_StoreRSP CompleteStore(StreamedStoreContext& context, T_DIMSE_C_StoreRQ& request,
+                                       DIC_US status = STATUS_Success)
+{
+    T_DIMSE_StoreProgress progress = {};
+    progress.state = DIMSE_StoreEnd;
+    T_DIMSE_C_StoreRSP response = {};
+    response.DimseStatus = status;
+    DcmDataset* detail = NULL;
+    StreamedStoreContext::callback(&context, &progress, &request, NULL, NULL, &response, &detail);
+    delete detail;
+    return response;
+}
+
+static void TestStreamedStores(const std::string& directory)
+{
+    DcmQueryRetrieveOptions options;
+    options.bitPreserving_ = OFTrue;
+    auto request = StoreRequest();
+    const std::string path = directory + "/received.dcm";
+    std::vector<E_TransferSyntax> syntaxes = {EXS_LittleEndianExplicit, EXS_LittleEndianImplicit, EXS_BigEndianExplicit, EXS_RLELossless};
+#ifdef WITH_ZLIB
+    syntaxes.push_back(EXS_DeflatedLittleEndianExplicit);
+#endif
+    for (E_TransferSyntax syntax : syntaxes)
+    {
+        DcmRLEEncoderRegistration::registerCodecs();
+        WriteImage(path, syntax);
+        DcmRLEEncoderRegistration::cleanup();
+        const std::string received = ReadBytes(path);
+        StoreDatabase database;
+        StreamedStoreContext context(database, options, path.c_str(), syntax, STATUS_Success);
+        T_DIMSE_StoreProgress progress = {};
+        progress.state = DIMSE_StoreProgressing;
+        T_DIMSE_C_StoreRSP response = {};
+        DcmDataset* detail = NULL;
+        StreamedStoreContext::callback(&context, &progress, &request, NULL, NULL, &response, &detail);
+        Check(database.stores == 0, "Partial file is not published during receive");
+        Check(CompleteStore(context, request).DimseStatus == STATUS_Success, "Completed streamed image is accepted without a decoder");
+        Check(database.stores == 1 && database.storedPath == path.c_str(), "Completed file handed to database once");
+        Check(ReadBytes(path) == received, "Streamed image bytes and transfer syntax are not rewritten");
+    }
+    for (const char* sopClass : {UID_BasicTextSRStorage, UID_EncapsulatedPDFStorage})
+    {
+        DcmFileFormat file;
+        file.getDataset()->putAndInsertString(DCM_SOPClassUID, sopClass);
+        file.getDataset()->putAndInsertString(DCM_SOPInstanceUID, "2.25.103");
+        const Uint8 document[] = {'%', 'P', 'D', 'F', '-', '1', '.', '7'};
+        if (strcmp(sopClass, UID_EncapsulatedPDFStorage) == 0)
+            file.getDataset()->putAndInsertUint8Array(DCM_EncapsulatedDocument, document, sizeof(document));
+        else
+            file.getDataset()->putAndInsertString(DCM_TextValue, "Synthetic report");
+        Check(file.saveFile(path.c_str(), EXS_LittleEndianExplicit).good(), "Write synthetic report");
+        const std::string received = ReadBytes(path);
+        auto reportRequest = StoreRequest(sopClass, "2.25.103");
+        StoreDatabase database;
+        StreamedStoreContext context(database, options, path.c_str(), EXS_LittleEndianExplicit, STATUS_Success);
+        Check(CompleteStore(context, reportRequest).DimseStatus == STATUS_Success && database.stores == 1,
+              "SR and encapsulated PDF stores are accepted");
+        Check(ReadBytes(path) == received, "Report payload is unchanged");
+    }
+
+    WriteImage(path, EXS_LittleEndianExplicit);
+    for (auto mismatch : {StoreRequest(UID_CTImageStorage), StoreRequest(UID_MRImageStorage, "2.25.999")})
+    {
+        StoreDatabase database;
+        StreamedStoreContext context(database, options, path.c_str(), EXS_LittleEndianExplicit, STATUS_Success);
+        Check(CompleteStore(context, mismatch).DimseStatus == STATUS_STORE_Error_DataSetDoesNotMatchSOPClass,
+              "Dataset SOP class and instance must match the C-STORE request");
+        Check(database.stores == 0, "Mismatched image never reaches the database");
+    }
+    {
+        DcmFileFormat file;
+        Check(file.loadFile(path.c_str()).good(), "Read synthetic image for UID validation");
+        file.getDataset()->putAndInsertString(DCM_SOPInstanceUID, "2.25.999");
+        Check(file.saveFile(path.c_str(), EXS_LittleEndianExplicit, EET_UndefinedLength, EGL_recalcGL,
+              EPD_noChange, 0, 0, EWM_dontUpdateMeta).good(), "Preserve request UID in file metaheader");
+        StoreDatabase database;
+        StreamedStoreContext context(database, options, path.c_str(), EXS_LittleEndianExplicit, STATUS_Success);
+        Check(CompleteStore(context, request).DimseStatus == STATUS_STORE_Error_DataSetDoesNotMatchSOPClass && database.stores == 0,
+              "Validate dataset UID, not the metaheader copied from the request");
+        DcmElement* removed = file.getDataset()->remove(DCM_SOPInstanceUID);
+        delete removed;
+        Check(file.saveFile(path.c_str(), EXS_LittleEndianExplicit, EET_UndefinedLength, EGL_recalcGL,
+              EPD_noChange, 0, 0, EWM_dontUpdateMeta).good(), "Write dataset without SOP instance UID");
+        StreamedStoreContext missingUID(database, options, path.c_str(), EXS_LittleEndianExplicit, STATUS_Success);
+        Check(CompleteStore(missingUID, request).DimseStatus == STATUS_STORE_Error_CannotUnderstand && database.stores == 0,
+              "Missing dataset UID cannot be supplied by the metaheader");
+    }
+    WriteImage(path, EXS_LittleEndianExplicit);
+    {
+        StoreDatabase database;
+        StreamedStoreContext context(database, options, path.c_str(), EXS_LittleEndianExplicit, STATUS_STORE_Refused_OutOfResources);
+        Check(CompleteStore(context, request).DimseStatus == STATUS_STORE_Refused_OutOfResources && database.stores == 0,
+              "Preflight refusal is not overwritten by successful network receipt");
+    }
+    {
+        StoreDatabase database;
+        StreamedStoreContext context(database, options, path.c_str(), EXS_LittleEndianExplicit, STATUS_Success);
+        Check(CompleteStore(context, request, STATUS_STORE_Refused_OutOfResources).DimseStatus == STATUS_STORE_Refused_OutOfResources && database.stores == 0,
+              "Failed or incomplete stream never reaches the database");
+    }
+    {
+        StoreDatabase database;
+        database.storeResult = EC_IllegalCall;
+        StreamedStoreContext context(database, options, path.c_str(), EXS_LittleEndianExplicit, STATUS_Success);
+        Check(CompleteStore(context, request).DimseStatus == STATUS_STORE_Refused_OutOfResources,
+              "Database failure cannot produce a successful C-STORE response");
+    }
+    unlink(path.c_str());
+    {
+        StoreDatabase database;
+        StreamedStoreContext context(database, options, path.c_str(), EXS_LittleEndianExplicit, STATUS_Success);
+        Check(CompleteStore(context, request).DimseStatus == STATUS_STORE_Error_CannotUnderstand && database.stores == 0,
+              "Unreadable received file is rejected");
+        options.ignoreStoreData_ = OFTrue;
+        StreamedStoreContext ignored(database, options, path.c_str(), EXS_LittleEndianExplicit, STATUS_Success);
+        Check(CompleteStore(ignored, request).DimseStatus == STATUS_Success && database.stores == 0,
+              "Ignore-store mode neither reads nor publishes the file");
+    }
+}
 
 static T_DIMSE_C_GetRSP Respond(GetContext& context, int count, bool cancelled, OFString* failedUIDs = NULL)
 {
@@ -341,7 +548,10 @@ int main()
 {
     char temporary[] = "/tmp/horos-query-retrieve-tests-XXXXXX";
     Check(mkdtemp(temporary) != NULL, "Create isolated fixture directory");
+    TestConcurrentWorkers();
+    TestConcurrentStorageReservation();
     TestFormats(temporary);
+    TestStreamedStores(temporary);
     TestResponses(temporary);
     TestNegotiation(temporary);
     rmdir(temporary);

@@ -319,7 +319,7 @@ static HorosIncomingImportTrace *HorosCurrentIncomingTrace(void) {
 
 @interface DicomDatabase ()
 
-- (NSArray *)addFilesAtPathsOnContextQueue:(NSArray *)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray originalDatesAdded:(NSDictionary *)originalDatesAdded;
+- (NSArray *)addFilesAtPathsOnContextQueue:(NSArray *)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray originalDatesAdded:(NSDictionary *)originalDatesAdded preparedResults:(NSDictionary *)preparedResults;
 - (NSArray *)addFilesDescribedInDictionariesOnContextQueue:(NSArray *)dicomFilesArray postNotifications:(BOOL)postNotifications rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray originalDatesAdded:(NSDictionary *)originalDatesAdded;
 - (NSInteger)importFilesFromIncomingDirOnContextQueue:(NSNumber *)showGUI listenerCompressionSettings:(int)listenerCompressionSettings;
 - (void)backfillLegacyROISidecarsThread;
@@ -2002,7 +2002,8 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
                                    generatedByOsiriX:generatedByOsiriX
                                         importedFiles:importedFiles
                                           returnArray:returnArray
-                                   originalDatesAdded:nil] retain];
+                                   originalDatesAdded:nil
+                                      preparedResults:nil] retain];
     });
     return [result autorelease];
 }
@@ -2018,13 +2019,15 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
                                  generatedByOsiriX:NO
                                       importedFiles:NO
                                         returnArray:YES
-                                 originalDatesAdded:originalDatesAdded ?: @{}] retain];
+                                 originalDatesAdded:originalDatesAdded ?: @{}
+                                    preparedResults:nil] retain];
     });
     return [result autorelease];
 }
 
--(NSArray*)addFilesAtPathsOnContextQueue:(NSArray*)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray originalDatesAdded:(NSDictionary*)originalDatesAdded
+-(NSArray*)addFilesAtPathsOnContextQueue:(NSArray*)paths postNotifications:(BOOL)postNotifications dicomOnly:(BOOL)dicomOnly rereadExistingItems:(BOOL)rereadExistingItems generatedByOsiriX:(BOOL)generatedByOsiriX importedFiles:(BOOL)importedFiles returnArray:(BOOL)returnArray originalDatesAdded:(NSDictionary*)originalDatesAdded preparedResults:(NSDictionary*)preparedResults
 {
+    HorosActivityScope activity;
     NSThread* thread = [NSThread currentThread];
     
 #ifdef RANDOMFILES
@@ -2083,6 +2086,7 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
         NSArray<HorosDICOMImportMetadataResult *> *parseResults =
             [HorosDICOMImportMetadataParser parsePaths:chunkPaths
                                              dicomOnly:dicomOnly
+                                      preparedResults:preparedResults ?: @{}
                                            isCancelled:isImportCancelled
                                                 progress:^(NSInteger completedCount) {
                 NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
@@ -3800,6 +3804,8 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
         }
         
         NSMutableArray *filesArray = [NSMutableArray array];
+        NSMutableDictionary *preparedResults = [NSMutableDictionary dictionary];
+        HorosDICOMImportMetadataParser *metadataParser = [[[HorosDICOMImportMetadataParser alloc] init] autorelease];
         
         [[NSFileManager defaultManager] confirmNoIndexDirectoryAtPath:self.dataDirPath];
         [trace record:@"disk_preflight" since:stageStarted count:0];
@@ -3861,7 +3867,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
         
         NSTimeInterval startTime = [NSDate timeIntervalSinceReferenceDate];
         NSTimeInterval start = startTime;
-        CFTimeInterval classificationTime = 0, pathAllocationTime = 0, relocationTime = 0;
+        CFTimeInterval classificationTime = 0, pathAllocationTime = 0, relocationTime = 0, metadataPreparationTime = 0;
         
         while([filesArray count] < maxNumberOfFiles &&
               (filesArray.count == 0 || [NSDate timeIntervalSinceReferenceDate]-startTime < batchTimeLimit)
@@ -4051,7 +4057,18 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                         NSString *dstPath = [self.dataDirPath stringByAppendingPathComponent: lastPathComponent];
                         
                         CFTimeInterval fileStageStarted = CACurrentMediaTime();
-                        isDicomFile = [DicomFile isDICOMFile:srcPath compressed: &isJPEGCompressed image: &isImage];
+                        HorosDICOMImportInspection *inspection = [metadataParser inspectFileAtPath:srcPath];
+                        @try {
+                        if (inspection)
+                        {
+                            if (!inspection.sourceIsCurrent) continue;
+                            isDicomFile = YES;
+                            [DicomFile classifySOPClassUID:inspection.sopClassUID
+                                        transferSyntaxUID:inspection.transferSyntaxUID
+                                               compressed:&isJPEGCompressed image:&isImage];
+                        }
+                        else
+                            isDicomFile = [DicomFile isDICOMFile:srcPath compressed:&isJPEGCompressed image:&isImage];
                         classificationTime += CACurrentMediaTime() - fileStageStarted;
                         
                         if (isDicomFile == YES)
@@ -4061,7 +4078,10 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                             {
                                 if ((isJPEGCompressed == YES && listenerCompressionSettings == 1) ||    // Decompress
                                     (isJPEGCompressed == NO  && listenerCompressionSettings == 2        // Compress
-                     && [DicomDatabase fileNeedsDecompression: srcPath]
+                     && (inspection ? [DicomDatabase shouldCompressSOPClassUID:inspection.sopClassUID
+                                                                   modality:inspection.modality rows:inspection.rows columns:inspection.columns
+                                                             isEncapsulated:inspection.isEncapsulated]
+                                    : [DicomDatabase fileNeedsDecompression:srcPath])
                                                                                                       ))
                                 {
                                     NSString *compressedPath = [self.decompressionDirPath stringByAppendingPathComponent: lastPathComponent];
@@ -4078,6 +4098,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                             }
                             
                             pathAllocationTime += CACurrentMediaTime() - fileStageStarted;
+                            if (inspection && !inspection.sourceIsCurrent) continue;
                             fileStageStarted = CACurrentMediaTime();
                             BOOL result;
                             
@@ -4095,7 +4116,15 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                             
                             relocationTime += CACurrentMediaTime() - fileStageStarted;
                             if (result == YES)
+                            {
                                 [filesArray addObject:dstPath];
+                                if (inspection)
+                                {
+                                    fileStageStarted = CACurrentMediaTime();
+                                    [preparedResults setObject:[inspection metadataResultForFileAtPath:dstPath] forKey:dstPath];
+                                    metadataPreparationTime += CACurrentMediaTime() - fileStageStarted;
+                                }
+                            }
                         }
                         else // DELETE or MOVE THIS UNKNOWN FILE ?
                         {
@@ -4105,6 +4134,9 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
                                 if (![NSFileManager.defaultManager moveItemAtPath:srcPath toPath:[self.errorsDirPath stringByAppendingPathComponent:lastPathComponent] error:NULL])
                                     [NSFileManager.defaultManager removeItemAtPath:srcPath error:NULL];
                             }
+                        }
+                        } @finally {
+                            [inspection discard];
                         }
                     }
                 }
@@ -4121,6 +4153,7 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
         [trace record:@"file_classification" duration:classificationTime count:filesArray.count];
         [trace record:@"path_allocation" duration:pathAllocationTime count:filesArray.count];
         [trace record:@"file_relocation" duration:relocationTime count:filesArray.count];
+        [trace record:@"file_metadata_preparation" duration:metadataPreparationTime count:preparedResults.count];
         stageStarted = CACurrentMediaTime();
         if( filesArray.count)
             thread.status = N2LocalizedSingularPluralCount( filesArray.count, NSLocalizedString(@"file", nil), NSLocalizedString(@"files", nil));
@@ -4132,13 +4165,15 @@ static void HorosAddROIReferenceImageToMap(NSMutableDictionary *imagesByReferenc
             
             NSArray* addedFiles = nil;
             if( thread.isCancelled == NO)
-                addedFiles = [self addFilesAtPaths: filesArray
+                addedFiles = [self addFilesAtPathsOnContextQueue:filesArray
                                  postNotifications: YES
                                           dicomOnly: [[NSUserDefaults standardUserDefaults] boolForKey: @"onlyDICOM"]
                                 rereadExistingItems: NO
                                   generatedByOsiriX: NO
                                       importedFiles: YES
-                                        returnArray: YES]; // these are IDs!
+                                        returnArray:YES
+                                 originalDatesAdded:nil
+                                    preparedResults:preparedResults]; // these are IDs!
             
             addedFilesCount = addedFiles.count;
             [trace record:@"parse_add_save_notify" since:stageStarted count:addedFilesCount];

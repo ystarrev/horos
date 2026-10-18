@@ -80,8 +80,9 @@ class ActivityTests(unittest.TestCase):
         for filename in ("HorosDatabaseTransport.swift", "HorosDirectTransfer.swift"):
             self.assertIn("defer { activity.stop() }", (SOURCES / filename).read_text())
         server = (SOURCES / "HorosQueryRetrieveServer.cpp").read_text()
-        self.assertLess(server.index("if (!ASC_associationWaiting"),
-                        server.index("HorosActivityScope activity;"))
+        acceptor = server.split("OFCondition HorosQueryRetrieveServer::waitForAssociation", 1)[1]
+        self.assertLess(acceptor.index("if (!ASC_associationWaiting"),
+                        acceptor.index("HorosActivityScope activity;"))
         self.assertIn("if (finished) HorosEndActivity(process.activity)", server)
         scope = (SOURCES / "HorosActivityScope.h").read_text()
         self.assertIn("~HorosActivityScope() { HorosEndActivity(token_); }", scope)

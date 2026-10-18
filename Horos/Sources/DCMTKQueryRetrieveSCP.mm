@@ -251,6 +251,17 @@ void errmsg(const char* msg, ...)
 
 @end
 
+void HorosRunListenerWorker(void (*operation)(void*), void* context)
+{
+    @autoreleasepool {
+        @try {
+            operation(context);
+        } @catch (NSException *exception) {
+            NSLog(@"DICOM listener worker failed: %@", exception);
+        }
+    }
+}
+
 @implementation DCMTKQueryRetrieveSCP
 
 + (BOOL) storeSCP
@@ -348,8 +359,8 @@ void errmsg(const char* msg, ...)
 	dcmEnableUnknownVRGeneration.set(OFTrue);
 	dcmEnableUnlimitedTextVRGeneration.set(OFTrue);
 	
-	//fix padding
-	options.bitPreserving_ = OFFalse;
+	// Stream the received dataset unchanged; DCMTK supplies the Part 10 file header.
+	options.bitPreserving_ = OFTrue;
 	
 	//write metaheader
 	options.useMetaheader_ = OFTrue;
@@ -630,9 +641,8 @@ DcmAssociationConfiguration asccfg;
 		}
 	}
 	
-    [NSThread sleepForTimeInterval: 1];
+    localSCP->waitForWorkers();
     [ContextCleaner waitForHandledAssociations];
-    [NSThread sleepForTimeInterval: 1];
     
 	if( _abort)
 		NSLog( @"---- store-SCP aborted");

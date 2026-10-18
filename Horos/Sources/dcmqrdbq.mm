@@ -60,6 +60,8 @@ END_EXTERN_C
 
 #include <cctype>
 #include <cstdarg>
+#include <cstdlib>
+#include <unistd.h>
 
 #include <dcmtk/dcmqrdb/dcmqrdbs.h>
 // #include <dcmtk/dcmqrdb/dcmqrdbi.h>
@@ -906,8 +908,6 @@ OFCondition DcmQueryRetrieveOsiriXDatabaseHandle::nextMoveResponse(
 }
 
 
-static int seed = 0;
-
 OFCondition DcmQueryRetrieveOsiriXDatabaseHandle::nextMoveResponse(
                 char            *SOPClassUID,
                 char            *SOPInstanceUID,
@@ -1171,7 +1171,6 @@ DcmQueryRetrieveOsiriXDatabaseHandle::DcmQueryRetrieveOsiriXDatabaseHandle(
 , quotaSystemEnabled(OFFalse)
 , doCheckFindIdentifier(OFFalse)
 , doCheckMoveIdentifier(OFFalse)
-, fnamecreator()
 , debugLevel(0)
 , receivedStoreRequest(OFFalse)
 {
@@ -1246,23 +1245,20 @@ OFCondition DcmQueryRetrieveOsiriXDatabaseHandle::makeNewStoreFileName(
                 const char      * /* SOPInstanceUID */ ,
                 char            *newImageFileName)
 {	
-    OFString filename;
-    char prefix[12];
-
     const char *m = dcmSOPClassUIDToModality(SOPClassUID);
     if (m == NULL) m = "XX";
-    snprintf(prefix, sizeof(prefix), "%s_%d_", m, getpid());	// getpid is very important, to be sure that this filename is UNIQUE, if multiple associations are currently running
-	
-	seed++;
-	
-	unsigned seedvalue = seed;
     newImageFileName[0] = 0; // return empty string in case of error
-	
-	if (! fnamecreator.makeFilename(seedvalue, [[DicomDatabase activeLocalDatabase] tempDirPathC], prefix, ".dcm", filename))
-	{
-		return DcmQROsiriXDatabaseError;
-	}
-    strcpy(newImageFileName, filename.c_str());
+
+    // Reserve the path atomically: parallel associations in this process must
+    // not race on a shared seed or a check-for-existence filename generator.
+    char filename[MAXPATHLEN + 1];
+    const int length = snprintf(filename, sizeof(filename), "%s/%s_XXXXXX.dcm",
+        [[DicomDatabase activeLocalDatabase] tempDirPathC], m);
+    if (length < 0 || static_cast<size_t>(length) >= sizeof(filename)) return DcmQROsiriXDatabaseError;
+    const int fd = mkstemps(filename, 4);
+    if (fd < 0) return DcmQROsiriXDatabaseError;
+    close(fd);
+    strcpy(newImageFileName, filename);
 	
 	return EC_Normal;
 }

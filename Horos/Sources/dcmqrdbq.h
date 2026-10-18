@@ -59,7 +59,6 @@
 
 #include <dcmtk/dcmnet/dicom.h>
 #include <dcmtk/dcmnet/dimse.h>
-#include <dcmtk/ofstd/offname.h>
 #include <dcmtk/dcmdata/dcdatset.h>
 
 #include <dcmtk/dcmqrdb/dcmqrdbi.h> // for DB_Level
@@ -425,9 +424,6 @@ private:
 
   /// flag indicating whether or not the check function for MOVE requests is enabled
   OFBool doCheckMoveIdentifier;
-
-  /// helper object for file name creation
-  OFFilenameCreator fnamecreator;
 
   /// current debug level
   int debugLevel;

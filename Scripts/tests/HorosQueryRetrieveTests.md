@@ -3,7 +3,12 @@
 The toolkit stays at the repository's pinned upstream revision. This change
 does not upgrade DCMTK, change the database format, or change Horos Direct
 Transfer. `HorosQueryRetrieveServer` uses `DcmThreadSCP` for the association
-lifecycle, stock find/store/move contexts, and the public DIMSE providers.
+lifecycle, stock find/move contexts, and the public DIMSE providers. Incoming
+C-STORE datasets stream unchanged to disk; a Horos completion callback checks
+the dataset SOP identifiers before handing the closed file to the import queue.
+The stock store context remains available for explicit dataset normalization.
+C-GET uses the same SOP validation and publishes each completed file immediately,
+before its C-STORE acknowledgement, through the existing incoming-import signal.
 Horos's C-GET callback selects a context for each source image and invokes the
 registered DCMTK codecs only when the selected representation requires them.
 
@@ -37,6 +42,9 @@ it never opens a Horos database or uses patient files. It covers:
 - Missing decoder and unchanged source-file bytes.
 - Missing-file counts, failed UID lists, cancellation after a failure, empty
   results, and database search failure.
+- Streamed native/implicit/big-endian/RLE images without a decoder, unchanged
+  SR/PDF payloads, UID mismatches, partial-file publication prevention, storage
+  refusal, database failure, missing files, and ignore-store behavior.
 - AE validation, default-role C-STORE, negotiated C-GET receiving roles, and
   study-root service enable/disable behavior.
 
@@ -44,8 +52,10 @@ it never opens a Horos database or uses patient files. It covers:
 
 After the normal incremental Horos build, use a small, known test study first:
 
-1. C-ECHO, study C-FIND, series expansion, and C-STORE into Horos. Check the
-   received study imports and opens normally after the association closes.
+1. C-ECHO, study C-FIND, series expansion, and C-STORE into Horos. Include a
+   compressed study and an SR/PDF report. Check imports, displayed pixels,
+   report viewing, and the recorded transfer syntax. Cancel an incoming transfer
+   and confirm no partial image is imported; then retrieve it again.
 2. An actual DICOM C-GET from Horos to a client offering compressed and native
    storage contexts. Include a study with mixed compressed/native instances.
    Confirm counts, headers, and displayed pixels. Horos Direct Transfer can
@@ -61,3 +71,25 @@ After the normal incremental Horos build, use a small, known test study first:
 
 No build, synthetic runtime execution, or live transfer is implied by passing
 the source checks.
+
+## C-GET Publication Fixture
+
+`CGetStorePublicationTests.mm` is another standalone fixture, not an app source.
+`test_dcm_cget_incremental.py` extracts `HorosCGetStoreContext` unchanged from
+`DCMTKQueryNode.mm` into a temporary include and syntax-checks the fixture. It
+does not compile an executable or run the fixture. After explicit build approval,
+the same include can be used to build the fixture against Foundation and the
+existing stock DCMTK libraries. Its database object is a notification counter;
+no patient database or network connection is involved.
+
+Runtime cases cover publication of successive image/SR/PDF files before the
+session ends, unchanged bytes, no publication during partial receipt, rejection
+of mismatched dataset UIDs, destination collision without overwrite, failed
+publication retaining the completed source, and transport failure without an
+import notification.
+
+For application verification, use an actual C-GET retrieve-and-view, not C-MOVE
+or Horos Direct Transfer. Confirm the viewer opens before retrieval completes,
+then cancel a larger transfer and verify the completed images remain available.
+Retry it and check the final object count and report viewing. The console line
+`C-GET published ... completed object(s)` confirms this path was exercised.

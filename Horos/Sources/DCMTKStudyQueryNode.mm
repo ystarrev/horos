@@ -233,6 +233,33 @@
 	return dataset;
 }
 
+- (DCMTKStudyQueryNode *)queryNodeForSeriesDiscovery
+{
+    // Query a private node: expanding a retrieval must not replace the outline's children.
+    DcmDataset *dataset = [self moveDataset];
+    DCMTKStudyQueryNode *node = nil;
+    @try
+    {
+        node = [DCMTKStudyQueryNode queryNodeWithDataset: dataset
+                                             callingAET: _callingAET
+                                              calledAET: _calledAET
+                                               hostname: _hostname
+                                                   port: _port
+                                         transferSyntax: _transferSyntax
+                                            compression: _compression
+                                        extraParameters: _extraParameters];
+        node.isAutoRetrieve = _isAutoRetrieve;
+        node.noSmartMode = _noSmartMode;
+        [node setShowErrorMessage: showErrorMessage];
+        node->_suppressQueryFailureMessages = YES;
+    }
+    @finally
+    {
+        delete dataset;
+    }
+    return node;
+}
+
 - (DcmDataset *)moveDataset
 {
 	DcmDataset *dataset = new DcmDataset();
@@ -530,6 +557,9 @@
                                                                       extraParameters: _extraParameters];
             
             newNode.study = self;
+            newNode.isAutoRetrieve = _isAutoRetrieve;
+            newNode.noSmartMode = _noSmartMode;
+            [newNode setShowErrorMessage: showErrorMessage];
             
             BOOL alreadyHere = NO;
             if( [[NSUserDefaults standardUserDefaults] boolForKey: @"QRRemoveDuplicateEntries"])

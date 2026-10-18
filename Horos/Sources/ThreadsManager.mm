@@ -48,9 +48,11 @@ void *HorosBeginActivity(void)
 
 void HorosEndActivity(void *token)
 {
-    HorosActivityToken *activity = (HorosActivityToken *)token;
-    [activity stop];
-    [activity release];
+    @autoreleasepool {
+        HorosActivityToken *activity = (HorosActivityToken *)token;
+        [activity stop];
+        [activity release];
+    }
 }
 
 @interface ThreadsManager ()

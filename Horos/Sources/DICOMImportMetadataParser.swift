@@ -14,9 +14,55 @@ final class DICOMImportMetadataResult: NSObject {
     }
 }
 
+/// A single-file handoff across relocation, never a persistent or global cache.
+@objc(HorosDICOMImportInspection)
+final class DICOMImportInspection: NSObject {
+    @objc let sopClassUID: String?
+    @objc let transferSyntaxUID: String
+    @objc let sourcePath: String
+    @objc let modality: String
+    @objc let rows: Int
+    @objc let columns: Int
+    @objc let isEncapsulated: Bool
+    private let revision: SwiftDICOMFileRevision
+    private let settings: SwiftDICOMImportSettings
+    private var reader: SwiftDICOMReader?
+
+    init(reader: SwiftDICOMReader, settings: SwiftDICOMImportSettings) {
+        self.reader = reader
+        self.settings = settings
+        sourcePath = reader.sourcePath
+        revision = reader.fileRevision
+        sopClassUID = reader.stringValue(forTag: "0008,0016")
+        transferSyntaxUID = reader.transferSyntaxUID
+        modality = reader.stringValue(forTag: "0008,0060") ?? "OT"
+        rows = reader.integerValue(forTag: "0028,0010") ?? 0
+        columns = reader.integerValue(forTag: "0028,0011") ?? 0
+        isEncapsulated = ![SwiftDICOMReader.implicitVRLittleEndianUID,
+                          SwiftDICOMReader.explicitVRLittleEndianUID].contains(reader.transferSyntaxUID)
+        super.init()
+    }
+
+    @objc var sourceIsCurrent: Bool {
+        revision == SwiftDICOMFileRevision(contentsOfFile: sourcePath)
+    }
+
+    @objc(metadataResultForFileAtPath:)
+    func metadataResult(fileAtPath path: String) -> DICOMImportMetadataResult {
+        defer { discard() }
+        let metadata = reader.flatMap {
+            SwiftDICOMImportMetadata.buildDictionary(reader: $0, path: path, settings: settings)
+        }
+        return DICOMImportMetadataResult(path: path, metadata: metadata)
+    }
+
+    @objc func discard() { reader = nil }
+}
+
 private final class DICOMImportMetadataParseState: @unchecked Sendable {
     let paths: [String]
     let dicomOnly: Bool
+    private let preparedResults: [String: DICOMImportMetadataResult]
 
     private let cancellationCheck: @convention(block) () -> Bool
     private let progressHandler: @convention(block) (Int) -> Void
@@ -29,11 +75,13 @@ private final class DICOMImportMetadataParseState: @unchecked Sendable {
     init(
         paths: [String],
         dicomOnly: Bool,
+        preparedResults: [String: DICOMImportMetadataResult],
         cancellationCheck: @escaping @convention(block) () -> Bool,
         progressHandler: @escaping @convention(block) (Int) -> Void
     ) {
         self.paths = paths
         self.dicomOnly = dicomOnly
+        self.preparedResults = preparedResults
         self.cancellationCheck = cancellationCheck
         self.progressHandler = progressHandler
         importSettings = SwiftDICOMImportSettings()
@@ -82,10 +130,12 @@ private final class DICOMImportMetadataParseState: @unchecked Sendable {
             // Every DICOM file takes the native Swift path. The legacy object
             // remains reachable only when the caller explicitly permits
             // non-DICOM imports and the file is not readable as DICOM.
-            let swiftMetadata = SwiftDICOMImportMetadata.dictionary(
-                fileAtPath: path,
-                settings: importSettings
-            )
+            let swiftMetadata: NSMutableDictionary?
+            if let prepared = preparedResults[path] {
+                swiftMetadata = prepared.metadata
+            } else {
+                swiftMetadata = SwiftDICOMImportMetadata.dictionary(fileAtPath: path, settings: importSettings)
+            }
             let metadata = swiftMetadata ?? (dicomOnly
                 ? nil
                 : DicomFile.metadataDictionary(fileAtPath: path, dicomOnly: false))
@@ -112,10 +162,33 @@ private final class DICOMImportMetadataParseState: @unchecked Sendable {
 /// method returns.
 @objc(HorosDICOMImportMetadataParser)
 final class DICOMImportMetadataParser: NSObject {
+    private let inspectionSettings = SwiftDICOMImportSettings()
+
+    @objc override init() { super.init() }
+
+    @objc(inspectFileAtPath:)
+    func inspectFile(atPath path: String) -> DICOMImportInspection? {
+        guard let reader = try? SwiftDICOMReader(contentsOfFile: path, metadataForExternalDecoder: true) else {
+            return nil
+        }
+        return DICOMImportInspection(reader: reader, settings: inspectionSettings)
+    }
+
     @objc(parsePaths:dicomOnly:isCancelled:progress:)
     static func parsePaths(
         _ paths: [String],
         dicomOnly: Bool,
+        isCancelled: @escaping @convention(block) () -> Bool,
+        progress: @escaping @convention(block) (Int) -> Void
+    ) -> [DICOMImportMetadataResult] {
+        parsePaths(paths, dicomOnly: dicomOnly, preparedResults: [:], isCancelled: isCancelled, progress: progress)
+    }
+
+    @objc(parsePaths:dicomOnly:preparedResults:isCancelled:progress:)
+    static func parsePaths(
+        _ paths: [String],
+        dicomOnly: Bool,
+        preparedResults: [String: DICOMImportMetadataResult],
         isCancelled: @escaping @convention(block) () -> Bool,
         progress: @escaping @convention(block) (Int) -> Void
     ) -> [DICOMImportMetadataResult] {
@@ -126,6 +199,7 @@ final class DICOMImportMetadataParser: NSObject {
         let state = DICOMImportMetadataParseState(
             paths: paths,
             dicomOnly: dicomOnly,
+            preparedResults: preparedResults,
             cancellationCheck: isCancelled,
             progressHandler: progress
         )
@@ -135,6 +209,13 @@ final class DICOMImportMetadataParser: NSObject {
         state.parseFirstPath()
 
         guard paths.count > 1, !state.isCancelled else {
+            return state.orderedResults()
+        }
+
+        // A fully prepared incoming batch only needs ordered handoff and
+        // progress delivery; avoid creating another set of parsing workers.
+        if paths.allSatisfy({ preparedResults[$0]?.metadata != nil }) {
+            state.runWorker()
             return state.orderedResults()
         }
 

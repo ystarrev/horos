@@ -82,6 +82,8 @@ static NSDateFormatter *DicomFileDateFormatter(void)
 typedef __typeof__(&HorosModernDCMTKIsDICOMFile) HorosModernDCMTKIsDICOMFileFn;
 typedef __typeof__(&HorosModernDCMTKCopyField) HorosModernDCMTKCopyFieldFn;
 typedef __typeof__(&HorosModernDCMTKFreeString) HorosModernDCMTKFreeStringFn;
+typedef __typeof__(&HorosModernDCMTKGetBasicMetadata) HorosModernDCMTKGetBasicMetadataFn;
+typedef __typeof__(&HorosModernDCMTKFreeBasicMetadata) HorosModernDCMTKFreeBasicMetadataFn;
 
 static NSString* HorosDicomFileBridgeString(char* value)
 {
@@ -585,6 +587,20 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
 }
 
 
++ (void)classifySOPClassUID:(NSString *)sopClassUID transferSyntaxUID:(NSString *)transferSyntax compressed:(BOOL *)compressed image:(BOOL *)image
+{
+    if (image)
+        *image = sopClassUID.length > 0 &&
+            ([DCMAbstractSyntaxUID isImageStorage:sopClassUID] || [DCMAbstractSyntaxUID isHiddenImageStorage:sopClassUID]);
+    if (compressed)
+        *compressed = [transferSyntax isEqualToString:[[DCMTransferSyntax JPEGLosslessTransferSyntax] transferSyntax]] ||
+            [transferSyntax isEqualToString:[[DCMTransferSyntax JPEGBaselineTransferSyntax] transferSyntax]] ||
+            [transferSyntax isEqualToString:[[DCMTransferSyntax JPEG2000LossyTransferSyntax] transferSyntax]] ||
+            [transferSyntax isEqualToString:[[DCMTransferSyntax JPEG2000LosslessTransferSyntax] transferSyntax]] ||
+            [transferSyntax isEqualToString:[[DCMTransferSyntax JPEGLSLosslessTransferSyntax] transferSyntax]] ||
+            [transferSyntax isEqualToString:[[DCMTransferSyntax JPEGLSLossyTransferSyntax] transferSyntax]];
+}
+
 + (BOOL) isDICOMFile:(NSString *) filePath compressed:(BOOL*) compressed image:(BOOL*) image
 {
     if (compressed)
@@ -592,6 +608,26 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
     
     if (image)
         *image = YES; // Assume it has pixel data
+
+    if (image || compressed)
+    {
+        HorosModernDCMTKGetBasicMetadataFn readMetadata = HorosDCMTKFunction(HorosModernDCMTKGetBasicMetadata);
+        HorosModernDCMTKFreeBasicMetadataFn freeMetadata = HorosDCMTKFunction(HorosModernDCMTKFreeBasicMetadata);
+        if (readMetadata && freeMetadata)
+        {
+            HorosModernDCMTKBasicMetadata metadata = {};
+            BOOL isDicom = readMetadata(filePath.UTF8String, &metadata) != 0;
+            @try {
+                if (isDicom)
+                    [self classifySOPClassUID:metadata.sopClassUID ? [NSString stringWithUTF8String:metadata.sopClassUID] : nil
+                           transferSyntaxUID:metadata.transferSyntaxUID ? [NSString stringWithUTF8String:metadata.transferSyntaxUID] : nil
+                                  compressed:compressed image:image];
+            } @finally {
+                freeMetadata(&metadata);
+            }
+            return isDicom;
+        }
+    }
     
     //////////////////////////////////////////////////////////
     
@@ -634,10 +670,7 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
             if (sopClassUID == nil)
                 sopClassUID = [DicomFile getDicomField:@"SOPClassUID" forFile:filePath];
 
-            if (sopClassUID.length == 0)
-                *image = NO;
-            else
-                *image = [DCMAbstractSyntaxUID isImageStorage:sopClassUID] || [DCMAbstractSyntaxUID isHiddenImageStorage:sopClassUID];
+            [self classifySOPClassUID:sopClassUID transferSyntaxUID:nil compressed:NULL image:image];
         }
         @catch (NSException * e)
         {
@@ -653,19 +686,7 @@ char* replaceBadCharacter (char* str, NSStringEncoding encoding)
         @try
         {
             NSString *transferSyntax = [DicomFile getDicomField: @"TransferSyntaxUID" forFile: filePath];
-            if ([transferSyntax isEqualToString: [[DCMTransferSyntax JPEGLosslessTransferSyntax] transferSyntax]] ||
-                [transferSyntax isEqualToString: [[DCMTransferSyntax JPEGBaselineTransferSyntax] transferSyntax]] ||
-                [transferSyntax isEqualToString: [[DCMTransferSyntax JPEG2000LossyTransferSyntax] transferSyntax]] ||
-                [transferSyntax isEqualToString: [[DCMTransferSyntax JPEG2000LosslessTransferSyntax] transferSyntax]] ||
-                [transferSyntax isEqualToString: [[DCMTransferSyntax JPEGLSLosslessTransferSyntax] transferSyntax]] ||
-                [transferSyntax isEqualToString: [[DCMTransferSyntax JPEGLSLossyTransferSyntax] transferSyntax]])
-            {
-                *compressed = YES;
-            }
-            else
-            {
-                *compressed = NO;
-            }
+            [self classifySOPClassUID:nil transferSyntaxUID:transferSyntax compressed:compressed image:NULL];
         }
         @catch (NSException * e)
         {

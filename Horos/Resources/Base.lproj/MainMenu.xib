@@ -117,6 +117,12 @@
                                                 <action selector="addAlbum:" target="898" id="14604"/>
                                             </connections>
                                         </menuItem>
+                                        <menuItem title="Add a Series Collection..." id="SCAlbumMenu001">
+                                            <modifierMask key="keyEquivalentModifierMask"/>
+                                            <connections>
+                                                <action selector="addSeriesCollection:" target="898" id="SCAlbumAction001"/>
+                                            </connections>
+                                        </menuItem>
                                         <menuItem title="Add a smart album..." id="14601">
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>

@@ -1791,6 +1791,39 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return CGPoint(x: screenX, y: screenY)
     }
 
+    func faceOffProjection(of point: SIMD3<Float>, in bounds: CGRect) -> CGPoint? {
+        guard bounds.width > 0, bounds.height > 0 else { return nil }
+        return project(point: point, camera: currentCameraState(for: bounds.size), in: bounds)
+    }
+
+    func faceOffPatientAnteriorOrientation() -> (direction: SIMD3<Float>, up: SIMD3<Float>)? {
+        guard let firstPix = pixList.first,
+              MetalViewerSliceGeometry(pix: firstPix) != nil else { return nil }
+
+        let matrix = referenceVoxelToPatientMatrix
+        let patientDirections = simd_float3x3(columns: (
+            simd_normalize(SIMD3<Float>(matrix.columns.0.x, matrix.columns.0.y, matrix.columns.0.z)),
+            simd_normalize(SIMD3<Float>(matrix.columns.1.x, matrix.columns.1.y, matrix.columns.1.z)),
+            simd_normalize(SIMD3<Float>(matrix.columns.2.x, matrix.columns.2.y, matrix.columns.2.z))
+        ))
+        guard abs(simd_determinant(patientDirections)) > 0.001 else { return nil }
+
+        // DICOM patient coordinates are LPS: anterior is -Y and superior is +Z.
+        let patientToVolume = simd_inverse(patientDirections)
+        let front = simd_normalize(patientToVolume * SIMD3<Float>(0, -1, 0))
+        let superior = patientToVolume * SIMD3<Float>(0, 0, 1)
+        let upCandidate = superior - simd_dot(superior, front) * front
+        guard simd_length_squared(upCandidate) > 0.000001 else { return nil }
+        let up = simd_normalize(upCandidate)
+        return (front, up)
+    }
+
+    func orientFaceOffTowardPatientAnterior() {
+        guard let (front, up) = faceOffPatientAnteriorOrientation() else { return }
+        let right = simd_normalize(simd_cross(up, front))
+        cameraRotation = simd_normalize(simd_quatf(simd_float3x3(columns: (right, up, front))))
+    }
+
     func setShadingEnabled(_ enabled: Bool) {
         shadingEnabled = enabled
     }
@@ -3259,7 +3292,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
     }
 
     private struct SkinShellExtractionResult {
-        let preparation: SkinEnvelopePreparation
+        let preparation: SkinEnvelopePreparation?
         let mask: [UInt8]?
         let surfaceVertexFloatData: Data?
     }
@@ -3310,7 +3343,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         let hasSurface = skinSurfaceVertexBuffer != nil &&
             skinSurfaceVertexCount > 0 &&
             skinSurfaceVertexFloatData != nil
-        let needsMask = skinMaskTexture == nil && skinMaskExtractionAttempted == false
+        let needsMask = showSkin == false && skinMaskTexture == nil && skinMaskExtractionAttempted == false
         let needsSurface = includeSurface && hasSurface == false && skinSurfaceExtractionAttempted == false
         let needsSurfacePoints = includeSurfacePoints && skinSurfaceWorldPoints.isEmpty
         let buildSurface = needsSurface ||
@@ -3355,8 +3388,9 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
                 guard self.skinWorkStopped == false else { return }
                 if volumeGeneration == self.skinVolumeGeneration, let result {
                     // Keep one bounded envelope, not one copy for every removal depth.
-                    if result.preparation.envelope.count <= MetalViewerCachePolicy.renderVolumeCacheBytes / 2 {
-                        self.skinEnvelopePreparation = result.preparation
+                    if let preparation = result.preparation,
+                       preparation.envelope.count <= MetalViewerCachePolicy.renderVolumeCacheBytes / 2 {
+                        self.skinEnvelopePreparation = preparation
                     }
                     if maskGeneration == self.skinMaskGeneration, let mask = result.mask {
                         let uploadStartedAt = MetalPerformanceTrace.begin()
@@ -3401,14 +3435,20 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             )
         }
         guard cancellation.isCancelled == false else { return nil }
-        let preparation = cachedPreparation ?? volumeData.withUnsafeBytes { rawBuffer in
-            prepareSkinEnvelope(
-                values: rawBuffer.bindMemory(to: Float.self),
-                volumeDimensions: volumeDimensions, voxelSpacing: voxelSpacing,
-                thresholdResult: thresholdResult, isCT: isCT, cancellation: cancellation
-            )
+        let preparation: SkinEnvelopePreparation?
+        if includeMask {
+            preparation = cachedPreparation ?? volumeData.withUnsafeBytes { rawBuffer in
+                prepareSkinEnvelope(
+                    values: rawBuffer.bindMemory(to: Float.self),
+                    volumeDimensions: volumeDimensions, voxelSpacing: voxelSpacing,
+                    thresholdResult: thresholdResult, isCT: isCT, cancellation: cancellation
+                )
+            }
+            guard preparation != nil else { return nil }
+        } else {
+            preparation = cachedPreparation
         }
-        guard let preparation, cancellation.isCancelled == false else { return nil }
+        guard cancellation.isCancelled == false else { return nil }
         var surfaceVertexFloatData: Data?
         if includeSurface {
             surfaceVertexFloatData = extractSkinSurface(
@@ -3418,10 +3458,15 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             )
         }
         guard cancellation.isCancelled == false else { return nil }
-        let mask = includeMask ? makeSkinDistanceMask(
-            preparation: preparation, volumeDimensions: volumeDimensions,
-            voxelSpacing: voxelSpacing, shellThicknessMM: shellThicknessMM
-        ) : nil
+        let mask: [UInt8]?
+        if includeMask, let preparation {
+            mask = makeSkinDistanceMask(
+                preparation: preparation, volumeDimensions: volumeDimensions,
+                voxelSpacing: voxelSpacing, shellThicknessMM: shellThicknessMM
+            )
+        } else {
+            mask = nil
+        }
         return SkinShellExtractionResult(
             preparation: preparation, mask: mask, surfaceVertexFloatData: surfaceVertexFloatData
         )
@@ -3546,7 +3591,7 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
             spacingY: voxelSpacing.y,
             spacingZ: voxelSpacing.z,
             threshold: thresholdResult.threshold,
-            openMinimumZCap: true
+            openVolumeBoundaryCaps: true
         )
         MetalPerformanceTrace.end("skin.mesh.total", since: meshStartedAt)
         guard let extractedSurface = extractedSurfaceResult else {
@@ -3945,22 +3990,34 @@ final class Metal3DVolumeRenderer: NSObject, MTKViewDelegate {
         return vertexFloatData.withUnsafeBytes { bytes -> [SIMD3<Float>] in
             let floats = bytes.bindMemory(to: Float.self)
             let vertexCount = floats.count / 6
+            let halfExtent = volumePhysicalExtent() * 0.5
+            let scale = volumePhysicalScale()
             var positions = [SIMD3<Float>]()
             positions.reserveCapacity(vertexCount)
             for vertexIndex in 0..<vertexCount {
                 let base = vertexIndex * 6
                 positions.append(
-                    worldPosition(
-                        forPhysicalPosition: SIMD3<Float>(
-                            floats[base],
-                            floats[base + 1],
-                            floats[base + 2]
-                        )
-                    )
+                    (SIMD3<Float>(
+                        floats[base],
+                        floats[base + 1],
+                        floats[base + 2]
+                    ) - halfExtent) / scale
                 )
             }
             return positions
         }
+    }
+
+    func faceOffSurfaceSnapshot() -> (vertices: [SIMD3<Float>], scaleMeters: Float)? {
+        precondition(Thread.isMainThread)
+        guard let data = skinSurfaceVertexFloatData, skinSurfaceVertexCount >= 3 else { return nil }
+        let vertices = worldPositions(fromSurfaceVertexFloatData: data)
+        guard vertices.count >= 3, vertices.count.isMultiple(of: 3) else { return nil }
+        return (vertices, volumePhysicalScale() / 1000)
+    }
+
+    func faceOffSurfaceExtractionFinished() -> Bool {
+        skinSurfaceExtractionAttempted && !skinWorkInFlight
     }
 
     private func centroidWorldPosition(fromSurfaceVertexFloatData vertexFloatData: Data) -> SIMD3<Float>? {

@@ -91,12 +91,10 @@ final class HorosDatabaseServer: NSObject {
         let peer = HorosDatabasePeer(connection: connection)
         peers[identifier] = peer
         let handler = handler
-        let activity = HorosActivityToken.begin()
         workers.addOperation { [weak self] in
             autoreleasepool {
                 defer {
                     peer.cancel()
-                    activity.stop()
                     DispatchQueue.main.async { [weak self] in
                         self?.peers.removeValue(forKey: identifier)
                     }
@@ -126,6 +124,7 @@ final class HorosDatabasePeer: NSObject {
     private static let chunkSize = 128 * 1024
     private static let idleTimeout: TimeInterval = 45
     private let connection: NWConnection
+    private let activity = HorosActivityToken.begin()
     private let condition = NSCondition()
     // Callback state is protected by condition; there is only one protocol consumer.
     private var failure: Error?
@@ -223,6 +222,9 @@ final class HorosDatabasePeer: NSObject {
         failure = URLError(.cancelled)
         condition.broadcast()
         condition.unlock()
+        // A cancelled queued operation may never execute its cleanup block.
+        // End activity here even if the queue still retains that operation.
+        activity.stop()
         connection.cancel()
     }
 

@@ -263,11 +263,10 @@ private final class MetalPreviewRenderer: NSObject, MTKViewDelegate {
             let dicomWindow = storedPixels.defaultWindow.flatMap { window in
                 window.level.isFinite && window.width.isFinite && window.width > 0 ? window : nil
             }
-            let useAutomaticWindow = modality?.uppercased() == "MR" || dicomWindow == nil
-            let automaticWindow = useAutomaticWindow
-                ? MetalViewerAutomaticWindowLevel.window(for: storedPixels, modality: modality)
-                : nil
-            let window = automaticWindow ?? dicomWindow ?? storedPixels.storedRangeWindow
+            let normalizedModality = modality?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            let useViewerDefault = normalizedModality == "MR" || normalizedModality == "CT"
+            let windowState = MetalViewerWindowLevelState(defaultWindow: useViewerDefault ? nil : dicomWindow)
+            let window = windowState.resolvedWindow(for: storedPixels, modality: modality)
             windowWidth = max(window.width, 1)
             windowLevel = window.level
             needsDefaultWindow = false

@@ -111,6 +111,11 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
         configureTumorLabelPopup()
     }
 
+    func setSkinSurfaceEnabled(_ enabled: Bool) {
+        skinSurfaceEnabled = enabled
+        rebuildVisibilityMenu()
+    }
+
     func configure(
         contentCapabilities: Metal3DViewerContentCapabilities,
         activeModality: String,
@@ -502,13 +507,6 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
             )
             visibilityMenu.addItem(
                 checkableMenuItem(
-                    title: NSLocalizedString("Show Surface", comment: ""),
-                    action: #selector(toggleSkinSurface(_:)),
-                    isOn: skinSurfaceEnabled
-                )
-            )
-            visibilityMenu.addItem(
-                checkableMenuItem(
                     title: NSLocalizedString("Show Tumour", comment: ""),
                     action: #selector(toggleTumorVisibility(_:)),
                     isOn: tumorVisible
@@ -540,6 +538,16 @@ final class Metal3DViewerToolbarController: NSObject, NSToolbarDelegate {
             depthItem.submenu = depthMenu
             visibilityMenu.addItem(.separator())
             visibilityMenu.addItem(depthItem)
+        }
+
+        if contentCapabilities.hasVisibilityOptions {
+            visibilityMenu.addItem(
+                checkableMenuItem(
+                    title: NSLocalizedString("Show Surface", comment: ""),
+                    action: #selector(toggleSkinSurface(_:)),
+                    isOn: skinSurfaceEnabled
+                )
+            )
         }
 
         if contentCapabilities.containsCT {

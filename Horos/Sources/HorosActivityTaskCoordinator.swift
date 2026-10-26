@@ -79,7 +79,6 @@ final class HorosActivityTaskCoordinator: NSObject {
 
     private var activities: [ObjectIdentifier: HorosActivityTask] = [:]
     private var completionHandlers: [ObjectIdentifier: [UUID: () -> Void]] = [:]
-    private var regularDockIcon: NSImage?
     private var preparedRegularDockIcon: NSImage?
     private var preparedActivityDockIcon: NSImage?
     private var preparedDockSize = NSSize.zero
@@ -161,27 +160,32 @@ final class HorosActivityTaskCoordinator: NSObject {
 
     fileprivate func updateActivityDockIcon() {
         if !HorosActivityToken.hasActiveOperations {
-            guard dockIconTimer != nil else { return }
+            guard dockIconTimer != nil || isActivityDockIconVisible else { return }
             dockIconTimer?.invalidate()
             dockIconTimer = nil
-            NSApplication.shared.applicationIconImage = regularDockIcon
-            regularDockIcon = nil
-            preparedRegularDockIcon = nil
-            preparedActivityDockIcon = nil
             isActivityDockIconVisible = false
+            // Use the same sized raster as the normal blink phase. Restoring
+            // the bundle icon here changes its size during short operations.
+            if let icon = preparedRegularDockIcon {
+                NSApplication.shared.applicationIconImage = icon
+            }
             return
         }
         guard dockIconTimer == nil else { return }
-        regularDockIcon = NSApplication.shared.applicationIconImage
-        setActivityDockIconVisible(true)
         let timer = Timer(timeInterval: 0.5, target: self,
                           selector: #selector(toggleActivityDockIcon(_:)),
                           userInfo: nil, repeats: true)
-        RunLoop.main.add(timer, forMode: .common)
         dockIconTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        setActivityDockIconVisible(true)
     }
 
     @objc private func toggleActivityDockIcon(_ timer: Timer) {
+        guard timer === dockIconTimer else { return }
+        guard HorosActivityToken.hasActiveOperations else {
+            updateActivityDockIcon()
+            return
+        }
         setActivityDockIconVisible(!isActivityDockIconVisible)
     }
 
@@ -192,7 +196,7 @@ final class HorosActivityTaskCoordinator: NSObject {
             ? reportedSize : NSSize(width: 128, height: 128)
         let scale = NSScreen.screens.map(\.backingScaleFactor).max() ?? 2
         // Rasterize and colour-convert once, not every blink. Rebuild only if the
-        // Dock size or display scale changes; retain the original for restoration.
+        // Dock size or display scale changes.
         if preparedRegularDockIcon == nil || preparedActivityDockIcon == nil ||
             preparedDockSize != size || preparedDockScale != scale {
             // applicationIconImage may be nil when AppKit is using the bundle icon.
@@ -204,8 +208,14 @@ final class HorosActivityTaskCoordinator: NSObject {
         let icon = visible ? (preparedActivityDockIcon ?? Self.activityDockIcon)
             : (preparedRegularDockIcon ?? Self.normalDockIcon)
         guard let icon else { return }
-        NSApplication.shared.applicationIconImage = icon
+        // Preparing/applying an AppKit image may run nested callbacks. Do not
+        // reapply activity after the final operation has already completed.
+        guard dockIconTimer != nil, HorosActivityToken.hasActiveOperations else {
+            updateActivityDockIcon()
+            return
+        }
         isActivityDockIconVisible = visible
+        NSApplication.shared.applicationIconImage = icon
     }
 
     private static func prepareDockIcon(_ image: NSImage?, size: NSSize, scale: CGFloat) -> NSImage? {

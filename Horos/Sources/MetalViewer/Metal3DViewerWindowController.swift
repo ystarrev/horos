@@ -3,7 +3,19 @@ import CoreData
 import simd
 
 final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate {
+    enum Mode { case volume, faceOff }
+
     private let volumeView = Metal3DVolumeView(frame: .zero)
+    private let mode: Mode
+    private let faceOffStatusLabel = NSTextField(wrappingLabelWithString: "Extracting skin surface...")
+    private let faceOffLandmarkToggle = NSButton(checkboxWithTitle: "Show landmarks", target: nil, action: nil)
+    private var faceOffDetectedLandmarks: [HeadLandmarkID: SIMD3<Float>] = [:]
+    private var faceOffDetectedAuxiliaryContours: [HeadAuxiliaryContourKind: [SIMD3<Float>]] = [:]
+    private var faceOffDetectedCTGlobes: [SIMD3<Float>] = []
+    private var faceOffWorker: HeadSurfaceLandmarkRenderer?
+    private var faceOffTask: Task<Void, Never>?
+    private var faceOffAnalysisStarted = false
+    private var faceOffGeneration = 0
     private let toolbarController = Metal3DViewerToolbarController()
     private let histogramPanelController = Metal3DHistogramPanelController()
     private let pixList: [DCMPix]
@@ -14,8 +26,9 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
     private var latestTumorSegmentationSummary: String?
     private var latestTumorSeriesFetchSummary: String?
 
-    init(pixList: [DCMPix], title: String) {
+    init(pixList: [DCMPix], title: String, mode: Mode = .volume) {
         self.pixList = pixList
+        self.mode = mode
         self.contentCapabilities = Metal3DViewerContentCapabilities(pixList: pixList)
 
         let window = NSWindow(
@@ -24,7 +37,7 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
             backing: .buffered,
             defer: false
         )
-        window.title = Self.windowTitle(for: title)
+        window.title = mode == .faceOff ? "FaceOff: \(title)" : Self.windowTitle(for: title)
         window.minSize = NSSize(width: 900, height: 600)
         window.center()
         window.isReleasedWhenClosed = false
@@ -210,15 +223,56 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
             volumeView.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
         ])
 
+        if mode == .faceOff {
+            let panel = NSVisualEffectView(frame: .zero)
+            panel.translatesAutoresizingMaskIntoConstraints = false
+            panel.material = .hudWindow
+            panel.state = .active
+            panel.wantsLayer = true
+            panel.layer?.cornerRadius = 10
+            panel.layer?.masksToBounds = true
+            faceOffStatusLabel.textColor = .white
+            faceOffStatusLabel.maximumNumberOfLines = 0
+            faceOffStatusLabel.lineBreakMode = .byWordWrapping
+            faceOffStatusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            faceOffStatusLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+            let retry = NSButton(title: "Re-detect landmarks", target: self, action: #selector(retryFaceOff(_:)))
+            retry.bezelStyle = .rounded
+            faceOffLandmarkToggle.target = self
+            faceOffLandmarkToggle.action = #selector(toggleFaceOffLandmarks(_:))
+            faceOffLandmarkToggle.state = .on
+            let stack = NSStackView(views: [faceOffStatusLabel, faceOffLandmarkToggle, retry])
+            stack.orientation = .vertical
+            stack.alignment = .leading
+            stack.spacing = 10
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            panel.addSubview(stack)
+            rootView.addSubview(panel)
+            NSLayoutConstraint.activate([
+                panel.leadingAnchor.constraint(equalTo: rootView.leadingAnchor, constant: 18),
+                panel.topAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.topAnchor, constant: 12),
+                panel.widthAnchor.constraint(equalToConstant: 480),
+                panel.trailingAnchor.constraint(lessThanOrEqualTo: rootView.trailingAnchor, constant: -18),
+                stack.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 16),
+                stack.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -16),
+                stack.topAnchor.constraint(equalTo: panel.topAnchor, constant: 14),
+                stack.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -14),
+                faceOffStatusLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            ])
+            volumeView.showSkinSurface = true
+            toolbarController.setSkinSurfaceEnabled(true)
+        }
+
         volumeView.volumeDidBecomeReady = { [weak self] in
             guard let self else { return }
             self.histogramPanelController.update(
                 histogram: self.volumeView.makeHistogramModel(),
                 opacityPoints: self.volumeView.opacityControlPoints()
             )
+            self.runFaceOffAnalysisIfReady()
         }
         volumeView.showMetal = contentCapabilities.containsCT == false
-        volumeView.configure(pixList: pixList)
+        volumeView.configure(pixList: pixList, faceOffStartingPose: mode == .faceOff)
         if let selectedWLPresetName = volumeView.selectedWLPresetName {
             toolbarController.selectWLPreset(named: selectedWLPresetName)
         }
@@ -233,6 +287,201 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
             histogram: volumeView.makeHistogramModel(),
             opacityPoints: volumeView.opacityControlPoints()
         )
+    }
+
+    @objc private func retryFaceOff(_ sender: Any?) {
+        cancelFaceOffAnalysis()
+        faceOffAnalysisStarted = false
+        faceOffDetectedLandmarks = [:]
+        faceOffDetectedAuxiliaryContours = [:]
+        faceOffDetectedCTGlobes = []
+        volumeView.faceOffLandmarks = [:]
+        volumeView.faceOffAuxiliaryContours = [:]
+        volumeView.faceOffCTGlobeCenters = []
+        volumeView.faceOffLandmarksConfirmed = true
+        faceOffStatusLabel.stringValue = "Detecting landmarks again..."
+        runFaceOffAnalysisIfReady()
+    }
+
+    @objc private func toggleFaceOffLandmarks(_ sender: NSButton) {
+        volumeView.faceOffLandmarks = sender.state == .on ? faceOffDetectedLandmarks : [:]
+        volumeView.faceOffAuxiliaryContours = sender.state == .on ? faceOffDetectedAuxiliaryContours : [:]
+        volumeView.faceOffCTGlobeCenters = sender.state == .on ? faceOffDetectedCTGlobes : []
+    }
+
+    private func runFaceOffAnalysisIfReady() {
+        guard mode == .faceOff, !faceOffAnalysisStarted else { return }
+        guard let snapshot = volumeView.faceOffSurfaceSnapshot(), snapshot.scaleMeters > 0 else {
+            if volumeView.faceOffSurfaceExtractionFinished() {
+                faceOffStatusLabel.stringValue = "No usable skin surface was extracted from this series. Check coverage and image quality."
+            }
+            return
+        }
+        faceOffAnalysisStarted = true
+        faceOffStatusLabel.stringValue = "Skin surface extracted. Detecting eye and nose landmarks..."
+
+        // The phone detector's anatomical checks use meters, while this viewer uses normalized volume coordinates.
+        let vertices = snapshot.vertices.map { $0 * snapshot.scaleMeters }
+        let indices = (0..<vertices.count).map { UInt32($0) }
+        let worker = HeadSurfaceLandmarkRenderer(vertices: vertices, indices: indices)
+        faceOffWorker = worker
+        let generation = faceOffGeneration
+        let scale = snapshot.scaleMeters
+        // Re-detection must use the same patient-aligned views regardless of camera rotation.
+        let preferred = volumeView.faceOffPatientAnteriorOrientation()
+        let modality = pixList.first?.modalityString?
+            .trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+        let isCT = modality == "CT"
+        let ctEyeInput: HeadCTEyeVolume?
+        if isCT, let preferred, let volume = volumeView.segmentationInput() {
+            ctEyeInput = HeadCTEyeVolume(float32HU: volume.float32VolumeData,
+                dimensions: volume.dimensions, spacingMM: volume.spacing,
+                patientAnterior: preferred.direction, patientSuperior: preferred.up,
+                surfaceEyeHints: [])
+        } else {
+            ctEyeInput = nil
+        }
+        faceOffTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let report = try? worker.findLandmarks(preferredDirection: preferred?.direction,
+                                                   preferredUp: preferred?.up)
+            let ctEyeDiagnostic: HeadCTEyeDiagnostic?
+            if let ctEyeInput {
+                let selected = report?.confirmed ?? report?.provisional
+                let hints: [SIMD3<Float>]
+                if let points = selected?.points,
+                   let a = points[.leftEyeMinX], let b = points[.leftEyeMaxX],
+                   let c = points[.rightEyeMinX], let d = points[.rightEyeMaxX] {
+                    hints = [(a + b) * (0.5 / scale), (c + d) * (0.5 / scale)]
+                } else {
+                    hints = []
+                }
+                let guidedInput = HeadCTEyeVolume(float32HU: ctEyeInput.float32HU,
+                    dimensions: ctEyeInput.dimensions, spacingMM: ctEyeInput.spacingMM,
+                    patientAnterior: ctEyeInput.patientAnterior, patientSuperior: ctEyeInput.patientSuperior,
+                    surfaceEyeHints: hints)
+                ctEyeDiagnostic = try? HeadCTEyeballFinder.detect(guidedInput)
+            } else {
+                ctEyeDiagnostic = nil
+            }
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
+            await MainActor.run {
+                guard self.faceOffGeneration == generation else { return }
+                self.faceOffTask = nil
+                self.faceOffWorker = nil
+                self.faceOffDetectedAuxiliaryContours = report?.auxiliaryContours.mapValues {
+                    $0.map { $0 / scale }
+                } ?? [:]
+                self.faceOffDetectedCTGlobes = ctEyeDiagnostic?.centers ?? []
+                self.volumeView.faceOffAuxiliaryContours = self.faceOffLandmarkToggle.state == .on
+                    ? self.faceOffDetectedAuxiliaryContours : [:]
+                self.volumeView.faceOffCTGlobeCenters = self.faceOffLandmarkToggle.state == .on
+                    ? self.faceOffDetectedCTGlobes : []
+                let auxiliary = report?.auxiliaryContours ?? [:]
+                let browCount = (auxiliary[.leftBrow]?.count ?? 0) + (auxiliary[.rightBrow]?.count ?? 0)
+                let eyeCount = (auxiliary[.visionLeftEye]?.count ?? 0) +
+                    (auxiliary[.visionRightEye]?.count ?? 0)
+                let noseCount = (auxiliary[.visionNoseCrest]?.count ?? 0) +
+                    (auxiliary[.visionNoseOutline]?.count ?? 0)
+                let seamCount = auxiliary[.surfaceEyeSeam]?.count ?? 0
+                let apexCount = auxiliary[.surfaceNoseApex]?.count ?? 0
+                let previewSearch = report.map {
+                    "frontal attempts \($0.surfacePreviewFrontal), seam hits \($0.surfaceSeamFound), apex hits \($0.surfaceApexFound)"
+                } ?? "search unavailable"
+                let contourSummary = "Vision on skin: eyes \(eyeCount), nose \(noseCount), brows \(browCount).\nGreen/teal: Vision; white: raw corners.\nMagenta proposals only (not registration): seam \(seamCount), apex \(apexCount).\nPreview: \(previewSearch)."
+                let browGap = report?.browToEyeGapMM.map { String(format: "%.1f", Double($0)) } ?? "-"
+                func midlineOffset(_ value: Float?) -> String {
+                    guard let value else { return "unavailable" }
+                    let amount = String(format: "%.1f mm", Double(abs(value)))
+                    return abs(value) > 5 ? "\(amount) (review)" : amount
+                }
+                let midlineSummary = report.map {
+                    let apexGap = $0.noseTipToApexMM.map {
+                        String(format: "%.1f mm", Double($0))
+                    } ?? "unavailable"
+                    return "3D brow-midline offset: tip \(midlineOffset($0.noseTipMidlineOffsetMM)), bridge \(midlineOffset($0.noseBridgeMidlineOffsetMM)).\nTip to magenta apex: \(apexGap) (preview only)."
+                } ?? ""
+                let ctEyeSummary: String
+                if !isCT {
+                    ctEyeSummary = ""
+                } else if let ctEyeDiagnostic, ctEyeDiagnostic.centers.count == 2,
+                          let separation = ctEyeDiagnostic.pairSeparationMM {
+                    let span = String(format: "%.1f", Double(separation))
+                    let selected = report?.confirmed ?? report?.provisional
+                    let visionSpan: String
+                    let ctComparison: String
+                    if let points = selected?.points,
+                       let a = points[.leftEyeMinX], let b = points[.leftEyeMaxX],
+                       let c = points[.rightEyeMinX], let d = points[.rightEyeMaxX] {
+                        visionSpan = String(format: "%.1f", Double(simd_distance((a + b) * 0.5,
+                                                                                  (c + d) * 0.5) * 1000))
+                        if let preferred {
+                            let globeMidpoint = (ctEyeDiagnostic.centers[0] + ctEyeDiagnostic.centers[1]) *
+                                (scale * 0.5)
+                            let visionMidpoint = (a + b + c + d) * 0.25
+                            let delta = visionMidpoint - globeMidpoint
+                            let lateral = simd_normalize(simd_cross(preferred.up, preferred.direction))
+                            let visionHeight = simd_dot(delta, preferred.up) * 1000
+                            let seam = auxiliary[.surfaceEyeSeam] ?? []
+                            let seamHeights = seam.map { simd_dot($0 - globeMidpoint, preferred.up) * 1000 }
+                                .sorted()
+                            let seamComparison = seamHeights.count >= 8
+                                ? String(format: ", magenta seam %.1f mm", Double(seamHeights[seamHeights.count / 2]))
+                                : ""
+                            ctComparison = String(format:
+                                " CT-relative height: Vision %.1f mm%@ (negative = below); lateral midpoint %.1f mm.",
+                                Double(visionHeight), seamComparison,
+                                Double(abs(simd_dot(delta, lateral)) * 1000))
+                        } else {
+                            ctComparison = ""
+                        }
+                    } else {
+                        visionSpan = "-"
+                        ctComparison = ""
+                    }
+                    ctEyeSummary = "\nCT globe centers (lime, internal): \(span) mm apart from \(ctEyeDiagnostic.candidateCount) candidates (\(ctEyeDiagnostic.detail)) | Vision eye span \(visionSpan) mm.\(ctComparison) Diagnostic only; not canthi."
+                } else if let ctEyeDiagnostic {
+                    ctEyeSummary = "\nCT globe diagnostic: \(ctEyeDiagnostic.detail) (\(ctEyeDiagnostic.candidateCount) candidates)."
+                } else {
+                    ctEyeSummary = "\nCT globe diagnostic unavailable for this volume."
+                }
+                if let result = report?.confirmed {
+                    self.faceOffDetectedLandmarks = result.points.mapValues { $0 / scale }
+                    self.volumeView.faceOffLandmarksConfirmed = true
+                    self.volumeView.faceOffLandmarks = self.faceOffLandmarkToggle.state == .on
+                        ? self.faceOffDetectedLandmarks : [:]
+                    self.faceOffStatusLabel.stringValue = String(
+                        format: "%ld landmarks detected (confidence %.2f).\n1-4: eye corners  5: nose tip  6: bridge\nBrow-eye gap %@ mm | %@\n%@%@\nDrag to rotate; scroll to zoom.",
+                        result.points.count, Double(result.confidence), browGap, contourSummary,
+                        midlineSummary, ctEyeSummary
+                    )
+                } else if let provisional = report?.provisional, let report {
+                    self.faceOffDetectedLandmarks = provisional.points.mapValues { $0 / scale }
+                    self.volumeView.faceOffLandmarksConfirmed = false
+                    self.volumeView.faceOffLandmarks = self.faceOffLandmarkToggle.state == .on
+                        ? self.faceOffDetectedLandmarks : [:]
+                    self.faceOffStatusLabel.stringValue = "Unconfirmed landmarks (orange; do not use for registration).\n\(report.failureSummary)\nBrow-eye gap \(browGap) mm | \(contourSummary)\n\(midlineSummary)\(ctEyeSummary)\nViews \(report.viewsRendered) | face observations \(report.visionFaces) | 3D valid \(report.anatomicalCandidates)"
+                } else if let report {
+                    let bestConfidence = report.bestPairedEyeConfidence.map {
+                        String(format: "%.2f", Double($0))
+                    } ?? "-"
+                    let bestPose = report.bestPairedEyePoseMagnitude.map {
+                        String(format: "%.2f", Double($0))
+                    } ?? "-"
+                    self.faceOffStatusLabel.stringValue = "No confirmed landmarks. \(report.failureSummary)\nEyes paired \(report.facesWithRawEyes) | confidence pass \(report.facesWithConfidentEyes) (best \(bestConfidence)) | pose pass \(report.facesWithAcceptableEyePose) (best \(bestPose))\nImage-left reorder \(report.facesWithReorderedEyes) | fallback spacing \(report.facesWithFallbackSpacing) | level \(report.facesWithFallbackLevel)\n\(contourSummary)\(ctEyeSummary)\nViews \(report.viewsRendered) | faces \(report.visionFaces) | accepted eyes \(report.facesWithEyes) | 2D \(report.imageCandidates) | mapped \(report.mappedCandidates) | 3D \(report.anatomicalCandidates)\nFallback alignment \(report.bestFallbackViewAlignment ?? "-") | nonfrontal rejects \(report.rejectedFallbackViews) | nose rejects \(report.rejectedNosePositions) | low-eye rejects \(report.rejectedLowEyes)"
+                } else {
+                    self.faceOffStatusLabel.stringValue = "Landmark analysis could not complete. Try re-detecting, or inspect the extracted surface.\(ctEyeSummary)"
+                }
+            }
+        }
+    }
+
+    private func cancelFaceOffAnalysis() {
+        faceOffGeneration &+= 1
+        faceOffTask?.cancel()
+        faceOffWorker?.stop()
+        faceOffTask = nil
+        faceOffWorker = nil
     }
 
     private func toggleHistogramPanel() {
@@ -657,6 +906,7 @@ final class Metal3DViewerWindowController: NSWindowController, NSWindowDelegate 
     }
 
     func windowWillClose(_ notification: Notification) {
+        cancelFaceOffAnalysis()
         volumeView.stopSkinPreparation()
         tumorSegmentationTask?.cancel()
         tumorSegmentationTask = nil

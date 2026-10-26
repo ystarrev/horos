@@ -1,42 +1,55 @@
 """Non-build integration checks for the clipboard clinic album feature."""
+import os
 import pathlib
+import subprocess
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONTROLLER = (ROOT / "Horos/Sources/ClinicAlbumImportController.swift").read_text()
 MATCHING = (ROOT / "Horos/Sources/ClinicAlbumMatching.swift").read_text()
+OCR = (ROOT / "Horos/Sources/ClinicAlbumOCR.swift").read_text()
 
 
 class ClinicAlbumIntegrationTests(unittest.TestCase):
     def test_menu_and_project_wiring(self):
         self.assertIn("[ClinicAlbumImportController installMenuItem]", (ROOT / "Horos/Sources/AppController.m").read_text())
         project = (ROOT / "Horos.xcodeproj/project.pbxproj").read_text()
-        for name in ("ClinicAlbumMatching.swift", "ClinicAlbumImportController.swift"):
+        for name in ("ClinicAlbumMatching.swift", "ClinicAlbumImportController.swift", "ClinicAlbumOCR.swift"):
             self.assertIn(name + " in Sources", project)
 
     def test_local_clipboard_ocr(self):
         self.assertIn("clipboard.data(forType: .png)", CONTROLLER)
-        self.assertIn("kCGImageSourceThumbnailMaxPixelSize: 3000", CONTROLLER)
-        self.assertIn("VNRecognizeTextRequest()", CONTROLLER)
-        self.assertIn("request.usesLanguageCorrection = false", CONTROLLER)
-        self.assertNotIn("URLSession", CONTROLLER)
+        self.assertIn("kCGImageSourceThumbnailMaxPixelSize: 3000", OCR)
+        self.assertIn("VNRecognizeTextRequest()", OCR)
+        self.assertIn("request.usesLanguageCorrection = false", OCR)
+        self.assertNotIn("URLSession", CONTROLLER + OCR)
 
     def test_accurate_ocr_stays_off_main_actor(self):
-        self.assertIn("request.recognitionLevel = .accurate", CONTROLLER)
-        self.assertNotIn(".RecognitionLevel.fast", CONTROLLER)
-        self.assertIn("Task.detached(priority: .userInitiated)", CONTROLLER)
-        self.assertIn("withTaskCancellationHandler", CONTROLLER)
-        self.assertIn("worker.cancel()", CONTROLLER)
-        self.assertIn("VNImageRequestHandler(cgImage: image).perform([request])", CONTROLLER)
-        self.assertIn("let names = recognizedNames(observations)", CONTROLLER)
-        self.assertIn("observations=%ld names=%ld", CONTROLLER)
+        self.assertIn("request.recognitionLevel = .accurate", OCR)
+        self.assertNotIn(".fast", OCR)
+        self.assertIn("queue.async", OCR)
+        self.assertIn("withTaskCancellationHandler", OCR)
+        self.assertIn("job.cancel()", OCR)
+        self.assertIn("request?.cancel()", OCR)
+        self.assertIn("VNImageRequestHandler(cgImage: image).perform([request])", OCR)
+        self.assertIn("ClinicAlbumOCR.recognizedNames(observations)", OCR)
+        self.assertIn("observations=%ld names=%ld", OCR)
 
     def test_accurate_ocr_uses_supported_cpu_devices(self):
-        self.assertIn("try request.supportedComputeStageDevices", CONTROLLER)
-        self.assertIn("if case .cpu = $0", CONTROLLER)
-        self.assertIn("request.setComputeDevice(cpu, for: stage)", CONTROLLER)
-        self.assertIn("mode=VN-accurate-CPU", CONTROLLER)
-        self.assertNotIn("request.usesCPUOnly", CONTROLLER)
+        self.assertIn("try request.supportedComputeStageDevices", OCR)
+        self.assertIn("if case .cpu = $0", OCR)
+        self.assertIn("request.setComputeDevice(cpu, for: stage)", OCR)
+        self.assertIn("if cpuOnly && ClinicAlbumOCR.isReaderInitializationFailure(failure)", OCR)
+        self.assertNotIn("request.usesCPUOnly", OCR)
+
+    def test_failed_ocr_does_not_leave_preview_loading(self):
+        failure = CONTROLLER.split("self.retry.isHidden = !self.rows.isEmpty", 1)[0].rsplit("} catch {", 1)[1]
+        self.assertIn("self.loading = false", failure)
+        self.assertIn("self.add.isEnabled = true", failure)
+        self.assertIn("#selector(retryRecognition)", CONTROLLER)
+        self.assertIn("rows.isEmpty, let data = clipboardData", CONTROLLER)
+        self.assertIn("self.updateStatus()", CONTROLLER.split("self.retry.isHidden = !self.rows.isEmpty", 1)[1])
 
     def test_isolated_and_revalidated_commit(self):
         self.assertIn(".privateQueueConcurrencyType", CONTROLLER)
@@ -94,6 +107,24 @@ class ClinicAlbumIntegrationTests(unittest.TestCase):
         self.assertIn("[controller emptyPreset:controller]", route)
         self.assertIn("[controller query:controller]", route)
         self.assertNotIn("retrieve:", route)
+
+
+class ClinicAlbumRuntimeTests(unittest.TestCase):
+    def test_matching_and_ocr_recovery(self):
+        swift = subprocess.check_output(["xcrun", "--find", "swift"], text=True).strip()
+        sdk = subprocess.check_output(["xcrun", "--show-sdk-path"], text=True).strip()
+        with tempfile.TemporaryDirectory(prefix="horos-clinic-tests-") as folder:
+            for name, source in (
+                ("Matching", MATCHING + "\n" + (ROOT / "Scripts/tests/ClinicAlbumMatchingTests.swift").read_text()),
+                ("OCR", MATCHING + "\n" + OCR + "\n" + (ROOT / "Scripts/tests/ClinicAlbumOCRTests.swift").read_text()),
+            ):
+                path = pathlib.Path(folder) / (name + ".swift")
+                path.write_text(source)
+                subprocess.run([swift, "-Xfrontend", "-parse-as-library", "-swift-version", "5",
+                                "-target", "arm64-apple-macosx27.0", "-sdk", sdk,
+                                "-module-cache-path", "/tmp/horos-ocr-module-cache", str(path),
+                                *(["--vision"] if name == "OCR" and os.environ.get("HOROS_TEST_CLINIC_OCR") == "1" else [])],
+                               check=True, timeout=120)
 
 
 if __name__ == "__main__":

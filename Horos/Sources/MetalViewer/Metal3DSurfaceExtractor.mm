@@ -58,51 +58,62 @@
 
 @end
 
-static NSData *Metal3DVertexFloatDataByRemovingZCropCaps(NSData *vertexFloatData, float spacingZ)
+static NSData *Metal3DVertexFloatDataByRemovingVolumeBoundaryCaps(NSData *vertexFloatData,
+                                                                  NSInteger sourceWidth,
+                                                                  NSInteger sourceHeight,
+                                                                  NSInteger sourceDepth,
+                                                                  float spacingX,
+                                                                  float spacingY,
+                                                                  float spacingZ)
 {
     const NSUInteger floatStride = sizeof(float);
     const NSUInteger floatsPerVertex = 6;
     const NSUInteger floatsPerTriangle = floatsPerVertex * 3;
     if (vertexFloatData.length < floatsPerTriangle * floatStride ||
-        vertexFloatData.length % (floatsPerTriangle * floatStride) != 0) {
+        vertexFloatData.length % (floatsPerTriangle * floatStride) != 0 ||
+        sourceWidth < 2 || sourceHeight < 2 || sourceDepth < 2) {
         return vertexFloatData;
+    }
+
+    const NSInteger dimensions[3] = {sourceWidth, sourceHeight, sourceDepth};
+    const float spacing[3] = {spacingX, spacingY, spacingZ};
+    float minimumCapLimit[3];
+    float maximumCapLimit[3];
+    for (NSUInteger axis = 0; axis < 3; axis++) {
+        if (!std::isfinite(spacing[axis]) || spacing[axis] == 0.0f) {
+            return vertexFloatData;
+        }
+        const float lastVoxelPosition = (float)(dimensions[axis] - 1) * spacing[axis];
+        if (!std::isfinite(lastVoxelPosition)) {
+            return vertexFloatData;
+        }
+        const float epsilon = std::max(std::fabs(spacing[axis]) * 0.0001f, 0.00001f);
+        minimumCapLimit[axis] = std::min(0.0f, lastVoxelPosition) + epsilon;
+        maximumCapLimit[axis] = std::max(0.0f, lastVoxelPosition) - epsilon;
     }
 
     const float *source = (const float *)vertexFloatData.bytes;
     const NSUInteger triangleCount = vertexFloatData.length / (floatsPerTriangle * floatStride);
     NSMutableData *filteredData = [NSMutableData dataWithCapacity:vertexFloatData.length];
-    float minimumZ = std::numeric_limits<float>::max();
-    float maximumZ = -std::numeric_limits<float>::max();
 
     for (NSUInteger triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
         const float *triangle = source + triangleIndex * floatsPerTriangle;
-        minimumZ = std::min(minimumZ, triangle[2]);
-        minimumZ = std::min(minimumZ, triangle[8]);
-        minimumZ = std::min(minimumZ, triangle[14]);
-        maximumZ = std::max(maximumZ, triangle[2]);
-        maximumZ = std::max(maximumZ, triangle[8]);
-        maximumZ = std::max(maximumZ, triangle[14]);
-    }
-
-    if (!std::isfinite(minimumZ) || !std::isfinite(maximumZ) || maximumZ <= minimumZ) {
-        return vertexFloatData;
-    }
-
-    const float capThickness = std::max(std::fabs(spacingZ) * 1.25f, 0.0001f);
-    const float minimumCapZLimit = minimumZ + capThickness;
-    const float maximumCapZLimit = maximumZ - capThickness;
-
-    for (NSUInteger triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
-        const float *triangle = source + triangleIndex * floatsPerTriangle;
-        const bool allVerticesInMinimumZCap =
-            triangle[2] <= minimumCapZLimit &&
-            triangle[8] <= minimumCapZLimit &&
-            triangle[14] <= minimumCapZLimit;
-        const bool allVerticesInMaximumZCap =
-            triangle[2] >= maximumCapZLimit &&
-            triangle[8] >= maximumCapZLimit &&
-            triangle[14] >= maximumCapZLimit;
-        if (!allVerticesInMinimumZCap && !allVerticesInMaximumZCap) {
+        bool isBoundaryCap = false;
+        for (NSUInteger axis = 0; axis < 3; axis++) {
+            const bool allVerticesAtMinimum =
+                triangle[axis] <= minimumCapLimit[axis] &&
+                triangle[floatsPerVertex + axis] <= minimumCapLimit[axis] &&
+                triangle[2 * floatsPerVertex + axis] <= minimumCapLimit[axis];
+            const bool allVerticesAtMaximum =
+                triangle[axis] >= maximumCapLimit[axis] &&
+                triangle[floatsPerVertex + axis] >= maximumCapLimit[axis] &&
+                triangle[2 * floatsPerVertex + axis] >= maximumCapLimit[axis];
+            if (allVerticesAtMinimum || allVerticesAtMaximum) {
+                isBoundaryCap = true;
+                break;
+            }
+        }
+        if (!isBoundaryCap) {
             [filteredData appendBytes:triangle length:floatsPerTriangle * floatStride];
         }
     }
@@ -354,7 +365,7 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
                                                                           spacingY:(float)spacingY
                                                                           spacingZ:(float)spacingZ
                                                                          threshold:(float)threshold
-                                                                   openMinimumZCap:(BOOL)openMinimumZCap;
+                                                           openVolumeBoundaryCaps:(BOOL)openVolumeBoundaryCaps;
 
 @end
 
@@ -377,7 +388,7 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
                                      spacingY:spacingY
                                      spacingZ:spacingZ
                                     threshold:threshold
-                              openMinimumZCap:NO];
+                      openVolumeBoundaryCaps:NO];
 }
 
 + (nullable Metal3DSurfaceExtractionResult *)extractSkinSurfaceFromVolume:(NSData *)volumeData
@@ -388,7 +399,7 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
                                                                  spacingY:(float)spacingY
                                                                  spacingZ:(float)spacingZ
                                                                 threshold:(float)threshold
-                                                          openMinimumZCap:(BOOL)openMinimumZCap
+                                                  openVolumeBoundaryCaps:(BOOL)openVolumeBoundaryCaps
 {
     return [self extractSkinSurfaceWithMetalFromVolume:volumeData
                                                  width:width
@@ -398,7 +409,7 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
                                               spacingY:spacingY
                                               spacingZ:spacingZ
                                              threshold:threshold
-                                       openMinimumZCap:openMinimumZCap];
+                               openVolumeBoundaryCaps:openVolumeBoundaryCaps];
 }
 
 + (nullable NSData *)filterSurfaceVertexFloatDataByRotatingVisibility:(NSData *)vertexFloatData
@@ -631,7 +642,7 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
                                                                           spacingY:(float)spacingY
                                                                           spacingZ:(float)spacingZ
                                                                          threshold:(float)threshold
-                                                                   openMinimumZCap:(BOOL)openMinimumZCap
+                                                           openVolumeBoundaryCaps:(BOOL)openVolumeBoundaryCaps
 {
     if (width <= 1 || height <= 1 || depth <= 1) {
         return nil;
@@ -869,8 +880,10 @@ static BOOL Metal3DSurfaceExtractorGetComputeResources(id<MTLDevice> *deviceOut,
 
     NSData *surfaceVoxelMask = [NSData dataWithBytes:surfaceMaskBuffer.contents length:(NSUInteger)voxelCount * sizeof(uint8_t)];
     NSData *vertexFloatData = [NSData dataWithBytes:vertexBuffer.contents length:(NSUInteger)vertexByteCount64];
-    if (openMinimumZCap) {
-        vertexFloatData = Metal3DVertexFloatDataByRemovingZCropCaps(vertexFloatData, spacingZ);
+    if (openVolumeBoundaryCaps) {
+        vertexFloatData = Metal3DVertexFloatDataByRemovingVolumeBoundaryCaps(vertexFloatData,
+                                                                            width, height, depth,
+                                                                            spacingX, spacingY, spacingZ);
     }
     const NSInteger filteredTriangleVertexCount = (NSInteger)(vertexFloatData.length / (sizeof(float) * 6));
     const NSInteger filteredTriangleCount = filteredTriangleVertexCount / 3;

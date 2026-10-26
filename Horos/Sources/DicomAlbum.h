@@ -39,7 +39,7 @@
 
 #import <Cocoa/Cocoa.h>
 
-@class DicomStudy;
+@class DicomStudy, DicomSeries;
 
 /** \brief  Core Data Entity for an Album */
 
@@ -53,6 +53,18 @@
 @property(nonatomic, retain) NSNumber* smartAlbum;
 @property(nonatomic, retain) NSSet* studies;
 @property int numberOfStudies;
+
+- (BOOL)isSeriesCollection;
++ (NSString *)seriesCollectionKeyForSeries:(DicomSeries *)series;
+- (NSArray<NSString *> *)seriesCollectionKeys;
+- (void)setSeriesCollectionKeys:(NSArray<NSString *> *)keys;
+- (NSDictionary *)seriesCollectionCriteria;
+- (void)setSeriesCollectionCriteria:(NSDictionary *)criteria;
+- (NSArray<NSString *> *)seriesCollectionExcludedKeys;
+- (void)setSeriesCollectionExcludedKeys:(NSArray<NSString *> *)keys;
+- (BOOL)containsSeriesInCollection:(DicomSeries *)series;
+- (void)addSeriesToCollection:(DicomSeries *)series;
+- (void)removeSeriesFromCollection:(DicomSeries *)series;
 
 @end
 

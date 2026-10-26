@@ -1509,6 +1509,24 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
                 else {
                     a = [albumArray objectAtIndex:index];
                 }
+
+                NSArray *seriesCollectionKeys = [dict objectForKey:@"seriesCollectionKeys"];
+                if ([seriesCollectionKeys isKindOfClass:[NSArray class]])
+                {
+                    if (a.smartAlbum.boolValue || (index != NSNotFound && ![a isSeriesCollection]))
+                        continue; // Never turn an existing study or smart album into a collection.
+                    a.smartAlbum = [NSNumber numberWithBool:NO];
+                    [a setSeriesCollectionKeys:seriesCollectionKeys];
+                    NSDictionary *criteria = [dict objectForKey:@"seriesCollectionCriteria"];
+                    if ([criteria isKindOfClass:[NSDictionary class]])
+                        [a setSeriesCollectionCriteria:criteria];
+                    NSArray *excluded = [dict objectForKey:@"seriesCollectionExcludedKeys"];
+                    if ([excluded isKindOfClass:[NSArray class]])
+                        [a setSeriesCollectionExcludedKeys:excluded];
+                    [[a mutableSetValueForKey:@"studies"] removeAllObjects];
+                }
+                else if ([a isSeriesCollection])
+                    continue; // Never import a study album over a collection with the same name.
                 
                 if (!a.smartAlbum.boolValue) {
                     a.smartAlbum = [NSNumber numberWithBool:NO];
@@ -1517,9 +1535,19 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
                         NSArray* qr = [self objectsForEntity:self.studyEntity predicate:[NSPredicate predicateWithFormat:@"studyInstanceUID = %@", studyInstanceUID]];
                         if (qr.count)
                         {
-                            [[a mutableSetValueForKey:@"studies"] addObjectsFromArray:qr];
+                            for (DicomStudy *study in qr)
+                            {
+                                if (![a isSeriesCollection])
+                                    [[a mutableSetValueForKey:@"studies"] addObject:study];
+                                else
+                                    for (DicomSeries *series in study.series)
+                                        if ([a containsSeriesInCollection:series]) {
+                                            [[a mutableSetValueForKey:@"studies"] addObject:study];
+                                            break;
+                                        }
+                            }
                         }
-                        else
+                        else if (![a isSeriesCollection])
                         {
                             DicomStudy* s = [self newObjectForEntity:self.studyEntity];
                             s.studyInstanceUID = [entry objectForKey:@"studyInstanceUID"];
@@ -1579,6 +1607,12 @@ NSString* const DicomDatabaseLogEntryEntityName = @"LogEntry";
                 else
                 {
                     NSMutableArray* studies = [NSMutableArray array];
+                    if ([album isSeriesCollection])
+                    {
+                        [entry setObject:[album seriesCollectionKeys] forKey:@"seriesCollectionKeys"];
+                        [entry setObject:[album seriesCollectionCriteria] forKey:@"seriesCollectionCriteria"];
+                        [entry setObject:[album seriesCollectionExcludedKeys] forKey:@"seriesCollectionExcludedKeys"];
+                    }
                     for (DicomStudy* study in album.studies)
                     {
                         NSMutableDictionary* entry = [NSMutableDictionary dictionary];

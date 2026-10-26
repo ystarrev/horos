@@ -3910,12 +3910,11 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     ) -> MetalViewerWindowLevel {
         let resolvedStoredPixels = storedPixels ?? MetalStoredInt16PixelData(pix: pix)
         if usesAutomaticWindowLevel,
-           let resolvedStoredPixels,
-           let automaticWindow = MetalViewerAutomaticWindowLevel.window(
-            for: resolvedStoredPixels,
-            modality: pix.modalityString
-           ) {
-            return automaticWindow
+           let resolvedStoredPixels {
+            return MetalViewerWindowLevelState().resolvedWindow(
+                for: resolvedStoredPixels,
+                modality: pix.modalityString
+            )
         }
         return resolvedStoredPixels?.inferredWindow
             ?? MetalViewerWindowLevel(level: 0, width: 1)

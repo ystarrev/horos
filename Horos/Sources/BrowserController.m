@@ -317,6 +317,11 @@ NSString* asciiString(NSString* str)
 -(void)initContextualMenus;
 -(void)observeScrollerStyleDidChangeNotification:(NSNotification*)n;
 -(void)removeAlbumObject:(DicomAlbum*)album;
+-(DicomAlbum*)selectedSeriesCollection;
+-(NSArray*)seriesCollectionSeriesForStudy:(DicomStudy*)study onlyImages:(BOOL)onlyImages;
+-(void)createAlbumAsSeriesCollection:(BOOL)isSeriesCollection;
+-(NSDictionary*)promptForSeriesCollectionCriteria:(DicomAlbum*)album name:(NSString**)name;
+-(NSInteger)addMatchingSeriesToCollection:(DicomAlbum*)album criteria:(NSDictionary*)criteria;
 -(void)openMetalViewerForDatabaseObject:(NSManagedObject*)item;
 -(void)openMetalViewerForSurgicalProcedure:(SurgicalProcedureEvent*)event;
 -(void)openVolumeImages:(NSArray*)loadList launcherName:(NSString*)launcherName;
@@ -503,6 +508,40 @@ static void HorosBrowserFitSidebarTable(NSTableView *tableView)
     [tableView sizeLastColumnToFit];
 }
 
+static NSTextField *HorosSeriesCollectionLabel(NSString *title, NSRect frame)
+{
+    NSTextField *label = [[[NSTextField alloc] initWithFrame:frame] autorelease];
+    label.stringValue = title;
+    label.editable = NO;
+    label.selectable = NO;
+    label.bordered = NO;
+    label.drawsBackground = NO;
+    return label;
+}
+
+static BOOL HorosSeriesCollectionMatchesWeighting(DicomSeries *series, NSString *weighting)
+{
+    if ([weighting isEqualToString:@"Any"]) return YES;
+    NSString *description = [NSString stringWithFormat:@"%@ %@", series.seriesDescription ?: @"", series.name ?: @""];
+    if (![description length]) return NO;
+    NSString *pattern = nil;
+    if ([weighting isEqualToString:@"T1"])
+        pattern = @"(^|[^A-Z0-9])T1(W|WEIGHTED)?([^A-Z0-9]|$)|MPRAGE|MP.RAGE|BRAVO|SPGR|VIBE|THRIVE|TFE";
+    else if ([weighting isEqualToString:@"T2"])
+        pattern = @"(^|[^A-Z0-9])T2(W|WEIGHTED)?([^A-Z0-9]|$)";
+    else if ([weighting isEqualToString:@"FLAIR"])
+        pattern = @"FLAIR";
+    return pattern && [description rangeOfString:pattern options:NSRegularExpressionSearch | NSCaseInsensitiveSearch].location != NSNotFound;
+}
+
+static NSUInteger HorosSeriesCollectionSliceCount(DicomSeries *series)
+{
+    NSUInteger images = series.images.count;
+    if (images != 1) return images;
+    DicomImage *image = [series.images anyObject];
+    return MAX(images, (NSUInteger)MAX(0, image.numberOfFrames.integerValue));
+}
+
 @implementation BrowserController
 
 +(void)initializeBrowserControllerClass
@@ -528,6 +567,7 @@ static NSString*    ModalityFilterToolbarItemIdentifier = @"ModalityFilter";
 static NSString*	XMLToolbarItemIdentifier			= @"XML.icns";
 static NSString*	MetalToolbarItemIdentifier			= @"MetalToolbar.png";
 static NSString*	Metal3DToolbarItemIdentifier			= @"Metal3DToolbarItem";
+static NSString* FaceOffToolbarItemIdentifier = @"FaceOffToolbarItem";
 static NSString* FrameToolbarItemIdentifier = @"FrameToolbarItem";
 static NSString*	OpenKeyImagesAndROIsToolbarItemIdentifier	= @"ROIsAndKeys.tif";
 static NSString*	OpenKeyImagesToolbarItemIdentifier	= @"Keys.tif";
@@ -3308,7 +3348,17 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             {
                 [self invalidateSmartAlbumFetch];
                 albumArrayContent = [[album valueForKey:@"studies"] allObjects];
-                description = [description stringByAppendingFormat:NSLocalizedString(@"Album selected: %@", nil), [album valueForKey:@"name"]];
+                if ([(DicomAlbum*)album isSeriesCollection])
+                {
+                    NSMutableArray *studiesWithSeries = [NSMutableArray array];
+                    for (DicomStudy *study in albumArrayContent)
+                        if ([[self seriesCollectionSeriesForStudy:study onlyImages:YES] count])
+                            [studiesWithSeries addObject:study];
+                    albumArrayContent = studiesWithSeries;
+                }
+                description = [description stringByAppendingFormat:[(DicomAlbum*)album isSeriesCollection]
+                    ? NSLocalizedString(@"Series Collection selected: %@", nil)
+                    : NSLocalizedString(@"Album selected: %@", nil), [album valueForKey:@"name"]];
             }
         }
     }
@@ -3557,7 +3607,14 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         {
             if ([_albumNoOfStudiesCache count] > albumTable.selectedRow && filtered == NO && smartAlbumLoading == NO)
             {
-                [_albumNoOfStudiesCache replaceObjectAtIndex:albumTable.selectedRow withObject:[decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInt:[outlineViewArray count]]]];
+                NSUInteger visibleCount = [outlineViewArray count];
+                if ([self selectedSeriesCollection])
+                {
+                    visibleCount = 0;
+                    for (DicomStudy *study in outlineViewArray)
+                        visibleCount += [[self outlineChildrenArray:study] count];
+                }
+                [_albumNoOfStudiesCache replaceObjectAtIndex:albumTable.selectedRow withObject:[decimalNumberFormatter stringForObjectValue:[NSNumber numberWithUnsignedInteger:visibleCount]]];
                 [albumTable reloadData];
             }
         }
@@ -3684,7 +3741,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 
     outlineViewArray = [self arrayByPresentingSurgicalProcedureStudies:outlineViewArray
                                                               sortDescriptors:sortDescriptors
-                                                               presentEvents:smartAlbumName == nil && [self seriesDescriptionSearchIsActive] == NO];
+                                                               presentEvents:smartAlbumName == nil && [self seriesDescriptionSearchIsActive] == NO && [self selectedSeriesCollection] == nil];
     
     long images = 0;
     long matchingSeries = 0;
@@ -3701,7 +3758,18 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
             images += [[obj valueForKey:@"noFiles"] intValue];
     }
 
-    if( [self seriesDescriptionSearchIsActive])
+    if( [self selectedSeriesCollection])
+    {
+        matchingSeries = 0;
+        images = 0;
+        for (DicomStudy *study in outlineViewArray)
+            for (DicomSeries *series in [self outlineChildrenArray:study]) {
+                matchingSeries++;
+                images += [[series valueForKey:@"noFiles"] intValue];
+            }
+        description = [description stringByAppendingFormat:NSLocalizedString(@" / Result = %ld series (%ld images)", nil), matchingSeries, images];
+    }
+    else if( [self seriesDescriptionSearchIsActive])
         description = [description stringByAppendingFormat:NSLocalizedString(@" / Result = %@ studies (%@ matching series, %@ images)", nil), [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInteger:[outlineViewArray count]]], [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithLong:matchingSeries]], [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithLong:images]]];
     else
         description = [description stringByAppendingFormat: NSLocalizedString(@" / Result = %@ studies (%@ images)", nil), [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInt: [outlineViewArray count]]], [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInt:images]]];
@@ -3914,7 +3982,17 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                 else
                 {
                     activityThread.status = ialbum.name;
-                    count = ialbum.studies.count;
+                    if ([ialbum isSeriesCollection])
+                    {
+                        count = 0;
+                        NSSet *keys = [NSSet setWithArray:[ialbum seriesCollectionKeys]];
+                        for (DicomStudy *study in ialbum.studies)
+                            for (DicomSeries *series in study.series)
+                                if ([keys containsObject:[DicomAlbum seriesCollectionKeyForSeries:series]])
+                                    count++;
+                    }
+                    else
+                        count = ialbum.studies.count;
                 }
                 
                 NSString *formattedCount = count >= 0 ? [decimalNumberFormatter stringForObjectValue:[NSNumber numberWithInteger:count]] : @"#";
@@ -4059,6 +4137,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     if( children == nil)
         return [NSArray array];
 
+    if( [item isKindOfClass:[DicomStudy class]] && [self selectedSeriesCollection])
+        children = [self seriesCollectionSeriesForStudy:item onlyImages:YES];
+
     if( [self seriesDescriptionSearchIsActive] == NO || ![[item valueForKey:@"type"] isEqualToString:@"Study"])
         return children;
 
@@ -4156,7 +4237,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
 
 - (NSArray*) imagesArray: (id) item preferredObject: (int) preferredObject onlyImages:(BOOL) onlyImages
 {
-    NSArray			*childrenArray = [self childrenArray: item onlyImages:onlyImages];
+    NSArray			*childrenArray = [item isKindOfClass:[DicomStudy class]] && [self selectedSeriesCollection]
+        ? [self seriesCollectionSeriesForStudy:item onlyImages:onlyImages]
+        : [self childrenArray:item onlyImages:onlyImages];
     NSMutableArray	*imagesPathArray = nil;
     
     if( childrenArray == nil)
@@ -4266,7 +4349,7 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
     
     
     if( [[aFile valueForKey:@"type"] isEqualToString:@"Study"])
-        aFile = [[aFile valueForKey:@"series"] anyObject];
+        aFile = [self selectedSeriesCollection] ? [[self seriesCollectionSeriesForStudy:(DicomStudy*)aFile onlyImages:YES] firstObject] : [[aFile valueForKey:@"series"] anyObject];
     
     if( [[aFile valueForKey:@"type"] isEqualToString:@"Series"])
         aFile = [[aFile valueForKey:@"images"] anyObject];
@@ -4328,7 +4411,9 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                 if( [[curObj valueForKey:@"type"] isEqualToString:@"Study"])
                 {
                     @autoreleasepool {
-                        NSArray	*seriesArray = [self childrenArray: curObj onlyImages: onlyImages];
+                        NSArray	*seriesArray = [self selectedSeriesCollection]
+                            ? [self seriesCollectionSeriesForStudy:(DicomStudy*)curObj onlyImages:onlyImages]
+                            : [self childrenArray:curObj onlyImages:onlyImages];
                         
                         int totImage = 0;
                         DicomSeries* dontDelete = nil;
@@ -5549,6 +5634,8 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
                         [[[item valueForKey:@"images"] allObjects] count] == 1 &&
                         [[[[[item valueForKey:@"images"] allObjects] objectAtIndex:0] valueForKey:@"numberOfFrames"] intValue] > 1))
                         matrixViewArray = [[NSArray arrayWithObject:item] retain];
+                    else if ([item isKindOfClass:[DicomStudy class]] && [self selectedSeriesCollection])
+                        matrixViewArray = [[self seriesCollectionSeriesForStudy:item onlyImages:YES] retain];
                     else
                         matrixViewArray = [[self childrenArray: item] retain];
                     
@@ -6540,6 +6627,33 @@ static BOOL HorosSeriesAnyPredicateFormat(NSPredicate *predicate, NSString **inn
         
         if( ([sender isKindOfClass:[NSMenuItem class]] && [sender menu] == [databaseOutline menu]) || [[self window] firstResponder] == databaseOutline || [[self window] firstResponder] == comparativeTable)
             matrixThumbnails = NO;
+    }
+
+    DicomAlbum *seriesCollection = [self selectedSeriesCollection];
+    if (seriesCollection && matrixThumbnails == NO && [_database isLocal])
+    {
+        NSMutableOrderedSet *seriesToRemove = [NSMutableOrderedSet orderedSet];
+        NSIndexSet *rows = databaseOutline.selectedRowIndexes;
+        for (NSUInteger row = rows.firstIndex; row != NSNotFound; row = [rows indexGreaterThanIndex:row])
+        {
+            id item = [databaseOutline itemAtRow:row];
+            if ([item isKindOfClass:[DicomStudy class]])
+                [seriesToRemove addObjectsFromArray:[self seriesCollectionSeriesForStudy:item onlyImages:NO]];
+            else if ([item isKindOfClass:[DicomSeries class]])
+                [seriesToRemove addObject:item];
+            else if ([item isKindOfClass:[DicomImage class]])
+                [seriesToRemove addObject:[item series]];
+        }
+        for (DicomSeries *series in seriesToRemove)
+            [seriesCollection removeSeriesFromCollection:series];
+        if (seriesToRemove.count)
+        {
+            [_database save];
+            [self refreshAlbums];
+            previousNoOfFiles = -1;
+            [self outlineViewRefresh];
+        }
+        return;
     }
     
     if( matrixThumbnails == NO && [databaseOutline selectedRow] == -1)
@@ -10273,10 +10387,13 @@ constrainSplitPosition:(CGFloat)proposedPosition
         NSRect theRect = [theView.window.contentView convertRect:theView.bounds fromView:theView];
         CGFloat dividerPosition = theRect.origin.x+theRect.size.width;
         NSRect splitFrame = [_bottomSplit frame];
+        CGFloat availableWidth = MAX(0, splitFrame.size.width - _bottomSplit.dividerThickness);
+        dividerPosition = MIN(MAX(0, dividerPosition), availableWidth);
+        CGFloat rightWidth = availableWidth - dividerPosition;
         [[[_bottomSplit subviews] objectAtIndex:0] setFrame:NSMakeRect(0, 0, dividerPosition, splitFrame.size.height)];
-        [[[_bottomSplit subviews] objectAtIndex:1] setFrame:NSMakeRect(dividerPosition+_bottomSplit.dividerThickness, 0, splitFrame.size.width-dividerPosition-_bottomSplit.dividerThickness, splitFrame.size.height)];
+        [[[_bottomSplit subviews] objectAtIndex:1] setFrame:NSMakeRect(dividerPosition+_bottomSplit.dividerThickness, 0, rightWidth, splitFrame.size.height)];
         
-        [animationSlider setFrameSize:NSMakeSize(splitFrame.size.width-dividerPosition-_bottomSplit.dividerThickness, animationSlider.frame.size.height)]; // for some weird reason, we need this..
+        [animationSlider setFrameSize:NSMakeSize(rightWidth, animationSlider.frame.size.height)]; // Keep the slider in sync with the right pane.
     }
 #ifdef WITH_BANNER
     else
@@ -10636,6 +10753,28 @@ constrainSplitPosition:(CGFloat)proposedPosition
 #pragma mark-
 #pragma mark Albums functions
 
+- (DicomAlbum*)selectedSeriesCollection
+{
+    NSInteger row = albumTable.selectedRow;
+    NSArray *albums = self.albumArray;
+    if (row <= 0 || row >= albums.count) return nil;
+    DicomAlbum *album = [albums objectAtIndex:row];
+    return [album isSeriesCollection] ? album : nil;
+}
+
+- (NSArray*)seriesCollectionSeriesForStudy:(DicomStudy*)study onlyImages:(BOOL)onlyImages
+{
+    DicomAlbum *album = [self selectedSeriesCollection];
+    NSArray *series = [self childrenArray:study onlyImages:onlyImages];
+    if (!album || ![album.studies containsObject:study]) return series;
+    NSMutableArray *selected = [NSMutableArray array];
+    NSSet *keys = [NSSet setWithArray:[album seriesCollectionKeys]];
+    for (DicomSeries *candidate in series)
+        if ([keys containsObject:[DicomAlbum seriesCollectionKeyForSeries:candidate]])
+            [selected addObject:candidate];
+    return selected;
+}
+
 - (IBAction) addSmartAlbum: (id)sender
 {
     NSArray *existingNames = [[self albumsInDatabase] valueForKey:@"name"];
@@ -10723,8 +10862,186 @@ constrainSplitPosition:(CGFloat)proposedPosition
 }
 
 - (IBAction) addAlbum:(id)sender
-{ // Add album
-    
+{
+    [self createAlbumAsSeriesCollection:NO];
+}
+
+- (IBAction)addSeriesCollection:(id)sender
+{
+    [self createAlbumAsSeriesCollection:YES];
+}
+
+- (NSDictionary*)promptForSeriesCollectionCriteria:(DicomAlbum*)album name:(NSString**)name
+{
+    NSDictionary *previous = [album seriesCollectionCriteria];
+    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+    alert.messageText = album ? NSLocalizedString(@"Update Series Collection", nil) : NSLocalizedString(@"New Series Collection", nil);
+    alert.informativeText = NSLocalizedString(@"Scan the database now. Updates are manual; you can still add or remove series by hand. MRI type is inferred from series names. Image/frame count does not verify spatial coverage, so review every candidate before image-guidance use.", nil);
+    [alert addButtonWithTitle:album ? NSLocalizedString(@"Add Matches", nil) : NSLocalizedString(@"Create and Scan", nil)];
+    [alert addButtonWithTitle:NSLocalizedString(@"Cancel", nil)];
+
+    NSView *form = [[[NSView alloc] initWithFrame:NSMakeRect(0, 0, 390, 172)] autorelease];
+    NSTextField *nameField = [[[NSTextField alloc] initWithFrame:NSMakeRect(148, 138, 235, 24)] autorelease];
+    nameField.stringValue = album.name ?: @"Image Guidance";
+    nameField.editable = album == nil;
+    [form addSubview:HorosSeriesCollectionLabel(NSLocalizedString(@"Name", nil), NSMakeRect(0, 140, 140, 21))];
+    [form addSubview:nameField];
+
+    NSPopUpButton *modality = [[[NSPopUpButton alloc] initWithFrame:NSMakeRect(145, 100, 240, 27) pullsDown:NO] autorelease];
+    [modality addItemsWithTitles:@[NSLocalizedString(@"CT and MRI", nil), @"CT", @"MRI"]];
+    NSString *modalityValue = [previous objectForKey:@"modality"] ?: @"CT+MR";
+    [modality selectItemAtIndex:[modalityValue isEqualToString:@"CT"] ? 1 : ([modalityValue isEqualToString:@"MR"] ? 2 : 0)];
+    [form addSubview:HorosSeriesCollectionLabel(NSLocalizedString(@"Modality", nil), NSMakeRect(0, 104, 140, 21))];
+    [form addSubview:modality];
+
+    NSPopUpButton *weighting = [[[NSPopUpButton alloc] initWithFrame:NSMakeRect(145, 62, 240, 27) pullsDown:NO] autorelease];
+    [weighting addItemsWithTitles:@[NSLocalizedString(@"T1 (name-based)", nil), NSLocalizedString(@"Any MRI", nil), NSLocalizedString(@"T2 (name-based)", nil), NSLocalizedString(@"FLAIR (name-based)", nil)]];
+    NSString *weightingValue = [previous objectForKey:@"mriType"] ?: @"T1";
+    [weighting selectItemAtIndex:[weightingValue isEqualToString:@"Any"] ? 1 : ([weightingValue isEqualToString:@"T2"] ? 2 : ([weightingValue isEqualToString:@"FLAIR"] ? 3 : 0))];
+    [form addSubview:HorosSeriesCollectionLabel(NSLocalizedString(@"MRI type", nil), NSMakeRect(0, 66, 140, 21))];
+    [form addSubview:weighting];
+
+    NSTextField *slices = [[[NSTextField alloc] initWithFrame:NSMakeRect(148, 26, 100, 24)] autorelease];
+    slices.integerValue = [[previous objectForKey:@"minimumSlices"] integerValue] > 0 ? [[previous objectForKey:@"minimumSlices"] integerValue] : 100;
+    [form addSubview:HorosSeriesCollectionLabel(NSLocalizedString(@"Minimum slices", nil), NSMakeRect(0, 28, 140, 21))];
+    [form addSubview:slices];
+    alert.accessoryView = form;
+
+    if ([alert runModal] != NSAlertFirstButtonReturn) return nil;
+    NSString *trimmedName = [nameField.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (!trimmedName.length || slices.integerValue < 2) {
+        HorosPresentInformationalAlert(NSLocalizedString(@"Invalid Series Collection", nil),
+            NSLocalizedString(@"Enter a name and a minimum of at least two slices.", nil),
+            NSLocalizedString(@"OK", nil), nil, nil);
+        return nil;
+    }
+    if (name) *name = [[trimmedName copy] autorelease];
+    NSArray *modalityCodes = @[@"CT+MR", @"CT", @"MR"];
+    NSArray *weightingCodes = @[@"T1", @"Any", @"T2", @"FLAIR"];
+    return @{ @"modality": [modalityCodes objectAtIndex:modality.indexOfSelectedItem],
+              @"mriType": [weightingCodes objectAtIndex:weighting.indexOfSelectedItem],
+              @"minimumSlices": @(slices.integerValue) };
+}
+
+- (NSInteger)addMatchingSeriesToCollection:(DicomAlbum*)album criteria:(NSDictionary*)criteria
+{
+    NSString *modality = [criteria objectForKey:@"modality"];
+    NSArray *modalities = [modality isEqualToString:@"CT"] ? @[@"CT"] :
+        ([modality isEqualToString:@"MR"] ? @[@"MR"] : @[@"CT", @"MR"]);
+    NSFetchRequest *request = [[[NSFetchRequest alloc] init] autorelease];
+    request.entity = self.database.seriesEntity;
+    request.predicate = [NSPredicate predicateWithFormat:@"modality IN %@", modalities];
+    request.fetchBatchSize = 200;
+
+    WaitRendering *wait = [[WaitRendering alloc] init:NSLocalizedString(@"Scanning series in database...", nil)];
+    [wait showWindow:self];
+    NSInteger added = -1;
+    @try {
+        NSError *error = nil;
+        NSArray *seriesList = [self.database.managedObjectContext executeFetchRequest:request error:&error];
+        if (!seriesList) {
+            NSLog(@"Series Collection scan failed: %@", error);
+            return -1;
+        }
+        NSMutableOrderedSet *keys = [NSMutableOrderedSet orderedSetWithArray:[album seriesCollectionKeys]];
+        NSSet *excluded = [NSSet setWithArray:[album seriesCollectionExcludedKeys]];
+        NSMutableSet *studies = [NSMutableSet set];
+        NSUInteger minimum = (NSUInteger)MAX(2, [[criteria objectForKey:@"minimumSlices"] integerValue]);
+        NSString *mriType = [criteria objectForKey:@"mriType"] ?: @"T1";
+        added = 0;
+        for (DicomSeries *series in seriesList) {
+            if (!series.study || HorosSeriesCollectionSliceCount(series) < minimum) continue;
+            if ([series.modality isEqualToString:@"MR"] && !HorosSeriesCollectionMatchesWeighting(series, mriType)) continue;
+            NSString *key = [DicomAlbum seriesCollectionKeyForSeries:series];
+            if (!key.length || [excluded containsObject:key]) continue;
+            if (![keys containsObject:key]) {
+                [keys addObject:key];
+                [studies addObject:series.study];
+                added++;
+            }
+        }
+        [album setSeriesCollectionCriteria:criteria];
+        [album setSeriesCollectionKeys:keys.array];
+        if (studies.count) [album addStudies:studies];
+        [self.database save:NULL];
+    }
+    @catch (NSException *exception) {
+        NSLog(@"Series Collection scan failed: %@", exception);
+        added = -1;
+    }
+    @finally {
+        [wait close];
+        [wait release];
+    }
+    return added;
+}
+
+- (IBAction)updateSeriesCollection:(id)sender
+{
+    if (![_database isLocal] || [_database isReadOnly]) return;
+    NSInteger row = [albumTable clickedRow];
+    if (row <= 0) row = albumTable.selectedRow;
+    if (row <= 0 || row >= self.albumArray.count) return;
+    DicomAlbum *album = [self.albumArray objectAtIndex:row];
+    if (![album isSeriesCollection]) return;
+    NSDictionary *criteria = [self promptForSeriesCollectionCriteria:album name:NULL];
+    if (!criteria) return;
+    NSInteger added = [self addMatchingSeriesToCollection:album criteria:criteria];
+    if (added < 0) {
+        HorosPresentInformationalAlert(NSLocalizedString(@"Series Collection Scan Failed", nil),
+            NSLocalizedString(@"Could not scan the database. The collection was not refreshed.", nil),
+            NSLocalizedString(@"OK", nil), nil, nil);
+        return;
+    }
+    previousNoOfFiles = -1;
+    [self refreshAlbums];
+    [self outlineViewRefresh];
+    HorosPresentInformationalAlert(NSLocalizedString(@"Series Collection Updated", nil),
+        NSLocalizedString(@"Added %ld matching series. Existing and manually added series were kept.", nil),
+        NSLocalizedString(@"OK", nil), nil, nil, (long)added);
+}
+
+- (void)createAlbumAsSeriesCollection:(BOOL)isSeriesCollection
+{
+    if (isSeriesCollection && (![_database isLocal] || [_database isReadOnly])) return;
+
+    if (isSeriesCollection) {
+        NSString *requestedName = nil;
+        NSDictionary *criteria = [self promptForSeriesCollectionCriteria:nil name:&requestedName];
+        if (!criteria) return;
+        NSFetchRequest *request = [[[NSFetchRequest alloc] init] autorelease];
+        request.entity = self.database.albumEntity;
+        NSArray *existing = [self.database.managedObjectContext executeFetchRequest:request error:NULL];
+        if (!existing) return;
+        NSString *name = requestedName;
+        for (NSUInteger suffix = 2; [[existing valueForKey:@"name"] containsObject:name]; suffix++)
+            name = [NSString stringWithFormat:@"%@ #%lu", requestedName, (unsigned long)suffix];
+        DicomAlbum *album = [self.database newObjectForEntity:self.database.albumEntity];
+        album.name = name;
+        album.smartAlbum = [NSNumber numberWithBool:NO];
+        [album setSeriesCollectionKeys:@[]];
+        NSInteger added = [self addMatchingSeriesToCollection:album criteria:criteria];
+        if (added < 0) {
+            [self.database.managedObjectContext deleteObject:album];
+            HorosPresentInformationalAlert(NSLocalizedString(@"Series Collection Scan Failed", nil),
+                NSLocalizedString(@"Could not scan the database. No collection was created.", nil),
+                NSLocalizedString(@"OK", nil), nil, nil);
+            return;
+        }
+        @synchronized (self) {
+            [_cachedAlbums release]; _cachedAlbums = nil;
+            [_cachedAlbumsIDs release]; _cachedAlbumsIDs = nil;
+            _cachedAlbumsContext = nil;
+        }
+        [self refreshAlbums];
+        [self outlineViewRefresh];
+        HorosPresentInformationalAlert(NSLocalizedString(@"Series Collection Created", nil),
+            NSLocalizedString(@"Added %ld matching series. You can update the scan later from the collection's menu.", nil),
+            NSLocalizedString(@"OK", nil), nil, nil, (long)added);
+        return;
+    }
+
+    NSString *previousTitle = [[newAlbum.title copy] autorelease];
     HorosBeginSheet(newAlbum, self.window, nil, nil, nil);
     
     int result = [NSApp runModalForWindow: newAlbum];
@@ -10732,6 +11049,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
     
     HorosEndSheet(newAlbum);
     [newAlbum orderOut: self];
+    newAlbum.title = previousTitle;
     
     if( result == NSModalResponseStop)
     {
@@ -10755,8 +11073,10 @@ constrainSplitPosition:(CGFloat)proposedPosition
                 name = [NSString stringWithFormat:@"%@ #%d", [newAlbumName stringValue], i++];
             }
             
-            NSManagedObject	*album = [NSEntityDescription insertNewObjectForEntityForName:@"Album" inManagedObjectContext: context];
-            [album setValue:name forKey:@"name"];
+            DicomAlbum *album = [NSEntityDescription insertNewObjectForEntityForName:@"Album" inManagedObjectContext:context];
+            album.name = name;
+            if (isSeriesCollection)
+                [album setSeriesCollectionKeys:@[]];
             
             [_database save];
 
@@ -10804,7 +11124,7 @@ constrainSplitPosition:(CGFloat)proposedPosition
 }
 
 -(void)removeAlbumObject:(DicomAlbum*)album {
-    if ((album.smartAlbum.boolValue == NO && album.studies.count == 0) ||
+    if ((album.smartAlbum.boolValue == NO && album.studies.count == 0 && (![album isSeriesCollection] || [album seriesCollectionKeys].count == 0)) ||
         HorosPresentInformationalAlert(NSLocalizedString(@"Delete Album", nil),
                                      NSLocalizedString(@"Are you sure you want to delete the album named %@?", nil),
                                      NSLocalizedString(@"OK",nil),
@@ -10990,7 +11310,12 @@ constrainSplitPosition:(CGFloat)proposedPosition
             
             [cell setTitle:nil];
             if (rowIndex >= 0 && rowIndex < albumArray.count)
-                [cell setTitle:[[albumArray objectAtIndex:rowIndex] valueForKey:@"name"]];
+            {
+                id album = [albumArray objectAtIndex:rowIndex];
+                NSString *name = [album valueForKey:@"name"];
+                [cell setTitle:[album isKindOfClass:[DicomAlbum class]] && [album isSeriesCollection]
+                    ? [name stringByAppendingString:@" (Series Collection)"] : name];
+            }
             
             NSString *noOfStudies = nil;
             @synchronized (_albumNoOfStudiesCache)
@@ -11149,18 +11474,46 @@ constrainSplitPosition:(CGFloat)proposedPosition
     {
         NSArray* albumArray = self.albumArray;
         
-        if (row >= [albumArray count] || row  == 0) // can't add to database
+        if (row <= 0 || row >= [albumArray count]) // can't add to database
             return NO;
         if ([[[albumArray objectAtIndex:row] valueForKey:@"smartAlbum"] boolValue]) // // can't add to smart album -- this should not be happening: validateDrop avoids it...
             return NO;
         
         DicomAlbum* album = [albumArray objectAtIndex:row];
+
+        if ([_database isReadOnly] || ([album isSeriesCollection] && ![_database isLocal]))
+            return NO;
         
         NSPasteboard* pb = [info draggingPasteboard];
         NSArray* xids = [BrowserController databaseObjectXIDsFromPasteboard:pb];
         NSMutableArray* items = [NSMutableArray array];
         for (NSString* xid in xids)
-            [items addObject:[_database objectWithID:[NSManagedObject UidForXid:xid]]];
+        {
+            NSManagedObject *object = [_database objectWithID:[NSManagedObject UidForXid:xid]];
+            if (object) [items addObject:object];
+        }
+
+        if ([album isSeriesCollection])
+        {
+            NSMutableOrderedSet *series = [NSMutableOrderedSet orderedSet];
+            for (NSManagedObject *object in items)
+            {
+                if ([object isKindOfClass:[DicomSeries class]])
+                    [series addObject:object];
+                else if ([object isKindOfClass:[DicomImage class]])
+                    [series addObject:[(DicomImage*)object series]];
+                else if ([object isKindOfClass:[DicomStudy class]])
+                    [series addObjectsFromArray:[(DicomStudy*)object imageSeries]];
+            }
+            if (!series.count) return NO;
+            for (DicomSeries *item in series)
+                [album addSeriesToCollection:item];
+            [_database save];
+            [self refreshAlbums];
+            previousNoOfFiles = -1;
+            [self outlineViewRefresh];
+            return YES;
+        }
         
         NSMutableArray* studies = [NSMutableArray array];
         for (NSManagedObject* object in items)
@@ -11194,7 +11547,8 @@ constrainSplitPosition:(CGFloat)proposedPosition
     {
         NSArray* array = self.albumArray;
         
-        if ((row >= [array count]) || [[[array objectAtIndex:row] valueForKey:@"smartAlbum"] boolValue] || row == 0) return NSDragOperationNone;
+        if (row <= 0 || row >= [array count] || [[[array objectAtIndex:row] valueForKey:@"smartAlbum"] boolValue] || [_database isReadOnly]) return NSDragOperationNone;
+        if ([[array objectAtIndex:row] isSeriesCollection] && ![_database isLocal]) return NSDragOperationNone;
         
         [albumTable setDropRow:row dropOperation:NSTableViewDropOn];
         
@@ -11511,6 +11865,8 @@ constrainSplitPosition:(CGFloat)proposedPosition
         if (aNotification.object == albumTable)
         {
             NSArray	*albumArray = self.albumArray;
+
+            previousNoOfFiles = -1; // The same study can expose a different subset of series.
             
             self.selectedAlbumName = nil;
             
@@ -11619,6 +11975,33 @@ constrainSplitPosition:(CGFloat)proposedPosition
     [self openVolumeImages:loadList launcherName:@"HorosMetal3DViewerLauncher"];
 }
 
+- (IBAction)openFaceOff:(id)sender
+{
+    NSMutableArray *images = [NSMutableArray array];
+    if (([sender isKindOfClass:[NSMenuItem class]] && [sender menu] == [oMatrix menu]) || [[self window] firstResponder] == oMatrix)
+        [self filesForDatabaseMatrixSelection:images onlyImages:YES];
+    else
+        [self filesForDatabaseOutlineSelection:images onlyImages:YES];
+
+    if (images.count == 0 || (images.count == 1 && [[[images objectAtIndex:0] valueForKey:@"numberOfFrames"] integerValue] < 2)) {
+        HorosPresentCriticalAlert(@"FaceOff", @"Select one CT or MRI series with at least two images.", @"OK", nil, nil);
+        return;
+    }
+    NSManagedObject *series = [[images objectAtIndex:0] valueForKey:@"series"];
+    NSString *modality = [[series valueForKey:@"modality"] uppercaseString];
+    if (!([modality isEqualToString:@"CT"] || [modality isEqualToString:@"MR"])) {
+        HorosPresentCriticalAlert(@"FaceOff", @"FaceOff currently supports CT and MRI series only.", @"OK", nil, nil);
+        return;
+    }
+    for (NSManagedObject *image in images) {
+        if (![[image valueForKey:@"series"] isEqual:series]) {
+            HorosPresentCriticalAlert(@"FaceOff", @"Select one CT or MRI series at a time.", @"OK", nil, nil);
+            return;
+        }
+    }
+    [self openVolumeImages:images launcherName:@"HorosFaceOffLauncher"];
+}
+
 - (IBAction)openFrameViewer:(id)sender
 {
     NSMutableArray *images = [NSMutableArray array];
@@ -11705,7 +12088,8 @@ constrainSplitPosition:(CGFloat)proposedPosition
     Class launcherClass = NSClassFromString(launcherName);
     if (launcherClass)
     {
-        [self markImagesAsOpened:correspondingObjects];
+        if (![launcherName isEqualToString:@"HorosFaceOffLauncher"])
+            [self markImagesAsOpened:correspondingObjects];
         [launcherClass launchWithContext:context];
     }
     else
@@ -11933,7 +12317,8 @@ constrainSplitPosition:(CGFloat)proposedPosition
     else if ([itemType isEqualToString:@"Study"])
     {
         study = item;
-        for (NSManagedObject *series in [self childrenArray:item onlyImages:YES])
+        NSArray *seriesToOpen = [self seriesCollectionSeriesForStudy:(DicomStudy*)item onlyImages:YES];
+        for (NSManagedObject *series in seriesToOpen)
         {
             if ([self isDICOMSegmentationSeries:series] == NO)
                 [loadList addObjectsFromArray:[self childrenArray:series onlyImages:YES]];
@@ -12016,7 +12401,8 @@ constrainSplitPosition:(CGFloat)proposedPosition
     else if( [itemType isEqualToString:@"Study"])
     {
         study = item;
-        for( NSManagedObject *series in [self childrenArray:item onlyImages:YES])
+        NSArray *seriesToOpen = [self seriesCollectionSeriesForStudy:(DicomStudy*)item onlyImages:YES];
+        for( NSManagedObject *series in seriesToOpen)
         {
             if( [self isDICOMSegmentationSeries:series] == NO)
                 [loadList addObjectsFromArray:[self childrenArray:series onlyImages:YES]];
@@ -12369,10 +12755,20 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
                 item = [[[NSMenuItem alloc] initWithTitle: NSLocalizedString(@"Edit Album", nil) action:@selector(albumTableDoublePressed:) keyEquivalent:@""] autorelease];
                 [item setTarget:self];
                 [menu addItem:item];
+
+                if (row > 0 && row < self.albumArray.count && [[self.albumArray objectAtIndex:row] isSeriesCollection]) {
+                    item = [[[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Update Series Collection...", nil) action:@selector(updateSeriesCollection:) keyEquivalent:@""] autorelease];
+                    [item setTarget:self];
+                    [menu addItem:item];
+                }
                 
                 [menu addItem: [NSMenuItem separatorItem]];
                 
                 item = [[[NSMenuItem alloc] initWithTitle: NSLocalizedString(@"Add Album", nil) action:@selector(addAlbum:) keyEquivalent:@""] autorelease];
+                [item setTarget:self];
+                [menu addItem:item];
+
+                item = [[[NSMenuItem alloc] initWithTitle: NSLocalizedString(@"Add Series Collection", nil) action:@selector(addSeriesCollection:) keyEquivalent:@""] autorelease];
                 [item setTarget:self];
                 [menu addItem:item];
                 
@@ -13229,6 +13625,8 @@ static BOOL HorosIsStaleTemporaryLocalDatabaseSource(NSDictionary *source)
     {
         if( [menuItem action] == @selector(deleteAlbum:) ||
            [menuItem action] == @selector(addAlbum:) ||
+           [menuItem action] == @selector(addSeriesCollection:) ||
+           [menuItem action] == @selector(updateSeriesCollection:) ||
            [menuItem action] == @selector(addSmartAlbum:) ||
            [menuItem action] == @selector(addAlbums:) ||
            [menuItem action] == @selector(defaultAlbums:))
@@ -16117,6 +16515,16 @@ static volatile int numberOfThreadsForJPEG = 0;
         }
         [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"FrameToolbarIntroduced"];
     }
+    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"FaceOffToolbarIntroduced"])
+    {
+        NSArray *identifiers = [[toolbar items] valueForKey:@"itemIdentifier"];
+        if (![identifiers containsObject:FaceOffToolbarItemIdentifier])
+        {
+            NSUInteger index = [identifiers indexOfObject:Metal3DToolbarItemIdentifier];
+            [toolbar insertItemWithItemIdentifier:FaceOffToolbarItemIdentifier atIndex:index == NSNotFound ? 0 : index + 1];
+        }
+        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"FaceOffToolbarIntroduced"];
+    }
     [self.window setTitleVisibility: NSWindowTitleHidden];
     [self.window setShowsToolbarButton:NO];
     [[self.window toolbar] setVisible: YES];
@@ -16216,6 +16624,18 @@ static volatile int numberOfThreadsForJPEG = 0;
         [toolbarItem setImage: metalImage];
         [toolbarItem setTarget: self];
         [toolbarItem setAction: @selector(openMetal3DViewer:)];
+    }
+    else if ([itemIdent isEqualToString: FaceOffToolbarItemIdentifier])
+    {
+        [toolbarItem setLabel:@"FaceOff"];
+        [toolbarItem setPaletteLabel:@"FaceOff"];
+        [toolbarItem setToolTip:@"Inspect the extracted face surface and detected landmarks for one CT or MRI series"];
+        NSImage *image = nil;
+        if (@available(macOS 11.0, *))
+            image = [NSImage imageWithSystemSymbolName:@"person.crop.square" accessibilityDescription:@"FaceOff"];
+        [toolbarItem setImage:image ?: [NSImage imageNamed:MetalToolbarItemIdentifier]];
+        [toolbarItem setTarget:self];
+        [toolbarItem setAction:@selector(openFaceOff:)];
     }
     else if ([itemIdent isEqualToString: MetalToolbarItemIdentifier])
     {
@@ -16449,6 +16869,7 @@ static volatile int numberOfThreadsForJPEG = 0;
             ImportToolbarItemIdentifier,
             ExportToolbarItemIdentifier,
             Metal3DToolbarItemIdentifier,
+            FaceOffToolbarItemIdentifier,
             FrameToolbarItemIdentifier,
             MetalToolbarItemIdentifier,
             QTSaveToolbarItemIdentifier,
@@ -16478,6 +16899,7 @@ static volatile int numberOfThreadsForJPEG = 0;
                              ImportToolbarItemIdentifier,
                              //			 CDRomToolbarItemIdentifier,
                              Metal3DToolbarItemIdentifier,
+                             FaceOffToolbarItemIdentifier,
                              FrameToolbarItemIdentifier,
                              MetalToolbarItemIdentifier,
                              QTSaveToolbarItemIdentifier,
@@ -16786,6 +17208,7 @@ static volatile int numberOfThreadsForJPEG = 0;
            [toolbarItem action] == @selector(viewerDICOM:) || 
 [toolbarItem action] == @selector(openMetalViewer:) || 
 [toolbarItem action] == @selector(openMetal3DViewer:) ||
+[toolbarItem action] == @selector(openFaceOff:) ||
 [toolbarItem action] == @selector(openFrameViewer:) ||
            [toolbarItem action] == @selector(revealInFinder:) || 
            [toolbarItem action] == @selector(export2PACS:) || 
@@ -16814,6 +17237,9 @@ static volatile int numberOfThreadsForJPEG = 0;
     }
     
     if ([[toolbarItem itemIdentifier] isEqualToString: Metal3DToolbarItemIdentifier])
+        return [self canOpenMetal3DForCurrentSelection];
+
+    if ([[toolbarItem itemIdentifier] isEqualToString: FaceOffToolbarItemIdentifier])
         return [self canOpenMetal3DForCurrentSelection];
 
     if ([[toolbarItem itemIdentifier] isEqualToString: FrameToolbarItemIdentifier])

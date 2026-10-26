@@ -53,7 +53,10 @@
 #import "HorosSwiftInterop.h"
 #import <errno.h>
 #import <arpa/inet.h>
+#import <fcntl.h>
+#import <limits.h>
 #import <netdb.h>
+#import <poll.h>
 #import <sys/socket.h>
 #import <unistd.h>
 
@@ -138,9 +141,9 @@ static NSDictionary *HorosDICOMSendNodeDictionaryFromSource(DicomNodeIdentifier 
     return node;
 }
 
-static int HorosPhoneConnect(NSString *host, NSUInteger port)
+static int HorosPhoneConnect(NSString *host, NSUInteger port, NSTimeInterval timeout)
 {
-    if (!host.length || !port)
+    if (!host.length || !port || timeout <= 0)
         return -1;
 
     struct addrinfo hints;
@@ -153,10 +156,15 @@ static int HorosPhoneConnect(NSString *host, NSUInteger port)
     if (getaddrinfo(host.UTF8String, portString.UTF8String, &hints, &result) != 0)
         return -1;
 
-    int socketFD = -1;
+    NSTimeInterval deadline = [NSDate timeIntervalSinceReferenceDate] + timeout;
+    int connectedFD = -1;
     for (struct addrinfo *candidate = result; candidate; candidate = candidate->ai_next)
     {
-        socketFD = socket(candidate->ai_family, candidate->ai_socktype, candidate->ai_protocol);
+        NSTimeInterval remaining = deadline - [NSDate timeIntervalSinceReferenceDate];
+        if (remaining <= 0)
+            break;
+
+        int socketFD = socket(candidate->ai_family, candidate->ai_socktype, candidate->ai_protocol);
         if (socketFD < 0)
             continue;
 
@@ -165,15 +173,43 @@ static int HorosPhoneConnect(NSString *host, NSUInteger port)
         setsockopt(socketFD, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe));
 #endif
 
-        if (connect(socketFD, candidate->ai_addr, candidate->ai_addrlen) == 0)
-            break;
+        int flags = fcntl(socketFD, F_GETFL, 0);
+        if (flags < 0 || fcntl(socketFD, F_SETFL, flags | O_NONBLOCK) < 0)
+        {
+            close(socketFD);
+            continue;
+        }
 
+        int connectResult = connect(socketFD, candidate->ai_addr, candidate->ai_addrlen);
+        BOOL connected = connectResult == 0;
+        if (!connected && connectResult < 0 && errno == EINPROGRESS)
+        {
+            struct pollfd descriptor = {socketFD, POLLOUT, 0};
+            int timeoutMilliseconds = (int)MIN(remaining * 1000.0, (NSTimeInterval)INT_MAX);
+            int pollResult;
+            do { pollResult = poll(&descriptor, 1, timeoutMilliseconds); }
+            while (pollResult < 0 && errno == EINTR);
+            if (pollResult > 0)
+            {
+                int socketError = 0;
+                socklen_t socketErrorLength = sizeof(socketError);
+                connected = getsockopt(socketFD, SOL_SOCKET, SO_ERROR, &socketError, &socketErrorLength) == 0 && socketError == 0;
+            }
+        }
+
+        if (connected)
+        {
+            if (fcntl(socketFD, F_SETFL, flags) == 0)
+            {
+                connectedFD = socketFD;
+                break;
+            }
+        }
         close(socketFD);
-        socketFD = -1;
     }
 
     freeaddrinfo(result);
-    return socketFD;
+    return connectedFD;
 }
 
 static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread *thread)
@@ -181,23 +217,22 @@ static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread 
     if (!host.length || !port)
         return -1;
 
-    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5.0];
-    int socketFD = -1;
-
+    NSTimeInterval deadline = [NSDate timeIntervalSinceReferenceDate] + 5.0;
     while (!thread.isCancelled)
     {
-        socketFD = HorosPhoneConnect(host, port);
+        NSTimeInterval remaining = deadline - [NSDate timeIntervalSinceReferenceDate];
+        if (remaining <= 0)
+            break;
+
+        int socketFD = HorosPhoneConnect(host, port, MIN(remaining, 1.5));
         if (socketFD >= 0)
             return socketFD;
 
-        if ([[NSDate date] compare:deadline] != NSOrderedAscending)
-            break;
-
         thread.status = NSLocalizedString(@"Waiting for iPhone planning app...", nil);
-        [NSThread sleepForTimeInterval:0.25];
+        [NSThread sleepForTimeInterval:MIN(0.25, MAX(0.0, deadline - [NSDate timeIntervalSinceReferenceDate]))];
     }
 
-    return socketFD;
+    return -1;
 }
 
 @implementation BrowserController (SourcesCopy)
@@ -446,7 +481,7 @@ static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread 
         thread.status = NSLocalizedString(@"Connecting to iPhone...", nil);
         socketFD = HorosPhoneConnectWithRetry(destination.location, destination.port, thread);
         if (socketFD < 0)
-            @throw [NSException exceptionWithName:NSGenericException reason:@"The iPhone planning app is unavailable." userInfo:nil];
+            @throw [NSException exceptionWithName:NSGenericException reason:@"Cannot connect to the iPhone. Keep the planning app open and check that the Mac and iPhone can reach each other on the local network." userInfo:nil];
         struct timeval timeout = {30, 0};
         setsockopt(socketFD, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
         setsockopt(socketFD, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));

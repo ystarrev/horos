@@ -35,7 +35,7 @@ NS_ASSUME_NONNULL_BEGIN
                                                                  spacingY:(float)spacingY
                                                                  spacingZ:(float)spacingZ
                                                                 threshold:(float)threshold
-                                                          openMinimumZCap:(BOOL)openMinimumZCap;
+                                                  openVolumeBoundaryCaps:(BOOL)openVolumeBoundaryCaps;
 
 + (nullable NSData *)filterSurfaceVertexFloatDataByRotatingVisibility:(NSData *)vertexFloatData
                                                               spacingX:(float)spacingX

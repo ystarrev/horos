@@ -87,12 +87,12 @@ class DICOMPreviewTests(unittest.TestCase):
         self.assertIn("needsDefaultWindow = false", method)
         self.assertNotIn("imageObj", method)
 
-    def test_mr_uses_planar_auto_window_and_ct_keeps_valid_dicom_window(self):
+    def test_mr_and_ct_share_planar_defaults_and_other_modalities_keep_dicom_windows(self):
         method = renderer_method("private func loadPix(")
         self.assertIn('reader?.stringValue(forTag: "0008,0060") ?? pix.modalityString', method)
-        self.assertIn('modality?.uppercased() == "MR" || dicomWindow == nil', method)
-        self.assertIn("MetalViewerAutomaticWindowLevel.window(for: storedPixels, modality: modality)", method)
-        self.assertIn("automaticWindow ?? dicomWindow ?? storedPixels.storedRangeWindow", method)
+        self.assertIn('normalizedModality == "MR" || normalizedModality == "CT"', method)
+        self.assertIn("MetalViewerWindowLevelState(defaultWindow: useViewerDefault ? nil : dicomWindow)", method)
+        self.assertIn("windowState.resolvedWindow(for: storedPixels, modality: modality)", method)
         self.assertIn("window.level.isFinite && window.width.isFinite && window.width > 0", method)
         self.assertNotIn("storedPixels.inferredWindow", method)
 

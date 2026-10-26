@@ -1,7 +1,5 @@
 import AppKit
 import CoreData
-import Vision
-import ImageIO
 
 private enum ClinicAlbumError: LocalizedError {
     case message(String)
@@ -233,6 +231,8 @@ private final class ClinicAlbumReviewController: NSWindowController, NSWindowDel
     private let create = NSButton(title: "Create Album", target: nil, action: nil)
     private let add = NSButton()
     private let refresh = NSButton()
+    private let retry = NSButton()
+    private var clipboardData: Data?
     private var rows: [Row] = []
     private var task: Task<Void, Never>?
     private var searches: [Int: Task<Void, Never>] = [:]
@@ -277,6 +277,12 @@ private final class ClinicAlbumReviewController: NSWindowController, NSWindowDel
         refresh.bezelStyle = .rounded
         refresh.isEnabled = false
         refresh.toolTip = "Refresh local studies after retrieving from PACS"
+        retry.image = NSImage(systemSymbolName: "text.viewfinder", accessibilityDescription: "Read image again")
+        retry.target = self
+        retry.action = #selector(retryRecognition)
+        retry.bezelStyle = .rounded
+        retry.toolTip = "Read image again"
+        retry.isHidden = true
 
         for (id, title, width) in [("include", "Add", 40.0), ("source", "Clipboard name", 185.0),
                                    ("query", "Search name or ID", 185.0), ("patient", "Database patient / ID / DOB / studies", 380.0),
@@ -301,7 +307,7 @@ private final class ClinicAlbumReviewController: NSWindowController, NSWindowDel
         screenshot.imageScaling = .scaleProportionallyUpOrDown
         screenshot.toolTip = "Clipboard screenshot"
         status.textColor = .secondaryLabelColor
-        for view in [nameLabel, albumName, dateLabel, clinicDate, scroll, screenshot, status, refresh, add, close, create] {
+        for view in [nameLabel, albumName, dateLabel, clinicDate, scroll, screenshot, status, retry, refresh, add, close, create] {
             view.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(view)
         }
@@ -324,7 +330,7 @@ private final class ClinicAlbumReviewController: NSWindowController, NSWindowDel
             scroll.topAnchor.constraint(equalTo: albumName.bottomAnchor, constant: 16),
             scroll.bottomAnchor.constraint(equalTo: status.topAnchor, constant: -12),
             status.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
-            status.trailingAnchor.constraint(lessThanOrEqualTo: refresh.leadingAnchor, constant: -12),
+            status.trailingAnchor.constraint(lessThanOrEqualTo: retry.leadingAnchor, constant: -12),
             status.centerYAnchor.constraint(equalTo: create.centerYAnchor),
             create.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
             create.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16),
@@ -335,19 +341,27 @@ private final class ClinicAlbumReviewController: NSWindowController, NSWindowDel
             add.widthAnchor.constraint(equalToConstant: 32),
             refresh.trailingAnchor.constraint(equalTo: add.leadingAnchor, constant: -8),
             refresh.centerYAnchor.constraint(equalTo: create.centerYAnchor),
-            refresh.widthAnchor.constraint(equalToConstant: 32)
+            refresh.widthAnchor.constraint(equalToConstant: 32),
+            retry.trailingAnchor.constraint(equalTo: refresh.leadingAnchor, constant: -8),
+            retry.centerYAnchor.constraint(equalTo: create.centerYAnchor),
+            retry.widthAnchor.constraint(equalToConstant: 32)
         ])
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func load(data: Data) {
+        clipboardData = data
+        task?.cancel()
+        loading = true
+        add.isEnabled = false
+        retry.isHidden = true
+        updateStatus()
+        status.stringValue = "Recognizing patient names..."
         task = Task { [weak self] in
             do {
                 let start = ProcessInfo.processInfo.systemUptime
-                let names = try await Self.recognize(data) { [weak self] message in
-                    self?.status.stringValue = message
-                }
+                let names = try await ClinicAlbumOCR.recognize(data)
                 let recognized = ProcessInfo.processInfo.systemUptime
                 guard !Task.isCancelled, let self, let browser = self.browser else { return }
                 self.rows = names.map { Row(source: $0, query: $0.searchQuery, studies: [], included: false) }
@@ -370,89 +384,29 @@ private final class ClinicAlbumReviewController: NSWindowController, NSWindowDel
                 }
             } catch {
                 guard !Task.isCancelled, let self else { return }
-                self.status.stringValue = "Could not prepare the clinic album."
+                self.loading = false
+                self.add.isEnabled = true
+                self.retry.isHidden = !self.rows.isEmpty
+                self.table.reloadData()
+                self.updateStatus()
+                self.status.stringValue = self.rows.isEmpty
+                    ? "Could not read image. Read again or add patients manually."
+                    : "Could not finish matching studies. Refresh to try again."
                 ClinicAlbumImportController.showError(error.localizedDescription, window: self.window)
             }
         }
     }
 
-    private nonisolated static func recognize(_ data: Data,
-        progress: @MainActor @Sendable (String) -> Void) async throws -> [ClinicName] {
-        try Task.checkCancellation()
-        await progress("Recognizing patient names...")
-        // VNImageRequestHandler is synchronous; keep image preparation and OCR
-        // off the main actor and discard results if the review window closes.
-        let worker = Task.detached(priority: .userInitiated) {
-            try recognizeImage(data)
-        }
-        return try await withTaskCancellationHandler {
-            let names = try await worker.value
-            try Task.checkCancellation()
-            return names
-        } onCancel: {
-            worker.cancel()
-        }
-    }
-
-    private nonisolated static func recognizeImage(_ data: Data) throws -> [ClinicName] {
-        try Task.checkCancellation()
-        let start = ProcessInfo.processInfo.systemUptime
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 3000
-              ] as CFDictionary) else {
-            throw ClinicAlbumError.message("The clipboard image could not be read.")
-        }
-        let prepared = ProcessInfo.processInfo.systemUptime
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = false
-        request.recognitionLanguages = ["en-US"]
-        request.automaticallyDetectsLanguage = false
-        // Small clinic screenshots do not need accelerator setup. Explicit CPU
-        // execution avoids the TextRecognition E5RT initialization failures.
-        for (stage, devices) in try request.supportedComputeStageDevices {
-            guard let cpu = devices.first(where: {
-                if case .cpu = $0 { return true }
-                return false
-            }) else {
-                throw ClinicAlbumError.message("Accurate text recognition is unavailable on the CPU. Please restart Horos and try again.")
-            }
-            request.setComputeDevice(cpu, for: stage)
-        }
-        try Task.checkCancellation()
-        try VNImageRequestHandler(cgImage: image).perform([request])
-        try Task.checkCancellation()
-        let observations = request.results ?? []
-        let names = recognizedNames(observations)
-        NSLog("CLINICALBUM mode=VN-accurate-CPU prepare=%.0fms OCR=%.0fms observations=%ld names=%ld pixels=%ldx%ld",
-              (prepared - start) * 1000, (ProcessInfo.processInfo.systemUptime - prepared) * 1000,
-              observations.count, names.count, image.width, image.height)
-        return names
-    }
-
-    private nonisolated static func recognizedNames(_ observations: [VNRecognizedTextObservation]) -> [ClinicName] {
-        // Join OCR fragments on the same baseline before pairing names with age/sex lines.
-        let ordered = observations.sorted { $0.boundingBox.midY > $1.boundingBox.midY }
-        var lines: [[VNRecognizedTextObservation]] = []
-        for observation in ordered {
-            if let last = lines.last, let first = last.first,
-               abs(first.boundingBox.midY - observation.boundingBox.midY) < min(first.boundingBox.height, observation.boundingBox.height) * 0.45 {
-                lines[lines.count - 1].append(observation)
-            } else { lines.append([observation]) }
-        }
-        return ClinicAlbumMatching.names(from: lines.map { line in
-            let texts = line.sorted { $0.boundingBox.minX < $1.boundingBox.minX }.compactMap { $0.topCandidates(1).first }
-            return (texts.map(\.string).joined(separator: " "), texts.map(\.confidence).min() ?? 0)
-        })
+    @objc private func retryRecognition() {
+        guard !loading, !committing, rows.isEmpty, let data = clipboardData else { return }
+        load(data: data)
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
     @objc private func addPatient() {
         guard !committing, add.isEnabled else { return }
+        retry.isHidden = true
         rows.append(Row(source: ClinicName(name: "", confidence: 1), query: "", studies: [], included: false))
         table.reloadData()
         table.scrollRowToVisible(rows.count - 1)

@@ -313,6 +313,8 @@ extern NSString * const O2PasteboardTypeDatabaseObjectXIDs;
 + (void) encryptFiles: (NSArray*) srcFiles inZIPFile: (NSString*) destFile password: (NSString*) password;
 - (IBAction) createDatabaseFolder:(id) sender;
 - (IBAction) addAlbum:(id)sender;
+- (IBAction)addSeriesCollection:(id)sender;
+- (IBAction)updateSeriesCollection:(id)sender;
 - (IBAction) deleteAlbum: (id)sender;
 - (IBAction) saveAlbums:(id) sender;
 - (IBAction) addAlbums:(id) sender;

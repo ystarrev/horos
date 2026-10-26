@@ -41,7 +41,7 @@ class MetalSkinSurfaceReuseTests(unittest.TestCase):
             "let hasSurface = skinSurfaceVertexBuffer != nil &&",
             "skinSurfaceVertexCount > 0 &&",
             "skinSurfaceVertexFloatData != nil",
-            "let needsMask = skinMaskTexture == nil && skinMaskExtractionAttempted == false",
+            "let needsMask = showSkin == false && skinMaskTexture == nil && skinMaskExtractionAttempted == false",
             "let needsSurface = includeSurface && hasSurface == false && skinSurfaceExtractionAttempted == false",
             "(needsSurfacePoints && skinSurfaceVertexFloatData == nil && skinSurfaceExtractionAttempted == false)",
             "includeSurface: buildSurface, cancellation: cancellation",
@@ -53,13 +53,27 @@ class MetalSkinSurfaceReuseTests(unittest.TestCase):
             self.assertIn(f"self.{field} =", install)
         self.assertIn("self.skinMaskTexture = self.makeSkinMaskTexture(mask: mask)", ENSURE)
 
+    def test_surface_only_does_not_prepare_unused_skin_removal_mask(self):
+        shell = declaration("private static func makeSkinShellMask(")
+        self.assertIn("if includeMask {", shell)
+        self.assertIn("preparation = cachedPreparation ?? volumeData.withUnsafeBytes", shell)
+        self.assertIn("preparation = cachedPreparation", shell)
+        self.assertIn("if includeMask, let preparation {", shell)
+        self.assertIn("let needsMask = showSkin == false", ENSURE)
+
+    def test_surface_world_coordinates_reuse_extent_and_scale(self):
+        conversion = declaration("private func worldPositions(fromSurfaceVertexFloatData")
+        self.assertIn("let halfExtent = volumePhysicalExtent() * 0.5", conversion)
+        self.assertIn("let scale = volumePhysicalScale()", conversion)
+        self.assertNotIn("worldPosition(forPhysicalPosition:", conversion)
+
     def test_mesh_generation_has_no_dependency_on_removal_depth(self):
         surface = EXTRACT
         self.assertNotRegex(surface, r"shellThicknessMM|skinShellThicknessMM|currentSkinClipDepthMM")
         self.assertIn("Metal3DSurfaceExtractor.extractSkinSurface(", surface)
         self.assertIn("Metal3DSurfaceExtractor.filterSurfaceVertexFloatData(", surface)
         self.assertIn("threshold: thresholdResult.threshold", surface)
-        self.assertIn("openMinimumZCap: true", surface)
+        self.assertIn("openVolumeBoundaryCaps: true", surface)
         self.assertEqual(ENSURE.count("skinShellThicknessMM()"), 1)
         distance = declaration("private static func makeSkinDistanceMask(")
         self.assertEqual(distance.count("maximumDistanceMM: shellThicknessMM"), 1)

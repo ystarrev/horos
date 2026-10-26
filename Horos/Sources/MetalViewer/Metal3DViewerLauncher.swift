@@ -33,6 +33,17 @@ final class Metal3DViewerLauncher: NSObject {
         )
     }
 
+    class func launchFaceOff(withContext context: NSDictionary) {
+        let pixList = (context["pixList"] as? [DCMPix]) ?? ((context["pixList"] as? NSArray)?.compactMap { $0 as? DCMPix } ?? [])
+        let capabilities = Metal3DViewerContentCapabilities(pixList: pixList)
+        guard pixList.count >= 2, capabilities.containsCT || capabilities.containsMRI else {
+            NSSound.beep()
+            return
+        }
+        let title = (context["title"] as? String) ?? "Series"
+        presentWindowController(Metal3DViewerWindowController(pixList: pixList, title: title, mode: .faceOff))
+    }
+
     @objc(launchWithSeries:)
     class func launch(withSeries seriesObject: NSManagedObject) {
         let seriesDescription = (seriesObject.value(forKey: "name") as? String) ?? NSLocalizedString("series", comment: "")
@@ -59,5 +70,13 @@ final class Metal3DViewerLauncher: NSObject {
         }
 
         controller.presentWindowOnViewerScreen()
+    }
+}
+
+@objc(HorosFaceOffLauncher)
+final class FaceOffLauncher: NSObject {
+    @objc(launchWithContext:)
+    class func launch(withContext context: NSDictionary) {
+        Metal3DViewerLauncher.launchFaceOff(withContext: context)
     }
 }

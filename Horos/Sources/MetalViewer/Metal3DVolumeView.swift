@@ -45,6 +45,112 @@ final class Metal3DVolumeView: NSView {
         }
     }
 
+    private final class FaceOffLandmarkOverlayView: NSView {
+        var points: [Int: CGPoint] = [:] {
+            didSet { needsDisplay = true }
+        }
+        var auxiliaryContours: [HeadAuxiliaryContourKind: [CGPoint]] = [:] {
+            didSet { needsDisplay = true }
+        }
+        var ctGlobeCenters: [CGPoint] = [] {
+            didSet { needsDisplay = true }
+        }
+        var confirmed = true {
+            didSet { needsDisplay = true }
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func draw(_ dirtyRect: NSRect) {
+            super.draw(dirtyRect)
+            for kind in HeadAuxiliaryContourKind.allCases {
+                let color: NSColor
+                switch kind {
+                case .leftBrow, .rightBrow: color = .systemCyan
+                case .midline: color = .systemYellow
+                case .faceOutline: color = .systemBlue
+                case .visionLeftEye, .visionRightEye: color = .systemGreen
+                case .visionNoseCrest, .visionNoseOutline: color = .systemTeal
+                case .rawCanthi: color = .white
+                case .surfaceEyeSeam, .surfaceNoseApex: color = .magenta
+                }
+                for center in auxiliaryContours[kind] ?? [] where bounds.insetBy(dx: 3, dy: 3).contains(center) {
+                    if kind == .surfaceNoseApex {
+                        let diamond = NSBezierPath()
+                        diamond.move(to: CGPoint(x: center.x, y: center.y + 6))
+                        diamond.line(to: CGPoint(x: center.x + 6, y: center.y))
+                        diamond.line(to: CGPoint(x: center.x, y: center.y - 6))
+                        diamond.line(to: CGPoint(x: center.x - 6, y: center.y))
+                        diamond.close()
+                        NSColor.black.withAlphaComponent(0.8).setFill()
+                        diamond.fill()
+                        color.setStroke()
+                        diamond.lineWidth = 2
+                        diamond.stroke()
+                        continue
+                    }
+                    if kind == .surfaceEyeSeam {
+                        let ring = NSBezierPath(ovalIn: CGRect(x: center.x - 3.5, y: center.y - 3.5,
+                                                                width: 7, height: 7))
+                        NSColor.black.withAlphaComponent(0.8).setFill()
+                        ring.fill()
+                        color.setStroke()
+                        ring.lineWidth = 2
+                        ring.stroke()
+                        continue
+                    }
+                    let dot = NSBezierPath(ovalIn: CGRect(x: center.x - 2, y: center.y - 2,
+                                                           width: 4, height: 4))
+                    if kind == .rawCanthi {
+                        color.setStroke()
+                        dot.lineWidth = 1.5
+                        dot.stroke()
+                    } else {
+                        color.withAlphaComponent(0.85).setFill()
+                        dot.fill()
+                    }
+                }
+            }
+            let globeColor = NSColor(calibratedRed: 0.52, green: 1.0, blue: 0.15, alpha: 1)
+            let globeLabelAttributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .bold),
+                .foregroundColor: globeColor
+            ]
+            for (index, center) in ctGlobeCenters.enumerated() where bounds.insetBy(dx: 16, dy: 16).contains(center) {
+                let ring = NSBezierPath(ovalIn: CGRect(x: center.x - 11, y: center.y - 11,
+                                                       width: 22, height: 22))
+                NSColor.black.withAlphaComponent(0.8).setFill()
+                ring.fill()
+                globeColor.setStroke()
+                ring.lineWidth = 2
+                ring.stroke()
+                let cross = NSBezierPath()
+                cross.move(to: CGPoint(x: center.x - 5, y: center.y))
+                cross.line(to: CGPoint(x: center.x + 5, y: center.y))
+                cross.move(to: CGPoint(x: center.x, y: center.y - 5))
+                cross.line(to: CGPoint(x: center.x, y: center.y + 5))
+                cross.lineWidth = 1.5
+                cross.stroke()
+                "CT G\(index + 1)".draw(at: CGPoint(x: center.x + 15, y: center.y - 6),
+                                          withAttributes: globeLabelAttributes)
+            }
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .bold),
+                .foregroundColor: NSColor.white
+            ]
+            for (number, center) in points.sorted(by: { $0.key < $1.key }) {
+                guard bounds.insetBy(dx: 8, dy: 8).contains(center) else { continue }
+                NSColor.black.withAlphaComponent(0.75).setFill()
+                NSBezierPath(ovalIn: CGRect(x: center.x - 9, y: center.y - 9, width: 18, height: 18)).fill()
+                (confirmed ? NSColor.systemPink : NSColor.systemOrange).setStroke()
+                let ring = NSBezierPath(ovalIn: CGRect(x: center.x - 9, y: center.y - 9, width: 18, height: 18))
+                ring.lineWidth = 2
+                ring.stroke()
+                String(number).draw(at: CGPoint(x: center.x + 12, y: center.y - 7), withAttributes: attributes)
+            }
+        }
+    }
+
     private final class CropHandleView: NSView {
         let plane: Metal3DCropPlane
 
@@ -182,6 +288,19 @@ final class Metal3DVolumeView: NSView {
     }
 
     private let metalView: MTKView
+    private let faceOffLandmarkOverlayView = FaceOffLandmarkOverlayView(frame: .zero)
+    var faceOffLandmarks: [HeadLandmarkID: SIMD3<Float>] = [:] {
+        didSet { refreshFaceOffLandmarks() }
+    }
+    var faceOffAuxiliaryContours: [HeadAuxiliaryContourKind: [SIMD3<Float>]] = [:] {
+        didSet { refreshFaceOffLandmarks() }
+    }
+    var faceOffCTGlobeCenters: [SIMD3<Float>] = [] {
+        didSet { refreshFaceOffLandmarks() }
+    }
+    var faceOffLandmarksConfirmed = true {
+        didSet { faceOffLandmarkOverlayView.confirmed = faceOffLandmarksConfirmed }
+    }
     private let surfaceCursorOverlayView = SurfaceCursorOverlayView(frame: .zero)
     private let cropOverlayView = CropOverlayView(frame: .zero)
     private let orientationOverlayView = MetalOrientationOverlayView(frame: .zero)
@@ -306,6 +425,9 @@ final class Metal3DVolumeView: NSView {
         metalView.depthStencilPixelFormat = .depth32Float
         addSubview(metalView)
 
+        faceOffLandmarkOverlayView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(faceOffLandmarkOverlayView)
+
         surfaceCursorOverlayView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(surfaceCursorOverlayView)
 
@@ -335,6 +457,10 @@ final class Metal3DVolumeView: NSView {
             metalView.trailingAnchor.constraint(equalTo: trailingAnchor),
             metalView.topAnchor.constraint(equalTo: topAnchor),
             metalView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            faceOffLandmarkOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            faceOffLandmarkOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            faceOffLandmarkOverlayView.topAnchor.constraint(equalTo: topAnchor),
+            faceOffLandmarkOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor),
             surfaceCursorOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
             surfaceCursorOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
             surfaceCursorOverlayView.topAnchor.constraint(equalTo: topAnchor),
@@ -571,10 +697,13 @@ final class Metal3DVolumeView: NSView {
         }
     }
 
-    func configure(pixList: [DCMPix]) {
+    func configure(pixList: [DCMPix], faceOffStartingPose: Bool = false) {
         guard let device = metalView.device else { return }
         renderer?.stopSkinPreparation()
         let renderer = Metal3DVolumeRenderer(device: device, pixList: pixList)
+        if faceOffStartingPose {
+            renderer.orientFaceOffTowardPatientAnterior()
+        }
         renderer.contentDidChange = { [weak self] in
             guard let self else { return }
             self.metalView.setNeedsDisplay(self.metalView.bounds)
@@ -606,6 +735,18 @@ final class Metal3DVolumeView: NSView {
         metalView.setNeedsDisplay(metalView.bounds)
         refreshCropHandles()
         refreshOrientationOverlay()
+    }
+
+    func faceOffSurfaceSnapshot() -> (vertices: [SIMD3<Float>], scaleMeters: Float)? {
+        renderer?.faceOffSurfaceSnapshot()
+    }
+
+    func faceOffSurfaceExtractionFinished() -> Bool {
+        renderer?.faceOffSurfaceExtractionFinished() ?? false
+    }
+
+    func faceOffPatientAnteriorOrientation() -> (direction: SIMD3<Float>, up: SIMD3<Float>)? {
+        renderer?.faceOffPatientAnteriorOrientation()
     }
 
     private func beginWindowLevelInteractionIfNeeded() {
@@ -778,6 +919,21 @@ final class Metal3DVolumeView: NSView {
             in: bounds,
             cubeTopInset: orientationCubeTopInset
         )
+        refreshFaceOffLandmarks()
+    }
+
+    private func refreshFaceOffLandmarks() {
+        var projected: [Int: CGPoint] = [:]
+        for (id, position) in faceOffLandmarks {
+            projected[id.rawValue + 1] = renderer?.faceOffProjection(of: position, in: bounds)
+        }
+        faceOffLandmarkOverlayView.points = projected
+        faceOffLandmarkOverlayView.auxiliaryContours = faceOffAuxiliaryContours.mapValues { contour in
+            contour.compactMap { renderer?.faceOffProjection(of: $0, in: bounds) }
+        }
+        faceOffLandmarkOverlayView.ctGlobeCenters = faceOffCTGlobeCenters.compactMap {
+            renderer?.faceOffProjection(of: $0, in: bounds)
+        }
     }
 
     private func updateHoveredCropPlane(at location: CGPoint) {

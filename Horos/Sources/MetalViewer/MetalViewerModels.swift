@@ -732,6 +732,24 @@ final class MetalViewerTumourSeedStore {
 struct MetalViewerWindowLevel: Equatable {
     var level: Float
     var width: Float
+
+    static func initialPreset(
+        for modality: String,
+        defaults: UserDefaults = .standard
+    ) -> (title: String, window: MetalViewerWindowLevel)? {
+        guard modality.trimmingCharacters(in: .whitespacesAndNewlines)
+            .caseInsensitiveCompare("CT") == .orderedSame else { return nil }
+
+        let title = "CT - Brain"
+        let fallback = MetalViewerWindowLevel(level: 50, width: 100)
+        guard let values = defaults.dictionary(forKey: "WLWW3")?[title] as? [NSNumber],
+              values.count >= 2,
+              values[0].floatValue.isFinite,
+              values[1].floatValue.isFinite, values[1].floatValue > 0 else {
+            return (title, fallback)
+        }
+        return (title, MetalViewerWindowLevel(level: values[0].floatValue, width: max(1, values[1].floatValue)))
+    }
 }
 
 enum MetalViewerAutomaticWindowLevel {
@@ -834,6 +852,17 @@ enum MetalViewerAutomaticWindowLevel {
 struct MetalViewerWindowLevelState {
     var defaultWindow: MetalViewerWindowLevel?
     var customWindow: MetalViewerWindowLevel?
+
+    func resolvedWindow(
+        for storedPixels: MetalStoredInt16PixelData,
+        modality: String?,
+        defaults: UserDefaults = .standard
+    ) -> MetalViewerWindowLevel {
+        customWindow ?? defaultWindow
+            ?? MetalViewerWindowLevel.initialPreset(for: modality ?? "", defaults: defaults)?.window
+            ?? MetalViewerAutomaticWindowLevel.window(for: storedPixels, modality: modality)
+            ?? storedPixels.inferredWindow
+    }
 }
 
 struct MetalViewerTransferFunctionState {
@@ -876,7 +905,8 @@ struct MetalStoredInt16PixelData {
     }
 
     var inferredWindow: MetalViewerWindowLevel {
-        if let defaultWindow {
+        if let defaultWindow,
+           defaultWindow.level.isFinite, defaultWindow.width.isFinite, defaultWindow.width > 0 {
             return defaultWindow
         }
 
@@ -2603,6 +2633,10 @@ final class MetalViewerSeries {
         self.dynamicTimePointCountHint = dynamicTimePointCountHint
         self.cachedPixList = initialPixList
         self.cachedStructuredReportHTML = nil
+        if let preset = MetalViewerWindowLevel.initialPreset(for: modality) {
+            windowLevelState.defaultWindow = preset.window
+            windowLevelPresetTitle = preset.title
+        }
     }
 
     func sharesSourceSeries(with other: MetalViewerSeries) -> Bool {

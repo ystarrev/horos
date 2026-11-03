@@ -927,6 +927,8 @@
 		F4E709230001000000000002 /* ClinicAlbumImportController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E709230002000000000002 /* ClinicAlbumImportController.swift */; };
 		F4E709230001000000000003 /* ClinicAlbumOCR.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E709230002000000000003 /* ClinicAlbumOCR.swift */; };
 		F4CF00000000000000000001 /* CFNetwork.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4CF00000000000000000002 /* CFNetwork.framework */; };
+		B3A8E0020000000000000001 /* Network.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B3A8E0020000000000000002 /* Network.framework */; };
+		B3A8E0030000000000000001 /* CoreImage.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B3A8E0030000000000000002 /* CoreImage.framework */; };
 		F4CF00000000000000000003 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4CF00000000000000000004 /* CoreFoundation.framework */; };
 		F4CTXCL0000000000000001 /* ContextCleaner.mm in Sources */ = {isa = PBXBuildFile; fileRef = F4CTXCL0000000000000002 /* ContextCleaner.mm */; };
 		F4DEC000000100000000001 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 29B97325FDCFA39411CA2CEA /* Foundation.framework */; };
@@ -1929,6 +1931,8 @@
 		F4E709230002000000000002 /* ClinicAlbumImportController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClinicAlbumImportController.swift; path = Horos/Sources/ClinicAlbumImportController.swift; sourceTree = SOURCE_ROOT; };
 		F4E709230002000000000003 /* ClinicAlbumOCR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClinicAlbumOCR.swift; path = Horos/Sources/ClinicAlbumOCR.swift; sourceTree = SOURCE_ROOT; };
 		F4CF00000000000000000002 /* CFNetwork.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CFNetwork.framework; path = System/Library/Frameworks/CFNetwork.framework; sourceTree = SDKROOT; };
+		B3A8E0020000000000000002 /* Network.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Network.framework; path = System/Library/Frameworks/Network.framework; sourceTree = SDKROOT; };
+		B3A8E0030000000000000002 /* CoreImage.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreImage.framework; path = System/Library/Frameworks/CoreImage.framework; sourceTree = SDKROOT; };
 		F4CF00000000000000000004 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		F4CTXCL0000000000000002 /* ContextCleaner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ContextCleaner.mm; sourceTree = "<group>"; };
 		F4DCM000000200000000001 /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
@@ -1960,6 +1964,8 @@
 				AB28B48C05B7998B00A9906C /* Foundation.framework in Frameworks */,
 				F4CF00000000000000000003 /* CoreFoundation.framework in Frameworks */,
 				F4CF00000000000000000001 /* CFNetwork.framework in Frameworks */,
+				B3A8E0020000000000000001 /* Network.framework in Frameworks */,
+				B3A8E0030000000000000001 /* CoreImage.framework in Frameworks */,
 				AB28B93305B79D5B00A9906C /* Cocoa.framework in Frameworks */,
 				AB28B93405B79D5C00A9906C /* ApplicationServices.framework in Frameworks */,
 				AB28B93505B79D5D00A9906C /* IOKit.framework in Frameworks */,
@@ -2019,6 +2025,8 @@
 				F4A100000002000000000007 /* MetalKit.framework */,
 				F4CF00000000000000000004 /* CoreFoundation.framework */,
 				F4CF00000000000000000002 /* CFNetwork.framework */,
+				B3A8E0020000000000000002 /* Network.framework */,
+				B3A8E0030000000000000002 /* CoreImage.framework */,
 				F4DCM000000200000000001 /* IOKit.framework */,
 				F4DCM000000200000000002 /* Accelerate.framework */,
 				F4DCM000000200000000003 /* ApplicationServices.framework */,

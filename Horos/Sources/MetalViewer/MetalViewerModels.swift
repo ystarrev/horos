@@ -729,6 +729,41 @@ final class MetalViewerTumourSeedStore {
     }
 }
 
+enum MetalViewerROIWindow {
+    static func pixelRect(selection: CGRect, bounds: CGRect, drawableSize: CGSize, isFlipped: Bool) -> CGRect? {
+        guard bounds.width > 0, bounds.height > 0,
+              drawableSize.width > 0, drawableSize.height > 0 else { return nil }
+        let clipped = selection.standardized.intersection(bounds)
+        guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return nil }
+        let xScale = drawableSize.width / bounds.width
+        let yScale = drawableSize.height / bounds.height
+        let top = isFlipped ? clipped.minY - bounds.minY : bounds.maxY - clipped.maxY
+        return CGRect(x: (clipped.minX - bounds.minX) * xScale, y: top * yScale,
+                      width: clipped.width * xScale, height: clipped.height * yScale)
+            .integral.intersection(CGRect(origin: .zero, size: drawableSize))
+    }
+
+    static func window(pixels: UnsafeBufferPointer<Float>, width: Int, height: Int, rowStride: Int) -> MetalViewerWindowLevel? {
+        guard width > 0, height > 0, rowStride >= width,
+              height <= pixels.count / rowStride else { return nil }
+        var minimum = Float.infinity
+        var maximum = -Float.infinity
+        for row in 0..<height {
+            for column in 0..<width {
+                let value = pixels[row * rowStride + column]
+                guard value.isFinite else { continue }
+                minimum = min(minimum, value)
+                maximum = max(maximum, value)
+            }
+        }
+        guard minimum.isFinite, maximum.isFinite else { return nil }
+        let level = Float((Double(minimum) + Double(maximum)) * 0.5)
+        let width = Float(max(Double(maximum) - Double(minimum), 1))
+        guard level.isFinite, width.isFinite else { return nil }
+        return MetalViewerWindowLevel(level: level, width: width)
+    }
+}
+
 struct MetalViewerWindowLevel: Equatable {
     var level: Float
     var width: Float

@@ -51,6 +51,7 @@ struct MetalUniforms {
     float baseVolumeRescaleSlope;
     float baseVolumeRescaleIntercept;
     uint baseVolumePadding;
+    uint roiWindowTarget;
 };
 
 struct MetalMPRVertex {
@@ -191,6 +192,7 @@ struct MetalMPRUniforms {
     uint baseHasCustomCLUT;
     uint overlayHasCustomCLUT;
     float baseBackgroundValue;
+    uint roiWindowTarget;
 };
 
 struct MetalPreviewUniforms {
@@ -2056,6 +2058,10 @@ fragment float4 metalViewerFragment(
             (fixedVoxelCoordinate + 0.5) / max(float3(baseVolumeTexture.get_width(), baseVolumeTexture.get_height(), baseVolumeTexture.get_depth()), float3(1.0))
         ).r;
     }
+    if (uniforms.roiWindowTarget == 1u) {
+        return float4(basePixelValue, 0.0, 0.0, 1.0);
+    }
+    if (uniforms.roiWindowTarget == 2u && uniforms.hasOverlay == 0) { discard_fragment(); }
     const float baseMinValue = uniforms.baseWindowLevel - uniforms.baseWindowWidth * 0.5;
     const float baseNormalized = clamp((basePixelValue - baseMinValue) / uniforms.baseWindowWidth, 0.0, 1.0);
     const float baseMapped = metalViewerApplyOpacity(baseNormalized, baseOpacityTexture, imageSampler);
@@ -2077,6 +2083,7 @@ fragment float4 metalViewerFragment(
     if (overlayCoord.x < 0.0 || overlayCoord.x > 1.0 ||
         overlayCoord.y < 0.0 || overlayCoord.y > 1.0 ||
         overlayCoord.z < 0.0 || overlayCoord.z > 1.0) {
+        if (uniforms.roiWindowTarget == 2u) { discard_fragment(); }
         const float3 baseFusionColor = metalViewerFusionColor(
             baseMapped,
             baseColor,
@@ -2087,6 +2094,9 @@ fragment float4 metalViewerFragment(
     }
 
     const float overlayPixelValue = overlayTexture.sample(imageSampler, overlayCoord).r;
+    if (uniforms.roiWindowTarget == 2u) {
+        return float4(overlayPixelValue, 0.0, 0.0, 1.0);
+    }
     const float overlayMinValue = uniforms.overlayWindowLevel - uniforms.overlayWindowWidth * 0.5;
     const float overlayNormalized = clamp((overlayPixelValue - overlayMinValue) / uniforms.overlayWindowWidth, 0.0, 1.0);
     const float overlayMapped = metalViewerApplyOpacity(overlayNormalized, overlayOpacityTexture, imageSampler);
@@ -2187,6 +2197,11 @@ fragment float4 metalViewerMPRFragment(
     const bool insideSource = all(sourceCoord >= 0.0f) && all(sourceCoord <= 1.0f);
     const float basePixelValue = insideSource
         ? metalViewerMPRSample(baseTexture, sourceVoxel) : uniforms.baseBackgroundValue;
+    if (uniforms.roiWindowTarget == 1u) {
+        if (!insideSource) { discard_fragment(); }
+        return float4(basePixelValue, 0.0, 0.0, 1.0);
+    }
+    if (uniforms.roiWindowTarget == 2u && uniforms.hasOverlay == 0) { discard_fragment(); }
     const float baseMinValue = uniforms.baseWindowLevel - uniforms.baseWindowWidth * 0.5;
     const float baseNormalized = clamp((basePixelValue - baseMinValue) / uniforms.baseWindowWidth, 0.0, 1.0);
     const float baseMapped = metalViewerApplyOpacity(baseNormalized, baseOpacityTexture, imageSampler);
@@ -2214,10 +2229,14 @@ fragment float4 metalViewerMPRFragment(
             uniforms.baseHasCustomCLUT,
             false
         );
+        if (uniforms.roiWindowTarget == 2u) { discard_fragment(); }
         return float4(baseFusionColor, 1.0);
     }
 
     const float overlayPixelValue = metalViewerMPRSample(overlayTexture, movingVoxel.xyz);
+    if (uniforms.roiWindowTarget == 2u) {
+        return float4(overlayPixelValue, 0.0, 0.0, 1.0);
+    }
     const float overlayMinValue = uniforms.overlayWindowLevel - uniforms.overlayWindowWidth * 0.5;
     const float overlayNormalized = clamp((overlayPixelValue - overlayMinValue) / uniforms.overlayWindowWidth, 0.0, 1.0);
     const float overlayMapped = metalViewerApplyOpacity(overlayNormalized, overlayOpacityTexture, imageSampler);

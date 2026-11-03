@@ -51,6 +51,9 @@
 #import "N2Debug.h"
 #import "N2Stuff.h"
 #import "HorosSwiftInterop.h"
+#import "HVRPSKTransport.h"
+#import <CoreImage/CoreImage.h>
+#import <CommonCrypto/CommonHMAC.h>
 #import <errno.h>
 #import <arpa/inet.h>
 #import <fcntl.h>
@@ -69,22 +72,180 @@ static uint64_t HorosHostToNetwork64(uint64_t value)
 #endif
 }
 
-static BOOL HorosPhoneSendAll(int socketFD, const void *bytes, size_t length)
+static NSImage* HorosPhonePairingImage(NSString* payload)
 {
-    const uint8_t *cursor = (const uint8_t*)bytes;
-    size_t remaining = length;
-    while (remaining > 0)
-    {
-        ssize_t sent = send(socketFD, cursor, remaining, 0);
-        if (sent < 0 && errno == EINTR)
-            continue;
-        if (sent <= 0)
-            return NO;
-        cursor += sent;
-        remaining -= sent;
-    }
+    CIFilter* generator = [CIFilter filterWithName:@"CIQRCodeGenerator"];
+    [generator setValue:[payload dataUsingEncoding:NSASCIIStringEncoding] forKey:@"inputMessage"];
+    [generator setValue:@"M" forKey:@"inputCorrectionLevel"];
+    CIImage* output = generator.outputImage;
+    if (!output) return nil;
+    CGImageRef modules = [[CIContext contextWithOptions:nil] createCGImage:output fromRect:output.extent];
+    if (!modules) return nil;
+    const size_t scale = 12;
+    const size_t margin = 4 * scale; // Standard four-module quiet zone.
+    const size_t width = (CGImageGetWidth(modules) + 8) * scale;
+    const size_t height = (CGImageGetHeight(modules) + 8) * scale;
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    CGContextRef bitmap = CGBitmapContextCreate(NULL, width, height, 8, width * 4, colorSpace,
+                                                (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(colorSpace);
+    if (!bitmap) { CGImageRelease(modules); return nil; }
+    CGContextSetRGBFillColor(bitmap, 1, 1, 1, 1);
+    CGContextFillRect(bitmap, CGRectMake(0, 0, width, height));
+    CGContextSetInterpolationQuality(bitmap, kCGInterpolationNone);
+    CGContextDrawImage(bitmap, CGRectMake(margin, margin,
+      CGImageGetWidth(modules) * scale, CGImageGetHeight(modules) * scale), modules);
+    CGImageRef image = CGBitmapContextCreateImage(bitmap);
+    CGContextRelease(bitmap);
+    CGImageRelease(modules);
+    if (!image) return nil;
+    NSImage* result = [[[NSImage alloc] initWithCGImage:image size:NSMakeSize(400, 400)] autorelease];
+    CGImageRelease(image);
+    return result;
+}
 
-    return YES;
+// This unauthenticated message only opens the scanner; the QR supplies the actual secret.
+static int HorosRequestPhonePairing(NSString* host, NSString* pairingID)
+{
+    if (!host.length || !pairingID.length) return -1;
+    NSString* message = [@"HVRPAIR1:" stringByAppendingString:pairingID];
+    NSData* data = [message dataUsingEncoding:NSASCIIStringEncoding];
+    if (data.length != 45) return -1;
+    struct addrinfo hints = {0};
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_NUMERICSERV;
+    struct addrinfo* addresses = NULL;
+    if (getaddrinfo(host.UTF8String, "59464", &hints, &addresses) != 0) return -1;
+    int connectedFD = -1;
+    for (struct addrinfo* address = addresses; address; address = address->ai_next)
+    {
+        int socketFD = socket(address->ai_family, address->ai_socktype, address->ai_protocol);
+        if (socketFD < 0) continue;
+        int noSignal = 1;
+        setsockopt(socketFD, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, sizeof(noSignal));
+        int flags = fcntl(socketFD, F_GETFL, 0);
+        if (flags < 0 || fcntl(socketFD, F_SETFL, flags | O_NONBLOCK) < 0)
+        { close(socketFD); continue; }
+        int result = connect(socketFD, address->ai_addr, address->ai_addrlen);
+        if (result < 0 && errno == EINPROGRESS)
+        {
+            struct pollfd pending = {socketFD, POLLOUT, 0};
+            result = poll(&pending, 1, 800);
+            if (result > 0)
+            {
+                int error = 0;
+                socklen_t errorLength = sizeof(error);
+                result = getsockopt(socketFD, SOL_SOCKET, SO_ERROR, &error, &errorLength) == 0 && !error ? 0 : -1;
+            }
+            else result = -1;
+        }
+        if (result == 0)
+        {
+            fcntl(socketFD, F_SETFL, flags);
+            struct timeval timeout = {1, 0};
+            setsockopt(socketFD, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+            const uint8_t* bytes = data.bytes;
+            size_t remaining = data.length;
+            while (remaining)
+            {
+                ssize_t sent = send(socketFD, bytes, remaining, 0);
+                if (sent < 0 && errno == EINTR) continue;
+                if (sent <= 0) break;
+                bytes += sent;
+                remaining -= sent;
+            }
+            if (!remaining && fcntl(socketFD, F_SETFL, flags | O_NONBLOCK) == 0)
+            {
+                connectedFD = socketFD;
+                break;
+            }
+            close(socketFD);
+        }
+        else close(socketFD);
+    }
+    freeaddrinfo(addresses);
+    return connectedFD;
+}
+
+static NSData* HorosPhonePairingKey(NSString* pairingID, NSString* host)
+{
+    if (!pairingID.length || ![[[NSUUID alloc] initWithUUIDString:pairingID] autorelease]) return nil;
+    NSDictionary* query = [NSDictionary dictionaryWithObjectsAndKeys:
+        (id)kSecClassGenericPassword, (id)kSecClass,
+        @"org.horos.PhoneVolumeRender.Pairing", (id)kSecAttrService,
+        pairingID, (id)kSecAttrAccount,
+        (id)kCFBooleanTrue, (id)kSecReturnData, nil];
+    CFTypeRef found = NULL;
+    if (SecItemCopyMatching((CFDictionaryRef)query, &found) == errSecSuccess)
+        return [(NSData*)found autorelease];
+    uint8_t keyBytes[32];
+    if (SecRandomCopyBytes(kSecRandomDefault, sizeof(keyBytes), keyBytes) != errSecSuccess) return nil;
+    NSData* key = [NSData dataWithBytes:keyBytes length:sizeof(keyBytes)];
+    volatile uint8_t* wipe = keyBytes;
+    for (size_t i = 0; i < sizeof(keyBytes); ++i) wipe[i] = 0;
+    NSMutableString* hex = [NSMutableString stringWithCapacity:64];
+    const uint8_t* bytes = key.bytes;
+    for (NSUInteger i = 0; i < key.length; ++i) [hex appendFormat:@"%02X", bytes[i]];
+    NSString* payload = [NSString stringWithFormat:@"HVRPAIR1:%@:%@", pairingID, hex];
+    NSImage* image = HorosPhonePairingImage(payload);
+    if (!image) return nil;
+    int pairingSocket = HorosRequestPhonePairing(host, pairingID);
+    if (pairingSocket < 0) return nil;
+    NSString* acknowledgement = [@"HVRPAIR1-ACK:" stringByAppendingString:pairingID];
+    NSData* acknowledgementData = [acknowledgement dataUsingEncoding:NSASCIIStringEncoding];
+    uint8_t digest[CC_SHA256_DIGEST_LENGTH];
+    CCHmac(kCCHmacAlgSHA256, key.bytes, key.length,
+           acknowledgementData.bytes, acknowledgementData.length, digest);
+    NSData* expectedReply = [NSData dataWithBytes:digest length:sizeof(digest)];
+    __block BOOL confirmed = NO;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        NSAlert* alert = [[[NSAlert alloc] init] autorelease];
+        alert.messageText = @"Pair with iPhonePlanner";
+        alert.informativeText = @"Scan this code with iPhonePlanner. The dialog will close and the image will send automatically once pairing is confirmed. Keep the iPhone app open in the foreground. Do not photograph or share this code.";
+        NSImageView* imageView = [[[NSImageView alloc] initWithFrame:NSMakeRect(0, 0, 400, 400)] autorelease];
+        imageView.image = image;
+        imageView.imageScaling = NSImageScaleProportionallyUpOrDown;
+        alert.accessoryView = imageView;
+        [alert addButtonWithTitle:@"Cancel"];
+        NSMutableData* reply = [NSMutableData dataWithLength:CC_SHA256_DIGEST_LENGTH];
+        __block NSUInteger received = 0;
+        NSTimer* timer = [NSTimer timerWithTimeInterval:0.1 repeats:YES block:^(NSTimer* activeTimer) {
+            (void)activeTimer;
+            ssize_t count = recv(pairingSocket, (uint8_t*)reply.mutableBytes + received,
+                                 reply.length - received, 0);
+            if (count > 0) received += (NSUInteger)count;
+            else if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) return;
+            else
+            {
+                [NSApp stopModalWithCode:NSModalResponseCancel];
+                [alert.window orderOut:nil];
+                return;
+            }
+            if (received == reply.length)
+            {
+                const uint8_t* actual = reply.bytes;
+                const uint8_t* expected = expectedReply.bytes;
+                uint8_t difference = 0;
+                for (NSUInteger index = 0; index < reply.length; ++index)
+                    difference |= actual[index] ^ expected[index];
+                confirmed = difference == 0;
+                [NSApp stopModalWithCode:confirmed ? NSModalResponseOK : NSModalResponseCancel];
+                [alert.window orderOut:nil];
+            }
+        }];
+        [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSModalPanelRunLoopMode];
+        NSModalResponse response = [alert runModal];
+        [timer invalidate];
+        confirmed = confirmed && response == NSModalResponseOK;
+    });
+    close(pairingSocket);
+    if (!confirmed) return nil;
+    NSMutableDictionary* item = [NSMutableDictionary dictionaryWithDictionary:query];
+    [item removeObjectForKey:(id)kSecReturnData];
+    [item setObject:key forKey:(id)kSecValueData];
+    if (SecItemAdd((CFDictionaryRef)item, NULL) != errSecSuccess) return nil;
+    return key;
 }
 
 static NSDictionary *HorosDICOMSendNodeDictionaryFromSource(DicomNodeIdentifier *destination)
@@ -141,98 +302,27 @@ static NSDictionary *HorosDICOMSendNodeDictionaryFromSource(DicomNodeIdentifier 
     return node;
 }
 
-static int HorosPhoneConnect(NSString *host, NSUInteger port, NSTimeInterval timeout)
+static nw_connection_t HorosSecurePhoneConnect(NSString *host, NSUInteger port, NSData *key)
 {
-    if (!host.length || !port || timeout <= 0)
-        return -1;
-
-    struct addrinfo hints;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-
-    NSString *portString = [NSString stringWithFormat:@"%lu", (unsigned long)port];
-    struct addrinfo *result = NULL;
-    if (getaddrinfo(host.UTF8String, portString.UTF8String, &hints, &result) != 0)
-        return -1;
-
-    NSTimeInterval deadline = [NSDate timeIntervalSinceReferenceDate] + timeout;
-    int connectedFD = -1;
-    for (struct addrinfo *candidate = result; candidate; candidate = candidate->ai_next)
+    if (!host.length || !port || key.length != 32) return nil;
+    nw_parameters_t parameters = HVRPSKParameters(key);
+    if (!parameters) return nil;
+    NSString* portString = [NSString stringWithFormat:@"%lu", (unsigned long)port];
+    nw_endpoint_t endpoint = nw_endpoint_create_host(host.UTF8String, portString.UTF8String);
+    nw_connection_t connection = endpoint ? nw_connection_create(endpoint, parameters) : nil;
+    if (connection)
     {
-        NSTimeInterval remaining = deadline - [NSDate timeIntervalSinceReferenceDate];
-        if (remaining <= 0)
-            break;
-
-        int socketFD = socket(candidate->ai_family, candidate->ai_socktype, candidate->ai_protocol);
-        if (socketFD < 0)
-            continue;
-
-#ifdef SO_NOSIGPIPE
-        int noSigPipe = 1;
-        setsockopt(socketFD, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe));
-#endif
-
-        int flags = fcntl(socketFD, F_GETFL, 0);
-        if (flags < 0 || fcntl(socketFD, F_SETFL, flags | O_NONBLOCK) < 0)
+        nw_connection_set_queue(connection, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0));
+        if (!HVRWaitForReady(connection, 10.0))
         {
-            close(socketFD);
-            continue;
+            nw_connection_cancel(connection);
+            nw_release(connection);
+            connection = nil;
         }
-
-        int connectResult = connect(socketFD, candidate->ai_addr, candidate->ai_addrlen);
-        BOOL connected = connectResult == 0;
-        if (!connected && connectResult < 0 && errno == EINPROGRESS)
-        {
-            struct pollfd descriptor = {socketFD, POLLOUT, 0};
-            int timeoutMilliseconds = (int)MIN(remaining * 1000.0, (NSTimeInterval)INT_MAX);
-            int pollResult;
-            do { pollResult = poll(&descriptor, 1, timeoutMilliseconds); }
-            while (pollResult < 0 && errno == EINTR);
-            if (pollResult > 0)
-            {
-                int socketError = 0;
-                socklen_t socketErrorLength = sizeof(socketError);
-                connected = getsockopt(socketFD, SOL_SOCKET, SO_ERROR, &socketError, &socketErrorLength) == 0 && socketError == 0;
-            }
-        }
-
-        if (connected)
-        {
-            if (fcntl(socketFD, F_SETFL, flags) == 0)
-            {
-                connectedFD = socketFD;
-                break;
-            }
-        }
-        close(socketFD);
     }
-
-    freeaddrinfo(result);
-    return connectedFD;
-}
-
-static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread *thread)
-{
-    if (!host.length || !port)
-        return -1;
-
-    NSTimeInterval deadline = [NSDate timeIntervalSinceReferenceDate] + 5.0;
-    while (!thread.isCancelled)
-    {
-        NSTimeInterval remaining = deadline - [NSDate timeIntervalSinceReferenceDate];
-        if (remaining <= 0)
-            break;
-
-        int socketFD = HorosPhoneConnect(host, port, MIN(remaining, 1.5));
-        if (socketFD >= 0)
-            return socketFD;
-
-        thread.status = NSLocalizedString(@"Waiting for iPhone planning app...", nil);
-        [NSThread sleepForTimeInterval:MIN(0.25, MAX(0.0, deadline - [NSDate timeIntervalSinceReferenceDate]))];
-    }
-
-    return -1;
+    if (endpoint) nw_release(endpoint);
+    nw_release(parameters);
+    return connection;
 }
 
 @implementation BrowserController (SourcesCopy)
@@ -443,7 +533,7 @@ static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread 
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
     HorosActivityToken *activity = [[HorosActivityToken beginActivity] retain];
     NSThread* thread = [NSThread currentThread];
-    int socketFD = -1;
+    nw_connection_t connection = nil;
     NSURL* packageDirectory = nil;
     HorosPhoneVolumeExporter* exporter = nil;
     @try
@@ -451,8 +541,14 @@ static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread 
         if (io.count < 3) return;
         DataNodeIdentifier* destination = io[1];
         NSString* protocol = destination.dictionary[@"Protocol"];
-        if (![protocol isKindOfClass:NSString.class] || ![protocol isEqualToString:@"HVRVOL02"])
-            @throw [NSException exceptionWithName:NSGenericException reason:@"Update the iPhone app before sending a prepared volume." userInfo:nil];
+        if (![protocol isKindOfClass:NSString.class] || ![protocol isEqualToString:@"HVRVOL03"])
+            @throw [NSException exceptionWithName:NSGenericException reason:@"This iPhone app does not support paired encrypted transfer. Update it before sending patient images." userInfo:nil];
+        NSString* pairingID = destination.dictionary[@"PairingID"];
+        thread.status = NSLocalizedString(@"Waiting for iPhone pairing if needed...", nil);
+        NSData* pairingKey = HorosPhonePairingKey(pairingID, destination.location);
+        if (pairingKey.length != 32)
+            @throw [NSException exceptionWithName:NSGenericException reason:@"Pairing did not complete. Keep iPhonePlanner open in the foreground and retry the transfer." userInfo:nil];
+        [self redrawSources];
         // Snapshot live annotations on the main thread before taking a database-context lock.
         __block HorosPhoneVolumeExporter* snapshot = nil;
         dispatch_sync(dispatch_get_main_queue(), ^{ snapshot = [[HorosPhoneVolumeExporter alloc] init]; });
@@ -479,15 +575,24 @@ static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread 
             @throw [NSException exceptionWithName:NSGenericException reason:preparationError ?: @"Unable to prepare the selected image." userInfo:nil];
         if (thread.isCancelled) return;
         thread.status = NSLocalizedString(@"Connecting to iPhone...", nil);
-        socketFD = HorosPhoneConnectWithRetry(destination.location, destination.port, thread);
-        if (socketFD < 0)
-            @throw [NSException exceptionWithName:NSGenericException reason:@"Cannot connect to the iPhone. Keep the planning app open and check that the Mac and iPhone can reach each other on the local network." userInfo:nil];
-        struct timeval timeout = {30, 0};
-        setsockopt(socketFD, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-        setsockopt(socketFD, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-        const char magic[8] = {'H','V','R','V','O','L','0','2'};
+        for (NSUInteger attempt = 0; attempt < 3 && !connection && !thread.isCancelled; ++attempt)
+        {
+            if (attempt) [NSThread sleepForTimeInterval:0.5];
+            connection = HorosSecurePhoneConnect(destination.location, destination.port, pairingKey);
+        }
+        if (!connection)
+        {
+            NSDictionary* oldKey = [NSDictionary dictionaryWithObjectsAndKeys:
+                (id)kSecClassGenericPassword, (id)kSecClass,
+                @"org.horos.PhoneVolumeRender.Pairing", (id)kSecAttrService,
+                pairingID, (id)kSecAttrAccount, nil];
+            SecItemDelete((CFDictionaryRef)oldKey);
+            [self redrawSources];
+            @throw [NSException exceptionWithName:NSGenericException reason:@"Secure connection failed. Check the network, then try again; Horos will show a new pairing QR code." userInfo:nil];
+        }
+        const char magic[8] = {'H','V','R','V','O','L','0','3'};
         uint32_t count = htonl((uint32_t)fileNames.count);
-        if (!HorosPhoneSendAll(socketFD, magic, sizeof(magic)) || !HorosPhoneSendAll(socketFD, &count, sizeof(count)))
+        if (!HVRWrite(connection, magic, sizeof(magic), NO) || !HVRWrite(connection, &count, sizeof(count), NO))
             @throw [NSException exceptionWithName:NSGenericException reason:@"Volume transfer handshake failed." userInfo:nil];
         uint64_t totalBytes = 0, sentBytes = 0;
         for (NSString* name in fileNames)
@@ -500,8 +605,8 @@ static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread 
             NSData* nameData = [name dataUsingEncoding:NSUTF8StringEncoding];
             uint32_t nameLength = htonl((uint32_t)nameData.length);
             uint64_t networkLength = HorosHostToNetwork64(length);
-            if (!HorosPhoneSendAll(socketFD, &nameLength, 4) || !HorosPhoneSendAll(socketFD, nameData.bytes, nameData.length) ||
-                !HorosPhoneSendAll(socketFD, &networkLength, 8))
+            if (!HVRWrite(connection, &nameLength, 4, NO) || !HVRWrite(connection, nameData.bytes, nameData.length, NO) ||
+                !HVRWrite(connection, &networkLength, 8, NO))
                 @throw [NSException exceptionWithName:NSGenericException reason:@"Volume transfer header failed." userInfo:nil];
             NSFileHandle* file = [NSFileHandle fileHandleForReadingFromURL:url error:nil];
             if (!file) @throw [NSException exceptionWithName:NSGenericException reason:@"Cannot open a prepared asset." userInfo:nil];
@@ -512,7 +617,7 @@ static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread 
                     @autoreleasepool
                     {
                         NSData* bytes = [file readDataUpToLength:(NSUInteger)MIN(length, 1024 * 1024) error:nil];
-                        if (!bytes.length || !HorosPhoneSendAll(socketFD, bytes.bytes, bytes.length))
+                        if (!bytes.length || !HVRWrite(connection, bytes.bytes, bytes.length, NO))
                             @throw [NSException exceptionWithName:NSGenericException reason:@"Volume transfer was interrupted." userInfo:nil];
                         length -= bytes.length;
                         sentBytes += bytes.length;
@@ -528,9 +633,7 @@ static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread 
         else
         {
             uint8_t acknowledgement = 0;
-            ssize_t received;
-            do { received = recv(socketFD, &acknowledgement, 1, 0); } while (received < 0 && errno == EINTR);
-            if (received != 1 || acknowledgement != 1)
+            if (!HVRRead(connection, &acknowledgement, 1) || acknowledgement != 1)
                 @throw [NSException exceptionWithName:NSGenericException reason:@"The iPhone did not accept the volume. Check its transfer message." userInfo:nil];
             thread.status = NSLocalizedString(@"Sent image volume and ROIs to iPhone.", nil);
             thread.progress = 1;
@@ -543,7 +646,7 @@ static int HorosPhoneConnectWithRetry(NSString *host, NSUInteger port, NSThread 
     }
     @finally
     {
-        if (socketFD >= 0) close(socketFD);
+        if (connection) { nw_connection_cancel(connection); nw_release(connection); }
         if (packageDirectory) [[NSFileManager defaultManager] removeItemAtURL:packageDirectory error:nil];
         [exporter release];
         [activity stop];

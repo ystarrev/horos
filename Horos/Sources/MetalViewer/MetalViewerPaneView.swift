@@ -2434,6 +2434,19 @@ final class MetalViewerPaneView: NSView {
         updateAnnotationOverlay()
     }
 
+    func selectROIWindow(completion: @escaping (Bool) -> Void) {
+        guard let metalView else { completion(false); return }
+        metalView.selectROIWindow { [weak self] window in
+            guard let self, let window else { completion(false); return }
+            self.applyWindowLevel(window)
+            completion(true)
+        }
+    }
+
+    func cancelROIWindowSelection() {
+        metalView?.cancelROIWindowSelection()
+    }
+
     func applyDefaultWindowLevelPreset() {
         guard let renderer = metalView?.renderer else { return }
         renderer.applyDefaultWindowLevelPreset()

@@ -31,7 +31,7 @@ final class HorosPhoneVolumeExporter: NSObject {
     func write(images: [NSManagedObject], toDirectory directory: URL) throws -> [String] {
         assets.removeAll(); assetNames.removeAll(); roiBytes = 0
         let selected = images.filter {
-            ["CT", "MR"].contains(($0.value(forKeyPath: "series.modality") as? String ?? "").uppercased())
+            ["CT", "MR", "XA"].contains(($0.value(forKeyPath: "series.modality") as? String ?? "").uppercased())
         }
         let seriesIDs = Set(selected.compactMap {
             ($0.value(forKey: "series") as? NSManagedObject)?.objectID
@@ -39,7 +39,7 @@ final class HorosPhoneVolumeExporter: NSObject {
         guard seriesIDs.count == 1,
               let seriesObject = selected.first?.value(forKey: "series") as? NSManagedObject,
               let studyObject = seriesObject.value(forKey: "study") as? NSManagedObject else {
-            throw failure("Select exactly one CT or MRI volume to send to the iPhone.")
+            throw failure("Select exactly one CT, MRI, or approved XA skull-test volume to send to the iPhone.")
         }
         guard let context = seriesObject.managedObjectContext else {
             throw failure("The selected series is no longer available in its database.")
@@ -134,6 +134,24 @@ final class HorosPhoneVolumeExporter: NSObject {
         let origin = first.origin + first.row * (lowX * first.spacingX) + first.column * (lowY * first.spacingY)
         let modality = source.modality.uppercased()
         let firstReader = frames[0].reader
+        if modality == "XA" {
+            // The two reconstructions share a Series UID. Distinguish their SOP instances
+            // without storing patient-specific DICOM identifiers in source control.
+            func digest(_ tag: String) -> String {
+                let value = (firstReader.stringValue(forTag: tag) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+            }
+            let imageType = firstReader.stringValue(forTag: "0008,0008")?.uppercased() ?? ""
+            let secondarySkull = digest("0008,0018") == "be74888723193f226e0adcda868ae2d349f44d0b20c60751c4002d9b249dabc5"
+                && imageType.contains("XPERCT_PROP") && width == 384 && height == 296 && depth == 384
+            let primarySkull = digest("0008,0018") == "16e5f4425f6fd5cb3088355958712377ec5c2babfe883976e791e27851301618"
+                && imageType.contains("VOLUME") && width == 512 && height == 394 && depth == 512
+            guard digest("0020,000E") == "0136461a0471b15db41d403774e3511af551e66162abca0e48795ebd8b4a0df5",
+                  firstReader.stringValue(forTag: "0020,0011")?.trimmingCharacters(in: .whitespacesAndNewlines) == "5002",
+                  secondarySkull || primarySkull else {
+                throw failure("Only the two recognized monochrome XA 5002 skull reconstructions can be sent for this test. Selected dimensions: \(width) x \(height) x \(depth). Nothing was sent.")
+            }
+        }
         let inverted = firstReader.stringValue(forTag: "0028,0004")?.uppercased() == "MONOCHROME1"
         let volumeName = "volume.f32"
         let volumeURL = directory.appendingPathComponent(volumeName)

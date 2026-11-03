@@ -216,9 +216,10 @@ static NSString* HorosPeerUIDFromDictionary(NSDictionary *dictionary)
     return [uid length] ? [uid lowercaseString] : nil;
 }
 
-@interface BrowserSourcesHelper : NSObject<HorosBonjourBrowserDelegate, HorosBonjourServiceDelegate>/*<NSTableViewDelegate,NSTableViewDataSource>*/
+@interface BrowserSourcesHelper : NSObject<HorosBonjourBrowserDelegate, HorosBonjourServiceDelegate, NSMenuDelegate>/*<NSTableViewDelegate,NSTableViewDataSource>*/
 {
     BrowserController* _browser;
+    NSTableView* _sourcesTableView;
     HorosBonjourBrowser* _nsbOsirix;
     HorosBonjourBrowser* _nsbDicom;
     HorosBonjourBrowser* _nsbPhoneVolumeRender;
@@ -233,6 +234,7 @@ static NSString* HorosPeerUIDFromDictionary(NSDictionary *dictionary)
 }
 
 -(id)initWithBrowser:(BrowserController*)browser;
+-(void)setSourcesTableView:(NSTableView*)tableView;
 -(void)invalidate;
 -(void)_scheduleBonjourBrowserStart;
 -(void)_startBonjourBrowsers;
@@ -272,8 +274,12 @@ static NSString* HorosPeerUIDFromDictionary(NSDictionary *dictionary)
     [_sourcesArrayController setSelectsInsertedObjects:NO];
 
     _sourcesHelper = [[BrowserSourcesHelper alloc] initWithBrowser:self];
+    [(BrowserSourcesHelper*)_sourcesHelper setSourcesTableView:_sourcesTableView];
     [_sourcesTableView setDataSource:_sourcesHelper];
     [_sourcesTableView setDelegate:_sourcesHelper];
+    NSMenu* sourcesMenu = [[[NSMenu alloc] initWithTitle:@"Sources"] autorelease];
+    [sourcesMenu setDelegate:(BrowserSourcesHelper*)_sourcesHelper];
+    [_sourcesTableView setMenu:sourcesMenu];
 
     PrettyCell* cell = [[[PrettyCell alloc] init] autorelease];
     [[_sourcesTableView tableColumnWithIdentifier:@"Source"] setDataCell:cell];
@@ -665,6 +671,11 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     return self;
 }
 
+-(void)setSourcesTableView:(NSTableView*)tableView
+{
+    _sourcesTableView = tableView;
+}
+
 -(void)dealloc
 {
     [self invalidate];
@@ -684,6 +695,9 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
         return;
 
     _invalidated = YES;
+    if ([_sourcesTableView.menu delegate] == self)
+        [_sourcesTableView.menu setDelegate:nil];
+    _sourcesTableView = nil;
     [[NSNotificationCenter defaultCenter] removeObserver:self name:NSApplicationDidBecomeActiveNotification object:NSApp];
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_verifyBonjourSources) object:nil];
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_startBonjourBrowsers) object:nil];
@@ -710,6 +724,7 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     if (_invalidated)
         return;
 
+    [_browser redrawSources];
     [self _scheduleBonjourBrowserStart];
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_verifyBonjourSources) object:nil];
     [self performSelector:@selector(_verifyBonjourSources) withObject:nil afterDelay:2.0];
@@ -1619,6 +1634,53 @@ static void* const SearchDicomNodesContext = @"SearchDicomNodesContext";
     if (tip)
         return tip;
     return @"";
+}
+
+-(void)menuNeedsUpdate:(NSMenu*)menu
+{
+    [menu removeAllItems];
+    NSInteger row = [_sourcesTableView clickedRow];
+    if (!_browser || row < 0 || row >= [_browser sourcesCount]) return;
+    DataNodeIdentifier* source = [_browser sourceIdentifierAtRow:(int)row];
+    if (![source isKindOfClass:[PhoneVolumeRenderNodeIdentifier class]]) return;
+
+    PhoneVolumeRenderNodeIdentifier* phone = (PhoneVolumeRenderNodeIdentifier*)source;
+    BOOL certified = [phone hasStoredPairing];
+    NSMenuItem* status = [[[NSMenuItem alloc] initWithTitle:certified ? @"Certified on this Mac" : @"Not certified on this Mac"
+                                                      action:NULL keyEquivalent:@""] autorelease];
+    [status setEnabled:NO];
+    [menu addItem:status];
+    if (!certified) return;
+
+    [menu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem* uncertify = [[[NSMenuItem alloc] initWithTitle:@"Uncertify iPhonePlanner..."
+                                                         action:@selector(uncertifyPhone:) keyEquivalent:@""] autorelease];
+    [uncertify setTarget:self];
+    [uncertify setRepresentedObject:phone];
+    [menu addItem:uncertify];
+}
+
+-(void)uncertifyPhone:(NSMenuItem*)sender
+{
+    PhoneVolumeRenderNodeIdentifier* phone = [sender representedObject];
+    if (![phone isKindOfClass:[PhoneVolumeRenderNodeIdentifier class]] || ![phone hasStoredPairing]) return;
+
+    NSAlert* confirmation = [[[NSAlert alloc] init] autorelease];
+    [confirmation setMessageText:@"Uncertify iPhonePlanner?"];
+    [confirmation setInformativeText:@"Horos will remove the pairing stored on this Mac. The next transfer to this iPhone will ask you to scan a new QR code. Images already on the iPhone will not be deleted."];
+    [confirmation addButtonWithTitle:@"Uncertify"];
+    [confirmation addButtonWithTitle:@"Cancel"];
+    if ([confirmation runModal] != NSAlertFirstButtonReturn) return;
+
+    NSError* error = nil;
+    if (![phone removeStoredPairing:&error]) {
+        NSAlert* failure = [[[NSAlert alloc] init] autorelease];
+        [failure setMessageText:@"Could not uncertify iPhonePlanner"];
+        [failure setInformativeText:[error localizedDescription] ?: @"Horos could not remove the stored pairing."];
+        [failure addButtonWithTitle:@"OK"];
+        [failure runModal];
+    }
+    [_browser redrawSources];
 }
 
 -(void)tableView:(NSTableView*)aTableView willDisplayCell:(PrettyCell*)cell forTableColumn:(NSTableColumn*)tableColumn row:(NSInteger)row

@@ -202,6 +202,12 @@ private final class DisplayHarness {
     var pendingRetrievalPresentation: ((CFTimeInterval) -> Void)?
     var pixList: [Int] = []
     init() { fatalError("Type checking only") }
+    // The scalar ROI pass has its own SDK type-checking harness.
+    private func encodePendingROIWindow(
+        in view: MTKView, frame: MetalViewerRenderFrame, options: MTL4CommitOptions,
+        draw: (MTL4RenderCommandEncoder, MTLRenderPipelineState, UInt32) -> Void
+    ) {}
+    func cancelROIWindowCapture() {}
 """ + "\n".join((BEGIN, SUBMIT, CAPTURE, TRACK, declaration("private func failPendingFrameCapture()"))) + "\n}"
         with tempfile.TemporaryDirectory(prefix="horos-metal4-api-") as directory:
             path = Path(directory) / "Check.swift"

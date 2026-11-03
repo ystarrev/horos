@@ -308,6 +308,7 @@ private struct MetalUniforms {
     var baseVolumeRescaleSlope: Float
     var baseVolumeRescaleIntercept: Float
     var baseVolumePadding: UInt32
+    var roiWindowTarget: UInt32 = 0
 }
 
 private struct MetalMPRUniforms {
@@ -328,6 +329,7 @@ private struct MetalMPRUniforms {
     var baseHasCustomCLUT: UInt32
     var overlayHasCustomCLUT: UInt32
     var baseBackgroundValue: Float
+    var roiWindowTarget: UInt32 = 0
 }
 
 private struct RegistrationUniforms {
@@ -792,6 +794,13 @@ private struct MetalViewerFrameCaptureRequest {
     let completion: (MetalPrintFrame?) -> Void
 }
 
+private struct MetalViewerROIWindowRequest {
+    let pixelRect: CGRect
+    let drawableSize: CGSize
+    let target: UInt32
+    let completion: (MetalViewerWindowLevel?) -> Void
+}
+
 // One slot owns every mutable allocation used by a submitted render frame.
 // Only the main thread touches a slot, and only after GPU feedback can it be reused.
 final class MetalViewerRenderFrame {
@@ -999,6 +1008,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
     private let samplerState: MTLSamplerState
     private let vertexBuffer: MTLBuffer
     private var pendingFrameCapture: MetalViewerFrameCaptureRequest?
+    private var pendingROIWindow: MetalViewerROIWindowRequest?
 
     private(set) var pixList: [DCMPix]
     private var overlayPixList: [DCMPix] = []
@@ -1856,7 +1866,111 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
     }
 
+    func captureROIWindow(in view: MTKView, selection: CGRect, completion: @escaping (MetalViewerWindowLevel?) -> Void) {
+        cancelROIWindowCapture()
+        guard let pixelRect = MetalViewerROIWindow.pixelRect(selection: selection, bounds: view.bounds,
+                                                             drawableSize: view.drawableSize, isFlipped: view.isFlipped) else {
+            completion(nil)
+            return
+        }
+        pendingROIWindow = MetalViewerROIWindowRequest(pixelRect: pixelRect, drawableSize: view.drawableSize,
+                                                       target: isOverlayWindowLevelActive ? 2 : 1, completion: completion)
+        view.draw()
+    }
+
+    func cancelROIWindowCapture() {
+        let request = pendingROIWindow
+        pendingROIWindow = nil
+        request?.completion(nil)
+    }
+
+    private func encodePendingROIWindow(
+        in view: MTKView,
+        frame: MetalViewerRenderFrame,
+        options: MTL4CommitOptions,
+        draw: (MTL4RenderCommandEncoder, MTLRenderPipelineState, UInt32) -> Void
+    ) {
+        guard let request = pendingROIWindow else { return }
+        pendingROIWindow = nil
+        let width = Int(view.drawableSize.width)
+        let height = Int(view.drawableSize.height)
+        let region = request.pixelRect
+        let regionWidth = Int(region.width)
+        let regionHeight = Int(region.height)
+        let bytesPerRow = (regionWidth * MemoryLayout<Float>.stride + 255) & ~255
+        guard request.drawableSize == view.drawableSize,
+              regionWidth > 0, regionHeight > 0 else { request.completion(nil); return }
+
+        // A one-shot scalar pass uses exactly the display's sampling and transforms,
+        // but bypasses WL/WW, CLUTs and annotations. Read back only the selected area.
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r32Float, width: width, height: height, mipmapped: false)
+        descriptor.storageMode = .private
+        descriptor.usage = .renderTarget
+        let depthDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: width, height: height, mipmapped: false)
+        depthDescriptor.storageMode = .private
+        depthDescriptor.usage = .renderTarget
+        let pipeline: MTLRenderPipelineState
+        do {
+            pipeline = try MetalPipelineCache.shared(for: deviceRef).renderPipeline(
+                vertex: displayMode == .stack2D ? "metalViewerVertex" : "metalViewerMPRVertex",
+                fragment: displayMode == .stack2D ? "metalViewerFragment" : "metalViewerMPRFragment",
+                colorPixelFormat: .r32Float, depthPixelFormat: .depth32Float
+            )
+        } catch {
+            NSLog("ROI WL/WW pipeline: %@", error.localizedDescription)
+            request.completion(nil)
+            return
+        }
+        guard let texture = deviceRef.makeTexture(descriptor: descriptor),
+              let depth = deviceRef.makeTexture(descriptor: depthDescriptor),
+              let buffer = deviceRef.makeBuffer(length: bytesPerRow * regionHeight, options: .storageModeShared) else {
+            request.completion(nil)
+            return
+        }
+        let pass = MTL4RenderPassDescriptor()
+        pass.colorAttachments[0].texture = texture
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].storeAction = .store
+        pass.colorAttachments[0].clearColor = MTLClearColorMake(.nan, 0, 0, 0)
+        pass.depthAttachment.texture = depth
+        pass.depthAttachment.loadAction = .clear
+        pass.depthAttachment.storeAction = .dontCare
+        pass.depthAttachment.clearDepth = 1
+        frame.retainResource(texture)
+        frame.retainResource(depth)
+        frame.retainResource(buffer)
+        guard let encoder = renderCommandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
+            request.completion(nil)
+            return
+        }
+        encoder.setArgumentTable(frame.vertexArguments, stages: .vertex)
+        encoder.setArgumentTable(frame.fragmentArguments, stages: .fragment)
+        draw(encoder, pipeline, request.target)
+        encoder.endEncoding()
+        guard !frame.encodingFailed, let copy = renderCommandBuffer.makeComputeCommandEncoder() else {
+            request.completion(nil)
+            return
+        }
+        copy.barrier(afterQueueStages: .fragment, beforeStages: .blit, visibilityOptions: .device)
+        copy.copy(sourceTexture: texture, sourceSlice: 0, sourceLevel: 0,
+                  sourceOrigin: MTLOrigin(x: Int(region.minX), y: Int(region.minY), z: 0),
+                  sourceSize: MTLSize(width: regionWidth, height: regionHeight, depth: 1),
+                  destinationBuffer: buffer, destinationOffset: 0, destinationBytesPerRow: bytesPerRow, destinationBytesPerImage: 0)
+        copy.endEncoding()
+        options.addFeedbackHandler { feedback in
+            let succeeded = feedback.error == nil
+            DispatchQueue.global(qos: .userInitiated).async {
+                let pixels = UnsafeBufferPointer(start: buffer.contents().assumingMemoryBound(to: Float.self),
+                                                 count: buffer.length / MemoryLayout<Float>.stride)
+                let window = succeeded ? MetalViewerROIWindow.window(pixels: pixels, width: regionWidth,
+                                                                       height: regionHeight, rowStride: bytesPerRow / MemoryLayout<Float>.stride) : nil
+                DispatchQueue.main.async { request.completion(window) }
+            }
+        }
+    }
+
     private func failPendingFrameCapture() {
+        cancelROIWindowCapture()
         guard let request = pendingFrameCapture else { return }
         pendingFrameCapture = nil
         DispatchQueue.main.async { request.completion(nil) }
@@ -8235,7 +8349,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         drawable: CAMetalDrawable,
         view: MTKView,
         operation: String,
-        since startedAt: CFTimeInterval?
+        since startedAt: CFTimeInterval?,
+        roiWindowDraw: (MTL4RenderCommandEncoder, MTLRenderPipelineState, UInt32) -> Void
     ) {
         guard !frame.encodingFailed else {
             renderCommandBuffer.endCommandBuffer()
@@ -8245,6 +8360,7 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
             return
         }
         let options = MTL4CommitOptions()
+        encodePendingROIWindow(in: view, frame: frame, options: options, draw: roiWindowDraw)
         encodePendingFrameCapture(from: drawable.texture, into: renderCommandBuffer, frame: frame, options: options)
         frame.residency.commit()
         renderCommandBuffer.useResidencySet(frame.residency)
@@ -8376,7 +8492,18 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
         encoder.endEncoding()
 
-        submitDisplayFrame(frame, drawable: drawable, view: view, operation: "draw.planar", since: performanceStartedAt)
+        submitDisplayFrame(frame, drawable: drawable, view: view, operation: "draw.planar", since: performanceStartedAt) { encoder, pipeline, target in
+            var rawUniforms = uniforms
+            rawUniforms.roiWindowTarget = target
+            encoder.setRenderPipelineState(pipeline)
+            frame.setVertexBuffer(vertexBuffer)
+            frame.setTextures([nil, overlayVolumeTexture, floatDisplayVolumeTexture,
+                               baseCLUTTexture, baseOpacityTexture, overlayCLUTTexture, overlayOpacityTexture,
+                               signedDisplayVolumeTexture, unsignedDisplayVolumeTexture], sampler: samplerState)
+            if frame.setUniforms(&rawUniforms) {
+                encoder.drawPrimitives(primitiveType: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            }
+        }
     }
 
     private func invalidateMPRROIVertexBuffer() {
@@ -8595,7 +8722,26 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         }
         encoder.endEncoding()
 
-        submitDisplayFrame(frame, drawable: drawable, view: view, operation: "draw.mpr", since: performanceStartedAt)
+        submitDisplayFrame(frame, drawable: drawable, view: view, operation: "draw.mpr", since: performanceStartedAt) { encoder, pipeline, target in
+            var rawUniforms = uniforms
+            rawUniforms.roiWindowTarget = target
+            if let renderLayout {
+                encoder.setViewport(renderLayout.mainViewport)
+                encoder.setScissorRect(renderLayout.mainScissor)
+            }
+            encoder.setRenderPipelineState(pipeline)
+            encoder.setDepthStencilState(mprDepthStencilState)
+            frame.setTextures([baseMPRTexture, overlayMPRTexture, nil,
+                               baseCLUTTexture, baseOpacityTexture, overlayCLUTTexture, overlayOpacityTexture,
+                               nil, nil], sampler: samplerState)
+            if frame.setVertices(vertices), frame.setUniforms(&rawUniforms) {
+                encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: vertices.count)
+            }
+            if let renderLayout {
+                drawMPRPreviewPanes(renderLayout.previewPanes, encoder: encoder, frame: frame, uniforms: rawUniforms,
+                                    baseVolumeTexture: baseVolumeTexture, imagePipeline: pipeline)
+            }
+        }
     }
 
     private func makeMPRUniforms(
@@ -8655,7 +8801,12 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         )
         encoder.endEncoding()
 
-        submitDisplayFrame(frame, drawable: drawable, view: view, operation: "draw.mpr3D", since: performanceStartedAt)
+        submitDisplayFrame(frame, drawable: drawable, view: view, operation: "draw.mpr3D", since: performanceStartedAt) { encoder, pipeline, target in
+            var rawUniforms = uniforms
+            rawUniforms.roiWindowTarget = target
+            drawMPRPreviewPanes(panes, encoder: encoder, frame: frame, uniforms: rawUniforms,
+                                baseVolumeTexture: baseVolumeTexture, imagePipeline: pipeline)
+        }
     }
 
     private func mprRenderLayout(for view: MTKView) -> MetalMPRRenderLayout? {
@@ -8866,7 +9017,8 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
         encoder: MTL4RenderCommandEncoder,
         frame: MetalViewerRenderFrame,
         uniforms: MetalMPRUniforms,
-        baseVolumeTexture: MTLTexture
+        baseVolumeTexture: MTLTexture,
+        imagePipeline: MTLRenderPipelineState? = nil
     ) {
         var previewUniforms = uniforms
         previewUniforms.viewProjectionMatrix = matrix_identity_float4x4
@@ -8882,11 +9034,13 @@ final class MetalViewerRenderer: NSObject, MTKViewDelegate {
 
             encoder.setViewport(pane.viewport)
             encoder.setScissorRect(pane.scissor)
-            encoder.setRenderPipelineState(mprPipelineState)
+            encoder.setRenderPipelineState(imagePipeline ?? mprPipelineState)
             encoder.setDepthStencilState(mprDepthStencilState)
             if frame.setVertices(vertices), frame.setUniforms(&previewUniforms) {
                 encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: vertices.count)
             }
+
+            if imagePipeline != nil { continue }
 
             let sliceThicknessVertices = makePlanarMPRPreviewSliceThicknessVertices(for: pane.plane, viewport: pane.viewport, unitScale: pane.unitScale)
             if sliceThicknessVertices.isEmpty == false {

@@ -42,6 +42,7 @@
 #import "NSHost+N2.h"
 #import <stdlib.h>
 #import "N2Debug.h"
+#import <Security/Security.h>
 
 @implementation DataNodeIdentifier
 
@@ -292,16 +293,69 @@
     return [[[[self class] alloc] initWithLocation:location port:port aetitle:@"" description:description dictionary:dictionary] autorelease];
 }
 
+-(NSDictionary*)_pairingKeyQuery {
+    NSString* pairingID = [_dictionary objectForKey:@"PairingID"];
+    if (![pairingID isKindOfClass:[NSString class]] || ![[[NSUUID alloc] initWithUUIDString:pairingID] autorelease])
+        return nil;
+    return [NSDictionary dictionaryWithObjectsAndKeys:
+        (id)kSecClassGenericPassword, (id)kSecClass,
+        @"org.horos.PhoneVolumeRender.Pairing", (id)kSecAttrService,
+        pairingID, (id)kSecAttrAccount, nil];
+}
+
+-(BOOL)hasStoredPairing {
+    NSDictionary* keyQuery = [self _pairingKeyQuery];
+    if (!keyQuery) return NO;
+    NSMutableDictionary* query = [NSMutableDictionary dictionaryWithDictionary:keyQuery];
+    [query setObject:(id)kCFBooleanTrue forKey:(id)kSecReturnAttributes];
+    [query setObject:(id)kSecMatchLimitOne forKey:(id)kSecMatchLimit];
+    [query setObject:(id)kSecUseAuthenticationUISkip forKey:(id)kSecUseAuthenticationUI];
+    CFTypeRef attributes = NULL;
+    OSStatus status = SecItemCopyMatching((CFDictionaryRef)query, &attributes);
+    if (attributes) CFRelease(attributes);
+    return status == errSecSuccess;
+}
+
+-(BOOL)removeStoredPairing:(NSError**)error {
+    NSDictionary* query = [self _pairingKeyQuery];
+    if (!query) {
+        if (error) *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:errSecParam userInfo:nil];
+        return NO;
+    }
+    OSStatus status = SecItemDelete((CFDictionaryRef)query);
+    if (status == errSecSuccess || status == errSecItemNotFound) return YES;
+    if (error) *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:status userInfo:nil];
+    return NO;
+}
+
 -(void)willDisplayCell:(PrettyCell*)cell {
     [super willDisplayCell:cell];
-    
-    if( [_dictionary valueForKey: @"icon"] && [NSImage imageNamed:[_dictionary valueForKey:@"icon"]])
-    {
-        cell.image = [NSImage imageNamed:[_dictionary valueForKey:@"icon"]];
+
+    NSString* iconName = [_dictionary objectForKey:@"icon"];
+    NSImage* baseImage = [iconName isKindOfClass:[NSString class]] ? [NSImage imageNamed:iconName] : nil;
+    if (!baseImage) baseImage = [NSImage imageNamed:@"Network.tif"];
+    if (![self hasStoredPairing]) {
+        cell.image = baseImage;
         return;
     }
-    
-    cell.image = [NSImage imageNamed:@"Network.tif"];
+
+    NSImage* badgedImage = [[[NSImage alloc] initWithSize:NSMakeSize(32, 32)] autorelease];
+    [badgedImage lockFocus];
+    [baseImage drawInRect:NSMakeRect(0, 0, 32, 32) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1];
+    NSBezierPath* badge = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(18, 1, 13, 13)];
+    [[NSColor colorWithCalibratedRed:0.12 green:0.62 blue:0.30 alpha:1] setFill];
+    [badge fill];
+    [[NSColor whiteColor] setStroke];
+    [badge setLineWidth:1.5];
+    [badge stroke];
+    NSBezierPath* check = [NSBezierPath bezierPath];
+    [check moveToPoint:NSMakePoint(21, 7)];
+    [check lineToPoint:NSMakePoint(23.5, 4.5)];
+    [check lineToPoint:NSMakePoint(28, 10)];
+    [check setLineWidth:1.8];
+    [check stroke];
+    [badgedImage unlockFocus];
+    cell.image = badgedImage;
 }
 
 -(BOOL)isEqualToDataNodeIdentifier:(PhoneVolumeRenderNodeIdentifier*)dni {
@@ -313,10 +367,11 @@
 
 -(NSString*)toolTip {
     NSString *tip = [super toolTip];
+    NSString* pairingStatus = [self hasStoredPairing] ? @"Certified on this Mac. Right-click to uncertify." : @"Not certified on this Mac.";
     if (tip.length)
-        return [tip stringByAppendingFormat:@" - %@", NSLocalizedString(@"Drag studies here to send them to the iPhone planning app.", nil)];
+        return [tip stringByAppendingFormat:@" - %@ %@", pairingStatus, NSLocalizedString(@"Drag studies here to send them to the iPhone planning app.", nil)];
     
-    return NSLocalizedString(@"Drag studies here to send them to the iPhone planning app.", nil);
+    return [NSString stringWithFormat:@"%@ %@", pairingStatus, NSLocalizedString(@"Drag studies here to send them to the iPhone planning app.", nil)];
 }
 
 @end

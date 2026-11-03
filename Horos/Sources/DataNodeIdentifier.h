@@ -114,5 +114,7 @@
 @interface PhoneVolumeRenderNodeIdentifier : RemoteDataNodeIdentifier
 
 +(id)phoneVolumeRenderNodeIdentifierWithLocation:(NSString*)location port:(NSUInteger)port description:(NSString*)description dictionary:(NSDictionary*)dictionary;
+-(BOOL)hasStoredPairing;
+-(BOOL)removeStoredPairing:(NSError**)error;
 
 @end

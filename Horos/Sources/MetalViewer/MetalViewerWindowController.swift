@@ -2690,6 +2690,8 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
         guard let activePaneView else { return }
         let targetSeries = activePaneView.activeWindowLevelSeries
 
+        for pane in paneViews { pane.cancelROIWindowSelection() }
+
         switch command {
         case .other:
             selectedWLWWTitle = NSLocalizedString("Other", comment: "")
@@ -2709,6 +2711,20 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             activePaneView.applyFullDynamicWindowLevelPreset()
             selectedWLWWTitle = NSLocalizedString("Full dynamic", comment: "")
             targetSeries.windowLevelPresetTitle = selectedWLWWTitle
+
+        case .roiWindow:
+            toolbarView.selectWLWWTitle(selectedWLWWTitle)
+            activePaneView.selectROIWindow { [weak self, weak activePaneView] applied in
+                guard applied, let self, let activePaneView else { return }
+                let title = NSLocalizedString("ROI WL/WW", comment: "")
+                targetSeries.windowLevelPresetTitle = title
+                if self.activePaneView === activePaneView {
+                    self.selectedWLWWTitle = title
+                    self.toolbarView.selectWLWWTitle(title)
+                    self.updateToolbarStatus()
+                }
+            }
+            return
 
         case .preset(let name):
             if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
@@ -2743,6 +2759,8 @@ final class MetalViewerWindowController: NSWindowController, NSSplitViewDelegate
             command = .automatic
         } else if title == NSLocalizedString("Full dynamic", comment: "") {
             command = .fullDynamic
+        } else if title == NSLocalizedString("ROI WL/WW", comment: "") {
+            command = .roiWindow
         } else if title == NSLocalizedString("Add Current WL/WW", comment: "") {
             command = .addCurrent
         } else if title == NSLocalizedString("Set WL/WW manually", comment: "")

@@ -152,6 +152,7 @@ private final class MetalMPRPreviewOverlayView: NSView {
         guard let owner else {
             return
         }
+        defer { owner.drawROIWindowSelection(in: self) }
 
         owner.drawLegacyROIOverlay()
 
@@ -232,6 +233,7 @@ private final class MetalMPRPreviewOverlayView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let owner,
+              !owner.isSelectingROIWindow,
               owner.renderer.displayMode.isMPRLike,
               let layout = owner.renderer.mprPreviewOverlayLayout(in: bounds),
               layout.dividerRect.width > 0,
@@ -244,6 +246,7 @@ private final class MetalMPRPreviewOverlayView: NSView {
     override func resetCursorRects() {
         super.resetCursorRects()
         guard let owner,
+              !owner.isSelectingROIWindow,
               owner.renderer.displayMode.isMPRLike,
               let layout = owner.renderer.mprPreviewOverlayLayout(in: bounds) else {
             return
@@ -676,6 +679,35 @@ final class MetalImageView: MTKView {
     private static let measurementLabelFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
 
     let renderer: MetalViewerRenderer
+    private var roiWindowCompletion: ((MetalViewerWindowLevel?) -> Void)?
+    private var roiWindowSelectionID: UUID?
+    private var roiWindowAnchor: CGPoint?
+    private var roiWindowRect: CGRect?
+    private var roiWindowBounds: CGRect?
+    private var isComputingROIWindow = false
+    private var roiWindowOwnsMouseGesture = false
+    private let roiWindowHintView = NSGlassEffectView()
+    private let roiWindowHintLabel = NSTextField(wrappingLabelWithString: NSLocalizedString(
+        "Drag a rectangle to maximize contrast in that area. Press Escape to cancel.", comment: "ROI WL/WW hint"))
+    fileprivate var isSelectingROIWindow: Bool { roiWindowCompletion != nil }
+
+    private static let roiWindowCursor: NSCursor = {
+        let image = NSImage(size: NSSize(width: 17, height: 17), flipped: false) { _ in
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: 8, y: 1))
+            path.line(to: NSPoint(x: 8, y: 15))
+            path.move(to: NSPoint(x: 1, y: 8))
+            path.line(to: NSPoint(x: 15, y: 8))
+            NSColor.black.setStroke()
+            path.lineWidth = 3
+            path.stroke()
+            NSColor.white.setStroke()
+            path.lineWidth = 1
+            path.stroke()
+            return true
+        }
+        return NSCursor(image: image, hotSpot: NSPoint(x: 8, y: 8))
+    }()
     var patientPointPlacementHandler: ((SIMD3<Double>) -> Void)? {
         didSet { updateMouseToolCursor(modifierFlags: NSEvent.modifierFlags) }
     }
@@ -740,6 +772,7 @@ final class MetalImageView: MTKView {
 
         renderer.stateDidChange = { [weak self] state in
             guard let self else { return }
+            self.cancelROIWindowSelection()
             // Update the cursor value from the newly committed pixels before
             // publishing any labels for that slice.
             if self.renderer.displayMode == .stack2D, let point = self.mouseAnnotationPoint {
@@ -770,6 +803,116 @@ final class MetalImageView: MTKView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    func selectROIWindow(completion: @escaping (MetalViewerWindowLevel?) -> Void) {
+        cancelROIWindowSelection()
+        guard windowLevelInteractionAllowedHandler?() ?? true else { completion(nil); return }
+        renderer.updateMPRHover(at: nil, in: bounds)
+        window?.makeFirstResponder(self)
+        roiWindowSelectionID = UUID()
+        roiWindowCompletion = completion
+        roiWindowBounds = bounds
+        showROIWindowHint()
+        window?.invalidateCursorRects(for: mprPreviewOverlayView)
+        updateMouseToolCursor(modifierFlags: NSEvent.modifierFlags)
+    }
+
+    func cancelROIWindowSelection() {
+        guard let completion = roiWindowCompletion else { return }
+        roiWindowCompletion = nil
+        clearROIWindowSelection()
+        renderer.cancelROIWindowCapture()
+        completion(nil)
+    }
+
+    private func showROIWindowHint() {
+        if roiWindowHintView.superview == nil {
+            roiWindowHintView.style = .regular
+            roiWindowHintView.cornerRadius = 20
+            roiWindowHintView.effectIsInteractive = false
+            roiWindowHintLabel.font = .systemFont(ofSize: 13, weight: .medium)
+            roiWindowHintLabel.textColor = .labelColor
+            roiWindowHintLabel.alignment = .center
+            let content = NSView()
+            content.autoresizingMask = [.width, .height]
+            content.addSubview(roiWindowHintLabel)
+            roiWindowHintView.contentView = content
+            // The overlay's hit testing passes through to the image during selection.
+            mprPreviewOverlayView.addSubview(roiWindowHintView)
+        }
+        let width = min(360, max(mprPreviewOverlayView.bounds.width - 24, 1))
+        let textWidth = max(width - 32, 1)
+        let textHeight = ceil(roiWindowHintLabel.cell?.cellSize(forBounds: NSRect(
+            x: 0, y: 0, width: textWidth, height: .greatestFiniteMagnitude)).height ?? 32)
+        roiWindowHintView.frame = NSRect(x: mprPreviewOverlayView.bounds.midX - width * 0.5,
+                                        y: mprPreviewOverlayView.bounds.minY + 24,
+                                        width: width, height: textHeight + 24)
+        roiWindowHintView.contentView?.frame = roiWindowHintView.bounds
+        roiWindowHintLabel.frame = roiWindowHintView.bounds.insetBy(dx: 16, dy: 12)
+        roiWindowHintView.isHidden = false
+    }
+
+    fileprivate func drawROIWindowSelection(in overlay: NSView) {
+        guard let rect = roiWindowRect, rect.width > 0, rect.height > 0 else { return }
+        let path = NSBezierPath(rect: overlay.convert(rect, from: self))
+        NSColor.black.setStroke()
+        path.lineWidth = 3
+        path.stroke()
+        NSColor.white.setStroke()
+        path.lineWidth = 1
+        path.setLineDash([4, 3], count: 2, phase: 0)
+        path.stroke()
+    }
+
+    private func updateROIWindowRectangle(to point: CGPoint) {
+        guard let anchor = roiWindowAnchor else { return }
+        roiWindowRect = CGRect(x: min(anchor.x, point.x), y: min(anchor.y, point.y),
+                               width: abs(point.x - anchor.x), height: abs(point.y - anchor.y)).intersection(bounds)
+        mprPreviewOverlayView.needsDisplay = true
+    }
+
+    private func finishROIWindowSelection(at point: CGPoint) {
+        guard !isComputingROIWindow, let identifier = roiWindowSelectionID else { return }
+        updateROIWindowRectangle(to: point)
+        roiWindowAnchor = nil
+        guard let rect = roiWindowRect, rect.width >= 2, rect.height >= 2 else {
+            roiWindowRect = nil
+            mprPreviewOverlayView.needsDisplay = true
+            return
+        }
+        isComputingROIWindow = true
+        renderer.captureROIWindow(in: self, selection: rect) { [weak self] window in
+            guard let self, self.roiWindowSelectionID == identifier else { return }
+            self.isComputingROIWindow = false
+            guard let window, self.windowLevelInteractionAllowedHandler?() ?? true else {
+                self.roiWindowRect = nil
+                self.mprPreviewOverlayView.needsDisplay = true
+                NSSound.beep()
+                return
+            }
+            let completion = self.roiWindowCompletion
+            self.roiWindowCompletion = nil
+            self.clearROIWindowSelection()
+            completion?(window)
+        }
+    }
+
+    private func clearROIWindowSelection() {
+        roiWindowHintView.isHidden = true
+        roiWindowSelectionID = nil
+        roiWindowAnchor = nil
+        roiWindowRect = nil
+        roiWindowBounds = nil
+        isComputingROIWindow = false
+        mprPreviewOverlayView.needsDisplay = true
+        window?.invalidateCursorRects(for: mprPreviewOverlayView)
+        updateMouseToolCursor(modifierFlags: NSEvent.modifierFlags)
+    }
+
+    override func resignFirstResponder() -> Bool {
+        cancelROIWindowSelection()
+        return super.resignFirstResponder()
+    }
+
     override func printView(_ sender: Any?) {
         // NSView's print: intercepts File > Print before the window can render
         // the image. A Metal layer cannot be printed by AppKit's view drawing.
@@ -793,6 +936,7 @@ final class MetalImageView: MTKView {
         transferFunctionState: MetalViewerTransferFunctionState,
         transferFunctionStateDidChange: ((MetalViewerTransferFunctionState) -> Void)?
     ) {
+        cancelROIWindowSelection()
         dragAnchor = .zero
         wlAnchor = 0
         wwAnchor = 0
@@ -832,6 +976,7 @@ final class MetalImageView: MTKView {
 
     override func layout() {
         super.layout()
+        if let roiWindowBounds, roiWindowBounds != bounds { cancelROIWindowSelection() }
         mprPreviewOverlayView.needsDisplay = true
         mprPreviewOverlayView.window?.invalidateCursorRects(for: mprPreviewOverlayView)
         publishMeasurementOverlays()
@@ -910,6 +1055,10 @@ final class MetalImageView: MTKView {
 
     override func resetCursorRects() {
         super.resetCursorRects()
+        if isSelectingROIWindow {
+            addCursorRect(bounds, cursor: Self.roiWindowCursor)
+            return
+        }
         if patientPointPlacementHandler != nil {
             addCursorRect(bounds, cursor: .crosshair)
             return
@@ -928,10 +1077,12 @@ final class MetalImageView: MTKView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if window == nil { cancelROIWindowSelection() }
         window?.makeFirstResponder(self)
     }
 
     override func scrollWheel(with event: NSEvent) {
+        cancelROIWindowSelection()
         interactionEventHandler?()
         let point = convert(event.locationInWindow, from: nil)
         mouseAnnotationPoint = point
@@ -973,6 +1124,7 @@ final class MetalImageView: MTKView {
     }
 
     override func magnify(with event: NSEvent) {
+        cancelROIWindowSelection()
         interactionEventHandler?()
         activateHandler?()
         window?.makeFirstResponder(self)
@@ -1011,6 +1163,17 @@ final class MetalImageView: MTKView {
         window?.makeFirstResponder(self)
         dragAnchor = convert(event.locationInWindow, from: nil)
         activeMouseButton = button
+        if isSelectingROIWindow {
+            roiWindowHintView.isHidden = true
+            roiWindowOwnsMouseGesture = true
+            guard button == .left else { cancelROIWindowSelection(); return }
+            if !isComputingROIWindow {
+                roiWindowAnchor = dragAnchor
+                roiWindowRect = nil
+                Self.roiWindowCursor.set()
+            }
+            return
+        }
         if button == .left, let place = patientPointPlacementHandler,
            event.modifierFlags.intersection([.shift, .option, .control, .command]).isEmpty {
             isPlacingPatientPoint = true
@@ -1085,6 +1248,12 @@ final class MetalImageView: MTKView {
     }
 
     private func dragMouseInteraction(with event: NSEvent, button: MetalViewerMouseButton) {
+        if roiWindowOwnsMouseGesture {
+            if isSelectingROIWindow, button == .left, !isComputingROIWindow {
+                updateROIWindowRectangle(to: convert(event.locationInWindow, from: nil))
+            }
+            return
+        }
         if isPlacingPatientPoint { return }
         guard button == activeMouseButton else {
             return
@@ -1171,6 +1340,11 @@ final class MetalImageView: MTKView {
     }
 
     private func endMouseInteraction(with event: NSEvent, button: MetalViewerMouseButton) {
+        if roiWindowOwnsMouseGesture {
+            roiWindowOwnsMouseGesture = false
+            if isSelectingROIWindow, button == .left { finishROIWindowSelection(at: convert(event.locationInWindow, from: nil)) }
+            return
+        }
         if isPlacingPatientPoint {
             if button == .left {
                 isPlacingPatientPoint = false
@@ -1748,7 +1922,7 @@ final class MetalImageView: MTKView {
     override func mouseMoved(with event: NSEvent) {
         interactionEventHandler?()
         let point = convert(event.locationInWindow, from: nil)
-        updateMouseAnnotationState(from: point)
+        if !isSelectingROIWindow { updateMouseAnnotationState(from: point) }
         updatePointerCursor(at: point, event: event)
     }
 
@@ -1767,7 +1941,7 @@ final class MetalImageView: MTKView {
     }
 
     override func mouseExited(with event: NSEvent) {
-        renderer.updateMPRHover(at: nil, in: bounds)
+        if !isSelectingROIWindow { renderer.updateMPRHover(at: nil, in: bounds) }
         resetMPRLineCursor()
         NSCursor.arrow.set()
         if mouseAnnotationState != nil {
@@ -1778,6 +1952,10 @@ final class MetalImageView: MTKView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if isSelectingROIWindow {
+            if event.keyCode == 53 { cancelROIWindowSelection() }
+            return
+        }
         if event.keyCode == 53 {
             switch activeStudyROIGesture {
             case .sphere:
@@ -2604,6 +2782,11 @@ final class MetalImageView: MTKView {
         at point: CGPoint,
         modifierFlags: NSEvent.ModifierFlags
     ) {
+        if isSelectingROIWindow {
+            resetMPRLineCursor()
+            Self.roiWindowCursor.set()
+            return
+        }
         if patientPointPlacementHandler != nil {
             resetMPRLineCursor()
             NSCursor.crosshair.set()

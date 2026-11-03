@@ -43,11 +43,17 @@ from metal3d_dicom_geometry import (
     classify_series_role,
     load_dicom_series_registered,
     nifti_affine_from_job,
+    normalize_role,
     target_shape_from_job,
 )
 
 
-DEFAULT_CHANNEL_ORDER = ["flair", "t1", "t1c", "t2"]
+HOROS_LABEL_NAMES = {
+    "0": "background",
+    "1": "tumour core / non-enhancing label",
+    "2": "edema",
+    "4": "enhancing tumour",
+}
 
 
 def load_json(path: Path) -> dict:
@@ -80,13 +86,76 @@ def configured_model_folder(config: dict) -> Path:
     return folder
 
 
-def configured_channel_order(config: dict) -> list[str]:
-    value = os.environ.get("HOROS_TUMOR_NNUNET_CHANNELS") or config.get("nnunet_channels")
-    if isinstance(value, str) and value.strip():
-        return [item.strip().lower() for item in value.split(",") if item.strip()]
-    if isinstance(value, list) and value:
-        return [str(item).strip().lower() for item in value if str(item).strip()]
-    return DEFAULT_CHANNEL_ORDER
+def model_channel_order(dataset: dict) -> list[str]:
+    channels = dataset.get("channel_names")
+    if not isinstance(channels, dict) or not channels:
+        raise RuntimeError("The model dataset.json must declare its input channel_names.")
+    if set(channels) != {str(index) for index in range(len(channels))}:
+        raise RuntimeError("The model channel_names must use consecutive indices starting at 0.")
+
+    aliases = {"t1w": "t1", "t1n": "t1", "t2w": "t2", "t2f": "flair",
+               "tumourseed": "seed", "tumorseed": "seed"}
+    supported = {"t1", "t1c", "t2", "flair", "seed"}
+    roles = []
+    for index in range(len(channels)):
+        name = channels[str(index)]
+        if not isinstance(name, str):
+            raise RuntimeError(f"The model input channel {index} must have a sequence name.")
+        role = normalize_role(name)
+        role = aliases.get(role, role)
+        if role not in supported:
+            raise RuntimeError(f"Unsupported model input channel {index}: {name!r}. Cannot infer its MRI sequence.")
+        roles.append(role)
+    return roles
+
+
+def model_label_mapping(dataset: dict) -> dict[int, int]:
+    labels = dataset.get("labels")
+    if not isinstance(labels, dict) or not labels:
+        raise RuntimeError("The model dataset.json must declare its output labels.")
+    aliases = {
+        0: ("background", "empty", "unused", "ignore"),
+        1: ("nonenhancing", "nonenhancingtumor", "nonenhancingtumour", "nonenhancingtumorcore",
+            "nonenhancingtumourcore", "necrosis", "necroticcore", "necrotictumorcore",
+            "necroticandnonenhancingtumorcore", "necroticandnonenhancingtumourcore", "ncrnet", "ncr", "net",
+            "tumorcore", "tumourcore", "core", "tc"),
+        2: ("edema", "oedema", "peritumoraledema", "peritumoraloedema", "ed", "snfh"),
+        4: ("enhancing", "enhancingtumor", "enhancingtumour", "enhancingtumorcore", "enhancingtumourcore", "et"),
+    }
+    targets = {name: target for target, names in aliases.items() for name in names}
+    mapping = {}
+    for name, source in labels.items():
+        if not isinstance(name, str) or type(source) is not int or source < 0:
+            raise RuntimeError("The model labels must have names and non-negative integer values; region-based labels are not supported.")
+        normalized = "".join(character for character in name.casefold() if character.isalnum())
+        if normalized not in targets:
+            raise RuntimeError(f"Unsupported model output label {name!r}. Cannot safely map it to a Horos tumour label.")
+        target = targets[normalized]
+        if source in mapping and mapping[source] != target:
+            raise RuntimeError(f"Conflicting model definitions for output label {source}.")
+        mapping[source] = target
+    if mapping.get(0) != 0 or not any(mapping.values()):
+        raise RuntimeError("The model must declare background label 0 and at least one supported tumour label.")
+    return mapping
+
+
+def remap_model_labels(data: np.ndarray, mapping: dict[int, int]) -> np.ndarray:
+    if not np.all(np.isfinite(data)):
+        raise RuntimeError("The model prediction contains non-finite label values.")
+    source = np.rint(data)
+    if not np.array_equal(source, data):
+        raise RuntimeError("The model prediction contains non-integer label values.")
+    values = {int(value) for value in np.unique(source)}
+    unknown = values - mapping.keys()
+    if unknown:
+        raise RuntimeError(f"The model predicted labels not declared in dataset.json: {sorted(unknown)}")
+
+    # Compare against the unchanged source so swaps cannot overwrite each other.
+    labels = np.zeros(source.shape, dtype=np.uint8)
+    for value in values:
+        if mapping[value] != 0:
+            labels[source == value] = mapping[value]
+    return labels
 
 
 def classify_role(series: dict) -> str:
@@ -426,7 +495,7 @@ def run_nnunet(config: dict, model_folder: Path, input_dir: Path, output_dir: Pa
     return prediction, timings
 
 
-def convert_prediction_to_horos(job: dict, prediction_path: Path, output_raw: Path) -> tuple[dict[str, int], dict]:
+def convert_prediction_to_horos(job: dict, prediction_path: Path, output_raw: Path, label_mapping: dict[int, int]) -> tuple[dict[str, int], dict]:
     width, height, depth = [int(value) for value in job["dimensions"]]
     expected_shape = (width, height, depth)
     data = np.asarray(nib.load(str(prediction_path)).get_fdata(), dtype=np.float32)
@@ -440,8 +509,7 @@ def convert_prediction_to_horos(job: dict, prediction_path: Path, output_raw: Pa
             anti_aliasing=False,
         )
 
-    labels = np.rint(data).clip(0, 255).astype(np.uint8)
-    labels[labels == 3] = 4
+    labels = remap_model_labels(data, label_mapping)
     labels_zyx, seed_guidance = constrain_labels_to_tumour_seeds(labels.transpose(2, 1, 0), job)
     labels = labels_zyx.transpose(2, 1, 0)
     raw = labels_zyx.reshape(int(job["expectedVoxelCount"]))
@@ -469,6 +537,9 @@ def main() -> int:
     work_dir = Path(job.get("workingDirectory") or job_path.parent)
     config = load_config()
     model_folder = configured_model_folder(config)
+    model_dataset = load_json(model_folder / "dataset.json")
+    channel_order = model_channel_order(model_dataset)
+    label_mapping = model_label_mapping(model_dataset)
     timings["configurationSeconds"] = elapsed_since(phase_start)
 
     phase_start = time.perf_counter()
@@ -484,7 +555,6 @@ def main() -> int:
         modalities["tumorseed"] = seed_mask
     timings["dicomSeriesLoadSeconds"] = elapsed_since(phase_start)
 
-    channel_order = configured_channel_order(config)
     input_dir = work_dir / "nnunet-input"
     output_dir = work_dir / "nnunet-output"
 
@@ -498,7 +568,7 @@ def main() -> int:
     output_raw = Path(job["outputLabelmap"])
     result_path = Path(job.get("resultJSON") or (work_dir / "result.json"))
     phase_start = time.perf_counter()
-    counts, output_seed_guidance = convert_prediction_to_horos(job, prediction, output_raw)
+    counts, output_seed_guidance = convert_prediction_to_horos(job, prediction, output_raw, label_mapping)
     timings["horosLabelmapWriteSeconds"] = elapsed_since(phase_start)
     timings["totalSeconds"] = elapsed_since(total_start)
 
@@ -514,6 +584,10 @@ def main() -> int:
         "backend": "nnunet-local-trained-model",
         "modelFolder": str(model_folder),
         "channels": written_roles,
+        "channelOrderSource": "model dataset.json",
+        "modelChannels": model_dataset["channel_names"],
+        "modelLabels": model_dataset["labels"],
+        "modelToHorosLabels": {str(source): target for source, target in label_mapping.items()},
         "tumourSeedGuidance": {
             "provided": tumour_seed_count(job),
             "usable": usable_seed_count,
@@ -525,12 +599,7 @@ def main() -> int:
         "labelVoxelCounts": counts,
         "channelRegistration": registration_summaries,
         "timings": timings,
-        "labels": {
-            "0": "background",
-            "1": "tumour core / non-enhancing label",
-            "2": "edema",
-            "4": "enhancing tumour",
-        },
+        "labels": HOROS_LABEL_NAMES,
         "message": "Local trained nnU-Net tumour segmentation completed.",
     }
     result_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")

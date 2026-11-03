@@ -25,6 +25,7 @@ final class MetalViewerToolbarView: NSView {
         case defaultWindow
         case automatic
         case fullDynamic
+        case roiWindow
         case preset(String)
         case addCurrent
         case setManually
@@ -137,6 +138,7 @@ final class MetalViewerToolbarView: NSView {
         addItem(NSLocalizedString("Default WL & WW", comment: ""), command: .defaultWindow, state: selectedTitle == NSLocalizedString("Default WL & WW", comment: "") ? .on : .off)
         addItem(NSLocalizedString("Auto", comment: ""), command: .automatic, state: selectedTitle == NSLocalizedString("Auto", comment: "") ? .on : .off)
         addItem(NSLocalizedString("Full dynamic", comment: ""), command: .fullDynamic, state: selectedTitle == NSLocalizedString("Full dynamic", comment: "") ? .on : .off)
+        addItem(NSLocalizedString("ROI WL/WW", comment: ""), command: .roiWindow, state: selectedTitle == NSLocalizedString("ROI WL/WW", comment: "") ? .on : .off)
         wlwwPopup.menu?.addItem(.separator())
 
         let presetKeys: [String]

@@ -78,7 +78,6 @@ or:
 ```json
 {
   "nnunet_model_folder": "/local/path/to/nnunet/model",
-  "nnunet_channels": "flair,t1,t1c,t2",
   "nnunet_device": "mps",
   "nnunet_folds": "0"
 }
@@ -86,13 +85,25 @@ or:
 
 The helper resamples selected local DICOM series into the
 `referenceVoxelToPatientMatrix` grid, then writes them into nnU-Net channel files
-named `horos_0000.nii.gz`, `horos_0001.nii.gz`, etc. The default channel order
-is `flair,t1,t1c,t2`, matching common BraTS/Medical Segmentation Decathlon
-conventions; set `nnunet_channels` if a model expects a different order. nnU-Net
-labels with value `3` are remapped to Horos label `4` for enhancing tumour.
-If a configured model expects a seed channel, include `seed`, `tumourseed`, or
-`tumorseed` in `nnunet_channels`; the helper writes a binary 5 mm seed-mask
-channel from `tumourSeeds`. When seeds are present, the helper also post-filters
+named `horos_0000.nii.gz`, `horos_0001.nii.gz`, etc. Channel order comes from
+the trained model folder's `dataset.json` `channel_names`, sorted by numeric
+index. Sequence aliases such as `t1ce` are matched to Horos roles such as `t1c`.
+Legacy `nnunet_channels` and `HOROS_TUMOR_NNUNET_CHANNELS` settings are ignored;
+they cannot override the model's training channel order. Missing or unsupported
+channel definitions stop the job instead of guessing an order.
+
+Output label names in the same `dataset.json` determine the conversion to
+Horos labels `0`, `1`, `2`, and `4`. For example, a model declaring edema as
+`1` and non-enhancing tumour as `2` has those labels swapped into Horos order.
+An `empty` or unused label becomes background, while an enhancing label `3`
+becomes `4` only if the model declares it as enhancing. Unknown, conflicting,
+or region-based label definitions stop the job rather than being silently
+misinterpreted. The result metadata records the source channel and label
+definitions and the model-to-Horos label mapping.
+
+If the model declares a `seed`, `tumourseed`, or `tumorseed` channel in
+`channel_names`, the helper writes a binary 5 mm seed-mask channel from
+`tumourSeeds`. When seeds are present, the helper also post-filters
 the returned labelmap to components touching the seed neighbourhood, with a
 5 mm seed-sphere fallback if the model output misses the seeds.
 
